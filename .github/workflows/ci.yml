@@ -35,23 +35,7 @@ jobs:
       # MacPorts' own CI sets up, keeps that from fetching a ports tree these
       # tests never read.
       - name: MacPorts
-        run: |
-          release=$(curl -fsSL https://raw.githubusercontent.com/macports/macports-base/master/config/RELEASE_URL)
-          version=${release##*/v}
-          if ! printf '%s\n' "$version" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+'; then echo "MacPorts' RELEASE_URL names no release: $release" >&2; exit 1; fi
-          major=$(sw_vers -productVersion | cut -d. -f1)
-          base=https://github.com/macports/macports-base/releases/download/v$version
-          curl -fsSLO "$base/MacPorts-$version.chk.txt"
-          package=$(sed -n "s/^SHA2-256(\(MacPorts-$version-$major-[A-Za-z]*\.pkg\))= .*/\1/p" "MacPorts-$version.chk.txt")
-          if [ -z "$package" ]; then echo "MacPorts $version has no package for macOS $major" >&2; exit 1; fi
-          sum=$(sed -n "s/^SHA2-256($package)= //p" "MacPorts-$version.chk.txt")
-          curl -fsSLO "$base/$package"
-          echo "$sum  $package" | shasum -a 256 -c -
-          sudo mkdir -p /opt/local/etc/macports "$RUNNER_TEMP/ports"
-          echo "file://$RUNNER_TEMP/ports [default,nosync]" | sudo tee /opt/local/etc/macports/sources.conf
-          sudo installer -pkg "$package" -target /
-          /opt/local/bin/port version
-          echo "DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh" >> "$GITHUB_ENV"
+        run: .github/scripts/macports.sh
 
       - name: Test
         run: make test
@@ -73,3 +57,42 @@ jobs:
 
       - name: Build
         run: make build
+
+  # Row A6 of the release-candidate test (the project's plan/prime-time.md):
+  # an Intel Mac, which prepares changes and checks them on GitHub. The
+  # suite, MacPorts' evaluator included, runs on x86_64, and dockhand builds.
+  intel:
+    runs-on: macos-15-intel
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: MacPorts
+        run: .github/scripts/macports.sh
+
+      - name: Test
+        run: make test
+
+      - name: Build
+        run: make build
+
+      - name: Prepare on Intel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone -q --depth 1 https://github.com/macports/macports-ports.git "$RUNNER_TEMP/ports"
+          export MACPORTS_TREE="$RUNNER_TEMP/ports" DOCKHAND_DB="$RUNNER_TEMP/dockhand.db" DOCKHAND_CONFIG="$RUNNER_TEMP/config.toml"
+          ./dockhand setup -y | tee "$RUNNER_TEMP/setup.log"
+          grep -q 'tart' "$RUNNER_TEMP/setup.log"
+          ./dockhand update jq --new --plan | tee "$RUNNER_TEMP/plan.log"
+          if ./dockhand check --plan 2>"$RUNNER_TEMP/check.err"; then echo "a check planned with nowhere to build" >&2; exit 1; fi
+          grep -q -- '--on github' "$RUNNER_TEMP/check.err"

@@ -12,7 +12,9 @@ import (
 	"slices"
 	"strings"
 
+	archivefile "github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/editprep"
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -376,6 +378,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	if err != nil {
 		return byHand(err)
 	}
+	failpoint.Hit("update.prepared")
 	update := describe(branch, request.Port, result)
 	update.Base = base
 	// A version update or a checksum refresh is where the port's URLs are
@@ -397,6 +400,14 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	if len(result.Files) > 0 && (compare || result.GoToolchain != nil) {
 		trees := [2]model.Source{{Tree: model.ObjectID(captured), Base: model.ObjectID(base)}, {Tree: result.PreparedTree, Base: model.ObjectID(base)}}
 		update.Upstream = e.assessUpstream(ctx, result, sourcecompare.Versions{Old: update.Before.Version, New: update.After.Version}, trees, compare)
+		// A repository GitHub answers by another name is a finding of the
+		// comparison, which holds: bump went on to submit skopeo, and
+		// neither its preview nor the pull request said it had moved
+		// (field testing's batch 10, finding 1).
+		if update.Renamed != "" && update.Upstream != nil {
+			update.Upstream.Changes = append(update.Upstream.Changes, model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: update.Renamed, Hold: true, Class: model.Introduced,
+				Message: fmt.Sprintf("upstream moved: GitHub answers %s as %s, by a redirect; the Portfile's github.setup may follow", update.Release.Repository, update.Renamed)})
+		}
 	}
 	if len(result.Files) == 0 {
 		update.Current = true
@@ -1049,7 +1060,15 @@ func (e *Engine) assessUpstream(ctx context.Context, result editprep.Result, ver
 	}
 	if compare && problem == "" && len(result.Downloads) > 0 {
 		pairs, err := e.readPairs(ctx, result.Pairs, input.Base, input.Port)
-		if err != nil {
+		switch {
+		case errors.Is(err, archivefile.ErrBinary):
+			// A binary package holds no source: said, holding nothing,
+			// as for a port that fetches none (field testing's batch 10,
+			// finding 2: 1password-cli).
+			read = append(read, model.Coverage{Path: path.Dir(result.Target.Portfile), Relevance: "unknown", Treatment: "inspected", Policy: notCompared,
+				Reason: result.Target.Name + " ships " + strings.TrimPrefix(err.Error(), archivefile.ErrBinary.Error()+": ")})
+			pairs = nil
+		case err != nil:
 			problem = err.Error()
 		}
 		input.Pairs = pairs
@@ -1122,6 +1141,9 @@ func (e *Engine) readPairs(ctx context.Context, pairs []editprep.ArchivePair, ba
 		var readings [2]project.Reading
 		for i, archive := range []distfetch.Download{pair.Previous, pair.Next} {
 			reading, err := e.readings().Read(ctx, archive.Path, archive.SHA256, project.Spec{Subdirectory: macports.SourceSubdirectory(ports[i].Options["worksrcdir"])})
+			if errors.Is(err, archivefile.ErrBinary) {
+				return nil, err
+			}
 			if err != nil {
 				return nil, fmt.Errorf("reading %s: %v", path.Base(archive.Path), err)
 			}
@@ -1204,6 +1226,10 @@ func editRecorded(branch model.BranchID, id model.EditID) func(store.Reader) boo
 // names it otherwise than the release was found by; empty where it's the
 // same, it isn't GitHub's, or GitHub couldn't be asked, which is no
 // reason to stop an update.
+// upstreamMovedRule is the comparison's finding that GitHub answers the
+// release's repository by another name.
+const upstreamMovedRule = "upstream-moved"
+
 func (e *Engine) renamed(ctx context.Context, release model.Release) string {
 	if release.Forge != forge.GitHub || release.Repository == "" {
 		return ""

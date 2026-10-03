@@ -137,7 +137,9 @@ new one has passed.`,
 				fmt.Fprintf(streams.Out, "This Mac has MacPorts %s. Checks read ports with it and build them with the image's %s; --rebuild --macports-version %s makes them the same.\n",
 					host, result.MacPorts, host)
 			}
-			fmt.Fprintf(streams.Out, "Next: dockhand check --on tart:%s\n", result.Release.Slug)
+			// Not a Next: line, which names only what the branch as it
+			// stands would accept, and setup has no branch.
+			fmt.Fprintf(streams.Out, "Checks build on it with --on tart:%s.\n", result.Release.Slug)
 			return nil
 		},
 	}

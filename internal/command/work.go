@@ -154,11 +154,22 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	}
 	fmt.Fprintln(out)
 	if offer && streams.terminal() && !yes {
-		if err := offerSetup(cmd.Context(), s, e, streams, file, configPath); err != nil {
+		written, err := offerSetup(cmd.Context(), s, e, streams, file, configPath)
+		if err != nil {
 			return err
 		}
+		if written != "" {
+			file.Maintainer = written
+		}
 	}
-	fmt.Fprintln(out, "Next: dockhand outdated --mine, or dockhand update <port>")
+	// A Next: line names only what would be accepted (the release bar's
+	// rule): outdated --mine needs the maintainers line, which A10's run
+	// of setup found missing.
+	if file.Maintainer != "" {
+		fmt.Fprintln(out, "Next: dockhand outdated --mine, or dockhand update <port>")
+	} else {
+		fmt.Fprintln(out, "Next: dockhand update <port>, or set maintainer in the configuration file for dockhand outdated --mine")
+	}
 	return nil
 }
 
@@ -292,6 +303,7 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, nu
 	if err != nil {
 		return err
 	}
+	fmt.Fprintln(streams.Err, experimentalWords(number, adoption.Author))
 	streams.emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "number": number, "title": adoption.Title,
 		"author": adoption.Author, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames()), "maintainers_can_edit": adoption.MaintainerCanModify})
 	if adoption.Already {

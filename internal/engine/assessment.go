@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	archivefile "github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -210,6 +211,11 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 	return found, made, nil
 }
 
+// binaryPackage starts what reading a revision's archives says of one
+// that's a binary package, which the assessment says as nothing to
+// compare.
+const binaryPackage = "binary package: "
+
 // errNoPlanner is an engine that can't plan archives, given no evaluator.
 var errNoPlanner = errors.New("assessing a revision needs MacPorts' evaluator")
 
@@ -266,6 +272,15 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 		defer os.RemoveAll(scratchDirectory)
 		var fetched map[string]string
 		input.Pairs, input.Unpaired, fetched, problem, again = e.readPlans(ctx, infos, plans, hadBase, scratchDirectory)
+		// A port that fetches a binary, as 1password-cli's installer
+		// package, has no source to compare, which is said and holds
+		// nothing, as for a port that fetches none (field testing's batch
+		// 10, finding 2).
+		if words, ok := strings.CutPrefix(problem, binaryPackage); ok {
+			coverage = append(coverage, model.Coverage{Path: directory, Relevance: "unknown", Treatment: "inspected", Policy: notCompared, Reason: name + " ships " + words})
+			problem = ""
+			break
+		}
 		if problem == "" {
 			input.Patches = e.patchesFor(ctx, patchRequest{infos: infos, sources: sources, portdir: directory, plan: plans[1], fetched: fetched, scratch: scratchDirectory})
 		}
@@ -618,6 +633,9 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 		}
 		for _, archive := range fetched {
 			reading, err := cache.Read(ctx, archive.Path, archive.Sum.SHA256, s.spec)
+			if errors.Is(err, archivefile.ErrBinary) {
+				return nil, nil, nil, binaryPackage + archive.Name + ", which is a binary package, with no source to compare", false
+			}
 			if err != nil {
 				return nil, nil, nil, fmt.Sprintf("reading %s: %v", archive.Name, err), false
 			}

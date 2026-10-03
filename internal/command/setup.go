@@ -48,7 +48,9 @@ authorized until you revoke it on GitHub's page for it, which it names.`,
 // login write, written to the configuration file, and, last and off by
 // default for its download, the Tart image of this Mac's macOS. Each is
 // the person's to decline, and one that fails is said, and the rest go on.
-func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Streams, file config.File, configPath string) error {
+// It says the maintainers line it wrote, or nothing.
+func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Streams, file config.File, configPath string) (string, error) {
+	written := ""
 	fmt.Fprintln(streams.Out)
 	if overridingToken() == "" {
 		if _, err := github.SavedLogin(ctx, authStore); err != nil && yesTo(streams, "? Log in to GitHub now, for submit and checks in your fork? [Y/n] ", true) {
@@ -63,8 +65,9 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 			line := suggestion.Spellings[0].Maintainer.String()
 			if yesTo(streams, fmt.Sprintf("? Write maintainer = %q to %s, as the ports naming @%s write it? [Y/n] ", line, tilde(configPath), suggestion.Login), true) {
 				if err := config.SetMaintainer(configPath, line); err != nil {
-					return err
+					return "", err
 				}
+				written = line
 				fmt.Fprintf(streams.Out, "Wrote maintainer = %q, for --mine, create, and serve's daily look.\n", line)
 			}
 		} else {
@@ -81,7 +84,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 			}
 		}
 	}
-	return nil
+	return written, nil
 }
 
 // hostImage says whether Tart has a base image of this Mac's macOS.

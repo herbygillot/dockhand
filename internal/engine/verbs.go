@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/history"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -222,6 +223,7 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 	if err := e.history().Prepare(ctx, &checkpoint); err != nil {
 		return Rebased{}, err
 	}
+	failpoint.Hit("rebase.prepared")
 	if err := e.history().Step("prepared"); err != nil {
 		return Rebased{}, err
 	}

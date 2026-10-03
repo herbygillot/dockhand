@@ -127,7 +127,7 @@ func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
 	_, _, err := dockhand(t, "update", "jq", "--new")
 	require.Error(t, err)
 	require.Regexp(t, `^can't update jq by itself: its pre-fetch hook runs exec\nKept: dockhand/jq-[a-z0-9]{4}, with nothing changed\.\n`+
-		`Edit the version yourself; dockhand checksums jq then fills in the rest:\n  dockhand edit jq$`, err.Error())
+		`Edit the version and its checksums yourself; port checksum jq, after the version's edit, says what its archives have:\n  dockhand edit jq$`, err.Error())
 
 	_, _, err = dockhand(t, "checksums", "jq", "--new")
 	require.ErrorContains(t, err, "can't refresh jq's checksums by itself: its pre-fetch hook runs exec\n")

@@ -73,7 +73,7 @@ MacPorts' distfiles mirror.`,
 			return err
 		},
 	}
-	where.register(cmd, s, "Show")
+	where.register(cmd, s, "show")
 	cmd.Flags().BoolVar(&stat, "stat", false, "list the changed files, not the patch")
 	cmd.Flags().BoolVar(&archives, "archive", false, "compare what the ports' source archives hold, not the Portfiles")
 	return cmd
@@ -262,15 +262,16 @@ some against the branch.`,
 				return err
 			}
 			streams.emit(impactView(impact))
-			writeImpact(streams.Out, impact)
+			writeImpact(streams.Out, impact, nextIn(ctx, e, branch, ""))
 			return nil
 		},
 	}
-	where.register(cmd, s, "Show")
+	where.register(cmd, s, "show")
 	return cmd
 }
 
-func writeImpact(out io.Writer, impact engine.Impact) {
+// in is how a Next: line reaches the branch, nextIn's lead.
+func writeImpact(out io.Writer, impact engine.Impact, in string) {
 	row := func(label, value string) { fmt.Fprintf(out, "%-17s %s\n", label, value) }
 	var changed []string
 	for _, port := range impact.Diff.Ports {
@@ -332,10 +333,10 @@ func writeImpact(out io.Writer, impact engine.Impact) {
 			names = append(names, dependent.Name)
 		}
 		if len(chosen) == len(impact.Dependents) {
-			fmt.Fprintf(out, "Next: dockhand check --also %s builds them against the branch\n", strings.Join(names, ","))
+			fmt.Fprintf(out, "Next: %sdockhand check --also %s (it builds them against the branch)\n", in, strings.Join(names, ","))
 		} else {
-			fmt.Fprintf(out, "Next: dockhand check --also %s builds one of each kind of dependent against the branch, %d of %d; name others with --also\n",
-				strings.Join(names, ","), len(chosen), len(impact.Dependents))
+			fmt.Fprintf(out, "Next: %sdockhand check --also %s (one of each kind of dependent, %d of %d; name others with --also)\n",
+				in, strings.Join(names, ","), len(chosen), len(impact.Dependents))
 		}
 	}
 }
@@ -379,6 +380,6 @@ checked out here, in your browser, and prints its address.`,
 			return openBrowser(ctx, address)
 		},
 	}
-	where.register(cmd, s, "Open")
+	where.register(cmd, s, "open")
 	return cmd
 }

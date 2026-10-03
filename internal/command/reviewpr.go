@@ -44,6 +44,7 @@ access. --markdown prints the text, for pasting.`,
 			if err != nil {
 				return err
 			}
+			fmt.Fprintln(streams.Err, experimentalWords(number, report.Author))
 			body := report.Markdown()
 			streams.emit(reviewView(report))
 			if markdown {
@@ -147,4 +148,15 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 		fmt.Fprintf(out, "  %s\n", words)
 	}
 	fmt.Fprintln(out, "  · not checked here: port lint and the build; MacPorts CI runs both")
+}
+
+// experimentalWords is the notice review and adopt --pr carry until the
+// trust rule is in code (the release bar, 5): they evaluate someone else's
+// Portfiles with MacPorts on this Mac, as no other command does.
+func experimentalWords(number int, author string) string {
+	whose := "its author's"
+	if author != "" {
+		whose = "@" + author + "'s"
+	}
+	return fmt.Sprintf("Experimental: dockhand evaluates #%d's Portfiles, %s, with MacPorts on this Mac, as it does your own, so read them first where you don't trust their code; running another person's Portfile apart from you is still to come.", number, whose)
 }

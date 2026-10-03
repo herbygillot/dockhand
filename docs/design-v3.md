@@ -274,7 +274,7 @@ openjdk21-update · ~/Source/macports-branches/openjdk21-update
 ✗ can't update openjdk21 by itself [hook-exec]
   java/openjdk21/Portfile:48: its pre-fetch hook runs `exec`, and dockhand won't guess what that changes.
   Kept: the branch, unchanged.
-  Edit the version yourself; `dockhand checksums openjdk21` then fills in the rest:
+  Edit the version and its checksums yourself; `port checksum openjdk21`, after the version's edit, says what its archives have:
     dockhand edit openjdk21
 ```
 

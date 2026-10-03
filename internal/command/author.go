@@ -410,7 +410,8 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		case stub.Version != update.After.Version:
 			fmt.Fprintf(out, "%s (obsolete, replaced_by %s) stays at %s; --with-obsolete moves it to %s.\n", stub.Port, update.Port, stub.Version, update.After.Version)
 		}
-		if update.Renamed != "" {
+		// Where upstream was compared, the move is one of its findings.
+		if update.Renamed != "" && update.Upstream == nil {
 			fmt.Fprintf(out, "Upstream moved: GitHub answers %s as %s, by a redirect; the Portfile's github.setup may follow.\n", update.Release.Repository, update.Renamed)
 		}
 	} else if update.Stealth != nil {
@@ -541,10 +542,20 @@ const distSubdirRemoved = "dist_subdir: a stealth update set it for the old vers
 // other than the one checked out here is gone to first, since a check
 // from elsewhere takes the branch's committed head.
 func nextAfterEdit(ctx context.Context, e *engine.Engine, branch model.Branch) string {
+	return nextIn(ctx, e, branch, "dockhand check")
+}
+
+// nextIn is a Next: line's steps, run in a branch: as they are where it's
+// checked out, and after a cd into its worktree elsewhere, since a check
+// from outside takes its committed head, not its edits. A Next: names
+// only what would be accepted (the release bar's rule), so the branch's
+// steps run where the branch is.
+func nextIn(ctx context.Context, e *engine.Engine, branch model.Branch, steps ...string) string {
+	line := strings.Join(steps, ", then ")
 	if current, err := e.Current(ctx); err == nil && current.ID == branch.ID {
-		return "dockhand check"
+		return line
 	}
-	return fmt.Sprintf(`cd "$(dockhand path %s)", then dockhand check`, branch.ShortName())
+	return fmt.Sprintf(`cd "$(dockhand path %s)", then %s`, branch.ShortName(), line)
 }
 
 // announce says which branch an edit is in, and whether it was just
@@ -585,7 +596,12 @@ func byHand(err error, request engine.UpdateRequest, branch model.Branch, starte
 	case unlocated != nil:
 		return fmt.Errorf("can't update %s by itself: %s%s\nEdit the version yourself; dockhand checksums %s then prints the checksums to write:\n  dockhand edit %s", port, reason, kept, port, port)
 	}
-	return fmt.Errorf("can't update %s by itself: %s%s\nEdit the version yourself; dockhand checksums %s then fills in the rest:\n  dockhand edit %s", port, reason, kept, port, port)
+	// checksums meets what stopped the update, evaluating the same
+	// Portfile, so it isn't named: git's and qemu's refusals each sent
+	// the person to a checksums that refused them again (the hugo
+	// exercise, field testing). A Next: names only what would be
+	// accepted (the release bar's rule).
+	return fmt.Errorf("can't update %s by itself: %s%s\nEdit the version and its checksums yourself; port checksum %s, after the version's edit, says what its archives have:\n  dockhand edit %s", port, reason, kept, port, port)
 }
 
 // uncertainUpdate is an update to the newest release that found none to

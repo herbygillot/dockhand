@@ -35,3 +35,10 @@ func TestFewSaysALongListByItsCount(t *testing.T) {
 	require.Equal(t, "4 ports: terraform-1.16, terraform-1.17, terraform-1.18 and 1 more", Few(ports, 3, "port"))
 	require.Empty(t, Few(nil, 3, "port"))
 }
+
+func TestAndListsWordsAsASentenceDoes(t *testing.T) {
+	require.Equal(t, "14", And([]string{"14"}))
+	require.Equal(t, "14 and 15", And([]string{"14", "15"}))
+	require.Equal(t, "13, 14, and 15", And([]string{"13", "14", "15"}))
+	require.Empty(t, And(nil))
+}

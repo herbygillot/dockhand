@@ -78,7 +78,7 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 		`  cargo.crates: 1 crate, from Cargo.lock\n`+
 		`  checksums: 1 distfile \+ 1 crate\n`+
 		`  Unconfirmed, marked in the file: license \(from GitHub's detection\), long_description, destroot\n`+
-		`Next: dockhand edit rift, then dockhand check\n$`, out)
+		`Next: cd "\$\(dockhand path rift-new\)", then dockhand edit rift, then dockhand check\n$`, out)
 
 	branch := regexp.MustCompile(`dockhand/(rift-new)`).FindStringSubmatch(out)[1]
 	dir := filepath.Join(w.home, "Source", "macports-branches", branch)

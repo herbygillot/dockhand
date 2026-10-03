@@ -283,3 +283,15 @@ func TestABatchsExitSaysWhetherAnythingWorked(t *testing.T) {
 	require.Equal(t, 3, ExitCode(writePrepared(t.Context(), nil, &out, append(failed, done), false)), "some need a look")
 	require.NoError(t, writePrepared(t.Context(), nil, &out, []engine.PreparedUpdate{done}, false), "all were done")
 }
+
+// Every port of a batch says what its comparison did, as a single update
+// does, including one that found nothing, and one that compared nothing
+// (field testing's batch 10, finding 3).
+func TestEveryBatchPortSaysItsComparison(t *testing.T) {
+	compared := engine.Update{Upstream: &model.UpstreamComparison{Changes: []model.UpstreamChange{}}}
+	require.Equal(t, []string{"Upstream source compared: no license, build file, or dependency changes."}, batchNotes(compared))
+	nothing := engine.Update{Upstream: &model.UpstreamComparison{Changes: []model.UpstreamChange{}, Coverage: []model.Coverage{{Path: "x", Relevance: "unknown", Treatment: "inspected", Policy: "not-compared", Reason: "op ships a binary package"}}}}
+	require.Len(t, batchNotes(nothing), 1)
+	require.Contains(t, batchNotes(nothing)[0], "Upstream not compared: ")
+	require.Empty(t, batchNotes(engine.Update{}), "nothing compared at all, as with --plan")
+}

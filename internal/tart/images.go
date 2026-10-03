@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -91,7 +92,15 @@ type VM struct {
 	DiskFormat string
 }
 
+// Images lists the Tart home's images. A home that isn't there has none,
+// and Tart isn't run, since it would make the home's directories, which
+// a command that only reads mustn't.
 func (c Client) Images(ctx context.Context, options RunOptions) ([]Image, error) {
+	if c.Home != "" {
+		if _, err := os.Stat(c.Home); errors.Is(err, os.ErrNotExist) {
+			return []Image{}, nil
+		}
+	}
 	output, err := c.Run(ctx, options, "list", "--format", "json")
 	for attempt := 1; errors.Is(err, ErrListingRaced) && attempt < listingAttempts; attempt++ {
 		select {

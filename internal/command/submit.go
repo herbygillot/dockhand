@@ -131,7 +131,7 @@ GitHub is kept.
 			}
 		},
 	}
-	where.register(cmd, s, "Submit")
+	where.register(cmd, s, "submit")
 	cmd.Flags().BoolVar(&preview, "plan", false, "show what would be pushed and opened, and change nothing")
 	cmd.Flags().BoolVar(&request.Head, "head", false, "submit the committed head, leaving uncommitted edits out")
 	cmd.Flags().BoolVar(&request.Draft, "draft", false, "open the pull request as a draft, which unfinished or failing checks allow")
@@ -559,6 +559,11 @@ func checkWords(plan engine.SubmitPlan) string {
 		passed := fmt.Sprintf("passed on %s for this commit's files (%s)", strings.Join(tested, ", "), evidence.Run.Name())
 		if len(excluded) > 0 {
 			passed += fmt.Sprintf("; nothing built on %s, where every port is excluded", strings.Join(excluded, ", "))
+		}
+		// What MacPorts' CI builds on that this check didn't: tart 2.40.1
+		// passed on 26 alone and failed CI on 15 (field testing, #35157).
+		if len(plan.UncoveredCI) > 0 {
+			passed += fmt.Sprintf("; MacPorts CI also builds on macOS %s, which no check here built on (check.on = [\"ci\"] checks those)", prose.And(plan.UncoveredCI))
 		}
 		return passed
 	}

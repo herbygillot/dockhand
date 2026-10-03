@@ -27,7 +27,8 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 
 	_, _, err := dockhand(t, "review", "x")
 	require.ErrorContains(t, err, `"x" is not a pull request number`)
-	out, _, err := dockhand(t, "review", "34905")
+	out, said, err := dockhand(t, "review", "34905")
+	require.Contains(t, said, "Experimental: dockhand evaluates #34905's Portfiles, its author's,", "the release bar's notice")
 	require.NoError(t, err)
 	require.Contains(t, out, "review of #34905 \"Update jq docs\", as @ada (read access to macports/macports-ports)\n  1 commit changing jq\n")
 	require.Contains(t, out, `should start with the port it changes: "jq: …" [subject-port]`)
@@ -64,8 +65,9 @@ func TestAdoptSomeonesPullRequest(t *testing.T) {
 
 	_, _, err := dockhand(t, "adopt", "x", "--pr", "34905")
 	require.ErrorContains(t, err, "adopt takes a branch or --pr, not both")
-	out, _, err := dockhand(t, "adopt", "--pr", "34905")
+	out, said, err := dockhand(t, "adopt", "--pr", "34905")
 	require.NoError(t, err)
+	require.Contains(t, said, "Experimental: dockhand evaluates #34905's Portfiles, @newcontrib's, with MacPorts on this Mac", "the release bar's notice")
 	require.Equal(t, "Adopted pr-34905: \"jq: document the options\" by @newcontrib, 1 commit, changing jq; maintainers can edit.\nDirectory: ~/Source/macports-branches/pr-34905\n", out)
 	require.FileExists(t, filepath.Join(w.home, "Source", "macports-branches", "pr-34905", "textproc/jq/Portfile"))
 	out, _, err = dockhand(t, "adopt", "--pr", "34905")

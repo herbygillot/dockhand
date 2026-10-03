@@ -408,10 +408,17 @@ func batchNotes(update engine.Update) []string {
 	for _, dropped := range update.PatchesDropped {
 		notes = append(notes, "Dropped patch "+dropped+", which the new source already holds; its file goes too.")
 	}
+	// Every port says what its comparison did, as a single update does:
+	// dolt, tart, and helm's subports said nothing in a batch, neither
+	// compared nor not (field testing's batch 10, finding 3).
 	switch comparison := update.Upstream; {
 	case comparison == nil:
 	case comparison.Problem != "":
 		notes = append(notes, "! Upstream archives not compared: "+comparison.Problem)
+	case engine.NothingCompared(*comparison):
+		notes = append(notes, "Upstream not compared: "+engine.CoverageWords(*comparison)+".")
+	case len(comparison.Changes) == 0:
+		notes = append(notes, "Upstream source compared: no license, build file, or dependency changes.")
 	default:
 		for _, change := range comparison.Changes {
 			notes = append(notes, upstreamWords(change))

@@ -193,8 +193,11 @@ Each build is evaluated with its variants, so it's planned as MacPorts would bui
 | `tart` | this Mac's release |
 | `tart:tahoe`, `tart:sequoia,tahoe`, `tart:all` | those releases' images, or every image you have |
 | `tahoe`, `15` | shorthand for `tart:` that release |
+| `ci` | the releases MacPorts' CI builds every pull request on, as its workflow at master names them (macOS 14, 15, and 26 today), on Tart |
 | `github` | MacPorts' workflow in your fork |
 | `command` | your own script |
+
+A check that built on fewer releases than MacPorts' CI does is said in `submit`'s preview and under the pull request's Tested on table: "MacPorts CI also builds on macOS 14 and 15, which no check here built on." A check on `github` runs that workflow itself, so it covers them all. `check.on = ["ci"]` checks on each; it isn't the default, since it builds three times over.
 
 With several releases, `check` builds two at a time, as many as macOS runs VMs, and shows the results as a grid, one column per release. A check on several providers, such as `--on tahoe --on github`, builds on each at once.
 

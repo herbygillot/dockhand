@@ -128,7 +128,7 @@ func TestSetupTart(t *testing.T) {
 	require.Equal(t, []tart.SetupOptions{{Release: "sonoma", MacPortsVersion: "2.12.5"}}, images.asked)
 	require.Contains(t, out, "Checking Tart images for Sonoma...\n", "the provisioner's progress is shown")
 	require.Contains(t, out, "Made dockhand-base-sonoma: macOS 14 (Sonoma) with Command Line Tools 16.2.0.0.1.1733547573 and MacPorts "+tart.DefaultMacPorts+".\n")
-	require.Contains(t, out, "Next: dockhand check --on tart:sonoma\n")
+	require.Contains(t, out, "Checks build on it with --on tart:sonoma.\n")
 
 	images.result.Reused = true
 	out, _, err = dockhand(t, "providers", "setup", "tart", "--check")

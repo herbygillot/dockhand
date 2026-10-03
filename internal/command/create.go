@@ -132,7 +132,7 @@ its go-get answer.`,
 			streams.emit(createdView(branch, created))
 			if created.MovedFrom != "" {
 				fmt.Fprintf(out, "Moved %s from %s to %s, its files as they were, your edits included\n", created.Port, created.MovedFrom, created.Directory)
-				fmt.Fprintf(out, "Next: dockhand edit %s, then dockhand check\n", created.Port)
+				fmt.Fprintln(out, "Next: "+nextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))
 				return nil
 			}
 			groups := []string{"github"}
@@ -187,7 +187,7 @@ its go-get answer.`,
 				fmt.Fprintf(out, "  maintainers: nomaintainer, as your config names none; %s\n", engine.MaintainerWords(e.SuggestMaintainer(ctx, branch.Base), e.ConfigFile))
 			}
 			writePlainHTTP(out, created.PlainHTTP)
-			fmt.Fprintf(out, "Next: dockhand edit %s, then dockhand check\n", created.Port)
+			fmt.Fprintln(out, "Next: "+nextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))
 			return nil
 		},
 	}

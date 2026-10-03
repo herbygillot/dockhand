@@ -49,7 +49,7 @@ Each step shows what it will do before it does it, and `--plan` on any of them s
 ## Where checks build
 
 ```sh
-dockhand providers                # what is set up, and what is missing
+dockhand setup                    # what is set up, and what is missing
 dockhand check --on sequoia --on tahoe      # both releases, and both must pass
 ```
 
@@ -86,11 +86,29 @@ dockhand submit --passing                 # go through the ones that passed
 | `rebase` | moves the branch onto fresh master, keeping a checkpoint `undo` brings back |
 | `clean` | removes merged branches' worktrees and branches, here and in your fork |
 
+## What it supports
+
+This release supports **updating ports whose source is on GitHub and that build with Go or Rust**, one port at a time and in batches: `update`, `check`, `tidy`, `submit`, `bump`, and `update --outdated`. Every other Portfile shape either works or refuses with a reason; dockhand never makes an edit it can't stand behind. Shapes outside that scope, which it plans with care or refuses:
+
+- ports on another forge, such as GitLab or Codeberg, and ports MacPorts fetches with Git;
+- Python ports, and ports whose subports share a revision or a release;
+- C libraries with `--revbump-dependents`, and ports checked variant by variant.
+
+Read what `--plan` shows for these before you go on. Two commands are **experimental** until dockhand runs another person's Portfile apart from your own: `adopt --pr` and `review` evaluate a pull request's Portfiles with MacPorts on your Mac, and say so each time.
+
+Building in Tart needs an Apple silicon Mac. An Intel Mac, like any other, prepares changes here and checks them on GitHub Actions, `--on github`, which runs MacPorts' own workflow in your fork.
+
+## Known issues
+
+What the release-candidate test finds that's rough but harms nothing is listed here, with its workaround.
+
+- A check builds on this Mac's release unless told otherwise, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--on ci` checks on all three.
+
 ## Requirements
 
 - **macOS on Apple silicon** to build in Tart. Any Mac can prepare changes and check them on GitHub Actions or your own script.
 - **MacPorts.** Dockhand reads Portfiles through MacPorts' own Tcl interpreter, so it sees what `port` sees.
-- **Git 2.40 or newer, and a clone of your fork** of `macports/macports-ports` that Git can push to. `init` checks the Git it runs: `git` on `PATH`, or `$GIT_BIN`. Dockhand finds the upstream remote whatever it is called, and your fork by your GitHub login.
+- **Git 2.40 or newer, and a clone of your fork** of `macports/macports-ports` that Git can push to. `setup` checks the Git it runs: `git` on `PATH`, or `$GIT_BIN`. Dockhand finds the upstream remote whatever it is called, and your fork by your GitHub login.
 - **A GitHub login** for `submit`: `dockhand setup github`, `GH_TOKEN` or `GITHUB_TOKEN`, or the GitHub CLI's.
 - **`go2port` or `cargo2port`**, from MacPorts, only for Go and Rust ports whose Portfile lists its dependencies.
 

@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/evidence"
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -520,6 +521,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}); err != nil {
 			return err
 		}
+		failpoint.Hit("check.running")
 		build := &build{d: d, ctx: ctx, execution: execution, tree: revision.Source.Tree, results: results, inputs: map[model.TargetID]model.TargetInputs{}, fetched: map[model.TargetID]model.ObjectID{}}
 		// The reused results are the execution's own, recorded before the
 		// provider builds the rest.

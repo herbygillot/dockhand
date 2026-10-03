@@ -56,7 +56,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	out, _, err = dockhand(t, "rebase")
 	require.NoError(t, err)
 	require.Regexp(t, `Rebased notes \(1 commit\) from master [0-9a-f]{7} onto [0-9a-f]{7}\.\nCheckpoint rebase-2 keeps the old history \(dockhand undo rebase-2\)\.\n`, out)
-	require.Contains(t, out, "Next: dockhand check, since the files it builds on have changed\n")
+	require.Contains(t, out, "Next: dockhand check (the files it builds on have changed)\n")
 	_, _, err = dockhand(t, "check")
 	require.NoError(t, err)
 	oldMaster := testsupport.Git(t, w.upstream, "rev-parse", "--short=7", "HEAD~1")

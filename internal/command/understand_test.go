@@ -67,7 +67,7 @@ func TestDiffAndImpact(t *testing.T) {
 	require.Equal(t, `Changed ports     jq
 Other dependents  jo (build), yq (library, runtime); candidates to look at
 Shared files      none
-Next: dockhand check --also yq,jo builds them against the branch
+Next: dockhand check --also yq,jo (it builds them against the branch)
 `, out)
 
 	// A changed directory's other ports are named as the base's index has

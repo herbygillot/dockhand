@@ -57,3 +57,17 @@ func FewJoined(items []string, shown int, noun, sep string) string {
 	}
 	return fmt.Sprintf("%s: %s and %d more", Plural(len(items), noun), strings.Join(items[:shown], sep), len(items)-shown)
 }
+
+// And is words as a sentence lists them: "14", "14 and 15", "13, 14,
+// and 15".
+func And(words []string) string {
+	switch len(words) {
+	case 0:
+		return ""
+	case 1:
+		return words[0]
+	case 2:
+		return words[0] + " and " + words[1]
+	}
+	return strings.Join(words[:len(words)-1], ", ") + ", and " + words[len(words)-1]
+}

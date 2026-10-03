@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
+	"github.com/herbygillot/dockhand/internal/config"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // configSetting is one line of dockhand config: a key, its value, and
@@ -56,6 +58,13 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			}
 			add("cleanup.automatic", automatic, "true")
 			add("cleanup.after", file.Cleanup.After, "15d")
+			// min_free as written, with what it reads as: config left it
+			// out (the acceptance harness's row C10, 2026-10-03).
+			minFree := ""
+			if file.Cleanup.MinFree != "" {
+				minFree = fmt.Sprintf("%s (%s)", file.Cleanup.MinFree, prose.Bytes(int64(file.Cleanup.Free())))
+			}
+			add("cleanup.min_free", minFree, prose.Bytes(config.DefaultMinFree))
 			add("serve.for_outdated", file.Serve.ForOutdated, "list")
 			add("serve.outdated_at", file.Serve.OutdatedAt, "07:00")
 			submitPassing := ""

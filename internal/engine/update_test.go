@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -851,6 +852,20 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 	require.Equal(t, "semgrep/semgrep", e.renamed(t.Context(), model.Release{Forge: forge.GitHub, Repository: "returntocorp/semgrep"}))
 	require.Empty(t, e.renamed(t.Context(), model.Release{Forge: forge.GitHub, Repository: "jqlang/jq"}))
 	require.Empty(t, e.renamed(t.Context(), model.Release{Forge: forge.GitLab, Repository: "returntocorp/semgrep"}))
+
+	// Where upstream is compared, the move is one of its findings, and
+	// holds, so bump and serve stop for it, and submit's preview and the
+	// pull request say it (field testing's batch 10, finding 1: skopeo).
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", CompareUpstream: true,
+		Release: &model.Release{Forge: forge.GitHub, Repository: "returntocorp/semgrep", Version: "1.8.1"}})
+	require.NoError(t, err)
+	require.NotNil(t, update.Upstream)
+	moved := slices.IndexFunc(update.Upstream.Changes, func(c model.UpstreamChange) bool { return c.Rule == upstreamMovedRule })
+	require.GreaterOrEqual(t, moved, 0, "%+v", update.Upstream.Changes)
+	require.True(t, update.Upstream.Changes[moved].Hold)
+	require.Equal(t, "upstream moved: GitHub answers returntocorp/semgrep as semgrep/semgrep, by a redirect; the Portfile's github.setup may follow", update.Upstream.Changes[moved].Message)
 }
 
 // The obsolete stub a Portfile keeps for a port, replaced_by it and

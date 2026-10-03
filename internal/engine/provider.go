@@ -44,6 +44,15 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 		}
 	}
 	for _, value := range on {
+		// ci is the releases MacPorts' CI builds on, as its workflow at
+		// master names them, on Tart.
+		if value == ciEnvironments {
+			slugs, err := e.ciSlugs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			value = buildenv.Tart + ":" + strings.Join(slugs, ",")
+		}
 		name, releases, _ := strings.Cut(value, ":")
 		if _, ok := e.Providers[name]; !ok {
 			if _, isRelease := e.Providers[buildenv.Tart]; isRelease && releases == "" && knownRelease(name) {

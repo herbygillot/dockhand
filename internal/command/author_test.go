@@ -423,13 +423,13 @@ Write them yourself; its archives have these now:
   dockhand edit git`)
 
 	err = byHand(fmt.Errorf("%w: a version it can't find", engine.ErrUnsupported), engine.UpdateRequest{Action: model.EditUpdate, Port: "git", Plan: true, FromMaster: true}, model.Branch{}, false)
-	require.EqualError(t, err, "can't update git by itself: a version it can't find\nEdit the version yourself; dockhand checksums git then fills in the rest:\n  dockhand edit git", "a plan keeps nothing, having changed nothing")
+	require.EqualError(t, err, "can't update git by itself: a version it can't find\nEdit the version and its checksums yourself; port checksum git, after the version's edit, says what its archives have:\n  dockhand edit git", "a plan keeps nothing, having changed nothing")
 
 	// An edit whose evaluation isn't the change intended is refused as one
 	// dockhand can't make, with the way on, where rust's came bare (the
 	// rust and cargo run).
 	err = byHand(fmt.Errorf("%w: rust-src, another port of the same Portfile, fetches its own source (its distfiles differ from rust's), which updating rust doesn't move", engine.ErrFidelity), engine.UpdateRequest{Action: model.EditUpdate, Port: "rust", Plan: true}, model.Branch{}, false)
-	require.EqualError(t, err, "can't update rust by itself: rust-src, another port of the same Portfile, fetches its own source (its distfiles differ from rust's), which updating rust doesn't move\nEdit the version yourself; dockhand checksums rust then fills in the rest:\n  dockhand edit rust")
+	require.EqualError(t, err, "can't update rust by itself: rust-src, another port of the same Portfile, fetches its own source (its distfiles differ from rust's), which updating rust doesn't move\nEdit the version and its checksums yourself; port checksum rust, after the version's edit, says what its archives have:\n  dockhand edit rust")
 }
 
 // An update names the port's other open pull requests, planned or made,

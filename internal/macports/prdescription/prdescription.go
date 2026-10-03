@@ -91,6 +91,10 @@ type TestedOn struct {
 	Reports          []Report
 	Columns          []string
 	Rows             []Row
+	// UncoveredCI are the macOS releases MacPorts' CI builds on that no
+	// check here built on, in words, "14 and 15", which a note under the
+	// table says.
+	UncoveredCI string
 }
 
 // Report is one environment's report: what it observed of itself, its
@@ -282,6 +286,9 @@ func Owned(facts Facts) string {
 			fmt.Fprintln(&b)
 		}
 		b.WriteString(notes.String())
+		if tested.UncoveredCI != "" {
+			fmt.Fprintf(&b, "\nMacPorts CI also builds on macOS %s, which no check here built on.\n", tested.UncoveredCI)
+		}
 	}
 	answers := facts.Verification
 	fmt.Fprintf(&b, "\n%s\n\nHave you\n\n", verificationHeading)

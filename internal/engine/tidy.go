@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/history"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -856,6 +857,7 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if err := e.history().Prepare(ctx, &checkpoint); err != nil {
 		return TidyResult{}, err
 	}
+	failpoint.Hit("tidy.prepared")
 	if err := e.history().Step("prepared"); err != nil {
 		return TidyResult{}, err
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // The pull request's description is prdescription's (the architecture
@@ -58,6 +59,9 @@ type bodyFacts struct {
 	// Note is the person's own note (model.Branch.Note), which the
 	// Description gives after what dockhand wrote there.
 	Note string
+	// UncoveredCI are the releases MacPorts' CI builds on that no check
+	// built on.
+	UncoveredCI []string
 }
 
 // description is what the facts let the description claim, as
@@ -76,6 +80,7 @@ func (facts bodyFacts) description() prdescription.Facts {
 	case evidence == nil:
 		described.TestedOn.Pending = true
 	default:
+		described.TestedOn.UncoveredCI = prose.And(facts.UncoveredCI)
 		checks := evidence.Checks()
 		// An environment where nothing was built or reused, as one where
 		// every port is excluded, has no report, and isn't named: it

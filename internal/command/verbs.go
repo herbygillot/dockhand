@@ -58,7 +58,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 			if err := command.Run(); err != nil {
 				return fmt.Errorf("the editor failed: %w", err)
 			}
-			fmt.Fprintln(streams.Out, "Next: dockhand checksums "+args[0]+" if you changed the version, then dockhand check")
+			fmt.Fprintln(streams.Out, "Next: "+nextIn(ctx, e, branch, "dockhand checksums "+args[0]+" (if you changed the version)", "dockhand check"))
 			return nil
 		},
 	}
@@ -246,11 +246,11 @@ rebase that conflicts is abandoned with the branch as it was.`,
 				writeNext(streams.Out, status)
 				return nil
 			}
-			fmt.Fprintln(streams.Out, "Next: dockhand check, since the files it builds on have changed")
+			fmt.Fprintln(streams.Out, "Next: "+nextIn(ctx, e, branch, "dockhand check (the files it builds on have changed)"))
 			return nil
 		},
 	}
-	where.register(cmd, s, "Rebase")
+	where.register(cmd, s, "rebase")
 	return cmd
 }
 

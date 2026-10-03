@@ -108,3 +108,18 @@ func TestAWalkPastTheLimitSaysSo(t *testing.T) {
 	require.ErrorContains(t, err, "more than the 3 KB dockhand reads of one")
 	require.NoError(t, Walk(t.Context(), zipfile, func(Member) error { return nil }))
 }
+
+// An installer package or an executable is said to be a binary, with no
+// source in it, rather than misread as a broken tarball: 1password-cli's
+// .pkg read as "archive/tar: invalid tar header" (field testing's batch
+// 10, finding 2).
+func TestABinaryIsSaidToBeOne(t *testing.T) {
+	directory := t.TempDir()
+	for name, data := range map[string]string{"op_apple_universal_v2.30.0.pkg": "xar!\x00\x1c\x00\x01rest", "tool": "\xcf\xfa\xed\xfe\x07\x00\x00\x01"} {
+		file := filepath.Join(directory, name)
+		require.NoError(t, os.WriteFile(file, []byte(data), 0o644))
+		err := Walk(t.Context(), file, func(Member) error { return nil })
+		require.ErrorIs(t, err, ErrBinary, name)
+		require.ErrorContains(t, err, name+" is a ")
+	}
+}

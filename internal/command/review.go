@@ -123,7 +123,7 @@ commits, and its files are as they were when it was saved.`,
 			return err
 		},
 	}
-	where.register(cmd, s, "Tidy")
+	where.register(cmd, s, "tidy")
 	cmd.Flags().BoolVar(&squash, "squash", false, "make one commit of the whole branch")
 	cmd.Flags().StringVar(&message, "message", "", "the message of the commit --squash makes")
 	cmd.Flags().StringVar(&author, "author", "", "attribute a commit that combines several people's commits: \"Name <email>\"")
@@ -468,7 +468,7 @@ checked out here.`,
 			return restoreCheckpoint(ctx, e, streams, name)
 		},
 	}
-	where.register(cmd, s, "Undo in")
+	where.register(cmd, s, "undo in")
 	return cmd
 }
 

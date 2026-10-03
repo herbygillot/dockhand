@@ -199,3 +199,13 @@ func TestTheMergedDescriptionsDescriptionIsDockhandsWhileUnchanged(t *testing.T)
 	require.Equal(t, elided, merged, "a description without one stays without")
 	require.Equal(t, Absent, sections.Description)
 }
+
+// The releases MacPorts' CI builds on that no check here did are said
+// under the table, so a reviewer knows what the author's check didn't
+// cover (field testing, #35157).
+func TestUncoveredCIReleasesAreSaid(t *testing.T) {
+	facts := Facts{TestedOn: TestedOn{Columns: []string{"macOS 26"}, Rows: []Row{{Port: "tart", Cells: []Cell{{Words: "✓"}}}}, UncoveredCI: "14 and 15"}}
+	require.Contains(t, Owned(facts), "\nMacPorts CI also builds on macOS 14 and 15, which no check here built on.\n")
+	facts.TestedOn.UncoveredCI = ""
+	require.NotContains(t, Owned(facts), "MacPorts CI also builds")
+}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -98,6 +99,9 @@ type SubmitPlan struct {
 	// pull request's description that dockhand writes; zero for a new one.
 	Sections DescriptionSections
 	Evidence *Evidence
+	// UncoveredCI are the releases MacPorts' CI builds on that the check
+	// built on none of, which the preview and the pull request say.
+	UncoveredCI []string
 	// Upstream is what upstream's change means for each port the commit
 	// changes, against the branch's base: its revision's assessments,
 	// collected where they weren't recorded (the assessment design, D). A
@@ -308,7 +312,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
-		Note: plan.Note}
+		Note: plan.Note, UncoveredCI: plan.UncoveredCI}
 	plan.facts = facts
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
 	return plan, nil
@@ -361,6 +365,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 		return nil
 	}
 	plan.Evidence = &evidence
+	plan.UncoveredCI = uncoveredCI(e.ciReleases(ctx, plan.Tree), evidence.Plan.Environments)
 	if err := acceptanceProblem(evidence, request.Accept); err != nil {
 		return err
 	}
@@ -591,6 +596,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		}
 		result.Pushed = true
 	}
+	failpoint.Hit("submit.pushed")
 	input := forge.PullRequestInput{Repository: plan.Repository, BaseBranch: UpstreamBranch, HeadBranch: plan.RemoteBranch(), HeadRepository: plan.HeadRepository,
 		Desired: forge.PullRequestContent{Head: model.ObjectID(plan.Commit), Title: plan.Title, Body: plan.Body}, Draft: plan.Request.Draft}
 	var observed forge.PullRequestObservation

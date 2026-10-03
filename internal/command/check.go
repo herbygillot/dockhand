@@ -167,7 +167,7 @@ true, it runs that baseline by itself.`,
 			return err
 		},
 	}
-	where.register(cmd, s, "Check")
+	where.register(cmd, s, "check")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what would be built and change nothing")
 	cmd.Flags().BoolVar(&head, "head", false, "check the committed tip")
 	cmd.Flags().BoolVar(&staged, "staged", false, "check the index")

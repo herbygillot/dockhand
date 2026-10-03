@@ -42,6 +42,7 @@ var engineImports = map[string]string{
 	"internal/macports/assess":        "what upstream's change means for the port, for update",
 	"internal/macports/patchcheck":    "a revision's patches checked against its source, for its assessment",
 	"internal/macports/fidelity":      "which subports a revision changed, for its change record",
+	"internal/failpoint":              "the acceptance harness's kill steps, which a normal build hasn't",
 	"internal/macports/prdescription": "the pull request's description, as MacPorts' template has it",
 	"internal/project":                "reading upstream's project where the port builds, for update's comparison",
 	"internal/outdated":               "what outdated reads of upstream",

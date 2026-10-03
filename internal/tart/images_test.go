@@ -26,6 +26,16 @@ printf '%s' '[{"Name":"one","Source":"local","Running":true},{"Name":"two","Sour
 	require.ErrorContains(t, err, "invalid image listing")
 }
 
+// A Tart home that isn't there has no images, and listing them doesn't
+// run Tart, which would make the home (the M1 shakedown, 2026-10-03).
+func TestAMissingHomeHasNoImagesAndIsNotMade(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "tart")
+	images, err := (Client{Executable: filepath.Join(t.TempDir(), "absent"), Home: home}).Images(t.Context(), RunOptions{})
+	require.NoError(t, err)
+	require.Empty(t, images)
+	require.NoDirExists(t, home)
+}
+
 // The shapes Tart 2.37.0 prints, captured 2026-09-24. An entry without the
 // fields dockhand reads is an error, not a VM that silently does not run.
 func TestListingAndDescriptionReadTart237Output(t *testing.T) {

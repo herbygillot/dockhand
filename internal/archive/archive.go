@@ -23,6 +23,26 @@ import (
 // errScanLimit means the archive's uncompressed stream exceeded the walk limit.
 var errScanLimit = errors.New("archive: exceeds scan limit")
 
+// ErrBinary is a file that holds a built program or an installer package,
+// not source: a macOS installer package (xar), as 1password-cli fetches,
+// or a Mach-O executable. Nothing in it is upstream source to compare
+// (field testing's batch 10, finding 2).
+var ErrBinary = errors.New("a binary package, with no source to compare")
+
+// binaryKind names the binary a file's first bytes say it is, or nothing.
+func binaryKind(header []byte) string {
+	if len(header) < 4 {
+		return ""
+	}
+	switch string(header[:4]) {
+	case "xar!":
+		return "a macOS installer package"
+	case "\xcf\xfa\xed\xfe", "\xce\xfa\xed\xfe", "\xca\xfe\xba\xbe", "\xfe\xed\xfa\xcf":
+		return "a Mach-O executable"
+	}
+	return ""
+}
+
 // scanLimit bounds the uncompressed bytes one walk reads; a variable for
 // tests. 4 GiB, at the person's word (2026-10-01): rustc's source holds
 // 3.5 GiB, past the 1 GiB it had. A tar stream has no index, so a walk
@@ -89,6 +109,9 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 	defer file.Close()
 	reader := bufio.NewReader(file)
 	header, _ := reader.Peek(4)
+	if kind := binaryKind(header); kind != "" {
+		return fmt.Errorf("%w: %s is %s", ErrBinary, path.Base(filename), kind)
+	}
 	if len(header) >= 2 && string(header[:2]) == "PK" {
 		stat, err := file.Stat()
 		if err != nil {

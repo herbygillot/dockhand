@@ -41,6 +41,8 @@ test:
 	@$(GO) test -timeout $(TEST_TIMEOUT) $$($(GO) list ./... | grep -vxF $(COMMAND_PACKAGE)) & others=$$!; \
 	GO="$(GO)" tools/shard-test.sh $(COMMAND_PACKAGE) $(COMMAND_SHARDS) $(TEST_TIMEOUT); command=$$?; \
 	wait $$others; others=$$?; [ $$others = 0 ] && [ $$command = 0 ]
+	@# The acceptance build's failpoints, which a normal build hasn't.
+	@$(GO) test -tags acceptance ./internal/failpoint/
 
 test-race:
 	@$(GO) test -race -timeout $(TEST_TIMEOUT) $$($(GO) list ./... | grep -vxF $(COMMAND_PACKAGE)) & others=$$!; \
