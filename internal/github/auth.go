@@ -68,7 +68,7 @@ func (s SystemCredentials) Token(ctx context.Context) (Token, error) {
 	}
 	path, err := exec.LookPath("gh")
 	if err != nil {
-		return Token{}, fmt.Errorf("%w: run dockhand auth login, set GH_TOKEN or GITHUB_TOKEN, or authenticate with the GitHub CLI", ErrNoCredentials)
+		return Token{}, fmt.Errorf("%w: run dockhand setup github, set GH_TOKEN or GITHUB_TOKEN, or authenticate with the GitHub CLI", ErrNoCredentials)
 	}
 	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "gh", Path: path, Args: []string{"auth", "token", "--hostname", "github.com"}, Limit: 1 << 16})
 	output := result.Output
@@ -76,7 +76,7 @@ func (s SystemCredentials) Token(ctx context.Context) (Token, error) {
 		if ctx.Err() != nil {
 			return Token{}, ctx.Err()
 		}
-		return Token{}, fmt.Errorf("%w: run dockhand auth login, set GH_TOKEN or GITHUB_TOKEN, or run gh auth login", ErrNoCredentials)
+		return Token{}, fmt.Errorf("%w: run dockhand setup github, set GH_TOKEN or GITHUB_TOKEN, or run gh auth login", ErrNoCredentials)
 	}
 	return resolvedToken(strings.TrimSpace(string(output)), SourceGitHubCLI)
 }
@@ -120,7 +120,7 @@ func (s CredentialSource) rejected() error {
 	case SourceGHEnvironment, SourceGitHubEnvironment:
 		remedy = fmt.Sprintf("replace or unset %s; it takes precedence over saved logins", s)
 	case SourceKeychain:
-		remedy = "run dockhand auth login to replace it, or dockhand auth logout to remove it"
+		remedy = "run dockhand setup github to replace it, or dockhand setup github --logout to remove it"
 	case SourceGitHubCLI:
 		remedy = "run gh auth login --hostname github.com to replace it"
 	default:

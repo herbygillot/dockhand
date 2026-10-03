@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -185,4 +187,62 @@ func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
 	require.NoError(t, err)
 	defer e.Close()
 	require.Contains(t, e.Providers, "tart")
+}
+
+// setup registers the checkout and reports, and on a terminal offers
+// what's missing, each declined by answering no (the command-line UX
+// review's §6); rerun with -y, or in a script, it offers nothing. Its
+// github part logs out, and init, auth, and providers still answer,
+// hidden from help.
+func TestSetupOffersWhatsMissing(t *testing.T) {
+	newWorld(t)
+	git, err := exec.LookPath("git")
+	require.NoError(t, err)
+	withAuth(t, nil)
+	// Git, and no Tart, so no image is offered.
+	bin := t.TempDir()
+	require.NoError(t, os.Symlink(git, filepath.Join(bin, "git")))
+	t.Setenv("PATH", bin)
+	var out, errs bytes.Buffer
+	err = Run(t.Context(), []string{"setup"}, Streams{In: strings.NewReader("\nn\n"), Out: &out, Err: &errs, interactive: true})
+	require.NoError(t, err)
+	require.Contains(t, errs.String(), "Keep branch worktrees in ")
+	require.Contains(t, errs.String(), "? Log in to GitHub now, for submit and checks in your fork? [Y/n] ")
+	require.Contains(t, out.String(), "  Publishing   · not set up: dockhand setup github, when you're ready to submit\n")
+	require.Contains(t, out.String(), "· maintainer: set maintainer = \"{@you example.org:you}\" in ~/.dockhand/config.toml, for --mine, create, and serve's daily look\n")
+	require.Contains(t, out.String(), "Next: dockhand outdated --mine, or dockhand update <port>\n")
+
+	quiet, said, err := dockhand(t, "setup", "-y")
+	require.NoError(t, err)
+	require.NotContains(t, said, "? ")
+	require.NotContains(t, quiet, "· maintainer:")
+
+	loggedOut, _, err := dockhand(t, "setup", "github", "--logout")
+	require.NoError(t, err)
+	require.Contains(t, loggedOut, "dockhand keeps no GitHub login in the Keychain.")
+
+	help, _, err := dockhand(t, "--help")
+	require.NoError(t, err)
+	require.Contains(t, help, "setup ")
+	for _, hidden := range []string{"\n  init ", "\n  auth ", "\n  providers "} {
+		require.NotContains(t, help, hidden)
+	}
+	_, _, err = dockhand(t, "init", "-y")
+	require.NoError(t, err, "init still answers, for scripts")
+}
+
+// setup writes the maintainers line it inferred, with the person's
+// agreement, into the configuration file, beside what's there.
+func TestSetupWritesTheMaintainerLine(t *testing.T) {
+	newWorld(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte("worktrees = \"/tmp/x\"\n\n[serve]\noutdated_at = \"07:00\"\n"), 0o600))
+	require.NoError(t, config.SetMaintainer(path, "{gmail.com:ada @ada}"))
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "maintainer = \"{gmail.com:ada @ada}\"\nworktrees = \"/tmp/x\"\n\n[serve]\noutdated_at = \"07:00\"\n", string(data))
+	require.NoError(t, config.SetMaintainer(path, "{@ada}"))
+	data, err = os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "maintainer = \"{@ada}\"\nworktrees")
 }

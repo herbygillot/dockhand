@@ -20,7 +20,7 @@ import (
 // wait guestssh.AwaitSSH, and batch 39 renamed the packages it imports
 // (channel to guestssh, text to textedit), and batch 48 regrouped their
 // imports, none of which changes an image.
-const setupPin = "86710c2553097a8cd8d3bfb1aa74af2770365efd36fab566f536af7546a7c95f"
+const setupPin = "a91773534fc49555107d2db81073eef0023cbe12de86762975bca41ba134ccfb"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning

@@ -243,7 +243,7 @@ func (l *rateLimits) waitWords(kind limitKind, until time.Time) string {
 func (l *rateLimits) refusal(kind limitKind, until time.Time) error {
 	words := limitWords(kind, l.who, until, time.Now())
 	if kind == primaryLimit && l.who == "for requests without a login" {
-		words += "; dockhand auth login raises it"
+		words += "; dockhand setup github raises it"
 	}
 	return &forge.RateLimitError{RetryAt: until, Err: errors.New(words)}
 }

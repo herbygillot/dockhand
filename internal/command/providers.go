@@ -44,8 +44,9 @@ const installTart = "sudo port install tart"
 
 func providersCommand(s *settings, streams Streams) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "providers",
-		Short: "Show where checks can build, and set up a place to build",
+		Use:    "providers",
+		Hidden: true,
+		Short:  "Show where checks can build, and set up a place to build",
 		Long: `Shows each provider a check can build with, and whether it's ready: tart,
 in dockhand's own macOS VMs; github, in your fork's GitHub Actions; and
 command, your own script, when the configuration file names one.`,
@@ -165,7 +166,7 @@ func providerLines(ctx context.Context, file config.File) []string {
 func tartReadiness(ctx context.Context) string {
 	images := images()
 	if images == nil {
-		return "· needs Tart: " + installTart + ", then dockhand providers setup tart"
+		return "· needs Tart: " + installTart + ", then dockhand setup tart"
 	}
 	status, err := images.Status(ctx)
 	if err != nil {
@@ -180,7 +181,7 @@ func tartReadiness(ctx context.Context) string {
 		if host != "" {
 			cost = host + ", " + cost
 		}
-		return fmt.Sprintf("· not set up: dockhand providers setup tart   (%s)", cost)
+		return fmt.Sprintf("· not set up: dockhand setup tart   (%s)", cost)
 	}
 	var releases []string
 	hasHost := false
@@ -197,7 +198,7 @@ func tartReadiness(ctx context.Context) string {
 		line += ", with Xcode for " + strings.Join(xcode, ", ")
 	}
 	if host != "" && !hasHost {
-		line += "; none for this Mac's " + host + ": dockhand providers setup tart"
+		line += "; none for this Mac's " + host + ": dockhand setup tart"
 	}
 	return line
 }

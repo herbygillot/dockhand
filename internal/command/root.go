@@ -87,8 +87,8 @@ func (s Streams) unattended() Streams {
 
 // gettingStarted is the main help's introduction: how to begin, and where
 // the guide is.
-const gettingStarted = `In your ports checkout, dockhand init sets up, and dockhand providers setup
-tart makes a clean macOS image for checks to build in. Then:
+const gettingStarted = `In your ports checkout, dockhand setup sets up, offering the GitHub login,
+your maintainers line, and a clean macOS image for checks to build in. Then:
 
   dockhand update <port> --new    a branch with the port at its newest release
   dockhand check                  build what the branch changes
@@ -176,6 +176,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	supportsJSON(root)
 	root.AddGroup(&cobra.Group{ID: "work", Title: "Start or enter work:"})
 	for _, command := range []*cobra.Command{
+		setupCommand(&settings, streams),
 		initCommand(&settings, streams),
 		startCommand(&settings, streams),
 		adoptCommand(&settings, streams),

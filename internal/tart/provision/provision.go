@@ -216,7 +216,7 @@ func (p *Provisioner) Run(ctx context.Context, options Options) (Result, error) 
 		// gives it both, in a candidate adopted like a rebuild.
 		if !machine.HostKeysRecorded(config.Image) {
 			if options.Check {
-				return Result{}, fmt.Errorf("setup: image %s predates dockhand's SSH key; run dockhand providers setup tart without --check to give it the key", config.Image)
+				return Result{}, fmt.Errorf("setup: image %s predates dockhand's SSH key; run dockhand setup tart without --check to give it the key", config.Image)
 			}
 			p.say("Giving %s dockhand's SSH key...", config.Image)
 			return p.upgrade(ctx, machine, config, release, golden, false, true)

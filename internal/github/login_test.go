@@ -143,13 +143,13 @@ func TestALoginThatCantRenewSaysWhy(t *testing.T) {
 
 	server, asked := tokenEndpoint(t, "")
 	_, err := renewer(server, expiring(t, time.Now().Add(-time.Hour)), lock).Token(t.Context())
-	require.EqualError(t, err, "forge: authentication is required: the GitHub login expired after six months unused; run dockhand auth login")
+	require.EqualError(t, err, "forge: authentication is required: the GitHub login expired after six months unused; run dockhand setup github")
 	require.Zero(t, asked.Load())
 
 	server, _ = tokenEndpoint(t, "bad_refresh_token")
 	_, err = renewer(server, expiring(t, time.Now().AddDate(0, 6, 0)), lock).Token(t.Context())
 	require.ErrorIs(t, err, github.ErrAuthentication)
-	require.EqualError(t, err, "forge: authentication is required: GitHub refused to renew the login (bad_refresh_token); run dockhand auth login")
+	require.EqualError(t, err, "forge: authentication is required: GitHub refused to renew the login (bad_refresh_token); run dockhand setup github")
 
 	server, _ = tokenEndpoint(t, "500")
 	store := expiring(t, time.Now().AddDate(0, 6, 0))

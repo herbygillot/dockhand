@@ -18,102 +18,148 @@ import (
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
+// initCommand is setup's former name, kept for scripts: it registers the
+// checkout and reports, offering nothing.
 func initCommand(s *settings, streams Streams) *cobra.Command {
 	var worktrees string
 	var yes bool
 	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Set up dockhand for this ports checkout; safe to rerun",
-		Long: `Registers this ports checkout, finds its remote for macports/macports-ports,
-and chooses where branch worktrees go: ~/Source/macports-branches unless
---worktrees or the configuration file says otherwise. It needs no GitHub login and no build
-setup; those come when something needs them.
-
-It first checks the Git dockhand runs, git on PATH or $GIT_BIN, and refuses
-one older than 2.40, which rebase needs.`,
-		Args: cobra.NoArgs,
+		Use:    "init",
+		Short:  "Set up dockhand for this ports checkout (now dockhand setup)",
+		Hidden: true,
+		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			options, file, configPath, err := s.options(cmd.Context())
-			if err != nil {
-				return err
-			}
-			// A Git too old is refused before anything is recorded.
-			gitVersion, err := engine.GitVersion(cmd.Context(), options)
-			if err != nil {
-				return err
-			}
-			e, err := engine.Open(cmd.Context(), options)
-			if err != nil {
-				return err
-			}
-			defer e.Close()
-			out := streams.Out
-
-			upstream, err := e.UpstreamRemote(cmd.Context())
-			if err != nil {
-				return err
-			}
-			if upstream != nil {
-				fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", tilde(e.Clone()), engine.UpstreamRepository, upstream.Name)
-			} else {
-				fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", tilde(e.Clone()), engine.UpstreamRepository, e.Upstream())
-			}
-
-			chosen := file.Worktrees
-			switch {
-			case worktrees != "":
-				if chosen, err = absolute(worktrees); err != nil {
-					return err
-				}
-			case chosen == "" && streams.terminal() && !yes:
-				answer, err := ask(streams, fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", tilde(e.DefaultWorktrees())))
-				if err != nil {
-					return err
-				}
-				if strings.HasPrefix(strings.ToLower(answer), "n") {
-					where, err := ask(streams, "Where, then? ")
-					if err != nil {
-						return err
-					}
-					if where == "" {
-						return fmt.Errorf("no directory given; rerun with --worktrees <directory>")
-					}
-					if chosen, err = absolute(where); err != nil {
-						return err
-					}
-				}
-			}
-			if chosen != "" && chosen != file.Worktrees {
-				if err := config.SetWorktrees(configPath, chosen); err != nil {
-					return err
-				}
-			}
-			if chosen == "" {
-				chosen = e.DefaultWorktrees()
-			}
-			fmt.Fprintf(out, "  Git          ✓ %s at %s\n", gitVersion, tilde(gitVersion.Path))
-			fmt.Fprintf(out, "  Branches     worktrees in %s\n", tilde(chosen))
-			if tclsh := portTclsh(); tclsh != "" {
-				fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", tilde(filepath.Dir(filepath.Dir(tclsh))))
-			} else {
-				fmt.Fprintf(out, "  Authoring    ! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports\n")
-			}
-			for i, line := range providerLines(cmd.Context(), file) {
-				label := ""
-				if i == 0 {
-					label = "Providers"
-				}
-				fmt.Fprintf(out, "  %-12s %s\n", label, line)
-			}
-			fmt.Fprintf(out, "  Publishing   %s\n", publishing(cmd.Context()))
-			fmt.Fprintf(out, "  Records      %s\n\n", tilde(options.Database))
-			fmt.Fprintln(out, "Next: dockhand outdated --mine, or dockhand update <port>")
-			return nil
+			return runSetup(cmd, s, streams, worktrees, yes, false)
 		},
 	}
 	cmd.Flags().StringVar(&worktrees, "worktrees", "", "keep branch worktrees in this directory, and remember it")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept the defaults without asking")
 	return cmd
+}
+
+// setupCommand registers the checkout, reports dockhand's health, and on
+// a terminal offers what's missing (the command-line UX review's §6): one
+// first-run command, rerun for the health check, in place of init,
+// providers, and auth.
+func setupCommand(s *settings, streams Streams) *cobra.Command {
+	var worktrees string
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "setup",
+		Short: "Set up dockhand for this ports checkout, and report its health; safe to rerun",
+		Long: `Registers this ports checkout, finds its remote for macports/macports-ports,
+and chooses where branch worktrees go: ~/Source/macports-branches unless
+--worktrees or the configuration file says otherwise. Then it reports what
+dockhand runs with: Git, MacPorts, the places a check can build, the GitHub
+login, and its records.
+
+On a terminal it offers what's missing, each in turn and each declined by
+answering no: the GitHub login, and the maintainers line the ports naming
+your GitHub login write, which it writes to the configuration file. The
+Tart image is offered last, since making one takes a large download;
+setup tart makes it any time. Rerun, it's the health check.
+
+It first checks the Git dockhand runs, git on PATH or $GIT_BIN, and refuses
+one older than 2.40, which rebase needs.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runSetup(cmd, s, streams, worktrees, yes, true)
+		},
+	}
+	cmd.Flags().StringVar(&worktrees, "worktrees", "", "keep branch worktrees in this directory, and remember it")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept the defaults, and offer nothing")
+	cmd.AddCommand(setupTartCommand(s, streams), setupGitHubCommand(streams))
+	return cmd
+}
+
+// runSetup registers the checkout and reports, and where offer is set,
+// on a terminal, offers what's missing.
+func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string, yes, offer bool) error {
+	options, file, configPath, err := s.options(cmd.Context())
+	if err != nil {
+		return err
+	}
+	// A Git too old is refused before anything is recorded.
+	gitVersion, err := engine.GitVersion(cmd.Context(), options)
+	if err != nil {
+		return err
+	}
+	e, err := engine.Open(cmd.Context(), options)
+	if err != nil {
+		return err
+	}
+	defer e.Close()
+	out := streams.Out
+
+	upstream, err := e.UpstreamRemote(cmd.Context())
+	if err != nil {
+		return err
+	}
+	if upstream != nil {
+		fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", tilde(e.Clone()), engine.UpstreamRepository, upstream.Name)
+	} else {
+		fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", tilde(e.Clone()), engine.UpstreamRepository, e.Upstream())
+	}
+
+	chosen := file.Worktrees
+	switch {
+	case worktrees != "":
+		if chosen, err = absolute(worktrees); err != nil {
+			return err
+		}
+	case chosen == "" && streams.terminal() && !yes:
+		answer, err := ask(streams, fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", tilde(e.DefaultWorktrees())))
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(strings.ToLower(answer), "n") {
+			where, err := ask(streams, "Where, then? ")
+			if err != nil {
+				return err
+			}
+			if where == "" {
+				return fmt.Errorf("no directory given; rerun with --worktrees <directory>")
+			}
+			if chosen, err = absolute(where); err != nil {
+				return err
+			}
+		}
+	}
+	if chosen != "" && chosen != file.Worktrees {
+		if err := config.SetWorktrees(configPath, chosen); err != nil {
+			return err
+		}
+	}
+	if chosen == "" {
+		chosen = e.DefaultWorktrees()
+	}
+	fmt.Fprintf(out, "  Git          ✓ %s at %s\n", gitVersion, tilde(gitVersion.Path))
+	fmt.Fprintf(out, "  Branches     worktrees in %s\n", tilde(chosen))
+	if tclsh := portTclsh(); tclsh != "" {
+		fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", tilde(filepath.Dir(filepath.Dir(tclsh))))
+	} else {
+		fmt.Fprintf(out, "  Authoring    ! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports\n")
+	}
+	for i, line := range providerLines(cmd.Context(), file) {
+		label := ""
+		if i == 0 {
+			label = "Providers"
+		}
+		fmt.Fprintf(out, "  %-12s %s\n", label, line)
+	}
+	fmt.Fprintf(out, "  Publishing   %s\n", publishing(cmd.Context()))
+	fmt.Fprintf(out, "  Records      %s\n", tilde(options.Database))
+	if legacy, err := e.LegacyBranchNames(cmd.Context()); err == nil && len(legacy) > 0 {
+		fmt.Fprintf(out, "  Old branches · %s from before v3 that nothing tracks: dockhand clean --legacy sorts them\n", prose.Plural(len(legacy), "branch"))
+	}
+	fmt.Fprintln(out)
+	if offer && streams.terminal() && !yes {
+		if err := offerSetup(cmd.Context(), s, e, streams, file, configPath); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintln(out, "Next: dockhand outdated --mine, or dockhand update <port>")
+	return nil
 }
 
 func startCommand(s *settings, streams Streams) *cobra.Command {
@@ -349,5 +395,5 @@ func publishing(ctx context.Context) string {
 	case errors.Is(err, github.ErrLoginEnded):
 		return "! " + strings.TrimPrefix(err.Error(), github.ErrAuthentication.Error()+": ")
 	}
-	return "· not set up: dockhand auth login, when you're ready to submit"
+	return "· not set up: dockhand setup github, when you're ready to submit"
 }

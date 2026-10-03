@@ -22,7 +22,7 @@ New tests follow two rules, so the suite stays parallel. A new engine test runs 
 
 ## Real VM acceptance test
 
-The opt-in acceptance test builds two ports of a real ports tree in a real clone of dockhand's Tahoe image, `dockhand-base-tahoe`, in dockhand's Tart home: `tree`, with no dependencies, and `pv`, whose dependency the guest installs first. It needs a Mac with that image, made by `dockhand providers setup tart tahoe`, and a free VM slot, and it takes several minutes. It checks that both pass, that each left a log, and that the clone is deleted:
+The opt-in acceptance test builds two ports of a real ports tree in a real clone of dockhand's Tahoe image, `dockhand-base-tahoe`, in dockhand's Tart home: `tree`, with no dependencies, and `pv`, whose dependency the guest installs first. It needs a Mac with that image, made by `dockhand setup tart tahoe`, and a free VM slot, and it takes several minutes. It checks that both pass, that each left a log, and that the clone is deleted:
 
 ```sh
 DOCKHAND_TEST_TART_LIVE=1 DOCKHAND_TEST_PORTS_TREE=~/Source/macports-ports \

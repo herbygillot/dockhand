@@ -26,12 +26,11 @@ When a Portfile does something dockhand does not understand, or a build fails, o
 
 ```sh
 cd ~/Source/macports-ports        # your clone, with your fork as a remote
-dockhand init                     # register this checkout; choose where branch worktrees go
-dockhand providers setup tart     # make a clean macOS image to build in; once, and it takes a while
-dockhand auth login               # a browser login to GitHub, for submit
+dockhand setup                    # register this checkout, then offer the GitHub login,
+                                  # your maintainers line, and a macOS image to build in
 ```
 
-`init` finds the remote for `macports/macports-ports` and puts branch worktrees in `~/Source/macports-branches`, unless you say otherwise. Your own checkout is left alone: each branch gets a sparse worktree of its own, holding only `_resources` and the ports it changes.
+`setup tart` and `setup github` do those two parts by themselves. `setup` finds the remote for `macports/macports-ports` and puts branch worktrees in `~/Source/macports-branches`, unless you say otherwise. Your own checkout is left alone: each branch gets a sparse worktree of its own, holding only `_resources` and the ports it changes.
 
 ## An update, start to finish
 
@@ -54,7 +53,7 @@ dockhand providers                # what is set up, and what is missing
 dockhand check --on sequoia --on tahoe      # both releases, and both must pass
 ```
 
-- **tart**, the default: a fresh clone of dockhand's own image for each macOS release, deleted afterwards. It needs an Apple silicon Mac with [Tart](https://tart.run) (`sudo port install tart`). The first image is this Mac's release; `providers setup tart sequoia` adds another. Ports that need the full Xcode build only in an Xcode image, which `providers setup tart --xcode ~/Downloads/Xcode_26.xip` adds. Without one, those ports are reported as not built, and never as failed.
+- **tart**, the default: a fresh clone of dockhand's own image for each macOS release, deleted afterwards. It needs an Apple silicon Mac with [Tart](https://tart.run) (`sudo port install tart`). The first image is this Mac's release; `setup tart sequoia` adds another. Ports that need the full Xcode build only in an Xcode image, which `setup tart --xcode ~/Downloads/Xcode_26.xip` adds. Without one, those ports are reported as not built, and never as failed.
 - **github**: MacPorts' own CI workflow, run in your fork's GitHub Actions. It needs the GitHub login and the workflow enabled in your fork.
 - **command**: your own script, for a build box or a VM you manage. See [the command provider](docs/command-provider.md).
 
@@ -92,7 +91,7 @@ dockhand submit --passing                 # go through the ones that passed
 - **macOS on Apple silicon** to build in Tart. Any Mac can prepare changes and check them on GitHub Actions or your own script.
 - **MacPorts.** Dockhand reads Portfiles through MacPorts' own Tcl interpreter, so it sees what `port` sees.
 - **Git 2.40 or newer, and a clone of your fork** of `macports/macports-ports` that Git can push to. `init` checks the Git it runs: `git` on `PATH`, or `$GIT_BIN`. Dockhand finds the upstream remote whatever it is called, and your fork by your GitHub login.
-- **A GitHub login** for `submit`: `dockhand auth login`, `GH_TOKEN` or `GITHUB_TOKEN`, or the GitHub CLI's.
+- **A GitHub login** for `submit`: `dockhand setup github`, `GH_TOKEN` or `GITHUB_TOKEN`, or the GitHub CLI's.
 - **`go2port` or `cargo2port`**, from MacPorts, only for Go and Rust ports whose Portfile lists its dependencies.
 
 ### Installing

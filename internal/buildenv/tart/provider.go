@@ -158,7 +158,7 @@ func (p *Provider) Environments(ctx context.Context, releases string) ([]model.E
 			}
 		}
 		if len(chosen) == 0 {
-			return nil, errors.New("--on tart:all: dockhand has no Tart images yet; dockhand providers setup tart makes one for this Mac's macOS")
+			return nil, errors.New("--on tart:all: dockhand has no Tart images yet; dockhand setup tart makes one for this Mac's macOS")
 		}
 	default:
 		for _, name := range strings.Split(releases, ",") {
@@ -172,7 +172,7 @@ func (p *Provider) Environments(ctx context.Context, releases string) ([]model.E
 	var environments []model.Environment
 	for _, release := range chosen {
 		if !slices.Contains(images, baseImage(release)) {
-			return nil, fmt.Errorf("no Tart image for macOS %s (%s): dockhand providers setup tart %s makes %s", release.Product, release.Name, release.Slug, baseImage(release))
+			return nil, fmt.Errorf("no Tart image for macOS %s (%s): dockhand setup tart %s makes %s", release.Product, release.Name, release.Slug, baseImage(release))
 		}
 		environment := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
 			DeveloperTools: model.DeveloperToolsCommandLine}
@@ -300,10 +300,10 @@ func (p *Provider) Remedy(unmet model.Unmet) string {
 	case err != nil:
 		return ""
 	case unmet.Needs == model.RequiresXcode:
-		return fmt.Sprintf("dockhand providers setup tart %s --xcode <Xcode .xip, or a folder of them> makes macOS %s's Xcode image", release.Slug, release.Product)
+		return fmt.Sprintf("dockhand setup tart %s --xcode <Xcode .xip, or a folder of them> makes macOS %s's Xcode image", release.Slug, release.Product)
 	case unmet.Needs.XcodeVersion() != "":
 		version := unmet.Needs.XcodeVersion()
-		return fmt.Sprintf("%s = %q under [providers.tart.xcode], then dockhand providers setup tart %s --xcode <Xcode %s .xip>, gives macOS %s's Xcode image Xcode %s", release.Slug, version, release.Slug, version, release.Product, version)
+		return fmt.Sprintf("%s = %q under [providers.tart.xcode], then dockhand setup tart %s --xcode <Xcode %s .xip>, gives macOS %s's Xcode image Xcode %s", release.Slug, version, release.Slug, version, release.Product, version)
 	}
 	return ""
 }

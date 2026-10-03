@@ -7,20 +7,20 @@ This is the guide to dockhand v3: how its commands fit together, and the choices
 In your clone of `macports/macports-ports`, the one with your fork as a remote:
 
 ```sh
-dockhand init
+dockhand setup
 ```
 
-`init` first checks the Git dockhand runs, `git` on `PATH` or `$GIT_BIN`, and refuses one older than 2.40, which `rebase` needs; macOS's own Git is new enough on current releases, and `sudo port install git` gets one otherwise. It then registers the checkout and finds its remote for `macports/macports-ports`, whatever it is called. It also chooses where branch worktrees go: `~/Source/macports-branches`, wherever the clone is, unless `--worktrees <dir>` or the configuration's `worktrees` names another. Running it again is safe. It needs no GitHub login and no build setup; those come when a command needs them.
+`setup` first checks the Git dockhand runs, `git` on `PATH` or `$GIT_BIN`, and refuses one older than 2.40, which `rebase` needs; macOS's own Git is new enough on current releases, and `sudo port install git` gets one otherwise. It then registers the checkout and finds its remote for `macports/macports-ports`, whatever it is called. It also chooses where branch worktrees go: `~/Source/macports-branches`, wherever the clone is, unless `--worktrees <dir>` or the configuration's `worktrees` names another. Then it reports what dockhand runs with: Git, MacPorts, the places a check can build, the GitHub login, and its records. On a terminal it offers what's missing, each in turn, each declined by answering no: the GitHub login (`setup github`); the maintainers line the ports naming your GitHub login write, which it writes to the configuration file; and last, off unless you say yes, since it downloads macOS, the Tart image of this Mac's release (`setup tart`). `-y` offers nothing. Running it again is safe, and is the health check. `init`, `auth`, and `providers`, which it replaces, still answer, hidden from help.
 
 Every command works on one ports checkout: `--tree` (`-t`), else `$MACPORTS_TREE`, else the directory you are in. Inside a branch's worktree, that is the checkout it belongs to, and the branch checked out there is the one a command means, `$MACPORTS_TREE` or not.
 
 ### Somewhere to build
 
-`dockhand providers` lists the places a check can build and whether each is ready. The usual first step is a Tart image of this Mac's macOS:
+`dockhand setup` reports the places a check can build and whether each is ready. The usual first step is a Tart image of this Mac's macOS:
 
 ```sh
 sudo port install tart
-dockhand providers setup tart
+dockhand setup tart
 ```
 
 See [Providers](#providers) for the others and for more releases.
@@ -30,10 +30,10 @@ See [Providers](#providers) for the others and for more releases.
 `submit`, the github provider, and `status --refresh` need to act as you on GitHub. Dockhand takes the first of these it finds:
 
 1. `GH_TOKEN`, then `GITHUB_TOKEN`;
-2. its own login, from `dockhand auth login`, kept in the macOS Keychain. The login is a one-time code in the browser, asking for the `public_repo` scope and a refresh token (`offline_access`). Its access token lasts eight hours, and dockhand renews it, `serve` included, with a refresh token that lasts six months from its last use: a login used at least once every six months never needs making again. A login an earlier dockhand kept, a single token, is asked to be made again;
+2. its own login, from `dockhand setup github`, kept in the macOS Keychain. The login is a one-time code in the browser, asking for the `public_repo` scope and a refresh token (`offline_access`). Its access token lasts eight hours, and dockhand renews it, `serve` included, with a refresh token that lasts six months from its last use: a login used at least once every six months never needs making again. A login an earlier dockhand kept, a single token, is asked to be made again;
 3. the GitHub CLI's login, through `gh auth token`.
 
-`dockhand auth status` says which account that is, and until when dockhand's own login renews itself; `dockhand auth logout` removes it, and names GitHub's page where you revoke dockhand's authorization too. A running `serve` uses a new `auth login` without a restart, and says once when its login can't renew itself. Reading public data, as `outdated` does, needs none, and goes on without one; where none was found, it isn't looked for again for five minutes, so a running `serve` picks up a login made meanwhile soon after.
+`dockhand setup` says where the login comes from, and until when dockhand's own login renews itself; `dockhand setup github --logout` removes it, and names GitHub's page where you revoke dockhand's authorization too. A running `serve` uses a new login without a restart, and says once when its login can't renew itself. Reading public data, as `outdated` does, needs none, and goes on without one; where none was found, it isn't looked for again for five minutes, so a running `serve` picks up a login made meanwhile soon after.
 
 ### The configuration file
 
@@ -224,11 +224,11 @@ One check of a branch runs at a time. While one is queued or running, `check` re
 Each check clones one of dockhand's images for each release and attempt, and deletes the clone afterwards ([details](tart-provider.md)). The images live in `~/.dockhand/tart`, or `$DOCKHAND_TART_HOME`, apart from your own Tart VMs.
 
 ```sh
-dockhand providers setup tart               # this Mac's release
-dockhand providers setup tart sequoia       # another; names like tahoe or numbers like 15
-dockhand providers setup tart --xcode ~/Downloads/Xcode_26.xip   # the Xcode add-on for this Mac's release
-dockhand providers setup tart --check       # check the image in a disposable clone
-dockhand providers setup tart --rebuild     # a replacement, keeping the old one until the new one passes
+dockhand setup tart               # this Mac's release
+dockhand setup tart sequoia       # another; names like tahoe or numbers like 15
+dockhand setup tart --xcode ~/Downloads/Xcode_26.xip   # the Xcode add-on for this Mac's release
+dockhand setup tart --check       # check the image in a disposable clone
+dockhand setup tart --rebuild     # a replacement, keeping the old one until the new one passes
 ```
 
 An image starts from Cirrus Labs' vanilla macOS image, and holds the Command Line Tools of the release's pinned generation and MacPorts: the release dockhand pins, unless `--macports-version` names another. Making one downloads the vanilla image the first time and takes up to 60 GB of disk. A golden copy is kept beside it, and a lost image is restored from it. Golden Gate, macOS 27, needs Tart 2.39.0 or newer, since its images have ASIF disks, which older Tart can't list while they run; setup says so before it starts anything.
@@ -340,7 +340,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 - the archives Tart's builds made, which checks keep in `~/.dockhand/archives` for later builds to install, but for the newest passed build of each port, on each environment, with each set of variants, which reuse may choose, and each open branch's newest passed result of each port on each environment. An older build's archive goes, however recent, so a port rebuilt often keeps one. It says how much stays;
 - checks' logs, in `~/.dockhand/logs`, which are kept compressed with gzip once their check ends (`logs` reads them as they were written): an ended branch's, once it has been merged, closed, or archived for `cleanup.after`, and an open branch's where they stand for nothing, superseded for `cleanup.after`. An open branch keeps the logs of its newest check in each environment it has built in, and of its three newest checks;
 - what an ended branch recorded of its checks, once it has been merged, closed, or archived for `cleanup.after`: each check's provider runs, results, plan, and revision, and the branch's assessments, but for its newest check, which `status --all` shows as it ended, and the builds reuse may still choose. `logs` says of a check that's gone that it's no longer recorded. An open branch's records are never touched, but for its assessments of a tree it moved past more than 7 days ago, which it would assess again;
-- the vanilla images Tart pulled for `providers setup tart`, once unused for 30 days. Each is deleted from dockhand's own Tart home with `tart delete`, never `tart prune`, and the next setup of its release downloads it again.
+- the vanilla images Tart pulled for `setup tart`, once unused for 30 days. Each is deleted from dockhand's own Tart home with `tart delete`, never `tart prune`, and the next setup of its release downloads it again.
 
 `serve` runs it. Without serve, a command starts it in the background once its own work is done, and doesn't wait for it; what it removed goes to `cleanup.log` beside the database. When free space where the database or Tart's images are falls below `cleanup.min_free`, it runs at once, and says so, at most once an hour.
 
@@ -405,6 +405,6 @@ The rest of dockhand's bounds are fixed in code: how large an archive it downloa
 | `DOCKHAND_UPSTREAM` | where master is fetched from, a mirror or a local repository, rather than MacPorts' own |
 | `DOCKHAND_INDEX_MIRROR` | the directory port indexes are downloaded from, a nearer mirror's, rather than MacPorts' |
 | `DOCKHAND_INDEX_CACHE` | where port indexes are cached; `dockhand/indexes` in your cache directory otherwise |
-| `DOCKHAND_GITHUB_CLIENT_ID` | the OAuth application `auth login` uses |
+| `DOCKHAND_GITHUB_CLIENT_ID` | the OAuth application `setup github` uses |
 
 `serve --install` keeps the ones serve reads, as they are when it's run, in the agent: `DOCKHAND_CONFIG`, `DOCKHAND_UPSTREAM`, `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`, `DOCKHAND_TART_HOME`, `TART_HOME`, and `DOCKHAND_SSH_DIR`, with `--git` and `--db`. A token is never kept there, since anyone on the Mac can read the agent's file.

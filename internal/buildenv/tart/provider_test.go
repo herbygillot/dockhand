@@ -684,7 +684,7 @@ func TestEnvironmentsAreReleasesWithImages(t *testing.T) {
 		require.Equal(t, want, got, releases)
 	}
 	_, err := p.Environments(t.Context(), "sequoia")
-	require.ErrorContains(t, err, "no Tart image for macOS 15 (Sequoia): dockhand providers setup tart sequoia makes dockhand-base-sequoia", "an Xcode image is an add-on to the base image")
+	require.ErrorContains(t, err, "no Tart image for macOS 15 (Sequoia): dockhand setup tart sequoia makes dockhand-base-sequoia", "an Xcode image is an add-on to the base image")
 	_, err = p.Environments(t.Context(), "leopard")
 	require.ErrorContains(t, err, "unknown release")
 }

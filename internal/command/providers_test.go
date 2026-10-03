@@ -74,7 +74,7 @@ func release(t *testing.T, name string) macos.Release {
 func TestProvidersWithoutTart(t *testing.T) {
 	out, _, err := dockhand(t, "providers")
 	require.NoError(t, err)
-	require.Equal(t, "tart     · needs Tart: sudo port install tart, then dockhand providers setup tart\n"+
+	require.Equal(t, "tart     · needs Tart: sudo port install tart, then dockhand setup tart\n"+
 		"github   · needs a GitHub login and your fork's Actions enabled\n", out)
 
 	_, _, err = dockhand(t, "providers", "setup", "tart")
@@ -87,12 +87,12 @@ func TestProvidersShowTheImages(t *testing.T) {
 	images.status = tart.Status{Host: release(t, "tahoe")}
 	out, _, err := dockhand(t, "providers")
 	require.NoError(t, err)
-	require.Contains(t, out, "tart     · not set up: dockhand providers setup tart   (macOS 26, up to 60 GB)\n")
+	require.Contains(t, out, "tart     · not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n")
 
 	images.status.Base = []macos.Release{release(t, "sonoma"), release(t, "sequoia")}
 	out, _, err = dockhand(t, "providers")
 	require.NoError(t, err)
-	require.Contains(t, out, "tart     ✓ images for macOS 14, 15; none for this Mac's macOS 26: dockhand providers setup tart\n")
+	require.Contains(t, out, "tart     ✓ images for macOS 14, 15; none for this Mac's macOS 26: dockhand setup tart\n")
 
 	images.status.Base = append(images.status.Base, release(t, "tahoe"))
 	out, _, err = dockhand(t, "providers")
@@ -154,7 +154,7 @@ func TestInitShowsTheProviders(t *testing.T) {
 	useImages(t, images)
 	out, _, err := dockhand(t, "init")
 	require.NoError(t, err)
-	require.Contains(t, out, "  Providers    tart     · not set up: dockhand providers setup tart   (macOS 26, up to 60 GB)\n"+
+	require.Contains(t, out, "  Providers    tart     · not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n"+
 		"               github   · needs a GitHub login and your fork's Actions enabled\n"+
 		"  Publishing   ")
 }

@@ -456,27 +456,38 @@ func expandHome(path string) (string, error) {
 	return filepath.Clean(path), nil
 }
 
-var worktreesLine = regexp.MustCompile(`(?m)^[ \t]*worktrees[ \t]*=.*$`)
-
 // SetWorktrees records the worktrees directory in the file at path,
 // creating it when absent and leaving every other line as it was.
 func SetWorktrees(path, directory string) error {
 	if !filepath.IsAbs(directory) {
 		return fmt.Errorf("worktrees: %q is not an absolute path", directory)
 	}
-	line := "worktrees = " + strconv.Quote(directory)
+	return setTopLevel(path, "worktrees", directory)
+}
+
+// SetMaintainer records the maintainers line in the file at path, as
+// setup writes the one it inferred, with the person's agreement.
+func SetMaintainer(path, maintainer string) error {
+	return setTopLevel(path, "maintainer", maintainer)
+}
+
+// setTopLevel sets a top-level string key in the file at path, creating
+// it when absent and leaving every other line as it was. A top-level key
+// must come before the first table, so an existing line counts only
+// there; otherwise the key goes at the top. What it writes is parsed
+// before it's kept.
+func setTopLevel(path, key, value string) error {
+	line := key + " = " + strconv.Quote(value)
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	text := string(data)
-	// A top-level key must come before the first table, so an existing line
-	// counts only there; otherwise the key goes at the top.
 	top := text
 	if i := regexp.MustCompile(`(?m)^[ \t]*\[`).FindStringIndex(text); i != nil {
 		top = text[:i[0]]
 	}
-	if loc := worktreesLine.FindStringIndex(top); loc != nil {
+	if loc := regexp.MustCompile(`(?m)^[ \t]*` + regexp.QuoteMeta(key) + `[ \t]*=.*$`).FindStringIndex(top); loc != nil {
 		text = text[:loc[0]] + line + text[loc[1]:]
 	} else {
 		text = line + "\n" + text

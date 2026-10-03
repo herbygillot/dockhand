@@ -375,9 +375,9 @@ func (f *follower) maybe(ctx context.Context) {
 		// once a process, rather than as each pull request it couldn't
 		// read (the auth flow review's plan, step 4).
 		if errors.Is(r.Err, github.ErrLoginEnded) {
-			report("serve: dockhand's GitHub login can't renew itself, so pull requests can't be read; run dockhand auth login, which serve uses without a restart")
+			report("serve: dockhand's GitHub login can't renew itself, so pull requests can't be read; run dockhand setup github, which serve uses without a restart")
 			if f.s.loginEnded.CompareAndSwap(false, true) {
-				f.s.notify("GitHub login", "dockhand's GitHub login can't renew itself; run dockhand auth login")
+				f.s.notify("GitHub login", "dockhand's GitHub login can't renew itself; run dockhand setup github")
 			}
 			continue
 		}

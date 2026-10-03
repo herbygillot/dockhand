@@ -134,13 +134,13 @@ func TestAFailedLoginSavesNothing(t *testing.T) {
 func TestALoginThatCantRenewIsSaid(t *testing.T) {
 	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	store[github.CredentialKey] = "gho_a_bare_token_from_an_earlier_dockhand"
-	require.Equal(t, "! the saved GitHub login is from an earlier dockhand; run dockhand auth login", publishing(t.Context()))
+	require.Equal(t, "! the saved GitHub login is from an earlier dockhand; run dockhand setup github", publishing(t.Context()))
 	expired := login("secret-token", "ada")
 	expired.RefreshExpiry = time.Now().Add(-time.Hour)
 	saved, err := expired.Encode()
 	require.NoError(t, err)
 	store[github.CredentialKey] = saved
-	require.Equal(t, "! the GitHub login expired after six months unused; run dockhand auth login", publishing(t.Context()))
+	require.Equal(t, "! the GitHub login expired after six months unused; run dockhand setup github", publishing(t.Context()))
 }
 
 func TestADeviceFlowAddressThatIsntHTTPSIsntOpened(t *testing.T) {

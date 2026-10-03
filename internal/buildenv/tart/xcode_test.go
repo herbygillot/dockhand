@@ -32,10 +32,10 @@ func TestTheEnvironmentsToolsChooseTheImage(t *testing.T) {
 func TestTheRemedyForXcodeIsItsImage(t *testing.T) {
 	t.Parallel()
 	unmet := model.Unmet{Target: "libharbor", Environment: model.Environment{Provider: "tart", Platform: tahoe, DeveloperTools: model.DeveloperToolsCommandLine}, Needs: model.RequiresXcode}
-	require.Equal(t, "dockhand providers setup tart tahoe --xcode <Xcode .xip, or a folder of them> makes macOS 26's Xcode image", testProvider(newMac()).Remedy(unmet))
+	require.Equal(t, "dockhand setup tart tahoe --xcode <Xcode .xip, or a folder of them> makes macOS 26's Xcode image", testProvider(newMac()).Remedy(unmet))
 
 	// One whose minimum_xcodeversions the image's Xcode doesn't meet is
 	// given that Xcode (the sand-runner port).
 	unmet.Environment.DeveloperTools, unmet.Needs = model.DeveloperToolsXcode, model.RequiresXcodeVersion("27.0")
-	require.Equal(t, `tahoe = "27.0" under [providers.tart.xcode], then dockhand providers setup tart tahoe --xcode <Xcode 27.0 .xip>, gives macOS 26's Xcode image Xcode 27.0`, testProvider(newMac()).Remedy(unmet))
+	require.Equal(t, `tahoe = "27.0" under [providers.tart.xcode], then dockhand setup tart tahoe --xcode <Xcode 27.0 .xip>, gives macOS 26's Xcode image Xcode 27.0`, testProvider(newMac()).Remedy(unmet))
 }

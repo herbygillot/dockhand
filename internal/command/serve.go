@@ -241,7 +241,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 	}
 	for _, token := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
 		if os.Getenv(token) != "" {
-			fmt.Fprintf(streams.Out, "%s isn't written into the agent, which anyone on this Mac can read; serve signs in to GitHub with the keychain's login (dockhand auth login).\n", token)
+			fmt.Fprintf(streams.Out, "%s isn't written into the agent, which anyone on this Mac can read; serve signs in to GitHub with the keychain's login (dockhand setup github).\n", token)
 		}
 	}
 	fmt.Fprintln(streams.Out, "After upgrading dockhand, or changing these settings, run serve --install again to restart it on the new build.")

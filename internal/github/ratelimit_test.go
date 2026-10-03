@@ -130,7 +130,7 @@ func TestAUsedUpLimitIsWaitedBeforeAsking(t *testing.T) {
 	require.NoError(t, get(t, t.Context(), client))
 	err := get(t, t.Context(), client)
 	require.ErrorContains(t, err, "GitHub's rate limit for requests without a login resets at")
-	require.ErrorContains(t, err, "dockhand auth login raises it")
+	require.ErrorContains(t, err, "dockhand setup github raises it")
 	require.Len(t, server.asked, 1)
 	require.Empty(t, *waits)
 }
