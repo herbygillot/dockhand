@@ -389,6 +389,15 @@ func (s *Store) transaction(ctx context.Context, write bool, repo model.Reposito
 		begin = "BEGIN IMMEDIATE"
 	}
 	if _, err := conn.ExecContext(ctx, begin); err != nil {
+		// The driver reports a context canceled while a statement ran even
+		// where the statement finished first, as modernc.org/sqlite does
+		// once its interrupt fires: a BEGIN that took effect reads as
+		// failed, and the connection went back to the pool inside the
+		// transaction, where the next BEGIN on it failed with "cannot
+		// start a transaction within a transaction" (CI's Intel run at
+		// 90de4fc2). A connection whose BEGIN reports an error isn't
+		// reused, whatever it holds.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		return storageError(err)
 	}
 	committed := false

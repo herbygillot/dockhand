@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -1293,4 +1295,44 @@ func requireWholeCopy(t *testing.T, copy string) {
 	info, err := os.Stat(copy)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+// A transaction whose context ends as it begins leaves no connection
+// inside a transaction for the next to find: the driver reports the
+// cancel even where BEGIN had taken effect, and the connection went back
+// to the pool in the transaction, where the next BEGIN failed with
+// "cannot start a transaction within a transaction" (CI's Intel run at
+// 90de4fc2). Contexts canceled at every moment around the BEGIN, then
+// transactions on every connection the pool holds, each of which must
+// begin.
+func TestACanceledBeginLeavesNoTransactionOpen(t *testing.T) {
+	f := open(t)
+	for i := range 3000 {
+		ctx, cancel := context.WithCancel(t.Context())
+		go func() {
+			for range i % 50 {
+				runtime.Gosched()
+			}
+			cancel()
+		}()
+		_ = f.store.Update(ctx, f.repo, func(store.Tx) error { return nil })
+		cancel()
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- f.store.View(t.Context(), f.repo, func(store.Reader) error {
+				time.Sleep(20 * time.Millisecond)
+				return nil
+			})
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
 }
