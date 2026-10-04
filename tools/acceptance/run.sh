@@ -59,15 +59,6 @@ if [ -z "$rows" ]; then
 	done
 fi
 
-# github_used is how much of the stage's token's hourly GitHub allowance is
-# spent, as GitHub's rate_limit endpoint says, which costs none of it;
-# empty without a token. Each row records what it spent (the M1's run at
-# 10aac0c3: the allowance went before B1, and nothing said where).
-github_used() {
-	[ -n "${GH_TOKEN:-}" ] || return 0
-	curl -fsS -m 10 -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/rate_limit 2>/dev/null | jq -r '.resources.core.used // empty' 2>/dev/null
-}
-
 results="$ACCEPT_STATE/results/$candidate"
 mkdir -p "$results"
 failed=0
@@ -109,7 +100,13 @@ for row in $rows; do
 	fi
 	mkdir -p "$ROW_DIR/json"
 	: >"$ROW_DIR/out.log"
-	used_before=$(github_used)
+	# Each dockhand the row runs, H6's included, says in this file what it
+	# sent GitHub's API and what GitHub last said was spent of the hour's
+	# allowance: GitHub's rate_limit endpoint said nothing was spent for a
+	# fine-grained token whose calls were refused (the M1's run at
+	# 1da4fdbf).
+	export DOCKHAND_GITHUB_LOG="$ROW_DIR/github.log"
+	: >"$DOCKHAND_GITHUB_LOG"
 	export ROW_DIR ROW_ID=$row ROW_LIB="$here/lib"
 	(
 		set +e
@@ -122,6 +119,7 @@ for row in $rows; do
 		setup() { :; }
 		act() { :; }
 		assert() { :; }
+		teardown() { :; }
 		# shellcheck disable=SC1090
 		. "$file"
 		if ! setup; then
@@ -131,14 +129,16 @@ for row in $rows; do
 		[ -f "$ROW_DIR/result" ] || act || :
 		harm_snapshot "$ROW_DIR/after"
 		[ -f "$ROW_DIR/result" ] || assert || :
+		# A row's teardown runs whatever came before it, its setup's
+		# failure included, and H7 reads what it leaves (the M1's run at
+		# 1da4fdbf: D-R2's setup failed with both slot VMs started).
+		teardown || :
+		harm_running >"$ROW_DIR/after/running.teardown" 2>/dev/null || :
 		harm_check
 	) >"$ROW_DIR/runner.log" 2>&1 || :
 
-	used_after=$(github_used)
-	spent=""
-	if [ -n "$used_before" ] && [ -n "$used_after" ] && [ "$used_after" -ge "$used_before" ]; then
-		spent=$((used_after - used_before))
-	fi
+	spent=$(awk -F '\t' '{n += $1} END {print n + 0}' "$DOCKHAND_GITHUB_LOG" 2>/dev/null)
+	used=$(awk -F '\t' '$2 > m {m = $2} END {print m + 0}' "$DOCKHAND_GITHUB_LOG" 2>/dev/null)
 	result=$(cat "$ROW_DIR/result" 2>/dev/null || echo fail)
 	why=$(cat "$ROW_DIR/why" 2>/dev/null || echo "the row gave no result")
 	[ -f "$ROW_DIR/result" ] || why="the row gave no result"
@@ -159,9 +159,9 @@ for row in $rows; do
 	jq -n --arg row "$row" --arg stage "$stage" --arg candidate "$candidate" --arg result "$result" --arg why "$why" \
 		--arg log "$ROW_DIR/out.log" --argjson harm "$(for v in "$ROW_DIR"/harm/H*; do [ -f "$v" ] && jq -n --arg k "$(basename "$v")" --arg v "$(cat "$v")" '{($k): $v}'; done | jq -s 'add // {}')" \
 		--argjson exits "$(for e in "$ROW_DIR"/json/*.json.exit; do [ -f "$e" ] && cat "$e"; done | jq -s '.')" \
-		--arg spent "$spent" \
+		--argjson spent "${spent:-0}" --argjson used "${used:-0}" \
 		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, harm: $harm, exit_codes: $exits, log: $log,
-		  github_requests: (if $spent == "" then null else ($spent | tonumber) end)}' >"$results/$row.json"
+		  github_requests: $spent, github_used_after: $used}' >"$results/$row.json"
 	printf '%-8s %-14s %s\n' "$row" "$result" "$why"
 	case "$result" in
 	pass | "refused well" | "known issue") ;;

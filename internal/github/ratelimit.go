@@ -125,6 +125,15 @@ var apiRequests atomic.Int64
 // Requests is how many requests this process has sent GitHub's API.
 func Requests() int64 { return apiRequests.Load() }
 
+// apiUsed is the last X-RateLimit-Used GitHub answered with: how much of
+// the login's hourly allowance is spent, by every process using it, which
+// GitHub's rate_limit endpoint didn't say for a fine-grained token (the
+// M1's run at 1da4fdbf). Zero before an answer.
+var apiUsed atomic.Int64
+
+// Used is the last X-RateLimit-Used GitHub answered this process with.
+func Used() int64 { return apiUsed.Load() }
+
 type rateLimited struct {
 	next   http.RoundTripper
 	limits *rateLimits
@@ -147,6 +156,9 @@ func (t rateLimited) RoundTrip(req *http.Request) (*http.Response, error) {
 		response, err := t.next.RoundTrip(req)
 		if err != nil {
 			return nil, err
+		}
+		if used, err := strconv.ParseInt(response.Header.Get("X-RateLimit-Used"), 10, 64); err == nil {
+			apiUsed.Store(used)
 		}
 		kind, until, limited := t.limits.observe(category, response)
 		if !limited {

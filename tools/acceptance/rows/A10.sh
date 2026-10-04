@@ -79,6 +79,11 @@ act() {
 		case " submit check " in *" $verb "*)
 			case " $words " in *" --plan "*) ;; *) words="$words --plan" ;; esac ;;
 		esac
+		# A batch starts what it shows only with --yes, without a terminal,
+		# as the docs' reader would answer its question.
+		case " $words " in *" --outdated "*)
+			case " $words " in *" -y "* | *" --yes "*) ;; *) words="$words -y" ;; esac ;;
+		esac
 		# shellcheck disable=SC2086
 		eval "set -- $words"
 		(cd "$dir" && dh "$@" </dev/null)

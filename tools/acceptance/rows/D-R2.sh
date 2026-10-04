@@ -22,7 +22,6 @@ assert() {
 		row_known "not run: ACCEPT_VANILLA names no vanilla image to take the slots with"
 		return
 	fi
-	fault_vm_slots_stop
 	if [ "${DR2_RUNNING:-0}" != 2 ]; then
 		row_fail "the person's VMs didn't survive the check: $DR2_RUNNING of 2 running"
 	elif grep -qiE 'slot|wait|capacity|running VM' "$ROW_DIR/dr2.log"; then
@@ -31,3 +30,7 @@ assert() {
 		row_fail "the check neither waited nor said why: $(tail -3 "$ROW_DIR/dr2.log" | tr '\n' ';')"
 	fi
 }
+
+# The slot VMs are stopped whatever happened, a setup that failed with
+# them started included.
+teardown() { fault_vm_slots_stop; }

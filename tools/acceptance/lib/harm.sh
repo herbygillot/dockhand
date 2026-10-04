@@ -303,6 +303,16 @@ harm_h6() {
 				;;
 			esac
 			words=${segment#dockhand }
+			# One that asks GitHub of every port a maintainer has, about
+			# three requests a port, isn't run: setup's Next: names
+			# outdated --mine, and H6 ran it after each of A10's setups,
+			# over Herby's 320 ports, which spent the stage's hourly
+			# allowance (the M1's runs at 10aac0c3 and 1da4fdbf).
+			case " $words " in *" --mine "* | *" --all "*)
+				unverified="$unverified [$segment: asks GitHub of every port, so it isn't run]"
+				continue
+				;;
+			esac
 			verb=""
 			for word in $words; do
 				case "$word" in -*) ;; *)
@@ -356,6 +366,15 @@ harm_h7() {
 		harm_allowed "$ROW_DIR/allow.running" "$line" && continue
 		broken="$broken [$line]"
 	done <"$after/running"
+	# After the row's teardown, nothing it started is left, allowed or not.
+	if [ -f "$after/running.teardown" ]; then
+		while IFS= read -r line; do
+			[ -n "$line" ] || continue
+			grep -qxF "$line" "$before/running" && continue
+			case "$broken" in *"[$line]"*) continue ;; esac
+			broken="$broken [$line, past teardown]"
+		done <"$after/running.teardown"
+	fi
 	if [ -n "$broken" ]; then
 		harm_write H7 "broken: left running$broken"
 	else

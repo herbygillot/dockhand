@@ -22,7 +22,7 @@ tools/acceptance/resume.sh done     # answer a WAITING checkpoint: done, skip, o
 
 `lib/guard.sh` refuses any quick run where dockhand's database, configuration, caches, tree, upstream, or Tart homes would be outside `ACCEPT_STATE`, and any full run but the test host's `dhtest` user.
 
-- **A row** is `rows/<ID>.sh`. Its header line `# stages: quick full` says the stages it runs in. It defines `setup`, `act`, and `assert`, and uses `lib/common.sh`:
+- **A row** is `rows/<ID>.sh`. Its header line `# stages: quick full` says the stages it runs in. It defines `setup`, `act`, `assert`, and `teardown`, which runs whatever came before it, and uses `lib/common.sh`:
   - `dh` and `dh_json` run dockhand, the second once with `--json` for H8;
   - `expect_exit` checks a command's exit status;
   - `allow_change`, `allow_ref_gone`, `allow_push`, `allow_prs`, and `allow_running` say what the row is meant to change;
@@ -34,12 +34,12 @@ tools/acceptance/resume.sh done     # answer a WAITING checkpoint: done, skip, o
   - H4, no token written;
   - H5, status matching Git;
   - H6, every `Next:` line accepted, run as its `--plan` where it would change something;
-  - H7, nothing left running;
+  - H7, nothing left running, and nothing past the row's teardown, allowed or not;
   - H8, every `--json` envelope agreeing with its exit code;
   - H9, in the quick stage, your own `~/.dockhand`, `~/.tart`, and `~/.ssh` as they were. Your own dockhand at work during a run, such as a `serve` agent, trips it too.
   
   A row any of them breaks is a blocker, whatever it said of itself.
-- **Results** are `$ACCEPT_STATE/results/<candidate>/<row>.json`, with each invariant's verdict, the row's log, and `github_requests`, what the row spent of the stage's token's hourly allowance, read from GitHub's `rate_limit`, which costs none of it. dockhand's own `--json` envelopes carry `github_requests` for each command, and `-v` says it.
+- **Results** are `$ACCEPT_STATE/results/<candidate>/<row>.json`, with each invariant's verdict, the row's log, `github_requests`, what the row's dockhands, H6's included, sent GitHub's API, and `github_used_after`, the most GitHub said was spent of the hour's allowance. Each dockhand writes a line to `DOCKHAND_GITHUB_LOG`, which the runner sets to the row's `github.log`; `--json` envelopes carry `github_requests` too, and `-v` says it.
 - **The self-test** (`selftest.sh`) runs a harmless row, two that change only what they say, and one made to break each invariant, against a stand-in dockhand, `gh`, and `tart` in `selftest/bin`. Each must be caught by its own invariant alone.
 - **Results are labelled** with the rc tag at HEAD where there is one, and HEAD's short commit otherwise, unless `--candidate` names it.
 - **The stage's GitHub token** (`ACCEPT_GH_TOKEN`, or `~/.dockhand-acceptance/gh-token`) needs no scopes. GitHub's hourly limit is per account, so the test account's token keeps the stage from spending what your own work, field testing included, draws on.

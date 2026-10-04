@@ -279,6 +279,16 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	if verbosity > 0 && mode.githubRequests > 0 {
 		streams.status.say(fmt.Sprintf("GitHub's API: %s", prose.Plural(int(mode.githubRequests), "request")))
 	}
+	// DOCKHAND_GITHUB_LOG, a file, gets a line a command: what it asked,
+	// how many requests it sent GitHub's API, and how much of the hour's
+	// allowance GitHub last said was spent, so a run can say which
+	// command spent it, --json or not.
+	if log := os.Getenv("DOCKHAND_GITHUB_LOG"); log != "" {
+		if file, err := os.OpenFile(log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+			fmt.Fprintf(file, "%d\t%d\t%s\n", mode.githubRequests, github.Used(), strings.Join(args, " "))
+			file.Close()
+		}
+	}
 	if !mode.json {
 		return err
 	}
