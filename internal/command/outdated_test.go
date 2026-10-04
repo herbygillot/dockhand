@@ -302,3 +302,16 @@ func TestEveryBatchPortSaysItsComparison(t *testing.T) {
 	require.Contains(t, batchNotes(nothing)[0], "Upstream not compared: ")
 	require.Empty(t, batchNotes(engine.Update{}), "nothing compared at all, as with --plan")
 }
+
+// A look over hundreds of ports says once what it spends of GitHub's
+// hourly allowance; a small one says nothing (the M1's run at 1da4fdbf:
+// 835 ports cost 2,166 requests).
+func TestALargeLookSaysItsCost(t *testing.T) {
+	var said []string
+	l := &lookups{say: func(line string) { said = append(said, line) }}
+	l.progress(0, 2)
+	require.Empty(t, said)
+	l.progress(1, 835)
+	l.progress(2, 835)
+	require.Equal(t, []string{"Looking up 835 ports asks GitHub about 2,200 times, of the 5,000 an hour a login has."}, said)
+}

@@ -4,8 +4,21 @@ package prose
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
+
+// Count writes a number with its thousands set apart, 2,200.
+func Count(n int) string {
+	digits := strconv.Itoa(n)
+	if n < 0 {
+		return "-" + Count(-n)
+	}
+	for i := len(digits) - 3; i > 0; i -= 3 {
+		digits = digits[:i] + "," + digits[i:]
+	}
+	return digits
+}
 
 // Plural is a count of a noun: "1 port", "2 ports", "3 patches".
 func Plural(n int, noun string) string {

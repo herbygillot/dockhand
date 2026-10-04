@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"text/tabwriter"
 
@@ -468,15 +469,28 @@ type lookups struct {
 	line  *statusLine
 	draw  bool
 	total atomic.Int64
+	// costly says once what a large look spends of GitHub's allowance.
+	costly sync.Once
+	say    func(string)
 }
 
 func newLookups(streams Streams) *lookups {
-	return &lookups{line: streams.stderrLine(), draw: streams.errTerminal()}
+	return &lookups{line: streams.stderrLine(), draw: streams.errTerminal(), say: streams.status.say}
 }
+
+// costlyLook is the number of ports past which a look says what it spends
+// of GitHub's hourly allowance, at about 2.6 requests a port, as measured
+// over a maintainer's 835 (the M1's run at 1da4fdbf: 2,166 requests).
+const costlyLook = 300
 
 // progress is outdated's callback as each lookup finishes.
 func (l *lookups) progress(done, total int) {
 	l.total.Store(int64(total))
+	if total >= costlyLook {
+		l.costly.Do(func() {
+			l.say(fmt.Sprintf("Looking up %s ports asks GitHub about %s times, of the 5,000 an hour a login has.", prose.Count(total), prose.Count((total*26/10+50)/100*100)))
+		})
+	}
 	if !l.draw {
 		return
 	}

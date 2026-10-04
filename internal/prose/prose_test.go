@@ -42,3 +42,9 @@ func TestAndListsWordsAsASentenceDoes(t *testing.T) {
 	require.Equal(t, "13, 14, and 15", And([]string{"13", "14", "15"}))
 	require.Empty(t, And(nil))
 }
+
+func TestCountSetsThousandsApart(t *testing.T) {
+	for n, want := range map[int]string{0: "0", 999: "999", 2200: "2,200", 1234567: "1,234,567", -5000: "-5,000"} {
+		require.Equal(t, want, Count(n))
+	}
+}
