@@ -314,7 +314,12 @@ proc consumed {name} {
         foreach tree $trees {
             if {[string first $tree $directory] == 0} { set relative [string range $directory [string length $tree] end] }
         }
-        lappend active [dict create name $other spec $spec directory $relative archive [digest [string trim $location]]]
+        set location [string trim $location]
+        set entry [dict create name $other spec $spec directory $relative archive [digest $location]]
+        # Where its archive is, for the host to keep it for a later guest
+        # (batch 90), as the target's own is kept.
+        if {[dict get $entry archive] ne ""} { dict set entry archive_file $location }
+        lappend active $entry
     }
     dict set inputs active $active
     return $inputs

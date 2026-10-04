@@ -209,3 +209,70 @@ func reusedInOrder(remaining []buildenv.Target, chosen map[model.TargetID]reuse.
 	}
 	return ordered
 }
+
+// dependencyInstalls are the kept archives of the ports the targets an
+// environment builds depend on, which earlier guests there installed them
+// from (batch 90): a target's direct dependencies, as MacPorts evaluates
+// it in the revision, and the ports active as its earlier builds there
+// built, which reach further. The guest's MacPorts takes one whose name is
+// the archive it wants, and builds the rest as before, so rust and cargo,
+// built from source once on a release MacPorts has no archives of them
+// for, aren't built again by a later check of any port needing them. A
+// port the plan builds is the branch's, and none of its are given. One
+// changed since it was kept isn't given.
+func (d *driver) dependencyInstalls(ctx context.Context, environment model.Environment, source model.Source, building []reuse.Target) []buildenv.Archive {
+	var ports []string
+	add := func(port string) {
+		if port == "" || slices.Contains(ports, port) {
+			return
+		}
+		for _, target := range d.plan.Targets {
+			if strings.EqualFold(target.Target.Name, port) || strings.EqualFold(target.Target.Subport, port) {
+				return
+			}
+		}
+		ports = append(ports, port)
+	}
+	reader, err := d.e.portReader()
+	for _, target := range building {
+		if err == nil {
+			name := target.Target.Name
+			if target.Target.Subport != "" {
+				name = target.Target.Subport
+			}
+			evaluated, evalErr := reader.Ports(ctx, source, target.Directory, environment, nil)
+			for _, port := range evaluated {
+				if evalErr != nil || port.Name != name {
+					continue
+				}
+				for _, dependency := range port.Dependencies {
+					add(dependency.Port)
+				}
+			}
+		}
+		for _, earlier := range target.Earlier {
+			for _, active := range earlier.Inputs.Active {
+				add(active.Name)
+			}
+		}
+	}
+	var kept []model.DependencyArchive
+	if err := d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
+		var err error
+		kept, err = r.DependencyArchives(environment, ports)
+		return err
+	}); err != nil {
+		return nil
+	}
+	var installs []buildenv.Archive
+	for _, archive := range kept {
+		if _, whole, err := d.e.keptArchive(ctx, archive.Digest); err != nil || !whole {
+			continue
+		}
+		if _, digest, err := sha256File(d.e.archivePath(archive.Digest)); err != nil || digest != archive.Digest {
+			continue
+		}
+		installs = append(installs, buildenv.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: d.e.archivePath(archive.Digest)})
+	}
+	return installs
+}

@@ -836,6 +836,54 @@ func (t *tx) KeepArchive(archive model.Archive) error {
 	return err
 }
 
+func (t *tx) KeepDependencyArchive(archive model.DependencyArchive) error {
+	if archive.Port == "" {
+		return fmt.Errorf("%w: archive %q kept for no port", store.ErrConflict, archive.Digest)
+	}
+	p := archive.Environment.Platform
+	_, err := t.exec("INSERT INTO dependency_archives(repository_id, digest, port, provider, platform_os, platform_version, platform_architecture, developer_tools, kept_at) "+
+		"VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT DO UPDATE SET kept_at=excluded.kept_at",
+		t.repo, archive.Digest, archive.Port, archive.Environment.Provider, p.OS, p.Version, p.Architecture, archive.Environment.DeveloperTools, millis(archive.KeptAt))
+	return err
+}
+
+// dependencyArchivesPerPort is how many of a port's kept dependency
+// archives DependencyArchives gives, newest first: the one a guest's
+// MacPorts wants is most likely the newest, and the one before it covers
+// a branch whose base is behind.
+const dependencyArchivesPerPort = 2
+
+func (t *tx) DependencyArchives(environment model.Environment, ports []string) ([]model.DependencyArchive, error) {
+	if len(ports) == 0 {
+		return nil, nil
+	}
+	p := environment.Platform
+	args := []any{t.repo, environment.Provider, p.OS, p.Version, p.Architecture, environment.DeveloperTools}
+	for _, port := range ports {
+		args = append(args, port)
+	}
+	args = append(args, dependencyArchivesPerPort)
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT digest, name, size, archive_kept, port, kept_at FROM (SELECT d.digest, a.name, a.size, a.kept_at AS archive_kept, d.port, d.kept_at, "+
+		"ROW_NUMBER() OVER (PARTITION BY d.port ORDER BY d.kept_at DESC, d.digest) AS newest FROM dependency_archives d JOIN archives a ON a.repository_id=d.repository_id AND a.digest=d.digest "+
+		"WHERE d.repository_id=? AND d.provider=? AND d.platform_os=? AND d.platform_version=? AND d.platform_architecture=? AND d.developer_tools=? AND d.port IN ("+placeholders(len(ports))+")) "+
+		"WHERE newest<=? ORDER BY port, kept_at DESC, digest", args...)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	defer rows.Close()
+	var found []model.DependencyArchive
+	for rows.Next() {
+		archive := model.DependencyArchive{Environment: environment}
+		var archiveKept, kept int64
+		if err := rows.Scan(&archive.Digest, &archive.Name, &archive.Size, &archiveKept, &archive.Port, &kept); err != nil {
+			return nil, storageError(err)
+		}
+		archive.KeptAt = fromMillis(archiveKept)
+		found = append(found, archive)
+	}
+	return found, storageError(rows.Err())
+}
+
 func placeholders(n int) string { return strings.TrimSuffix(strings.Repeat("?,", n), ",") }
 
 func boolInt(b bool) int {

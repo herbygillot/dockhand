@@ -231,6 +231,8 @@ type fakeBuild struct {
 	refs     []string
 	// kept are the archives fetched, by file name, to what arrived.
 	kept map[string][]byte
+	// dependencies are the ports whose archives KeepDependency kept.
+	dependencies []string
 }
 
 func (b *fakeBuild) Refer(ref string) error {
@@ -285,6 +287,16 @@ func (b *fakeBuild) Keep(target model.TargetID, name string, fetch func(path str
 		b.kept = map[string][]byte{}
 	}
 	b.kept[name] = data
+	return nil
+}
+
+func (b *fakeBuild) KeepDependency(port model.ActivePort, name string, fetch func(path string) error) error {
+	if err := b.Keep("", name, fetch); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.dependencies = append(b.dependencies, port.Name)
 	return nil
 }
 
@@ -348,14 +360,16 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	libharbor := guestResult{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestPort{}, Archive: "sha256:11",
 		ArchiveFile: "/opt/local/var/macports/software/libharbor/libharbor-3_0.darwin_25.arm64.tbz2"}
 	cli := guestResult{ID: "harbor-cli", Outcome: "failed", Phase: "install", Log: "target-2.log", Detail: "Failed to install harbor-cli",
-		Active: []guestPort{{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"}},
-		Steps:  []guestStep{{"lint", 1}, {"dependencies", 3}, {"fetch", 900}, {"checksum", 902}, {"install", 903}}}
+		Active: []guestPort{{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11", ArchiveFile: "/opt/local/var/macports/software/libharbor/libharbor-3_0.darwin_25.arm64.tbz2"},
+			{Name: "rust", Spec: "@1.91.0_0", Directory: "lang/rust", Archive: "sha256:22", ArchiveFile: "/opt/local/var/macports/software/rust/rust-1.91.0_0.darwin_25.arm64.tbz2"}},
+		Steps: []guestStep{{"lint", 1}, {"dependencies", 3}, {"fetch", 900}, {"checksum", 902}, {"install", 903}}}
 	mac := newMac(
 		guestResults{State: "running"},
 		guestResults{State: "running", Targets: []guestResult{libharbor}},
 		guestResults{State: "finished", Targets: []guestResult{libharbor, cli}},
 	)
 	mac.guest.logs["libharbor-3_0.darwin_25.arm64.tbz2"] = "libharbor's archive"
+	mac.guest.logs["rust-1.91.0_0.darwin_25.arm64.tbz2"] = "rust's archive"
 	job := tartJob(t, 1)
 	build := &fakeBuild{}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
@@ -371,9 +385,11 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	require.Contains(t, build.progress, "harbor-cli: Failed to install harbor-cli")
 	require.Equal(t, map[model.TargetID][]model.ActivePort{
 		"libharbor":  {},
-		"harbor-cli": {{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"}},
+		"harbor-cli": {{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"}, {Name: "rust", Spec: "@1.91.0_0", Directory: "lang/rust", Archive: "sha256:22"}},
 	}, build.consumed, "what each build read, the guest's none included")
-	require.Equal(t, map[string][]byte{"libharbor-3_0.darwin_25.arm64.tbz2": []byte("libharbor's archive")}, build.kept, "a passed target's archive is kept, by MacPorts' name for it")
+	require.Equal(t, map[string][]byte{"libharbor-3_0.darwin_25.arm64.tbz2": []byte("libharbor's archive"), "rust-1.91.0_0.darwin_25.arm64.tbz2": []byte("rust's archive")}, build.kept,
+		"a passed target's archive is kept, by MacPorts' name for it, and a dependency's (batch 90)")
+	require.Equal(t, []string{"rust"}, build.dependencies, "a target active as another built is kept as a target, not a dependency")
 
 	vm := "dockhand-check-run-7-tahoe-1"
 	require.Equal(t, []string{"clone dockhand-base-tahoe " + vm, "start " + vm, "reach " + vm + " as dockhand-base-tahoe", "delete " + vm}, mac.events)

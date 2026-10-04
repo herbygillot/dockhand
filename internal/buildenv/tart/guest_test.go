@@ -257,7 +257,7 @@ func TestAVerdictRecordsThePortsActiveAsItBuilt(t *testing.T) {
 		return "sha256:" + hex.EncodeToString(sum[:])
 	}
 	require.Equal(t, []guestPort{
-		{Name: "zlib", Spec: "@1.3.2_0", Directory: "devel/zlib", Archive: digest("zlib's archive")},
+		{Name: "zlib", Spec: "@1.3.2_0", Directory: "devel/zlib", Archive: digest("zlib's archive"), ArchiveFile: filepath.Join(archives, "zlib")},
 		{Name: "xz", Spec: "@5.8.1_0+universal", Directory: "devel/xz"},
 		{Name: "gone", Spec: "@1.0_0"},
 	}, results.Targets[0].Active)

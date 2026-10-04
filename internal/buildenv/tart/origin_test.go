@@ -79,7 +79,13 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // Since batch 43 a failure's detail names the command MacPorts says
 // failed and what the tool said last before it: its words, again, and the
 // protocol stays 2.
-const guestPin = "eb7edf50c8c97e262804f7acc65524cd9afe200801fe54f9a7f77ad7f59f6176"
+//
+// Since batch 90 each active port's entry also says where its archive is,
+// for the host to keep a dependency's for a later guest. That reports
+// more, and builds and judges nothing otherwise: a dependency installed
+// from a kept archive is recorded by its digest, as one from MacPorts'
+// own archives always was, so the protocol stays 2.
+const guestPin = "fd399c7bfa26defe56000dd0b92226cd56928c3b69c68d98ac100bc47c60b27d"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

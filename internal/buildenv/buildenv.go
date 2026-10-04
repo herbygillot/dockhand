@@ -134,6 +134,15 @@ type Build interface {
 	// already isn't fetched again. A provider that can't fetch archives
 	// doesn't call it.
 	Keep(target model.TargetID, name string, fetch func(path string) error) error
+	// KeepDependency keeps the archive a port active as a target built was
+	// installed from, after the target's Record, for a later guest in the
+	// environment to install rather than build (batch 90): rust and cargo,
+	// built from source where MacPorts had no archive for the release yet.
+	// fetch writes it as Keep's does, and it is kept only if it matches the
+	// digest Consumed reported of the port. A port the plan builds is a
+	// target, whose archive Keep keeps, and isn't kept this way. A
+	// provider that can't fetch archives doesn't call it.
+	KeepDependency(port model.ActivePort, name string, fetch func(path string) error) error
 	// Progress reports a step to whoever is watching.
 	Progress(message string)
 	// Observe records what the environment reported about itself, for

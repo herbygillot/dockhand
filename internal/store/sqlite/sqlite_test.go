@@ -659,6 +659,56 @@ func TestAnArchiveIsRecordedOnceByDigest(t *testing.T) {
 	}))
 }
 
+// A dependency's kept archives are found by port in an environment, the
+// newest two of each first, and go with their archives when pruning
+// forgets them (batch 90).
+func TestADependencysArchivesAreFoundByPortAndGoWithTheirArchives(t *testing.T) {
+	f := open(t)
+	f.seed(t)
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
+	other := tahoe
+	other.Platform.Version = "27"
+	keep := func(digest, name, port string, environment model.Environment, kept time.Time) {
+		t.Helper()
+		archive := model.Archive{Digest: digest, Name: name, Size: 10, KeptAt: kept}
+		require.NoError(t, f.update(t, func(tx store.Tx) error {
+			if err := tx.KeepArchive(archive); err != nil {
+				return err
+			}
+			return tx.KeepDependencyArchive(model.DependencyArchive{Archive: archive, Port: port, Environment: environment})
+		}))
+	}
+	keep("sha256:r1", "rust-1.90.0_0.darwin_25.arm64.tbz2", "rust", tahoe, at)
+	keep("sha256:r2", "rust-1.91.0_0.darwin_25.arm64.tbz2", "rust", tahoe, at.Add(time.Hour))
+	keep("sha256:r3", "rust-1.91.0_1.darwin_25.arm64.tbz2", "rust", tahoe, at.Add(2*time.Hour))
+	keep("sha256:c1", "cargo-1.91.0_0.darwin_25.arm64.tbz2", "cargo", tahoe, at)
+	keep("sha256:g1", "rust-1.91.0_0.darwin_27.arm64.tbz2", "rust", other, at)
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
+		return tx.KeepDependencyArchive(model.DependencyArchive{Archive: model.Archive{Digest: "sha256:r1", KeptAt: at}, Environment: tahoe})
+	}), store.ErrConflict, "kept for no port")
+	names := func(environment model.Environment, ports ...string) []string {
+		t.Helper()
+		var found []string
+		require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+			archives, err := rd.DependencyArchives(environment, ports)
+			for _, archive := range archives {
+				found = append(found, archive.Name)
+			}
+			return err
+		}))
+		return found
+	}
+	require.Equal(t, []string{"cargo-1.91.0_0.darwin_25.arm64.tbz2", "rust-1.91.0_1.darwin_25.arm64.tbz2", "rust-1.91.0_0.darwin_25.arm64.tbz2"}, names(tahoe, "rust", "cargo"))
+	require.Equal(t, []string{"rust-1.91.0_0.darwin_27.arm64.tbz2"}, names(other, "rust"))
+	require.Empty(t, names(tahoe))
+
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		_, err := tx.PruneArchives(at.Add(90 * time.Minute))
+		return err
+	}))
+	require.Equal(t, []string{"rust-1.91.0_1.darwin_25.arm64.tbz2"}, names(tahoe, "rust", "cargo"), "pruned with their archives")
+}
+
 // An archive is forgotten once no live result names it (D6): an open
 // branch's newest passed result of each target in each environment keeps
 // its own, and the newest passed build reuse may choose keeps its own

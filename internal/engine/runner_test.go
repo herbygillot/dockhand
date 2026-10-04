@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -42,6 +43,9 @@ type scriptedProvider struct {
 	consumes map[model.TargetID][]model.ActivePort
 	// keep makes each passed target's archive "<target>'s archive", kept.
 	keep bool
+	// keepDependencies keeps each active port's archive whose digest is
+	// scriptedArchive's of it, as a dependency's (batch 90).
+	keepDependencies bool
 	// says is reported as the build starts, as staging a guest's index
 	// is, with a line behind the scenes after it.
 	says string
@@ -123,6 +127,22 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 		if p.keep && outcome == model.OutcomePassed {
 			if err := build.Keep(target.ID, name, func(path string) error { return os.WriteFile(path, content, 0o644) }); err != nil {
 				return err
+			}
+		}
+		if p.keepDependencies {
+			active := p.active
+			if found, ok := p.consumes[target.ID]; ok {
+				active = found
+			}
+			for _, port := range active {
+				name, content, digest := scriptedArchive(model.TargetID(port.Name))
+				// A target's archive is its result's, as Tart leaves it.
+				if port.Archive != digest || slices.ContainsFunc(job.Plan.Targets, func(t model.PlanTarget) bool { return string(t.ID) == port.Name }) {
+					continue
+				}
+				if err := build.KeepDependency(port, name, func(path string) error { return os.WriteFile(path, content, 0o644) }); err != nil {
+					return err
+				}
 			}
 		}
 		if failing && i == 0 {
@@ -839,6 +859,74 @@ func TestTheTargetsThatChangedBuildAndTheRestAreReused(t *testing.T) {
 // an earlier attempt finished, on a retry (decisions 28 and 44). A build
 // that shows it active from another archive is said to have been given
 // another by MacPorts.
+// A dependency a guest installed, from an archive it built where MacPorts
+// had none, is kept, and a later check's guest is given it, for a target
+// that depends on it, by its port's evaluation or as an earlier build of
+// it had it active (the M1's run at d302e744: dust's second check built
+// rust and cargo again, batch 90). A port the plan builds isn't kept so.
+func TestAGuestIsGivenTheDependencyArchivesAnEarlierGuestInstalled(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	_, _, rustDigest := scriptedArchive("rust")
+	_, _, libDigest := scriptedArchive("libharbor")
+	rust := model.ActivePort{Name: "rust", Spec: "@1.91.0_0", Directory: "lang/rust", Archive: rustDigest}
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: libDigest}
+	provider := &identified{scriptedProvider: scriptedProvider{keep: true, keepDependencies: true, active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib, rust}}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	revision := harborBranch(t, e)
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}))
+	branch.Base = revision.Source.Base
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+		"devel/libharbor":        {port("libharbor")},
+		"devel/harbor-cli":       {port("harbor-cli", "libharbor", "rust")},
+		"graphics/harbor-viewer": {port("harbor-viewer", "rust")},
+	}}
+	check := func() {
+		t.Helper()
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+	}
+	check()
+	require.Empty(t, provider.jobs[0].Installs, "nothing was kept before")
+	var kept []model.DependencyArchive
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		kept, err = r.DependencyArchives(tahoeArm, []string{"rust", "libharbor"})
+		return err
+	}))
+	require.Len(t, kept, 1, "libharbor, a target, isn't kept as a dependency")
+	require.Equal(t, "rust", kept[0].Port)
+
+	write(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 2\n"})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	revision = capture.Revision
+	check()
+	job := provider.jobs[len(provider.jobs)-1]
+	var given []buildenv.Archive
+	for _, archive := range job.Installs {
+		if archive.Target == "" {
+			given = append(given, archive)
+		}
+	}
+	require.Len(t, given, 1)
+	require.Equal(t, buildenv.Archive{Port: "rust", Name: "rust-1_0.darwin_25.arm64.tbz2", Digest: rustDigest, Path: given[0].Path}, given[0])
+	data, err := os.ReadFile(given[0].Path)
+	require.NoError(t, err)
+	require.Equal(t, "rust's archive", string(data))
+}
+
 func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 	t.Parallel()
 	f := setup(t)

@@ -537,9 +537,10 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}
 		// What they need and don't build here, the guest installs from the
 		// archives kept of it.
-		build.installs, err = d.installs(ctx, environment, slices.DeleteFunc(targets, func(target reuse.Target) bool {
+		builds := slices.DeleteFunc(targets, func(target reuse.Target) bool {
 			return !slices.ContainsFunc(building, func(b buildenv.Target) bool { return b.ID == target.ID })
-		}), build.results)
+		})
+		build.installs, err = d.installs(ctx, environment, builds, build.results)
 		if err != nil {
 			return err
 		}
@@ -553,6 +554,19 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 				words = "the guest installs %s from the archive kept of its build, for the targets that need it"
 			}
 			build.Progress(fmt.Sprintf(words, strings.Join(names, ", ")))
+		}
+		// And the ports they depend on, from the archives earlier guests
+		// here installed them from, rather than build them again (batch
+		// 90). A provider that can't install archives leaves them.
+		if dependencies := d.dependencyInstalls(ctx, environment, revision.Source, builds); len(dependencies) > 0 {
+			var names []string
+			for _, archive := range dependencies {
+				if !slices.Contains(names, archive.Port) {
+					names = append(names, archive.Port)
+				}
+			}
+			build.Progress(fmt.Sprintf("the guest may install %s from archives earlier checks' guests here installed them from, rather than build them", strings.Join(names, ", ")))
+			build.installs = append(build.installs, dependencies...)
 		}
 		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit, Installs: build.installs,
 			Directory: filepath.Join(e.LogDirectory(), d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
@@ -685,6 +699,9 @@ type build struct {
 	fetched map[model.TargetID]model.ObjectID
 	// installs are the kept archives the guest installs targets from.
 	installs []buildenv.Archive
+	// active are the ports the provider reported active as targets
+	// built (Consumed), whose archives KeepDependency may keep.
+	active []model.ActivePort
 }
 
 func (b *build) Canceled() bool { return b.ctx.Err() != nil && !b.d.stopped() }
@@ -714,11 +731,17 @@ func (b *build) Consumed(target model.TargetID, active []model.ActivePort) {
 	// that one.
 	for _, port := range active {
 		for _, archive := range b.installs {
+			// A dependency's kept archives are offered, not required:
+			// MacPorts takes the one it wants, or none.
+			if archive.Target == "" {
+				continue
+			}
 			if strings.EqualFold(port.Name, archive.Port) && port.Archive != "" && port.Archive != archive.Digest {
 				b.Progress(fmt.Sprintf("%s built with %s from another archive than the one kept of its build: MacPorts chose %s", target, port.Name, port.Archive))
 			}
 		}
 	}
+	b.active = append(b.active, active...)
 	if inputs, ok := b.read(planned, active); ok {
 		b.inputs[target] = inputs
 	}

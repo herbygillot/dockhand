@@ -143,6 +143,9 @@ type Reader interface {
 	Archive(digest string) (model.Archive, error)
 	// Archives are every kept archive, by digest.
 	Archives() ([]model.Archive, error)
+	// DependencyArchives are the kept archives guests in an environment
+	// installed the ports named from, the newest few of each port first.
+	DependencyArchives(environment model.Environment, ports []string) ([]model.DependencyArchive, error)
 	// Reusable are a target's passed results in an environment that keep
 	// what their builds read, from the builds themselves rather than a
 	// reuse of them, each with the execution that built it, newest first,
@@ -219,6 +222,9 @@ type Tx interface {
 	// branch's newest passed result of each target in each environment.
 	// It returns what it forgot, whose files go next.
 	PruneArchives(before time.Time) ([]model.Archive, error)
+	// KeepDependencyArchive records a kept archive as one a guest in an
+	// environment installed a port from; the archive must be kept.
+	KeepDependencyArchive(archive model.DependencyArchive) error
 	// PruneHistory removes what the branches that ended before a time
 	// recorded of their checks, sparing what reuse may still choose and
 	// each branch's newest run (D6), and says how much.

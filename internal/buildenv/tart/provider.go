@@ -445,6 +445,9 @@ type guestPort struct {
 	Spec      string `json:"spec"`
 	Directory string `json:"directory"`
 	Archive   string `json:"archive"`
+	// ArchiveFile is where its archive is in the guest; absent where the
+	// guest kept none.
+	ArchiveFile string `json:"archive_file,omitempty"`
 }
 
 // Execute builds the job's targets in a fresh clone of the release's image.
@@ -953,7 +956,35 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 			build.Progress(fmt.Sprintf("%s: its archive wasn't kept: %v", got.ID, err))
 		}
 	}
+	// The archives its dependencies were installed from are kept too, for
+	// a later guest to install them rather than build them again: rust
+	// and cargo, built from source where MacPorts had no archive for the
+	// release yet, took hours of a check on macOS 27 (the M1's run at
+	// d302e744, batch 90). One that isn't kept is said, and builds again
+	// next time.
+	for _, port := range got.Active {
+		if port.Archive == "" || port.ArchiveFile == "" || isTarget(job, port.Name) {
+			continue
+		}
+		active := model.ActivePort{Name: port.Name, Spec: port.Spec, Directory: port.Directory, Archive: port.Archive}
+		if err := p.keepDependency(ctx, g, build, active, port.ArchiveFile); err != nil {
+			build.Progress(fmt.Sprintf("%s: the archive of its dependency %s wasn't kept: %v", got.ID, port.Name, err))
+		}
+	}
 	return nil
+}
+
+// isTarget reports whether a port is one of the plan's targets, built in
+// this job or not, whose archives are their results' and aren't kept as
+// dependencies'.
+func isTarget(job buildenv.Job, port string) bool {
+	targets := slices.Clone(job.Plan.Targets)
+	for _, target := range job.Targets {
+		targets = append(targets, target.PlanTarget)
+	}
+	return slices.ContainsFunc(targets, func(target model.PlanTarget) bool {
+		return strings.EqualFold(target.Target.Name, port) || strings.EqualFold(target.Target.Subport, port)
+	})
 }
 
 // keep fetches a target's archive from where the guest's MacPorts keeps
@@ -964,6 +995,16 @@ func (p *Provider) keep(ctx context.Context, g guest, build buildenv.Build, targ
 		return fmt.Errorf("the guest named %q, not a file in %s", file, software)
 	}
 	return build.Keep(target, path.Base(file), func(local string) error { return g.Download(ctx, file, local, true) })
+}
+
+// keepDependency fetches the archive a dependency was installed from,
+// from the guest's software directory, as keep does a target's.
+func (p *Provider) keepDependency(ctx context.Context, g guest, build buildenv.Build, port model.ActivePort, file string) error {
+	software := path.Join(p.prefix(), "var/macports/software") + "/"
+	if path.Clean(file) != file || !strings.HasPrefix(file, software) {
+		return fmt.Errorf("the guest named %q, not a file in %s", file, software)
+	}
+	return build.KeepDependency(port, path.Base(file), func(local string) error { return g.Download(ctx, file, local, true) })
 }
 
 // reported is what the guest reported about itself, for the pull request's

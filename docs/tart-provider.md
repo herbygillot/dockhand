@@ -267,6 +267,17 @@ Signing an archive as a site's entry, and the keys, are
 `macports/binaryarchive`'s; the provider uploads the entry and configures
 the guest's MacPorts to trust it.
 
+The archives its dependencies were installed from are kept the same way,
+each by the digest the guest reported of it as active, for the port it is
+and the environment it was installed in, unless the port is one of the
+check's targets, the branch's build of it (batch 90). A later check's guest
+in that environment is given the kept archives of its targets' direct
+dependencies, as MacPorts evaluates them in the revision, and of the ports
+their earlier builds had active, the two newest of each port, in the same
+site. MacPorts takes one whose name is the archive it would fetch, and
+builds or fetches the rest as before: a Rust toolchain built from source on
+a release MacPorts has no archives of it for builds once, not in each check.
+
 Each target's log is copied into the check's log directory (`dockhand
 logs`). When the guest's Command Line Tools, or its Xcode in an Xcode
 image, differ from the facts table's row the plan was read with, the

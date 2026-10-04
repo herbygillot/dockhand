@@ -19,6 +19,18 @@ type Archive struct {
 	KeptAt time.Time
 }
 
+// DependencyArchive is a kept archive (Archive) a guest installed a port
+// it didn't build as a target from, for a later guest in the same
+// environment to install rather than build: rust and cargo, built from
+// source where MacPorts had no archive for the release yet (batch 90).
+// The port is one the check's revision had as its base did; one the
+// branch changed is a target, whose archive is its result's.
+type DependencyArchive struct {
+	Archive
+	Port        string
+	Environment Environment
+}
+
 // ValidArchiveName reports whether a name is one file's, as MacPorts names
 // an archive: no directory, and nothing a path could make more of.
 func ValidArchiveName(name string) bool {

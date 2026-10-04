@@ -177,3 +177,37 @@ func (b *build) Keep(target model.TargetID, name string, fetch func(path string)
 	}
 	return b.d.e.keepArchive(b.ctx, model.Archive{Digest: result.Archive, Name: name}, fetch)
 }
+
+// KeepDependency keeps the archive a dependency of a target was installed
+// from in the guest, by the digest Consumed reported of it, for a later
+// guest in the environment (buildenv.Build). A port the plan builds is the
+// branch's, whose archive isn't master's build of it, and isn't kept so.
+func (b *build) KeepDependency(port model.ActivePort, name string, fetch func(path string) error) error {
+	if port.Name == "" || !strings.HasPrefix(port.Archive, "sha256:") {
+		return fmt.Errorf("%s was active from no archive to keep", port.Name)
+	}
+	for _, target := range b.d.plan.Targets {
+		if strings.EqualFold(target.Target.Name, port.Name) || strings.EqualFold(target.Target.Subport, port.Name) {
+			return fmt.Errorf("%s is a target of the check, whose archive is its result's", port.Name)
+		}
+	}
+	if !b.consumed(port) {
+		return fmt.Errorf("%s wasn't reported active from %s", port.Name, port.Archive)
+	}
+	if err := b.d.e.keepArchive(b.ctx, model.Archive{Digest: port.Archive, Name: name}, fetch); err != nil {
+		return err
+	}
+	archive := model.DependencyArchive{Archive: model.Archive{Digest: port.Archive, Name: name, KeptAt: b.d.e.now()}, Port: port.Name, Environment: b.execution.Environment}
+	return b.d.e.Store.Update(b.ctx, b.d.e.Repository, func(tx store.Tx) error { return tx.KeepDependencyArchive(archive) })
+}
+
+// consumed reports whether a port was reported active from an archive as
+// one of the execution's targets built.
+func (b *build) consumed(port model.ActivePort) bool {
+	for _, active := range b.active {
+		if active.Name == port.Name && active.Archive == port.Archive {
+			return true
+		}
+	}
+	return false
+}
