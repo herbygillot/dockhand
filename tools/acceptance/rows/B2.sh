@@ -10,11 +10,15 @@
 # rust or cargo for a macOS release before its own builders do, and the
 # base image has none, so on macOS 27 that is hours on two vCPUs (the M1's
 # run at d302e744). The quick stage doesn't run it then, unless
-# ACCEPT_B2_BUILD=1 asks for the build; the full stage runs it through.
+# ACCEPT_B2_BUILD=1 asks for the build; the full stage runs it through,
+# but for a dry run.
 # Where it builds, a second check of the branch, --fresh, must install
 # rust and cargo from the archives the first kept (batch 90).
 act() {
-	if [ "${ACCEPT_STAGE:-}" = quick ] && [ -n "${ACCEPT_GH_FORK:-}" ] && [ "${ACCEPT_B2_BUILD:-0}" != 1 ]; then
+	# A dry run of the full stage runs in the quick stage's environment,
+	# fork and all, and built rust and cargo too (the M1's dry run at
+	# 90de4fc2): only a live full stage, or ACCEPT_B2_BUILD=1, builds.
+	if [ -n "${ACCEPT_GH_FORK:-}" ] && [ "${ACCEPT_B2_BUILD:-0}" != 1 ] && { [ "${ACCEPT_STAGE:-}" = quick ] || [ "${ACCEPT_DRY:-0}" = 1 ]; }; then
 		row_result "not run" "with a fork, bump runs a whole check, whose guest builds rust and cargo from source where MacPorts has no archives for its release; ACCEPT_B2_BUILD=1 runs it"
 		return 0
 	fi

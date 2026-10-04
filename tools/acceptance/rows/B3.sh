@@ -4,6 +4,14 @@
 # preview. Each port gets its own branch and check, and the batch's output
 # and exit code say what worked.
 act() {
+	# Its checks build the Rust port, whose guest builds rust and cargo
+	# from source on a release MacPorts has no archives for: hours a dry
+	# run of the full stage has no business taking (the M1's dry run at
+	# 90de4fc2).
+	if [ "${ACCEPT_DRY:-0}" = 1 ] && [ "${ACCEPT_B3_BUILD:-0}" != 1 ]; then
+		row_result "not run" "a dry run builds no toolchain; ACCEPT_B3_BUILD=1 runs it"
+		return 0
+	fi
 	dh_json update --outdated "${ACCEPT_GO_PORT:?}" "${ACCEPT_RUST_PORT:?}" --check -y || :
 	dh serve --drain || :
 	local branch

@@ -19,3 +19,7 @@ That run showed batch 90's reuse working: B2's second check got 41 kept archives
 - **settle_stopped settles what a cut serve left queued**, as B3's check-2 was, besides what it left stopped; only after a cut, since a row's own queued check is H7's to judge.
 - **A dependency's archive given to the guest is named** (`givingWords`): "giving the guest rust-1.91.0_0.darwin_27.arm64.tbz2, from the archive an earlier guest installed it from", where it said "giving the guest , from the archive kept of its build", having no target to name.
 - **B3's home isn't seeded with B2's archives.** A kept archive is a row of that home's database, under its repository's ID, beside its file; copying them into the next row's fresh database would mean writing dockhand's records from the harness, and carry one row's state into another, which the reset exists to stop. B2 shows the reuse; B3, cut by the Prime-time thread's guard while rust builds, is graded not run where the guard calls `cut_command`.
+
+## A dry run builds no toolchain
+
+The full stage's dry run on the M1 built rust and cargo in B2, and started again in B3, though `ACCEPT_B2_BUILD` was unset: B2's gate held only in the quick stage, and a dry run of the full stage runs in the quick stage's environment, its fork configured. B2 now builds only in a live full stage or with `ACCEPT_B2_BUILD=1`, and B3 isn't run in a dry run unless `ACCEPT_B3_BUILD=1`.
