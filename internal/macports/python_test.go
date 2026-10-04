@@ -15,6 +15,18 @@ func TestAPythonSubportNamesItsPackage(t *testing.T) {
 	}
 }
 
+// A Python port provides the project its python.rootname names, as
+// py313-yaml provides PyYAML, or its name's where that wasn't read; and
+// the project its forge setup names, as py313-protobuf3 provides
+// protobuf.
+func TestAPythonPortProvidesItsProjects(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, []string{"pyyaml"}, PortInfo{Name: "py313-yaml", Options: map[string]string{"python.rootname": "pyyaml"}}.PythonProjects())
+	require.Equal(t, []string{"Pillow"}, PortInfo{Name: "py313-Pillow"}.PythonProjects())
+	require.Equal(t, []string{"protobuf3", "protobuf"}, PortInfo{Name: "py313-protobuf3", Options: map[string]string{"python.rootname": "protobuf3", "github.project": "protobuf"}}.PythonProjects())
+	require.Empty(t, PortInfo{Name: "jq", Options: map[string]string{"github.project": "jq"}}.PythonProjects())
+}
+
 // A Python port's name says the Python version it's built for.
 func TestAPythonPortsVersion(t *testing.T) {
 	for port, want := range map[string]string{"py313-requests": "3.13", "py27-six": "2.7", "py310-textual-fastdatatable": "3.10"} {

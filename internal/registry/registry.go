@@ -57,19 +57,37 @@ var ErrNoSource = errors.New("registry: no source repository named")
 // from (Codex's review of 386ac2cc, finding 3).
 var ErrSubdirectory = errors.New("registry: the module is below its repository's root")
 
+// Found is what a registry says of a project: the address of the source
+// repository it names, and its latest version there, where the registry
+// says one (Go's doesn't, here).
+type Found struct {
+	Source  string
+	Version string
+}
+
 // Source is the address of the source repository a registry name's
 // project names: its repository, homepage, or source link, or the
 // module's own path.
 func (c Client) Source(ctx context.Context, argument string) (string, error) {
+	found, err := c.Find(ctx, argument)
+	return found.Source, err
+}
+
+// Find is what a registry name's registry says of its project: its source
+// (Source), and its latest version, which names the release where its
+// repository marks none, as a project published to PyPI alone may not
+// (the Vx port's field testing, 2026-10-03).
+func (c Client) Find(ctx context.Context, argument string) (Found, error) {
 	switch {
 	case strings.HasPrefix(argument, "pypi:"):
 		return c.pypi(ctx, strings.TrimPrefix(argument, "pypi:"))
 	case strings.HasPrefix(argument, "crates:"):
 		return c.crate(ctx, strings.TrimPrefix(argument, "crates:"))
 	case strings.HasPrefix(argument, "go:"):
-		return c.module(ctx, strings.TrimPrefix(argument, "go:"))
+		source, err := c.module(ctx, strings.TrimPrefix(argument, "go:"))
+		return Found{Source: source}, err
 	}
-	return argument, nil
+	return Found{Source: argument}, nil
 }
 
 func (c Client) get(ctx context.Context, address string, into func(io.Reader) error) error {
@@ -86,9 +104,9 @@ func (c Client) get(ctx context.Context, address string, into func(io.Reader) er
 	return into(response.Body)
 }
 
-func (c Client) pypi(ctx context.Context, project string) (string, error) {
+func (c Client) pypi(ctx context.Context, project string) (Found, error) {
 	if !plainName.MatchString(project) {
-		return "", fmt.Errorf("registry: %q is not a PyPI project name", project)
+		return Found{}, fmt.Errorf("registry: %q is not a PyPI project name", project)
 	}
 	base := c.PyPI
 	if base == "" {
@@ -98,31 +116,32 @@ func (c Client) pypi(ctx context.Context, project string) (string, error) {
 		Info struct {
 			HomePage    string            `json:"home_page"`
 			ProjectURLs map[string]string `json:"project_urls"`
+			Version     string            `json:"version"`
 		} `json:"info"`
 	}
 	if err := c.get(ctx, strings.TrimRight(base, "/")+"/"+url.PathEscape(project)+"/json", func(body io.Reader) error {
 		return json.NewDecoder(body).Decode(&answer)
 	}); err != nil {
-		return "", fmt.Errorf("pypi:%s: %w", project, err)
+		return Found{}, fmt.Errorf("pypi:%s: %w", project, err)
 	}
 	// The link a project names its source by, in PyPI's usual labels,
 	// before any other link to a forge.
 	for _, label := range []string{"Source", "Source Code", "Repository", "Code", "GitHub", "Homepage", "Home"} {
 		for key, link := range answer.Info.ProjectURLs {
 			if strings.EqualFold(key, label) && forge(link) {
-				return link, nil
+				return Found{Source: link, Version: answer.Info.Version}, nil
 			}
 		}
 	}
 	if forge(answer.Info.HomePage) {
-		return answer.Info.HomePage, nil
+		return Found{Source: answer.Info.HomePage, Version: answer.Info.Version}, nil
 	}
-	return "", fmt.Errorf("pypi:%s: %w", project, ErrNoSource)
+	return Found{}, fmt.Errorf("pypi:%s: %w", project, ErrNoSource)
 }
 
-func (c Client) crate(ctx context.Context, name string) (string, error) {
+func (c Client) crate(ctx context.Context, name string) (Found, error) {
 	if !plainName.MatchString(name) {
-		return "", fmt.Errorf("registry: %q is not a crate name", name)
+		return Found{}, fmt.Errorf("registry: %q is not a crate name", name)
 	}
 	base := c.Crates
 	if base == "" {
@@ -130,18 +149,19 @@ func (c Client) crate(ctx context.Context, name string) (string, error) {
 	}
 	var answer struct {
 		Crate struct {
-			Repository string `json:"repository"`
+			Repository       string `json:"repository"`
+			MaxStableVersion string `json:"max_stable_version"`
 		} `json:"crate"`
 	}
 	if err := c.get(ctx, strings.TrimRight(base, "/")+"/"+url.PathEscape(name), func(body io.Reader) error {
 		return json.NewDecoder(body).Decode(&answer)
 	}); err != nil {
-		return "", fmt.Errorf("crates:%s: %w", name, err)
+		return Found{}, fmt.Errorf("crates:%s: %w", name, err)
 	}
 	if answer.Crate.Repository == "" {
-		return "", fmt.Errorf("crates:%s: %w", name, ErrNoSource)
+		return Found{}, fmt.Errorf("crates:%s: %w", name, ErrNoSource)
 	}
-	return answer.Crate.Repository, nil
+	return Found{Source: answer.Crate.Repository, Version: answer.Crate.MaxStableVersion}, nil
 }
 
 // goImport is a go-import meta tag: the import prefix, the version

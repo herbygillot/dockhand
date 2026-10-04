@@ -1181,37 +1181,37 @@ func (e *Engine) observeProviders(ctx context.Context, input assess.Input, trees
 			if provider.Base {
 				tree = trees[0]
 			}
-			version, directory, err := portVersion(ctx, reader, tree, provider.Port)
+			port, directory, err := providerPort(ctx, reader, tree, provider.Port)
 			switch {
 			case errors.Is(err, ErrNoPort) || errors.Is(err, portindex.ErrNotIndexed):
 				observed[provider] = assess.Observation{Absent: true}
 			case err != nil:
 				observed[provider] = assess.Observation{Problem: err.Error()}
 			default:
-				observed[provider] = assess.Observation{Version: version, Directory: directory}
+				observed[provider] = assess.Observation{Version: port.Version, Directory: directory, Packages: port.PythonProjects()}
 			}
 		}
 	}
 }
 
-// portVersion is a port's version in a tree, as MacPorts evaluates it on
-// this Mac, and its directory; ErrNoPort, or the index's ErrNotIndexed,
-// where the tree has no such port.
-func portVersion(ctx context.Context, reader PortReader, source model.Source, name string) (string, string, error) {
+// providerPort is a port in a tree, as MacPorts evaluates it on this Mac,
+// and its directory; ErrNoPort, or the index's ErrNotIndexed, where the
+// tree has no such port.
+func providerPort(ctx context.Context, reader PortReader, source model.Source, name string) (macports.PortInfo, string, error) {
 	directory, err := reader.Directory(ctx, source, name)
 	if err != nil {
-		return "", "", err
+		return macports.PortInfo{}, "", err
 	}
 	ports, err := reader.Ports(ctx, source, directory, model.Environment{}, nil)
 	if err != nil {
-		return "", "", err
+		return macports.PortInfo{}, "", err
 	}
 	for _, port := range ports {
 		if port.Name == name {
-			return port.Version, directory, nil
+			return port, directory, nil
 		}
 	}
-	return "", "", fmt.Errorf("%w: %s defines no port %s", ErrNoPort, directory, name)
+	return macports.PortInfo{}, "", fmt.Errorf("%w: %s defines no port %s", ErrNoPort, directory, name)
 }
 
 // editRecorded witnesses an edit's record (store.Recorded).

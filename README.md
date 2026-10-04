@@ -108,6 +108,7 @@ What the release-candidate test finds that's rough but harms nothing is listed h
 - A revision that changes only a patch's contents, keeping its name, reads as fetching the base's source, so the upstream assessment compares nothing for it, that patch included. A check still applies it, and fails where it doesn't apply, so check after editing a patch.
 - A Rust or Go port whose version you edit by hand keeps its old `cargo.crates` or `go.vendors`: `checksums` refreshes only its own archives' checksums. `dockhand update <port> <version>` regenerates them; undo the hand edit first.
 - A batch of submits, with serve watching their pull requests, can spend GitHub's hourly limit of requests; dockhand says when it lifts.
+- A Tart check installs a port's dependencies from MacPorts' binary archives where they're there, and builds them from source where they aren't, without saying which first. On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, a Rust or Go port's first check builds rust and cargo, or go, from source: hours on a VM's two cores (dust on macOS 27, 2026-10-04). Later checks install what it built from the archives dockhand keeps. Check such a port first on the previous release, `--on tahoe`, or let the first check run.
 - `serve` has printed a check's "passed" line twice (check-130, field testing, 2026-10-02). It hasn't recurred, and it changes nothing but the output.
 
 ## Requirements

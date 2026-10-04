@@ -94,6 +94,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.Equal(t, 2, ExitCode(err), "a failed check exits 2")
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass. Logs: dockhand logs check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
+	require.Contains(t, out, "jq failed at install; the last it printed:\n    building from ", "what no reading of its log explained (the Vx port's field testing)")
 }
 
 // A narrowed plan says what --only left out, and that submit still needs

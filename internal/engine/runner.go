@@ -863,9 +863,49 @@ func withCause(detail string, result model.TargetResult) string {
 	case !ok:
 		return detail
 	case detail == "":
-		return "from its log: " + cause.Line
+		return fromItsLog + cause.Line
 	}
-	return detail + " · from its log: " + cause.Line
+	return detail + " · " + fromItsLog + cause.Line
+}
+
+// fromItsLog marks what withCause read from a failure's log.
+const fromItsLog = "from its log: "
+
+// FailureLines are the last lines, at most n, of the step a target failed
+// at in an environment, read from its log where no reading of it found the
+// cause (withCause): what a failure printed last, said in the check's own
+// report rather than left to dockhand logs (the Vx port's field testing,
+// 2026-10-03). The step ends where another target's step in the same log
+// begins. None for a result that didn't fail, or has no log.
+func FailureLines(evidence Evidence, target TargetEvidence, environment, n int) []string {
+	if environment >= len(target.Outcomes) {
+		return nil
+	}
+	result := target.Outcomes[environment].TargetResult
+	if result.Outcome != model.OutcomeFailed || result.Log == "" || strings.Contains(result.Detail, fromItsLog) {
+		return nil
+	}
+	from := 1
+	if len(result.Steps) > 0 {
+		from = result.Steps[len(result.Steps)-1].Line
+	}
+	to := 0
+	for _, other := range evidence.Targets {
+		if other.Target.ID == target.Target.ID || environment >= len(other.Outcomes) || other.Outcomes[environment].Log != result.Log {
+			continue
+		}
+		for _, step := range other.Outcomes[environment].Steps {
+			if step.Line > from && (to == 0 || step.Line < to) {
+				to = step.Line
+			}
+		}
+	}
+	file, err := buildlog.Open(result.Log)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+	return buildlog.Last(file, from, to, n)
 }
 
 // blockRemaining records as blocked the targets a provider left without a

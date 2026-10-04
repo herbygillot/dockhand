@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -176,6 +177,11 @@ worktree, with no check named, the branch's latest.`,
 				return err
 			}
 			if run.State.Terminal() {
+				// One that finished at once, building nothing, says whose
+				// results it took (the Vx port's field testing).
+				if evidence, err := e.RunEvidence(ctx, run.ID); err == nil && len(evidence.ReusedAll()) > 0 {
+					return fmt.Errorf("%s already %s, reusing %s's results (the same inputs)", run.Name(), run.State, prose.And(evidence.ReusedAll()))
+				}
 				return fmt.Errorf("%s already %s", run.Name(), run.State)
 			}
 			session, err := startSession(ctx, e, model.SessionForeground)

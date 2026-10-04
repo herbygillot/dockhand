@@ -2,14 +2,26 @@
 # B2: one shot, with no serve running: bump on the small Rust port, asking
 # nothing, to its pull request, or exiting 3 where it's held, naming the
 # command that finishes it. bump settles what would stop its submit before
-# it edits anything, so in the quick stage, which has no GitHub fork, it
-# refuses at once, naming the fork: the full stage runs it through.
+# it edits anything, so in a quick stage without ACCEPT_GH_FORK it refuses
+# at once, naming the fork.
+#
+# With ACCEPT_GH_FORK it goes through a whole Tart check, and the guest
+# builds the port's toolchain first: MacPorts has no binary archives of
+# rust or cargo for a macOS release before its own builders do, and the
+# base image has none, so on macOS 27 that is hours on two vCPUs (the M1's
+# run at d302e744). The quick stage doesn't run it then, unless
+# ACCEPT_B2_BUILD=1 asks for the build; the full stage runs it through.
 act() {
+	if [ "${ACCEPT_STAGE:-}" = quick ] && [ -n "${ACCEPT_GH_FORK:-}" ] && [ "${ACCEPT_B2_BUILD:-0}" != 1 ]; then
+		row_result "not run" "with a fork, bump runs a whole check, whose guest builds rust and cargo from source where MacPorts has no archives for its release; ACCEPT_B2_BUILD=1 runs it"
+		return 0
+	fi
 	dh_json bump "${ACCEPT_RUST_PORT:?}" </dev/null || :
 }
 
 assert() {
 	local file=$ROW_DIR/json/1.json status error
+	[ -f "$file.exit" ] || return 0
 	status=$(cat "$file.exit")
 	error=$(jq -r '.error // ""' "$file")
 	if grep -qE '\[y/N\]|\[Y/n\]' "$ROW_DIR/out.log"; then

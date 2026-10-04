@@ -485,12 +485,13 @@ type githubProjects struct {
 const projectFileLimit = 4 << 20
 
 func (g githubProjects) Project(ctx context.Context, address string) (Project, error) {
+	var published string
 	if registry.Named(address) {
-		source, err := g.registry.Source(ctx, address)
+		found, err := g.registry.Find(ctx, address)
 		if err != nil {
 			return Project{}, err
 		}
-		address = source
+		address, published = found.Source, found.Version
 	}
 	name, err := githubName(address)
 	if err != nil {
@@ -526,18 +527,27 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 			latest = &all[i]
 		}
 	}
-	if latest == nil {
-		return Project{}, fmt.Errorf("%s has no release on GitHub; create names the version from the latest one", name)
-	}
-	found.Tag = latest.Tag
-	if assets, ok := repository.(forge.AssetRepository); ok {
-		if found.Assets, err = assets.Assets(ctx, latest.Tag); err != nil {
+	var tag forge.Tag
+	switch {
+	case latest != nil:
+		found.Tag = latest.Tag
+		if assets, ok := repository.(forge.AssetRepository); ok {
+			if found.Assets, err = assets.Assets(ctx, latest.Tag); err != nil {
+				return Project{}, err
+			}
+		}
+		if tag, err = repository.Tag(ctx, latest.Tag); err != nil {
 			return Project{}, err
 		}
-	}
-	tag, err := repository.Tag(ctx, latest.Tag)
-	if err != nil {
-		return Project{}, err
+	case published != "":
+		// A project published to its registry and only tagged on GitHub
+		// is created at the tag of the version its registry has (the Vx
+		// port's field testing, 2026-10-03).
+		if tag, found.Tag, err = publishedTag(ctx, repository, published); err != nil {
+			return Project{}, fmt.Errorf("%s has no release on GitHub, and %w", name, err)
+		}
+	default:
+		return Project{}, fmt.Errorf("%s has no release on GitHub; create names the version from the latest one", name)
 	}
 	files, ok := repository.(forge.FileRepository)
 	if !ok {
@@ -548,12 +558,28 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 		switch {
 		case errors.Is(err, forge.ErrNotFound):
 		case err != nil:
-			return Project{}, fmt.Errorf("reading %s at %s: %w", file, latest.Tag, err)
+			return Project{}, fmt.Errorf("reading %s at %s: %w", file, found.Tag, err)
 		default:
 			found.Files[file] = data
 		}
 	}
 	return found, nil
+}
+
+// publishedTag is a repository's tag of a version its registry has
+// published: v1.2.3 or 1.2.3, as projects tag them.
+func publishedTag(ctx context.Context, repository forge.Repository, version string) (forge.Tag, string, error) {
+	names := []string{"v" + version, version}
+	for _, name := range names {
+		tag, err := repository.Tag(ctx, name)
+		switch {
+		case err == nil:
+			return tag, name, nil
+		case !errors.Is(err, forge.ErrNotFound):
+			return forge.Tag{}, "", err
+		}
+	}
+	return forge.Tag{}, "", fmt.Errorf("no tag %s for the version its registry has", strings.Join(names, " or "))
 }
 
 // githubName is the owner/name of the GitHub project an address names,

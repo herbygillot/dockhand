@@ -518,6 +518,36 @@ func (e Evidence) Recorded() bool {
 	return false
 }
 
+// ReusedAll names the earlier checks whose builds the check reused, when it
+// built nothing itself: every one of its own executions reused every
+// target's result (decision 28). It is empty for a check that built
+// anything, or recorded nothing.
+func (e Evidence) ReusedAll() []string {
+	own := map[model.ExecutionID]bool{}
+	for _, execution := range e.Executions {
+		if execution.Run != e.Run.ID {
+			continue
+		}
+		if !execution.Reused {
+			return nil
+		}
+		own[execution.ID] = true
+	}
+	var checks []string
+	for _, target := range e.Targets {
+		for _, result := range target.Outcomes {
+			if !own[result.Execution] {
+				continue
+			}
+			if found, ok := e.origins[result.ReusedFrom]; ok && !slices.Contains(checks, found.Check) {
+				checks = append(checks, found.Check)
+			}
+		}
+	}
+	slices.Sort(checks)
+	return checks
+}
+
 // Missing lists the targets that ask for a check (TargetEvidence.Missing).
 func (e Evidence) Missing() []TargetEvidence {
 	var missing []TargetEvidence

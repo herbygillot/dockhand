@@ -26,13 +26,13 @@ func TestARegistryNameIsReadAsItsSource(t *testing.T) {
 		mu.Unlock()
 		switch r.URL.Path {
 		case "/pypi/flatbuffers/json":
-			fmt.Fprint(w, `{"info":{"home_page":"https://flatbuffers.dev","project_urls":{"Documentation":"https://flatbuffers.dev","Source":"https://github.com/google/flatbuffers"}}}`)
+			fmt.Fprint(w, `{"info":{"home_page":"https://flatbuffers.dev","project_urls":{"Documentation":"https://flatbuffers.dev","Source":"https://github.com/google/flatbuffers"},"version":"25.9.23"}}`)
 		case "/pypi/homepaged/json":
 			fmt.Fprint(w, `{"info":{"home_page":"https://github.com/owner/homepaged","project_urls":{}}}`)
 		case "/pypi/sourceless/json":
 			fmt.Fprint(w, `{"info":{"home_page":"https://example.org","project_urls":null}}`)
 		case "/crates/ripgrep":
-			fmt.Fprint(w, `{"crate":{"name":"ripgrep","repository":"https://github.com/BurntSushi/ripgrep"}}`)
+			fmt.Fprint(w, `{"crate":{"name":"ripgrep","repository":"https://github.com/BurntSushi/ripgrep","max_stable_version":"15.1.0"}}`)
 		case "/crates/bare":
 			fmt.Fprint(w, `{"crate":{"name":"bare"}}`)
 		case "/golang.org/x/tools", "/golang.org/x/tools/gopls":
@@ -81,6 +81,14 @@ func TestARegistryNameIsReadAsItsSource(t *testing.T) {
 		_, err := c.Source(context.Background(), bad)
 		require.Error(t, err, bad)
 	}
+	// The latest version names the release where the repository marks
+	// none (the Vx port's field testing).
+	found, err := c.Find(context.Background(), "pypi:flatbuffers")
+	require.NoError(t, err)
+	require.Equal(t, Found{Source: "https://github.com/google/flatbuffers", Version: "25.9.23"}, found)
+	found, err = c.Find(context.Background(), "crates:ripgrep")
+	require.NoError(t, err)
+	require.Equal(t, "15.1.0", found.Version)
 	mu.Lock()
 	defer mu.Unlock()
 	require.Contains(t, agents, "dockhand/2", "crates.io asks for a User-Agent")

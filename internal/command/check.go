@@ -119,6 +119,13 @@ true, it runs that baseline by itself.`,
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), what)
 			if len(capture.Untracked) > 0 {
 				fmt.Fprintf(out, "Left out, not tracked: %s (--include adds one)\n", strings.Join(capture.Untracked, ", "))
+				// A Portfile written by hand in a new port's directory is
+				// one Git doesn't track yet, and the worktree's sparse
+				// checkout keeps git add from taking it: the commands are
+				// said whole (the Vx port's field testing, 2026-10-03).
+				for _, directory := range capture.NewPorts {
+					fmt.Fprintf(out, "  %s is a new port's: dockhand check --include %s/Portfile builds it, and git sparse-checkout add %s lets git add take it\n", directory, directory, directory)
+				}
 			}
 			writePlan(out, proposed, e.PolicyNotes(proposed), e.Remedy)
 			writePushes(out, proposed)
@@ -586,9 +593,17 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 	fmt.Fprintln(out)
 	switch run.State {
 	case model.RunPassed:
+		// A check of files an earlier check already built finishes at
+		// once: which check's results it took is said up front, so the
+		// instant pass isn't a surprise (the Vx port's field testing).
+		if from := evidence.ReusedAll(); len(from) > 0 {
+			fmt.Fprintf(out, "Passed for %s, reusing %s's results: the same inputs, so nothing was built (--fresh builds again).\n", engine.Describe(revision), prose.And(from))
+			return nil
+		}
 		fmt.Fprintf(out, "Passed for %s.\n", engine.Describe(revision))
 		return nil
 	case model.RunFailed:
+		writeFailureLines(out, evidence)
 		if err := hintBaseline(ctx, e, out, run); err != nil {
 			fmt.Fprintf(streams.Err, "baseline: %v\n", err)
 		}
@@ -597,6 +612,35 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 		return stoppedExit(run, evidence)
 	}
 	return exitf(3, "%s needs attention: %s", run.Name(), run.Detail)
+}
+
+// failureLines is how many of a failed step's last lines a check's
+// report shows.
+const failureLines = 15
+
+// writeFailureLines shows, for each failure no reading of its log
+// explained, the last lines its failed step printed.
+func writeFailureLines(out io.Writer, evidence engine.Evidence) {
+	for _, target := range evidence.Targets {
+		for i := range target.Outcomes {
+			lines := engine.FailureLines(evidence, target, i, failureLines)
+			if len(lines) == 0 {
+				continue
+			}
+			where := ""
+			if phase := target.Outcomes[i].Phase; phase != "" {
+				where = " at " + string(phase)
+			}
+			if len(evidence.Plan.Environments) > 1 {
+				where += " on " + environmentWords(evidence.Plan.Environments[i])
+			}
+			fmt.Fprintf(out, "%s failed%s; the last it printed:\n", target.Target.ID, where)
+			for _, line := range lines {
+				fmt.Fprintf(out, "    %s\n", line)
+			}
+			fmt.Fprintln(out)
+		}
+	}
 }
 
 // stoppedExit says what a check that was stopped leaves: what it finished,

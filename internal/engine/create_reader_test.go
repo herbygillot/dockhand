@@ -13,6 +13,7 @@ import (
 
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/registry"
 )
 
 // create reads a GitHub project as GitHub's API gives it: its description,
@@ -41,6 +42,10 @@ func TestCreateReadsAGitHubProject(t *testing.T) {
 			fmt.Fprint(w, `{"tag_name":"v1.2.0","assets":[{"name":"txt-1.2.0.tar.gz"},{"name":"txt-1.2.0-aarch64-apple-darwin.zip"}]}`)
 		case "/api/repos/erik/txt/git/ref/tags/v1.2.0":
 			fmt.Fprintf(w, `{"ref":"refs/tags/v1.2.0","object":{"type":"commit","sha":%q}}`, commit)
+		case "/pypi/txt/json":
+			fmt.Fprint(w, `{"info":{"project_urls":{"Source":"https://github.com/erik/txt"},"version":"1.2.0"}}`)
+		case "/pypi/newer/json":
+			fmt.Fprint(w, `{"info":{"project_urls":{"Source":"https://github.com/erik/txt"},"version":"9.9"}}`)
 		case "/api/repos/erik/txt/contents/Cargo.toml":
 			fmt.Fprintf(w, `{"type":"file","encoding":"base64","size":%d,"name":"Cargo.toml","path":"Cargo.toml","content":%q}`, len(cargo), base64.StdEncoding.EncodeToString([]byte(cargo)))
 		default:
@@ -64,6 +69,15 @@ func TestCreateReadsAGitHubProject(t *testing.T) {
 	set("erik/txt", `[{"tag_name":"v2.0.0","draft":true}]`)
 	_, err = reader.Project(t.Context(), "https://github.com/erik/txt")
 	require.ErrorContains(t, err, "erik/txt has no release on GitHub")
+	// Named by its registry, it is created at the tag of the version the
+	// registry has (the Vx port's field testing, 2026-10-03).
+	reader.registry = registry.Client{HTTP: server.Client(), PyPI: server.URL + "/pypi/"}
+	project, err = reader.Project(t.Context(), "pypi:txt")
+	require.NoError(t, err)
+	require.Equal(t, "v1.2.0", project.Tag)
+	require.Equal(t, []byte(cargo), project.Files["Cargo.toml"])
+	_, err = reader.Project(t.Context(), "pypi:newer")
+	require.ErrorContains(t, err, "erik/txt has no release on GitHub, and no tag v9.9 or 9.9 for the version its registry has")
 
 	_, err = reader.Project(t.Context(), "https://gitlab.com/erik/txt")
 	require.ErrorContains(t, err, "create reads projects on GitHub so far")

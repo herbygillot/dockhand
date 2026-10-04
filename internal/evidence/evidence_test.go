@@ -85,6 +85,25 @@ func TestACheckRecordedWhatItsOwnRunsDid(t *testing.T) {
 	require.False(t, Evidence{Run: model.Run{ID: "run_3"}}.Recorded())
 }
 
+// A check that built nothing names the checks whose results it took, so
+// its instant pass isn't a surprise; one that built anything names none
+// (the Vx port's field testing, 2026-10-03).
+func TestACheckThatBuiltNothingNamesWhatItReused(t *testing.T) {
+	plan := model.Plan{Environments: []model.Environment{tahoeArm}, Targets: []model.PlanTarget{{ID: "jq"}, {ID: "yq"}}}
+	reused := model.GuestExecution{ID: "tart_2", Run: "run_2", Environment: tahoeArm, Reused: true, State: model.ExecutionFinished}
+	origin := Origin{Execution: model.GuestExecution{ID: "tart_1", Run: "run_1", Environment: tahoeArm}, Check: "check-1"}
+	check := Check{Run: model.Run{ID: "run_2"}, Plan: plan, Executions: []model.GuestExecution{reused},
+		Results: map[model.ExecutionID][]model.TargetResult{"tart_2": {
+			{Execution: "tart_2", Target: "jq", Outcome: model.OutcomePassed, ReusedFrom: "tart_1"},
+			{Execution: "tart_2", Target: "yq", Outcome: model.OutcomePassed, ReusedFrom: "tart_1"}}},
+		Origins: map[model.ExecutionID]Origin{"tart_1": origin}}
+	require.Equal(t, []string{"check-1"}, Of(check).ReusedAll())
+
+	check.Executions[0].Reused = false
+	require.Empty(t, Of(check).ReusedAll(), "it built the rest")
+	require.Empty(t, Of(Check{Run: model.Run{ID: "run_3"}, Plan: plan}).ReusedAll(), "it recorded nothing")
+}
+
 // A cell says what it is, so its readers don't ask the plan again: a
 // target --only left out, filled from an earlier check where the
 // environment couldn't build it, is unmet as that check's plan found it,

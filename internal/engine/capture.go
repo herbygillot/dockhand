@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -42,6 +43,10 @@ type Capture struct {
 	Reused bool
 	// Untracked lists the files left out because Git does not track them.
 	Untracked []string
+	// NewPorts are the directories among them whose Portfile is left out:
+	// a port written by hand, which the worktree's sparse checkout keeps
+	// git add from taking (the Vx port's field testing, 2026-10-03).
+	NewPorts []string
 }
 
 // Describe names the revision for people: "snapshot 3" or "commit 7e3f1a2".
@@ -91,6 +96,11 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 		}
 	}
 	capture.Untracked = slices.DeleteFunc(capture.Untracked, func(p string) bool { return slices.Contains(request.Include, p) })
+	for _, path := range capture.Untracked {
+		if directory, ok := macports.PortDirectoryOf(path); ok && path == directory+"/Portfile" {
+			capture.NewPorts = append(capture.NewPorts, directory)
+		}
+	}
 
 	var tree string
 	switch request.Mode {

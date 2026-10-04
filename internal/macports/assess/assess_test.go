@@ -131,6 +131,27 @@ func TestANewPortsUnmetRequirementsHold(t *testing.T) {
 	}
 }
 
+// A port needn't be named for the package it provides: the packages an
+// observation of each Python dependency finds, its python.rootname and
+// its forge's project, provide a requirement no name matches, as
+// py313-yaml provides PyYAML and py313-protobuf3 protobuf
+// (the Vx port's field testing, 2026-10-03: py-pyaml held on "no port
+// the Portfile depends on is named for it").
+func TestARequirementIsProvidedByThePackageAPortNames(t *testing.T) {
+	input := Input{
+		Port: pythonPort("py313-pyaml", "py313-yaml", "py313-tqdm", "py313-protobuf3"), New: true,
+		Pairs: []Pair{{After: read(t, "pkg-1", map[string]string{"pyproject.toml": "[project]\ndependencies = [\"PyYAML>=6\", \"Pillow\", \"protobuf>=4\"]\n"}, project.Spec{})}},
+	}
+	providers := map[Provider]Observation{{Port: "py313-yaml"}: {Version: "6.0.2", Packages: []string{"PyYAML"}}, {Port: "py313-tqdm"}: {Version: "4.67", Packages: []string{"tqdm"}},
+		{Port: "py313-protobuf3"}: {Version: "6.33.0", Packages: []string{"protobuf3", "protobuf"}}}
+	comparison := observed(t, input, providers)
+	require.Equal(t, []string{"! upstream: pyproject.toml requires pillow, and no port the Portfile depends on is named for it"}, pins(comparison))
+
+	providers[Provider{Port: "py313-yaml"}] = Observation{Version: "5.4", Packages: []string{"PyYAML"}}
+	comparison = observed(t, input, providers)
+	require.Contains(t, pins(comparison), "! upstream: pyproject.toml requires pyyaml >=6, which MacPorts' py313-yaml 5.4 doesn't meet", "judged against the port that provides it")
+}
+
 // The base's provider is asked about only once the candidate's doesn't
 // meet a requirement.
 func TestTheBaseIsAskedOnlyWhereTheCandidateFails(t *testing.T) {

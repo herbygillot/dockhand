@@ -27,6 +27,7 @@ func TestCaptureNumbersSnapshotsAndReusesUnchangedOnes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "snapshot 1", Describe(first.Revision))
 	require.Equal(t, []string{"notes.txt"}, first.Untracked, "untracked files are listed and left out")
+	require.Empty(t, first.NewPorts)
 	again, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
 	require.NoError(t, err)
 	require.True(t, again.Reused)
@@ -83,4 +84,19 @@ func TestACaptureOfFilesThatMovedIsRefused(t *testing.T) {
 	e.betweenReads = nil
 	_, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Include: []string{"notes.txt"}})
 	require.NoError(t, err, "files at rest are captured")
+}
+
+// A Portfile written by hand in a new port's directory is a new port
+// left out, which check names with the commands that take it (the Vx
+// port's field testing, 2026-10-03).
+func TestAHandWrittenPortIsANewPortLeftOut(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "py-pyaml"})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"python/py-pyaml/Portfile": "name py-pyaml\nversion 1\n", "python/py-pyaml/notes.txt": "mine\n"})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, []string{"python/py-pyaml"}, capture.NewPorts)
 }

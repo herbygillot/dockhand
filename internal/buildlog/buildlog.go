@@ -84,3 +84,43 @@ func From(log []byte, line int) ([]byte, bool) {
 	}
 	return log[start:], true
 }
+
+// Last is a step's last lines in a log, at most n, from the line it began
+// on to the line before to, or to the log's end where to is 0: what a
+// failure that no reading explains printed last, as a person scrolling
+// up from the end would look at it. MacPorts' own DEBUG lines are left
+// out, since port -d writes them between every line that matters, and so
+// are blank lines; whatever the build wrote to its error output is in the
+// log beside the rest (the Vx port's field testing, 2026-10-03).
+func Last(log io.Reader, from, to, n int) []string {
+	if n <= 0 {
+		return nil
+	}
+	lines := bufio.NewReaderSize(log, maxLine)
+	var last []string
+	for number := 1; to == 0 || number < to; number++ {
+		line, err := lines.ReadSlice('\n')
+		long := false
+		for errors.Is(err, bufio.ErrBufferFull) {
+			long = true
+			_, err = lines.ReadSlice('\n')
+		}
+		if err != nil && !errors.Is(err, io.EOF) || len(line) == 0 && !long {
+			break
+		}
+		text := strings.TrimRight(string(line), "\r\n")
+		if long {
+			text = "(a line too long to show)"
+		}
+		if number >= from && strings.TrimSpace(text) != "" && !strings.HasPrefix(text, "DEBUG: ") {
+			if len(last) == n {
+				last = last[1:]
+			}
+			last = append(last, text)
+		}
+		if err != nil {
+			break
+		}
+	}
+	return last
+}

@@ -2,6 +2,7 @@ package macports
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -23,6 +24,31 @@ func PythonPackage(port string) (string, bool) {
 		return "", false
 	}
 	return m[3], true
+}
+
+// PythonProjects are the Python packages a port of the python PortGroup
+// may provide, as PyPI names them: python.rootname, which the PortGroup
+// takes the name from by default and a port sets where it differs, as
+// py313-yaml's is PyYAML, else the name's (PythonPackage); and the
+// project its forge setup names, where it fetches from one, as
+// py313-protobuf3 fetches google/protobuf, PyPI's protobuf. Names are as
+// MacPorts writes them, for a comparison to normalize as Python compares
+// names. None for a port of another name.
+func (p PortInfo) PythonProjects() []string {
+	name, ok := PythonPackage(p.Name)
+	if !ok {
+		return nil
+	}
+	if rootname, set, err := p.option("python.rootname"); err == nil && set && rootname != "" {
+		name = rootname
+	}
+	projects := []string{name}
+	for _, option := range []string{"github.project", "gitlab.project"} {
+		if project, set, err := p.option(option); err == nil && set && project != "" && !slices.Contains(projects, project) {
+			projects = append(projects, project)
+		}
+	}
+	return projects
 }
 
 // PythonVersion is the Python version a port of the python PortGroup's

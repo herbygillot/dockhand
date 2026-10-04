@@ -126,11 +126,13 @@ type Provider struct {
 }
 
 // Observation is a port's version as the caller observed it, and its
-// directory; or that the tree has no such port (Absent); or why it
-// couldn't tell.
+// directory, with the Python packages it may provide where it is a Python
+// port (macports.PortInfo.PythonProjects); or that the tree has no such
+// port (Absent); or why it couldn't tell.
 type Observation struct {
 	Version   string
 	Directory string
+	Packages  []string
 	Absent    bool
 	Problem   string
 }

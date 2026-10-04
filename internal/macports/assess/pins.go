@@ -43,7 +43,7 @@ func (a *assessment) questions() []pinned {
 	}
 	var found []pinned
 	for _, r := range a.requirements {
-		q := pinned{requirement: r, now: provider(a.input.Port, r.name), before: provider(a.input.Base, r.name)}
+		q := pinned{requirement: r, now: a.provider(a.input.Port, r.name, false), before: a.provider(a.input.Base, r.name, true)}
 		if !r.changed && q.now == q.before {
 			continue
 		}
@@ -52,15 +52,42 @@ func (a *assessment) questions() []pinned {
 	return found
 }
 
-// provider is the port a port depends on that provides a Python package,
-// by the name MacPorts gives such ports; empty where none does.
-func provider(port macports.PortInfo, name string) string {
+// provider is the port a port depends on that provides a Python package:
+// by the name MacPorts gives such ports, or else by a package an
+// observation of the port found it may provide, as py313-yaml provides
+// PyYAML and py313-protobuf3 protobuf (the Vx port's field testing,
+// 2026-10-03); empty where none does.
+func (a *assessment) provider(port macports.PortInfo, name string, base bool) string {
 	for _, dependency := range port.Dependencies {
 		if provided, ok := macports.PythonPackage(dependency.Port); ok && project.NormalizeName(provided) == name {
 			return dependency.Port
 		}
 	}
+	for _, dependency := range port.Dependencies {
+		observed := a.input.Observed[Provider{Port: dependency.Port, Base: base}]
+		for _, provided := range observed.Packages {
+			if project.NormalizeName(provided) == name {
+				return dependency.Port
+			}
+		}
+	}
 	return ""
+}
+
+// unnamed are the Python ports a port depends on that weren't observed,
+// whose packages a requirement no port is named for may be among.
+func (a *assessment) unnamed(port macports.PortInfo, base bool) []Provider {
+	var unobserved []Provider
+	for _, dependency := range port.Dependencies {
+		provider := Provider{Port: dependency.Port, Base: base}
+		if _, python := macports.PythonPackage(dependency.Port); !python {
+			continue
+		}
+		if _, ok := a.input.Observed[provider]; !ok {
+			unobserved = append(unobserved, provider)
+		}
+	}
+	return unobserved
 }
 
 // applying are a requirement's declarations that may apply to a MacPorts
@@ -121,6 +148,18 @@ func Wanted(input Input) []Provider {
 	}
 	for _, q := range a.questions() {
 		now := applying(q.requirement.now, q.now)
+		// A requirement no dependency is named for asks which package
+		// each Python dependency provides.
+		if q.now == "" && len(now) > 0 {
+			for _, provider := range a.unnamed(a.input.Port, false) {
+				want(provider)
+			}
+		}
+		if q.before == "" && len(applying(q.requirement.before, "")) > 0 {
+			for _, provider := range a.unnamed(a.input.Base, true) {
+				want(provider)
+			}
+		}
 		if q.now == "" || len(now) == 0 {
 			continue
 		}

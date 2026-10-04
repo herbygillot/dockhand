@@ -123,3 +123,12 @@ func TestALogKeptCompressedIsReadAsWritten(t *testing.T) {
 	_, err = ReadFile(gone)
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
+
+// A failure no reading explains shows the step's last lines, without
+// port -d's DEBUG lines, and nothing of a later step's.
+func TestLastIsAStepsEndWithoutDebugLines(t *testing.T) {
+	log := "--->  Building dep\nDEBUG: x\n--->  Building vx\nDEBUG: Executing org.macports.build\nvx: error: no module named foo\n\nDEBUG: y\nmake: *** [all] Error 1\n--->  Building other\nother output\n"
+	require.Equal(t, []string{"vx: error: no module named foo", "make: *** [all] Error 1"}, Last(strings.NewReader(log), 4, 9, 15))
+	require.Equal(t, []string{"--->  Building other", "other output"}, Last(strings.NewReader(log), 4, 0, 2), "to the log's end")
+	require.Empty(t, Last(strings.NewReader(log), 20, 0, 15), "the log ends before the step")
+}
