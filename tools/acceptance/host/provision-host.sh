@@ -49,14 +49,16 @@ else
 	step git -C "$HOST_ROOT/ports-mirror.git" fetch --prune
 fi
 
-# 5. The Xcode archives a person staged, one per release, checked.
-if [ -d "$HOST_ROOT/xcode" ]; then
+# 5. The Xcode a person staged, checked. Only A12 uses one, this Mac's
+# release's, for an Xcode image; without one A12 isn't run, so setup goes
+# on without waiting (the Prime-time thread, 2026-10-04: no other row
+# uses an Xcode image).
+if ls "$HOST_ROOT"/xcode/*.xip >/dev/null 2>&1; then
 	for xip in "$HOST_ROOT"/xcode/*.xip; do
-		[ -f "$xip" ] || continue
 		step pkgutil --check-signature "$xip"
 	done
 else
-	human "download each release's Xcode with your Apple ID into $HOST_ROOT/xcode"
+	echo "optional: for A12's Xcode image, download this Mac's release's Xcode with your Apple ID into $HOST_ROOT/xcode; without it A12 isn't run"
 fi
 
 # 6. The overlay the candidate's Portfile goes in, as a source MacPorts reads.
