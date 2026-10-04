@@ -65,7 +65,10 @@ jobs:
   # to build here but GitHub.
   intel:
     runs-on: macos-15-intel
-    timeout-minutes: 40
+    # The suite takes about 20 minutes here, and Prepare's update builds
+    # a PortIndex of the whole tree, about 20 more: 40 cancelled one run
+    # in its last minute (3316ae31), and another finished 45 seconds short.
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
