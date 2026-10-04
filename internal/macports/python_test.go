@@ -61,3 +61,15 @@ func TestThePythonsAPortBuildsFor(t *testing.T) {
 	require.Equal(t, "python313", PythonPort("3.13"))
 	require.Equal(t, "python27", PythonPort("2.7"))
 }
+
+// A Python subport new to a directory is compared with the base's newest
+// subport of its package; any other port with itself.
+func TestANewPythonSubportsCounterpartIsItsSibling(t *testing.T) {
+	t.Parallel()
+	base := []PortInfo{{Name: "py-coremltools"}, {Name: "py39-coremltools"}, {Name: "py310-coremltools"}, {Name: "py310-other"}}
+	require.Equal(t, "py310-coremltools", CounterpartIn(base, "py313-coremltools"))
+	require.Equal(t, "py39-coremltools", CounterpartIn(base, "py39-coremltools"))
+	require.Equal(t, "py-coremltools", CounterpartIn(base, "py-coremltools"))
+	require.Equal(t, "py313-new", CounterpartIn(base, "py313-new"))
+	require.Equal(t, "jq", CounterpartIn(nil, "jq"))
+}

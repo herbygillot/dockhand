@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,7 +76,7 @@ func (r *Repository) run(ctx context.Context, input []byte, env []string, args .
 	command := r.command(ctx, env, args...)
 	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: args[0], Path: command.Path, Args: command.Args[1:], Dir: command.Dir, Env: command.Env, Stdin: bytes.NewReader(input), ExtraFiles: command.ExtraFiles, WaitDelay: command.WaitDelay})
 	if err != nil {
-		return nil, err
+		return nil, sshRefused(args[0], err)
 	}
 	if args[0] == "for-each-ref" && len(result.Stderr) != 0 {
 		return nil, &subprocess.Error{Tool: "git", Command: args[0], Stderr: strings.TrimSpace(string(result.Stderr)), Cause: errors.New("reference lookup reported a warning")}
@@ -123,4 +124,21 @@ func repositoryEnv() []string {
 		}
 	}
 	return append(result, "GIT_PAGER=cat", "LC_ALL=C", "GIT_NO_REPLACE_OBJECTS=1", "GIT_NO_LAZY_FETCH=1", "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
+}
+
+// ErrSSHRefused is a remote's SSH server refusing every key this Mac
+// offered it.
+var ErrSSHRefused = errors.New("git: the SSH server refused this Mac's keys")
+
+// sshRefused says a command's SSH refusal plainly, with what to look at,
+// rather than as ssh's and git's raw words (the Vx port's field testing,
+// 2026-10-04: with the agent's key gone, submit --plan stopped on
+// "ssh_askpass: exec(/usr/X11R6/bin/ssh-askpass) … Permission denied
+// (publickey)"). ssh's words are kept in the error, after it.
+func sshRefused(command string, err error) error {
+	failed := new(subprocess.Error)
+	if !errors.As(err, &failed) || !strings.Contains(failed.Stderr, "Permission denied (publickey") {
+		return err
+	}
+	return fmt.Errorf("%w (git %s); is your key loaded? ssh-add -l lists the agent's keys, and ssh -T git@github.com tries them: %w", ErrSSHRefused, command, err)
 }

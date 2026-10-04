@@ -63,3 +63,19 @@ func TestCherryCountsWhatMasterHasOfABranch(t *testing.T) {
 	_, err = repo.Cherry(t.Context(), "master", head)
 	require.Error(t, err, "literal commits")
 }
+
+// An SSH server refusing every key is said plainly, with what to look at,
+// and ssh's own words kept after it (the Vx port's field testing,
+// 2026-10-04).
+func TestAnSSHRefusalIsSaidPlainly(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	ssh := filepath.Join(t.TempDir(), "ssh")
+	require.NoError(t, os.WriteFile(ssh, []byte("#!/bin/sh\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n"), 0o755))
+	t.Setenv("GIT_SSH_COMMAND", ssh)
+	repo := snapshotRepo(t)
+	_, err := repo.RemoteHead(t.Context(), "git@github.com:someone/macports-ports.git", "candidate")
+	require.ErrorIs(t, err, git.ErrSSHRefused)
+	require.ErrorContains(t, err, "is your key loaded? ssh-add -l")
+	require.ErrorContains(t, err, "Permission denied (publickey)")
+}

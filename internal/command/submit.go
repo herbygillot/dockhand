@@ -443,6 +443,8 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	fmt.Fprintf(out, "  PR       %s\n", pullRequestWords(plan))
 	if plan.Note != "" {
 		fmt.Fprintf(out, "  Note     %s\n", noteLine(plan))
+	} else if plan.DescriptionSaysNothing() {
+		fmt.Fprintln(out, "  Note     none, and the commit has no body, so the Description says nothing of the change: --note \"…\" adds one")
 	}
 	if len(plan.LeftOut) > 0 {
 		fmt.Fprintf(out, "  Left out %s (not committed)\n", strings.Join(plan.LeftOut, ", "))
@@ -493,33 +495,48 @@ func upstreamLines(plan engine.SubmitPlan) []string {
 }
 
 // comparisonLines are what each port's assessment found, a line each,
-// marked as update marks them, each naming its port where there are
-// several, under an Upstream label.
+// marked as update marks them, under an Upstream label. Where there are
+// several ports, each line names the ports that found it, said once for
+// all of them: a python port's subports each repeated a license finding
+// and a requirement's, whose other lines differed by provider (the Vx
+// port's field testing, 2026-10-04, py-coremltools and py-mlx-vlm).
 func comparisonLines(comparisons []engine.PortComparison) []string {
 	comparisons = engine.Grouped(comparisons)
-	ports := map[string]bool{}
-	for _, found := range comparisons {
-		ports[found.Port] = true
+	type line struct {
+		mark, words string
+		ports       []string
 	}
-	var lines []string
-	for _, found := range comparisons {
-		port := ""
-		if len(ports) > 1 {
-			port = found.Port + ": "
+	var found []line
+	add := func(port, said string) {
+		mark, words := said[:len("! ")], said[len("! "):]
+		for i := range found {
+			if found[i].mark == mark && found[i].words == words {
+				found[i].ports = append(found[i].ports, port)
+				return
+			}
 		}
-		if found.Comparison.Problem != "" {
-			lines = append(lines, "! "+port+"archives not compared: "+found.Comparison.Problem)
+		found = append(found, line{mark: mark, words: words, ports: []string{port}})
+	}
+	for _, c := range comparisons {
+		if c.Comparison.Problem != "" {
+			add(c.Port, "! archives not compared: "+c.Comparison.Problem)
 		}
-		for _, change := range found.Comparison.Changes {
-			change = underUpstream(change)
-			change.Message = port + change.Message
-			lines = append(lines, upstreamWords(change))
+		for _, change := range c.Comparison.Changes {
+			add(c.Port, upstreamWords(underUpstream(change)))
 		}
 		// What it read and checked is said too, so silence isn't taken
 		// for not looking (rust 1.99.0, batch 23).
-		if words := engine.CoverageWords(found.Comparison); words != "" {
-			lines = append(lines, "· "+port+words)
+		if words := engine.CoverageWords(c.Comparison); words != "" {
+			add(c.Port, "· "+words)
 		}
+	}
+	var lines []string
+	for _, l := range found {
+		port := ""
+		if len(comparisons) > 1 {
+			port = strings.Join(l.ports, ", ") + ": "
+		}
+		lines = append(lines, l.mark+port+l.words)
 	}
 	return lines
 }

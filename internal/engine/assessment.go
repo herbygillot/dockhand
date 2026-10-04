@@ -188,6 +188,12 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 				Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}, Problem: "its ports couldn't be read: " + err.Error()}})
 			continue
 		}
+		var basePorts []macports.PortInfo
+		if exists[0] {
+			// Read only to find a new subport's sibling; where it can't
+			// be, each subport is evaluated by its own name, as before.
+			basePorts, _ = reader.Ports(ctx, sources[0], directory, model.Environment{}, nil)
+		}
 		for _, port := range ports {
 			// A subport the revision's record says it didn't change is no
 			// part of what upstream's change means: terraform-1.16's
@@ -205,7 +211,7 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 				continue
 			}
 			made = append(made, model.Assessment{Branch: branch, Tree: tree, Base: base, Port: port.Name, Directory: directory, Policy: assess.Policy, At: e.now(),
-				Comparison: e.assessPort(ctx, planner, sources, directory, port.Name, exists[0])})
+				Comparison: e.assessPort(ctx, planner, sources, directory, [2]string{macports.CounterpartIn(basePorts, port.Name), port.Name}, exists[0])})
 		}
 	}
 	return found, made, nil
@@ -220,11 +226,13 @@ const binaryPackage = "binary package: "
 var errNoPlanner = errors.New("assessing a revision needs MacPorts' evaluator")
 
 // assessPort assesses one port of a directory at the revision against the
-// base, as this Mac's context fetches it. A port new to the directory has
+// base, as this Mac's context fetches it: names are the port in the base,
+// its own or a sibling's (macports.CounterpartIn), and in the revision. A port new to the directory has
 // no base, and its candidate is assessed alone, with nothing said of a
 // missing old archive; a port that fetches no upstream source has nothing
 // to compare, and says so.
-func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources [2]model.Source, directory, name string, hadBase bool) model.UpstreamComparison {
+func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources [2]model.Source, directory string, names [2]string, hadBase bool) model.UpstreamComparison {
+	name := names[1]
 	var infos [2]macports.PortInfo
 	var plans [2][]macports.Distfile
 	problem := ""
@@ -235,7 +243,7 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 		if side == 0 && !hadBase {
 			continue
 		}
-		info, plan, err := planner.ArchivePlan(ctx, source, directory, name)
+		info, plan, err := planner.ArchivePlan(ctx, source, directory, names[side])
 		switch {
 		case errors.Is(err, ErrNoArchives):
 			if side == 1 {
@@ -262,7 +270,15 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 	case infos[1].GitFetched():
 		input.Pairs, coverage, problem, again = e.readCommits(ctx, infos, hadBase)
 	case !fetches:
-		coverage = append(coverage, model.Coverage{Path: directory, Relevance: "unknown", Treatment: "inspected", Policy: notCompared, Reason: name + " fetches no upstream source, so there's nothing to compare"})
+		reason := name + " fetches no upstream source, so there's nothing to compare"
+		// A python stub over its subports fetches nothing itself, and
+		// its subports' source is compared: said so, rather than read as
+		// a port with no source (the Vx port's field testing, 2026-10-04,
+		// py-coremltools and py-pyaml).
+		if only, err := infos[1].MetadataOnly(); err == nil && only {
+			reason = name + " builds nothing itself, so its subports' source is what's compared"
+		}
+		coverage = append(coverage, model.Coverage{Path: directory, Relevance: "unknown", Treatment: "inspected", Policy: notCompared, Reason: reason})
 	default:
 		scratchDirectory, err := scratch.Dir("assess-")
 		if err != nil {

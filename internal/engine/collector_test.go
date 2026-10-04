@@ -67,7 +67,7 @@ func TestAnUpdatesAssessmentChecksItsPatches(t *testing.T) {
 	require.Len(t, reused, 1)
 	require.Zero(t, planner.fetches.Load(), "the update's record stands, collecting nothing again")
 	require.Equal(t, 1, ofPatch(reused[0].Comparison), "the update's own record checked the patch")
-	fresh := e.assessPort(t.Context(), planner, [2]model.Source{{Tree: base}, {Tree: tree}}, "textproc/jq", "jq", true)
+	fresh := e.assessPort(t.Context(), planner, [2]model.Source{{Tree: base}, {Tree: tree}}, "textproc/jq", [2]string{"jq", "jq"}, true)
 	require.Empty(t, fresh.Problem)
 	require.Equal(t, 1, ofPatch(fresh), "as a fresh collection does")
 }

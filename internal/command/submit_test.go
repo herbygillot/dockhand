@@ -375,7 +375,8 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	require.NotContains(t, g.PRs[34901].Body, "Author's note")
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
-	require.NotContains(t, out, "  Note ")
+	require.Contains(t, out, "  Note     none, and the commit has no body, so the Description says nothing of the change: --note \"…\" adds one\n",
+		"with the note taken out, nothing says what changed (the Vx port's field testing)")
 
 	g.PRs[34901].Body = strings.Replace(g.PRs[34901].Body, "#### Description\n\n", "#### Description\n\nWhat I tested by hand.\n\n", 1)
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--note", "Fixed upstream.")

@@ -523,6 +523,26 @@ func commitBody(message string) string {
 	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
+// trailer is a Git trailer's line, "Assisted-By: Claude Code".
+var trailer = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*: \S`)
+
+// SaysNothing reports a Description that would say nothing of the change:
+// no new port, no note, and one commit whose body is empty, or only
+// trailers, as a MacPorts update's subject-only commit is (the Vx port's
+// field testing, 2026-10-04: py-coremltools' Description held its
+// Assisted-by trailer alone).
+func SaysNothing(facts Facts) bool {
+	if len(facts.NewPorts) > 0 || facts.Note != "" || len(facts.Commits) != 1 {
+		return false
+	}
+	for _, line := range strings.Split(commitBody(facts.Commits[0].Message), "\n") {
+		if line = strings.TrimSpace(line); line != "" && !trailer.MatchString(line) {
+			return false
+		}
+	}
+	return true
+}
+
 // citesTickets reports a commit citing a Trac ticket by its URL.
 func citesTickets(commits []Commit) bool {
 	return slices.ContainsFunc(commits, func(c Commit) bool {

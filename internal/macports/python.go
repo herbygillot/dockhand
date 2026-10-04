@@ -51,6 +51,30 @@ func (p PortInfo) PythonProjects() []string {
 	return projects
 }
 
+// CounterpartIn is the port of a directory's other version, ports, that a
+// port is compared with: itself, where they have it; else, for a Python
+// subport they don't have, their newest subport of the same package, whose
+// source it shares, so py311-coremltools, added beside py310-coremltools,
+// is compared with it rather than taken for a new port (the Vx port's
+// field testing, 2026-10-04: its license and NOTICE findings read as
+// py310's alone). The name itself where neither is there.
+func CounterpartIn(ports []PortInfo, name string) string {
+	if slices.ContainsFunc(ports, func(port PortInfo) bool { return port.Name == name }) {
+		return name
+	}
+	pkg, ok := PythonPackage(name)
+	if !ok {
+		return name
+	}
+	counterpart := name
+	for _, port := range ports {
+		if other, ok := PythonPackage(port.Name); ok && other == pkg && (counterpart == name || naturalCompare(port.Name, counterpart) > 0) {
+			counterpart = port.Name
+		}
+	}
+	return counterpart
+}
+
 // PythonVersion is the Python version a port of the python PortGroup's
 // naming is built for, as Python writes it: py313-requests is 3.13, and
 // py27-requests 2.7.

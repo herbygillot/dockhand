@@ -106,7 +106,7 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 			return errors.Join(switched, e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, string(base)))
 		}
 	} else {
-		if err := e.Repo.AddSparseWorktree(ctx, directory, name, []string{macports.ResourcesDirectory}); err != nil {
+		if err := e.Repo.AddSparseWorktree(ctx, directory, name, append([]string{macports.ResourcesDirectory}, e.portNamed(ctx, base, request.Name)...)); err != nil {
 			return model.Branch{}, errors.Join(err, undo())
 		}
 		undo = func() error {
@@ -135,6 +135,24 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 		return model.Branch{}, errors.Join(err, undo())
 	}
 	return branch, nil
+}
+
+// portNamed is the directory of the port a branch is named for at a
+// commit, category/<name>, for start to check out beside _resources, so
+// the port's files are there to edit (the Vx port's field testing,
+// 2026-10-04: py-coremltools' branch had only _resources). None where no
+// one category holds such a port, or the tree can't be read; edit and
+// update add a port's directory as they need it.
+func (e *Engine) portNamed(ctx context.Context, commit model.ObjectID, name string) []string {
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(commit)})
+	if err != nil {
+		return nil
+	}
+	directories, err := e.directoriesNamed(ctx, trees[string(commit)], name)
+	if err != nil || len(directories) != 1 {
+		return nil
+	}
+	return directories
 }
 
 // branchRecorded witnesses a new branch's record (store.Recorded).

@@ -160,6 +160,12 @@ func TestStartMakesASparseWorktreeFromFreshMaster(t *testing.T) {
 	require.ErrorIs(t, err, git.ErrBranchExists)
 	require.ErrorContains(t, err, "dockhand adopt dockhand/mine")
 
+	// A branch named for a port has its directory checked out, so its
+	// files are there to edit (the Vx port's field testing, 2026-10-04).
+	named, err := e.Start(t.Context(), StartRequest{Name: "jq"})
+	require.NoError(t, err)
+	require.Contains(t, files(t, named.Worktree), "textproc/jq/Portfile")
+
 	require.NoError(t, os.MkdirAll(filepath.Join(e.Worktrees(), "occupied"), 0o755))
 	_, err = e.Start(t.Context(), StartRequest{Name: "occupied"})
 	require.ErrorContains(t, err, "already exists")

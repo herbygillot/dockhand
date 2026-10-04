@@ -209,3 +209,17 @@ func TestUncoveredCIReleasesAreSaid(t *testing.T) {
 	facts.TestedOn.UncoveredCI = ""
 	require.NotContains(t, Owned(facts), "MacPorts CI also builds")
 }
+
+// A Description says nothing of the change where the one commit's body is
+// empty or trailers alone, and nothing else is said there.
+func TestADescriptionOfASubjectOnlyCommitSaysNothing(t *testing.T) {
+	t.Parallel()
+	one := func(message string) Facts { return Facts{Commits: []Commit{{ID: "abc", Message: message}}} }
+	require.True(t, SaysNothing(one("py-coremltools: update to 9.0")))
+	require.True(t, SaysNothing(one("py-coremltools: update to 9.0\n\nAssisted-by: Claude Code")))
+	require.False(t, SaysNothing(one("py-coremltools: update to 9.0\n\nAdds NOTICE's Apache-2 parts to the license.")))
+	withNote := one("py-coremltools: update to 9.0")
+	withNote.Note = "Tested with a model conversion."
+	require.False(t, SaysNothing(withNote))
+	require.False(t, SaysNothing(Facts{Commits: []Commit{{Message: "a: x"}, {Message: "b: y"}}}), "a table of commits says what each did")
+}

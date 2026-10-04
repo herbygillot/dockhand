@@ -168,6 +168,16 @@ func (p *SubmitPlan) Answer(testedBinaries, testedVariants bool) {
 	}
 }
 
+// DescriptionSaysNothing reports a Description dockhand writes that would
+// say nothing of the change (prdescription.SaysNothing), for submit to
+// point at --note; one a person keeps is theirs.
+func (p SubmitPlan) DescriptionSaysNothing() bool {
+	if p.Theirs || p.Sections.Description == SectionKept || p.Sections.Description == SectionAbsent {
+		return false
+	}
+	return prdescription.SaysNothing(p.facts.description())
+}
+
 // Describe replaces the description with one the person wrote, which
 // gives their note however they left it.
 func (p *SubmitPlan) Describe(body string) {

@@ -266,18 +266,47 @@ func TestEachSubportIsAssessedForItself(t *testing.T) {
 	require.NotContains(t, strings.Join(holds(byPort["py313-demo"]), "\n"), "py313-tomli")
 }
 
+// A Python subport new to the directory is compared with the base's
+// sibling of its package, so a license change upstream is said of every
+// subport alike, and none is taken for a new port (the Vx port's field
+// testing, 2026-10-04, py-coremltools).
+func TestANewSubportIsComparedWithItsSibling(t *testing.T) {
+	t.Parallel()
+	e, branch, base, tree := revisionFixture(t, map[string]string{"python/py-demo/Portfile": "name py-demo\nversion 2\n"})
+	p := newPlanner(t)
+	e.ArchivePlanner = p
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"python/py-demo": {{Name: "py310-demo"}, {Name: "py313-demo"}}},
+		trees: map[model.ObjectID]map[string][]macports.PortInfo{base: {"python/py-demo": {{Name: "py310-demo"}}}}}
+	port := func(python, version string) macports.PortInfo {
+		return macports.PortInfo{Name: "py" + python + "-demo", Version: version, Options: map[string]string{"dockhand.portgroups": "python", "license": "MIT"}}
+	}
+	p.add(base, plannedPort{info: port("310", "1"), archives: map[string]map[string]string{"demo-1.tar.gz": {"LICENSE": "MIT\n"}}})
+	for _, python := range []string{"310", "313"} {
+		p.add(tree, plannedPort{info: port(python, "2"), archives: map[string]map[string]string{"demo-2.tar.gz": {"LICENSE": "MIT\n", "NOTICE": "Apache-2.0 parts\n"}}})
+	}
+	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
+	require.NoError(t, err)
+	byPort := map[string]model.Assessment{}
+	for _, a := range assessments {
+		byPort[a.Port] = a
+	}
+	require.NotEmpty(t, messagesOf(byPort["py310-demo"].Comparison))
+	require.Equal(t, messagesOf(byPort["py310-demo"].Comparison), messagesOf(byPort["py313-demo"].Comparison), "compared with py310-demo's base")
+}
+
 // A Git-fetched port whose source can't be read isn't compared, which
 // holds as what couldn't be checked does (D4); a port that fetches no
 // source has nothing to compare, and says so without holding.
 func TestWhatCantBeComparedSaysSo(t *testing.T) {
 	t.Parallel()
-	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/gitty/Portfile": "name gitty\n", "devel/meta/Portfile": "name meta\n"})
+	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/gitty/Portfile": "name gitty\n", "devel/meta/Portfile": "name meta\n", "python/py-stub/Portfile": "name py-stub\n"})
 	p := newPlanner(t)
 	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"devel/gitty": {{Name: "gitty"}}, "devel/meta": {{Name: "meta"}}}}
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"devel/gitty": {{Name: "gitty"}}, "devel/meta": {{Name: "meta"}}, "python/py-stub": {{Name: "py-stub"}}}}
 	for _, tree := range []model.ObjectID{base, tree} {
 		p.add(tree, plannedPort{info: macports.PortInfo{Name: "gitty", Options: map[string]string{"fetch.type": "git"}}})
 		p.add(tree, plannedPort{info: macports.PortInfo{Name: "meta"}, noSource: true})
+		p.add(tree, plannedPort{info: macports.PortInfo{Name: "py-stub", Options: map[string]string{"dockhand.metadata_only": "1"}}, noSource: true})
 	}
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
@@ -292,6 +321,9 @@ func TestWhatCantBeComparedSaysSo(t *testing.T) {
 	require.Empty(t, holds(byPort["meta"]))
 	require.Equal(t, []model.Coverage{{Path: "devel/meta", Relevance: "unknown", Treatment: "inspected", Policy: notCompared, Reason: "meta fetches no upstream source, so there's nothing to compare"}}, byPort["meta"].Comparison.Coverage)
 	require.True(t, NothingCompared(byPort["meta"].Comparison))
+	// A python stub's subports are compared, which it says rather than
+	// read as a port with no source (the Vx port's field testing).
+	require.Equal(t, "py-stub builds nothing itself, so its subports' source is what's compared", byPort["py-stub"].Comparison.Coverage[0].Reason)
 }
 
 // What's recorded for a revision stands: it's read, not made again. One
