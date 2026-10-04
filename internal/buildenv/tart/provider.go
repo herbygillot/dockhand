@@ -747,7 +747,7 @@ func (p *Provider) install(ctx context.Context, g guest, job buildenv.Job, build
 		return err
 	}
 	for _, archive := range job.Installs {
-		build.Progress(fmt.Sprintf("giving the guest %s, from the archive kept of its build", archive.Target))
+		build.Progress(givingWords(archive))
 		// Signed once, beside the kept archive, which cleanup removes them
 		// with; its digest is checked each time (D18).
 		entry, err := binaryarchive.Sign(ctx, keys, binaryarchive.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: archive.Path})
@@ -773,6 +773,18 @@ func (p *Provider) install(ctx context.Context, g guest, job buildenv.Job, build
 	}
 	_, err = g.Command(ctx, nil, "sudo", "-n", "/bin/chmod", "-R", "a+rX", archiveSite)
 	return err
+}
+
+// givingWords say an archive given to the guest: a target's is its
+// build's; a dependency's, offered for MacPorts to take if it's the one
+// it wants, is an earlier guest's install of it (batch 90), and has no
+// target to name, which left "giving the guest , from …" (the M1's run at
+// 11491d4e).
+func givingWords(archive buildenv.Archive) string {
+	if archive.Target == "" {
+		return fmt.Sprintf("giving the guest %s, from the archive an earlier guest installed it from", archive.Name)
+	}
+	return fmt.Sprintf("giving the guest %s, from the archive kept of its build", archive.Target)
 }
 
 // signingKeys are the keys archives given to guests are signed with, kept

@@ -133,15 +133,19 @@ cut_command() { printf '%s\n' "$*" >>"$ROW_DIR/cut"; }
 # otherwise a run left so is the row's failure.
 settle_stopped() {
 	local runs name why
-	# One stopped before the row began is an earlier row's, not this one's.
-	runs=$("$DH_BIN" --json queue 2>/dev/null | jq -r '.result.runs[]? | select(.stopped) | .name' 2>/dev/null |
+	# One stopped before the row began is an earlier row's, not this one's;
+	# one a cut serve left queued, not yet taken, is the cut's too (the
+	# M1's run at 11491d4e: B3's check-2).
+	local queued=false
+	[ -s "$ROW_DIR/cut" ] && queued=true
+	runs=$("$DH_BIN" --json queue 2>/dev/null | jq -r --argjson queued "$queued" '.result.runs[]? | select(.stopped or ($queued and .state == "queued")) | .name' 2>/dev/null |
 		while IFS= read -r name; do grep -qxF "run $name" "$ROW_DIR/before/running" 2>/dev/null || printf '%s\n' "$name"; done)
 	[ -n "$runs" ] || return 0
 	for name in $runs; do
-		printf 'stopped, then canceled by the runner: %s\n' "$name" >>"$ROW_DIR/notes"
+		printf 'left stopped or queued, then canceled by the runner: %s\n' "$name" >>"$ROW_DIR/notes"
 		"$DH_BIN" cancel "$name" >>"$ROW_DIR/out.log" 2>&1 || :
 	done
-	why="left $(printf '%s' "$runs" | tr '\n' ' ' | sed 's/ $//') stopped, canceled before H7 read the queue"
+	why="left $(printf '%s' "$runs" | tr '\n' ' ' | sed 's/ $//') stopped or queued, canceled before H7 read the queue"
 	if [ -s "$ROW_DIR/cut" ]; then
 		row_result "not run" "the runner cut $(paste -sd ';' "$ROW_DIR/cut"), which $why"
 	else

@@ -37,7 +37,12 @@ b2_reuse() {
 	B2_REUSE=$DH_LAST_JSON
 	local check
 	check=$(jq -r '.result.run.name // empty' "$B2_REUSE")
-	[ -n "$check" ] && dh logs "$check" --port "$ACCEPT_RUST_PORT" >"$ROW_DIR/reuse.log" 2>&1 || :
+	# Straight to its own file: dh writes to the row's log (the M1's run
+	# at 11491d4e found reuse.log empty).
+	if [ -n "$check" ]; then
+		printf '$ dockhand logs %s --port %s >reuse.log\n' "$check" "$ACCEPT_RUST_PORT" >>"$ROW_DIR/out.log"
+		"$DH_BIN" logs "$check" --port "$ACCEPT_RUST_PORT" >"$ROW_DIR/reuse.log" 2>&1 || :
+	fi
 }
 
 assert() {
@@ -59,13 +64,25 @@ assert() {
 			row_fail "the second check's guest built $(grep -oE '^--->  Building (rust|cargo) ' "$ROW_DIR/reuse.log" | awk '{print $3}' | sort -u | paste -sd ' ' -) again, rather than install the archives the first kept"
 			return
 		fi
-		if ! grep -q 'from archives earlier checks' "$ROW_DIR/out.log"; then
+		if [ ! -s "$ROW_DIR/reuse.log" ]; then
+			row_fail "the second check's log of $ACCEPT_RUST_PORT couldn't be read, so whether its guest built rust again isn't known"
+			return
+		fi
+		if ! grep -q 'from the archive an earlier guest installed it from' "$ROW_DIR/out.log"; then
 			row_fail "the second check gave its guest no kept dependency archive"
 			return
 		fi
+		B2_REUSED="its second check, --fresh, installed rust and cargo from the archives the first kept ($(grep -c 'from the archive an earlier guest installed it from' "$ROW_DIR/out.log") given)"
+	fi
+	# With a fork, bump goes through its check and stops at the push,
+	# which the quick stage refuses (lib/ssh-read-only.sh): that is the
+	# stage, and the row is graded on the rest.
+	if [ "$status" != 0 ] && [ "${ACCEPT_STAGE:-}" = quick ] && grep -q 'the quick stage never pushes' "$ROW_DIR/out.log"; then
+		row_pass "bump checked and stopped at the stage's refused push${B2_REUSED:+; $B2_REUSED}"
+		return
 	fi
 	case "$status" in
-	0) row_pass "bumped to its pull request" ;;
+	0) row_pass "bumped to its pull request${B2_REUSED:+; $B2_REUSED}" ;;
 	3) if grep -q '^Once it.s fine: dockhand submit' "$ROW_DIR/out.log" || printf '%s' "$error" | grep -q 'dockhand submit'; then
 		row_pass "held for a look, naming the submit that finishes it"
 	else

@@ -791,3 +791,11 @@ func TestReleasesTakeTheMacsSlotsInTurn(t *testing.T) {
 	})
 	require.True(t, waited, "the second waited for the first's VM")
 }
+
+// An archive given to the guest is named: a target's by the target, a
+// dependency's by its file (the M1's run at 11491d4e).
+func TestAnArchiveGivenToTheGuestIsNamed(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "giving the guest libharbor, from the archive kept of its build", givingWords(buildenv.Archive{Target: "libharbor", Port: "libharbor", Name: "libharbor-3_0.darwin_25.arm64.tbz2"}))
+	require.Equal(t, "giving the guest rust-1.91.0_0.darwin_27.arm64.tbz2, from the archive an earlier guest installed it from", givingWords(buildenv.Archive{Port: "rust", Name: "rust-1.91.0_0.darwin_27.arm64.tbz2"}))
+}
