@@ -376,6 +376,49 @@ func TestAPortAnEnvironmentDoesNotDefineIsNotBuiltThere(t *testing.T) {
 // MacPorts reads it, so a check requiring tests can say it asks
 // nothing of them (the ov run's finding 3). One whose test.run wasn't read
 // is left unsaid.
+// graphPorts are fakePorts with a port index's dependencies.
+type graphPorts struct {
+	fakePorts
+	graph map[string][]string
+}
+
+func (g graphPorts) DependencyGraph(context.Context, model.Source) (map[string][]string, error) {
+	if g.graph == nil {
+		return nil, errors.New("no index")
+	}
+	return g.graph, nil
+}
+
+// A changed port that depends on another only by way of a port the branch
+// doesn't change is ordered after it, and needs it, as the port index's
+// dependencies have it (field testing's py-mlx-vlm, check-201: mlx-vlm on
+// safetensors through transformers); with no index, by direct
+// dependencies alone.
+func TestAPlanOrdersThroughUnchangedPorts(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	revision := harborBranch(t, e)
+	ports := fakePorts{directories: map[string][]macports.PortInfo{
+		"devel/libharbor":        {port("libharbor")},
+		"devel/harbor-cli":       {port("harbor-cli", "harbor-glue")},
+		"graphics/harbor-viewer": {port("harbor-viewer")},
+		"graphics/harbor-tools":  {port("harbor-tools")},
+	}}
+	e.PortReader = graphPorts{fakePorts: ports}
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	planned, _ := plan.In(tahoeArm)
+	require.Less(t, slices.Index(planned.Order, "harbor-cli"), slices.Index(planned.Order, "libharbor"), "no index: nothing says harbor-cli needs libharbor")
+
+	e.PortReader = graphPorts{fakePorts: ports, graph: map[string][]string{"harbor-cli": {"harbor-glue"}, "harbor-glue": {"zlib", "libharbor"}, "zlib": nil}}
+	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	planned, _ = plan.In(tahoeArm)
+	require.Less(t, slices.Index(planned.Order, "libharbor"), slices.Index(planned.Order, "harbor-cli"))
+	require.Equal(t, []model.TargetID{"libharbor"}, planned.Dependencies["harbor-cli"])
+}
+
 func TestAPlanRecordsWhatDeclaresNoTests(t *testing.T) {
 	t.Parallel()
 	f := setup(t)

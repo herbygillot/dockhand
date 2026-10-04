@@ -93,3 +93,19 @@ func TestReverseDependencies(t *testing.T) {
 	require.Equal(t, []string{portindex.DependsBuild}, reverse.ByPort["tool"][0].Fields)
 	require.Equal(t, "core", reverse.ByPort["runtime"][0].Name)
 }
+
+// Each port's direct dependencies are read forward, by lowercased name,
+// for a plan to follow through unchanged ports; a fetch dependency isn't
+// one a build needs installed.
+func TestDependencies(t *testing.T) {
+	t.Parallel()
+	index, err := portindex.Open(writeIndex(t, []indexRecord{
+		{"core", "name core portdir devel/core depends_run port:runtime"},
+		{"runtime", "name runtime portdir devel/runtime"},
+		{"Consumer", "name Consumer portdir apps/consumer depends_lib port:Core depends_build path:/opt/local/bin/tool:tool depends_fetch port:fetcher"},
+	}, nil))
+	require.NoError(t, err)
+	forward, err := index.Dependencies()
+	require.NoError(t, err)
+	require.Equal(t, map[string][]string{"core": {"runtime"}, "consumer": {"core", "tool"}}, forward)
+}

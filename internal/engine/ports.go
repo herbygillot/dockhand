@@ -233,6 +233,16 @@ func (p *evaluatedPorts) PortsDefined(ctx context.Context, source model.Source, 
 	return defined, err
 }
 
+// DependencyGraph reads every port's direct dependencies from the port
+// index of the source (portindex.Index.Dependencies).
+func (p *evaluatedPorts) DependencyGraph(ctx context.Context, source model.Source) (graph map[string][]string, err error) {
+	err = p.index(ctx, source, func(index *portindex.Index) error {
+		graph, err = index.Dependencies()
+		return err
+	})
+	return graph, err
+}
+
 // dependentsIn are the direct dependents of the directories' ports in an
 // index.
 func dependentsIn(index *portindex.Index, directories []string) ([]Dependent, error) {

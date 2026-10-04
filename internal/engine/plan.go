@@ -179,6 +179,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		}
 	}
 
+	throughUnchanged(ctx, reader, revision.Source, candidates, evaluations)
 	decision, err := planning.Decide(planning.Input{Environments: plan.Environments, Candidates: candidates, Evaluations: evaluations, Only: request.Only, Where: request.where})
 	if err != nil {
 		return plan, err
@@ -461,4 +462,71 @@ func VariantsFlag(value string) (map[string]bool, bool, error) {
 		return nil, false, fmt.Errorf("--variants: %w", err)
 	}
 	return variants, false, nil
+}
+
+// dependencyGraphReader is a port reader that can read every port's direct
+// dependencies from the revision's port index.
+type dependencyGraphReader interface {
+	DependencyGraph(ctx context.Context, source model.Source) (map[string][]string, error)
+}
+
+// throughUnchanged adds to each candidate's evaluated dependencies the
+// candidates it depends on only by way of ports the plan doesn't build:
+// py313-mlx-vlm on py313-safetensors through py313-transformers, which
+// --only had put first (field testing's py-mlx-vlm, check-201). A guest
+// resolving from the branch's tree builds the changed one as it goes, but
+// where the port between comes from a published archive, the order is
+// what makes the build use the branch's. Read from the port index, once,
+// and only where there are two candidates to order; where it can't be
+// read, the plan orders by direct dependencies alone, as before.
+func throughUnchanged(ctx context.Context, reader PortReader, source model.Source, candidates []model.PlanTarget, evaluations []planning.Evaluation) {
+	graphs, ok := reader.(dependencyGraphReader)
+	if !ok || len(candidates) < 2 {
+		return
+	}
+	graph, err := graphs.DependencyGraph(ctx, source)
+	if err != nil {
+		progress.VerboseReport(ctx, "ordering by direct dependencies alone: %v", err)
+		return
+	}
+	byName := map[string]model.TargetID{}
+	for _, candidate := range candidates {
+		// A port's default build, not one of --variants' builds of it.
+		name := candidate.Target.Name
+		if candidate.Target.Subport != "" {
+			name = candidate.Target.Subport
+		}
+		if model.TargetID(name) == candidate.ID {
+			byName[strings.ToLower(name)] = candidate.ID
+		}
+	}
+	for _, evaluation := range evaluations {
+		for id, evaluated := range evaluation {
+			seen := map[string]bool{}
+			var queue []string
+			for _, dependency := range evaluated.Dependencies {
+				if _, candidate := byName[strings.ToLower(string(dependency.Port))]; !candidate {
+					queue = append(queue, strings.ToLower(string(dependency.Port)))
+				}
+			}
+			for len(queue) > 0 {
+				name := queue[0]
+				queue = queue[1:]
+				if seen[name] {
+					continue
+				}
+				seen[name] = true
+				for _, next := range graph[name] {
+					if reached, candidate := byName[next]; candidate {
+						if reached != id && !slices.ContainsFunc(evaluated.Dependencies, func(d planning.Dependency) bool { return d.Port == reached }) {
+							evaluated.Dependencies = append(evaluated.Dependencies, planning.Dependency{Port: reached})
+						}
+						continue
+					}
+					queue = append(queue, next)
+				}
+			}
+			evaluation[id] = evaluated
+		}
+	}
 }

@@ -106,6 +106,29 @@ func (i *Index) ReverseDependencies() (Reverse, error) {
 	return result, nil
 }
 
+// Dependencies are each indexed port's direct dependencies, library,
+// build, and run, by lowercased name to lowercased names, read in one
+// pass: what a plan follows through unchanged ports to order the changed
+// ones that depend on each other only by way of them. A field that can't
+// be parsed is left out.
+func (i *Index) Dependencies() (map[string][]string, error) {
+	forward := map[string][]string{}
+	err := i.Each(func(entry Entry) bool {
+		edges, _ := entry.dependencyEdges(reverseDependencyFields)
+		if len(edges) == 0 {
+			return true
+		}
+		requires := make([]string, 0, len(edges))
+		for name := range edges {
+			requires = append(requires, name)
+		}
+		sort.Strings(requires)
+		forward[strings.ToLower(entry.Name)] = requires
+		return true
+	})
+	return forward, err
+}
+
 func sortUnread(values []Unread) {
 	sort.Slice(values, func(i, j int) bool {
 		if values[i].Port != values[j].Port {
