@@ -127,6 +127,7 @@ for row in $rows; do
 		fi
 		harm_snapshot "$ROW_DIR/before"
 		[ -f "$ROW_DIR/result" ] || act || :
+		settle_stopped || :
 		harm_snapshot "$ROW_DIR/after"
 		[ -f "$ROW_DIR/result" ] || assert || :
 		# A row's teardown runs whatever came before it, its setup's

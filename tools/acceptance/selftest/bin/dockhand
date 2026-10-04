@@ -25,6 +25,14 @@ queue)
 	[ "$json" = 1 ] && envelope 0 "$(cat "$state/queue.json" 2>/dev/null || echo '{"runs": []}')"
 	exit 0
 	;;
+cancel)
+	# Ends a stopped run, as dockhand cancel does.
+	if [ -f "$state/queue.json" ]; then
+		jq --arg name "${args[1]:-}" '.runs |= map(select(.name != $name))' "$state/queue.json" >"$state/queue.json.new" && mv "$state/queue.json.new" "$state/queue.json"
+	fi
+	echo "Stopped ${args[1]:-}; what it finished is kept."
+	exit 0
+	;;
 path)
 	echo "$state"
 	exit 0

@@ -93,7 +93,7 @@ say() { printf '%s\n' "$*" >&2; }
 # and Go ignores SIGALRM, so a dockhand check waiting on the VM limit ran
 # 2h47m past its 180 seconds (the M1's run at 10aac0c3, D-R2).
 with_timeout() {
-	local seconds=$1
+	local seconds=$1 status=0
 	shift
 	perl -e '
 		my $seconds = shift;
@@ -111,7 +111,42 @@ with_timeout() {
 		waitpid($pid, 0);
 		alarm 0;
 		exit(($? & 127) ? 128 + ($? & 127) : $? >> 8);
-	' "$seconds" "$@"
+	' "$seconds" "$@" || status=$?
+	# A cut command is said where the runner reads it: what it left
+	# stopped is the cut's, not dockhand's (settle_stopped).
+	if [ "$status" = 142 ] && [ -n "${ROW_DIR:-}" ]; then
+		printf '%s, after %ss\n' "$*" "$seconds" >>"$ROW_DIR/cut"
+	fi
+	return "$status"
+}
+
+# cut_command records a command a guard of the row's, rather than
+# with_timeout, stopped before it finished, as one stopping serve while a
+# toolchain still builds does.
+cut_command() { printf '%s\n' "$*" >>"$ROW_DIR/cut"; }
+
+# settle_stopped ends the runs a row left recorded as running with no
+# live process behind them, so H7 reads a clean queue (the M1's run at
+# d302e744: B3's serve was stopped mid-check, and its two runs read as
+# left running). Each is listed in the row's notes and canceled. Where a
+# cut stopped the process, the row isn't run, with what was cut;
+# otherwise a run left so is the row's failure.
+settle_stopped() {
+	local runs name why
+	# One stopped before the row began is an earlier row's, not this one's.
+	runs=$("$DH_BIN" --json queue 2>/dev/null | jq -r '.result.runs[]? | select(.stopped) | .name' 2>/dev/null |
+		while IFS= read -r name; do grep -qxF "run $name" "$ROW_DIR/before/running" 2>/dev/null || printf '%s\n' "$name"; done)
+	[ -n "$runs" ] || return 0
+	for name in $runs; do
+		printf 'stopped, then canceled by the runner: %s\n' "$name" >>"$ROW_DIR/notes"
+		"$DH_BIN" cancel "$name" >>"$ROW_DIR/out.log" 2>&1 || :
+	done
+	why="left $(printf '%s' "$runs" | tr '\n' ' ' | sed 's/ $//') stopped, canceled before H7 read the queue"
+	if [ -s "$ROW_DIR/cut" ]; then
+		row_result "not run" "the runner cut $(paste -sd ';' "$ROW_DIR/cut"), which $why"
+	else
+		row_fail "dockhand $why, with no cut by the runner"
+	fi
 }
 
 # dh_bg starts dockhand in the background, its output in a file of the

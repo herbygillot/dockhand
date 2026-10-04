@@ -34,7 +34,7 @@ tools/acceptance/resume.sh done     # answer a WAITING checkpoint: done, skip, o
   - H4, no token written;
   - H5, status matching Git;
   - H6, every `Next:` line accepted, run as its `--plan` where it would change something;
-  - H7, nothing left running, and nothing past the row's teardown, allowed or not;
+  - H7, nothing left running, and nothing past the row's teardown, allowed or not. Before H7 reads the queue, the runner cancels each check a row left stopped, recorded as running with no live process behind it, and lists it in the row's notes: a row whose command `with_timeout` or a guard cut (`cut_command`) isn't run, with what was cut, and one with no cut fails, never an H7 blocker for a serve the runner stopped (the M1's run at d302e744, B3);
   - H8, every `--json` envelope agreeing with its exit code;
   - H9, in the quick stage, your own `~/.dockhand`, `~/.tart`, and `~/.ssh` as they were. Your own dockhand at work during a run, such as a `serve` agent, trips it too.
   
