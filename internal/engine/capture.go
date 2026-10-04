@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports"
+	"path"
 	"slices"
+	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -91,11 +93,22 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 		return Capture{}, err
 	}
 	for _, path := range request.Include {
-		if !slices.Contains(capture.Untracked, path) {
-			return Capture{}, fmt.Errorf("--include %s: it is not an untracked file here", path)
+		if slices.Contains(capture.Untracked, path) {
+			continue
 		}
+		// One Git ignores is left out as git add leaves it, and said so,
+		// with the command that names the rule (the person, 2026-10-04:
+		// what gathers files abides by .gitignore as Git does).
+		if ignored, err := worktree.Ignored(ctx, path); err == nil && len(ignored) > 0 {
+			return Capture{}, fmt.Errorf("--include %s: Git ignores it, so a check leaves it out as git add would; git check-ignore -v %s names the rule", path, path)
+		}
+		return Capture{}, fmt.Errorf("--include %s: it is not an untracked file here", path)
 	}
-	capture.Untracked = slices.DeleteFunc(capture.Untracked, func(p string) bool { return slices.Contains(request.Include, p) })
+	// An editor's swap or backup file isn't one a person leaves out of a
+	// check: it isn't listed as left out (field testing's py-mlx-vlm,
+	// 2026-10-04: office/tasksh/.Portfile.swp), though --include could
+	// still take it. A .gitignore that ignores it keeps it out of git add.
+	capture.Untracked = slices.DeleteFunc(capture.Untracked, func(p string) bool { return slices.Contains(request.Include, p) || editorFile(p) })
 	for _, path := range capture.Untracked {
 		if directory, ok := macports.PortDirectoryOf(path); ok && path == directory+"/Portfile" {
 			capture.NewPorts = append(capture.NewPorts, directory)
@@ -206,4 +219,22 @@ func (e *Engine) Edited(ctx context.Context, branch model.Branch) ([]string, err
 		return nil, err
 	}
 	return worktree.TrackedChanges(ctx)
+}
+
+// editorFile reports an editor's swap, lock, or backup file: vim's
+// .name.swp, .swo, and .swn, Emacs's name~ and .#name, and a merge's
+// .orig.
+func editorFile(name string) bool {
+	base := path.Base(name)
+	switch {
+	case strings.HasSuffix(base, "~"), strings.HasPrefix(base, ".#"), strings.HasSuffix(base, ".orig"):
+		return true
+	case strings.HasPrefix(base, "."):
+		for _, suffix := range []string{".swp", ".swo", ".swn"} {
+			if strings.HasSuffix(base, suffix) {
+				return true
+			}
+		}
+	}
+	return false
 }

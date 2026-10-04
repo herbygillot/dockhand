@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
@@ -134,7 +135,16 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 	case report.UpstreamUnread != "":
 		fmt.Fprintf(out, "  · upstream's change wasn't assessed: %s\n", report.UpstreamUnread)
 	case len(lines) > 0:
-		fmt.Fprintln(out, "  Upstream:")
+		// What MacPorts has of a dependency is read at the pull request's
+		// commits, which master may have moved past, as it had for an
+		// older or merged one: the commits are named (field testing's
+		// py-mlx-vlm, 2026-10-04: transformers 5.3.0, where master had
+		// 5.18.0 by then).
+		heading := "  Upstream:"
+		if report.Head != "" && report.Base != "" {
+			heading = fmt.Sprintf("  Upstream, against MacPorts' ports at the pull request's %s, off master at %s:", engine.Short(model.ObjectID(report.Head)), engine.Short(model.ObjectID(report.Base)))
+		}
+		fmt.Fprintln(out, heading)
 		for _, line := range lines {
 			fmt.Fprintf(out, "    %s\n", line)
 		}

@@ -86,7 +86,7 @@ func TestAReviewSaysTheAssessmentAndTheDependents(t *testing.T) {
 		Dependents: []engine.Dependent{{Name: "ttyd", Phases: []string{"library"}}, {Name: "luv", Phases: []string{"library"}}}}
 	var out bytes.Buffer
 	writeReview(&out, report)
-	require.Contains(t, out.String(), "  Upstream:\n    · patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED\n")
+	require.Contains(t, out.String(), "  Upstream, against MacPorts' ports at the pull request's bbbbbbb, off master at aaaaaaa:\n    · patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED\n")
 	require.Contains(t, out.String(), "  2 dependents, from the index at aaaaaaa: ttyd (library), luv (library); candidates to look at.\n")
 
 	report.Upstream, report.UpstreamUnread, report.Dependents, report.DependentsUnread = nil, "assessing a revision needs MacPorts' evaluator", nil, "reading the port index: no index"

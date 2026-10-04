@@ -331,13 +331,26 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 	// Tests required ask nothing of a port that declares none, which
 	// passes under any policy: said, so its ✓ isn't read as tests passed.
 	if plan.Tests == model.TestsRequired {
-		var untested []string
+		var untested, tested []string
 		for _, build := range plan.Builds {
 			for _, id := range build.Untested {
 				if target, ok := plan.Target(id); ok && !slices.Contains(untested, string(target.ID)) {
 					untested = append(untested, string(target.ID))
 				}
 			}
+		}
+		for _, build := range plan.Builds {
+			for _, id := range build.Order {
+				if !slices.Contains(build.Untested, id) && !slices.Contains(tested, string(id)) {
+					tested = append(tested, string(id))
+				}
+			}
+		}
+		// Which do declare them is said too, beside those that don't, so
+		// "asks nothing" of a stub isn't read as of the port (field
+		// testing's py-mlx-vlm, 2026-10-04).
+		if len(untested) > 0 && len(tested) > 0 {
+			fmt.Fprintf(out, "Tests       %s, which must pass\n", prose.And(tested))
 		}
 		switch len(untested) {
 		case 0:

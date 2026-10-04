@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -95,8 +97,57 @@ func TestAHandWrittenPortIsANewPortLeftOut(t *testing.T) {
 	e := f.open(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "py-pyaml"})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"python/py-pyaml/Portfile": "name py-pyaml\nversion 1\n", "python/py-pyaml/notes.txt": "mine\n"})
+	write(t, branch.Worktree, map[string]string{"python/py-pyaml/Portfile": "name py-pyaml\nversion 1\n", "python/py-pyaml/notes.txt": "mine\n",
+		"python/py-pyaml/.Portfile.swp": "swap\n", "python/py-pyaml/Portfile~": "backup\n"})
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Equal(t, []string{"python/py-pyaml"}, capture.NewPorts)
+	require.Equal(t, []string{"python/py-pyaml/Portfile", "python/py-pyaml/notes.txt"}, capture.Untracked, "an editor's swap and backup files aren't listed as left out")
+}
+
+// What gathers untracked files abides by what Git ignores, as git add
+// does: a .gitignore at the tree's root and one in a port's directory,
+// and .git/info/exclude. A capture leaves the ignored files out, and
+// doesn't list them as left out; --include refuses one, saying why; and
+// a branch's worktree with only ignored files isn't dirty for clean (the
+// person, 2026-10-04).
+func TestWhatGitIgnoresIsLeftOutOfWhatACheckGathers(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq"})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{".gitignore": "*.swp\n", "textproc/jq/.gitignore": "scratch/\n"})
+	testsupport.Git(t, branch.Worktree, "add", "--sparse", ".gitignore", "textproc/jq/.gitignore")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "jq: ignore an editor's files")
+	common := testsupport.Git(t, branch.Worktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	require.NoError(t, os.MkdirAll(filepath.Join(common, "info"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(common, "info", "exclude"), []byte("local.txt\n"), 0o644))
+	write(t, branch.Worktree, map[string]string{"textproc/jq/.Portfile.swp": "swap\n", "textproc/jq/scratch/out.txt": "out\n", "textproc/jq/local.txt": "mine\n"})
+
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Empty(t, capture.Untracked, "every one is ignored")
+	reason, err := e.dirty(t.Context(), branch.Worktree)
+	require.NoError(t, err)
+	require.Empty(t, reason, "ignored files make no worktree dirty")
+	for _, path := range []string{"textproc/jq/.Portfile.swp", "textproc/jq/scratch/out.txt", "textproc/jq/local.txt"} {
+		_, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Include: []string{path}})
+		require.ErrorContains(t, err, "--include "+path+": Git ignores it, so a check leaves it out as git add would; git check-ignore -v "+path+" names the rule")
+	}
+
+	write(t, branch.Worktree, map[string]string{"textproc/jq/files/fix.patch": "fix\n"})
+	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, []string{"textproc/jq/files/fix.patch"}, capture.Untracked, "what isn't ignored is still left out, and said")
+	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Include: []string{"textproc/jq/files/fix.patch"}})
+	require.NoError(t, err)
+	file, _, err := e.Repo.File(t.Context(), string(capture.Revision.Source.Tree), "textproc/jq/files/fix.patch")
+	require.NoError(t, err)
+	require.True(t, file.Exists, "--include takes it")
+	for _, path := range []string{"textproc/jq/.Portfile.swp", "textproc/jq/scratch/out.txt", "textproc/jq/local.txt"} {
+		file, _, err := e.Repo.File(t.Context(), string(capture.Revision.Source.Tree), path)
+		require.NoError(t, err)
+		require.False(t, file.Exists, path)
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -179,6 +180,37 @@ func (r *Repository) Untracked(ctx context.Context) ([]string, error) {
 		}
 	}
 	return paths, nil
+}
+
+// Ignored are the paths among those given that Git ignores, by a
+// .gitignore in the worktree at any depth, .git/info/exclude, or
+// core.excludesFile, as git check-ignore reads them: whatever Git itself
+// would leave out of git add, dockhand leaves out too.
+func (r *Repository) Ignored(ctx context.Context, paths ...string) ([]string, error) {
+	for _, name := range paths {
+		if !snapshotPath(name) {
+			return nil, fmt.Errorf("git: invalid path %q", name)
+		}
+	}
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	out, err := r.run(ctx, []byte(strings.Join(paths, "\x00")+"\x00"), nil, "check-ignore", "-z", "--stdin")
+	// check-ignore exits 1 when none of them is ignored, which isn't an
+	// error here.
+	if exit := new(exec.ExitError); errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var ignored []string
+	for path := range strings.SplitSeq(string(out), "\x00") {
+		if path != "" {
+			ignored = append(ignored, path)
+		}
+	}
+	return ignored, nil
 }
 
 // Conflicts lists paths with unresolved merge conflicts.

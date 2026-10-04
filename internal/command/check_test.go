@@ -315,7 +315,8 @@ func TestAStoppedCheckSaysWhatItLeft(t *testing.T) {
 }
 
 // A plan requiring tests names the ports that declare none, which pass
-// under any policy; a plan that doesn't require them needn't.
+// under any policy, and beside them those that do; a plan that doesn't
+// require them needn't.
 func TestAPlanRequiringTestsNamesWhatDeclaresNone(t *testing.T) {
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	plan := model.Plan{Tests: model.TestsRequired, Environments: []model.Environment{tahoe},
@@ -323,11 +324,12 @@ func TestAPlanRequiringTestsNamesWhatDeclaresNone(t *testing.T) {
 		Builds:  []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"ov", "jq"}, Untested: []model.TargetID{"ov"}}}}
 	var out bytes.Buffer
 	writePlan(&out, plan, nil, nil)
-	require.Contains(t, out.String(), "No tests    ov declares none, so requiring them asks nothing of it\n")
+	require.Contains(t, out.String(), "Tests       jq, which must pass\nNo tests    ov declares none, so requiring them asks nothing of it\n", "which do is said beside which don't")
 	plan.Builds[0].Untested = []model.TargetID{"ov", "jq"}
 	out.Reset()
 	writePlan(&out, plan, nil, nil)
 	require.Contains(t, out.String(), "No tests    ov, jq declare none, so requiring them asks nothing of them\n")
+	require.NotContains(t, out.String(), "Tests       ")
 	plan.Tests = model.TestsDeclared
 	out.Reset()
 	writePlan(&out, plan, nil, nil)
