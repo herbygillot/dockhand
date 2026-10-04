@@ -104,15 +104,18 @@ func TestDownloadRejectsErrorBodiesAndSizeOverflow(t *testing.T) {
 	require.ErrorIs(t, err, fetch.ErrStalled)
 	require.ErrorContains(t, err, "downloading source-2.tar.gz from "+slow.URL+"/source-2.tar.gz: fetch: no data arrived for 50ms, so dockhand gave up on it")
 	trickle := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		for range 8 {
-			_, _ = w.Write(bytes.Repeat([]byte{0x1f}, 64))
+		for range 16 {
+			_, _ = w.Write(bytes.Repeat([]byte{0x1f}, 32))
 			w.(http.Flusher).Flush()
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 	}))
 	defer trickle.Close()
-	result, err := (Client{Stall: 50 * time.Millisecond}).fetchOne(t.Context(), archiveInfo(trickle.URL))
-	require.NoError(t, err, "160 ms in all, but never 50 without a byte")
+	// The bound is wide of the 50 ms between writes, and short of the
+	// 800 ms in all: 50 ms beside writes 20 ms apart, a loaded CI runner's
+	// scheduling stalled it once (the Intel job at 60894bc0).
+	result, err := (Client{Stall: 300 * time.Millisecond}).fetchOne(t.Context(), archiveInfo(trickle.URL))
+	require.NoError(t, err, "800 ms in all, but never 300 without a byte")
 	require.Equal(t, int64(512), result.Size)
 
 	// A transport failure names the cause without repeating the URL.
