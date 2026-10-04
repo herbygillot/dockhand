@@ -80,10 +80,17 @@ func (p *fakePlanner) add(tree model.ObjectID, port plannedPort) {
 	}
 	var checksums []string
 	for _, name := range slices.Sorted(maps.Keys(port.archives)) {
-		path := writeTarball(p.t, p.t.TempDir(), strings.TrimSuffix(name, ".tar.gz"), port.archives[name])
-		data, err := os.ReadFile(path)
-		require.NoError(p.t, err)
-		p.served[name] = data
+		// An archive two ports name is made once: made again a second
+		// later, its tarball's times differ, and the first port's
+		// checksum no longer matches what's served (CI at 22336157).
+		data, made := p.served[name]
+		if !made {
+			path := writeTarball(p.t, p.t.TempDir(), strings.TrimSuffix(name, ".tar.gz"), port.archives[name])
+			var err error
+			data, err = os.ReadFile(path)
+			require.NoError(p.t, err)
+			p.served[name] = data
+		}
 		sum := sha256.Sum256(data)
 		checksums = append(checksums, fmt.Sprintf("%s sha256 %s size %d", name, hex.EncodeToString(sum[:]), len(data)))
 	}
@@ -272,17 +279,17 @@ func TestEachSubportIsAssessedForItself(t *testing.T) {
 // testing, 2026-10-04, py-coremltools).
 func TestANewSubportIsComparedWithItsSibling(t *testing.T) {
 	t.Parallel()
-	e, branch, base, tree := revisionFixture(t, map[string]string{"python/py-demo/Portfile": "name py-demo\nversion 2\n"})
+	e, branch, base, tree := revisionFixture(t, map[string]string{"python/py-sibling/Portfile": "name py-sibling\nversion 2\n"})
 	p := newPlanner(t)
 	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"python/py-demo": {{Name: "py310-demo"}, {Name: "py313-demo"}}},
-		trees: map[model.ObjectID]map[string][]macports.PortInfo{base: {"python/py-demo": {{Name: "py310-demo"}}}}}
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"python/py-sibling": {{Name: "py310-sibling"}, {Name: "py313-sibling"}}},
+		trees: map[model.ObjectID]map[string][]macports.PortInfo{base: {"python/py-sibling": {{Name: "py310-sibling"}}}}}
 	port := func(python, version string) macports.PortInfo {
-		return macports.PortInfo{Name: "py" + python + "-demo", Version: version, Options: map[string]string{"dockhand.portgroups": "python", "license": "MIT"}}
+		return macports.PortInfo{Name: "py" + python + "-sibling", Version: version, Options: map[string]string{"dockhand.portgroups": "python", "license": "MIT"}}
 	}
-	p.add(base, plannedPort{info: port("310", "1"), archives: map[string]map[string]string{"demo-1.tar.gz": {"LICENSE": "MIT\n"}}})
+	p.add(base, plannedPort{info: port("310", "1"), archives: map[string]map[string]string{"sibling-1.tar.gz": {"LICENSE": "MIT\n"}}})
 	for _, python := range []string{"310", "313"} {
-		p.add(tree, plannedPort{info: port(python, "2"), archives: map[string]map[string]string{"demo-2.tar.gz": {"LICENSE": "MIT\n", "NOTICE": "Apache-2.0 parts\n"}}})
+		p.add(tree, plannedPort{info: port(python, "2"), archives: map[string]map[string]string{"sibling-2.tar.gz": {"LICENSE": "MIT\n", "NOTICE": "Apache-2.0 parts\n"}}})
 	}
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
@@ -290,8 +297,8 @@ func TestANewSubportIsComparedWithItsSibling(t *testing.T) {
 	for _, a := range assessments {
 		byPort[a.Port] = a
 	}
-	require.NotEmpty(t, messagesOf(byPort["py310-demo"].Comparison))
-	require.Equal(t, messagesOf(byPort["py310-demo"].Comparison), messagesOf(byPort["py313-demo"].Comparison), "compared with py310-demo's base")
+	require.NotEmpty(t, messagesOf(byPort["py310-sibling"].Comparison))
+	require.Equal(t, messagesOf(byPort["py310-sibling"].Comparison), messagesOf(byPort["py313-sibling"].Comparison), "compared with py310-sibling's base")
 }
 
 // A Git-fetched port whose source can't be read isn't compared, which
