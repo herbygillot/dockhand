@@ -17,7 +17,7 @@ long_description    dockhand automates the mechanical part of maintaining a \
 
 categories          sysutils macports
 license             MIT
-maintainers         {herbygillot @herbygillot} openmaintainer
+maintainers         {gmail.com:herby.gillot @herbygillot} openmaintainer
 
 checksums           rmd160  @RMD160@ \
                     sha256  @SHA256@ \
