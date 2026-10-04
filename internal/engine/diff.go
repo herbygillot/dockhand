@@ -149,6 +149,7 @@ func (e *Engine) portsDefined(ctx context.Context, source model.Source, director
 		reader = ports
 	}
 	namer, ok := reader.(portNamer)
+	directories = e.inSource(ctx, source, directories)
 	if !ok || len(directories) == 0 {
 		return nil
 	}
@@ -308,12 +309,35 @@ func (e *Engine) dependents(ctx context.Context, source model.Source, directorie
 			return nil, fmt.Errorf("nothing here reads dependents")
 		}
 	}
+	if directories = e.inSource(ctx, source, directories); len(directories) == 0 {
+		return nil, nil
+	}
 	found, err := reader.Dependents(ctx, source, directories)
 	if err != nil {
 		return found, err
 	}
 	under, err := e.variantDependents(ctx, source, directories, found)
 	return append(found, under...), err
+}
+
+// inSource are the directories a source's tree has a Portfile in. One it
+// hasn't is a new port's, which its index names no port of and nothing as
+// depending on, so the index, whose build for a whole tree can take long,
+// isn't read for it (the M1's run at d302e744: review of #34756, a new
+// port, built one for 99 minutes). One that can't be looked up is kept,
+// for the index to answer.
+func (e *Engine) inSource(ctx context.Context, source model.Source, directories []string) []string {
+	if source.Tree == "" {
+		return directories
+	}
+	var present []string
+	for _, directory := range directories {
+		file, _, err := e.Repo.File(ctx, string(source.Tree), directory+"/Portfile")
+		if err != nil || file.Exists {
+			present = append(present, directory)
+		}
+	}
+	return present
 }
 
 // appendOnce appends a value a list doesn't hold yet.

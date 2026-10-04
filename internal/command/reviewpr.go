@@ -122,6 +122,9 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 	access := engine.Access(report.Permission)
 	fmt.Fprintf(out, "review of #%d %q, as @%s (%s to %s)\n", report.Ref.Number, report.Title, report.Login, access, report.Ref.Repository)
 	fmt.Fprintf(out, "  %s\n", report.Summary())
+	if report.Behind != "" {
+		fmt.Fprintf(out, "  · %s\n", report.Behind)
+	}
 	for _, finding := range report.Findings {
 		fmt.Fprintf(out, "  %s\n", finding)
 	}

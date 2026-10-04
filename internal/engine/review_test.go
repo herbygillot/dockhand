@@ -76,6 +76,41 @@ func TestReviewAppliesTheRulesAndRemembersWhatItFound(t *testing.T) {
 	require.Contains(t, again.Markdown(), "[follow-up]")
 }
 
+// A master here behind the pull request's own base isn't taken for where
+// it leaves it: what master changed since would be reviewed as the pull
+// request's, each port assessed and its index built (the M1's run at
+// d302e744: a one-port review ran 99 minutes against a pinned master).
+// The forge's count of its commits says where it leaves its base, which
+// is reviewed from, and said.
+func TestReviewStartsAtThePullRequestsOwnBase(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	fake := f.withFork(t, e)
+	testsupport.Git(t, f.upstream, "switch", "-q", "-c", "ahead")
+	write(t, f.upstream, map[string]string{"lang/php/Portfile": "name php\nversion 8.5.1\n"})
+	testsupport.Git(t, f.upstream, "add", "lang/php/Portfile")
+	commitAs(t, f.upstream, "Someone someone@example.org", "php: new port")
+	testsupport.Git(t, f.upstream, "switch", "-q", "-c", "contrib")
+	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n", "sysutils/jqx/Portfile": "name jqx\nversion 1\n"})
+	testsupport.Git(t, f.upstream, "add", "sysutils/jqx/Portfile")
+	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: update to 1.8.1")
+	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, f.upstream, "switch", "-q", "master")
+	fake.PRs[34905] = &forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: 34905, URL: "https://github.com/macports/macports-ports/pull/34905"},
+		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", State: forge.PullRequestOpen, Title: "jq: update to 1.8.1", Commits: 1}
+	read := &readDirectories{}
+	e.DependentReader = read
+
+	report, err := e.Review(t.Context(), 34905)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"jq", "jqx"}, report.Ports, "php is a change ahead of master, not the pull request's")
+	require.Equal(t, [][]string{{"textproc/jq"}, {"textproc/jq"}, {"textproc/jq"}}, read.asked, "the index is read for the ports the base has, not the new one's")
+	require.Len(t, report.Commits, 1)
+	require.Equal(t, testsupport.Git(t, f.upstream, "rev-parse", "ahead"), report.Base)
+	require.Contains(t, report.Behind, "master here is behind #34905's base, 2 commits past it to its head where the pull request has 1 commit, so it's reviewed from ")
+}
+
 func findingCodes(findings []commitrules.Finding) []string {
 	var codes []string
 	for _, finding := range findings {
@@ -181,6 +216,19 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 		require.Empty(t, recorded, "a review records no assessment")
 		return err
 	}))
+}
+
+// readDirectories records the directories the index is asked about.
+type readDirectories struct{ asked [][]string }
+
+func (r *readDirectories) Dependents(_ context.Context, _ model.Source, directories []string) ([]Dependent, error) {
+	r.asked = append(r.asked, directories)
+	return nil, nil
+}
+
+func (r *readDirectories) PortsDefined(_ context.Context, _ model.Source, directories []string) (map[string][]string, error) {
+	r.asked = append(r.asked, directories)
+	return nil, nil
 }
 
 // definedPorts names the ports textproc/jq defines, as an index with a

@@ -49,9 +49,12 @@ type ReviewReport struct {
 	Login, Permission string
 	// Head is the commit reviewed; Base where it leaves master.
 	Head, Base string
-	Commits    []git.HistoryCommit
-	Ports      []string
-	Findings   []commitrules.Finding
+	// Behind says that master here was behind the pull request's base,
+	// and where it was reviewed from instead; empty where it wasn't.
+	Behind   string
+	Commits  []git.HistoryCommit
+	Ports    []string
+	Findings []commitrules.Finding
 	// Previous is the last review of the pull request, if any, and
 	// Resolved its findings that no longer hold.
 	Previous *model.Review
@@ -128,6 +131,23 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	}
 	if report.Commits, err = e.Repo.History(ctx, report.Base, report.Head); err != nil {
 		return report, err
+	}
+	// Master here behind the pull request's own base would make what it
+	// changes everything master changed since, each port of it assessed
+	// and its index built: a one-port pull request's review ran 99
+	// minutes against a pinned master (the M1's run at d302e744, E9). The
+	// forge's count of its commits says where it leaves its base, which
+	// is reviewed from instead, and said.
+	if n := pr.Commits; n > 0 && len(report.Commits) > n {
+		own, err := e.Repo.Resolve(ctx, fmt.Sprintf("%s~%d^{commit}", report.Head, n))
+		if err != nil {
+			return report, err
+		}
+		report.Behind = fmt.Sprintf("master here is behind #%d's base, %s past it to its head where the pull request has %s, so it's reviewed from %s, before its own", number, prose.Plural(len(report.Commits), "commit"), prose.Plural(n, "commit"), short(model.ObjectID(own)))
+		report.Base = own
+		if report.Commits, err = e.Repo.History(ctx, report.Base, report.Head); err != nil {
+			return report, err
+		}
 	}
 	trees, err := e.Repo.CommitTrees(ctx, []string{report.Base, report.Head})
 	if err != nil {

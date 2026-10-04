@@ -40,8 +40,11 @@ type PullRequest struct {
 	// RemoteHead is its head commit as observed. Recording it does not
 	// imply that the object is available in the local Git repository.
 	RemoteHead model.ObjectID
-	Title      string
-	Body       string
+	// Commits is how many commits it has, as the forge counts them; zero
+	// where the forge didn't say.
+	Commits int `json:",omitempty"`
+	Title   string
+	Body    string
 	// Author is who opened it, and MaintainerCanModify whether they let
 	// the repository's maintainers push to its head branch.
 	Author              string `json:",omitempty"`
