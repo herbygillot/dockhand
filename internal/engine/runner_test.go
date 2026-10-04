@@ -368,9 +368,20 @@ func TestACancelIsAppliedByWhoeverHoldsTheRun(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond)
 	run, err := e.RequestCancel(t.Context(), canceller, queued.ID)
 	require.NoError(t, err)
-	require.Equal(t, model.RunRunning, run.State, "the holder applies it")
+	// The holder applies it, at its next poll. It may already have, and
+	// released the run, by the time the request returns, which then reads
+	// the run canceled: on CI's Intel runner it had (404ac160). Either
+	// way the canceller applies nothing while the holder lives.
+	require.Contains(t, []model.RunState{model.RunRunning, model.RunCanceled}, run.State)
 	run = <-done
 	require.Equal(t, model.RunCanceled, run.State)
+	events, err := e.RunEvents(t.Context(), run.ID, 0)
+	require.NoError(t, err)
+	applied := slices.IndexFunc(events, func(event model.Event) bool {
+		return event.Kind == "run.state" && strings.HasSuffix(event.Message, " canceled")
+	})
+	require.GreaterOrEqual(t, applied, 0)
+	require.Equal(t, runner.ID(), events[applied].Session, "the holder applied it, not the canceller")
 
 	// A queued run is canceled at once.
 	second, err := e.Enqueue(t.Context(), model.Branch{ID: run.Branch}, mustPlan(t, e, run), model.OriginPerson)
