@@ -27,8 +27,10 @@ fi
 step sudo sysadminctl -addUser dhtest -fullName "Dockhand Acceptance" -password - -home /Users/dhtest
 
 # 2. FileVault stays on, so a person logs dhtest in, and keeps it logged in
-# by fast user switching, for the serve rows.
-human "log dhtest in at the login window once, then switch back with fast user switching"
+# by fast user switching, for the serve rows. Nothing below needs the
+# login, so it's said at the end rather than waited on here, which left
+# steps 3 to 5 undone and a rerun deleting dhtest again (the Prime-time
+# thread, 2026-10-05).
 
 # 3. Git's identity and the test account's SSH key: the contributor's own
 # setup, which dockhand doesn't do.
@@ -61,12 +63,41 @@ if command -v gh >/dev/null && [ -n "${ACCEPT_TEST_ACCOUNT:-}" ]; then
 			step gh api -X DELETE "repos/$sandbox/git/$ref"
 		done
 	done
-	step gh repo sync "$sandbox" --branch master --force
+	step gh repo sync "$sandbox" --branch master --force || :
+	# Syncing, and deleting branches, need the test token's write access
+	# to the fork: Contents and Pull requests, read and write. Without it
+	# the fork's master drifts behind MacPorts' (107 commits on
+	# 2026-10-05), and its test pull requests show MacPorts' commits as
+	# theirs. GitHub says how far behind it is, which a sync leaves at 0.
+	if [ "$DRY" = 0 ]; then
+		behind=$(gh api "repos/$sandbox/compare/master...macports:macports-ports:master" --jq '.ahead_by' 2>/dev/null || echo unknown)
+		[ "$behind" = 0 ] || die "$sandbox's master is $behind commits behind MacPorts' after the sync: give the token gh uses Contents and Pull requests, read and write, on the fork, and run this again"
+	fi
 else
 	echo "skipped: clearing the fork needs gh and ACCEPT_TEST_ACCOUNT, the test GitHub login"
+fi
+
+# 4b. dhtest's ports clone, MACPORTS_TREE as full.sh has it: the test
+# account's fork, read over HTTPS and pushed to over SSH with the test key
+# (full.sh's GIT_SSH_COMMAND), MacPorts' own as the upstream remote. It
+# borrows the host's mirror's objects while it clones, and keeps none of
+# its own ties to it.
+if [ -n "${ACCEPT_TEST_ACCOUNT:-}" ]; then
+	tree=/Users/dhtest/Source/macports-ports
+	step sudo -u dhtest mkdir -p /Users/dhtest/Source
+	if [ -d "$HOST_ROOT/ports-mirror.git" ]; then
+		step sudo -u dhtest git clone -q --reference "$HOST_ROOT/ports-mirror.git" --dissociate "https://github.com/$ACCEPT_TEST_ACCOUNT/macports-ports.git" "$tree"
+	else
+		step sudo -u dhtest git clone -q "https://github.com/$ACCEPT_TEST_ACCOUNT/macports-ports.git" "$tree"
+	fi
+	step sudo -u dhtest git -C "$tree" remote set-url --push origin "git@github.com:$ACCEPT_TEST_ACCOUNT/macports-ports.git"
+	step sudo -u dhtest git -C "$tree" remote add upstream https://github.com/macports/macports-ports.git
+else
+	echo "skipped: dhtest's ports clone needs ACCEPT_TEST_ACCOUNT, the test GitHub login"
 fi
 
 # 5. The starting point the harm sweep compares with.
 step mkdir -p "$HOST_ROOT/baseline"
 echo "free: $(df -g / | awk 'NR == 2 {print $4}') GB" | if [ "$DRY" = 1 ]; then sed 's/^/would record: /'; else tee "$HOST_ROOT/baseline/free"; fi
+then_person "log dhtest in at the login window once, then switch back with fast user switching; full.sh runs as dhtest after that"
 echo "reset-user.sh: done$([ "$DRY" = 1 ] && echo ', as a dry run: nothing was changed')"

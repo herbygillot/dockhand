@@ -24,6 +24,9 @@
 #                      approval list go to MacPorts.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
+# dhtest's login shell doesn't put MacPorts on PATH; the rows run port,
+# and the dockhand row A1 installs (the Prime-time thread, 2026-10-05).
+case ":$PATH:" in *:/opt/local/bin:*) ;; *) export PATH="/opt/local/bin:/opt/local/sbin:$PATH" ;; esac
 : "${ACCEPT_GH_LOGIN:?full.sh needs ACCEPT_GH_LOGIN, the test GitHub account}"
 : "${ACCEPT_GO_PORT:?full.sh needs ACCEPT_GO_PORT, a small Go port that is due}"
 : "${ACCEPT_RUST_PORT:?full.sh needs ACCEPT_RUST_PORT, a small Rust port that is due}"
@@ -47,6 +50,8 @@ fi
 : "${ACCEPT_GH_KEY:=$HOME/.dockhand-acceptance/test-account_ed25519}"
 [ -r "$ACCEPT_GH_KEY" ] || { echo "full.sh: ACCEPT_GH_KEY, $ACCEPT_GH_KEY, isn't there; reset-user.sh puts the test account's key there" >&2; exit 2; }
 export GIT_SSH_COMMAND="ssh -i $ACCEPT_GH_KEY -o IdentitiesOnly=yes -o IdentityAgent=none"
+
+[ -d "$MACPORTS_TREE/.git" ] || { echo "full.sh: MACPORTS_TREE, $MACPORTS_TREE, isn't a clone; reset-user.sh clones the test account's fork there" >&2; exit 2; }
 
 # Test pull requests go to the sandbox (engine.Options.PullRequests).
 export DOCKHAND_PULL_REQUESTS=${ACCEPT_SANDBOX:-$ACCEPT_GH_LOGIN/macports-ports}

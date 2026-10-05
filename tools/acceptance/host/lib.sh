@@ -32,6 +32,10 @@ human() {
 	[ "$DRY" = 1 ] || exit 75
 }
 
+# then is a step only a person can take that nothing after it waits on:
+# said, and the script goes on.
+then_person() { printf 'THEN: %s\n' "$*"; }
+
 die() {
 	printf '%s: %s\n' "$(basename "$0")" "$*" >&2
 	exit 1
