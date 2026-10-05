@@ -5,9 +5,10 @@
 # plan/prime-time-environment.md). Because it deletes a macOS user, it
 # refuses unless this Mac carries the test-host marker an admin writes,
 # and unless the user is exactly dhtest. Without --run, it only says what
-# it would do.
+# it would do. With --after-login it keeps dhtest and its home, and does
+# the steps after making it, for a home macOS made only at first login.
 #
-#   tools/acceptance/host/reset-user.sh dhtest [--run]
+#   tools/acceptance/host/reset-user.sh dhtest [--run] [--after-login]
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=lib.sh
@@ -19,23 +20,67 @@ if [ ! -f "$HOST_MARKER" ]; then
 	die "$HOST_MARKER is missing: this Mac isn't marked as the test host, so no user is deleted"
 fi
 [ "$(id -un)" != dhtest ] || die "run it as the admin driver, not as dhtest"
+after_login=0
+for arg in "$@"; do
+	[ "$arg" = --after-login ] && after_login=1
+done
 
-# 1. Delete dhtest and make it again.
-if id dhtest >/dev/null 2>&1; then
-	step sudo sysadminctl -deleteUser dhtest
+# as_dhtest runs a command as dhtest in dhtest's own home: sudo alone
+# keeps the driver's HOME, and git config --global then wrote, or failed
+# to lock, the driver's ~/.gitconfig (the Prime-time thread, 2026-10-05).
+as_dhtest() { sudo -H -u dhtest "$@"; }
+
+# The fork is cleared with the test account's token, which is checked
+# before dhtest is deleted, so a missing login stops nothing halfway:
+# GH_TOKEN, else the token file, else gh's own login.
+: "${ACCEPT_GH_TOKEN_FILE:=$HOME/.dockhand-acceptance/gh-token}"
+if [ -z "${GH_TOKEN:-}" ] && [ -r "$ACCEPT_GH_TOKEN_FILE" ]; then
+	GH_TOKEN=$(tr -d '[:space:]' <"$ACCEPT_GH_TOKEN_FILE")
+	export GH_TOKEN
 fi
-step sudo sysadminctl -addUser dhtest -fullName "Dockhand Acceptance" -password - -home /Users/dhtest
+if command -v gh >/dev/null && [ -n "${ACCEPT_TEST_ACCOUNT:-}" ]; then
+	sandbox="$ACCEPT_TEST_ACCOUNT/macports-ports"
+	message=
+	if ! gh auth status >/dev/null 2>&1; then
+		message="gh has no login: set GH_TOKEN, or put the test account's token at $ACCEPT_GH_TOKEN_FILE (ACCEPT_GH_TOKEN_FILE)"
+	elif [ "$(gh api "repos/$sandbox" --jq .permissions.push 2>/dev/null)" != true ]; then
+		message="the token gh uses can't write to $sandbox: give it Contents and Pull requests, read and write, on the fork"
+	fi
+	if [ -n "$message" ]; then
+		if [ "$DRY" = 1 ]; then
+			echo "would stop: $message"
+		else
+			die "$message"
+		fi
+	fi
+fi
+
+# 1. Delete dhtest and make it again, with its home: sysadminctl only
+# assigns the home, which macOS makes at first login, and every step
+# below writes in it. createhomedir makes it from the user template now.
+if [ "$after_login" = 0 ]; then
+	if id dhtest >/dev/null 2>&1; then
+		step sudo sysadminctl -deleteUser dhtest
+	fi
+	step sudo sysadminctl -addUser dhtest -fullName "Dockhand Acceptance" -password - -home /Users/dhtest
+	step sudo createhomedir -c -u dhtest
+fi
+if [ "$DRY" = 0 ] && [ ! -d /Users/dhtest ]; then
+	human "dhtest has no home yet: log dhtest in at the login window once, switch back, and run $(basename "$0") dhtest --run --after-login"
+fi
 
 # 2. FileVault stays on, so a person logs dhtest in, and keeps it logged in
-# by fast user switching, for the serve rows. Nothing below needs the
+# by fast user switching, for the serve rows. sysadminctl makes dhtest
+# with the password read at its prompt, and says such a user can't unlock
+# FileVault; after a reboot the driver unlocks it, and then logs dhtest in. Nothing below needs the
 # login, so it's said at the end rather than waited on here, which left
 # steps 3 to 5 undone and a rerun deleting dhtest again (the Prime-time
 # thread, 2026-10-05).
 
 # 3. Git's identity and the test account's SSH key: the contributor's own
 # setup, which dockhand doesn't do.
-step sudo -u dhtest git config --global user.name "Dockhand Acceptance"
-step sudo -u dhtest git config --global user.email "dhtest@example.invalid"
+step as_dhtest git config --global user.name "Dockhand Acceptance"
+step as_dhtest git config --global user.email "dhtest@example.invalid"
 # The key goes where full.sh offers it alone, outside ~/.ssh, so no other
 # key, and no agent's, stands in for it.
 : "${ACCEPT_TEST_KEY:=$HOME/.dockhand-acceptance/herbyg-test_ed25519}"
@@ -52,7 +97,6 @@ fi
 # dockhand's branches deleted; and its master made MacPorts' again, so a
 # pull request within it shows only its own commits.
 if command -v gh >/dev/null && [ -n "${ACCEPT_TEST_ACCOUNT:-}" ]; then
-	sandbox="$ACCEPT_TEST_ACCOUNT/macports-ports"
 	for repo in macports/macports-ports "$sandbox"; do
 		for number in $(gh pr list --repo "$repo" --author "$ACCEPT_TEST_ACCOUNT" --state open --json number,title --jq '.[] | select(.title | startswith("[testing]")) | .number'); do
 			step gh pr close "$number" --repo "$repo"
@@ -84,14 +128,14 @@ fi
 # its own ties to it.
 if [ -n "${ACCEPT_TEST_ACCOUNT:-}" ]; then
 	tree=/Users/dhtest/Source/macports-ports
-	step sudo -u dhtest mkdir -p /Users/dhtest/Source
+	step as_dhtest mkdir -p /Users/dhtest/Source
 	if [ -d "$HOST_ROOT/ports-mirror.git" ]; then
-		step sudo -u dhtest git clone -q --reference "$HOST_ROOT/ports-mirror.git" --dissociate "https://github.com/$ACCEPT_TEST_ACCOUNT/macports-ports.git" "$tree"
+		step as_dhtest git clone -q --reference "$HOST_ROOT/ports-mirror.git" --dissociate "https://github.com/$ACCEPT_TEST_ACCOUNT/macports-ports.git" "$tree"
 	else
-		step sudo -u dhtest git clone -q "https://github.com/$ACCEPT_TEST_ACCOUNT/macports-ports.git" "$tree"
+		step as_dhtest git clone -q "https://github.com/$ACCEPT_TEST_ACCOUNT/macports-ports.git" "$tree"
 	fi
-	step sudo -u dhtest git -C "$tree" remote set-url --push origin "git@github.com:$ACCEPT_TEST_ACCOUNT/macports-ports.git"
-	step sudo -u dhtest git -C "$tree" remote add upstream https://github.com/macports/macports-ports.git
+	step as_dhtest git -C "$tree" remote set-url --push origin "git@github.com:$ACCEPT_TEST_ACCOUNT/macports-ports.git"
+	step as_dhtest git -C "$tree" remote add upstream https://github.com/macports/macports-ports.git
 else
 	echo "skipped: dhtest's ports clone needs ACCEPT_TEST_ACCOUNT, the test GitHub login"
 fi

@@ -1,7 +1,8 @@
 # stages: full
 # D-I5: the Mac sleeps during a check, and reboots while serve runs. The
 # check resumes or fails clearly, with no VM orphaned; serve picks the
-# check up after login. FileVault stays on, so a person unlocks.
+# check up after login. FileVault stays on, so a person unlocks: as the
+# driver, since dhtest, made with sysadminctl, can't unlock FileVault.
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
 	host_only "sleep and reboot" || return 0
@@ -14,7 +15,7 @@ act() {
 	dh_bg_wait || :
 	dh serve --install || :
 	dh check -b "$DI5_BRANCH" --fresh --enqueue || :
-	checkpoint "reboot the Mac (sudo shutdown -r now), unlock FileVault, and log dhtest in; then resume" || return 0
+	checkpoint "reboot the Mac (sudo shutdown -r now), unlock FileVault as the admin driver (dhtest can't), and log dhtest in; then resume" || return 0
 	sleep 120
 	dh_json status "$DI5_BRANCH" || :
 	dh serve --uninstall || :
