@@ -136,6 +136,10 @@ type SubmitPlan struct {
 	// wrote it or left out, which submit keeps as it is.
 	Note        string
 	NoteLeftOut bool
+	// Written is what dockhand has written of Body, recorded as what it
+	// last wrote: Body, but each part kept as someone's own carries
+	// dockhand's last text of it (prdescription.Written).
+	Written string
 
 	facts bodyFacts
 }
@@ -153,12 +157,14 @@ func (p *SubmitPlan) Answer(testedBinaries, testedVariants bool) {
 	p.Request.TestedBinaries, p.Request.TestedVariants = testedBinaries, testedVariants
 	p.facts.TestedBinaries, p.facts.TestedVariants = testedBinaries, testedVariants
 	p.Body = pullRequestBody(p.facts)
+	p.Written = p.Body
 	if p.Existing != nil {
 		last := ""
 		if p.Branch.PullRequest != nil {
 			last = p.Branch.PullRequest.Body
 		}
 		p.Body, p.Sections = prdescription.Merge(p.Existing.PullRequest.Body, last, p.Body, len(p.Request.Types) > 0)
+		p.Written = prdescription.Written(p.Body, last, p.Sections)
 		// Someone else's description is never rewritten (ApplySubmit).
 		if p.Theirs {
 			p.Sections = DescriptionSections{Description: SectionKept, Types: SectionKept, TestedOn: SectionKept}
@@ -181,7 +187,7 @@ func (p SubmitPlan) DescriptionSaysNothing() bool {
 // Describe replaces the description with one the person wrote, which
 // gives their note however they left it.
 func (p *SubmitPlan) Describe(body string) {
-	p.Body, p.BodyKept, p.NoteLeftOut = body, true, false
+	p.Body, p.Written, p.BodyKept, p.NoteLeftOut = body, body, true, false
 	p.Sections = DescriptionSections{Description: SectionKept, Types: SectionKept, TestedOn: SectionKept}
 }
 
@@ -666,7 +672,12 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		if err != nil {
 			return err
 		}
-		body := plan.Body
+		// What dockhand wrote, not a person's edit it kept, is recorded,
+		// so the next submit still tells the two apart.
+		body := plan.Written
+		if body == "" {
+			body = plan.Body
+		}
 		if plan.Theirs {
 			body = plan.Existing.PullRequest.Body
 		}

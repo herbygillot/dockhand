@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -496,6 +497,25 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		if before.Platform == after.Platform {
 			record = &model.ChangeRecord{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Directory: edit.Directory, Platform: after.Platform,
 				Ports: fidelity.SubportChanges(edit.Directory, &before, &after), Policy: fidelity.ChangePolicy, At: edit.At}
+			// What the edit changed in a block this Mac doesn't evaluate is
+			// said, as a record made from the base says it (batch 76):
+			// primed without it, a subport changed only there dropped out
+			// of submit's ports and tidy's groups, and the record is never
+			// made again (the architecture re-synthesis, L2c).
+			name := edit.Directory + "/Portfile"
+			baseFile, baseText, baseErr := worktree.File(ctx, trees[string(base)], name)
+			appliedFile, appliedText, appliedErr := worktree.File(ctx, applied, name)
+			if baseErr != nil || appliedErr != nil {
+				record = nil
+			} else {
+				if !baseFile.Exists {
+					baseText = nil
+				}
+				if !appliedFile.Exists {
+					appliedText = nil
+				}
+				record.Unseen, record.AllUnseen = portfile.UnseenChanges(baseText, appliedText)
+			}
 		}
 	}
 	// The files are written; a record that landed though its commit's

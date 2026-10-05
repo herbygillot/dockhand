@@ -58,6 +58,12 @@ type fakePreparer struct {
 	// family are the other ports the Portfile defines, as the edit
 	// evaluates them before it.
 	family map[string]macports.PortInfo
+	// subports are other ports the Portfile defines, the same before
+	// and after the edit as it evaluates them.
+	subports map[string]macports.PortInfo
+	// rewrite edits a version update's Portfile further, as the edit
+	// writes it.
+	rewrite func(string) string
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r editprep.Request) (model.Release, error) {
@@ -96,6 +102,9 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 	case r.Action == model.EditUpdate:
 		next = r.Release.Version
 		after = versionLine.ReplaceAllString(after, "version "+next)
+		if p.rewrite != nil {
+			after = p.rewrite(after)
+		}
 	case r.Action == model.EditRevbump:
 		nextRevision = revision + 1
 		if revisionLine.MatchString(after) {
@@ -133,6 +142,10 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 		if other != r.Selection.Selector {
 			result.Fidelity[0].Before.Ports[other] = info
 		}
+	}
+	for other, info := range p.subports {
+		result.Fidelity[0].Before.Ports[other] = info
+		result.Fidelity[0].After.Ports[other] = info
 	}
 	// The port depended on the same ports before the edit.
 	if len(p.dependencies) > 0 {
@@ -900,4 +913,37 @@ func TestAnObsoleteStubMovesWithItsReplacementWhenAsked(t *testing.T) {
 	for _, edit := range edits {
 		require.Equal(t, "jq: update to 1.8.1", edit.Subject, "the stub's edit is the replacement's update")
 	}
+}
+
+// An update's own record says what it changed where this Mac's
+// evaluation doesn't look, as a record made from the base says it: a
+// subport changed only under Darwin 19 stays one of tidy's and submit's
+// ports (the architecture re-synthesis, L2c).
+func TestAnUpdatesRecordKeepsTheSubportsItCantSee(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	legacy := "subport jq-legacy {\n    version 0.9\n}\n"
+	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n" + legacy})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: add jq-legacy")
+	e, p := f.withPreparer(t)
+	f.withFork(t, e)
+	p.subports = map[string]macports.PortInfo{"jq-legacy": {Name: "jq-legacy", Version: "0.9"}}
+	p.rewrite = func(text string) string {
+		return strings.Replace(text, legacy, "subport jq-legacy {\n    version 0.9\n    platform darwin 19 {\n        configure.args-append --old\n    }\n}\n", 1)
+	}
+	branch := committedUpdate(t, e)
+
+	var records []model.ChangeRecord
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		records, err = r.ChangeRecords(store.AssessmentFilter{Branch: branch.ID})
+		return err
+	}))
+	require.NotEmpty(t, records)
+	require.Equal(t, []string{"jq"}, records[0].Changed(), "what this Mac's evaluation sees")
+	require.Equal(t, []string{"jq-legacy"}, records[0].Unseen, "the update's own record")
+
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{"jq", "jq-legacy"}, plan.Ports)
 }

@@ -223,3 +223,21 @@ func TestADescriptionOfASubjectOnlyCommitSaysNothing(t *testing.T) {
 	require.False(t, SaysNothing(withNote))
 	require.False(t, SaysNothing(Facts{Commits: []Commit{{Message: "a: x"}, {Message: "b: y"}}}), "a table of commits says what each did")
 }
+
+// What dockhand records as written keeps its own text where a person's
+// edit was kept, so the next merge still tells them apart: recorded
+// merged, an edited Description survived one re-submit (the architecture
+// re-synthesis, L1).
+func TestWrittenKeepsDockhandsTextWhereAPersonsWasKept(t *testing.T) {
+	written := "#### Description\n\nupdate\n\n###### Tested on\n\nmacOS 26\n"
+	edited := strings.Replace(written, "update", "What I tested by hand.", 1)
+	fresh := strings.Replace(written, "macOS 26", "macOS 26 and 15", 1)
+	merged, sections := Merge(edited, written, fresh, false)
+	require.Equal(t, Kept, sections.Description)
+	require.Contains(t, merged, "What I tested by hand.")
+	recorded := Written(merged, written, sections)
+	require.Equal(t, fresh, recorded, "dockhand's Description, and the Tested on it refreshed")
+	again, sections := Merge(merged, recorded, fresh, false)
+	require.Equal(t, Kept, sections.Description, "still theirs on the next submit")
+	require.Equal(t, merged, again)
+}

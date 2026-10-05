@@ -646,6 +646,36 @@ func Merge(existing, lastWritten, fresh string, named bool) (string, Sections) {
 	return submittedFirst(body, lastWritten, fresh, testedOn), Sections{Description: description, Types: types, TestedOn: testedOn}
 }
 
+// Written is what dockhand has written of a merged description, to
+// record as what it last wrote: the merged description, but each part
+// Merge kept as someone's own carries dockhand's last text of it instead.
+// Recorded merged, a person's edit read as dockhand's on the next submit,
+// which replaced it: an edited Description survived one re-submit, and
+// an un-ticked Type was ticked again (the architecture re-synthesis, L1).
+func Written(merged, lastWritten string, sections Sections) string {
+	if sections.TestedOn == Kept {
+		if at, ok := ownedSpan(merged); ok {
+			if last, ok := ownedSpan(lastWritten); ok {
+				merged = merged[:at] + lastWritten[last:]
+			}
+		}
+	}
+	replace := func(span func(string) (int, int, bool)) {
+		from, to, found := span(merged)
+		was, wasEnd, written := span(lastWritten)
+		if found && written {
+			merged = merged[:from] + lastWritten[was:wasEnd] + merged[to:]
+		}
+	}
+	if sections.Types == Kept {
+		replace(typesSpan)
+	}
+	if sections.Description == Kept {
+		replace(func(body string) (int, int, bool) { return sectionSpan(body, descriptionHeading) })
+	}
+	return merged
+}
+
 // submittedFirst gives a description dockhand wrote before its first line
 // named dockhand the line fresh begins with, where rewriting everything
 // from Tested on down took away the last line that named dockhand. One

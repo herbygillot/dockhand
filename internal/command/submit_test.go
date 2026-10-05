@@ -317,6 +317,19 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; its description is yours, and stays as it is\n`, out, "a Description a person edited is theirs")
+
+	// It stays theirs through every submit after, not the next alone:
+	// recorded merged, their text read as dockhand's on the third, which
+	// replaced it (the architecture re-synthesis, L1). An un-ticked Type
+	// stays un-ticked too.
+	unticked := strings.Replace(g.PRs[34901].Body, "- [x] enhancement", "- [ ] enhancement", 1)
+	g.PRs[34901].Body = unticked
+	for range 2 {
+		_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+		require.NoError(t, err)
+		require.Contains(t, g.PRs[34901].Body, "What I tested by hand.")
+		require.Contains(t, g.PRs[34901].Body, "- [ ] enhancement")
+	}
 }
 
 // Every part refreshed is named, in the description's order.
