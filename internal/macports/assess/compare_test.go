@@ -315,6 +315,27 @@ func TestANativeLibraryIsSaidWhereMacPortsHasAPortForIt(t *testing.T) {
 	require.Contains(t, messages(comparison.Changes), "· upstream: Cargo.lock adds aws-lc-sys 0.45.0, which links the native library aws-lc: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds", "not observed, so said as before")
 }
 
+// llvm-sys names the LLVM it links in its version, 221 for LLVM 22, which
+// MacPorts has as llvm-22: perry's update added it and said nothing, since
+// no port is named llvm (field testing's batch 13).
+func TestLLVMsSysCrateIsSaidWithItsSeries(t *testing.T) {
+	var readings [2]project.Reading
+	for i, crates := range [][]string{{"serde 1.0.210"}, {"serde 1.0.210", "llvm-sys 221.0.1"}} {
+		reading, err := project.Read(t.Context(), testsupport.Tarball(t, fmt.Sprintf("perry-%d", i), map[string]string{"Cargo.lock": lock(crates...)}), project.Spec{})
+		require.NoError(t, err)
+		readings[i] = reading
+	}
+	perry := macports.PortInfo{Name: "perry", Options: map[string]string{"dockhand.portgroups": "cargo"}}
+	input := Input{Port: perry, Base: perry, Pairs: []Pair{{Archive: "perry-0.5.1520.tar.gz", Before: readings[0], After: readings[1]}}}
+	var wanted []string
+	for _, provider := range Wanted(input) {
+		wanted = append(wanted, provider.Port)
+	}
+	require.Equal(t, []string{"llvm-22", "llvm"}, wanted)
+	comparison := observed(t, input, map[Provider]Observation{{Port: "llvm-22"}: {Version: "22.1.0", Directory: "lang/llvm-22"}, {Port: "llvm"}: {Absent: true}})
+	require.Contains(t, messages(comparison.Changes), "· upstream: Cargo.lock adds llvm-sys 221.0.1, which links the native library llvm 22, which MacPorts has as lang/llvm-22: the Portfile may declare it, rather than the crate linking whatever copy it finds")
+}
+
 // A Node workspace's manifest is compared as the root's is: beekeeper-studio
 // added two dependencies and moved electron in apps/studio/package.json,
 // which reading the root alone said nothing of (the beekeeper-studio run's

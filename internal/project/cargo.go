@@ -7,6 +7,7 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -331,6 +332,23 @@ func (p CargoPackage) NativeLibrary() string {
 		}
 	}
 	return ""
+}
+
+// NativeLibraryVersion is the version of the native library a crate
+// links, where its own version says it: llvm-sys's major version is
+// LLVM's major and minor together, 221 for LLVM 22.1, as its README
+// documents, so 221.0.1 links LLVM 22, whose MacPorts port is llvm-22
+// (field testing's perry, 0.5.1520). Empty for any other crate.
+func (p CargoPackage) NativeLibraryVersion() string {
+	if p.Name != "llvm-sys" {
+		return ""
+	}
+	major, _, _ := strings.Cut(p.Version, ".")
+	n, err := strconv.Atoi(major)
+	if err != nil || n < 10 {
+		return ""
+	}
+	return strconv.Itoa(n / 10)
 }
 
 // cratesIO is crates.io's index as a lock names it, in each protocol.

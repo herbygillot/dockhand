@@ -41,6 +41,18 @@ func TestACargoProjectsChangedBinariesAreSaid(t *testing.T) {
 		"Cargo.toml":          {Data: []byte("[workspace]\nmembers = [\"jgenesis\"]\n")},
 		"jgenesis/Cargo.toml": {Data: []byte("[package]\nname = \"jgenesis\"\n")},
 	}
-	require.Equal(t, []Change{{Kind: "build", How: "binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: jgenesis added; jgenesis-cli, jgenesis-gui removed"}}, cargoBinaries(old, now))
-	require.Empty(t, cargoBinaries(now, now))
+	before := project.Reading{Files: old, Programs: []string{"jgenesis-cli", "jgenesis-gui"}}
+	after := project.Reading{Files: now, Programs: []string{"jgenesis"}}
+	require.Equal(t, []Change{{Kind: "build", How: "binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: jgenesis added; jgenesis-cli, jgenesis-gui removed"}}, cargoBinaries(before, after))
+	require.Empty(t, cargoBinaries(after, after))
+
+	// A member added with no src/main.rs, or src/bin, is a library, which
+	// installs nothing a destroot names: mise's mise-dotenv (field
+	// testing, batch 13).
+	library := map[string]project.File{"jgenesis-dotenv/Cargo.toml": {Data: []byte("[package]\nname = \"jgenesis-dotenv\"\n")}}
+	for name, file := range now {
+		library[name] = file
+	}
+	require.Empty(t, cargoBinaries(after, project.Reading{Files: library, Programs: []string{"jgenesis"}}))
+	require.NotEmpty(t, cargoBinaries(after, project.Reading{Files: library, Programs: []string{"jgenesis", "jgenesis-dotenv"}}), "one with a main.rs is a program")
 }

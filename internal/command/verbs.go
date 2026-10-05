@@ -18,12 +18,13 @@ import (
 
 func editCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchChoice
+	var noOpen bool
 	cmd := &cobra.Command{
 		Use:   "edit <port>",
 		Short: "Open a port's files in your editor",
 		Long: `Brings a port's directory into the branch's worktree, when a sparse worktree
 does not hold it yet, and opens its Portfile in $VISUAL or $EDITOR. Without
-a terminal or an editor, it prints the Portfile's path.
+a terminal or an editor, or with --no-open, it prints the Portfile's path.
 
 The branch is --branch, else the one checked out here; --new starts one.`,
 		Args: cobra.ExactArgs(1),
@@ -48,7 +49,10 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 			portfile := filepath.Join(branch.Worktree, filepath.FromSlash(directory), "Portfile")
 			streams.emit(map[string]any{"branch": branchRef(branch), "started": started, "directory": directory, "portfile": portfile})
 			editor := firstOf(os.Getenv("VISUAL"), os.Getenv("EDITOR"))
-			if !streams.terminal() || editor == "" {
+			// --no-open only brings the port's files in, for an editor of
+			// the person's own, where EDITOR=true stood in for it (field
+			// testing's batch 13).
+			if noOpen || !streams.terminal() || editor == "" {
 				fmt.Fprintln(streams.Out, portfile)
 				return nil
 			}
@@ -63,6 +67,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 		},
 	}
 	where.flags(cmd)
+	cmd.Flags().BoolVar(&noOpen, "no-open", false, "bring the port's files into the worktree and print the Portfile's path, opening no editor")
 	return cmd
 }
 

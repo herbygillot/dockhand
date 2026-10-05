@@ -18,8 +18,9 @@ import (
 // project's workspaces' package.json files. 3: a Cargo workspace's
 // members' Cargo.toml files. 4: the files a CMakeLists.txt include()s.
 // 5: the archive's directories, to DirectoryDepth deep. 6: every
-// Makefile.am's libtool version (LibraryVersions).
-const ReaderVersion = 6
+// Makefile.am's libtool version (LibraryVersions). 7: Cargo's
+// src/main.rs files (Programs).
+const ReaderVersion = 7
 
 // Cache keeps readings on disk by what they read: an archive's content, by
 // its sha256, and where in it the project is, with the reader's version

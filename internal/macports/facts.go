@@ -81,6 +81,19 @@ func (p PortInfo) PortGroups() (groups []string, known bool) {
 	return groups, set && err == nil
 }
 
+// BuildsInto reports a directory below ${worksrcpath} that the port's
+// build makes, which its source needn't have: Cargo's target, for a port
+// of the cargo or rust PortGroup, which a release's tarball may carry by
+// accident and the next may not (field testing's perry, 0.5.1159 to
+// 0.5.1520: "upstream's source no longer has target/").
+func (p PortInfo) BuildsInto(directory string) bool {
+	if directory != "target" {
+		return false
+	}
+	groups, _ := p.PortGroups()
+	return slices.ContainsFunc(groups, func(group string) bool { return group == "cargo" || group == "rust" })
+}
+
 // libraryPorts are the ports named otherwise than the native libraries
 // they provide, as Rust's -sys crates name them: onig_sys links
 // oniguruma6, and libz-sys zlib.
@@ -97,6 +110,20 @@ var libraryPorts = map[string][]string{
 // named otherwise, zlib for libz. A port named for a library may be
 // versioned too, as openssl3 is, which TiesTo reads.
 func LibraryPorts(library string) []string {
+	return LibraryPortsAt(library, "")
+}
+
+// LibraryPortsAt are LibraryPorts for a library at a version its crate
+// names, the versioned port first, as MacPorts names one series of a
+// library a port of its own: llvm-22 for LLVM 22.
+func LibraryPortsAt(library, version string) []string {
+	if version != "" {
+		return append([]string{library + "-" + version}, libraryPortNames(library)...)
+	}
+	return libraryPortNames(library)
+}
+
+func libraryPortNames(library string) []string {
 	names := []string{library}
 	if bare := strings.TrimPrefix(library, "lib"); bare != library && bare != "" {
 		names = append(names, bare)
@@ -119,7 +146,8 @@ func (p PortInfo) TiesTo(library string) LibraryTies {
 	names := LibraryPorts(library)
 	named := func(name string) bool {
 		version, ok := strings.CutPrefix(name, library)
-		return ok && strings.Trim(version, "0123456789") == "" || slices.Contains(names[1:], name)
+		// openssl3, or llvm-22 as MacPorts names a series.
+		return ok && strings.Trim(strings.TrimPrefix(version, "-"), "0123456789") == "" || slices.Contains(names[1:], name)
 	}
 	var ties LibraryTies
 	groups, _ := p.PortGroups()

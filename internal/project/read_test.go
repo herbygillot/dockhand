@@ -285,3 +285,22 @@ func TestAPythonBackendReadsWhatsItsOwn(t *testing.T) {
 	require.True(t, DeclaresVersion("setup.cfg", "current_version = 2.0.0", "2.0.0"), "bumpversion's")
 	require.False(t, DeclaresVersion("setup.cfg", "current_version = 2.0.0.1", "2.0.0"))
 }
+
+// A reading keeps Cargo's src/main.rs files, by which a package with no
+// [[bin]] builds a program or is a library (field testing, batch 13).
+func TestAReadingKnowsWhichCargoPackagesArePrograms(t *testing.T) {
+	t.Parallel()
+	found, err := Read(t.Context(), testsupport.Tarball(t, "mise-1.0", map[string]string{
+		"Cargo.toml":                    "[workspace]\nmembers = [\"crates/*\"]\n",
+		"src/main.rs":                   "fn main() {}\n",
+		"crates/mise-dotenv/Cargo.toml": "[package]\nname = \"mise-dotenv\"\n",
+		"crates/mise-dotenv/src/lib.rs": "\n",
+		"crates/tool/Cargo.toml":        "[package]\nname = \"tool\"\n",
+		"crates/tool/src/bin/a.rs":      "fn main() {}\n",
+	}), Spec{})
+	require.NoError(t, err)
+	require.Equal(t, []string{".", "crates/tool"}, found.Programs)
+	require.True(t, found.CargoProgram("."))
+	require.False(t, found.CargoProgram("crates/mise-dotenv"))
+	require.True(t, found.CargoProgram("crates/tool"), "its src/bin")
+}

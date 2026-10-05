@@ -658,10 +658,11 @@ func unlinked(change sourcecompare.Change, port macports.PortInfo) (model.Upstre
 // couldn't be observed, it's said as it was, MacPorts perhaps providing
 // it; Wanted asks for each name not yet observed.
 func (a *assessment) native(change sourcecompare.Change) (model.UpstreamChange, bool) {
-	library := project.CargoPackage{Name: change.Name}.NativeLibrary()
+	crate := project.CargoPackage{Name: change.Name, Version: change.Now}
+	library := crate.NativeLibrary()
 	found := finding(change, false)
 	absent := true
-	for _, name := range macports.LibraryPorts(library) {
+	for _, name := range macports.LibraryPortsAt(library, crate.NativeLibraryVersion()) {
 		observation, ok := a.input.Observed[Provider{Port: name}]
 		switch {
 		case !ok:
@@ -940,6 +941,11 @@ func (a *assessment) worksrc() []model.UpstreamChange {
 	}
 	var found []model.UpstreamChange
 	for _, named := range portfile.WorksrcPaths(a.input.Portfile) {
+		// A directory the build makes, as Cargo's target, needn't be in
+		// the source, whatever the base's held.
+		if a.input.Port.BuildsInto(strings.Split(named, "/")[0]) {
+			continue
+		}
 		for _, pair := range a.input.Pairs {
 			gone := ""
 			segments := strings.Split(named, "/")

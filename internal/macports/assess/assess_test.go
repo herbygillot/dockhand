@@ -1,6 +1,7 @@
 package assess
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -468,6 +469,25 @@ func TestADirectoryTheBuildNamesThatsGoneHolds(t *testing.T) {
 		"upstream's source no longer has pfff/, which the Portfile's build names as ${worksrcpath}/pfff; the Portfile may need to follow",
 		"upstream's source no longer has semgrep-core/src/, which the Portfile's build names as ${worksrcpath}/semgrep-core/src; the Portfile may need to follow",
 	}, gone)
+}
+
+// Cargo's target directory is the build's, for a port of the cargo
+// PortGroup, though a release's tarball carried it and the next doesn't
+// (field testing's perry, 0.5.1159 to 0.5.1520).
+func TestCargosTargetIsTheBuildsOwn(t *testing.T) {
+	portfile := []byte("build {\n    system -W ${worksrcpath}/target/release \"true\"\n}\n")
+	before := map[string]string{"Cargo.toml": "[package]\nname = \"perry\"\n", "src/main.rs": "fn main() {}\n", "target/release/perry.d": "deps\n"}
+	after := map[string]string{"Cargo.toml": "[package]\nname = \"perry\"\n", "src/main.rs": "fn main() {}\n"}
+	cargo := macports.PortInfo{Name: "perry", Options: map[string]string{"dockhand.portgroups": "cargo"}}
+	comparison := Assess(Input{Port: cargo, Base: cargo, Portfile: portfile,
+		Pairs: []Pair{{Archive: "perry", Before: read(t, "perry-0.5.1159", before, project.Spec{}), After: read(t, "perry-0.5.1520", after, project.Spec{})}}})
+	for _, change := range comparison.Changes {
+		require.NotEqual(t, WorksrcPathGone, change.Rule, change.Message)
+	}
+	plain := macports.PortInfo{Name: "perry"}
+	comparison = Assess(Input{Port: plain, Base: plain, Portfile: portfile,
+		Pairs: []Pair{{Archive: "perry", Before: read(t, "perry-0.5.1159", before, project.Spec{}), After: read(t, "perry-0.5.1520", after, project.Spec{})}}})
+	require.True(t, slices.ContainsFunc(comparison.Changes, func(change model.UpstreamChange) bool { return change.Rule == WorksrcPathGone }), "not Cargo's, so the source's own")
 }
 
 // A port still fetching GitHub's tarball is said, holding nothing, with

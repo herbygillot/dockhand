@@ -201,7 +201,17 @@ func TestEmptyDependencyBlocksAndUnrelatedPorts(t *testing.T) {
 	t.Parallel()
 	_, err := Inspect([]byte("go.vendors\n"), map[string]string{Go: "", Cargo: ""})
 	require.ErrorContains(t, err, "mixed Go and Cargo")
-	plan, err := Inspect([]byte("go.vendors\n"), map[string]string{Go: ""})
+	// A cargo port declaring no crates and building online, as fnox,
+	// whose empty cargo.offline_cmd has Cargo fetch them as it builds,
+	// has nothing to regenerate (field testing's batch 13); one building
+	// offline needs them declared.
+	plan, err := Inspect([]byte("name fnox\ncargo.offline_cmd\n"), map[string]string{Cargo: "", "cargo.offline_cmd": ""})
+	require.NoError(t, err)
+	require.Nil(t, plan)
+	plan, err = Inspect([]byte("name fixture\n"), map[string]string{Cargo: "", "cargo.offline_cmd": "--frozen --offline"})
+	require.NoError(t, err)
+	require.Equal(t, Cargo, plan.Kind)
+	plan, err = Inspect([]byte("go.vendors\n"), map[string]string{Go: ""})
 	require.NoError(t, err)
 	require.Equal(t, Go, plan.Kind)
 	plan, err = Inspect([]byte("name fixture\n"), map[string]string{Go: "", "go.offline_build": "no"})

@@ -231,7 +231,7 @@ func Compare(older, newer project.Reading, versions Versions, named func(option 
 		}
 	}
 	changes = append(changes, libraryVersions(older.LibraryVersions, newer.LibraryVersions)...)
-	changes = append(changes, cargoBinaries(older.Files, newer.Files)...)
+	changes = append(changes, cargoBinaries(older, newer)...)
 	changes = licenseMove(changes, before, after)
 	for i := range changes {
 		changes[i].System = project.SystemOf(changes[i].Path)
@@ -627,10 +627,10 @@ func libraryVersions(old, now map[string]string) []Change {
 // and jgenesis-gui into one jgenesis, which nothing said (field testing,
 // batch 12). A library package's renaming reads as one too, which a look
 // settles.
-func cargoBinaries(old, now map[string]project.File) []Change {
-	binaries := func(files map[string]project.File) []string {
+func cargoBinaries(old, now project.Reading) []Change {
+	binaries := func(reading project.Reading) []string {
 		var names []string
-		for name, file := range files {
+		for name, file := range reading.Files {
 			if path.Base(name) != "Cargo.toml" || file.Truncated {
 				continue
 			}
@@ -639,7 +639,11 @@ func cargoBinaries(old, now map[string]project.File) []Change {
 				continue
 			}
 			found := manifest.Bins
-			if len(found) == 0 && manifest.Package != nil && manifest.Package.Name != "" {
+			// A package with no [[bin]] builds a program of its name only
+			// where it has src/main.rs or src/bin; otherwise it's a
+			// library, which installs nothing a destroot names (mise's
+			// mise-dotenv, field testing's batch 13).
+			if len(found) == 0 && manifest.Package != nil && manifest.Package.Name != "" && reading.CargoProgram(path.Dir(name)) {
 				found = []string{manifest.Package.Name}
 			}
 			for _, binary := range found {
@@ -1154,6 +1158,9 @@ func nativeLinks(name string, old project.File, hadOld bool, now project.File, h
 		}
 		// Once, whichever versions the lock pins.
 		had[pkg.Name] = true
+		if version := pkg.NativeLibraryVersion(); version != "" {
+			library += " " + version
+		}
 		changes = append(changes, Change{Kind: "dependency", How: "native", Path: name, Name: pkg.Name, Now: pkg.Version,
 			Message: fmt.Sprintf("upstream: Cargo.lock adds %s %s, which links the native library %s", pkg.Name, pkg.Version, library)})
 	}

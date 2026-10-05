@@ -71,6 +71,13 @@ type Reading struct {
 	// src/Makefile.am's from 7:0:0 to 8:0:0, and only the root's
 	// Makefile.am was read (field testing, batch 12).
 	LibraryVersions map[string]string `json:",omitempty"`
+	// Programs are the directories below Top whose Cargo package builds
+	// a program by Cargo's conventions, having src/main.rs or a .rs file
+	// in src/bin, "." for Top itself: one with no [[bin]] builds a
+	// program only so, and a library otherwise, which mise's new
+	// mise-dotenv was, and was held as a binary added (field testing,
+	// batch 13).
+	Programs []string `json:",omitempty"`
 }
 
 // DirectoryDepth is how deep below Top a reading lists directories.
@@ -86,6 +93,36 @@ func (r Reading) HasDirectory(dir string) (has, known bool) {
 	}
 	_, found := slices.BinarySearch(r.Directories, dir)
 	return found, true
+}
+
+// CargoProgram reports whether the Cargo package in a directory below
+// Top builds a program by Cargo's conventions (Programs). One read before
+// Programs were kept counts as one.
+func (r Reading) CargoProgram(dir string) bool {
+	if r.Programs == nil {
+		return true
+	}
+	if dir == "" {
+		dir = "."
+	}
+	return slices.Contains(r.Programs, dir)
+}
+
+// cargoProgram is the directory of the Cargo package a file makes a
+// program of: its src/main.rs, or a .rs file directly in its src/bin.
+func cargoProgram(name string) (string, bool) {
+	dir, file := path.Split(name)
+	dir = strings.TrimSuffix(dir, "/")
+	var src string
+	switch {
+	case file == "main.rs" && path.Base(dir) == "src":
+		src = dir
+	case strings.HasSuffix(file, ".rs") && path.Base(dir) == "bin" && path.Base(path.Dir(dir)) == "src":
+		src = path.Dir(dir)
+	default:
+		return "", false
+	}
+	return path.Dir(src), true
 }
 
 // File is a file as it was read: its first FileLimit bytes, and whether
@@ -148,6 +185,7 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 	tops := map[string]bool{}
 	libraries := map[string]string{}
 	directories := map[string]bool{}
+	programs := map[string]bool{}
 	flat := false
 	has := map[string]bool{}
 	err := archive.Walk(ctx, filename, func(member archive.Member) error {
@@ -157,6 +195,9 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 		}
 		for dir := path.Dir(name); dir != "." && dir != "/"; dir = path.Dir(dir) {
 			directories[dir] = true
+		}
+		if program, ok := cargoProgram(name); ok {
+			programs[program] = true
 		}
 		first, rest, nested := strings.Cut(name, "/")
 		if !nested {
@@ -246,6 +287,21 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 		}
 	}
 	slices.Sort(found.Directories)
+	for dir := range programs {
+		rest := dir
+		if found.Top != "" {
+			switch {
+			case dir == found.Top:
+				rest = "."
+			case strings.HasPrefix(dir, found.Top+"/"):
+				rest = strings.TrimPrefix(dir, found.Top+"/")
+			default:
+				continue
+			}
+		}
+		found.Programs = append(found.Programs, rest)
+	}
+	slices.Sort(found.Programs)
 	found.Files = map[string]File{}
 	for name, file := range candidates {
 		rest := name

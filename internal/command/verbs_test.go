@@ -33,6 +33,10 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	require.NoError(t, err, "without a terminal, edit prints the Portfile")
 	require.Equal(t, filepath.Join(dir, "textproc/jq/Portfile")+"\n", out)
 	require.FileExists(t, filepath.Join(dir, "textproc/jq/Portfile"), "the sparse worktree grew to hold it")
+	t.Setenv("EDITOR", "false")
+	out, _, err = dockhand(t, "edit", "jq", "--no-open")
+	require.NoError(t, err, "--no-open runs no editor, failing or not")
+	require.Equal(t, filepath.Join(dir, "textproc/jq/Portfile")+"\n", out)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n# a note\n"), 0o644))
 	_, _, err = dockhand(t, "check")

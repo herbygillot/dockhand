@@ -91,8 +91,15 @@ func Inspect(src []byte, options map[string]string) (*Plan, error) {
 	if options[Go] != "" || explicitGo {
 		kind = Go
 	}
+	// A port of the cargo PortGroup that declares no crates and builds
+	// online, as fnox, whose empty cargo.offline_cmd has Cargo fetch them
+	// as it builds, has nothing to regenerate: its version line is the
+	// update (field testing's batch 13, bumped by hand twice). One that
+	// builds offline needs its crates declared, which an update adds.
 	_, cargo := options[Cargo]
-	if cargo || options[CargoGit] != "" {
+	offline, read := options["cargo.offline_cmd"]
+	online := read && strings.TrimSpace(offline) == ""
+	if cargo && !online || options[Cargo] != "" || len(commands[Cargo]) > 0 || options[CargoGit] != "" || len(commands[CargoGit]) > 0 {
 		if kind != "" {
 			return nil, fmt.Errorf("dependency: mixed Go and Cargo declarations require manual preparation")
 		}

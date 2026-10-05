@@ -132,3 +132,27 @@ func TestLastIsAStepsEndWithoutDebugLines(t *testing.T) {
 	require.Equal(t, []string{"--->  Building other", "other output"}, Last(strings.NewReader(log), 4, 0, 2), "to the log's end")
 	require.Empty(t, Last(strings.NewReader(log), 20, 0, 15), "the log ends before the step")
 }
+
+// A Rust build's cause is the first error rustc placed in a source file,
+// with where: Cargo's summary names only its command (field testing's
+// perry, batch 13). Cargo's own "error: could not compile" places
+// nothing, and isn't taken.
+func TestARustErrorIsReadWithWhereItIs(t *testing.T) {
+	log := "   Compiling llvm-sys v221.0.1\n" +
+		"error: No suitable version of LLVM was found system-wide or pointed\n" +
+		"       to by LLVM_SYS_221_PREFIX.\n" +
+		"error: No suitable version of LLVM was found system-wide or pointed to by LLVM_SYS_221_PREFIX.\n" +
+		"   --> /opt/local/var/macports/build/perry/work/.home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/llvm-sys-221.0.1/src/lib.rs:542:1\n" +
+		"    |\n" +
+		"error: could not compile `llvm-sys` (lib) due to 1 previous error\n" +
+		"warning: build failed, waiting for other jobs to finish...\n"
+	cause, ok := FirstFrom(strings.NewReader(log), 1)
+	require.True(t, ok)
+	require.Equal(t, "error: No suitable version of LLVM was found system-wide or pointed to by LLVM_SYS_221_PREFIX. (at /opt/local/var/macports/build/perry/work/.home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/llvm-sys-221.0.1/src/lib.rs:542:1)", cause.Line)
+	require.Equal(t, 4, cause.Number)
+	_, ok = FirstFrom(strings.NewReader("error: could not compile `perry` (bin \"perry\") due to 2 previous errors\n"), 1)
+	require.False(t, ok, "Cargo's summary places nothing")
+	cause, ok = FirstFrom(strings.NewReader("error[E0425]: cannot find value `x` in this scope\n --> src/main.rs:3:13\n"), 1)
+	require.True(t, ok)
+	require.Equal(t, "error[E0425]: cannot find value `x` in this scope (at src/main.rs:3:13)", cause.Line)
+}

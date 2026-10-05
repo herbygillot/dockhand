@@ -31,13 +31,26 @@ type Cause struct {
 // make's or MacPorts' own.
 var compilerError = regexp.MustCompile(`^[^\s:]*[^\s:\d][^:]*:\d+:(\d+:)? (fatal )?error: \S`)
 
+// rustError is rustc's error, "error: message" or "error[E0425]:
+// message", which its next line places, "  --> src/lib.rs:542:1", as the
+// Rust reference's diagnostics show them; Cargo's own "error: could not
+// compile" places nothing, and isn't taken.
+var (
+	rustError    = regexp.MustCompile(`^error(\[E\d{4}\])?: \S`)
+	rustLocation = regexp.MustCompile(`^\s*--> (\S+:\d+:\d+)$`)
+)
+
 // FirstFrom reads a log, from a line on, counting from 1, for the first
 // line a reading takes as a failure's likely cause: in a C or C++ build,
-// the first error is the one the rest follow from. None where the log has
-// none, or can't be read. The line is where the step that failed began: a dependency's build before it may
+// the first error is the one the rest follow from, and in a Rust one the
+// first error rustc placed in a source file, with where (field testing's
+// perry: llvm-sys's "No suitable version of LLVM was found", at its
+// lib.rs:542, where the summary named Cargo's command alone). None where
+// the log has none, or can't be read. The line is where the step that failed began: a dependency's build before it may
 // have printed an error of its own and gone on (batch 14).
 func FirstFrom(log io.Reader, from int) (Cause, bool) {
 	lines := bufio.NewReaderSize(log, maxLine)
+	var pending Cause
 	for number := 1; ; number++ {
 		line, err := lines.ReadSlice('\n')
 		long := false
@@ -52,6 +65,16 @@ func FirstFrom(log io.Reader, from int) (Cause, bool) {
 			text := strings.TrimRight(string(line), "\r\n")
 			if compilerError.MatchString(text) {
 				return Cause{Line: strings.TrimSpace(text), Number: number}, true
+			}
+			if pending.Line != "" {
+				if m := rustLocation.FindStringSubmatch(text); m != nil {
+					pending.Line += " (at " + m[1] + ")"
+					return pending, true
+				}
+				pending = Cause{}
+			}
+			if rustError.MatchString(text) {
+				pending = Cause{Line: strings.TrimSpace(text), Number: number}
 			}
 		}
 		if err != nil {
