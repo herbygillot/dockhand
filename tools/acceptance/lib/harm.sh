@@ -242,6 +242,13 @@ harm_h4() {
 harm_h5() {
 	local repo json broken="" name gitbranch head worktree edited actual
 	repo=${ACCEPT_WATCH%% *}
+	# In the full stage A0 runs before A1 installs the dockhand under
+	# test, whose status isn't there to read: nothing to judge, not a
+	# harm (the rc1 full stage on the M1).
+	if [ ! -x "${DH_BIN:-}" ]; then
+		harm_write H5 "skipped: no dockhand at $DH_BIN yet to read status with"
+		return
+	fi
 	if ! json=$(cd "${ACCEPT_RUN_DIR:-$repo}" && "$DH_BIN" --json status 2>/dev/null); then
 		harm_write H5 "broken: status failed: $(printf '%s' "$json" | jq -r '.error // empty' 2>/dev/null)"
 		return

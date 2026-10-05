@@ -19,9 +19,12 @@ host_only() {
 }
 
 # checkpoint stops for a person: WAITING: <what to do>, on the runner's
-# output and in $ACCEPT_STATE/waiting, until resume.sh answers done,
-# skip, or fail. A skip, a dry run, or the quick stage stops the row as
-# not run; a fail fails it.
+# own output (the run's log, through fd 3, which run.sh opens on it; a
+# row's own output goes to its runner.log, where A1's WAITING sat two
+# hours unseen on the rc1 full stage), in the row's runner.log, and in
+# $ACCEPT_STATE/waiting, until resume.sh answers done, skip, or fail. A
+# skip, a dry run, or the quick stage stops the row as not run; a fail
+# fails it.
 checkpoint() {
 	local what=$* answer
 	if ! protocol_live; then
@@ -31,6 +34,7 @@ checkpoint() {
 	rm -f "$ACCEPT_STATE/resume"
 	printf '%s\t%s\n' "${ROW_ID:?}" "$what" >"$ACCEPT_STATE/waiting"
 	say "WAITING: $ROW_ID: $what (tools/acceptance/resume.sh done, skip, or fail)"
+	{ printf 'WAITING: %s: %s (tools/acceptance/resume.sh done, skip, or fail)\n' "$ROW_ID" "$what" >&3; } 2>/dev/null || :
 	printf 'WAITING: %s\n' "$what" >>"$ROW_DIR/out.log"
 	until [ -f "$ACCEPT_STATE/resume" ]; do sleep 5; done
 	answer=$(cat "$ACCEPT_STATE/resume")

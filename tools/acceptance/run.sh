@@ -50,6 +50,9 @@ else
 fi
 [ -n "$candidate" ] || candidate=$(git -C "$here" describe --tags --match 'v*' --exact-match 2>/dev/null || git -C "$here" rev-parse --short HEAD 2>/dev/null || echo dev)
 export ACCEPT_STAGE=$stage ACCEPT_CANDIDATE=$candidate
+# fd 3 is the run's own output, which a row's checkpoint writes its
+# WAITING to, past the row's runner.log (lib/protocol.sh).
+exec 3>&1
 
 # The rows of this stage, in order, unless --rows names them.
 if [ -z "$rows" ]; then

@@ -8,3 +8,8 @@ The Prime-time thread set the full stage up on the M1 for v0.3.0-rc1 and worked 
 - **reset-user.sh clones dhtest's ports tree.** Nothing made `MACPORTS_TREE`, `~/Source/macports-ports`, which A2 expects to be dhtest's fresh fork clone. It now clones the test account's fork there, read over HTTPS and pushed to over SSH, with MacPorts' own as `upstream`, borrowing the host mirror's objects while it clones. `full.sh` stops where `MACPORTS_TREE` isn't a clone, naming reset-user.sh.
 - **full.sh puts MacPorts on PATH.** dhtest's login shell lacked `/opt/local/bin`; full.sh prepends it and `/opt/local/sbin` where it's missing.
 - **The fork's sync is checked.** Clearing the fork needs the test token's Contents and Pull requests write access on it; without them the fork's master had drifted 107 commits behind MacPorts'. After the sync, reset-user.sh asks GitHub how far behind it still is, and stops, naming the permissions, where it isn't level. The README says so.
+
+## From the rc1 full stage's first rows
+
+- **H5 isn't judged before dockhand is installed.** In the full stage A0 runs before A1 installs the dockhand under test, so H5's `dockhand --json status` failed with no error, and A0 graded a blocker though `make test` passed. With no dockhand at `DH_BIN`, H5 is "skipped", saying so.
+- **A row's WAITING reaches the run's own output.** A checkpoint's `WAITING:` went to the row's `runner.log` and `$ACCEPT_STATE/waiting` alone, since the row's output is its log, and A1 sat two hours unseen. run.sh opens fd 3 on its own output, and a checkpoint writes there too; the README says where it appears.
