@@ -75,6 +75,33 @@ func CounterpartIn(ports []PortInfo, name string) string {
 	return counterpart
 }
 
+// LikelyPortNames are the names MacPorts may give the port of a project
+// named so, by the language PortGroups' naming: py-, p5-, rb-, and R-
+// before it, a python- or perl- prefix taken as theirs, and each in lower
+// case, for a name no port has, such as sdnotify, whose port is
+// py-sdnotify (field testing's batch 14). The name itself is left out.
+func LikelyPortNames(name string) []string {
+	var names []string
+	add := func(candidate string) {
+		if candidate != name && candidate != "" && !slices.Contains(names, candidate) {
+			names = append(names, candidate)
+		}
+	}
+	base := name
+	for prefix, lang := range map[string]string{"python-": "py-", "perl-": "p5-", "ruby-": "rb-"} {
+		if rest, ok := strings.CutPrefix(strings.ToLower(name), prefix); ok {
+			add(lang + rest)
+			base = rest
+		}
+	}
+	for _, prefix := range []string{"py-", "p5-", "rb-", "R-"} {
+		add(prefix + base)
+		add(prefix + strings.ToLower(base))
+	}
+	add(strings.ToLower(name))
+	return names
+}
+
 // PythonVersion is the Python version a port of the python PortGroup's
 // naming is built for, as Python writes it: py313-requests is 3.13, and
 // py27-requests 2.7.

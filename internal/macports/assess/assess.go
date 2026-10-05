@@ -484,6 +484,7 @@ func (a *assessment) pair(pair Pair) {
 			a.add(finding(change, !proven[base]))
 		case change.How == "native":
 			if found, ok := a.native(change); ok {
+				found.Message += alongside(change, pair)
 				a.add(found)
 			}
 		case change.Kind == "license" && (change.How == "years" || change.How == "moved"):
@@ -686,6 +687,29 @@ func (a *assessment) native(change sourcecompare.Change) (model.UpstreamChange, 
 	}
 	found.Message += ": MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds"
 	return found, true
+}
+
+// alongside warns of a crate in the same lock that declaring the native
+// library would break: aws-lc-sys's build finds OpenSSL 3's headers first
+// where the openssl PortGroup puts them on CPATH, and fails, which
+// following openssl-sys's hint did to qsv 24.0.0 (field testing's batch
+// 14). Empty where none is there.
+func alongside(change sourcecompare.Change, pair Pair) string {
+	if (project.CargoPackage{Name: change.Name}).NativeLibrary() != "openssl" {
+		return ""
+	}
+	file, ok := pair.After.Files[change.Path]
+	if !ok {
+		file, ok = pair.After.Files[path.Join(pair.After.Root, change.Path)]
+	}
+	if !ok {
+		return ""
+	}
+	packages, err := project.ReadCargoLock(file.Data)
+	if err != nil || !slices.ContainsFunc(packages, func(pkg project.CargoPackage) bool { return pkg.Name == "aws-lc-sys" }) {
+		return ""
+	}
+	return "; but aws-lc-sys is in the lock too, whose build fails with OpenSSL 3's headers on CPATH, as the openssl PortGroup puts them: declare openssl only where its build is kept from them"
 }
 
 // build is a build file's change as a finding: one of the project's own

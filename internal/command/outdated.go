@@ -360,7 +360,11 @@ func writeSkipped(out io.Writer, plan engine.OutdatedPlan, report engine.Outdate
 		case port.Problem != "":
 			fmt.Fprintf(out, "Skipped: %s (couldn't check: %s)\n", port.Port, port.Problem)
 		case port.Moved != nil:
-			fmt.Fprintf(out, "Skipped: %s (its branch %s moved past the commit it pins; name the version to set)\n", port.Port, port.Moved.Branch)
+			// update can't move a commit pin yet, so "name the version to
+			// set" was a dead end: update refused the version and the
+			// commit alike (field testing's batch 14, wezterm). The edit
+			// is said whole instead.
+			fmt.Fprintf(out, "Skipped: %s (its branch %s moved past the commit it pins, which update can't move yet: dockhand edit %s --no-open, set the commit and the version, then dockhand checksums %s)\n", port.Port, port.Moved.Branch, port.Port, port.Port)
 		case port.Current != "":
 			current = append(current, port.Port+" "+port.Current)
 		}

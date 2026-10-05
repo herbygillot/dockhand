@@ -315,3 +315,13 @@ func TestALargeLookSaysItsCost(t *testing.T) {
 	l.progress(2, 835)
 	require.Equal(t, []string{"Looking up 835 ports asks GitHub about 2,200 times, of the 5,000 an hour a login has."}, said)
 }
+
+// A port whose commit pin its branch moved past is skipped with the edit
+// that moves it said whole, where "name the version to set" sent the
+// person to an update that refused it (field testing's batch 14,
+// wezterm).
+func TestACommitPinMovedPastSaysTheEdit(t *testing.T) {
+	var out bytes.Buffer
+	writeSkipped(&out, engine.OutdatedPlan{}, engine.OutdatedReport{Ports: []engine.OutdatedPort{{Port: "wezterm", Moved: &engine.Head{Branch: "main"}}}})
+	require.Equal(t, "Skipped: wezterm (its branch main moved past the commit it pins, which update can't move yet: dockhand edit wezterm --no-open, set the commit and the version, then dockhand checksums wezterm)\n", out.String())
+}

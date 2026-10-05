@@ -36,9 +36,17 @@ func FromEntry(entry portindex.Entry, variants map[string]bool) macports.Selecti
 type unknownPort struct {
 	name string
 	err  error
+	// likely are ports the index has of the names MacPorts may give the
+	// project (macports.LikelyPortNames).
+	likely []string
 }
 
-func (e unknownPort) Error() string { return "no port named " + e.name }
+func (e unknownPort) Error() string {
+	if len(e.likely) > 0 {
+		return "no port named " + e.name + "; did you mean " + strings.Join(e.likely, " or ") + "?"
+	}
+	return "no port named " + e.name
+}
 
 func (e unknownPort) Unwrap() []error { return []error{macports.ErrTarget, ErrUnknownPort, e.err} }
 
@@ -61,7 +69,13 @@ func (r *Reader) Resolve(ctx context.Context, tree macports.Tree, selected macpo
 	}
 	entry, err := index.Lookup(selected.Selector)
 	if errors.Is(err, portindex.ErrNotIndexed) {
-		return nil, unknownPort{name: selected.Selector, err: err}
+		unknown := unknownPort{name: selected.Selector, err: err}
+		for _, name := range macports.LikelyPortNames(selected.Selector) {
+			if _, found := index.Lookup(name); found == nil {
+				unknown.likely = append(unknown.likely, name)
+			}
+		}
+		return nil, unknown
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: cannot resolve %s in selected source: %w", macports.ErrTarget, selected.Selector, err)

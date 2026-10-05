@@ -620,3 +620,13 @@ func TestAWorkspacesDependenciesAreCountedOnce(t *testing.T) {
 	found := count("Cargo.toml", "the Cargo.toml of 3 workspace members", changes)
 	require.Equal(t, "upstream: the Cargo.toml of 3 workspace members: 2 changed (cranelift-isle, cranelift-codegen-meta)", found.Message)
 }
+
+// openssl-sys's hint warns where aws-lc-sys is in the lock too, whose
+// build declaring openssl broke in qsv 24.0.0 (field testing's batch 14).
+func TestTheOpenSSLHintWarnsOfAWSLC(t *testing.T) {
+	before := map[string]string{"Cargo.lock": lock("serde 1.0.200")}
+	said := compared(t, before, map[string]string{"Cargo.lock": lock("serde 1.0.200", "openssl-sys 0.9.109", "aws-lc-sys 0.45.0")})
+	require.Contains(t, said, "· upstream: Cargo.lock adds openssl-sys 0.9.109, which links the native library openssl: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds; but aws-lc-sys is in the lock too, whose build fails with OpenSSL 3's headers on CPATH, as the openssl PortGroup puts them: declare openssl only where its build is kept from them")
+	said = compared(t, before, map[string]string{"Cargo.lock": lock("serde 1.0.200", "openssl-sys 0.9.109")})
+	require.NotContains(t, strings.Join(said, "\n"), "aws-lc-sys")
+}

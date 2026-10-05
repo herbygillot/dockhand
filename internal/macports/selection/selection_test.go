@@ -111,3 +111,18 @@ type indexFunc func(context.Context, macports.Tree) (*portindex.Index, error)
 func (f indexFunc) Index(ctx context.Context, tree macports.Tree) (*portindex.Index, error) {
 	return f(ctx, tree)
 }
+
+// A name no port has, whose project MacPorts names by a language's
+// prefix, suggests the port: sdnotify's is py-sdnotify (field testing's
+// batch 14).
+func TestAnUnknownNameSuggestsTheLanguagesPort(t *testing.T) {
+	tree := indexedTree(t, "1.0")
+	reader := &selection.Reader{Evaluator: native(t), Index: indexFunc(func(_ context.Context, tree macports.Tree) (*portindex.Index, error) {
+		return portindex.Open(tree.Root())
+	})}
+	body := "name py-sdnotify portdir python/py-sdnotify\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tree.Root(), "PortIndex"), []byte(fmt.Sprintf("py-sdnotify %d\n%s", len(body), body)), 0600))
+	_, err := reader.Resolve(t.Context(), tree, macports.Selection{Selector: "sdnotify"})
+	require.ErrorIs(t, err, selection.ErrUnknownPort)
+	require.EqualError(t, err, "no port named sdnotify; did you mean py-sdnotify?")
+}

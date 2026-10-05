@@ -73,3 +73,13 @@ func TestANewPythonSubportsCounterpartIsItsSibling(t *testing.T) {
 	require.Equal(t, "py313-new", CounterpartIn(base, "py313-new"))
 	require.Equal(t, "jq", CounterpartIn(nil, "jq"))
 }
+
+// The names MacPorts may give a project's port, by the language
+// PortGroups' prefixes.
+func TestLikelyPortNames(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, []string{"py-sdnotify", "p5-sdnotify", "rb-sdnotify", "R-sdnotify"}, LikelyPortNames("sdnotify"))
+	require.Contains(t, LikelyPortNames("python-dateutil"), "py-dateutil")
+	require.Contains(t, LikelyPortNames("PyYAML"), "py-pyyaml")
+	require.NotContains(t, LikelyPortNames("jq"), "jq")
+}
