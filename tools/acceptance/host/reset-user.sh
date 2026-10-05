@@ -130,7 +130,7 @@ if command -v gh >/dev/null && [ -n "${ACCEPT_TEST_ACCOUNT:-}" ]; then
 	# theirs. GitHub says how far behind it is, which a sync leaves at 0.
 	if [ "$DRY" = 0 ]; then
 		behind=$(gh api "repos/$sandbox/compare/master...macports:macports-ports:master" --jq '.ahead_by' 2>/dev/null || echo unknown)
-		[ "$behind" = 0 ] || die "$sandbox's master is $behind commits behind MacPorts' after the sync: give the token gh uses Contents and Pull requests, read and write, on the fork, and run this again"
+		[ "$behind" = 0 ] || die "$sandbox's master is $behind commits behind MacPorts' after the sync: give the token gh uses Contents, Pull requests, and Workflows, read and write, on the fork, and run this again"
 	fi
 else
 	echo "skipped: clearing the fork needs gh and ACCEPT_TEST_ACCOUNT, the test GitHub login"
