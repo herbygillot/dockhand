@@ -210,7 +210,7 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	require.Contains(t, errs.String(), "? Log in to GitHub now, for submit and checks in your fork? [Y/n] ")
 	require.Contains(t, out.String(), "  Publishing   · not set up: dockhand setup github, when you're ready to submit\n")
 	require.Contains(t, out.String(), "· maintainer: set maintainer = \"{@you example.org:you}\" in ~/.dockhand/config.toml, for --mine, create, and serve's daily look\n")
-	require.Contains(t, out.String(), "Next: dockhand update <port>, or set maintainer in the configuration file for dockhand outdated --mine\n", "no maintainer, so outdated --mine isn't named alone")
+	require.Contains(t, out.String(), "Next: dockhand setup github, then dockhand update <port>, or set maintainer in the configuration file for dockhand outdated --mine\n", "no maintainer, so outdated --mine isn't named alone")
 
 	quiet, said, err := dockhand(t, "setup", "-y")
 	require.NoError(t, err)

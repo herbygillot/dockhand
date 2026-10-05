@@ -94,7 +94,7 @@ func TestProvidersWithoutTart(t *testing.T) {
 	out, _, err := dockhand(t, "providers")
 	require.NoError(t, err)
 	require.Equal(t, "tart     · needs Tart: sudo port install tart, then dockhand setup tart\n"+
-		"github   · needs a GitHub login and your fork's Actions enabled\n", out)
+		"github   · needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n", out)
 
 	_, _, err = dockhand(t, "providers", "setup", "tart")
 	require.ErrorContains(t, err, "Tart isn't installed: sudo port install tart")
@@ -107,6 +107,14 @@ func TestProvidersShowTheImages(t *testing.T) {
 	out, _, err := dockhand(t, "providers")
 	require.NoError(t, err)
 	require.Contains(t, out, "tart     · not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n")
+
+	// An Xcode image made without the plain one is said (the rc1 full
+	// stage's A2).
+	images.status.Xcode = []macos.Release{release(t, "tahoe")}
+	out, _, err = dockhand(t, "providers")
+	require.NoError(t, err)
+	require.Contains(t, out, "tart     · Xcode image for macOS 26 ready; no plain image, which most ports build in: dockhand setup tart   (macOS 26, up to 60 GB)\n")
+	images.status.Xcode = nil
 
 	images.status.Base = []macos.Release{release(t, "sonoma"), release(t, "sequoia")}
 	out, _, err = dockhand(t, "providers")
@@ -174,7 +182,7 @@ func TestInitShowsTheProviders(t *testing.T) {
 	out, _, err := dockhand(t, "init")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Providers    tart     · not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n"+
-		"               github   · needs a GitHub login and your fork's Actions enabled\n"+
+		"               github   · needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n"+
 		"  Publishing   ")
 }
 

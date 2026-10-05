@@ -165,10 +165,15 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	// A Next: line names only what would be accepted (the release bar's
 	// rule): outdated --mine needs the maintainers line, which A10's run
 	// of setup found missing.
+	// The setup still to do comes first.
+	first := ""
+	if steps := missingSteps(cmd.Context()); len(steps) > 0 {
+		first = strings.Join(steps, ", then ") + ", then "
+	}
 	if file.Maintainer != "" {
-		fmt.Fprintln(out, "Next: dockhand outdated --mine, or dockhand update <port>")
+		fmt.Fprintln(out, "Next: "+first+"dockhand outdated --mine, or dockhand update <port>")
 	} else {
-		fmt.Fprintln(out, "Next: dockhand update <port>, or set maintainer in the configuration file for dockhand outdated --mine")
+		fmt.Fprintln(out, "Next: "+first+"dockhand update <port>, or set maintainer in the configuration file for dockhand outdated --mine")
 	}
 	return nil
 }

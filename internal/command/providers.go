@@ -195,6 +195,15 @@ func tartReadiness(ctx context.Context) string {
 		if host != "" {
 			cost = host + ", " + cost
 		}
+		// An Xcode image made without the plain one is said, not taken for
+		// nothing set up (the rc1 full stage's A2).
+		if len(status.Xcode) > 0 {
+			var xcode []string
+			for _, release := range status.Xcode {
+				xcode = append(xcode, release.Product)
+			}
+			return fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which most ports build in: dockhand setup tart   (%s)", strings.Join(xcode, ", "), cost)
+		}
 		return fmt.Sprintf("· not set up: dockhand setup tart   (%s)", cost)
 	}
 	var releases []string
@@ -224,7 +233,28 @@ func githubReadiness(ctx context.Context) string {
 	if _, err := authStore.Get(ctx, github.CredentialKey); err == nil {
 		return "✓ with your GitHub login; your fork's Actions must be enabled"
 	}
-	return "· needs a GitHub login and your fork's Actions enabled"
+	return "· needs a GitHub login, dockhand setup github, and your fork's Actions enabled"
+}
+
+// missingSteps are the setup commands still to run, in order, for setup's
+// Next: line, which jumped to update with Tart and the login undone (the
+// rc1 full stage's A2): a Tart image where Tart can build, and a login
+// where no token stands in for one.
+func missingSteps(ctx context.Context) []string {
+	var steps []string
+	if tartSupported() {
+		if images := images(); images != nil {
+			if status, err := images.Status(ctx); err == nil && len(status.Base) == 0 {
+				steps = append(steps, "dockhand setup tart")
+			}
+		}
+	}
+	if overridingToken() == "" {
+		if _, err := authStore.Get(ctx, github.CredentialKey); err != nil {
+			steps = append(steps, "dockhand setup github")
+		}
+	}
+	return steps
 }
 
 // offerXcode downloads the Xcode setup is missing with xcodes. At a
