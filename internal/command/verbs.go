@@ -82,8 +82,9 @@ reason as its commit subject for tidy: "<port>: <reason>", such as
 --subject "rebuild for poppler 25.09.0". A revision shared by several
 subports is bumped for all of them.
 
-The branch is --branch, else the one checked out here. Otherwise a new
-branch is started, since a rebuild has its own reason.`,
+The branch is --branch, started from master where no branch has the name
+yet, else the one checked out here. Otherwise a new branch is started,
+since a rebuild has its own reason.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -139,8 +140,14 @@ branch is started, since a rebuild has its own reason.`,
 // one named for the first port.
 func revbumpBranch(ctx context.Context, e *engine.Engine, selector, port string, plan bool) (model.Branch, bool, error) {
 	if selector != "" {
-		branch, err := e.Resolve(ctx, selector)
-		return branch, false, err
+		if plan {
+			branch, err := e.Resolve(ctx, selector)
+			if errors.Is(err, engine.ErrNoBranch) {
+				return branch, false, fmt.Errorf("--plan changes nothing, so it starts no branch, and no branch is named %s yet; without --plan, this starts it from master", selector)
+			}
+			return branch, false, err
+		}
+		return namedOrStarted(ctx, e, selector)
 	}
 	branch, err := e.Current(ctx)
 	if err == nil || !errors.Is(err, engine.ErrNoBranch) {

@@ -37,7 +37,7 @@ type branchChoice struct {
 }
 
 func (c *branchChoice) flags(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&c.branch, "branch", "b", "", "work in this branch, by its exact name (the dockhand/ prefix is optional)")
+	cmd.Flags().StringVarP(&c.branch, "branch", "b", "", "work in this branch, by its exact name (the dockhand/ prefix is optional); a name no branch has starts one from master")
 	cmd.Flags().BoolVar(&c.new, "new", false, "start a new branch for this, in its own worktree")
 	cmd.MarkFlagsMutuallyExclusive("branch", "new")
 }
@@ -310,6 +310,17 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		return branch, update, err
 	}
 	defer e.Close()
+	// A plan starts no branch, so a --branch no branch has yet is planned
+	// against master, which is where it would start; a plan of anything
+	// but a version update needs the branch to plan in.
+	if request.Plan && where.branch != "" && !fromMaster {
+		if _, err := e.Resolve(ctx, where.branch); errors.Is(err, engine.ErrNoBranch) {
+			if request.Action != model.EditUpdate {
+				return model.Branch{}, engine.Update{}, fmt.Errorf("--plan changes nothing, so it starts no branch, and no branch is named %s yet; without --plan, this starts it from master", where.branch)
+			}
+			fromMaster = true
+		}
+	}
 	// So is one with no branch to plan in, since a plan starts nothing.
 	var beside string
 	if request.Plan && request.Action == model.EditUpdate && !fromMaster {
@@ -790,8 +801,7 @@ func untrackedHere(ctx context.Context, e *engine.Engine) string {
 // terminal is asked, and a script is told the choices.
 func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where branchChoice, port, purpose string) (model.Branch, bool, error) {
 	if where.branch != "" {
-		branch, err := e.Resolve(ctx, where.branch)
-		return branch, false, err
+		return namedOrStarted(ctx, e, where.branch)
 	}
 	if where.new {
 		return startFor(ctx, e, port, whatFor(purpose))
@@ -880,6 +890,26 @@ func startFor(ctx context.Context, e *engine.Engine, port, what string) (model.B
 	name, err := e.NameFor(ctx, port, what)
 	if err != nil {
 		return model.Branch{}, false, err
+	}
+	return startNamed(ctx, e, name)
+}
+
+// namedOrStarted is the branch an authoring command's --branch names, or,
+// where no tracked branch has the name, one started from master under it,
+// as design v3 §6.6 and usage.md's revbump example have it: revbump gdal
+// inkscape --branch poppler-25.09 starts poppler-25.09 (the person,
+// 2026-10-05, on the rc1 full stage's A12). A Git branch of the name
+// that dockhand doesn't track is refused, pointing at adopt, as start
+// refuses it; commands that read or act on a whole branch never start one.
+func namedOrStarted(ctx context.Context, e *engine.Engine, name string) (model.Branch, bool, error) {
+	branch, err := e.Resolve(ctx, name)
+	if !errors.Is(err, engine.ErrNoBranch) {
+		return branch, false, err
+	}
+	// A merged branch of the name takes no changes, and isn't quietly
+	// replaced by a new one: start names one of the name on purpose.
+	if merged, mergedErr := e.ResolveRecord(ctx, name); mergedErr == nil {
+		return model.Branch{}, false, fmt.Errorf("%w: %s was merged, and takes no changes; dockhand start %s starts a new branch of the name", engine.ErrNoBranch, merged.ShortName(), merged.ShortName())
 	}
 	return startNamed(ctx, e, name)
 }

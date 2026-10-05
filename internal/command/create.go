@@ -80,7 +80,10 @@ its go-get answer.`,
 			var branch model.Branch
 			switch {
 			case where.branch != "":
-				branch, err = e.Resolve(ctx, where.branch)
+				var started bool
+				if branch, started, err = namedOrStarted(ctx, e, where.branch); err == nil && started {
+					fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
+				}
 			case where.new:
 				// A name master has is refused before a branch is started
 				// for it.

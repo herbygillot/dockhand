@@ -520,7 +520,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "jq-update\n  Work     cleaned after its merge\n  PR       #34901 merged\n", out, "its worktree, ports, and checks went with it, and nothing is next")
 	_, _, err = dockhand(t, "update", "jq", "--branch", "jq-update")
-	require.ErrorContains(t, err, "no tracked branch named jq-update", "a merged branch takes no changes")
+	require.ErrorContains(t, err, "jq-update was merged, and takes no changes; dockhand start jq-update starts a new branch of the name", "a merged branch takes no changes, nor is it replaced by --branch")
 	_, _, err = dockhand(t, "start", "jq-update")
 	require.NoError(t, err, "a merged branch's name can be used again")
 	out, _, err = dockhand(t, "status", "jq-update")

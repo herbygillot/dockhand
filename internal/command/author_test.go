@@ -229,6 +229,32 @@ func TestAPlanInANamedBranchIsPlannedThere(t *testing.T) {
 	require.NotContains(t, out, "Planned on master")
 }
 
+// An authoring command's --branch naming no branch starts it from master,
+// as usage.md's revbump example does (the person, 2026-10-05); a plan
+// starts nothing, planning an update on master; and a Git branch of the
+// name that dockhand doesn't track is refused, pointing at adopt.
+func TestABranchNamedForTheFirstTimeIsStarted(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	out, _, err := dockhand(t, "update", "jq", "--plan", "--branch", "jq-new")
+	require.NoError(t, err, "a plan starts nothing")
+	require.Contains(t, out, "Planned on master")
+	_, _, err = dockhand(t, "revbump", "jq", "--subject", "rebuild for oniguruma 6.9.10", "--branch", "jq-rebuild", "--plan")
+	require.ErrorContains(t, err, "--plan changes nothing, so it starts no branch, and no branch is named jq-rebuild yet; without --plan, this starts it from master")
+
+	out, _, err = dockhand(t, "revbump", "jq", "--subject", "rebuild for oniguruma 6.9.10", "--branch", "jq-rebuild")
+	require.NoError(t, err)
+	require.Regexp(t, `^Started dockhand/jq-rebuild from master [0-9a-f]+ \(fetched just now\)\n`, out)
+	out, _, err = dockhand(t, "edit", "jq", "--branch", "jq-rebuild", "--no-open")
+	require.NoError(t, err, "named again, it's the same branch")
+	require.NotContains(t, out, "Started dockhand")
+
+	testsupport.Git(t, w.clone, "branch", "dockhand/theirs")
+	_, _, err = dockhand(t, "revbump", "jq", "--subject", "rebuild", "--branch", "theirs")
+	require.ErrorContains(t, err, "dockhand adopt dockhand/theirs")
+}
+
 // A branch someone made with Git, which dockhand doesn't track, is theirs
 // to adopt where it changes the port, in commits, edits, or files it adds,
 // which work on master would leave out. Where it doesn't, it's no context,
