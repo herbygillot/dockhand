@@ -51,6 +51,20 @@ harm_snapshot() {
 	harm_prs >"$out/prs" 2>/dev/null || :
 	harm_running >"$out/running" 2>/dev/null || :
 	harm_home >"$out/home"
+	harm_tokens >"$out/tokens" 2>/dev/null || :
+}
+
+# harm_tokens lists, as file and the token-shaped text found in it, every
+# token-shaped string in the secret directories (H4's), sorted: H4 flags
+# one the row added, beside one the row's own output shows, so what was
+# there before the row, a person's or an image's, is no harm of its, and a
+# new one anywhere it searches is.
+harm_tokens() {
+	local dir
+	for dir in ${ACCEPT_SECRET_DIRS:-}; do
+		[ -e "$dir" ] || continue
+		grep -roaE --exclude-dir=tart --exclude-dir=archives --exclude='*.img' --exclude='*.tbz2' "$HARM_TOKEN" "$dir" 2>/dev/null || :
+	done | sort -u
 }
 
 # harm_home lists the person's own state directories: whether each is
@@ -235,10 +249,19 @@ harm_h4() {
 	# they're left out; dockhand's own state beside them, its database,
 	# configuration, logs, and the logs and results copied out of guests,
 	# is searched as before.
-	for dir in ${ACCEPT_SECRET_DIRS:-}; do
-		[ -e "$dir" ] || continue
-		found="$found $(grep -rlaE --exclude-dir=tart --exclude-dir=archives --exclude='*.img' --exclude='*.tbz2' "$HARM_TOKEN" "$dir" 2>/dev/null | tr '\n' ' ')"
-	done
+	# A token-shaped string the row added to the secret directories, in a
+	# file or a value, compared with what was there before it began
+	# (harm_tokens): one that was already there, a person's or an image's,
+	# is the row's no more than a disk image's bytes are, and a new one is,
+	# wherever it is searched.
+	if [ -f "$ROW_DIR/before/tokens" ] && [ -f "$ROW_DIR/after/tokens" ]; then
+		found="$found $(comm -13 "$ROW_DIR/before/tokens" "$ROW_DIR/after/tokens" | cut -d: -f1 | sort -u | tr '\n' ' ')"
+	else
+		for dir in ${ACCEPT_SECRET_DIRS:-}; do
+			[ -e "$dir" ] || continue
+			found="$found $(grep -rlaE --exclude-dir=tart --exclude-dir=archives --exclude='*.img' --exclude='*.tbz2' "$HARM_TOKEN" "$dir" 2>/dev/null | tr '\n' ' ')"
+		done
+	fi
 	found=$(printf '%s' "$found" | tr -s ' ')
 	if [ -n "${found// /}" ]; then
 		harm_write H4 "broken: a token in$found"
