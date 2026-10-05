@@ -44,7 +44,22 @@ if command -v gh >/dev/null && [ -n "${ACCEPT_TEST_ACCOUNT:-}" ]; then
 	if ! gh auth status >/dev/null 2>&1; then
 		message="gh has no login: set GH_TOKEN, or put the test account's token at $ACCEPT_GH_TOKEN_FILE (ACCEPT_GH_TOKEN_FILE)"
 	elif [ "$(gh api "repos/$sandbox" --jq .permissions.push 2>/dev/null)" != true ]; then
-		message="the token gh uses can't write to $sandbox: give it Contents and Pull requests, read and write, on the fork"
+		message="the token gh uses can't write to $sandbox: give it Contents, Pull requests, and Workflows, read and write, on the fork"
+	elif [ "$DRY" = 1 ]; then
+		echo "would check: the token gh uses can write to $sandbox's contents, by making a branch there and deleting it"
+	else
+		# The repository's push permission is the account's role, which a
+		# fine-grained token without Contents write still reads as true,
+		# and the sync then failed with 403 after dhtest was made again
+		# (the Prime-time thread, 2026-10-05). Making a branch needs what
+		# the sync does, and nothing else answers it.
+		probe="refs/heads/dockhand-acceptance-probe-$$"
+		head=$(gh api "repos/$sandbox/git/ref/heads/master" --jq .object.sha 2>/dev/null || :)
+		if [ -z "$head" ] || ! gh api -X POST "repos/$sandbox/git/refs" -f ref="$probe" -f sha="$head" >/dev/null 2>&1; then
+			message="the token gh uses can't write $sandbox's contents: give it Contents, Pull requests, and Workflows, read and write, on the fork"
+		else
+			gh api -X DELETE "repos/$sandbox/git/$probe" >/dev/null
+		fi
 	fi
 	if [ -n "$message" ]; then
 		if [ "$DRY" = 1 ]; then
