@@ -12,7 +12,9 @@ result=$(jq -r .result "$request")
 jq '{version: 1, targets: [.targets[] | {id, outcome: "passed", tests: "none"}]}' "$request" >"$result"
 SH
 	chmod +x "$ROW_DIR/provider.sh"
-	cat >>"${DOCKHAND_CONFIG:?}" <<TOML
+	# Kept to restore in teardown, as A10 does.
+	cp "${DOCKHAND_CONFIG:?}" "$ROW_DIR/config.before"
+	cat >>"$DOCKHAND_CONFIG" <<TOML
 
 [providers.command]
 run = "$ROW_DIR/provider.sh"
@@ -28,4 +30,9 @@ assert() {
 	0) row_pass "the command provider ran the check, and its result read back: $(jq -r '.result.run.state // empty' "$ROW_DIR/json/1.json")" ;;
 	*) row_fail "check --on command exited $(cat "$ROW_DIR/json/1.json.exit" 2>/dev/null): $(jq -r '.error // empty' "$ROW_DIR/json/1.json")" ;;
 	esac
+}
+
+teardown() {
+	[ -f "$ROW_DIR/config.before" ] && cp "$ROW_DIR/config.before" "$DOCKHAND_CONFIG"
+	return 0
 }

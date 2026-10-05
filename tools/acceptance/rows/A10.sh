@@ -18,7 +18,15 @@ setup() {
 	local maintainer=${ACCEPT_MAINTAINER:-@herbygillot}
 	printf 'maintainer = "%s"\n' "$maintainer" >"$ROW_DIR/maintainer.toml"
 	# The maintainer line goes before any table, where a top-level key must.
-	{ cat "$ROW_DIR/maintainer.toml"; cat "${DOCKHAND_CONFIG:?}"; } >"$ROW_DIR/config.toml" && cp "$ROW_DIR/config.toml" "$DOCKHAND_CONFIG"
+	# Kept to restore in teardown: in the full stage it's dhtest's own,
+	# which outlasts the row; a maintainer line already there is replaced.
+	cp "${DOCKHAND_CONFIG:?}" "$ROW_DIR/config.before"
+	{ cat "$ROW_DIR/maintainer.toml"; grep -v '^maintainer *=' "$DOCKHAND_CONFIG"; } >"$ROW_DIR/config.toml" && cp "$ROW_DIR/config.toml" "$DOCKHAND_CONFIG"
+}
+
+teardown() {
+	[ -f "$ROW_DIR/config.before" ] && cp "$ROW_DIR/config.before" "$DOCKHAND_CONFIG"
+	return 0
 }
 
 a10_examples() {

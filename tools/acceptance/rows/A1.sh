@@ -1,8 +1,10 @@
 # stages: full
 # A1: install from a local copy of the dockhand Portfile at the candidate
 # commit, which host/stage-candidate.sh put in the overlay. It builds, and
-# dockhand --version names the candidate's version and commit, which
-# tests the ldflag.
+# dockhand --version names the candidate's version, which tests the
+# ldflag. A release tarball has no Git data, so a tagged build names no
+# commit, and needn't: its tag names one (internal/buildinfo, Source),
+# which a Generated-By trailer is found by.
 act() {
 	checkpoint "install the candidate: sudo port -N install dockhand, from the overlay" || return 0
 	dh --version || :

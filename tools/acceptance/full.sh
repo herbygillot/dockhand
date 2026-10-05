@@ -55,6 +55,14 @@ export GIT_SSH_COMMAND="ssh -i $ACCEPT_GH_KEY -o IdentitiesOnly=yes -o IdentityA
 
 # Test pull requests go to the sandbox (engine.Options.PullRequests).
 export DOCKHAND_PULL_REQUESTS=${ACCEPT_SANDBOX:-$ACCEPT_GH_LOGIN/macports-ports}
+# dockhand's own configuration file, which rows that set something up
+# for themselves (A10's maintainer, E10's command provider) change for
+# their run and restore: the quick stage names a scratch one, and here it
+# is dhtest's, where dockhand reads it by default (the rc1 full stage:
+# A10 died in setup on DOCKHAND_CONFIG unset).
+export DOCKHAND_CONFIG=${DOCKHAND_CONFIG:-$HOME/.dockhand/config.toml}
+mkdir -p "$(dirname "$DOCKHAND_CONFIG")"
+touch "$DOCKHAND_CONFIG"
 export ACCEPT_STATE ACCEPT_GH_LOGIN ACCEPT_GO_PORT ACCEPT_RUST_PORT MACPORTS_TREE
 export ACCEPT_REPO=$(cd "$here/../.." && pwd)
 export DH_BIN=${DH_BIN:-/opt/local/bin/dockhand}

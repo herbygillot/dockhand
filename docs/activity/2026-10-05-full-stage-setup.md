@@ -13,3 +13,8 @@ The Prime-time thread set the full stage up on the M1 for v0.3.0-rc1 and worked 
 
 - **H5 isn't judged before dockhand is installed.** In the full stage A0 runs before A1 installs the dockhand under test, so H5's `dockhand --json status` failed with no error, and A0 graded a blocker though `make test` passed. With no dockhand at `DH_BIN`, H5 is "skipped", saying so.
 - **A row's WAITING reaches the run's own output.** A checkpoint's `WAITING:` went to the row's `runner.log` and `$ACCEPT_STATE/waiting` alone, since the row's output is its log, and A1 sat two hours unseen. run.sh opens fd 3 on its own output, and a checkpoint writes there too; the README says where it appears.
+
+## A10's configuration, and what A1 checks
+
+- **The full stage names dockhand's configuration file.** A10's setup read `DOCKHAND_CONFIG`, which only the quick stage set, and died before its act ("parameter null or not set"). full.sh now exports it as dhtest's own, `~/.dockhand/config.toml`, where dockhand reads it by default, and makes it if it isn't there. A10 and E10, which change it for their run (a maintainer, and a command provider), keep it as it was and restore it in teardown, since dhtest's outlasts the row; A10 replaces a maintainer line rather than adding a second.
+- **A1 checks the version, which is what a tagged build names.** dockhand @0.3.0-rc1 printed "dockhand v0.3.0-rc1" with no commit, where A1's header said it names the version and commit. A release tarball has no Git data, so a build of it records no revision; the Portfile's ldflag sets the version, and a tag names its commit, which `buildinfo.Source` finds a Generated-By trailer's build by. The header was wrong, not the Portfile, and now says so.
