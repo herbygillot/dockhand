@@ -462,6 +462,25 @@ func (e *Engine) Logs(ctx context.Context, id model.RunID) (RunLogs, error) {
 	return logs, err
 }
 
+// IncludedPorts are the ports the latest check built from files Git
+// doesn't track, which check --include added: a new port's Portfile, which
+// the branch's own files don't change yet, so ChangedPorts names none.
+// Status said "Ports none yet" of a branch whose check had just built one
+// (Codex's feedback, approved 2026-10-05). None where the branch's files
+// change a port, or the latest check was of a commit.
+func (s BranchStatus) IncludedPorts() []string {
+	if ports, _ := s.ChangedPorts(); len(ports) > 0 || s.LatestRevision == nil || s.LatestRevision.Kind != model.RevisionSnapshot || s.Evidence == nil {
+		return nil
+	}
+	var included []string
+	for _, target := range s.Evidence.Plan.Targets {
+		if target.Role == model.Changed && !slices.Contains(included, target.Target.Name) {
+			included = append(included, target.Target.Name)
+		}
+	}
+	return included
+}
+
 // ChangedPorts are what the branch's files change as they are now, as a
 // person reads it: the ports its change records say (recordedPorts), then
 // _resources, where it changed.

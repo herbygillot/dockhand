@@ -405,3 +405,25 @@ func TestCheckingABranchWithNoCommitsTakesItsWorkingFiles(t *testing.T) {
 	_, _, err = dockhand(t, "check", "--plan", "--branch", "jq-update")
 	require.ErrorContains(t, err, "jq-update's worktree has edits (textproc/jq/Portfile); choose --head for the committed tip or --working-tree for the files")
 }
+
+// A branch whose only port is a new one's untracked Portfile, built with
+// check --include, names it in status, not "none yet" (Codex's feedback,
+// approved 2026-10-05).
+func TestStatusNamesAPortBuiltWithInclude(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withScript(t, w, "passed")
+	_, _, err := dockhand(t, "start", "vx")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "Source", "macports-branches", "vx")
+	t.Setenv("MACPORTS_TREE", dir)
+	out, _, err := dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "  Ports    none yet\n")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "lang", "vx"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lang", "vx", "Portfile"), []byte("name vx\nversion 1\n"), 0o644))
+	_, _, _ = dockhand(t, "check", "--include", "lang/vx/Portfile")
+	out, _, err = dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "  Ports    none committed; vx built from untracked files (check --include)\n")
+}

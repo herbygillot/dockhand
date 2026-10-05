@@ -527,7 +527,11 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 		fmt.Fprintln(out, "  Work     cleaned after its merge")
 	} else {
 		ports := portWords(status)
-		if ports == "" {
+		switch included := status.IncludedPorts(); {
+		case ports != "":
+		case len(included) > 0:
+			ports = fmt.Sprintf("none committed; %s built from untracked files (check --include)", prose.And(included))
+		default:
 			ports = "none yet"
 		}
 		fmt.Fprintf(out, "  Ports    %s\n", ports)
