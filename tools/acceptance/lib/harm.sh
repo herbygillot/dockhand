@@ -226,9 +226,18 @@ harm_h3() {
 harm_h4() {
 	local found dir
 	found=$(grep -rlaE "$HARM_TOKEN" "$ROW_DIR/out.log" "$ROW_DIR/json" 2>/dev/null || :)
+	# Tart's VM images and the archives guests built are binary, gigabytes
+	# of them: a token's shape turns up in their bytes by chance, as it did
+	# in three disk.img files of the Golden Gate vanilla image before any
+	# token was on the host (the rc1 full stage). Nothing of the host's
+	# login goes into a guest or its archives (dockhand gives a guest the
+	# revision, its targets, and kept archives, never a credential), so
+	# they're left out; dockhand's own state beside them, its database,
+	# configuration, logs, and the logs and results copied out of guests,
+	# is searched as before.
 	for dir in ${ACCEPT_SECRET_DIRS:-}; do
 		[ -e "$dir" ] || continue
-		found="$found $(grep -rlaE "$HARM_TOKEN" "$dir" 2>/dev/null | tr '\n' ' ')"
+		found="$found $(grep -rlaE --exclude-dir=tart --exclude-dir=archives --exclude='*.img' --exclude='*.tbz2' "$HARM_TOKEN" "$dir" 2>/dev/null | tr '\n' ' ')"
 	done
 	found=$(printf '%s' "$found" | tr -s ' ')
 	if [ -n "${found// /}" ]; then

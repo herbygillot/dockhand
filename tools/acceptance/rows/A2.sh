@@ -6,7 +6,15 @@ act() {
 	host_only "setup in dhtest's fresh fork clone" || return 0
 	allow_change "*"
 	(cd "$MACPORTS_TREE" && dh setup) || :
-	checkpoint "enter auth login's code in a browser, signed in as the test account" || return 0
+	# The login is auth login's: setup, without a terminal, says to run it
+	# (the rc1 full stage, whose checkpoint asked for a code nothing had
+	# printed). It runs here, printing its code and address, and waits
+	# while the person enters the code.
+	dh_bg auth login --no-browser
+	if wait_for_line "$DH_BG_LOG" 'one-time code: ' 120; then
+		checkpoint "authorize dockhand as the test account: $(grep -m1 'one-time code: ' "$DH_BG_LOG"), at $(grep -m1 -oE 'https://[^ ]+' "$DH_BG_LOG")" || { kill "$DH_BG_PID" 2>/dev/null; return 0; }
+	fi
+	dh_bg_wait || :
 	dh auth status || :
 	dh providers || :
 }
