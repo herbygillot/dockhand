@@ -57,10 +57,13 @@ exec 3>&1
 # The rows of this stage, in order, unless --rows names them. A row
 # marked "# order: alone", as S1's day of serve, runs only when named, so
 # it holds up no other row; the run says how to run it after.
+# Rows go in their IDs' numeric order, A2 before A10, as the plan lists
+# them: in glob order A12's Xcode image ran before A2 made the base image
+# it needs (the rc3 full run, 2026-10-06).
 alone=""
 if [ -z "$rows" ]; then
-	for file in "$rowdir"/*.sh; do
-		[ -f "$file" ] || continue
+	for id in $(find "$rowdir" -maxdepth 1 -name '*.sh' -type f -exec basename {} .sh \; | sort -V); do
+		file="$rowdir/$id.sh"
 		grep -qE "^# stages:(.* )?$stage( |\$)" "$file" || continue
 		if grep -q '^# order: alone' "$file"; then
 			alone="$alone $(basename "$file" .sh)"
