@@ -11,7 +11,7 @@ act() {
 	while IFS= read -r url; do
 		[ -n "$url" ] || continue
 		dh_json create "$url" --new || continue
-		name=$(jq -r '.result.branch // empty' "$DH_LAST_JSON")
+		name=$(jq -r '.result.branch.name // empty' "$DH_LAST_JSON")
 		dh check -b "$name" || :
 		dh_json submit -b "$name" --plan || :
 	done <"$ROW_DIR/projects"
