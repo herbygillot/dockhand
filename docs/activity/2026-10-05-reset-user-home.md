@@ -70,3 +70,7 @@ With earlier rows' branches set aside, a `submit --plan` on the ports checkout's
 ## 2026-10-06: logins without waiting codes
 
 Two D-C2 device codes expired while the run waited for a person. Rows that log out to test what follows, D-C1, D-C2, and D-C5, now keep dockhand's Keychain login in a shell variable, never a file or a log, and put it back as it was through `security`'s standard input (`login_keep`, `login_restore`), so no code is asked for; D-C5 asks for the GitHub CLI's login only where reset-user.sh's isn't the test account's. Where a code is needed, A2's first login and D-C3's after its revocation, `device_login` asks the person to say they're ready before setup github issues one. D-C3, which left the login revoked for the rows after, now logs in again beside the revocation. The rows a person does on GitHub's site, D-C3 and D-C4, run next to each other, after D-C1 and D-C2, which now need no one.
+
+## 2026-10-06: D-C2 follows a pull request through the logout
+
+D-C2 asked serve to say once that it couldn't act after a logout. It can: a running serve keeps the client it made, and its token, which GitHub honours until it expires, and reads public pull requests without a login past that; the rc6 run's serve, with nothing to follow, said nothing. The row now opens a test pull request in setup, closes it while dockhand is logged out, and passes when serve says it closed, with the same process before and after the login comes back. That serve doesn't say it's logged out is a README known issue, with the fix under Later.
