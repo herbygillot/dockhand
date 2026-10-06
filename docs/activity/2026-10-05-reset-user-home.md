@@ -21,3 +21,7 @@ createhomedir froze the M1 at dhtest's first login, after a full reset at 04:35Z
 ## 2026-10-06: A10 on a fresh account
 
 A10's setup wrote the maintainer line with `grep -v`, which exits 1 for a config with no other line, as dhtest's empty one, so the copy was skipped and the row recorded its setup failed. It filters with `sed` now.
+
+## 2026-10-06: S1 runs alone, for a day, on the real workload
+
+S1 said it ran last but ran in glob order, before S2, so its soak held up the end of the run. A row marked `# order: alone` now runs only when named, and run.sh says to run it with `--rows S1` after. S1 soaked an idle serve: a fresh account has no maintainer and cleanup's defaults never act on a host with room. It now sets the person's maintainer line (ACCEPT_MAINTAINER), `serve.for_outdated = "check"`, and `cleanup.after = "12h"`, restoring the config in teardown, and samples serve's memory, free disk, plain and compressed logs, and auth status every hour for 24 hours, the person's choice (ACCEPT_S1_HOURS), then lists Tart's VMs for the judgment.

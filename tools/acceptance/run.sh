@@ -54,11 +54,19 @@ export ACCEPT_STAGE=$stage ACCEPT_CANDIDATE=$candidate
 # WAITING to, past the row's runner.log (lib/protocol.sh).
 exec 3>&1
 
-# The rows of this stage, in order, unless --rows names them.
+# The rows of this stage, in order, unless --rows names them. A row
+# marked "# order: alone", as S1's day of serve, runs only when named, so
+# it holds up no other row; the run says how to run it after.
+alone=""
 if [ -z "$rows" ]; then
 	for file in "$rowdir"/*.sh; do
 		[ -f "$file" ] || continue
-		grep -qE "^# stages:(.* )?$stage( |\$)" "$file" && rows="$rows $(basename "$file" .sh)"
+		grep -qE "^# stages:(.* )?$stage( |\$)" "$file" || continue
+		if grep -q '^# order: alone' "$file"; then
+			alone="$alone $(basename "$file" .sh)"
+		else
+			rows="$rows $(basename "$file" .sh)"
+		fi
 	done
 fi
 
@@ -174,5 +182,8 @@ for row in $rows; do
 	esac
 done
 [ "$notrun" -eq 0 ] || echo "$notrun not run: each stopped at a step for the host or a person, as its row says"
+for row in $alone; do
+	echo "$row runs alone, after this run: run it with --rows $row"
+done
 echo "Results: $results"
 [ "$failed" -eq 0 ]
