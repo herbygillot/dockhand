@@ -368,10 +368,13 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 		}
 		// A check of these files still to finish is the one to wait for,
 		// not a new one to run.
-		var pending []model.Run
+		var pending, passed []model.Run
 		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 			var err error
-			pending, err = runsOfTree(r, plan.Branch.ID, model.ObjectID(plan.Tree), model.RunQueued, model.RunRunning)
+			if pending, err = runsOfTree(r, plan.Branch.ID, model.ObjectID(plan.Tree), model.RunQueued, model.RunRunning); err != nil {
+				return err
+			}
+			passed, err = r.Runs(store.RunFilter{Branch: plan.Branch.ID, States: []model.RunState{model.RunPassed}, Limit: 1})
 			return err
 		}); err != nil {
 			return err
@@ -379,6 +382,14 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 		if len(pending) > 0 {
 			run := pending[0]
 			plan.Blocking = append(plan.Blocking, fmt.Sprintf("%s, of this commit's files, is %s; dockhand wait %s, then submit, or submit a draft with --draft", run.Name(), run.State, run.Name()))
+			return nil
+		}
+		// A check passed of other files, as before a rebase, is reused
+		// where a port reads the same files: the check needed is quick, and
+		// is said so, since a rebase's refusal read as a whole build again
+		// (the rc6 full stage, B5).
+		if len(passed) > 0 {
+			plan.Blocking = append(plan.Blocking, fmt.Sprintf("no check has finished for this commit's files; dockhand check reuses %s's builds where a port reads the same files, building only what changed. Or submit a draft with --draft, or without a check with --no-check, which the pull request states", passed[0].Name()))
 			return nil
 		}
 		plan.Blocking = append(plan.Blocking, "no check has finished for this commit's files; run dockhand check first, submit a draft with --draft, or submit without a check with --no-check, which the pull request states")

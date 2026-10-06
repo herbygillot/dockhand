@@ -618,3 +618,23 @@ func TestArchiveReadsThePullRequestsState(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, archived.PullRequestOpen)
 }
+
+// A commit no check passed, on a branch whose earlier check passed, as
+// after a rebase, says the check it needs reuses that check's builds (the
+// rc6 full stage, B5).
+func TestSubmitSaysACheckWouldReuseTheEarlierOne(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	checked(t, e, branch, model.OutcomePassed, model.OutcomePassed)
+	portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": read(t, portfile) + "# a later commit\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: a later commit")
+
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+	require.NotEmpty(t, plan.Blocking)
+	require.Contains(t, plan.Blocking[0], "no check has finished for this commit's files; dockhand check reuses check-1's builds where a port reads the same files")
+}
