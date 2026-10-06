@@ -81,6 +81,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	out, _, err = dockhand(t, "check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · checking snapshot 1\n", "a plan finds a snapshot already recorded of the same files")
+	require.Contains(t, out, "Reuse       a port whose earlier passed build read the same files is reused when the check runs", "with a passed check before it, a plan says reuse may apply (the rc6 full stage, B5)")
 
 	out, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)

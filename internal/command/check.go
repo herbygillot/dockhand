@@ -135,6 +135,14 @@ true, it runs that baseline by itself.`,
 				return errors.New("nothing was checked: " + unrunnable(proposed))
 			}
 			if plan {
+				// Reuse is chosen when the check runs, from what each earlier
+				// build read, so a plan can't say which ports reuse; that
+				// some may, it says, since a plan after a rebase read as a
+				// full build where its check reused one (the rc6 full stage,
+				// B5).
+				if passed, err := e.Runs(ctx, store.RunFilter{Branch: branch.ID, States: []model.RunState{model.RunPassed}, Limit: 1}); err == nil && len(passed) > 0 && !proposed.Fresh {
+					fmt.Fprintln(out, "Reuse       a port whose earlier passed build read the same files is reused when the check runs, not built; --fresh builds every port")
+				}
 				return nil
 			}
 			if err := confirmVariantBuilds(streams, proposed, yes); err != nil {
