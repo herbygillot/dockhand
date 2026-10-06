@@ -21,7 +21,9 @@ setup() {
 	# Kept to restore in teardown: in the full stage it's dhtest's own,
 	# which outlasts the row; a maintainer line already there is replaced.
 	cp "${DOCKHAND_CONFIG:?}" "$ROW_DIR/config.before"
-	{ cat "$ROW_DIR/maintainer.toml"; grep -v '^maintainer *=' "$DOCKHAND_CONFIG"; } >"$ROW_DIR/config.toml" && cp "$ROW_DIR/config.toml" "$DOCKHAND_CONFIG"
+	# sed, not grep -v, which exits 1 for a config with no other line, as
+	# a fresh account's empty one (the rc3 full run, 2026-10-06).
+	{ cat "$ROW_DIR/maintainer.toml"; sed '/^maintainer *=/d' "$DOCKHAND_CONFIG"; } >"$ROW_DIR/config.toml" && cp "$ROW_DIR/config.toml" "$DOCKHAND_CONFIG"
 }
 
 teardown() {
