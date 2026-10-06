@@ -25,3 +25,11 @@ A10's setup wrote the maintainer line with `grep -v`, which exits 1 for a config
 ## 2026-10-06: S1 runs alone, for a day, on the real workload
 
 S1 said it ran last but ran in glob order, before S2, so its soak held up the end of the run. A row marked `# order: alone` now runs only when named, and run.sh says to run it with `--rows S1` after. S1 soaked an idle serve: a fresh account has no maintainer and cleanup's defaults never act on a host with room. It now sets the person's maintainer line (ACCEPT_MAINTAINER), `serve.for_outdated = "check"`, and `cleanup.after = "12h"`, restoring the config in teardown, and samples serve's memory, free disk, plain and compressed logs, and auth status every hour for 24 hours, the person's choice (ACCEPT_S1_HOURS), then lists Tart's VMs for the judgment.
+
+## 2026-10-06: A4's findings
+
+- **H3 says when it couldn't count.** dhtest's gh was never logged in, the snapshot swallowed `gh pr list`'s failure, and H3 passed while A4 opened herbyg-test/macports-ports#1. A failed listing is kept in `prs.err`, and H3 reads "not checked" with the reason.
+- **full.sh stops unless gh is the test account.** H3 and every row's `close_test_pr` need it; it checks `gh api user` against ACCEPT_GH_LOGIN before any row.
+- **reset-user.sh logs dhtest's gh in** with the test account's token (GH_TOKEN, the token file, or the driver's gh), in gh's own file rather than a Keychain, and stops if the token is another account's.
+- **A4 allows its own push and pull request.** The person's submit pushed `dockhand/<port>` to the fork, which H2 called harm.
+- **README and providers.** setup offers the maintainers line only as the ports your GitHub login maintains write it, and otherwise says how to write it; update changes the branch's files without a preview, which `dockhand diff` shows, and the steps after it preview; a release with only its Xcode image is said to need its plain image beside it, which a check does since batch 100, rather than "which most ports build in", since a check builds in the Xcode image where there is one (the person's decision of 2026-09-26).

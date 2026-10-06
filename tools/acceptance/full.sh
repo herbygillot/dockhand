@@ -55,6 +55,15 @@ export GIT_SSH_COMMAND="ssh -i $ACCEPT_GH_KEY -o IdentitiesOnly=yes -o IdentityA
 
 # Test pull requests go to the sandbox (engine.Options.PullRequests).
 export DOCKHAND_PULL_REQUESTS=${ACCEPT_SANDBOX:-$ACCEPT_GH_LOGIN/macports-ports}
+# H3 counts the test account's pull requests and the rows close their test
+# ones with gh, so gh is logged in as that account before any row runs:
+# unlogged, H3 passed while A4 opened one, and no test one would have
+# closed (the rc3 full run, 2026-10-06).
+gh_login=$(gh api user --jq .login 2>/dev/null || :)
+if [ "$gh_login" != "$ACCEPT_GH_LOGIN" ]; then
+	echo "full.sh: gh is logged in as ${gh_login:-nobody}, not $ACCEPT_GH_LOGIN: H3 couldn't count pull requests, nor the rows close their test ones. Log dhtest's gh in with the test account's token (reset-user.sh --after-login does)." >&2
+	exit 2
+fi
 # dockhand's own configuration file, which rows that set something up
 # for themselves (A10's maintainer, E10's command provider) change for
 # their run and restore: the quick stage names a scratch one, and here it

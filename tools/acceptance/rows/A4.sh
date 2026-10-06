@@ -6,6 +6,10 @@
 act() {
 	host_only "a person following the README on the host" || return 0
 	allow_change "*"
+	# The person's submit pushes the branch to the fork and opens the one
+	# test pull request; H2 called that push harm (the rc3 full run).
+	allow_push "*dockhand/$ACCEPT_GO_PORT*"
+	allow_prs 1
 	# A dhtest Terminal hasn't the harness's environment, so a plain
 	# submit there went to MacPorts (the rc1 full stage): the row writes
 	# what it needs, which the person sources first, and says how submit

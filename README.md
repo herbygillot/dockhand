@@ -30,7 +30,7 @@ dockhand setup                    # register this checkout, then offer the GitHu
                                   # your maintainers line, and a macOS image to build in
 ```
 
-`setup tart` and `setup github` do those two parts by themselves. `setup` finds the remote for `macports/macports-ports` and puts branch worktrees in `~/Source/macports-branches`, unless you say otherwise. Your own checkout is left alone: each branch gets a sparse worktree of its own, holding only `_resources` and the ports it changes.
+The maintainers line is offered as the ports maintained by your GitHub login write it; with none, setup says how to write it yourself. `setup tart` and `setup github` do the image and the login by themselves. `setup` finds the remote for `macports/macports-ports` and puts branch worktrees in `~/Source/macports-branches`, unless you say otherwise. Your own checkout is left alone: each branch gets a sparse worktree of its own, holding only `_resources` and the ports it changes.
 
 ## An update, start to finish
 
@@ -42,7 +42,7 @@ dockhand tidy                     # one commit, "jq: update to 1.8.1"
 dockhand submit                   # push to your fork and open the pull request
 ```
 
-Each step shows what it will do before it does it, and `--plan` on any of them shows the plan and changes nothing. `update jq --new --submit` runs the whole sequence, previewing each step, and `bump jq` runs it asking nothing, stopping wherever you should look. If the check fails, the branch stays as it is. `dockhand logs check-12 --port jq` prints the log, and you fix the Portfile in the worktree and run `check` again. Checks build the files as they are on disk, committed or not, so there is nothing to commit first.
+`update` changes only the branch's own files, which `dockhand diff` shows, and the steps after it, which build, commit, and push, each show what they will do before they do it; `--plan` on any of them shows the plan and changes nothing. `update jq --new --submit` runs the whole sequence, previewing each step, and `bump jq` runs it asking nothing, stopping wherever you should look. If the check fails, the branch stays as it is. `dockhand logs check-12 --port jq` prints the log, and you fix the Portfile in the worktree and run `check` again. Checks build the files as they are on disk, committed or not, so there is nothing to commit first.
 
 `status` shows every open branch: its ports, its edits, its latest check, and its pull request, under a list of what needs you, each with the command that moves it forward. Inside a branch's worktree, `status` shows that branch in detail.
 

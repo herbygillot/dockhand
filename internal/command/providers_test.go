@@ -113,7 +113,7 @@ func TestProvidersShowTheImages(t *testing.T) {
 	images.status.Xcode = []macos.Release{release(t, "tahoe")}
 	out, _, err = dockhand(t, "providers")
 	require.NoError(t, err)
-	require.Contains(t, out, "tart     · Xcode image for macOS 26 ready; no plain image, which most ports build in: dockhand setup tart   (macOS 26, up to 60 GB)\n")
+	require.Contains(t, out, "tart     · Xcode image for macOS 26 ready; no plain image, which a check needs beside it: dockhand setup tart   (macOS 26, up to 60 GB)\n")
 	images.status.Xcode = nil
 
 	images.status.Base = []macos.Release{release(t, "sonoma"), release(t, "sequoia")}

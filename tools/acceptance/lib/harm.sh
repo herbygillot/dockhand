@@ -48,7 +48,10 @@ harm_snapshot() {
 		done <"$out/worktrees.$id"
 		harm_remote_refs "$repo" >"$out/remote.$id" 2>"$out/remote.$id.err" || :
 	done
-	harm_prs >"$out/prs" 2>/dev/null || :
+	# A listing that fails says so in prs.err, which H3 reads: dhtest's gh,
+	# never logged in, made H3 pass while A4 opened a pull request (the
+	# rc3 full run, 2026-10-06).
+	harm_prs >"$out/prs" 2>"$out/prs.err" || printf 'the pull requests could not be listed\n' >>"$out/prs.err"
 	harm_running >"$out/running" 2>/dev/null || :
 	harm_home >"$out/home"
 	harm_tokens >"$out/tokens" 2>/dev/null || :
@@ -225,6 +228,10 @@ harm_h3() {
 	local before=$1 after=$2 opened allowed=0
 	if [ -z "${ACCEPT_GH_LOGIN:-}" ]; then
 		harm_write H3 "skipped: no GitHub login to watch, as in the quick stage, which opens none"
+		return
+	fi
+	if [ -s "$before/prs.err" ] || [ -s "$after/prs.err" ]; then
+		harm_write H3 "not checked: $(cat "$before/prs.err" "$after/prs.err" 2>/dev/null | grep . | head -1)"
 		return
 	fi
 	[ -f "$ROW_DIR/allow.prs" ] && allowed=$(cat "$ROW_DIR/allow.prs")

@@ -202,7 +202,7 @@ func tartReadiness(ctx context.Context) string {
 			for _, release := range status.Xcode {
 				xcode = append(xcode, release.Product)
 			}
-			return fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which most ports build in: dockhand setup tart   (%s)", strings.Join(xcode, ", "), cost)
+			return fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which a check needs beside it: dockhand setup tart   (%s)", strings.Join(xcode, ", "), cost)
 		}
 		return fmt.Sprintf("· not set up: dockhand setup tart   (%s)", cost)
 	}

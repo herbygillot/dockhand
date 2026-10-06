@@ -114,6 +114,27 @@ else
 	human "put the test GitHub account's SSH key at $ACCEPT_TEST_KEY (ACCEPT_TEST_KEY), which this copies to dhtest"
 fi
 
+# 3b. dhtest's gh, logged in as the test account, with the token step 4
+# uses: H3 counts that account's pull requests with it, and the rows close
+# their test ones; never logged in, H3 passed while A4 opened one (the rc3
+# full run, 2026-10-06). It's kept in gh's file, not a Keychain, which
+# dhtest's isn't open to this session.
+if [ -n "${ACCEPT_TEST_ACCOUNT:-}" ] && command -v gh >/dev/null; then
+	token=${GH_TOKEN:-$(gh auth token 2>/dev/null || :)}
+	if [ -z "$token" ]; then
+		human "give this a token for $ACCEPT_TEST_ACCOUNT, as GH_TOKEN or at $ACCEPT_GH_TOKEN_FILE, for dhtest's gh"
+	elif [ "$DRY" = 1 ]; then
+		echo "would run: as_dhtest gh auth login --hostname github.com --with-token --insecure-storage, with $ACCEPT_TEST_ACCOUNT's token"
+	else
+		echo "+ as_dhtest gh auth login --hostname github.com --with-token --insecure-storage"
+		printf '%s\n' "$token" | as_dhtest gh auth login --hostname github.com --with-token --insecure-storage
+		login=$(as_dhtest gh api user --jq .login 2>/dev/null || :)
+		[ "$login" = "$ACCEPT_TEST_ACCOUNT" ] || die "dhtest's gh is logged in as ${login:-nobody}, not $ACCEPT_TEST_ACCOUNT: the token is another account's"
+	fi
+else
+	echo "skipped: dhtest's gh login needs gh and ACCEPT_TEST_ACCOUNT, the test GitHub login"
+fi
+
 # 4. The test account's fork, cleared. It's also the sandbox the full
 # stage's test pull requests go to (DOCKHAND_PULL_REQUESTS), within it:
 # leftover [testing] pull requests closed, there and at MacPorts;
