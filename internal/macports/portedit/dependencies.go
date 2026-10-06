@@ -331,6 +331,16 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
+	// A module the old version's go2port output left out, which the new
+	// version's has, is the generator's now, not kept, and its go.sum pin
+	// isn't asked after.
+	if len(keptModules) > 0 {
+		modules, err := depblock.GoModules(values[depblock.Go])
+		if err != nil {
+			return Result{}, err
+		}
+		keptModules = slices.DeleteFunc(keptModules, func(kept depblock.Difference) bool { return slices.Contains(modules, kept.Name) })
+	}
 	var keptNames []string
 	if len(keptModules) > 0 {
 		gosum, _, err := depblock.Manifest(ctx, nextInput.Archive, nextInput.Worksrcdir, "go.sum")

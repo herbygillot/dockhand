@@ -26,6 +26,19 @@ func (m *ModuleMoved) Error() string {
 	return fmt.Sprintf("dependency: go.mod's module is %s, where go.package is %s", m.From, m.To)
 }
 
+// GoModules are the modules go.vendors tokens declare, in their order.
+func GoModules(values []string) ([]string, error) {
+	rows, err := goRows(values)
+	if err != nil {
+		return nil, err
+	}
+	modules := make([]string, 0, len(rows))
+	for _, row := range rows {
+		modules = append(modules, row[0])
+	}
+	return modules, nil
+}
+
 func generateGo(ctx context.Context, executable string, in Input) (GeneratedBlocks, error) {
 	data, member, err := Manifest(ctx, in.Archive, in.Worksrcdir, "go.mod")
 	if err != nil {

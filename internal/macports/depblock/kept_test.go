@@ -29,6 +29,15 @@ func TestAGoModuleKeptByHandIsKept(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, append([]string{"c2sp.org/CCTV/age", "lock", "v0.0.0-20240306222714-3ec4d716e805", "sha256", sha, "size", "10"}, next...), kept, "in module order, as declared")
 
+	// A kept module the new output has is its row, not a second one.
+	withAge := append([]string{"c2sp.org/CCTV/age", "lock", "v0.0.0-20240306222714-3ec4d716e805", "sha256", other, "size", "11"}, next...)
+	kept, err = KeepGoModules(declared, withAge, []string{"c2sp.org/CCTV/age"})
+	require.NoError(t, err)
+	require.Equal(t, withAge, kept)
+	modules, err := GoModules(withAge)
+	require.NoError(t, err)
+	require.Equal(t, []string{"c2sp.org/CCTV/age", "github.com/x/y"}, modules)
+
 	gosum := []byte("c2sp.org/CCTV/age v0.0.0-20240306222714-3ec4d716e805 h1:xyz=\ngithub.com/x/y v1.1.0/go.mod h1:abc=\n")
 	require.True(t, GoSumPins(gosum, "c2sp.org/CCTV/age", "v0.0.0-20240306222714-3ec4d716e805"))
 	require.True(t, GoSumPins(gosum, "github.com/x/y", "v1.1.0"), "by its go.mod's line")

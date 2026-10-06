@@ -23,14 +23,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func manifestArchive(t *testing.T, name, manifest, version string) []byte {
+func manifestArchive(t *testing.T, name, manifest, version string, more ...string) []byte {
 	t.Helper()
 	var data bytes.Buffer
 	gz := gzip.NewWriter(&data)
 	tw := tar.NewWriter(gz)
-	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "fixture-" + version + "/" + name, Mode: 0600, Size: int64(len(manifest)), Typeflag: tar.TypeReg}))
-	_, err := tw.Write([]byte(manifest))
-	require.NoError(t, err)
+	// more are further name, content pairs, as a go.sum beside go.mod.
+	files := append([]string{name, manifest}, more...)
+	for i := 0; i+1 < len(files); i += 2 {
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: "fixture-" + version + "/" + files[i], Mode: 0600, Size: int64(len(files[i+1])), Typeflag: tar.TypeReg}))
+		_, err := tw.Write([]byte(files[i+1]))
+		require.NoError(t, err)
+	}
 	require.NoError(t, tw.Close())
 	require.NoError(t, gz.Close())
 	return data.Bytes()
@@ -228,6 +232,50 @@ func TestGoDependencyPreparation(t *testing.T) {
 		})
 	}
 }
+
+// A module the Portfile keeps that the current version's go2port output
+// leaves out, but the new version's has, is the new output's: listed once,
+// and not said to be kept. go-reflex 0.3.2 listed kr/text twice, and its
+// check failed at extract (the rc3 full run, 2026-10-06).
+func TestAKeptGoModuleTheNewOutputHasIsListedOnce(t *testing.T) {
+	t.Parallel()
+	sha := strings.Repeat("a", 64)
+	old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
+	next := "module github.com/owner/fixture\ngo 1.24\nrequire (\n\texample.com/new/v2 v2.0.0\n\tgithub.com/kr/text v0.1.0\n)\n"
+	before := manifestArchive(t, "go.mod", old, "1.0")
+	// The new go.sum still pins it, as 0.3.2's did.
+	after := manifestArchive(t, "go.mod", next, "2.0", "go.sum", "github.com/kr/text v0.1.0 h1:abc=\nexample.com/new/v2 v2.0.0 h1:def=\n")
+	extra := `options go.vendors
+ default go.vendors {}
+ proc fixture_vendors {} {
+  foreach {module lock value sha checksum} [option go.vendors] {
+   distfiles-append dep.tar.gz:vendor
+   master_sites-append https://invalid.example:vendor
+   checksums-append dep.tar.gz sha256 $checksum
+  }
+ }
+ port::register_callback fixture_vendors
+ ` + "go.vendors example.com/old lock v1.0.0 sha256 " + sha + " github.com/kr/text lock v0.1.0 sha256 " + sha + "\n"
+	service, request := versionFixture(t, "go-setup", extra, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/1.0/") {
+			_, _ = w.Write(before)
+		} else {
+			_, _ = w.Write(after)
+		}
+	})
+	script := "for tag do :; done\nif [ \"$tag\" = v1.0 ]; then\nprintf '%s\\n' 'go.vendors example.com/old lock v1.0.0 sha256 " + sha + "'\nelse\nprintf '%s\\n' 'go.vendors github.com/kr/text lock v0.1.0 sha256 " + sha + " example.com/new/v2 lock v2.0.0 sha256 " + sha + "'\nfi"
+	service.DependencyTools = depblock.Tools{Go2Port: dependencyHelper(t, script), Cargo2Port: "absent"}
+	result, err := service.Prepare(t.Context(), request)
+	require.NoError(t, err)
+	require.Len(t, result.Files, 1)
+	require.Equal(t, 1, strings.Count(string(result.Files[0].After), "github.com/kr/text"), string(result.Files[0].After))
+	for _, block := range result.Regenerated {
+		for _, notice := range block.Notices {
+			require.NotContains(t, notice, "Kept the modules")
+		}
+	}
+}
+
 func TestCargoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("b", 64)

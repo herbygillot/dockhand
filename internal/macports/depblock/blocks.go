@@ -596,7 +596,10 @@ func goField(row []string, field string) string {
 
 // KeepGoModules adds to generated go.vendors tokens the rows declared
 // keeps for modules, as they're declared, in module order: the modules a
-// maintainer keeps that the generator leaves out.
+// maintainer keeps that the generator leaves out. A module the generator
+// has is its own row, never a second one: kr/text, kept from go-reflex
+// 0.3.1's Portfile, was listed twice for 0.3.2, whose go2port output had
+// it, and the check failed at extract (the rc3 full run, 2026-10-06).
 func KeepGoModules(declared, generated []string, modules []string) ([]string, error) {
 	keptRows, err := goRows(declared)
 	if err != nil {
@@ -606,8 +609,11 @@ func KeepGoModules(declared, generated []string, modules []string) ([]string, er
 	if err != nil {
 		return nil, err
 	}
+	has := func(module string) bool {
+		return slices.ContainsFunc(rows, func(row []string) bool { return row[0] == module })
+	}
 	for _, row := range keptRows {
-		if slices.Contains(modules, row[0]) {
+		if slices.Contains(modules, row[0]) && !has(row[0]) {
 			rows = append(rows, row)
 		}
 	}
