@@ -1,5 +1,5 @@
 # stages: full
-# B4: answering a review: an edit in the worktree, check, tidy, and
+# B4: answering a review: an edit in the worktree, tidy, check, and
 # submit again. The PR is updated, not replaced; a person's edits to the
 # description are kept; a review re-request is offered.
 # prs: ${ACCEPT_GO_PORT} test
@@ -14,8 +14,12 @@ act() {
 	checkpoint "edit the description of the test PR for $(port) on GitHub, and leave a review asking for a change" || return 0
 	printf '\n# answering a review\n' >>"$(dh_quiet path "$B4_BRANCH")/$(dh_quiet --json status "$B4_BRANCH" | jq -r '.result.branches[0].directories[0]')/Portfile"
 	allow_change "*"
-	dh check -b "$B4_BRANCH" || :
+	# The edit is tidied into a commit before it's checked: a check of a
+	# branch with commits and edits, without a terminal, asks which to
+	# build, and refused, so the tidy that followed left a commit no check
+	# had passed, and the second submit stopped there (the rc6 full stage).
 	dh tidy -b "$B4_BRANCH" -y || :
+	dh check -b "$B4_BRANCH" || :
 	dh_json submit -b "$B4_BRANCH" -y || :
 	close_test_pr "$(port)" "$B4_BRANCH"
 }
