@@ -14,6 +14,7 @@ func TestMasterIsYourCheckoutsNotABranch(t *testing.T) {
 	e := f.open(t)
 	_, err := e.Current(t.Context())
 	require.ErrorIs(t, err, ErrNoBranch)
+	require.ErrorIs(t, err, ErrYourCheckout)
 	require.ErrorContains(t, err, "this is your checkout's master, not one of dockhand's branches; name one with -b <branch>")
 	require.NotContains(t, err.Error(), "adopt")
 }

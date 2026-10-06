@@ -56,7 +56,8 @@ func (b branchFlags) resolve(ctx context.Context, e *engine.Engine, streams Stre
 		branch, err = portBranch(ctx, e, streams, b.port)
 	default:
 		branch, err = e.Current(ctx)
-		if errors.Is(err, engine.ErrNoBranch) {
+		// On master, the engine's refusal already says how to name one.
+		if errors.Is(err, engine.ErrNoBranch) && !errors.Is(err, engine.ErrYourCheckout) {
 			return model.Branch{}, fmt.Errorf("%w; name one with -b <branch> or -p <port>, or run this in the branch's worktree (dockhand path <branch>)", err)
 		}
 		return branch, err

@@ -464,6 +464,10 @@ func (e *Engine) named(ctx context.Context, selector string, lookup func(store.R
 	return branch, err
 }
 
+// ErrYourCheckout is a command run on the person's own checkout's master,
+// which is never one of dockhand's branches; its error says how to name one.
+var ErrYourCheckout = errors.New("this is your checkout's master, not one of dockhand's branches")
+
 // Current is the tracked branch checked out where the engine was opened.
 func (e *Engine) Current(ctx context.Context) (model.Branch, error) {
 	name, err := e.Repo.CurrentBranch(ctx)
@@ -475,7 +479,7 @@ func (e *Engine) Current(ctx context.Context) (model.Branch, error) {
 	// there, as the README read, was told to adopt master (the rc5 full
 	// stage, A4).
 	if errors.Is(err, ErrNoBranch) && name == UpstreamBranch {
-		return model.Branch{}, fmt.Errorf("%w: this is your checkout's %s, not one of dockhand's branches; name one with -b <branch>, as dockhand status lists them, or cd \"$(dockhand path <branch>)\"", ErrNoBranch, name)
+		return model.Branch{}, fmt.Errorf("%w: %w; name one with -b <branch> or -p <port>, as dockhand status lists them, or cd \"$(dockhand path <branch>)\"", ErrNoBranch, ErrYourCheckout)
 	}
 	if errors.Is(err, ErrNoBranch) {
 		return model.Branch{}, fmt.Errorf("%w: %s is not tracked; dockhand adopt tracks it", ErrNoBranch, name)

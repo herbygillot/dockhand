@@ -589,3 +589,32 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	require.True(t, plan.NoteLeftOut)
 	require.NotContains(t, plan.Body, "Author's note")
 }
+
+// archive says a pull request is still open as GitHub has it now, not as
+// last recorded: one closed with gh was said to be still open (the rc6
+// full stage).
+func TestArchiveReadsThePullRequestsState(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+
+	fake.PRs[submitted.PullRequest.Ref.Number].State = forge.PullRequestClosed
+	archived, err := e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: branch, KeepWorktree: true})
+	require.NoError(t, err)
+	require.False(t, archived.PullRequestOpen, "closed on GitHub since it was recorded open")
+
+	_, err = e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: archived.Branch, Undo: true})
+	require.NoError(t, err)
+	fake.PRs[submitted.PullRequest.Ref.Number].State = forge.PullRequestOpen
+	archived, err = e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: archived.Branch, KeepWorktree: true})
+	require.NoError(t, err)
+	require.True(t, archived.PullRequestOpen)
+}

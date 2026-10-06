@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/failpoint"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/history"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -291,6 +292,10 @@ type Archived struct {
 	// Removed is the worktree removed, and Kept why it stayed: what it
 	// holds that its Git branch doesn't.
 	Removed, Kept string
+	// PullRequestOpen is whether the branch's pull request is open, as
+	// GitHub says now, where it can be read, else as last recorded: one
+	// closed with gh was said to be still open (the rc6 full stage).
+	PullRequestOpen bool
 }
 
 // ArchiveBranch sets a branch aside in one step (the command-line UX
@@ -304,6 +309,12 @@ type Archived struct {
 func (e *Engine) ArchiveBranch(ctx context.Context, request ArchiveRequest) (Archived, error) {
 	branch, err := e.Archive(ctx, request.Branch, request.Undo)
 	result := Archived{Branch: branch}
+	if pr := branch.PullRequest; err == nil && pr != nil && !request.Undo {
+		result.PullRequestOpen = pr.Observed == nil || pr.Observed.State == string(forge.PullRequestOpen)
+		if observed, err := e.forge().Observe(ctx, pullRequestRef(pr.Repository, pr.Number)); err == nil && observed.Found {
+			result.PullRequestOpen = observed.PullRequest.State == forge.PullRequestOpen
+		}
+	}
 	if err != nil || request.Undo || request.KeepWorktree || !branch.Managed || !exists(branch.Worktree) {
 		return result, err
 	}

@@ -324,7 +324,7 @@ closes it.`,
 			default:
 				fmt.Fprintf(out, "Archived %s; its files, Git branch, and pull request are untouched. dockhand archive --undo %s brings it back.\n", branch.ShortName(), branch.ShortName())
 			}
-			if pr := branch.PullRequest; pr != nil && (pr.Observed == nil || pr.Observed.State == "open") {
+			if pr := branch.PullRequest; pr != nil && archived.PullRequestOpen {
 				fmt.Fprintf(out, "#%d is still open; archive doesn't close it. Close it on GitHub, or with: gh pr close %d --repo %s\n", pr.Number, pr.Number, pr.Repository)
 			}
 			return nil
