@@ -97,6 +97,35 @@ if [ "$stage" = full ]; then
 		unset -f say row_result
 	fi
 fi
+# isolate_branches sets aside, before a full stage's row, the open branches
+# earlier rows left, so the row's port selects only its own: rows pick
+# their branch by port, and A10's examples and B1's update left three of
+# go-reflex's open, so B1's check -p was refused as ambiguous (the rc6
+# full stage). A branch whose pull request is still open stays, for the
+# rows that ask a person to name one, and is said. What's left open is
+# written to the row's branches.before, which own_branch reads.
+isolate_branches() {
+	local open name
+	if [ "$stage" != full ] || [ "${ACCEPT_DRY:-0}" = 1 ] || [ ! -x "${DH_BIN:-}" ]; then
+		: >"$ROW_DIR/branches.before"
+		return 0
+	fi
+	open=$("$DH_BIN" --json status 2>/dev/null | jq -r '.result.branches[]? | [.name, (.pull_request.state // "")] | @tsv' 2>/dev/null || :)
+	while IFS=$'\t' read -r name state; do
+		[ -n "$name" ] || continue
+		if [ -n "$state" ] && [ "$state" != closed ] && [ "$state" != merged ]; then
+			printf 'kept %s: its pull request is %s\n' "$name" "$state" >>"$ROW_DIR/isolation.log"
+			printf '%s: %s stays open, its pull request %s; a row selecting its port may find it\n' "$row" "$name" "$state" >&3
+			continue
+		fi
+		printf '$ dockhand archive %s\n' "$name" >>"$ROW_DIR/isolation.log"
+		"$DH_BIN" archive "$name" </dev/null >>"$ROW_DIR/isolation.log" 2>&1 || :
+	done <<EOT
+$open
+EOT
+	"$DH_BIN" --json status 2>/dev/null | jq -r '.result.branches[]?.name' >"$ROW_DIR/branches.before" 2>/dev/null || :
+}
+
 printf '%-8s %-14s %s\n' ROW RESULT WHY
 for row in $rows; do
 	file="$rowdir/$row.sh"
@@ -122,6 +151,7 @@ for row in $rows; do
 	export DOCKHAND_GITHUB_LOG="$ROW_DIR/github.log"
 	: >"$DOCKHAND_GITHUB_LOG"
 	export ROW_DIR ROW_ID=$row ROW_LIB="$here/lib"
+	isolate_branches
 	(
 		set +e
 		# shellcheck source=lib/common.sh

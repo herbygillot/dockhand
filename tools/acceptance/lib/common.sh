@@ -36,6 +36,13 @@ dh_setup() {
 	fi
 }
 
+# own_branch is the open branch the row made: one open now that wasn't when
+# it started (run.sh's branches.before), the newest where it made several.
+own_branch() {
+	"$DH_BIN" --json status 2>/dev/null | jq -r '.result.branches[]?.name' 2>/dev/null |
+		grep -vxF -f "$ROW_DIR/branches.before" 2>/dev/null | tail -1
+}
+
 # dh_json runs dockhand with --json once, keeping the envelope and the
 # process's exit status for H8, and returns that status; DH_LAST_JSON
 # names the envelope's file. Its output is also in out.log, for H4.

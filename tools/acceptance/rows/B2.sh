@@ -14,6 +14,7 @@
 # but for a dry run.
 # Where it builds, a second check of the branch, --fresh, must install
 # rust and cargo from the archives the first kept (batch 90).
+# prs: ${ACCEPT_RUST_PORT} test
 act() {
 	# A dry run of the full stage runs in the quick stage's environment,
 	# fork and all, and built rust and cargo too (the M1's dry run at
@@ -22,6 +23,11 @@ act() {
 		row_result "not run" "with a fork, bump runs a whole check, whose guest builds rust and cargo from source where MacPorts has no archives for its release; ACCEPT_B2_BUILD=1 runs it"
 		return 0
 	fi
+	# bump goes on to its pull request, in the sandbox the stage names:
+	# the one H3 and H2 allow, and the approval list names (the rc6 full
+	# stage found neither).
+	allow_prs 1
+	allow_push "*dockhand/${ACCEPT_RUST_PORT}*"
 	dh_json bump "${ACCEPT_RUST_PORT:?}" </dev/null || :
 	b2_reuse
 }
@@ -34,9 +40,10 @@ act() {
 # second check's log of the port says which.
 b2_reuse() {
 	local branch
-	branch=$(git -C "${MACPORTS_TREE:?}" for-each-ref --format='%(refname:short)' 'refs/heads/dockhand/*' | head -1)
+	# The bump's own branch, not the first of any left open: that was
+	# A12's (the rc6 full stage).
+	branch=$(own_branch)
 	[ -n "$branch" ] || return 0
-	branch=${branch#dockhand/}
 	dh_json check -b "$branch" --fresh </dev/null || :
 	B2_REUSE=$DH_LAST_JSON
 	local check

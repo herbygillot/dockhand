@@ -38,3 +38,7 @@ S1 said it ran last but ran in glob order, before S2, so its soak held up the en
 
 - **A5 copies a WAL database with its -wal and -shm,** and backs up from the copy: a read-only open of dhtest's database failed with "unable to open database file", having no -shm and no leave to make one. A database already at the candidate's schema, with no earlier copy, is now "not run", naming ACCEPT_REAL_DB, rather than a known issue.
 - **A7 says what to stage,** a dockhand newer than the candidate, and to answer skip when there's none; its teardown uninstalls serve's agent, which a skipped A7 left running through the rows after.
+
+## 2026-10-06: each row selects its own branch
+
+The rc5 and rc6 full stages' rows left branches open, and later rows pick theirs by port: after section A, go-reflex had three open (A10's examples twice, and B1's), so B1's `check -p go-reflex` was rightly refused as ambiguous, and B4's `status --port … branches[0]` took A10's. Before each live full-stage row, run.sh now archives the open branches earlier rows left (`isolate_branches`, logged in the row's isolation.log), keeping, and saying on the run's output, any whose pull request is still open, for the rows that ask a person to name one. A row's own branch is `own_branch`: one open now that wasn't when it started. B2's second check takes its bump's branch that way rather than the first `dockhand/*` ref, which was A12's, and B2 names its pull request (`# prs:`) and allows its push and pull request, which H2 and H3 would have called harm.
