@@ -13,3 +13,7 @@ From the Prime-time thread: `reset-user.sh dhtest --run`, run on the test host a
 ## Verification
 
 - Dry runs against a scratch host root, with and without `--after-login`, and the harness selftest.
+
+## 2026-10-06: two phases again
+
+createhomedir froze the M1 at dhtest's first login, after a full reset at 04:35Z had made and filled the home before macOS's first-login setup (inferred; the flow without it worked). `--run` now deletes and makes dhtest and stops with WAITING to log it in once; `--run --after-login` does the per-user steps in the home that login made. `--make-home` keeps createhomedir as an explicit opt-in, and naming it with `--after-login` is refused.

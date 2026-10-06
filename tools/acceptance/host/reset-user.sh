@@ -5,10 +5,14 @@
 # plan/prime-time-environment.md). Because it deletes a macOS user, it
 # refuses unless this Mac carries the test-host marker an admin writes,
 # and unless the user is exactly dhtest. Without --run, it only says what
-# it would do. With --after-login it keeps dhtest and its home, and does
-# the steps after making it, for a home macOS made only at first login.
+# it would do. It runs in two phases around dhtest's first login: --run
+# deletes and makes dhtest, and stops for a person to log it in once;
+# --run --after-login keeps dhtest and its home, which macOS made at that
+# login, and sets up what's in it. --make-home has createhomedir make the
+# home instead, and goes straight on, which froze the M1 at dhtest's
+# first login (the Prime-time thread, 2026-10-06), so only on purpose.
 #
-#   tools/acceptance/host/reset-user.sh dhtest [--run] [--after-login]
+#   tools/acceptance/host/reset-user.sh dhtest [--run] [--after-login | --make-home]
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=lib.sh
@@ -20,10 +24,12 @@ if [ ! -f "$HOST_MARKER" ]; then
 	die "$HOST_MARKER is missing: this Mac isn't marked as the test host, so no user is deleted"
 fi
 [ "$(id -un)" != dhtest ] || die "run it as the admin driver, not as dhtest"
-after_login=0
+after_login=0 make_home=0
 for arg in "$@"; do
 	[ "$arg" = --after-login ] && after_login=1
+	[ "$arg" = --make-home ] && make_home=1
 done
+[ "$after_login$make_home" != 11 ] || die "--after-login and --make-home are two ways to have dhtest's home: name one"
 
 # as_dhtest runs a command as dhtest in dhtest's own home: sudo alone
 # keeps the driver's HOME, and git config --global then wrote, or failed
@@ -70,27 +76,29 @@ if command -v gh >/dev/null && [ -n "${ACCEPT_TEST_ACCOUNT:-}" ]; then
 	fi
 fi
 
-# 1. Delete dhtest and make it again, with its home: sysadminctl only
-# assigns the home, which macOS makes at first login, and every step
-# below writes in it. createhomedir makes it from the user template now.
+# 1. Delete dhtest and make it again. sysadminctl only assigns the home,
+# which macOS makes at first login, and every step below writes in it, so
+# the run stops here for that login. A home made beforehand, and filled
+# before macOS's first-login setup, froze the Mac at that login.
 if [ "$after_login" = 0 ]; then
 	if id dhtest >/dev/null 2>&1; then
 		step sudo sysadminctl -deleteUser dhtest
 	fi
 	step sudo sysadminctl -addUser dhtest -fullName "Dockhand Acceptance" -password - -home /Users/dhtest
-	step sudo createhomedir -c -u dhtest
+	if [ "$make_home" = 1 ]; then
+		step sudo createhomedir -c -u dhtest
+	else
+		human "log dhtest in at the login window once, switch back with fast user switching, and run $(basename "$0") dhtest --run --after-login"
+	fi
 fi
 if [ "$DRY" = 0 ] && [ ! -d /Users/dhtest ]; then
-	human "dhtest has no home yet: log dhtest in at the login window once, switch back, and run $(basename "$0") dhtest --run --after-login"
+	die "dhtest has no home: log dhtest in at the login window once, then run this with --after-login"
 fi
 
-# 2. FileVault stays on, so a person logs dhtest in, and keeps it logged in
-# by fast user switching, for the serve rows. sysadminctl makes dhtest
-# with the password read at its prompt, and says such a user can't unlock
-# FileVault; after a reboot the driver unlocks it, and then logs dhtest in. Nothing below needs the
-# login, so it's said at the end rather than waited on here, which left
-# steps 3 to 5 undone and a rerun deleting dhtest again (the Prime-time
-# thread, 2026-10-05).
+# 2. FileVault stays on, so a person keeps dhtest logged in by fast user
+# switching, for the serve rows. sysadminctl makes dhtest with the
+# password read at its prompt, and says such a user can't unlock
+# FileVault; after a reboot the driver unlocks it, and then logs dhtest in.
 
 # 3. Git's identity and the test account's SSH key: the contributor's own
 # setup, which dockhand doesn't do.
@@ -158,5 +166,5 @@ fi
 # 5. The starting point the harm sweep compares with.
 step mkdir -p "$HOST_ROOT/baseline"
 echo "free: $(df -g / | awk 'NR == 2 {print $4}') GB" | if [ "$DRY" = 1 ]; then sed 's/^/would record: /'; else tee "$HOST_ROOT/baseline/free"; fi
-then_person "log dhtest in at the login window once, then switch back with fast user switching; full.sh runs as dhtest after that"
+then_person "keep dhtest logged in, switching back with fast user switching; full.sh runs as dhtest"
 echo "reset-user.sh: done$([ "$DRY" = 1 ] && echo ', as a dry run: nothing was changed')"
