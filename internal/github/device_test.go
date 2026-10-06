@@ -103,3 +103,24 @@ func TestALoginWithoutARefreshTokenIsRefused(t *testing.T) {
 	_, err := flow.Authorize(t.Context(), "fixture-client", func(credential.DeviceAuthorization) error { return nil })
 	require.ErrorContains(t, err, "GitHub's login came with no refresh token, no refresh_token_expires_in, no expires_in, so it couldn't renew itself; nothing was saved")
 }
+
+// A code left unentered says it expired, and how to get another, as
+// GitHub's expired_token or the wait its expiry set ends it (the rc6 full
+// stage, D-C2).
+func TestAnExpiredDeviceCodeSaysSo(t *testing.T) {
+	for _, answer := range []string{"expired_token", "authorization_pending"} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/device/code":
+				fmt.Fprint(w, `{"device_code":"device-secret","user_code":"ABCD-EFGH","verification_uri":"https://github.com/login/device","expires_in":2,"interval":1}`)
+			case "/access_token":
+				fmt.Fprintf(w, `{"error":%q}`, answer)
+			}
+		}))
+		flow := &github.DeviceFlow{HTTP: server.Client(), Endpoint: oauth2.Endpoint{DeviceAuthURL: server.URL + "/device/code", TokenURL: server.URL + "/access_token", AuthStyle: oauth2.AuthStyleInParams}, APIBaseURL: server.URL}
+		_, err := flow.Authorize(t.Context(), "fixture-client", func(credential.DeviceAuthorization) error { return nil })
+		server.Close()
+		require.ErrorContains(t, err, "the code ABCD-EFGH expired before it was entered at https://github.com/login/device; run dockhand setup github again", answer)
+	}
+}

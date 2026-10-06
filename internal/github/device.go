@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -52,6 +53,16 @@ func (f *DeviceFlow) Authorize(ctx context.Context, clientID string, present fun
 	}
 	token, err := config.DeviceAccessToken(ctx, authorization)
 	if err != nil {
+		// A code left unentered expires, by GitHub's word or by the wait
+		// the code's expiry set: said as that, not "context deadline
+		// exceeded" (the rc6 full stage, D-C2).
+		var retrieve *oauth2.RetrieveError
+		switch {
+		case errors.As(err, &retrieve) && retrieve.ErrorCode == "expired_token", errors.Is(err, context.DeadlineExceeded):
+			return credential.Login{}, fmt.Errorf("github: the code %s expired before it was entered at %s; run dockhand setup github again for a new one", authorization.UserCode, authorization.VerificationURI)
+		case errors.As(err, &retrieve) && retrieve.ErrorCode == "access_denied":
+			return credential.Login{}, fmt.Errorf("github: the sign-in was declined at %s; nothing was saved", authorization.VerificationURI)
+		}
 		return credential.Login{}, fmt.Errorf("github: completing device authorization: %w", err)
 	}
 	if token == nil {
