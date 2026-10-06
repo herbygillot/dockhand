@@ -137,6 +137,33 @@ func TestServeStopsForAnUpgrade(t *testing.T) {
 	require.Contains(t, served.String(), "serve: dockhand was upgraded; stopping once its checks end, so launchd starts the new build\nserve: stopped for the upgrade\n")
 }
 
+// A serve whose executable is gone past an upgrade's moment takes dockhand
+// as uninstalled, and stops, saying how to remove the agent (the rc6 full
+// stage, A8).
+func TestServeStopsWhenUninstalled(t *testing.T) {
+	checkedBranch(t)
+	executable := filepath.Join(t.TempDir(), "dockhand")
+	require.NoError(t, os.WriteFile(executable, []byte("rc6"), 0o755))
+	realExecutable, realGrace := servedExecutable, serveGrace
+	t.Cleanup(func() { servedExecutable, serveGrace = realExecutable, realGrace })
+	servedExecutable = func(bool) string { return executable }
+	serveGrace = 200 * time.Millisecond
+	var served syncBuffer
+	done := make(chan error)
+	go func() {
+		done <- Run(t.Context(), []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+	}()
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, settle, 10*time.Millisecond)
+	require.NoError(t, os.Remove(executable))
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(settle):
+		t.Fatalf("serve didn't stop once uninstalled: %s", served.String())
+	}
+	require.Contains(t, served.String(), "serve: dockhand was uninstalled; stopping once its checks end. serve --uninstall removes the agent\nserve: stopped, as dockhand was uninstalled\n")
+}
+
 // status says when serve runs another build than its own.
 func TestStatusSaysServesOtherBuild(t *testing.T) {
 	t.Parallel()
@@ -165,7 +192,9 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	plist, err := os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
 	require.NoError(t, err)
 	require.Contains(t, string(plist), "<string>serve</string><string>--tree</string><string>"+w.clone+"</string>")
-	require.Contains(t, string(plist), "<key>KeepAlive</key><true/>")
+	// Kept alive while dockhand is installed, and not once it's
+	// uninstalled, which left launchd respawning a missing program.
+	require.Regexp(t, `<key>KeepAlive</key><dict><key>PathState</key><dict><key>[^<]+</key><true/></dict></dict>`, string(plist))
 	require.Contains(t, string(plist), "<key>ProcessType</key><string>Background</string>")
 	require.NotContains(t, string(plist), "--no-notify")
 	require.Len(t, calls, 2)

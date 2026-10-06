@@ -24,6 +24,11 @@ type LaunchdJob struct {
 	// KeepAlive restarts the job whenever it ends; a one-shot job's is
 	// false.
 	KeepAlive bool
+	// KeepAliveWhile, a path, narrows KeepAlive to while that path exists
+	// (launchd.plist's PathState): an agent whose program is uninstalled
+	// isn't restarted, which left launchd spawning a missing program in a
+	// loop, exit 78 (the rc6 full stage, A8).
+	KeepAliveWhile string
 	// ProcessType is launchd's, such as Background; none where empty.
 	ProcessType string
 }
@@ -41,7 +46,10 @@ func (j LaunchdJob) Plist() []byte {
 		out.WriteString("<string>" + xmlString(arg) + "</string>")
 	}
 	keepAlive := "<false/>"
-	if j.KeepAlive {
+	switch {
+	case j.KeepAlive && j.KeepAliveWhile != "":
+		keepAlive = "<dict><key>PathState</key><dict><key>" + xmlString(j.KeepAliveWhile) + "</key><true/></dict></dict>"
+	case j.KeepAlive:
 		keepAlive = "<true/>"
 	}
 	out.WriteString(`</array><key>RunAtLoad</key><true/><key>KeepAlive</key>` + keepAlive + `<key>AbandonProcessGroup</key><false/>`)

@@ -3,6 +3,9 @@ package macos
 import (
 	"encoding/xml"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -40,4 +43,18 @@ func TestALaunchdJobKeptAliveEscapesEveryKey(t *testing.T) {
 	require.Contains(t, data, "<key>ProcessType</key><string>Background</string>")
 	require.Contains(t, data, "<key>ODD&lt;KEY&gt;</key><string>v&amp;w</string>")
 	require.NotContains(t, string(LaunchdPlist("one-shot", nil, "/tmp/log", nil)), "ProcessType", "a one-shot job's plist is as it was")
+}
+
+// A job kept alive while a path exists says so as launchd.plist's
+// PathState, and stays a property list plutil reads (the rc6 full stage,
+// A8).
+func TestALaunchdJobKeptAliveWhileItsProgramIsThere(t *testing.T) {
+	data := LaunchdJob{Label: "serve", Arguments: []string{"/opt/local/bin/dockhand", "serve"}, Log: "/tmp/serve.log", KeepAlive: true, KeepAliveWhile: "/opt/local/bin/dockhand&"}.Plist()
+	require.Contains(t, string(data), "<key>KeepAlive</key><dict><key>PathState</key><dict><key>/opt/local/bin/dockhand&amp;</key><true/></dict></dict>")
+	if plutil, err := exec.LookPath("plutil"); err == nil {
+		file := filepath.Join(t.TempDir(), "serve.plist")
+		require.NoError(t, os.WriteFile(file, data, 0o644))
+		out, err := exec.Command(plutil, "-lint", file).CombinedOutput()
+		require.NoError(t, err, "%s", out)
+	}
 }

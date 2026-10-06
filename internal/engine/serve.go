@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -58,6 +59,10 @@ type ServeOptions struct {
 	Executable string
 	// Build is the build serve runs, which status shows beside its own.
 	Build string
+	// ExecutableGrace is how long the executable may be missing before
+	// serve takes it as uninstalled, past an upgrade's moment between its
+	// old and new files; a minute when zero.
+	ExecutableGrace time.Duration
 }
 
 // ServeOutdated is serve.for_outdated, and whose ports it looks at.
@@ -285,14 +290,29 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		// A check that passed may be what the submitter waits for.
 		submitter.last = time.Time{}
 	}
+	var missing time.Time
+	stopped := ""
 	for running.Err() == nil {
-		if !upgraded && started != nil && replaced(options.Executable, started) {
-			upgraded = true
-			s.say("serve: dockhand was upgraded; stopping once its checks end, so launchd starts the new build")
+		if !upgraded && started != nil {
+			switch gone, swapped := replaced(options.Executable, started); {
+			case swapped:
+				upgraded, stopped = true, "serve: stopped for the upgrade"
+				s.say("serve: dockhand was upgraded; stopping once its checks end, so launchd starts the new build")
+			case !gone:
+				missing = time.Time{}
+			case missing.IsZero():
+				missing = time.Now()
+			case time.Since(missing) >= cmp.Or(options.ExecutableGrace, time.Minute):
+				// Gone past an upgrade's moment between its old and new
+				// files: uninstalled. serve went on running the deleted
+				// program (the rc6 full stage, A8).
+				upgraded, stopped = true, "serve: stopped, as dockhand was uninstalled"
+				s.say("serve: dockhand was uninstalled; stopping once its checks end. serve --uninstall removes the agent")
+			}
 		}
 		if upgraded {
 			if len(inFlight) == 0 {
-				s.say("serve: stopped for the upgrade")
+				s.say("%s", stopped)
 				return nil
 			}
 			select {
@@ -752,15 +772,18 @@ func executableFile(path string) os.FileInfo {
 	return info
 }
 
-// replaced says whether the file at path is no longer the one serve
-// started from: another file, as an upgrade installs, or the same one
-// rewritten. A path with no file, mid-upgrade, isn't replaced yet.
-func replaced(path string, started os.FileInfo) bool {
+// replaced says whether the file at path is gone, or is no longer the one
+// serve started from: another file, as an upgrade installs, or the same
+// one rewritten.
+func replaced(path string, started os.FileInfo) (gone, swapped bool) {
 	now, err := os.Stat(path)
-	if err != nil {
-		return false
+	if errors.Is(err, os.ErrNotExist) {
+		return true, false
 	}
-	return !os.SameFile(started, now) || !now.ModTime().Equal(started.ModTime()) || now.Size() != started.Size()
+	if err != nil {
+		return false, false
+	}
+	return false, !os.SameFile(started, now) || !now.ModTime().Equal(started.ModTime()) || now.Size() != started.Size()
 }
 
 // Serving is what the leading serve says about itself, for status and

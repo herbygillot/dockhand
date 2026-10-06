@@ -44,6 +44,10 @@ the matching generator installed:
 
 Dockhand will find them in your PATH, or through CARGO2PORT_BIN and
 GO2PORT_BIN. Ports without a generated block need neither.
+
+If you run serve as a launchd agent (dockhand serve --install), run
+dockhand serve --uninstall before uninstalling dockhand. An agent left
+behind stops by itself once dockhand is gone.
 "
 
 # No go.vendors: the release tarball carries its own vendor directory.

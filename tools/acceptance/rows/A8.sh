@@ -18,6 +18,12 @@ act() {
 	checkpoint "install the candidate again: sudo port -N install dockhand" || return 0
 	"$DH_BIN" --version >"$ROW_DIR/reinstalled" 2>&1 || :
 }
+# serve's agent goes when the row does: one left running would take the
+# checks the rows after queue (the rc6 full stage).
+teardown() {
+	"$DH_BIN" serve --uninstall >/dev/null 2>&1 || :
+}
+
 assert() {
 	if ! grep -q . "$ROW_DIR/reinstalled" 2>/dev/null || ! "$DH_BIN" --version >/dev/null 2>&1; then
 		row_fail "dockhand isn't installed again after the row, which the rows after need: $(head -1 "$ROW_DIR/reinstalled" 2>/dev/null)"

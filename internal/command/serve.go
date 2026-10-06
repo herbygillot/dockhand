@@ -28,6 +28,10 @@ var servePoll = 2 * time.Second
 // serveRefresh is how often serve reads your pull requests from GitHub.
 var serveRefresh = 5 * time.Minute
 
+// serveGrace is how long serve's executable may be missing before serve
+// takes dockhand as uninstalled.
+var serveGrace = time.Minute
+
 // serveCleanup is how often serve runs automatic cleanup (decision 36).
 var serveCleanup = 24 * time.Hour
 
@@ -140,16 +144,17 @@ func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain, subm
 		SubmitLimit:   file.Serve.Limit(),
 		Outdated: engine.ServeOutdated{Maintainers: file.Maintainers(), Hour: hour, Minute: minute, Mode: file.Serve.Mode(),
 			On: file.Check.On, Tests: model.TestPolicy(file.Check.Tests)},
-		Cleanup:      file.Cleanup.On(),
-		CleanupAge:   file.Cleanup.Age(),
-		Say:          func(line string) { fmt.Fprintln(out, line) },
-		Poll:         servePoll,
-		Refresh:      serveRefresh,
-		CleanupEvery: serveCleanup,
-		MinFree:      file.Cleanup.Free(),
-		Build:        buildinfo.Current().String(),
-		Executable:   servedExecutable(drain),
-		Now:          serveNow,
+		Cleanup:         file.Cleanup.On(),
+		CleanupAge:      file.Cleanup.Age(),
+		Say:             func(line string) { fmt.Fprintln(out, line) },
+		Poll:            servePoll,
+		Refresh:         serveRefresh,
+		CleanupEvery:    serveCleanup,
+		MinFree:         file.Cleanup.Free(),
+		Build:           buildinfo.Current().String(),
+		Executable:      servedExecutable(drain),
+		ExecutableGrace: serveGrace,
+		Now:             serveNow,
 	}
 	if notify {
 		options.Notify = func(title, text string) { _ = postNotification(title, text) }
@@ -303,5 +308,7 @@ func agentPlist(arguments []string, environment [][2]string, log string) []byte 
 	for _, variable := range environment {
 		variables[variable[0]] = variable[1]
 	}
-	return macos.LaunchdJob{Label: AgentLabel, Arguments: arguments, Log: log, Environment: variables, KeepAlive: true, ProcessType: "Background"}.Plist()
+	// Kept alive while dockhand is installed, and not after port uninstall
+	// removes it.
+	return macos.LaunchdJob{Label: AgentLabel, Arguments: arguments, Log: log, Environment: variables, KeepAlive: true, KeepAliveWhile: arguments[0], ProcessType: "Background"}.Plist()
 }
