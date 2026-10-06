@@ -53,3 +53,7 @@ The rc5 and rc6 full stages' rows left branches open, and later rows pick theirs
 - **B6 makes and merges its own pull request in setup,** a test one in the sandbox, merged with gh, before the harm sweep's snapshot: a person made one inside the snapshot's window, and H2 and H3 took the pull request and the merge for the row's harm. It's not run unless the approval list has its test pull request.
 - **The sandbox's master is set to MacPorts' outright,** by its ref, in submit_pr, B6, and reset-user.sh: `gh repo sync --force` leaves a master that is only ahead of MacPorts', as B6's merge left it. submit_pr allows the move, which H2 would otherwise call a push. reset-user.sh now stops on a master ahead of MacPorts', not only one behind.
 - **B7 uninstalls serve's agent in its teardown,** skipped or not. It and S1 each install the account's one serve agent, so they can't run at once.
+
+## 2026-10-06: B9 keeps its check.on to itself
+
+B9 appended `[check] on = ["github"]` to dhtest's config and left it, so every later row's check would have run on GitHub Actions. Its setup now keeps the config and its teardown puts it back, as A10's do. Its "no Tart set up" couldn't hold in run order, A4 and A12 having made images, so it gives dockhand an empty Tart home of its own, `DOCKHAND_TART_HOME`, which dockhand reads (internal/tart). It takes its branch with own_branch.

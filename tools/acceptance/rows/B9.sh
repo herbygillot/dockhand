@@ -5,15 +5,30 @@
 # check runs MacPorts' workflow in the fork and reads back; the
 # dockhand-check/ branch is removed.
 # prs: ${ACCEPT_GO_PORT} test
+#
+# In run order Tart is set up already, A4 and A12 having made images, so
+# the row gives dockhand an empty Tart home of its own (DOCKHAND_TART_HOME)
+# for "no Tart set up"; and the check.on it sets is the row's alone: its
+# setup keeps the config, and its teardown puts it back, which every later
+# row's check would otherwise have run on GitHub by (the rc6 full stage).
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
+setup() {
+	cp "${DOCKHAND_CONFIG:?}" "$ROW_DIR/config.before"
+	mkdir -p "$ROW_DIR/tart-home"
+	export DOCKHAND_TART_HOME="$ROW_DIR/tart-home"
+}
+teardown() {
+	[ -f "$ROW_DIR/config.before" ] && cp "$ROW_DIR/config.before" "$DOCKHAND_CONFIG"
+	return 0
+}
 act() {
 	host_only "a fork with Actions, before Tart's setup" || return 0
 	allow_change "*"
 	allow_push "*dockhand-check/*"
 	dh providers || :
-	printf '\n[check]\non = ["github"]\n' >>"${DOCKHAND_CONFIG:-$HOME/.dockhand/config.toml}"
+	printf '\n[check]\non = ["github"]\n' >>"$DOCKHAND_CONFIG"
 	dh_setup update "$(port)" --new || return 0
-	B9_BRANCH=$(dh_quiet --json status --port "$(port)" | jq -r '.result.branches[0].name')
+	B9_BRANCH=$(own_branch)
 	dh_json check -b "$B9_BRANCH" || :
 	dh tidy -b "$B9_BRANCH" -y || :
 	submit_pr "$(port)" "$B9_BRANCH" || :
