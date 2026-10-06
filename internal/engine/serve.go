@@ -196,15 +196,17 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	if options.SubmitPassing {
 		publishing = fmt.Sprintf("opens PRs for passing updates it prepared, at most %d a day", options.SubmitLimit)
 	}
-	s.say("serve: leading (pid %d) · builds on %s · %s", os.Getpid(), strings.Join(described, ", "), publishing)
-	e.announceServing(options.SubmitPassing, options.Build)
 	// The build serve started from: after port upgrade replaced it, a
 	// serve under launchd went on running the old one, and status said
 	// nothing of it (the rc3 full stage, A7). An upgrade is noticed between
 	// checks, never during one (Design v3 §11): serve starts no more, and
-	// stops once those running end, so launchd starts the new build.
+	// stops once those running end, so launchd starts the new build. It's
+	// noted before serve says it leads, so nothing replaced after that
+	// line passes for the build it started from.
 	started := executableFile(options.Executable)
 	upgraded := false
+	s.say("serve: leading (pid %d) · builds on %s · %s", os.Getpid(), strings.Join(described, ", "), publishing)
+	e.announceServing(options.SubmitPassing, options.Build)
 	followed := &follower{s: s, reported: map[string]bool{}}
 	cleaned := &cleaner{s: s, session: session}
 	scanned := &outdatedScanner{s: s}

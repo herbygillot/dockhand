@@ -172,13 +172,18 @@ func (g *GitHub) observe(pr *forge.PullRequest) forge.PullRequestObservation {
 }
 
 func (g *GitHub) Find(_ context.Context, q forge.PullRequestQuery) (forge.PullRequestObservation, error) {
+	// As GitHub's: the open one, else the latest.
+	var found *forge.PullRequest
 	for _, number := range slices.Sorted(maps.Keys(g.PRs)) {
 		pr := g.PRs[number]
-		if pr.HeadRepository == q.HeadRepository && pr.HeadBranch == q.HeadBranch {
-			return g.observe(pr), nil
+		if pr.HeadRepository == q.HeadRepository && pr.HeadBranch == q.HeadBranch && (found == nil || found.State != forge.PullRequestOpen) {
+			found = pr
 		}
 	}
-	return forge.PullRequestObservation{}, nil
+	if found == nil {
+		return forge.PullRequestObservation{}, nil
+	}
+	return g.observe(found), nil
 }
 
 func (g *GitHub) Observe(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {

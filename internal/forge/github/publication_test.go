@@ -401,3 +401,38 @@ func TestMarkReadyTellsAnOrganizationsRefusalOfTheApp(t *testing.T) {
 	require.EqualError(t, err, "github: "+refusal)
 	require.ErrorIs(t, err, forge.ErrAppRestricted)
 }
+
+// A head branch's name carries every pull request ever opened from it:
+// the open one is the branch's, and with none open, the latest; two open
+// is ambiguous (the rc5 full stage, A4).
+func TestFindPrefersTheOpenPullRequestOfAName(t *testing.T) {
+	row := func(number int, state string) map[string]any {
+		pr := prJSON()
+		pr["number"], pr["state"] = number, state
+		pr["html_url"] = fmt.Sprintf("https://github.com/upstream/ports/pull/%d", number)
+		return pr
+	}
+	for _, test := range []struct {
+		rows []any
+		want int
+		err  bool
+	}{
+		{rows: []any{row(9, "open"), row(1, "closed")}, want: 9},
+		{rows: []any{row(1, "closed"), row(9, "open")}, want: 9},
+		{rows: []any{row(1, "closed"), row(4, "closed")}, want: 4},
+		{rows: []any{row(1, "open"), row(4, "open")}, err: true},
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(test.rows)
+		}))
+		client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
+		found, err := client.Find(t.Context(), forge.PullRequestQuery{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main"})
+		server.Close()
+		if test.err {
+			require.ErrorContains(t, err, "multiple open pull requests")
+			continue
+		}
+		require.NoError(t, err)
+		require.Equal(t, test.want, found.PullRequest.Ref.Number)
+	}
+}

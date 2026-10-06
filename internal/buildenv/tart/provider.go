@@ -10,6 +10,7 @@
 package tart
 
 import (
+	"cmp"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -533,8 +534,24 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		return err
 	}
 	defer func() { _ = started.Stop(cleanup, time.Minute) }()
-	g, err := m.Reach(ctx, vm, image)
+	// A VM whose tart run ended takes no address: waiting out tart ip's
+	// five minutes for one only delayed saying so (the rc5 full stage).
+	reaching, stopReaching := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-started.Done():
+			stopReaching()
+		case <-reaching.Done():
+		}
+	}()
+	g, err := m.Reach(reaching, vm, image)
+	stopReaching()
 	if err != nil {
+		select {
+		case <-started.Done():
+			err = fmt.Errorf("tart run ended before %s took an address: %w", vm, cmp.Or(started.Err(), err))
+		default:
+		}
 		return p.trouble(ctx, "reaching "+vm, err)
 	}
 	defer g.Close(cleanup)

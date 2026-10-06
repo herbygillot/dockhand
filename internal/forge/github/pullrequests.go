@@ -51,7 +51,12 @@ func (c *Client) Find(ctx context.Context, q forge.PullRequestQuery) (forge.Pull
 	options := &gh.PullRequestListOptions{
 		State: "all", Head: headOwner + ":" + q.HeadBranch, Base: q.BaseBranch,
 	}
+	// A head branch's name can carry several pull requests over time: an
+	// earlier one closed or merged, and the one open now, as each update of
+	// a port to a version is named alike. The open one is the branch's; with
+	// none open, the latest.
 	found := forge.PullRequestObservation{ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	open := false
 	for row, err := range client.PullRequests.ListIter(ctx, owner, repo, options) {
 		if err != nil {
 			return forge.PullRequestObservation{}, githubapi.RateLimitError(err)
@@ -64,10 +69,13 @@ func (c *Client) Find(ctx context.Context, q forge.PullRequestQuery) (forge.Pull
 		if !strings.EqualFold(pr.HeadRepository, q.HeadRepository) || pr.HeadBranch != q.HeadBranch || pr.BaseBranch != q.BaseBranch {
 			continue
 		}
-		if found.Found {
-			return forge.PullRequestObservation{}, fmt.Errorf("github: multiple pull requests match this branch")
+		isOpen := pr.State == forge.PullRequestOpen
+		switch {
+		case isOpen && open:
+			return forge.PullRequestObservation{}, fmt.Errorf("github: multiple open pull requests match this branch")
+		case isOpen, !open && (!found.Found || pr.Ref.Number > found.PullRequest.Ref.Number):
+			found, open = observation, isOpen
 		}
-		found = observation
 	}
 	return found, nil
 }

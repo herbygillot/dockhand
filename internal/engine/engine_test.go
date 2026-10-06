@@ -293,7 +293,7 @@ func TestPathAndResolve(t *testing.T) {
 	require.Equal(t, branch.Worktree, path)
 
 	_, err = e.Path(t.Context(), "")
-	require.ErrorContains(t, err, "master is not tracked")
+	require.ErrorContains(t, err, "this is your checkout's master, not one of dockhand's branches")
 
 	// Where dockhand can't check an adopted branch out, a worktree the
 	// person adds for it later is found, and recorded as theirs.

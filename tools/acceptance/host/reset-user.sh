@@ -114,6 +114,20 @@ else
 	human "put the test GitHub account's SSH key at $ACCEPT_TEST_KEY (ACCEPT_TEST_KEY), which this copies to dhtest"
 fi
 
+# 3a. GitHub's host keys, from the keys GitHub publishes: a fresh home has
+# no known_hosts, and git's push over SSH, with no terminal to ask at,
+# failed "Host key verification failed" (the rc5 full stage).
+keys=$(curl -fsS https://api.github.com/meta | jq -r '.ssh_keys[] | "github.com " + .' 2>/dev/null || :)
+if [ -z "$keys" ]; then
+	human "GitHub's SSH host keys couldn't be read from api.github.com/meta for dhtest's ~/.ssh/known_hosts"
+elif [ "$DRY" = 1 ]; then
+	echo "would write: /Users/dhtest/.ssh/known_hosts, GitHub's $(printf '%s\n' "$keys" | wc -l | tr -d ' ') published host keys"
+else
+	as_dhtest install -d -m 700 /Users/dhtest/.ssh
+	printf '%s\n' "$keys" | as_dhtest tee -a /Users/dhtest/.ssh/known_hosts >/dev/null
+	echo "+ wrote GitHub's host keys to /Users/dhtest/.ssh/known_hosts"
+fi
+
 # 3b. dhtest's gh, logged in as the test account, with the token step 4
 # uses: H3 counts that account's pull requests with it, and the rows close
 # their test ones; never logged in, H3 passed while A4 opened one (the rc3

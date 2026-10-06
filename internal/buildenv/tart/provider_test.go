@@ -32,7 +32,10 @@ import (
 type fakeMac struct {
 	mu     sync.Mutex
 	images []string
-	cached []tartvm.Image
+	// noAddress is a VM that takes no address, as one whose tart run
+	// ended: Reach waits until it's given up on.
+	noAddress bool
+	cached    []tartvm.Image
 	// live counts the VMs it starts until they stop, on top of base, the
 	// person's own, rather than reading running's script; peak is the
 	// most of its own it ran at once.
@@ -140,8 +143,12 @@ func (m *fakeMac) DeleteCached(_ context.Context, name string) error {
 	m.mu.Unlock()
 	return nil
 }
-func (m *fakeMac) Reach(_ context.Context, vm, image string) (guest, error) {
+func (m *fakeMac) Reach(ctx context.Context, vm, image string) (guest, error) {
 	m.log("reach " + vm + " as " + image)
+	if m.noAddress {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	return m.guest, nil
 }
 
@@ -566,6 +573,17 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	err := testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
 	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
 	require.ErrorContains(t, err, "the VM stopped")
+
+	// A VM whose tart run ends before it takes an address is said at
+	// once, not after tart ip's five minutes (the rc5 full stage).
+	mac = newMac(guestResults{State: "running"})
+	mac.noAddress = true
+	close(mac.run.done)
+	start := time.Now()
+	err = testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
+	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+	require.ErrorContains(t, err, "tart run ended before dockhand-check-run-7-tahoe-1 took an address: it crashed")
+	require.Less(t, time.Since(start), 30*time.Second)
 }
 
 // An attempt removes what an earlier attempt of its run and release left,

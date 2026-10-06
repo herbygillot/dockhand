@@ -471,6 +471,12 @@ func (e *Engine) Current(ctx context.Context) (model.Branch, error) {
 		return model.Branch{}, fmt.Errorf("%w: this checkout is not on a branch", ErrNoBranch)
 	}
 	branch, err := e.Resolve(ctx, name)
+	// Master is your checkout's, never a branch of dockhand's: a check run
+	// there, as the README read, was told to adopt master (the rc5 full
+	// stage, A4).
+	if errors.Is(err, ErrNoBranch) && name == UpstreamBranch {
+		return model.Branch{}, fmt.Errorf("%w: this is your checkout's %s, not one of dockhand's branches; name one with -b <branch>, as dockhand status lists them, or cd \"$(dockhand path <branch>)\"", ErrNoBranch, name)
+	}
 	if errors.Is(err, ErrNoBranch) {
 		return model.Branch{}, fmt.Errorf("%w: %s is not tracked; dockhand adopt tracks it", ErrNoBranch, name)
 	}

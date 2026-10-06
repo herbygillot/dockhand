@@ -45,6 +45,32 @@ func committedUpdate(t *testing.T, e *Engine) model.Branch {
 	return branch
 }
 
+// A closed or merged pull request from a branch of the same name, which
+// isn't this branch's, is an earlier one: a new one opens beside it, and
+// the plan names it. rc3's closed test pull request had dead-ended rc5's
+// update of go-reflex to the same version (the rc5 full stage, A4).
+func TestAnEarlierClosedPullRequestOfTheSameNameIsntThisOnes(t *testing.T) {
+	t.Parallel()
+	for _, state := range []forge.PullRequestState{forge.PullRequestClosed, forge.PullRequestMerged} {
+		f := setup(t)
+		e, _ := f.withPreparer(t)
+		fake := f.withFork(t, e)
+		branch := committedUpdate(t, e)
+		fake.PRs[1] = &forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: 1},
+			HeadRepository: "ada/macports-ports", HeadBranch: "dockhand/jq-update", State: state, Title: "[testing] jq: update to 1.8.1"}
+
+		plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+		require.NoError(t, err, state)
+		require.Nil(t, plan.Existing)
+		require.NotNil(t, plan.Earlier)
+		require.Equal(t, 1, plan.Earlier.Ref.Number)
+		submitted, err := e.ApplySubmit(t.Context(), plan)
+		require.NoError(t, err)
+		require.True(t, submitted.Created, "a new pull request")
+		require.NotEqual(t, 1, submitted.PullRequest.Ref.Number)
+	}
+}
+
 func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 	t.Parallel()
 	f := setup(t)

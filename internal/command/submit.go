@@ -635,10 +635,14 @@ func unfoundBuildWords(build engine.UnfoundBuild) string {
 
 func pullRequestWords(plan engine.SubmitPlan) string {
 	if plan.Existing == nil {
+		words := "opens a new one"
 		if plan.Request.Draft {
-			return "opens a new draft"
+			words = "opens a new draft"
 		}
-		return "opens a new one"
+		if earlier := plan.Earlier; earlier != nil {
+			words += fmt.Sprintf("; #%d, %s, came from a branch of this name before", earlier.Ref.Number, earlier.State)
+		}
+		return words
 	}
 	words := fmt.Sprintf("updates #%d", plan.Existing.PullRequest.Ref.Number)
 	if pr := plan.Branch.PullRequest; pr != nil && pr.Draft && !plan.Request.Draft {

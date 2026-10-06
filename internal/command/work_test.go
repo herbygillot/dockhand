@@ -166,7 +166,7 @@ func TestMacPortsTreeKeepsTheWorktreeYouAreIn(t *testing.T) {
 	require.Equal(t, worktree+"\n", out)
 	t.Chdir(w.home)
 	_, _, err = dockhand(t, "path")
-	require.ErrorContains(t, err, "master is not tracked", "outside it, the checkout named, which has master out")
+	require.ErrorContains(t, err, "this is your checkout's master, not one of dockhand's branches", "outside it, the checkout named, which has master out")
 }
 
 // Where Tart is installed, the engine builds with it; the tests find no

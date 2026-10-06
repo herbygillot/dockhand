@@ -89,6 +89,10 @@ type SubmitPlan struct {
 	Replaces bool
 	// Existing is the pull request already open for the branch.
 	Existing *forge.PullRequestObservation
+	// Earlier is a pull request from the same head branch name that is
+	// closed or merged, which isn't the branch's: a new one opens beside
+	// it, and the preview says so.
+	Earlier *forge.PullRequest
 
 	Title string
 	Body  string
@@ -440,6 +444,16 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	}
 	pr := observed.PullRequest
 	if pr.State != forge.PullRequestOpen {
+		// One found by the head branch's name alone, closed or merged, is
+		// an earlier branch's of the same name, as update --new names every
+		// update of a port to a version alike: rc3's closed test pull
+		// request dead-ended rc5's update of go-reflex to the same version,
+		// with "start a new branch", which names it the same (the rc5 full
+		// stage, A4). A new pull request opens.
+		if plan.Branch.PullRequest == nil {
+			plan.Earlier = &pr
+			return nil
+		}
 		return fmt.Errorf("#%d is %s; start a new branch for further work (dockhand start)", pr.Ref.Number, pr.State)
 	}
 	plan.Existing = &observed

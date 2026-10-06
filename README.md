@@ -36,7 +36,7 @@ The maintainers line is offered as the ports maintained by your GitHub login wri
 
 ```sh
 dockhand update jq --new          # a branch from fresh master, jq moved to its newest release
-cd "$(dockhand path jq-…)"        # the branch's worktree, if you want to look or edit
+cd "$(dockhand path jq-…)"        # the branch's worktree, where the next steps find it
 dockhand check                    # build it in a clean VM of this Mac's macOS
 dockhand tidy                     # one commit, "jq: update to 1.8.1"
 dockhand submit                   # push to your fork and open the pull request
