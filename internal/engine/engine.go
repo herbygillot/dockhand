@@ -126,6 +126,8 @@ type Engine struct {
 	// the forge), which serve's runs, and a check's environments building
 	// together, share.
 	lazy sync.Mutex
+	// forgeMade is whether forge assembled Forge, rather than being given it.
+	forgeMade bool
 }
 
 // assemble returns what field holds, building it on first use. The build

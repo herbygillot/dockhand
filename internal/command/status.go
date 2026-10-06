@@ -486,6 +486,10 @@ func serveWords(s engine.ServeState) string {
 		if build := buildinfo.Current().String(); s.Build != "" && s.Build != build {
 			line += fmt.Sprintf(" · on dockhand %s, where this is %s", s.Build, build)
 		}
+		// A serve not acting on GitHub, as its login stands, says why.
+		if s.NotActing != "" {
+			line += " · not acting on GitHub: " + s.NotActing
+		}
 		if s.OpensPullRequests {
 			line += " · opens PRs for passing updates"
 		}

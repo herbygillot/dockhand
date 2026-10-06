@@ -48,9 +48,20 @@ func (e *Engine) forge() Forge {
 	e.lazy.Lock()
 	defer e.lazy.Unlock()
 	if e.Forge == nil {
-		e.Forge = e.github()
+		e.Forge, e.forgeMade = e.github(), true
 	}
 	return e.Forge
+}
+
+// dropForge lets go of the GitHub client the engine assembled, and the
+// token it holds, so the next use reads the login as it is now: serve's,
+// when the login changed under it. One the engine was given stays.
+func (e *Engine) dropForge() {
+	e.lazy.Lock()
+	defer e.lazy.Unlock()
+	if e.forgeMade {
+		e.Forge, e.forgeMade = nil, false
+	}
 }
 
 // pullRequestRef is a pull request on GitHub, where MacPorts' pull

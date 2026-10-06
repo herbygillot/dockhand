@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/subprocess"
@@ -115,6 +116,20 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 	return cmd
 }
 
+// serveIdentityEvery is how often serve reads who its login acts as.
+var serveIdentityEvery = time.Minute
+
+// serveIdentity is who serve's GitHub login acts as now, read afresh each
+// time it's asked, from the same chain the engine's client reads. Tests
+// stand another in.
+var serveIdentity = func() func(context.Context) (string, error) {
+	watcher := github.SystemIdentity(github.SystemCredentials{Store: authStore, Key: github.CredentialKey})
+	return func(ctx context.Context) (string, error) {
+		identity, err := watcher.Current(ctx)
+		return identity.Account, err
+	}
+}
+
 // servedExecutable is the file a long-lived serve watches for an upgrade;
 // a drain ends by itself, and watches none. Tests stand another in.
 var servedExecutable = func(drain bool) string {
@@ -154,6 +169,8 @@ func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain, subm
 		Build:           buildinfo.Current().String(),
 		Executable:      servedExecutable(drain),
 		ExecutableGrace: serveGrace,
+		Identity:        serveIdentity(),
+		IdentityEvery:   serveIdentityEvery,
 		Now:             serveNow,
 	}
 	if notify {

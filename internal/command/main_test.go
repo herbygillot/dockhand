@@ -50,6 +50,9 @@ func TestMain(m *testing.M) {
 	tartSupported = func() bool { return true }
 	// Nor the GitHub CLI this Mac has, signed in as its person.
 	gitHubCLI = signedIn{}
+	// Nor this Mac's GitHub login, read afresh by serve's identity check:
+	// a serve test's login is no one's, unless the test gives it one.
+	serveIdentity = func() func(context.Context) (string, error) { return nil }
 	// The executable is the test binary, which isn't dockhand.
 	startCleanup = func(engine.Options) error { return nil }
 	cleanup := testsupport.IsolateHome()

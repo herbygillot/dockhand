@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/github"
 )
 
 // syncBuffer is a buffer two goroutines may share.
@@ -379,4 +380,45 @@ func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
 	require.Contains(t, agent, "<key>TART_HOME</key><string>"+filepath.Join(w.home, "tart")+"</string>", "made absolute")
 	require.NotContains(t, agent, "ghp_secret")
 	require.NotContains(t, agent, "GH_TOKEN")
+}
+
+// serve acts on GitHub only as the account it started as: with no login
+// it says so once, as with another account's, and says when its own comes
+// back; status says why it isn't acting (the rc6 full stage, D-C2).
+func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
+	checkedBranch(t)
+	var mu sync.Mutex
+	answers := []string{"ada", "", "", "bob", "ada"}
+	realIdentity, realEvery := serveIdentity, serveIdentityEvery
+	t.Cleanup(func() { serveIdentity, serveIdentityEvery = realIdentity, realEvery })
+	serveIdentityEvery = 50 * time.Millisecond
+	serveIdentity = func() func(context.Context) (string, error) {
+		return func(context.Context) (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			answer := answers[0]
+			if len(answers) > 1 {
+				answers = answers[1:]
+			}
+			if answer == "" {
+				return "", github.ErrNoCredentials
+			}
+			return answer, nil
+		}
+	}
+	ctx, stop := context.WithCancel(t.Context())
+	var served syncBuffer
+	done := make(chan error)
+	go func() {
+		done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+	}()
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "logged in again as ada") }, settle, 10*time.Millisecond)
+	stop()
+	require.NoError(t, <-done)
+	out := served.String()
+	require.Equal(t, 1, strings.Count(out, "serve: no GitHub login now; it reads pull requests without one, and opens, pushes, and checks on GitHub nothing until dockhand setup github logs in\n"), out)
+	require.Contains(t, out, "serve: the GitHub login is now bob's, where serve started as ada's; it acts on GitHub as no one until ada logs in again, or serve is restarted\n")
+	require.Contains(t, out, "serve: logged in again as ada; acting on GitHub again\n")
+
+	require.Equal(t, "serve: running (pid 7) · not acting on GitHub: no GitHub login · queue: empty", serveWords(engine.ServeState{Running: true, PID: 7, NotActing: "no GitHub login"}))
 }

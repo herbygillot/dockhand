@@ -59,6 +59,12 @@ type ServeOptions struct {
 	Executable string
 	// Build is the build serve runs, which status shows beside its own.
 	Build string
+	// Identity is who the person's GitHub login acts as now, read afresh
+	// each time (github.IdentityWatcher); serve acts on GitHub only as the
+	// account it first found. Nil checks nothing.
+	Identity func(context.Context) (string, error)
+	// IdentityEvery is how often Identity is read; a minute when zero.
+	IdentityEvery time.Duration
 	// ExecutableGrace is how long the executable may be missing before
 	// serve takes it as uninstalled, past an upgrade's moment between its
 	// old and new files; a minute when zero.
@@ -211,7 +217,9 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	started := executableFile(options.Executable)
 	upgraded := false
 	s.say("serve: leading (pid %d) · builds on %s · %s", os.Getpid(), strings.Join(described, ", "), publishing)
-	e.announceServing(options.SubmitPassing, options.Build)
+	login := &loginGate{s: s}
+	login.look(ctx)
+	e.announceServing(options.SubmitPassing, options.Build, login.words())
 	followed := &follower{s: s, reported: map[string]bool{}}
 	cleaned := &cleaner{s: s, session: session}
 	scanned := &outdatedScanner{s: s}
@@ -323,9 +331,12 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			continue
 		}
 		if !options.Drain {
-			followed.maybe(running)
-			scanned.maybe(running)
-			if options.SubmitPassing {
+			login.look(running)
+			if login.reads() {
+				followed.maybe(running)
+				scanned.maybe(running)
+			}
+			if options.SubmitPassing && login.writes() {
 				submitter.maybe(running)
 			}
 		}
@@ -357,6 +368,12 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				break
 			}
 			if slices.ContainsFunc(needs, func(name string) bool { return inUse[name] >= max(capacity[name], 1) }) {
+				waiting = true
+				continue
+			}
+			// A check on GitHub pushes as the login: none starts while it
+			// isn't the account serve started as.
+			if slices.Contains(needs, buildenv.GitHub) && !login.writes() {
 				waiting = true
 				continue
 			}
@@ -395,6 +412,83 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	}
 	s.say("serve: stopped")
 	return nil
+}
+
+// loginGate keeps serve acting on GitHub only as the account it first
+// found: a serve went on with a token after a logout, and once that
+// expired could have gone on as the GitHub CLI's account, another one (the
+// rc6 full stage, D-C2). It looks at most once a minute. With no login,
+// serve reads pull requests without one and writes nothing; with another
+// account's, it does nothing on GitHub; each is said once, and the account
+// it started as coming back is said too.
+type loginGate struct {
+	s      *server
+	pinned string
+	// state is "" while serve acts, "none" with no login, and "other"
+	// with another account's, other.
+	state, other string
+	last         time.Time
+}
+
+func (g *loginGate) look(ctx context.Context) {
+	identity := g.s.options.Identity
+	if identity == nil || !g.last.IsZero() && time.Since(g.last) < cmp.Or(g.s.options.IdentityEvery, time.Minute) {
+		return
+	}
+	g.last = time.Now()
+	account, err := identity(ctx)
+	switch {
+	case errors.Is(err, github.ErrNoCredentials):
+		g.set("none", "")
+	case err != nil:
+		// Who it is couldn't be read now, as GitHub out of reach; what
+		// serve does stays as it was.
+	case g.pinned == "":
+		g.pinned = account
+		g.set("", "")
+	case account != g.pinned:
+		g.set("other", account)
+	default:
+		g.set("", "")
+	}
+}
+
+func (g *loginGate) set(state, other string) {
+	if state == g.state && other == g.other {
+		return
+	}
+	was := g.state
+	g.state, g.other = state, other
+	// The client held, and its token, go: the next use reads the login as
+	// it is now.
+	g.s.e.dropForge()
+	switch state {
+	case "none":
+		g.s.say("serve: no GitHub login now; it reads pull requests without one, and opens, pushes, and checks on GitHub nothing until dockhand setup github logs in")
+	case "other":
+		g.s.say("serve: the GitHub login is now %s's, where serve started as %s's; it acts on GitHub as no one until %s logs in again, or serve is restarted", other, g.pinned, g.pinned)
+	default:
+		if was != "" {
+			g.s.say("serve: logged in again as %s; acting on GitHub again", g.pinned)
+		}
+	}
+	g.s.e.announceServing(g.s.options.SubmitPassing, g.s.options.Build, g.words())
+}
+
+// reads is whether serve reads GitHub; writes, whether it acts there.
+func (g *loginGate) reads() bool  { return g.state != "other" }
+func (g *loginGate) writes() bool { return g.state == "" }
+
+// words are what status says of a serve not acting on GitHub; empty
+// while it acts.
+func (g *loginGate) words() string {
+	switch g.state {
+	case "none":
+		return "no GitHub login"
+	case "other":
+		return fmt.Sprintf("logged in as %s, started as %s", g.other, g.pinned)
+	}
+	return ""
 }
 
 // follower reads the pull requests every Refresh, reporting what changed,
@@ -792,6 +886,9 @@ type Serving struct {
 	PID           int    `json:"pid"`
 	SubmitPassing bool   `json:"submit_passing"`
 	Build         string `json:"build,omitempty"`
+	// NotActing is why serve isn't acting on GitHub, as its login stands;
+	// empty while it acts.
+	NotActing string `json:"not_acting,omitempty"`
 }
 
 // ServeState is serve's state for the repository, as status and queue
@@ -802,10 +899,12 @@ type ServeState struct {
 	Running           bool
 	PID               int
 	OpensPullRequests bool
-	// Build is the build the leading serve runs, where it said.
-	Build   string
-	Queue   int
-	Stopped int
+	// Build is the build the leading serve runs, where it said; NotActing,
+	// why it isn't acting on GitHub, where it isn't.
+	Build     string
+	NotActing string
+	Queue     int
+	Stopped   int
 }
 
 // ServeState reads serve's state. Judging who is alive takes a session.
@@ -832,14 +931,14 @@ func (e *Engine) ServeState(ctx context.Context, session *coord.Session) (ServeS
 		state.Running, state.PID = true, leader.PID
 		// What an earlier serve said of itself isn't the leader's to say.
 		if serving, ok := e.lastServing(); ok && serving.PID == leader.PID {
-			state.OpensPullRequests, state.Build = serving.SubmitPassing, serving.Build
+			state.OpensPullRequests, state.Build, state.NotActing = serving.SubmitPassing, serving.Build, serving.NotActing
 		}
 	}
 	return state, nil
 }
 
-func (e *Engine) announceServing(submitPassing bool, build string) {
-	if data, err := json.Marshal(Serving{PID: os.Getpid(), SubmitPassing: submitPassing, Build: build}); err == nil {
+func (e *Engine) announceServing(submitPassing bool, build, notActing string) {
+	if data, err := json.Marshal(Serving{PID: os.Getpid(), SubmitPassing: submitPassing, Build: build, NotActing: notActing}); err == nil {
 		_ = e.writeServeFile("serving.json", data)
 	}
 }
