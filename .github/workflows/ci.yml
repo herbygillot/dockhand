@@ -95,7 +95,11 @@ jobs:
         run: |
           set -euo pipefail
           # $RUNNER_TEMP/ports is MacPorts' own source, root's (macports.sh).
-          git clone -q --depth 1 https://github.com/macports/macports-ports.git "$RUNNER_TEMP/ports-tree"
+          # Days of history, not one commit: dockhand seeds its index from
+          # MacPorts' mirror and re-indexes only what changed since a commit
+          # the mirror's index can't predate, which a one-commit clone
+          # hasn't, so the step indexed the whole tree, about 16 minutes.
+          git clone -q --shallow-since="3 days ago" https://github.com/macports/macports-ports.git "$RUNNER_TEMP/ports-tree"
           # MacPorts' installer puts /opt/local/bin on a login shell's PATH,
           # which a runner's step doesn't read.
           export PATH="/opt/local/bin:/opt/local/sbin:$PATH"
