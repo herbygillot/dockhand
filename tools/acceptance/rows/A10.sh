@@ -96,8 +96,23 @@ act() {
 		esac
 		# shellcheck disable=SC2086
 		eval "set -- $words"
+		local before
+		before=$(wc -c <"$ROW_DIR/out.log" | tr -d ' ')
 		(cd "$dir" && dh "$@" </dev/null)
-		case $? in 0 | 3) ;; *) printf '%s (run as dockhand %s, in %s)\n' "$line" "$words" "$dir" >>"$ROW_DIR/a10.failed" ;; esac
+		case $? in
+		0 | 3) ;;
+		*)
+			# A release whose Tart image the stage hasn't made is refused,
+			# naming the setup that makes it, as it should be: the example
+			# needs that image first, which isn't the docs' fault (the rc6
+			# full stage).
+			if tail -c +"$((before + 1))" "$ROW_DIR/out.log" | grep -q 'no Tart image for macOS .*: dockhand setup tart'; then
+				printf '%s: needs a Tart image the stage hasn'"'"'t made: %s\n' "$line" "$(tail -c +"$((before + 1))" "$ROW_DIR/out.log" | grep -o 'no Tart image for macOS [^:]*' | head -1)" >>"$ROW_DIR/a10.notrun"
+			else
+				printf '%s (run as dockhand %s, in %s)\n' "$line" "$words" "$dir" >>"$ROW_DIR/a10.failed"
+			fi
+			;;
+		esac
 	done <<EOT
 $(a10_examples)
 EOT
