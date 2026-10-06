@@ -82,6 +82,10 @@ fi
 # is dhtest's, where dockhand reads it by default (the rc1 full stage:
 # A10 died in setup on DOCKHAND_CONFIG unset).
 export DOCKHAND_CONFIG=${DOCKHAND_CONFIG:-$HOME/.dockhand/config.toml}
+# dockhand's database, where it keeps it by default, named for the rows
+# that read beside it, as C9's and D-T1's kept archives: unset, they read
+# "/archives" (the rc6 full stage).
+export DOCKHAND_DB=${DOCKHAND_DB:-$HOME/.dockhand/dockhand.db}
 mkdir -p "$(dirname "$DOCKHAND_CONFIG")"
 touch "$DOCKHAND_CONFIG"
 export ACCEPT_STATE ACCEPT_GH_LOGIN ACCEPT_GO_PORT ACCEPT_RUST_PORT MACPORTS_TREE
