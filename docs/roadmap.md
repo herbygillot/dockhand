@@ -681,6 +681,13 @@ First after the release, ahead of the layered plan's layer 1 (command-line UX), 
 2. **Live progress from the guest** in `wait` and `watch`: the port it's building and MacPorts' phase, which the Tart provider reads only once a target finishes (`buildenv/tart/provider.go`'s follow). Streaming the whole log comes second.
 3. **The libraries a build links against the lib dependencies it declares**, a notice first: each Mach-O the port installs, its links under /opt/local mapped to the ports that own them, with what the guest reports active (`guestResult.Active`), and the ports it links but doesn't declare said. Whether `port -t`, MacPorts' trace mode, is the mechanism or a complement is weighed first.
 
+From field testing's batch 15 (2026-10-06, at 6f9d714d), after the release, none harm:
+
+- **A Git crate a port resolves online isn't an override.** tart-softnet's dhcproto and dhcproto-macros are Git dependencies its build resolves online (`build.pre_args-delete --offline --frozen`), with no cargo.crates_github; update reports "existing cargo.crates_github differs" of a block the Portfile hasn't. Such a port's Git crates are left to online resolution, said with a note, as an empty `cargo.offline_cmd` leaves them (halloy, pgdog).
+- **A patch that only edits Cargo.lock, on a version update,** is said as a lockfile refresh the new release may make unneeded, not "edits dependency manifests; regenerate manually" (meli's patch-Cargo.lock.diff); a check could try the build without it.
+- **An owner's transfer, said as one.** sudosh2's "upstream moved: GitHub answers squash/sudosh2 as WLTBAgent/sudosh2" is a transfer to another owner, not a rename within one or a change of case: said as "transferred from squash to WLTBAgent; v1.0.8 is the first release under the new owner", more strongly for what a port installs with privilege.
+- **A workspace member the Portfile doesn't build, still said** (a repeat of batch 13's second finding): epic-lore's "lore-stamp added: the Portfile's destroot may name the old ones", where the Portfile builds only lore-client and lore-server. The lib-only filter is to be checked against members the Portfile doesn't build.
+
 From field testing's batch 14 (2026-10-05, at 82551b6d), after these:
 
 - **update moves a commit pin.** wezterm pins github.setup to a commit, its version derived from the commit's date and hash; outdated says its branch moved past the pin, and update refuses both the version and the commit, so it's bumped by hand. update would take the branch's head, or a commit named, write the hash into github.setup, and the version by the port's scheme where it can read it, else take it named. Since batch 97 outdated says the edit that works.
