@@ -165,15 +165,21 @@ if command -v gh >/dev/null && [ -n "${ACCEPT_TEST_ACCOUNT:-}" ]; then
 			step gh api -X DELETE "repos/$sandbox/git/$ref"
 		done
 	done
-	step gh repo sync "$sandbox" --branch master --force || :
+	# The fork's master is set to MacPorts', whichever way it drifted: gh
+	# repo sync --force leaves a master that is only ahead, as B6's merge of
+	# a test pull request left it (the rc6 full stage).
+	upstream=$(gh api repos/macports/macports-ports/git/ref/heads/master --jq .object.sha 2>/dev/null || :)
+	if [ -n "$upstream" ]; then
+		step gh api -X PATCH "repos/$sandbox/git/refs/heads/master" -f sha="$upstream" -F force=true --silent || :
+	fi
 	# Syncing, and deleting branches, need the test token's write access
 	# to the fork: Contents and Pull requests, read and write. Without it
 	# the fork's master drifts behind MacPorts' (107 commits on
 	# 2026-10-05), and its test pull requests show MacPorts' commits as
 	# theirs. GitHub says how far behind it is, which a sync leaves at 0.
 	if [ "$DRY" = 0 ]; then
-		behind=$(gh api "repos/$sandbox/compare/master...macports:macports-ports:master" --jq '.ahead_by' 2>/dev/null || echo unknown)
-		[ "$behind" = 0 ] || die "$sandbox's master is $behind commits behind MacPorts' after the sync: give the token gh uses Contents, Pull requests, and Workflows, read and write, on the fork, and run this again"
+		drift=$(gh api "repos/$sandbox/compare/master...macports:macports-ports:master" --jq '"\(.behind_by) ahead of and \(.ahead_by) behind"' 2>/dev/null || echo unknown)
+		[ "$drift" = "0 ahead of and 0 behind" ] || die "$sandbox's master is $drift MacPorts' after the reset: give the token gh uses Contents, Pull requests, and Workflows, read and write, on the fork, and run this again"
 	fi
 else
 	echo "skipped: clearing the fork needs gh and ACCEPT_TEST_ACCOUNT, the test GitHub login"

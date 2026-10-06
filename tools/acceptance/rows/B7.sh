@@ -14,6 +14,12 @@ act() {
 	dh_json serve --uninstall || :
 	launchctl print "gui/$(id -u)" 2>/dev/null | grep -i dockhand >"$ROW_DIR/agents" || :
 }
+# serve's agent goes when the row does, skipped or not, as A7's and A8's
+# do (the rc6 full stage).
+teardown() {
+	"$DH_BIN" serve --uninstall >/dev/null 2>&1 || :
+}
+
 assert() {
 	[ ! -s "$ROW_DIR/agents" ] || { row_fail "serve --uninstall left an agent"; return; }
 	judged "the daily look ran, PR states refreshed, the login renewed without a prompt, and notifications arrived"

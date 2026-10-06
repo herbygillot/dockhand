@@ -47,3 +47,9 @@ The rc5 and rc6 full stages' rows left branches open, and later rows pick theirs
 
 - **B4 tidies its answer to the review before it checks it.** It checked a branch with commits and an edit on top, without a terminal, which asks whether to build the commits or the files and refused; the tidy after it left a commit no check had passed, so the second submit stopped and the row never reached what it tests. No other row checks edits on top of commits. The README's "committed or not" now says a check with edits on top of commits asks which, and `--head` or `--working-tree` answers without a terminal.
 - **submit_pr syncs the sandbox's master with MacPorts' before a test pull request,** so it shows only its own commits; reset-user.sh synced it only at the reset.
+
+## 2026-10-06: B6 makes its own merge; the sandbox is reset outright
+
+- **B6 makes and merges its own pull request in setup,** a test one in the sandbox, merged with gh, before the harm sweep's snapshot: a person made one inside the snapshot's window, and H2 and H3 took the pull request and the merge for the row's harm. It's not run unless the approval list has its test pull request.
+- **The sandbox's master is set to MacPorts' outright,** by its ref, in submit_pr, B6, and reset-user.sh: `gh repo sync --force` leaves a master that is only ahead of MacPorts', as B6's merge left it. submit_pr allows the move, which H2 would otherwise call a push. reset-user.sh now stops on a master ahead of MacPorts', not only one behind.
+- **B7 uninstalls serve's agent in its teardown,** skipped or not. It and S1 each install the account's one serve agent, so they can't run at once.

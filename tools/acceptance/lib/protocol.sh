@@ -108,10 +108,13 @@ submit_pr() {
 	fi
 	# The sandbox's master is MacPorts' as of the last reset, so a test
 	# pull request showed MacPorts' later commits as its own (the rc6 full
-	# stage): it's brought up to MacPorts' first, by force, as reset-user.sh
-	# does: B6 merges a test pull request into it, after which a plain sync
-	# fails, and the sandbox's master is disposable.
-	gh repo sync "${DOCKHAND_PULL_REQUESTS:?}" --branch master --force >>"$ROW_DIR/out.log" 2>&1 || :
+	# stage): it's set to MacPorts' first, as reset-user.sh sets it. The
+	# sandbox's master is disposable, and gh repo sync --force left one B6's
+	# merge put ahead of MacPorts', so the ref is set outright.
+	local upstream
+	allow_push "* refs/heads/master"
+	upstream=$(gh api repos/macports/macports-ports/git/ref/heads/master --jq .object.sha 2>>"$ROW_DIR/out.log" || :)
+	[ -z "$upstream" ] || gh api -X PATCH "repos/${DOCKHAND_PULL_REQUESTS:?}/git/refs/heads/master" -f sha="$upstream" -F force=true --silent >>"$ROW_DIR/out.log" 2>&1 || :
 	subject=$(git -C "$(dh_quiet path "$branch")" log -1 --format=%s)
 	dh_json submit -b "$branch" -y --title "[testing] $subject" --skip-notification \
 		--note "This pull request tests a dockhand release candidate, ${ACCEPT_CANDIDATE:-}, and will be closed without merging." "$@"

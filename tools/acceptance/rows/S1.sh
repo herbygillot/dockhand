@@ -11,7 +11,9 @@
 # room. The row gives serve the person's ports to look at and check,
 # and a short cleanup age, and samples serve's memory, the disk, and the
 # logs every hour. The person chose a day (2026-10-06); ACCEPT_S1_HOURS
-# changes it.
+# changes it. It installs the one serve agent the account has, as B7 does,
+# so the two can't run at once: B7's install would replace S1's agent, and
+# its teardown remove it.
 hours() { printf '%s' "${ACCEPT_S1_HOURS:-24}"; }
 
 setup() {
