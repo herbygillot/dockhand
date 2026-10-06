@@ -248,7 +248,16 @@ func Stage(ctx context.Context, repo *git.Repository, source model.Source, platf
 	} else {
 		// A tree that is its own base, as a baseline check's is, is
 		// upstream's, whose ports that don't parse are no contribution's.
-		entry, err = cache.ensure(ctx, repo, tree, named("", string(source.Commit), tree), root, projection, false, nil, true, string(source.Commit))
+		// Its commit is the one the mirror bootstrap brackets: the source's,
+		// else its base's, where the base is a commit of this very tree, as
+		// an update planned from master has it. Without one, CI's update
+		// indexed the whole tree, about 16 minutes on Intel, with the
+		// mirror's index there to seed it (2026-10-06).
+		commit := string(source.Commit)
+		if commit == "" && baseTree != "" && string(source.Base) != baseTree {
+			commit = string(source.Base)
+		}
+		entry, err = cache.ensure(ctx, repo, tree, named("", commit, tree), root, projection, false, nil, true, commit)
 		if err != nil {
 			return "", err
 		}

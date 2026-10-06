@@ -4,6 +4,12 @@
 # the candidate host/stage-candidate.sh put in the overlay:
 #
 #   tools/acceptance/full.sh --candidate v0.3.0-rcN [--rows "A1 A2"]
+#   tools/acceptance/full.sh --end
+#
+# --end, once the run and its reruns are over, logs dhtest's gh out, whose
+# login reset-user.sh keeps in ~/.config/gh in plain text, and names the
+# results to copy: only $ACCEPT_STATE/results, never ~/.config, nor
+# ~/.dockhand-acceptance, which holds the test account's key.
 #
 # Nothing here is scratch: the rows act on dhtest's own ports clone, its
 # dockhand as row A1 installs it, and the test GitHub account, and lib/
@@ -27,6 +33,12 @@ here=$(cd "$(dirname "$0")" && pwd)
 # dhtest's login shell doesn't put MacPorts on PATH; the rows run port,
 # and the dockhand row A1 installs (the Prime-time thread, 2026-10-05).
 case ":$PATH:" in *:/opt/local/bin:*) ;; *) export PATH="/opt/local/bin:/opt/local/sbin:$PATH" ;; esac
+if [ "${1:-}" = --end ]; then
+	gh auth logout --hostname github.com >/dev/null 2>&1 || :
+	rm -f "$HOME/.config/gh/hosts.yml"
+	echo "full.sh: dhtest's gh is logged out. Copy only the results: ${ACCEPT_STATE:-$HOME/.dockhand-acceptance/full}/results"
+	exit 0
+fi
 : "${ACCEPT_GH_LOGIN:?full.sh needs ACCEPT_GH_LOGIN, the test GitHub account}"
 : "${ACCEPT_GO_PORT:?full.sh needs ACCEPT_GO_PORT, a small Go port that is due}"
 : "${ACCEPT_RUST_PORT:?full.sh needs ACCEPT_RUST_PORT, a small Rust port that is due}"

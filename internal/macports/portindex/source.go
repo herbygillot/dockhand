@@ -75,6 +75,14 @@ func (s *Stager) Index(ctx context.Context, tree macports.Tree) (*Index, error) 
 	}
 	source := tree.Source()
 	if s.WithoutBase {
+		// A base that is a commit of this very tree, as an update planned
+		// from master has, is the tree's commit, which the mirror bootstrap
+		// brackets; dropped with the base, it cost CI a full pass.
+		if source.Commit == "" && source.Base != "" {
+			if baseTree, err := sourceBaseTree(ctx, s.Repo, source); err == nil && baseTree == string(source.Tree) && baseTree != string(source.Base) {
+				source.Commit = source.Base
+			}
+		}
 		source.Base = ""
 	}
 	entry, err := Stage(ctx, s.Repo, source, platform, s.Config, tree)

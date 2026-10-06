@@ -424,6 +424,32 @@ func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, meta.Full)
 	require.Nil(t, meta.Mirror)
+
+	// A source that names its commit only as its base, as an update planned
+	// from master has, is seeded as well, by Stage and by a Stager that
+	// drops bases; it was indexed in full, about 16 minutes in CI on Intel
+	// (2026-10-06).
+	based := model.Source{Tree: model.ObjectID(newerTree), Base: model.ObjectID(newer)}
+	byBase := *f
+	byBase.config.CacheDirectory = t.TempDir()
+	byBase.config.Mirror = cold.config.Mirror
+	_, messages, err = byBase.stage(based)
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(messages, "\n"), "Seeding the PortIndex from the mirror index")
+
+	var stagerMessages []string
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { stagerMessages = append(stagerMessages, update.Message) })
+	snapshot, err := f.repo.Materialize(t.Context(), newerTree)
+	require.NoError(t, err)
+	defer snapshot.Close()
+	into, err := macports.NewTree(based, snapshot.Root, testPlatform)
+	require.NoError(t, err)
+	config := f.config
+	config.CacheDirectory = t.TempDir()
+	config.Mirror = cold.config.Mirror
+	_, err = (&Stager{Repo: f.repo, Config: config, WithoutBase: true}).Index(ctx, into)
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(stagerMessages, "\n"), "Seeding the PortIndex from the mirror index")
 }
 
 // Index generation lists what the root holds, so a sparse workspace handed
