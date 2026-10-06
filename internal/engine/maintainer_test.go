@@ -64,7 +64,7 @@ func TestTheMaintainerSuggestedIsTheLineThePortsWrite(t *testing.T) {
 	suggestion.Spellings = suggestion.Spellings[:1]
 	require.Equal(t, `set maintainer = "{example.org:ada @ada}" in ~/.dockhand/config.toml, as the ports that name @ada write it`, MaintainerWords(suggestion, "~/.dockhand/config.toml"))
 
-	placeholder := `set maintainer = "{@you example.org:you}" in ~/.dockhand/config.toml`
+	placeholder := `set maintainer to you as a Portfile's maintainers line writes you, such as "@you" for your GitHub login, or "{example.org:you @you}" with your email too, in ~/.dockhand/config.toml`
 	e.PortReader = maintainedPorts{asked: &asked}
 	require.Equal(t, placeholder, MaintainerWords(e.SuggestMaintainer(t.Context(), base), "~/.dockhand/config.toml"), "nothing names the login")
 	e.Forge = signedOut{}

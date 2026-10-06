@@ -87,17 +87,17 @@ func (e *Engine) MaintainerHint(ctx context.Context) string {
 	return MaintainerWords(e.SuggestMaintainerAtMaster(ctx), e.configFile())
 }
 
-// maintainerPlaceholder is the maintainer suggested where none of the
-// person's own can be.
-const maintainerPlaceholder = "{@you example.org:you}"
-
 // MaintainerWords say what to set as maintainer in dockhand's config, the
 // file named, as the command read it: the entry most of the ports naming
 // the person's login write, as they write it, and the others they write,
 // to choose from; or, with nothing to suggest, a placeholder to fill in.
 func MaintainerWords(s MaintainerSuggestion, file string) string {
+	// With nothing to suggest, the form a Portfile's maintainers line
+	// takes, as an example rather than a value to set: "{@you
+	// example.org:you}" read as one to copy, and in no order MacPorts
+	// writes (the rc3 and rc6 full stages).
 	if len(s.Spellings) == 0 {
-		return fmt.Sprintf("set maintainer = %q in %s", maintainerPlaceholder, file)
+		return fmt.Sprintf(`set maintainer to you as a Portfile's maintainers line writes you, such as "@you" for your GitHub login, or "{example.org:you @you}" with your email too, in %s`, file)
 	}
 	first, handle := s.Spellings[0], "@"+s.Login
 	words := fmt.Sprintf("set maintainer = %q in %s", first.Maintainer.String(), file)

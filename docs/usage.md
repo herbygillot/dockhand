@@ -40,7 +40,7 @@ See [Providers](#providers) for the others and for more releases.
 Settings live in `~/.dockhand/config.toml`, or the file `$DOCKHAND_CONFIG` names. Nothing in it is required, and an unknown key is refused by name. A flag comes before the environment, and the environment before the file. [All the settings](#settings) are listed at the end of this page. Two are worth setting early:
 
 ```toml
-maintainer = "{@you example.org:you} openmaintainer"   # your maintainers line, for --mine and create
+maintainer = "{example.org:you @you} openmaintainer"   # your maintainers line, for --mine and create
 
 [check]
 on = ["tart:sequoia,tahoe"]   # where checks build unless --on says otherwise
@@ -139,7 +139,7 @@ In place of the URL, `pypi:NAME`, `crates:NAME`, or `go:MODULE` names the projec
 - the category, unless `--category` names it: one of the tree's categories the project's description names (a "terminal text editor" is `editors`), else the build system's guess, and said with what it chose, since it picks the directory. Running `create` again with another `--category`, before the port is committed, moves it there, your edits included;
 - a Rust or Go port's `destroot`, which installs the programs its manifest names, since neither PortGroup installs anything.
 
-The description is the manifest's one line where it has one, else GitHub's. A plain-HTTP homepage is written as its `https://` form where that answers, since MacPorts prefers HTTPS, and said where it doesn't. The maintainer is your `maintainer` setting, else `nomaintainer`, marked, and `create` says the line to set: the one the ports naming your GitHub login write at the branch's base, as `{gmail.com:herby.gillot @herbygillot}`, with any others they write named, each with how many ports write it, for you to choose from. It writes no configuration; where it can't find yours, it says `{@you example.org:you}` for you to fill in. `outdated --mine` and `serve`, which needs the setting for its daily look, suggest the same line, at master, `serve` as it starts; each names the configuration file it read, `$DOCKHAND_CONFIG` where that's set. `--name` names the port when the project's name isn't right for it. The new Portfile is staged, so the next check includes it.
+The description is the manifest's one line where it has one, else GitHub's. A plain-HTTP homepage is written as its `https://` form where that answers, since MacPorts prefers HTTPS, and said where it doesn't. The maintainer is your `maintainer` setting, else `nomaintainer`, marked, and `create` says the line to set: the one the ports naming your GitHub login write at the branch's base, as `{gmail.com:herby.gillot @herbygillot}`, with any others they write named, each with how many ports write it, for you to choose from. It writes no configuration; where it can't find yours, it shows the forms a maintainers line takes, `@you` or `{example.org:you @you}`, for you to fill in. `outdated --mine` and `serve`, which needs the setting for its daily look, suggest the same line, at master, `serve` as it starts; each names the configuration file it read, `$DOCKHAND_CONFIG` where that's set. `--name` names the port when the project's name isn't right for it. The new Portfile is staged, so the next check includes it.
 
 ### edit
 

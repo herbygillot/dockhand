@@ -145,7 +145,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	require.Contains(t, out, "  homepage: over HTTPS, as MacPorts prefers; GitHub gives http://txt.hellman.io/\n", "the finding 6 of the txt run")
 	require.Contains(t, out, "txt 0.8.1 · Rust (Cargo.toml) · Cargo.toml says MIT OR Apache-2.0 · \"A fast, intuitive terminal text editor\"\n")
 	require.Contains(t, out, "Unconfirmed, marked in the file: category devel (guessed from the build system; create --category moves it), license (from Cargo.toml), long_description, maintainers")
-	require.Contains(t, out, "  maintainers: nomaintainer, as your config names none; set maintainer = \"{@you example.org:you}\" in "+filepath.Join(w.home, ".dockhand", "config.toml")+"\n",
+	require.Contains(t, out, "  maintainers: nomaintainer, as your config names none; set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in "+filepath.Join(w.home, ".dockhand", "config.toml")+"\n",
 		"no port at the base names @ada")
 	branch := regexp.MustCompile(`dockhand/(txt-new)`).FindStringSubmatch(out)[1]
 	data, err := os.ReadFile(filepath.Join(w.home, "Source", "macports-branches", branch, "devel/txt/Portfile"))
