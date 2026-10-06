@@ -57,3 +57,8 @@ The rc5 and rc6 full stages' rows left branches open, and later rows pick theirs
 ## 2026-10-06: B9 keeps its check.on to itself
 
 B9 appended `[check] on = ["github"]` to dhtest's config and left it, so every later row's check would have run on GitHub Actions. Its setup now keeps the config and its teardown puts it back, as A10's do. Its "no Tart set up" couldn't hold in run order, A4 and A12 having made images, so it gives dockhand an empty Tart home of its own, `DOCKHAND_TART_HOME`, which dockhand reads (internal/tart). It takes its branch with own_branch.
+
+## 2026-10-06: C4 and C7 make what they test
+
+- **C4 plans pomo against the quick stage's pin.** The full stage's master is MacPorts' own, where pomo has moved on, so its update had nothing to change and the module-move case never ran. In the full stage the row now makes a bare master of its own at the pin, borrowing the ports clone's objects as quick.sh does, and names it with `DOCKHAND_UPSTREAM` for the row alone.
+- **C7 makes its branches in setup,** before the harm sweep's snapshot, as B6 does: two test pull requests merged in the sandbox, the second's fork branch moved by a commit pushed after its merge, a third closed with an uncommitted edit in its worktree, and a branch archived, listed in the row's fixtures file. Its teardown sets the sandbox's master back to MacPorts'.
