@@ -27,8 +27,16 @@ setup() {
 		row_result "not run" "no database of yours to copy at $ACCEPT_REAL_DB; set ACCEPT_REAL_DB"
 		return 0
 	fi
-	mkdir -p "$ROW_DIR/db" "$ROW_DIR/old"
-	sqlite3 "file:$ACCEPT_REAL_DB?mode=ro" ".backup '$ROW_DIR/db/dockhand.db'" || return 1
+	mkdir -p "$ROW_DIR/db" "$ROW_DIR/old" "$ROW_DIR/source"
+	# The database is in WAL mode, which a read-only open can't read
+	# without its -shm, nor make one (the rc3 full stage: "unable to open
+	# database file"): it's copied with its -wal and -shm, and backed up
+	# from the copy, which leaves the person's untouched.
+	local part
+	for part in "" -wal -shm; do
+		[ ! -f "$ACCEPT_REAL_DB$part" ] || cp "$ACCEPT_REAL_DB$part" "$ROW_DIR/source/dockhand.db$part"
+	done
+	sqlite3 "$ROW_DIR/source/dockhand.db" ".backup '$ROW_DIR/db/dockhand.db'" || return 1
 	# The build before the newest schema: the parent of the commit that
 	# added it.
 	A5_OLD_REV=$(git -C "$ACCEPT_REPO" log -1 --format=%H -- "internal/store/sqlite/schema/$newest")^
@@ -52,7 +60,7 @@ assert() {
 	names_before=$(jq -r '[.result.branches[]?.name] | sort | join(" ")' "$ROW_DIR/before.json" 2>/dev/null)
 	names_after=$(jq -r '[.result.branches[]?.name] | sort | join(" ")' "$ROW_DIR/after.json" 2>/dev/null)
 	if jq -r '.error // ""' "$ROW_DIR/before.json" 2>/dev/null | grep -q 'newer than this dockhand supports'; then
-		row_known "nothing to migrate: $ACCEPT_REAL_DB is already at the candidate's schema, and no earlier copy was kept"
+		row_result "not run" "nothing to migrate: $ACCEPT_REAL_DB is already at the candidate's schema, and no earlier copy was kept; set ACCEPT_REAL_DB to a database at the schema before"
 		return
 	fi
 	if [ "$(jq -r .exit_code "$ROW_DIR/before.json" 2>/dev/null)" != 0 ]; then
@@ -60,7 +68,7 @@ assert() {
 		return
 	fi
 	if ! grep -q "^Migrated dockhand's database from schema" "$ROW_DIR/after.json.err"; then
-		row_known "nothing to migrate: the copy is already at the candidate's schema"
+		row_result "not run" "nothing to migrate: the copy is already at the candidate's schema; set ACCEPT_REAL_DB to a database at the schema before"
 		return
 	fi
 	if ! ls "$ROW_DIR/db"/dockhand.db.schema-* >/dev/null 2>&1; then

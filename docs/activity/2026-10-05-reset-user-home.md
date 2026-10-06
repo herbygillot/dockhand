@@ -33,3 +33,8 @@ S1 said it ran last but ran in glob order, before S2, so its soak held up the en
 - **reset-user.sh logs dhtest's gh in** with the test account's token (GH_TOKEN, the token file, or the driver's gh), in gh's own file rather than a Keychain, and stops if the token is another account's.
 - **A4 allows its own push and pull request.** The person's submit pushed `dockhand/<port>` to the fork, which H2 called harm.
 - **README and providers.** setup offers the maintainers line only as the ports your GitHub login maintains write it, and otherwise says how to write it; update changes the branch's files without a preview, which `dockhand diff` shows, and the steps after it preview; a release with only its Xcode image is said to need its plain image beside it, which a check does since batch 100, rather than "which most ports build in", since a check builds in the Xcode image where there is one (the person's decision of 2026-09-26).
+
+## 2026-10-06: A5 and A7
+
+- **A5 copies a WAL database with its -wal and -shm,** and backs up from the copy: a read-only open of dhtest's database failed with "unable to open database file", having no -shm and no leave to make one. A database already at the candidate's schema, with no earlier copy, is now "not run", naming ACCEPT_REAL_DB, rather than a known issue.
+- **A7 says what to stage,** a dockhand newer than the candidate, and to answer skip when there's none; its teardown uninstalls serve's agent, which a skipped A7 left running through the rows after.
