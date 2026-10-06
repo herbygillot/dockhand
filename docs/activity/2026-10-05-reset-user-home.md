@@ -66,3 +66,7 @@ B9 appended `[check] on = ["github"]` to dhtest's config and left it, so every l
 ## 2026-10-06: rows that submit name their branch
 
 With earlier rows' branches set aside, a `submit --plan` on the ports checkout's master is refused for want of a branch before it reaches what the row asks about. D-C1 (a login) and F3 (the fork's remotes) now make and tidy a branch of their own in setup, logged in, and submit it with `-b`. D-T3 fails only on a `dockhand/*` branch it started, not on those earlier rows left. No other row runs submit, check, or tidy without naming a branch, but C8's, which runs in a branch's worktree.
+
+## 2026-10-06: logins without waiting codes
+
+Two D-C2 device codes expired while the run waited for a person. Rows that log out to test what follows, D-C1, D-C2, and D-C5, now keep dockhand's Keychain login in a shell variable, never a file or a log, and put it back as it was through `security`'s standard input (`login_keep`, `login_restore`), so no code is asked for; D-C5 asks for the GitHub CLI's login only where reset-user.sh's isn't the test account's. Where a code is needed, A2's first login and D-C3's after its revocation, `device_login` asks the person to say they're ready before setup github issues one. D-C3, which left the login revoked for the rows after, now logs in again beside the revocation. The rows a person does on GitHub's site, D-C3 and D-C4, run next to each other, after D-C1 and D-C2, which now need no one.

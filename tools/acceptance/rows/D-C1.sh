@@ -14,11 +14,13 @@ setup() {
 }
 act() {
 	host_only "the test user's own Keychain" || return 0
+	login_keep || { row_result "not run" "dockhand has no login in the Keychain to log out of"; return 0; }
 	dh auth logout || :
 	dh_json status || :
 	dh_json outdated --mine || :
 	dh_json submit -b "$DC1_BRANCH" --plan || :
-	checkpoint "log back in: dockhand auth login, as the test account" || return 0
+	# The login comes back as it was, with no code to enter.
+	login_restore || device_login "D-C1 logs dockhand back in" || return 0
 }
 assert() {
 	[ "$(cat "$ROW_DIR/json/1.json.exit")" = 0 ] || { row_fail "status failed without a login"; return; }

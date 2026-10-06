@@ -10,11 +10,8 @@ act() {
 	# (the rc1 full stage, whose checkpoint asked for a code nothing had
 	# printed). It runs here, printing its code and address, and waits
 	# while the person enters the code.
-	dh_bg setup github --no-browser
-	if wait_for_line "$DH_BG_LOG" 'one-time code: ' 120; then
-		checkpoint "authorize dockhand as the test account: $(grep -m1 'one-time code: ' "$DH_BG_LOG"), at $(grep -m1 -oE 'https://[^ ]+' "$DH_BG_LOG")" || { kill "$DH_BG_PID" 2>/dev/null; return 0; }
-	fi
-	dh_bg_wait || :
+	# The code is issued once the person says they're there (device_login).
+	device_login "A2 logs dockhand in as the test account" || :
 	dh auth status || :
 	dh providers || :
 }

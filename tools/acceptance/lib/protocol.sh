@@ -134,3 +134,41 @@ close_test_pr() {
 
 # dh_quiet runs dockhand for a value a row reads, not for the row's log.
 dh_quiet() { "$DH_BIN" "$@" 2>/dev/null; }
+
+# The test account's login, as dockhand keeps it in the Keychain
+# (github.CredentialKey), kept for a row that logs out to test what
+# follows, and put back after, so no person enters a code for it: two
+# codes expired while D-C2 waited for one (the rc6 full stage). It's held
+# in a shell variable alone, never a file or the row's log, and put back
+# through security's standard input, as dockhand stores it.
+DH_LOGIN_SERVICE=github.com/herbygillot/dockhand
+DH_LOGIN_ACCOUNT=github.com
+
+# login_keep holds the Keychain's login in DH_KEPT_LOGIN; it fails where
+# there's none.
+login_keep() {
+	DH_KEPT_LOGIN=$(security find-generic-password -a "$DH_LOGIN_ACCOUNT" -s "$DH_LOGIN_SERVICE" -w 2>/dev/null) || DH_KEPT_LOGIN=""
+	[ -n "$DH_KEPT_LOGIN" ]
+}
+
+# login_restore puts the kept login back, as it was.
+login_restore() {
+	[ -n "${DH_KEPT_LOGIN:-}" ] || return 1
+	printf 'add-generic-password -U -a %s -s %s -w %s\n' "$DH_LOGIN_ACCOUNT" "$DH_LOGIN_SERVICE" "$DH_KEPT_LOGIN" | security -i >/dev/null 2>&1
+}
+
+# device_login logs dockhand in by GitHub's device flow, asking first: the
+# code is issued only once the person says they're there, since one
+# issued to an empty room expires (the rc6 full stage), then shown at a
+# second checkpoint, while setup github waits for it.
+device_login() {
+	checkpoint "say ready for a GitHub login code: $*" || return 1
+	dh_bg setup github --no-browser
+	if wait_for_line "$DH_BG_LOG" 'one-time code: ' 120; then
+		checkpoint "authorize dockhand as the test account: $(grep -m1 'one-time code: ' "$DH_BG_LOG"), at $(grep -m1 -oE 'https://[^ ]+' "$DH_BG_LOG")" || {
+			kill "$DH_BG_PID" 2>/dev/null
+			return 1
+		}
+	fi
+	dh_bg_wait
+}
