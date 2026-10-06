@@ -169,7 +169,7 @@ func TestUpdateSubmitPassesOnWhereAndWhatWasTested(t *testing.T) {
 	g := withGitHub(t, w)
 
 	_, _, err := dockhand(t, "update", "jq", "--new", "--on", "command")
-	require.EqualError(t, err, "--on, --tested-binaries, and --tested-variants go with --submit")
+	require.EqualError(t, err, "--on, --tested-binaries, --tested-variants, --title, --note, and --skip-notification go with --submit")
 	_, _, err = dockhand(t, "update", "jq", "--new", "--yes")
 	require.EqualError(t, err, "--yes goes with --outdated or --submit")
 

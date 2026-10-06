@@ -28,7 +28,13 @@ act() {
 	# stage found neither).
 	allow_prs 1
 	allow_push "*dockhand/${ACCEPT_RUST_PORT}*"
-	dh_json bump "${ACCEPT_RUST_PORT:?}" </dev/null || :
+	# A test pull request says it is one, as submit_pr's do.
+	local test=()
+	if [ "$(pr_kind "$ACCEPT_RUST_PORT")" != real ]; then
+		test=(--title "[testing] ${ACCEPT_RUST_PORT}: dockhand ${ACCEPT_CANDIDATE:-} bump" --skip-notification
+			--note "This pull request tests a dockhand release candidate, ${ACCEPT_CANDIDATE:-}, and will be closed without merging.")
+	fi
+	dh_json bump "${ACCEPT_RUST_PORT:?}" "${test[@]}" </dev/null || :
 	b2_reuse
 }
 

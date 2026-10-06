@@ -46,6 +46,27 @@ func TestBumpGoesFromUpdateToPullRequestAskingNothing(t *testing.T) {
 	require.Len(t, g.PRs, 1)
 }
 
+// bump passes submit's title, note, and [skip notification] on, so a
+// test's pull request can say it is one (the rc6 full stage, B2).
+func TestBumpPassesSubmitsWordsOn(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "passed")
+	g := withGitHub(t, w)
+	g.Others = nil
+
+	_, errs, err := bumpOn(t, "jq", "--title", "[testing] jq: update to 1.8.1", "--note", "A test; it will be closed.", "--skip-notification")
+	require.NoError(t, err, errs)
+	require.Len(t, g.PRs, 1)
+	require.Equal(t, "[testing] jq: update to 1.8.1", g.PRs[34901].Title)
+	require.Contains(t, g.PRs[34901].Body, "A test; it will be closed.")
+	require.Contains(t, g.PRs[34901].Body, "[skip notification]")
+
+	_, _, err = dockhand(t, "update", "jq", "--title", "x")
+	require.ErrorContains(t, err, "go with --submit")
+}
+
 // What would stop bump before the edit stops it with nothing changed.
 func TestBumpChangesNothingWhenItHasNothingToDo(t *testing.T) {
 	w := newWorld(t)

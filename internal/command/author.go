@@ -95,8 +95,9 @@ settled before anything is edited.`,
 			if linked.submit && (batch.outdated || plan) {
 				return errors.New("--submit goes with one port's update, not --plan or --outdated")
 			}
-			if !linked.submit && (len(linked.on) > 0 || linked.testedBinaries || linked.testedVariants) {
-				return errors.New("--on, --tested-binaries, and --tested-variants go with --submit")
+			linked.noteSet = cmd.Flags().Changed("note")
+			if !linked.submit && (len(linked.on) > 0 || linked.testedBinaries || linked.testedVariants || linked.title != "" || linked.noteSet || linked.skipNotification) {
+				return errors.New("--on, --tested-binaries, --tested-variants, --title, --note, and --skip-notification go with --submit")
 			}
 			if batch.outdated {
 				batch.plan = plan
@@ -178,6 +179,9 @@ func (v *versionUpdate) flags(cmd *cobra.Command, goesOn string) {
 	cmd.Flags().StringArrayVar(&v.linked.on, "on", nil, goesOn+"where to check (default check.on)")
 	cmd.Flags().BoolVar(&v.linked.testedBinaries, "tested-binaries", false, goesOn+"state that you tested the basic functionality of all binary files")
 	cmd.Flags().BoolVar(&v.linked.testedVariants, "tested-variants", false, goesOn+"state that you checked the most important variants")
+	cmd.Flags().StringVar(&v.linked.title, "title", "", goesOn+"the pull request's title (default: the commit subject)")
+	cmd.Flags().StringVar(&v.linked.note, "note", "", goesOn+"your own note in the pull request's description")
+	cmd.Flags().BoolVar(&v.linked.skipNotification, "skip-notification", false, goesOn+"add [skip notification], so maintainers are not mentioned")
 	cmd.Flags().BoolVar(&v.keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&v.shared, "shared-release", false, "move every subport that shares the port's release")
 	cmd.Flags().BoolVar(&v.obsolete, "with-obsolete", false, "also move the Portfile's obsolete stub for the port, one replaced_by it, to the same version")
@@ -278,7 +282,10 @@ func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch mod
 		return err
 	}
 	fmt.Fprintln(out)
-	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.testedBinaries, TestedVariants: linked.testedVariants}
+	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.testedBinaries, TestedVariants: linked.testedVariants, Title: linked.title, SkipNotification: linked.skipNotification}
+	if linked.noteSet {
+		request.Note = &linked.note
+	}
 	return submitChecked(ctx, s, e, streams, request, linked.on, linked.unattended)
 }
 
@@ -295,6 +302,13 @@ type linkedOptions struct {
 	testedBinaries, testedVariants bool
 	yes                            bool
 	unattended                     bool
+	// title, note, and skipNotification are submit's, passed on; noteSet
+	// is whether --note was given, "" taking a note out. bump took none, so
+	// a test's pull request couldn't be marked one (the rc6 full stage, B2).
+	title            string
+	note             string
+	noteSet          bool
+	skipNotification bool
 }
 
 // author finds the branch, makes the edit, and reports it.

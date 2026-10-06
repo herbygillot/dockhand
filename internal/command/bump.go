@@ -46,6 +46,7 @@ dockhand can't. --on says where to check (default check.on).`,
 				return err
 			}
 			version.linked.submit, version.linked.yes, version.linked.unattended = true, true, true
+			version.linked.noteSet = cmd.Flags().Changed("note")
 			return version.run(cmd.Context(), s, streams.unattended(), branchChoice{new: true}, request)
 		},
 	}

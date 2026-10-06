@@ -88,7 +88,7 @@ dockhand bump jq           # the newest release, all the way to its pull request
 dockhand bump jq 1.8.1     # a version you name
 ```
 
-`bump` is `update --new --submit --yes` asking nothing, for an update you want submitted without looking along the way; `update` is the same work a step at a time. It isn't `port bump`, which refreshes checksums, as `checksums` does. It updates the port on fresh master, in a branch it starts for the edit, tidies the edit into one commit, checks it, and submits exactly that commit once the check passes. Its `--json` result is `update --submit`'s. It takes `update`'s `--revbump-dependents`, `--except`, `--shared-release`, and `--keep-old-checksums`, and `submit`'s `--on`, `--tested-binaries`, and `--tested-variants`.
+`bump` is `update --new --submit --yes` asking nothing, for an update you want submitted without looking along the way; `update` is the same work a step at a time. It isn't `port bump`, which refreshes checksums, as `checksums` does. It updates the port on fresh master, in a branch it starts for the edit, tidies the edit into one commit, checks it, and submits exactly that commit once the check passes. Its `--json` result is `update --submit`'s. It takes `update`'s `--revbump-dependents`, `--except`, `--shared-release`, and `--keep-old-checksums`, and `submit`'s `--on`, `--tested-binaries`, `--tested-variants`, `--title`, `--note`, and `--skip-notification`, which `update --submit` takes too.
 
 It stops wherever a person should look:
 
