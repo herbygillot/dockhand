@@ -36,6 +36,10 @@ act() {
 	fi
 	dh_json bump "${ACCEPT_RUST_PORT:?}" "${test[@]}" </dev/null || :
 	b2_reuse
+	# Its test pull request closes once the row has its evidence: left
+	# open, its branch stayed, and B5 and D-I4 saw two of the port's (the
+	# rc6 full stage).
+	close_test_pr "$ACCEPT_RUST_PORT" "$(own_branch)"
 }
 
 # b2_reuse checks the bump's branch again, --fresh, in the same home: the

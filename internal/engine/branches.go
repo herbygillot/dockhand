@@ -522,7 +522,9 @@ func (e *Engine) checkOutAgain(ctx context.Context, branch model.Branch) error {
 	}
 	head, _, err := e.Repo.Branch(ctx, branch.Name)
 	if errors.Is(err, git.ErrBranchMissing) {
-		return fmt.Errorf("%s's worktree %s is gone, and so is its Git branch", branch.Name, branch.Worktree)
+		// Nothing is left to check out; the record holds its name until
+		// it's set aside (the rc6 full stage, A10).
+		return fmt.Errorf("%s's worktree %s is gone, and so is its Git branch, so nothing of it is left: dockhand archive %s sets its record aside, and another name starts afresh", branch.Name, branch.Worktree, branch.ShortName())
 	}
 	if err != nil {
 		return err
