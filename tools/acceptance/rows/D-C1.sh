@@ -1,12 +1,23 @@
 # stages: full
 # D-C1: no login at all: read-only commands work, and submit refuses,
 # naming auth login.
+#
+# Its submit names a branch of its own, made while logged in: on the
+# ports checkout's master, with earlier rows' branches set aside, submit
+# refused for want of a branch before it asked for a login (the rc6 full
+# stage).
+setup() {
+	host_only "the test user's own Keychain" || return 0
+	dh_setup update "${ACCEPT_GO_PORT:?}" --new || return 1
+	DC1_BRANCH=$(own_branch)
+	dh tidy -b "$DC1_BRANCH" -y || return 1
+}
 act() {
 	host_only "the test user's own Keychain" || return 0
 	dh auth logout || :
 	dh_json status || :
 	dh_json outdated --mine || :
-	dh_json submit --plan || :
+	dh_json submit -b "$DC1_BRANCH" --plan || :
 	checkpoint "log back in: dockhand auth login, as the test account" || return 0
 }
 assert() {

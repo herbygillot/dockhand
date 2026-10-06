@@ -62,3 +62,7 @@ B9 appended `[check] on = ["github"]` to dhtest's config and left it, so every l
 
 - **C4 plans pomo against the quick stage's pin.** The full stage's master is MacPorts' own, where pomo has moved on, so its update had nothing to change and the module-move case never ran. In the full stage the row now makes a bare master of its own at the pin, borrowing the ports clone's objects as quick.sh does, and names it with `DOCKHAND_UPSTREAM` for the row alone.
 - **C7 makes its branches in setup,** before the harm sweep's snapshot, as B6 does: two test pull requests merged in the sandbox, the second's fork branch moved by a commit pushed after its merge, a third closed with an uncommitted edit in its worktree, and a branch archived, listed in the row's fixtures file. Its teardown sets the sandbox's master back to MacPorts'.
+
+## 2026-10-06: rows that submit name their branch
+
+With earlier rows' branches set aside, a `submit --plan` on the ports checkout's master is refused for want of a branch before it reaches what the row asks about. D-C1 (a login) and F3 (the fork's remotes) now make and tidy a branch of their own in setup, logged in, and submit it with `-b`. D-T3 fails only on a `dockhand/*` branch it started, not on those earlier rows left. No other row runs submit, check, or tidy without naming a branch, but C8's, which runs in a branch's worktree.
