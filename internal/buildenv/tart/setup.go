@@ -119,7 +119,7 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 	}
 	// Making an image is the costly case, and it's named before it
 	// starts: an image that exists, or its golden copy, costs a check.
-	if !options.Check && progress != nil {
+	if !options.Check {
 		m, err := p.vms()
 		if err != nil {
 			return SetupResult{}, err
@@ -128,11 +128,22 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 		if err != nil {
 			return SetupResult{}, fmt.Errorf("listing dockhand's Tart images: %w", err)
 		}
+		has := func(image string) bool {
+			return slices.Contains(images, image) || slices.Contains(images, tartvm.GoldenName(image))
+		}
+		// An Xcode image is an add-on beside the release's base image,
+		// and a check takes the release only where the base image is
+		// (Environments): made alone, it spent 65 GB on an image no check
+		// could use (the rc3 full run, 2026-10-06).
+		if options.Xcode != "" && !has(baseImage(release)) {
+			return SetupResult{}, fmt.Errorf("an Xcode image is an add-on to macOS %s (%s)'s base image, which isn't made yet: dockhand setup tart %s makes it, then --xcode adds Xcode beside it",
+				release.Product, release.Name, release.Slug)
+		}
 		image, disk := baseImage(release), SetupDisk
 		if options.Xcode != "" {
 			image, disk = xcodeImage(release), XcodeDisk
 		}
-		if options.Rebuild || !slices.Contains(images, image) && !slices.Contains(images, tartvm.GoldenName(image)) {
+		if progress != nil && (options.Rebuild || !has(image)) {
 			fmt.Fprintf(progress, "Making %s for macOS %s (%s), which takes up to %s of disk.\n", image, release.Product, release.Name, disk)
 		}
 	}

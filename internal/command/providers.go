@@ -87,8 +87,8 @@ downloads the vanilla image the first time and takes up to ` + tart.SetupDisk + 
 A golden copy is kept beside it, and a lost image is restored from it.
 
 Xcode is an add-on. --xcode, given an Xcode .xip from Apple or a folder of
-them, makes dockhand-xcode-<release> instead, the same with Xcode too, in
-up to ` + tart.XcodeDisk + ` more. Its Xcode is the one MacPorts' arm64
+them, makes dockhand-xcode-<release> beside the release's base image, which
+it needs first, the same with Xcode too, in up to ` + tart.XcodeDisk + ` more. Its Xcode is the one MacPorts' arm64
 buildbot for the release runs, so ports are built as MacPorts builds its
 packages; providers.tart.xcode in the configuration names another for a
 release. The archive of that version is required, never a newer one in its

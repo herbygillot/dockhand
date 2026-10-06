@@ -76,6 +76,13 @@ func TestSetupNamesItsCost(t *testing.T) {
 			require.NotContains(t, progress.String(), "Making", "%+v", options)
 		}
 	}
+
+	// An Xcode image without its base image is refused before it costs
+	// anything, since no check could build on it (the rc3 full run).
+	var progress bytes.Buffer
+	_, err = p.Setup(t.Context(), SetupOptions{Release: "sequoia", Xcode: "/x"}, &progress)
+	require.ErrorContains(t, err, "isn't made yet: dockhand setup tart sequoia makes it, then --xcode adds Xcode beside it")
+	require.Empty(t, progress.String())
 }
 
 // A release's Xcode image installs what MacPorts' arm64 buildbot for it

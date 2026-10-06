@@ -53,7 +53,7 @@ dockhand setup                    # what is set up, and what is missing
 dockhand check --on sequoia --on tahoe      # both releases, and both must pass
 ```
 
-- **tart**, the default: a fresh clone of dockhand's own image for each macOS release, deleted afterwards. It needs an Apple silicon Mac with [Tart](https://tart.run) (`sudo port install tart`). The first image is this Mac's release; `setup tart sequoia` adds another. Ports that need the full Xcode build only in an Xcode image, which `setup tart --xcode ~/Downloads/Xcode_26.xip` adds. Without one, those ports are reported as not built, and never as failed.
+- **tart**, the default: a fresh clone of dockhand's own image for each macOS release, deleted afterwards. It needs an Apple silicon Mac with [Tart](https://tart.run) (`sudo port install tart`). The first image is this Mac's release; `setup tart sequoia` adds another. Ports that need the full Xcode build only in an Xcode image, which `setup tart --xcode ~/Downloads/Xcode_26.xip` adds beside the release's base image, made first. Without one, those ports are reported as not built, and never as failed.
 - **github**: MacPorts' own CI workflow, run in your fork's GitHub Actions. It needs the GitHub login and the workflow enabled in your fork.
 - **command**: your own script, for a build box or a VM you manage. See [the command provider](docs/command-provider.md).
 

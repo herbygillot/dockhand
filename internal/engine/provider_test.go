@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -36,6 +37,18 @@ func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 	}
 	_, err = (&Engine{}).Environments(t.Context(), nil)
 	require.ErrorContains(t, err, "a check needs somewhere to build")
+	// Tart's own refusal is said, not the general one that suggests the
+	// same Tart (the rc3 full run, 2026-10-06).
+	_, err = (&Engine{Providers: map[string]buildenv.Provider{"tart": &imageless{}}}).Environments(t.Context(), nil)
+	require.ErrorContains(t, err, "no Tart image for macOS 27 (golden-gate): dockhand setup tart golden-gate makes")
+	require.NotContains(t, err.Error(), "--on tart builds")
+}
+
+// imageless stands for Tart with no base image for this Mac's release.
+type imageless struct{ scriptedProvider }
+
+func (*imageless) Environments(context.Context, string) ([]model.Environment, error) {
+	return nil, errors.New("no Tart image for macOS 27 (golden-gate): dockhand setup tart golden-gate makes dockhand-base-golden-gate")
 }
 
 // releasing stands for Tart: it builds on the releases named, the Mac's

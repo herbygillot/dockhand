@@ -30,10 +30,19 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 		if _, ok := e.Providers[buildenv.Command]; ok {
 			return []model.Environment{{Provider: buildenv.Command}}, nil
 		}
+		// Tart's own refusal names what to set up, as "dockhand setup tart
+		// golden-gate makes …"; the general one suggested --on tart, which
+		// fails the same way (the rc3 full run, 2026-10-06).
+		var why string
 		if tart, ok := e.Providers[buildenv.Tart].(buildenv.ReleaseProvider); ok {
-			if environments, err := tart.Environments(ctx, ""); err == nil {
+			environments, err := tart.Environments(ctx, "")
+			if err == nil {
 				return environments[:1], nil
 			}
+			why = err.Error()
+		}
+		if why != "" {
+			return nil, fmt.Errorf(`a check needs somewhere to build: %s; or --on github builds with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in %s`, why, e.configFile())
 		}
 		return nil, fmt.Errorf(`a check needs somewhere to build: --on tart builds in a Tart image of this Mac's macOS, --on github with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in %s; [check] on = ["tart"] makes one the default`, e.configFile())
 	}
