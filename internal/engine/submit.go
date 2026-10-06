@@ -15,8 +15,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
+	"github.com/herbygillot/dockhand/internal/macports/portcreate"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -277,6 +279,19 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		return plan, err
 	}
 	plan.Findings = append(plan.Findings, portfiles...)
+	// What create guessed and marked unconfirmed is a person's to confirm
+	// before MacPorts sees it: serie's preview said ready with six marks
+	// left, nomaintainer among them (the rc6 full stage, B8).
+	for _, path := range changed {
+		if !strings.HasSuffix(path, "/Portfile") {
+			continue
+		}
+		if _, text, err := worktree.File(ctx, plan.Tree, path); err == nil {
+			if marked := portcreate.Marked(text); len(marked) > 0 {
+				plan.Blocking = append(plan.Blocking, fmt.Sprintf("%s still marks %s unconfirmed (%s): confirm each, remove its %q line, and tidy", path, prose.Plural(len(marked), "guess"), strings.Join(marked, ", "), portcreate.Unconfirmed))
+			}
+		}
+	}
 	for _, commit := range plan.Commits {
 		if commit.Merge() {
 			plan.Blocking = append(plan.Blocking, fmt.Sprintf("commit %s is a merge; MacPorts asks for a rebase instead", short(model.ObjectID(commit.ID))))

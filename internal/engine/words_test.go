@@ -57,3 +57,10 @@ func TestAnUnmetMinimumSaysWhatTheEnvironmentHas(t *testing.T) {
 	unmet.Has = ""
 	require.Equal(t, "needs Xcode 26.0, through sand-runner", UnmetWords(unmet), "a plan made before it was kept")
 }
+
+// A coverage item named more than once is named once, with how many
+// (the rc6 full stage, B8).
+func TestARepeatedItemIsNamedOnce(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "Cargo.lock (4), go.mod", namedList([]string{"Cargo.lock", "Cargo.lock", "go.mod", "Cargo.lock", "Cargo.lock"}))
+}

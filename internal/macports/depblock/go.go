@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path"
+	"slices"
 	"strings"
 
 	"golang.org/x/mod/modfile"
@@ -61,6 +62,9 @@ func generateGo(ctx context.Context, executable string, in Input) (GeneratedBloc
 	}
 	if mod.Module.Mod.Path != in.Package {
 		return GeneratedBlocks{}, &ModuleMoved{From: mod.Module.Mod.Path, To: in.Package}
+	}
+	if err := unprunedGraph(ctx, in, mod); err != nil {
+		return GeneratedBlocks{}, err
 	}
 	if !safeToken(in.Package) || !safeToken(in.Tag) {
 		return GeneratedBlocks{}, fmt.Errorf("dependency: invalid Go package or tag")
@@ -117,6 +121,47 @@ func generateGo(ctx context.Context, executable string, in Input) (GeneratedBloc
 	}
 	return GeneratedBlocks{Values: map[string][]string{Go: values}}, nil
 }
+
+// unprunedGraph refuses a module whose go.mod says a Go before 1.17, or
+// none: its go.mod needn't list every module its build reads, which go.sum
+// does, and go2port writes go.mod's alone. countdown 1.5.0, at go 1.14,
+// required go-runewidth, which imports rivo/uniseg, and its check failed at
+// install with uniseg missing (the rc6 full stage, B8). The modules go.sum
+// has the source of, and go.mod doesn't require, are named.
+func unprunedGraph(ctx context.Context, in Input, mod *modfile.File) error {
+	if mod.Go != nil && semver.Compare("v"+mod.Go.Version, "v1.17") >= 0 {
+		return nil
+	}
+	sum, _, err := Manifest(ctx, in.Archive, in.Worksrcdir, "go.sum")
+	if errors.Is(err, macports.ErrManifestMissing) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	required := map[string]bool{}
+	for _, require := range mod.Require {
+		required[require.Mod.Path] = true
+	}
+	var missing []string
+	for _, line := range strings.Split(string(sum), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || strings.HasSuffix(fields[1], "/go.mod") || required[fields[0]] || slices.Contains(missing, fields[0]) {
+			continue
+		}
+		missing = append(missing, fields[0])
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	version := "no Go version"
+	if mod.Go != nil {
+		version = "go " + mod.Go.Version
+	}
+	slices.Sort(missing)
+	return fmt.Errorf("dependency: go.mod says %s, before 1.17, so it needn't require every module its build reads, and go2port writes go.mod's alone; go.sum has the source of %s too, which go.vendors needs by hand", version, strings.Join(missing, ", "))
+}
+
 func goRows(values []string) ([][]string, error) {
 	var rows [][]string
 	for i := 0; i < len(values); {

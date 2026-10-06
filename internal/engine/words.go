@@ -242,8 +242,25 @@ func CoverageWords(comparison model.UpstreamComparison) string {
 	return strings.ToUpper(words[:1]) + words[1:]
 }
 
-// namedList names up to coverageNamed items, and counts the rest.
+// namedList names up to coverageNamed items, and counts the rest. An item
+// named more than once, as a workspace's Cargo.lock in each member, is
+// named once with how many: serie's read "Cargo.lock, Cargo.lock,
+// Cargo.lock, Cargo.lock" (the rc6 full stage, B8).
 func namedList(items []string) string {
+	counts := map[string]int{}
+	var unique []string
+	for _, item := range items {
+		if counts[item] == 0 {
+			unique = append(unique, item)
+		}
+		counts[item]++
+	}
+	items = unique
+	for i, item := range items {
+		if counts[item] > 1 {
+			items[i] = fmt.Sprintf("%s (%d)", item, counts[item])
+		}
+	}
 	if len(items) <= coverageNamed {
 		return strings.Join(items, ", ")
 	}

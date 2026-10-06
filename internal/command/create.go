@@ -34,7 +34,8 @@ else from GitHub's detection; the long description; and the category,
 guessed from the build system unless --category names it. The description
 is the manifest's one line where it has one, else GitHub's. The
 maintainer is your config's maintainer, else nomaintainer, marked, with
-the line to set: the one the ports naming your GitHub login write. The new
+the line to set: the one the ports naming your GitHub login write. submit
+holds until each guess is confirmed and its mark removed. The new
 Portfile is staged, so the next check includes it. Nothing is committed.
 
 The branch is --branch, else the one checked out here; --new starts one.

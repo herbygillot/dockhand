@@ -63,7 +63,7 @@ var engineImports = map[string]string{
 	"internal/macports/portfile":    "Portfile vocabulary",
 	"internal/macports/version":     "how versions read, for an update crossing a major version",
 	"internal/macports/distfetch":   "a Portfile's archives as MacPorts shipped them, for diff --archive and stealth updates, and MacPorts' mirror",
-	"internal/macports/portcreate":  "new Portfiles, for create",
+	"internal/macports/portcreate":  "new Portfiles, for create, and the guesses submit holds for",
 	"internal/macports/commitmsg":   "commit messages, for tidy",
 	"internal/macports/commitrules": "the commit rules, for tidy, submit, and review",
 }

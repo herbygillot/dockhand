@@ -137,6 +137,28 @@ func TestGoGeneratorChecksExactManifestRequirements(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, result.Values[Go])
 }
+
+// A module before go 1.17 needn't require every module its build reads,
+// which go.sum has the source of, and go2port writes go.mod's alone: one
+// that leaves some out is refused, naming them (the rc6 full stage, B8:
+// countdown 1.5.0, missing rivo/uniseg).
+func TestGoGeneratorRefusesAnUnprunedGraphGoModLeavesShort(t *testing.T) {
+	t.Parallel()
+	sha := strings.Repeat("a", 64)
+	manifest := "module github.com/owner/fixture\ngo 1.14\nrequire github.com/mattn/go-runewidth v0.0.9\n"
+	sum := "github.com/mattn/go-runewidth v0.0.9 h1:a=\ngithub.com/mattn/go-runewidth v0.0.9/go.mod h1:b=\ngithub.com/rivo/uniseg v0.1.0 h1:c=\ngithub.com/rivo/uniseg v0.1.0/go.mod h1:d=\ngolang.org/x/text v0.3.0/go.mod h1:e=\n"
+	script := outputHelper(t, "go.vendors github.com/mattn/go-runewidth lock v0.0.9 sha256 "+sha)
+	in := Input{Archive: sourceArchive(t, map[string]string{"root/go.mod": manifest, "root/go.sum": sum}), Worksrcdir: "root", Package: "github.com/owner/fixture", Tag: "v1.5.0"}
+	_, err := Generate(t.Context(), Go, script, in)
+	require.ErrorContains(t, err, "go.mod says go 1.14, before 1.17")
+	require.ErrorContains(t, err, "go.sum has the source of github.com/rivo/uniseg too")
+	require.NotContains(t, err.Error(), "golang.org/x/text", "a module go.sum has only the go.mod of isn't built")
+
+	in.Archive = sourceArchive(t, map[string]string{"root/go.mod": strings.Replace(manifest, "go 1.14", "go 1.17", 1), "root/go.sum": sum})
+	_, err = Generate(t.Context(), Go, script, in)
+	require.NoError(t, err, "from go 1.17, go.mod lists what the build reads")
+}
+
 func TestCargoGeneratorRetainsRegistryAndGitDependencies(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)

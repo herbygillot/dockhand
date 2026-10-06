@@ -638,3 +638,20 @@ func TestSubmitSaysACheckWouldReuseTheEarlierOne(t *testing.T) {
 	require.NotEmpty(t, plan.Blocking)
 	require.Contains(t, plan.Blocking[0], "no check has finished for this commit's files; dockhand check reuses check-1's builds where a port reads the same files")
 }
+
+// What create marked unconfirmed holds a submission until a person
+// confirms it (the rc6 full stage, B8: serie said ready with six marks).
+func TestSubmitHoldsWhatsMarkedUnconfirmed(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": read(t, portfile) + "# dockhand: unconfirmed, from the forge's license detection\nlicense MIT\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: license")
+
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Contains(t, plan.Blocking, `textproc/jq/Portfile still marks 1 guess unconfirmed (license): confirm each, remove its "# dockhand: unconfirmed," line, and tidy`)
+}

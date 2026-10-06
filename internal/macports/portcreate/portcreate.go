@@ -23,6 +23,30 @@ const Modeline = "# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode
 // Unconfirmed begins the comment that marks a guessed line.
 const Unconfirmed = "# dockhand: unconfirmed,"
 
+// Marked are the guesses a Portfile still marks Unconfirmed, each named
+// by the option of the line the mark is above, or the mark's own words
+// where nothing follows it: what a person hasn't confirmed yet.
+func Marked(text []byte) []string {
+	lines := strings.Split(string(text), "\n")
+	var marked []string
+	for i, line := range lines {
+		why, ok := strings.CutPrefix(strings.TrimSpace(line), Unconfirmed)
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(why)
+		for _, next := range lines[i+1:] {
+			if next = strings.TrimSpace(next); next != "" && !strings.HasPrefix(next, "#") {
+				name, _, _ = strings.Cut(next, " ")
+				name = strings.TrimSuffix(name, "{")
+				break
+			}
+		}
+		marked = append(marked, name)
+	}
+	return marked
+}
+
 // Build is how the project builds, as its files say.
 type Build struct {
 	// System is cargo, go, cmake, meson, python, autotools, autoreconf, or
