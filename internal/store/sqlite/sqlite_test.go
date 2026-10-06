@@ -97,6 +97,22 @@ func (f fixture) run(t *testing.T, b model.Branch, r model.Revision, p model.Pla
 	return run
 }
 
+// A database a newer build migrates while this one has it open is refused
+// at this one's next transaction, as opening it would be: a serve started
+// on an older build went on with its own code against the newer schema
+// (the person's question, 2026-10-06).
+func TestANewerSchemaIsRefusedWhileOpen(t *testing.T) {
+	f := open(t)
+	db, err := sql.Open("sqlite", f.path)
+	require.NoError(t, err)
+	_, err = db.Exec(fmt.Sprintf("PRAGMA user_version=%d;", schemaVersion+1))
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	err = f.store.View(t.Context(), f.repo, func(store.Reader) error { return nil })
+	require.ErrorIs(t, err, store.ErrSchema)
+	require.ErrorContains(t, err, "newer than this dockhand supports")
+}
+
 func TestOpenCreatesReopensAndRefusesOtherDatabases(t *testing.T) {
 	f := open(t)
 	again, err := f.store.Register(t.Context(), "/src/macports-ports/.git")

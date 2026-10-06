@@ -582,15 +582,16 @@ type statusJSON struct {
 
 // serveJSON is serve's state as fields, beside its line.
 type serveJSON struct {
-	Running           bool `json:"running"`
-	PID               int  `json:"pid,omitempty"`
-	OpensPullRequests bool `json:"opens_pull_requests,omitempty"`
-	Queue             int  `json:"queue"`
-	Stopped           int  `json:"stopped"`
+	Running           bool   `json:"running"`
+	PID               int    `json:"pid,omitempty"`
+	OpensPullRequests bool   `json:"opens_pull_requests,omitempty"`
+	Build             string `json:"build,omitempty"`
+	Queue             int    `json:"queue"`
+	Stopped           int    `json:"stopped"`
 }
 
 func serveView(s engine.ServeState) serveJSON {
-	return serveJSON{Running: s.Running, PID: s.PID, OpensPullRequests: s.OpensPullRequests, Queue: s.Queue, Stopped: s.Stopped}
+	return serveJSON{Running: s.Running, PID: s.PID, OpensPullRequests: s.OpensPullRequests, Build: s.Build, Queue: s.Queue, Stopped: s.Stopped}
 }
 
 func nonNil[T any](values []T) []T {

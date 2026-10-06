@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -110,6 +111,19 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 	return cmd
 }
 
+// servedExecutable is the file a long-lived serve watches for an upgrade;
+// a drain ends by itself, and watches none. Tests stand another in.
+var servedExecutable = func(drain bool) string {
+	if drain {
+		return ""
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return executable
+}
+
 // serveOptions turns the configuration and flags into what serve does,
 // its lines going to out and its notices to macOS notifications when
 // notify, serve.notify less --no-notify, allows.
@@ -133,6 +147,8 @@ func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain, subm
 		Refresh:      serveRefresh,
 		CleanupEvery: serveCleanup,
 		MinFree:      file.Cleanup.Free(),
+		Build:        buildinfo.Current().String(),
+		Executable:   servedExecutable(drain),
 		Now:          serveNow,
 	}
 	if notify {
@@ -244,7 +260,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 			fmt.Fprintf(streams.Out, "%s isn't written into the agent, which anyone on this Mac can read; serve signs in to GitHub with the keychain's login (dockhand setup github).\n", token)
 		}
 	}
-	fmt.Fprintln(streams.Out, "After upgrading dockhand, or changing these settings, run serve --install again to restart it on the new build.")
+	fmt.Fprintln(streams.Out, "After changing these settings, run serve --install again; after an upgrade, serve restarts on the new build by itself.")
 	return nil
 }
 

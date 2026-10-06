@@ -412,6 +412,18 @@ func (s *Store) transaction(ctx context.Context, write bool, repo model.Reposito
 			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		}
 	}()
+	// A newer build may have migrated the database since this one opened
+	// it: a long-running serve went on with its own code against the newer
+	// schema. Every transaction reads the version first, and a newer one
+	// is refused as opening it would be, so serve stops and launchd starts
+	// the new build (the person's question, 2026-10-06).
+	var version int
+	if err := conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return storageError(err)
+	}
+	if version > schemaVersion {
+		return fmt.Errorf("%w: %s has schema %d, newer than this dockhand supports (%d); use a newer build", store.ErrSchema, s.path, version, schemaVersion)
+	}
 	if repo != "" {
 		var exists int
 		if err := conn.QueryRowContext(ctx, "SELECT 1 FROM repositories WHERE id=?", repo).Scan(&exists); err != nil {

@@ -108,6 +108,43 @@ func TestACheckIsHandedToServe(t *testing.T) {
 	require.Contains(t, served.String(), "serve: stopped\n")
 }
 
+// A serve whose executable is replaced, as port upgrade replaces it,
+// finishes what it runs and stops, saying why, so launchd starts the new
+// build; it had gone on running the old one (the rc3 full stage, A7).
+func TestServeStopsForAnUpgrade(t *testing.T) {
+	checkedBranch(t)
+	executable := filepath.Join(t.TempDir(), "dockhand")
+	require.NoError(t, os.WriteFile(executable, []byte("rc4"), 0o755))
+	real := servedExecutable
+	t.Cleanup(func() { servedExecutable = real })
+	servedExecutable = func(bool) string { return executable }
+	var served syncBuffer
+	done := make(chan error)
+	go func() {
+		done <- Run(t.Context(), []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+	}()
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, settle, 10*time.Millisecond)
+	// The new build is a new file at the same path.
+	next := executable + ".new"
+	require.NoError(t, os.WriteFile(next, []byte("rc5 build"), 0o755))
+	require.NoError(t, os.Rename(next, executable))
+	select {
+	case err := <-done:
+		require.NoError(t, err, "launchd restarts an agent that exits")
+	case <-time.After(settle):
+		t.Fatalf("serve didn't stop for the upgrade: %s", served.String())
+	}
+	require.Contains(t, served.String(), "serve: dockhand was upgraded; stopping once its checks end, so launchd starts the new build\nserve: stopped for the upgrade\n")
+}
+
+// status says when serve runs another build than its own.
+func TestStatusSaysServesOtherBuild(t *testing.T) {
+	t.Parallel()
+	line := serveWords(engine.ServeState{Running: true, PID: 7, Build: "v0.3.0-rc3"})
+	require.Contains(t, line, "serve: running (pid 7) · on dockhand v0.3.0-rc3, where this is ")
+	require.Equal(t, "serve: running (pid 7) · queue: empty", serveWords(engine.ServeState{Running: true, PID: 7}), "a serve that didn't say runs as this does")
+}
+
 func TestServeInstallsALaunchdAgent(t *testing.T) {
 	w := checkedBranch(t)
 	var calls [][]string

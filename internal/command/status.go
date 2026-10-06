@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -480,6 +481,11 @@ func serveWords(s engine.ServeState) string {
 	line := "serve: not running"
 	if s.Running {
 		line = fmt.Sprintf("serve: running (pid %d)", s.PID)
+		// A serve on another build than this command's, as one port
+		// upgrade left running, is said (the rc3 full stage, A7).
+		if build := buildinfo.Current().String(); s.Build != "" && s.Build != build {
+			line += fmt.Sprintf(" · on dockhand %s, where this is %s", s.Build, build)
+		}
 		if s.OpensPullRequests {
 			line += " · opens PRs for passing updates"
 		}

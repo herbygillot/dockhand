@@ -52,6 +52,12 @@ type ServeOptions struct {
 	Poll, Refresh, CleanupEvery time.Duration
 	// Now is the clock serve's daily work reads; time.Now when nil.
 	Now func() time.Time
+	// Executable is the file serve runs from, which it watches: replaced,
+	// as port upgrade replaces it, serve finishes its checks and stops,
+	// and launchd starts the new build. Empty watches none.
+	Executable string
+	// Build is the build serve runs, which status shows beside its own.
+	Build string
 }
 
 // ServeOutdated is serve.for_outdated, and whose ports it looks at.
@@ -191,7 +197,14 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		publishing = fmt.Sprintf("opens PRs for passing updates it prepared, at most %d a day", options.SubmitLimit)
 	}
 	s.say("serve: leading (pid %d) · builds on %s · %s", os.Getpid(), strings.Join(described, ", "), publishing)
-	e.announceServing(options.SubmitPassing)
+	e.announceServing(options.SubmitPassing, options.Build)
+	// The build serve started from: after port upgrade replaced it, a
+	// serve under launchd went on running the old one, and status said
+	// nothing of it (the rc3 full stage, A7). An upgrade is noticed between
+	// checks, never during one (Design v3 §11): serve starts no more, and
+	// stops once those running end, so launchd starts the new build.
+	started := executableFile(options.Executable)
+	upgraded := false
 	followed := &follower{s: s, reported: map[string]bool{}}
 	cleaned := &cleaner{s: s, session: session}
 	scanned := &outdatedScanner{s: s}
@@ -271,6 +284,22 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		submitter.last = time.Time{}
 	}
 	for running.Err() == nil {
+		if !upgraded && started != nil && replaced(options.Executable, started) {
+			upgraded = true
+			s.say("serve: dockhand was upgraded; stopping once its checks end, so launchd starts the new build")
+		}
+		if upgraded {
+			if len(inFlight) == 0 {
+				s.say("serve: stopped for the upgrade")
+				return nil
+			}
+			select {
+			case <-running.Done():
+			case f := <-done:
+				settle(f)
+			}
+			continue
+		}
 		if !options.Drain {
 			followed.maybe(running)
 			scanned.maybe(running)
@@ -708,11 +737,36 @@ func dayStart(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
+// executableFile is the file serve runs from, as it was when serve
+// started; nil where there's none to watch.
+func executableFile(path string) os.FileInfo {
+	if path == "" {
+		return nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+	return info
+}
+
+// replaced says whether the file at path is no longer the one serve
+// started from: another file, as an upgrade installs, or the same one
+// rewritten. A path with no file, mid-upgrade, isn't replaced yet.
+func replaced(path string, started os.FileInfo) bool {
+	now, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !os.SameFile(started, now) || !now.ModTime().Equal(started.ModTime()) || now.Size() != started.Size()
+}
+
 // Serving is what the leading serve says about itself, for status and
 // queue in other terminals.
 type Serving struct {
-	PID           int  `json:"pid"`
-	SubmitPassing bool `json:"submit_passing"`
+	PID           int    `json:"pid"`
+	SubmitPassing bool   `json:"submit_passing"`
+	Build         string `json:"build,omitempty"`
 }
 
 // ServeState is serve's state for the repository, as status and queue
@@ -723,8 +777,10 @@ type ServeState struct {
 	Running           bool
 	PID               int
 	OpensPullRequests bool
-	Queue             int
-	Stopped           int
+	// Build is the build the leading serve runs, where it said.
+	Build   string
+	Queue   int
+	Stopped int
 }
 
 // ServeState reads serve's state. Judging who is alive takes a session.
@@ -751,14 +807,14 @@ func (e *Engine) ServeState(ctx context.Context, session *coord.Session) (ServeS
 		state.Running, state.PID = true, leader.PID
 		// What an earlier serve said of itself isn't the leader's to say.
 		if serving, ok := e.lastServing(); ok && serving.PID == leader.PID {
-			state.OpensPullRequests = serving.SubmitPassing
+			state.OpensPullRequests, state.Build = serving.SubmitPassing, serving.Build
 		}
 	}
 	return state, nil
 }
 
-func (e *Engine) announceServing(submitPassing bool) {
-	if data, err := json.Marshal(Serving{PID: os.Getpid(), SubmitPassing: submitPassing}); err == nil {
+func (e *Engine) announceServing(submitPassing bool, build string) {
+	if data, err := json.Marshal(Serving{PID: os.Getpid(), SubmitPassing: submitPassing, Build: build}); err == nil {
 		_ = e.writeServeFile("serving.json", data)
 	}
 }

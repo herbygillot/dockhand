@@ -68,7 +68,7 @@ dockhand serve --drain                    # run the queued checks, then exit
 dockhand submit --passing                 # go through the ones that passed
 ```
 
-`--mine` means the ports whose `maintainers` line names you, from `maintainer` in `~/.dockhand/config.toml`. Left running, `dockhand serve` runs the checks you queue, such as with `check -d`, looks for new releases of your ports each day, and follows your pull requests' reviews and CI. It posts macOS notifications as checks finish and pull requests change, and `serve --install` makes it a launchd agent that starts at login. It opens no pull requests unless you ask it to, with `serve.submit_passing`, and then within a daily limit.
+`--mine` means the ports whose `maintainers` line names you, from `maintainer` in `~/.dockhand/config.toml`. Left running, `dockhand serve` runs the checks you queue, such as with `check -d`, looks for new releases of your ports each day, and follows your pull requests' reviews and CI. It posts macOS notifications as checks finish and pull requests change, and `serve --install` makes it a launchd agent that starts at login; when dockhand is upgraded, the agent finishes its checks and starts again on the new build. It opens no pull requests unless you ask it to, with `serve.submit_passing`, and then within a daily limit.
 
 ## Other kinds of change
 
