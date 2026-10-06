@@ -13,6 +13,9 @@ act() {
 		dh_json create "$url" --new || continue
 		name=$(jq -r '.result.branch.name // empty' "$DH_LAST_JSON")
 		dh check -b "$name" || :
+		# submit previews commits, so the new port is tidied first, as B4
+		# tidies (the rc6 full stage).
+		dh tidy -b "$name" -y || :
 		dh_json submit -b "$name" --plan || :
 	done <"$ROW_DIR/projects"
 }
