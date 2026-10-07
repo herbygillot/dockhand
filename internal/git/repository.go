@@ -76,7 +76,7 @@ func (r *Repository) run(ctx context.Context, input []byte, env []string, args .
 	command := r.command(ctx, env, args...)
 	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: args[0], Path: command.Path, Args: command.Args[1:], Dir: command.Dir, Env: command.Env, Stdin: bytes.NewReader(input), ExtraFiles: command.ExtraFiles, WaitDelay: command.WaitDelay})
 	if err != nil {
-		return nil, sshRefused(args[0], err)
+		return nil, httpsUnauthenticated(args[0], sshRefused(args[0], err))
 	}
 	if args[0] == "for-each-ref" && len(result.Stderr) != 0 {
 		return nil, &subprocess.Error{Tool: "git", Command: args[0], Stderr: strings.TrimSpace(string(result.Stderr)), Cause: errors.New("reference lookup reported a warning")}
@@ -135,6 +135,27 @@ var ErrSSHRefused = errors.New("git: the SSH server refused this Mac's keys")
 // 2026-10-04: with the agent's key gone, submit --plan stopped on
 // "ssh_askpass: exec(/usr/X11R6/bin/ssh-askpass) … Permission denied
 // (publickey)"). ssh's words are kept in the error, after it.
+// ErrNoHTTPSCredentials is git holding no credentials for an HTTPS remote,
+// where it may not ask at a terminal.
+var ErrNoHTTPSCredentials = errors.New("git has no credentials for this HTTPS remote")
+
+// httpsUnauthenticated says it plainly, with what to do, rather than as
+// git's raw "fatal: could not read Username for 'https://github.com':
+// terminal prompts disabled" (the rc6 full stage, D-C6). git documents no
+// code for it, so its words are read: an exception to depending on
+// documented interfaces alone, as sshRefused's are. git's words are kept
+// in the error, after it.
+func httpsUnauthenticated(command string, err error) error {
+	failed := new(subprocess.Error)
+	if !errors.As(err, &failed) {
+		return err
+	}
+	if !strings.Contains(failed.Stderr, "could not read Username for '") && !strings.Contains(failed.Stderr, "Authentication failed for '") {
+		return err
+	}
+	return fmt.Errorf("%w (git %s); set up a credential helper, as git config --global credential.helper osxkeychain, or point the fork's remote at SSH: %w", ErrNoHTTPSCredentials, command, err)
+}
+
 func sshRefused(command string, err error) error {
 	failed := new(subprocess.Error)
 	if !errors.As(err, &failed) || !strings.Contains(failed.Stderr, "Permission denied (publickey") {

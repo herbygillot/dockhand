@@ -1,6 +1,8 @@
 package git_test
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,4 +80,22 @@ func TestAnSSHRefusalIsSaidPlainly(t *testing.T) {
 	require.ErrorIs(t, err, git.ErrSSHRefused)
 	require.ErrorContains(t, err, "is your key loaded? ssh-add -l")
 	require.ErrorContains(t, err, "Permission denied (publickey)")
+}
+
+// An HTTPS remote git holds no credentials for, and may not ask about at
+// a terminal, is said plainly, with what to do, and git's own words kept
+// after it (the rc6 full stage, D-C6).
+func TestMissingHTTPSCredentialsAreSaidPlainly(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	repo := snapshotRepo(t)
+	_, err := repo.RemoteHead(t.Context(), server.URL+"/someone/macports-ports.git", "candidate")
+	require.ErrorIs(t, err, git.ErrNoHTTPSCredentials)
+	require.ErrorContains(t, err, "set up a credential helper")
+	require.ErrorContains(t, err, "could not read Username")
 }
