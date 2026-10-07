@@ -543,6 +543,10 @@ func comparisonLines(comparisons []engine.PortComparison) []string {
 
 func pushWords(plan engine.SubmitPlan) string {
 	switch {
+	// What the blocker holds isn't said as what the push would do (the
+	// rc6 full stage, D-S1: "replaces the fork's branch at d2b5022 …").
+	case plan.OthersPushed != "":
+		return "won't push: someone else pushed " + engine.Short(plan.OthersPushed)
 	case plan.RemoteHead.Exists && plan.RemoteHead.Object == plan.Commit:
 		return "nothing new; the fork already has " + engine.Short(model.ObjectID(plan.Commit))
 	case plan.Replaces:

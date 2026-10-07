@@ -160,4 +160,14 @@ done
 		exit 1
 	fi
 ) || fail=1
+# No row takes the first dockhand/* branch for its own: alphabetical, and
+# archived branches keep their refs, so it was another row's (the rc6 full
+# stage: D-S4 put its hand commit on b10-broken). own_branch is the row's.
+if picked=$(grep -nE "branch --list 'dockhand/\*'.*\| *head" "$here"/rows/*.sh); then
+	echo "selftest: rows take the first dockhand/* branch rather than own_branch:"
+	printf '%s\n' "$picked"
+	fail=1
+else
+	echo "selftest: no row takes the first dockhand/* branch for its own"
+fi
 exit "$fail"

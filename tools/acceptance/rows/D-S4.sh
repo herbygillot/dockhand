@@ -5,7 +5,10 @@ port() { printf '%s' "${ACCEPT_RUST_PORT:?}"; }
 act() {
 	dh_setup update "$(port)" --new || return 0
 	local dir portfile
-	dir=$("$DH_BIN" path "$(git -C "$MACPORTS_TREE" branch --list 'dockhand/*' --format='%(refname:short)' | head -1)") || return 0
+	# The row's own branch: the first dockhand/* ref, alphabetically, was
+	# b10-broken, archived, and the hand commit went on it (the rc6 full
+	# stage).
+	dir=$("$DH_BIN" path "$(own_branch)") || return 0
 	portfile=$(find "$dir" -path "*/$(port)/Portfile" | head -1)
 	allow_change "$portfile"
 	printf 'notes\n' >"$dir/HAND.txt"

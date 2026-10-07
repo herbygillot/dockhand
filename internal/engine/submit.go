@@ -90,6 +90,9 @@ type SubmitPlan struct {
 	// Replaces is true when the push replaces history rather than adding
 	// to it.
 	Replaces bool
+	// OthersPushed is what someone else pushed to the pull request since
+	// dockhand last did, which holds the push; empty where none did.
+	OthersPushed model.ObjectID
 	// Existing is the pull request already open for the branch.
 	Existing *forge.PullRequestObservation
 	// Earlier is a pull request from the same head branch name that is
@@ -490,6 +493,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 		}
 	}
 	if last := plan.Branch.PullRequest; last != nil && last.Pushed != "" && pr.RemoteHead != last.Pushed && string(pr.RemoteHead) != plan.Commit {
+		plan.OthersPushed = pr.RemoteHead
 		plan.Blocking = append(plan.Blocking, fmt.Sprintf("someone else pushed to #%d: it is at %s, and dockhand last pushed %s. Fetch it (git fetch %s %s) and compare before submitting again; nothing will be pushed over it",
 			pr.Ref.Number, short(pr.RemoteHead), short(last.Pushed), remoteName, plan.RemoteBranch()))
 	}

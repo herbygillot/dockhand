@@ -30,7 +30,7 @@ act() {
 }
 assert() {
 	local branch
-	branch=$(git -C "$MACPORTS_TREE" branch --list 'dockhand/*' --format='%(refname:short)' | head -1)
+	branch=dockhand/$(own_branch)
 	if [ -f "$ROW_DIR/hook.ran" ]; then
 		row_fail "a global hook ran in dockhand's commit"
 	elif [ "$(cat "$ROW_DIR/json/1.json.exit" 2>/dev/null)" != 0 ]; then

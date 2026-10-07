@@ -6,9 +6,9 @@
 port() { printf '%s' "${ACCEPT_RUST_PORT:?}"; }
 act() {
 	dh_setup update "$(port)" --new || return 0
-	local branch
-	branch=$(git -C "$MACPORTS_TREE" branch --list 'dockhand/*' --format='%(refname:short)' | head -1)
-	DI3_BRANCH=${branch#dockhand/}
+	# The row's own branch: the first dockhand/* ref, alphabetically, was
+	# another row's, archived (the rc6 full stage, D-S4).
+	DI3_BRANCH=$(own_branch)
 	DOCKHAND_FAILPOINT=tidy.prepared:kill DH_BIN="${DH_FAILPOINT_BIN:?}" dh tidy -b "$DI3_BRANCH" -y || :
 	dh_json status "$DI3_BRANCH" || :
 	dh_json tidy -b "$DI3_BRANCH" -y || :

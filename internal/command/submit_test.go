@@ -927,3 +927,12 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	require.Contains(t, out, "jq-update: removed ada/macports-ports:dockhand/jq-update\n")
 	require.DirExists(t, filepath.Join(w.home, "Source", "macports-branches", "other-work"), "the archived branch's worktree stays")
 }
+
+// The Push line says what the blocker holds, not the push it stops (the
+// rc6 full stage, D-S1).
+func TestThePushLineSaysItWontPushOverAnotherPush(t *testing.T) {
+	t.Parallel()
+	plan := engine.SubmitPlan{Commit: strings.Repeat("7", 40), Replaces: true, OthersPushed: model.ObjectID(strings.Repeat("d", 40))}
+	plan.RemoteHead.Exists, plan.RemoteHead.Object = true, strings.Repeat("d", 40)
+	require.Equal(t, "won't push: someone else pushed ddddddd", pushWords(plan))
+}

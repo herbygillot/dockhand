@@ -208,6 +208,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, plan.Blocking, 1)
 	require.Contains(t, plan.Blocking[0], "someone else pushed to #34901")
+	require.NotEmpty(t, plan.OthersPushed, "the preview's Push line says it won't push (the rc6 full stage, D-S1)")
 }
 
 func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {
