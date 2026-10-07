@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -69,8 +70,16 @@ macOS Keychain. GH_TOKEN or GITHUB_TOKEN, when set, take precedence over it.`,
 	return cmd
 }
 
+// authStatusJSON is auth status's result: the account, where its token
+// comes from, and, for the Keychain's login, until when it renews itself.
+type authStatusJSON struct {
+	Account     string     `json:"account"`
+	Source      string     `json:"source"`
+	RenewsUntil *time.Time `json:"renews_until,omitempty"`
+}
+
 func authStatusCommand(streams Streams) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show which GitHub account submit would use",
 		Args:  cobra.NoArgs,
@@ -80,15 +89,22 @@ func authStatusCommand(streams Streams) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			result := authStatusJSON{Account: account, Source: string(client.CredentialSource())}
 			fmt.Fprintf(streams.Out, "Logged in to github.com as %s, using %s.\n", account, client.CredentialSource())
 			if client.CredentialSource() == github.SourceKeychain {
 				if login, err := github.SavedLogin(cmd.Context(), authStore); err == nil {
 					fmt.Fprintf(streams.Out, "It renews itself until %s, six months from its last use.\n", login.RefreshExpiry.Local().Format("2 January 2006"))
+					result.RenewsUntil = &login.RefreshExpiry
 				}
 			}
+			streams.emit(result)
 			return nil
 		},
 	}
+	// The one auth command whose result a script reads (the rc6 full
+	// stage's D-C5 asked it for --json, and was refused).
+	supportsJSON(cmd)
+	return cmd
 }
 
 func authLogoutCommand(streams Streams) *cobra.Command {

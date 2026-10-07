@@ -108,6 +108,16 @@ func TestAuthLoginStatusAndLogout(t *testing.T) {
 	out, _, err = dockhand(t, "auth", "status")
 	require.NoError(t, err)
 	require.Equal(t, "Logged in to github.com as ada, using Dockhand macOS Keychain.\nIt renews itself until "+until+", six months from its last use.\n", out)
+	// With --json, the same, for a script (the rc6 full stage, D-C5).
+	out, _, err = dockhand(t, "--json", "auth", "status")
+	require.NoError(t, err)
+	var envelope struct {
+		Result authStatusJSON `json:"result"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &envelope), out)
+	require.Equal(t, "ada", envelope.Result.Account)
+	require.Equal(t, "Dockhand macOS Keychain", envelope.Result.Source)
+	require.NotNil(t, envelope.Result.RenewsUntil)
 
 	out, _, err = dockhand(t, "auth", "logout")
 	require.NoError(t, err)
