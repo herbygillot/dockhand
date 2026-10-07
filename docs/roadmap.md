@@ -29,9 +29,15 @@ The weak point the review found is the information passed between steps. Several
 **After the release, in order** (the person's "Fixes first", 2026-10-07, on the architecture review's slotting; the project's plan/architecture-after-release.md):
 
 1. **Fixes, released as v0.3.1.** C4c, C4d, X4, X5, H1, and H2, and bump refusing a tidy plan that isn't unambiguous, as serve's preparation does (M3's test found the difference; the person's "In v0.3.1", 2026-10-07). X2, L2b, L3a, L3e, L5, H8, and M3's test went into rc7 instead (batches 110 and 111).
+   From Codex's gcc15 group update (field testing, 2026-10-07, with a build of 464d583c, 86 commits behind main; checked against main at 9201a890), five ride along:
+   - **adopt names the ports the working tree changes.** "0 commits above master …, changing no ports yet" was said of a tree with edits to three ports: `describeScope` (command/work.go) reads only what's committed. It says the uncommitted edits too, "with edits not yet committed to gcc15, libgcc15, gcc15-libcxx".
+   - **A check's `--include` counts when status compares files.** A check that passed with an untracked patch included read "files have changed since" in status, which asked for another check of the same files: the comparison leaves out what the snapshot included. It reads the snapshot's included paths, or says plainly that an included untracked file isn't compared.
+   - **An untracked file in a changed port's directory is said before the VM boots,** as a new patch in `files/` is, with what keeps it: `--include <path>` for this check, or `git add`. Today it's left out of the check silently.
+   - **A kept dependency archive that's gone is named, and its record dropped.** Before a guest is given them, dependency archives whose file is missing or changed are already skipped (batch 90), silently, so the record stays and each check skips it again. The skip names the port and drops the record. Attempt 1 of check-264 failing after the boot, where attempt 2 recovered, isn't explained by that skip, which 464d583c already had; it needs that run's logs to say why.
+   - **status --json says what `latest_check` is while a check runs:** null today, which reads as no check. It names the running check, or the field's documentation says it's the newest finished one, beside `active`.
 2. **The three items approved on 2026-10-05** (from Codex's feedback, checked at 82551b6d):
    - **check in a checkout dockhand doesn't track**, by the command-line UX review's §2 rule, a branch started where nothing else could be meant: on a terminal, a Git branch someone made is offered to `adopt`, and a detached HEAD a branch started at HEAD named for its port; a script is refused, naming the command.
-   - **Live progress from the guest** in `wait` and `watch`: the port it's building and MacPorts' phase, which the Tart provider reads only once a target finishes (`buildenv/tart/provider.go`'s follow). Streaming the whole log comes second.
+   - **Live progress from the guest** in `wait` and `watch`: the port it's building and MacPorts' phase, which the Tart provider reads only once a target finishes (`buildenv/tart/provider.go`'s follow). Streaming the whole log comes second, as `logs` following a running target, where it says "recorded no log" until the target ends (Codex's gcc15 note 5, 2026-10-07, after the Vx run's note 6).
    - **The libraries a build links against the lib dependencies it declares**, a notice first: each Mach-O the port installs, its links under /opt/local mapped to the ports that own them, with what the guest reports active (`guestResult.Active`), and the ports it links but doesn't declare said. Whether `port -t`, MacPorts' trace mode, is the mechanism or a complement is weighed first.
 3. **M1, the engine's file moves,** as one mechanical batch: no change of behaviour, and no new exports. The rule of moving code only when it's touched gives way for these moves alone, and the engine stays one package.
 4. **Structural, C3 first:** the evaluator's type assertions replaced with `Evaluator` and `Upstream` fields, the narrow interfaces kept as parameter types, since a capability missing today turns change records off without a word. Then X1, with X3's engine half and H9's fixtures: one `engine.Dependencies` that command fills, ending the package-global test seams and dropping eight engine imports, so command's tests can run in parallel, file by file. This replaces "until wanted".
@@ -720,6 +726,10 @@ What dockhand could grow into, and what to redesign. [Directions](directions.md)
 Each step still becomes Next's work at the person's word.
 
 ## Later
+
+From Codex's gcc15 group update (2026-10-07), after the release:
+
+- **A binary older than the checkout it's run in says so** (Codex's gcc15 note 7, 2026-10-07: a build of 464d583c, 86 commits behind main, met fixes main already had). dockhand knows the commit it was built from; where the ports tree's own checkout isn't dockhand's, the comparison needs dockhand's source checkout, which only a development build has, so it's a note for development builds alone, "this dockhand is N commits behind <checkout>", or a `version` line. A release names its tag, which is enough.
 
 From field testing's batch 15 (2026-10-06, at 6f9d714d), after the release, none harm:
 
