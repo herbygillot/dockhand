@@ -103,3 +103,66 @@ func TestServeSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	scanner.maybe(t.Context())
 	require.Len(t, said, 1, "said once")
 }
+
+// limitedReader is upstream discovery under GitHub's rate limit: the
+// day's look finds jq outdated and fd held by the limit, until lifted,
+// when fd is found outdated, unless the limit holds again.
+type limitedReader struct {
+	asked   []OutdatedRequest
+	lifted  time.Time
+	holdsOn bool
+}
+
+func (l *limitedReader) Outdated(_ context.Context, _ model.ObjectID, request OutdatedRequest) ([]OutdatedPort, error) {
+	l.asked = append(l.asked, request)
+	fd := OutdatedPort{Port: "fd", Current: "10.1", Problem: "GitHub's rate limit for your login resets in 18 minutes", RetryAt: l.lifted}
+	if len(request.Ports) > 0 {
+		if !l.holdsOn {
+			fd = OutdatedPort{Port: "fd", Current: "10.1", Newest: "10.2", Outdated: true}
+		}
+		return []OutdatedPort{fd}, nil
+	}
+	return []OutdatedPort{{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true}, fd}, nil
+}
+
+// The day's look a rate limit cut short goes over those ports once, just
+// after it lifts, and isn't done until then; a limit that holds again
+// leaves the day done without them, said once (the rc6 full stage, D-N4).
+func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
+	t.Parallel()
+	for _, holdsOn := range []bool{false, true} {
+		f := setup(t)
+		e := f.open(t)
+		e.Forge = forgetest.New("", "")
+		morning := time.Date(2026, 10, 7, 8, 0, 0, 0, time.Local)
+		reader := &limitedReader{lifted: morning.Add(18 * time.Minute), holdsOn: holdsOn}
+		e.OutdatedReader = reader
+		now := morning
+		var said []string
+		s := newServer(e, ServeOptions{Outdated: ServeOutdated{Maintainers: []string{"@ada"}, Mode: "list"}, Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return now }})
+		scanner := &outdatedScanner{s: s}
+		scanner.maybe(t.Context())
+		require.Contains(t, said, "serve: GitHub's rate limit kept 1 port from the day's look; it looks at them again at "+morning.Add(19*time.Minute).Format("15:04 MST"))
+		_, err := os.Stat(e.serveFile("outdated.stamp"))
+		require.ErrorIs(t, err, os.ErrNotExist, "the day isn't done")
+
+		now = morning.Add(5 * time.Minute)
+		scanner.maybe(t.Context())
+		require.Len(t, reader.asked, 1, "not before the limit lifts")
+
+		now = morning.Add(20 * time.Minute)
+		said = nil
+		scanner.maybe(t.Context())
+		require.Len(t, reader.asked, 2)
+		require.Equal(t, []string{"fd"}, reader.asked[1].Ports, "only what the limit held")
+		_, err = os.Stat(e.serveFile("outdated.stamp"))
+		require.NoError(t, err, "the day is done once the retry ran")
+		if holdsOn {
+			require.Contains(t, said, "serve: GitHub's rate limit kept 1 port from the day's look again; it's done for today without them")
+			continue
+		}
+		look, ok := e.LastOutdatedLook()
+		require.True(t, ok)
+		require.ElementsMatch(t, []string{"jq", "fd"}, look.Outdated, "the retry adds to the day's look")
+	}
+}

@@ -655,6 +655,11 @@ func uncertainWords(last OutdatedLook, look OutdatedLook) string {
 type outdatedScanner struct {
 	s        *server
 	reported string
+	// retryAt is when the day's look goes over the ports a rate limit
+	// kept it from checking, retry, once, just after the limit lifts; the
+	// day isn't done until then (the rc6 full stage, D-N4).
+	retryAt time.Time
+	retry   []string
 }
 
 // hint is serve's line for a person whose config names no maintainer.
@@ -684,11 +689,17 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	if info, err := os.Stat(e.serveFile("outdated.stamp")); err == nil && !info.ModTime().Before(due) {
 		return
 	}
+	retrying := len(o.retry) > 0
+	if retrying && now.Before(o.retryAt) {
+		return
+	}
 	// The day's look is stamped once it has run, so a serve stopped part
 	// way through looks again; one that failed is stamped too, and tried
-	// the next day, its problem said once.
+	// the next day, its problem said once. One a rate limit cut short
+	// isn't, until its retry has run.
+	stamp := true
 	defer func() {
-		if ctx.Err() == nil {
+		if ctx.Err() == nil && stamp {
 			_ = e.stampServeFile("outdated.stamp", now)
 		}
 	}()
@@ -704,10 +715,23 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		report(o.hint(ctx))
 		return
 	}
-	found, err := e.Outdated(ctx, OutdatedRequest{Maintainers: settings.Maintainers})
+	request := OutdatedRequest{Maintainers: settings.Maintainers}
+	if retrying {
+		request = OutdatedRequest{Ports: o.retry}
+		o.retry, o.retryAt = nil, time.Time{}
+	}
+	found, err := e.Outdated(ctx, request)
 	if err != nil {
 		report(fmt.Sprintf("serve: looking for new releases of your ports: %v", err))
 		return
+	}
+	if limited, lifts := found.RateLimited(); len(limited) > 0 {
+		if !retrying {
+			o.retry, o.retryAt, stamp = limited, lifts.Add(time.Minute), false
+			o.s.say("serve: GitHub's rate limit kept %s from the day's look; it looks at them again at %s", prose.Plural(len(limited), "port"), o.retryAt.Local().Format("15:04 MST"))
+		} else {
+			o.s.say("serve: GitHub's rate limit kept %s from the day's look again; it's done for today without them", prose.Plural(len(limited), "port"))
+		}
 	}
 	var names, uncertain []string
 	setAside := map[string][]string{}
@@ -724,6 +748,14 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	}
 	last, _ := e.LastOutdatedLook()
 	look := OutdatedLook{CheckedAt: now, Master: string(found.Master), Outdated: names, Uncertain: uncertain, SetAside: setAside}
+	// A retry's look adds to the day's, which it went over only part of.
+	if retrying {
+		for _, name := range last.Outdated {
+			if !slices.Contains(look.Outdated, name) {
+				look.Outdated = append(look.Outdated, name)
+			}
+		}
+	}
 	if data, err := json.Marshal(look); err == nil {
 		_ = e.writeServeFile("outdated.json", data)
 	}

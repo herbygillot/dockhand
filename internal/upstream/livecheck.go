@@ -25,7 +25,7 @@ func (s *Service) discoverOverridden(ctx context.Context, port macports.PortInfo
 	result = Result{CurrentVersion: port.Version, Assessment: Unknown, ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	defer func() {
 		if err != nil {
-			result.Detail = err.Error()
+			result.Detail, result.RetryAt = err.Error(), retryAt(err)
 		}
 	}()
 	// The livecheck names versions in the source's spelling, as Base

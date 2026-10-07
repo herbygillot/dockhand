@@ -60,7 +60,7 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	result = Result{CurrentVersion: port.Version, Assessment: Unknown, ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	defer func() {
 		if err != nil {
-			result.Detail = err.Error()
+			result.Detail, result.RetryAt = err.Error(), retryAt(err)
 		}
 	}()
 	if port.OwnVersion() {

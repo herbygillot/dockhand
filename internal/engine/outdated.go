@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
@@ -37,8 +38,10 @@ type OutdatedPort struct {
 	// is a person's call, and Newest is the first of them. It is neither
 	// current nor to be updated by itself.
 	Uncertain []SetAside
-	// Problem says why the port could not be checked.
+	// Problem says why the port could not be checked; RetryAt, when a
+	// rate limit that kept it from being checked lifts, zero where none.
 	Problem string
+	RetryAt time.Time
 	Release *model.Release
 	// With is the subport whose check stands for this one, which shares
 	// its Portfile's release; it moves with that one's update.
@@ -91,6 +94,22 @@ func (r OutdatedReport) Unchecked() []OutdatedPort {
 		}
 	}
 	return unchecked
+}
+
+// RateLimited are the ports a rate limit kept from being checked, and
+// when the last of those limits lifts.
+func (r OutdatedReport) RateLimited() ([]string, time.Time) {
+	var ports []string
+	var lifts time.Time
+	for _, port := range r.Ports {
+		if port.Problem != "" && !port.RetryAt.IsZero() {
+			ports = append(ports, port.Port)
+			if port.RetryAt.After(lifts) {
+				lifts = port.RetryAt
+			}
+		}
+	}
+	return ports, lifts
 }
 
 func (r OutdatedReport) UncheckedWords() string {
@@ -163,7 +182,7 @@ func outdatedPort(port outdated.Port) OutdatedPort {
 	case upstream.OwnVersion:
 		entry.OwnVersion = true
 	case upstream.Unknown:
-		entry.Problem = port.Detail
+		entry.Problem, entry.RetryAt = port.Detail, port.RetryAt
 		if entry.Problem == "" {
 			entry.Problem = "its newest release could not be found"
 		}

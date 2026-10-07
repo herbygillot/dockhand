@@ -21,7 +21,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	result = Result{CurrentVersion: port.Version, Assessment: Unknown, ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	defer func() {
 		if err != nil {
-			result.Detail = err.Error()
+			result.Detail, result.RetryAt = err.Error(), retryAt(err)
 		}
 	}()
 	// The listing is compared against the source's own spelling of the

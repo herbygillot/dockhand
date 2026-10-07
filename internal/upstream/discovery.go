@@ -108,6 +108,9 @@ type Result struct {
 	Evidence   []Observation
 	Detail     string
 	ObservedAt time.Time
+	// RetryAt is when a rate limit that kept the port from being checked
+	// lifts; zero where none did.
+	RetryAt time.Time
 }
 
 type Service struct {
@@ -153,4 +156,14 @@ func (s *Service) repository(port macports.PortInfo, automatic bool) (portsource
 		return spec, nil, fmt.Errorf("upstream: catalog returned a different source")
 	}
 	return spec, repository, nil
+}
+
+// retryAt is when a rate limit that stopped a discovery lifts, for serve's
+// daily look to try again then (the rc6 full stage, D-N4); zero for any
+// other error.
+func retryAt(err error) time.Time {
+	if limited := new(forge.RateLimitError); errors.As(err, &limited) {
+		return limited.RetryAt
+	}
+	return time.Time{}
 }
