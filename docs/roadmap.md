@@ -24,6 +24,43 @@ The weak point the review found is the information passed between steps. Several
 
 ## Next
 
+**Now: the prime-time pass** per the project's plan/prime-time.md, commands frozen and fixes only. The full stage runs as dhtest on the M1: v0.3.0-rc1 to rc6 were tagged, and run 4, on rc6, ran 79 rows with no harms; every product finding it made is fixed on main, through 9213fc80, with CI green. Left: rc7 on the person's go; the rows on the rerun list; B7 and C1 overnight; D-I5 with the person at the Mac, with F3's rename, F5, F7, and F10; S1's 24-hour soak; `full.sh --end`; then v0.3.0 on the commit that passes, and macports/macports-ports#34756, which is unchanged until then.
+
+**After the release, in order** (1 to 3 from Codex's feedback, checked at 82551b6d and approved by the person on 2026-10-05, ahead of layer 1):
+
+1. **check in a checkout dockhand doesn't track**, by the command-line UX review's §2 rule, a branch started where nothing else could be meant: on a terminal, a Git branch someone made is offered to `adopt`, and a detached HEAD a branch started at HEAD named for its port; a script is refused, naming the command.
+2. **Live progress from the guest** in `wait` and `watch`: the port it's building and MacPorts' phase, which the Tart provider reads only once a target finishes (`buildenv/tart/provider.go`'s follow). Streaming the whole log comes second.
+3. **The libraries a build links against the lib dependencies it declares**, a notice first: each Mach-O the port installs, its links under /opt/local mapped to the ports that own them, with what the guest reports active (`guestResult.Active`), and the ports it links but doesn't declare said. Whether `port -t`, MacPorts' trace mode, is the mechanism or a complement is weighed first.
+4. **archive says which ignored files its worktree removal deletes** (the person's `.gitignore` item, 2026-10-04; ordered after the release on 2026-10-07). `git worktree remove --force` deletes a worktree's ignored files with it, which nothing lists; listing them in archive's output would be enough.
+5. **Layer 1** with the model's steps 2 and 3 inside it, each replayed on terraform, py-lmdb, qemu, perl5 and the stub: the ledger and finding kinds with the change record as first evidence (proved on the three contradictions plus terraform), and with it, as 5.1, one shared revision analysis that the record, the assessments, and the plan read instead of each deriving its own (Codex's review of 386ac2cc, finding 4; the person's word, 2026-10-03 04:39Z); probe-located revision and checksums, subsuming R2; fidelity as strict predicted versus observed with the decision record, retiring `VersionFollowers`, `belowSource`, `followsObsolete` and revision sharing, with `--shared-release` becoming a needs-judgment finding; readiness per action and the `Next:` contract; then the UX on it (§10's marks, §9, §3, §7, and §4 last).
+6. **Then** the survey rules as counterfactual evaluations, each a notice first; the trust rule in code, after which `review` and `adopt --pr` move onto the record and drop the experimental notice; the person's voice; and after those, the deferred `create` work and the targeted upstream fixes (forges, git-fetched ports, crate pins).
+
+Unchanged: layer 3 is held, check builds every subport, and the won't-do list stands.
+
+What Next held before, finished from 2026-09-27 to 2026-10-04, is under [Done](#done).
+
+### Alongside, on the Mac
+
+These need MacPorts Base, whole-tree surveys, or VMs, so they run as the Mac allows, independent of the order above.
+
+- **The oracle's remaining phases** ([scope](oracle.md)):
+  - phase 3, the workspace rule: reads inside the tree materialize on demand, and reads outside it are refused;
+  - phase 6, the bootstrap under the environment contract;
+  - `java_home` answered from the facts table;
+  - 4b, `with-deps`, only when a survey shows a registry answer reaching what an update edits;
+  - the comparison with a fresh Tart guest, possible since the v3 Tart provider;
+  - decision D2.
+- **Host-independence foundations** (the previous step 6):
+  - the evaluator's clean launch environment (16);
+  - the environment contract, and a disposable `portdbpath`;
+  - normalized records;
+  - `base212`, and a master preview identified by commit (39).
+- **The survey's parallelism.** It ran on 7.2 cores on 2026-09-22 against 10.7 at the baseline, unexplained. A mutex and CPU profile over one category comes before the next whole-tree run.
+
+## Done
+
+Next's finished work, 2026-09-27 to 2026-10-04, as it was ordered then, each with its activity note.
+
 **The implementation plan, as the person agreed it on 2026-10-02 23:33Z** ("I think I agree with your take on all 5"; the project's plan/implementation-plan.md, against 7b14d4e2). It is the queue from batch 59 on, and it revises the order below where they differ:
 
 0. **Batch 59's merged patches** (done, [note](activity/2026-10-02-batch-59.md)). `create` from registry names and `--like` were to move after the release; registry names had landed as batch 60 ([note](activity/2026-10-02-batch-60.md)) before the plan reached this thread, and stay, at the person's word (2026-10-02 23:46Z): the model change touches nothing in `create` or `internal/registry`; review them once step 1 is in, before the pass. `--like` waits.
@@ -39,9 +76,7 @@ The weak point the review found is the information passed between steps. Several
 
    The quick stage first runs once H1 to H4 are in. H6 and H7 may overlap release prep. Nothing in acceptance runs until the person gives the signal.
 3. **Release prep, the bar's code items:** the `Next:` rule (a `Next:` line names only a command that would accept the branch as it stands, or is left out), as a sweep of every `Next:` with a test each, rebase on a merged PR and the checksums dead end in command/author.go among them; the experimental notice on `adopt --pr` and `review`, saying whose Portfile they evaluate; the README's supported-scope section and a known-issues stub; the Intel CI job (prime-time row A6); and a `--plan` dry run of prime-time section E. With them, field testing batch 10's findings (2026-10-02, 21 ports through `update --outdated`, `serve --drain`, and submit, PRs #35140 to #35160, and `bump` for kubescape and skopeo): (1) skopeo's "Upstream moved" notice from update is lost by `bump`, reaching neither submit's preview nor the PR, and belongs in both, or as a `!` hold in bump; (2) 1password-cli's binary distfile reads as "archive/tar: invalid tar header" under a temporary name, where it should say the port ships a binary package with nothing to compare; (3) dolt, tart, and helm's three subports printed no upstream line in a batch, neither compared nor not, where every port should have one, as a single update does; (4) serve still prints a check's "passed" line twice (check-130 s2n-tls), so batch 53's deduplication left the cause. And tart 2.40.1 (#35157): it passed a check on macOS 26 alone, `check.on`'s default being this Mac's release, and failed MacPorts CI on macos-15, using a vmnet API only the macOS 26 SDK has. Chosen: submit's preview and the pull request say which of MacPorts CI's releases (14, 15, 26) no check covered, "checked on 26 only; CI also builds 14 and 15", and `check.on` accepts `ci` for those releases; the default stays this Mac's, since tripling every check's time is the person's to choose. The quick stage runs against each fix as it lands. Done 2026-10-03 with batch 73 ([note](activity/2026-10-03-batch-73.md)): the `Next:` sweep, the notice, the README sections, the Intel job, MacPorts CI's releases, and findings 1 to 3; finding 4 didn't recur in the quick stage and stays a known issue. Left in step 3, then: section E's dry run, run as the quick stage's E rows on the person's signal, and the known-issues list filled from the quick stage's results; both done by 2026-10-04, when the quick stage at 404ac160 met its bar, no fail, no blocker, and no invariant broken (the project library's `plan/quick-run-2026-10-04-e.md`), its E rows passing or refusing well and its two known issues, pomo's move and py-lmdb's subports, in the README. Step 3 is finished; its release candidate is the commit that records this. This step ends at an rc-ready commit: no tag, no pull request, and no change to macports/macports-ports#34756 until the person says. When #34756 is updated after the full stage passes, its maintainers line is `{gmail.com:herby.gillot @herbygillot} openmaintainer`, the person's Gmail form (decided 2026-10-04), as the acceptance harness's Portfile.in already has it. Field testing batch 11 (2026-10-03, on 95f28fe0, PRs #35164 to #35180), done with batch 80 ([note](activity/2026-10-03-batch-80.md)): lima's patches checked where golang's post-extract moves the source, garage's gitea.setup a version input and a listing's release taking the tag its PortGroup composes, fnox's submodule-only post-fetch standard, halloy's Git-pin refusal naming whose lock it read, a rate limit said as one, and configure.ac's change said by what it asks. Left for after the release: `checksums` regenerating a Rust or Go port's crates or modules after a hand edit of its version, and spending fewer GitHub requests across a batch and serve's watching, such as one GraphQL query for every pull request's state; both are known issues. Codex's review of 386ac2cc, the person's "Fix 1, 3, 5" (2026-10-03 04:39Z), added three fixes here, done with batch 76 ([note](activity/2026-10-03-batch-76.md)): a change record never narrows the scope past what it covered, a record that couldn't be made is made again and status says why, and `create` refuses a Go module below its repository's root. Its finding 2, a patch's contents changing under the same name, is a known issue in the README; the rest of finding 5 and finding 6 come after the release. The person's `.gitignore` item (2026-10-04): any command that gathers uncommitted files into source control abides by what Git ignores, a `.gitignore` at any depth, `.git/info/exclude`, and `core.excludesFile`, by asking Git rather than reading the files, and only `internal/git` gathers them. Done 2026-10-04 with batch 91 ([note](activity/2026-10-04-batch-91.md)): it held already, and is now guarded by tests, with `--include` saying why it refuses an ignored file; archive's removal of a worktree's ignored files is left to the person, under Later.
-4. **The prime-time pass** per the project's plan/prime-time.md: commands frozen, fixes only, run by field testing; then the release. No tag and no change to macports/macports-ports#34756 until it passes.
-5. **After the release, layer 1** with the model's steps 2 and 3 inside it, each replayed on terraform, py-lmdb, qemu, perl5 and the stub: the ledger and finding kinds with the change record as first evidence (proved on the three contradictions plus terraform), and with it, as 5.1, one shared revision analysis that the record, the assessments, and the plan read instead of each deriving its own (Codex's review of 386ac2cc, finding 4; the person's word, 2026-10-03 04:39Z); probe-located revision and checksums, subsuming R2; fidelity as strict predicted versus observed with the decision record, retiring `VersionFollowers`, `belowSource`, `followsObsolete` and revision sharing, with `--shared-release` becoming a needs-judgment finding; readiness per action and the `Next:` contract; then the UX on it (§10's marks, §9, §3, §7, and §4 last).
-6. **Then** the survey rules as counterfactual evaluations, each a notice first; the trust rule in code, after which `review` and `adopt --pr` move onto the record and drop the experimental notice; the person's voice; and after those, the deferred `create` work and the targeted upstream fixes (forges, git-fetched ports, crate pins).
+4 to 6. The prime-time pass, and layer 1 and the survey rules after the release: in [Next](#next).
 
 Unchanged: layer 3 is held, check builds every subport, and the won't-do list stands.
 
@@ -218,23 +253,6 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
    2. **`sourcecompare` as a diff of readings, and `internal/macports/assess`:** hold policy moves out of `sourcecompare`, the engine, and `raiseGoToolchain`'s judgment, with a typed concern in `model`, identified by its rule, subject, context, and evidence. The assessment reads both sides in full with the port's facts at both, and classes each concern against the base: only one the candidate introduces, or one that couldn't be checked, holds. Relevance is kept apart from its treatment, so batch 9's scoping stays as a named policy, not a proof. Batch 19's version-only and Python items land here. Done 2026-09-30 ([note](activity/2026-09-30-assessment.md)): findings carry a rule, a subject, and a class; the Python requirements in question and the Go minimum are judged against the base, and what the base had already is said without holding; a subdirectory an archive lacks is coverage, not a gap, since a port's other distfiles lack it too.
    3. **Source facts and a revision's assessment:** a port's source as declared, observed, and built, in `model`; each target assessed per context against the revision's captured base, a new port with no fictitious missing archive; collection by `update`, a check's driver, `submit`, serve, and `review`, with `status` only reporting; the gate gathering concerns, each submission mode keeping its rules. It takes batch 19's Git item, by the forge's archive of each commit, the update-workflow review's finding 4, and batch 13's hand-changed version. Done 2026-09-30 ([note](activity/2026-09-30-revision-assessment.md)): assessments are the revision's, recorded by its tree, base, and port; `update` records its own where its branch was fresh, a check's driver and `submit` collect what's missing, and `status` only reads; readings are kept by content; the gate gathers typed concerns. In this Mac's context, and `review`'s collecting is batch 11's. Trying an incomplete assessment again for the same files, where the failure was the network's, is a follow-up.
 
-### Alongside, on the Mac
-
-These need MacPorts Base, whole-tree surveys, or VMs, so they run as the Mac allows, independent of the order above.
-
-- **The oracle's remaining phases** ([scope](oracle.md)):
-  - phase 3, the workspace rule: reads inside the tree materialize on demand, and reads outside it are refused;
-  - phase 6, the bootstrap under the environment contract;
-  - `java_home` answered from the facts table;
-  - 4b, `with-deps`, only when a survey shows a registry answer reaching what an update edits;
-  - the comparison with a fresh Tart guest, possible since the v3 Tart provider;
-  - decision D2.
-- **Host-independence foundations** (the previous step 6):
-  - the evaluator's clean launch environment (16);
-  - the environment contract, and a disposable `portdbpath`;
-  - normalized records;
-  - `base212`, and a master preview identified by commit (39).
-- **The survey's parallelism.** It ran on 7.2 cores on 2026-09-22 against 10.7 at the baseline, unexplained. A mutex and CPU profile over one category comes before the next whole-tree run.
 
 ## Smaller items
 
@@ -603,9 +621,23 @@ What each exercise run asked for that is done, or that joined a numbered item, w
 
 ## Decisions for the person
 
-None open, as of 2026-10-02.
+Open, as of 2026-10-07:
+
+- **Where the architecture review's after-release items go,** among Next's ordered list.
+- **The privacy follow-up.**
+- **Reusing an archived branch's name.** Branch names are unique among branches that aren't merged (schema 1's `branch_name` index), so an archived branch's record holds its name; reusing it needs the index narrowed to open branches, or a command that forgets a record.
+- **Warning before a dependency builds from source,** which MacPorts says only inside its port API or as the install runs (see Later's "A check says which dependencies it will build from source").
 
 ### Decided
+
+Decided 2026-10-07, from the rc6 full stage's run 4 (the prioritization thread's roadmap revisit):
+
+- **Ports that don't need Xcode keep building in the Xcode image** where a release has one (run 4's call 1), as decided 2026-09-26; revisited if a pull request fails MacPorts CI for want of Xcode.
+- **bump without a terminal opens its pull request without `--yes`** (run 4's call 2): "fine for now".
+- **submit doesn't run the check itself after a rebase** (B5, run 4's call 4): its refusal says the check reuses the earlier build where a port reads the same files.
+- **`check.on` defaults to this Mac's release,** with the "checked on 26 only; CI also builds 14 and 15" notice, and `check.on = ci` for MacPorts CI's releases.
+- **archive lists the ignored files its worktree removal deletes,** after the release, as Next's fourth item.
+
 - **D15. A trailer naming a build nobody can find** (decided 2026-10-02: "we'll go with your take"). Closed as it is: neither fix is built, and submit's warning of a `Generated-By` naming a build GitHub doesn't have stays. Once a release ships, trailers name tags anyone can find. Reopened only if a release build is reported unfound.
 - **D19. `cargo.update`** (decided 2026-10-02: "agreed with your take"). update takes a port that sets `cargo.update yes` where its source ships a Cargo.lock, and still refuses one without; dockhand never adds or removes the line; and the update says "cargo.update is on; MacPorts re-resolves offline against these crates." The check is what proves each port. Taken with batch 56, beside the other update findings, with docs/dependency-preparation.md's refusal changed to match.
 - **D21. Reusing GitHub Actions' results** (decided 2026-10-02: "agreed with your take"). No: only Tart's results are reused. A GitHub Actions check is never reused, since its runner image floats and its dependencies are live; revisited only if GitHub names an image digest and the workflow pins what it installs.
@@ -675,12 +707,6 @@ Each step still becomes Next's work at the person's word.
 
 ## Later
 
-First after the release, ahead of the layered plan's layer 1 (command-line UX), from Codex's feedback, checked at 82551b6d and approved by the person on 2026-10-05:
-
-1. **check in a checkout dockhand doesn't track**, by the command-line UX review's §2 rule, a branch started where nothing else could be meant: on a terminal, a Git branch someone made is offered to `adopt`, and a detached HEAD a branch started at HEAD named for its port; a script is refused, naming the command.
-2. **Live progress from the guest** in `wait` and `watch`: the port it's building and MacPorts' phase, which the Tart provider reads only once a target finishes (`buildenv/tart/provider.go`'s follow). Streaming the whole log comes second.
-3. **The libraries a build links against the lib dependencies it declares**, a notice first: each Mach-O the port installs, its links under /opt/local mapped to the ports that own them, with what the guest reports active (`guestResult.Active`), and the ports it links but doesn't declare said. Whether `port -t`, MacPorts' trace mode, is the mechanism or a complement is weighed first.
-
 From field testing's batch 15 (2026-10-06, at 6f9d714d), after the release, none harm:
 
 - **A Git crate a port resolves online isn't an override.** tart-softnet's dhcproto and dhcproto-macros are Git dependencies its build resolves online (`build.pre_args-delete --offline --frozen`), with no cargo.crates_github; update reports "existing cargo.crates_github differs" of a block the Portfile hasn't. Such a port's Git crates are left to online resolution, said with a note, as an empty `cargo.offline_cmd` leaves them (halloy, pgdog).
@@ -706,7 +732,6 @@ Of the architecture re-synthesis, the person chose L1 and L2c for rc3 (2026-10-0
 - **A pull request's MacPorts CI failure, classified, and its re-run** (field testing, 2026-10-03: garage #35174 failed on macos-15 at fetch, mirror.sjtu.edu.cn answering 403 for jni-sys-macros-0.4.1.crate, while `check --head --on sequoia` passed on the same commit; the job was re-run by hand with `gh run rerun --failed`). status says "CI ✗" and nothing more. Read the failed job's log for a transient fetch failure, a distfile one mirror refused where another serves it, and say it, "CI failed fetching jni-sys-macros-0.4.1.crate (mirror 403)", with the re-run as one command (`dockhand ci rerun <PR>`, MacPorts' Actions API through the person's login, which needs the permission to re-run, a maintainer's on another's pull request). Not a release blocker.
 - **A check says which dependencies it will build from source** (the M1's run at d302e744, 2026-10-04, in release scope by its report). dust's first check on macOS 27 built rust and cargo from source, as MacPorts' arm64 builder for the release, which the facts table has, hadn't archived them yet; on a VM's two cores that's hours, with nothing said, and B3's check of dust after it built them again. Since batch 90 a check keeps the archives its guest installed dependencies from, and a later guest in the same environment is given those of its targets' direct dependencies, and of what their earlier builds had active, so the toolchain builds once. Every kept dependency archive isn't given to every guest, as was asked, since each is uploaded into the guest before MacPorts asks for any, rust's alone hundreds of megabytes; the host knows a target's direct dependencies from its evaluation, which reach rust, cargo, and go. What's said before the first build is still the README's known issue. Saying it up front needs, per dependency, whether an archive is there for the guest's platform and variants, which MacPorts answers only inside its port API (`_archive_available`, undocumented) or by its progress lines as the install runs ("Fetching archive for", then "Building"), each an exception to depending on documented interfaces alone, for the person to decide.
 - **A Python requirement weighed by what needs it** (field testing's py-mlx-vlm follow-up, 2026-10-04). Its review counted 12 missing requirements alike; only Pillow and requests broke `import mlx_vlm`, tqdm came through transformers, and the rest were for `mlx_vlm.server` or imported lazily. A requirement a dependency's own dependencies provide would count as met, which needs their evaluations in turn; and one reached only through an optional or lazy import would be said apart from one a module-level import from the package's `__init__` needs, which is reading Python's imports. Both wait behind the core.
-- **archive says which ignored files its worktree removal deletes** (the person's `.gitignore` item, 2026-10-04, left to the person). `git worktree remove --force` deletes a worktree's ignored files with it, which nothing lists; listing them in archive's output would be enough.
 - **What the Vx port's field testing asked for beyond batch 88** (2026-10-03). Batch 88 took four of its findings; these wait behind the core:
   - `create` for a Cargo workspace's binaries: which of its members, its `src/bin` programs, and not its test and bench targets, a port installs, where create now reads the root package's alone;
   - `check --keep`, leaving a failed check's Tart VM running for a shell into it, `dockhand shell check-N`, and removed by the next check or `clean`;
