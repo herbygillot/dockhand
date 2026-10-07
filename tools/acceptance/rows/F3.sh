@@ -19,7 +19,9 @@ act() {
 	for layout in ssh https swapped; do
 		checkpoint "set the remotes as the $layout layout in $MACPORTS_TREE" || return 0
 		dh_json auth status || :
-		dh_json submit -b "$F3_BRANCH" --plan || :
+		# --no-check: setup makes no check, and the preview judged here is
+		# the fork's and upstream's, not the check's.
+		dh_json submit -b "$F3_BRANCH" --plan --no-check || :
 	done
 	checkpoint "rename the fork on GitHub, then put the remotes back" || return 0
 	dh_json auth status || :

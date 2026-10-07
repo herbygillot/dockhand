@@ -32,15 +32,19 @@ setup() {
 act() {
 	host_only "a submitted branch on the fork" || return 0
 	[ -n "${DS1_BRANCH:-}" ] || return 0
-	dh submit -b "$DS1_BRANCH" --plan || :
-	dh_json submit -b "$DS1_BRANCH" -y || :
+	# --no-check, as its first submit: setup makes no check, and a refusal
+	# for want of one would pass the row for the wrong reason.
+	dh submit -b "$DS1_BRANCH" --plan --no-check || :
+	dh_json submit -b "$DS1_BRANCH" -y --no-check || :
 	close_test_pr "$(port)" "$DS1_BRANCH"
 }
 assert() {
 	local submit
-	submit=$(grep -l '^submit .* -y$' "$ROW_DIR"/json/*.json.args 2>/dev/null | tail -1)
+	submit=$(grep -l '^submit .* -y' "$ROW_DIR"/json/*.json.args 2>/dev/null | tail -1)
 	[ "$(cat "${submit%.args}.exit" 2>/dev/null)" != 0 ] || { row_fail "submit went ahead over someone's push"; return; }
 	grep -q "Push .*won't push: someone else pushed" "$ROW_DIR/out.log" ||
 		{ row_fail "the preview's Push line didn't say it won't push"; return; }
+	jq -r '.error // empty' "${submit%.args}" | grep -qi "no check has finished" &&
+		{ row_fail "submit refused for want of a check, not for someone's push"; return; }
 	row_pass "refused: $(jq -r '.error // empty' "${submit%.args}")"
 }

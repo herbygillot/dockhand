@@ -1,14 +1,20 @@
 # stages: full
 # D-C6: Git's own push credentials missing: an HTTPS fork remote with no
-# credential helper, and an SSH key with a passphrase and no agent. Each
-# fails naming git's credentials, and never hangs.
+# credential helper, and an SSH key GitHub doesn't know, offered alone
+# with no agent. Each fails naming git's credentials, and never hangs.
+# The key is made by the row and has a passphrase, but isn't on the test
+# account, so the case is an unknown key's refusal; a passphrase-locked
+# key GitHub knows isn't covered (the rc8 full stage).
 #
 # The row sets both up itself, in its own scope, and puts them back: the
 # clone's push URL on HTTPS with an empty credential.helper in its local
 # config, which resets the system's osxkeychain, as a global unset didn't;
 # and a throwaway key with a passphrase, offered alone through the row's
 # own GIT_SSH_COMMAND, with no agent, since full.sh's names the test key
-# (the rc6 full stage). Its submit names a branch of its own.
+# (the rc6 full stage). Its submit names a branch of its own, and is
+# --no-check, since setup makes no check: the rc8 preview held for want of
+# one before any push, and the credentials were never reached. Its words
+# are a test pull request's, should a push ever get through.
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 setup() {
 	host_only "the fork's push credentials" || return 0
@@ -20,21 +26,22 @@ setup() {
 act() {
 	host_only "the fork's push credentials" || return 0
 	[ -n "${DC6_BRANCH:-}" ] || return 0
-	local fork
+	local fork words=(--no-check --title "[testing] $(port): a dockhand credentials test" --skip-notification
+		--note "This pull request tests a dockhand release candidate, ${ACCEPT_CANDIDATE:-}, and will be closed without merging.")
 	fork=$(git -C "$MACPORTS_TREE" remote get-url origin | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##')
 	# An HTTPS push with no credential helper.
 	git -C "$MACPORTS_TREE" remote set-url --push origin "https://github.com/$fork.git"
 	git -C "$MACPORTS_TREE" config --local credential.helper ""
-	printf '$ dockhand submit -b %s -y   # HTTPS, no credential helper\n' "$DC6_BRANCH" >>"$ROW_DIR/out.log"
-	with_timeout 300 "$DH_BIN" submit -b "$DC6_BRANCH" -y </dev/null >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
+	printf '$ dockhand submit -b %s -y --no-check   # HTTPS, no credential helper\n' "$DC6_BRANCH" >>"$ROW_DIR/out.log"
+	with_timeout 300 "$DH_BIN" submit -b "$DC6_BRANCH" -y "${words[@]}" </dev/null >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
 	dc6_restore
-	# SSH with a key that has a passphrase, and no agent.
+	# SSH with a key GitHub doesn't know, offered alone, and no agent.
 	ssh-keygen -q -t ed25519 -N "dockhand acceptance $$" -C "dockhand acceptance D-C6" -f "$ROW_DIR/passphrase_key" || return 0
-	printf '$ dockhand submit -b %s -y   # SSH, a passphrase key, no agent\n' "$DC6_BRANCH" >>"$ROW_DIR/out.log"
+	printf '$ dockhand submit -b %s -y --no-check   # SSH, a key GitHub doesn'"'"'t know, no agent\n' "$DC6_BRANCH" >>"$ROW_DIR/out.log"
 	(
 		unset SSH_AUTH_SOCK SSH_ASKPASS
 		export GIT_SSH_COMMAND="ssh -i $ROW_DIR/passphrase_key -o IdentitiesOnly=yes -o IdentityAgent=none"
-		with_timeout 300 "$DH_BIN" submit -b "$DC6_BRANCH" -y </dev/null >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
+		with_timeout 300 "$DH_BIN" submit -b "$DC6_BRANCH" -y "${words[@]}" </dev/null >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
 	)
 	rm -f "$ROW_DIR/passphrase_key" "$ROW_DIR/passphrase_key.pub"
 }
