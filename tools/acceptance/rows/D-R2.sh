@@ -16,7 +16,8 @@ act() {
 	[ -n "${ACCEPT_VANILLA:-}" ] || return 0
 	allow_running "vm dhaccept-slot-1" "vm dhaccept-slot-2"
 	dh_setup update "$(port)" --new || return 0
-	with_timeout 180 "$DH_BIN" check -b "$(own_branch)" >"$ROW_DIR/dr2.log" 2>&1
+	# --fresh, so a reused build doesn't skip the guest the fault is for.
+	with_timeout 180 "$DH_BIN" check -b "$(own_branch)" --fresh >"$ROW_DIR/dr2.log" 2>&1
 	echo "$?" >"$ROW_DIR/dr2.exit"
 	cat "$ROW_DIR/dr2.log" >>"$ROW_DIR/out.log"
 	DR2_RUNNING=$(tart list --format json | jq -r '[.[] | select(.Name | startswith("dhaccept-slot-")) | select(.State == "running")] | length')

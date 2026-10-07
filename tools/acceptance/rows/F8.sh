@@ -14,7 +14,8 @@ act() {
 	host_only "Tart on the host" || return 0
 	local shim
 	shim=$(fault_shims old-tart)
-	PATH="$shim:$PATH" "$DH_BIN" check -b "$F8_BRANCH" --on golden-gate >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
+	# --fresh, so a reused build doesn't skip the tart the shim is.
+	PATH="$shim:$PATH" "$DH_BIN" check -b "$F8_BRANCH" --on golden-gate --fresh >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
 	# Homebrew's Tart, ahead on PATH, stood in for by a Tart of its own in
 	# a Homebrew-shaped directory, saying a newer version and doing what
 	# the real one does, so no one installs Homebrew for the row.

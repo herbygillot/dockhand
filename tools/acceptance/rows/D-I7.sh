@@ -25,8 +25,11 @@ act() {
 	[ -n "$branch" ] || { row_fail "the update made no branch"; return 0; }
 	dh_setup tidy -b "$branch" -y || return 0
 	for kind in fault error; do
-		printf '$ DOCKHAND_FAILPOINT=tart.results:%s dockhand check -b %s\n' "$kind" "$branch" >>"$ROW_DIR/out.log"
-		DOCKHAND_FAILPOINT="tart.results:$kind" "$DI7_FP" check -b "$branch" </dev/null >"$ROW_DIR/check.$kind" 2>&1
+		# --fresh: a check that reuses an earlier build starts no guest,
+		# and the failpoint is never met (the rc8 full stage, which reused
+		# check-57's).
+		printf '$ DOCKHAND_FAILPOINT=tart.results:%s dockhand check -b %s --fresh\n' "$kind" "$branch" >>"$ROW_DIR/out.log"
+		DOCKHAND_FAILPOINT="tart.results:$kind" "$DI7_FP" check -b "$branch" --fresh </dev/null >"$ROW_DIR/check.$kind" 2>&1
 		printf '%s\n' "$?" >"$ROW_DIR/check.$kind.exit"
 		cat "$ROW_DIR/check.$kind" >>"$ROW_DIR/out.log"
 		printf '[exit %d]\n' "$(cat "$ROW_DIR/check.$kind.exit")" >>"$ROW_DIR/out.log"

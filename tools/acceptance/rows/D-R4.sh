@@ -15,7 +15,8 @@ act() {
 	host_only "a set-up Tart and MacPorts" || return 0
 	local shim
 	shim=$(fault_shims tart)
-	PATH="$shim:$PATH" "$DH_BIN" check -b "$DR4_BRANCH" >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
+	# --fresh, so a reused build doesn't skip the tart the shim is.
+	PATH="$shim:$PATH" "$DH_BIN" check -b "$DR4_BRANCH" --fresh >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
 	rm -rf "$shim"
 	shim=$(fault_shims port)
 	PATH="$shim:$PATH" "$DH_BIN" update "$(port)" --new --plan >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
