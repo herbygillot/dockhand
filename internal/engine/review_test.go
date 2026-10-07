@@ -272,3 +272,19 @@ func TestComparisonsThatSayTheSameAreGrouped(t *testing.T) {
 		"py-mlx-vlm: upstream's LICENSE changed",
 	}, report.UpstreamWords())
 }
+
+// A pull request that isn't there is said with where it was looked for,
+// the sandbox DOCKHAND_PULL_REQUESTS names included (the rc6 full stage,
+// E9).
+func TestAMissingPullRequestSaysWhereItWasLookedFor(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	_, err := e.Review(t.Context(), 999)
+	require.ErrorIs(t, err, forge.ErrNotFound)
+	require.ErrorContains(t, err, "no pull request #999 in macports/macports-ports")
+	e.options.PullRequests = "ada/macports-ports"
+	_, err = e.AdoptPullRequest(t.Context(), 999)
+	require.ErrorContains(t, err, "no pull request #999 in ada/macports-ports, the sandbox DOCKHAND_PULL_REQUESTS names")
+}

@@ -594,7 +594,7 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 	ref := pullRequestRef(e.PullRequestRepository(), number)
 	observed, err := e.forge().Observe(ctx, ref)
 	if err != nil {
-		return adoption, fmt.Errorf("reading #%d: %w", number, err)
+		return adoption, e.readingPullRequest(number, err)
 	}
 	pr := observed.PullRequest
 	adoption.Title, adoption.Author, adoption.MaintainerCanModify = pr.Title, pr.Author, pr.MaintainerCanModify

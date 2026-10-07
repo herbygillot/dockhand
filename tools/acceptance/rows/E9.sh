@@ -10,7 +10,10 @@ act() {
 	if [ "${ACCEPT_STAGE:-}" = quick ] && [ -n "${DOCKHAND_UPSTREAM:-}" ]; then
 		git -C "$DOCKHAND_UPSTREAM" fetch -q https://github.com/macports/macports-ports.git "refs/pull/$pr/head:refs/pull/$pr/head" >>"$ROW_DIR/out.log" 2>&1 || :
 	fi
-	dh review "$pr" --markdown </dev/null || :
+	# The pull request is MacPorts', so review reads MacPorts': the stage's
+	# DOCKHAND_PULL_REQUESTS names its sandbox, where #34756 isn't (the rc6
+	# full stage).
+	(unset DOCKHAND_PULL_REQUESTS; dh review "$pr" --markdown </dev/null) || :
 }
 assert() {
 	if grep -qi 'experimental' "$ROW_DIR/out.log"; then

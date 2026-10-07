@@ -98,13 +98,29 @@ func (r ReviewReport) Summary() string {
 // dependents, as update finds them for one's own (the libuv run's finding
 // 2). What couldn't be assessed or read is said, never an error. It posts
 // nothing.
+// readingPullRequest is the error of a pull request that couldn't be read:
+// where one isn't found, it says where it was looked for, the sandbox
+// DOCKHAND_PULL_REQUESTS names included, rather than a bare "404 Not
+// Found" (the rc6 full stage, E9).
+func (e *Engine) readingPullRequest(number int, err error) error {
+	if !errors.Is(err, forge.ErrNotFound) {
+		return fmt.Errorf("reading #%d: %w", number, err)
+	}
+	repository := e.PullRequestRepository()
+	where := repository
+	if repository != UpstreamRepository {
+		where += ", the sandbox DOCKHAND_PULL_REQUESTS names"
+	}
+	return fmt.Errorf("no pull request #%d in %s: %w", number, where, err)
+}
+
 func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	ref := pullRequestRef(e.PullRequestRepository(), number)
 	report := ReviewReport{Ref: ref}
 	f := e.forge()
 	observed, err := f.Observe(ctx, ref)
 	if err != nil {
-		return report, fmt.Errorf("reading #%d: %w", number, err)
+		return report, e.readingPullRequest(number, err)
 	}
 	pr := observed.PullRequest
 	report.Title, report.State, report.Ref.URL, report.Author = pr.Title, pr.State, pr.Ref.URL, pr.Author
