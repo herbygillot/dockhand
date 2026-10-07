@@ -5,6 +5,9 @@
 . "${ROW_LIB:?}/fault.sh"
 act() {
 	local proxy
+	# The branches before, which earlier rows' archived ones keep refs of:
+	# only one this row starts is a failure (the rc6 full stage).
+	git -C "$MACPORTS_TREE" branch --list 'dockhand/*' >"$ROW_DIR/git-branches.before"
 	proxy=$(fault_proxy reset) || return 1
 	(
 		export HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" https_proxy="$proxy" http_proxy="$proxy"
@@ -22,8 +25,8 @@ assert() {
 	done
 	if [ -n "$bad" ]; then
 		row_fail "offline, not said so:$bad"
-	elif [ -n "$(git -C "$MACPORTS_TREE" branch --list 'dockhand/*')" ]; then
-		row_fail "a branch was started offline: $(git -C "$MACPORTS_TREE" branch --list 'dockhand/*' | tr '\n' ' ')"
+	elif [ -n "$(git -C "$MACPORTS_TREE" branch --list 'dockhand/*' | grep -vxF -f "$ROW_DIR/git-branches.before")" ]; then
+		row_fail "a branch was started offline: $(git -C "$MACPORTS_TREE" branch --list 'dockhand/*' | grep -vxF -f "$ROW_DIR/git-branches.before" | tr '\n' ' ')"
 	else
 		row_pass "each said it couldn't reach the network, and nothing was started"
 	fi
