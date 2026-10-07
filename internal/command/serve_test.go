@@ -388,7 +388,7 @@ func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
 func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 	checkedBranch(t)
 	var mu sync.Mutex
-	answers := []string{"ada", "", "", "bob", "ada"}
+	answers := []string{"ada", "", "", "bob", "revoked", "revoked", "ada"}
 	realIdentity, realEvery := serveIdentity, serveIdentityEvery
 	t.Cleanup(func() { serveIdentity, serveIdentityEvery = realIdentity, realEvery })
 	serveIdentityEvery = 50 * time.Millisecond
@@ -400,8 +400,11 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 			if len(answers) > 1 {
 				answers = answers[1:]
 			}
-			if answer == "" {
+			switch answer {
+			case "":
 				return "", github.ErrNoCredentials
+			case "revoked":
+				return "", fmt.Errorf("%w: GitHub rejected the credential from Dockhand macOS Keychain", github.ErrAuthentication)
 			}
 			return answer, nil
 		}
@@ -418,6 +421,7 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 	out := served.String()
 	require.Equal(t, 1, strings.Count(out, "serve: no GitHub login now; it reads pull requests without one, and opens, pushes, and checks on GitHub nothing until dockhand setup github logs in\n"), out)
 	require.Contains(t, out, "serve: the GitHub login is now bob's, where serve started as ada's; it acts on GitHub as no one until ada logs in again, or serve is restarted\n")
+	require.Equal(t, 1, strings.Count(out, "serve: GitHub rejected its login, as once it's revoked; it acts on GitHub as no one until dockhand setup github logs in again\n"), out)
 	require.Contains(t, out, "serve: logged in again as ada; acting on GitHub again\n")
 
 	require.Equal(t, "serve: running (pid 7) · not acting on GitHub: no GitHub login · queue: empty", serveWords(engine.ServeState{Running: true, PID: 7, NotActing: "no GitHub login"}))

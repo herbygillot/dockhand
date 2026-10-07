@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // Identity is who the person's GitHub login acts as now, and where its
@@ -18,17 +19,23 @@ type Identity struct {
 // reading the credential chain afresh, as a client holding a token
 // doesn't: a long-running serve kept acting with a token after a logout,
 // and could have gone on with the GitHub CLI's, another account's, once it
-// expired (the rc6 full stage, D-C2). The account is asked of GitHub only
-// when the token changes. With no credential at all it returns
+// expired (the rc6 full stage, D-C2). The account is asked of GitHub when
+// the token changes, and again each Recheck, so a token GitHub stopped
+// honouring, as a revoked login's, is found: its error is then
+// ErrAuthentication's. With no credential at all it returns
 // ErrNoCredentials.
 type IdentityWatcher struct {
 	Credentials TokenSource
 	HTTP        *http.Client
 	BaseURL     string
+	// Recheck is how long an account read stands for the same token; ten
+	// minutes when zero.
+	Recheck time.Duration
 
 	mu      sync.Mutex
 	secret  string
 	current Identity
+	checked time.Time
 }
 
 // SystemIdentity watches the login SystemClient uses.
@@ -46,7 +53,11 @@ func (w *IdentityWatcher) Current(ctx context.Context) (Identity, error) {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if token.Secret == w.secret && w.current.Account != "" {
+	recheck := w.Recheck
+	if recheck <= 0 {
+		recheck = 10 * time.Minute
+	}
+	if token.Secret == w.secret && w.current.Account != "" && time.Since(w.checked) < recheck {
 		return w.current, nil
 	}
 	client := &Client{HTTP: w.HTTP, Config: Config{BaseURL: w.BaseURL, Token: token.Secret}}
@@ -54,6 +65,6 @@ func (w *IdentityWatcher) Current(ctx context.Context) (Identity, error) {
 	if err != nil {
 		return Identity{}, err
 	}
-	w.secret, w.current = token.Secret, Identity{Account: account, Source: token.Source}
+	w.secret, w.current, w.checked = token.Secret, Identity{Account: account, Source: token.Source}, time.Now()
 	return w.current, nil
 }

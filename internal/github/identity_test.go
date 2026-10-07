@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -43,4 +44,29 @@ func TestTheIdentityWatcherReadsTheLoginAfresh(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "bob", identity.Account)
 	require.Equal(t, 2, asked)
+}
+
+// A token GitHub stopped honouring, as a revoked login's, is found at the
+// next recheck, as ErrAuthentication (the rc6 full stage, D-C3).
+func TestTheIdentityWatcherFindsARevokedToken(t *testing.T) {
+	revoked := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if revoked {
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprint(w, `{"message":"Bad credentials"}`)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"login":"ada"}`)
+	}))
+	defer server.Close()
+	watcher := &github.IdentityWatcher{HTTP: server.Client(), BaseURL: server.URL + "/", Recheck: time.Nanosecond, Credentials: github.TokenSourceFunc(func(context.Context) (github.Token, error) {
+		return github.Token{Secret: "ada-token", Source: github.SourceKeychain}, nil
+	})}
+	_, err := watcher.Current(t.Context())
+	require.NoError(t, err)
+	revoked = true
+	_, err = watcher.Current(t.Context())
+	require.ErrorIs(t, err, github.ErrAuthentication)
+	require.NotErrorIs(t, err, github.ErrNoCredentials)
 }

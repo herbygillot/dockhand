@@ -424,8 +424,9 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 type loginGate struct {
 	s      *server
 	pinned string
-	// state is "" while serve acts, "none" with no login, and "other"
-	// with another account's, other.
+	// state is "" while serve acts, "none" with no login, "rejected" with
+	// one GitHub no longer honours, and "other" with another account's,
+	// other.
 	state, other string
 	last         time.Time
 }
@@ -440,6 +441,11 @@ func (g *loginGate) look(ctx context.Context) {
 	switch {
 	case errors.Is(err, github.ErrNoCredentials):
 		g.set("none", "")
+	case errors.Is(err, github.ErrAuthentication):
+		// GitHub no longer honours the login, as once it's revoked: the
+		// credential is there and unchanged, and serve would have tried it
+		// each look, saying nothing in status (the rc6 full stage, D-C3).
+		g.set("rejected", "")
 	case err != nil:
 		// Who it is couldn't be read now, as GitHub out of reach; what
 		// serve does stays as it was.
@@ -467,6 +473,8 @@ func (g *loginGate) set(state, other string) {
 		g.s.say("serve: no GitHub login now; it reads pull requests without one, and opens, pushes, and checks on GitHub nothing until dockhand setup github logs in")
 	case "other":
 		g.s.say("serve: the GitHub login is now %s's, where serve started as %s's; it acts on GitHub as no one until %s logs in again, or serve is restarted", other, g.pinned, g.pinned)
+	case "rejected":
+		g.s.say("serve: GitHub rejected its login, as once it's revoked; it acts on GitHub as no one until dockhand setup github logs in again")
 	default:
 		if was != "" {
 			g.s.say("serve: logged in again as %s; acting on GitHub again", g.pinned)
@@ -476,7 +484,7 @@ func (g *loginGate) set(state, other string) {
 }
 
 // reads is whether serve reads GitHub; writes, whether it acts there.
-func (g *loginGate) reads() bool  { return g.state != "other" }
+func (g *loginGate) reads() bool  { return g.state != "other" && g.state != "rejected" }
 func (g *loginGate) writes() bool { return g.state == "" }
 
 // words are what status says of a serve not acting on GitHub; empty
@@ -487,6 +495,8 @@ func (g *loginGate) words() string {
 		return "no GitHub login"
 	case "other":
 		return fmt.Sprintf("logged in as %s, started as %s", g.other, g.pinned)
+	case "rejected":
+		return "GitHub rejected the login; dockhand setup github"
 	}
 	return ""
 }
