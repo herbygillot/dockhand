@@ -567,6 +567,10 @@ func (j *journal) show(ctx context.Context) {
 		switch event.Kind {
 		case "progress", "target.result", "execution.retry", "execution.state":
 			fmt.Fprintf(j.out, "  %s\n", event.Message)
+		case engine.AlteredKind:
+			// A kept archive found altered is marked, where it was in the
+			// journal alone (the rc8 full stage's D-T1).
+			fmt.Fprintf(j.out, "  ! %s\n", event.Message)
 		}
 	}
 }
@@ -773,6 +777,15 @@ func checkResult(ctx context.Context, e *engine.Engine, run model.Run) (checkJSO
 	}
 	revisionResult, planResult, runResult := revisionView(revision), planView(plan), runView(run)
 	result.Branch, result.Revision, result.Plan, result.Run = branch.ShortName(), &revisionResult, &planResult, &runResult
+	events, err := e.RunEvents(ctx, run.ID, 0)
+	if err != nil {
+		return result, err
+	}
+	for _, event := range events {
+		if event.Kind == engine.AlteredKind {
+			result.Altered = append(result.Altered, event.Message)
+		}
+	}
 	return result, nil
 }
 

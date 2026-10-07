@@ -1041,6 +1041,38 @@ func TestAGuestIsGivenTheDependencyArchivesAnEarlierGuestInstalled(t *testing.T)
 	data, err := os.ReadFile(given[0].Path)
 	require.NoError(t, err)
 	require.Equal(t, "rust's archive", string(data))
+
+	// One altered since it was kept, a byte the same size, isn't given,
+	// and is said, and set aside, where it was skipped in silence (the
+	// rc8 full stage's D-T1).
+	require.NoError(t, os.WriteFile(given[0].Path, []byte("Rust's archive"), 0o600))
+	write(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 3\n"})
+	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	revision = capture.Revision
+	check()
+	job = provider.jobs[len(provider.jobs)-1]
+	require.False(t, slices.ContainsFunc(job.Installs, func(a buildenv.Archive) bool { return a.Port == "rust" }), "the altered archive isn't given")
+	var said []string
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		runs, err := r.Runs(store.RunFilter{Branch: branch.ID})
+		if err != nil {
+			return err
+		}
+		events, err := r.RunEvents(runs[0].ID, 0, 1000)
+		for _, event := range events {
+			if event.Kind == AlteredKind {
+				said = append(said, event.Message)
+			}
+		}
+		return err
+	}))
+	require.Len(t, said, 1)
+	require.Contains(t, said[0], "the archive kept of rust isn't the one it was kept as, "+rustDigest+", so the guest gets it as MacPorts would")
+	require.FileExists(t, given[0].Path+".altered", "set aside")
+	data, err = os.ReadFile(given[0].Path)
+	require.NoError(t, err)
+	require.Equal(t, "rust's archive", string(data), "the guest's own, kept again")
 }
 
 func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
@@ -1137,6 +1169,7 @@ func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 	fourth := check(false)
 	require.Empty(t, provider.jobs[len(provider.jobs)-1].Installs, "the altered archive isn't given")
 	require.Contains(t, strings.Join(messages(fourth), "\n"), "the archive kept of libharbor isn't the one it was kept as, "+libDigest+", so the guest builds it instead")
+	require.FileExists(t, installed.Path+".altered", "set aside, so no later check meets it")
 	require.NoError(t, os.WriteFile(installed.Path, []byte("libharbor's archive"), 0o600))
 
 	// A retry installs what the attempt before it finished.

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -115,11 +116,7 @@ func (d *driver) installs(ctx context.Context, environment model.Environment, bu
 			// and the check says why (prime-time D-T1). Signing would refuse
 			// it too, and fail the check, where a build does the work.
 			if _, digest, err := sha256File(d.e.archivePath(archive.Digest)); err != nil || digest != archive.Digest {
-				if err := d.fenced(ctx, func(tx store.Tx) error {
-					_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: "archive.altered", Level: model.LevelInfo,
-						Message: fmt.Sprintf("%s: the archive kept of %s isn't the one it was kept as, %s, so the guest builds it instead", d.run.Name(), need, archive.Digest)})
-					return err
-				}); err != nil {
+				if err := d.altered(ctx, string(need), archive.Digest, "the guest builds it instead"); err != nil {
 					return nil, err
 				}
 				continue
@@ -286,9 +283,37 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 			continue
 		}
 		if _, digest, err := sha256File(d.e.archivePath(archive.Digest)); err != nil || digest != archive.Digest {
+			// Said, as a target's is, where it was skipped in silence (the
+			// rc8 full stage's D-T1). What can't be said leaves the guest
+			// to fetch the dependency as before.
+			_ = d.altered(ctx, archive.Port, archive.Digest, "the guest gets it as MacPorts would, from its archives or a build")
 			continue
 		}
 		installs = append(installs, buildenv.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: d.e.archivePath(archive.Digest)})
 	}
 	return installs
+}
+
+// AlteredKind is the event a kept archive changed since it was kept is
+// said by: check prints it, and its --json result carries it.
+const AlteredKind = "archive.altered"
+
+// altered says a kept archive that isn't the one it was kept as, by a
+// byte or more, as tampering or a disk's fault leaves one, and sets the
+// file aside beside it, as <file>.altered, so no later check meets it
+// again, and what it was is there to look at. Its record goes as an
+// archive's whose file is gone does, at cleanup. keptArchive, which
+// compares only the size, is the cheap test reuse and cleanup make; the
+// digest is read here, before a guest is given one (prime-time D-T1).
+func (d *driver) altered(ctx context.Context, port, digest, instead string) error {
+	path := d.e.archivePath(digest)
+	aside := ""
+	if os.Rename(path, path+".altered") == nil {
+		aside = "; it's set aside as " + path + ".altered"
+	}
+	return d.fenced(ctx, func(tx store.Tx) error {
+		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: AlteredKind, Level: model.LevelInfo,
+			Message: fmt.Sprintf("%s: the archive kept of %s isn't the one it was kept as, %s, so %s%s", d.run.Name(), port, digest, instead, aside)})
+		return err
+	})
 }

@@ -384,6 +384,9 @@ type checkJSON struct {
 	Targets []targetJSON `json:"targets"`
 	// Baseline is the baseline check.baseline ran after this check failed.
 	Baseline *checkJSON `json:"baseline,omitempty"`
+	// Altered are the kept archives found changed since they were kept,
+	// which no guest was given, each said as check says it.
+	Altered []string `json:"altered_archives,omitempty"`
 }
 
 // gather takes a check's result, or the baseline's that looks into it.
