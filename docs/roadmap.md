@@ -636,6 +636,10 @@ Open, as of 2026-10-07:
 
 ### Decided
 
+Decided 2026-10-07, before rc7 ("Behaviour fixes", on the prioritization thread's scope card, after "We haven't done a release yet, so I actually do feel inclined to get the Item 1 fixes in"):
+
+- **Item 1's behaviour fixes go into rc7,** with M3's test: X2, conservatively (only what's wrapped as infrastructure, and what's unclassified, retries; dockhand's own guest faults say so at once), L2b, L3a, L3e, L5, and H8. C4c, C4d, X4, X5, H1, and H2 wait for v0.3.1.
+
 Decided 2026-10-07, from the rc6 full stage's run 4 (the prioritization thread's roadmap revisit):
 
 - **Ports that don't need Xcode keep building in the Xcode image** where a release has one (run 4's call 1), as decided 2026-09-26; revisited if a pull request fails MacPorts CI for want of Xcode.
