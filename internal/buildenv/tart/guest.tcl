@@ -399,6 +399,33 @@ proc build {index target} {
         } elseif {$message ne ""} {
             return [{*}$fail $result install "a dependency failed to install: [why $log $message]"]
         }
+        # A dependency with no archive for the guest's release builds from
+        # source, and what it built with stays active for the target: git
+        # left gettext's msgfmt for taisei, which declares no gettext, and
+        # its check passed where MacPorts CI's failed, installing git from
+        # its archive (field testing, 2026-10-07). Only the target's
+        # closure stays active: its dependencies, of every kind, and theirs
+        # other than for building, as port(1)'s rdeps --no-build has them.
+        set closure $dependencies
+        foreach dependency $dependencies {
+            foreach line [split [fact $port -q rdeps --no-build $dependency] \n] {
+                if {[set other [string trim $line]] ne ""} { lappend closure $other }
+            }
+        }
+        set strays {}
+        foreach line [split [fact $port -q installed active] \n] {
+            if {[regexp {^\s*(\S+) @\S+ \(active\)$} $line -> other] && [lsearch -exact -nocase $closure $other] < 0 && $other ni $strays} {
+                lappend strays $other
+            }
+        }
+        if {[llength $strays]} {
+            set fd [open $log a]
+            puts $fd "dockhand: deactivating what the dependencies built with, outside $name's dependencies: [join $strays {, }]"
+            close $fd
+            if {[set message [run $log [concat [list $port -N -f deactivate] $strays]]] ne ""} {
+                return [{*}$fail $result install "deactivating what its dependencies built with failed: [why $log $message]"]
+            }
+        }
     }
     foreach phase {fetch checksum} {
         mark result $log $phase

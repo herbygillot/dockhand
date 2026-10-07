@@ -48,7 +48,7 @@ const Protocol = 1
 // environment's origin, so raising it ends reuse of evidence the program
 // recorded before (decision 28). A test pins guest.tcl, and fails until a
 // change to it raises this or, for a change of wording only, re-pins.
-const VerifierProtocol = 2
+const VerifierProtocol = 3
 
 // guestRoot is where the guest program and the staged tree live in a clone.
 const guestRoot = "/var/tmp/dockhand-check"
@@ -236,6 +236,7 @@ func (p *Provider) Identity(_ context.Context, environment model.Environment) (s
 // for a person told why an earlier result doesn't stand.
 var verifierChanges = map[int]string{
 	2: "has begun to build each target from its source, never from a published archive, and from clean work",
+	3: "has begun to build each target with its own dependencies alone active, deactivating what a dependency built from source needed to build",
 }
 
 // IdentityChange says what changed between two of an environment's

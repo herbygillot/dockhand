@@ -25,7 +25,9 @@ import (
 // each target's dependencies from DEPS ("name=dep ..."), and fails the
 // phases FAIL names ("phase:port ..."), with MacPorts' closing Error
 // lines after the failure's own, or with no Error line at all where QUIET
-// is set. A port's archive is ARCHIVES/<name>, and
+// is set. Each port's dependencies other than for building, as rdeps
+// --no-build has them, come from RDEPS ("name=dep,dep ..."). A port's
+// archive is ARCHIVES/<name>, and
 // its directory devel/<name>, but for UNRESOLVED, which port can't
 // resolve. Each step of a build writes its command to the log, "port
 // <arguments>", installing dependencies writes DEPLINES lines more, and
@@ -50,7 +52,12 @@ case "$*" in
     exit 0 ;;
   *"echo depof:"*)
     for entry in $DEPS; do
-      case "$*" in *"depof:${entry%%=*}") echo "${entry#*=}" ;; esac
+      case "$*" in *"depof:${entry%%=*}") echo "${entry#*=}" | tr ',' ' ' ;; esac
+    done
+    exit 0 ;;
+  *"-q rdeps --no-build "*)
+    for entry in $RDEPS; do
+      case "$*" in *"--no-build ${entry%%=*}") echo "${entry#*=}" | tr ',' '\n' | sed 's/^/  /' ;; esac
     done
     exit 0 ;;
 esac
@@ -139,7 +146,7 @@ set foreignManagers {}
 	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	output, _ := command.CombinedOutput()
 	data, err = os.ReadFile(filepath.Join(root, "results.json"))
 	require.NoError(t, err, "%s", output)
@@ -209,7 +216,7 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 func TestTheGuestRecordsWhereEachStepBeginsInItsLog(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	results, _ := guestRunIn(t, root, twoTargets("declared"), "TESTED=libharbor", "DEPS=libharbor=zlib harbor-cli=libharbor",
+	results, _ := guestRunIn(t, root, twoTargets("declared"), "TESTED=libharbor", "DEPS=libharbor=zlib harbor-cli=libharbor", "RDEPS=libharbor=zlib",
 		"ACTIVE=  zlib @1.3.2_0 (active)\\n", "DEPLINES=46000")
 	require.Equal(t, "finished", results.State, results.Detail)
 	steps := []guestStep{{"deactivate", 1}, {"clean", 2}, {"lint", 3}, {"dependencies", 4}, {"fetch", 46005}, {"checksum", 46006}, {"install", 46007}}
@@ -529,4 +536,25 @@ func TestABuildPastItsBoundIsEnded(t *testing.T) {
 	results, _ = guestRun(t, input, "HANG=lint:libharbor")
 	require.Equal(t, "lint", results.Targets[0].Phase)
 	require.Equal(t, "lint ran past its 1s bound, so it was ended", results.Targets[0].Detail)
+}
+
+// What a dependency built from source needed to build is deactivated
+// before the target builds, so the target sees only its own dependencies
+// and what they need at run time: git, built for want of an archive, left
+// gettext's msgfmt for taisei, whose check passed where MacPorts CI's
+// failed (field testing, 2026-10-07). With nothing outside the closure,
+// nothing more is run.
+func TestATargetBuildsWithOnlyItsClosureActive(t *testing.T) {
+	t.Parallel()
+	input := guestInput{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []guestTarget{{ID: "taisei", Name: "taisei", Portfile: "games/taisei/Portfile"}}}
+	active := `  git @2.51.0_0 (active)\n  gettext @1.0_0 (active)\n  gettext-runtime @1.0_0 (active)\n  meson @1.9.1_0 (active)\n  python314 @3.14.0_0 (active)\n`
+	results, commands := guestRun(t, input, "DEPS=taisei=meson,git", "RDEPS=meson=python314 git=gettext-runtime", "ACTIVE="+active)
+	require.Equal(t, "passed", results.Targets[0].Outcome, results.Detail)
+	require.Contains(t, commands, "-N -f deactivate gettext", "only what's outside taisei's closure")
+
+	results, commands = guestRun(t, input, "DEPS=taisei=meson,git", "RDEPS=meson=python314 git=gettext-runtime,gettext", "ACTIVE="+active)
+	require.Equal(t, "passed", results.Targets[0].Outcome, results.Detail)
+	require.False(t, slices.ContainsFunc(commands, func(c string) bool {
+		return strings.HasPrefix(c, "-N -f deactivate ") && c != "-N -f deactivate active"
+	}), "all of it is the closure's: %v", commands)
 }

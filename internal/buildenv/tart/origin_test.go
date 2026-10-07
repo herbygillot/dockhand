@@ -31,7 +31,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 	require.NoError(t, tartvm.WriteImageRecord(home, "dockhand-base-tahoe", manifest))
 	identity, err = provider.Identity(t.Context(), tahoe)
 	require.NoError(t, err)
-	require.Equal(t, manifest.Origin()+"; verifier 2", identity)
+	require.Equal(t, manifest.Origin()+"; verifier 3", identity)
 
 	xcode := tahoe
 	xcode.DeveloperTools = model.DeveloperToolsXcode
@@ -40,7 +40,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 	require.Empty(t, identity, "the Xcode image is another image, and has no record")
 }
 
-// guestPin is the digest of the guest program VerifierProtocol 2 covers.
+// guestPin is the digest of the guest program VerifierProtocol 3 covers.
 // Protocol 2 builds each target from its source, never from a published
 // archive, and cleans its earlier work first (the s2n-tls run's findings 1
 // and 2): what protocol 1 recorded may be an archive install taken for a
@@ -85,7 +85,13 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // more, and builds and judges nothing otherwise: a dependency installed
 // from a kept archive is recorded by its digest, as one from MacPorts'
 // own archives always was, so the protocol stays 2.
-const guestPin = "fd399c7bfa26defe56000dd0b92226cd56928c3b69c68d98ac100bc47c60b27d"
+//
+// Protocol 3: what a dependency built from source needed to build is
+// deactivated before the target builds, which judges a target otherwise,
+// since one that passed with another's build tools may not pass without
+// them, so a result recorded before isn't reused (field testing,
+// 2026-10-07: taisei passed with git's gettext).
+const guestPin = "a13aa74baea901500f87b94e80c19adeff49a2dd4be59d24cf1975c0c74e1b4b"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this
@@ -97,7 +103,7 @@ func TestTheVerifierProtocolCoversTheGuestProgram(t *testing.T) {
 	data, err := os.ReadFile("guest.tcl")
 	require.NoError(t, err)
 	sum := sha256.Sum256(data)
-	require.Equal(t, 2, VerifierProtocol)
+	require.Equal(t, 3, VerifierProtocol)
 	require.Equal(t, guestPin, hex.EncodeToString(sum[:]), "guest.tcl changed: raise VerifierProtocol if ports are built or judged otherwise, or update guestPin if not")
 }
 
@@ -110,6 +116,8 @@ func TestAChangedIdentitySaysWhatChanged(t *testing.T) {
 	image := "source sha256:eeec; setup 3; macports 2.12.6; tools 26.6"
 	require.Equal(t, "dockhand has begun to build each target from its source, never from a published archive, and from clean work",
 		p.IdentityChange(model.Environment{}, image+"; verifier 1", image+"; verifier 2"))
+	require.Equal(t, "dockhand has begun to build each target with its own dependencies alone active, deactivating what a dependency built from source needed to build",
+		p.IdentityChange(model.Environment{}, image+"; verifier 2", image+"; verifier 3"))
 	require.Equal(t, "dockhand has begun to build otherwise", p.IdentityChange(model.Environment{}, image+"; verifier 2", image+"; verifier 9"))
 	require.Empty(t, p.IdentityChange(model.Environment{}, image+"; verifier 1", "source sha256:ffff; setup 3; macports 2.12.6; tools 26.6; verifier 2"), "another image")
 	require.Empty(t, p.IdentityChange(model.Environment{}, image+"; verifier 2", image+"; verifier 2"))
