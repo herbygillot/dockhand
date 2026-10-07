@@ -113,6 +113,12 @@ isolate_branches() {
 	open=$("$DH_BIN" --json status 2>/dev/null | jq -r '.result.branches[]? | [.name, (.pull_request.state // "")] | @tsv' 2>/dev/null || :)
 	while IFS=$'\t' read -r name state; do
 		[ -n "$name" ] || continue
+		# A row that runs in halves around a reboot, as D-I5, names the
+		# branch its second half finds in $ACCEPT_STATE/keep-branches.
+		if grep -qxF "$name" "$ACCEPT_STATE/keep-branches" 2>/dev/null; then
+			printf 'kept %s: a row'"'"'s second half needs it\n' "$name" >>"$ROW_DIR/isolation.log"
+			continue
+		fi
 		if [ -n "$state" ] && [ "$state" != closed ] && [ "$state" != merged ]; then
 			printf 'kept %s: its pull request is %s\n' "$name" "$state" >>"$ROW_DIR/isolation.log"
 			printf '%s: %s stays open, its pull request %s; a row selecting its port may find it\n' "$row" "$name" "$state" >&3

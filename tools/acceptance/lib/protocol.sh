@@ -172,3 +172,24 @@ device_login() {
 	fi
 	dh_bg_wait
 }
+
+# failpoint_bin builds, once a candidate, dockhand from the candidate's
+# source with the acceptance build's failpoints, for the kill rows, which
+# the release binary can't stop at a named step: the candidate's tag
+# where it is one, else the harness's own checkout. It says the binary.
+failpoint_bin() {
+	local rev=${ACCEPT_CANDIDATE:-HEAD} out source
+	git -C "${ACCEPT_REPO:?}" rev-parse -q --verify "$rev^{commit}" >/dev/null 2>&1 || rev=HEAD
+	out="${ACCEPT_STATE:?}/bin/dockhand-failpoints-$(git -C "$ACCEPT_REPO" rev-parse --short "$rev^{commit}")"
+	if [ ! -x "$out" ]; then
+		source=$(mktemp -d "${ACCEPT_STATE}/failpoint-src.XXXXXX") || return 1
+		mkdir -p "$(dirname "$out")"
+		if ! { git -C "$ACCEPT_REPO" archive "$rev" | tar -x -C "$source" &&
+			(cd "$source" && GOFLAGS=-mod=vendor go build -tags acceptance -o "$out" ./cmd/dockhand); } >>"$ROW_DIR/out.log" 2>&1; then
+			rm -rf "$source"
+			return 1
+		fi
+		rm -rf "$source"
+	fi
+	printf '%s' "$out"
+}

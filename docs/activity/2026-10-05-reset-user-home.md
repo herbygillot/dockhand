@@ -74,3 +74,8 @@ Two D-C2 device codes expired while the run waited for a person. Rows that log o
 ## 2026-10-06: D-C2 follows a pull request through the logout
 
 D-C2 asked serve to say once that it couldn't act after a logout. It can: a running serve keeps the client it made, and its token, which GitHub honours until it expires, and reads public pull requests without a login past that; the rc6 run's serve, with nothing to follow, said nothing. The row now opens a test pull request in setup, closes it while dockhand is logged out, and passes when serve says it closed, with the same process before and after the login comes back. That serve doesn't say it's logged out is a README known issue, with the fix under Later.
+
+## 2026-10-07: D-I4 kills at the step; D-I5 runs alone
+
+- **D-I4 kills submit at its two dangerous steps,** by the candidate's own source built with the acceptance failpoints (`failpoint_bin`): after the push, before GitHub opens the pull request (`submit.pushed`), and after GitHub has it, before dockhand records it (`submit.created`, new). It had killed the release binary when its -v output named the step, which it didn't, so nothing was killed. Each kill is a branch of its own, and the row passes when submitting again leaves exactly one pull request from that branch. submit -v now says "Opening the pull request for …" before the create.
+- **D-I5 runs alone, in two halves around the reboot,** which ended every row after it: `full.sh --rows D-I5` to the reboot, keeping its branch in `$ACCEPT_STATE/D-I5.state` and `keep-branches`, which isolate_branches leaves open, then the same after login, which judges what serve did. Its checks are `--fresh`, since one that reused a build ended before the sleep it was to be interrupted by.
