@@ -23,7 +23,9 @@ act() {
 	rm -f "$ROW_DIR/token"
 	[ -n "$token" ] || { row_result "not run" "no token was put in $ROW_DIR/token"; return 0; }
 	GH_TOKEN=$token "$DH_BIN" auth status >>"$ROW_DIR/out.log" 2>&1 || :
-	GH_TOKEN=$token "$DH_BIN" submit -b "$DC4_BRANCH" --plan >>"$ROW_DIR/out.log" 2>&1 || :
+	# --no-check, so the account is all its preview judges: setup makes no
+	# check, and the preview held for want of one (the rc8 full stage).
+	GH_TOKEN=$token "$DH_BIN" submit -b "$DC4_BRANCH" --plan --no-check >>"$ROW_DIR/out.log" 2>&1 || :
 }
 teardown() {
 	rm -f "$ROW_DIR/token"
