@@ -88,7 +88,7 @@ A flag that tunes how a command does its one job is fine: `--on`, `--fresh`, `--
 
 ### Recommendations
 
-**a. One pipeline axis, with `commit` as a stage.** §4's `--to edit|check|submit` should gain `commit`, because `update --outdated` commits each update as a side effect of being a batch. The stages become edit → commit → check → submit, and every authoring verb ends at `--to` (default: edit). Pipeline flags are then defined once and accepted by any command whose `--to` reaches their stage:
+**a. One pipeline axis, with `commit` as a stage.** (Superseded by §6, which puts this axis on a new verb, `ship`, and takes the modes off `update` and `submit`.) §4's `--to edit|check|submit` should gain `commit`, because `update --outdated` commits each update as a side effect of being a batch. The stages become edit → commit → check → submit, and every authoring verb ends at `--to` (default: edit). Pipeline flags are then defined once and accepted by any command whose `--to` reaches their stage:
 - `--title`, `--note`, `--type`, `--draft`, `--tested-*`, and `--skip-notification` for submit;
 - `--on` for check.
 
@@ -131,9 +131,90 @@ I propose:
 - **A note on a parked branch.** `--note` exists only on `submit`, `bump`, and `update --submit`, so there's no way to say why a branch is parked without submitting it. That's the directions doc's branch notes, and §3's `-b` rollout gives it an obvious shape: `dockhand note -b x "waiting on upstream fix"`.
 - **Testing someone's PR here.** `review --check` (§8) still isn't built. Today it takes three commands: `adopt --pr`, `check --pr`, `review`.
 
+## 6. Modes: one new verb, three folds, and no noun groups (refined 2026-10-07)
+
+Herby asked whether the mode flags want new commands, or several commands rethought under one. I took each family of modes from §4's table in turn. The answer differs by family. Exactly one family wants a new verb, three want folding into a verb that already exists, and the rest are fine as they are.
+
+### The pipeline family wants one new verb: `ship`
+
+These are all the same act, carrying a change forward through edit → commit → check → submit, spelled six ways:
+
+- `bump`;
+- `update --submit`;
+- `update --outdated [--mine] [--check]`;
+- `submit --check`;
+- `submit --passing`;
+- `serve.for_outdated` and `serve.submit_passing`.
+
+Each has its own flags, its own `--yes`, and its own idea of where to stop.
+
+§4 above put `--to` on `update`. **I'd now revise that.** `update jq --to submit` would still make `update` end in different states depending on a flag, which is the problem itself. Instead:
+
+- **The stage verbs lose their modes.** Each always ends in the same state:
+  - `update` edits and leaves the edit uncommitted, one port or several;
+  - `tidy` commits;
+  - `check` checks;
+  - `submit` publishes the committed head.
+
+  `update` loses `--submit`, `--outdated`, `--check`, `--yes`, and its six "with --submit" flags. `submit` loses `--check` and `--passing`.
+- **One new verb, `ship`, carries a change as far as `--to` says** (`commit`, `check`, or `submit`, the default), from wherever it is now:
+
+  | Today | With `ship` |
+  | --- | --- |
+  | `bump jq` | `ship jq --yes` |
+  | `update jq --new --submit` | `ship jq` |
+  | `update --outdated --mine --check` | `ship --mine --to check` |
+  | `submit -b x --check` | `ship -b x` |
+  | `submit --passing` | `ship --passing` |
+  | a held bump, continued with `submit --branch <name>` | `ship jq` again: it resumes from where the branch is |
+  | `serve.for_outdated` plus `serve.submit_passing` | `serve.ship_to = "list" \| "commit" \| "check" \| "submit"`, with the same guardrails and daily limit |
+
+**`ship`'s contract is what §3 and §10 already describe, now in one place:**
+
+- Targets are ports (`ship jq gh-dash`, `ship --mine`) or branches (`-b`, `-p`, `--pr`, `--passing`).
+- From a port, the edit stage is a version update. Other authoring (`create`, `revbump`, `edit`) starts the branch, and then `ship -b` carries it forward.
+- It shows one plan, a row per target and a column per stage, then asks once. `--yes` skips the question. Without a terminal, running it is the decision, as `bump` and `submit --check` are today. The check is explicit, because `--to` names it, which keeps Herby's rule that a script's submit never starts a check unasked.
+- Each step is the stage verb's own logic, with its holds. A target stops at a protective refusal or a hold, and the others go on.
+- Running it again resumes. It's idempotent: a target already past `--to` is left alone and reported.
+- The flags of each stage are defined once and accepted when `--to` reaches that stage:
+  - edit: `--revbump-dependents`, `--except`, `--shared-release`, `--with-obsolete`, `--keep-old-checksums`;
+  - check: `--on`, `--tests`;
+  - submit: `--title`, `--note`, `--type`, `--draft`, `--tested-*`, `--skip-notification`.
+
+  `bump`'s missing `--type` and `--draft` can't happen again.
+- It follows the batch exit rule from §10.
+
+**Why a new verb, and not `bump` widened.** `bump -b mods-new` (a new port) and `bump --passing` read wrong, because "bump" means a version change in MacPorts' own words. `ship` reads right in every row above. If v0.3.0 goes out with `bump`, it can stay as a documented alias for `ship <port> --yes` for one minor release.
+
+**Its relation to layer 1.** `ship` is "do what `Next:` says, until `--to` or a stop". It needs layer 1's readiness per action to know where a branch is and what moves it, so it belongs where the roadmap already puts §3 and §4: after layer 1's step 5. The stage verbs losing their modes goes in the same batch, since `ship` is what replaces them.
+
+### Three families fold into verbs that already exist
+
+- **Someone else's pull request goes into `review`.** Today it's `review <pr>` (text), `adopt --pr` (a branch), `check --pr` (build), and §8's proposed `review --check`. `review <pr>` becomes the maintainer's one verb: it reads the PR, applies the rules, and with `--check` adopts the PR as `pr-<n>` if needed and builds it. It posts with `--comment` or `--request-changes`. `adopt --pr` stays for when you mean to push to their branch.
+- **Administration goes into `setup`.** `serve --install` and `--uninstall` become `setup serve [--remove]`, and `clean --legacy` is offered by the health report. `setup` is already the group for the environment (`setup github`, `setup tart`).
+- **The branch lifecycle goes into `undo` and `clean`.**
+  - `undo` reverses the branch's latest reversible step, which can be a tidy, a rebase, or an archive.
+  - `clean` covers every way a branch ends: merged (the default and automatic), and closed or archived with `--delete`, which also removes the local and fork branches after showing them.
+  - `archive` stays as the one way to park a branch.
+
+### The rest needs no new verb
+
+- **Runs** (`check`, `wait`, `cancel`, `retry`, `logs`) share one object, a check, and each does one thing. What they lack is the `-b`/`-p`/`--pr` rollout (§3), not structure. `queue` folds into `status`. `check --baseline` stays a flag, because its result is still a check, beside the branch's.
+- **Reading** (`status`, `diff`, `impact`, `outdated`, `explain`, `open`): `diff --archive` becomes `diff --source`, and `status --attention` stays, since its output contract is documented for prompts and scripts.
+
+### What I'd not do: noun groups
+
+`dockhand branch archive`, `dockhand run cancel`, and `dockhand pr review` would group the help, but they'd add a word to every daily command to fix what the help's own sections already do. They'd also put `ship`, which spans ports, branches, and PRs, under no noun at all. Flat verbs plus one orchestration verb is the smaller change with the bigger effect.
+
+### Net effect on the surface
+
+- One verb is added (`ship`). `bump` is retired or kept as an alias, and `queue` folds into `status`. The top-level count stays at 32 with the alias, or drops to 31 without it.
+- About fifteen mode flags leave `update` and `submit`.
+- Every remaining verb has one end state and one output shape. The one exception is `ship`, whose job is to vary its stopping point, and it does that through a single option.
+
 ## Suggested order
 
 1. **Now, if the release pass allows text:** §2's help and README fixes and the help-reference test. Text only, no behaviour change, and it's what v0.3.0's first readers see.
 2. **v0.3.1:** §1's bugs (recording a branch's intent, the `status --port` message, `-b` creating on a typo, `clean`'s stale usage), and §3's rollout of `-b`/`-p`/`--pr` to `status`, `path`, `archive`, and the run commands.
-3. **With layer 1's step 5**, where the roadmap already places §3, §4, §7, and §9: §4's pipeline axis with `commit`, shared pipeline flags, the batch grammar, the word table, and `undo` covering `archive`.
-4. **When touched:** `setup serve`, `clean --legacy` into the health report, `diff --source`, `clean --delete`, batch `rebase`, `note`, and `review --check`.
+3. **With layer 1's step 5**, where the roadmap already places §3, §4, §7, and §9: `ship` and the stage verbs losing their modes (§6), the word table, and `undo` covering `archive`.
+4. **When touched:** `setup serve`, `clean --legacy` into the health report, `diff --source`, `clean --delete`, batch `rebase`, `note`, and `review` as the maintainer's verb (§6).
