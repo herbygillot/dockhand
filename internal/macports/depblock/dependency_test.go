@@ -159,6 +159,30 @@ func TestGoGeneratorRefusesAnUnprunedGraphGoModLeavesShort(t *testing.T) {
 	require.NoError(t, err, "from go 1.17, go.mod lists what the build reads")
 }
 
+// A module before go 1.17 whose Portfile already keeps by hand what go.mod
+// leaves out, at the version go.sum pins, isn't refused: go-reflex keeps
+// kr/text v0.1.0 beside go2port's rows, and every update of it was refused
+// (the rc7 full stage). One kept at another version than go.sum pins, or
+// another module left out, still is.
+func TestGoGeneratorTakesWhatGoVendorsAlreadyKeeps(t *testing.T) {
+	t.Parallel()
+	sha := strings.Repeat("a", 64)
+	manifest := "module github.com/cespare/reflex\ngo 1.15\nrequire github.com/kr/pretty v0.1.0\n"
+	sum := "github.com/kr/pretty v0.1.0 h1:a=\ngithub.com/kr/pretty v0.1.0/go.mod h1:b=\ngithub.com/kr/text v0.1.0 h1:c=\ngithub.com/kr/text v0.1.0/go.mod h1:d=\n"
+	script := outputHelper(t, "go.vendors github.com/kr/pretty lock v0.1.0 sha256 "+sha)
+	in := Input{Archive: sourceArchive(t, map[string]string{"root/go.mod": manifest, "root/go.sum": sum}), Worksrcdir: "root", Package: "github.com/cespare/reflex", Tag: "v0.3.2",
+		Vendored: []string{"github.com/kr/pretty", "lock", "v0.1.0", "sha256", sha, "github.com/kr/text", "lock", "v0.1.0", "sha256", sha}}
+	_, err := Generate(t.Context(), Go, script, in)
+	require.NoError(t, err, "go.vendors keeps kr/text at the version go.sum pins")
+
+	in.Vendored = []string{"github.com/kr/text", "lock", "v0.0.9", "sha256", sha}
+	_, err = Generate(t.Context(), Go, script, in)
+	require.ErrorContains(t, err, "go.sum has the source of github.com/kr/text too", "kept at another version than go.sum pins")
+	in.Vendored = nil
+	_, err = Generate(t.Context(), Go, script, in)
+	require.ErrorContains(t, err, "go.sum has the source of github.com/kr/text too", "not kept")
+}
+
 func TestCargoGeneratorRetainsRegistryAndGitDependencies(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)

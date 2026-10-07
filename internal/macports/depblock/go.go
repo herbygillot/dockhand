@@ -127,7 +127,10 @@ func generateGo(ctx context.Context, executable string, in Input) (GeneratedBloc
 // does, and go2port writes go.mod's alone. countdown 1.5.0, at go 1.14,
 // required go-runewidth, which imports rivo/uniseg, and its check failed at
 // install with uniseg missing (the rc6 full stage, B8). The modules go.sum
-// has the source of, and go.mod doesn't require, are named.
+// has the source of, and go.mod doesn't require, are named, but for one
+// the Portfile's go.vendors already keeps by hand at a version go.sum
+// pins, which the update keeps (KeepGoModules): go-reflex keeps kr/text
+// v0.1.0 so, and every update of it was refused (the rc7 full stage).
 func unprunedGraph(ctx context.Context, in Input, mod *modfile.File) error {
 	if mod.Go != nil && semver.Compare("v"+mod.Go.Version, "v1.17") >= 0 {
 		return nil
@@ -142,6 +145,14 @@ func unprunedGraph(ctx context.Context, in Input, mod *modfile.File) error {
 	required := map[string]bool{}
 	for _, require := range mod.Require {
 		required[require.Mod.Path] = true
+	}
+	// A declaration that doesn't read as go.vendors keeps nothing here;
+	// the comparison with the generator's says what's wrong with it.
+	vendored, _ := goRows(in.Vendored)
+	for _, row := range vendored {
+		if GoSumPins(sum, row[0], goField(row, "lock")) {
+			required[row[0]] = true
+		}
 	}
 	var missing []string
 	for _, line := range strings.Split(string(sum), "\n") {

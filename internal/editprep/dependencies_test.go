@@ -276,6 +276,43 @@ func TestAKeptGoModuleTheNewOutputHasIsListedOnce(t *testing.T) {
 	}
 }
 
+// A module before go 1.17 whose go.mod leaves out one its Portfile already
+// keeps by hand, at the version go.sum pins, updates, keeping it, where
+// every update was refused: go-reflex, at go 1.15, keeps kr/text v0.1.0
+// beside go2port's rows (the rc7 full stage).
+func TestAnUnprunedGoModuleKeepsWhatGoVendorsKeeps(t *testing.T) {
+	t.Parallel()
+	sha := strings.Repeat("a", 64)
+	mod := "module github.com/owner/fixture\ngo 1.15\nrequire github.com/kr/pretty v0.1.0\n"
+	sum := "github.com/kr/pretty v0.1.0 h1:a=\ngithub.com/kr/pretty v0.1.0/go.mod h1:b=\ngithub.com/kr/text v0.1.0 h1:c=\ngithub.com/kr/text v0.1.0/go.mod h1:d=\n"
+	before := manifestArchive(t, "go.mod", mod, "1.0", "go.sum", sum)
+	after := manifestArchive(t, "go.mod", mod, "2.0", "go.sum", sum)
+	extra := `options go.vendors
+ default go.vendors {}
+ proc fixture_vendors {} {
+  foreach {module lock value sha checksum} [option go.vendors] {
+   distfiles-append dep.tar.gz:vendor
+   master_sites-append https://invalid.example:vendor
+   checksums-append dep.tar.gz sha256 $checksum
+  }
+ }
+ port::register_callback fixture_vendors
+ ` + "go.vendors github.com/kr/pretty lock v0.1.0 sha256 " + sha + " github.com/kr/text lock v0.1.0 sha256 " + sha + "\n"
+	service, request := versionFixture(t, "go-setup", extra, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/1.0/") {
+			_, _ = w.Write(before)
+		} else {
+			_, _ = w.Write(after)
+		}
+	})
+	script := "printf '%s\\n' 'go.vendors github.com/kr/pretty lock v0.1.0 sha256 " + sha + "'"
+	service.DependencyTools = depblock.Tools{Go2Port: dependencyHelper(t, script), Cargo2Port: "absent"}
+	result, err := service.Prepare(t.Context(), request)
+	require.NoError(t, err)
+	require.Len(t, result.Files, 1)
+	require.Equal(t, 1, strings.Count(string(result.Files[0].After), "github.com/kr/text lock v0.1.0"), string(result.Files[0].After))
+}
+
 func TestCargoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("b", 64)

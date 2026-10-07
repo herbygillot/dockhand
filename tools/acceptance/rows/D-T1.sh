@@ -22,8 +22,8 @@ act() {
 		row_result "not run" "set ACCEPT_LIB_PORT to a small library port and ACCEPT_LIB_DEPENDENT to a small port that depends on it"
 		return 0
 	fi
-	dh_setup revbump "$ACCEPT_LIB_PORT" "$ACCEPT_LIB_DEPENDENT" --branch dt1-tamper --subject "rebuild to test a tampered archive" || return 0
-	dh_setup check -b dt1-tamper || return 0
+	dh_setup revbump "$ACCEPT_LIB_PORT" "$ACCEPT_LIB_DEPENDENT" --branch "$(run_name dt1-tamper)" --subject "rebuild to test a tampered archive" || return 0
+	dh_setup check -b "$(run_name dt1-tamper)" || return 0
 	local archives archive dir
 	archives="$(dirname "${DOCKHAND_DB:?}")/archives"
 	DT1_ALTERED=0
@@ -34,9 +34,9 @@ act() {
 	done <<EOT
 $(find "$archives" -type f ! -name '*.sig' ! -name '*.rmd160' 2>/dev/null)
 EOT
-	dir=$("$DH_BIN" path dt1-tamper) || return 0
-	printf '\n# rebuilt with its dependency reused, to test a tampered archive\n' >>"$dir/$(dh_quiet --json status dt1-tamper | jq -r --arg p "$ACCEPT_LIB_DEPENDENT" '.result.branches[0].directories[] | select(endswith("/" + $p))')/Portfile"
-	dh_json check -b dt1-tamper || :
+	dir=$("$DH_BIN" path "$(run_name dt1-tamper)") || return 0
+	printf '\n# rebuilt with its dependency reused, to test a tampered archive\n' >>"$dir/$(dh_quiet --json status "$(run_name dt1-tamper)" | jq -r --arg p "$ACCEPT_LIB_DEPENDENT" '.result.branches[0].directories[] | select(endswith("/" + $p))')/Portfile"
+	dh_json check -b "$(run_name dt1-tamper)" || :
 	# The check's events, as its record keeps them, read from the stage's
 	# own database, opened read-only.
 	sqlite3 "file:${DOCKHAND_DB}?mode=ro" "SELECT message FROM events WHERE kind = 'archive.altered'" >>"$ROW_DIR/out.log" 2>&1 || :

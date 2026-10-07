@@ -51,6 +51,8 @@ act() {
 			name=${line#cd \"\$(dockhand path }
 			name=${name%%)*}
 			name=${name%…}
+			# The row's own name for a branch the docs name (run_name).
+			case "$name" in "$port-"*) ;; *) name=$(run_name "$name") ;; esac
 			branch=$(git -C "$MACPORTS_TREE" branch --list "dockhand/$name*" --format='%(refname:short)' | head -1)
 			if [ -n "$branch" ] && dir=$("$DH_BIN" path "$branch"); then
 				printf '$ cd %s\n' "$dir" >>"$ROW_DIR/out.log"
@@ -83,6 +85,10 @@ act() {
 		case "$words" in *"--branch "*)
 			name=${words#*--branch }
 			name=${name%% *}
+			# A name the docs give is the row's own for this run, since an
+			# earlier run's archived record holds it (the rc7 full stage).
+			words=${words/--branch $name/--branch $(run_name "$name")}
+			name=$(run_name "$name")
 			"$DH_BIN" path "$name" >/dev/null 2>&1 || dh start "$name" >/dev/null 2>&1 || :
 			;;
 		esac

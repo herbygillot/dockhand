@@ -14,6 +14,10 @@ type Input struct {
 	Archive, Worksrcdir, Package, Tag string
 	// Git states which Git crates a Cargo port declares; see GitPolicy.
 	Git GitPolicy
+	// Vendored are the go.vendors tokens the Portfile declares: a module
+	// it keeps by hand, which go.sum still pins at its version, is one
+	// go.vendors has (unprunedGraph).
+	Vendored []string
 }
 
 // GeneratedBlocks holds helper-derived declarations. Git lists the crates

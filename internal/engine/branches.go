@@ -522,9 +522,14 @@ func (e *Engine) checkOutAgain(ctx context.Context, branch model.Branch) error {
 	}
 	head, _, err := e.Repo.Branch(ctx, branch.Name)
 	if errors.Is(err, git.ErrBranchMissing) {
-		// Nothing is left to check out; the record holds its name until
-		// it's set aside (the rc6 full stage, A10).
-		return fmt.Errorf("%s's worktree %s is gone, and so is its Git branch, so nothing of it is left: dockhand archive %s sets its record aside, and another name starts afresh", branch.Name, branch.Worktree, branch.ShortName())
+		// Nothing is left to check out (the rc6 full stage, A10). The
+		// record holds its name, archived too: archive sets it aside, and
+		// doesn't free the name, which it read as if it did (the rc7 full
+		// stage).
+		if branch.State == model.BranchArchived {
+			return fmt.Errorf("%s's worktree %s is gone, and so is its Git branch, so nothing of it is left; its record is archived, and keeps the name: start the work under another name (reusing an archived branch's name comes after the release)", branch.Name, branch.Worktree)
+		}
+		return fmt.Errorf("%s's worktree %s is gone, and so is its Git branch, so nothing of it is left: dockhand archive %s sets its record aside, and the name stays taken; another name starts afresh", branch.Name, branch.Worktree, branch.ShortName())
 	}
 	if err != nil {
 		return err
