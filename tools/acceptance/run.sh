@@ -130,6 +130,10 @@ isolate_branches() {
 $open
 EOT
 	"$DH_BIN" --json status 2>/dev/null | jq -r '.result.branches[]?.name' >"$ROW_DIR/branches.before" 2>/dev/null || :
+	# Remote-tracking refs of fork branches gone go before the row, outside
+	# its harm sweep's window, so no row's prune finds them (the rc6 full
+	# stage, D-S9).
+	git -C "${MACPORTS_TREE:?}" remote prune origin >>"$ROW_DIR/isolation.log" 2>&1 || :
 }
 
 printf '%-8s %-14s %s\n' ROW RESULT WHY

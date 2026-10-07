@@ -9,6 +9,10 @@ act() {
 	dh_bg check -p "$(port)"
 	wait_for_line "$DH_BG_LOG" 'building in' 900 || :
 	git -C "$MACPORTS_TREE" gc -q --prune=now 2>>"$ROW_DIR/git.log" || :
+	# The prune is the row's own, the person's: the remote-tracking refs it
+	# removes for fork branches gone are no work dockhand lost (the rc6
+	# full stage, where H1 counted two).
+	allow_ref_gone 'refs/remotes/origin/*'
 	git -C "$MACPORTS_TREE" fetch -q --prune origin 2>>"$ROW_DIR/git.log" || :
 	dh_bg_wait || :
 	echo "$?" >"$ROW_DIR/ds9.check"

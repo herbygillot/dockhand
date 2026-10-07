@@ -83,3 +83,5 @@ D-C2 asked serve to say once that it couldn't act after a logout. It can: a runn
 ## 2026-10-07: rows that need a pull request's state make it
 
 D-S1, D-S2, and D-S10 make what they test in setup, before the harm sweep's snapshot, as B6 and C7 do: D-S1 a test pull request and a commit pushed to its fork branch from the worktree and taken back out of it; D-S2 a test pull request closed, with an uncommitted edit left; D-S10 a master of its own, at MacPorts', which moves to the branch's commit once it's tidied, standing in for another contributor's pull request landing. D-I3, D-S4, and F4 take their branch with own_branch, where the first `dockhand/*` ref, alphabetically, was another row's, archived, and the selftest refuses a row that does that.
+
+D-S9's own `git fetch --prune` removed the clone's remote-tracking refs of fork branches an earlier cleanup deleted, and H1 counted them as lost work; the row now allows `refs/remotes/origin/*` gone for its prune. close_test_pr deletes the tracking ref of the fork branch its clean removed, and run.sh prunes origin's stale tracking refs before each full-stage row, outside its harm window.

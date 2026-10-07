@@ -130,6 +130,9 @@ close_test_pr() {
 	allow_change "*"
 	allow_ref_gone "*$branch*"
 	dh_json clean --closed -y
+	# The clone's remote-tracking ref of the fork branch clean removed goes
+	# too, which a later row's prune would otherwise take for lost work.
+	git -C "$MACPORTS_TREE" update-ref -d "refs/remotes/origin/dockhand/$branch" 2>/dev/null || :
 }
 
 # dh_quiet runs dockhand for a value a row reads, not for the row's log.
