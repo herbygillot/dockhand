@@ -15,10 +15,21 @@ act() {
 	local shim
 	shim=$(fault_shims old-tart)
 	PATH="$shim:$PATH" "$DH_BIN" check -b "$F8_BRANCH" --on golden-gate >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
-	checkpoint "install Tart from Homebrew too (brew install cirruslabs/cli/tart), ahead on PATH" || return 0
-	dh_json providers || :
+	# Homebrew's Tart, ahead on PATH, stood in for by a Tart of its own in
+	# a Homebrew-shaped directory, saying a newer version and doing what
+	# the real one does, so no one installs Homebrew for the row.
+	local brew=$ROW_DIR/homebrew/bin real
+	real=$(command -v tart)
+	mkdir -p "$brew"
+	printf '#!/bin/sh
+[ "$1" = --version ] && { echo "2.41.0"; exit 0; }
+exec "%s" "$@"
+' "$real" >"$brew/tart"
+	chmod +x "$brew/tart"
+	PATH="$brew:$PATH" dh_json providers || :
 }
 assert() {
 	grep -q '2.39' "$ROW_DIR/out.log" || { row_fail "the old Tart wasn't refused by version"; return; }
-	judged "Homebrew's Tart was found"
+	grep -q "Tart isn't installed" "$ROW_DIR/out.log" && { row_fail "the Tart ahead on PATH wasn't found"; return; }
+	row_pass "the old Tart was refused by version, and the Tart ahead on PATH was found"
 }
