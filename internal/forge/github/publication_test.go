@@ -3,6 +3,7 @@ package github_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -434,5 +435,36 @@ func TestFindPrefersTheOpenPullRequestOfAName(t *testing.T) {
 		}
 		require.NoError(t, err)
 		require.Equal(t, test.want, found.PullRequest.Ref.Number)
+	}
+}
+
+// Each refusal says which it is, where one message for all four read a
+// renamed fork as invalid, archived, or disabled; a rename is its own
+// error, naming the new name (the rc8 full stage's F3).
+func TestRepositoryInfoSaysWhyItRefuses(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		row  map[string]any
+		want string
+	}{
+		{"renamed", map[string]any{"full_name": "author/ports-renamed", "default_branch": "main", "clone_url": "https://github.com/author/ports-renamed.git"}, "author/ports is now author/ports-renamed, renamed or transferred"},
+		{"branch", map[string]any{"full_name": "author/ports", "default_branch": "a..b", "clone_url": "https://github.com/author/ports.git"}, `author/ports's default branch, "a..b", isn't a branch name dockhand can use`},
+		{"archived", map[string]any{"full_name": "author/ports", "default_branch": "main", "archived": true, "clone_url": "https://github.com/author/ports.git"}, "author/ports is archived on GitHub, so nothing can be pushed to it"},
+		{"disabled", map[string]any{"full_name": "author/ports", "default_branch": "main", "disabled": true, "clone_url": "https://github.com/author/ports.git"}, "author/ports is disabled on GitHub"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(test.row)
+			}))
+			defer server.Close()
+			client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
+			_, err := client.RepositoryInfo(t.Context(), "author/ports")
+			require.ErrorContains(t, err, test.want)
+			var moved *forge.RepositoryMovedError
+			require.Equal(t, test.name == "renamed", errors.As(err, &moved))
+			if moved != nil {
+				require.Equal(t, forge.RepositoryMovedError{From: "author/ports", To: "author/ports-renamed", CloneURL: "https://github.com/author/ports-renamed.git"}, *moved)
+			}
+		})
 	}
 }

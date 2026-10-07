@@ -34,6 +34,9 @@ type GitHub struct {
 	// ForkParent is the fork's parent as GitHub reports it; MacPorts'
 	// where empty. Another names a fork of something else.
 	ForkParent string
+	// ForkMovedTo is where GitHub says the fork went, renamed or
+	// transferred; empty where it's where it was.
+	ForkMovedTo string
 	// Repos are other people's repositories, by name, as local paths.
 	Repos map[string]string
 	// PRs are the pull requests opened, by number, from 34901; Drafts
@@ -138,6 +141,9 @@ func (g *GitHub) NameFromRemote(url string) (string, error) {
 }
 
 func (g *GitHub) RepositoryInfo(_ context.Context, name string) (forge.RepositoryInfo, error) {
+	if name == ForkRepository && g.ForkMovedTo != "" {
+		return forge.RepositoryInfo{}, &forge.RepositoryMovedError{From: name, To: g.ForkMovedTo, CloneURL: "https://github.com/" + g.ForkMovedTo + ".git"}
+	}
 	if name == ForkRepository {
 		parent := g.ForkParent
 		if parent == "" {

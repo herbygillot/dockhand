@@ -963,6 +963,17 @@ func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named st
 		return buildenv.Fork{}, fmt.Errorf("%s isn't the sandbox %s that pull requests go to", fork.Repository, e.PullRequestRepository())
 	}
 	info, err := f.RepositoryInfo(ctx, fork.Repository)
+	var moved *forge.RepositoryMovedError
+	if errors.As(err, &moved) {
+		// Refused, not followed: the remote names the repository dockhand
+		// pushes to, and a person points it at the new one (the trust rule;
+		// the rc8 full stage's F3).
+		url := moved.CloneURL
+		if strings.HasPrefix(fork.PushURL, "git@") || strings.HasPrefix(fork.PushURL, "ssh://") {
+			url = "git@github.com:" + moved.To + ".git"
+		}
+		return buildenv.Fork{}, fmt.Errorf("%s is now %s on GitHub, renamed or transferred, and remote %s still names the old one; point it at the new one: git remote set-url %s %s", moved.From, moved.To, fork.Remote, fork.Remote, url)
+	}
 	if err != nil {
 		return buildenv.Fork{}, err
 	}

@@ -31,8 +31,20 @@ func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.Reposit
 	if err != nil {
 		return forge.RepositoryInfo{}, githubapi.RateLimitError(err)
 	}
-	if !strings.EqualFold(row.GetFullName(), name) || !git.ValidBranchName(row.GetDefaultBranch()) || row.GetArchived() || row.GetDisabled() {
-		return forge.RepositoryInfo{}, fmt.Errorf("github: repository metadata is invalid or repository is archived/disabled")
+	// Each refusal says which it is: one message for all four read a
+	// renamed fork as invalid, archived, or disabled (the rc8 full stage's
+	// F3).
+	switch {
+	case !strings.EqualFold(row.GetFullName(), name) && githubapi.ValidRepositoryName(row.GetFullName()):
+		return forge.RepositoryInfo{}, &forge.RepositoryMovedError{From: name, To: row.GetFullName(), CloneURL: row.GetCloneURL()}
+	case !strings.EqualFold(row.GetFullName(), name):
+		return forge.RepositoryInfo{}, fmt.Errorf("github: GitHub answered %s with a repository named %q, which isn't one", name, row.GetFullName())
+	case !git.ValidBranchName(row.GetDefaultBranch()):
+		return forge.RepositoryInfo{}, fmt.Errorf("github: %s's default branch, %q, isn't a branch name dockhand can use", name, row.GetDefaultBranch())
+	case row.GetArchived():
+		return forge.RepositoryInfo{}, fmt.Errorf("github: %s is archived on GitHub, so nothing can be pushed to it", name)
+	case row.GetDisabled():
+		return forge.RepositoryInfo{}, fmt.Errorf("github: %s is disabled on GitHub", name)
 	}
 	cloneName, err := c.NameFromRemote(row.GetCloneURL())
 	if err != nil || !strings.EqualFold(cloneName, name) {

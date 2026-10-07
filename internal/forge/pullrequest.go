@@ -173,6 +173,16 @@ type PullRequestSummary struct {
 type PullRequestQuery struct{ Repository, HeadRepository, HeadBranch, BaseBranch string }
 type RepositoryInfo struct{ Name, DefaultBranch, Parent, CloneURL string }
 
+// RepositoryMovedError is a repository the forge answers under another
+// name, renamed or transferred, as it redirects the old one: what a remote
+// still names isn't the repository, and dockhand pushes to no other than
+// the one named (the rc8 full stage's F3).
+type RepositoryMovedError struct{ From, To, CloneURL string }
+
+func (e *RepositoryMovedError) Error() string {
+	return fmt.Sprintf("%s is now %s, renamed or transferred", e.From, e.To)
+}
+
 // ReviewComment is a review's comment on one line of a changed file.
 type ReviewComment struct {
 	Path string

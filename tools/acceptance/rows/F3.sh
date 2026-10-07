@@ -23,9 +23,19 @@ act() {
 		# the fork's and upstream's, not the check's.
 		dh_json submit -b "$F3_BRANCH" --plan --no-check || :
 	done
-	checkpoint "rename the fork on GitHub, then put the remotes back" || return 0
+	checkpoint "rename the fork on GitHub, then put the remotes back as they were, still naming its old name" || return 0
 	dh_json auth status || :
+	# submit, which finds the fork, refuses one GitHub renamed, naming the
+	# new name and the git remote set-url to run, where it read "invalid
+	# or archived" (the rc8 full stage).
+	dh_json submit -b "$F3_BRANCH" --plan --no-check || :
+	F3_RENAMED=$DH_LAST_JSON
+	checkpoint "rename the fork back on GitHub" || return 0
 }
 assert() {
-	judged "the fork and upstream were found in each layout and after the rename"
+	if [ -n "${F3_RENAMED:-}" ]; then
+		jq -r '.error // ""' "$F3_RENAMED" | grep -q 'is now .* on GitHub, renamed or transferred.*git remote set-url' ||
+			{ row_fail "submit didn't name the renamed fork and the remote to point at it: $(jq -r '.error // "it went on"' "$F3_RENAMED")"; return; }
+	fi
+	judged "the fork and upstream were found in each layout, and submit named the rename"
 }

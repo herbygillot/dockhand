@@ -37,6 +37,11 @@ func TestSubmitPushesOnlyToYourFork(t *testing.T) {
 	err := plan(t, "", func(_ fixture, fake *forgetest.GitHub) { fake.ForkParent = "someone/other-ports" })
 	require.ErrorContains(t, err, "ada/macports-ports is not a fork of macports/macports-ports; dockhand pushes only to your fork")
 
+	// A fork renamed on GitHub is refused, naming where it went and the
+	// remote to point at it, not followed (the rc8 full stage's F3).
+	err = plan(t, "", func(_ fixture, fake *forgetest.GitHub) { fake.ForkMovedTo = "ada/macports-ports-renamed" })
+	require.ErrorContains(t, err, "ada/macports-ports is now ada/macports-ports-renamed on GitHub, renamed or transferred, and remote fork still names the old one; point it at the new one: git remote set-url fork https://github.com/ada/macports-ports-renamed.git")
+
 	err = plan(t, "elsewhere", func(fixture, *forgetest.GitHub) {})
 	require.ErrorContains(t, err, "there is no remote elsewhere that pushes to a GitHub repository other than macports/macports-ports")
 
