@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -425,4 +426,49 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 	require.Contains(t, out, "serve: logged in again as ada; acting on GitHub again\n")
 
 	require.Equal(t, "serve: running (pid 7) · not acting on GitHub: no GitHub login · queue: empty", serveWords(engine.ServeState{Running: true, PID: 7, NotActing: "no GitHub login"}))
+}
+
+// A login revoked, then one serve can't read for a while, as a Keychain
+// that won't answer the agent, then a new one: serve says once why it
+// couldn't read it, where it kept its state in silence, and that it's
+// logged in again once it can (the rc8 full stage's D-C3).
+func TestServeSaysALoginItCantRead(t *testing.T) {
+	checkedBranch(t)
+	var mu sync.Mutex
+	answers := []string{"ada", "revoked", "unread", "unread", "ada"}
+	realIdentity, realEvery := serveIdentity, serveIdentityEvery
+	t.Cleanup(func() { serveIdentity, serveIdentityEvery = realIdentity, realEvery })
+	serveIdentityEvery = 50 * time.Millisecond
+	serveIdentity = func() func(context.Context) (string, error) {
+		return func(context.Context) (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			answer := answers[0]
+			if len(answers) > 1 {
+				answers = answers[1:]
+			}
+			switch answer {
+			case "revoked":
+				return "", fmt.Errorf("%w: GitHub rejected the credential from Dockhand macOS Keychain", github.ErrAuthentication)
+			case "unread":
+				return "", errors.New("github: reading saved credential: the keychain won't answer")
+			}
+			return answer, nil
+		}
+	}
+	ctx, stop := context.WithCancel(t.Context())
+	var served syncBuffer
+	done := make(chan error)
+	go func() {
+		done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+	}()
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "logged in again as ada") }, settle, 10*time.Millisecond)
+	stop()
+	require.NoError(t, <-done)
+	out := served.String()
+	require.Equal(t, 1, strings.Count(out, "serve: couldn't read who its GitHub login is (github: reading saved credential: the keychain won't answer); it goes on as it was, and reads it again each minute\n"), out)
+	require.Contains(t, out, "serve: logged in again as ada; acting on GitHub again\n")
+
+	require.Equal(t, "serve: running (pid 7) · not acting on GitHub: GitHub rejected the login; dockhand setup github · couldn't read its GitHub login: the keychain won't answer · queue: empty",
+		serveWords(engine.ServeState{Running: true, PID: 7, NotActing: "GitHub rejected the login; dockhand setup github", LoginProblem: "the keychain won't answer"}))
 }

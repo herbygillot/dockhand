@@ -244,7 +244,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	s.say("serve: leading (pid %d) · builds on %s · %s", os.Getpid(), strings.Join(described, ", "), publishing)
 	login := &loginGate{s: s}
 	login.look(ctx)
-	s.written("serving.json", e.announceServing(options.SubmitPassing, options.Build, login.words()))
+	s.written("serving.json", e.announceServing(login.serving()))
 	followed := &follower{s: s, reported: map[string]bool{}}
 	cleaned := &cleaner{s: s, session: session}
 	scanned := &outdatedScanner{s: s}
@@ -454,6 +454,9 @@ type loginGate struct {
 	// other.
 	state, other string
 	last         time.Time
+	// problem is why the login couldn't be read, the last look; "" when
+	// it could (unread).
+	problem string
 }
 
 func (g *loginGate) look(ctx context.Context) {
@@ -463,6 +466,11 @@ func (g *loginGate) look(ctx context.Context) {
 	}
 	g.last = time.Now()
 	account, err := identity(ctx)
+	if errors.Is(err, github.ErrNoCredentials) || errors.Is(err, github.ErrAuthentication) {
+		g.unread(nil)
+	} else {
+		g.unread(err)
+	}
 	switch {
 	case errors.Is(err, github.ErrNoCredentials):
 		g.set("none", "")
@@ -473,7 +481,7 @@ func (g *loginGate) look(ctx context.Context) {
 		g.set("rejected", "")
 	case err != nil:
 		// Who it is couldn't be read now, as GitHub out of reach; what
-		// serve does stays as it was.
+		// serve does stays as it was, and unread said why.
 	case g.pinned == "":
 		g.pinned = account
 		g.set("", "")
@@ -505,7 +513,31 @@ func (g *loginGate) set(state, other string) {
 			g.s.say("serve: logged in again as %s; acting on GitHub again", g.pinned)
 		}
 	}
-	g.s.written("serving.json", g.s.e.announceServing(g.s.options.SubmitPassing, g.s.options.Build, g.words()))
+	g.s.written("serving.json", g.s.e.announceServing(g.serving()))
+}
+
+// serving is what serve says of itself, with its login as it stands.
+func (g *loginGate) serving() Serving {
+	return Serving{SubmitPassing: g.s.options.SubmitPassing, Build: g.s.options.Build, NotActing: g.words(), LoginProblem: g.problem}
+}
+
+// unread says once why who the login is couldn't be read, where it went
+// unsaid and serve kept its state, as "rejected" after a new login it
+// couldn't read (the rc8 full stage's D-C3); nil clears it, said by the
+// login's state. It's said again when the reason changes.
+func (g *loginGate) unread(err error) {
+	problem := ""
+	if err != nil {
+		problem = err.Error()
+	}
+	if problem == g.problem {
+		return
+	}
+	g.problem = problem
+	if problem != "" {
+		g.s.say("serve: couldn't read who its GitHub login is (%s); it goes on as it was, and reads it again each minute", problem)
+	}
+	g.s.written("serving.json", g.s.e.announceServing(g.serving()))
 }
 
 // reads is whether serve reads GitHub; writes, whether it acts there.
@@ -965,6 +997,9 @@ type Serving struct {
 	// NotActing is why serve isn't acting on GitHub, as its login stands;
 	// empty while it acts.
 	NotActing string `json:"not_acting,omitempty"`
+	// LoginProblem is why serve couldn't read who its login is, the last
+	// time it looked; empty when it could.
+	LoginProblem string `json:"login_problem,omitempty"`
 }
 
 // ServeState is serve's state for the repository, as status and queue
@@ -976,11 +1011,13 @@ type ServeState struct {
 	PID               int
 	OpensPullRequests bool
 	// Build is the build the leading serve runs, where it said; NotActing,
-	// why it isn't acting on GitHub, where it isn't.
-	Build     string
-	NotActing string
-	Queue     int
-	Stopped   int
+	// why it isn't acting on GitHub, where it isn't; LoginProblem, why it
+	// couldn't read its login, where it couldn't.
+	Build        string
+	NotActing    string
+	LoginProblem string
+	Queue        int
+	Stopped      int
 }
 
 // ServeState reads serve's state. Judging who is alive takes a session.
@@ -1007,15 +1044,17 @@ func (e *Engine) ServeState(ctx context.Context, session *coord.Session) (ServeS
 		state.Running, state.PID = true, leader.PID
 		// What an earlier serve said of itself isn't the leader's to say.
 		if serving, ok := e.lastServing(); ok && serving.PID == leader.PID {
-			state.OpensPullRequests, state.Build, state.NotActing = serving.SubmitPassing, serving.Build, serving.NotActing
+			state.OpensPullRequests, state.Build, state.NotActing, state.LoginProblem = serving.SubmitPassing, serving.Build, serving.NotActing, serving.LoginProblem
 		}
 	}
 	return state, nil
 }
 
-// announceServing writes what this serve says of itself, for status.
-func (e *Engine) announceServing(submitPassing bool, build, notActing string) error {
-	data, err := json.Marshal(Serving{PID: os.Getpid(), SubmitPassing: submitPassing, Build: build, NotActing: notActing})
+// announceServing writes what this serve says of itself, for status, as
+// this process.
+func (e *Engine) announceServing(serving Serving) error {
+	serving.PID = os.Getpid()
+	data, err := json.Marshal(serving)
 	if err != nil {
 		return err
 	}

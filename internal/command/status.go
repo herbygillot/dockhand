@@ -501,6 +501,11 @@ func serveWords(s engine.ServeState) string {
 		if s.NotActing != "" {
 			line += " · not acting on GitHub: " + s.NotActing
 		}
+		// One that couldn't read its login says so, where it said nothing
+		// and kept its state (the rc8 full stage's D-C3).
+		if s.LoginProblem != "" {
+			line += " · couldn't read its GitHub login: " + s.LoginProblem
+		}
 		if s.OpensPullRequests {
 			line += " · opens PRs for passing updates"
 		}

@@ -191,6 +191,34 @@ func TestARenewedLoginTheStoreRefusedIsUsedAndSavedLater(t *testing.T) {
 	require.EqualValues(t, 1, asked.Load(), "renewed once")
 }
 
+// A login saved since a renewal the store didn't take, as dockhand setup
+// github saves one, is the one used, and the renewal, of the login it
+// replaced, never writes over it: serve, given a new login after its own
+// was revoked, kept the old one (the rc8 full stage's D-C3).
+func TestALoginSavedSinceAnUnsavedRenewalWins(t *testing.T) {
+	noEnvironment(t)
+	server, _ := tokenEndpoint(t, "")
+	store := expiring(t, time.Now().AddDate(0, 6, 0))
+	store.refuse = true
+	source := renewer(server, store, filepath.Join(t.TempDir(), "github-login.lock"))
+	token, err := source.Token(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "A2", token.Secret, "renewed, and held, since the store refused it")
+
+	fresh, err := credential.Login{Access: "A9", AccessExpiry: time.Now().Add(time.Hour), Refresh: "R9", RefreshExpiry: time.Now().AddDate(0, 6, 0), Account: "ada", ClientID: "fixture-client"}.Encode()
+	require.NoError(t, err)
+	store.mu.Lock()
+	store.value, store.refuse = fresh, false // as another process's setup github saves it
+	store.mu.Unlock()
+	token, err = source.Token(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "A9", token.Secret, "the login saved since")
+	require.Equal(t, "R9", store.login(t).Refresh, "the held renewal didn't write over it")
+	token, err = source.Token(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "A9", token.Secret)
+}
+
 // A token GitHub rejects is renewed though it hadn't expired, and a
 // client's request tried again with the new one.
 func TestARejectedLoginIsRenewed(t *testing.T) {

@@ -587,12 +587,13 @@ type serveJSON struct {
 	OpensPullRequests bool   `json:"opens_pull_requests,omitempty"`
 	Build             string `json:"build,omitempty"`
 	NotActing         string `json:"not_acting,omitempty"`
+	LoginProblem      string `json:"login_problem,omitempty"`
 	Queue             int    `json:"queue"`
 	Stopped           int    `json:"stopped"`
 }
 
 func serveView(s engine.ServeState) serveJSON {
-	return serveJSON{Running: s.Running, PID: s.PID, OpensPullRequests: s.OpensPullRequests, Build: s.Build, NotActing: s.NotActing, Queue: s.Queue, Stopped: s.Stopped}
+	return serveJSON{Running: s.Running, PID: s.PID, OpensPullRequests: s.OpensPullRequests, Build: s.Build, NotActing: s.NotActing, LoginProblem: s.LoginProblem, Queue: s.Queue, Stopped: s.Stopped}
 }
 
 func nonNil[T any](values []T) []T {

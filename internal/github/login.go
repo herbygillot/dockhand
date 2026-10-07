@@ -46,6 +46,9 @@ func (s SystemCredentials) WithRenewal(flow *DeviceFlow, path string) SystemCred
 type pendingLogin struct {
 	mu    sync.Mutex
 	login *credential.Login
+	// from is the refresh token of the login it renewed: a login in the
+	// store with another is one saved since, as by dockhand setup github.
+	from string
 }
 
 func (p *pendingLogin) get() *credential.Login {
@@ -57,13 +60,23 @@ func (p *pendingLogin) get() *credential.Login {
 	return p.login
 }
 
-func (p *pendingLogin) set(login *credential.Login) {
+func (p *pendingLogin) set(login *credential.Login, from string) {
 	if p == nil {
 		return
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.login = login
+	p.login, p.from = login, from
+}
+
+// renewedFrom is the refresh token of the login the pending one renewed.
+func (p *pendingLogin) renewedFrom() string {
+	if p == nil {
+		return ""
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.from
 }
 
 // errOldLogin and errExpiredLogin are a saved login that can't renew
@@ -131,16 +144,27 @@ func (s SystemCredentials) login(ctx context.Context, rejected Token) (Token, bo
 	if err != nil {
 		return Token{}, true, err
 	}
-	s.keep(ctx, renewed)
+	s.keep(ctx, renewed, saved.Refresh)
 	return tokenOf(renewed), true, nil
 }
 
 // saved is the login the store keeps, or the one renewed it didn't take.
+// A login saved since the renewal, as by dockhand setup github, is the
+// store's: the pending one, of the login it replaced, goes. It stood in
+// front of the new login, and a later save wrote it over it: serve, given
+// a new login after its own was revoked, never read it (the rc8 full
+// stage's D-C3).
 func (s SystemCredentials) saved(ctx context.Context) (credential.Login, error) {
 	if pending := s.renewed.get(); pending != nil {
+		if value, err := s.Store.Get(ctx, s.Key); err == nil {
+			if stored, err := credential.DecodeLogin(value); err == nil && stored.Refresh != s.renewed.renewedFrom() && stored.Refresh != pending.Refresh {
+				s.renewed.set(nil, "")
+				return stored, nil
+			}
+		}
 		// A save that failed is tried again, the next time it's asked.
 		if encoded, err := pending.Encode(); err == nil && s.Store.Put(ctx, s.Key, encoded) == nil {
-			s.renewed.set(nil)
+			s.renewed.set(nil, "")
 		}
 		return *pending, nil
 	}
@@ -162,13 +186,13 @@ func (s SystemCredentials) saved(ctx context.Context) (credential.Login, error) 
 // which is spent: one the store doesn't take is used from memory, and
 // saved the next time the login is asked for, and said, since a process
 // that ends before then leaves the person logged out.
-func (s SystemCredentials) keep(ctx context.Context, renewed credential.Login) {
+func (s SystemCredentials) keep(ctx context.Context, renewed credential.Login, from string) {
 	encoded, err := renewed.Encode()
 	if err == nil {
 		err = s.Store.Put(ctx, s.Key, encoded)
 	}
 	if err != nil {
-		s.renewed.set(&renewed)
+		s.renewed.set(&renewed, from)
 		progress.Report(ctx, "Couldn't save the renewed GitHub login to the Keychain (%v); this dockhand uses it, and tries again. If it ends first, run dockhand setup github.", err)
 	}
 }
