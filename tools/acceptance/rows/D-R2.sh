@@ -1,13 +1,21 @@
 # stages: quick full
 # D-R2: both VM slots taken by the person's own Tart VMs. The check waits
 # or says why, and never stops those VMs. It needs a vanilla image to
-# clone, ACCEPT_VANILLA, else Cirrus Labs' vanilla image of macOS 27
-# where Tart has it already; without one, it isn't run.
+# clone, ACCEPT_VANILLA, else a Cirrus Labs vanilla image dockhand's Tart
+# home has already (fault_tart), macOS 27's first; without one, it isn't
+# run.
 . "${ROW_LIB:?}/fault.sh"
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 setup() {
-	if [ -z "${ACCEPT_VANILLA:-}" ] && tart list --quiet 2>/dev/null | grep -qxF ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest; then
-		export ACCEPT_VANILLA=ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest
+	if [ -z "${ACCEPT_VANILLA:-}" ]; then
+		local images
+		images=$(fault_tart list --quiet 2>/dev/null)
+		if printf '%s\n' "$images" | grep -qxF ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest; then
+			export ACCEPT_VANILLA=ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest
+		else
+			ACCEPT_VANILLA=$(printf '%s\n' "$images" | grep -E '^ghcr\.io/cirruslabs/macos-[a-z-]+-vanilla:' | head -1)
+			export ACCEPT_VANILLA
+		fi
 	fi
 	[ -n "${ACCEPT_VANILLA:-}" ] || return 0
 	fault_vm_slots
@@ -20,11 +28,11 @@ act() {
 	with_timeout 180 "$DH_BIN" check -b "$(own_branch)" --fresh >"$ROW_DIR/dr2.log" 2>&1
 	echo "$?" >"$ROW_DIR/dr2.exit"
 	cat "$ROW_DIR/dr2.log" >>"$ROW_DIR/out.log"
-	DR2_RUNNING=$(tart list --format json | jq -r '[.[] | select(.Name | startswith("dhaccept-slot-")) | select(.State == "running")] | length')
+	DR2_RUNNING=$(fault_tart list --format json | jq -r '[.[] | select(.Name | startswith("dhaccept-slot-")) | select(.State == "running")] | length')
 }
 assert() {
 	if [ -z "${ACCEPT_VANILLA:-}" ]; then
-		row_result "not run" "ACCEPT_VANILLA names no vanilla image to take the slots with, and Tart hasn't Cirrus Labs' macOS 27 one"
+		row_result "not run" "ACCEPT_VANILLA names no vanilla image to take the slots with, and dockhand's Tart home has no Cirrus Labs vanilla one"
 		return
 	fi
 	if [ "${DR2_RUNNING:-0}" != 2 ]; then

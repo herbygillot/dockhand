@@ -51,6 +51,12 @@ fault_low_disk_stop() { [ -n "${FAULT_LOW_DISK:-}" ] && hdiutil detach -quiet -f
 # fault_vm_slots takes the Mac's two VM slots with two running clones of a
 # vanilla macOS image, ACCEPT_VANILLA, in the user's own Tart home, as a
 # person's own VMs would. It says nothing and does nothing without one.
+# fault_tart runs tart in dockhand's Tart home, DOCKHAND_TART_HOME, else
+# ~/.dockhand/tart, where dockhand keeps its images: a plain tart reads
+# Tart's own home, and D-R2 found no vanilla image there (the rc8 full
+# stage).
+fault_tart() { TART_HOME="${DOCKHAND_TART_HOME:-$HOME/.dockhand/tart}" tart "$@"; }
+
 fault_vm_slots() {
 	[ -n "${ACCEPT_VANILLA:-}" ] || return 1
 	local n
@@ -58,16 +64,16 @@ fault_vm_slots() {
 	# (the M1's rerun: VM "dhaccept-slot-1" already exists).
 	fault_vm_slots_stop
 	for n in 1 2; do
-		tart clone "$ACCEPT_VANILLA" "dhaccept-slot-$n" || return 1
-		tart run --no-graphics "dhaccept-slot-$n" >"$ROW_DIR/slot-$n.log" 2>&1 &
+		fault_tart clone "$ACCEPT_VANILLA" "dhaccept-slot-$n" || return 1
+		fault_tart run --no-graphics "dhaccept-slot-$n" >"$ROW_DIR/slot-$n.log" 2>&1 &
 	done
 	sleep 20
 }
 fault_vm_slots_stop() {
 	local n
 	for n in 1 2; do
-		tart stop "dhaccept-slot-$n" >/dev/null 2>&1
-		tart delete "dhaccept-slot-$n" >/dev/null 2>&1
+		fault_tart stop "dhaccept-slot-$n" >/dev/null 2>&1
+		fault_tart delete "dhaccept-slot-$n" >/dev/null 2>&1
 	done
 }
 
