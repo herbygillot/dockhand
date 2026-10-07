@@ -395,17 +395,25 @@ func TestACancelIsAppliedByWhoeverHoldsTheRun(t *testing.T) {
 	queued := queuedHarborRun(t, e, tahoeArm)
 	runner, canceller := session(t, e), session(t, e)
 
-	done := make(chan model.Run)
+	// Drive's result comes back to be judged here: a require in its
+	// goroutine can't stop the test, and left the wait below to block
+	// until the package's timeout.
+	type driven struct {
+		run model.Run
+		err error
+	}
+	done := make(chan driven, 1)
 	go func() {
 		run, err := e.Drive(context.Background(), runner, queued.ID)
-		require.NoError(t, err)
-		done <- run
+		done <- driven{run, err}
 	}()
+	// Bounds, not paces: each wait ends as soon as it's met, and a loaded
+	// runner, as CI's Intel one, may take far longer than here.
 	require.Eventually(t, func() bool {
 		provider.mu.Lock()
 		defer provider.mu.Unlock()
 		return len(provider.jobs) == 1
-	}, 5*time.Second, 10*time.Millisecond)
+	}, settleWait, 10*time.Millisecond, "the provider was never given the job")
 	run, err := e.RequestCancel(t.Context(), canceller, queued.ID)
 	require.NoError(t, err)
 	// The holder applies it, at its next poll. It may already have, and
@@ -413,7 +421,13 @@ func TestACancelIsAppliedByWhoeverHoldsTheRun(t *testing.T) {
 	// the run canceled: on CI's Intel runner it had (404ac160). Either
 	// way the canceller applies nothing while the holder lives.
 	require.Contains(t, []model.RunState{model.RunRunning, model.RunCanceled}, run.State)
-	run = <-done
+	select {
+	case result := <-done:
+		require.NoError(t, result.err)
+		run = result.run
+	case <-time.After(settleWait):
+		t.Fatal("the holder never ended the run after its cancel was asked for")
+	}
 	require.Equal(t, model.RunCanceled, run.State)
 	events, err := e.RunEvents(t.Context(), run.ID, 0)
 	require.NoError(t, err)
@@ -430,6 +444,10 @@ func TestACancelIsAppliedByWhoeverHoldsTheRun(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.RunCanceled, canceled.State)
 }
+
+// settleWait bounds a test's wait for what another goroutine does: a
+// bound, not a pace, since the wait ends once the condition holds.
+const settleWait = 2 * time.Minute
 
 func mustPlan(t *testing.T, e *Engine, run model.Run) model.Plan {
 	t.Helper()
