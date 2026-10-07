@@ -112,6 +112,9 @@ type server struct {
 	// loginEnded is whether serve has notified that the GitHub login
 	// can't renew itself, which it does once a process.
 	loginEnded atomic.Bool
+	// unwritten is the day each of serve's files last failed to be
+	// written, said once a day (written).
+	unwritten map[string]time.Time
 }
 
 func newServer(e *Engine, options ServeOptions) *server {
@@ -138,6 +141,28 @@ func (s *server) say(format string, args ...any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.options.Say(fmt.Sprintf(format, args...))
+}
+
+// written says a failure to write one of serve's files once a day, where
+// it was dropped, and status read an older state without a word (the
+// architecture review's L3e). Nil says nothing.
+func (s *server) written(name string, err error) {
+	if err == nil {
+		return
+	}
+	day := dayStart(s.options.Now())
+	s.mu.Lock()
+	said := s.unwritten[name].Equal(day)
+	if !said {
+		if s.unwritten == nil {
+			s.unwritten = map[string]time.Time{}
+		}
+		s.unwritten[name] = day
+	}
+	s.mu.Unlock()
+	if !said {
+		s.say("serve: couldn't write %s, so status may read an older state: %v", s.e.serveFile(name), err)
+	}
 }
 
 func (s *server) notify(title, text string) {
@@ -219,7 +244,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	s.say("serve: leading (pid %d) · builds on %s · %s", os.Getpid(), strings.Join(described, ", "), publishing)
 	login := &loginGate{s: s}
 	login.look(ctx)
-	e.announceServing(options.SubmitPassing, options.Build, login.words())
+	s.written("serving.json", e.announceServing(options.SubmitPassing, options.Build, login.words()))
 	followed := &follower{s: s, reported: map[string]bool{}}
 	cleaned := &cleaner{s: s, session: session}
 	scanned := &outdatedScanner{s: s}
@@ -480,7 +505,7 @@ func (g *loginGate) set(state, other string) {
 			g.s.say("serve: logged in again as %s; acting on GitHub again", g.pinned)
 		}
 	}
-	g.s.e.announceServing(g.s.options.SubmitPassing, g.s.options.Build, g.words())
+	g.s.written("serving.json", g.s.e.announceServing(g.s.options.SubmitPassing, g.s.options.Build, g.words()))
 }
 
 // reads is whether serve reads GitHub; writes, whether it acts there.
@@ -700,7 +725,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	stamp := true
 	defer func() {
 		if ctx.Err() == nil && stamp {
-			_ = e.stampServeFile("outdated.stamp", now)
+			o.s.written("outdated.stamp", e.stampServeFile("outdated.stamp", now))
 		}
 	}()
 	report := func(problem string) {
@@ -757,7 +782,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		}
 	}
 	if data, err := json.Marshal(look); err == nil {
-		_ = e.writeServeFile("outdated.json", data)
+		o.s.written("outdated.json", e.writeServeFile("outdated.json", data))
 	}
 	// What couldn't be checked is said first, and the rest's result as the
 	// rest's: "none of your ports" said of ports it never saw (D-N4).
@@ -988,10 +1013,13 @@ func (e *Engine) ServeState(ctx context.Context, session *coord.Session) (ServeS
 	return state, nil
 }
 
-func (e *Engine) announceServing(submitPassing bool, build, notActing string) {
-	if data, err := json.Marshal(Serving{PID: os.Getpid(), SubmitPassing: submitPassing, Build: build, NotActing: notActing}); err == nil {
-		_ = e.writeServeFile("serving.json", data)
+// announceServing writes what this serve says of itself, for status.
+func (e *Engine) announceServing(submitPassing bool, build, notActing string) error {
+	data, err := json.Marshal(Serving{PID: os.Getpid(), SubmitPassing: submitPassing, Build: build, NotActing: notActing})
+	if err != nil {
+		return err
 	}
+	return e.writeServeFile("serving.json", data)
 }
 
 // lastServing is what the last serve to lead said about itself, which is

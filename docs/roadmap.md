@@ -24,11 +24,11 @@ The weak point the review found is the information passed between steps. Several
 
 ## Next
 
-**Now: the prime-time pass** per the project's plan/prime-time.md, commands frozen and fixes only. The full stage runs as dhtest on the M1: v0.3.0-rc1 to rc6 were tagged, and run 4, on rc6, ran 79 rows with no harms; every product finding it made is fixed on main, through 9213fc80, with CI green. Left: rc7 on the person's go; the rows on the rerun list; B7 and C1 overnight; D-I5 with the person at the Mac, with F3's rename, F5, F7, and F10; S1's 24-hour soak; `full.sh --end`; then v0.3.0 on the commit that passes, and macports/macports-ports#34756, which is unchanged until then.
+**Now: the prime-time pass** per the project's plan/prime-time.md, commands frozen and fixes only. The full stage runs as dhtest on the M1: v0.3.0-rc1 to rc6 were tagged, and run 4, on rc6, ran 79 rows with no harms; every product finding it made is fixed on main, through 9213fc80, with CI green. Left: rc7 on the person's go, with item 1's behaviour fixes and M3's test (batches 110 and 111); the rows on the rerun list, `full.sh --rows-file tools/acceptance/rerun-rc7`, D-I7 among them; B7 and C1 overnight; D-I5 with the person at the Mac, with F3's rename, F5, F7, and F10; S1's 24-hour soak; `full.sh --end`; then v0.3.0 on the commit that passes, and macports/macports-ports#34756, which is unchanged until then.
 
 **After the release, in order** (the person's "Fixes first", 2026-10-07, on the architecture review's slotting; the project's plan/architecture-after-release.md):
 
-1. **Fixes, released as v0.3.1.** X2 first: the runner honours `buildenv.ErrInfrastructure`, retries only what's wrapped as infrastructure, and says anything else at once as dockhand's own fault (runner.go's attempt loop). Then L2b, update's assessment marking a fetch failure or a rate limit transient; L3a, a passed result whose inputs weren't recorded keeping a `NotReusable` reason that's shown; and M3's test, that bump and serve stop on the same Held and Unambiguous conditions. Riding along: L3e, L5, C4c, C4d, X4, X5, H1, H2, and H8. The README's known issues for X2 and L2b come off when it ships.
+1. **Fixes, released as v0.3.1.** C4c, C4d, X4, X5, H1, and H2, and bump refusing a tidy plan that isn't unambiguous, as serve's preparation does (M3's test found the difference; the person's "In v0.3.1", 2026-10-07). X2, L2b, L3a, L3e, L5, H8, and M3's test went into rc7 instead (batches 110 and 111).
 2. **The three items approved on 2026-10-05** (from Codex's feedback, checked at 82551b6d):
    - **check in a checkout dockhand doesn't track**, by the command-line UX review's §2 rule, a branch started where nothing else could be meant: on a terminal, a Git branch someone made is offered to `adopt`, and a detached HEAD a branch started at HEAD named for its port; a script is refused, naming the command.
    - **Live progress from the guest** in `wait` and `watch`: the port it's building and MacPorts' phase, which the Tart provider reads only once a target finishes (`buildenv/tart/provider.go`'s follow). Streaming the whole log comes second.
@@ -639,6 +639,7 @@ Open, as of 2026-10-07:
 Decided 2026-10-07, before rc7 ("Behaviour fixes", on the prioritization thread's scope card, after "We haven't done a release yet, so I actually do feel inclined to get the Item 1 fixes in"):
 
 - **Item 1's behaviour fixes go into rc7,** with M3's test: X2, conservatively (only what's wrapped as infrastructure, and what's unclassified, retries; dockhand's own guest faults say so at once), L2b, L3a, L3e, L5, and H8. C4c, C4d, X4, X5, H1, and H2 wait for v0.3.1.
+- **bump refuses a tidy plan that isn't unambiguous, in v0.3.1** (the person's "In v0.3.1" on M3's finding). bump's `--yes` applies a plan as shown, where serve's preparation stops on one that isn't `Unambiguous`; a fresh bump branch holds only dockhand's own edits, so the difference needs a person's edit in the new worktree between the update and tidy. Nothing changes for rc7.
 
 Decided 2026-10-07, from the rc6 full stage's run 4 (the prioritization thread's roadmap revisit):
 

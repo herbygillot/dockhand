@@ -12,6 +12,9 @@ import (
 // active port's that has one. A port the guest couldn't place in the tree
 // has none, and leaves the inputs incomplete (Current).
 func Paths(recorded model.TargetInputs) []string {
+	if recorded.NotReusable != "" {
+		return nil
+	}
 	paths := []string{recorded.Directory, macports.ResourcesDirectory}
 	for _, port := range recorded.Active {
 		if port.Directory != "" {
@@ -43,7 +46,7 @@ func Paths(recorded model.TargetInputs) []string {
 // have built it. A build that recorded a commit stands for no target that
 // isn't fetched with Git now.
 func Current(recorded model.TargetInputs, identity string, target model.PlanTarget, git *model.GitSource, trees map[string]model.ObjectID) bool {
-	if !recorded.Complete() || identity == "" || recorded.Environment != identity {
+	if recorded.NotReusable != "" || !recorded.Complete() || identity == "" || recorded.Environment != identity {
 		return false
 	}
 	if recorded.Directory != target.Directory || !maps.Equal(recorded.Variants, target.Target.Variants) {

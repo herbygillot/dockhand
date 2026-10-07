@@ -103,7 +103,7 @@ func (e *Engine) identityNow(ctx context.Context, environment model.Environment)
 // plan they're judged against, then the environments' identities, read
 // outside any transaction, then the checks' records.
 func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []model.Run) (Evidence, error) {
-	required := e.requiredEnvironments(ctx)
+	required, problem := e.requiredEnvironments(ctx)
 	var plan model.Plan
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		own, err := r.Plan(primary.Plan)
@@ -145,6 +145,21 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 			earlier = append(earlier, check)
 		}
 		judged = evidence.Judge(own, plan, earlier, now)
+		judged.Problem = problem
+		// A passed result no later check can reuse says why, so a rebuild
+		// isn't a silent hour (the architecture review's L3a).
+		for t := range judged.Targets {
+			for i, c := range judged.Targets[t].Outcomes {
+				if c.Outcome != model.OutcomePassed || c.Inputs == "" {
+					continue
+				}
+				inputs, err := r.Inputs(c.Inputs)
+				if err != nil {
+					return err
+				}
+				judged.Targets[t].Outcomes[i].NotReusable = inputs.NotReusable
+			}
+		}
 		return nil
 	})
 	// What changed where a result no longer stands is its provider's to
@@ -253,13 +268,15 @@ func runsOfTree(r store.Reader, branch model.BranchID, tree model.ObjectID, stat
 
 // requiredEnvironments are the environments a check builds in by default,
 // check.on's, which a branch's evidence always requires (D17); none where
-// they can't be resolved, as where a provider isn't set up.
-func (e *Engine) requiredEnvironments(ctx context.Context) []model.Environment {
+// they can't be resolved, as where a provider isn't set up, with why, for
+// the evidence to say, where it was dropped and the evidence required
+// less without a word (the architecture review's L5).
+func (e *Engine) requiredEnvironments(ctx context.Context) ([]model.Environment, string) {
 	environments, err := e.Environments(ctx, e.CheckOn)
 	if err != nil {
-		return nil
+		return nil, fmt.Sprintf("check.on couldn't be resolved, so only the environments its checks planned are required: %v", err)
 	}
-	return environments
+	return environments, ""
 }
 
 // acceptanceProblem is why a port submit --accept names can't be

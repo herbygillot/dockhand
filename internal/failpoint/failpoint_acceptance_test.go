@@ -36,3 +36,14 @@ func TestAFailpointKillsAtItsStep(t *testing.T) {
 		}
 	}
 }
+
+// A step DOCKHAND_FAILPOINT asks to fail fails once in the process, as it
+// asks, and any other step, or the same step after, doesn't.
+func TestAFailpointFailsItsStepOnce(t *testing.T) {
+	t.Setenv("DOCKHAND_FAILPOINT", "tart.results:fault")
+	require.Empty(t, failpoint.Fails("tidy.prepared"))
+	require.Equal(t, "fault", failpoint.Fails("tart.results"))
+	require.Empty(t, failpoint.Fails("tart.results"), "once")
+	t.Setenv("DOCKHAND_FAILPOINT", "check.running:kill")
+	require.Empty(t, failpoint.Fails("check.running"), "a kill isn't a failure")
+}

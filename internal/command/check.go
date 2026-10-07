@@ -718,7 +718,7 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 		for _, target := range evidence.Targets {
 			var cells []string
 			for i := range target.Outcomes {
-				cell := engine.EvidenceWords(evidence, target, i, false)
+				cell := resultWords(evidence, target, i)
 				if where {
 					cell = environmentWords(environments[i]) + " " + cell
 				}
@@ -737,11 +737,23 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 	for _, target := range evidence.Targets {
 		fmt.Fprintf(grid, "%s%s", indent, target.Target.ID)
 		for i := range target.Outcomes {
-			fmt.Fprintf(grid, "\t%s", engine.EvidenceWords(evidence, target, i, false))
+			fmt.Fprintf(grid, "\t%s", resultWords(evidence, target, i))
 		}
 		fmt.Fprintln(grid)
 	}
 	_ = grid.Flush()
+}
+
+// resultWords are a target's result in one environment, as the pull
+// request words it, and on the terminal, why no later check can reuse a
+// passed one, where its rebuild was silent (the architecture review's
+// L3a).
+func resultWords(evidence engine.Evidence, target engine.TargetEvidence, environment int) string {
+	words := engine.EvidenceWords(evidence, target, environment, false)
+	if reason := target.Outcomes[environment].NotReusable; reason != "" {
+		words += "; not reusable: " + reason
+	}
+	return words
 }
 
 // checkResult is a run's --json result, without its targets' results.

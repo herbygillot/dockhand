@@ -565,6 +565,9 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 		if status.Evidence != nil {
 			// status has no plan above it, so one environment is named.
 			writeResults(out, "           ", *status.Evidence, true)
+			if status.Evidence.Problem != "" {
+				fmt.Fprintf(out, "           ! %s\n", status.Evidence.Problem)
+			}
 		}
 	}
 	pr := prWords(status)

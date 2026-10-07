@@ -515,7 +515,7 @@ func TestABlockedTargetGoesToTheGuestMarked(t *testing.T) {
 // A Git-fetched target goes to the guest with the commit its fetch must
 // check out (batch 20), a port fetched otherwise without one, and the
 // commit the guest says a fetch checked out is reported with the result.
-// One that isn't a commit is trouble with the guest.
+// One that isn't a commit is a fault in dockhand's guest program.
 func TestAGitFetchedTargetGoesToTheGuestWithTheCommitExpected(t *testing.T) {
 	t.Parallel()
 	commit := strings.Repeat("a", 40)
@@ -533,7 +533,7 @@ func TestAGitFetchedTargetGoesToTheGuestWithTheCommitExpected(t *testing.T) {
 	libharbor.Fetched = "v4"
 	mac = newMac(guestResults{State: "finished", Targets: []guestResult{libharbor}})
 	err := testProvider(mac).Execute(t.Context(), job, &fakeBuild{})
-	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+	require.ErrorIs(t, err, buildenv.ErrDockhandFault, "the guest program is dockhand's")
 	require.ErrorContains(t, err, `fetched "v4", which isn't a commit`)
 }
 
@@ -547,24 +547,18 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 		mac  *fakeMac
 		want string
 	}{
-		"errored":  {newMac(guestResults{State: "running", Targets: []guestResult{passed}}, guestResults{State: "errored", Detail: "the image already has ports installed"}), "the image already has ports installed"},
-		"exited":   {newMac(guestResults{State: "running", Targets: []guestResult{passed}}), "the guest program stopped before it finished: the runner's last words"},
-		"protocol": {newMac(guestResults{State: "running", Targets: []guestResult{passed}}), "protocol 9"},
+		"errored": {newMac(guestResults{State: "running", Targets: []guestResult{passed}}, guestResults{State: "errored", Detail: "the image already has ports installed"}), "the image already has ports installed"},
+		"exited":  {newMac(guestResults{State: "running", Targets: []guestResult{passed}}), "the guest program stopped before it finished: the runner's last words"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			switch name {
-			case "exited":
+			if name == "exited" {
 				test.mac.guest.exited = true
-			case "protocol":
-				test.mac.guest.results[0].Protocol = 9
 			}
 			build := &fakeBuild{}
 			err := testProvider(test.mac).Execute(t.Context(), tartJob(t, 1), build)
 			require.ErrorIs(t, err, buildenv.ErrInfrastructure)
 			require.ErrorContains(t, err, test.want)
-			if name != "protocol" {
-				require.Len(t, build.results, 1, "what the guest finished stays recorded")
-			}
+			require.Len(t, build.results, 1, "what the guest finished stays recorded")
 			require.Contains(t, test.mac.events, "delete dockhand-check-run-7-tahoe-1")
 		})
 	}
@@ -584,6 +578,34 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
 	require.ErrorContains(t, err, "tart run ended before dockhand-check-run-7-tahoe-1 took an address: it crashed")
 	require.Less(t, time.Since(start), 30*time.Second)
+}
+
+// Results dockhand's guest program writes that this dockhand can't read,
+// or that name what the job didn't ask for, are dockhand's fault, not the
+// environment's: another attempt would clone a VM to repeat it (the
+// architecture review's X2). The clone still goes.
+func TestResultsDockhandCantReadAreItsOwnFault(t *testing.T) {
+	t.Parallel()
+	for name, test := range map[string]struct {
+		results guestResults
+		want    string
+	}{
+		"protocol": {guestResults{Protocol: 9, State: "finished"}, "the guest program wrote protocol 9 results; this dockhand reads 1"},
+		"unasked":  {guestResults{State: "finished", Targets: []guestResult{{ID: "fd", Outcome: "passed"}}}, `the guest reported "fd", which this job didn't ask for`},
+		"outcome":  {guestResults{State: "finished", Targets: []guestResult{{ID: "libharbor", Outcome: "skipped"}}}, `the guest reported libharbor "skipped"`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mac := newMac(test.results)
+			if name == "protocol" {
+				mac.guest.results[0].Protocol = 9
+			}
+			err := testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
+			require.ErrorIs(t, err, buildenv.ErrDockhandFault)
+			require.NotErrorIs(t, err, buildenv.ErrInfrastructure)
+			require.ErrorContains(t, err, test.want)
+			require.Contains(t, mac.events, "delete dockhand-check-run-7-tahoe-1")
+		})
+	}
 }
 
 // An attempt removes what an earlier attempt of its run and release left,

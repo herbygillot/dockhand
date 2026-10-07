@@ -14,4 +14,9 @@
 //   - submit.created, once GitHub has opened the pull request, before
 //     dockhand records it;
 //   - check.running, once a check's provider run is recorded running.
+//
+// DOCKHAND_FAILPOINT=<step>:fault and <step>:error make a step fail once in
+// the process, as a fault in dockhand's own handling would, or as an error
+// nothing classifies would. The steps are:
+//   - tart.results, as the Tart provider reads a guest's results.
 package failpoint

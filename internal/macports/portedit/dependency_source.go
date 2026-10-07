@@ -37,16 +37,16 @@ func dependencySources(info macports.PortInfo, sources []distfetch.Source) ([]di
 // from what upstream serves, as it was before they were kept, and the
 // problem is returned in their place: the update can't be compared with
 // bytes MacPorts didn't ship.
-func originalDependencySource(ctx context.Context, store *distfetch.Store, info macports.PortInfo, fetch, candidates []distfetch.Source, plan *depblock.Plan, kept bool) (depblock.Input, []distfetch.Download, string, error) {
+func originalDependencySource(ctx context.Context, store *distfetch.Store, info macports.PortInfo, fetch, candidates []distfetch.Source, plan *depblock.Plan, kept bool) (depblock.Input, []distfetch.Download, error, error) {
 	var downloads []distfetch.Download
-	problem := ""
+	var problem error
 	if kept {
 		shipped, err := store.Shipped(ctx, info, distfetch.FetchPlan(fetch))
 		switch {
 		case ctx.Err() != nil:
-			return depblock.Input{}, nil, "", ctx.Err()
+			return depblock.Input{}, nil, nil, ctx.Err()
 		case err != nil:
-			problem = err.Error()
+			problem = err
 		default:
 			downloads = downloadsOf(shipped)
 		}
@@ -55,13 +55,13 @@ func originalDependencySource(ctx context.Context, store *distfetch.Store, info 
 		for _, source := range fetch {
 			download, err := store.Fetch(ctx, info, source)
 			if err != nil {
-				return depblock.Input{}, nil, "", err
+				return depblock.Input{}, nil, nil, err
 			}
 			downloads = append(downloads, download)
 		}
 	}
 	input, err := selectDependencySource(ctx, info, candidates, downloads, plan)
-	if problem != "" {
+	if problem != nil {
 		downloads = nil
 	}
 	return input, downloads, problem, err

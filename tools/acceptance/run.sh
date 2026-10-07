@@ -3,7 +3,11 @@
 # results/<candidate>/<row>.json (prime-time.md; the project's
 # plan/acceptance-harness.md, H1).
 #
-#   tools/acceptance/run.sh --stage quick|full --candidate <rc> [--rows "A3 B1"] [--dry-run]
+#   tools/acceptance/run.sh --stage quick|full --candidate <rc> [--rows "A3 B1" | --rows-file <file>] [--dry-run]
+#
+# --rows-file names the rows in a file, one ID a line, blank lines and
+# lines from # on aside, as a rerun list (rerun-rc7): run in their IDs'
+# order, as --rows's, and refused whole where one names no row.
 #
 # --dry-run walks the full stage's rows in the quick stage's scratch
 # environment, each up to its first step that needs the test host or a
@@ -27,13 +31,22 @@ while [ $# -gt 0 ]; do
 	--stage) stage=$2; shift 2 ;;
 	--candidate) candidate=$2; shift 2 ;;
 	--rows) rows=$(printf '%s' "$2" | tr ',' ' '); shift 2 ;;
+	--rows-file)
+		[ -f "$2" ] || { echo "run.sh: --rows-file $2 is no file" >&2; exit 2; }
+		rows=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$2" | { grep -v '^$' || :; } | sort -V | tr '\n' ' ')
+		[ -n "$rows" ] || { echo "run.sh: --rows-file $2 names no rows" >&2; exit 2; }
+		shift 2
+		;;
 	--row-dir) rowdir=$2; shift 2 ;;
 	--dry-run) ACCEPT_DRY=1; shift ;;
-	-h | --help) sed -n '2,17p' "$0"; exit 0 ;;
+	-h | --help) sed -n '2,21p' "$0"; exit 0 ;;
 	*) echo "run.sh: unknown argument $1" >&2; exit 2 ;;
 	esac
 done
 case "$stage" in quick | full) ;; *) echo "run.sh: --stage is quick or full" >&2; exit 2 ;; esac
+for id in $rows; do
+	[ -f "$rowdir/$id.sh" ] || { echo "run.sh: no row $id in $rowdir" >&2; exit 2; }
+done
 if [ -z "${ACCEPT_STATE:-}" ] || [ ! -d "$ACCEPT_STATE" ]; then
 	echo "run.sh: ACCEPT_STATE names no directory; the stage's environment sets it, so a run never touches your own state" >&2
 	exit 2

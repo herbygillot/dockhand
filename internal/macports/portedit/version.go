@@ -2,10 +2,12 @@ package portedit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
 
+	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
@@ -114,7 +116,9 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 		return result, err
 	}
 	if request.KeepArchives != "" {
-		result.Pairs, result.PreviousProblem = pairArchives(ctx, store, plan.pairs(), nil, result.Downloads)
+		var err error
+		result.Pairs, err = pairArchives(ctx, store, plan.pairs(), nil, result.Downloads)
+		result.previousFailed(err)
 	}
 	if err := s.raiseGoToolchain(ctx, request, input, &result); err != nil {
 		return result, err
@@ -167,7 +171,7 @@ type ArchivePair struct {
 // it declares it, and pairs each with the archive that replaces it there.
 // have are archives already fetched as shipped, found by name. Not getting
 // one is a problem to report, never a reason to refuse the update.
-func pairArchives(ctx context.Context, store *distfetch.Store, pairs []archivePair, have, downloads []distfetch.Download) ([]ArchivePair, string) {
+func pairArchives(ctx context.Context, store *distfetch.Store, pairs []archivePair, have, downloads []distfetch.Download) ([]ArchivePair, error) {
 	named := func(downloads []distfetch.Download, name string) (distfetch.Download, bool) {
 		i := slices.IndexFunc(downloads, func(d distfetch.Download) bool { return d.Name == name })
 		if i < 0 {
@@ -179,19 +183,28 @@ func pairArchives(ctx context.Context, store *distfetch.Store, pairs []archivePa
 	for _, pair := range pairs {
 		next, ok := named(downloads, pair.next)
 		if !ok {
-			return nil, pair.next + " wasn't fetched"
+			return nil, errors.New(pair.next + " wasn't fetched")
 		}
 		previous, ok := named(have, pair.previous.Name)
 		if !ok {
 			shipped, err := store.Shipped(ctx, pair.info, []macports.Distfile{pair.previous.Distfile})
 			if err != nil {
-				return nil, err.Error()
+				return nil, err
 			}
 			previous = shipped[0].Download
 		}
 		paired = append(paired, ArchivePair{Previous: previous, Next: next, Base: pair.info, Port: pair.port})
 	}
-	return paired, ""
+	return paired, nil
+}
+
+// previousFailed records why the archives the update replaces couldn't be
+// fetched, and whether another try may fetch them; nothing where err is
+// nil.
+func (r *Result) previousFailed(err error) {
+	if err != nil {
+		r.PreviousProblem, r.PreviousTransient = err.Error(), fetch.Transient(err)
+	}
 }
 
 // shippedPlan is MacPorts' own fetch plan for the Portfile as it stands,

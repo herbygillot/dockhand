@@ -464,10 +464,12 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	result.Crates = gitDownloads
 	result.Regenerated = regenerated
 	switch {
-	case kept && previousProblem != "":
-		result.PreviousProblem = previousProblem
+	case kept && previousProblem != nil:
+		result.previousFailed(previousProblem)
 	case kept:
-		result.Pairs, result.PreviousProblem = pairArchives(ctx, store, archivePlan.pairs(), previous, result.Downloads)
+		var err error
+		result.Pairs, err = pairArchives(ctx, store, archivePlan.pairs(), previous, result.Downloads)
+		result.previousFailed(err)
 	}
 	if err := s.raiseGoToolchain(ctx, request, input, &result); err != nil {
 		return Result{}, err

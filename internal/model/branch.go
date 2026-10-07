@@ -165,10 +165,12 @@ func (b Branch) ShortName() string { return strings.TrimPrefix(b.Name, BranchPre
 const BranchPrefix = "dockhand/"
 
 // validRefName applies the parts of git check-ref-format that a branch name
-// dockhand stores can break; Git remains the authority when it creates one.
+// dockhand stores can break, as git.ValidBranchName does, which a test
+// holds them to; Git remains the authority when it creates one. Each
+// component is held to them: dockhand/a.lock/b passed here where Git
+// refuses it (the architecture review's H8).
 func validRefName(name string) bool {
-	if name == "" || strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") || strings.HasSuffix(name, ".") ||
-		strings.HasSuffix(name, ".lock") || strings.Contains(name, "..") || strings.Contains(name, "//") || strings.Contains(name, "@{") || name == "@" {
+	if name == "" || strings.HasSuffix(name, ".") || strings.Contains(name, "..") || strings.Contains(name, "@{") || name == "@" {
 		return false
 	}
 	for _, c := range name {
@@ -177,7 +179,7 @@ func validRefName(name string) bool {
 		}
 	}
 	for part := range strings.SplitSeq(name, "/") {
-		if strings.HasPrefix(part, ".") {
+		if part == "" || strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
 			return false
 		}
 	}

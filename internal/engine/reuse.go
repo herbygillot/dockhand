@@ -44,6 +44,22 @@ func (d *driver) earlier(ctx context.Context, environment model.Environment, rem
 	return targets, paths, err
 }
 
+// sayNotReusable says, of each target whose newest earlier build here
+// stands but couldn't be reused, why it builds again: what that build
+// read wasn't recorded (the architecture review's L3a).
+func (d *driver) sayNotReusable(ctx context.Context, environment model.Environment, targets []reuse.Target) {
+	for _, target := range targets {
+		if len(target.Earlier) == 0 {
+			continue
+		}
+		newest := target.Earlier[0]
+		if newest.Inputs.NotReusable == "" || !d.plan.Tests.Stands(newest.Result) {
+			continue
+		}
+		d.emit(ctx, "execution.state", fmt.Sprintf("%s: %s: %s builds again: its last build here passed, but can't be reused, since %s", d.run.Name(), describeEnvironment(environment), target.ID, newest.Inputs.NotReusable))
+	}
+}
+
 // reusable chooses the targets that reuse an earlier build instead of
 // building, before an environment's first attempt (reuse.Choose, decision
 // 28): each target's newest earlier build that stands and read what it

@@ -354,20 +354,30 @@ func TestAnUpdateOfAPortOnAMirrorGroupIsCompared(t *testing.T) {
 // An update keeping archives to compare keeps the current version's as
 // MacPorts shipped it: from upstream while it serves it as the Portfile
 // declares, else from MacPorts' mirror, under the port's dist_subdir, and
-// else not at all, saying why.
+// else not at all, saying why, and whether another try may fetch it: a
+// rate limit may lift, where a changed archive stays changed (the
+// architecture review's L2b).
 func TestAnUpdateComparesWithTheArchiveMacPortsShipped(t *testing.T) {
 	t.Parallel()
 	shipped, regenerated, next := "fixture 1.0 as shipped", "fixture 1.0 as regenerated", "fixture 2.0"
-	for _, test := range []struct{ name, upstream, mirror, problem string }{
-		{"upstream", shipped, "", ""},
-		{"mirror", regenerated, shipped, ""},
-		{"neither", regenerated, "", "upstream no longer serves fixture-1.0.tar.gz as the Portfile's checksums describe it"},
+	for _, test := range []struct {
+		name, upstream, mirror, problem string
+		transient                       bool
+	}{
+		{name: "upstream", upstream: shipped},
+		{name: "mirror", upstream: regenerated, mirror: shipped},
+		{name: "neither", upstream: regenerated, problem: "upstream no longer serves fixture-1.0.tar.gz as the Portfile's checksums describe it"},
+		{name: "rate limited", problem: "fixture-1.0.tar.gz", transient: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			service, request := versionFixture(t, "setup", "dist_subdir fixture/1.0_1\n", func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/releases/1.0/fixture-1.0.tar.gz":
+					if test.upstream == "" {
+						w.WriteHeader(http.StatusTooManyRequests)
+						return
+					}
 					fmt.Fprint(w, test.upstream)
 				case "/releases/2.0/fixture-2.0.tar.gz":
 					fmt.Fprint(w, next)
@@ -390,7 +400,8 @@ func TestAnUpdateComparesWithTheArchiveMacPortsShipped(t *testing.T) {
 			require.NoError(t, err, "the update goes on whatever the comparison can have")
 			require.Equal(t, next, string(fileBytes(t, result.Downloads[0].Path)))
 			if test.problem != "" {
-				require.Equal(t, test.problem, result.PreviousProblem)
+				require.Contains(t, result.PreviousProblem, test.problem)
+				require.Equal(t, test.transient, result.PreviousTransient, result.PreviousProblem)
 				require.Empty(t, result.Pairs)
 				return
 			}

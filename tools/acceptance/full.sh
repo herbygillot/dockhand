@@ -3,7 +3,7 @@
 # test host, as the fresh user dhtest that host/reset-user.sh made, with
 # the candidate host/stage-candidate.sh put in the overlay:
 #
-#   tools/acceptance/full.sh --candidate v0.3.0-rcN [--rows "A1 A2"]
+#   tools/acceptance/full.sh --candidate v0.3.0-rcN [--rows "A1 A2" | --rows-file tools/acceptance/rerun-rc7]
 #   tools/acceptance/full.sh --end
 #
 # --end, once the run and its reruns are over, logs dhtest's gh out, whose

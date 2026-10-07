@@ -110,8 +110,8 @@ What the release-candidate test finds that's rough but harms nothing is listed h
 - A batch of submits, with serve watching their pull requests, can spend GitHub's hourly limit of requests; dockhand says when it lifts.
 - A Tart check installs a port's dependencies from MacPorts' binary archives where they're there, and builds them from source where they aren't, without saying which first. On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first check of a Rust or Go port there builds rust and cargo, or go, from source: hours on a VM's two cores (dust on macOS 27, 2026-10-04). Dockhand keeps the archives its guest installed them from, and a later check of any port that depends on them installs them from those, until cleanup forgets them. Check such a port first on the previous release, `--on tahoe`, or let the first check run.
 - `update` doesn't say when the new version no longer fetches an archive the old one did, such as a vendored crate it dropped; the Portfile keeps the old checksum lines. Read `dockhand diff` before `tidy`.
-- A fetch that fails during `update` holds the branch until a file in it is edited, even once the fetch would succeed. Editing a file in the port's directory releases it.
-- A fault in dockhand's own handling of a Tart guest is retried three times, cloning a VM each time, before the check reports it.
+- A fetch during `update` that a server refuses, as a 404 does, holds the branch until a file in it is edited, even once the archive is served again; a rate limit or an outage is fetched again at the next look. Editing a file in the port's directory releases it.
+- A fault in dockhand's own handling of a Tart guest is said at once where dockhand knows it for its own, as results it can't read; any other error the guest meets is tried again, up to three times, cloning a VM each time, before the check reports it.
 - `serve` has printed a check's "passed" line twice (check-130, field testing, 2026-10-02). It hasn't recurred, and it changes nothing but the output.
 
 ## Requirements

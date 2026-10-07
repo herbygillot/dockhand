@@ -485,6 +485,9 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		if err != nil {
 			return err
 		}
+		if attempt == 0 && !d.plan.Fresh {
+			d.sayNotReusable(ctx, environment, targets)
+		}
 		var reused map[model.TargetID]reuse.Candidate
 		if attempt == 0 && identity == "" && !d.plan.Fresh && d.anotherCanReuse(ctx, environment) {
 			// Where another environment of the check can reuse its results,
@@ -587,7 +590,20 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			}
 			d.problem(fmt.Sprintf("%s: %v; another attempt won't fix it, so none was made", describeEnvironment(environment), err))
 			return nil
+		case errors.Is(err, buildenv.ErrDockhandFault):
+			// A fault in dockhand's own handling, as a guest program
+			// reporting what this dockhand can't read, would only repeat:
+			// it's said at once, as dockhand's, where it cloned a VM for
+			// each of three attempts (the architecture review's X2).
+			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
+				return err
+			}
+			fault := strings.TrimPrefix(err.Error(), buildenv.ErrDockhandFault.Error()+": ")
+			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", describeEnvironment(environment), fault))
+			return nil
 		case err != nil:
+			// Infrastructure trouble, and what no provider classified, is
+			// tried again.
 			d.emit(ctx, "execution.retry", fmt.Sprintf("%s: %v", describeEnvironment(environment), err))
 			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
 				return err
@@ -753,8 +769,16 @@ func (b *build) Consumed(target model.TargetID, active []model.ActivePort) {
 func (b *build) read(planned model.PlanTarget, active []model.ActivePort) (model.TargetInputs, bool) {
 	inputs, err := reuse.Inputs(b.ctx, b.d.e.Repo, b.tree, b.execution.Identity, planned, active)
 	if err != nil {
-		b.Progress(fmt.Sprintf("%s: what its build read wasn't recorded: %v", planned.ID, err))
-		return model.TargetInputs{}, false
+		reason := fmt.Sprintf("what its build read wasn't recorded: %v", err)
+		b.Progress(fmt.Sprintf("%s: %s", planned.ID, reason))
+		// Where reuse could have been, the reason is kept, for the
+		// check that builds it again to say (the architecture review's
+		// L3a); a provider that can't say what the environment is
+		// reuses nothing anyway.
+		if b.execution.Identity == "" {
+			return model.TargetInputs{}, false
+		}
+		return model.TargetInputs{NotReusable: reason}, true
 	}
 	return inputs, true
 }

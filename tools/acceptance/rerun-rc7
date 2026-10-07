@@ -1,0 +1,56 @@
+# The rows rc7's full stage reruns, one ID a line (full.sh --rows-file):
+# the rows run 4 found something in, D-C4, now its harness is fixed, every
+# check row, and D-I7, the X2 fault row. B7, C1, D-I5, F5, F7, F10, and S1
+# run separately, as the prime-time plan has them.
+A8
+A10
+B4
+B5
+B6
+B8
+B9
+C4
+C7
+C9
+D-C1
+D-C2
+D-C3
+D-C4
+D-C5
+D-C6
+D-I4
+D-N1
+D-N2
+D-N4
+D-N5
+D-R1
+D-R2
+D-R3
+D-R4
+D-S1
+D-S2
+D-S4
+D-S9
+D-S10
+D-T1
+D-T3
+D-T5
+E9
+F1
+F2
+F3
+F8
+F11
+S2
+# The check rows.
+A12
+B1
+B2
+B3
+B10
+D-I6
+D-S6
+E8
+E10
+# The X2 fault row.
+D-I7

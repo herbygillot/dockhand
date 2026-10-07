@@ -64,6 +64,10 @@ type fakePreparer struct {
 	// rewrite edits a version update's Portfile further, as the edit
 	// writes it.
 	rewrite func(string) string
+	// previous is why the archives an update replaces couldn't be
+	// fetched, and whether another try may fetch them.
+	previous          string
+	previousTransient bool
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r editprep.Request) (model.Release, error) {
@@ -173,7 +177,11 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 	}
 	// The new archive replaces the old one where both are given; given
 	// alone, it replaces none dockhand found.
-	if r.KeepArchives != "" && p.upstream[1] != nil {
+	if r.KeepArchives != "" && p.previous != "" {
+		next := distfetch.Download{Path: writeTarball(p.t, r.KeepArchives, "new", map[string]string{"LICENSE": "MIT\n"})}
+		next.Name = "new.tar.gz"
+		result.Downloads, result.PreviousProblem, result.PreviousTransient = []distfetch.Download{next}, p.previous, p.previousTransient
+	} else if r.KeepArchives != "" && p.upstream[1] != nil {
 		next := distfetch.Download{Path: writeTarball(p.t, r.KeepArchives, "new", p.upstream[1])}
 		next.Name = "new.tar.gz"
 		result.Downloads = []distfetch.Download{next}
@@ -415,6 +423,24 @@ func TestAnUpdateComparesTheUpstreamArchives(t *testing.T) {
 	require.True(t, NothingCompared(*quiet.Upstream), "no archives, nothing compared, and said: %+v", quiet.Upstream)
 	require.Equal(t, "jq fetches no upstream source, so there's nothing to compare", CoverageWords(*quiet.Upstream))
 	require.False(t, quiet.Upstream.Held())
+}
+
+// An update whose replaced archives couldn't be fetched for what another
+// try may not meet, as a rate limit, records its comparison transient, so
+// a later look at its files fetches them again, as a revision's does; one
+// refused stands for its files (the architecture review's L2b).
+func TestAnUpdateWhosePreviousArchivesWereRateLimitedIsTriedAgain(t *testing.T) {
+	t.Parallel()
+	for _, transient := range []bool{true, false} {
+		f := setup(t)
+		e, p := f.withPreparer(t)
+		p.previous, p.previousTransient = "HTTP 429 from upstream", transient
+		update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-update"}, Action: model.EditUpdate, Port: "jq", CompareUpstream: true})
+		require.NoError(t, err)
+		require.Equal(t, "the current version's archives could not be fetched: HTTP 429 from upstream", update.Upstream.Problem)
+		require.Equal(t, transient, update.Upstream.Transient)
+		require.True(t, update.Upstream.Held(), "what couldn't be compared holds meanwhile (D4)")
+	}
 }
 
 // refusing can't make the edit by itself, as for a port whose pre-fetch

@@ -91,6 +91,9 @@ type Cell struct {
 	// for CellRemade, and Change what's other now, in a person's words
 	// (RemadeWords).
 	Recorded, Change string
+	// NotReusable is why no later check can reuse a passed result, where
+	// what its build read wasn't recorded (model.TargetInputs).
+	NotReusable string
 }
 
 // recorded is a result recorded in an environment, as a cell: one that
@@ -211,6 +214,10 @@ type Evidence struct {
 	// inputs, what its results' builds recorded reading, by key.
 	sources map[[2]string]readSource
 	inputs  map[string]model.TargetInputs
+	// Problem is why the environments check.on names, which the evidence
+	// always requires, couldn't be resolved, so it requires only those its
+	// checks planned; empty where they were.
+	Problem string
 }
 
 // readSource is what an earlier result's build read of the sources a

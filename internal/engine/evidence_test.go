@@ -128,6 +128,15 @@ func TestEachEnvironmentTakesItsNewestCheck(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, submission.Blocking, 2)
 	require.Contains(t, submission.Blocking[0], "is changed, and no check of these files built it everywhere it's required")
+	require.Empty(t, submission.Evidence.Problem)
+
+	// One that can't be resolved requires nothing more, and the evidence
+	// says why, where it said nothing (the architecture review's L5).
+	e.CheckOn = []string{"nowhere"}
+	submission, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
+	require.NoError(t, err)
+	require.Empty(t, submission.Blocking)
+	require.Contains(t, submission.Evidence.Problem, "check.on couldn't be resolved, so only the environments its checks planned are required: ")
 }
 
 // identified is a scripted provider that says what its environments are

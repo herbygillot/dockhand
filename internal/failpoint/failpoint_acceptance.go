@@ -5,6 +5,7 @@ package failpoint
 import (
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 )
 
@@ -20,4 +21,21 @@ func Hit(step string) {
 	}
 	_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
 	select {}
+}
+
+// failed are the steps that have failed as asked, each once in a process.
+var failed sync.Map
+
+// Fails says the failure DOCKHAND_FAILPOINT asks of this step, once in the
+// process: "fault", a fault in dockhand's own handling, or "error", one
+// nothing classifies; "" where it asks none, or the step has failed once.
+func Fails(step string) string {
+	name, action, ok := strings.Cut(os.Getenv("DOCKHAND_FAILPOINT"), ":")
+	if !ok || name != step || (action != "fault" && action != "error") {
+		return ""
+	}
+	if _, done := failed.LoadOrStore(step, true); done {
+		return ""
+	}
+	return action
 }

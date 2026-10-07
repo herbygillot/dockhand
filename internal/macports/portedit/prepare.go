@@ -102,9 +102,12 @@ type Result struct {
 	// Pairs are each archive the update replaced beside the one that
 	// replaces it, in every context that fetches them, fetched only when
 	// KeepArchives asked; PreviousProblem is why the replaced ones could
-	// not be.
-	Pairs           []ArchivePair `json:"-"`
-	PreviousProblem string        `json:",omitempty"`
+	// not be, and PreviousTransient that another try may fetch them, as
+	// HTTP and the network say (fetch.Transient): a mirror's outage or a
+	// rate limit.
+	Pairs             []ArchivePair `json:"-"`
+	PreviousProblem   string        `json:",omitempty"`
+	PreviousTransient bool          `json:",omitempty"`
 	// Patches reports whether each declared patch file still applies to the
 	// candidate source; a rejected patch is a finding, not a refusal.
 	Patches []patchcheck.Result `json:",omitempty"`

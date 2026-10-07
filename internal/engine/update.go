@@ -1071,7 +1071,12 @@ func (e *Engine) assessUpstream(ctx context.Context, result editprep.Result, ver
 	switch {
 	case !compare:
 	case result.PreviousProblem != "":
+		// A mirror's outage or a rate limit is transient, as the revision's
+		// assessment has it, so a later look fetches them again rather
+		// than hold on a stale reason until a file is edited (the
+		// architecture review's L2b).
 		problem = "the current version's archives could not be fetched: " + result.PreviousProblem
+		again = result.PreviousTransient
 	case len(result.Downloads) == 0 && input.Port.GitFetched():
 		viaGit = true
 		input.Pairs, read, problem, again = e.readCommits(ctx, [2]macports.PortInfo{input.Base, input.Port}, true)

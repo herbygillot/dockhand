@@ -28,6 +28,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/staging"
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -882,8 +883,17 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 			continue
 		}
 		failures = 0
+		// The acceptance harness's X2 row makes a read fail once, as a
+		// fault of dockhand's own, which isn't tried again, or as an error
+		// nothing classifies, which is.
+		switch failpoint.Fails("tart.results") {
+		case "fault":
+			return fmt.Errorf("%w: the guest's results were read wrong, as a failpoint asked", buildenv.ErrDockhandFault)
+		case "error":
+			return errors.New("the guest's results were lost, as a failpoint asked")
+		}
 		if results.Protocol != Protocol {
-			return fmt.Errorf("%w: the guest program wrote protocol %d results; this dockhand reads %d", buildenv.ErrInfrastructure, results.Protocol, Protocol)
+			return fmt.Errorf("%w: the guest program wrote protocol %d results; this dockhand reads %d", buildenv.ErrDockhandFault, results.Protocol, Protocol)
 		}
 		if err := take(results); err != nil {
 			return err
@@ -933,13 +943,13 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 		}
 	}
 	if !found {
-		return fmt.Errorf("%w: the guest reported %q, which this job didn't ask for", buildenv.ErrInfrastructure, got.ID)
+		return fmt.Errorf("%w: the guest reported %q, which this job didn't ask for", buildenv.ErrDockhandFault, got.ID)
 	}
 	result := model.TargetResult{Target: target.ID, Outcome: model.Outcome(got.Outcome), Phase: model.Phase(got.Phase), Tests: model.TestOutcome(got.Tests)}
 	switch result.Outcome {
 	case model.OutcomePassed, model.OutcomeFailed, model.OutcomeBlocked:
 	default:
-		return fmt.Errorf("%w: the guest reported %s %q", buildenv.ErrInfrastructure, got.ID, got.Outcome)
+		return fmt.Errorf("%w: the guest reported %s %q", buildenv.ErrDockhandFault, got.ID, got.Outcome)
 	}
 	if result.Outcome != model.OutcomeFailed {
 		result.Phase = ""
@@ -959,7 +969,7 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 	}
 	if got.Fetched != "" {
 		if !git.ValidObjectID(got.Fetched) {
-			return fmt.Errorf("%w: the guest reported %s fetched %q, which isn't a commit", buildenv.ErrInfrastructure, got.ID, got.Fetched)
+			return fmt.Errorf("%w: the guest reported %s fetched %q, which isn't a commit", buildenv.ErrDockhandFault, got.ID, got.Fetched)
 		}
 		build.Fetched(target.ID, got.Fetched)
 	}

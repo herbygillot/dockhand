@@ -58,7 +58,9 @@ type scriptedProvider struct {
 	// refused makes each failure one another attempt won't fix, as a
 	// guest refusing dockhand's login is.
 	refused bool
-	jobs    []buildenv.Job
+	// fault is each failing attempt's error, where one is given.
+	fault error
+	jobs  []buildenv.Job
 }
 
 // scriptedArchive is the archive a scripted build of a target makes: its
@@ -79,6 +81,9 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 	p.mu.Unlock()
 	if failing && p.refused {
 		return fmt.Errorf("%w: %w: reaching the VM: the guest refused SSH", buildenv.ErrInfrastructure, buildenv.ErrNeedsAttention)
+	}
+	if failing && p.fault != nil {
+		return p.fault
 	}
 	if failing && !p.partial {
 		return errors.New("the VM did not start")
@@ -325,6 +330,41 @@ func TestRepeatedInfrastructureTroubleNeedsAttention(t *testing.T) {
 	require.Len(t, provider.jobs, model.MaxAttempts)
 	require.Contains(t, run.Detail, "no provider \"tart\" is set up here")
 	require.Contains(t, run.Detail, "failed 3 times")
+}
+
+// What a provider says is infrastructure, and what it doesn't classify, is
+// tried again; a fault in dockhand's own handling, as a guest program
+// reporting a target its job didn't ask for, is said at once, as
+// dockhand's, where it cloned a VM for each of three attempts (the
+// architecture review's X2).
+func TestOnlyWhatAnotherAttemptCouldFixIsTriedAgain(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name     string
+		fault    error
+		attempts int
+		detail   string
+	}{
+		{"infrastructure", fmt.Errorf("%w: the VM stopped", buildenv.ErrInfrastructure), model.MaxAttempts, "failed 3 times for reasons of its own"},
+		{"unclassified", errors.New("the VM did not start"), model.MaxAttempts, "failed 3 times for reasons of its own"},
+		{"dockhand's own", fmt.Errorf("%w: the guest reported %q, which this job didn't ask for", buildenv.ErrDockhandFault, "fd"), 1,
+			`dockhand: command macOS 26 (Tahoe) arm64: the guest reported "fd", which this job didn't ask for; the fault is dockhand's own, so another attempt would repeat it, and none was made`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			e := f.open(t)
+			provider := &scriptedProvider{failures: 99, fault: test.fault}
+			e.Providers = map[string]buildenv.Provider{"command": provider}
+			queued := queuedHarborRun(t, e, tahoeArm)
+
+			run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+			require.NoError(t, err)
+			require.Equal(t, model.RunAttention, run.State)
+			require.Len(t, provider.jobs, test.attempts)
+			require.Contains(t, run.Detail, test.detail)
+		})
+	}
 }
 
 // Trouble another attempt won't fix, as a guest refusing dockhand's
@@ -754,6 +794,53 @@ func TestAnUnchangedBuildIsReused(t *testing.T) {
 	require.Len(t, provider.jobs, 4, "_resources changed")
 	again(false)
 	require.Len(t, provider.jobs, 4, "and the new build is reused in its turn")
+}
+
+// A passed build whose inputs couldn't be recorded is reused by no later
+// check, which says why as it builds again, and its result says it too,
+// where an hour's rebuild was silent (the architecture review's L3a).
+func TestABuildThatCantBeReusedSaysWhy(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	outside := model.ActivePort{Name: "harbor-tools", Spec: "@1_0", Directory: "../outside", Archive: "sha256:aa"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{outside}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	first, err := e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm).ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, first.State, first.Detail)
+
+	var branch model.Branch
+	var revision model.Revision
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		if revision, err = r.Revision(first.Revision); err != nil {
+			return err
+		}
+		branch, err = r.Branch(first.Branch)
+		return err
+	}))
+	evidence, found, err := e.EvidenceFor(t.Context(), branch.ID, revision.Source.Tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Contains(t, evidence.Targets[0].Outcomes[0].NotReusable, "what its build read wasn't recorded: ")
+
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+	require.NoError(t, err)
+	second, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, second.State, second.Detail)
+	require.Len(t, provider.jobs, 2, "built again")
+	var said []string
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		events, err := r.RunEvents(second.ID, 0, 1000)
+		for _, event := range events {
+			said = append(said, event.Message)
+		}
+		return err
+	}))
+	require.Contains(t, strings.Join(said, "\n"), "libharbor builds again: its last build here passed, but can't be reused, since what its build read wasn't recorded: ")
 }
 
 // Where only some targets would read what their earlier builds read, those

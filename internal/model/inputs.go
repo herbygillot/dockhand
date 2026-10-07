@@ -47,6 +47,11 @@ type TargetInputs struct {
 	// build was checked by tells apart (EnvironmentPlan.Git). Left out when
 	// empty, so a key recorded before it is the same key still.
 	Fetched ObjectID `json:",omitempty"`
+	// NotReusable is why no later build can reuse this one, where what it
+	// read couldn't be recorded, kept so a later check that builds it
+	// again can say why, where it rebuilt for an hour in silence (the
+	// architecture review's L3a). Left out when empty.
+	NotReusable string `json:",omitempty"`
 }
 
 // NewTargetInputs gathers a build's inputs, the active ports in name

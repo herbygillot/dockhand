@@ -53,6 +53,13 @@ var ErrInfrastructure = errors.New("provider infrastructure failed")
 // it had spent every attempt on it.
 var ErrNeedsAttention = errors.New("another attempt won't fix it")
 
+// ErrDockhandFault marks a fault in dockhand's own handling, rather than in
+// the environment or what it built: a guest program reporting what this
+// dockhand can't read, or a target its job didn't ask for. Another attempt
+// would repeat it, so the runner says it at once, as dockhand's. What's
+// marked neither way is tried again, as infrastructure is.
+var ErrDockhandFault = errors.New("a fault in dockhand")
+
 // Job is one guest execution's work.
 type Job struct {
 	Run         model.Run

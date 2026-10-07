@@ -20,6 +20,8 @@ func TestANormalBuildHasNoFailpoints(t *testing.T) {
 	require.False(t, failpoint.Enabled)
 	t.Setenv("DOCKHAND_FAILPOINT", "tidy.prepared:kill")
 	failpoint.Hit("tidy.prepared")
+	t.Setenv("DOCKHAND_FAILPOINT", "tart.results:fault")
+	require.Empty(t, failpoint.Fails("tart.results"))
 
 	binary := filepath.Join(t.TempDir(), "dockhand")
 	build := exec.Command("go", "build", "-o", binary, "github.com/herbygillot/dockhand/cmd/dockhand")
