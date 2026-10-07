@@ -43,6 +43,17 @@ dh() {
 # only the Next: lines after the last mark (the M1's rerun, D-S5, D-S9).
 next_superseded() { printf '# Next: lines above were superseded by the row: %s\n' "$*" >>"$ROW_DIR/out.log"; }
 
+# next_superseded_for marks only the Next: lines so far that name one
+# branch as undone by the row, as closing its test pull request does: H6
+# replayed "Next: dockhand submit --branch …" after the row had closed the
+# pull request it named, and submit refused the closed one (the rc8 full
+# stage, B4). The other branches' lines still run.
+next_superseded_for() {
+	local branch=$1
+	shift
+	printf '# Next: lines naming %s above were superseded by the row: %s\n' "$branch" "$*" >>"$ROW_DIR/out.log"
+}
+
 # dh_setup runs a step that only sets the row up, such as the update
 # that makes a branch for it: where it fails, the row fails as its setup's,
 # with what dockhand said, rather than as a later step's that never ran.

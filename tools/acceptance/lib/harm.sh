@@ -391,7 +391,7 @@ harm_h6() {
 $line
 EOT
 	done <<EOT
-$(awk '/^# Next: lines above were superseded/ {kept = ""; next} {kept = kept $0 "\n"} END {printf "%s", kept}' "$ROW_DIR/out.log" 2>/dev/null | grep -h '^Next: ')
+$(harm_next_lines)
 EOT
 	if [ -n "$unverified" ]; then
 		printf '%s\n' "$unverified" >"$ROW_DIR/next.unverified"
@@ -401,6 +401,32 @@ EOT
 	else
 		harm_write H6 "ok: $ran run"
 	fi
+}
+
+# harm_next_lines are the row's Next: lines H6 runs: those after the last
+# whole mark (next_superseded), less those naming a branch a later mark
+# names (next_superseded_for), by its name or dockhand/ and its name.
+harm_next_lines() {
+	awk '
+	/^# Next: lines above were superseded/ { n = 0; next }
+	/^# Next: lines naming [^ ]+ above were superseded/ {
+		b = $5; m = 0
+		for (i = 1; i <= n; i++) {
+			keep = 1
+			c = split(lines[i], w, " ")
+			for (k = 1; k <= c; k++) {
+				t = w[k]
+				gsub(/["\047,;)(]/, "", t)
+				if (t == b || t == "dockhand/" b) keep = 0
+			}
+			if (keep) lines[++m] = lines[i]
+		}
+		n = m
+		next
+	}
+	{ lines[++n] = $0 }
+	END { for (i = 1; i <= n; i++) print lines[i] }
+	' "$ROW_DIR/out.log" 2>/dev/null | grep -h '^Next: '
 }
 
 # H7: nothing left running that the row didn't mean to leave.

@@ -53,6 +53,7 @@ setup() {
 	git -C "$worktree" commit -q --allow-empty -m "after the merge" || return 1
 	git -C "$worktree" push -q origin "HEAD:refs/heads/dockhand/$moved" >>"$ROW_DIR/out.log" 2>&1 || return 1
 	closed=$(c7_pr) || return 1
+	next_superseded_for "$closed" "its test pull request closed"
 	gh pr close "$(c7_url "$closed")" >>"$ROW_DIR/out.log" 2>&1 || return 1
 	printf '# an edit no commit has\n' >>"$(dh_quiet path "$closed")/$(dh_quiet --json status "$closed" | jq -r '.result.branches[0].directories[0]')/Portfile"
 	# A name of this run's own: an archived branch keeps its name.

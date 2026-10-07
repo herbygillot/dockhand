@@ -125,6 +125,9 @@ submit_pr() {
 close_test_pr() {
 	local port=$1 branch=$2 url
 	[ "$(pr_kind "$port")" = test ] || return 0
+	# What the row was told to do next with the branch, as submit it, the
+	# close makes moot; H6 doesn't run it after (next_superseded_for).
+	next_superseded_for "$branch" "its test pull request closed"
 	url=$(dh_quiet --json status "$branch" | jq -r '.result.branches[0].pull_request.url // empty')
 	[ -n "$url" ] && gh pr close "$url" --comment "Closed: a dockhand release candidate's test, recorded." >/dev/null
 	allow_change "*"

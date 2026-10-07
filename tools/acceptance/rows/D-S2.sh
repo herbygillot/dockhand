@@ -19,6 +19,7 @@ setup() {
 	DS2_BRANCH=$(own_branch)
 	dh tidy -b "$DS2_BRANCH" -y || return 1
 	submit_pr "$(port)" "$DS2_BRANCH" --no-check || return 1
+	next_superseded_for "$DS2_BRANCH" "its test pull request closed"
 	gh pr close "$(dh_quiet --json status "$DS2_BRANCH" | jq -r '.result.branches[0].pull_request.url // empty')" >>"$ROW_DIR/out.log" 2>&1 || return 1
 	printf '# an edit no commit has\n' >>"$(dh_quiet path "$DS2_BRANCH")/$(dh_quiet --json status "$DS2_BRANCH" | jq -r '.result.branches[0].directories[0]')/Portfile"
 }
