@@ -643,6 +643,7 @@ What each exercise run asked for that is done, or that joined a numbered item, w
 Open, as of 2026-10-07:
 
 - **The privacy follow-up.**
+- **Holding a major version for a look, in v0.3.0 or v0.3.1** (field testing at b8baa26b, 2026-10-07; the person's preference since 2026-10-06 is to hold off on major bumps). `dockhand bump hyperfine` went from 1.21.0 to 2.0.0 and opened macports/macports-ports#35353 without a pause: update's batch flags a major, and bump and serve's submit don't stop for one. The proposal: a setting, as `update.majors = "hold"`, under which bump and serve hold an update whose major version moves, with a `!` line naming both versions and the `dockhand submit --branch …` to run after a look, and `outdated` marks the updates it would hold. A new behaviour, so its release is the person's call; v0.3.1 is the recommendation, since the prime-time pass has commands frozen.
 
 ### Decided
 

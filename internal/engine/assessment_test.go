@@ -884,3 +884,17 @@ func TestASubportWhoseSourceDidntChangeIsLeftOut(t *testing.T) {
 	require.Len(t, comparisons, 1)
 	require.Equal(t, "tool-2", comparisons[0].Port)
 }
+
+// A crate linking a library MacPorts has no port for is set apart by its
+// lock, which was compared: it's said by the crate, where "compared
+// Cargo.lock" and "not compared: Cargo.lock" said both (field testing,
+// hyperfine 2.0.0).
+func TestALibraryWithNoPortIsSaidByItsCrate(t *testing.T) {
+	t.Parallel()
+	comparison := model.UpstreamComparison{Coverage: []model.Coverage{
+		{Path: "Cargo.lock", Relevance: "used", Treatment: "inspected", Policy: "read"},
+		{Path: "Cargo.toml", Relevance: "used", Treatment: "inspected", Policy: "read"},
+		{Path: "Cargo.lock", Relevance: "unknown", Treatment: "set-apart", Policy: "native-library-ports", Reason: "mimalloc-sys links mimalloc, which MacPorts has no port for"},
+	}}
+	require.Equal(t, "Compared Cargo.lock, Cargo.toml; set apart, with no port to declare: mimalloc-sys links mimalloc, which MacPorts has no port for", CoverageWords(comparison))
+}

@@ -185,7 +185,7 @@ const coverageNamed = 5
 // LICENSE, go.mod" read as an instruction (field testing, 2026-10-02).
 // Empty where the comparison recorded no coverage.
 func CoverageWords(comparison model.UpstreamComparison) string {
-	var read, apart, unused, notes []string
+	var read, apart, unused, unported, notes []string
 	applied, unchecked := 0, 0
 	for _, c := range comparison.Coverage {
 		if c.Source != "" && c.Policy != assess.SourceRemoved && c.Policy != assess.SourceUncertain {
@@ -200,6 +200,12 @@ func CoverageWords(comparison model.UpstreamComparison) string {
 			applied++
 		case c.Policy == "patch-unchecked":
 			unchecked++
+		case c.Treatment == "set-apart" && c.Policy == "native-library-ports":
+			// A crate linking a library MacPorts has no port for is set
+			// apart by its lock, which was compared: "not compared:
+			// Cargo.lock" beside "compared Cargo.lock" said both (field
+			// testing, hyperfine 2.0.0). It's said by the crate.
+			unported = append(unported, c.Reason)
 		case c.Treatment == "set-apart" && c.System != "":
 			unused = append(unused, c.Path+" ("+c.System+")")
 		case c.Treatment == "set-apart":
@@ -229,6 +235,9 @@ func CoverageWords(comparison model.UpstreamComparison) string {
 	}
 	if len(apart) > 0 {
 		parts = append(parts, "not compared: "+namedList(apart))
+	}
+	if len(unported) > 0 {
+		parts = append(parts, "set apart, with no port to declare: "+namedList(unported))
 	}
 	parts = append(parts, notes...)
 	if len(parts) == 0 {
