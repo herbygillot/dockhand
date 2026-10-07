@@ -8,14 +8,14 @@ port() { printf '%s' "${ACCEPT_RUST_PORT:?}"; }
 act() {
 	dh_setup update "$(port)" --new || return 0
 	dh_json tidy -p "$(port)" -y || :
-	dh_setup start c8-hand --port "${ACCEPT_GO_PORT:?}" || return 0
+	dh_setup start $(run_name c8-hand) --port "${ACCEPT_GO_PORT:?}" || return 0
 	local dir portfile
-	dir=$("$DH_BIN" path c8-hand)
+	dir=$("$DH_BIN" path $(run_name c8-hand))
 	portfile=$(find "$dir" -path "*/${ACCEPT_GO_PORT}/Portfile" | head -1)
 	printf '# a hand edit\n' >>"$portfile"
 	allow_change "$portfile"
-	dh_json tidy -b c8-hand -y </dev/null || :
-	dh tidy -b c8-hand --plan --out "$ROW_DIR/c8.plan" </dev/null || :
+	dh_json tidy -b $(run_name c8-hand) -y </dev/null || :
+	dh tidy -b $(run_name c8-hand) --plan --out "$ROW_DIR/c8.plan" </dev/null || :
 	printf '# and another, after the plan was saved\n' >>"$portfile"
 	(cd "$dir" && dh_json tidy --apply "$ROW_DIR/c8.plan" </dev/null) || :
 }

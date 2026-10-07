@@ -6,19 +6,19 @@
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 
 act() {
-	dh_setup start b10-broken --port "$(port)" || return 0
+	dh_setup start $(run_name b10-broken) --port "$(port)" || return 0
 	local dir portfile
-	dir=$("$DH_BIN" path b10-broken) || return 0
+	dir=$("$DH_BIN" path $(run_name b10-broken)) || return 0
 	portfile=$(find "$dir" -path "*/$(port)/Portfile" | head -1)
 	printf '\npost-destroot {\n    return -code error "acceptance: a deliberate failure"\n}\n' >>"$portfile"
 	allow_change "$portfile"
-	dh_json check -b b10-broken || :
+	dh_json check -b $(run_name b10-broken) || :
 	B10_RUN=$(jq -r '.result.run.name // empty' "$ROW_DIR/json/1.json")
 	[ -n "$B10_RUN" ] || return 0
 	dh logs "$B10_RUN" || :
 	dh_json retry "$B10_RUN" || :
-	dh_json check -b b10-broken --baseline || :
-	dh_json check -b b10-broken -d || :
+	dh_json check -b $(run_name b10-broken) --baseline || :
+	dh_json check -b $(run_name b10-broken) -d || :
 	B10_QUEUED=$(jq -r '.result.run.name // empty' "$ROW_DIR/json/4.json")
 	dh queue || :
 	[ -n "$B10_QUEUED" ] && dh_json cancel "$B10_QUEUED" || :

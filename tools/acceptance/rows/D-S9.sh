@@ -16,12 +16,12 @@ act() {
 	git -C "$MACPORTS_TREE" fetch -q --prune origin 2>>"$ROW_DIR/git.log" || :
 	dh_bg_wait || :
 	echo "$?" >"$ROW_DIR/ds9.check"
-	dh_setup start ds9-gone || return 0
-	allow_ref_gone refs/heads/dockhand/ds9-gone
-	git -C "$MACPORTS_TREE" worktree remove --force "$("$DH_BIN" path ds9-gone)" 2>>"$ROW_DIR/git.log" || :
-	git -C "$MACPORTS_TREE" branch -D dockhand/ds9-gone >>"$ROW_DIR/git.log" 2>&1 || :
-	next_superseded "ds9-gone deleted"
-	dh_json status ds9-gone || :
+	dh_setup start $(run_name ds9-gone) || return 0
+	allow_ref_gone refs/heads/dockhand/$(run_name ds9-gone)
+	git -C "$MACPORTS_TREE" worktree remove --force "$("$DH_BIN" path $(run_name ds9-gone))" 2>>"$ROW_DIR/git.log" || :
+	git -C "$MACPORTS_TREE" branch -D dockhand/$(run_name ds9-gone) >>"$ROW_DIR/git.log" 2>&1 || :
+	next_superseded "$(run_name ds9-gone) deleted"
+	dh_json status $(run_name ds9-gone) || :
 }
 assert() {
 	case "$(cat "$ROW_DIR/ds9.check" 2>/dev/null)" in

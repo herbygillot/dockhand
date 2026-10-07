@@ -24,6 +24,15 @@ setup() {
 }
 act() { C4_PLAN=$(plan_update pomo); }
 assert() {
+	# At the pin pomo is at 0.8.1, GitHub's newest tag; 0.8.2, the release
+	# whose go.mod names codeberg.org, is tagged on Codeberg alone, where
+	# dockhand doesn't look for releases. So no update reaches the move, and
+	# a plan with nothing to change tests nothing (the rc8 full stage, which
+	# read it a known issue).
+	if plan_words pomo | grep -qiE 'nothing to change|already at'; then
+		row_result "not run" "pomo's newest release dockhand can find, on GitHub, is 0.8.1, which the pin has; the move came with 0.8.2, tagged on Codeberg alone, so no update reaches it"
+		return
+	fi
 	if ! plan_ok "$C4_PLAN"; then
 		row_fail "pomo's plan exited $(cat "$C4_PLAN.exit"): $(jq -r '.error // empty' "$C4_PLAN")"
 	elif [ "$(cat "$C4_PLAN.exit")" = 1 ]; then

@@ -3,18 +3,18 @@
 # remove: status says so, path checks it out again, and the branch's
 # record is intact.
 act() {
-	dh_setup start ds3-rm --port "${ACCEPT_GO_PORT:?}" || return 0
-	dh_setup start ds3-git --port "${ACCEPT_GO_PORT}" || return 0
+	dh_setup start $(run_name ds3-rm) --port "${ACCEPT_GO_PORT:?}" || return 0
+	dh_setup start $(run_name ds3-git) --port "${ACCEPT_GO_PORT}" || return 0
 	local rm_dir git_dir
-	rm_dir=$("$DH_BIN" path ds3-rm) && git_dir=$("$DH_BIN" path ds3-git) || return 0
+	rm_dir=$("$DH_BIN" path $(run_name ds3-rm)) && git_dir=$("$DH_BIN" path $(run_name ds3-git)) || return 0
 	allow_change "$rm_dir/*" "$git_dir/*"
 	rm -rf "$rm_dir"
-	next_superseded "ds3-rm's worktree removed"
+	next_superseded "$(run_name ds3-rm)'s worktree removed"
 	git -C "$MACPORTS_TREE" worktree remove --force "$git_dir"
-	dh_json status ds3-rm || :
-	dh_json status ds3-git || :
-	dh path ds3-rm || :
-	dh path ds3-git || :
+	dh_json status $(run_name ds3-rm) || :
+	dh_json status $(run_name ds3-git) || :
+	dh path $(run_name ds3-rm) || :
+	dh path $(run_name ds3-git) || :
 	DS3_RM=$rm_dir DS3_GIT=$git_dir
 }
 assert() {
