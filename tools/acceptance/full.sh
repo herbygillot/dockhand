@@ -34,6 +34,12 @@ here=$(cd "$(dirname "$0")" && pwd)
 # and the dockhand row A1 installs (the Prime-time thread, 2026-10-05).
 case ":$PATH:" in *:/opt/local/bin:*) ;; *) export PATH="/opt/local/bin:/opt/local/sbin:$PATH" ;; esac
 if [ "${1:-}" = --end ]; then
+	# A fault's disk image the runs left attached is said, to detach.
+	ACCEPT_STATE=${ACCEPT_STATE:-$HOME/.dockhand-acceptance/full}
+	# shellcheck source=lib/harm.sh
+	. "$here/lib/harm.sh"
+	left=$(fault_images_attached)
+	[ -z "$left" ] || echo "full.sh: disk images the runs left attached, to detach: $(printf '%s ' $left)(hdiutil detach -force <device>)" >&2
 	gh auth logout --hostname github.com >/dev/null 2>&1 || :
 	rm -f "$HOME/.config/gh/hosts.yml"
 	echo "full.sh: dhtest's gh is logged out. Copy only the results: ${ACCEPT_STATE:-$HOME/.dockhand-acceptance/full}/results"

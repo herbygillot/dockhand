@@ -128,6 +128,18 @@ type Engine struct {
 	lazy sync.Mutex
 	// forgeMade is whether forge assembled Forge, rather than being given it.
 	forgeMade bool
+	// required is check.on's environments as last resolved, kept for
+	// requiredWait (requiredEnvironments).
+	required requiredRead
+}
+
+// requiredRead is one resolution of check.on's environments, and when.
+type requiredRead struct {
+	mu           sync.Mutex
+	at           time.Time
+	on           []string
+	environments []model.Environment
+	problem      string
 }
 
 // assemble returns what field holds, building it on first use. The build

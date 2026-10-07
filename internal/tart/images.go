@@ -68,7 +68,16 @@ var ErrListingRaced = errors.New("tart: a VM went while Tart listed its VMs")
 var (
 	listingAttempts = 5
 	listingPause    = 500 * time.Millisecond
+	// listingWait bounds each listing: Tart asks each image's disk of
+	// diskutil, which can hang on a disk diskimagesiod left attached, and
+	// status hung with it for 22 minutes (the rc8 full stage). A listing
+	// takes about 30 seconds on the M1.
+	listingWait = 2 * time.Minute
 )
+
+// ErrListingTimedOut is a listing Tart didn't answer in listingWait: what
+// VMs there are, and which run, is unknown.
+var ErrListingTimedOut = errors.New("tart: Tart didn't answer tart list")
 
 // ErrVMMissing reports a VM Tart does not have.
 var ErrVMMissing = errors.New("tart: VM does not exist")
@@ -92,6 +101,19 @@ type VM struct {
 	DiskFormat string
 }
 
+// list runs tart list, bounded by listingWait: one Tart doesn't answer in
+// time is ErrListingTimedOut, said with the wait, where the caller's own
+// context ending is its own.
+func (c Client) list(ctx context.Context, options RunOptions) ([]byte, error) {
+	listing, cancel := context.WithTimeout(ctx, listingWait)
+	defer cancel()
+	output, err := c.Run(listing, options, "list", "--format", "json")
+	if err != nil && ctx.Err() == nil && errors.Is(listing.Err(), context.DeadlineExceeded) {
+		return nil, fmt.Errorf("%w in %s, so what VMs there are is unknown; a disk image Tart's listing waits on may be stuck attached (hdiutil info)", ErrListingTimedOut, listingWait)
+	}
+	return output, err
+}
+
 // Images lists the Tart home's images. A home that isn't there has none,
 // and Tart isn't run, since it would make the home's directories, which
 // a command that only reads mustn't.
@@ -101,14 +123,14 @@ func (c Client) Images(ctx context.Context, options RunOptions) ([]Image, error)
 			return []Image{}, nil
 		}
 	}
-	output, err := c.Run(ctx, options, "list", "--format", "json")
+	output, err := c.list(ctx, options)
 	for attempt := 1; errors.Is(err, ErrListingRaced) && attempt < listingAttempts; attempt++ {
 		select {
 		case <-ctx.Done():
 			return nil, errors.Join(err, ctx.Err())
 		case <-time.After(listingPause):
 		}
-		output, err = c.Run(ctx, options, "list", "--format", "json")
+		output, err = c.list(ctx, options)
 	}
 	if err != nil {
 		return nil, err

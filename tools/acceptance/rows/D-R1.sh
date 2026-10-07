@@ -24,3 +24,7 @@ act() {
 assert() {
 	grep -qiE 'free|disk|space' "$ROW_DIR/out.log" && row_pass "said the disk was short" || row_fail "didn't say the disk was short"
 }
+
+# The image is detached whatever act did, and before the harm sweep reads
+# what's left attached.
+teardown() { fault_low_disk_stop; }

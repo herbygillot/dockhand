@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/evidence"
@@ -271,13 +272,31 @@ func runsOfTree(r store.Reader, branch model.BranchID, tree model.ObjectID, stat
 // they can't be resolved, as where a provider isn't set up, with why, for
 // the evidence to say, where it was dropped and the evidence required
 // less without a word (the architecture review's L5).
+//
+// One resolution stands for requiredWait: resolving check.on lists Tart's
+// images, half a minute on the M1 and two at most (tart.ErrListingTimedOut),
+// and status judged each branch's evidence with a listing of its own.
 func (e *Engine) requiredEnvironments(ctx context.Context) ([]model.Environment, string) {
-	environments, err := e.Environments(ctx, e.CheckOn)
-	if err != nil {
-		return nil, fmt.Sprintf("check.on couldn't be resolved, so only the environments its checks planned are required: %v", err)
+	r := &e.required
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.at.IsZero() && time.Since(r.at) < requiredWait && slices.Equal(r.on, e.CheckOn) {
+		return r.environments, r.problem
 	}
-	return environments, ""
+	environments, err := e.Environments(ctx, e.CheckOn)
+	r.environments, r.problem = environments, ""
+	if err != nil {
+		r.environments, r.problem = nil, fmt.Sprintf("check.on couldn't be resolved, so only the environments its checks planned are required: %v", err)
+	}
+	if ctx.Err() == nil {
+		r.at, r.on = time.Now(), slices.Clone(e.CheckOn)
+	}
+	return r.environments, r.problem
 }
+
+// requiredWait is how long one resolution of check.on's environments
+// stands within an engine.
+const requiredWait = time.Minute
 
 // acceptanceProblem is why a port submit --accept names can't be
 // accepted: it wasn't checked, it passed, no check of these files built

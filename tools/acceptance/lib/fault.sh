@@ -41,12 +41,26 @@ fault_low_disk() {
 	FAULT_LOW_DISK=$mount
 	printf '%s' "$mount"
 }
+#
+# A row calls fault_low_disk in $(...), whose FAULT_LOW_DISK goes with it,
+# so _fill and _stop take the row's own mount point where it's unset: the
+# image was neither filled nor detached, and rc6's and rc8's were left
+# attached in their results (the rc8 full stage).
 fault_low_disk_fill() {
-	local leave_mb=${1:-50} free_mb
-	free_mb=$(df -m "$FAULT_LOW_DISK" | awk 'NR == 2 {print $4}')
-	[ "$free_mb" -gt "$leave_mb" ] && mkfile -n "$((free_mb - leave_mb))m" "$FAULT_LOW_DISK/filler"
+	local leave_mb=${1:-50} free_mb mount=${FAULT_LOW_DISK:-$ROW_DIR/lowdisk}
+	free_mb=$(df -m "$mount" | awk 'NR == 2 {print $4}')
+	[ "$free_mb" -gt "$leave_mb" ] && mkfile -n "$((free_mb - leave_mb))m" "$mount/filler"
 }
-fault_low_disk_stop() { [ -n "${FAULT_LOW_DISK:-}" ] && hdiutil detach -quiet -force "$FAULT_LOW_DISK"; FAULT_LOW_DISK=""; }
+fault_low_disk_stop() {
+	local mount=${FAULT_LOW_DISK:-$ROW_DIR/lowdisk} device
+	hdiutil detach -quiet "$mount" 2>/dev/null || hdiutil detach -quiet -force "$mount" 2>/dev/null || :
+	# Attached but not mounted there, as a failed attach leaves one: by
+	# its image.
+	for device in $(fault_images_attached "$ROW_DIR/lowdisk.sparseimage"); do
+		hdiutil detach -quiet -force "$device" 2>/dev/null || :
+	done
+	FAULT_LOW_DISK=""
+}
 
 # fault_vm_slots takes the Mac's two VM slots with two running clones of a
 # vanilla macOS image, ACCEPT_VANILLA, in the user's own Tart home, as a

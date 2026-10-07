@@ -126,6 +126,18 @@ harm_prs() {
 }
 
 # harm_running lists the Tart VMs running and the checks queued or running.
+# fault_images_attached says the device of each disk image attached whose
+# path matches a pattern, a grep -E one; with no pattern, the acceptance
+# runs' own, a low-disk image or one under the stage's state.
+fault_images_attached() {
+	local pattern=${1:-lowdisk\.sparseimage|${ACCEPT_STATE:-/nonexistent}}
+	hdiutil info 2>/dev/null | awk -v pattern="$pattern" '
+		/^image-path/ { sub(/^image-path *: */, ""); matched = ($0 ~ pattern); next }
+		/^=+$/ { matched = 0; next }
+		matched && /^\/dev\/disk[0-9]+[ \t]/ { print $1; matched = 0 }
+	'
+}
+
 harm_running() {
 	local home
 	if command -v tart >/dev/null; then
@@ -133,14 +145,19 @@ harm_running() {
 		# there, since listing makes one.
 		for home in "${DOCKHAND_TART_HOME:-$HOME/.dockhand/tart}" "${TART_HOME:-$HOME/.tart}"; do
 			[ -d "$home" ] || continue
-			TART_HOME=$home tart list --format json 2>/dev/null | jq -r '.[] | select(.State == "running") | "vm " + .Name' 2>/dev/null || :
+			# Bounded, as dockhand's own listing is: a disk Tart's listing
+			# waits on can hang it (the rc8 full stage).
+			with_timeout 150 env TART_HOME="$home" tart list --format json 2>/dev/null | jq -r '.[] | select(.State == "running") | "vm " + .Name' 2>/dev/null || :
 		done
 	fi
 	"$DH_BIN" --json queue 2>/dev/null | jq -r '.result.runs[]? | select(.state == "queued" or .state == "running") | "run " + .name' 2>/dev/null || :
-	# The fault kit's own processes, a row's proxy among them.
+	# The fault kit's own processes, a row's proxy among them, and its disk
+	# images still attached, as D-R1's low-disk one was left (the rc8 full
+	# stage).
 	if [ -n "${ACCEPT_STATE:-}" ]; then
 		pgrep -f "$ACCEPT_STATE/bin/faultproxy" 2>/dev/null | sed 's/^/process faultproxy /' || :
 	fi
+	fault_images_attached | sed 's/^/disk image /' || :
 }
 
 harm_write() { printf '%s\n' "$2" >"$ROW_DIR/harm/$1"; }

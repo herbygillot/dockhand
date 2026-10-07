@@ -159,3 +159,19 @@ printf '%s' '[{"Name":"dockhand-base-tahoe","Source":"local","Running":false}]'
 	require.NoError(t, err)
 	require.Equal(t, listingAttempts, strings.Count(string(calls), "x"))
 }
+
+// A listing Tart doesn't answer in time is said, where status waited on it
+// for 22 minutes behind a disk diskutil couldn't answer for (the rc8 full
+// stage).
+func TestAListingTartDoesntAnswerIsBounded(t *testing.T) {
+	wait := listingWait
+	t.Cleanup(func() { listingWait = wait })
+	listingWait = 200 * time.Millisecond
+	executable := filepath.Join(t.TempDir(), "tart")
+	testsupport.WriteExecutable(t, executable, "#!/bin/sh\nexec sleep 30\n")
+	start := time.Now()
+	_, err := Client{Executable: executable}.Images(t.Context(), RunOptions{})
+	require.ErrorIs(t, err, ErrListingTimedOut)
+	require.ErrorContains(t, err, "in 200ms, so what VMs there are is unknown")
+	require.Less(t, time.Since(start), 20*time.Second, "not the sleep's thirty")
+}
