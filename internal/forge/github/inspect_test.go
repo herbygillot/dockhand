@@ -46,6 +46,33 @@ func TestInspectSummarizesMergeabilityReviewsAndChecks(t *testing.T) {
 	require.Error(t, err)
 }
 
+// A first-time contributor's CI, waiting for a maintainer to approve its
+// workflows, which GitHub says as a check run concluded action_required,
+// reads as pending, never failed (the rc6 full stage, F1: the test
+// account owns its sandbox, whose pull requests never wait).
+func TestCIAwaitingApprovalReadsAsWaiting(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/pulls/8/reviews"):
+			fmt.Fprint(w, `[]`)
+		case strings.HasSuffix(r.URL.Path, "/pulls/8"):
+			fmt.Fprintf(w, `{"number":8,"state":"open","draft":false,"head":{"sha":%q}}`, head)
+		case strings.HasSuffix(r.URL.Path, "/check-runs"):
+			fmt.Fprint(w, `{"total_count":2,"check_runs":[{"name":"Build ports (macos-14)","status":"completed","conclusion":"action_required"},{"name":"Build ports (macos-15)","status":"completed","conclusion":"action_required"}]}`)
+		case strings.HasSuffix(r.URL.Path, "/status"):
+			fmt.Fprint(w, `{"state":"pending","statuses":[]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
+	status, err := client.Inspect(t.Context(), forge.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 8})
+	require.NoError(t, err)
+	require.Equal(t, forge.CheckSummary{Total: 2, Pending: 2}, status.Checks)
+}
+
 func TestInspectNamesWhoRequestedChangesAndReviewCanBeRequestedAgain(t *testing.T) {
 	head := strings.Repeat("a", 40)
 	var requested []any

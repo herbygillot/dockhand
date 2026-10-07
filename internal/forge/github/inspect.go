@@ -81,7 +81,10 @@ func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.P
 		}
 		status.Checks.Total++
 		switch {
-		case run.GetStatus() != "completed":
+		// A first-time contributor's workflow waits for a maintainer's
+		// approval, which GitHub says as action_required: waiting, not
+		// failed (the rc6 full stage's F1, which a sandbox can't show).
+		case run.GetStatus() != "completed", run.GetConclusion() == "action_required":
 			status.Checks.Pending++
 		case run.GetConclusion() == "success" || run.GetConclusion() == "neutral" || run.GetConclusion() == "skipped":
 			status.Checks.Passed++
