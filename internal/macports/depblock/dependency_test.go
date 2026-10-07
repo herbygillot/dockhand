@@ -142,6 +142,35 @@ func TestGoGeneratorChecksExactManifestRequirements(t *testing.T) {
 // which go.sum has the source of, and go2port writes go.mod's alone: one
 // that leaves some out is refused, naming them (the rc6 full stage, B8:
 // countdown 1.5.0, missing rivo/uniseg).
+// go2port locks a module in a subdirectory of its repository by the
+// repository's tag, as charmbracelet/x/term at term/v0.2.1, which is the
+// v0.2.1 go.mod requires; walk 1.13.0 was refused as not covering go.mod
+// (the rc8 full stage, B8). A refusal names what differs.
+func TestGoGeneratorReadsASubdirectoryModulesTag(t *testing.T) {
+	t.Parallel()
+	sha := strings.Repeat("a", 64)
+	manifest := "module github.com/antonmedv/walk\ngo 1.21\nrequire (\n\tgithub.com/charmbracelet/x/term v0.2.1\n\tgithub.com/example/tools/cli/v2 v2.3.0\n\tgithub.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646\n)\n"
+	in := Input{Archive: sourceArchive(t, map[string]string{"root/go.mod": manifest}), Worksrcdir: "root", Package: "github.com/antonmedv/walk", Tag: "v1.13.0"}
+	rows := func(term string) string {
+		return "go.vendors github.com/charmbracelet/x/term lock " + term + " sha256 " + sha +
+			" github.com/example/tools/cli/v2 lock cli/v2.3.0 sha256 " + sha +
+			" github.com/nfnt/resize lock 83c6a9932646 sha256 " + sha
+	}
+	result, err := Generate(t.Context(), Go, outputHelper(t, rows("term/v0.2.1")), in)
+	require.NoError(t, err)
+	require.Contains(t, result.Values[Go], "term/v0.2.1", "the lock stays go2port's")
+
+	_, err = Generate(t.Context(), Go, outputHelper(t, rows("other/v0.2.1")), in)
+	require.ErrorContains(t, err, "github.com/charmbracelet/x/term at other/v0.2.1 where go.mod has v0.2.1", "another directory's tag isn't this module's")
+	_, err = Generate(t.Context(), Go, outputHelper(t, "go.vendors github.com/charmbracelet/x/term lock v0.2.1 sha256 "+sha+" github.com/extra/mod lock v1.0.0 sha256 "+sha), in)
+	require.ErrorContains(t, err, "missing github.com/example/tools/cli/v2 v2.3.0; missing github.com/nfnt/resize 83c6a9932646; extra github.com/extra/mod v1.0.0")
+
+	require.Equal(t, "v0.2.1", LockVersion("github.com/charmbracelet/x/term", "term/v0.2.1"))
+	require.Equal(t, "v2.3.0", LockVersion("github.com/example/tools/cli/v2", "cli/v2.3.0"))
+	require.Equal(t, "v1.0.0", LockVersion("example.com/a", "v1.0.0"))
+	require.True(t, GoSumPins([]byte("github.com/charmbracelet/x/term v0.2.1 h1:a=\n"), "github.com/charmbracelet/x/term", "term/v0.2.1"))
+}
+
 func TestGoGeneratorRefusesAnUnprunedGraphGoModLeavesShort(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)

@@ -19,15 +19,18 @@ act() {
 		dh_json submit -b "$name" --plan || :
 	done <"$ROW_DIR/projects"
 	# A module before go 1.17 whose go.mod leaves out a module its build
-	# reads is refused, naming it: countdown 1.5.0, at go 1.14, needs
-	# rivo/uniseg, which only its go.sum has (the rc6 full stage, batch 108).
+	# reads can't have its go.vendors made, naming it: countdown 1.5.0, at
+	# go 1.14, needs rivo/uniseg, which only its go.sum has (the rc6 full
+	# stage, batch 108). create drafts the port and says why its checksums
+	# aren't filled in, as for its other checksum failures, and the check
+	# stops it before submit (the rc8 full stage).
 	dh_json create "${ACCEPT_B8_UNPRUNED:-https://github.com/antonmedv/countdown}" --new || :
 	B8_UNPRUNED=$DH_LAST_JSON
 }
 assert() {
 	grep -q unconfirmed "$ROW_DIR/out.log" || { row_fail "no guess was marked unconfirmed"; return; }
-	if [ -n "${B8_UNPRUNED:-}" ] && ! jq -r '.error // ""' "$B8_UNPRUNED" | grep -q 'go.sum has the source of .*rivo/uniseg'; then
-		row_fail "create didn't refuse countdown's go.vendors, naming rivo/uniseg: $(jq -r '.error // "it succeeded"' "$B8_UNPRUNED")"
+	if [ -n "${B8_UNPRUNED:-}" ] && ! jq -r '.result.checksums_problem // ""' "$B8_UNPRUNED" | grep -q 'go.sum has the source of .*rivo/uniseg'; then
+		row_fail "create didn't say countdown's go.vendors needs rivo/uniseg: $(jq -r '.result.checksums_problem // .error // "it said nothing"' "$B8_UNPRUNED")"
 		return
 	fi
 	judged "both new ports built, and their previews read right"

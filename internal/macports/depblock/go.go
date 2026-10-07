@@ -110,16 +110,61 @@ func generateGo(ctx context.Context, executable string, in Input) (GeneratedBloc
 		}
 		for i := 1; i < len(row); i += 2 {
 			if row[i] == "lock" {
-				actual[row[0]] = row[i+1]
+				actual[row[0]] = LockVersion(row[0], row[i+1])
 			}
 		}
 	}
 	if !maps.Equal(actual, expected) {
 		// go2port fetches the module by its path itself, which is where
 		// pomo's, on codeberg.org, went wrong (field testing, 2026-10-02).
-		return GeneratedBlocks{}, fmt.Errorf("dependency: go2port's output for %s %s does not cover the source go.mod requirements exactly; go2port fetches the module from %s itself", in.Package, in.Tag, strings.SplitN(in.Package, "/", 2)[0])
+		// What differs is named, where the refusal said only that
+		// something did (the rc8 full stage's B8, walk).
+		return GeneratedBlocks{}, fmt.Errorf("dependency: go2port's output for %s %s does not cover the source go.mod requirements exactly (%s); go2port fetches the module from %s itself", in.Package, in.Tag, requirementDifferences(expected, actual), strings.SplitN(in.Package, "/", 2)[0])
 	}
 	return GeneratedBlocks{Values: map[string][]string{Go: values}}, nil
+}
+
+// LockVersion is the version a go.vendors lock names for a module. go2port
+// locks a module in a subdirectory of its repository by the repository's
+// tag, the subdirectory and the version, as github.com/charmbracelet/x/term
+// at term/v0.2.1, where go.mod and go.sum name v0.2.1: walk 1.13.0's
+// create was refused as not covering go.mod (the rc8 full stage's B8).
+// Any other lock is its version as it is.
+func LockVersion(modulePath, lock string) string {
+	at := strings.LastIndex(lock, "/")
+	if at < 0 {
+		return lock
+	}
+	directory, version := lock[:at], lock[at+1:]
+	path := modulePath
+	if prefix, _, ok := module.SplitPathVersion(modulePath); ok {
+		path = prefix
+	}
+	if !strings.HasSuffix(path, "/"+directory) {
+		return lock
+	}
+	return version
+}
+
+// requirementDifferences names the modules go2port's output and go.mod
+// disagree on: one missing, one extra, and one at another version.
+func requirementDifferences(expected, actual map[string]string) string {
+	var differences []string
+	for _, path := range slices.Sorted(maps.Keys(expected)) {
+		version, ok := actual[path]
+		switch {
+		case !ok:
+			differences = append(differences, "missing "+path+" "+expected[path])
+		case version != expected[path]:
+			differences = append(differences, path+" at "+version+" where go.mod has "+expected[path])
+		}
+	}
+	for _, path := range slices.Sorted(maps.Keys(actual)) {
+		if _, ok := expected[path]; !ok {
+			differences = append(differences, "extra "+path+" "+actual[path])
+		}
+	}
+	return strings.Join(differences, "; ")
 }
 
 // unprunedGraph refuses a module whose go.mod says a Go before 1.17, or

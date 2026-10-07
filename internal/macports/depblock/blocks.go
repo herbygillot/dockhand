@@ -626,8 +626,10 @@ func KeepGoModules(declared, generated []string, modules []string) ([]string, er
 }
 
 // GoSumPins says whether a go.sum pins a module at a version, by either
-// of its lines: the module's or its go.mod's.
+// of its lines: the module's or its go.mod's. The version may be a
+// go.vendors lock, as a subdirectory module's tag (LockVersion).
 func GoSumPins(gosum []byte, module, version string) bool {
+	version = LockVersion(module, version)
 	for _, line := range strings.Split(string(gosum), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[0] == module && (fields[1] == version || fields[1] == version+"/go.mod") {
