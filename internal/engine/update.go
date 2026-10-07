@@ -218,6 +218,13 @@ type Update struct {
 // written only if none of the files it touches changed in the meantime.
 func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, error) {
 	update, err := e.update(ctx, request)
+	// GitHub's rate limit is said as itself, with when it lifts and that
+	// nothing changed, not as the request it stopped, "Get …/git/commits/…:
+	// GitHub's rate limit …" (the rc6 full stage, D-R4). An update writes
+	// its files only once it has its release, so nothing has.
+	if limited := new(forge.RateLimitError); errors.As(err, &limited) {
+		return update, fmt.Errorf("%w; nothing was changed", limited)
+	}
 	if err != nil || request.Action != model.EditUpdate || update.Current || update.Port == "" {
 		return update, err
 	}

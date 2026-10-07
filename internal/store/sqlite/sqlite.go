@@ -104,6 +104,24 @@ var _ store.Store = (*Store)(nil)
 // Open opens the database at path, creating it and its directory when
 // absent, and refuses a file that is not a dockhand v3 database.
 func Open(ctx context.Context, path string, options Options) (*Store, error) {
+	s, err := openStore(ctx, path, options)
+	if err != nil && corrupt(err) {
+		// What's wrong, what dockhand did with it, which is nothing, and
+		// what a person can do, rather than SQLite's words alone (the rc6
+		// full stage, D-T5): never to delete it, which nothing restores.
+		return nil, fmt.Errorf("%w: %s can't be read as dockhand's database (%v); dockhand left it as it is. Restore it from a backup, or move it aside and dockhand starts a new one, which won't know this one's branches, checks, or kept archives", store.ErrUnavailable, path, err)
+	}
+	return s, err
+}
+
+// corrupt says whether SQLite found the file damaged, or not a database:
+// SQLITE_CORRUPT, 11, or SQLITE_NOTADB, 26.
+func corrupt(err error) bool {
+	var sqliteErr *sqlitedriver.Error
+	return errors.As(err, &sqliteErr) && (sqliteErr.Code()&255 == 11 || sqliteErr.Code()&255 == 26)
+}
+
+func openStore(ctx context.Context, path string, options Options) (*Store, error) {
 	if path == "" || path == ":memory:" || options.BusyTimeout < 0 || options.OperationTimeout < 0 {
 		return nil, fmt.Errorf("%w: database path %q", store.ErrUnavailable, path)
 	}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1350,5 +1351,26 @@ func TestACanceledBeginLeavesNoTransactionOpen(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		require.NoError(t, err)
+	}
+}
+
+// A file that isn't a database, or a damaged one, is said with its path,
+// that dockhand left it as it is, and what to do, never to delete it (the
+// rc6 full stage, D-T5).
+func TestADamagedDatabaseIsSaidPlainly(t *testing.T) {
+	for name, content := range map[string][]byte{
+		"not a database": []byte(strings.Repeat("not a database at all\n", 400)),
+		"truncated":      append([]byte("SQLite format 3\x00"), make([]byte, 84)...),
+	} {
+		path := filepath.Join(t.TempDir(), "dockhand.db")
+		require.NoError(t, os.WriteFile(path, content, 0o600))
+		_, err := Open(t.Context(), path, Options{})
+		require.ErrorIs(t, err, store.ErrUnavailable, name)
+		require.ErrorContains(t, err, path+" can't be read as dockhand's database", name)
+		require.ErrorContains(t, err, "dockhand left it as it is. Restore it from a backup, or move it aside", name)
+		require.NotContains(t, err.Error(), "delete")
+		after, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, content, after, "left as it was")
 	}
 }

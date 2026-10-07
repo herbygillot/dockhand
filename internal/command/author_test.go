@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -554,4 +555,25 @@ func TestAnUpdateCountsTheCratesItWrote(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, " and 352 crates (160 changed).\n", "an empty block says nothing: no \"and 0 Git crates (0 changed)\" (the txt run's finding 6)")
 	require.Contains(t, out, "The Portfile pinned soundtouch 0.4.1 over the lock's 0.4.0; the new lock has 0.5.4, so the pin is dropped.\n")
+}
+
+// limitedBumper is a bumper GitHub's rate limit stops before it finds the
+// release, as a request for a tag's commit is.
+type limitedBumper struct{ bumper }
+
+func (limitedBumper) ResolveRelease(context.Context, editprep.Request) (model.Release, error) {
+	limited := &forge.RateLimitError{RetryAt: time.Now().Add(18 * time.Minute), Err: errors.New("GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT")}
+	return model.Release{}, fmt.Errorf("Get \"https://api.github.com/repos/jqlang/jq/git/commits/abc\": %w", limited)
+}
+
+// An update GitHub's rate limit stops says the limit, when it lifts, and
+// that nothing changed, not the request it stopped (the rc6 full stage,
+// D-R4).
+func TestARateLimitedUpdateSaysSo(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	testPreparer = func(e *engine.Engine) engine.Preparer { return limitedBumper{bumper{repo: e.Repo}} }
+	t.Cleanup(func() { testPreparer = nil })
+	_, _, err := dockhand(t, "update", "jq", "--new", "--plan")
+	require.EqualError(t, err, "GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT; nothing was changed")
 }
