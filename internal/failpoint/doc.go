@@ -11,5 +11,7 @@
 //   - tidy.prepared and rebase.prepared, after the checkpoint is recorded,
 //     before the branch moves;
 //   - submit.pushed, after the push, before the pull request opens;
+//   - submit.created, once GitHub has opened the pull request, before
+//     dockhand records it;
 //   - check.running, once a check's provider run is recorded running.
 package failpoint

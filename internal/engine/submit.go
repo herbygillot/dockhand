@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portcreate"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -686,6 +687,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		result.Pushed = true
 	}
 	failpoint.Hit("submit.pushed")
+	progress.VerboseReport(ctx, "Opening the pull request for %s", plan.Head())
 	input := forge.PullRequestInput{Repository: plan.Repository, BaseBranch: UpstreamBranch, HeadBranch: plan.RemoteBranch(), HeadRepository: plan.HeadRepository,
 		Desired: forge.PullRequestContent{Head: model.ObjectID(plan.Commit), Title: plan.Title, Body: plan.Body}, Draft: plan.Request.Draft}
 	var observed forge.PullRequestObservation
@@ -706,6 +708,9 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 	if err != nil {
 		return result, fmt.Errorf("pushed %s to %s, but the pull request was not written: %w; dockhand submit again finishes it", short(model.ObjectID(plan.Commit)), plan.Head(), err)
 	}
+	// The window a kill is worst in: GitHub has the pull request, and the
+	// record hasn't it yet (the rc6 full stage, D-I4).
+	failpoint.Hit("submit.created")
 	result.PullRequest = observed.PullRequest
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		branch, err := tx.Branch(plan.Branch.ID)
