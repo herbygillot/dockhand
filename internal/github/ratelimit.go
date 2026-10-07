@@ -272,10 +272,12 @@ func (l *rateLimits) refusal(kind limitKind, until time.Time) error {
 }
 
 // limitWords says when a limit lifts, as "GitHub's rate limit for your
-// login resets at 14:05, in 23 minutes"; who may be empty where it isn't
-// known.
+// login resets in 23 minutes, at 14:05 EDT"; who may be empty where it
+// isn't known.
 func limitWords(kind limitKind, who string, until, now time.Time) string {
-	when := "at " + until.Local().Format("15:04") + ", in " + duration(until.Sub(now))
+	// The wait first, then the time with its zone, which a log read later,
+	// or a Mac in another zone, can't take for granted (the rc6 full stage).
+	when := "in " + duration(until.Sub(now)) + ", at " + until.Local().Format("15:04 MST")
 	if kind == secondaryLimit {
 		return "GitHub's secondary rate limit, on requests made close together, lifts " + when
 	}

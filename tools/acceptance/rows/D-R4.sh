@@ -3,14 +3,22 @@
 # with what's missing; nothing else breaks.
 . "$ROW_LIB/fault.sh"
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
+# Its check names a branch of its own, and its update plans from master:
+# with earlier rows' branches set aside, both were refused for want of a
+# branch before they missed Tart or MacPorts (the rc6 full stage).
+setup() {
+	host_only "a set-up Tart and MacPorts" || return 0
+	dh_setup update "$(port)" --new || return 1
+	DR4_BRANCH=$(own_branch)
+}
 act() {
 	host_only "a set-up Tart and MacPorts" || return 0
 	local shim
 	shim=$(fault_shims tart)
-	PATH="$shim:$PATH" "$DH_BIN" check -p "$(port)" >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
+	PATH="$shim:$PATH" "$DH_BIN" check -b "$DR4_BRANCH" >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
 	rm -rf "$shim"
 	shim=$(fault_shims port)
-	PATH="$shim:$PATH" "$DH_BIN" update "$(port)" --plan >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
+	PATH="$shim:$PATH" "$DH_BIN" update "$(port)" --new --plan >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
 	dh_json status || :
 }
 assert() {

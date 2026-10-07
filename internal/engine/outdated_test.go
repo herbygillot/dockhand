@@ -132,3 +132,13 @@ func TestDiscoveryBecomesOutdatedsPort(t *testing.T) {
 	require.Equal(t, "jq: no Portfile; fd: excluded on arm64", unresolvedWords(model.Plan{Unresolved: []model.Unresolved{
 		{Target: model.Target{Name: "jq"}, Reason: "no Portfile"}, {Target: model.Target{Name: "fd"}, Reason: "excluded on arm64"}}}))
 }
+
+// What couldn't be checked is counted and said with the first one's why,
+// for the line said ahead of the rest's result (the rc6 full stage, D-N4).
+func TestUncheckedPortsAreSaidAhead(t *testing.T) {
+	t.Parallel()
+	report := OutdatedReport{Ports: []OutdatedPort{{Port: "go-reflex", Problem: "GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT\nlisting them with git"}, {Port: "libt3config"}, {Port: "dominant_colours", Problem: "the same"}, {Port: "contacts-cli"}}}
+	require.Len(t, report.Unchecked(), 2)
+	require.Equal(t, "2 of 4 ports couldn't be checked: GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT", report.UncheckedWords())
+	require.Empty(t, OutdatedReport{Ports: []OutdatedPort{{Port: "jq"}}}.UncheckedWords())
+}

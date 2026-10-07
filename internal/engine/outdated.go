@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/outdated"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
@@ -74,6 +75,31 @@ type OutdatedReader interface {
 type OutdatedReport struct {
 	Master model.ObjectID
 	Ports  []OutdatedPort
+}
+
+// Unchecked are the ports that couldn't be checked, as GitHub's rate limit
+// leaves them, and UncheckedWords says how many of all, and why the first
+// couldn't, as "2 of 4 ports couldn't be checked: GitHub's rate limit …":
+// what's said ahead of the rest's result, which it can't stand for, since
+// "none has a newer release" was said of four where two due ones went
+// unchecked (the rc6 full stage, D-N4).
+func (r OutdatedReport) Unchecked() []OutdatedPort {
+	var unchecked []OutdatedPort
+	for _, port := range r.Ports {
+		if port.Problem != "" {
+			unchecked = append(unchecked, port)
+		}
+	}
+	return unchecked
+}
+
+func (r OutdatedReport) UncheckedWords() string {
+	unchecked := r.Unchecked()
+	if len(unchecked) == 0 {
+		return ""
+	}
+	why, _, _ := strings.Cut(unchecked[0].Problem, "\n")
+	return fmt.Sprintf("%d of %s couldn't be checked: %s", len(unchecked), prose.Plural(len(r.Ports), "port"), why)
 }
 
 // Outdated reports which of the chosen ports have newer releases upstream

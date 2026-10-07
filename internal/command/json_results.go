@@ -630,7 +630,14 @@ func outdatedView(report engine.OutdatedReport) map[string]any {
 	for _, port := range report.Ports {
 		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Problem: port.Problem, OwnVersion: port.OwnVersion, With: port.With, Moved: movedView(port.Moved)})
 	}
-	return map[string]any{"master": report.Master, "ports": ports}
+	view := map[string]any{"master": report.Master, "ports": ports}
+	// How many couldn't be checked, and why, for a script, which the exit
+	// code says too (the rc6 full stage, D-N4).
+	if unchecked := report.Unchecked(); len(unchecked) > 0 {
+		view["unchecked"] = len(unchecked)
+		view["unchecked_why"] = report.UncheckedWords()
+	}
+	return view
 }
 
 type preparedJSON struct {

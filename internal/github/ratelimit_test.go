@@ -104,7 +104,7 @@ func TestALongRateLimitIsSaidWithItsReset(t *testing.T) {
 	var limited *forge.RateLimitError
 	require.ErrorAs(t, err, &limited)
 	require.Equal(t, reset, limited.RetryAt)
-	require.ErrorContains(t, err, "GitHub's rate limit for your login resets at "+reset.Local().Format("15:04")+", in 23 minutes")
+	require.ErrorContains(t, err, "GitHub's rate limit for your login resets in 23 minutes, at "+reset.Local().Format("15:04 MST"))
 	require.Empty(t, *waits)
 
 	err = get(t, t.Context(), client)
@@ -129,7 +129,7 @@ func TestAUsedUpLimitIsWaitedBeforeAsking(t *testing.T) {
 	client, waits = limitedClient(t, server, "")
 	require.NoError(t, get(t, t.Context(), client))
 	err := get(t, t.Context(), client)
-	require.ErrorContains(t, err, "GitHub's rate limit for requests without a login resets at")
+	require.ErrorContains(t, err, "GitHub's rate limit for requests without a login resets in")
 	require.ErrorContains(t, err, "dockhand setup github raises it")
 	require.Len(t, server.asked, 1)
 	require.Empty(t, *waits)
@@ -156,7 +156,7 @@ func TestASecondaryLimitIsWaitedOnceForItsRetryAfter(t *testing.T) {
 	err := get(t, t.Context(), client)
 	var limited *forge.RateLimitError
 	require.ErrorAs(t, err, &limited)
-	require.ErrorContains(t, err, "GitHub's secondary rate limit, on requests made close together, lifts at")
+	require.ErrorContains(t, err, "GitHub's secondary rate limit, on requests made close together, lifts in")
 	require.Len(t, server.asked, 2, "asked again once, after the wait")
 	require.Len(t, *waits, 1)
 	require.InDelta(t, 60, (*waits)[0].Seconds(), 1, "GitHub's minute, where it names no wait")

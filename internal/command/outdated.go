@@ -173,7 +173,19 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	ports, master := prose.Plural(len(report.Ports), "port"), engine.Short(report.Master)
 	var line string
 	alone := len(report.Ports) == 1 && newer == 0 && unknown == 0
+	// What couldn't be checked leads, and the result is the rest's, which
+	// it can't stand for: "None of 4 ports has a newer release" was said
+	// where the 2 it couldn't check were due (the rc6 full stage, D-N4).
+	if unknown > 0 {
+		fmt.Fprintln(out, report.UncheckedWords())
+		checked := len(report.Ports) - unknown
+		ports = prose.Plural(checked, "port") + " checked"
+	}
 	switch {
+	case unknown > 0 && newer == 0:
+		line = fmt.Sprintf("Of the %s, none has a newer release, at master %s", ports, master)
+	case unknown > 0:
+		line = fmt.Sprintf("Of the %s, %d %s a newer release, at master %s", ports, newer, map[bool]string{true: "has", false: "have"}[newer == 1], master)
 	case alone && own == 1:
 		line = fmt.Sprintf("%s has no release to look for, at master %s: it fetches nothing here, and no livecheck reads its version", report.Ports[0].Port, master)
 	case alone && uncertain == 0:
@@ -202,17 +214,19 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	case own > 1:
 		line += fmt.Sprintf(" · %d have no release to look for", own)
 	}
-	if unknown > 0 {
-		line += fmt.Sprintf(" · %d couldn't be checked", unknown)
-		if !all {
-			line += " (--all says why)"
-		}
+	if unknown > 0 && !all {
+		line += " · --all lists those it couldn't check"
 	}
 	fmt.Fprintln(out, line)
 	if uncertain > 0 {
 		// Serve says such a port once, but outdated every time it's asked:
 		// the port's own livecheck can settle it for good.
 		fmt.Fprintln(out, "Where a tag set aside is an old one spelled oddly rather than a release, a livecheck.regex that skips it keeps it out of later looks.")
+	}
+	// Exit 3, attention: a script can't take an incomplete look for a
+	// whole one. What's said is above, so the exit says nothing more.
+	if unknown > 0 {
+		return &ExitError{Code: 3}
 	}
 	return nil
 }

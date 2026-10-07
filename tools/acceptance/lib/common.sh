@@ -10,7 +10,27 @@
 
 # dh runs dockhand as a person would, its output kept for the harm sweep
 # (H4's token grep, H6's Next: lines), and returns its exit status.
+# port_guard fails the row as the harness's own fault where it runs check,
+# submit, or tidy with -p for a port no open branch changes: after
+# isolate_branches sets earlier rows' aside, such a call is refused for
+# want of a branch before it reaches what the row tests, which six rows
+# of the rc6 full stage did. It says it, and the call goes on.
+port_guard() {
+	local verb=$1 port="" previous=""
+	case "$verb" in check | submit | tidy) ;; *) return 0 ;; esac
+	for arg in "$@"; do
+		case "$previous" in -p | --port) port=$arg ;; esac
+		previous=$arg
+	done
+	[ -n "$port" ] || return 0
+	if [ "$("$DH_BIN" --json status --port "$port" 2>/dev/null | jq '[.result.branches[]?] | length' 2>/dev/null)" = 0 ]; then
+		printf 'HARNESS: dockhand %s -p %s, with no open branch for %s; the row should make its own\n' "$verb" "$port" "$port" >>"$ROW_DIR/out.log"
+		row_fail "harness: $verb -p $port ran with no open branch for $port; the row should make its own (own_branch)"
+	fi
+}
+
 dh() {
+	port_guard "$@"
 	local status=0
 	printf '$ dockhand %s\n' "$*" >>"$ROW_DIR/out.log"
 	"$DH_BIN" "$@" >>"$ROW_DIR/out.log" 2>&1 || status=$?
@@ -47,6 +67,7 @@ own_branch() {
 # process's exit status for H8, and returns that status; DH_LAST_JSON
 # names the envelope's file. Its output is also in out.log, for H4.
 dh_json() {
+	port_guard "$@"
 	local status=0 n
 	n=$(find "$ROW_DIR/json" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
 	local file="$ROW_DIR/json/$((n + 1)).json"

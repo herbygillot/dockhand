@@ -8,9 +8,16 @@ act() {
 	host_only "a sparse disk image" || return 0
 	local mount
 	mount=$(fault_low_disk 60g) || { row_fail "the sparse image wasn't made"; return 0; }
-	fault_low_disk_fill 2000
 	allow_change "*"
-	DOCKHAND_DB="$mount/dockhand.db" DOCKHAND_TART_HOME="$mount/tart" "$DH_BIN" check -p "$(port)" >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
+	# The branch is the image database's own, started there before the
+	# disk fills: an empty database had none, and check stopped for want of
+	# one before it touched the disk (the rc6 full stage).
+	local branch
+	branch=$(DOCKHAND_DB="$mount/dockhand.db" DOCKHAND_TART_HOME="$mount/tart" "$DH_BIN" --json update "$(port)" --new 2>>"$ROW_DIR/out.log" |
+		jq -r '.result.branch | if type == "object" then .name else . end // empty')
+	[ -n "$branch" ] || { row_fail "its branch couldn't be started on the image"; fault_low_disk_stop; return 0; }
+	fault_low_disk_fill 2000
+	DOCKHAND_DB="$mount/dockhand.db" DOCKHAND_TART_HOME="$mount/tart" "$DH_BIN" check -b "$branch" >>"$ROW_DIR/out.log" 2>&1 || echo "[exit $?]" >>"$ROW_DIR/out.log"
 	fault_low_disk_stop
 	rm -f "$ROW_DIR/lowdisk.sparseimage"
 }

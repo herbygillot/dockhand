@@ -64,13 +64,18 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	}
 	require.Equal(t, "jq has no newer release, at master 1bb30d5\n", said(current("jq")))
 	require.Equal(t, "None of 2 ports has a newer release, at master 1bb30d5\n", said(current("jq"), current("fd")))
-	require.Equal(t, "None of 2 ports has a newer release, at master 1bb30d5 · 1 couldn't be checked (--all says why)\n",
-		said(engine.OutdatedPort{Port: "jq", Problem: "no forge"}, current("fd")), "a port that couldn't be checked isn't said to have none")
+	// What couldn't be checked leads, the result is the rest's, and the
+	// command exits 3 (the rc6 full stage, D-N4).
+	var partial bytes.Buffer
+	err := writeOutdated(t.Context(), nil, &partial, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{{Port: "jq", Problem: "GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT"}, current("fd")}}, false)
+	require.Equal(t, 3, ExitCode(err))
+	require.Equal(t, "1 of 2 ports couldn't be checked: GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT\nOf the 1 port checked, none has a newer release, at master 1bb30d5 · --all lists those it couldn't check\n",
+		partial.String(), "a port that couldn't be checked isn't said to have none")
 
 	// Where none could be checked, as offline, each says why, and the
 	// command fails rather than guess (the M1's quick stage, D-N1).
 	var offline bytes.Buffer
-	err := writeOutdated(t.Context(), nil, &offline, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{{Port: "jq", Current: "1.8.2", Problem: "dial tcp: connection refused\ngit ls-remote: exit status 128"}}}, false)
+	err = writeOutdated(t.Context(), nil, &offline, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{{Port: "jq", Current: "1.8.2", Problem: "dial tcp: connection refused\ngit ls-remote: exit status 128"}}}, false)
 	require.EqualError(t, err, "no port could be checked, at master 1bb30d5: dial tcp: connection refused")
 	require.Equal(t, "  PORT   NOW     NEWEST   DOCKHAND CAN\n  jq     1.8.2   ?        couldn't check: dial tcp: connection refused; git ls-remote: exit status 128\n", offline.String())
 
@@ -123,13 +128,13 @@ func TestOutdatedThenUpdateOutdated(t *testing.T) {
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada} openmaintainer\"\n"), data...), 0o644))
 
 	out, _, err := dockhand(t, "outdated", "--mine")
-	require.NoError(t, err)
+	require.Equal(t, 3, ExitCode(err), "one couldn't be checked")
 	require.Equal(t, []string{"@ada", "example.org:ada"}, reader.asked[0].Maintainers)
 	require.Contains(t, out, "  PORT   NOW     NEWEST   DOCKHAND CAN\n  jq     1.7.1   1.8.1    update\n")
-	require.Contains(t, out, "1 of 2 ports has a newer release, at master ")
-	require.Contains(t, out, " · 1 couldn't be checked (--all says why)\n")
+	require.Contains(t, out, "1 of 2 ports couldn't be checked: no forge could be found for it\nOf the 1 port checked, 1 has a newer release, at master ")
+	require.Contains(t, out, " · --all lists those it couldn't check\n")
 	out, _, err = dockhand(t, "outdated", "--mine", "--all")
-	require.NoError(t, err)
+	require.Equal(t, 3, ExitCode(err))
 	require.Contains(t, out, "couldn't check: no forge could be found for it")
 
 	// --outdated takes any number of ports, and --plan starts none.
@@ -152,7 +157,7 @@ func TestOutdatedThenUpdateOutdated(t *testing.T) {
 	require.Contains(t, stdout.String(), "1 branch updated and tidied into one commit each; 1 check queued\nserve isn't running: dockhand serve, or dockhand wait to run them here\n")
 
 	out, _, err = dockhand(t, "outdated", "jq")
-	require.NoError(t, err)
+	require.Equal(t, 3, ExitCode(err), "the fixture's lost couldn't be checked")
 	require.Regexp(t, `jq     1\.7\.1   1\.8\.1    already in jq-1\.8\.1\n`, out)
 	out, _, err = dockhand(t, "update", "--outdated", "jq", "--yes")
 	require.NoError(t, err)
@@ -180,7 +185,8 @@ func TestUpdateOutdatedLeavesAnUncertainPortForALook(t *testing.T) {
 	require.Contains(t, out, "Skipped: yq (v5.0 compares newer, but its commit is older than v4.44.1's; after a look, dockhand update yq 5.0)\n")
 
 	result, err := jsonOf(t, "outdated", "jq", "lost", "yq")
-	require.NoError(t, err)
+	require.Equal(t, 3, ExitCode(err), "lost couldn't be checked")
+	require.EqualValues(t, 1, dig(t, result.Result, "unchecked"))
 	yq := dig(t, result.Result, "ports", 2)
 	require.Equal(t, "yq", dig(t, yq, "port"))
 	require.Equal(t, false, dig(t, yq, "outdated"))
@@ -197,12 +203,12 @@ func TestOutdatedShowsItsProgressAtATerminal(t *testing.T) {
 	reader := withOutdated(t)
 	var out, errs bytes.Buffer
 	err := Run(t.Context(), []string{"outdated", "jq", "lost"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
-	require.NoError(t, err)
+	require.Equal(t, 3, ExitCode(err), "lost couldn't be checked")
 	require.Equal(t, "\r\033[KLooking up each port's newest release: 0 of 2\r\033[KLooking up each port's newest release: 1 of 2\r\033[K", errs.String())
 	require.NotContains(t, out.String(), "Looking up")
 
 	_, errOut, err := dockhand(t, "outdated", "jq", "lost")
-	require.NoError(t, err)
+	require.Equal(t, 3, ExitCode(err))
 	require.NotContains(t, errOut, "Looking up", "no terminal, no count drawn")
 	require.NotNil(t, reader.asked[1].Progress, "the count is still followed, for a look cut short")
 }

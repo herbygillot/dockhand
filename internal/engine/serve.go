@@ -727,9 +727,18 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	if data, err := json.Marshal(look); err == nil {
 		_ = e.writeServeFile("outdated.json", data)
 	}
-	if len(names) == 0 {
+	// What couldn't be checked is said first, and the rest's result as the
+	// rest's: "none of your ports" said of ports it never saw (D-N4).
+	unchecked := found.UncheckedWords()
+	if unchecked != "" {
+		o.s.say("serve: %s", unchecked)
+	}
+	switch {
+	case len(names) == 0 && unchecked != "":
+		o.s.say("serve: none of the rest has a newer release")
+	case len(names) == 0:
 		o.s.say("serve: none of your ports has a newer release")
-	} else {
+	default:
 		o.s.say("serve: %s of yours %s newer releases: %s", prose.Plural(len(names), "port"), map[bool]string{true: "has", false: "have"}[len(names) == 1], strings.Join(names, ", "))
 	}
 	// A port whose newest release is uncertain is neither current nor an
