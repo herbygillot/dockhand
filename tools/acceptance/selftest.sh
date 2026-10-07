@@ -32,7 +32,7 @@ check() {
 	fi
 	echo "selftest: $row $got${harm:+ ($harm)}: $(jq -r '[.harm | to_entries[] | .key + " " + (.value | split(":")[0])] | join(", ")' "$state/results/selftest/$row.json")"
 }
-for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h3:blocker:H3 h4:blocker:H4 h4present:pass h4added:blocker:H4 h5:blocker:H5 h6:blocker:H6 h6closed:pass h6otherbranch:blocker:H6 h7:blocker:H7 h7teardown:blocker:H7 h7cut:not_run h7stopped:fail h8:blocker:H8 h9:blocker:H9; do
+for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h3:blocker:H3 h4:blocker:H4 h4present:pass h4added:blocker:H4 h5:blocker:H5 h6:blocker:H6 h6closed:pass h6cleaned:pass h6otherbranch:blocker:H6 h7:blocker:H7 h7teardown:blocker:H7 h7cut:not_run h7stopped:fail h8:blocker:H8 h9:blocker:H9; do
 	row=${spec%%:*}
 	rest=${spec#*:}
 	want=${rest%%:*}

@@ -37,6 +37,12 @@ path)
 	echo "$state"
 	exit 0
 	;;
+clean)
+	# Takes every branch out of status, as cleaning merged ones does.
+	echo '{"attention": [], "branches": []}' >"$state/status.json"
+	echo "Cleaned."
+	exit 0
+	;;
 hint)
 	echo "Next: dockhand diff -b x, then dockhand tidy -b x"
 	exit 0

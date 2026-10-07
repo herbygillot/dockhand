@@ -32,10 +32,32 @@ port_guard() {
 dh() {
 	port_guard "$@"
 	local status=0
+	clean_before "$@"
 	printf '$ dockhand %s\n' "$*" >>"$ROW_DIR/out.log"
 	"$DH_BIN" "$@" >>"$ROW_DIR/out.log" 2>&1 || status=$?
 	printf '[exit %d]\n' "$status" >>"$ROW_DIR/out.log"
+	clean_after "$@"
 	return "$status"
+}
+
+# clean_before and clean_after, around a clean, mark the Next: lines of
+# each branch it took out of status as superseded (next_superseded_for):
+# H6 ran B6's setup's "cd \"$(dockhand path …)\"", check, and tidy after the
+# row had merged and cleaned the branch, and read the row a blocker (the
+# rc8 full stage).
+clean_before() {
+	[ "${1:-}" = clean ] || return 0
+	"$DH_BIN" --json status 2>/dev/null | jq -r '.result.branches[]?.name' 2>/dev/null >"$ROW_DIR/clean.before" || :
+}
+clean_after() {
+	[ "${1:-}" = clean ] && [ -f "$ROW_DIR/clean.before" ] || return 0
+	local now name
+	now=$("$DH_BIN" --json status 2>/dev/null | jq -r '.result.branches[]?.name' 2>/dev/null || :)
+	while IFS= read -r name; do
+		[ -n "$name" ] || continue
+		printf '%s\n' "$now" | grep -qxF "$name" || next_superseded_for "$name" "clean took it out"
+	done <"$ROW_DIR/clean.before"
+	rm -f "$ROW_DIR/clean.before"
 }
 
 # next_superseded marks the Next: lines printed so far as undone by the
@@ -91,11 +113,13 @@ dh_json() {
 	local status=0 n
 	n=$(find "$ROW_DIR/json" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
 	local file="$ROW_DIR/json/$((n + 1)).json"
+	clean_before "$@"
 	printf '$ dockhand --json %s\n' "$*" >>"$ROW_DIR/out.log"
 	"$DH_BIN" --json "$@" >"$file" 2>>"$ROW_DIR/out.log" || status=$?
 	cat "$file" >>"$ROW_DIR/out.log"
 	printf '%s\n' "$status" >"$file.exit"
 	printf '%s\n' "$*" >"$file.args"
+	clean_after "$@"
 	DH_LAST_JSON=$file
 	return "$status"
 }
