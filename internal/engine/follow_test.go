@@ -113,3 +113,32 @@ func TestServeSaysAnEndedLoginOnce(t *testing.T) {
 	require.Equal(t, []string{"serve: dockhand's GitHub login can't renew itself, so pull requests can't be read; run dockhand setup github, which serve uses without a restart"}, said)
 	require.Equal(t, []string{"GitHub login: dockhand's GitHub login can't renew itself; run dockhand setup github"}, notified)
 }
+
+// A credential GitHub rejects fails the read once, as its error, not each
+// pull request's: a revoked login was said five times, and status went on
+// to exit 0 (the rc6 full stage, D-C3).
+func TestARejectedLoginFailsTheReadOnce(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	for _, name := range []string{"jq-one", "jq-two"} {
+		branch, err := e.Start(t.Context(), StartRequest{Name: name})
+		require.NoError(t, err)
+		_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+		require.NoError(t, err)
+		tidy, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+		require.NoError(t, err)
+		_, err = e.ApplyTidy(t.Context(), tidy)
+		require.NoError(t, err)
+		plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+		require.NoError(t, err)
+		_, err = e.ApplySubmit(t.Context(), plan)
+		require.NoError(t, err)
+	}
+	fake.ObserveErr = fmt.Errorf("%w: GitHub rejected the credential from Dockhand macOS Keychain", github.ErrAuthentication)
+	fake.Observed = 0
+	_, err := e.RefreshPullRequests(t.Context())
+	require.ErrorIs(t, err, github.ErrAuthentication)
+	require.Equal(t, 1, fake.Observed, "the read stops at the first rejection")
+}

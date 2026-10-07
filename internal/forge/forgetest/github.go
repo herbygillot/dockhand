@@ -54,8 +54,12 @@ type GitHub struct {
 	// before another was opened; Searches counts them all.
 	Others    []forge.PullRequestSummary
 	SearchErr error
-	Quiet     int
-	Searches  int
+	// ObserveErr fails every Observe, as a credential GitHub rejects does;
+	// Observed counts the reads.
+	ObserveErr error
+	Observed   int
+	Quiet      int
+	Searches   int
 	// Readied are the pull requests marked ready; ReadyRefused is GitHub
 	// refusing to mark one.
 	Readied      []int
@@ -187,6 +191,10 @@ func (g *GitHub) Find(_ context.Context, q forge.PullRequestQuery) (forge.PullRe
 }
 
 func (g *GitHub) Observe(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	g.Observed++
+	if g.ObserveErr != nil {
+		return forge.PullRequestObservation{}, g.ObserveErr
+	}
 	if pr, ok := g.Theirs[ref.Number]; ok {
 		return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
 	}

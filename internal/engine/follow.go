@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -39,6 +40,13 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) ([]Refreshed, error) {
 			continue
 		}
 		refreshed, err := e.refresh(ctx, branch)
+		// A credential GitHub rejects is rejected for every pull request:
+		// it's the read's error, said once, not each branch's, as a revoked
+		// login was said five times and status went on to exit 0 (the rc6
+		// full stage, D-C3).
+		if errors.Is(err, github.ErrAuthentication) {
+			return all, err
+		}
 		refreshed.Err = err
 		all = append(all, refreshed)
 	}

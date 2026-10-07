@@ -43,7 +43,18 @@ from GitHub first; serve does that every few minutes.`,
 			}
 			defer e.Close()
 			if refresh {
-				refreshPullRequests(cmd.Context(), e, streams.Err)
+				// A read GitHub refused, as with a revoked login, is the
+				// command's error: status is still shown, from what's
+				// recorded, but for --json, whose one envelope says it.
+				if err := refreshPullRequests(cmd.Context(), e, streams.Err); err != nil {
+					if streams.json() {
+						return err
+					}
+					if shown := showStatus(cmd.Context(), e, streams, args, attentionOnly, all, port); shown != nil {
+						return shown
+					}
+					return err
+				}
 			}
 			return showStatus(cmd.Context(), e, streams, args, attentionOnly, all, port)
 		},
@@ -601,12 +612,12 @@ func writeNextFor(ctx context.Context, e *engine.Engine, out io.Writer, id model
 }
 
 // refreshPullRequests reads the pull requests and says what changed, and
-// what could not be read.
-func refreshPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) {
+// what could not be read; GitHub refusing the read altogether is its
+// error.
+func refreshPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) error {
 	refreshed, err := e.RefreshPullRequests(ctx)
 	if err != nil {
-		fmt.Fprintf(out, "Could not read pull requests: %v\n", err)
-		return
+		return fmt.Errorf("could not read pull requests: %w", err)
 	}
 	for _, r := range refreshed {
 		if r.Err != nil {
@@ -616,6 +627,7 @@ func refreshPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) {
 			fmt.Fprintf(out, "%s: %s\n", r.Branch.ShortName(), change)
 		}
 	}
+	return nil
 }
 
 // portWords are what a branch changes as status says it, a port read
