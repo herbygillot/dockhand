@@ -41,4 +41,4 @@ Automatic expiry was exercised with the real CLI by aging only a disposable rele
 
 The full-tree run generated two cold indexes, taking 3m53s in discovery and 3m54s in Tart staging. The caches have separate roots/profile inputs; this concrete duplicated-work observation is recorded in the roadmap for a measured reuse improvement, not silently treated as equivalent cache entries here.
 
-Exercise transcripts and measurements are preserved outside the repository at `/Users/herby/Documents/ChatGPT/Dockhand/exercises/2026-09-16-roadmap-cleanup`. The isolated Tart image/home, source checkouts, test databases, staging caches, and temporary binaries were removed after validation. The repository's `dockhand` binary was rebuilt from the committed implementation.
+Exercise transcripts and measurements are preserved outside the repository. The isolated Tart image/home, source checkouts, test databases, staging caches, and temporary binaries were removed after validation. The repository's `dockhand` binary was rebuilt from the committed implementation.

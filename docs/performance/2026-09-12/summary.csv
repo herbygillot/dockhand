@@ -7,13 +7,13 @@ observe,100,100,10,0,False,0,0,active-ten,3,3,0,27565.887875,27112.998833,27663.
 read,100,100,1,0,False,1,1,contention-1,10,10,0,30.5373745,28.743125,33.522834,2653300.0,,
 edit,100,100,1,0,False,1,1,contention-1,10,10,0,853.623834,833.484625,910.988167,7636540.0,,
 read,1000,1000,1,0,False,2,1,contention-1000,4,4,0,62.824938,51.691958,65.037125,22217748.0,,
-edit,1000,1000,1,0,False,2,1,contention-1000,8,4,4,8398.1168335,8380.48125,8505.442375,72051540.0,5001.148;5001.306;5001.074;5001.066,ledger: timed out waiting for writer lock: /private/var/folders/l6/xhprvp0x6_q4239mpj1zp3_40000gn/T/dockhand-ledgerperf-4030984868/ledger.lock: context deadline exceeded
+edit,1000,1000,1,0,False,2,1,contention-1000,8,4,4,8398.1168335,8380.48125,8505.442375,72051540.0,5001.148;5001.306;5001.074;5001.066,ledger: timed out waiting for writer lock: $TMPDIR/dockhand-ledgerperf-4030984868/ledger.lock: context deadline exceeded
 read,100,100,1,0,False,2,1,contention-2,10,10,0,29.765271,27.82475,31.960667,2658528.0,,
-edit,100,100,1,0,False,2,1,contention-2,20,19,1,892.408458,822.205042,4515.9225,7638416,5001.172,ledger: timed out waiting for writer lock: /private/var/folders/l6/xhprvp0x6_q4239mpj1zp3_40000gn/T/dockhand-ledgerperf-1578738376/ledger.lock: context deadline exceeded
+edit,100,100,1,0,False,2,1,contention-2,20,19,1,892.408458,822.205042,4515.9225,7638416,5001.172,ledger: timed out waiting for writer lock: $TMPDIR/dockhand-ledgerperf-1578738376/ledger.lock: context deadline exceeded
 read,100,100,1,0,False,4,1,contention-4,10,10,0,39.433458,31.81675,61.705083,2657568.0,,
-edit,100,100,1,0,False,4,1,contention-4,40,31,9,914.300708,851.116625,5320.706666,7644624,5000.420;5000.532;5000.746;5000.382;5001.057;5000.370;5000.911;5000.706;5001.098,ledger: timed out waiting for writer lock: /private/var/folders/l6/xhprvp0x6_q4239mpj1zp3_40000gn/T/dockhand-ledgerperf-1223438321/ledger.lock: context deadline exceeded
+edit,100,100,1,0,False,4,1,contention-4,40,31,9,914.300708,851.116625,5320.706666,7644624,5000.420;5000.532;5000.746;5000.382;5001.057;5000.370;5000.911;5000.706;5001.098,ledger: timed out waiting for writer lock: $TMPDIR/dockhand-ledgerperf-1223438321/ledger.lock: context deadline exceeded
 read,100,100,1,0,False,4,1,diagnostic-contention,5,5,0,36.380125,30.536292,38.749,2660920,,
-edit,100,100,1,0,False,4,1,diagnostic-contention,20,17,3,878.819375,851.719458,5334.023666,7668704,5001.113;5001.135;5001.064,ledger: timed out waiting for writer lock: /private/var/folders/l6/xhprvp0x6_q4239mpj1zp3_40000gn/T/dockhand-ledgerperf-1176330844/ledger.lock: context deadline exceeded
+edit,100,100,1,0,False,4,1,diagnostic-contention,20,17,3,878.819375,851.719458,5334.023666,7668704,5001.113;5001.135;5001.064,ledger: timed out waiting for writer lock: $TMPDIR/dockhand-ledgerperf-1176330844/ledger.lock: context deadline exceeded
 noop,1000,1000,1,0,False,0,0,diagnostic-distinct,1,1,0,7904.908542,7904.908542,7904.908542,87889328,,
 edit,1000,1000,1,0,False,0,0,diagnostic-distinct,1,1,0,8291.681875,8291.681875,8291.681875,72089632,,
 observe,1000,1000,1,0,False,0,0,diagnostic-distinct,1,1,0,33023.569917,33023.569917,33023.569917,386598360,,

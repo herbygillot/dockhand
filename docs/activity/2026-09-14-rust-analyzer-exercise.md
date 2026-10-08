@@ -1,6 +1,6 @@
 # rust-analyzer bump-to-PR exercise
 
-Rebuilt Dockhand from the current source and exercised `rust-analyzer` against `/Users/herby/Source/macports-ports`. The requested update was published as [MacPorts PR #34679](https://github.com/macports/macports-ports/pull/34679).
+Rebuilt Dockhand from the current source and exercised `rust-analyzer` against a local `macports-ports` checkout. The requested update was published as [MacPorts PR #34679](https://github.com/macports/macports-ports/pull/34679).
 
 ## Result
 

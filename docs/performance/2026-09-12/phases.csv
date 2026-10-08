@@ -84,8 +84,8 @@ diagnostic-contention,edit,100,100,1,5,,git:mktree,1,8.105375,8.105375,8.105375
 diagnostic-contention,edit,100,100,1,5,,git:commit-tree,1,11.1475,11.1475,11.1475
 diagnostic-contention,edit,100,100,1,5,,git:update-ref,1,42.775042,42.775042,42.775042
 diagnostic-contention,edit,100,100,1,5,,lock-held,1,882.82575,882.82575,882.82575
-diagnostic-contention,edit,100,100,2,1,ledger: timed out waiting for writer lock: /private/var/folders/l6/xhprvp0x6_q4239mpj1zp3_40000gn/T/dockhand-ledgerperf-1176330844/ledger.lock: context deadline exceeded,lock-wait,1,5001.063959,5001.063959,5001.063959
-diagnostic-contention,edit,100,100,4,1,ledger: timed out waiting for writer lock: /private/var/folders/l6/xhprvp0x6_q4239mpj1zp3_40000gn/T/dockhand-ledgerperf-1176330844/ledger.lock: context deadline exceeded,lock-wait,1,5001.086,5001.086,5001.086
+diagnostic-contention,edit,100,100,2,1,ledger: timed out waiting for writer lock: $TMPDIR/dockhand-ledgerperf-1176330844/ledger.lock: context deadline exceeded,lock-wait,1,5001.063959,5001.063959,5001.063959
+diagnostic-contention,edit,100,100,4,1,ledger: timed out waiting for writer lock: $TMPDIR/dockhand-ledgerperf-1176330844/ledger.lock: context deadline exceeded,lock-wait,1,5001.086,5001.086,5001.086
 diagnostic-contention,edit,100,100,3,1,,lock-wait,1,4475.171625,4475.171625,4475.171625
 diagnostic-contention,edit,100,100,3,1,,git:for-each-ref,2,17.087875,6.882375,10.2055
 diagnostic-contention,edit,100,100,3,1,,git:cat-file,3,22.492125,7.106709,8.148166
@@ -170,7 +170,7 @@ diagnostic-contention,edit,100,100,4,2,,git:mktree,1,8.170333,8.170333,8.170333
 diagnostic-contention,edit,100,100,4,2,,git:commit-tree,1,12.427375,12.427375,12.427375
 diagnostic-contention,edit,100,100,4,2,,git:update-ref,1,40.210458,40.210458,40.210458
 diagnostic-contention,edit,100,100,4,2,,lock-held,1,865.646166,865.646166,865.646166
-diagnostic-contention,edit,100,100,2,2,ledger: timed out waiting for writer lock: /private/var/folders/l6/xhprvp0x6_q4239mpj1zp3_40000gn/T/dockhand-ledgerperf-1176330844/ledger.lock: context deadline exceeded,lock-wait,1,5001.043167,5001.043167,5001.043167
+diagnostic-contention,edit,100,100,2,2,ledger: timed out waiting for writer lock: $TMPDIR/dockhand-ledgerperf-1176330844/ledger.lock: context deadline exceeded,lock-wait,1,5001.043167,5001.043167,5001.043167
 diagnostic-contention,edit,100,100,4,3,,lock-wait,1,0.046167,0.046167,0.046167
 diagnostic-contention,edit,100,100,4,3,,git:for-each-ref,2,20.153583,7.510666,12.642917
 diagnostic-contention,edit,100,100,4,3,,git:cat-file,3,22.887,7.230625,7.924583

@@ -20,7 +20,7 @@ New tests cover raw object fidelity despite Git export attributes, dirty-checkou
 `go test -race ./... -timeout 120s`, `go vet ./...`, and `go build ./...` passed. The affected Git, MacPorts, and workflow packages were checked again with the race detector after the final edge-case tests were added. Whitespace checks passed. MacPorts integration tests run when `port-tclsh` is installed and skip elsewhere. An opt-in integration check binds real ports from a selected repository and stores accepted work only in a temporary database:
 
 ```sh
-DOCKHAND_TEST_PORTS_REPO=/Users/herby/Source/macports-ports \
+DOCKHAND_TEST_PORTS_REPO=~/Source/macports-ports \
 DOCKHAND_TEST_PORTS_BRANCH=master \
 go test -v ./internal/workflow -run TestVerificationBindingAgainstPortsTree -timeout 180s
 ```

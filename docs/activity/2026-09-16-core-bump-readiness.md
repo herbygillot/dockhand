@@ -55,7 +55,7 @@ Detailed sequence, preservation rules, refusal cases, and acceptance criteria ar
 
 ## Evidence and validation
 
-Raw observations, tool source, module files, runtime/source identity, progress, and reproduction instructions live at `~/Documents/ChatGPT/Dockhand/surveys/2026-09-16-core-bump-readiness`. The earlier survey remains at `~/Documents/ChatGPT/Dockhand/exercises/2026-09-16-hardening`.
+Raw observations, tool source, module files, runtime/source identity, progress, and reproduction instructions are kept outside the repository, alongside the earlier survey.
 
 The control harness, corrected Helm probe, and exact-source Wasmer replay completed successfully as investigations, including expected unsupported/unknown outcomes. Portfile restoration checks passed. No production code was changed, so the full application suite was not repeated for these documentation changes. Markdown links and `git diff --check` were checked. The existing untracked review directory/logo and ports checkout files were left untouched.
 
