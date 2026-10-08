@@ -1,11 +1,15 @@
 package engine
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/github"
 )
 
 // A port that may have a newer release is named once for what was set
@@ -46,4 +50,38 @@ func TestServeSaysAFileItCouldntWriteOnceADay(t *testing.T) {
 	now = now.AddDate(0, 0, 1)
 	s.written("serving.json", full)
 	require.Len(t, said, 3, "said again the next day")
+}
+
+// What status and queue read of serve's login is written before serve
+// says it, so a reader that follows serve's line finds it: D-C3 read
+// queue right after "GitHub rejected its login" and found serve acting
+// (the rc9 full stage).
+func TestServeWritesItsLoginStateBeforeSayingIt(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	answers := []error{nil, fmt.Errorf("%w: GitHub rejected the credential", github.ErrAuthentication), nil}
+	read := map[string]string{}
+	s := newServer(e, ServeOptions{
+		IdentityEvery: time.Nanosecond,
+		Identity: func(context.Context) (string, error) {
+			err := answers[0]
+			answers = answers[1:]
+			return "ada", err
+		},
+		Say: func(line string) {
+			serving, _ := e.lastServing()
+			read[line] = serving.NotActing
+		},
+	})
+	g := &loginGate{s: s}
+	for range 3 {
+		g.last = time.Time{}
+		g.look(t.Context())
+	}
+	require.Equal(t, "GitHub rejected the login; dockhand setup github",
+		read["serve: GitHub rejected its login, as once it's revoked; it acts on GitHub as no one until dockhand setup github logs in again"])
+	got, ok := read["serve: logged in again as ada; acting on GitHub again"]
+	require.True(t, ok)
+	require.Empty(t, got, "acting again, written before it's said")
 }

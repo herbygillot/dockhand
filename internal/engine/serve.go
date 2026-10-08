@@ -501,6 +501,10 @@ func (g *loginGate) set(state, other string) {
 	// The client held, and its token, go: the next use reads the login as
 	// it is now.
 	g.s.e.dropForge()
+	// What status and queue read is written before serve says it, so one
+	// that follows serve's line reads it: D-C3 read queue right after the
+	// rejection's line and found serve acting (the rc9 full stage).
+	g.s.written("serving.json", g.s.e.announceServing(g.serving()))
 	switch state {
 	case "none":
 		g.s.say("serve: no GitHub login now; it reads pull requests without one, and opens, pushes, and checks on GitHub nothing until dockhand setup github logs in")
@@ -513,7 +517,6 @@ func (g *loginGate) set(state, other string) {
 			g.s.say("serve: logged in again as %s; acting on GitHub again", g.pinned)
 		}
 	}
-	g.s.written("serving.json", g.s.e.announceServing(g.serving()))
 }
 
 // serving is what serve says of itself, with its login as it stands.
@@ -534,10 +537,10 @@ func (g *loginGate) unread(err error) {
 		return
 	}
 	g.problem = problem
+	g.s.written("serving.json", g.s.e.announceServing(g.serving()))
 	if problem != "" {
 		g.s.say("serve: couldn't read who its GitHub login is (%s); it goes on as it was, and reads it again each minute", problem)
 	}
-	g.s.written("serving.json", g.s.e.announceServing(g.serving()))
 }
 
 // reads is whether serve reads GitHub; writes, whether it acts there.
