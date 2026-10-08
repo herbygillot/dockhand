@@ -253,10 +253,19 @@ dh_bg_wait() {
 
 # wait_for_line waits until a file has a line matching a pattern, for up
 # to some seconds; it fails where none comes.
+#
+# log_size is a file's size in bytes, 0 where it isn't there: the offset
+# to give wait_for_line before a row's step writes the lines it waits on.
+log_size() { wc -c <"$1" 2>/dev/null | tr -d ' ' || echo 0; }
+
+# from, a byte offset, has it read only what the file holds past it: a log
+# that outlasts the row, as serve.log does, holds earlier runs' lines, and
+# D-C3's waits matched rc9's, so queue ran before rc10's serve had looked
+# (the rc10 full stage). log_size gives the offset to take before acting.
 wait_for_line() {
-	local file=$1 pattern=$2 seconds=${3:-600} waited=0
+	local file=$1 pattern=$2 seconds=${3:-600} from=${4:-0} waited=0
 	while [ "$waited" -lt "$seconds" ]; do
-		grep -qE "$pattern" "$file" 2>/dev/null && return 0
+		tail -c +"$((from + 1))" "$file" 2>/dev/null | grep -qE "$pattern" && return 0
 		sleep 2
 		waited=$((waited + 2))
 	done

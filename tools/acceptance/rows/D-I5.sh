@@ -27,10 +27,13 @@ act() {
 	wait_for_line "$DH_BG_LOG" 'building|running' 900 || { row_fail "the check never started building"; kill "$DH_BG_PID" 2>/dev/null; return 0; }
 	checkpoint "sleep the Mac (pmset sleepnow, or close the lid) for five minutes, then wake it" || { kill "$DH_BG_PID" 2>/dev/null; return 0; }
 	dh_bg_wait || :
+	local served
+	served=$(log_size "$HOME/.dockhand/logs/serve.log")
 	dh serve --install || :
 	dh check -b "$DI5_BRANCH" --fresh -d || :
-	# serve has the check building before the reboot ends it.
-	wait_for_line "$HOME/.dockhand/logs/serve.log" "check-[0-9]+ $DI5_BRANCH: (running|resuming)" 600 || :
+	# serve has the check building before the reboot ends it, said since
+	# this serve began: serve.log keeps earlier runs' lines.
+	wait_for_line "$HOME/.dockhand/logs/serve.log" "check-[0-9]+ $DI5_BRANCH: (running|resuming)" 600 "$served" || :
 	printf '%s\n' "$DI5_BRANCH" >"$DI5_STATE"
 	# The second half's run sets earlier rows' branches aside, but this one,
 	# and starts the row's results afresh, so the first half's log is kept.

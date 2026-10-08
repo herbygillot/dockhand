@@ -14,12 +14,16 @@ act() {
 	dh_json status --refresh || :
 	# serve reads who its login is each minute, and asks GitHub again for
 	# the same token each ten.
-	wait_for_line "$log" '^serve: GitHub rejected its login' 720 || :
+	# Only this row's lines: serve.log keeps earlier runs' (the rc10 full
+	# stage).
+	wait_for_line "$log" '^serve: GitHub rejected its login' 720 "${before:-0}" || :
+	local rejected
+	rejected=$(log_size "$log")
 	dh_json queue || :
 	# A revoked login is dead, so the rows after need a new one; it's
 	# asked for here, beside the revocation, where the person already is.
 	device_login "D-C3 logs dockhand in again after the revocation" || :
-	wait_for_line "$log" '^serve: logged in again as ' 180 || :
+	wait_for_line "$log" '^serve: logged in again as ' 180 "${rejected:-0}" || :
 	dh_quiet --json queue | jq -r '.result.serve_state.pid // empty' >"$ROW_DIR/pid.after"
 	tail -c +"$((${before:-0} + 1))" "$log" >"$ROW_DIR/serve.log" 2>/dev/null || :
 	dh serve --uninstall || :
