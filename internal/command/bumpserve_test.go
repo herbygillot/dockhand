@@ -173,6 +173,13 @@ func serveWith(t *testing.T, concerns concerned, search error) (bool, string) {
 	poll := servePoll
 	t.Cleanup(func() { servePoll = poll })
 	servePoll = 20 * time.Millisecond
+	// The day's look runs from serve.outdated_at, 07:00 local by default:
+	// a clock left running found it not yet due past midnight, and serve
+	// prepared nothing (CI on the rc9 tag, 00:21 to 00:45 UTC).
+	now := serveNow
+	t.Cleanup(func() { serveNow = now })
+	morning := time.Date(2026, 10, 7, 8, 0, 0, 0, time.Local)
+	serveNow = func() time.Time { return morning }
 	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
 	post := postNotification
 	t.Cleanup(func() { postNotification = post })
