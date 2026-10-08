@@ -38,8 +38,9 @@ path)
 	exit 0
 	;;
 clean)
-	# Takes every branch out of status, as cleaning merged ones does.
-	echo '{"attention": [], "branches": []}' >"$state/status.json"
+	# Marks every branch cleaned, as cleaning merged ones does: status
+	# --all still lists them.
+	jq '.branches |= map(.cleaned = true)' "$state/status.json" >"$state/status.json.new" 2>/dev/null && mv "$state/status.json.new" "$state/status.json"
 	echo "Cleaned."
 	exit 0
 	;;

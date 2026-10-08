@@ -45,14 +45,19 @@ dh() {
 # H6 ran B6's setup's "cd \"$(dockhand path …)\"", check, and tidy after the
 # row had merged and cleaned the branch, and read the row a blocker (the
 # rc8 full stage).
+#
+# Read from status --all, since a branch merged is out of plain status's
+# list before the clean that removes it: B6's, merged and taken by a plain
+# clean, wasn't marked (the rc9 full stage). A branch still there after,
+# and not cleaned, is one the clean left.
 clean_before() {
 	[ "${1:-}" = clean ] || return 0
-	"$DH_BIN" --json status 2>/dev/null | jq -r '.result.branches[]?.name' 2>/dev/null >"$ROW_DIR/clean.before" || :
+	"$DH_BIN" --json status --all 2>/dev/null | jq -r '.result.branches[]? | select(.cleaned != true) | .name' 2>/dev/null >"$ROW_DIR/clean.before" || :
 }
 clean_after() {
 	[ "${1:-}" = clean ] && [ -f "$ROW_DIR/clean.before" ] || return 0
 	local now name
-	now=$("$DH_BIN" --json status 2>/dev/null | jq -r '.result.branches[]?.name' 2>/dev/null || :)
+	now=$("$DH_BIN" --json status --all 2>/dev/null | jq -r '.result.branches[]? | select(.cleaned != true) | .name' 2>/dev/null || :)
 	while IFS= read -r name; do
 		[ -n "$name" ] || continue
 		printf '%s\n' "$now" | grep -qxF "$name" || next_superseded_for "$name" "clean took it out"
