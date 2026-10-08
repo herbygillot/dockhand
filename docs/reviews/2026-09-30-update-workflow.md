@@ -26,7 +26,7 @@ Several findings below concern deliberate policy choices, including D4, D9, and 
 | Check | Tidy when requested, capture the commit, plan changed ports/subports in configured environments, order prerequisites, build targets from source, and retain applicable evidence. | Keep this. The recent source-build/clean-work fix and verifier identity invalidation are appropriate. |
 | Publish | A human submission sees warnings. Bump/serve additionally hold for upstream concerns, incomplete archive comparison, commit findings, and duplicate-PR uncertainty. The linked check binds the submitted commit. | Correct distinction between authoring and unattended publication. Some missing assessments currently evade that distinction. |
 
-Main orchestration: [Engine.Update](/Users/herby/Source/dockhand2/internal/engine/update.go:151), [preparation](/Users/herby/Source/dockhand2/internal/preparation/preparation.go:154), [archive/context planning](/Users/herby/Source/dockhand2/internal/macports/portedit/artifact_plan.go:67), [linked submission](/Users/herby/Source/dockhand2/internal/command/submit.go:228), and [unattended holds](/Users/herby/Source/dockhand2/internal/engine/servesubmit.go:103).
+Main orchestration: [Engine.Update](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/engine/update.go#L151), [preparation](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/preparation/preparation.go#L154), [archive/context planning](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/macports/portedit/artifact_plan.go#L67), [linked submission](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/command/submit.go#L228), and [unattended holds](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/engine/servesubmit.go#L103).
 
 ## Findings
 
@@ -36,9 +36,9 @@ Main orchestration: [Engine.Update](/Users/herby/Source/dockhand2/internal/engin
 
 There are three separate holes in the comparison surface:
 
-- **Git-fetched source:** [compareUpstream](/Users/herby/Source/dockhand2/internal/engine/update.go:637) returns nil when there are no downloads. This is the normal Git path. A nil comparison contributes no hold. Licensing and runtime dependency changes still exist in Git source; a successful build does not assess them. D4 already holds archive updates whose comparison could not be completed. I would apply the same principle here. Deferring Git patch applicability to the actual build is reasonable, but that does not justify deferring licensing to it.
-- **Archive/project layout:** [interesting](/Users/herby/Source/dockhand2/internal/sourcecompare/compare.go:275) assumes one enclosing directory, skips archive-root files, and reads build/manifests only immediately below that enclosing directory. It neither validates that layout nor reports unsupported project roots. Fixtures containing a changed root-level LICENSE, and a newly added requirement in python/pyproject.toml, both return no changes and no error.
-- **Recognized file, incomplete interpretation:** [pyprojectDependencies](/Users/herby/Source/dockhand2/internal/sourcecompare/manifests.go:234) projects dependencies but omits requires-python, build-system requirements/backend, and optional-dependency groups. A fixture changing the Python minimum from 3.9 to 3.13 and switching setuptools to hatchling returns no findings. Because pyproject.toml is a recognized manifest, the generic build-file warning does not catch these changes either.
+- **Git-fetched source:** [compareUpstream](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/engine/update.go#L637) returns nil when there are no downloads. This is the normal Git path. A nil comparison contributes no hold. Licensing and runtime dependency changes still exist in Git source; a successful build does not assess them. D4 already holds archive updates whose comparison could not be completed. I would apply the same principle here. Deferring Git patch applicability to the actual build is reasonable, but that does not justify deferring licensing to it.
+- **Archive/project layout:** [interesting](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/sourcecompare/compare.go#L275) assumes one enclosing directory, skips archive-root files, and reads build/manifests only immediately below that enclosing directory. It neither validates that layout nor reports unsupported project roots. Fixtures containing a changed root-level LICENSE, and a newly added requirement in python/pyproject.toml, both return no changes and no error.
+- **Recognized file, incomplete interpretation:** [pyprojectDependencies](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/sourcecompare/manifests.go#L234) projects dependencies but omits requires-python, build-system requirements/backend, and optional-dependency groups. A fixture changing the Python minimum from 3.9 to 3.13 and switching setuptools to hatchling returns no findings. Because pyproject.toml is a recognized manifest, the generic build-file warning does not catch these changes either.
 
 The nested-project case is especially relevant to a port whose build directory is below the archive root. Preparation already carries worksrcdir/cargo.dir knowledge, while comparison receives only archive paths and old/new version strings.
 
@@ -50,7 +50,7 @@ Do not recursively flag every manifest in examples, tests, and vendored projects
 
 **Fix the version-only rule; refine relevance before extending it.**
 
-[versionOnly](/Users/herby/Source/dockhand2/internal/sourcecompare/compare.go:250) treats any changed line as harmless if replacing the old project-version string with the new one reproduces it. This is textual substitution, not recognition of a version declaration.
+[versionOnly](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/sourcecompare/compare.go#L250) treats any changed line as harmless if replacing the old project-version string with the new one reproduces it. This is textual substitution, not recognition of a version declaration.
 
 A fixture changes both:
 
@@ -61,7 +61,7 @@ find_package(SomeLibrary 1.0 REQUIRED)
 
 to 2.0. The entire file is classified as changing only the project's version, without a hold. A dependency minimum has changed too. Restrict the exemption to narrowly recognized version declarations; otherwise retain the generic build-file finding. This preserves D12's conservative policy without trying to interpret all of CMake.
 
-There is a related problem in [BuildSystems](/Users/herby/Source/dockhand2/internal/macports/buildsystems.go:53) and [compareUpstream's suppression](/Users/herby/Source/dockhand2/internal/engine/update.go:658). Finding a known PortGroup establishes that a system is used. It does not establish that every other system is unused. CMake can invoke another build system or package runtime components without loading their PortGroups.
+There is a related problem in [BuildSystems](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/macports/buildsystems.go#L53) and [compareUpstream's suppression](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/engine/update.go#L658). Finding a known PortGroup establishes that a system is used. It does not establish that every other system is unused. CMake can invoke another build system or package runtime components without loading their PortGroups.
 
 A fixture with a CMake PortGroup and a newly added package.json runtime dependency has its hold suppressed. That demonstrates the rule; it does not demonstrate an actual hybrid port failure. Also, the same native selected-port classification is applied to every archive pair, even though the archive planner may have found different platform/variant contexts.
 
@@ -73,7 +73,7 @@ I agree with removing flatbuffers' irrelevant manifest noise. I would represent 
 
 The new Python marker handling is a real improvement. It retains repeated declarations, evaluates macOS applicability, and recognizes a previously foreign-only dependency becoming applicable. Those earlier review issues are addressed.
 
-However, [pythonPins](/Users/herby/Source/dockhand2/internal/engine/update.go:741) only examines requirements that changed, only where a dependency's port name matches its package name, only for the selected prepared port, and stops after the first matching provider. A failure to read or interpret the supplying port's version produces an advisory finding with Hold false. An unmatched name produces nothing. Poetry constraints are read into summary strings without the typed requirements consumed by this checker.
+However, [pythonPins](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/engine/update.go#L741) only examines requirements that changed, only where a dependency's port name matches its package name, only for the selected prepared port, and stops after the first matching provider. A failure to read or interpret the supplying port's version produces an advisory finding with Hold false. An unmatched name produces nothing. Poetry constraints are read into summary strings without the typed requirements consumed by this checker.
 
 A local fixture confirms that a raised requirement against an unreadable MacPorts version is advisory. The existing test suite intentionally expects that behavior too. **I disagree with it for unattended submission:** uncertainty about a changed runtime requirement is precisely something a passing build may not resolve. An unmatched name should be “provider unresolved,” not automatically “missing dependency” and not silent success.
 
@@ -85,7 +85,7 @@ I agree with D9's decision to avoid holding every Go/Rust dependency update. Com
 
 **Add applicability and supersession to assessment records.**
 
-[upstreamComparisons](/Users/herby/Source/dockhand2/internal/engine/servesubmit.go:136) returns every stored edit's comparison. It does not compare the current files with Edit.Files, establish which releases now apply, or reevaluate dependency observations. The edit record already has before/after file identities, but this consumer does not use them.
+[upstreamComparisons](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/engine/servesubmit.go#L136) returns every stored edit's comparison. It does not compare the current files with Edit.Files, establish which releases now apply, or reevaluate dependency observations. The edit record already has before/after file identities, but this consumer does not use them.
 
 A fixture updates a port through MIT → GPL → MIT. Submission assessment still retrieves both intermediate license holds, although the final upstream license matches the original. Conservatively retaining a hold is understandable, but this is history being replayed, not an assessment of the net contribution.
 
@@ -99,9 +99,9 @@ This should not invalidate everything after a commit-message edit or an unrelate
 
 **Correctness gap established by the data flow; no live tag mutation was attempted.**
 
-The repeated tag checks in [preparation](/Users/herby/Source/dockhand2/internal/preparation/preparation.go:171) are good. They protect the preparation interval.
+The repeated tag checks in [preparation](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/preparation/preparation.go#L171) are good. They protect the preparation interval.
 
-But [planGitVersion](/Users/herby/Source/dockhand2/internal/macports/portedit/git_source.go:57) leaves git.branch as a tag unless the original Portfile already pins a literal commit. The build happens later. [guestTarget](/Users/herby/Source/dockhand2/internal/buildenv/tart/provider.go:367) carries no expected upstream commit, and [TargetInputs](/Users/herby/Source/dockhand2/internal/model/inputs.go:32) identifies the ports-tree inputs and active packages, not the actual fetched Git revision. The guest delegates fetch to MacPorts.
+But [planGitVersion](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/macports/portedit/git_source.go#L57) leaves git.branch as a tag unless the original Portfile already pins a literal commit. The build happens later. [guestTarget](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/buildenv/tart/provider.go#L367) carries no expected upstream commit, and [TargetInputs](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/model/inputs.go#L32) identifies the ports-tree inputs and active packages, not the actual fetched Git revision. The guest delegates fetch to MacPorts.
 
 If the tag moves after preparation, the recorded Release.Commit can name one source while the build fetches another. An unchanged Portfile and environment are insufficient to establish identical source inputs for such a port. The archive path has the written checksums to bind bytes; the tag-based Git path lacks the equivalent later proof.
 
@@ -113,7 +113,7 @@ Providers that cannot attest this should expose that limitation in the evidence 
 
 **Refine these heuristics, without discarding the useful discovery optimizations.**
 
-Two local fixtures exercise assumptions in [latest.go](/Users/herby/Source/dockhand2/internal/upstream/latest.go:233):
+Two local fixtures exercise assumptions in [latest.go](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/upstream/latest.go#L233):
 
 1. **Commit time is treated as release order.** predates discards a version that compares newer if its commit predates the current release's commit. A fixture with published versions 1.0 and 2.0, where 2.0 names an older commit, reports Current and sets aside 2.0. Release branches, delayed tags, and timestamp anomalies make that possible without a malformed version. The rule is useful for historical tag misspellings, but the comment that a newer release never predates the current one is too strong.
 2. **Two points are treated as proof of ordering.** evaluateNewest evaluates the two greatest captured versions and falls back to all candidates only when those expose an ordering reversal/tie. A synthetic mapping 2.0 → 20.0, 3.0 → 3.0, 4.0 → 4.0 still chooses 4.0. This proves the optimization's limit, not the prevalence of such Portfiles.
@@ -134,21 +134,21 @@ An update assessment could recommend a small set of checks based on the actual c
 | A Python runtime requirement changes | Resolve provider/version/applicability and consider an import or package-specific smoke test. |
 | Declared tests fail or time out | Present that as an unattended-publication concern, even when the check's recorded policy makes it advisory. |
 
-[TestsDeclared](/Users/herby/Source/dockhand2/internal/model/plan.go:74) intentionally allows a built target with failed tests to pass, and the unattended hold rules add no separate test-failure hold. I understand matching MacPorts CI for the default check. **I would consider a stricter unattended publication policy for observed test failures**, preserving D1's rule that each historical result retains its original test policy. This is a policy recommendation, not an implementation bug. Absence of tests should remain different from tests that ran and failed.
+[TestsDeclared](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/model/plan.go#L74) intentionally allows a built target with failed tests to pass, and the unattended hold rules add no separate test-failure hold. I understand matching MacPorts CI for the default check. **I would consider a stricter unattended publication policy for observed test failures**, preserving D1's rule that each historical result retains its original test policy. This is a policy recommendation, not an implementation bug. Absence of tests should remain different from tests that ran and failed.
 
-Keep [--revbump-dependents](/Users/herby/Source/dockhand2/internal/engine/diff.go:240) explicit. The base index's direct library dependents are a useful actionable set, not proof that all need revision bumps or that no other consumers matter. Static/header-only consumers, plugins, variant-only relationships, and API changes can need different treatment. Recommend impact checks separately from writing revision bumps; do not automatically bump every reverse dependency.
+Keep [--revbump-dependents](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/engine/diff.go#L240) explicit. The base index's direct library dependents are a useful actionable set, not proof that all need revision bumps or that no other consumers matter. Static/header-only consumers, plugins, variant-only relationships, and API changes can need different treatment. Recommend impact checks separately from writing revision bumps; do not automatically bump every reverse dependency.
 
 I would also retain optional baselines and the distinction between infrastructure failure and port failure. Runtime smoke checks are already deferred in the roadmap; they are an acknowledged coverage limit, not new unfinished work invented by this review.
 
 ## Efficiency and smaller decision improvements
 
-**Move cheap publication preflight earlier.** Bump checks for existing local work and valid environments before editing. It does expensive preparation before the other-PR search; [submitChecked](/Users/herby/Source/dockhand2/internal/command/submit.go:228) then checks/builds before applying the unattended holds, even if its initial submission plan already names another PR. Batch preparation does not perform that early remote search. An unattended publication mode could stop before downloads/builds on a known duplicate, while an explicitly requested preparation/check still proceeds. Repeat the search before publishing because the world may have changed.
+**Move cheap publication preflight earlier.** Bump checks for existing local work and valid environments before editing. It does expensive preparation before the other-PR search; [submitChecked](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/command/submit.go#L228) then checks/builds before applying the unattended holds, even if its initial submission plan already names another PR. Batch preparation does not perform that early remote search. An unattended publication mode could stop before downloads/builds on a known duplicate, while an explicitly requested preparation/check still proceeds. Repeat the search before publishing because the world may have changed.
 
 **Treat plan as reusable evidence with preconditions.** A full update --plan already downloads, evaluates, and compares; executing the update repeats this. A bounded prepared-candidate artifact could reuse local observations and artifact bytes if the source and release identities still match. Cache immutable data by digest and preserve the intentional final source/tag checks. Profile interpreter starts before changing evaluator behavior; sessions and workspace reuse already exist.
 
-**Keep URL advice off the critical path.** [plainHTTP](/Users/herby/Source/dockhand2/internal/engine/https.go:28) probes URLs serially, with up to ten seconds each, even before returning Current. Bounded parallelism, deduplication, or optional cached advice would improve responsiveness without changing the update decision.
+**Keep URL advice off the critical path.** [plainHTTP](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/engine/https.go#L28) probes URLs serially, with up to ten seconds each, even before returning Current. Bounded parallelism, deduplication, or optional cached advice would improve responsiveness without changing the update decision.
 
-**Classify checksum intent from source facts.** [stealthUpdate](/Users/herby/Source/dockhand2/internal/macports/portedit/stealth.go:59) skips stealth handling whenever the Portfile differs anywhere from the branch base. A comment/homepage edit therefore changes whether a same-name source replacement gets a revision bump and dist_subdir. Compare version/source/fetch/checksum facts, or retain an explicit authoring intent, rather than inferring a version edit from any changed Portfile. This observation is from the code path, not a separate reproduced update.
+**Classify checksum intent from source facts.** [stealthUpdate](https://github.com/herbygillot/dockhand/blob/073a880b44/internal/macports/portedit/stealth.go#L59) skips stealth handling whenever the Portfile differs anywhere from the branch base. A comment/homepage edit therefore changes whether a same-name source replacement gets a revision bump and dist_subdir. Compare version/source/fetch/checksum facts, or retain an explicit authoring intent, rather than inferring a version edit from any changed Portfile. This observation is from the code path, not a separate reproduced update.
 
 **Avoid turning patch prechecks into absolute authority.** Keeping the prepared edit when a patch fails the host-side check is useful: a person can fix it, and the actual build runs the real hooks. For unattended work, expose “likely to fail before build” and allow a cheaper triage stop, but do not equate that limited precheck with authoritative MacPorts execution.
 

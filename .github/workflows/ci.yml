@@ -46,6 +46,9 @@ jobs:
       - name: Format
         run: make fmt-check
 
+      - name: Local paths
+        run: make path-check
+
       - name: Vet
         run: make vet
 

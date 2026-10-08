@@ -17,7 +17,7 @@
 #     and two runs compare;
 #   - a local bare fork, fork.git, so nothing can be pushed anywhere real;
 #     and, where ACCEPT_GH_FORK names the test account's fork on GitHub,
-#     such as herbyg-test/macports-ports, a remote "github" for it, which
+#     such as <test-account>/macports-ports, a remote "github" for it, which
 #     submit's preview finds as the fork, as the stage's token's login
 #     owns it. The stage never pushes there: its GIT_SSH_COMMAND refuses
 #     every push, and reads with the test account's key alone (ACCEPT_GH_KEY).
@@ -86,7 +86,7 @@ export DOCKHAND_INDEX_CACHE="$state/cache/index" DOCKHAND_READING_CACHE="$state/
 export ACCEPT_WATCH="$state/clone" ACCEPT_UPSTREAM="origin github" ACCEPT_RUN_DIR="$state/clone"
 # SSH reads the fork with the test account's key alone, and a push, which
 # SSH alone would carry, is refused (lib/ssh-read-only.sh).
-: "${ACCEPT_GH_KEY:=$HOME/.dockhand-acceptance/herbyg-test_ed25519}"
+: "${ACCEPT_GH_KEY:=$HOME/.dockhand-acceptance/test-account_ed25519}"
 export ACCEPT_GH_KEY GIT_SSH_COMMAND="$here/lib/ssh-read-only.sh"
 # The Tart homes, kept between runs, since an image takes an hour and
 # tens of gigabytes to make.

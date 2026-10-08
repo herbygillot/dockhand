@@ -27,7 +27,7 @@ Job `job_LKNH5UAPO5SCP5IHSXVPLU7MGY`, source commit `7f2182cf669e8992c76c320d601
 4. Root and both conflicting dependents passed independently. The failure target failed in `dockhand-exercise-unrelated`, phase `build`, classified as a dependency failure. No inference that the root caused it was made.
 5. The final job was failed with `3 passed, 1 failed`; the passing root did not override the cohort result. Successful guests were released; the failed guest/evidence remained retained by the normal diagnostic policy. The other guests continued despite that failure.
 
-The temporary clone is retained at `/private/var/folders/l6/xhprvp0x6_q4239mpj1zp3_40000gn/T/dockhand-cohort-exercise-1z5ha57j` for inspection, along with the durable job records. Full-cohort publication rejection is covered by the existing fixture-forge regressions; no synthetic PR was submitted.
+The temporary clone is retained at `$TMPDIR/dockhand-cohort-exercise-1z5ha57j` for inspection, along with the durable job records. Full-cohort publication rejection is covered by the existing fixture-forge regressions; no synthetic PR was submitted.
 
 ## Finding and correction
 

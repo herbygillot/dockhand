@@ -106,7 +106,7 @@ step as_dhtest git config --global user.name "Dockhand Acceptance"
 step as_dhtest git config --global user.email "dhtest@example.invalid"
 # The key goes where full.sh offers it alone, outside ~/.ssh, so no other
 # key, and no agent's, stands in for it.
-: "${ACCEPT_TEST_KEY:=$HOME/.dockhand-acceptance/herbyg-test_ed25519}"
+: "${ACCEPT_TEST_KEY:=$HOME/.dockhand-acceptance/test-account_ed25519}"
 if [ -r "$ACCEPT_TEST_KEY" ]; then
 	step sudo install -d -o dhtest -m 700 /Users/dhtest/.dockhand-acceptance
 	step sudo install -o dhtest -m 600 "$ACCEPT_TEST_KEY" /Users/dhtest/.dockhand-acceptance/test-account_ed25519

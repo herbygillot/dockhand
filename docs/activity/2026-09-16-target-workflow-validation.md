@@ -54,7 +54,7 @@ Automatic discovery selected 7.4.2 from 7.4.0. Preparation checked the original 
 
 No executable version output was used as a verification criterion. These runs do not establish support on the platform Wasmer explicitly rejects.
 
-Full local observations, command output, and patches are retained outside the repository under `~/Documents/ChatGPT/Dockhand/exercises/2026-09-16-target-workflow`; source patches are exercise evidence, not changes to Dockhand's repository. The roadmap records remaining broader coverage separately.
+Full local observations, command output, and patches are retained outside the repository; source patches are exercise evidence, not changes to Dockhand's repository. The roadmap records remaining broader coverage separately.
 
 ## Cleanup
 

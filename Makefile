@@ -19,7 +19,7 @@ ifneq ($(strip $(VERSION)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.Version=$(strip $(VERSION))
 endif
 
-.PHONY: build test test-race vet lint fmt-check deadcode mutate vendor vendor-check acceptance acceptance-selftest clean
+.PHONY: build test test-race vet lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest clean
 
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
@@ -63,6 +63,14 @@ lint:
 fmt-check:
 	@files=$$(gofmt -l $$(git ls-files --cached --others --exclude-standard '*.go' | grep -v '^vendor/')); \
 	if [ -n "$$files" ]; then echo "not gofmt-formatted:" >&2; echo "$$files" >&2; exit 1; fi
+
+# Fail when the docs or the acceptance harness name a path on someone's own
+# Mac: a home directory other than the harness's dhtest or Shared, a per-user
+# temporary directory, or ~/Documents. Say ~, $TMPDIR, or "outside the
+# repository" instead; /private/var/folders/… stays fine.
+path-check:
+	@found=$$(git grep -noE '/Users/[A-Za-z0-9_.-]+|/private/var/folders/[A-Za-z0-9]|~/Documents/' -- docs tools README.md AGENTS.md | grep -vE ':/Users/(dhtest|Shared)$$'); \
+	if [ -n "$$found" ]; then echo "a local path in the repository:" >&2; echo "$$found" >&2; exit 1; fi
 
 # Mutation testing, by version like deadcode: each mutant of MUTATE's files
 # runs their package's tests, through go test -overlay, so the checkout is

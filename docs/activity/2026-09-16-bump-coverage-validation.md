@@ -64,4 +64,4 @@ Codex establishes a concrete next task: support exact commit-qualified Cargo Git
 - Darwin-major enumeration and native threshold observations remain bounded metadata coverage. Minor/deployment dimensions, mutable thresholds, and external host inputs remain unresolved unless explicitly supported.
 - Manifest selection remains conservative for extraction layouts it cannot prove. There is no first-file fallback.
 
-Raw survey/control JSON, harnesses, prepared Portfiles, and test logs are retained outside the repository at `~/Documents/ChatGPT/Dockhand/exercises/2026-09-16-bump-coverage`. The [roadmap](../roadmap.md) now prioritizes the discovered Cargo mapping gap and remaining demonstrated platform dimensions, followed by broader PR observation.
+Raw survey/control JSON, harnesses, prepared Portfiles, and test logs are retained outside the repository. The [roadmap](../roadmap.md) now prioritizes the discovered Cargo mapping gap and remaining demonstrated platform dimensions, followed by broader PR observation.
