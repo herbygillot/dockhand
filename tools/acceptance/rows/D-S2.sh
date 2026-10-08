@@ -32,7 +32,11 @@ act() {
 	dh rebase -b "$DS2_BRANCH" || :
 }
 assert() {
-	jq -e '.result.branches[0].pull_request.state | select(. == "closed" or . == "merged")' "$ROW_DIR/json/1.json" >/dev/null ||
+	# The status envelope by what it ran, not its number: setup's submit
+	# came first, and json/1.json was its (the rc9 full stage).
+	local status
+	status=$(grep -l '^status --refresh ' "$ROW_DIR"/json/*.json.args 2>/dev/null | head -1)
+	jq -e '.result.branches[0].pull_request.state | select(. == "closed" or . == "merged")' "${status%.args}" >/dev/null ||
 		{ row_fail "status --refresh didn't say the PR closed"; return; }
 	judged "clean kept the edits, and rebase didn't point at the closed PR"
 }

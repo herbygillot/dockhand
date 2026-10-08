@@ -48,6 +48,12 @@ act() {
 	digest=$(sqlite3 "file:${DOCKHAND_DB}?mode=ro" "SELECT digest FROM archives WHERE name LIKE '$ACCEPT_LIB_PORT-%' ORDER BY kept_at DESC LIMIT 1" 2>>"$ROW_DIR/out.log")
 	path=$(find "$(dt1_archives)" -type f -name "${digest#sha256:}" 2>/dev/null | head -1)
 	DT1_ALTERED=0
+	# None kept, as where cleanup has forgotten it, is said plainly: the
+	# row has nothing to alter (the rc9 full stage).
+	if [ -z "$path" ]; then
+		row_result "not run" "no kept archive of $ACCEPT_LIB_PORT to alter: its dependent's check gave the guest none, or cleanup has forgotten it"
+		return 0
+	fi
 	if [ -n "$path" ]; then
 		cp -p "$path" "$ROW_DIR/dt1.original" && printf '%s\n' "$path" >"$ROW_DIR/dt1.path" || return 0
 		fault_flip "$path"
