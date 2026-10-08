@@ -23,6 +23,7 @@ setup() {
 	local url
 	url=$(dh_quiet --json status "$B6_BRANCH" | jq -r '.result.branches[0].pull_request.url // empty')
 	[ -n "$url" ] || return 1
+	next_superseded_for "$B6_BRANCH" "its test pull request merged"
 	gh pr merge "$url" --merge >>"$ROW_DIR/out.log" 2>&1 || return 1
 	b6_reset_sandbox
 	printf '%s\n' "$B6_BRANCH" >"$ROW_DIR/branch"

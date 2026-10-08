@@ -44,9 +44,14 @@ setup() {
 	fi
 	cp "$ROW_DIR/branches.before" "$ROW_DIR/branches.seen"
 	local merged moved closed archived worktree
+	# What the row was told to do next with a branch it merges, it merges
+	# past: a merged branch takes no check or tidy, and H6 ran them on the
+	# kept one (the rc10 full stage).
 	merged=$(c7_pr) || return 1
+	next_superseded_for "$merged" "its test pull request merged"
 	gh pr merge "$(c7_url "$merged")" --merge >>"$ROW_DIR/out.log" 2>&1 || return 1
 	moved=$(c7_pr) || return 1
+	next_superseded_for "$moved" "its test pull request merged"
 	gh pr merge "$(c7_url "$moved")" --merge >>"$ROW_DIR/out.log" 2>&1 || return 1
 	# The fork branch moves after its merge: a commit pushed to it.
 	worktree=$(dh_quiet path "$moved")
