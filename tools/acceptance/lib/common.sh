@@ -96,7 +96,7 @@ dh_setup() {
 
 # run_name is a name of the row's own for this run, base and the time the
 # row first asked: a branch name an earlier run's record holds, archived,
-# can't be taken again (after the release, Next's third item), so a fixed
+# can't be taken again (after the release, Next's fourth item), so a fixed
 # one failed its row's setup on a reused account (the rc7 full stage).
 run_name() {
 	[ -s "$ROW_DIR/run-stamp" ] || date +%m%d%H%M%S >"$ROW_DIR/run-stamp"
