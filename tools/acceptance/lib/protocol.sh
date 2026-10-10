@@ -166,17 +166,26 @@ login_restore() {
 # device_login logs dockhand in by GitHub's device flow, asking first: the
 # code is issued only once the person says they're there, since one
 # issued to an empty room expires (the rc6 full stage), then shown at a
-# second checkpoint, while setup github waits for it.
+# second checkpoint, while setup github waits for it. A code that
+# expired unused is asked for again, up to three codes: an answer after
+# it lapsed went on to wait for a login that never came, and D-C3 failed
+# on it (the rc10 rerun, 00:30Z).
 device_login() {
+	local codes=0
 	checkpoint "say ready for a GitHub login code: $*" || return 1
-	dh_bg setup github --no-browser
-	if wait_for_line "$DH_BG_LOG" 'one-time code: ' 120; then
-		checkpoint "authorize dockhand as the test account: $(grep -m1 'one-time code: ' "$DH_BG_LOG"), at $(grep -m1 -oE 'https://[^ ]+' "$DH_BG_LOG")" || {
-			kill "$DH_BG_PID" 2>/dev/null
-			return 1
-		}
-	fi
-	dh_bg_wait
+	while :; do
+		codes=$((codes + 1))
+		dh_bg setup github --no-browser
+		if wait_for_line "$DH_BG_LOG" 'one-time code: ' 120; then
+			checkpoint "authorize dockhand as the test account: $(grep -m1 'one-time code: ' "$DH_BG_LOG"), at $(grep -m1 -oE 'https://[^ ]+' "$DH_BG_LOG")" || {
+				kill "$DH_BG_PID" 2>/dev/null
+				return 1
+			}
+		fi
+		dh_bg_wait && return 0
+		grep -q 'expired before it was entered' "$DH_BG_LOG" && [ "$codes" -lt 3 ] || return 1
+		checkpoint "the code expired before it was entered; say ready for a new one: $*" || return 1
+	done
 }
 
 # failpoint_bin builds, once a candidate, dockhand from the candidate's

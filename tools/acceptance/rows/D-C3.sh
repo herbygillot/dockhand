@@ -22,8 +22,13 @@ act() {
 	dh_json queue || :
 	# A revoked login is dead, so the rows after need a new one; it's
 	# asked for here, beside the revocation, where the person already is.
-	device_login "D-C3 logs dockhand in again after the revocation" || :
-	wait_for_line "$log" '^serve: logged in again as ' 180 "${rejected:-0}" || :
+	# A login that never came in is the harness's, not serve's: waiting
+	# for serve to say it's back would only fail the row.
+	if device_login "D-C3 logs dockhand in again after the revocation"; then
+		wait_for_line "$log" '^serve: logged in again as ' 180 "${rejected:-0}" || :
+	else
+		row_result "not run" "the new login never came in, so serve's return to it wasn't seen: $(grep -m1 -E 'expired|error' "$DH_BG_LOG" 2>/dev/null)"
+	fi
 	dh_quiet --json queue | jq -r '.result.serve_state.pid // empty' >"$ROW_DIR/pid.after"
 	tail -c +"$((${before:-0} + 1))" "$log" >"$ROW_DIR/serve.log" 2>/dev/null || :
 	dh serve --uninstall || :
