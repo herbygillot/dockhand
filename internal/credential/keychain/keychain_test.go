@@ -80,7 +80,7 @@ func TestALockedKeychainIsSaidSo(t *testing.T) {
 	_, err := store.Get(t.Context(), key)
 	require.ErrorIs(t, err, credential.ErrLocked)
 	require.NotErrorIs(t, err, credential.ErrNotFound)
-	require.EqualError(t, err, "the login Keychain is locked, as it is over SSH with nobody at the screen; security unlock-keychain unlocks it")
+	require.EqualError(t, err, "the login Keychain is locked, as it is over SSH with nobody at the screen; unlock it with security unlock-keychain in the same shell, since unlocking it in another SSH session doesn't reach this one")
 	require.ErrorIs(t, store.Delete(t.Context(), key), credential.ErrLocked)
 }
 

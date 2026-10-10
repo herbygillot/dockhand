@@ -44,6 +44,10 @@ func TestRunCapturesStreamsAndReportsFailures(t *testing.T) {
 	require.Contains(t, string(combined.Output), "err")
 	require.Empty(t, combined.Stderr)
 	require.ErrorContains(t, err, "fixture sub: exit status 3: out\nerr")
+
+	// Nothing on stderr leaves no ": " behind the exit status.
+	_, err = Run(t.Context(), Spec{Tool: "fixture", Path: script(t, "exit 36\n"), Args: []string{"find"}})
+	require.EqualError(t, err, "fixture find: exit status 36")
 }
 
 func TestRunStreamsToAnExtraSinkAndHonorsInputDirAndEnv(t *testing.T) {

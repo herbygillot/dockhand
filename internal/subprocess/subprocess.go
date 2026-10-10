@@ -65,6 +65,11 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
+	// A command that wrote nothing to stderr leaves no ": " behind it
+	// (the rc10 full stage's F5, "exit status 36: ").
+	if strings.TrimSpace(e.Stderr) == "" {
+		return fmt.Sprintf("%s %s: %v", e.Tool, e.Command, e.Cause)
+	}
 	return fmt.Sprintf("%s %s: %v: %s", e.Tool, e.Command, e.Cause, e.Stderr)
 }
 

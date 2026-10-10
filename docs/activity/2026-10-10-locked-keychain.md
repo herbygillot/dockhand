@@ -18,3 +18,15 @@ framework's status, and the Keychain store read only 44 (errSecItemNotFound).
 - Every reader goes through that path: commands, `auth status`
   (AuthenticatedUser), and serve's minute re-read, which says the problem once
   as a login it couldn't read and keeps it in status, not as a rejection.
+
+## After Prime-time's F5 notes
+
+- The advice says to unlock in the same shell: `security unlock-keychain` in
+  one SSH session doesn't reach another.
+- A subprocess error with nothing on stderr no longer ends in a stray ": "
+  (`subprocess.Error`), as serve's "exit status 36: )" did.
+- F5's SSH check runs `--fresh`, so Tart starts a VM over SSH; on rc10 it
+  reused check-132's build.
+- auth status, update, and serve's minute re-read all read the login through
+  `SystemCredentials.saved`, so the wording reaches each; Prime-time's raw
+  messages were rc10's.

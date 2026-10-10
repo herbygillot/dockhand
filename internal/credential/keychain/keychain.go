@@ -27,7 +27,7 @@ var errLocked error = lockedError{}
 type lockedError struct{}
 
 func (lockedError) Error() string {
-	return "the login Keychain is locked, as it is over SSH with nobody at the screen; security unlock-keychain unlocks it"
+	return "the login Keychain is locked, as it is over SSH with nobody at the screen; unlock it with security unlock-keychain in the same shell, since unlocking it in another SSH session doesn't reach this one"
 }
 
 func (lockedError) Is(target error) bool { return target == credential.ErrLocked }
