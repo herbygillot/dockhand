@@ -12,7 +12,8 @@ setup() {
 act() {
 	host_only "MacPorts' configuration on the host" || return 0
 	checkpoint "point sources.conf at $MACPORTS_TREE, then resume" || return 0
-	dh_json providers || :
+	# Plain output: rc10's providers has no --json (the rc10 rerun).
+	dh providers || :
 	dh_bg check -b "$F7_BRANCH"
 	checkpoint "run sudo port selfupdate while the check runs" || return 0
 	dh_bg_wait || :
