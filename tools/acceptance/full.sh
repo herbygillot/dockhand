@@ -21,6 +21,8 @@
 #   ACCEPT_GH_LOGIN    the test GitHub account's login, whose PRs H3 counts
 #   ACCEPT_GO_PORT     a small Go port that's due, and ACCEPT_RUST_PORT a
 #                      small Rust one, chosen on the day
+#   ACCEPT_SLEEP_PORT  optional: a port whose build lasts some minutes, for
+#                      D-I5's sleep, the Rust port unless set
 #   ACCEPT_GH_KEY      the test account's SSH key, which git offers alone,
 #                      ~/.dockhand-acceptance/test-account_ed25519 unless
 #                      set: never the agent's keys, which may be a person's
@@ -48,6 +50,7 @@ fi
 : "${ACCEPT_GH_LOGIN:?full.sh needs ACCEPT_GH_LOGIN, the test GitHub account}"
 : "${ACCEPT_GO_PORT:?full.sh needs ACCEPT_GO_PORT, a small Go port that is due}"
 : "${ACCEPT_RUST_PORT:?full.sh needs ACCEPT_RUST_PORT, a small Rust port that is due}"
+: "${ACCEPT_SLEEP_PORT:=$ACCEPT_RUST_PORT}"
 : "${ACCEPT_STATE:=$HOME/.dockhand-acceptance/full}"
 : "${MACPORTS_TREE:=$HOME/Source/macports-ports}"
 mkdir -p "$ACCEPT_STATE"
@@ -94,7 +97,7 @@ export DOCKHAND_CONFIG=${DOCKHAND_CONFIG:-$HOME/.dockhand/config.toml}
 export DOCKHAND_DB=${DOCKHAND_DB:-$HOME/.dockhand/dockhand.db}
 mkdir -p "$(dirname "$DOCKHAND_CONFIG")"
 touch "$DOCKHAND_CONFIG"
-export ACCEPT_STATE ACCEPT_GH_LOGIN ACCEPT_GO_PORT ACCEPT_RUST_PORT MACPORTS_TREE
+export ACCEPT_STATE ACCEPT_GH_LOGIN ACCEPT_GO_PORT ACCEPT_RUST_PORT ACCEPT_SLEEP_PORT MACPORTS_TREE
 export ACCEPT_REPO=$(cd "$here/../.." && pwd)
 export DH_BIN=${DH_BIN:-/opt/local/bin/dockhand}
 export ACCEPT_WATCH=$MACPORTS_TREE ACCEPT_UPSTREAM=${upstream# } ACCEPT_RUN_DIR=$MACPORTS_TREE
