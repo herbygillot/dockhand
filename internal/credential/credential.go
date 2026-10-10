@@ -8,6 +8,12 @@ import (
 
 var ErrNotFound = errors.New("credential: not found")
 
+// ErrLocked is a store that keeps the credential but can't give it now,
+// as a locked Keychain with nobody at the screen to unlock it. Its reader
+// says how to unlock it, or what stands in for it; it's never a reason to
+// try another source.
+var ErrLocked = errors.New("credential: the store is locked")
+
 type Key struct {
 	Service string
 	Account string

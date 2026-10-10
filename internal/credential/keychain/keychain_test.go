@@ -69,6 +69,21 @@ func TestStoreDistinguishesKeychainFailuresFromMissingItems(t *testing.T) {
 	require.NotErrorIs(t, err, credential.ErrNotFound)
 }
 
+// A locked Keychain, as over SSH with nobody at the screen, is said so,
+// with how to unlock it, not as security's raw exit status (the rc10 full
+// stage's F5).
+func TestALockedKeychainIsSaidSo(t *testing.T) {
+	executable := filepath.Join(t.TempDir(), "security")
+	testsupport.WriteExecutable(t, executable, "#!/bin/sh\nexit 36\n")
+	store := keychain.Store{Executable: executable}
+	key := credential.Key{Service: "fixture", Account: "github.com"}
+	_, err := store.Get(t.Context(), key)
+	require.ErrorIs(t, err, credential.ErrLocked)
+	require.NotErrorIs(t, err, credential.ErrNotFound)
+	require.EqualError(t, err, "the login Keychain is locked, as it is over SSH with nobody at the screen; security unlock-keychain unlocks it")
+	require.ErrorIs(t, store.Delete(t.Context(), key), credential.ErrLocked)
+}
+
 func lastLine(value string) string {
 	lines := []byte(value)
 	for len(lines) > 0 && (lines[len(lines)-1] == '\n' || lines[len(lines)-1] == '\r') {

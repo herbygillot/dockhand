@@ -172,6 +172,11 @@ func (s SystemCredentials) saved(ctx context.Context) (credential.Login, error) 
 	if errors.Is(err, credential.ErrNotFound) {
 		return credential.Login{}, err
 	}
+	// Locked, it keeps the login still: no other source is tried, as for
+	// any login that's there (the rc10 full stage's F5).
+	if errors.Is(err, credential.ErrLocked) {
+		return credential.Login{}, fmt.Errorf("github: the saved GitHub login can't be read: %w, or GH_TOKEN set for the command stands in for it", err)
+	}
 	if err != nil {
 		return credential.Login{}, fmt.Errorf("github: reading saved credential: %w", err)
 	}

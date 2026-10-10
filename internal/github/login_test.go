@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // keptLogins is a store holding logins as the Keychain would, which can
@@ -161,6 +162,31 @@ func TestALoginThatCantRenewSaysWhy(t *testing.T) {
 	for _, secret := range []string{"A1", "R1"} {
 		require.NotContains(t, err.Error(), secret)
 	}
+}
+
+// lockedStore is a Keychain that keeps a login but is locked.
+type lockedStore struct{ keptLogins }
+
+func (*lockedStore) Get(context.Context, credential.Key) (string, error) {
+	return "", locked{}
+}
+
+type locked struct{}
+
+func (locked) Error() string        { return "the login Keychain is locked" }
+func (locked) Is(target error) bool { return target == credential.ErrLocked }
+
+// A locked Keychain is said with the way out, and the GitHub CLI's login
+// isn't tried in its place: the saved login is still the one meant (the
+// rc10 full stage's F5).
+func TestALockedKeychainIsSaidAndNothingElseTried(t *testing.T) {
+	noEnvironment(t)
+	bin := t.TempDir()
+	testsupport.WriteExecutable(t, filepath.Join(bin, "gh"), "#!/bin/sh\necho gho_cli\n")
+	t.Setenv("PATH", bin)
+	_, err := github.SystemClient(&lockedStore{}).Credentials.Token(t.Context())
+	require.ErrorIs(t, err, credential.ErrLocked)
+	require.EqualError(t, err, "github: the saved GitHub login can't be read: the login Keychain is locked, or GH_TOKEN set for the command stands in for it")
 }
 
 // A renewed login the store didn't take is used, said, and saved the next

@@ -14,6 +14,29 @@ import (
 
 const encodedPrefix = "dockhand-base64:"
 
+// security exits with the low byte of the Security framework's status:
+// 44 for errSecItemNotFound (-25300), and 36 for
+// errSecInteractionNotAllowed (-25308), which a locked Keychain gives
+// where it can't ask to be unlocked, as over SSH with nobody at the
+// screen (the rc10 full stage's F5, which read a raw "exit status 36").
+const interactionNotAllowed = 36
+
+// errLocked is the locked Keychain, said with how to unlock it.
+var errLocked error = lockedError{}
+
+type lockedError struct{}
+
+func (lockedError) Error() string {
+	return "the login Keychain is locked, as it is over SSH with nobody at the screen; security unlock-keychain unlocks it"
+}
+
+func (lockedError) Is(target error) bool { return target == credential.ErrLocked }
+
+func isLocked(err error) bool {
+	var exit *exec.ExitError
+	return errors.As(err, &exit) && exit.ExitCode() == interactionNotAllowed
+}
+
 type Store struct {
 	Executable string
 }
@@ -35,6 +58,9 @@ func (s Store) Get(ctx context.Context, key credential.Key) (string, error) {
 		}
 		if ctx.Err() != nil {
 			return "", ctx.Err()
+		}
+		if isLocked(err) {
+			return "", errLocked
 		}
 		return "", fmt.Errorf("keychain: reading credential: %w", err)
 	}
@@ -124,6 +150,9 @@ func (s Store) Delete(ctx context.Context, key credential.Key) error {
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() == 44 {
 		return credential.ErrNotFound
+	}
+	if isLocked(err) {
+		return errLocked
 	}
 	if err != nil {
 		return fmt.Errorf("keychain: removing credential: %w", err)
