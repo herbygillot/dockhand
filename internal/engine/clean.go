@@ -738,11 +738,29 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	// what reuse may still choose and its newest check, which status
 	// shows; and an open branch's assessments of a tree it moved past
 	// (D6).
+	//
+	// History goes a chunk of branches to a transaction, so a large
+	// backlog never holds the writer lock past the busy timeout a check's
+	// own writes wait for (the SQL study's SQL-S2).
+	for from := model.BranchID(""); ; {
+		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+			pruned, next, err := tx.PruneHistory(e.now().Add(-after), from, historyChunk)
+			if err != nil {
+				return err
+			}
+			report.History.Add(pruned)
+			from = next
+			return nil
+		})
+		if err != nil {
+			return report, fmt.Errorf("cleaning build history: %w", err)
+		}
+		if from == "" {
+			break
+		}
+	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		var err error
-		if report.History, err = tx.PruneHistory(e.now().Add(-after)); err != nil {
-			return err
-		}
 		if report.Assessments, err = tx.PruneAssessments(e.now().Add(-supersededAssessments)); err != nil {
 			return err
 		}

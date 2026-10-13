@@ -28,6 +28,13 @@ const supersededAssessments = 7 * 24 * time.Hour
 // build that has just kept one may not have finished recording it.
 const archiveGrace = time.Hour
 
+// historyChunk is how many ended branches' history one transaction prunes.
+// On the SQL study's year-scale database (2026-10-13) a first-time backlog
+// of 200 ended branches took 17 s on an M-series Mac in chunks of ten,
+// each 0.7 to 1.0 s, and 3 s a chunk at fifty: a chunk stays near a
+// second, short of the 5 s a check's own writes wait for the lock.
+const historyChunk = 10
+
 // LogCleanupWords says what cleanup did to checks' logs: "compressed 242
 // logs, 802 MB to 50 MB; removed 12 checks' logs, 140 MB, kept for
 // nothing past 15 days".

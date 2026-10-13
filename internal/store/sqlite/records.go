@@ -774,7 +774,8 @@ func (t *tx) Archives() ([]model.Archive, error) {
 }
 
 // unnamedArchive selects the archives kept before a time that no live
-// result names, finding the results that name each through result_archive.
+// result names: neither reuse's newest builds nor an open branch's newest
+// results.
 // reusableBuilds are, for each target in each environment, its newest
 // passed build that recorded what it read and kept an archive, from the
 // build itself rather than a reuse of it: the one result reuse may still
@@ -893,53 +894,74 @@ func boolInt(b bool) int {
 	return 0
 }
 
-// PruneHistory removes what the branches that ended before a time recorded
-// of their checks (D6), in the order foreign keys allow: the results of
-// their checks but those reuse may still choose (reusableBuilds); the
-// executions left with no result, but one a remaining result reused; the
-// runs left with no execution, but each branch's newest, which status
-// shows; the plans and revisions no remaining run needs; the branches'
-// assessments; and the inputs no remaining result names.
-func (t *tx) PruneHistory(before time.Time) (store.Pruned, error) {
+// PruneHistory removes what up to limit branches that ended before a
+// time recorded of their checks (D6), the branches taken in ID order past
+// after, so a large backlog commits a chunk at a time and no write holds
+// the lock past the busy timeout other writers wait for (the SQL study's
+// SQL-S2). It says the last branch it took, which the next call passes as
+// after, or "" once none is left; that call also removes the inputs no
+// remaining result names, which no one branch's do.
+func (t *tx) PruneHistory(before time.Time, after model.BranchID, limit int) (store.Pruned, model.BranchID, error) {
 	var pruned store.Pruned
 	if err := t.write(); err != nil {
-		return pruned, err
+		return pruned, "", err
 	}
-	ended := "SELECT id FROM branches WHERE repository_id=? AND state<>'open' AND ended_at IS NOT NULL AND ended_at<?"
-	endedRuns := "SELECT id FROM runs WHERE repository_id=? AND branch_id IN (" + ended + ")"
-	endedExecutions := "SELECT id FROM executions WHERE repository_id=? AND run_id IN (" + endedRuns + ")"
-	at := millis(before)
-	steps := []struct {
-		count *int
-		query string
-		args  []any
-	}{
-		{&pruned.Results, "DELETE FROM results WHERE repository_id=? AND execution_id IN (" + endedExecutions + ") " +
-			"AND (execution_id, target_id) NOT IN (SELECT execution_id, target_id FROM (" + reusableBuilds + "))",
-			[]any{t.repo, t.repo, t.repo, t.repo, at, t.repo}},
-		{&pruned.Executions, "DELETE FROM executions AS e WHERE e.repository_id=? AND e.run_id IN (" + endedRuns + ") " +
-			"AND NOT EXISTS (SELECT 1 FROM results r WHERE r.repository_id=e.repository_id AND (r.execution_id=e.id OR r.reused_from=e.id))",
-			[]any{t.repo, t.repo, t.repo, at}},
-		{&pruned.Runs, "DELETE FROM runs AS u WHERE u.repository_id=? AND u.branch_id IN (" + ended + ") " +
-			"AND u.number<(SELECT max(v.number) FROM runs v WHERE v.repository_id=u.repository_id AND v.branch_id=u.branch_id) " +
-			"AND NOT EXISTS (SELECT 1 FROM executions e WHERE e.repository_id=u.repository_id AND e.run_id=u.id)",
-			[]any{t.repo, t.repo, at}},
-		{&pruned.Plans, "DELETE FROM plans AS p WHERE p.repository_id=? AND p.revision_id IN (SELECT id FROM revisions WHERE repository_id=? AND branch_id IN (" + ended + ")) " +
-			"AND NOT EXISTS (SELECT 1 FROM runs u WHERE u.repository_id=p.repository_id AND u.plan_id=p.id)",
-			[]any{t.repo, t.repo, t.repo, at}},
-		{&pruned.Revisions, "DELETE FROM revisions AS v WHERE v.repository_id=? AND v.branch_id IN (" + ended + ") " +
-			"AND NOT EXISTS (SELECT 1 FROM runs u WHERE u.repository_id=v.repository_id AND u.revision_id=v.id) " +
-			"AND NOT EXISTS (SELECT 1 FROM plans p WHERE p.repository_id=v.repository_id AND p.revision_id=v.id)",
-			[]any{t.repo, t.repo, at}},
-		{&pruned.Assessments, "DELETE FROM assessments WHERE repository_id=? AND branch_id IN (" + ended + ")",
-			[]any{t.repo, t.repo, at}},
-		{&pruned.Changes, "DELETE FROM change_records WHERE repository_id=? AND branch_id IN (" + ended + ")",
-			[]any{t.repo, t.repo, at}},
-		{&pruned.Inputs, "DELETE FROM inputs WHERE repository_id=? AND key NOT IN (SELECT inputs FROM results WHERE repository_id=? AND inputs<>'')",
-			[]any{t.repo, t.repo}},
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT id FROM branches WHERE repository_id=? AND state<>'open' AND ended_at IS NOT NULL AND ended_at<? AND id>? ORDER BY id LIMIT ?",
+		t.repo, millis(before), string(after), limit)
+	if err != nil {
+		return pruned, "", storageError(err)
 	}
-	for _, step := range steps {
-		result, err := t.conn.ExecContext(t.ctx, step.query, step.args...)
+	var ended []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return pruned, "", storageError(err)
+		}
+		ended = append(ended, id)
+	}
+	if err := rows.Close(); err != nil {
+		return pruned, "", storageError(err)
+	}
+	if len(ended) > 0 {
+		if pruned, err = t.pruneBranchHistory(ended); err != nil {
+			return pruned, "", err
+		}
+	}
+	if len(ended) == limit {
+		return pruned, model.BranchID(ended[len(ended)-1]), nil
+	}
+	result, err := t.conn.ExecContext(t.ctx, pruneInputs, t.repo, t.repo)
+	if err != nil {
+		return pruned, "", storageError(err)
+	}
+	n, err := result.RowsAffected()
+	pruned.Inputs = int(n)
+	return pruned, "", storageError(err)
+}
+
+// pruneInputs removes the inputs records no result names.
+const pruneInputs = "DELETE FROM inputs WHERE repository_id=? AND key NOT IN (SELECT inputs FROM results WHERE repository_id=? AND inputs<>'')"
+
+// pruneBranchHistory removes what the branches recorded of their checks,
+// in the order foreign keys allow: the results of their checks but those
+// reuse may still choose (reusableBuilds); the executions left with no
+// result, but one a remaining result reused; the runs left with no
+// execution, but each branch's newest, which status shows; the plans and
+// revisions no remaining run needs; and the branches' assessments and
+// change records. It's one delete over a set of branches, which forgetting
+// an archived branch is to reuse for one.
+//
+// Each statement reaches its rows through an index (schema 31): a
+// correlated subquery that scans made it quadratic in history, and it
+// passed its timeout at a year's scale (the SQL study's SQL-S1). The keep
+// set is computed once, not probed per result.
+func (t *tx) pruneBranchHistory(branches []string) (store.Pruned, error) {
+	var pruned store.Pruned
+	steps := pruneBranchSteps(len(branches))
+	counts := []*int{&pruned.Results, &pruned.Executions, &pruned.Runs, &pruned.Plans, &pruned.Revisions, &pruned.Assessments, &pruned.Changes}
+	for i, step := range steps {
+		result, err := t.conn.ExecContext(t.ctx, step.query, step.args(t.repo, branches)...)
 		if err != nil {
 			return pruned, storageError(err)
 		}
@@ -947,9 +969,58 @@ func (t *tx) PruneHistory(before time.Time) (store.Pruned, error) {
 		if err != nil {
 			return pruned, storageError(err)
 		}
-		*step.count = int(n)
+		*counts[i] = int(n)
 	}
 	return pruned, nil
+}
+
+// pruneStep is one of pruneBranchHistory's statements, over n branches,
+// with how its arguments are laid out: the repository at each repo
+// position, and the branches at the set.
+type pruneStep struct {
+	query string
+	// layout is the statement's arguments in order: 'r' the repository,
+	// 'b' the branch set.
+	layout string
+}
+
+func (s pruneStep) args(repo model.RepositoryID, branches []string) []any {
+	var args []any
+	for _, c := range s.layout {
+		if c == 'r' {
+			args = append(args, repo)
+			continue
+		}
+		for _, b := range branches {
+			args = append(args, b)
+		}
+	}
+	return args
+}
+
+// pruneBranchSteps are pruneBranchHistory's statements over n branches,
+// in the order it runs them.
+func pruneBranchSteps(n int) []pruneStep {
+	set := "(" + placeholders(n) + ")"
+	runs := "SELECT id FROM runs WHERE repository_id=? AND branch_id IN " + set
+	return []pruneStep{
+		{"WITH keep AS MATERIALIZED (SELECT execution_id, target_id FROM (" + reusableBuilds + ")) " +
+			"DELETE FROM results WHERE repository_id=? AND execution_id IN (SELECT id FROM executions WHERE repository_id=? AND run_id IN (" + runs + ")) " +
+			"AND (execution_id, target_id) NOT IN (SELECT execution_id, target_id FROM keep)", "rrrrb"},
+		{"DELETE FROM executions AS e WHERE e.repository_id=? AND e.run_id IN (" + runs + ") " +
+			"AND NOT EXISTS (SELECT 1 FROM results r WHERE r.repository_id=e.repository_id AND r.execution_id=e.id) " +
+			"AND NOT EXISTS (SELECT 1 FROM results r WHERE r.repository_id=e.repository_id AND r.reused_from=e.id)", "rrb"},
+		{"DELETE FROM runs AS u WHERE u.repository_id=? AND u.branch_id IN " + set + " " +
+			"AND u.number<(SELECT max(v.number) FROM runs v WHERE v.repository_id=u.repository_id AND v.branch_id=u.branch_id) " +
+			"AND NOT EXISTS (SELECT 1 FROM executions e WHERE e.repository_id=u.repository_id AND e.run_id=u.id)", "rb"},
+		{"DELETE FROM plans AS p WHERE p.repository_id=? AND p.revision_id IN (SELECT id FROM revisions WHERE repository_id=? AND branch_id IN " + set + ") " +
+			"AND NOT EXISTS (SELECT 1 FROM runs u WHERE u.repository_id=p.repository_id AND u.plan_id=p.id)", "rrb"},
+		{"DELETE FROM revisions AS v WHERE v.repository_id=? AND v.branch_id IN " + set + " " +
+			"AND NOT EXISTS (SELECT 1 FROM runs u WHERE u.repository_id=v.repository_id AND u.revision_id=v.id) " +
+			"AND NOT EXISTS (SELECT 1 FROM plans p WHERE p.repository_id=v.repository_id AND p.revision_id=v.id)", "rb"},
+		{"DELETE FROM assessments WHERE repository_id=? AND branch_id IN " + set, "rb"},
+		{"DELETE FROM change_records WHERE repository_id=? AND branch_id IN " + set, "rb"},
+	}
 }
 
 // PruneAssessments removes the assessments and change records of the trees

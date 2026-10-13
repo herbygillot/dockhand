@@ -225,10 +225,14 @@ type Tx interface {
 	// KeepDependencyArchive records a kept archive as one a guest in an
 	// environment installed a port from; the archive must be kept.
 	KeepDependencyArchive(archive model.DependencyArchive) error
-	// PruneHistory removes what the branches that ended before a time
-	// recorded of their checks, sparing what reuse may still choose and
-	// each branch's newest run (D6), and says how much.
-	PruneHistory(before time.Time) (Pruned, error)
+	// PruneHistory removes what up to limit branches that ended before a
+	// time recorded of their checks, taken in ID order past after, sparing
+	// what reuse may still choose and each branch's newest run (D6). It
+	// says how much, and the last branch it took, for the next call's
+	// after, or "" once none is left, when it also removes the inputs no
+	// result names. Each call is a chunk, so a large backlog commits a
+	// chunk at a time.
+	PruneHistory(before time.Time, after model.BranchID, limit int) (Pruned, model.BranchID, error)
 	// PruneAssessments removes the assessments and change records of trees
 	// an open branch moved past before a time, and says how many.
 	PruneAssessments(before time.Time) (int, error)
@@ -286,4 +290,16 @@ func NewID(prefix string) string {
 // Pruned counts what PruneHistory removed, by kind.
 type Pruned struct {
 	Runs, Executions, Results, Plans, Revisions, Assessments, Changes, Inputs int
+}
+
+// Add counts another chunk's prune with this one.
+func (p *Pruned) Add(other Pruned) {
+	p.Runs += other.Runs
+	p.Executions += other.Executions
+	p.Results += other.Results
+	p.Plans += other.Plans
+	p.Revisions += other.Revisions
+	p.Assessments += other.Assessments
+	p.Changes += other.Changes
+	p.Inputs += other.Inputs
 }

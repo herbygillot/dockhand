@@ -61,4 +61,6 @@ The rest reach something outside the checkout and run only when named:
 
 v3 keeps its records in SQLite behind the `internal/store` contract, with `internal/store/sqlite` as the implementation, in `~/.dockhand/dockhand.db` unless `--db` or `DOCKHAND_DB` says otherwise. The schema is `internal/store/sqlite/schema/NNN.sql`, applied in order and only forward: a change to it is a new file, never an edit to one already released. One database holds several ports checkouts, and every read and write names the one it is for. v2's `state.db` is never read.
 
+Two rules keep the store's writes short (the SQL study of 2026-10-13, [review](reviews/2026-10-13-sql-study.md)). Every foreign-key child column of a table that pruning deletes from has an index: a delete checks its foreign keys there, and without one `PruneHistory` went quadratic in history. And no write transaction runs past about a second at a year's scale, since a writer waiting for the lock gives up after five (`BusyTimeout`), where a transaction may run thirty: a large delete goes in chunks, as history's pruning does. Every prune and window statement has a plan test, and a correlated subquery that scans a table fails it.
+
 Help and completion open no database. [`architecture.md`](architecture.md) maps the packages, and [the roadmap](roadmap.md) says what is being built.

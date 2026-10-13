@@ -871,12 +871,17 @@ func TestAnEndedBranchsHistoryGoesButWhatReuseNeeds(t *testing.T) {
 	pruneAt := func(before time.Time) store.Pruned {
 		t.Helper()
 		var pruned store.Pruned
-		require.NoError(t, f.update(t, func(tx store.Tx) error {
-			var err error
-			pruned, err = tx.PruneHistory(before)
-			return err
-		}))
-		return pruned
+		for from := model.BranchID(""); ; {
+			require.NoError(t, f.update(t, func(tx store.Tx) error {
+				chunk, next, err := tx.PruneHistory(before, from, 10)
+				pruned.Add(chunk)
+				from = next
+				return err
+			}))
+			if from == "" {
+				return pruned
+			}
+		}
 	}
 	require.Equal(t, store.Pruned{}, pruneAt(at.Add(time.Hour)), "an open branch keeps everything")
 	b.State, b.EndedAt = model.BranchMerged, at
@@ -889,6 +894,86 @@ func TestAnEndedBranchsHistoryGoesButWhatReuseNeeds(t *testing.T) {
 	var violations int
 	require.NoError(t, f.db(t).QueryRow("SELECT count(*) FROM pragma_foreign_key_check").Scan(&violations))
 	require.Zero(t, violations)
+}
+
+// History goes a chunk of branches at a time, in ID order, each call
+// saying the last branch it took for the next, and "" once none is left,
+// when the inputs no result names go too (the SQL study's SQL-S2).
+func TestHistoryIsPrunedAChunkAtATime(t *testing.T) {
+	f := open(t)
+	first, r, p := f.seed(t)
+	second := f.branch("br_2", "dockhand/jq-2")
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.AddBranch(second) }))
+	for _, b := range []*model.Branch{&first, &second} {
+		b.State, b.EndedAt = model.BranchMerged, at
+		require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(*b) }))
+	}
+	f.run(t, first, r, p)
+	f.run(t, first, r, p)
+	var chunks []model.BranchID
+	var pruned store.Pruned
+	for from := model.BranchID(""); ; {
+		require.NoError(t, f.update(t, func(tx store.Tx) error {
+			chunk, next, err := tx.PruneHistory(at.Add(time.Hour), from, 1)
+			pruned.Add(chunk)
+			from = next
+			return err
+		}))
+		chunks = append(chunks, from)
+		if from == "" {
+			break
+		}
+	}
+	require.Equal(t, []model.BranchID{first.ID, second.ID, ""}, chunks)
+	require.Equal(t, 1, pruned.Runs, "the older of br_1's two runs; its newest stays")
+}
+
+// Pruning history reaches its rows through indexes: no statement scans a
+// table from a correlated subquery, as three did, which went quadratic in
+// history and passed the prune's timeout at a year's scale (the SQL
+// study's SQL-S1).
+func TestHistoryIsPrunedWithoutCorrelatedScans(t *testing.T) {
+	f := open(t)
+	branches := []string{"br_1", "br_2"}
+	steps := pruneBranchSteps(len(branches))
+	steps = append(steps, pruneStep{query: pruneInputs, layout: "rr"})
+	for _, step := range steps {
+		for _, scan := range f.correlatedScans(t, step.query, step.args(f.repo, branches)...) {
+			t.Errorf("%s\nscans %s from a correlated subquery", step.query, scan)
+		}
+	}
+}
+
+// correlatedScans are the plan's full scans of a table that run under a
+// correlated subquery: once for each row of the outer statement.
+func (f fixture) correlatedScans(t *testing.T, query string, args ...any) []string {
+	t.Helper()
+	rows, err := f.store.db.QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+query, args...)
+	require.NoError(t, err)
+	defer rows.Close()
+	parents, details := map[int]int{}, map[int]string{}
+	var ids []int
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		require.NoError(t, rows.Scan(&id, &parent, &unused, &detail))
+		parents[id], details[id] = parent, detail
+		ids = append(ids, id)
+	}
+	require.NoError(t, rows.Err())
+	var scans []string
+	for _, id := range ids {
+		if !strings.HasPrefix(details[id], "SCAN ") || strings.Contains(details[id], " INDEX ") {
+			continue
+		}
+		for up := parents[id]; up != 0; up = parents[up] {
+			if strings.HasPrefix(details[up], "CORRELATED ") {
+				scans = append(scans, details[id])
+				break
+			}
+		}
+	}
+	return scans
 }
 
 // An open branch's assessments of a tree it moved past go once its newer
