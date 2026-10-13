@@ -1,0 +1,408 @@
+diff --git a/internal/store/sqlite/sql_study_probe_test.go b/internal/store/sqlite/sql_study_probe_test.go
+new file mode 100644
+index 0000000..3fda6b2
+--- /dev/null
++++ b/internal/store/sqlite/sql_study_probe_test.go
+@@ -0,0 +1,402 @@
++package sqlite
++
++import (
++	"context"
++	"fmt"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/herbygillot/dockhand/internal/model"
++	"github.com/herbygillot/dockhand/internal/store"
++)
++
++// A year-scale synthetic database built through Open (real migrations and
++// pragmas), then every production query explained and timed.
++const gen = `
++PRAGMA foreign_keys=OFF;
++BEGIN;
++INSERT INTO repositories VALUES('repo_a','/src/ports/.git',0);
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<299)
++INSERT INTO branches(repository_id,id,name,base,worktree,managed,title,state,created_at,ended_at)
++SELECT 'repo_a','br_'||i,'b'||i,'base','/wt/'||i,1,'t',CASE WHEN i%3=0 THEN 'open' ELSE 'merged' END,i,CASE WHEN i%3=0 THEN NULL ELSE 5000 END FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<5999)
++INSERT INTO revisions SELECT 'repo_a','rev_'||i,'br_'||(i%300),'commit',0,'c'||i,'tree_'||(i/2),'base','h'||i,1000+i FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<5999)
++INSERT INTO plans SELECT 'repo_a','plan_'||i,'rev_'||i,'{}',1000+i FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<5999)
++INSERT INTO runs(repository_id,id,number,branch_id,revision_id,plan_id,origin,state,detail,created_at,finished_at)
++SELECT 'repo_a','run_'||i,i+1,'br_'||(i%300),'rev_'||i,'plan_'||i,'serve',CASE WHEN i>5990 THEN 'queued' ELSE 'passed' END,'',1000+i,CASE WHEN i>5990 THEN NULL ELSE 2000+i END FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<17999)
++INSERT INTO executions(repository_id,id,run_id,provider,platform_os,platform_version,platform_architecture,developer_tools,attempt,state,detail,provider_ref,observed,identity,created_at,finished_at)
++SELECT 'repo_a','ex_'||i,'run_'||(i/3),'tart','darwin',CAST(23+(i%3) AS TEXT),'arm64','xcode',1,'finished','','tart-clone-'||i,'','id',1000+i,2000+i FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<199999)
++INSERT OR IGNORE INTO results(repository_id,execution_id,target_id,outcome,phase,tests,log,inputs,recorded_at,detail,builders,archive,reused_from,steps)
++SELECT 'repo_a','ex_'||(i/11),'port-'||((i*7919)%2000),CASE WHEN i%10=0 THEN 'failed' ELSE 'passed' END,'','none','logs/'||i||'.log','in_'||i,1000+i,'','',CASE WHEN i%2=0 THEN 'sha256:'||(i/10*10) ELSE '' END,CASE WHEN i%5=0 AND i>40000 THEN 'ex_'||(i/11-3000) ELSE '' END,'' FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<199999)
++INSERT INTO inputs SELECT 'repo_a','in_'||i,'{"x":1}' FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<19999)
++INSERT INTO archives SELECT 'repo_a','sha256:'||(i*10),'a'||i||'.tbz2',1000000,1000+i*10 FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<4999)
++INSERT INTO dependency_archives SELECT 'repo_a','sha256:'||(i*10),'dep-'||(i%400),'tart','darwin',CAST(23+(i%3) AS TEXT),'arm64','xcode',1000+i FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<59)
++INSERT INTO sessions SELECT 'repo_a','ses_'||i,'serve',100+i,'x','v',i,i,CASE WHEN i<59 THEN i+1 END FROM n;
++INSERT INTO leases VALUES('repo_a','serve','ses_59',4,0);
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<99999)
++INSERT INTO events(repository_id,at,session_id,branch_id,run_id,target_id,kind,level,message)
++SELECT 'repo_a',1000+i,'ses_1','br_'||(i%300),'run_'||(5000+i/100),'',
++ CASE WHEN i%500=0 THEN 'serve.submit' WHEN i%3=0 THEN 'progress' ELSE 'target.result' END,
++ CASE WHEN i%4=0 THEN 'verbose' ELSE 'info' END,'a message of about sixty bytes that describes what happened ok' FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<17999)
++INSERT INTO assessments SELECT 'repo_a','br_'||(i%300),'tree_'||(i/6),'base','port-'||(i%2000),'d','{}',1,1000+i FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<17999)
++INSERT INTO change_records SELECT 'repo_a','br_'||(i%300),'tree_'||(i/6),'base','d'||(i%2000),'{}',1,1000+i FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<5999)
++INSERT INTO edits(repository_id,id,branch_id,kind,port,directory,subject,files,at) SELECT 'repo_a','ed_'||i,'br_'||(i%300),'update','p','d','s','[]',1000+i FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<1999)
++INSERT INTO checkpoints(repository_id,number,branch_id,before_head,after_head,at) SELECT 'repo_a',i+1,'br_'||(i%300),'a','b',1000+i FROM n;
++WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<1999)
++INSERT INTO reviews SELECT 'repo_a','macports/macports-ports',30000+(i%500),'h','[]','',1000+i FROM n;
++COMMIT;
++`
++
++type probe struct {
++	name, query string
++	args        []any
++	write       bool
++}
++
++func TestZZStudy(t *testing.T) {
++	dir := os.Getenv("STUDY_DIR")
++	if dir == "" {
++		t.Skip()
++	}
++	ctx := context.Background()
++	path := filepath.Join(dir, "syn.db")
++	fresh := false
++	if _, err := os.Stat(path); err != nil {
++		fresh = true
++	}
++	s, err := Open(ctx, path, Options{OperationTimeout: 10 * time.Minute})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s.Close()
++	if fresh {
++		g := gen
++		if os.Getenv("STUDY_QUARTER") != "" {
++			g = strings.NewReplacer("i<5999", "i<1499", "i<17999", "i<4499", "i<199999", "i<49999", "i<19999", "i<4999", "i>5990", "i>1490", "i>40000", "i>10000", "i/11-3000", "i/11-750").Replace(g)
++		}
++		if _, err := s.db.ExecContext(ctx, g); err != nil {
++			t.Fatal(err)
++		}
++		if _, err := s.db.ExecContext(ctx, "PRAGMA optimize=0x10002"); err != nil {
++			t.Fatal(err)
++		}
++	}
++	repo := "repo_a"
++	env := []any{"tart", "darwin", "24", "arm64", "xcode"}
++	cat := func(a ...[]any) []any {
++		var out []any
++		for _, x := range a {
++			out = append(out, x...)
++		}
++		return out
++	}
++	r := func(a ...any) []any { return a }
++	runsStates, runsStatesArgs := runsQuery("repo_a", store.RunFilter{States: []model.RunState{"queued", "running"}})
++	runsBranch, runsBranchArgs := runsQuery("repo_a", store.RunFilter{Branch: "br_3"})
++	runsBranchLimit, runsBranchLimitArgs := runsQuery("repo_a", store.RunFilter{Branch: "br_3", Limit: 1})
++	runsLimit, runsLimitArgs := runsQuery("repo_a", store.RunFilter{Limit: 20})
++	aRev, aRevArgs := assessmentsQuery("repo_a", store.AssessmentFilter{Branch: "br_3", Tree: "tree_1", Base: "base"})
++	aBr, aBrArgs := assessmentsQuery("repo_a", store.AssessmentFilter{Branch: "br_3"})
++	ended := "SELECT id FROM branches WHERE repository_id=? AND state<>'open' AND ended_at IS NOT NULL AND ended_at<?"
++	endedRuns := "SELECT id FROM runs WHERE repository_id=? AND branch_id IN (" + ended + ")"
++	endedExecutions := "SELECT id FROM executions WHERE repository_id=? AND run_id IN (" + endedRuns + ")"
++	at := int64(1 << 40)
++	probes := []probe{
++		{"tx preamble repo", "SELECT 1 FROM repositories WHERE id=?", r(repo), false},
++		{"Branch", "SELECT " + branchColumns + " FROM branches WHERE repository_id=? AND id=?", r(repo, "br_3"), false},
++		{"BranchNamed", "SELECT " + branchColumns + " FROM branches WHERE repository_id=? AND name=? AND state<>'merged'", r(repo, "b3"), false},
++		{"MergedBranchNamed", "SELECT " + branchColumns + " FROM branches WHERE repository_id=? AND name=? AND state='merged' ORDER BY created_at DESC, id DESC LIMIT 1", r(repo, "b4"), false},
++		{"Branches(open)", "SELECT " + branchColumns + " FROM branches WHERE repository_id=? AND state IN (?) ORDER BY created_at, id", r(repo, "open"), false},
++		{"Revisions", revisionsQuery, r(repo, "br_3"), false},
++		{"NextSnapshot", "SELECT coalesce(max(snapshot), 0) FROM revisions WHERE repository_id=? AND branch_id=? AND kind='snapshot'", r(repo, "br_3"), false},
++		{"Runs(states)", runsStates, runsStatesArgs, false},
++		{"Runs(branch)", runsBranch, runsBranchArgs, false},
++		{"Runs(branch,limit1)", runsBranchLimit, runsBranchLimitArgs, false},
++		{"Runs(limit20)", runsLimit, runsLimitArgs, false},
++		{"NextRunNumber", "SELECT coalesce(max(number), 0) FROM runs WHERE repository_id=?", r(repo), false},
++		{"Executions(run)", "SELECT " + executionColumns + " FROM executions WHERE repository_id=? AND run_id=? ORDER BY created_at, rowid", r(repo, "run_100"), false},
++		{"ExecutionsReferred", referredQuery, r(repo, "tart-clone-5"), false},
++		{"Results(execution)", "SELECT " + resultColumns + " FROM results r WHERE r.repository_id=? AND r.execution_id=? ORDER BY r.recorded_at, r.rowid", r(repo, "ex_100"), false},
++		{"Reusable", reusableQuery, cat(r(repo, "port-42"), env, r(5)), false},
++		{"RecordResult run+plan", "SELECT u.id, u.plan_id FROM executions e JOIN runs u ON u.repository_id=e.repository_id AND u.id=e.run_id WHERE e.repository_id=? AND e.id=?", r(repo, "ex_5"), false},
++		{"RecordResult existing", "SELECT outcome FROM results WHERE repository_id=? AND execution_id=? AND target_id=?", r(repo, "ex_5", "port-1"), false},
++		{"reusableBuilds (window)", reusableBuilds, r(repo), false},
++		{"openBranchArchives (window)", openBranchArchives, r(repo), false},
++		{"PruneArchives (as SELECT)", "SELECT count(*) FROM archives AS a WHERE " + unnamedArchive, r(repo, at, repo, repo), false},
++		{"DependencyArchives", "SELECT digest, name, size, archive_kept, port, kept_at FROM (SELECT d.digest, a.name, a.size, a.kept_at AS archive_kept, d.port, d.kept_at, " +
++			"ROW_NUMBER() OVER (PARTITION BY d.port ORDER BY d.kept_at DESC, d.digest) AS newest FROM dependency_archives d JOIN archives a ON a.repository_id=d.repository_id AND a.digest=d.digest " +
++			"WHERE d.repository_id=? AND d.provider=? AND d.platform_os=? AND d.platform_version=? AND d.platform_architecture=? AND d.developer_tools=? AND d.port IN (?,?,?)) " +
++			"WHERE newest<=? ORDER BY port, kept_at DESC, digest", cat(r(repo), env, r("dep-1", "dep-2", "dep-3", 2)), false},
++		{"Archives()", "SELECT digest, name, size, kept_at FROM archives WHERE repository_id=? ORDER BY digest", r(repo), false},
++		{"PruneHistory results", "SELECT count(*) FROM results WHERE repository_id=? AND execution_id IN (" + endedExecutions + ") " +
++			"AND (execution_id, target_id) NOT IN (SELECT execution_id, target_id FROM (" + reusableBuilds + "))", r(repo, repo, repo, repo, at, repo), false},
++		{"PruneHistory executions", "SELECT count(*) FROM executions AS e WHERE e.repository_id=? AND e.run_id IN (" + endedRuns + ") " +
++			"AND NOT EXISTS (SELECT 1 FROM results r WHERE r.repository_id=e.repository_id AND (r.execution_id=e.id OR r.reused_from=e.id))", r(repo, repo, repo, at), false},
++		{"PruneHistory runs", "SELECT count(*) FROM runs AS u WHERE u.repository_id=? AND u.branch_id IN (" + ended + ") " +
++			"AND u.number<(SELECT max(v.number) FROM runs v WHERE v.repository_id=u.repository_id AND v.branch_id=u.branch_id) " +
++			"AND NOT EXISTS (SELECT 1 FROM executions e WHERE e.repository_id=u.repository_id AND e.run_id=u.id)", r(repo, repo, at), false},
++		{"PruneHistory plans", "SELECT count(*) FROM plans AS p WHERE p.repository_id=? AND p.revision_id IN (SELECT id FROM revisions WHERE repository_id=? AND branch_id IN (" + ended + ")) " +
++			"AND NOT EXISTS (SELECT 1 FROM runs u WHERE u.repository_id=p.repository_id AND u.plan_id=p.id)", r(repo, repo, repo, at), false},
++		{"PruneHistory revisions", "SELECT count(*) FROM revisions AS v WHERE v.repository_id=? AND v.branch_id IN (" + ended + ") " +
++			"AND NOT EXISTS (SELECT 1 FROM runs u WHERE u.repository_id=v.repository_id AND u.revision_id=v.id) " +
++			"AND NOT EXISTS (SELECT 1 FROM plans p WHERE p.repository_id=v.repository_id AND p.revision_id=v.id)", r(repo, repo, at), false},
++		{"PruneHistory inputs", "SELECT count(*) FROM inputs WHERE repository_id=? AND key NOT IN (SELECT inputs FROM results WHERE repository_id=? AND inputs<>'')", r(repo, repo), false},
++		{"PruneAssessments", "SELECT count(*) FROM assessments AS a WHERE a.repository_id=? AND a.branch_id IN (SELECT id FROM branches WHERE repository_id=? AND state='open') " +
++			"AND EXISTS (SELECT 1 FROM revisions v WHERE v.repository_id=a.repository_id AND v.branch_id=a.branch_id AND v.created_at<? AND v.tree_id<>a.tree " +
++			"AND v.created_at=(SELECT max(w.created_at) FROM revisions w WHERE w.repository_id=v.repository_id AND w.branch_id=v.branch_id))", r(repo, repo, at), false},
++		{"PruneJournal events", "SELECT count(*) FROM events WHERE repository_id=? AND at<?", r(repo, int64(50000)), false},
++		{"PruneJournal sessions", "SELECT count(*) FROM sessions WHERE repository_id=? AND COALESCE(ended_at, heartbeat_at)<? AND id NOT IN (SELECT holder FROM leases WHERE repository_id=? AND holder IS NOT NULL)", r(repo, at, repo), false},
++		{"CountEvents", countEventsQuery, r(repo, "serve.submit", int64(50000)), false},
++		{"Events", "SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND sequence>? ORDER BY sequence LIMIT ?", r(repo, int64(99000), 1000), false},
++		{"RunEvents", "SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND run_id=? AND sequence>? ORDER BY sequence LIMIT ?", r(repo, "run_5500", int64(0), 1000), false},
++		{"LastEvent", "SELECT COALESCE(MAX(sequence), 0) FROM events WHERE repository_id=?", r(repo), false},
++		{"Edits", "SELECT id, branch_id, kind, port, directory, subject, files, at, upstream, release FROM edits WHERE repository_id=? AND branch_id=? ORDER BY at, rowid", r(repo, "br_3"), false},
++		{"Assessments(rev)", aRev, aRevArgs, false},
++		{"Assessments(branch)", aBr, aBrArgs, false},
++		{"ChangeRecords(rev)", "SELECT record, at FROM change_records WHERE repository_id=? AND branch_id=? AND tree=? AND base=? ORDER BY +at DESC, rowid DESC", r(repo, "br_3", "tree_1", "base"), false},
++		{"Checkpoints", checkpointsQuery, r(repo, "br_3"), false},
++		{"NextCheckpointNumber", "SELECT coalesce(max(number), 0) + 1 FROM checkpoints WHERE repository_id=?", r(repo), false},
++		{"Acceptances", "SELECT branch_id, commit_id, port, at FROM acceptances WHERE repository_id=? AND branch_id=? AND commit_id=? ORDER BY port", r(repo, "br_3", "c"), false},
++		{"LastReview", "SELECT head, findings, posted, at FROM reviews WHERE repository_id=? AND pr_repository=? AND number=? ORDER BY at DESC, rowid DESC LIMIT 1", r(repo, "macports/macports-ports", 30001), false},
++		{"ALT results keep-CTE", "WITH keep AS MATERIALIZED (" + reusableBuilds + ") SELECT count(*) FROM results WHERE repository_id=? AND execution_id IN (" + endedExecutions + ") " +
++			"AND NOT EXISTS (SELECT 1 FROM keep k WHERE k.execution_id=results.execution_id AND k.target_id=results.target_id)", r(repo, repo, repo, repo, repo, at), false},
++		{"ALT executions NOT IN", "SELECT count(*) FROM executions AS e WHERE e.repository_id=? AND e.run_id IN (" + endedRuns + ") " +
++			"AND e.id NOT IN (SELECT execution_id FROM results WHERE repository_id=?) AND e.id NOT IN (SELECT reused_from FROM results WHERE repository_id=? AND reused_from<>'')", r(repo, repo, repo, at, repo, repo), false},
++		{"ALT executions 2xNOT EXISTS", "SELECT count(*) FROM executions AS e WHERE e.repository_id=? AND e.run_id IN (" + endedRuns + ") " +
++			"AND NOT EXISTS (SELECT 1 FROM results r WHERE r.repository_id=e.repository_id AND r.execution_id=e.id) AND NOT EXISTS (SELECT 1 FROM results r WHERE r.repository_id=e.repository_id AND r.reused_from=e.id)", r(repo, repo, repo, at), false},
++		{"ALT plans NOT IN", "SELECT count(*) FROM plans AS p WHERE p.repository_id=? AND p.revision_id IN (SELECT id FROM revisions WHERE repository_id=? AND branch_id IN (" + ended + ")) " +
++			"AND p.id NOT IN (SELECT plan_id FROM runs WHERE repository_id=?)", r(repo, repo, repo, at, repo), false},
++		{"ALT revisions NOT IN", "SELECT count(*) FROM revisions AS v WHERE v.repository_id=? AND v.branch_id IN (" + ended + ") " +
++			"AND v.id NOT IN (SELECT revision_id FROM runs WHERE repository_id=?) AND v.id NOT IN (SELECT revision_id FROM plans WHERE repository_id=?)", r(repo, repo, at, repo, repo), false},
++		{"ALT reusableBuilds+index", reusableBuilds, r(repo), false},
++		{"Lease", "SELECT holder, generation, acquired_at FROM leases WHERE repository_id=? AND resource=?", r(repo, "serve"), false},
++		{"Session", "SELECT " + sessionColumns + " FROM sessions WHERE repository_id=? AND id=?", r(repo, "ses_3"), false},
++	}
++	only := os.Getenv("STUDY_ONLY")
++	for _, p := range probes {
++		if only != "" && !strings.Contains(p.name, only) {
++			continue
++		}
++		rows, err := s.db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+p.query, p.args...)
++		if err != nil {
++			t.Fatalf("%s: %v", p.name, err)
++		}
++		var plan []string
++		for rows.Next() {
++			var id, parent, notused int
++			var detail string
++			rows.Scan(&id, &parent, &notused, &detail)
++			plan = append(plan, fmt.Sprintf("%d<%d %s", id, parent, detail))
++		}
++		rows.Close()
++		qctx, cancel := context.WithTimeout(ctx, 60*time.Second)
++		start := time.Now()
++		n := 0
++		rows, err = s.db.QueryContext(qctx, p.query, p.args...)
++		if err == nil {
++			for rows.Next() {
++				n++
++			}
++			err = rows.Err()
++			rows.Close()
++		}
++		cancel()
++		el := time.Since(start)
++		fmt.Printf("=== %s: %v rows=%d err=%v\n", p.name, el, n, err)
++		for _, l := range plan {
++			fmt.Println("    " + l)
++		}
++	}
++}
++
++
++func TestZZPrune(t *testing.T) {
++	dir := os.Getenv("STUDY_DIR")
++	if dir == "" {
++		t.Skip()
++	}
++	ctx := context.Background()
++	src := filepath.Join(dir, "syn.db")
++	dst := filepath.Join(dir, "prune.db")
++	os.Remove(dst)
++	os.Remove(dst + "-wal")
++	os.Remove(dst + "-shm")
++	data, _ := os.ReadFile(src)
++	os.WriteFile(dst, data, 0o600)
++	timeout := 30 * time.Second
++	if os.Getenv("STUDY_LONG") != "" {
++		timeout = 20 * time.Minute
++	}
++	s, err := Open(ctx, dst, Options{OperationTimeout: timeout})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s.Close()
++	start := time.Now()
++	var pruned store.Pruned
++	err = s.Update(ctx, "repo_a", func(tx store.Tx) error {
++		var err error
++		pruned, err = tx.PruneHistory(time.UnixMilli(1 << 40))
++		return err
++	})
++	fmt.Printf("PruneHistory: %v err=%v pruned=%+v\n", time.Since(start), err, pruned)
++	start = time.Now()
++	var archives []model.Archive
++	err = s.Update(ctx, "repo_a", func(tx store.Tx) error {
++		var err error
++		archives, err = tx.PruneArchives(time.UnixMilli(1 << 40))
++		return err
++	})
++	fmt.Printf("PruneArchives: %v err=%v n=%d\n", time.Since(start), err, len(archives))
++}
++
++func TestZZOverhead(t *testing.T) {
++	dir := os.Getenv("STUDY_DIR")
++	if dir == "" {
++		t.Skip()
++	}
++	ctx := context.Background()
++	s, err := Open(ctx, filepath.Join(dir, "syn.db"), Options{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s.Close()
++	n := 2000
++	start := time.Now()
++	for i := 0; i < n; i++ {
++		_ = s.View(ctx, "repo_a", func(r store.Reader) error { return nil })
++	}
++	fmt.Printf("empty View: %v each\n", time.Since(start)/time.Duration(n))
++	start = time.Now()
++	for i := 0; i < n; i++ {
++		_ = s.View(ctx, "repo_a", func(r store.Reader) error { _, err := r.Run("run_100"); return err })
++	}
++	fmt.Printf("View(Run): %v each\n", time.Since(start)/time.Duration(n))
++	start = time.Now()
++	for i := 0; i < n; i++ {
++		_ = s.View(ctx, "repo_a", func(r store.Reader) error {
++			for j := 0; j < 10; j++ {
++				if _, err := r.Run("run_100"); err != nil {
++					return err
++				}
++			}
++			return nil
++		})
++	}
++	fmt.Printf("View(10xRun): %v each\n", time.Since(start)/time.Duration(n))
++	start = time.Now()
++	for i := 0; i < n; i++ {
++		_ = s.View(ctx, "repo_a", func(r store.Reader) error { _, err := r.Plan("plan_100"); return err })
++	}
++	fmt.Printf("View(Plan tiny): %v each\n", time.Since(start)/time.Duration(n))
++	start = time.Now()
++	for i := 0; i < 200; i++ {
++		_ = s.Update(ctx, "repo_a", func(tx store.Tx) error { return tx.CheckLease(model.Lease{Resource: "serve", Holder: "ses_59", Generation: 4}) })
++	}
++	fmt.Printf("no-op Update: %v each\n", time.Since(start)/200)
++	start = time.Now()
++	for i := 0; i < 200; i++ {
++		_ = s.Update(ctx, "repo_a", func(tx store.Tx) error {
++			_, err := tx.AppendEvent(model.Event{Kind: "progress", At: time.Now(), Message: "x"})
++			return err
++		})
++	}
++	fmt.Printf("1-event Update (linux fsync): %v each\n", time.Since(start)/200)
++}
++
++func TestZZSteps(t *testing.T) {
++	dir := os.Getenv("STUDY_DIR")
++	if dir == "" {
++		t.Skip()
++	}
++	ctx := context.Background()
++	src := filepath.Join(dir, "syn.db")
++	proposed := os.Getenv("STUDY_PROPOSED") != ""
++	dst := filepath.Join(dir, "steps"+os.Getenv("STUDY_VARIANT")+".db")
++	for _, x := range []string{"", "-wal", "-shm"} {
++		os.Remove(dst + x)
++	}
++	data, _ := os.ReadFile(src)
++	os.WriteFile(dst, data, 0o600)
++	s, err := Open(ctx, dst, Options{OperationTimeout: 30 * time.Minute})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s.Close()
++	repo := "repo_a"
++	at := int64(1 << 40)
++	ended := "SELECT id FROM branches WHERE repository_id=? AND state<>'open' AND ended_at IS NOT NULL AND ended_at<?"
++	endedRuns := "SELECT id FROM runs WHERE repository_id=? AND branch_id IN (" + ended + ")"
++	endedExecutions := "SELECT id FROM executions WHERE repository_id=? AND run_id IN (" + endedRuns + ")"
++	type step struct {
++		name, q string
++		args    []any
++	}
++	steps := []step{
++		{"results", "DELETE FROM results WHERE repository_id=? AND execution_id IN (" + endedExecutions + ") " +
++			"AND (execution_id, target_id) NOT IN (SELECT execution_id, target_id FROM (" + reusableBuilds + "))",
++			[]any{repo, repo, repo, repo, at, repo}},
++		{"executions", "DELETE FROM executions AS e WHERE e.repository_id=? AND e.run_id IN (" + endedRuns + ") " +
++			"AND NOT EXISTS (SELECT 1 FROM results r WHERE r.repository_id=e.repository_id AND (r.execution_id=e.id OR r.reused_from=e.id))",
++			[]any{repo, repo, repo, at}},
++		{"runs", "DELETE FROM runs AS u WHERE u.repository_id=? AND u.branch_id IN (" + ended + ") " +
++			"AND u.number<(SELECT max(v.number) FROM runs v WHERE v.repository_id=u.repository_id AND v.branch_id=u.branch_id) " +
++			"AND NOT EXISTS (SELECT 1 FROM executions e WHERE e.repository_id=u.repository_id AND e.run_id=u.id)",
++			[]any{repo, repo, at}},
++		{"plans", "DELETE FROM plans AS p WHERE p.repository_id=? AND p.revision_id IN (SELECT id FROM revisions WHERE repository_id=? AND branch_id IN (" + ended + ")) " +
++			"AND NOT EXISTS (SELECT 1 FROM runs u WHERE u.repository_id=p.repository_id AND u.plan_id=p.id)",
++			[]any{repo, repo, repo, at}},
++		{"revisions", "DELETE FROM revisions AS v WHERE v.repository_id=? AND v.branch_id IN (" + ended + ") " +
++			"AND NOT EXISTS (SELECT 1 FROM runs u WHERE u.repository_id=v.repository_id AND u.revision_id=v.id) " +
++			"AND NOT EXISTS (SELECT 1 FROM plans p WHERE p.repository_id=v.repository_id AND p.revision_id=v.id)",
++			[]any{repo, repo, at}},
++		{"inputs", "DELETE FROM inputs WHERE repository_id=? AND key NOT IN (SELECT inputs FROM results WHERE repository_id=? AND inputs<>'')",
++			[]any{repo, repo}},
++	}
++	if proposed {
++		steps[0] = step{"results", "WITH keep AS MATERIALIZED (" + reusableBuilds + ") DELETE FROM results WHERE repository_id=? AND execution_id IN (" + endedExecutions + ") " +
++			"AND NOT EXISTS (SELECT 1 FROM keep k WHERE k.execution_id=results.execution_id AND k.target_id=results.target_id)", []any{repo, repo, repo, repo, repo, at}}
++		steps[1] = step{"executions", "DELETE FROM executions AS e WHERE e.repository_id=? AND e.run_id IN (" + endedRuns + ") " +
++			"AND e.id NOT IN (SELECT execution_id FROM results WHERE repository_id=?) AND e.id NOT IN (SELECT reused_from FROM results WHERE repository_id=? AND reused_from<>'')", []any{repo, repo, repo, at, repo, repo}}
++		steps[3] = step{"plans", "DELETE FROM plans AS p WHERE p.repository_id=? AND p.revision_id IN (SELECT id FROM revisions WHERE repository_id=? AND branch_id IN (" + ended + ")) " +
++			"AND p.id NOT IN (SELECT plan_id FROM runs WHERE repository_id=?)", []any{repo, repo, repo, at, repo}}
++		steps[4] = step{"revisions", "DELETE FROM revisions AS v WHERE v.repository_id=? AND v.branch_id IN (" + ended + ") " +
++			"AND v.id NOT IN (SELECT revision_id FROM runs WHERE repository_id=?) AND v.id NOT IN (SELECT revision_id FROM plans WHERE repository_id=?)", []any{repo, repo, at, repo, repo}}
++	}
++	if v := os.Getenv("STUDY_VARIANT"); v == "B" || v == "C" {
++		for _, q := range []string{"CREATE INDEX run_plan ON runs(repository_id, plan_id)", "CREATE INDEX run_revision ON runs(repository_id, revision_id)", "CREATE INDEX plan_revision ON plans(repository_id, revision_id)", "CREATE INDEX result_reused ON results(repository_id, reused_from)"} {
++			if _, err := s.db.ExecContext(ctx, q); err != nil {
++				t.Fatal(err)
++			}
++		}
++		s.db.ExecContext(ctx, "ANALYZE")
++		steps[1] = step{"executions", "DELETE FROM executions AS e WHERE e.repository_id=? AND e.run_id IN (" + endedRuns + ") " +
++			"AND NOT EXISTS (SELECT 1 FROM results r WHERE r.repository_id=e.repository_id AND r.execution_id=e.id) AND NOT EXISTS (SELECT 1 FROM results r WHERE r.repository_id=e.repository_id AND r.reused_from=e.id)", []any{repo, repo, repo, at}}
++	}
++	total := time.Now()
++	for _, st := range steps {
++		start := time.Now()
++		res, err := s.db.ExecContext(ctx, st.q, st.args...)
++		var n int64
++		if err == nil {
++			n, _ = res.RowsAffected()
++		}
++		fmt.Printf("variant=%s proposed=%v %s: %v n=%d err=%v\n", os.Getenv("STUDY_VARIANT"), proposed, st.name, time.Since(start), n, err)
++	}
++	fmt.Printf("total %v\n", time.Since(total))
++}
