@@ -46,3 +46,15 @@ environments); a batch `ship --to submit` queues its checks and resumes on a
 rerun; a build-time download is a notice, not a hold, until the guest can
 observe a fetch, which makes Later's qsv entry agree. D-R3 and the privacy
 follow-up stay open.
+
+## The SQL study, folded in
+
+From the plan's "The SQL study, folded in" section: SQL-S1 (the quadratic
+`PruneHistory`, with SQL-S2's chunked, foreign-key-ordered delete and SQL-S3's
+dead index) is Next's new first item, v0.3.1, a point release on the quick
+stage, with migration 031 and two docs/development.md rules. The rest ride
+the items that open the same code: part 1's dependency-archive, status, branch,
+and hygiene items; part 2's ship engine, ship, and surface steps; part 3's
+live progress and archived names; and v0.5.0's revision analysis and
+readiness. The study's codes are SQL-S1 to SQL-S5 and SQL-O1 to SQL-O8, apart
+from prime-time's S1 soak, and its "not taken" list is recorded.
