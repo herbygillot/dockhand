@@ -543,6 +543,40 @@ func SaysNothing(facts Facts) bool {
 	return true
 }
 
+// NoteRepeatsCommits reports a note that mostly says again what the
+// commits' bodies say, which the Description gives above it: half its
+// lines or more, list marks and case aside, are lines of a body. A note
+// given before a commit was amended to carry a body read twice in the
+// Description (field testing, grafana 13.2.4, #35488).
+func NoteRepeatsCommits(facts Facts) bool {
+	said := map[string]bool{}
+	for _, commit := range facts.Commits {
+		for _, line := range strings.Split(commitBody(commit.Message), "\n") {
+			if line = comparable(line); line != "" && !trailer.MatchString(line) {
+				said[line] = true
+			}
+		}
+	}
+	lines, repeated := 0, 0
+	for _, line := range strings.Split(facts.Note, "\n") {
+		if line = comparable(line); line != "" {
+			lines++
+			if said[line] {
+				repeated++
+			}
+		}
+	}
+	return repeated > 0 && 2*repeated >= lines
+}
+
+// comparable is a line as NoteRepeatsCommits compares it: without a list
+// mark, spacing, or case.
+func comparable(line string) string {
+	line = strings.TrimSpace(line)
+	line = strings.TrimLeft(line, "-*• ")
+	return strings.ToLower(strings.Join(strings.Fields(line), " "))
+}
+
 // citesTickets reports a commit citing a Trac ticket by its URL.
 func citesTickets(commits []Commit) bool {
 	return slices.ContainsFunc(commits, func(c Commit) bool {

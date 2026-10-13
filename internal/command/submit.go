@@ -473,6 +473,15 @@ func noteLine(plan engine.SubmitPlan) string {
 	if more && strings.TrimSpace(rest) != "" {
 		words = strings.TrimSpace(words) + " …"
 	}
+	// A kept note outlives the commits it was written beside: one given
+	// before a commit was amended to carry a body read twice in the
+	// Description (field testing, grafana 13.2.4, #35488).
+	if plan.NoteKept() {
+		words += "\n           kept from an earlier submit, across rewritten commits; --note \"\" clears it"
+	}
+	if plan.NoteRepeatsCommits() && !plan.NoteLeftOut {
+		words += "\n           ! it mostly repeats the commit message's body, which the Description gives above it; --note \"\" clears it"
+	}
 	if plan.NoteLeftOut {
 		words += "\n           ! not in the description: its Description is yours, edited on GitHub or taken out, and stays as it is"
 	}

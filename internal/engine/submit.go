@@ -194,6 +194,16 @@ func (p SubmitPlan) DescriptionSaysNothing() bool {
 	return prdescription.SaysNothing(p.facts.description())
 }
 
+// NoteRepeatsCommits reports a note that mostly repeats the commits'
+// bodies, which the Description gives already (prdescription).
+func (p SubmitPlan) NoteRepeatsCommits() bool {
+	return p.Note != "" && prdescription.NoteRepeatsCommits(p.facts.description())
+}
+
+// NoteKept reports a note from an earlier submit, which this one keeps,
+// across rewritten commits too, since no --note was given.
+func (p SubmitPlan) NoteKept() bool { return p.Note != "" && p.Request.Note == nil }
+
 // Describe replaces the description with one the person wrote, which
 // gives their note however they left it.
 func (p *SubmitPlan) Describe(body string) {

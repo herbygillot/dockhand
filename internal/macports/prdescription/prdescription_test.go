@@ -241,3 +241,15 @@ func TestWrittenKeepsDockhandsTextWhereAPersonsWasKept(t *testing.T) {
 	require.Equal(t, Kept, sections.Description, "still theirs on the next submit")
 	require.Equal(t, merged, again)
 }
+
+// A note that mostly says again what the commit's body says is found: a
+// note given before the commit was amended to carry a body read twice
+// (field testing, grafana 13.2.4, #35488).
+func TestANoteRepeatingTheCommitBodyIsFound(t *testing.T) {
+	commit := Commit{Message: "grafana: update to 13.2.4\n\n- Bump Go floor to 1.25\n- Refresh go.vendors\n\nAssisted-By: Claude Code\n"}
+	repeats := Facts{Commits: []Commit{commit}, Note: "* bump go floor to 1.25\n* Refresh go.vendors\n* Tested on 26"}
+	require.True(t, NoteRepeatsCommits(repeats))
+	own := Facts{Commits: []Commit{commit}, Note: "The tests need network access.\nUpstream knows."}
+	require.False(t, NoteRepeatsCommits(own))
+	require.False(t, NoteRepeatsCommits(Facts{Commits: []Commit{commit}, Note: "Assisted-By: Claude Code"}), "a trailer is no body")
+}
