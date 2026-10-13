@@ -36,3 +36,13 @@ testing's command-surface entry (`--plan` without a branch, a preview's exit
 without a terminal, Tart capacity read by serve alone) moved into layer 1's
 §9. The fetch-outside hold and Later's "a hold … is the person's call" stay
 as they are, pending decision 5.
+
+## Decisions 2 to 5
+
+At the person's "2-5, go with your recommendations" (17:57Z): `ship --passing`
+asks once over one plan of every branch (amending D11); the evidence a
+submission requires is the build profile in effect (D17's required
+environments); a batch `ship --to submit` queues its checks and resumes on a
+rerun; a build-time download is a notice, not a hold, until the guest can
+observe a fetch, which makes Later's qsv entry agree. D-R3 and the privacy
+follow-up stay open.
