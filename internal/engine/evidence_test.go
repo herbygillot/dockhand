@@ -129,6 +129,12 @@ func TestEachEnvironmentTakesItsNewestCheck(t *testing.T) {
 	require.Len(t, submission.Blocking, 2)
 	require.Contains(t, submission.Blocking[0], "is changed, and no check of these files built it everywhere it's required")
 	require.Empty(t, submission.Evidence.Problem)
+	// submit --check runs the check that's still needed, rather than
+	// refusing for the earlier check's gap (field testing, grafana 13.2.4).
+	submission, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update", PendingCheck: true, Head: true})
+	require.NoError(t, err)
+	require.Empty(t, submission.Blocking)
+	require.True(t, submission.CheckNeeded)
 
 	// One that can't be resolved requires nothing more, and the evidence
 	// says why, where it said nothing (the architecture review's L5).

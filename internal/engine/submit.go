@@ -134,7 +134,7 @@ type SubmitPlan struct {
 	// Blocking is what stops the submission.
 	Blocking []string
 	// CheckNeeded is true when a PendingCheck plan has no check for its
-	// files yet.
+	// files yet, or only one that built them somewhere they're required.
 	CheckNeeded bool
 	// Theirs is true for a pull request someone else opened: submit only
 	// pushes to it, and never rewrites its title or description.
@@ -412,6 +412,16 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 			return nil
 		}
 		plan.Blocking = append(plan.Blocking, "no check has finished for this commit's files; run dockhand check first, submit a draft with --draft, or submit without a check with --no-check, which the pull request states")
+		return nil
+	}
+	// submit --check runs the check these files still need, where an
+	// earlier one built them only somewhere: running it is the decision,
+	// and the check reuses what stands. Refusing for the earlier check's
+	// gaps left --check doing nothing (field testing, grafana 13.2.4:
+	// check-323 passed macOS 12 alone, and macOS 26 was required). A
+	// failure stands, and is refused as before.
+	if request.PendingCheck && evidence.Unfinished() {
+		plan.CheckNeeded = true
 		return nil
 	}
 	plan.Evidence = &evidence

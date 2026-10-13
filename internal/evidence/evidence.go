@@ -566,6 +566,17 @@ func (e Evidence) Missing() []TargetEvidence {
 	return missing
 }
 
+// Unfinished reports evidence that another check would settle: some
+// target asks for a check, and none that didn't pass has a result that
+// failed. One with a failure stands for these files: checking them again
+// reuses it.
+func (e Evidence) Unfinished() bool {
+	failed := e.Failed()
+	return len(failed) > 0 && !slices.ContainsFunc(failed, func(t TargetEvidence) bool {
+		return !t.Missing() || slices.ContainsFunc(t.Outcomes, func(c Cell) bool { return c.Kind == CellRecorded && c.Outcome != model.OutcomePassed })
+	})
+}
+
 // Failed lists the targets that didn't pass where they must
 // (TargetEvidence.Failing).
 func (e Evidence) Failed() []TargetEvidence {

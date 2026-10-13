@@ -591,11 +591,33 @@ func checkWords(plan engine.SubmitPlan) string {
 		}
 		return passed
 	}
-	var names []string
+	// Each port is said where it failed and where nothing of these files
+	// built it, apart: check-323 had passed grafana on macOS 12, and the
+	// line said it "did not pass on" 12 and 26 alike (field testing,
+	// grafana 13.2.4).
+	var said []string
 	for _, target := range failed {
-		names = append(names, target.Target.Target.Name)
+		var failedOn, unbuiltOn []string
+		for _, cell := range target.Outcomes {
+			switch {
+			case cell.Unbuilt():
+				unbuiltOn = append(unbuiltOn, engine.DescribeEnvironment(cell.Environment))
+			case cell.Kind == engine.CellRecorded && cell.Outcome != model.OutcomePassed:
+				failedOn = append(failedOn, engine.DescribeEnvironment(cell.Environment))
+			}
+		}
+		name := target.Target.Target.Name
+		if len(failedOn) > 0 {
+			said = append(said, fmt.Sprintf("%s did not pass on %s", name, strings.Join(failedOn, ", ")))
+		}
+		if len(unbuiltOn) > 0 {
+			said = append(said, fmt.Sprintf("%s isn't built for these files on %s", name, strings.Join(unbuiltOn, ", ")))
+		}
+		if len(failedOn) == 0 && len(unbuiltOn) == 0 {
+			said = append(said, fmt.Sprintf("%s did not pass on %s", name, strings.Join(environments, ", ")))
+		}
 	}
-	return fmt.Sprintf("%s: %s did not pass on %s", evidence.Run.Name(), strings.Join(names, ", "), strings.Join(environments, ", "))
+	return fmt.Sprintf("%s: %s", evidence.Run.Name(), strings.Join(said, "; "))
 }
 
 func otherWords(plan engine.SubmitPlan) string {

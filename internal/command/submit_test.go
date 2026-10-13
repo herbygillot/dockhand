@@ -936,3 +936,23 @@ func TestThePushLineSaysItWontPushOverAnotherPush(t *testing.T) {
 	plan.RemoteHead.Exists, plan.RemoteHead.Object = true, strings.Repeat("d", 40)
 	require.Equal(t, "won't push: someone else pushed ddddddd", pushWords(plan))
 }
+
+// The Checks line says where a port failed apart from where nothing of
+// these files built it: check-323 passed grafana on macOS 12, and the line
+// said it "did not pass on" 12 and 26 alike (field testing, grafana
+// 13.2.4).
+func TestCheckWordsSayWhatWasntBuilt(t *testing.T) {
+	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	grafana := model.PlanTarget{Target: model.Target{Name: "grafana"}}
+	evidence := engine.Evidence{Run: model.Run{Number: 323}, Plan: model.Plan{Environments: []model.Environment{monterey, tahoe}}, Targets: []engine.TargetEvidence{{
+		Target:    grafana,
+		Unchecked: true,
+		Outcomes: []engine.Cell{
+			{TargetResult: model.TargetResult{Outcome: model.OutcomePassed}, Kind: engine.CellRecorded, Environment: monterey},
+			{TargetResult: model.TargetResult{Outcome: model.OutcomeNotRun}, Kind: engine.CellNotRun, Environment: tahoe},
+		},
+	}}}
+	said := checkWords(engine.SubmitPlan{Evidence: &evidence})
+	require.Equal(t, "check-323: grafana isn't built for these files on "+engine.DescribeEnvironment(tahoe), said)
+}
