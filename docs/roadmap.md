@@ -24,7 +24,7 @@ The weak point the review found is the information passed between steps. Several
 
 ## Next
 
-**Now: the prime-time pass** per the project's plan/prime-time.md, commands frozen and fixes only. The full stage runs as dhtest on the M1: v0.3.0-rc1 to rc8 were tagged. Run 4, on rc6, ran 79 rows with no harms, and every product finding it made was fixed. rc7's run stopped early on a go.vendors regression (batch 112); rc8, at b8a6d1f9, is running the whole list, `full.sh --rows-file tools/acceptance/rerun-rc7`, and its fixes on main go into the next candidate (batches 113 and 114, and the harness's since). Left: the rest of rc8's list; B7 and C1 overnight; D-I5 with the person at the Mac, with F3's rename, F5, F7, and F10; S1's 24-hour soak; `full.sh --end`; then v0.3.0 on the commit that passes, and macports/macports-ports#34756, which is unchanged until then.
+**Now: the prime-time pass** per the project's plan/prime-time.md, commands frozen and fixes only. The full stage runs as dhtest on the M1: v0.3.0-rc1 to rc11 were tagged. rc11, at 285a496f, is the candidate: every row has passed but S1's 24-hour soak, running since 2026-10-13, and F5 over SSH with the person after it (as Prime-time reported, 2026-10-13). Then `full.sh --end`, the write-up, v0.3.0 on the commit that passes, and macports/macports-ports#34756, which is unchanged until then.
 
 **After the release, in order** (the person's "Fixes first", 2026-10-07, on the architecture review's slotting, and "Move earlier" the same day for the `.gitignore`, archived-name, and `port -b` items, and "v0.4.0 after" on 2026-10-09 for ship; the project's plan/architecture-after-release.md):
 
