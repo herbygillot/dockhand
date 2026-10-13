@@ -214,10 +214,17 @@ func TestKeepAliveBeats(t *testing.T) {
 	f.c.Now, f.c.Heartbeat = nil, 10*time.Millisecond
 	s := f.session(t, 100, model.SessionServe)
 	started := s.Record().HeartbeatAt
-	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
-	defer cancel()
-	s.KeepAlive(ctx)
-	require.True(t, s.Record().HeartbeatAt.After(started))
+	// It waits for a beat rather than a fixed 200ms, which a slow runner's
+	// store writes outlasted (CI's Intel job on b1ac0ce2).
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.KeepAlive(ctx)
+	}()
+	require.Eventually(t, func() bool { return s.Record().HeartbeatAt.After(started) }, 10*time.Second, 10*time.Millisecond)
+	cancel()
+	<-done
 }
 
 // failingWrites is a store whose next writes fail, as one that waited past

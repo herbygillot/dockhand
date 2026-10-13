@@ -20,3 +20,9 @@ rule, and `PendingCheck` set `CheckNeeded` only where no evidence existed.
 
 Tests: TestEachEnvironmentTakesItsNewestCheck (a `--check` plan over a
 required environment no check built), TestCheckWordsSayWhatWasntBuilt.
+
+## CI on b1ac0ce2: a heartbeat test's fixed wait
+
+CI's Intel job failed TestKeepAliveBeats (internal/coord), unrelated to the
+change: the test gave KeepAlive 200ms, and a slow runner's store writes ran
+past it, so no beat was recorded. It now waits for a beat, up to ten seconds.
