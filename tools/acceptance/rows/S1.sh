@@ -14,6 +14,9 @@
 # changes it. It installs the one serve agent the account has, as B7 does,
 # so the two can't run at once: B7's install would replace S1's agent, and
 # its teardown remove it.
+# fault_tart: tart in dockhand's Tart home, where its VMs are; a plain
+# tart list read Tart's own home and came out empty (rc11's D-I5).
+. "${ROW_LIB:?}/fault.sh"
 hours() { printf '%s' "${ACCEPT_S1_HOURS:-24}"; }
 
 setup() {
@@ -54,7 +57,7 @@ act() {
 		sample >>"$ROW_DIR/samples"
 		dh auth status >>"$ROW_DIR/auth" 2>&1 || :
 	done
-	tart list 2>/dev/null >"$ROW_DIR/vms" || :
+	fault_tart list 2>/dev/null >"$ROW_DIR/vms" || :
 	dh serve --uninstall || :
 }
 

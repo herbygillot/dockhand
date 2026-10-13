@@ -20,6 +20,9 @@
 # is confirmed running right before the sleep is asked for, and
 # afterwards pmset's log must show a sleep between the check's building
 # and its end; without one, the sleep half is "not run", with why.
+# fault_tart: tart in dockhand's Tart home, where its VMs are; a plain
+# tart list read Tart's own home and came out empty (rc11's D-I5).
+. "${ROW_LIB:?}/fault.sh"
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 sleep_port() { printf '%s' "${ACCEPT_SLEEP_PORT:-${ACCEPT_RUST_PORT:?}}"; }
 DI5_STATE=${ACCEPT_STATE:-/nonexistent}/D-I5.state
@@ -117,7 +120,7 @@ di5_after_reboot() {
 	fi
 	tail -c +"$((${served:-0} + 1))" "$serve_log" >"$ROW_DIR/serve.log" 2>/dev/null || :
 	dh_json status "$DI5_BRANCH" || :
-	tart list >"$ROW_DIR/vms" 2>&1 || :
+	fault_tart list >"$ROW_DIR/vms" 2>&1 || :
 	dh serve --uninstall || :
 }
 teardown() {
