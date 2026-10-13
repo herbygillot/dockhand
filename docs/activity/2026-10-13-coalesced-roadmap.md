@@ -24,3 +24,15 @@ the GitHub Actions log steps (D20), Later's "builds from source" (the decided
 The architecture review's H codes in Next and Decided are written A-H1 and so
 on, apart from the harness's harm invariants. Decisions 2 to 5, D-R3, and the
 privacy follow-up stay pending and unapplied.
+
+## The plan thread's duplicates
+
+The plan thread's list of seven: 1 to 3 were merged above. 4: Later's online
+Cargo Git crate (tart-softnet) folded into depblock's false refusals. 5:
+Later's owner transfer (sudosh2) folded into part 2's move and owner hold.
+6: the "Not now" structure entry's second sentence named items with entries of
+their own; it now points to them. 7: the three surface items under field
+testing's command-surface entry (`--plan` without a branch, a preview's exit
+without a terminal, Tart capacity read by serve alone) moved into layer 1's
+§9. The fetch-outside hold and Later's "a hold … is the person's call" stay
+as they are, pending decision 5.
