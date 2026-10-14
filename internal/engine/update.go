@@ -160,8 +160,8 @@ type Update struct {
 	// update moved it too (WithObsolete).
 	Obsolete *ObsoleteStub
 	// family is the port's Portfile's ports before the edit, as the edit
-	// evaluated them.
-	family macports.Snapshot
+	// evaluated them, and familyAfter after it.
+	family, familyAfter macports.Snapshot
 	// Distfiles counts the port's archives whose checksums were written,
 	// and Regenerated the dependency blocks written again, a Git crate's
 	// archive among them, each with its entries.
@@ -230,6 +230,15 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	update.Obsolete = obsoleteStub(update)
 	if update.Obsolete == nil || !request.WithObsolete || update.Obsolete.Version == update.After.Version {
+		return update, nil
+	}
+	// One the edit moved already, as a version line inside the main
+	// port's `if {${subport} eq ${name}}` moves with a shared release,
+	// has nothing left to update: terraform's did, and updating it again
+	// found no version input and said the whole update failed (field
+	// testing at a3c43ef7, terraform-1.16 1.16.6).
+	if moved, ok := update.familyAfter.Ports[update.Obsolete.Port]; ok && moved.Version == update.After.Version {
+		update.Obsolete.Moved = true
 		return update, nil
 	}
 	follow := UpdateRequest{Branch: update.Branch, Action: model.EditUpdate, Port: update.Obsolete.Port, Version: update.After.Version,
@@ -686,6 +695,7 @@ func describe(branch model.Branch, selector string, result editprep.Result) Upda
 	}
 	if len(result.Fidelity) > 0 {
 		update.family = result.Fidelity[0].Before
+		update.familyAfter = result.Fidelity[len(result.Fidelity)-1].After
 	}
 	update.CrossesMajor = update.Before.Version != "" && version.CrossesMajor(update.Before.Version, update.After.Version)
 	for _, file := range result.Files {

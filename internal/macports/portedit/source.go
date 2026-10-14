@@ -193,7 +193,13 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	} else if name != "" {
 		// Said once, though the probe and the preparation each load the
 		// port (the sshuttle run: py-pipdeptree's update said it thrice).
-		progress.ReportOnce(ctx, "%s is a stub; editing %s and its sibling subports as one release", name, carrier.Name)
+		// An obsolete one says so: "terraform is a stub" read as a
+		// python-style stub (field testing at a3c43ef7).
+		if replacement := before.Ports[name].Options["replaced_by"]; replacement != "" {
+			progress.ReportOnce(ctx, "%s is an obsolete stub, replaced by %s; editing %s and its sibling subports as one release", name, replacement, carrier.Name)
+		} else {
+			progress.ReportOnce(ctx, "%s is a stub; editing %s and its sibling subports as one release", name, carrier.Name)
+		}
 		stub = name
 		request.Stub, request.SharedRelease = name, true
 		selected = carrier

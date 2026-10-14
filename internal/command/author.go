@@ -403,6 +403,13 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	}
 	if err != nil {
 		if started {
+			// An update that failed after its edit, as an obsolete stub's
+			// following did, says the edit it kept: "nothing changed" was
+			// said of a worktree holding terraform-1.16's (field testing
+			// at a3c43ef7).
+			if len(update.Files) > 0 {
+				return branch, update, fmt.Errorf("%w\nKept: %s, with the edit to %s made and not committed", err, branch.Name, strings.Join(update.Files, ", "))
+			}
 			return branch, update, fmt.Errorf("%w\nKept: %s, with nothing changed", err, branch.Name)
 		}
 		return branch, update, err

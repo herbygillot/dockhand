@@ -56,8 +56,8 @@ type fakePreparer struct {
 	// options are the evaluated port's options after the edit.
 	options map[string]string
 	// family are the other ports the Portfile defines, as the edit
-	// evaluates them before it.
-	family map[string]macports.PortInfo
+	// evaluates them before it, and familyAfter those it moves, as after.
+	family, familyAfter map[string]macports.PortInfo
 	// subports are other ports the Portfile defines, the same before
 	// and after the edit as it evaluates them.
 	subports map[string]macports.PortInfo
@@ -145,6 +145,11 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 	for other, info := range p.family {
 		if other != r.Selection.Selector {
 			result.Fidelity[0].Before.Ports[other] = info
+		}
+	}
+	for other, info := range p.familyAfter {
+		if other != r.Selection.Selector {
+			result.Fidelity[0].After.Ports[other] = info
 		}
 	}
 	for other, info := range p.subports {
@@ -939,6 +944,30 @@ func TestAnObsoleteStubMovesWithItsReplacementWhenAsked(t *testing.T) {
 	for _, edit := range edits {
 		require.Equal(t, "jq: update to 1.8.1", edit.Subject, "the stub's edit is the replacement's update")
 	}
+}
+
+// An obsolete stub the edit moved already, as terraform's version line
+// inside the main port's `if {${subport} eq ${name}}` moves with
+// terraform-1.16's shared release, is said as moved, and isn't updated
+// again: that found no version input, and the update said it failed, its
+// edit made (field testing at a3c43ef7, terraform-1.16 1.16.6).
+func TestAnObsoleteStubTheEditMovedIsntUpdatedAgain(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	p.family = map[string]macports.PortInfo{"jq-old": {Name: "jq-old", Version: "1.7.1", Options: map[string]string{"replaced_by": "jq", "distfiles": ""}}}
+	p.familyAfter = map[string]macports.PortInfo{"jq-old": {Name: "jq-old", Version: "1.8.1", Options: map[string]string{"replaced_by": "jq", "distfiles": ""}}}
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	moved, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", WithObsolete: true})
+	require.NoError(t, err)
+	require.Equal(t, &ObsoleteStub{Port: "jq-old", Version: "1.7.1", Moved: true}, moved.Obsolete)
+	var edits []model.Edit
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		edits, err = r.Edits(branch.ID)
+		return err
+	}))
+	require.Len(t, edits, 1, "the port's edit alone")
 }
 
 // An update's own record says what it changed where this Mac's
