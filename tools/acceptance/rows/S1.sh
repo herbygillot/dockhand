@@ -39,23 +39,39 @@ setup() {
 # sample writes one line of what the soak watches: the time, serve's
 # memory in kilobytes, the free disk, and the logs, compressed and not.
 sample() {
-	local logs=$HOME/.dockhand/logs rss
-	rss=$(pgrep -u "$(id -u)" -f 'dockhand serve' | head -1 | xargs -r ps -o rss= -p 2>/dev/null | tr -d ' ')
+	local logs=$HOME/.dockhand/logs rss pid
+	# serve's own pid, as it records it: a pgrep for "dockhand serve"
+	# caught serve --install's, 384 KB (rc11's soak).
+	pid=$(s1_pid)
+	[ -n "$pid" ] && rss=$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ')
 	printf '%s rss_kb=%s free_kb=%s logs=%s gz=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${rss:-none}" \
 		"$(df -k "$HOME" | awk 'NR == 2 {print $4}')" \
 		"$(find "$logs" -type f ! -name '*.gz' 2>/dev/null | wc -l | tr -d ' ')" \
 		"$(find "$logs" -type f -name '*.gz' 2>/dev/null | wc -l | tr -d ' ')"
 }
 
+# s1_pid is the pid of the serve that leads, as queue reports it.
+s1_pid() {
+	dh_quiet --json queue | jq -r '.result.serve_state.pid // empty' 2>/dev/null
+}
+
 act() {
 	host_only "a day of serve on the host" || return 0
 	allow_change "*"
 	dh serve --install || return 0
-	local i
+	local i waited
+	# The first sample is serve's, once it has started under launchd.
+	for ((waited = 0; waited < 120; waited += 5)); do
+		[ -n "$(s1_pid)" ] && break
+		sleep 5
+	done
 	for ((i = 0; i <= $(hours); i++)); do
 		[ "$i" = 0 ] || sleep 3600
 		sample >>"$ROW_DIR/samples"
-		dh auth status >>"$ROW_DIR/auth" 2>&1 || :
+		# Straight to the row's file, a line each with when: dh writes
+		# to out.log, which left this file empty (rc11's soak).
+		printf '%s ' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$ROW_DIR/auth"
+		"$DH_BIN" auth status >>"$ROW_DIR/auth" 2>&1 || printf '[exit %d]\n' "$?" >>"$ROW_DIR/auth"
 	done
 	fault_tart list 2>/dev/null >"$ROW_DIR/vms" || :
 	dh serve --uninstall || :
