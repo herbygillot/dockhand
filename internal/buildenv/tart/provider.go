@@ -421,7 +421,10 @@ type guestResults struct {
 	State       string            `json:"state"`
 	Detail      string            `json:"detail"`
 	Environment map[string]string `json:"environment"`
-	Targets     []guestResult     `json:"targets"`
+	// Building is the target the program is building, until its result
+	// is written; empty between targets.
+	Building string        `json:"building"`
+	Targets  []guestResult `json:"targets"`
 }
 
 type guestResult struct {
@@ -850,11 +853,16 @@ exec /bin/launchctl bootstrap system "$2/guest.plist"`, "dockhand", input, guest
 // follow reads the guest's results as they grow, recording each target's
 // as it appears with its log, until the program finishes. A program that
 // stops without finishing, a VM that stops, or a guest that can't be read
-// for a minute is infrastructure trouble; what was recorded stays.
+// for a minute is infrastructure trouble; what was recorded stays, and the
+// target the guest was building is recorded as interrupted.
 func (p *Provider) follow(ctx context.Context, g guest, started run, job buildenv.Job, build buildenv.Build, release macos.Release) error {
 	recorded := 0
 	failures := 0
 	observed := false
+	// building is the target the guest said it was building when last
+	// read.
+	building := ""
+	lost := func(err error) error { return interrupted(job, build, building, err) }
 	// take takes in what the guest has written: what it reported about
 	// itself, once, and each target's result not yet recorded. Every read
 	// goes through it, the last one too, since the guest writes its
@@ -881,7 +889,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-started.Done():
-			return fmt.Errorf("%w: the VM stopped: %v", buildenv.ErrInfrastructure, started.Err())
+			return lost(fmt.Errorf("%w: the VM stopped: %v", buildenv.ErrInfrastructure, started.Err()))
 		case <-time.After(p.poll()):
 		}
 		results, err := p.read(ctx, g)
@@ -890,7 +898,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 				return ctx.Err()
 			}
 			if failures++; time.Duration(failures)*p.poll() >= time.Minute {
-				return fmt.Errorf("%w: reading the guest's results: %w", buildenv.ErrInfrastructure, err)
+				return lost(fmt.Errorf("%w: reading the guest's results: %w", buildenv.ErrInfrastructure, err))
 			}
 			continue
 		}
@@ -910,21 +918,41 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 		if err := take(results); err != nil {
 			return err
 		}
+		building = results.Building
 		switch results.State {
 		case "finished":
 			return nil
 		case "errored":
-			return fmt.Errorf("%w: the guest: %s", buildenv.ErrInfrastructure, results.Detail)
+			return lost(fmt.Errorf("%w: the guest: %s", buildenv.ErrInfrastructure, results.Detail))
 		}
 		if gone, err := stopped(ctx, g); err == nil && gone {
 			// It may have written its last results after the read above.
-			if last, err := p.read(ctx, g); err == nil && last.State == "finished" {
-				return take(last)
+			if last, err := p.read(ctx, g); err == nil && last.Protocol == Protocol {
+				if err := take(last); err != nil || last.State == "finished" {
+					return err
+				}
+				building = last.Building
 			}
 			log, _ := g.Read(ctx, guestRoot+"/runner.log", true)
-			return fmt.Errorf("%w: the guest program stopped before it finished: %s", buildenv.ErrInfrastructure, strings.TrimSpace(tail(string(log), 400)))
+			return lost(fmt.Errorf("%w: the guest program stopped before it finished: %s", buildenv.ErrInfrastructure, strings.TrimSpace(tail(string(log), 400))))
 		}
 	}
+}
+
+// interrupted records the target a lost guest was building as
+// interrupted, with why it was lost, and returns why. The runner tries it
+// again, as it does a target the guest never reached; the result says the
+// guest got as far as building it.
+func interrupted(job buildenv.Job, build buildenv.Build, building string, cause error) error {
+	i := slices.IndexFunc(job.Targets, func(target buildenv.Target) bool { return string(target.ID) == building })
+	if i < 0 {
+		return cause
+	}
+	detail := strings.TrimPrefix(cause.Error(), buildenv.ErrInfrastructure.Error()+": ")
+	if err := build.Record(model.TargetResult{Target: job.Targets[i].ID, Outcome: model.OutcomeInterrupted, Detail: detail}); err != nil {
+		return fmt.Errorf("%w; %s wasn't recorded as interrupted: %v", cause, building, err)
+	}
+	return cause
 }
 
 func (p *Provider) read(ctx context.Context, g guest) (guestResults, error) {

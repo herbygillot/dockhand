@@ -589,6 +589,41 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	require.Less(t, time.Since(start), 30*time.Second)
 }
 
+// The target a lost guest was building is recorded as interrupted, with
+// why the guest was lost, after what it finished (decision 44); a guest
+// lost between targets, or before any, interrupts none.
+func TestTheTargetALostGuestWasBuildingIsInterrupted(t *testing.T) {
+	t.Parallel()
+	passed := guestResult{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
+	for name, test := range map[string]struct {
+		mac  *fakeMac
+		want []model.TargetResult
+	}{
+		"errored": {
+			newMac(guestResults{State: "running", Targets: []guestResult{passed}}, guestResults{State: "errored", Building: "harbor-cli", Targets: []guestResult{passed}, Detail: "building harbor-cli: no such variable"}),
+			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest: building harbor-cli: no such variable"}},
+		},
+		// What the guest wrote last, read after it stopped, is taken first:
+		// libharbor finished, and harbor-cli was building.
+		"exited": {
+			newMac(guestResults{State: "running", Building: "libharbor"}, guestResults{State: "running", Building: "harbor-cli", Targets: []guestResult{passed}}),
+			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest program stopped before it finished: the runner's last words"}},
+		},
+		"between targets": {newMac(guestResults{State: "running", Targets: []guestResult{passed}}), []model.TargetResult{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if name != "errored" {
+				test.mac.guest.exited = true
+			}
+			build := &fakeBuild{}
+			err := testProvider(test.mac).Execute(t.Context(), tartJob(t, 1), build)
+			require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+			require.Equal(t, model.OutcomePassed, build.results[0].Outcome, "what the guest finished stays recorded")
+			require.Equal(t, test.want, build.results[1:])
+		})
+	}
+}
+
 // Results dockhand's guest program writes that this dockhand can't read,
 // or that name what the job didn't ask for, are dockhand's fault, not the
 // environment's: another attempt would clone a VM to repeat it (the

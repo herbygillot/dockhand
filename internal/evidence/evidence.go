@@ -68,7 +68,8 @@ const (
 	// says why, as the plan that found it says.
 	CellUnmet CellKind = "unmet"
 	// CellNotRun is a target required there that no check of the files
-	// built: --only left it out, or the check stopped before it.
+	// built: --only left it out, or the check stopped before it or as it
+	// built.
 	CellNotRun CellKind = "not-run"
 	// CellRemade is a target built there before the environment was made
 	// again, from another source or with other tools: another environment,
@@ -78,7 +79,7 @@ const (
 
 // Cell is a target's result in one environment, with what kind of cell it
 // is. An excluded, unmet, not run, or remade cell's result is
-// OutcomeNotRun, or OutcomeUnmet, with no execution.
+// OutcomeNotRun, OutcomeInterrupted, or OutcomeUnmet, with no execution.
 type Cell struct {
 	model.TargetResult
 	Kind        CellKind
@@ -97,9 +98,15 @@ type Cell struct {
 }
 
 // recorded is a result recorded in an environment, as a cell: one that
-// says its target wasn't reached is a cell not run.
+// says its target wasn't reached is a cell not run, and so is one that was
+// building when its environment was lost, which says nothing of the port,
+// and whose execution built nothing the evidence holds.
 func recorded(environment model.Environment, result model.TargetResult) Cell {
-	if result.Outcome == model.OutcomeNotRun {
+	switch result.Outcome {
+	case model.OutcomeNotRun:
+		return Cell{TargetResult: result, Kind: CellNotRun, Environment: environment}
+	case model.OutcomeInterrupted:
+		result.Execution = ""
 		return Cell{TargetResult: result, Kind: CellNotRun, Environment: environment}
 	}
 	return Cell{TargetResult: result, Kind: CellRecorded, Environment: environment}
