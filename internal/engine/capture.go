@@ -238,3 +238,24 @@ func editorFile(name string) bool {
 	}
 	return false
 }
+
+// UntrackedInChanged are the untracked files a capture left out that sit in
+// a directory the plan changes: a new patch in a port's files/, which the
+// check builds without, and fails or passes for the wrong reason (Codex's
+// gcc15 group update, 2026-10-07). They're said before any VM boots, with
+// what takes each in.
+func UntrackedInChanged(capture Capture, plan model.Plan) []string {
+	var directories []string
+	for _, target := range plan.Targets {
+		if target.Role == model.Changed && target.Directory != "" && !slices.Contains(directories, target.Directory) {
+			directories = append(directories, target.Directory)
+		}
+	}
+	var found []string
+	for _, path := range capture.Untracked {
+		if slices.ContainsFunc(directories, func(d string) bool { return strings.HasPrefix(path, d+"/") }) {
+			found = append(found, path)
+		}
+	}
+	return found
+}

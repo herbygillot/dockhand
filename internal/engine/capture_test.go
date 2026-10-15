@@ -151,3 +151,14 @@ func TestWhatGitIgnoresIsLeftOutOfWhatACheckGathers(t *testing.T) {
 		require.False(t, file.Exists, path)
 	}
 }
+
+// An untracked file in a directory the plan changes is the one to say, as
+// a new patch in files/; one elsewhere, or in an extra's, isn't.
+func TestUntrackedFilesInChangedPortsAreSaid(t *testing.T) {
+	capture := Capture{Untracked: []string{"textproc/jq/files/fix.diff", "notes.txt", "devel/oniguruma/files/x.diff"}}
+	plan := model.Plan{Targets: []model.PlanTarget{
+		{ID: "jq", Directory: "textproc/jq", Role: model.Changed},
+		{ID: "oniguruma", Directory: "devel/oniguruma", Role: model.Also},
+	}}
+	require.Equal(t, []string{"textproc/jq/files/fix.diff"}, UntrackedInChanged(capture, plan))
+}

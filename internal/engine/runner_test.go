@@ -1073,6 +1073,33 @@ func TestAGuestIsGivenTheDependencyArchivesAnEarlierGuestInstalled(t *testing.T)
 	data, err = os.ReadFile(given[0].Path)
 	require.NoError(t, err)
 	require.Equal(t, "rust's archive", string(data), "the guest's own, kept again")
+
+	// One whose file is gone is said, and its record dropped, where each
+	// check skipped it again in silence (Codex's gcc15 group update).
+	require.NoError(t, os.Remove(given[0].Path))
+	write(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 4\n"})
+	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	revision = capture.Revision
+	check()
+	job = provider.jobs[len(provider.jobs)-1]
+	require.False(t, slices.ContainsFunc(job.Installs, func(a buildenv.Archive) bool { return a.Port == "rust" }), "the gone archive isn't given")
+	var gone []string
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		runs, err := r.Runs(store.RunFilter{Branch: branch.ID})
+		if err != nil {
+			return err
+		}
+		events, err := r.RunEvents(runs[0].ID, 0, 1000)
+		for _, event := range events {
+			if event.Kind == GoneKind {
+				gone = append(gone, event.Message)
+			}
+		}
+		return err
+	}))
+	require.Len(t, gone, 1)
+	require.Contains(t, gone[0], "the archive kept of rust, "+rustDigest+", is gone, so its record is dropped")
 }
 
 func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {

@@ -53,8 +53,10 @@ func (e *Engine) keptArchive(ctx context.Context, digest string) (model.Archive,
 // keepArchive keeps an archive its build reported by digest: fetch writes
 // it into the store, where it is checked against the digest, made durable,
 // and only then recorded, which makes it ready for dependents (decision
-// 44). One kept already isn't fetched again.
-func (e *Engine) keepArchive(ctx context.Context, archive model.Archive, fetch func(path string) error) error {
+// 44). One kept already isn't fetched again. also, where given, records
+// what keeping it is for in the same transaction: a dependency's two
+// records were two commits (the SQL study's SQL-S4).
+func (e *Engine) keepArchive(ctx context.Context, archive model.Archive, fetch func(path string) error, also func(store.Tx) error) error {
 	if !strings.HasPrefix(archive.Digest, "sha256:") || !model.ValidArchiveName(archive.Name) {
 		return fmt.Errorf("an archive named %q with digest %q can't be kept", archive.Name, archive.Digest)
 	}
@@ -63,7 +65,10 @@ func (e *Engine) keepArchive(ctx context.Context, archive model.Archive, fetch f
 	} else if kept {
 		// One altered since it was kept is replaced by this build's.
 		if _, digest, err := sha256File(e.archivePath(archive.Digest)); err == nil && digest == archive.Digest {
-			return nil
+			if also == nil {
+				return nil
+			}
+			return e.Store.Update(ctx, e.Repository, also)
 		}
 	}
 	directory := e.ArchiveDirectory()
@@ -90,7 +95,12 @@ func (e *Engine) keepArchive(ctx context.Context, archive model.Archive, fetch f
 		return err
 	}
 	archive.Size, archive.KeptAt = size, e.now()
-	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return tx.KeepArchive(archive) })
+	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		if err := tx.KeepArchive(archive); err != nil || also == nil {
+			return err
+		}
+		return also(tx)
+	})
 }
 
 // pruneArchives forgets the archives kept before a time that no live
@@ -98,10 +108,10 @@ func (e *Engine) keepArchive(ctx context.Context, archive model.Archive, fetch f
 // what no record names that is older than it: a fetch that didn't
 // finish, or a file whose record never followed. It returns what it
 // forgot, and what stays kept.
-func (e *Engine) pruneArchives(ctx context.Context, before time.Time) (removed, kept []model.Archive, err error) {
+func (e *Engine) pruneArchives(ctx context.Context, before, dependenciesSince time.Time) (removed, kept []model.Archive, err error) {
 	if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		var err error
-		if removed, err = tx.PruneArchives(before); err != nil {
+		if removed, err = tx.PruneArchives(before, dependenciesSince); err != nil {
 			return err
 		}
 		kept, err = tx.Archives()
@@ -175,7 +185,7 @@ func (b *build) Keep(target model.TargetID, name string, fetch func(path string)
 	if !ok || result.Outcome != model.OutcomePassed || result.Archive == "" {
 		return fmt.Errorf("%s has no passed result naming an archive to keep", target)
 	}
-	return b.d.e.keepArchive(b.ctx, model.Archive{Digest: result.Archive, Name: name}, fetch)
+	return b.d.e.keepArchive(b.ctx, model.Archive{Digest: result.Archive, Name: name}, fetch, nil)
 }
 
 // KeepDependency keeps the archive a dependency of a target was installed
@@ -194,11 +204,8 @@ func (b *build) KeepDependency(port model.ActivePort, name string, fetch func(pa
 	if !b.consumed(port) {
 		return fmt.Errorf("%s wasn't reported active from %s", port.Name, port.Archive)
 	}
-	if err := b.d.e.keepArchive(b.ctx, model.Archive{Digest: port.Archive, Name: name}, fetch); err != nil {
-		return err
-	}
 	archive := model.DependencyArchive{Archive: model.Archive{Digest: port.Archive, Name: name, KeptAt: b.d.e.now()}, Port: port.Name, Environment: b.execution.Environment}
-	return b.d.e.Store.Update(b.ctx, b.d.e.Repository, func(tx store.Tx) error { return tx.KeepDependencyArchive(archive) })
+	return b.d.e.keepArchive(b.ctx, model.Archive{Digest: port.Archive, Name: name}, fetch, func(tx store.Tx) error { return tx.KeepDependencyArchive(archive) })
 }
 
 // consumed reports whether a port was reported active from an archive as

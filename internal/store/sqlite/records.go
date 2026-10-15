@@ -796,15 +796,25 @@ const openBranchArchives = "SELECT archive FROM (SELECT r.archive, ROW_NUMBER() 
 	"WHERE r.repository_id=? AND r.outcome='passed' AND r.archive<>'' AND b.state='open') WHERE newest=1"
 
 const unnamedArchive = "a.repository_id=? AND a.kept_at<? AND a.digest NOT IN (SELECT archive FROM (" + reusableBuilds + ")) " +
-	"AND a.digest NOT IN (" + openBranchArchives + ")"
+	"AND a.digest NOT IN (" + openBranchArchives + ") AND a.digest NOT IN (" + newestDependencies + ")"
+
+// newestDependencies are the archives a guest installed each port from, in
+// each environment, the newest of each, kept since a time: a dependency's
+// archive is named by no result, so each day's cleanup forgot it once it
+// was an hour old, and rust, built from source where MacPorts had no
+// archive for the release, was built again the next day (the rc9 full
+// stage). It lasts until cleanup.after, as a result's record does.
+const newestDependencies = "SELECT digest FROM (SELECT digest, kept_at, ROW_NUMBER() OVER (" +
+	"PARTITION BY port, provider, platform_os, platform_version, platform_architecture, developer_tools ORDER BY kept_at DESC, rowid DESC) AS newest " +
+	"FROM dependency_archives WHERE repository_id=?) WHERE newest=1 AND kept_at>=?"
 
 // PruneArchives forgets the unnamed archives and reads them back in the one
 // statement, which returns them in no order of its own.
-func (t *tx) PruneArchives(before time.Time) ([]model.Archive, error) {
+func (t *tx) PruneArchives(before, dependenciesSince time.Time) ([]model.Archive, error) {
 	if err := t.write(); err != nil {
 		return nil, err
 	}
-	pruned, err := t.archives("DELETE FROM archives AS a WHERE "+unnamedArchive+" RETURNING digest, name, size, kept_at", t.repo, millis(before), t.repo, t.repo)
+	pruned, err := t.archives("DELETE FROM archives AS a WHERE "+unnamedArchive+" RETURNING digest, name, size, kept_at", t.repo, millis(before), t.repo, t.repo, t.repo, millis(dependenciesSince))
 	slices.SortFunc(pruned, func(a, b model.Archive) int { return strings.Compare(a.Digest, b.Digest) })
 	return pruned, err
 }
@@ -845,6 +855,16 @@ func (t *tx) KeepDependencyArchive(archive model.DependencyArchive) error {
 	_, err := t.exec("INSERT INTO dependency_archives(repository_id, digest, port, provider, platform_os, platform_version, platform_architecture, developer_tools, kept_at) "+
 		"VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT DO UPDATE SET kept_at=excluded.kept_at",
 		t.repo, archive.Digest, archive.Port, archive.Environment.Provider, p.OS, p.Version, p.Architecture, archive.Environment.DeveloperTools, millis(archive.KeptAt))
+	return err
+}
+
+// ForgetDependencyArchive drops the record that a guest in an environment
+// installed a port from a kept archive; the archive's own record stays, for
+// a result that may name it.
+func (t *tx) ForgetDependencyArchive(archive model.DependencyArchive) error {
+	p := archive.Environment.Platform
+	_, err := t.exec("DELETE FROM dependency_archives WHERE repository_id=? AND digest=? AND port=? AND provider=? AND platform_os=? AND platform_version=? AND platform_architecture=? AND developer_tools=?",
+		t.repo, archive.Digest, archive.Port, archive.Environment.Provider, p.OS, p.Version, p.Architecture, archive.Environment.DeveloperTools)
 	return err
 }
 

@@ -220,11 +220,16 @@ type Tx interface {
 	// result names (decisions 36 and 44, D6): the newest passed build of
 	// each target in each environment that reuse may choose, and an open
 	// branch's newest passed result of each target in each environment.
-	// It returns what it forgot, whose files go next.
-	PruneArchives(before time.Time) ([]model.Archive, error)
+	// The newest archive a guest installed each port from, in each
+	// environment, kept since dependenciesSince, stays too. It returns
+	// what it forgot, whose files go next.
+	PruneArchives(before, dependenciesSince time.Time) ([]model.Archive, error)
 	// KeepDependencyArchive records a kept archive as one a guest in an
 	// environment installed a port from; the archive must be kept.
 	KeepDependencyArchive(archive model.DependencyArchive) error
+	// ForgetDependencyArchive drops that record, as for an archive whose
+	// file is gone; the archive's own record stays.
+	ForgetDependencyArchive(archive model.DependencyArchive) error
 	// PruneHistory removes what up to limit branches that ended before a
 	// time recorded of their checks, taken in ID order past after, sparing
 	// what reuse may still choose and each branch's newest run (D6). It

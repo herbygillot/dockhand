@@ -117,6 +117,11 @@ true, it runs that baseline by itself.`,
 				}
 			}
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), what)
+			// A file the check leaves out in a port it builds is said with
+			// a mark, and how to take it in (Codex's gcc15 group update).
+			for _, path := range engine.UntrackedInChanged(capture, proposed) {
+				fmt.Fprintf(out, "! %s isn't tracked, so this check builds without it: --include %s takes it into this check, and git add %s keeps it\n", path, path, path)
+			}
 			if len(capture.Untracked) > 0 {
 				fmt.Fprintf(out, "Left out, not tracked: %s (--include adds one)\n", strings.Join(capture.Untracked, ", "))
 				// A Portfile written by hand in a new port's directory is
@@ -567,9 +572,9 @@ func (j *journal) show(ctx context.Context) {
 		switch event.Kind {
 		case "progress", "target.result", "execution.retry", "execution.state":
 			fmt.Fprintf(j.out, "  %s\n", event.Message)
-		case engine.AlteredKind:
-			// A kept archive found altered is marked, where it was in the
-			// journal alone (the rc8 full stage's D-T1).
+		case engine.AlteredKind, engine.GoneKind:
+			// A kept archive found altered, or gone, is marked, where it
+			// was in the journal alone (the rc8 full stage's D-T1).
 			fmt.Fprintf(j.out, "  ! %s\n", event.Message)
 		}
 	}
@@ -782,7 +787,7 @@ func checkResult(ctx context.Context, e *engine.Engine, run model.Run) (checkJSO
 		return result, err
 	}
 	for _, event := range events {
-		if event.Kind == engine.AlteredKind {
+		if event.Kind == engine.AlteredKind || event.Kind == engine.GoneKind {
 			result.Altered = append(result.Altered, event.Message)
 		}
 	}

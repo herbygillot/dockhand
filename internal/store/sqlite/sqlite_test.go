@@ -721,11 +721,20 @@ func TestADependencysArchivesAreFoundByPortAndGoWithTheirArchives(t *testing.T) 
 	require.Equal(t, []string{"rust-1.91.0_0.darwin_27.arm64.tbz2"}, names(other, "rust"))
 	require.Empty(t, names(tahoe))
 
+	// Each port's newest in each environment lasts until cleanup.after,
+	// though no result names it: rust built from source was built again
+	// the next day (the rc9 full stage).
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
-		_, err := tx.PruneArchives(at.Add(90 * time.Minute))
+		_, err := tx.PruneArchives(at.Add(90*time.Minute), at)
 		return err
 	}))
-	require.Equal(t, []string{"rust-1.91.0_1.darwin_25.arm64.tbz2"}, names(tahoe, "rust", "cargo"), "pruned with their archives")
+	require.Equal(t, []string{"cargo-1.91.0_0.darwin_25.arm64.tbz2", "rust-1.91.0_1.darwin_25.arm64.tbz2"}, names(tahoe, "rust", "cargo"), "the older rust's go")
+	require.Equal(t, []string{"rust-1.91.0_0.darwin_27.arm64.tbz2"}, names(other, "rust"))
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		_, err := tx.PruneArchives(at.Add(90*time.Minute), at.Add(90*time.Minute))
+		return err
+	}))
+	require.Equal(t, []string{"rust-1.91.0_1.darwin_25.arm64.tbz2"}, names(tahoe, "rust", "cargo"), "pruned with their archives once past cleanup.after")
 }
 
 // An archive is forgotten once no live result names it (D6): an open
@@ -779,7 +788,7 @@ func TestArchivesGoWhenNoLiveResultNamesThem(t *testing.T) {
 		t.Helper()
 		var digests []string
 		require.NoError(t, f.update(t, func(tx store.Tx) error {
-			pruned, err := tx.PruneArchives(at.Add(time.Hour))
+			pruned, err := tx.PruneArchives(at.Add(time.Hour), at.Add(time.Hour))
 			for _, archive := range pruned {
 				digests = append(digests, archive.Digest)
 			}
@@ -1191,7 +1200,7 @@ func TestHistoryIsReadThroughIndexes(t *testing.T) {
 		args  []any
 		index string
 	}{
-		{"SELECT digest FROM archives a WHERE " + unnamedArchive, []any{f.repo, 1, f.repo, f.repo}, "result_target (repository_id=?)"},
+		{"SELECT digest FROM archives a WHERE " + unnamedArchive, []any{f.repo, 1, f.repo, f.repo, f.repo, 1}, "result_target (repository_id=?)"},
 		{reusableQuery, reusable, "result_target (repository_id=? AND target_id=?)"},
 		{revisionsQuery, []any{f.repo, "br_1"}, "revision_branch (repository_id=? AND branch_id=?)"},
 		{referredQuery, []any{f.repo, "clone"}, "execution_ref (repository_id=? AND provider_ref=?)"},

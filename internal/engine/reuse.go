@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -269,17 +270,34 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 			}
 		}
 	}
+	// The archives' records are read with the dependencies', in one
+	// view (the SQL study's SQL-O5).
 	var kept []model.DependencyArchive
+	recorded := map[string]model.Archive{}
 	if err := d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
 		var err error
-		kept, err = r.DependencyArchives(environment, ports)
-		return err
+		if kept, err = r.DependencyArchives(environment, ports); err != nil {
+			return err
+		}
+		for _, archive := range kept {
+			if a, err := r.Archive(archive.Digest); err == nil {
+				recorded[archive.Digest] = a
+			} else if !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
+		return nil
 	}); err != nil {
 		return nil
 	}
 	var installs []buildenv.Archive
 	for _, archive := range kept {
-		if _, whole, err := d.e.keptArchive(ctx, archive.Digest); err != nil || !whole {
+		// One whose file is gone is said, and its record dropped, where
+		// each check skipped it again in silence (Codex's gcc15 group
+		// update, 2026-10-07).
+		a, ok := recorded[archive.Digest]
+		if info, err := os.Stat(d.e.archivePath(archive.Digest)); !ok || err != nil || info.Size() != a.Size {
+			_ = d.gone(ctx, archive)
 			continue
 		}
 		if _, digest, err := sha256File(d.e.archivePath(archive.Digest)); err != nil || digest != archive.Digest {
@@ -293,6 +311,22 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 	}
 	return installs
 }
+
+// gone says a dependency's kept archive whose file is missing, or isn't the
+// size it was kept at, and drops its record, so no later check meets it.
+func (d *driver) gone(ctx context.Context, archive model.DependencyArchive) error {
+	return d.fenced(ctx, func(tx store.Tx) error {
+		if err := tx.ForgetDependencyArchive(archive); err != nil {
+			return err
+		}
+		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: GoneKind, Level: model.LevelInfo,
+			Message: fmt.Sprintf("%s: the archive kept of %s, %s, is gone, so its record is dropped, and the guest gets it as MacPorts would, from its archives or a build", d.run.Name(), archive.Port, archive.Digest)})
+		return err
+	})
+}
+
+// GoneKind is the event a dependency's kept archive that's gone is said by.
+const GoneKind = "archive.gone"
 
 // AlteredKind is the event a kept archive changed since it was kept is
 // said by: check prints it, and its --json result carries it.

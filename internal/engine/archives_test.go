@@ -31,12 +31,12 @@ func TestAnArchiveIsKeptOnlyWholeAndOnce(t *testing.T) {
 		}
 	}
 
-	require.ErrorContains(t, e.keepArchive(t.Context(), archive, fetch([]byte("damaged"))), "arrived as sha256:")
+	require.ErrorContains(t, e.keepArchive(t.Context(), archive, fetch([]byte("damaged")), nil), "arrived as sha256:")
 	_, kept, err := e.keptArchive(t.Context(), archive.Digest)
 	require.NoError(t, err)
 	require.False(t, kept, "a damaged archive isn't kept")
 
-	require.NoError(t, e.keepArchive(t.Context(), archive, fetch(content)))
+	require.NoError(t, e.keepArchive(t.Context(), archive, fetch(content), nil))
 	found, kept, err := e.keptArchive(t.Context(), archive.Digest)
 	require.NoError(t, err)
 	require.True(t, kept)
@@ -49,7 +49,7 @@ func TestAnArchiveIsKeptOnlyWholeAndOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "nothing is left of the fetches but the archive")
 
-	require.NoError(t, e.keepArchive(t.Context(), archive, fetch(content)))
+	require.NoError(t, e.keepArchive(t.Context(), archive, fetch(content), nil))
 	require.Equal(t, 2, fetches, "one kept already isn't fetched again")
 
 	// A record whose file is gone isn't kept: it is fetched again.
@@ -57,14 +57,14 @@ func TestAnArchiveIsKeptOnlyWholeAndOnce(t *testing.T) {
 	_, kept, err = e.keptArchive(t.Context(), archive.Digest)
 	require.NoError(t, err)
 	require.False(t, kept)
-	require.NoError(t, e.keepArchive(t.Context(), archive, fetch(content)))
+	require.NoError(t, e.keepArchive(t.Context(), archive, fetch(content), nil))
 	require.Equal(t, 3, fetches)
 	require.FileExists(t, e.archivePath(archive.Digest))
 
 	for _, name := range []string{"", "..", "../libharbor.tbz2", filepath.Join("devel", "libharbor.tbz2")} {
 		named := archive
 		named.Name = name
-		require.Error(t, e.keepArchive(t.Context(), named, fetch(content)), "%q isn't a file's name", name)
+		require.Error(t, e.keepArchive(t.Context(), named, fetch(content), nil), "%q isn't a file's name", name)
 	}
 	require.Equal(t, 3, fetches, "nothing is fetched under a name that isn't a file's")
 }
