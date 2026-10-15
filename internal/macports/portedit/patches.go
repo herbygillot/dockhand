@@ -36,8 +36,10 @@ func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *
 		return nil
 	}
 	var archives []string
+	// MacPorts patches what it extracted, which a distfile extract.only
+	// leaves out isn't.
 	for _, download := range result.Downloads {
-		if download.Path != "" {
+		if download.Path != "" && info.Extracts(download.Name) {
 			archives = append(archives, download.Path)
 		}
 	}

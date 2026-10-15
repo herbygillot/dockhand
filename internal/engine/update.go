@@ -1216,7 +1216,7 @@ func (e *Engine) readPairs(ctx context.Context, pairs []editprep.ArchivePair, ba
 		}
 		var readings [2]project.Reading
 		for i, archive := range []distfetch.Download{pair.Previous, pair.Next} {
-			reading, err := e.readings().Read(ctx, archive.Path, archive.SHA256, project.Spec{Subdirectory: macports.SourceSubdirectory(ports[i].Options["worksrcdir"])})
+			reading, err := e.readDistfile(ctx, ports[i], archive.Name, archive.Path, archive.SHA256, project.Spec{Subdirectory: macports.SourceSubdirectory(ports[i].Options["worksrcdir"])})
 			// Named for the distfile, not the temporary file it was
 			// fetched to: "ships source-906474379 is a macOS installer
 			// package" (field testing at 5eb101a3, 1password-cli).

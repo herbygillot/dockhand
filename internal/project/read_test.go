@@ -1,6 +1,8 @@
 package project
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -303,4 +305,20 @@ func TestAReadingKnowsWhichCargoPackagesArePrograms(t *testing.T) {
 	require.True(t, found.CargoProgram("."))
 	require.False(t, found.CargoProgram("crates/mise-dotenv"))
 	require.True(t, found.CargoProgram("crates/tool"), "its src/bin")
+}
+
+// A file that isn't an archive is read as the one file it is: kept where
+// an archive's reading would keep it, as a license file, and nothing kept
+// otherwise, as for a script (field testing at 285a496f, bashunit).
+func TestAFileThatIsntAnArchiveIsReadAsItself(t *testing.T) {
+	dir := t.TempDir()
+	script, license := filepath.Join(dir, "bashunit"), filepath.Join(dir, "LICENSE")
+	require.NoError(t, os.WriteFile(script, []byte("#!/bin/bash\n"), 0o644))
+	require.NoError(t, os.WriteFile(license, []byte("MIT License\n"), 0o644))
+	reading, err := ReadFile(script, "bashunit")
+	require.NoError(t, err)
+	require.Equal(t, Reading{Layout: Flat, Files: map[string]File{}}, reading)
+	reading, err = ReadFile(license, "LICENSE")
+	require.NoError(t, err)
+	require.Equal(t, Reading{Layout: Flat, Files: map[string]File{"LICENSE": {Data: []byte("MIT License\n")}}}, reading)
 }

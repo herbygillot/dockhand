@@ -84,6 +84,12 @@ func (p *fakePlanner) add(tree model.ObjectID, port plannedPort) {
 		// later, its tarball's times differ, and the first port's
 		// checksum no longer matches what's served (CI at 22336157).
 		data, made := p.served[name]
+		if script, raw := port.archives[name][""]; raw && !made {
+			// A file served as it is, no archive: a script a port copies
+			// into place.
+			data, made = []byte(script), true
+			p.served[name] = data
+		}
 		if !made {
 			path := writeTarball(p.t, p.t.TempDir(), strings.TrimSuffix(name, ".tar.gz"), port.archives[name])
 			var err error
@@ -822,6 +828,35 @@ func TestAnArchiveNoLongerFetchedIsSaid(t *testing.T) {
 		Rule: assess.SourceRemoved, Class: model.Introduced, Source: "extra-*.tar.gz"})
 	require.Contains(t, CoverageWords(result), "not compared: extra-1.0.tar.gz")
 	require.Contains(t, CoverageWords(result), "Compared LICENSE", "the one archive compared reads as a port of one archive's")
+}
+
+// A distfile MacPorts doesn't extract is read as the file it is, and
+// compared as one, holding nothing for being no archive: bashunit fetches
+// a script, with extract.only empty, which read as "archive/tar: invalid
+// tar header" and held its update (field testing at 285a496f).
+func TestADistfileMacPortsDoesntExtractIsComparedAsAFile(t *testing.T) {
+	t.Parallel()
+	p := newPlanner(t)
+	only := map[string]string{"extract.only": ""}
+	p.add("base", plannedPort{info: macports.PortInfo{Name: "bashunit", Options: only}, archives: map[string]map[string]string{"bashunit": {"": "#!/bin/bash\necho 0.51.0\n"}}})
+	p.add("candidate", plannedPort{info: macports.PortInfo{Name: "bashunit", Options: only}, archives: map[string]map[string]string{"bashunit": {"": "#!/bin/bash\necho 0.52.0\n"}}})
+	e := &Engine{}
+	e.options.Readings = t.TempDir()
+	var infos [2]macports.PortInfo
+	var plans [2][]macports.Distfile
+	for i, tree := range []model.ObjectID{"base", "candidate"} {
+		var err error
+		infos[i], plans[i], err = p.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/bashunit", "bashunit")
+		require.NoError(t, err)
+	}
+	pairs, unpaired, fetched, problem, _ := e.readPlans(t.Context(), infos, plans, true, t.TempDir())
+	require.Empty(t, problem)
+	require.Empty(t, unpaired)
+	require.Len(t, pairs, 1)
+	require.Equal(t, project.Flat, pairs[0].After.Layout)
+	require.Empty(t, fetched, "what MacPorts doesn't extract isn't patched")
+	result := assess.Assess(assess.Input{Port: infos[1], Base: infos[0], Pairs: pairs})
+	require.False(t, result.Held())
 }
 
 // An update of a Git-fetched port compares its commits, as a revision's

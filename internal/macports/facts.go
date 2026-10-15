@@ -42,6 +42,18 @@ func (p PortInfo) FetchesNothing() (bool, error) {
 	return !slices.ContainsFunc(files, func(file string) bool { return file != "" }), err
 }
 
+// Extracts reports whether MacPorts extracts a distfile, by its name: one
+// extract.only names, as it does each distfile unless a Portfile says
+// otherwise. A port whose distfile is a single script it copies into
+// place, as bashunit's, empties extract.only, and the file isn't an
+// archive (field testing at 285a496f); the cargo PortGroup names only the
+// project's archive, leaving the crates for its own step. A distfile is
+// taken as extracted where extract.only wasn't read.
+func (p PortInfo) Extracts(name string) bool {
+	only, set, err := p.optionList("extract.only")
+	return err != nil || !set || slices.Contains(only, name)
+}
+
 // OwnVersion reports a port with no release upstream to follow: it
 // fetches nothing, and its livecheck reads no version, as a _select
 // port's. Its version is MacPorts' own. False where either fact wasn't

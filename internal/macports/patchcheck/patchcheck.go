@@ -61,7 +61,9 @@ type Result struct {
 
 // Port checks a port's patches against archives as MacPorts would apply
 // them, by the port as evaluated: its worksrcdir, extract.rename,
-// patch.dir, and patch.pre_args. A patch.dir that leaves the source
+// patch.dir, and patch.pre_args, then patch.args, which MacPorts' patch
+// command line gives after them, so herdr's patch.args -p1 is the strip
+// level (field testing at 5eb101a3). A patch.dir that leaves the source
 // directory can't be modelled, so each patch is unchecked there.
 func Port(ctx context.Context, info macports.PortInfo, archives []string, patches []Patch) ([]Result, error) {
 	dir := info.Options["patch.dir"]
@@ -73,6 +75,8 @@ func Port(ctx context.Context, info macports.PortInfo, archives []string, patche
 		return results, nil
 	}
 	pre, _ := syntax.ListValues(info.Options["patch.pre_args"])
+	args, _ := syntax.ListValues(info.Options["patch.args"])
+	pre = append(pre, args...)
 	rename, err := info.Bool("extract.rename")
 	if err != nil {
 		return nil, err
@@ -296,7 +300,12 @@ func targets(data []byte, strip int) []string {
 // keyed by their path relative to the source directory.
 func extract(ctx context.Context, request Request, wanted map[string]bool, directory string) error {
 	worksrc := strings.Trim(request.Worksrcdir, "/")
-	_, subdir, _ := strings.Cut(worksrc, "/")
+	// The project's directory below an archive's top: none for a GOPATH
+	// worksrcdir, which a renamed top directory is moved to whole, as
+	// golang's moves maddy-0.9.6 to gopath/src/github.com/foxcpp/maddy
+	// with extract.rename (field testing at a9cef1f8: its patch read as
+	// finding no file to patch, and built).
+	subdir := macports.SourceSubdirectory(worksrc)
 	// A source directory no archive holds is one a PortGroup's
 	// post-extract moves an archive's top directory to, as golang's moves
 	// lima-2.2.1 to gopath/src/github.com/lima-vm/lima: it's read as that

@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -176,4 +177,33 @@ func TestAPatchTheSourceAlreadyHoldsIsMerged(t *testing.T) {
 	require.Equal(t, Result{Name: "merged.diff", Checked: true, Merged: true, Detail: "is already in the source: it applies in reverse"}, results[0])
 	require.False(t, results[1].Merged)
 	require.False(t, results[1].Applies)
+}
+
+// A GOPATH source directory with extract.rename is the archive's top
+// directory, renamed and moved there whole, as golang's moves maddy's
+// (field testing at a9cef1f8: maddy's patch-build.sh.diff, written
+// ./build.sh, read as finding no file to patch).
+func TestARenamedGOPATHSourceIsTheArchivesTopDirectory(t *testing.T) {
+	archive := sourceArchive(t, map[string]string{"maddy-0.9.6/build.sh": "one\ntwo\nthree\n"})
+	patch := strings.ReplaceAll(good, "dir/a.txt", "./build.sh")
+	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "gopath/src/github.com/foxcpp/maddy", Rename: true, PreArgs: []string{"-t", "-N", "-p0"},
+		Patches: []Patch{{Name: "patch-build.sh.diff", Data: []byte(patch)}}})
+	require.NoError(t, err)
+	require.True(t, results[0].Applies, results[0].Detail)
+}
+
+// patch.args follows patch.pre_args on MacPorts' patch command line, so
+// its -p1 is the strip level a Git-style patch applies at, as herdr's
+// does (field testing at 5eb101a3: applied at -p0, "No file to patch").
+func TestPatchArgsStripLevelIsMacPorts(t *testing.T) {
+	archive := sourceArchive(t, map[string]string{"herdr-0.9.5/src/update.rs": "one\ntwo\nthree\n"})
+	patch := strings.ReplaceAll(strings.ReplaceAll(good, "--- dir/a.txt", "--- a/src/update.rs"), "+++ dir/a.txt", "+++ b/src/update.rs")
+	info := macports.PortInfo{Options: map[string]string{"worksrcdir": "herdr-0.9.5", "extract.rename": "1", "patch.pre_args": "-t -N -p0", "patch.args": "-p1"}}
+	results, err := Port(t.Context(), info, []string{archive}, []Patch{{Name: "patch-macports-update.diff", Data: []byte(patch)}})
+	require.NoError(t, err)
+	require.True(t, results[0].Applies, results[0].Detail)
+	delete(info.Options, "patch.args")
+	results, err = Port(t.Context(), info, []string{archive}, []Patch{{Name: "patch-macports-update.diff", Data: []byte(patch)}})
+	require.NoError(t, err)
+	require.False(t, results[0].Applies, "at -p0 alone it finds no file")
 }

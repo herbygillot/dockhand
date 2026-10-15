@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"maps"
+	"os"
 	"path"
 	"regexp"
 	"slices"
@@ -164,6 +165,30 @@ func wanted(rest, root string) bool {
 		rest = below
 	}
 	return !strings.Contains(rest, "/") && (BuildFile(rest) || Manifest(rest) || rest == CargoLock)
+}
+
+// ReadFile reads a file that isn't an archive, as a distfile MacPorts
+// doesn't extract is, as the one file it is, by name: a flat reading that
+// keeps it where a reading of an archive would, as a license or build
+// file, and keeps nothing otherwise, as for bashunit's script (field
+// testing at 285a496f, where reading it as a tar was refused and held
+// the update).
+func ReadFile(filename, name string) (Reading, error) {
+	reading := Reading{Layout: Flat, Files: map[string]File{}}
+	if !wanted(name, "") {
+		return reading, nil
+	}
+	file, err := os.Open(filename)
+	if err != nil {
+		return Reading{}, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, FileLimit+1))
+	if err != nil {
+		return Reading{}, err
+	}
+	reading.Files[name] = File{Data: data[:min(len(data), FileLimit)], Truncated: len(data) > FileLimit}
+	return reading, nil
 }
 
 // Read reads a project from an archive: which layout it has, where its

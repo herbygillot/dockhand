@@ -173,3 +173,17 @@ func TestWhatAPortFetchesAndWhetherItsLivecheckReadsAVersion(t *testing.T) {
 	_, err := PortInfo{OptionErrors: map[string]string{"livecheck.type": "boom"}}.LivecheckReadsVersion()
 	require.Error(t, err, "an unread livecheck isn't one that reads nothing")
 }
+
+// A distfile is extracted where extract.only names it, as it names each
+// unless a Portfile says otherwise: bashunit's empty extract.only extracts
+// nothing, and cargo's names the project's archive and not its crates.
+// One whose extract.only wasn't read is taken as extracted.
+func TestADistfileIsExtractedWhereExtractOnlyNamesIt(t *testing.T) {
+	t.Parallel()
+	require.False(t, PortInfo{Options: map[string]string{"extract.only": ""}}.Extracts("bashunit"))
+	cargo := PortInfo{Options: map[string]string{"extract.only": "herdr-0.9.5.tar.gz"}}
+	require.True(t, cargo.Extracts("herdr-0.9.5.tar.gz"))
+	require.False(t, cargo.Extracts("adler2-2.0.1.crate"))
+	require.True(t, PortInfo{}.Extracts("demo-1.0.tar.gz"), "not read")
+	require.True(t, PortInfo{Options: map[string]string{"extract.only": "x"}, OptionErrors: map[string]string{"extract.only": "can't read"}}.Extracts("demo-1.0.tar.gz"), "unsettled")
+}

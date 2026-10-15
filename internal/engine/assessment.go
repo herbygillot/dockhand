@@ -398,10 +398,16 @@ func (e *Engine) patchesFor(ctx context.Context, request patchRequest) []assess.
 	var missed []macports.Distfile
 	if request.plan == nil {
 		for _, name := range slices.Sorted(maps.Keys(request.fetched)) {
-			paths = append(paths, request.fetched[name])
+			if infos[1].Extracts(name) {
+				paths = append(paths, request.fetched[name])
+			}
 		}
 	}
 	for _, file := range request.plan {
+		if !infos[1].Extracts(file.Name) {
+			// MacPorts patches what it extracted, which this isn't.
+			continue
+		}
 		if path, ok := request.fetched[file.Name]; ok {
 			paths = append(paths, path)
 		} else {
@@ -566,6 +572,18 @@ func (e *Engine) sourceArchiver() (SourceArchiver, error) {
 	return e.discovery(ports), nil
 }
 
+// readDistfile reads a distfile as MacPorts treats it: one it extracts as
+// the archive of a project, kept by its content's digest (project.Cache),
+// and one it doesn't, as bashunit's script, as the file it is
+// (project.ReadFile), which an archive's reader refused as no tar (field
+// testing at 285a496f).
+func (e *Engine) readDistfile(ctx context.Context, info macports.PortInfo, name, filename, digest string, spec project.Spec) (project.Reading, error) {
+	if !info.Extracts(name) {
+		return project.ReadFile(filename, name)
+	}
+	return e.readings().Read(ctx, filename, digest, spec)
+}
+
 // readPlans reads the archives each version's fetch plan names, paired by
 // the port's source set (macports.MatchSources): one only the revision
 // names is read beside nothing, as new, and one only the base names, or
@@ -648,7 +666,7 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 			return nil, nil, nil, fmt.Sprintf("%s archives couldn't be fetched: %v", which, err), transient(err)
 		}
 		for _, archive := range fetched {
-			reading, err := cache.Read(ctx, archive.Path, archive.Sum.SHA256, s.spec)
+			reading, err := e.readDistfile(ctx, s.info, archive.Name, archive.Path, archive.Sum.SHA256, s.spec)
 			if errors.Is(err, archivefile.ErrBinary) {
 				return nil, nil, nil, binaryPackage + archive.Name + ", which is a binary package, with no source to compare", false
 			}
@@ -656,7 +674,7 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 				return nil, nil, nil, fmt.Sprintf("reading %s: %v", archive.Name, err), false
 			}
 			s.readings[archive.Name] = reading
-			if i == 1 {
+			if i == 1 && s.info.Extracts(archive.Name) {
 				fetchedNow[archive.Name] = archive.Path
 			}
 		}
