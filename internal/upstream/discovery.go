@@ -111,6 +111,9 @@ type Result struct {
 	// RetryAt is when a rate limit that kept the port from being checked
 	// lifts; zero where none did.
 	RetryAt time.Time
+	// Unpublished is an update whose release has none of its files yet,
+	// for a port that fetches them (askAssets): newer, but not ready.
+	Unpublished bool
 }
 
 type Service struct {

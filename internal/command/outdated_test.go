@@ -108,6 +108,14 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	var out bytes.Buffer
 	require.NoError(t, writeOutdated(t.Context(), nil, &out, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{own("helm_select"), own("kubectl_select")}}, true))
 	require.Equal(t, "  PORT             NOW   NEWEST   DOCKHAND CAN\n  helm_select      0.1   —        nothing; it fetches nothing here, and no livecheck reads its version\n  kubectl_select   0.1   —        nothing; it fetches nothing here, and no livecheck reads its version\nNone of 2 ports has a newer release, at master 1bb30d5 · 2 have no release to look for\n", out.String())
+
+	// A newer release whose files aren't published yet is said as not
+	// ready, as update would refuse it, and isn't counted as newer (field
+	// testing at 43949b89, browsh 1.8.3).
+	unready := engine.OutdatedPort{Port: "browsh", Current: "1.8.2", Newest: "1.8.3", Outdated: true, Unpublished: "the release of v1.8.3 has no files yet, which update fetches; it's not ready"}
+	notReady := "  PORT     NOW     NEWEST   DOCKHAND CAN\n  browsh   1.8.2   1.8.3    nothing yet: the release of v1.8.3 has no files yet, which update fetches; it's not ready\n"
+	require.Equal(t, notReady+"browsh has a newer release, not ready yet, at master 1bb30d5\n", said(unready))
+	require.Equal(t, notReady+"None of 2 ports has a newer release, at master 1bb30d5 · 1 has a release not ready yet\n", said(unready, current("jq")))
 }
 
 func TestOutdatedThenUpdateOutdated(t *testing.T) {
@@ -194,6 +202,9 @@ func TestUpdateOutdatedLeavesAnUncertainPortForALook(t *testing.T) {
 	require.Equal(t, "5.0", dig(t, yq, "newest"))
 	require.Equal(t, []any{map[string]any{"tag": "v5.0", "version": "5.0", "source": "5.0", "predates": "v4.44.1"}}, dig(t, yq, "uncertain"))
 	require.Nil(t, dig(t, result.Result, "ports", 0, "uncertain"), "absent for a port outdated for sure")
+	require.Equal(t, "uncertain", dig(t, yq, "class"))
+	require.Equal(t, "newer", dig(t, result.Result, "ports", 0, "class"))
+	require.Equal(t, "unchecked", dig(t, result.Result, "ports", 1, "class"))
 }
 
 // At a terminal, outdated shows how many ports are looked up on a line it

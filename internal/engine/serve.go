@@ -810,10 +810,10 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	var names, uncertain []string
 	setAside := map[string][]string{}
 	for _, port := range found.Ports {
-		switch {
-		case port.Outdated:
+		switch port.Class() {
+		case OutdatedNewer:
 			names = append(names, port.Port)
-		case len(port.Uncertain) > 0:
+		case OutdatedUncertain:
 			uncertain = append(uncertain, port.Port)
 			for _, aside := range port.Uncertain {
 				setAside[port.Port] = append(setAside[port.Port], aside.Tag)

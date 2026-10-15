@@ -90,7 +90,9 @@ update --outdated --mine starts on them.`,
 func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report engine.OutdatedReport, all bool) error {
 	table := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(table, "  PORT\tNOW\tNEWEST\tDOCKHAND CAN")
-	newer, unknown, uncertain, moved, own := 0, 0, 0, 0, 0
+	summary := report.Summary()
+	newer, unknown, uncertain, moved, own := summary[engine.OutdatedNewer], summary[engine.OutdatedUnchecked], summary[engine.OutdatedUncertain], summary[engine.OutdatedMoved], summary[engine.OutdatedOwnVersion]
+	unready := summary[engine.OutdatedUnpublished]
 	// Where no port could be checked, as offline, each says why, and the
 	// command fails: "none has a newer release" would be a guess (the M1's
 	// quick stage, D-N1, 2026-10-03).
@@ -121,31 +123,30 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	}
 	for _, port := range report.Ports {
 		folded := port.With != "" && listed[port.With]
+		class := port.Class()
 		switch {
-		case port.OwnVersion:
-			own++
+		case class == engine.OutdatedOwnVersion:
 			if all {
 				fmt.Fprintf(table, "  %s\t%s\t—\tnothing; it fetches nothing here, and no livecheck reads its version\n", port.Port, orDash(port.Current))
 			}
-		case port.Moved != nil:
+		case class == engine.OutdatedMoved:
 			// A port pinned to a commit of a branch that has moved on is
 			// behind, and the version to give the commit is a person's.
-			moved++
 			fmt.Fprintf(table, "  %s\t%s\t%s?\tedit %s by hand: its %s names a newer commit than the one it pins\n", port.Port, port.Current, port.Newest, port.Port, port.Moved.Branch)
-		case port.Problem != "":
-			unknown++
+		case class == engine.OutdatedUnchecked:
 			if all || none {
 				fmt.Fprintf(table, "  %s\t%s\t?\tcouldn't check: %s\n", port.Port, orDash(port.Current), strings.ReplaceAll(port.Problem, "\n", "; "))
 			}
-		case len(port.Uncertain) > 0:
+		case class == engine.OutdatedUncertain:
 			// Neither current nor outdated for sure, so it's listed for
 			// a look, with the update that takes it.
-			uncertain++
 			fmt.Fprintf(table, "  %s\t%s\t%s?\tupdate %s %s after a look: %s\n", port.Port, port.Current, port.Newest, port.Port, port.Uncertain[0].Source, setAsideWords(port.Uncertain))
-		case port.Outdated && folded:
-			newer++
-		case port.Outdated:
-			newer++
+		case class == engine.OutdatedUnpublished:
+			// Newer, but update would refuse it until its release has
+			// its files (field testing at 43949b89, browsh).
+			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing yet: %s\n", port.Port, port.Current, port.Newest, port.Unpublished)
+		case class == engine.OutdatedNewer && folded:
+		case class == engine.OutdatedNewer:
 			can := "update"
 			open, err := e.BranchesChanging(ctx, port.Port)
 			if err != nil {
@@ -169,7 +170,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing; it is current%s\n", port.Port, port.Current, port.Newest, with(port.Port))
 		}
 	}
-	if newer > 0 || uncertain > 0 || moved > 0 || all || none {
+	if newer > 0 || uncertain > 0 || moved > 0 || unready > 0 || all || none {
 		table.Flush()
 	}
 	if none {
@@ -177,7 +178,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	}
 	ports, master := prose.Plural(len(report.Ports), "port"), engine.Short(report.Master)
 	var line string
-	alone := len(report.Ports) == 1 && newer == 0 && unknown == 0
+	alone := len(report.Ports) == 1 && newer == 0 && unknown == 0 && unready == 0
 	// What couldn't be checked leads, and the result is the rest's, which
 	// it can't stand for: "None of 4 ports has a newer release" was said
 	// where the 2 it couldn't check were due (the rc6 full stage, D-N4).
@@ -191,6 +192,9 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		line = fmt.Sprintf("Of the %s, none has a newer release, at master %s", ports, master)
 	case unknown > 0:
 		line = fmt.Sprintf("Of the %s, %d %s a newer release, at master %s", ports, newer, map[bool]string{true: "has", false: "have"}[newer == 1], master)
+	case len(report.Ports) == 1 && unready == 1:
+		line = fmt.Sprintf("%s has a newer release, not ready yet, at master %s", report.Ports[0].Port, master)
+		unready = 0
 	case alone && own == 1:
 		line = fmt.Sprintf("%s has no release to look for, at master %s: it fetches nothing here, and no livecheck reads its version", report.Ports[0].Port, master)
 	case alone && uncertain == 0:
@@ -206,6 +210,12 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	}
 	if uncertain > 0 && !alone {
 		line += fmt.Sprintf(" · %d may have one, for a look", uncertain)
+	}
+	switch {
+	case unready == 1:
+		line += " · 1 has a release not ready yet"
+	case unready > 1:
+		line += fmt.Sprintf(" · %d have releases not ready yet", unready)
 	}
 	switch {
 	case moved == 1:

@@ -612,6 +612,11 @@ type outdatedPortJSON struct {
 	// Moved is, for a port that tracks a branch, the branch and the newer
 	// commit it names than the one the port pins.
 	Moved *movedJSON `json:"moved,omitempty"`
+	// Class is what the look found of it: newer, current, uncertain,
+	// unpublished, moved, own-version, or unchecked; Unpublished, for an
+	// unpublished one, why its newer release isn't ready.
+	Class       string `json:"class"`
+	Unpublished string `json:"unpublished,omitempty"`
 }
 
 // movedJSON is the branch a port tracks and the commit it names now.
@@ -649,7 +654,8 @@ func movedView(head *engine.Head) *movedJSON {
 func outdatedView(report engine.OutdatedReport) map[string]any {
 	ports := []outdatedPortJSON{}
 	for _, port := range report.Ports {
-		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Problem: port.Problem, OwnVersion: port.OwnVersion, With: port.With, Moved: movedView(port.Moved)})
+		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Problem: port.Problem, OwnVersion: port.OwnVersion, With: port.With, Moved: movedView(port.Moved),
+			Class: string(port.Class()), Unpublished: port.Unpublished})
 	}
 	view := map[string]any{"master": report.Master, "ports": ports}
 	// How many couldn't be checked, and why, for a script, which the exit

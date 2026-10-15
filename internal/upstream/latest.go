@@ -34,7 +34,35 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		result, err = s.discoverPort(ctx, port)
 		return err
 	})
+	if err == nil {
+		s.askAssets(ctx, port, &result)
+	}
 	return result, err
+}
+
+// askAssets asks a newer release whether its files are published, for a
+// port that fetches the files uploaded to its release (github.tarball_from
+// releases): a release is published before its files are, and outdated
+// listed browsh 1.8.3 as an update that update then refused, its assets
+// not yet there (field testing at 43949b89). One with none is Unpublished.
+// What can't be asked is left as it was: update says it when it fetches.
+func (s *Service) askAssets(ctx context.Context, port macports.PortInfo, result *Result) {
+	if result.Assessment != UpdateAvailable || result.Release == nil || result.Release.Tag == "" {
+		return
+	}
+	spec, repository, err := s.repository(port, true)
+	if err != nil || spec.Catalog != portsource.Releases {
+		return
+	}
+	assets, ok := repository.(forge.AssetRepository)
+	if !ok {
+		return
+	}
+	names, err := assets.Assets(ctx, result.Release.Tag)
+	if err == nil && len(names) == 0 || errors.Is(err, forge.ErrNotFound) {
+		result.Unpublished = true
+		result.Detail = fmt.Sprintf("the release of %s has no files yet, which update fetches; it's not ready", result.Release.Tag)
+	}
 }
 
 // withVersionSession calls fn with the service's version comparisons in

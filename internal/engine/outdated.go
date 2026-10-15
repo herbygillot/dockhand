@@ -54,6 +54,64 @@ type OutdatedPort struct {
 	// nothing, and no livecheck reads its version, as a _select port's.
 	// Its version is MacPorts' own; it's covered, and never planned.
 	OwnVersion bool
+	// Unpublished says why a newer release isn't ready: its release has
+	// none of the files the port fetches yet (upstream's askAssets). It's
+	// said, as update would refuse it, and never planned.
+	Unpublished string
+}
+
+// OutdatedClass is what a look found of a port, one of the classes below,
+// which plain outdated counts and lists by (Summary).
+type OutdatedClass string
+
+const (
+	// OutdatedOwnVersion has no release to look for (OwnVersion).
+	OutdatedOwnVersion OutdatedClass = "own-version"
+	// OutdatedMoved tracks a branch that names a newer commit (Moved).
+	OutdatedMoved OutdatedClass = "moved"
+	// OutdatedUnchecked couldn't be checked (Problem).
+	OutdatedUnchecked OutdatedClass = "unchecked"
+	// OutdatedUncertain may have a newer release, for a look (Uncertain).
+	OutdatedUncertain OutdatedClass = "uncertain"
+	// OutdatedUnpublished has a newer release not ready yet (Unpublished).
+	OutdatedUnpublished OutdatedClass = "unpublished"
+	// OutdatedNewer has a newer release (Outdated).
+	OutdatedNewer OutdatedClass = "newer"
+	// OutdatedCurrent has none.
+	OutdatedCurrent OutdatedClass = "current"
+)
+
+// Class is what the look found of the port, the first of its facts that
+// holds, in the order the constants are: one with no release to look for
+// is neither checked nor current, and one that couldn't be checked isn't
+// said to be anything else.
+func (p OutdatedPort) Class() OutdatedClass {
+	switch {
+	case p.OwnVersion:
+		return OutdatedOwnVersion
+	case p.Moved != nil:
+		return OutdatedMoved
+	case p.Problem != "":
+		return OutdatedUnchecked
+	case len(p.Uncertain) > 0:
+		return OutdatedUncertain
+	case p.Outdated && p.Unpublished != "":
+		return OutdatedUnpublished
+	case p.Outdated:
+		return OutdatedNewer
+	}
+	return OutdatedCurrent
+}
+
+// UncheckedReason is why a port couldn't be checked, as ports are grouped
+// by: GitHub's rate limit for every port it kept, whenever each lifts, and
+// otherwise the problem's first line.
+func (p OutdatedPort) UncheckedReason() string {
+	if !p.RetryAt.IsZero() {
+		return "GitHub's rate limit"
+	}
+	reason, _, _ := strings.Cut(p.Problem, "\n")
+	return reason
 }
 
 // Head is the branch a port tracks and the commit it names now.
@@ -112,13 +170,54 @@ func (r OutdatedReport) RateLimited() ([]string, time.Time) {
 	return ports, lifts
 }
 
+// Where they couldn't for several reasons, the reasons are counted, the
+// commonest first, two named and the rest counted together: the daily
+// look's 27 unchecked were said with one port's reason, "requested version
+// matches multiple releases…" (the rc10 full stage's B7).
 func (r OutdatedReport) UncheckedWords() string {
 	unchecked := r.Unchecked()
 	if len(unchecked) == 0 {
 		return ""
 	}
-	why, _, _ := strings.Cut(unchecked[0].Problem, "\n")
-	return fmt.Sprintf("%d of %s couldn't be checked: %s", len(unchecked), prose.Plural(len(r.Ports), "port"), why)
+	count := map[string]int{}
+	var reasons []string
+	for _, port := range unchecked {
+		reason := port.UncheckedReason()
+		if count[reason] == 0 {
+			reasons = append(reasons, reason)
+		}
+		count[reason]++
+	}
+	head := fmt.Sprintf("%d of %s couldn't be checked: ", len(unchecked), prose.Plural(len(r.Ports), "port"))
+	if len(reasons) == 1 {
+		why, _, _ := strings.Cut(unchecked[0].Problem, "\n")
+		return head + why
+	}
+	// The commonest first; among equals, the order they were met.
+	slices.SortStableFunc(reasons, func(a, b string) int { return count[b] - count[a] })
+	var said []string
+	rest := 0
+	for i, reason := range reasons {
+		if i < 2 {
+			said = append(said, fmt.Sprintf("%d for %s", count[reason], reason))
+			continue
+		}
+		rest += count[reason]
+	}
+	if rest > 0 {
+		said = append(said, fmt.Sprintf("%d more (dockhand outdated --all says each)", rest))
+	}
+	return head + strings.Join(said, ", ")
+}
+
+// Summary counts the report's ports by what the look found of each
+// (OutdatedPort.Class).
+func (r OutdatedReport) Summary() map[OutdatedClass]int {
+	summary := map[OutdatedClass]int{}
+	for _, port := range r.Ports {
+		summary[port.Class()]++
+	}
+	return summary
 }
 
 // Outdated reports which of the chosen ports have newer releases upstream
@@ -175,6 +274,9 @@ func outdatedPort(port outdated.Port) OutdatedPort {
 	switch port.Assessment {
 	case upstream.UpdateAvailable:
 		entry.Outdated = true
+		if port.Unpublished {
+			entry.Unpublished = port.Detail
+		}
 	case upstream.Uncertain:
 		entry.Uncertain = port.SetAside
 	case upstream.Moved:
@@ -231,6 +333,10 @@ func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (Outda
 			continue
 		}
 		if !port.Outdated {
+			continue
+		}
+		if port.Unpublished != "" {
+			plan.Skipped = append(plan.Skipped, SkippedUpdate{Port: port.Port, Reason: port.Unpublished})
 			continue
 		}
 		if port.With != "" {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -125,6 +126,10 @@ func TestDiscoveryBecomesOutdatedsPort(t *testing.T) {
 	head := &upstream.Head{Branch: "main", Commit: strings.Repeat("a", 40)}
 	require.Equal(t, head, of(upstream.Result{Assessment: upstream.Moved, Head: head}).Moved)
 	require.True(t, of(upstream.Result{Assessment: upstream.OwnVersion}).OwnVersion)
+	unready := of(upstream.Result{Assessment: upstream.UpdateAvailable, Unpublished: true, Detail: "the release of v1.8.3 has no files yet"})
+	require.True(t, unready.Outdated)
+	require.Equal(t, "the release of v1.8.3 has no files yet", unready.Unpublished)
+	require.Equal(t, OutdatedUnpublished, unready.Class(), "newer, but not ready")
 	require.Equal(t, "no forge could be found for it", of(upstream.Result{Assessment: upstream.Unknown, Detail: "no forge could be found for it"}).Problem)
 	require.Equal(t, "its newest release could not be found", of(upstream.Result{Assessment: upstream.Unknown}).Problem)
 
@@ -137,8 +142,34 @@ func TestDiscoveryBecomesOutdatedsPort(t *testing.T) {
 // for the line said ahead of the rest's result (the rc6 full stage, D-N4).
 func TestUncheckedPortsAreSaidAhead(t *testing.T) {
 	t.Parallel()
-	report := OutdatedReport{Ports: []OutdatedPort{{Port: "go-reflex", Problem: "GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT\nlisting them with git"}, {Port: "libt3config"}, {Port: "dominant_colours", Problem: "the same"}, {Port: "contacts-cli"}}}
+	lifts := time.Date(2026, 10, 7, 23, 24, 0, 0, time.UTC)
+	report := OutdatedReport{Ports: []OutdatedPort{{Port: "go-reflex", Problem: "GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT\nlisting them with git", RetryAt: lifts}, {Port: "libt3config"}, {Port: "dominant_colours", Problem: "the same", RetryAt: lifts}, {Port: "contacts-cli"}}}
 	require.Len(t, report.Unchecked(), 2)
 	require.Equal(t, "2 of 4 ports couldn't be checked: GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT", report.UncheckedWords())
 	require.Empty(t, OutdatedReport{Ports: []OutdatedPort{{Port: "jq"}}}.UncheckedWords())
+
+	// Several reasons are counted, the commonest first, two named and the
+	// rest together (the rc10 full stage's B7: 27 said with one's reason).
+	several := OutdatedReport{Ports: []OutdatedPort{{Port: "jq"}}}
+	add := func(n int, port OutdatedPort) {
+		for range n {
+			several.Ports = append(several.Ports, port)
+		}
+	}
+	add(4, OutdatedPort{Problem: "requested version matches multiple releases"})
+	add(20, OutdatedPort{Problem: "GitHub's rate limit for your login resets in 18 minutes", RetryAt: lifts})
+	add(2, OutdatedPort{Problem: "no forge could be found for it"})
+	add(1, OutdatedPort{Problem: "its newest release could not be found"})
+	require.Equal(t, "27 of 28 ports couldn't be checked: 20 for GitHub's rate limit, 4 for requested version matches multiple releases, 3 more (dockhand outdated --all says each)", several.UncheckedWords())
+	require.Equal(t, map[OutdatedClass]int{OutdatedUnchecked: 27, OutdatedCurrent: 1}, several.Summary())
+	require.Equal(t, OutdatedNewer, OutdatedPort{Outdated: true}.Class())
+	require.Equal(t, OutdatedUnchecked, OutdatedPort{Outdated: true, Problem: "x"}.Class(), "one that couldn't be checked is nothing else")
+
+	// A release not ready isn't planned, and says why (browsh).
+	f := setup(t)
+	e := f.open(t)
+	plan, err := e.PlanOutdated(t.Context(), OutdatedReport{Ports: []OutdatedPort{{Port: "browsh", Current: "1.8.2", Newest: "1.8.3", Outdated: true, Unpublished: "the release of v1.8.3 has no files yet"}}})
+	require.NoError(t, err)
+	require.Empty(t, plan.Updates)
+	require.Equal(t, []SkippedUpdate{{Port: "browsh", Reason: "the release of v1.8.3 has no files yet"}}, plan.Skipped)
 }

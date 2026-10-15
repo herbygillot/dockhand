@@ -36,6 +36,16 @@ type catalog struct {
 	agent        string
 	// dates are commits' times; a commit without one is undated.
 	dates map[string]time.Time
+	// assets are each release's files, by tag; every release has one
+	// where it's nil.
+	assets map[string][]string
+}
+
+func (c *catalog) Assets(_ context.Context, tag string) ([]string, error) {
+	if c.assets == nil {
+		return []string{"project.tar.gz"}, nil
+	}
+	return c.assets[tag], nil
 }
 
 func (c *catalog) CommitTime(_ context.Context, commit string) (time.Time, error) {
@@ -106,6 +116,26 @@ func TestAutomaticSelectionHonorsArchiveModeVersionOrderingAndPrereleases(t *tes
 	result, err = service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)
 	require.Equal(t, "2.0", result.CandidateVersion, "tag-only projects need no GitHub Release")
+}
+
+// A newer release of a port that fetches its release's files, whose
+// release has none yet, is an update not ready, as update would refuse it
+// (field testing at 43949b89, browsh); one with its files is ready, and a
+// port fetching a tag's archive isn't asked.
+func TestANewerReleaseWithoutItsFilesIsntReady(t *testing.T) {
+	t.Parallel()
+	c := &catalog{releases: []forge.Release{{Tag: "v1.0"}, {Tag: "v1.1"}}, assets: map[string][]string{"v1.0": {"project-1.0.tar.gz"}}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
+	require.True(t, result.Unpublished)
+	require.Equal(t, "the release of v1.1 has no files yet, which update fetches; it's not ready", result.Detail)
+	c.assets["v1.1"] = []string{"project-1.1.tar.gz"}
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.False(t, result.Unpublished)
 }
 
 func TestAutomaticSelectionAppliesMaintainerFilterAndReportsCurrentOrAhead(t *testing.T) {
