@@ -171,3 +171,27 @@ func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 		require.ElementsMatch(t, []string{"jq", "fd"}, look.Outdated, "the retry adds to the day's look")
 	}
 }
+
+// The day's look notifies where the ports it found with newer releases
+// changed since the last look, once, and not where they're the same or
+// there are none (the rc10 full stage's B7).
+func TestTheDaysLookNotifiesWhenWhatItFoundChanged(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "2 ports have newer releases (dockhand outdated --mine)", lookNotice(OutdatedLook{}, OutdatedLook{Outdated: []string{"jq", "fd"}}))
+	require.Equal(t, "1 port has newer releases (dockhand outdated --mine)", lookNotice(OutdatedLook{Outdated: []string{"jq", "fd"}}, OutdatedLook{Outdated: []string{"jq"}}))
+	require.Empty(t, lookNotice(OutdatedLook{Outdated: []string{"jq", "fd"}}, OutdatedLook{Outdated: []string{"fd", "jq"}}), "the same ports")
+	require.Empty(t, lookNotice(OutdatedLook{Outdated: []string{"jq"}}, OutdatedLook{}), "none")
+
+	f := setup(t)
+	e := f.open(t)
+	e.Forge = forgetest.New("", "")
+	morning := time.Date(2026, 10, 7, 8, 0, 0, 0, time.Local)
+	e.OutdatedReader = &limitedReader{lifted: morning.Add(-time.Hour)}
+	now := morning
+	var notified []string
+	s := newServer(e, ServeOptions{Outdated: ServeOutdated{Maintainers: []string{"@ada"}, Mode: "list"}, Say: func(string) {}, Now: func() time.Time { return now },
+		Notify: func(title, text string) { notified = append(notified, title+": "+text) }})
+	scanner := &outdatedScanner{s: s}
+	scanner.maybe(t.Context())
+	require.Contains(t, notified, "Your ports: 1 port has newer releases (dockhand outdated --mine)")
+}

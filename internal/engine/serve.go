@@ -710,6 +710,20 @@ func uncertainWords(last OutdatedLook, look OutdatedLook) string {
 	return line
 }
 
+// lookNotice is the day's look as a notification, where the ports it
+// found with newer releases aren't the last look's: serve notified of a
+// pull request, a branch it prepared, and a submission, and the look's
+// count went to serve.log and status alone, so serve.for_outdated =
+// "list", the default, said nothing a person saw (the rc10 full stage's
+// B7). Empty where nothing changed, or none has a newer release. It names
+// outdated --mine, which lists them.
+func lookNotice(last, look OutdatedLook) string {
+	if len(look.Outdated) == 0 || slices.Equal(slices.Sorted(slices.Values(last.Outdated)), slices.Sorted(slices.Values(look.Outdated))) {
+		return ""
+	}
+	return fmt.Sprintf("%s newer releases (dockhand outdated --mine)", prose.Plural(len(look.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(look.Outdated) == 1])
+}
+
 // outdatedScanner looks for new releases of your ports once a day, at the
 // configured time, and does what serve.for_outdated says.
 type outdatedScanner struct {
@@ -818,6 +832,9 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	}
 	if data, err := json.Marshal(look); err == nil {
 		o.s.written("outdated.json", e.writeServeFile("outdated.json", data))
+	}
+	if line := lookNotice(last, look); line != "" {
+		o.s.notify("Your ports", line)
 	}
 	// What couldn't be checked is said first, and the rest's result as the
 	// rest's: "none of your ports" said of ports it never saw (D-N4).
