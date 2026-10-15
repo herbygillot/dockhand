@@ -64,6 +64,9 @@ type Options struct {
 	Readings string
 	// Indexes is where port indexes are cached; IndexCache's when empty.
 	Indexes string
+	// AllowMajors lets an update nobody looks over move a port's major
+	// version without a look; holds.majors = "allow". Held otherwise.
+	AllowMajors bool
 }
 
 // Engine is bound to one ports checkout and its registered repository.

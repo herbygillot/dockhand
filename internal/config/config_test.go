@@ -206,3 +206,15 @@ func TestServeSettings(t *testing.T) {
 		require.ErrorContains(t, err, "serve."+setting)
 	}
 }
+
+// holds.majors holds an unattended major-version update unless it's allow.
+func TestHoldsMajorsHoldsUnlessAllowed(t *testing.T) {
+	f, err := parse("config.toml", "")
+	require.NoError(t, err)
+	require.True(t, f.Holds.HoldMajors(), "held by default")
+	f, err = parse("config.toml", "[holds]\nmajors = \"allow\"\n")
+	require.NoError(t, err)
+	require.False(t, f.Holds.HoldMajors())
+	_, err = parse("config.toml", "[holds]\nmajors = \"sometimes\"\n")
+	require.ErrorContains(t, err, "holds.majors")
+}

@@ -70,6 +70,8 @@ const (
 	// FromSubmission is what stops the submission itself: a blocking
 	// reason, or a plan that couldn't be made.
 	FromSubmission ConcernOrigin = "submission"
+	// FromHolds is a hold the configuration asks for, holds.majors's.
+	FromHolds ConcernOrigin = "holds"
 )
 
 // Unported is the concern as it reads for any port, its key without the

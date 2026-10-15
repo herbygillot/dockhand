@@ -46,7 +46,22 @@ type File struct {
 		Tart    TartProvider     `toml:"tart"`
 	} `toml:"providers"`
 	Cleanup Cleanup `toml:"cleanup"`
+	Holds   Holds   `toml:"holds"`
 }
+
+// Holds are what holds an update nobody looks over, bump's and serve's, for
+// a person's look, beside what its comparison finds: the hold list that
+// ship's holds join.
+type Holds struct {
+	// Majors is what such an update does where its major version moves:
+	// hold (the default) or allow (the person's preference since
+	// 2026-10-06; hyperfine went from 1.21.0 to 2.0.0 unlooked at).
+	Majors string `toml:"majors"`
+}
+
+// HoldMajors reports whether an unattended update holds where its major
+// version moves: unless majors is allow.
+func (h Holds) HoldMajors() bool { return h.Majors != "allow" }
 
 // Submit holds submit's defaults.
 type Submit struct {
@@ -359,6 +374,11 @@ func parse(path, text string) (File, error) {
 	}
 	if f.Serve.SubmitLimit < 0 {
 		return File{}, fmt.Errorf("%s: serve.submit_limit: %d is not a number of pull requests", path, f.Serve.SubmitLimit)
+	}
+	switch f.Holds.Majors {
+	case "", "hold", "allow":
+	default:
+		return File{}, fmt.Errorf("%s: holds.majors: %q is not hold or allow", path, f.Holds.Majors)
 	}
 	switch f.Submit.RerequestReview {
 	case "", "ask", "always", "never":

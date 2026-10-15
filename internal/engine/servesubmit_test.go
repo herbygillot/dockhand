@@ -454,3 +454,30 @@ func TestAHoldSharedByPortsIsSaidOnce(t *testing.T) {
 	require.Len(t, held, 2, "a concern a port")
 	require.Equal(t, []string{"upstream's setup.py changed; the build may need the Portfile to follow"}, HoldLines(held))
 }
+
+// An update nobody looks over whose major version moves is held before
+// its edit, so nothing is prepared, unless holds.majors allows it:
+// hyperfine went from 1.21.0 to 2.0.0 and bump opened #35353 unlooked at
+// (field testing at b8baa26b). A submission's concerns carry it too, from
+// what the branch's update recorded, for serve's.
+func TestAMajorVersionHoldsAnUnattendedUpdate(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	f.withFork(t, e)
+	major := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "2.0.0", CurrentVersion: "1.7.1"}, Version: "2.0.0", Forge: "github", Tag: "jq-2.0.0"}
+	_, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-bump"}, Action: model.EditUpdate, Port: "jq", Version: "2.0.0", Release: &major, Unattended: true})
+	var held *HeldBeforeEdit
+	require.ErrorAs(t, err, &held)
+	require.Equal(t, []string{"jq moves from 1.7.1 to 2.0.0, a new major version, which holds.majors holds for a look"}, HoldLines(held.Held))
+	require.Equal(t, model.FromHolds, held.Held[0].Origin)
+	require.Empty(t, p.requests, "nothing was prepared")
+	require.True(t, e.HoldsMajor("1.7.1", "2.0.0"))
+	require.False(t, e.HoldsMajor("1.7.1", "1.8.1"))
+
+	require.Equal(t, []string{"jq moves from 1.7.1 to 2.0.0, a new major version, which holds.majors holds for a look"},
+		HoldLines(e.majorHolds([]model.Edit{{Kind: model.EditUpdate, Port: "jq", Release: &major}})))
+
+	e.options.AllowMajors = true
+	require.Nil(t, e.majorHold("jq", "1.7.1", "2.0.0"), "holds.majors = \"allow\"")
+}

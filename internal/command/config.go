@@ -65,6 +65,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				minFree = fmt.Sprintf("%s (%s)", file.Cleanup.MinFree, prose.Bytes(int64(file.Cleanup.Free())))
 			}
 			add("cleanup.min_free", minFree, prose.Bytes(config.DefaultMinFree))
+			add("holds.majors", file.Holds.Majors, "hold")
 			add("serve.for_outdated", file.Serve.ForOutdated, "list")
 			add("serve.outdated_at", file.Serve.OutdatedAt, "07:00")
 			submitPassing := ""

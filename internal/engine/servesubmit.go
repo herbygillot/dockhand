@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -153,6 +154,9 @@ func (p SubmitPlan) Concerns() []model.Concern {
 	}
 	for _, moved := range p.Moved {
 		add(moved)
+	}
+	for _, major := range p.Majors {
+		add(major)
 	}
 	for _, finding := range p.Findings {
 		add(model.Concern{Origin: model.FromCommitRules, Rule: finding.Code, Detail: "commit rules: " + finding.String()})
@@ -373,4 +377,41 @@ func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (
 		return err
 	})
 	return submitted, err
+}
+
+// majorRule is the hold on an update whose major version moves.
+const majorRule = "major-version"
+
+// majorHold is the hold on an update nobody looks over whose major version
+// moves, unless holds.majors allows it: hyperfine went from 1.21.0 to 2.0.0
+// and bump opened #35353 without a pause (field testing at b8baa26b). It's
+// said before the edit, so nothing is downloaded or built; nil where it
+// doesn't hold.
+func (e *Engine) majorHold(port, from, to string) *model.Concern {
+	if e.options.AllowMajors || from == "" || !version.CrossesMajor(from, to) {
+		return nil
+	}
+	return &model.Concern{Origin: model.FromHolds, Port: port, Rule: majorRule, Subject: to,
+		Detail: fmt.Sprintf("%s moves from %s to %s, a new major version, which holds.majors holds for a look", port, from, to)}
+}
+
+// HoldsMajor reports whether an update nobody looks over from one version
+// to another is held for its major version (majorHold), for outdated to
+// mark the updates it would hold.
+func (e *Engine) HoldsMajor(from, to string) bool { return e.majorHold("", from, to) != nil }
+
+// majorHolds are the major-version holds of a branch's updates, from what
+// each edit's release moved from and to, for a submission nobody looks
+// over: serve prepares an update whose check then passes.
+func (e *Engine) majorHolds(edits []model.Edit) []model.Concern {
+	var held []model.Concern
+	for _, edit := range edits {
+		if edit.Kind != model.EditUpdate || edit.Release == nil {
+			continue
+		}
+		if major := e.majorHold(edit.Port, edit.Release.CurrentVersion, edit.Release.Version); major != nil && !slices.ContainsFunc(held, func(c model.Concern) bool { return c.Key() == major.Key() }) {
+			held = append(held, *major)
+		}
+	}
+	return held
 }

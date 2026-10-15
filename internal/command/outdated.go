@@ -156,6 +156,10 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			case port.With != "":
 				can = "update with " + port.With
 			}
+			// A major version bump and serve would hold (holds.majors).
+			if e.HoldsMajor(port.Current, port.Newest) {
+				can += "; a new major version, held for a look unattended"
+			}
 			fmt.Fprintf(table, "  %s\t%s\t%s\t%s%s\n", port.Port, port.Current, port.Newest, can, with(port.Port))
 		case folded:
 		case all && port.With != "":

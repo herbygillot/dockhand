@@ -295,6 +295,14 @@ func (e *Engine) PrepareOutdated(ctx context.Context, plan OutdatedPlan, options
 
 func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options PrepareOptions) PreparedUpdate {
 	done := PreparedUpdate{Planned: planned}
+	// What serve prepares nobody looks over: a major version is held
+	// before anything is prepared (holds.majors).
+	if options.Origin == model.OriginServe {
+		if major := e.majorHold(planned.Port.Port, planned.Port.Current, planned.Port.Newest); major != nil {
+			done.Problem = major.Detail + "; nothing was prepared"
+			return done
+		}
+	}
 	var err error
 	done.Update, err = e.Update(ctx, UpdateRequest{Start: &StartRequest{Name: planned.Name, Origin: options.Origin}, Action: model.EditUpdate, Port: planned.Port.Port, Version: planned.Port.Newest,
 		Release: planned.Port.Release, CompareUpstream: true, NoHandBranch: true})

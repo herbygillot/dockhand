@@ -384,6 +384,9 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		// 2026-10-02: "a matching resolved release is required").
 		input.Version = release.Requested
 		if request.Unattended && !release.NoUpdate {
+			if major := e.majorHold(request.Port, release.CurrentVersion, release.Version); major != nil {
+				return Update{}, &HeldBeforeEdit{Port: request.Port, Held: []model.Concern{*major}}
+			}
 			if err := e.heldBeforeEdit(ctx, request.Port, own); err != nil {
 				return Update{}, err
 			}

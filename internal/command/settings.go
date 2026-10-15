@@ -84,6 +84,8 @@ func (s *settings) options(ctx context.Context) (engine.Options, config.File, st
 		Git:       firstOf(s.git, os.Getenv("GIT_BIN")),
 		Database:  database,
 		Worktrees: file.Worktrees,
+		// holds.majors = "allow" lets bump and serve move a major version.
+		AllowMajors: !file.Holds.HoldMajors(),
 		// DOCKHAND_UPSTREAM fetches master from a mirror or, in tests, a
 		// local repository.
 		Upstream: os.Getenv("DOCKHAND_UPSTREAM"),
