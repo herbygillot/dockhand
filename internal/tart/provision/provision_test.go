@@ -631,3 +631,30 @@ func TestAnXcodeArchiveMustBeApples(t *testing.T) {
 	require.Equal(t, "Xcode_26.6_Apple_silicon.xip", filepath.Base(checked))
 	require.Empty(t, machine.events, "nothing is made")
 }
+
+// MacPorts' installer runs selfupdate, which takes the guest past the base
+// it installed where a newer one is out: 2.12.7 came out on 2026-10-13,
+// and setup rejected the image it had just made, asked for 2.12.6 (the
+// v0.3.1 quick stage, 2026-10-15). A newer base is taken, made or found;
+// an older one isn't.
+func TestAGuestMacPortsNewerThanAskedIsTaken(t *testing.T) {
+	machine := newFakeMachine()
+	machine.validation.MacPortsVersion = "2.12.99"
+	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.Equal(t, "2.12.99", result.MacPortsVersion)
+	again, err := testProvisioner(t, newFakeMachine("dockhand-base-tahoe")).Run(t.Context(), Options{})
+	require.NoError(t, err, "an image found with a newer base is taken too")
+	require.True(t, again.Reused)
+
+	older := newFakeMachine()
+	older.validation.MacPortsVersion = "2.11.0"
+	_, err = testProvisioner(t, older).Run(t.Context(), Options{})
+	require.ErrorContains(t, err, "asked for MacPorts "+macports.DefaultBaseVersion+" or newer")
+
+	require.True(t, baseAtLeast("2.12.7", "2.12.6"))
+	require.True(t, baseAtLeast("2.13", "2.12.6"))
+	require.True(t, baseAtLeast("2.12.6", "2.12.6"))
+	require.False(t, baseAtLeast("2.12.5", "2.12.6"))
+	require.False(t, baseAtLeast("2.9.9", "2.12.6"))
+}
