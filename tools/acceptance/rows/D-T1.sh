@@ -41,7 +41,7 @@ act() {
 		row_result "not run" "set ACCEPT_LIB_PORT to a small library port and ACCEPT_LIB_DEPENDENT to a small port that depends on it"
 		return 0
 	fi
-	dh_setup revbump "$ACCEPT_LIB_PORT" "$ACCEPT_LIB_DEPENDENT" --branch "$(run_name dt1-tamper)" --subject "rebuild to test a tampered archive" || return 0
+	dh_setup revbump "$ACCEPT_LIB_PORT" "$ACCEPT_LIB_DEPENDENT" --new="$(run_name dt1-tamper)" --subject "rebuild to test a tampered archive" || return 0
 	dh_setup check -b "$(run_name dt1-tamper)" || return 0
 	local digest path dir
 	# The library's newest kept archive, by its record.

@@ -481,10 +481,19 @@ func (e *Engine) Resolve(ctx context.Context, selector string) (model.Branch, er
 	// it's said from the record, not as a name nothing has (the rc8 full
 	// stage's B6, the rc10 full stage's C7).
 	if merged, merr := e.named(ctx, selector, store.Reader.MergedBranchNamed); merr == nil {
-		return branch, fmt.Errorf("%w named %s: %s", ErrNoBranch, selector, e.mergedWords(ctx, merged))
+		return branch, fmt.Errorf("%w named %s: %w", ErrNoBranch, selector, &MergedError{Branch: merged, words: e.mergedWords(ctx, merged)})
 	}
 	return branch, err
 }
+
+// MergedError is a name an open branch hasn't, which a merged one's record
+// keeps: what became of it, said from the record.
+type MergedError struct {
+	Branch model.Branch
+	words  string
+}
+
+func (m *MergedError) Error() string { return m.words }
 
 // mergedWords say what became of a merged branch, from its record: "jq-1.8
 // was merged as #35012 and cleaned", or, where clean kept it, its worktree

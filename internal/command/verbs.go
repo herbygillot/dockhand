@@ -72,7 +72,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 }
 
 func revbumpCommand(s *settings, streams Streams) *cobra.Command {
-	var selector, subject string
+	var selector, subject, newName string
 	var plan bool
 	cmd := &cobra.Command{
 		Use:   "revbump <port>... --subject <reason>",
@@ -82,8 +82,8 @@ reason as its commit subject for tidy: "<port>: <reason>", such as
 --subject "rebuild for poppler 25.09.0". A revision shared by several
 subports is bumped for all of them.
 
-The branch is --branch, started from master where no branch has the name
-yet, else the one checked out here. Otherwise a new branch is started,
+The branch is --branch, an existing one, or --new=<name>, a new one of the
+name, else the one checked out here. Otherwise a new branch is started,
 since a rebuild has its own reason.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -96,7 +96,17 @@ since a rebuild has its own reason.`,
 				return err
 			}
 			defer e.Close()
-			branch, started, err := revbumpBranch(ctx, e, selector, args[0], plan)
+			var branch model.Branch
+			var started bool
+			if newName != "" {
+				if plan {
+					return errors.New("--plan changes nothing, so it starts no branch; plan in an existing one with --branch")
+				}
+				branch, err = e.Start(ctx, engine.StartRequest{Name: newName, Ports: []string{args[0]}})
+				started = err == nil
+			} else {
+				branch, started, err = revbumpBranch(ctx, e, selector, args[0], plan)
+			}
 			if err != nil {
 				return err
 			}
@@ -130,7 +140,9 @@ since a rebuild has its own reason.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&selector, "branch", "b", "", "work in this branch, by its exact name (the dockhand/ prefix is optional)")
+	cmd.Flags().StringVarP(&selector, "branch", "b", "", "work in this existing branch, by its exact name (the dockhand/ prefix is optional)")
+	cmd.Flags().StringVar(&newName, "new", "", "start a new branch of this name for the rebuild")
+	cmd.MarkFlagsMutuallyExclusive("branch", "new")
 	cmd.Flags().StringVar(&subject, "subject", "", "the reason, which becomes each commit's subject after the port's name")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edits and change nothing")
 	return cmd
@@ -140,14 +152,10 @@ since a rebuild has its own reason.`,
 // one named for the first port.
 func revbumpBranch(ctx context.Context, e *engine.Engine, selector, port string, plan bool) (model.Branch, bool, error) {
 	if selector != "" {
-		if plan {
-			branch, err := e.Resolve(ctx, selector)
-			if errors.Is(err, engine.ErrNoBranch) {
-				return branch, false, fmt.Errorf("--plan changes nothing, so it starts no branch, and no branch is named %s yet; without --plan, this starts it from master", selector)
-			}
-			return branch, false, err
-		}
-		return namedOrStarted(ctx, e, selector, port)
+		// -b names an existing branch, planned in or not; --new=<name>
+		// starts one.
+		selection, err := e.Select(ctx, engine.Selector{Branch: selector, Policy: engine.SelectOrStart}, "rebuild", "revbump")
+		return selection.Branch, false, err
 	}
 	branch, err := e.Current(ctx)
 	if err == nil || !errors.Is(err, engine.ErrNoBranch) {

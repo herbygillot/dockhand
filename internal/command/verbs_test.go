@@ -1,14 +1,17 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -171,4 +174,28 @@ func TestABranchStartedForAPortIsThatPorts(t *testing.T) {
 	_, errs, err := dockhand(t, "edit", "jq")
 	require.NoError(t, err)
 	require.Contains(t, errs, "Working in notes, the one open branch changing jq; --new starts another.\n")
+}
+
+// Where several open branches change a port, one question asks which, or
+// for a new one: "start another?" and "which one?" were two (the split's
+// 7d row 7). A script is told them, by exact name.
+func TestSeveralBranchesForAPortAreOneQuestion(t *testing.T) {
+	newWorld(t)
+	for _, name := range []string{"jq-one", "jq-two"} {
+		_, _, err := dockhand(t, "start", name, "--port", "jq")
+		require.NoError(t, err)
+	}
+	run := func(answer string) (string, string, error) {
+		var out, errs bytes.Buffer
+		err := Run(t.Context(), []string{"edit", "jq", "--no-open"}, Streams{In: strings.NewReader(answer + "\n"), Out: &out, Err: &errs, interactive: true})
+		return out.String(), errs.String(), err
+	}
+	_, errs, err := run("2")
+	require.NoError(t, err)
+	require.Contains(t, errs, "jq is changed in 2 open branches:\n  1. jq-one\n  2. jq-two\n? which one, or n for a new branch? [1-2/n] ")
+	out, _, err := run("n")
+	require.NoError(t, err)
+	require.Regexp(t, `(?m)^Started dockhand/jq-[a-z0-9]{4} from master`, out)
+	_, _, err = dockhand(t, "edit", "jq", "--no-open")
+	require.ErrorIs(t, err, engine.ErrAmbiguous, "a script is told them")
 }

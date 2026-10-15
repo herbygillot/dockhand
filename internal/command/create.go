@@ -81,11 +81,12 @@ its go-get answer.`,
 			var branch model.Branch
 			switch {
 			case where.branch != "":
-				var started bool
-				if branch, started, err = namedOrStarted(ctx, e, where.branch, name); err == nil && started {
-					fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
+				// -b names an existing branch; --new=<name> starts one.
+				var selection engine.Selection
+				if selection, err = e.Select(ctx, engine.Selector{Branch: where.branch, Policy: engine.SelectOrStart}, "new", "create"); err == nil {
+					branch = selection.Branch
 				}
-			case where.new:
+			case where.isNew():
 				// A name master has is refused before a branch is started
 				// for it.
 				var taken, unchecked, free string
@@ -99,8 +100,10 @@ its go-get answer.`,
 				if unchecked != "" {
 					fmt.Fprintf(streams.Err, "whether a subport is named %s wasn't checked: %s\n", name, unchecked)
 				}
-				if free, err = e.NameFor(ctx, name, "new"); err != nil {
-					return err
+				if free = where.newName(); free == "" {
+					if free, err = e.NameFor(ctx, name, "new"); err != nil {
+						return err
+					}
 				}
 				if branch, err = e.Start(ctx, engine.StartRequest{Name: free, Base: base, Ports: []string{name}}); err == nil {
 					fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))

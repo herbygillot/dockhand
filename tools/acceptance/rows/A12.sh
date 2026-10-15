@@ -19,7 +19,7 @@ act() {
 	dh providers setup tart --xcode "$xcode" || :
 	local branch
 	branch=$(run_name a12-xcode)
-	dh_setup revbump "$ACCEPT_XCODE_PORT" --branch "$branch" --subject "rebuild to check an Xcode image" || return 0
+	dh_setup revbump "$ACCEPT_XCODE_PORT" --new="$branch" --subject "rebuild to check an Xcode image" || return 0
 	dh_json check -b "$branch" </dev/null || :
 }
 

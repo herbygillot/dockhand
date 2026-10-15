@@ -319,7 +319,7 @@ The source changed, so by default the revision is bumped and `dist_subdir` follo
 The reason is the subject, because that's how maintainers write it: 91 of 93 recent upstream rebuilds put the reason in the subject.
 
 ```console
-$ dockhand revbump gdal inkscape --subject "rebuild for poppler 25.09.0" --branch poppler-25.09
+$ dockhand revbump gdal inkscape --subject "rebuild for poppler 25.09.0" --new=poppler-25.09
 poppler-25.09 · 2 ports
   gdal       revision 2 → 3
   inkscape   revision 0 → 1

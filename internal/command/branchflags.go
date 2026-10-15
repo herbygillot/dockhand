@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -45,59 +44,22 @@ func (b branchFlags) explicit() bool {
 // with their exact names. A flag beats where the command runs, and says
 // so where the two differ.
 func (b branchFlags) resolve(ctx context.Context, e *engine.Engine, streams Streams) (model.Branch, error) {
-	var branch model.Branch
-	var err error
-	switch {
-	case b.branch != "":
-		branch, err = e.Resolve(ctx, b.branch)
-	case b.pr != 0:
-		branch, err = e.PullRequestBranch(ctx, b.pr)
-	case b.port != "":
-		branch, err = portBranch(ctx, e, streams, b.port)
-	default:
-		branch, err = e.Current(ctx)
+	selection, err := e.Select(ctx, engine.Selector{Branch: b.branch, PR: b.pr, Port: b.port, Policy: engine.SelectExisting}, "", "")
+	if err != nil {
 		// On master, the engine's refusal already says how to name one.
-		if errors.Is(err, engine.ErrNoBranch) && !errors.Is(err, engine.ErrYourCheckout) {
+		if !b.explicit() && errors.Is(err, engine.ErrNoBranch) && !errors.Is(err, engine.ErrYourCheckout) {
 			return model.Branch{}, fmt.Errorf("%w; name one with -b <branch> or -p <port>, or run this in the branch's worktree (dockhand path <branch>)", err)
 		}
-		return branch, err
-	}
-	if err != nil {
 		return model.Branch{}, err
+	}
+	branch, _, err := settleSelection(ctx, e, streams, selection, b.port, "", false)
+	if err != nil || !b.explicit() {
+		return branch, err
 	}
 	if here, err := e.Current(ctx); err == nil && here.ID != branch.ID {
 		fmt.Fprintf(streams.Err, "%s (not %s, checked out here)\n", branch.ShortName(), here.ShortName())
 	}
 	return branch, nil
-}
-
-// portBranch is the open branch that changes a port, as -p names it.
-func portBranch(ctx context.Context, e *engine.Engine, streams Streams, port string) (model.Branch, error) {
-	found, err := e.PortBranches(ctx, port)
-	switch {
-	case err != nil:
-		return model.Branch{}, err
-	case len(found) == 0:
-		return model.Branch{}, fmt.Errorf("%w changes %s; dockhand status --port %s lists every branch touching it", engine.ErrNoBranch, port, port)
-	case len(found) == 1:
-		fmt.Fprintf(streams.Err, "Working in %s, the one open branch changing %s.\n", found[0].Branch.ShortName(), port)
-		return found[0].Branch, nil
-	case !streams.terminal():
-		return model.Branch{}, &engine.AmbiguousError{Port: port, Branches: found}
-	}
-	fmt.Fprintf(streams.Err, "%s is changed in %d open branches:\n", port, len(found))
-	for i, f := range found {
-		fmt.Fprintf(streams.Err, "  %d. %s\n", i+1, branchPurpose(f))
-	}
-	answer, err := ask(streams, fmt.Sprintf("? which one? [1-%d] ", len(found)))
-	if err != nil {
-		return model.Branch{}, err
-	}
-	n, err := strconv.Atoi(answer)
-	if err != nil || n < 1 || n > len(found) {
-		return model.Branch{}, errors.New("nothing chosen, so nothing changed")
-	}
-	return found[n-1].Branch, nil
 }
 
 // branchPurpose is a branch as a choice among several says it: its name,

@@ -236,24 +236,30 @@ func TestAPlanInANamedBranchIsPlannedThere(t *testing.T) {
 	require.NotContains(t, out, "Planned on master")
 }
 
-// An authoring command's --branch naming no branch starts it from master,
-// as usage.md's revbump example does (the person, 2026-10-05); a plan
-// starts nothing, planning an update on master; and a Git branch of the
-// name that dockhand doesn't track is refused, pointing at adopt.
-func TestABranchNamedForTheFirstTimeIsStarted(t *testing.T) {
+// -b names an existing branch, everywhere, and a name no branch has is
+// refused, saying --new=<name> starts one: edit jq -b jq-typo said
+// "Started dockhand/jq-typo" with no question (the command-line UX second
+// look's §1 and §3). --new=<name> starts a branch of the name; a plan
+// with it is made on master. A Git branch dockhand doesn't track is
+// adopt's.
+func TestBNamesAnExistingBranchAndNewNamesANewOne(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
-	out, _, err := dockhand(t, "update", "jq", "--plan", "--branch", "jq-new")
+	_, _, err := dockhand(t, "update", "jq", "--plan", "--branch", "jq-new")
+	require.ErrorContains(t, err, "no tracked branch named jq-new; --new=jq-new starts one")
+	out, _, err := dockhand(t, "update", "jq", "--plan", "--new=jq-new")
 	require.NoError(t, err, "a plan starts nothing")
 	require.Contains(t, out, "Planned on master")
-	_, _, err = dockhand(t, "revbump", "jq", "--subject", "rebuild for oniguruma 6.9.10", "--branch", "jq-rebuild", "--plan")
-	require.ErrorContains(t, err, "--plan changes nothing, so it starts no branch, and no branch is named jq-rebuild yet; without --plan, this starts it from master")
+	_, _, err = dockhand(t, "revbump", "jq", "--subject", "rebuild for oniguruma 6.9.10", "--branch", "jq-rebuild")
+	require.ErrorContains(t, err, "no tracked branch named jq-rebuild; --new=jq-rebuild starts one")
+	_, _, err = dockhand(t, "edit", "jq", "--branch", "jq-typo", "--no-open")
+	require.ErrorContains(t, err, "no tracked branch named jq-typo; --new=jq-typo starts one")
 
-	out, _, err = dockhand(t, "revbump", "jq", "--subject", "rebuild for oniguruma 6.9.10", "--branch", "jq-rebuild")
+	out, _, err = dockhand(t, "edit", "jq", "--new=jq-rebuild", "--no-open")
 	require.NoError(t, err)
-	require.Regexp(t, `^Started dockhand/jq-rebuild from master [0-9a-f]+ \(fetched just now\)\n`, out)
-	out, _, err = dockhand(t, "edit", "jq", "--branch", "jq-rebuild", "--no-open")
+	require.Regexp(t, `(?m)^Started dockhand/jq-rebuild from master [0-9a-f]+ \(fetched just now\)$`, out)
+	out, _, err = dockhand(t, "revbump", "jq", "--subject", "rebuild for oniguruma 6.9.10", "--branch", "jq-rebuild")
 	require.NoError(t, err, "named again, it's the same branch")
 	require.NotContains(t, out, "Started dockhand")
 
