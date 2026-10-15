@@ -104,7 +104,7 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 			contents, found.Revbumped = bumped, true
 		}
 	}
-	if after, _, err := portfile.StealthDistSubdir(contents, found.Revbumped || byHand); err != nil {
+	if after, err := portfile.StealthDistSubdir(contents, found.Revbumped || byHand); err != nil {
 		found.Problem = unsupportedReason(err)
 	} else {
 		contents = after

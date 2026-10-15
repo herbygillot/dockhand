@@ -50,18 +50,6 @@ type Snapshot struct {
 	Root string `json:"-"`
 }
 
-func (s Snapshot) RequiresXcode() (bool, error) {
-	port, ok := s.Ports[s.Target.Name]
-	if !ok {
-		return false, fmt.Errorf("%w: evaluated target %s is missing", ErrTarget, s.Target.Name)
-	}
-	value, err := port.Bool("use_xcode")
-	if err != nil {
-		return false, fmt.Errorf("%w for %s", err, s.Target.Name)
-	}
-	return value, nil
-}
-
 // Bool reads an evaluated option as Tcl reads a boolean: yes, true, on,
 // and 1 are true, no, false, off, 0, and an unset option are false, in
 // any case, and anything else is an error, as is an option the

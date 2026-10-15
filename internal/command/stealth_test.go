@@ -60,7 +60,7 @@ func (r rechecksummer) Prepare(ctx context.Context, request editprep.Request) (e
 			}
 			stealth.Revbumped, revision = true, 1
 		}
-		if after, _, err = portfile.StealthDistSubdir(after, stealth.Revbumped); err != nil {
+		if after, err = portfile.StealthDistSubdir(after, stealth.Revbumped); err != nil {
 			return editprep.Result{}, err
 		}
 		stealth.DistSubdir = "jq/" + version + "_1"

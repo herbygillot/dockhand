@@ -114,7 +114,7 @@ subport terraform-1.4 {
 	snapshot, err := evaluator.Evaluate(t.Context(), source)
 	require.NoError(t, err)
 	require.Equal(t, "1.4.3", snapshot.Ports["terraform-1.4"].Version)
-	requiresXcode, err := snapshot.RequiresXcode()
+	requiresXcode, err := snapshot.Ports["terraform-1.4"].Bool("use_xcode")
 	require.NoError(t, err)
 	require.True(t, requiresXcode)
 	require.Contains(t, snapshot.Ports["terraform-1.4"].OptionErrors, "livecheck.url")

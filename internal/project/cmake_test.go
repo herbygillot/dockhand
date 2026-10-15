@@ -11,7 +11,7 @@ import (
 // writes its commands: names in any case, arguments quoted or bracketed,
 // comments passed over (the fluent-bit run, batch 23).
 func TestACMakeListsOptionsAndPackagesAreRead(t *testing.T) {
-	facts := ParseCMake([]byte(`cmake_minimum_required(VERSION 3.20)
+	facts := cmakeDocument(`cmake_minimum_required(VERSION 3.20)
 project(fluent-bit VERSION 5.1.3)
 # option(FLB_COMMENTED "not one" ON)
 #[[ option(FLB_BRACKETED "nor this" ON) ]]
@@ -28,7 +28,7 @@ elseif(FLB_MBEDTLS)
 else()
   message(STATUS [=[no "TLS" here]=])
 endif()
-`)).Facts()
+`).Facts()
 	require.Equal(t, map[string]CMakeOption{
 		"FLB_TLS": {Default: "ON"}, "FLB_KAFKA": {Default: "OFF"}, "FLB_KAFKA_SASL": {Default: "ON", Dependent: true},
 		"FLB_PROTOBUF_ENCODER": {Default: "OFF"}, "FLB_SHARED": {Default: "${BUILD_SHARED_LIBS}"},
@@ -44,7 +44,7 @@ endif()
 // on one alone, nested ones included, each statement in a line.
 func TestCMakeWithoutLeavesOutOptionsAndWhatTheyGate(t *testing.T) {
 	text := "project(x)\noption(A \"a\" OFF)\nif(A)\n  find_package(P)\n  if(WIN32)\n    message(x)\n  endif()\nendif()\nif(${A})\n  add_definitions(-DA)\nendif()\nif(B)\n  find_package(Q)\nendif()\nadd_library(x a.c)\n"
-	document := ParseCMake([]byte(text))
+	document := cmakeDocument(text)
 	require.Equal(t, "project(x)\nif(B)\nfind_package(Q)\nendif()\nadd_library(x a.c)", StatementsText(document.Without(map[string]bool{"A": true}, map[string]bool{"A": true})))
 	require.Equal(t, "project(x)\nif(A)\nfind_package(P)\nif(WIN32)\nmessage(x)\nendif()\nendif()\nif(${A})\nadd_definitions(-DA)\nendif()\nif(B)\nfind_package(Q)\nendif()\nadd_library(x a.c)",
 		StatementsText(document.Without(map[string]bool{"A": true}, nil)), "an option on by default gates what the default build reads")
@@ -73,7 +73,7 @@ if(D AND NOT A)
   message(FATAL_ERROR "D requires A")
 endif()
 `
-	require.Equal(t, map[string]bool{"A": true, "D": true}, ParseCMake([]byte(text)).Off(func(option string) bool { return option == "F" }))
+	require.Equal(t, map[string]bool{"A": true, "D": true}, cmakeDocument(text).Off(func(option string) bool { return option == "F" }))
 }
 
 // What the default build reads of a CMakeLists.txt is each branch whose
@@ -97,7 +97,7 @@ func TestTheDocumentTakesTheBranchesTheDefaultBuildDoes(t *testing.T) {
 		"x() # a comment\n#[[ a bracket\ncomment ]]\n\ny(\"#not\")\n": "x()\ny(#not)",
 		"if(\n  A\n)\n  a()\nendif()\nx(\"two words\")\n":             "x(\"two words\")",
 	} {
-		require.Equal(t, want, StatementsText(ParseCMake([]byte(text)).Without(nil, off)), text)
+		require.Equal(t, want, StatementsText(cmakeDocument(text).Without(nil, off)), text)
 	}
 }
 
@@ -106,7 +106,7 @@ func TestTheDocumentTakesTheBranchesTheDefaultBuildDoes(t *testing.T) {
 // a change is: a multiline if(), an elseif(), and an else(), the branch
 // before it negated (the architecture review's finding 3).
 func TestAStatementKnowsTheBlocksItsWithin(t *testing.T) {
-	document := ParseCMake([]byte("if(\n  DEMO\n  AND NOT WIN32\n)\n  a()\nelseif(${OTHER} STREQUAL x)\n  b()\nelse()\n  c()\nendif()\nd()\n"))
+	document := cmakeDocument("if(\n  DEMO\n  AND NOT WIN32\n)\n  a()\nelseif(${OTHER} STREQUAL x)\n  b()\nelse()\n  c()\nendif()\nd()\n")
 	under := map[string][]CMakeCondition{}
 	for _, statement := range document.Statements(nil, nil) {
 		under[statement.Text] = statement.Under
@@ -147,7 +147,6 @@ func TestADocumentReadsWhatItIncludes(t *testing.T) {
 		"cmake/more.cmake: set(B ON)", "cmake/more.cmake: include(${CMAKE_CURRENT_LIST_DIR}/more.cmake)",
 		": include(Helpers)", "cmake/Helpers.cmake: option(C c ON)", ": include(GNUInstallDirs)", ": include(${GENERATED}/x.cmake)", ": option(B b OFF)",
 	}, files, "each included file's commands in its place")
-	require.Empty(t, ParseCMake(reading.Files["CMakeLists.txt"].Data).Included(), "alone, it follows nothing")
 }
 
 // A CMakeLists.txt that sets its version in parts sets each as the
@@ -160,4 +159,10 @@ func TestAVersionSetInPartsIsTheVersion(t *testing.T) {
 	require.False(t, DeclaresVersionPart("CMakeLists.txt", "set(FLB_VERSION_PATCH 2)", "set(OTHER_VERSION_PATCH 3)", "5.1.2", "5.1.3"))
 	require.False(t, DeclaresVersionPart("meson.build", "set(FLB_VERSION_PATCH 2)", "set(FLB_VERSION_PATCH 3)", "5.1.2", "5.1.3"))
 	require.Equal(t, "set(A_VERSION_MAJOR 5)\nset(A_VERSION_PATCH 3)\nset(A_VERSION_TWEAK 7)", VersionPartsAs("set(A_VERSION_MAJOR 5)\nset(A_VERSION_PATCH 2)\nset(A_VERSION_TWEAK 7)", "5.1.2", "5.1.3"))
+}
+
+// cmakeDocument reads a CMakeLists.txt at the top of an archive that holds
+// nothing else, as a reading does.
+func cmakeDocument(text string) CMakeDocument {
+	return Reading{Files: map[string]File{"CMakeLists.txt": {Data: []byte(text)}}}.CMakeDocument("CMakeLists.txt")
 }

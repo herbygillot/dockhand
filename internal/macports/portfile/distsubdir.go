@@ -19,14 +19,6 @@ var (
 	stealthRevision = `${name}/${version}_${revision}`
 )
 
-// DistSubdir is how a stealth update's dist_subdir names the directory.
-type DistSubdir struct {
-	// ByRevision is ${name}/${version}_${revision}; otherwise Counter
-	// numbers it.
-	ByRevision bool
-	Counter    int
-}
-
 // StealthDistSubdir keeps a distfile that changed upstream without a new
 // name apart from the old one, so mirrors keep both. With the revision
 // bumped, it sets dist_subdir ${name}/${version}_${revision} after the
@@ -35,34 +27,34 @@ type DistSubdir struct {
 // archive's directory. One that follows the revision needs the bump. A
 // dist_subdir set any other way, or inside a block, is the person's to
 // change.
-func StealthDistSubdir(src []byte, revbumped bool) ([]byte, DistSubdir, error) {
+func StealthDistSubdir(src []byte, revbumped bool) ([]byte, error) {
 	script, subdirs, checksums, err := distSubdirCommands(src)
 	if err != nil {
-		return nil, DistSubdir{}, err
+		return nil, err
 	}
 	switch {
 	case len(subdirs) > 1:
-		return nil, DistSubdir{}, fmt.Errorf("%w: dist_subdir is set more than once", ErrUnsupported)
+		return nil, fmt.Errorf("%w: dist_subdir is set more than once", ErrUnsupported)
 	case len(subdirs) == 1:
 		cmd := subdirs[0]
 		if len(cmd.Words) != 2 {
-			return nil, DistSubdir{}, fmt.Errorf("%w: dist_subdir is not one word", ErrUnsupported)
+			return nil, fmt.Errorf("%w: dist_subdir is not one word", ErrUnsupported)
 		}
 		value := string(src[cmd.Words[1].Span.Start:cmd.Words[1].Span.End])
 		if value == stealthRevision {
 			if !revbumped {
-				return nil, DistSubdir{}, fmt.Errorf("%w: dist_subdir follows the revision, so without a revision bump the new archive would land where the old one is", ErrUnsupported)
+				return nil, fmt.Errorf("%w: dist_subdir follows the revision, so without a revision bump the new archive would land where the old one is", ErrUnsupported)
 			}
-			return src, DistSubdir{ByRevision: true}, nil
+			return src, nil
 		}
 		m := stealthCounter.FindStringSubmatch(value)
 		if m == nil {
-			return nil, DistSubdir{}, fmt.Errorf("%w: dist_subdir is already set, to %s", ErrUnsupported, value)
+			return nil, fmt.Errorf("%w: dist_subdir is already set, to %s", ErrUnsupported, value)
 		}
 		n, _ := strconv.Atoi(m[1])
 		next := fmt.Sprintf("${name}/${version}_%d", n+1)
 		out, err := textedit.Apply(src, []textedit.Edit{{Span: cmd.Words[1].Span, New: []byte(next)}})
-		return out, DistSubdir{Counter: n + 1}, err
+		return out, err
 	}
 	newline := "\n"
 	if bytes.Contains(src, []byte("\r\n")) {
@@ -78,9 +70,9 @@ func StealthDistSubdir(src []byte, revbumped bool) ([]byte, DistSubdir, error) {
 		}
 	}
 	width = max(width, len("dist_subdir")+1)
-	value, form := "${name}/${version}_1", DistSubdir{Counter: 1}
+	value := "${name}/${version}_1"
 	if revbumped {
-		value, form = stealthRevision, DistSubdir{ByRevision: true}
+		value = stealthRevision
 	}
 	line := "dist_subdir" + strings.Repeat(" ", width-len("dist_subdir")) + value
 	insert := newline + line
@@ -88,7 +80,7 @@ func StealthDistSubdir(src []byte, revbumped bool) ([]byte, DistSubdir, error) {
 		insert = line + newline
 	}
 	out, err := textedit.Apply(src, []textedit.Edit{{Span: textedit.Span{Start: at, End: at}, New: []byte(insert)}})
-	return out, form, err
+	return out, err
 }
 
 // RemoveStealthDistSubdir removes a stealth update's dist_subdir, in

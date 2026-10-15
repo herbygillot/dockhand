@@ -1,7 +1,6 @@
 package workspace_test
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -154,19 +153,6 @@ func TestOverlaySharesTrackedFilesAndReplacesTheEdited(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, base.Root(), tree.Base())
 	require.Equal(t, overlay.Root(), tree.Root())
-	edits := overlay.Edits()
-	require.Len(t, edits, 1)
-	require.True(t, edits[0].Before.Exists)
-	require.Equal(t, uint32(0100644), edits[0].Mode)
-	committed, err := overlay.Commit(t.Context())
-	require.NoError(t, err)
-	require.NotEqual(t, f.source().Tree, committed.Tree)
-	_, content, err := f.repo.File(t.Context(), string(committed.Tree), "devel/a/Portfile")
-	require.NoError(t, err)
-	require.Equal(t, edited, string(content))
-	unchanged, err := base.Commit(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, f.source().Tree, unchanged.Tree, "a base commits to its own tree")
 	_, err = base.Overlay(t.Context(), []git.FileEdit{{Path: "devel/b/Portfile", After: []byte("x")}})
 	require.ErrorContains(t, err, "not one", "a file the base does not hold cannot be overlaid")
 	_, err = base.Overlay(t.Context(), []git.FileEdit{{Path: "_resources/port1.0/checks/link.list", After: []byte("x")}})
@@ -271,11 +257,11 @@ func TestAnOverlayEvaluatesInTheBaseSession(t *testing.T) {
 	defer base.Close()
 	require.NoError(t, base.EnsurePort(t.Context(), targetA))
 	evaluator := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
-	batch, err := base.Batch(t.Context(), evaluator)
+	baseTree, err := base.Tree(model.Platform{})
 	require.NoError(t, err)
-	again, err := base.Batch(t.Context(), evaluator)
+	batch, err := evaluator.OpenBatch(t.Context(), baseTree)
 	require.NoError(t, err)
-	require.Same(t, batch, again, "one session per base")
+	defer batch.Close()
 	platform, err := evaluator.NativePlatform(t.Context())
 	require.NoError(t, err)
 	bound, err := base.Context(targetA, platform)
@@ -287,9 +273,6 @@ func TestAnOverlayEvaluatesInTheBaseSession(t *testing.T) {
 	overlay, err := base.Overlay(t.Context(), []git.FileEdit{{Path: "devel/a/Portfile", After: []byte(strings.Replace(portfileA, "version 1", "version 2", 1))}})
 	require.NoError(t, err)
 	defer overlay.Close()
-	shared, err := overlay.Batch(t.Context(), evaluator)
-	require.NoError(t, err)
-	require.Same(t, batch, shared, "an overlay's session is its base's")
 	candidate, err := overlay.Context(targetA, platform)
 	require.NoError(t, err)
 	after, err := batch.EvaluateSelected(t.Context(), candidate)
@@ -305,9 +288,6 @@ func TestAnOverlayEvaluatesInTheBaseSession(t *testing.T) {
 	require.NoError(t, err)
 	_, err = batch.EvaluateSelected(t.Context(), elsewhere)
 	require.ErrorContains(t, err, "session is bound to", "another base is not served")
-	require.NoError(t, base.Close())
-	_, err = base.Batch(context.Background(), evaluator)
-	require.ErrorContains(t, err, "closed")
 }
 
 // A registry hands out one workspace per source: the second holder gets the

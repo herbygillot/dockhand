@@ -77,11 +77,6 @@ func (c CMakeCondition) Tests(name string) bool {
 // including another; a cycle stops at it too.
 const cmakeIncludeDepth = 8
 
-// ParseCMake reads a CMakeLists.txt alone, its include()s not followed.
-func ParseCMake(data []byte) CMakeDocument {
-	return parseCMake(string(data), "", nil)
-}
-
 // CMakeDocument reads the CMakeLists.txt at name with each file it
 // include()s that the reading has (cmakeIncludes), each read in its place.
 func (r Reading) CMakeDocument(name string) CMakeDocument {
@@ -108,7 +103,7 @@ func parseCMake(text, dir string, read func(string) (string, bool)) CMakeDocumen
 		for _, command := range commands {
 			command.file = file
 			d.commands = append(d.commands, command)
-			if read == nil || depth >= cmakeIncludeDepth {
+			if depth >= cmakeIncludeDepth {
 				continue
 			}
 			modules = append(modules, cmakeModulePath(command, dir, file)...)

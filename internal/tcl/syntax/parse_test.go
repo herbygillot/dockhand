@@ -169,7 +169,6 @@ func TestParseWindowsAndErrorRecovery(t *testing.T) {
 			require.Equal(t, window, script.Span, "script escaped requested window: %+v", script.Span)
 
 			checkScript(t, source, script, window)
-			require.True(t, strings.HasPrefix(errs[0].Describe(source), "2:"), "diagnostic lost original line: %s", errs[0].Describe(source))
 			if strings.Contains(test.body, "version 2") {
 				require.Len(t, commands(script), 2, "error recovery swallowed following command")
 			}

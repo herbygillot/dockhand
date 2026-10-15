@@ -260,9 +260,8 @@ func TestToolsDistinguishMissingFailureAndCancellation(t *testing.T) {
 	tools := Tools{Go2Port: filepath.Join(t.TempDir(), "missing"), Cargo2Port: outputHelper(t, "")}
 	_, err := tools.Resolve(Go)
 	require.ErrorContains(t, err, "missing executable go2port")
-	available := tools.Probe()
-	require.False(t, available[0].Available)
-	require.True(t, available[1].Available)
+	_, err = tools.Resolve(Cargo)
+	require.NoError(t, err)
 	file := helper(t, "echo 'generator failed' >&2\nexit 7")
 	_, err = run(t.Context(), file, t.TempDir())
 	require.ErrorContains(t, err, "generator failed")

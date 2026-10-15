@@ -32,13 +32,12 @@ type Mirror struct {
 	// the mirror's tarballs directory; empty selects the default mirror.
 	// A test points it at a local server, and a person at a nearer mirror.
 	Base string
-	// Margin is subtracted from the mirror's Last-Modified to bracket the
-	// master commit; two hours when unset, since master gains tens of ports
-	// an hour and the mirror's index is minutes behind its build.
-	Margin time.Duration
 }
 
-const defaultMirrorMargin = 2 * time.Hour
+// mirrorMargin is subtracted from the mirror's Last-Modified to bracket the
+// master commit: two hours, since master gains tens of ports an hour and
+// the mirror's index is minutes behind its build.
+const mirrorMargin = 2 * time.Hour
 
 // mirrorProvenance records what a mirror-seeded generation was built from.
 type mirrorProvenance struct {
@@ -64,10 +63,6 @@ func (c *cache) mirrorSeed(ctx context.Context, repo *git.Repository, commit, tr
 			progress.VerboseReport(ctx, "Mirror index unavailable for bootstrap: %v", err)
 			return "", nil, nil, nil
 		}
-	}
-	margin := mirror.Margin
-	if margin <= 0 {
-		margin = defaultMirrorMargin
 	}
 	committed, err := repo.CommitTime(ctx, commit)
 	if err != nil {
@@ -98,7 +93,7 @@ func (c *cache) mirrorSeed(ctx context.Context, repo *git.Repository, commit, tr
 		progress.VerboseReport(ctx, "The commit of %s predates the mirror index of %s, which can seed only a later one; indexing in full", name, lastModified.UTC().Format(time.RFC3339))
 		return "", nil, nil, nil
 	}
-	bracket, err := repo.CommitBefore(ctx, commit, lastModified.Add(-margin))
+	bracket, err := repo.CommitBefore(ctx, commit, lastModified.Add(-mirrorMargin))
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -139,5 +134,5 @@ func (c *cache) mirrorSeed(ctx context.Context, repo *git.Repository, commit, tr
 		return "", nil, nil, err
 	}
 	progress.VerboseReport(ctx, "Seeding the PortIndex from the mirror index of %s, re-indexing %d paths changed since master %s", lastModified.UTC().Format(time.RFC3339), len(changed), bracket[:12])
-	return seed, changed, &mirrorProvenance{URL: address, LastModified: lastModified.UTC(), Commit: bracket, Margin: margin.String()}, nil
+	return seed, changed, &mirrorProvenance{URL: address, LastModified: lastModified.UTC(), Commit: bracket, Margin: mirrorMargin.String()}, nil
 }

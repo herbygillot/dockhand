@@ -193,15 +193,6 @@ const (
 	GoToolchainByHand GoToolchainOutcome = "by hand"
 )
 
-// Unmet reports a requirement the Portfile's minimum doesn't meet after the
-// update. A passing build can't catch it, since the builder's Go is new
-// enough, so it's a person's to look at.
-func (t GoToolchain) Unmet() bool {
-	return t.Outcome == GoToolchainUndeclared || t.Outcome == GoToolchainByHand
-}
-
-// report records a fidelity report and makes its evaluated snapshot the
-// prepared result.
 // PortBefore is a port as the edit found it: the first evaluation's, or,
 // where nothing was edited, as it stands; false where the result says
 // neither.
@@ -235,6 +226,8 @@ func (r Result) PortAfter(name string) (macports.PortInfo, bool) {
 	return macports.PortInfo{}, false
 }
 
+// report records a fidelity report and makes its evaluated snapshot the
+// prepared result.
 func (r *Result) report(report Fidelity) {
 	r.Fidelity = append(r.Fidelity, report)
 	r.Prepared = report.After
