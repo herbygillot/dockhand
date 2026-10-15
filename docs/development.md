@@ -47,14 +47,13 @@ The rest reach something outside the checkout and run only when named:
 | `DOCKHAND_TEST_MACPORTS_TCLSH` | every test that evaluates Portfiles or builds an index | the MacPorts installation whose `port-tclsh` it names |
 | `DOCKHAND_TEST_BASE_ADAPTER=preview` | the same | admits a development build of Base, such as master, which the evaluator otherwise refuses; the parent-side host-access regressions skip under it |
 | `DOCKHAND_TEST_TCLSH` | `tcl/rpc` | a `tclsh` other than the one on `PATH`, such as a Tcl 9 `port-tclsh` |
-| `DOCKHAND_TEST_PORTS_TREE` | `macports/eval` `TestPortsThatReadTheHostThroughBaseCompilerQueries` | a macports-ports checkout, read only |
+| `DOCKHAND_TEST_PORTS_TREE` | `macports/eval` `TestPortsThatAskBaseForCompilersReadTheTable` | a macports-ports checkout, read only |
 | `DOCKHAND_GUARD_TREE` | `macports/eval` `session_guard_test.go` | a ports tree whose Portfiles the session guard samples |
-| `DOCKHAND_TEST_DEPENDENCY_HELPERS=1` | `macports/dependency` `live_test.go` | the installed `go2port`/`cargo2port` and an upstream Go archive |
-| `DOCKHAND_TEST_PORTS_REPO` | `git` `TestCaptureRealPortsCheckout` | a real macports-ports checkout, read only |
+| `DOCKHAND_TEST_DEPENDENCY_HELPERS=1` | `macports/depblock` `live_test.go` | the installed `go2port`/`cargo2port` and an upstream Go archive |
 | `DOCKHAND_TEST_GITHUB_PR`, `DOCKHAND_TEST_GITHUB_TOKEN` | `forge/github` `inspect_live_test.go` | one pull request, `owner/repo#number`, read with that token |
 | `DOCKHAND_TEST_BOOTSTRAP_VM` | `tart/provision` `TestLiveAgentRegistration` | a running disposable VM you own, whose agent it registers |
 | `DOCKHAND_TEST_TART_LIVE` | `buildenv/tart` `TestLiveCheckInATahoeGuest` | the acceptance test above, with `DOCKHAND_TEST_PORTS_TREE` |
-| `DOCKHAND_TEST_TART_IMAGE` | `tart/host` `TestLiveTartContracts`, `tart/channel` `TestLiveChannel` | Tart's listing, stop, and delete behavior, and the guest channel, on a clone of the named raw-disk image |
+| `DOCKHAND_TEST_TART_IMAGE` | `tart/host` `TestLiveTartContracts`, `tart/guestssh` `TestLiveChannel` | Tart's listing, stop, and delete behavior, and the guest channel, on a clone of the named raw-disk image |
 | `DOCKHAND_TEST_TART_ASIF_SOURCE` | `tart/host` `TestLiveTartListsWhileAnASIFVMRuns` | an ASIF image such as Golden Gate's, cloned and run briefly while Tart lists its VMs; it needs Tart 2.39.0 or newer, and skips on an older one |
 
 ## State and service boundaries
