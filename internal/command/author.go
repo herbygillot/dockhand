@@ -840,7 +840,7 @@ func untrackedHere(ctx context.Context, e *engine.Engine) string {
 // terminal is asked, and a script is told the choices.
 func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where branchChoice, port, purpose string) (model.Branch, bool, error) {
 	if where.branch != "" {
-		return namedOrStarted(ctx, e, where.branch)
+		return namedOrStarted(ctx, e, where.branch, port)
 	}
 	if where.new {
 		return startFor(ctx, e, port, whatFor(purpose))
@@ -886,7 +886,7 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 			return model.Branch{}, false, err
 		}
 		fmt.Fprintf(streams.Err, "%s is in no open branch, so this starts %s for it.\n", port, engine.BranchName(name))
-		return startNamed(ctx, e, name)
+		return startNamed(ctx, e, name, port)
 	case 1:
 		fmt.Fprintf(streams.Err, "Working in %s, the one open branch changing %s; --new starts another.\n", changing[0].Branch.ShortName(), port)
 		return changing[0].Branch, false, nil
@@ -906,7 +906,7 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 	if !strings.EqualFold(answer, "y") && !strings.EqualFold(answer, "yes") {
 		return model.Branch{}, false, errors.New("nothing changed")
 	}
-	return startNamed(ctx, e, name)
+	return startNamed(ctx, e, name, port)
 }
 
 // errStartForVersion is an update's branch to start once the update knows
@@ -930,7 +930,7 @@ func startFor(ctx context.Context, e *engine.Engine, port, what string) (model.B
 	if err != nil {
 		return model.Branch{}, false, err
 	}
-	return startNamed(ctx, e, name)
+	return startNamed(ctx, e, name, port)
 }
 
 // namedOrStarted is the branch an authoring command's --branch names, or,
@@ -940,7 +940,7 @@ func startFor(ctx context.Context, e *engine.Engine, port, what string) (model.B
 // 2026-10-05, on the rc1 full stage's A12). A Git branch of the name
 // that dockhand doesn't track is refused, pointing at adopt, as start
 // refuses it; commands that read or act on a whole branch never start one.
-func namedOrStarted(ctx context.Context, e *engine.Engine, name string) (model.Branch, bool, error) {
+func namedOrStarted(ctx context.Context, e *engine.Engine, name, port string) (model.Branch, bool, error) {
 	branch, err := e.Resolve(ctx, name)
 	if !errors.Is(err, engine.ErrNoBranch) {
 		return branch, false, err
@@ -950,11 +950,17 @@ func namedOrStarted(ctx context.Context, e *engine.Engine, name string) (model.B
 	if merged, mergedErr := e.ResolveRecord(ctx, name); mergedErr == nil {
 		return model.Branch{}, false, fmt.Errorf("%w: %s was merged, and takes no changes; dockhand start %s starts a new branch of the name", engine.ErrNoBranch, merged.ShortName(), merged.ShortName())
 	}
-	return startNamed(ctx, e, name)
+	return startNamed(ctx, e, name, port)
 }
 
-func startNamed(ctx context.Context, e *engine.Engine, name string) (model.Branch, bool, error) {
-	branch, err := e.Start(ctx, engine.StartRequest{Name: name})
+// startNamed starts the branch an authoring command names or chooses, for
+// the port it works on, which the branch's record keeps (Branch.Ports).
+func startNamed(ctx context.Context, e *engine.Engine, name, port string) (model.Branch, bool, error) {
+	request := engine.StartRequest{Name: name}
+	if port != "" {
+		request.Ports = []string{port}
+	}
+	branch, err := e.Start(ctx, request)
 	return branch, err == nil, err
 }
 

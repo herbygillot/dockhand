@@ -39,6 +39,9 @@ type StartRequest struct {
 	// Base is the master commit to start from, fetched moments ago, as an
 	// update prepared on it was; master is fetched now when empty.
 	Base model.ObjectID
+	// Ports are the ports it's started for, which its record keeps
+	// (model.Branch.Ports).
+	Ports []string
 }
 
 // Start creates a branch from freshly fetched master, in a sparse managed
@@ -116,7 +119,7 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 
 	branch := model.Branch{
 		ID: model.BranchID(store.NewID("br")), Repository: e.Repository, Name: name, Base: base,
-		Worktree: directory, Managed: !request.Here, State: model.BranchOpen, CreatedAt: e.now(), Origin: request.Origin,
+		Worktree: directory, Managed: !request.Here, State: model.BranchOpen, CreatedAt: e.now(), Origin: request.Origin, Ports: slices.Compact(slices.Clone(request.Ports)),
 	}
 	if branch.Origin == "" {
 		branch.Origin = model.OriginPerson

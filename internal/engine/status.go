@@ -528,6 +528,14 @@ func (s BranchStatus) IncludedPorts() []string {
 	return included
 }
 
+// Touches reports whether a branch is a port's: it changes the port, by
+// its directory or its change record, or it was started for it
+// (model.Branch.Ports), as status --port reads it.
+func (s BranchStatus) Touches(port string) bool {
+	changed, _ := s.ChangedPorts()
+	return slices.Contains(s.Scope.PortNames(), port) || slices.Contains(changed, port) || slices.Contains(s.Branch.Ports, port)
+}
+
 // ChangedPorts are what the branch's files change as they are now, as a
 // person reads it: the ports its change records say (recordedPorts), then
 // _resources, where it changed.

@@ -219,7 +219,7 @@ tracked files.`,
 			} else if name, err = e.FreeName(ctx, ports[0]); err != nil {
 				return err
 			}
-			branch, err := e.Start(ctx, engine.StartRequest{Name: name, Here: here})
+			branch, err := e.Start(ctx, engine.StartRequest{Name: name, Here: here, Ports: ports})
 			if err != nil {
 				return err
 			}

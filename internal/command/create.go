@@ -82,7 +82,7 @@ its go-get answer.`,
 			switch {
 			case where.branch != "":
 				var started bool
-				if branch, started, err = namedOrStarted(ctx, e, where.branch); err == nil && started {
+				if branch, started, err = namedOrStarted(ctx, e, where.branch, name); err == nil && started {
 					fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
 				}
 			case where.new:
@@ -102,7 +102,7 @@ its go-get answer.`,
 				if free, err = e.NameFor(ctx, name, "new"); err != nil {
 					return err
 				}
-				if branch, err = e.Start(ctx, engine.StartRequest{Name: free, Base: base}); err == nil {
+				if branch, err = e.Start(ctx, engine.StartRequest{Name: free, Base: base, Ports: []string{name}}); err == nil {
 					fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
 				}
 			default:

@@ -149,3 +149,26 @@ func TestUndoAndOpen(t *testing.T) {
 	require.ErrorContains(t, err, "jq-update has no pull request yet; dockhand submit -b jq-update opens one")
 	require.Empty(t, opened)
 }
+
+// A branch started for a port is that port's before it changes it: status
+// --port finds it, status says what it was started for, and an edit of the
+// port from the checkout works in it rather than starting a second beside
+// it (the command-line UX second look's §1).
+func TestABranchStartedForAPortIsThatPorts(t *testing.T) {
+	newWorld(t)
+	_, _, err := dockhand(t, "start", "notes", "--port", "jq")
+	require.NoError(t, err)
+	out, _, err := dockhand(t, "status", "--port", "jq")
+	require.NoError(t, err)
+	require.Regexp(t, `(?m)^notes\s+1\s`, out, "found, and counted")
+	out, _, err = dockhand(t, "status", "notes")
+	require.NoError(t, err)
+	require.Contains(t, out, "  Ports    none changed yet; started for jq\n")
+	result, err := jsonOf(t, "status", "notes")
+	require.NoError(t, err)
+	require.Equal(t, []any{"jq"}, dig(t, result.Result, "branches", 0, "started_for"))
+
+	_, errs, err := dockhand(t, "edit", "jq")
+	require.NoError(t, err)
+	require.Contains(t, errs, "Working in notes, the one open branch changing jq; --new starts another.\n")
+}

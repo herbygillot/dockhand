@@ -461,8 +461,11 @@ type branchJSON struct {
 	// Changed are the ports the branch changes, each directory's changed
 	// subports where its change record says, and Notes say why a port is
 	// its directory's, read from the text instead.
-	Changed []string          `json:"changed_ports"`
-	Notes   map[string]string `json:"port_notes,omitempty"`
+	Changed []string `json:"changed_ports"`
+	// StartedFor are the ports it was started for, which it may not
+	// change yet.
+	StartedFor []string          `json:"started_for,omitempty"`
+	Notes      map[string]string `json:"port_notes,omitempty"`
 	// Releases are where the branch's updates found their versions.
 	Releases []releaseJSON `json:"releases"`
 	// Latest is the branch's newest finished check, null until one has
@@ -522,7 +525,7 @@ func branchView(status engine.BranchStatus) branchJSON {
 	view := branchJSON{Name: branch.ShortName(), GitBranch: branch.Name, ID: string(branch.ID), State: string(branch.State), Worktree: branch.Worktree, Managed: branch.Managed,
 		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Renamed: status.Renamed, Cleaned: status.Cleaned(), Commits: status.Commits,
 		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{},
-		Held: engine.HoldLines(status.Held), Assessment: string(status.Assessment), OnMaster: string(status.OnMaster)}
+		Held: engine.HoldLines(status.Held), Assessment: string(status.Assessment), OnMaster: string(status.OnMaster), StartedFor: branch.Ports}
 	if len(status.Held) > 0 {
 		view.HeldConcerns = concernsView(status.Held)
 	}

@@ -113,10 +113,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		return err
 	}
 	if port != "" {
-		statuses = slices.DeleteFunc(statuses, func(s engine.BranchStatus) bool {
-			changed, _ := s.ChangedPorts()
-			return !slices.Contains(s.Scope.PortNames(), port) && !slices.Contains(changed, port)
-		})
+		statuses = slices.DeleteFunc(statuses, func(s engine.BranchStatus) bool { return !s.Touches(port) })
 	}
 	var rows []attention
 	for _, status := range statuses {
@@ -166,6 +163,10 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		fmt.Fprintln(table, "BRANCH\tPORTS\tWORK\tCHECKS\tPR")
 		for _, status := range statuses {
 			ports := strconv.Itoa(len(status.Scope.Ports))
+			if len(status.Scope.Ports) == 0 && len(status.Branch.Ports) > 0 {
+				// The ports it was started for, which it doesn't change yet.
+				ports = strconv.Itoa(len(status.Branch.Ports))
+			}
 			if status.Cleaned() {
 				// What its Git branch changed went with it.
 				ports = "—"
@@ -568,6 +569,8 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 		case ports != "":
 		case len(included) > 0:
 			ports = fmt.Sprintf("none committed; %s built from untracked files (check --include)", prose.And(included))
+		case len(branch.Ports) > 0:
+			ports = "none changed yet; started for " + prose.And(branch.Ports)
 		default:
 			ports = "none yet"
 		}

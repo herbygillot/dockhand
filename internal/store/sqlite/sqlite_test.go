@@ -192,6 +192,8 @@ func TestBranchesKeepTheirRules(t *testing.T) {
 	b.Title, b.PullRequest = "libharbor: update to 2.0", &model.PullRequest{Repository: "macports/macports-ports", Number: 34901, Head: "ada/macports-ports:dockhand/libharbor-2"}
 	// A person's note for the pull request is the branch's (schema 27).
 	b.Note = "The tests failed on a permission error,\nbefore any test ran."
+	// The ports it was started for are the branch's (schema 32).
+	b.Ports = []string{"libharbor", "harbor-cli"}
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
 		got, err := r.BranchNamed(b.Name)

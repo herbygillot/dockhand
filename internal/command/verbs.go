@@ -147,7 +147,7 @@ func revbumpBranch(ctx context.Context, e *engine.Engine, selector, port string,
 			}
 			return branch, false, err
 		}
-		return namedOrStarted(ctx, e, selector)
+		return namedOrStarted(ctx, e, selector, port)
 	}
 	branch, err := e.Current(ctx)
 	if err == nil || !errors.Is(err, engine.ErrNoBranch) {

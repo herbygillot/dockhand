@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // ErrInvalid reports a record that breaks one of this package's rules.
@@ -157,6 +158,12 @@ type Branch struct {
 	// run, #35084). It is the branch's, not the pull request's, so a note
 	// given before one opens is kept for it.
 	Note string
+	// Ports are the ports it was started for, by name: start --port's, or
+	// the port an authoring command started it for. -p, status --port,
+	// and its ports read them beside what it changes, so a branch started
+	// for jq is jq's before it changes jq (the command-line UX second
+	// look's §1).
+	Ports []string
 	// EndedAt is when it left open, merged, closed, or archived, which
 	// cleanup times what it keeps of its checks from (D6); zero while it's
 	// open. The store records the moment it leaves open where it's zero.
@@ -183,6 +190,11 @@ func (b Branch) Validate() error {
 	}
 	if pr := b.PullRequest; pr != nil && (pr.Repository == "" || pr.Number <= 0 || pr.Head == "") {
 		return invalid("branch %s has an incomplete pull request", b.ID)
+	}
+	for _, port := range b.Ports {
+		if port == "" || strings.ContainsFunc(port, unicode.IsSpace) {
+			return invalid("branch %s was started for an unusable port name %q", b.ID, port)
+		}
 	}
 	return nil
 }

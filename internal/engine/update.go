@@ -316,6 +316,9 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		}
 		started := *request.Start
 		started.Base = base
+		if !slices.Contains(started.Ports, request.Port) {
+			started.Ports = append(started.Ports, request.Port)
+		}
 		// One not yet named is named for the version the update moves
 		// to, where it found one (NameFor).
 		if started.Name == "" {
@@ -851,6 +854,10 @@ func (e *Engine) PortBranches(ctx context.Context, port string) ([]PortBranch, e
 		switch {
 		case err != nil:
 			return nil, err
+		// A branch started for the port is the port's before it changes
+		// it (the command-line UX second look's §1).
+		case !changes && slices.Contains(branch.Ports, port):
+			substantive = append(substantive, PortBranch{Branch: branch})
 		case changes && onlyRevision:
 			revisionOnly = append(revisionOnly, PortBranch{Branch: branch, RevisionOnly: true})
 		case changes:
