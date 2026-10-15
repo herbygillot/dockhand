@@ -266,10 +266,22 @@ func TestAHeartbeatGoesOnAfterAFailedBeat(t *testing.T) {
 		defer mu.Unlock()
 		said = append(said, update.Message)
 	})
-	ctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
-	defer cancel()
-	s.KeepAlive(ctx)
-	require.True(t, s.Record().HeartbeatAt.After(started), "it beat again after the failures")
+	// It waits for the beat after the failures rather than a fixed 300ms,
+	// which a slow runner's store writes outlasted (CI's Intel job on
+	// 84937cb4).
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.KeepAlive(ctx)
+	}()
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(said) >= 2 && s.Record().HeartbeatAt.After(started)
+	}, 10*time.Second, 10*time.Millisecond, "it beat again after the failures")
+	cancel()
+	<-done
 	mu.Lock()
 	defer mu.Unlock()
 	require.Len(t, said, 2, "%q", said)

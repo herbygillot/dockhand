@@ -14,3 +14,10 @@ parse. The classification was right, holding nothing.
 The same batch's herdr patch warning, a Git-style patch probed at -p0 where
 MacPorts uses -p1, joins the roadmap's golang patch item as one cause: the
 probe applies patches with the evaluated `patch.pre_args` and `patch.args`.
+
+## CI on 84937cb4: a second heartbeat test's fixed wait
+
+CI's Intel job failed TestAHeartbeatGoesOnAfterAFailedBeat (internal/coord),
+unrelated to the change, as TestKeepAliveBeats had on b1ac0ce2: it gave
+KeepAlive 300ms to fail three beats and beat again. It now waits for the
+beat and both lines, up to ten seconds; 20 runs under -race pass.
