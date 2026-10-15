@@ -16,7 +16,7 @@
 # want of a branch before it reaches what the row tests, which six rows
 # of the rc6 full stage did. It says it, and the call goes on.
 port_guard() {
-	local verb=$1 port="" previous=""
+	local verb=${1:-} port="" previous=""
 	case "$verb" in check | submit | tidy) ;; *) return 0 ;; esac
 	for arg in "$@"; do
 		case "$previous" in -p | --port) port=$arg ;; esac
