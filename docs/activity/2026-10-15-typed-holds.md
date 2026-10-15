@@ -20,3 +20,12 @@ written once against the type layer 1 keeps.
   view (`concernsView`).
 
 Tests: TestAHoldSharedByPortsIsSaidOnce; the holds tests read `HoldLines`.
+
+## engine.ComparisonLines
+
+The command package review's row 4: submit put a "! " or "· " on each
+comparison line and sliced it back off to group the lines by port.
+`engine.ComparisonLines` groups them with whether each holds as a field
+(`ComparisonLine{Hold, Ports, Words}`), and `engine.UnderUpstream`, which the
+command had, words a change under the Upstream heading. submit and
+`review --pr` render the marks. TestComparisonLinesSayHoldsAsAField.

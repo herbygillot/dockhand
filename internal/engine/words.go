@@ -333,3 +333,57 @@ func Grouped(comparisons []PortComparison) []PortComparison {
 	}
 	return grouped
 }
+
+// UnderUpstream is a change as it reads under an Upstream heading, which
+// already says whose it is: "upstream's LICENSE changed" is "LICENSE
+// changed" there. Elsewhere, as in what holds a submission, the words
+// stand alone.
+func UnderUpstream(change model.UpstreamChange) model.UpstreamChange {
+	for _, prefix := range []string{"upstream's ", "upstream: "} {
+		if rest, ok := strings.CutPrefix(change.Message, prefix); ok {
+			change.Message = rest
+			break
+		}
+	}
+	return change
+}
+
+// ComparisonLine is one line of what comparing a branch's upstream
+// archives found, under an Upstream heading: whether it holds, the ports it
+// was found for, and its words.
+type ComparisonLine struct {
+	Hold  bool
+	Ports []string
+	Words string
+}
+
+// ComparisonLines are what the comparisons found, a line each, the same
+// finding of several ports once with each port named: a change a passing
+// build can't catch, archives that couldn't be compared, which hold, and
+// what was read and checked, so silence isn't taken for not looking (rust
+// 1.99.0, batch 23). Whether a line holds is its own field, where submit
+// sliced a "! " back off the words it had put on them.
+func ComparisonLines(comparisons []PortComparison) []ComparisonLine {
+	var lines []ComparisonLine
+	add := func(port string, hold bool, words string) {
+		for i := range lines {
+			if lines[i].Hold == hold && lines[i].Words == words {
+				lines[i].Ports = append(lines[i].Ports, port)
+				return
+			}
+		}
+		lines = append(lines, ComparisonLine{Hold: hold, Ports: []string{port}, Words: words})
+	}
+	for _, c := range Grouped(comparisons) {
+		if c.Comparison.Problem != "" {
+			add(c.Port, true, "archives not compared: "+c.Comparison.Problem)
+		}
+		for _, change := range c.Comparison.Changes {
+			add(c.Port, change.Hold, UnderUpstream(change).Message)
+		}
+		if words := CoverageWords(c.Comparison); words != "" {
+			add(c.Port, false, words)
+		}
+	}
+	return lines
+}

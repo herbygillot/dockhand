@@ -64,3 +64,17 @@ func TestARepeatedItemIsNamedOnce(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "Cargo.lock (4), go.mod", namedList([]string{"Cargo.lock", "Cargo.lock", "go.mod", "Cargo.lock", "Cargo.lock"}))
 }
+
+// A comparison's lines say whether each holds as a field, the same finding
+// of two ports once with both named, and what was read.
+func TestComparisonLinesSayHoldsAsAField(t *testing.T) {
+	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Hold: true, Message: "upstream's LICENSE changed"}
+	lines := ComparisonLines([]PortComparison{
+		{Port: "alpha", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license}}},
+		{Port: "beta", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license}, Problem: "HTTP 404"}},
+	})
+	require.Equal(t, []ComparisonLine{
+		{Hold: true, Ports: []string{"alpha", "beta"}, Words: "LICENSE changed"},
+		{Hold: true, Ports: []string{"beta"}, Words: "archives not compared: HTTP 404"},
+	}, lines[:2])
+}

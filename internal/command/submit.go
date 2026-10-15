@@ -514,42 +514,17 @@ func upstreamLines(plan engine.SubmitPlan) []string {
 // and a requirement's, whose other lines differed by provider (the Vx
 // port's field testing, 2026-10-04, py-coremltools and py-mlx-vlm).
 func comparisonLines(comparisons []engine.PortComparison) []string {
-	comparisons = engine.Grouped(comparisons)
-	type line struct {
-		mark, words string
-		ports       []string
-	}
-	var found []line
-	add := func(port, said string) {
-		mark, words := said[:len("! ")], said[len("! "):]
-		for i := range found {
-			if found[i].mark == mark && found[i].words == words {
-				found[i].ports = append(found[i].ports, port)
-				return
-			}
-		}
-		found = append(found, line{mark: mark, words: words, ports: []string{port}})
-	}
-	for _, c := range comparisons {
-		if c.Comparison.Problem != "" {
-			add(c.Port, "! archives not compared: "+c.Comparison.Problem)
-		}
-		for _, change := range c.Comparison.Changes {
-			add(c.Port, upstreamWords(underUpstream(change)))
-		}
-		// What it read and checked is said too, so silence isn't taken
-		// for not looking (rust 1.99.0, batch 23).
-		if words := engine.CoverageWords(c.Comparison); words != "" {
-			add(c.Port, "· "+words)
-		}
-	}
 	var lines []string
-	for _, l := range found {
-		port := ""
-		if len(comparisons) > 1 {
-			port = strings.Join(l.ports, ", ") + ": "
+	several := len(engine.Grouped(comparisons)) > 1
+	for _, l := range engine.ComparisonLines(comparisons) {
+		mark, port := "· ", ""
+		if l.Hold {
+			mark = "! "
 		}
-		lines = append(lines, l.mark+port+l.words)
+		if several {
+			port = strings.Join(l.Ports, ", ") + ": "
+		}
+		lines = append(lines, mark+port+l.Words)
 	}
 	return lines
 }
