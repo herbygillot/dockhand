@@ -167,6 +167,13 @@ type Update struct {
 	// archive among them, each with its entries.
 	Distfiles   int
 	Regenerated []editprep.Regenerated
+	// Compared counts the distinct archives a checksum refresh fetched to
+	// compare, and ChecksumsLeft what it left as it was, with why.
+	Compared      int
+	ChecksumsLeft []editprep.ChecksumLeft
+	// Differing are the archives whose checksums weren't as the Portfile
+	// declared them, for a checksum refresh.
+	Differing []string
 	// PatchProblems name the port's patches that no longer apply, and
 	// PatchesUnchecked those no check reached before the build;
 	// PatchesApplied counts those checked that apply.
@@ -426,6 +433,14 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 				Message: fmt.Sprintf("upstream moved: GitHub answers %s as %s, by a redirect; the Portfile's github.setup may follow", update.Release.Repository, update.Renamed)})
 		}
 	}
+	if request.Action == model.EditChecksums {
+		update.ChecksumsLeft, update.Differing = result.Left, result.Differing
+		names := map[string]bool{}
+		for _, download := range result.Downloads {
+			names[download.Name] = true
+		}
+		update.Compared = len(names)
+	}
 	if len(result.Files) == 0 {
 		update.Current = true
 		return update, nil
@@ -571,7 +586,10 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 // now, read through the clone, since a plan only reads.
 func (e *Engine) updateSource(ctx context.Context, request UpdateRequest) (*git.Repository, string, model.ObjectID, error) {
 	if request.FromMaster || request.Start != nil {
-		if request.FromMaster && !request.Plan || request.Action != model.EditUpdate {
+		// A checksum refresh's plan reads master too, as a version
+		// update's does; only a version update starts its branch here.
+		planned := request.FromMaster && request.Action == model.EditChecksums
+		if request.FromMaster && !request.Plan || request.Action != model.EditUpdate && !planned {
 			return nil, "", "", errors.New("engine: only a version update is prepared from master; start a branch for anything else")
 		}
 		master, err := e.fetchMaster(ctx)

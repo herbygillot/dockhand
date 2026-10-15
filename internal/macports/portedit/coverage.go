@@ -18,10 +18,13 @@ import (
 type archiveCoverage struct {
 	declared, covered, inert, unique map[string]bool
 	downloads                        []plannedArchive
+	// names are the archive each declared group names, by its ID, where
+	// it names one.
+	names map[string]string
 }
 
 func newArchiveCoverage() *archiveCoverage {
-	return &archiveCoverage{declared: map[string]bool{}, covered: map[string]bool{}, inert: map[string]bool{}, unique: map[string]bool{}}
+	return &archiveCoverage{declared: map[string]bool{}, covered: map[string]bool{}, inert: map[string]bool{}, unique: map[string]bool{}, names: map[string]string{}}
 }
 
 // declare records the checksum groups one context's binding declares, and
@@ -29,6 +32,9 @@ func newArchiveCoverage() *archiveCoverage {
 func (c *archiveCoverage) declare(info macports.PortInfo, groups []distfiles.Group) {
 	for _, group := range groups {
 		c.declared[group.ID()] = true
+		if group.Name != "" {
+			c.names[group.ID()] = group.Name
+		}
 	}
 	for id := range inertChecksumGroups(info, groups) {
 		c.inert[id] = true

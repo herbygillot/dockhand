@@ -33,6 +33,9 @@ type Regenerated = portedit.Regenerated
 type Override = portedit.Override
 type GoToolchainOutcome = portedit.GoToolchainOutcome
 type Stealth = portedit.Stealth
+
+// ChecksumLeft is what a checksum refresh left as it was, with why.
+type ChecksumLeft = portedit.ChecksumLeft
 type StealthDistfile = portedit.StealthDistfile
 type StealthRequest = portedit.StealthRequest
 

@@ -159,6 +159,12 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	require.NotContains(t, asked.String(), "? ", "a plan asks nothing")
 	require.Contains(t, told.String(), "Planned on master ")
 	require.Equal(t, none, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+	// A checksum refresh's plan too, which started one: "this starts
+	// dockhand/jq-checksums for it" (batch a, 2026-10-15).
+	planned, _, err = dockhand(t, "checksums", "jq", "--plan")
+	require.NoError(t, err)
+	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\)`, planned)
+	require.Equal(t, none, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 
 	// With no open branch changing the port, the update starts one, in
 	// a script too, and says so first (the command-line UX review, §2).

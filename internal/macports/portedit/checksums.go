@@ -142,6 +142,7 @@ func (s *Service) refreshChecksumsInto(ctx context.Context, request Request, inp
 	if err != nil {
 		return result, err
 	}
+	result.Left = observed.left
 	for _, frame := range observed.contexts {
 		result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Variant: frame.variant, Modeled: frame.profile != input.before.Platform})
 	}
@@ -163,7 +164,15 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 		if obsoleteIn(observed.Snapshot.Ports[input.target.Name]) {
 			return nil
 		}
-		binding, err := s.bindArchives(ctx, input, input.data, observed)
+		here := profile == input.before.Platform
+		binding, err := s.bindArchivesOn(ctx, input, input.data, observed, here)
+		// A context modeled on another Mac that the evaluation can't
+		// model, as one that reads the host, is left as it is, and said;
+		// this Mac's is read as it stands.
+		if !here && errors.Is(err, errProbeInconclusive) {
+			plan.left = append(plan.left, ChecksumLeft{Kind: LeftContext, What: contextWords(profile, variant), Reason: reasonWords(err)})
+			return nil
+		}
 		if err != nil {
 			return fmt.Errorf("context %+v: %w", profile, err)
 		}
@@ -198,11 +207,66 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 			return nil, fmt.Errorf("+%s: %w", variant, err)
 		}
 	}
-	if ids := coverage.uncovered(); len(ids) > 0 {
-		return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", errProbeInconclusive, ids[0])
+	// A declaration no context it could read fetches stays as written, and
+	// is said; one refreshed is enough to go on.
+	for _, id := range coverage.uncovered() {
+		what := coverage.names[id]
+		if what == "" {
+			what = "checksum declaration " + id
+		}
+		plan.left = append(plan.left, ChecksumLeft{Kind: LeftDeclaration, What: what, Reason: "no context dockhand could read fetches it"})
+	}
+	if len(coverage.downloads) == 0 {
+		return nil, fmt.Errorf("%w: no archive in the contexts dockhand could read; left: %s", errProbeInconclusive, leftWords(plan.left))
 	}
 	plan.downloads = coverage.downloads
 	return plan, nil
+}
+
+// ChecksumLeft is what a checksum refresh left as it was, with why: a
+// context it couldn't model, a declaration no readable context fetches, or
+// dependency entries it couldn't write. It's a list, not prose, so the
+// refresh writes the rest, and later work shortens the list.
+type ChecksumLeft struct {
+	Kind   LeftKind `json:"kind"`
+	What   string   `json:"what"`
+	Reason string   `json:"reason"`
+}
+
+// LeftKind is what a ChecksumLeft is.
+type LeftKind string
+
+const (
+	// LeftContext is a platform or variant the refresh couldn't read.
+	LeftContext LeftKind = "context"
+	// LeftDeclaration is a checksum declaration it left as written.
+	LeftDeclaration LeftKind = "declaration"
+	// LeftDependencies is a dependency block's entries it couldn't write.
+	LeftDependencies LeftKind = "dependencies"
+)
+
+func contextWords(profile model.Platform, variant string) string {
+	if variant != "" {
+		return "+" + variant
+	}
+	return fmt.Sprintf("%s %s %s", profile.OS, profile.Version, profile.Architecture)
+}
+
+// reasonWords is an error as a reason, without the sentinels it wraps.
+func reasonWords(err error) string {
+	words := err.Error()
+	for _, sentinel := range []error{errProbeInconclusive, ErrUnsupported} {
+		words = strings.TrimPrefix(words, sentinel.Error()+": ")
+	}
+	return words
+}
+
+func leftWords(left []ChecksumLeft) string {
+	var words []string
+	for _, l := range left {
+		words = append(words, l.What+" ("+l.Reason+")")
+	}
+	return strings.Join(words, "; ")
 }
 
 // inertChecksumGroups names the declared checksum groups that no archive

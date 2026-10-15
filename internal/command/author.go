@@ -149,8 +149,14 @@ dist_subdir ${name}/${version}_${revision}, so mirrors keep both archives.
 numbers the directory instead: ${name}/${version}_1, the MacPorts guide's
 recipe. A later version update removes either.
 
+It reads the Portfile as it stands, on every platform it models, with no
+version to find and none of update's holds: a context it can't read, or a
+declaration none it reads fetches, is left as it was and said.
+
 The branch is --branch, else the one checked out here; --new starts one.
---plan shows the edit and changes nothing.`,
+--plan shows the edit and changes nothing, and is the check: it says
+whether every distfile matches its checksums, starting no branch where
+none is open, and exits 3 where any doesn't.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request := engine.UpdateRequest{Action: model.EditChecksums, Port: args[0], KeepOldChecksums: keepOld, KeepRevision: keepRevision, Plan: plan}
@@ -335,9 +341,11 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 			fromMaster = true
 		}
 	}
-	// So is one with no branch to plan in, since a plan starts nothing.
+	// So is one with no branch to plan in, since a plan starts nothing: a
+	// checksum refresh's too, whose plan started a branch, "this starts
+	// dockhand/jq-checksums for it", for a plan that changes nothing.
 	var beside string
-	if request.Plan && request.Action == model.EditUpdate && !fromMaster {
+	if request.Plan && (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && !fromMaster {
 		if fromMaster, beside, err = unbranchedPlan(ctx, e, where, request.Port); err != nil {
 			return branch, update, err
 		}
@@ -423,8 +431,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		case request.Action == model.EditUpdate:
 			fmt.Fprintf(out, "%s is already at %s; nothing to change.\n", update.Port, update.After)
 		default:
-			fmt.Fprintf(out, "%s %s's checksums are current; nothing to change.\n", update.Port, update.After)
+			fmt.Fprintf(out, "%s %s: %s; nothing to change.\n", update.Port, update.After, matchWords(update.Compared))
 		}
+		writeLeft(out, update.ChecksumsLeft)
 		writePlainHTTP(out, update.PlainHTTP)
 		return branch, update, nil
 	}
@@ -469,6 +478,15 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, true)
 			streams.emit(result)
 			return branch, update, err
+		}
+		// A checksum refresh's plan is its check: it says which archives
+		// don't match, and exits 3 where any doesn't, for a script.
+		if request.Action == model.EditChecksums {
+			writeLeft(out, update.ChecksumsLeft)
+			if len(update.Differing) > 0 {
+				fmt.Fprintf(out, "%d of %s don't match their checksums: %s\n", len(update.Differing), prose.Plural(update.Compared, "distfile"), strings.Join(update.Differing, ", "))
+				return branch, update, &ExitError{Code: 3}
+			}
 		}
 		return branch, update, nil
 	}
@@ -1057,4 +1075,25 @@ func upstreamWords(change model.UpstreamChange) string {
 		return "! " + change.Message
 	}
 	return "· " + change.Message
+}
+
+// matchWords says that every archive a checksum refresh compared matches
+// the Portfile's checksums for it.
+func matchWords(compared int) string {
+	switch compared {
+	case 0:
+		return "its checksums are current"
+	case 1:
+		return "its distfile matches its checksums"
+	}
+	return fmt.Sprintf("all %d distfiles match their checksums", compared)
+}
+
+// writeLeft says what a checksum refresh left as it was, and why, a line
+// each: a context it couldn't read, a declaration none it read fetches,
+// dependency entries it couldn't write.
+func writeLeft(out io.Writer, left []engine.ChecksumLeft) {
+	for _, l := range left {
+		fmt.Fprintf(out, "Left as it was: %s, %s\n", l.What, l.Reason)
+	}
 }

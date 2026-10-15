@@ -34,6 +34,8 @@ type plannedArchive struct {
 type observedArchivePlan struct {
 	contexts  []archiveContext
 	downloads []plannedArchive
+	// left is what a checksum refresh leaves as it was (ChecksumLeft).
+	left []ChecksumLeft
 	// pairs are each archive the update replaces beside its replacement,
 	// once for each checksum declaration they share, whichever contexts
 	// fetch them.
@@ -53,8 +55,17 @@ type archivePair struct {
 }
 
 func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation) (distfiles.Binding, error) {
+	return s.bindArchivesOn(ctx, input, contents, observed, false)
+}
+
+// bindArchivesOn is bindArchives, where here says the context is this Mac
+// as it is: what the evaluation read of the host is the host's, so it
+// stands, where for a context modeled on another Mac it's inconclusive.
+// A checksum refresh reads cpi's this way, whose qmake5 PortGroup reads
+// the host's Qt paths (field testing at 43949b89).
+func (s *Service) bindArchivesOn(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation, here bool) (distfiles.Binding, error) {
 	port, inconclusive := observe.Tolerate(ctx, observed.Ports[input.target.Name], contents, observed.Snapshot.Root)
-	if inconclusive {
+	if inconclusive && !here {
 		return distfiles.Binding{}, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, observe.HostInputs(port))
 	}
 	info := observed.Snapshot.Ports[input.target.Name]

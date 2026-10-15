@@ -32,6 +32,9 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 			return result, wheelsOnly(ctx, s.PyPI, item.artifact.Name, item.artifact.URLs, item.info.Version, err)
 		}
 		group := item.artifact.Group
+		if differs(group, download) && !slices.Contains(result.Differing, item.artifact.Name) {
+			result.Differing = append(result.Differing, item.artifact.Name)
+		}
 		if group.Legacy() && !request.KeepOldChecksums && !group.Traced() {
 			edit, values := portfile.RewriteChecksumGroup(plan.contents, group.Pairs, download.Checksum)
 			if _, ok := updates[edit.Span]; !ok {
@@ -100,6 +103,17 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		}
 	}
 	return result, nil
+}
+
+// differs reports a download whose checksums aren't what its group
+// declares.
+func differs(group distfiles.Group, download distfetch.Download) bool {
+	for kind, token := range group.Values {
+		if value, ok := download.Value(kind); !ok || value != token.Value {
+			return true
+		}
+	}
+	return false
 }
 
 // checksumUpdate is the text one span becomes and the evaluated words it
