@@ -182,6 +182,24 @@ func (r *Repository) Untracked(ctx context.Context) ([]string, error) {
 	return paths, nil
 }
 
+// IgnoredFiles lists the files in the checkout that Git ignores, as git
+// ls-files --ignored reads them, a directory it ignores whole as one
+// entry ending in a slash: what git worktree remove --force deletes with
+// the worktree, unsaid.
+func (r *Repository) IgnoredFiles(ctx context.Context) ([]string, error) {
+	out, err := r.output(ctx, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory")
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for path := range strings.SplitSeq(string(out), "\x00") {
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
+}
+
 // Ignored are the paths among those given that Git ignores, by a
 // .gitignore in the worktree at any depth, .git/info/exclude, or
 // core.excludesFile, as git check-ignore reads them: whatever Git itself

@@ -310,7 +310,8 @@ closes it.`,
 				}
 			}
 			branch = archived.Branch
-			streams.emit(map[string]any{"branch": branch.ShortName(), "state": branch.State, "worktree_removed": archived.Removed != "", "worktree_kept": archived.Kept})
+			streams.emit(map[string]any{"branch": branch.ShortName(), "state": branch.State, "worktree_removed": archived.Removed != "", "worktree_kept": archived.Kept,
+				"ignored_removed": nonNil(archived.IgnoredRemoved)})
 			out := streams.Out
 			if undo {
 				fmt.Fprintf(out, "%s is back among your open branches.\n", branch.ShortName())
@@ -319,6 +320,11 @@ closes it.`,
 			switch {
 			case archived.Removed != "":
 				fmt.Fprintf(out, "Archived %s, and removed its worktree; its Git branch and pull request stay. dockhand archive --undo %s brings it back.\n", branch.ShortName(), branch.ShortName())
+				// What Git ignores goes with the worktree, and no branch
+				// keeps it: said, as nothing else lists it.
+				if ignored := archived.IgnoredRemoved; len(ignored) > 0 {
+					fmt.Fprintf(out, "Its ignored files went with it: %s\n", prose.Few(ignored, 5, "file"))
+				}
 			case archived.Kept != "":
 				fmt.Fprintf(out, "Archived %s; its worktree stays, since %s. dockhand archive --discard %s removes it, edits and all.\n", branch.ShortName(), archived.Kept, branch.ShortName())
 			default:

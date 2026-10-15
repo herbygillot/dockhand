@@ -99,6 +99,15 @@ func TestInitStartPathAndAdopt(t *testing.T) {
 
 	_, _, err = dockhand(t, "path", "fd-update")
 	require.ErrorContains(t, err, "no tracked branch named fd-update")
+
+	// A branch whose work is all uncommitted edits names the ports they
+	// change, where it said "changing no ports yet".
+	testsupport.Git(t, w.clone, "switch", "-q", "-c", "edits-only", "master")
+	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.2\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "_resources/port1.0/group/github-1.0.tcl"), []byte("# group, edited\n"), 0o644))
+	out, _, err = dockhand(t, "adopt")
+	require.NoError(t, err)
+	require.Regexp(t, `^Adopted edits-only: 0 commits above master [0-9a-f]{7}, with edits not yet committed to jq and _resources\.\n`, out)
 }
 
 func TestInitRemembersAChosenWorktreesDirectory(t *testing.T) {

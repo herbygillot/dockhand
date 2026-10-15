@@ -199,6 +199,10 @@ type Adoption struct {
 	// Commits counts the commits above master.
 	Commits int
 	Scope   Scope
+	// Uncommitted are the ports the worktree's uncommitted edits change
+	// that its commits don't: "0 commits above master, changing no ports
+	// yet" was said of a tree with edits to three ports.
+	Uncommitted []string
 	// Placed is where adopting checked the branch out, where it wasn't
 	// anywhere, and Unplaced why it couldn't.
 	Placed, Unplaced string
@@ -248,6 +252,7 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 		if adoption.Branch.Worktree == "" {
 			adoption.place(ctx, e)
 		}
+		adoption.Uncommitted = e.uncommittedPorts(ctx, adoption.Branch, adoption.Scope)
 		return adoption, nil
 	}
 	if renamed, ok, err := e.renamedFrom(ctx, name, head); err != nil || ok {
@@ -296,7 +301,32 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 	if err == nil && worktree == "" {
 		adoption.place(ctx, e)
 	}
+	if err == nil {
+		adoption.Uncommitted = e.uncommittedPorts(ctx, adoption.Branch, adoption.Scope)
+	}
 	return adoption, err
+}
+
+// uncommittedPorts are the ports a branch's worktree's uncommitted edits
+// change that its commits don't (scope), by name; none where it has no
+// worktree here.
+func (e *Engine) uncommittedPorts(ctx context.Context, branch model.Branch, scope Scope) []string {
+	worktree, err := e.openWorktree(ctx, branch)
+	if err != nil {
+		return nil
+	}
+	edited, err := worktree.TrackedChanges(ctx)
+	if err != nil {
+		return nil
+	}
+	committed := scope.Changed()
+	var ports []string
+	for _, port := range macports.ScopeOf(edited).Changed() {
+		if !slices.Contains(committed, port) {
+			ports = append(ports, port)
+		}
+	}
+	return ports
 }
 
 // place checks out an adopted branch that isn't anywhere, as start does,
@@ -439,10 +469,36 @@ func (e *Engine) Resolve(ctx context.Context, selector string) (model.Branch, er
 	}
 	// A name no record has may be one a branch was renamed to by hand,
 	// which is followed, then found.
-	if followed, ferr := e.followRenames(ctx, selector); ferr != nil || len(followed) == 0 {
-		return branch, err
+	if followed, ferr := e.followRenames(ctx, selector); ferr == nil && len(followed) > 0 {
+		if branch, err = e.named(ctx, selector, store.Reader.BranchNamed); !errors.Is(err, ErrNoBranch) {
+			return branch, err
+		}
 	}
-	return e.named(ctx, selector, store.Reader.BranchNamed)
+	// A merged branch's record keeps its name, as status --all shows it:
+	// it's said from the record, not as a name nothing has (the rc8 full
+	// stage's B6, the rc10 full stage's C7).
+	if merged, merr := e.named(ctx, selector, store.Reader.MergedBranchNamed); merr == nil {
+		return branch, fmt.Errorf("%w named %s: %s", ErrNoBranch, selector, e.mergedWords(ctx, merged))
+	}
+	return branch, err
+}
+
+// mergedWords say what became of a merged branch, from its record: "jq-1.8
+// was merged as #35012 and cleaned", or, where clean kept it, its worktree
+// holding commits past the merge, that it takes no changes, and how they
+// become a branch again.
+func (e *Engine) mergedWords(ctx context.Context, branch model.Branch) string {
+	words := branch.ShortName() + " was merged"
+	if pr := branch.PullRequest; pr != nil {
+		words += fmt.Sprintf(" as #%d", pr.Number)
+	}
+	if _, _, err := e.Repo.Branch(ctx, branch.Name); errors.Is(err, git.ErrBranchMissing) {
+		return words + " and cleaned"
+	}
+	if branch.Worktree != "" && exists(branch.Worktree) {
+		return words + fmt.Sprintf(", and takes no changes; the commits past the merge are kept in %s; dockhand adopt %s tracks them as a new branch", branch.Worktree, branch.Name)
+	}
+	return words + fmt.Sprintf(", and takes no changes; dockhand adopt %s tracks what its Git branch holds as a new branch", branch.Name)
 }
 
 // ResolveRecord finds a branch as Resolve does, or else the newest merged
@@ -506,10 +562,18 @@ func (e *Engine) Path(ctx context.Context, selector string) (string, error) {
 	if selector == "" {
 		branch, err = e.Current(ctx)
 	} else {
-		branch, err = e.Resolve(ctx, selector)
+		// path only reads, so a merged branch clean kept is reached, its
+		// worktree given; one cleaned has none, and none is made again.
+		branch, err = e.ResolveRecord(ctx, selector)
 	}
 	if err != nil {
 		return "", err
+	}
+	if branch.State == model.BranchMerged {
+		if branch.Worktree != "" && exists(branch.Worktree) {
+			return branch.Worktree, nil
+		}
+		return "", fmt.Errorf("%s; nothing of it is checked out", e.mergedWords(ctx, branch))
 	}
 	if branch.Worktree == "" {
 		if branch, err = e.placeWorktree(ctx, branch); err != nil {

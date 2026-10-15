@@ -44,9 +44,13 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Nothing to remove.\n", out, "plain clean is merged branches only")
 
+	// What Git ignores goes with the worktree, and is said, as nothing
+	// else lists it (the person's .gitignore item, 2026-10-04).
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*.log\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "build.log"), []byte("built\n"), 0o644))
 	archived, _, err = dockhand(t, "archive", "--discard", "jq-update")
 	require.NoError(t, err)
-	require.Contains(t, archived, "Archived jq-update, and removed its worktree; its Git branch and pull request stay. dockhand archive --undo jq-update brings it back.\n")
+	require.Contains(t, archived, "Archived jq-update, and removed its worktree; its Git branch and pull request stay. dockhand archive --undo jq-update brings it back.\nIts ignored files went with it: build.log\n")
 	require.NoDirExists(t, dir)
 	require.Equal(t, head, strings.TrimSpace(testsupport.Git(t, w.clone, "rev-parse", "dockhand/jq-update")), "the branch and its work stay")
 

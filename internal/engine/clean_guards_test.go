@@ -211,3 +211,27 @@ func TestLegacyCleanupKeepsWhatHoldsAnotherCommit(t *testing.T) {
 	require.False(t, done[0].Done)
 	require.NotEmpty(t, testsupport.Git(t, f.clone, "branch", "--list", name))
 }
+
+// A merged branch's name is said from its record, not as a name nothing
+// has: path, which only reads, gives the worktree clean kept, and says one
+// cleaned has none; a command that changes a branch is refused, saying
+// what became of it (the rc8 full stage's B6, the rc10 full stage's C7).
+func TestAMergedBranchIsSaidFromItsRecord(t *testing.T) {
+	t.Parallel()
+	_, e, _, branch := mergedBranch(t)
+	path, err := e.Path(t.Context(), "jq-update")
+	require.NoError(t, err)
+	require.Equal(t, branch.Worktree, path, "the worktree it still has")
+	_, err = e.Resolve(t.Context(), "jq-update")
+	require.ErrorIs(t, err, ErrNoBranch)
+	require.ErrorContains(t, err, "jq-update was merged as #34901, and takes no changes; the commits past the merge are kept in "+branch.Worktree+"; dockhand adopt dockhand/jq-update tracks them as a new branch")
+
+	plans, err := e.PlanClean(t.Context())
+	require.NoError(t, err)
+	_, err = e.ApplyClean(t.Context(), plans)
+	require.NoError(t, err)
+	_, err = e.Resolve(t.Context(), "jq-update")
+	require.EqualError(t, err, "no tracked branch named jq-update: jq-update was merged as #34901 and cleaned")
+	_, err = e.Path(t.Context(), "jq-update")
+	require.EqualError(t, err, "jq-update was merged as #34901 and cleaned; nothing of it is checked out")
+}

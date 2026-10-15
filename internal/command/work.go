@@ -279,7 +279,7 @@ edit and you have write access, and never rewrites their description.`,
 				return err
 			}
 			streams.emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "renamed_from": adoption.Renamed, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames()),
-				"placed": adoption.Placed, "unplaced": adoption.Unplaced})
+				"uncommitted": nonNil(adoption.Uncommitted), "placed": adoption.Placed, "unplaced": adoption.Unplaced})
 			if adoption.Already {
 				fmt.Fprintf(streams.Out, "%s is already tracked.\n", adoption.Branch.Name)
 				writePlaced(streams.Out, adoption)
@@ -292,7 +292,7 @@ edit and you have write access, and never rewrites their description.`,
 				}
 				return nil
 			}
-			fmt.Fprintf(streams.Out, "Adopted %s: %s above master %s%s.\n", adoption.Branch.Name, prose.Plural(adoption.Commits, "commit"), engine.Short(adoption.Branch.Base), describeScope(adoption.Scope))
+			fmt.Fprintf(streams.Out, "Adopted %s: %s above master %s%s.\n", adoption.Branch.Name, prose.Plural(adoption.Commits, "commit"), engine.Short(adoption.Branch.Base), describeScope(adoption.Scope, adoption.Uncommitted))
 			writePlaced(streams.Out, adoption)
 			return nil
 		},
@@ -331,7 +331,7 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, nu
 		edits = "maintainers can't push to it; suggest changes with dockhand review " + fmt.Sprint(number)
 	}
 	fmt.Fprintf(streams.Out, "Adopted %s: %q by @%s, %s%s; %s.\nDirectory: %s\n", adoption.Branch.ShortName(), adoption.Title, adoption.Author,
-		prose.Plural(adoption.Commits, "commit"), describeScope(adoption.Scope), edits, tilde(adoption.Branch.Worktree))
+		prose.Plural(adoption.Commits, "commit"), describeScope(adoption.Scope, nil), edits, tilde(adoption.Branch.Worktree))
 	return nil
 }
 
@@ -363,15 +363,18 @@ path <branch>)" or an editor. Without a name, the branch checked out here.`,
 	}
 }
 
-func describeScope(scope engine.Scope) string {
+func describeScope(scope engine.Scope, uncommitted []string) string {
 	changed := scope.Changed()
-	switch len(changed) {
-	case 0:
+	words := ", changing " + prose.And(changed)
+	switch {
+	case len(changed) == 0 && len(uncommitted) > 0:
+		return ", with edits not yet committed to " + prose.And(uncommitted)
+	case len(changed) == 0:
 		return ", changing no ports yet"
-	case 1:
-		return ", changing " + changed[0]
+	case len(uncommitted) > 0:
+		words += ", with edits not yet committed to " + prose.And(uncommitted)
 	}
-	return ", changing " + strings.Join(changed[:len(changed)-1], ", ") + " and " + changed[len(changed)-1]
+	return words
 }
 
 // ask puts a question on stderr and reads one line. Input that ends

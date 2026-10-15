@@ -290,8 +290,11 @@ type ArchiveRequest struct {
 type Archived struct {
 	Branch model.Branch
 	// Removed is the worktree removed, and Kept why it stayed: what it
-	// holds that its Git branch doesn't.
-	Removed, Kept string
+	// holds that its Git branch doesn't. IgnoredRemoved are the files Git
+	// ignores that went with it, which nothing listed (the person's
+	// .gitignore item, 2026-10-04).
+	Removed, Kept  string
+	IgnoredRemoved []string
 	// PullRequestOpen is whether the branch's pull request is open, as
 	// GitHub says now, where it can be read, else as last recorded: one
 	// closed with gh was said to be still open (the rc6 full stage).
@@ -325,6 +328,9 @@ func (e *Engine) ArchiveBranch(ctx context.Context, request ArchiveRequest) (Arc
 	if dirty != "" && !request.Discard {
 		result.Kept = dirty
 		return result, nil
+	}
+	if worktree, err := git.Open(ctx, branch.Worktree, e.options.Git); err == nil {
+		result.IgnoredRemoved, _ = worktree.IgnoredFiles(ctx)
 	}
 	if err := e.Repo.RemoveWorktree(ctx, branch.Worktree); err != nil {
 		return result, err
