@@ -460,6 +460,9 @@ type branchJSON struct {
 	// collects.
 	Held       []string `json:"held,omitempty"`
 	Assessment string   `json:"assessment,omitempty"`
+	// HeldConcerns are Held, typed, each with where it came from and the
+	// rule that raised it, beside held's words.
+	HeldConcerns []concernJSON `json:"concerns,omitempty"`
 	// Moved are the Git-fetched ports whose release's tag named another
 	// commit when the update chose it than when the latest check, of the
 	// files as they are now, planned it (rule release-moved), which hold a
@@ -487,12 +490,25 @@ type concernJSON struct {
 	Detail  string `json:"detail"`
 }
 
+// concernsView is concerns as JSON, an empty list for none.
+func concernsView(concerns []model.Concern) []concernJSON {
+	view := []concernJSON{}
+	for _, concern := range concerns {
+		view = append(view, concernJSON{Origin: string(concern.Origin), Port: concern.Port, Rule: concern.Rule, Source: concern.Source, Path: concern.Path, Subject: concern.Subject,
+			Class: string(concern.Class), Detail: concern.Detail})
+	}
+	return view
+}
+
 func branchView(status engine.BranchStatus) branchJSON {
 	branch := status.Branch
 	view := branchJSON{Name: branch.ShortName(), GitBranch: branch.Name, ID: string(branch.ID), State: string(branch.State), Worktree: branch.Worktree, Managed: branch.Managed,
 		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Renamed: status.Renamed, Cleaned: status.Cleaned(), Commits: status.Commits,
 		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{},
-		Held: status.Held, Assessment: string(status.Assessment), OnMaster: string(status.OnMaster)}
+		Held: engine.HoldLines(status.Held), Assessment: string(status.Assessment), OnMaster: string(status.OnMaster)}
+	if len(status.Held) > 0 {
+		view.HeldConcerns = concernsView(status.Held)
+	}
 	view.Changed, view.Notes = status.ChangedPorts()
 	view.Changed = nonNil(view.Changed)
 	if len(view.Notes) == 0 {

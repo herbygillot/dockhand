@@ -378,11 +378,7 @@ func submitView(plan engine.SubmitPlan) submitJSON {
 	for _, build := range plan.UnfoundBuilds {
 		view.UnfoundBuilds = append(view.UnfoundBuilds, unfoundBuildJSON{Build: build.Build, Commits: build.Commits, Commit: build.Source.Commit, Release: build.Source.Release})
 	}
-	view.Concerns = []concernJSON{}
-	for _, concern := range plan.Concerns() {
-		view.Concerns = append(view.Concerns, concernJSON{Origin: string(concern.Origin), Port: concern.Port, Rule: concern.Rule, Source: concern.Source, Path: concern.Path, Subject: concern.Subject,
-			Class: string(concern.Class), Detail: concern.Detail})
-	}
+	view.Concerns = concernsView(plan.Concerns())
 	return view
 }
 

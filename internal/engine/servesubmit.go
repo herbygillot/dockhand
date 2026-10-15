@@ -17,9 +17,9 @@ import (
 type ServeCandidate struct {
 	Branch model.Branch
 	Plan   SubmitPlan
-	// Held are the reasons it waits for a person; empty when serve may
-	// submit it.
-	Held []string
+	// Held are the concerns it waits for a person over; empty when serve
+	// may submit it.
+	Held []model.Concern
 }
 
 // Passing is the open branches with checked work not yet on a pull
@@ -90,7 +90,7 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 		plan, err := e.PlanSubmit(ctx, SubmitRequest{Branch: branch})
 		candidate := ServeCandidate{Branch: branch, Plan: plan}
 		if err != nil {
-			candidate.Held = append(candidate.Held, err.Error())
+			candidate.Held = append(candidate.Held, model.Concern{Origin: model.FromSubmission, Rule: "unplanned", Detail: err.Error()})
 			candidates = append(candidates, candidate)
 			continue
 		}
@@ -102,18 +102,33 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 
 // Held are the reasons a submission no person looked over waits for one,
 // as dockhand bump's does (SubmitPlan.held), for a branch of any origin.
-func (e *Engine) Held(_ context.Context, plan SubmitPlan) ([]string, error) {
+func (e *Engine) Held(_ context.Context, plan SubmitPlan) ([]model.Concern, error) {
 	return plan.held(), nil
 }
 
-// held are the reasons a submission no person looked over waits for one
-// (Design v3 §11's guardrails): what blocks it, and its concerns.
-func (p SubmitPlan) held() []string {
-	held := slices.Clone(p.Blocking)
-	for _, concern := range p.Concerns() {
-		held = append(held, concern.Detail)
+// held are the concerns a submission no person looked over waits for one
+// over (Design v3 §11's guardrails): what blocks it, and its concerns.
+func (p SubmitPlan) held() []model.Concern {
+	var held []model.Concern
+	for _, blocking := range p.Blocking {
+		held = append(held, model.Concern{Origin: model.FromSubmission, Rule: "blocking", Detail: blocking})
 	}
-	return held
+	return append(held, p.Concerns()...)
+}
+
+// HoldLines are concerns as they're said, a line each, the same finding of
+// several ports once: two subports' "setup.py changed" read twice in a
+// submission's held line (field testing at f41fbad6, py-kubernetes).
+func HoldLines(concerns []model.Concern) []string {
+	var lines []string
+	said := map[string]bool{}
+	for _, concern := range concerns {
+		if key := concern.Unported(); !said[key] {
+			said[key] = true
+			lines = append(lines, concern.Detail)
+		}
+	}
+	return lines
 }
 
 // Concerns are what a submission would wait on a person's look for, were
@@ -132,14 +147,8 @@ func (p SubmitPlan) Concerns() []model.Concern {
 		}
 	}
 	for _, found := range p.Upstream {
-		for _, change := range found.Comparison.Changes {
-			if change.Hold {
-				add(model.Concern{Origin: model.FromUpstream, Port: found.Port, Rule: change.Rule, Source: change.Source, Path: change.Path, Subject: change.Subject, Class: change.Class, Detail: change.Message})
-			}
-		}
-		if problem := found.Comparison.Problem; problem != "" {
-			add(model.Concern{Origin: model.FromUpstream, Port: found.Port, Rule: "not-compared", Class: model.UnknownBaseline,
-				Detail: "the upstream archives couldn't be compared: " + problem})
+		for _, concern := range found.Comparison.Concerns(found.Port) {
+			add(concern)
 		}
 	}
 	for _, moved := range p.Moved {
@@ -290,11 +299,11 @@ func othersConcerns(others []forge.PullRequestSummary, problem string) []model.C
 // held submission does.
 type HeldBeforeEdit struct {
 	Port string
-	Held []string
+	Held []model.Concern
 }
 
 func (h *HeldBeforeEdit) Error() string {
-	return fmt.Sprintf("%s is held for a look before its edit: %s", h.Port, strings.Join(h.Held, "; "))
+	return fmt.Sprintf("%s is held for a look before its edit: %s", h.Port, strings.Join(HoldLines(h.Held), "; "))
 }
 
 // heldBeforeEdit looks for the port's other open pull requests before an
@@ -302,10 +311,7 @@ func (h *HeldBeforeEdit) Error() string {
 // hold the submission once the check passed, so it holds the update now,
 // before anything is downloaded or built.
 func (e *Engine) heldBeforeEdit(ctx context.Context, port string, except int) error {
-	var held []string
-	for _, concern := range othersConcerns(e.openPullRequests(ctx, []string{port}, except)) {
-		held = append(held, concern.Detail)
-	}
+	held := othersConcerns(e.openPullRequests(ctx, []string{port}, except))
 	if len(held) > 0 {
 		return &HeldBeforeEdit{Port: port, Held: held}
 	}
@@ -315,16 +321,16 @@ func (e *Engine) heldBeforeEdit(ctx context.Context, port string, except int) er
 // assessedHolds are why the recorded assessments of a branch's files hold
 // it for a person's look (UpstreamComparison.Holds), and how far they're
 // recorded: status reads them, and collects nothing.
-func (e *Engine) assessedHolds(ctx context.Context, branch model.Branch, tree model.ObjectID, directories []string) ([]string, AssessmentState, error) {
+func (e *Engine) assessedHolds(ctx context.Context, branch model.Branch, tree model.ObjectID, directories []string) ([]model.Concern, AssessmentState, error) {
 	assessments, err := e.revisionAssessments(ctx, branch.ID, branch.Base, tree, false)
 	if err != nil {
 		return nil, "", err
 	}
 	slices.SortFunc(assessments, func(a, b model.Assessment) int { return strings.Compare(a.Port, b.Port) })
-	var held []string
+	var held []model.Concern
 	state := AssessmentAvailable
 	for _, a := range assessments {
-		held = append(held, a.Comparison.Holds()...)
+		held = append(held, a.Comparison.Concerns(a.Port)...)
 		if a.Comparison.Problem != "" {
 			state = AssessmentIncomplete
 		}
@@ -353,7 +359,7 @@ const (
 // saying in its description that no person reviewed it.
 func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (Submitted, error) {
 	if len(candidate.Held) > 0 {
-		return Submitted{}, fmt.Errorf("%s is held for a look: %s", candidate.Branch.ShortName(), candidate.Held[0])
+		return Submitted{}, fmt.Errorf("%s is held for a look: %s", candidate.Branch.ShortName(), HoldLines(candidate.Held)[0])
 	}
 	plan := candidate.Plan
 	plan.Body = plan.Body + "\n\n" + ServeNote + "\n"

@@ -920,9 +920,10 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 	for _, candidate := range candidates {
 		name := candidate.Branch.ShortName()
 		if len(candidate.Held) > 0 {
-			if p.held[candidate.Branch.ID] != candidate.Held[0] {
-				p.s.say("serve: %s is held for a look: %s", name, candidate.Held[0])
-				p.held[candidate.Branch.ID] = candidate.Held[0]
+			// Said once a branch, while its first concern stays the same.
+			if first := candidate.Held[0]; p.held[candidate.Branch.ID] != first.Key() {
+				p.s.say("serve: %s is held for a look: %s", name, first.Detail)
+				p.held[candidate.Branch.ID] = first.Key()
 			}
 			continue
 		}

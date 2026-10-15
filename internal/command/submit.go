@@ -313,10 +313,10 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 		}
 		if len(held) > 0 {
 			view := submitView(plan)
-			view.Held = held
+			view.Held = engine.HoldLines(held)
 			streams.emit(view)
 			name := plan.Branch.ShortName()
-			return exitf(ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: dockhand submit --branch %s", name, strings.Join(held, "; "), name)
+			return exitf(ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: dockhand submit --branch %s", name, strings.Join(engine.HoldLines(held), "; "), name)
 		}
 	}
 	fmt.Fprintln(streams.Out)

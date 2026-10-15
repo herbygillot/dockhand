@@ -407,7 +407,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		return branch, update, uncertainUpdate(request.Port, uncertain.SetAside, linked, branch, started)
 	}
 	if held := new(engine.HeldBeforeEdit); errors.As(err, &held) {
-		return branch, update, heldBeforeEdit(request, held.Held)
+		return branch, update, heldBeforeEdit(request, engine.HoldLines(held.Held))
 	}
 	if err != nil {
 		if started {

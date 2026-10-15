@@ -86,19 +86,31 @@ func (c *UpstreamComparison) Held() bool { return len(c.Holds()) > 0 }
 // build can't catch, and, since what couldn't be checked holds too (D4),
 // the problem that kept the archives from being compared.
 func (c *UpstreamComparison) Holds() []string {
+	var holds []string
+	for _, concern := range c.Concerns("") {
+		holds = append(holds, concern.Detail)
+	}
+	return holds
+}
+
+// Concerns are Holds, typed, each a concern of the port's: each change a
+// passing build can't catch, and the problem that kept the archives from
+// being compared.
+func (c *UpstreamComparison) Concerns(port string) []Concern {
 	if c == nil {
 		return nil
 	}
-	var holds []string
+	var concerns []Concern
 	for _, change := range c.Changes {
 		if change.Hold {
-			holds = append(holds, change.Message)
+			concerns = append(concerns, Concern{Origin: FromUpstream, Port: port, Rule: change.Rule, Source: change.Source, Path: change.Path, Subject: change.Subject, Class: change.Class, Detail: change.Message})
 		}
 	}
 	if c.Problem != "" {
-		holds = append(holds, "the upstream archives couldn't be compared: "+c.Problem)
+		concerns = append(concerns, Concern{Origin: FromUpstream, Port: port, Rule: "not-compared", Class: UnknownBaseline,
+			Detail: "the upstream archives couldn't be compared: " + c.Problem})
 	}
-	return holds
+	return concerns
 }
 
 // UpstreamChange is one finding of an assessment: a license file, a build

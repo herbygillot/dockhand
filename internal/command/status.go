@@ -298,7 +298,7 @@ func attentionFor(s engine.BranchStatus) []attention {
 		case len(s.Edited) > 0:
 			return row("·", engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
 		case s.Branch.PullRequest == nil && len(s.Held) > 0:
-			return row("!", "passed; held for a look: "+s.Held[0], submitNext(s, name))
+			return row("!", "passed; held for a look: "+engine.HoldLines(s.Held)[0], submitNext(s, name))
 		case s.Branch.PullRequest == nil && len(s.Moved) > 0:
 			// The check built another source than the update chose: serve
 			// waits for a look, and a person's submission shows it.

@@ -202,7 +202,7 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 	held, state, err = e.assessedHolds(t.Context(), branch, tree, []string{"textproc/jq"})
 	require.NoError(t, err)
 	require.Equal(t, AssessmentAvailable, state)
-	require.Equal(t, []string{"upstream's meson.build is new; the build may need the Portfile to follow"}, held)
+	require.Equal(t, []string{"upstream's meson.build is new; the build may need the Portfile to follow"}, HoldLines(held))
 
 	// A later revision that changes an unrelated file reads what was kept.
 	later := editTree(t, e, tree, map[string]string{"textproc/jq/files/patch-a.diff": "--- a\n"})
@@ -514,7 +514,7 @@ func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
 	require.Len(t, moved, 1)
 	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "tool", Rule: "source-moved", Subject: now, Class: model.Introduced,
 		Detail: "tool's git.branch v2 named " + built[:7] + " when check-7 planned it, and names " + now[:7] + " now: the check built another source than this would submit"}, moved[0])
-	require.Contains(t, SubmitPlan{Moved: moved}.held(), moved[0].Detail, "it holds a submission nobody looks over")
+	require.Contains(t, HoldLines(SubmitPlan{Moved: moved}.held()), moved[0].Detail, "it holds a submission nobody looks over")
 	// A target --only left out of the check is read the same way.
 	omitted := &Evidence{Run: model.Run{Number: 8}, Plan: model.Plan{Omitted: []model.PlanTarget{target},
 		Builds: []model.EnvironmentPlan{{Git: map[model.TargetID]model.GitSource{"tool": {URL: project, Ref: "v2", Commit: model.ObjectID(built)}}}}}}

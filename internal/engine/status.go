@@ -56,7 +56,7 @@ type BranchStatus struct {
 	// Held are the findings of its files' recorded assessments that hold
 	// a branch serve prepared for a person's look, and Assessment how far
 	// they're recorded; status collects none.
-	Held       []string
+	Held       []model.Concern
 	Assessment AssessmentState
 	// Stopped is the active run recorded as running that no live process
 	// drives, once JudgeStopped has looked; nil otherwise.

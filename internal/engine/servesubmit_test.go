@@ -91,10 +91,10 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 
 	status, err := e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
-	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, status.Held)
+	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, HoldLines(status.Held))
 	candidates, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, candidates[0].Held)
+	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, HoldLines(candidates[0].Held))
 	require.Len(t, candidates[0].Plan.Upstream, 1)
 	require.Equal(t, "jq", candidates[0].Plan.Upstream[0].Port)
 	require.Equal(t, []model.UpstreamChange{
@@ -118,10 +118,10 @@ func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
 	held := []string{"the upstream archives couldn't be compared: new.tar.gz replaces no archive dockhand could find, so it wasn't compared"}
 	status, err := e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
-	require.Equal(t, held, status.Held, "the attention list says why")
+	require.Equal(t, held, HoldLines(status.Held), "the attention list says why")
 	candidates, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, held, candidates[0].Held)
+	require.Equal(t, held, HoldLines(candidates[0].Held))
 	require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{},
 		Problem: "new.tar.gz replaces no archive dockhand could find, so it wasn't compared"}}}, candidates[0].Plan.Upstream)
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
@@ -145,10 +145,10 @@ func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
 	held := []string{"upstream: go.mod requires Go 1.25, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call"}
 	status, err := e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
-	require.Equal(t, held, status.Held)
+	require.Equal(t, held, HoldLines(status.Held))
 	candidates, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, held, candidates[0].Held)
+	require.Equal(t, held, HoldLines(candidates[0].Held))
 	require.Empty(t, fake.Created)
 }
 
@@ -198,13 +198,13 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 
 	candidates, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, []string{"#34777 is open for the same port: jq: update to 1.8.1"}, candidates[0].Held)
+	require.Equal(t, []string{"#34777 is open for the same port: jq: update to 1.8.1"}, HoldLines(candidates[0].Held))
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
 	require.ErrorContains(t, err, "is held for a look: #34777 is open")
 	require.Empty(t, fake.Created)
 
 	held := SubmitPlan{SearchProblem: "rate limited"}.held()
-	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, held)
+	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, HoldLines(held))
 }
 
 // An update no person looks over, bump's, looks for the port's other open
@@ -227,12 +227,13 @@ func TestAnUnattendedUpdateLooksForOthersBeforeItsEdit(t *testing.T) {
 	_, err := e.Update(t.Context(), bump("jq-bump"))
 	var held *HeldBeforeEdit
 	require.ErrorAs(t, err, &held)
-	require.Equal(t, &HeldBeforeEdit{Port: "jq", Held: []string{"#34777 is open for the same port: jq: update to 1.8.0"}}, held)
+	require.Equal(t, "jq", held.Port)
+	require.Equal(t, []string{"#34777 is open for the same port: jq: update to 1.8.0"}, HoldLines(held.Held))
 	require.Empty(t, p.requests, "nothing was prepared")
 	fake.Others, fake.SearchErr = nil, errors.New("rate limited")
 	_, err = e.Update(t.Context(), bump("jq-bump"))
 	require.ErrorAs(t, err, &held)
-	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, held.Held)
+	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, HoldLines(held.Held))
 	require.Empty(t, p.requests)
 	require.Empty(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 
@@ -309,7 +310,7 @@ func TestATagMovedBetweenAnUpdateAndItsCheckIsAConcern(t *testing.T) {
 	moved := preparedSources(evidence, []model.Edit{update("libharbor", release("v4", chosen))})
 	require.Equal(t, []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: planned, Class: model.Introduced,
 		Detail: "libharbor's git.branch v4 named aaaaaaa when its update chose it, and bbbbbbb when check-7 planned it: the check built another source than the update chose"}}, moved)
-	require.Contains(t, SubmitPlan{Moved: moved}.held(), moved[0].Detail, "it holds a submission nobody looks over")
+	require.Contains(t, HoldLines(SubmitPlan{Moved: moved}.held()), moved[0].Detail, "it holds a submission nobody looks over")
 
 	require.Empty(t, preparedSources(evidence, []model.Edit{update("libharbor", release("v4", chosen)), update("libharbor", release("v4", planned))}),
 		"the newest update chose what the check built")
@@ -381,7 +382,7 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 	candidates, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
-	require.Equal(t, []string{"jq's git.branch jq-1.8.1 named " + chosen[:7] + " when its update chose it, and " + moved[:7] + " when " + checked.Name() + " planned it: the check built another source than the update chose"}, candidates[0].Held)
+	require.Equal(t, []string{"jq's git.branch jq-1.8.1 named " + chosen[:7] + " when its update chose it, and " + moved[:7] + " when " + checked.Name() + " planned it: the check built another source than the update chose"}, HoldLines(candidates[0].Held))
 
 	// Status says it too, from the store and the plan alone. With the
 	// repository gone, it reads nothing of it, and says nothing of where
@@ -392,7 +393,7 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 	status, err := e.BranchStatus(t.Context(), candidates[0].Branch)
 	require.NoError(t, err)
 	require.Len(t, status.Moved, 1)
-	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "release-moved", Subject: moved, Class: model.Introduced, Detail: candidates[0].Held[0]}, status.Moved[0])
+	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "release-moved", Subject: moved, Class: model.Introduced, Detail: candidates[0].Held[0].Detail}, status.Moved[0])
 
 	// Files changed since the check aren't what it planned for: the
 	// question waits for a check of them.
@@ -441,4 +442,15 @@ func TestServeLeavesAPersonsPassingBranchToThem(t *testing.T) {
 	require.Empty(t, candidates)
 	require.Len(t, yours, 1)
 	require.Equal(t, branch.ID, yours[0].ID)
+}
+
+// A hold two ports share is said once: py-kubernetes's two subports' held
+// line read "…follow; upstream's setup.py changed; …follow" (field testing
+// at f41fbad6). Concerns stay one a port, each with its key.
+func TestAHoldSharedByPortsIsSaidOnce(t *testing.T) {
+	changed := model.UpstreamComparison{Changes: []model.UpstreamChange{{Kind: "build", Rule: "build-file", Path: "setup.py", Hold: true, Message: "upstream's setup.py changed; the build may need the Portfile to follow"}}}
+	plan := SubmitPlan{Upstream: []PortComparison{{Port: "py312-kubernetes", Comparison: changed}, {Port: "py313-kubernetes", Comparison: changed}}}
+	held := plan.held()
+	require.Len(t, held, 2, "a concern a port")
+	require.Equal(t, []string{"upstream's setup.py changed; the build may need the Portfile to follow"}, HoldLines(held))
 }

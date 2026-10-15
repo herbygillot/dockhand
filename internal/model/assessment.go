@@ -67,7 +67,18 @@ const (
 	// FromOtherPullRequests is another open pull request for a port, or
 	// not knowing whether there is one.
 	FromOtherPullRequests ConcernOrigin = "other-pull-requests"
+	// FromSubmission is what stops the submission itself: a blocking
+	// reason, or a plan that couldn't be made.
+	FromSubmission ConcernOrigin = "submission"
 )
+
+// Unported is the concern as it reads for any port, its key without the
+// port: the same finding of two subports is said once (the py-kubernetes
+// run's "…follow; upstream's setup.py changed; …follow").
+func (c Concern) Unported() string {
+	c.Port = ""
+	return c.Key()
+}
 
 // Key identifies a concern: the same concern for two ports, or in two
 // places, is two. One raised by no named rule is known by its words too.
