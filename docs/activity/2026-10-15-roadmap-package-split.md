@@ -42,5 +42,5 @@ distfile and patch items (b495055a) are marked done; `auth` went with D-C4
 and stays in setup's `SuggestFor`; part 3's setup verb takes what 7a rows 3
 and 4 and 7b row 4 leave, bridge 1 being settled in hygiene; and PR #4
 also wires up `interrupted` (356d5693), merges cleanly onto c10e2ea4, and
-holds up only hygiene. Open with the person: whether the fork another
-account owns holds, part 2 item 2's, rather than warns.
+holds up only hygiene. The fork another account owns stays a warning, at
+the person's "Keep the warning" (21:34Z).
