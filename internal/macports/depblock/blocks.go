@@ -26,24 +26,7 @@ const CargoGit = "cargo.crates_github"
 var ErrToolUnavailable = errors.New("dependency: cannot regenerate")
 
 type Tools struct{ Go2Port, Cargo2Port string }
-type Availability struct {
-	Name      string `json:"name"`
-	Path      string `json:"path,omitempty"`
-	Available bool   `json:"available"`
-}
 
-func (t Tools) Probe() []Availability {
-	result := []Availability{}
-	for _, item := range []struct{ name, path string }{{"go2port", t.Go2Port}, {"cargo2port", t.Cargo2Port}} {
-		path := item.path
-		if path == "" {
-			path = item.name
-		}
-		resolved, err := exec.LookPath(path)
-		result = append(result, Availability{Name: item.name, Path: resolved, Available: err == nil})
-	}
-	return result
-}
 func (t Tools) Resolve(kind string) (string, error) {
 	name, path := "cargo2port", t.Cargo2Port
 	if kind == Go {

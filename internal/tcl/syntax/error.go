@@ -76,8 +76,3 @@ type Error struct {
 func (e Error) Error() string {
 	return fmt.Sprintf("%s at offset %d", e.Type, e.Span.Start)
 }
-
-func (e Error) Describe(src []byte) string {
-	line, col := textedit.Position(src, e.Span.Start)
-	return fmt.Sprintf("%d:%d: %s", line, col, e.Type)
-}

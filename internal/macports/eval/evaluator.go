@@ -23,7 +23,6 @@ import (
 
 type Evaluator struct {
 	Executable string
-	Prefix     string
 	// Model is the macOS an interpreter describes as its own when MacPorts
 	// runs on a host that is not a Mac; zero selects DefaultModel. A Mac
 	// always describes itself.
@@ -80,14 +79,10 @@ var toolchainScript string
 func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session, macports.Runtime, error) {
 	executable := e.Executable
 	if executable == "" {
-		if e.Prefix != "" {
-			executable = filepath.Join(e.Prefix, "bin", macports.TclShell)
-		} else {
-			var err error
-			executable, err = exec.LookPath(macports.TclShell)
-			if err != nil {
-				return nil, macports.Runtime{}, fmt.Errorf("%w: %w", macports.ErrStartup, err)
-			}
+		var err error
+		executable, err = exec.LookPath(macports.TclShell)
+		if err != nil {
+			return nil, macports.Runtime{}, fmt.Errorf("%w: %w", macports.ErrStartup, err)
 		}
 	}
 	proc, err := shell.Start(ctx, executable, shell.WithDir(tree.Root()))

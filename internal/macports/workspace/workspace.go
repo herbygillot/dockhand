@@ -47,7 +47,6 @@ type Workspace struct {
 	// sharedResources marks an overlay whose _resources is a symlink to
 	// the base's directory rather than entries of its own.
 	sharedResources bool
-	batch           macports.Batch
 	closed          bool
 	// adopted marks a workspace over a directory someone else owns and
 	// filled: the whole tree is present, its entries come from a walk, and
@@ -79,8 +78,7 @@ func Open(ctx context.Context, repo *git.Repository, source model.Source) (*Work
 // Adopt describes a directory that already holds the whole tree, a plain
 // materialization or a test fixture, so overlays can be made over it. The
 // directory stays the caller's: Close leaves it. Entries come from a walk
-// of the directory, so an overlay's Commit has no blob to check against
-// and is refused; Rescan picks up files added after adoption. Only tests
+// of the directory; Rescan picks up files added after adoption. Only tests
 // adopt a directory; production workspaces come from the registry.
 func Adopt(root string, source model.Source) (*Workspace, error) {
 	root, err := filepath.EvalSymlinks(root)
@@ -152,8 +150,7 @@ func (w *Workspace) scan() error {
 	return nil
 }
 
-func (w *Workspace) Source() model.Source { return w.source }
-func (w *Workspace) Root() string         { return w.directory }
+func (w *Workspace) Root() string { return w.directory }
 
 // Base is the workspace an overlay was made from; a base returns itself.
 func (w *Workspace) Base() *Workspace {
@@ -281,30 +278,6 @@ func (w *Workspace) Context(target model.Target, platform model.Platform) (macpo
 		return macports.Context{}, err
 	}
 	return tree.Select(target)
-}
-
-// Batch is the interpreter session bound to the base root, opened on first
-// use and shared by the base and its overlays until Close.
-func (w *Workspace) Batch(ctx context.Context, ports macports.BatchReader) (macports.Batch, error) {
-	base := w.Base()
-	base.mu.Lock()
-	defer base.mu.Unlock()
-	if base.closed {
-		return nil, fmt.Errorf("workspace: closed")
-	}
-	if base.batch != nil {
-		return base.batch, nil
-	}
-	tree, err := base.Tree(model.Platform{})
-	if err != nil {
-		return nil, err
-	}
-	batch, err := ports.OpenBatch(ctx, tree)
-	if err != nil {
-		return nil, err
-	}
-	base.batch = batch
-	return batch, nil
 }
 
 // Overlay is a sibling projection with the edits applied. Its scope is the
@@ -466,27 +439,6 @@ func (w *Workspace) linkNew() error {
 	return nil
 }
 
-// Edits are the overlay's edits with their before states filled from the
-// base's entries; a base has none.
-func (w *Workspace) Edits() []git.FileEdit { return slices.Clone(w.edits) }
-
-// Commit writes the overlay's edits as git objects over the base tree and
-// returns the source whose tree they make. The overlay's files are, by
-// construction, that tree's projection over the overlay's scope.
-func (w *Workspace) Commit(ctx context.Context) (model.Source, error) {
-	if w.base == nil {
-		return w.source, nil
-	}
-	if w.repo == nil {
-		return model.Source{}, fmt.Errorf("workspace: an overlay of an adopted directory has no repository to commit to")
-	}
-	tree, err := w.repo.EditTree(ctx, string(w.source.Tree), w.edits)
-	if err != nil {
-		return model.Source{}, err
-	}
-	return model.Source{Tree: model.ObjectID(tree), Base: w.source.Base}, nil
-}
-
 // Close closes the session, then removes the directory. Overlays close
 // before their base; closing a base with open overlays leaves their files
 // intact, since hardlinks survive their source.
@@ -497,15 +449,9 @@ func (w *Workspace) Close() error {
 		return nil
 	}
 	w.closed = true
-	batch := w.batch
-	w.batch = nil
 	w.mu.Unlock()
-	var err error
-	if batch != nil {
-		err = batch.Close()
-	}
 	if w.adopted {
-		return err
+		return nil
 	}
-	return errors.Join(err, os.RemoveAll(w.directory))
+	return os.RemoveAll(w.directory)
 }
