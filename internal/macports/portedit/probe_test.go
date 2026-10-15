@@ -64,6 +64,9 @@ version [clock format [clock scan ${github.version} -format %Y-%m-%d -gmt 1] -fo
 		// llvm's: the major is the port's name, and the rest a literal
 		// segment after it.
 		{"literal segment of a composed version", "set llvm_version 19\ngithub.setup owner fixture ${llvm_version}.1.7 v", "19.1.8", "19.1.8", "${llvm_version}.1.8"},
+		// A setup the table doesn't know, as go_toolchain.setup: its words
+		// are offered, and the probe keeps the one the version follows.
+		{"unknown setup", "proc fixture.setup {release} {github.setup owner fixture $release v}\nfixture.setup 1.26.8", "1.26.9", "1.26.9", "fixture.setup 1.26.9"},
 		{"inactive assignments", "set unused 1.2.3\nif {0} {set release 1.2.3}\nset release {1.2.3}\ngithub.setup owner fixture $release v", "1.2.4", "1.2.4", "set unused 1.2.3"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -93,6 +96,9 @@ if {$a ne "1.2.3"} {github.setup owner fixture $a v} else {github.setup owner fi
 		// The subport is selected: its sibling, the main port, moves too.
 		{"sibling", "github.setup owner fixture 1.2.3 v\nsubport fixture-child {}", "fixture-child", "fixture, another port of the same Portfile, moves with fixture-child's release; --shared-release moves both", ErrFidelity},
 		{"unchanged evaluated version", "github.setup owner fixture 1.2.3 v\nversion 5", "", "did not change the evaluated version", ErrUnsupported},
+		// Two words of a setup the table doesn't know both move it.
+		{"unknown setup, two moving words", `proc fixture.setup {a b} {if {$a ne "1.2.3"} {github.setup owner fixture $a v} else {github.setup owner fixture $b v}}
+fixture.setup 1.2.3 1.2.3`, "", "2 version inputs", ErrUnsupported},
 		{"failed probe", `set release 1.2.3
 if {$release ne "1.2.3"} {error "candidate is not evaluable"}
 github.setup owner fixture $release v`, "", "inconclusive", ErrUnsupported},

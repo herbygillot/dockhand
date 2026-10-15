@@ -224,3 +224,16 @@ func TestScanPlatformNeedsRecognizesOperandForms(t *testing.T) {
 		require.ErrorIs(t, err, ErrInconclusive, source)
 	}
 }
+
+// Checksums for an archive named for an architecture make the contexts
+// architecture-dependent, though the Portfile reads nothing of it: a
+// PortGroup chooses it, as go_toolchain's darwin-arm64 and darwin-amd64
+// binaries (field testing at 1cc87c43).
+func TestArchitectureNamedArchivesSampleEachArchitecture(t *testing.T) {
+	_, arch, err := contextBoundaries([]byte("checksums go1.26.9.src.tar.gz sha256 aaa go1.26.9.darwin-amd64.tar.gz sha256 bbb\n"))
+	require.NoError(t, err)
+	require.True(t, arch)
+	_, arch, err = contextBoundaries([]byte("checksums jq-1.8.1.tar.gz sha256 aaa\n"))
+	require.NoError(t, err)
+	require.False(t, arch)
+}

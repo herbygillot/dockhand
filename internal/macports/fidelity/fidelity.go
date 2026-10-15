@@ -322,6 +322,15 @@ func version(before, after macports.Snapshot, selected string, release model.Rel
 				}
 			}
 
+			// A field that moves only by the version written in it, as
+			// go_toolchain's long_description, "provides Go 1.26.8", is
+			// the version's: go-1.26's update was refused as changing it
+			// (field testing at 1cc87c43).
+			for key, value := range old.Options {
+				if moved, ok := next.Options[key]; ok && moved != value && writesVersion(value, moved, original.Version, release.Version) {
+					old.Options[key] = moved
+				}
+			}
 			if release.Tag != "" && next.Options["git.branch"] != release.Tag {
 				result.UnexpectedChanges = append(result.UnexpectedChanges, name+".git.branch differs from selected tag")
 			}
@@ -598,4 +607,10 @@ func SubportChanges(directory string, base, revision *macports.Snapshot) []model
 		changes = append(changes, change)
 	}
 	return changes
+}
+
+// writesVersion reports a value that differs from another only by the
+// version written in it, from one to the other, everywhere it's written.
+func writesVersion(value, moved, from, to string) bool {
+	return from != "" && from != to && strings.Contains(value, from) && strings.ReplaceAll(value, from, to) == moved
 }

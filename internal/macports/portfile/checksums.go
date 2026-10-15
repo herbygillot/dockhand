@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
@@ -132,4 +133,49 @@ func ChecksumsBlock(sums []Checksum) string {
 		}
 	}
 	return "checksums           " + strings.Join(lines, " \\\n"+indent)
+}
+
+// RenameChecksumFiles writes a version edit into the archive names a
+// checksums declaration lists literally: go-1.26's names its three,
+// go1.26.9.src.tar.gz and the two darwin binaries, so moving the version
+// alone left them naming the old release, and no declaration was found for
+// the new archives (field testing at 1cc87c43). Each literal name word of
+// a checksums, checksums-append, or checksums-prepend command, anywhere in
+// the Portfile, that writes from has it written as to; algorithms and
+// values are left as they are.
+func RenameChecksumFiles(src []byte, from, to string) ([]byte, error) {
+	if from == "" || from == to {
+		return src, nil
+	}
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("%w: invalid Tcl syntax", ErrUnsupported)
+	}
+	var edits []textedit.Edit
+	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
+		switch name, _ := cmd.Name(src); name {
+		case "checksums", "checksums-append", "checksums-prepend":
+		default:
+			continue
+		}
+		for i, word := range cmd.Words[1:] {
+			value, literal := word.Literal(src)
+			// A name is a word that's neither an algorithm nor the value
+			// after one.
+			if !literal || word.Expand || IsChecksumKind(value) || i > 0 && isKindWord(src, cmd.Words[i]) || !strings.Contains(value, from) {
+				continue
+			}
+			edits = append(edits, textedit.Edit{Span: word.Inner(), New: []byte(strings.ReplaceAll(value, from, to))})
+		}
+	}
+	if len(edits) == 0 {
+		return src, nil
+	}
+	return textedit.Apply(src, edits)
+}
+
+// isKindWord reports a word that names a checksum algorithm.
+func isKindWord(src []byte, word syntax.Word) bool {
+	value, literal := word.Literal(src)
+	return literal && IsChecksumKind(value)
 }

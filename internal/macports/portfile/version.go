@@ -93,6 +93,16 @@ func Candidates(src []byte) ([]Candidate, error) {
 				}
 			default:
 				index = setupVersionIndex(name, len(cmd.Words))
+				// A setup this table doesn't know offers each of its
+				// literal words, and the probe keeps the one the evaluated
+				// version follows, refusing where two move it: go-1.26's
+				// go_toolchain.setup 1.26.8 offered none, and update found
+				// no version input (field testing at 1cc87c43).
+				if index < 0 && strings.HasSuffix(name, ".setup") {
+					for _, w := range cmd.Words[1:] {
+						word(w)
+					}
+				}
 			}
 			if index >= 0 {
 				word(cmd.Words[index])

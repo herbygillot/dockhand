@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
@@ -61,6 +62,17 @@ func (s *platformScanner) command(cmd syntax.Command) error {
 	name, _ := cmd.Name(s.src)
 	if name == "supported_archs" && len(cmd.Words) > 1 {
 		s.needs.arch = true
+	}
+	// Checksums for an archive named for an architecture are fetched on
+	// that architecture alone, as a PortGroup chooses it where the
+	// Portfile reads nothing of it: go-1.26's darwin-amd64 binary had no
+	// context on an arm64 Mac (go_toolchain, field testing at 1cc87c43).
+	if strings.HasPrefix(name, "checksums") {
+		for _, word := range cmd.Words[1:] {
+			if value, ok := word.Literal(s.src); ok && namesArchitecture(value) {
+				s.needs.arch = true
+			}
+		}
 	}
 	windows := cmd.Expressions(s.src)
 	for _, window := range windows {
@@ -294,4 +306,16 @@ func profilesForBoundaries(majors map[int]bool, archDependent bool, native model
 		}
 	}
 	return result, nil
+}
+
+// namesArchitecture reports an archive name that names a Mac's
+// architecture, as release binaries are named.
+func namesArchitecture(name string) bool {
+	name = strings.ToLower(name)
+	for _, arch := range []string{"arm64", "aarch64", "amd64", "x86_64", "x86-64"} {
+		if strings.Contains(name, arch) {
+			return true
+		}
+	}
+	return false
 }

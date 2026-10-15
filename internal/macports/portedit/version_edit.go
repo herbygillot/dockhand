@@ -227,7 +227,13 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		return nil, snapshot, fmt.Errorf("%w: %d version inputs can select %s; edit the Portfile manually", ErrUnsupported, matches, sourceVersion)
 	}
 	if checkFidelity {
-		return s.followObsolete(ctx, reader, input, selected, snapshot)
+		// Archive names the checksums list literally move with the
+		// version, as go-1.26's three do (portfile.RenameChecksumFiles).
+		renamed, err := portfile.RenameChecksumFiles(selected, input.info.Version, snapshot.Ports[input.target.Name].Version)
+		if err != nil {
+			return nil, snapshot, fmt.Errorf("%w: %w", ErrUnsupported, err)
+		}
+		return s.followObsolete(ctx, reader, input, renamed, snapshot)
 	}
 	return selected, snapshot, nil
 }
