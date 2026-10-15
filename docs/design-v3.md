@@ -566,7 +566,7 @@ A `command` provider receives a request file (the revision as a Git bundle, the 
 
 ### Results
 
-`check` covers lint, fetch and checksum, build and install, and declared tests. `check --lint` is the cheap partial form. Each target reports one of passed, failed at a phase, blocked by a failed changed dependency, not run, or could not evaluate. "Could not evaluate" never becomes "not applicable".
+`check` covers lint, fetch and checksum, build and install, and declared tests. `check --lint` is the cheap partial form. Each target reports one of passed, failed at a phase, blocked by a failed changed dependency, not run, interrupted (its environment was lost as it built, so another attempt builds it again), or could not evaluate. "Could not evaluate" never becomes "not applicable".
 
 Tests are advisory, as in MacPorts CI: "build passed; tests failed (advisory)" is shown as exactly that. `--tests required` makes a test failure decisive.
 

@@ -730,8 +730,10 @@ func (b *build) Blocked(target model.TargetID) (model.TargetID, bool) {
 	if _, ok := b.d.plan.Target(target); !ok {
 		return "", false
 	}
+	// A dependency interrupted in an earlier attempt is built again, and
+	// blocks nothing.
 	for _, dep := range b.d.plan.DependsOnIn(b.execution.Environment, target) {
-		if result, ok := b.results[dep]; ok && result.Outcome != model.OutcomePassed {
+		if result, ok := b.results[dep]; ok && result.Outcome.Complete() && result.Outcome != model.OutcomePassed {
 			return dep, true
 		}
 	}
@@ -960,10 +962,10 @@ func FailureLines(evidence Evidence, target TargetEvidence, environment, n int) 
 }
 
 // blockRemaining records as blocked the targets a provider left without a
-// result whose changed dependency did not pass.
+// verdict whose changed dependency did not pass.
 func (b *build) blockRemaining(targets []buildenv.Target) {
 	for _, target := range targets {
-		if _, ok := b.results[target.ID]; ok {
+		if result, ok := b.results[target.ID]; ok && result.Outcome.Complete() {
 			continue
 		}
 		if _, blocked := b.Blocked(target.ID); blocked {

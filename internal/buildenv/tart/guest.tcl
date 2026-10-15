@@ -5,7 +5,9 @@
 # target's dependencies are installed and activated, then it is linted,
 # fetched, checksummed, and installed, and its declared tests run after.
 # Each target's result is written to results.json as it finishes, so a
-# guest lost midway keeps what it recorded (decision 44).
+# guest lost midway keeps what it recorded (decision 44), and the target
+# it is building is written as it begins, so the one a lost guest was
+# building is recorded as interrupted.
 package require json
 package require json::write
 json::write indented false
@@ -18,6 +20,7 @@ close $fd
 set prefix [dict get $input prefix]
 set port $prefix/bin/port
 set results {}
+set building ""
 set environment [dict create]
 
 # save writes the results so far, replacing the file whole. A result's
@@ -25,7 +28,7 @@ set environment [dict create]
 # them, and for where each step of its build began in its log, a list of
 # each step's name and line.
 proc save {state {detail ""}} {
-    global root input results environment
+    global root input results building environment
     set targets {}
     foreach result $results {
         set fields {}
@@ -54,7 +57,8 @@ proc save {state {detail ""}} {
     set facts {}
     dict for {key value} $environment { lappend facts $key [json::write string $value] }
     set data [json::write object protocol [dict get $input protocol] state [json::write string $state] \
-        detail [json::write string $detail] environment [json::write object {*}$facts] targets [json::write array {*}$targets]]
+        detail [json::write string $detail] environment [json::write object {*}$facts] building [json::write string $building] \
+        targets [json::write array {*}$targets]]
     set fd [open $root/results.json.tmp w]
     puts $fd $data
     close $fd
@@ -559,6 +563,8 @@ save running
 set index 0
 foreach target [dict get $input targets] {
     incr index
+    set building [dict get $target id]
+    save running
     if {[catch {build $index $target} result]} {
         save errored "building [dict get $target id]: $result"
         exit 1
@@ -575,6 +581,7 @@ foreach target [dict get $input targets] {
         }
     }
     lappend results $result
+    set building ""
     save running
 }
 save finished

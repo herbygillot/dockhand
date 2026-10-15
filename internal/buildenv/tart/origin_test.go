@@ -91,7 +91,12 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // since one that passed with another's build tools may not pass without
 // them, so a result recorded before isn't reused (field testing,
 // 2026-10-07: taisei passed with git's gettext).
-const guestPin = "a13aa74baea901500f87b94e80c19adeff49a2dd4be59d24cf1975c0c74e1b4b"
+//
+// Since then the program also writes which target it is building as it
+// begins it, for the host to record the one a lost guest was building as
+// interrupted. That reports more, and builds and judges nothing
+// otherwise, so the protocol stays 3.
+const guestPin = "c7c307a625496c544530ccd4d5d0cd0923da468d41460a4bb08bec5fe890f4f8"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

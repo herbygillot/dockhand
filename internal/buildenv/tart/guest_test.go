@@ -109,6 +109,35 @@ func guestRun(t *testing.T, input guestInput, env ...string) (guestResults, []st
 // root/prefix.
 func guestRunIn(t *testing.T, root string, input guestInput, env ...string) (guestResults, []string) {
 	t.Helper()
+	command := guestCommand(t, root, input, env...)
+	output, _ := command.CombinedOutput()
+	results, err := readResults(root)
+	require.NoError(t, err, "%s", output)
+	commands, _ := os.ReadFile(filepath.Join(root, "port.log"))
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(string(commands)), "\n") {
+		if line != "" {
+			// The port directory is the scratch root's; the tail is enough.
+			lines = append(lines, strings.ReplaceAll(line, filepath.Join(root, "ports")+"/", ""))
+		}
+	}
+	return results, lines
+}
+
+// readResults reads the results the guest program has written in root.
+func readResults(root string) (guestResults, error) {
+	var results guestResults
+	data, err := os.ReadFile(filepath.Join(root, "results.json"))
+	if err != nil {
+		return results, err
+	}
+	return results, json.Unmarshal(data, &results)
+}
+
+// guestCommand is the shipped guest program, ready to run on input in
+// root, with the fake port.
+func guestCommand(t *testing.T, root string, input guestInput, env ...string) *exec.Cmd {
+	t.Helper()
 	executable := testsupport.MacPortsTclsh(t)
 	prefix := filepath.Join(root, "prefix")
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "bin"), 0o755))
@@ -147,20 +176,7 @@ set foreignManagers {}
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
 	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
-	output, _ := command.CombinedOutput()
-	data, err = os.ReadFile(filepath.Join(root, "results.json"))
-	require.NoError(t, err, "%s", output)
-	var results guestResults
-	require.NoError(t, json.Unmarshal(data, &results), "%s", data)
-	commands, _ := os.ReadFile(portLog)
-	var lines []string
-	for _, line := range strings.Split(strings.TrimSpace(string(commands)), "\n") {
-		if line != "" {
-			// The port directory is the scratch root's; the tail is enough.
-			lines = append(lines, strings.ReplaceAll(line, filepath.Join(root, "ports")+"/", ""))
-		}
-	}
-	return results, lines
+	return command
 }
 
 func twoTargets(tests string) guestInput {
@@ -536,6 +552,36 @@ func TestABuildPastItsBoundIsEnded(t *testing.T) {
 	results, _ = guestRun(t, input, "HANG=lint:libharbor")
 	require.Equal(t, "lint", results.Targets[0].Phase)
 	require.Equal(t, "lint ran past its 1s bound, so it was ended", results.Targets[0].Detail)
+}
+
+// The guest says which target it is building as it begins it, beside the
+// results of those it finished, so the target a guest lost midway was
+// building is known (decision 44).
+func TestTheGuestSaysWhatItIsBuilding(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	// harbor-cli's install hangs until its bound ends it, which is time
+	// enough to read what the guest says as it builds.
+	input := twoTargets("advisory")
+	input.BuildTimeout = 2
+	command := guestCommand(t, root, input, "HANG=install:harbor-cli")
+	require.NoError(t, command.Start())
+	var results guestResults
+	require.Eventually(t, func() bool {
+		var err error
+		results, err = readResults(root)
+		return err == nil && results.Building == "harbor-cli"
+	}, 30*time.Second, 10*time.Millisecond)
+	require.Equal(t, "running", results.State)
+	require.Len(t, results.Targets, 1)
+	require.Equal(t, "libharbor", results.Targets[0].ID)
+
+	require.NoError(t, command.Wait())
+	results, err := readResults(root)
+	require.NoError(t, err)
+	require.Equal(t, "finished", results.State)
+	require.Empty(t, results.Building, "nothing is building once harbor-cli's result is written")
+	require.Len(t, results.Targets, 2)
 }
 
 // What a dependency built from source needed to build is deactivated

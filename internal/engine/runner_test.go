@@ -35,6 +35,12 @@ type scriptedProvider struct {
 	failures int
 	// partial records the first target before a failing attempt stops.
 	partial bool
+	// interrupts is the target a failing attempt was building when it
+	// stopped, recorded as interrupted, as Tart records a lost guest's.
+	interrupts model.TargetID
+	// blockedFirst are the targets each job's Blocked said were blocked
+	// before anything built, as Tart asks.
+	blockedFirst [][]model.TargetID
 	// wait holds the build until its context ends.
 	wait bool
 	// active are reported as the ports active as each target built, and
@@ -74,8 +80,15 @@ func scriptedArchive(target model.TargetID) (string, []byte, string) {
 func (p *scriptedProvider) Name() string { return "command" }
 
 func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
+	var blocked []model.TargetID
+	for _, target := range job.Targets {
+		if _, ok := build.Blocked(target.ID); ok {
+			blocked = append(blocked, target.ID)
+		}
+	}
 	p.mu.Lock()
 	p.jobs = append(p.jobs, job)
+	p.blockedFirst = append(p.blockedFirst, blocked)
 	failing := p.failures > 0
 	p.failures--
 	p.mu.Unlock()
@@ -85,7 +98,7 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 	if failing && p.fault != nil {
 		return p.fault
 	}
-	if failing && !p.partial {
+	if failing && !p.partial && p.interrupts == "" {
 		return errors.New("the VM did not start")
 	}
 	if p.says != "" {
@@ -102,6 +115,12 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 				return err
 			}
 			continue
+		}
+		if failing && target.ID == p.interrupts {
+			if err := build.Record(model.TargetResult{Target: target.ID, Outcome: model.OutcomeInterrupted, Detail: "the VM stopped"}); err != nil {
+				return err
+			}
+			return fmt.Errorf("%w: the VM stopped", buildenv.ErrInfrastructure)
 		}
 		outcome, ok := p.outcomes[target.ID]
 		if !ok {
@@ -150,7 +169,7 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 				}
 			}
 		}
-		if failing && i == 0 {
+		if failing && p.partial && i == 0 {
 			return errors.New("the VM stopped answering")
 		}
 	}
@@ -299,6 +318,55 @@ func TestAFailedDependencyBlocksAndInfrastructureIsRetried(t *testing.T) {
 	require.Equal(t, model.OutcomeFailed, got["harbor-cli@arm64"])
 	require.Equal(t, model.OutcomeBlocked, got["harbor-viewer@arm64"], "blocked, not failed")
 	require.Equal(t, "harbor-cli, harbor-viewer did not pass", run.Detail)
+}
+
+// A target that was building when its environment was lost is recorded as
+// interrupted, which is no verdict: the next attempt builds it again, and
+// what needs it isn't blocked by it. Where every attempt is lost, it reads
+// as interrupted and unchecked (the 2026-09-25 model note).
+func TestAnInterruptedTargetIsBuiltAgainAndBlocksNothing(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &scriptedProvider{failures: 1, interrupts: "harbor-cli"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	require.Len(t, provider.jobs, 2)
+	require.Equal(t, []model.TargetID{"harbor-cli", "harbor-viewer"}, targetIDs(provider.jobs[1].Targets), "libharbor's verdict stands, and harbor-cli is built again")
+	require.Empty(t, provider.blockedFirst[1], "an interrupted dependency blocks nothing")
+
+	f = setup(t)
+	e = f.open(t)
+	provider = &scriptedProvider{failures: 99, interrupts: "harbor-cli"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued = queuedHarborRun(t, e, tahoeArm)
+	run, err = e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunAttention, run.State)
+	require.Len(t, provider.jobs, model.MaxAttempts)
+	got := outcomes(t, e, run)
+	require.Equal(t, model.OutcomePassed, got["libharbor@arm64"])
+	require.Equal(t, model.OutcomeInterrupted, got["harbor-cli@arm64"])
+	require.Equal(t, model.OutcomeNotRun, got["harbor-viewer@arm64"], "never reached")
+	evidence, err := e.RunEvidence(t.Context(), run.ID)
+	require.NoError(t, err)
+	cli := evidence.Targets[slices.IndexFunc(evidence.Targets, func(target TargetEvidence) bool { return target.Target.ID == "harbor-cli" })]
+	require.True(t, cli.Missing(), "an interruption says nothing of the port")
+	require.Equal(t, CellNotRun, cli.Outcomes[0].Kind)
+	require.Equal(t, "the VM stopped", cli.Outcomes[0].Detail)
+	require.Empty(t, evidence.Runs(0)[1:], "the attempts that built nothing aren't runs behind the results")
+}
+
+func targetIDs(targets []buildenv.Target) []model.TargetID {
+	var ids []model.TargetID
+	for _, target := range targets {
+		ids = append(ids, target.ID)
+	}
+	return ids
 }
 
 func TestADependencyFailureBlocksWithoutARetry(t *testing.T) {
