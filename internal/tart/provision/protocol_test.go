@@ -19,8 +19,9 @@ import (
 // bounded setup's wait on a blocked listing, and batch 36 made its SSH
 // wait guestssh.AwaitSSH, and batch 39 renamed the packages it imports
 // (channel to guestssh, text to textedit), and batch 48 regrouped their
-// imports, none of which changes an image.
-const setupPin = "f59674bdf43b096555905c1d962dac63dc59856c4c16a0a15e1eb063bf0906e6"
+// imports, and v0.3.1 took a guest MacPorts newer than asked, which
+// MacPorts' installer's selfupdate makes, none of which changes an image.
+const setupPin = "4aa1344e7a71cf89ebb291e120c5f883654cd7cee559f56f0b36cef905631162"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning
