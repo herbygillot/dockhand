@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
@@ -550,4 +551,44 @@ func TestABaselineAndAResourcesChangeIndexPastTheBasesBrokenPorts(t *testing.T) 
 	require.True(t, ok)
 	require.False(t, meta.Strict)
 	require.Equal(t, baseTree, f.latest(), "the candidate still doesn't displace the upstream seed")
+}
+
+// A wait for the cache, which a cleanup of old indexes holds exclusively,
+// is said once it has gone on a while (field testing at c9ad2112, where a
+// look waited unsaid).
+func TestAWaitForTheCacheIsSaid(t *testing.T) {
+	config := Config{Executable: "/bin/true", Digest: "sha256:" + strings.Repeat("0", 64), CacheDirectory: t.TempDir()}
+	platform := model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
+	opened, err := openCache(t.Context(), config, platform)
+	require.NoError(t, err)
+	directory := opened.directory
+	require.NoError(t, opened.Close())
+	held, err := filelock.Acquire(t.Context(), filepath.Join(directory, cacheLockName), filelock.Exclusive)
+	require.NoError(t, err)
+	saidAfter := waitSaidAfter
+	waitSaidAfter = 10 * time.Millisecond
+	t.Cleanup(func() { waitSaidAfter = saidAfter })
+	var mu sync.Mutex
+	var said []string
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) {
+		mu.Lock()
+		defer mu.Unlock()
+		said = append(said, update.Message)
+	})
+	done := make(chan error, 1)
+	go func() {
+		c, err := openCache(ctx, config, platform)
+		if err == nil {
+			err = c.Close()
+		}
+		done <- err
+	}()
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(said) == 1
+	}, 5*time.Second, 5*time.Millisecond)
+	require.NoError(t, held.Close())
+	require.NoError(t, <-done)
+	require.Equal(t, []string{"Waiting for the PortIndex cache, which another dockhand is clearing of old indexes"}, said)
 }

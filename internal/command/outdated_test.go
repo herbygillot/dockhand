@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -320,6 +321,21 @@ func TestALargeLookSaysItsCost(t *testing.T) {
 	l.progress(1, 835)
 	l.progress(2, 835)
 	require.Equal(t, []string{"Looking up 835 ports asks GitHub about 2,200 times, of the 5,000 an hour a login has."}, said)
+}
+
+// Off a terminal, a look says its count once it has run a while, and
+// again now and then, not each port, and not once every port is looked up
+// (field testing at c9ad2112: two ports, 13 minutes, nothing said).
+func TestALookOffATerminalSaysItsCountAsItGoes(t *testing.T) {
+	var said []string
+	l := &lookups{say: func(line string) { said = append(said, line) }, first: time.Minute, every: time.Hour, started: time.Now()}
+	l.progress(1, 3)
+	require.Empty(t, said, "not before it has run a while")
+	l.started = time.Now().Add(-2 * time.Minute)
+	l.progress(1, 3)
+	l.progress(2, 3)
+	l.progress(3, 3)
+	require.Equal(t, []string{"Looked up 1 of 3 ports' newest releases"}, said)
 }
 
 // A port whose commit pin its branch moved past is skipped with the edit

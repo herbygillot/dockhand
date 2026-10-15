@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/stretchr/testify/require"
@@ -117,4 +118,29 @@ func TestReportsSayWhatTheyreAboutAndKeptOnesArentRepeated(t *testing.T) {
 		{Level: progress.Info, Message: "macOS 15 (Tart): Building the PortIndex", About: "macOS 15 (Tart)"},
 		{Level: progress.Verbose, Message: "macOS 15 (Tart): base fd44713: indexing in full", About: "macOS 15 (Tart): base fd44713"},
 	}, kept)
+}
+
+// A step that runs past its delay says what it waits on, once; one that
+// ends sooner says nothing (field testing at c9ad2112).
+func TestAfterSaysASlowStepOnce(t *testing.T) {
+	var mu sync.Mutex
+	var said []string
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) {
+		mu.Lock()
+		defer mu.Unlock()
+		said = append(said, update.Message)
+	})
+	stop := progress.After(ctx, time.Hour, "never said")
+	stop()
+	stop = progress.After(ctx, time.Millisecond, "Waiting for %s", "the cache")
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(said) == 1
+	}, time.Second, time.Millisecond)
+	stop()
+	stop()
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{"Waiting for the cache"}, said)
 }

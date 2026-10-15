@@ -172,6 +172,9 @@ func WithSiblings(ports []Port) []Port {
 	return ports
 }
 
+// slowLookup is how long one port's lookup goes before it's said.
+const slowLookup = 20 * time.Second
+
 // Concurrency is how many ports Observe looks up at once when the service
 // doesn't say: each takes MacPorts processes of its own while it is
 // evaluated, and a few requests upstream.
@@ -190,8 +193,13 @@ func (s *Service) observeOne(ctx context.Context, editor *portedit.Service, file
 	// What loading a port says is the editor's, behind the scenes to a
 	// look that edits nothing: "py-wsaccel is a stub; editing
 	// py313-wsaccel" (field testing, 2026-10-02).
+	loud := ctx
 	ctx = progress.Quiet(ctx)
 	item := Port{Selector: selected.Label, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC()}}
+	// A lookup that waits is said, once: most of a port's time is spent on
+	// its upstream, and a look that printed nothing for minutes didn't say
+	// on what (field testing at c9ad2112).
+	defer progress.After(loud, slowLookup, "Still looking up %s's newest release, waiting on its upstream", selected.Label)()
 	probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: files.Source, Workspace: files.Projection, Selection: selected.Selection, Platform: platform})
 	if problem == nil && selected.Name != "" {
 		problem = probe.Agrees(selected.Name)

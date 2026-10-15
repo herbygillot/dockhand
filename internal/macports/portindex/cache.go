@@ -71,6 +71,10 @@ type cache struct {
 	guard     *os.File
 }
 
+// waitSaidAfter is how long a wait on the cache goes unsaid; tests shorten
+// it.
+var waitSaidAfter = 3 * time.Second
+
 func openCache(ctx context.Context, c Config, platform model.Platform) (*cache, error) {
 	for _, value := range []string{platform.OS, platform.Version, platform.Architecture} {
 		if value == "" || strings.ContainsAny(value, "/\\\x00\r\n\t ") {
@@ -89,7 +93,11 @@ func openCache(ctx context.Context, c Config, platform model.Platform) (*cache, 
 	}
 	identity := model.Digest([]byte(strings.Join([]string{cacheLayout, c.Digest, c.Runtime, platform.OS, platform.Version, platform.Architecture, variables}, "\x00")))
 	directory := filepath.Join(c.CacheDirectory, identity)
+	// Only a cleanup of old indexes holds it exclusively (Prune), and a
+	// wait on it was said nowhere (field testing at c9ad2112).
+	waiting := progress.After(ctx, waitSaidAfter, "Waiting for the PortIndex cache, which another dockhand is clearing of old indexes")
 	guard, err := filelock.Acquire(ctx, filepath.Join(directory, cacheLockName), filelock.Shared)
+	waiting()
 	if err != nil {
 		return nil, err
 	}

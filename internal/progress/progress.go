@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Level says who a report is for. Info is the minimum a person needs to
@@ -169,4 +170,18 @@ func emit(ctx context.Context, level Level, format string, args ...any) {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	sink.report(update)
+}
+
+// After reports, once, at info level, what a step waits on, where it has
+// run for longer than delay: the first outdated after a rebuild printed
+// nothing for 13 minutes, waiting on something it didn't say (field
+// testing at c9ad2112). A step that ends sooner says nothing. stop ends the
+// wait, and is safe to call more than once.
+func After(ctx context.Context, delay time.Duration, format string, args ...any) (stop func()) {
+	timer := time.AfterFunc(delay, func() {
+		if ctx.Err() == nil {
+			emit(ctx, Info, format, args...)
+		}
+	})
+	return func() { timer.Stop() }
 }

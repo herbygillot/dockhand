@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -480,11 +481,12 @@ func batchNotes(update engine.Update) []string {
 	return notes
 }
 
-// lookupProgress shows, on a terminal, how many ports' newest releases are
-// looked up, on one line it redraws and clears when they all are: a large
-// --mine takes minutes. Elsewhere, and for --json, it shows nothing.
 // lookups follows outdated's lookups: on a terminal it redraws their count
-// in place, and it remembers how many there are, for a look cut short.
+// in place, on one line it clears when they all are, since a large --mine
+// takes minutes; elsewhere it says the count as a line, once the look has
+// run a while and then now and then, where it said nothing and a look of
+// two ports was killed after 13 minutes, its wait unsaid (field testing at
+// c9ad2112). It remembers how many there are, for a look cut short.
 type lookups struct {
 	line  *statusLine
 	draw  bool
@@ -492,10 +494,16 @@ type lookups struct {
 	// costly says once what a large look spends of GitHub's allowance.
 	costly sync.Once
 	say    func(string)
+	// Off a terminal, the count is said once the look has run first, and
+	// again each every after that.
+	first, every time.Duration
+	mu           sync.Mutex
+	started      time.Time
+	said         time.Time
 }
 
 func newLookups(streams Streams) *lookups {
-	return &lookups{line: streams.stderrLine(), draw: streams.errTerminal(), say: streams.status.say}
+	return &lookups{line: streams.stderrLine(), draw: streams.errTerminal(), say: streams.status.say, first: 10 * time.Second, every: 30 * time.Second, started: time.Now()}
 }
 
 // costlyLook is the number of ports past which a look says what it spends
@@ -512,6 +520,13 @@ func (l *lookups) progress(done, total int) {
 		})
 	}
 	if !l.draw {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		now := time.Now()
+		if l.every > 0 && done < total && now.Sub(l.started) >= l.first && now.Sub(l.said) >= l.every {
+			l.said = now
+			l.say(fmt.Sprintf("Looked up %d of %d ports' newest releases", done, total))
+		}
 		return
 	}
 	if done == total {
