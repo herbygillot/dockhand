@@ -174,9 +174,6 @@ func openStore(ctx context.Context, path string, options Options) (*Store, error
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 
-// Path is the database's absolute path.
-func (s *Store) Path() string { return s.path }
-
 func (s *Store) initialize(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, s.options.OperationTimeout)
 	defer cancel()

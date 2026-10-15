@@ -55,12 +55,12 @@ func TestARegistryNameIsReadAsItsSource(t *testing.T) {
 		"go:sigs.k8s.io/yaml":                 "https://github.com/kubernetes-sigs/yaml",
 		"https://github.com/o/p":              "https://github.com/o/p",
 	} {
-		source, err := c.Source(context.Background(), name)
+		found, err := c.Find(context.Background(), name)
 		require.NoError(t, err, name)
-		require.Equal(t, want, source, name)
+		require.Equal(t, want, found.Source, name)
 	}
 	for name, why := range map[string]error{"pypi:sourceless": ErrNoSource, "crates:bare": ErrNoSource} {
-		_, err := c.Source(context.Background(), name)
+		_, err := c.Find(context.Background(), name)
 		require.True(t, errors.Is(err, why), "%s: %v", name, err)
 	}
 	// A module below its repository's root is refused by its
@@ -71,14 +71,14 @@ func TestARegistryNameIsReadAsItsSource(t *testing.T) {
 		"go:github.com/o/p/tools/cmd/v3":    "subdirectory tools/cmd",
 		"go:golang.org/x/tools/gopls":       "subdirectory gopls",
 	} {
-		_, err := c.Source(context.Background(), name)
+		_, err := c.Find(context.Background(), name)
 		require.ErrorIs(t, err, ErrSubdirectory, name)
 		require.ErrorContains(t, err, below, name)
 	}
-	_, err := c.Source(context.Background(), "crates:missing")
+	_, err := c.Find(context.Background(), "crates:missing")
 	require.ErrorContains(t, err, "crates:missing")
 	for _, bad := range []string{"pypi:../etc", "crates:a b", "go:not a path"} {
-		_, err := c.Source(context.Background(), bad)
+		_, err := c.Find(context.Background(), bad)
 		require.Error(t, err, bad)
 	}
 	// The latest version names the release where the repository marks

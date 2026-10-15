@@ -65,16 +65,9 @@ type Found struct {
 	Version string
 }
 
-// Source is the address of the source repository a registry name's
-// project names: its repository, homepage, or source link, or the
-// module's own path.
-func (c Client) Source(ctx context.Context, argument string) (string, error) {
-	found, err := c.Find(ctx, argument)
-	return found.Source, err
-}
-
-// Find is what a registry name's registry says of its project: its source
-// (Source), and its latest version, which names the release where its
+// Find is what a registry name's registry says of its project: the
+// address of the source repository it names (its repository, homepage, or
+// source link, or the module's own path), and its latest version, which names the release where its
 // repository marks none, as a project published to PyPI alone may not
 // (the Vx port's field testing, 2026-10-03).
 func (c Client) Find(ctx context.Context, argument string) (Found, error) {

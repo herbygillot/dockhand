@@ -11,9 +11,7 @@ import (
 // none of them; each is stated here with what goes without it.
 func TestGitHubForgeSatisfiesItsOptionalCapabilities(t *testing.T) {
 	var client any = &Client{}
-	_, ok := client.(forge.PullRequestInspector)
-	require.True(t, ok, "sync and adopt --pr read pull requests through forge.PullRequestInspector")
-	_, ok = client.(forge.Documents)
+	_, ok := client.(forge.Documents)
 	require.True(t, ok, "livecheck listings on GitHub are fetched through forge.Documents")
 	var repository any = &repository{}
 	_, ok = repository.(forge.ReleaseRepository)

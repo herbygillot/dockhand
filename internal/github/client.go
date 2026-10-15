@@ -115,11 +115,6 @@ func (c *Client) AuthenticatedAPI(ctx context.Context) (*gh.Client, error) {
 	return c.authSDK, nil
 }
 
-func (c *Client) Authenticate(ctx context.Context) error {
-	_, err := c.AuthenticatedUser(ctx)
-	return err
-}
-
 func (c *Client) AuthenticatedUser(ctx context.Context) (string, error) {
 	client, err := c.AuthenticatedAPI(ctx)
 	if err != nil {
