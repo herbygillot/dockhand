@@ -19,7 +19,7 @@ import (
 // evaluate. Reading says how the tests counted, "advisory" when empty
 // (Evidence.testsReading). Accepted marks a failure submit --accept
 // acknowledged.
-func targetWords(plan model.Plan, target model.PlanTarget, result Cell, reading string, accepted bool) string {
+func targetWords(plan model.Plan, result Cell, reading string, accepted bool) string {
 	if reading == "" {
 		reading = "advisory"
 	}

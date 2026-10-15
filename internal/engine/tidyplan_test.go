@@ -77,8 +77,8 @@ func TestRegroupCombinesAndReorders(t *testing.T) {
 	result, err := e.ApplyTidy(t.Context(), regrouped)
 	require.NoError(t, err)
 	require.Len(t, result.Commits, 2)
-	require.Equal(t, []string{"jq: build against libharbor 3", "libharbor: update to 3"}, log(t, plan.Worktree, plan.Branch.Base))
-	require.Empty(t, testsupport.Git(t, plan.Worktree, "status", "--porcelain"))
+	require.Equal(t, []string{"jq: build against libharbor 3", "libharbor: update to 3"}, log(t, plan.Branch.Worktree, plan.Branch.Base))
+	require.Empty(t, testsupport.Git(t, plan.Branch.Worktree, "status", "--porcelain"))
 }
 
 func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
@@ -136,27 +136,27 @@ func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
 	_, err = e.LoadTidyPlan(t.Context(), []byte("version = 3\n"))
 	require.ErrorContains(t, err, "version 3; this dockhand reads version 2")
 
-	write(t, plan.Worktree, map[string]string{"textproc/jq/Portfile": "edited after the plan\n"})
+	write(t, plan.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "edited after the plan\n"})
 	_, err = e.LoadTidyPlan(t.Context(), edited)
 	require.ErrorIs(t, err, ErrStalePlan)
 	require.ErrorContains(t, err, "its files were edited")
-	write(t, plan.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n# harbor 3\n"})
+	write(t, plan.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n# harbor 3\n"})
 
 	// Staging something the plan never saw makes it stale too, since
 	// applying would reset the index.
-	write(t, plan.Worktree, map[string]string{"textproc/jq/Portfile": "staged after the plan\n"})
-	testsupport.Git(t, plan.Worktree, "add", "textproc/jq/Portfile")
-	write(t, plan.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n# harbor 3\n"})
+	write(t, plan.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "staged after the plan\n"})
+	testsupport.Git(t, plan.Branch.Worktree, "add", "textproc/jq/Portfile")
+	write(t, plan.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n# harbor 3\n"})
 	_, err = e.LoadTidyPlan(t.Context(), edited)
 	require.ErrorIs(t, err, ErrStalePlan)
 	require.ErrorContains(t, err, "something was staged since it was made")
-	testsupport.Git(t, plan.Worktree, "read-tree", plan.Index)
+	testsupport.Git(t, plan.Branch.Worktree, "read-tree", plan.Index)
 
 	loaded, err = e.LoadTidyPlan(t.Context(), edited)
 	require.NoError(t, err)
 	_, err = e.ApplyTidy(t.Context(), loaded)
 	require.NoError(t, err)
-	require.Equal(t, []string{"libharbor: update to 3, with the github PortGroup it needs", "jq: build against libharbor 3"}, log(t, plan.Worktree, plan.Branch.Base))
+	require.Equal(t, []string{"libharbor: update to 3, with the github PortGroup it needs", "jq: build against libharbor 3"}, log(t, plan.Branch.Worktree, plan.Branch.Base))
 	_, err = e.LoadTidyPlan(t.Context(), edited)
 	require.ErrorContains(t, err, "it has new commits")
 }

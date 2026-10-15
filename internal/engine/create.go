@@ -126,7 +126,6 @@ func defaultName(project Project, build portcreate.Build) string {
 // Created is what create wrote.
 type Created struct {
 	Port, Directory string
-	Project         Project
 	Version         string
 	Build           portcreate.Build
 	Crates          int
@@ -271,7 +270,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 		return Created{}, err
 	}
 
-	created := Created{Port: name, Directory: directory, Project: project, Version: version, Build: build, Crates: len(spec.Crates),
+	created := Created{Port: name, Directory: directory, Version: version, Build: build, Crates: len(spec.Crates),
 		Category: spec.Category, CategoryFrom: spec.CategoryFrom, Unconfirmed: spec.Unconfirmed(), HomepageFrom: homepageFrom}
 	update, err := e.Update(ctx, UpdateRequest{Branch: request.Branch, Action: model.EditChecksums, Port: name, answered: answered})
 	switch {

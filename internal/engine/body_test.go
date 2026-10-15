@@ -280,3 +280,9 @@ func TestAResultsReasonIsSaidUnderTheTable(t *testing.T) {
 	evidence.Targets = evidence.Targets[2:]
 	require.NotContains(t, ownedSections(bodyFacts{Evidence: &evidence}), "¹", "no reason, no note")
 }
+
+// ownedSections are the part of the description dockhand keeps up to date:
+// Tested on through Verification.
+func ownedSections(facts bodyFacts) string {
+	return prdescription.Owned(facts.description())
+}

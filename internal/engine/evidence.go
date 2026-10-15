@@ -21,7 +21,6 @@ type (
 	TargetEvidence = evidence.TargetEvidence
 	Cell           = evidence.Cell
 	CellKind       = evidence.CellKind
-	Observation    = evidence.Observation
 )
 
 const (
@@ -57,7 +56,7 @@ func RemadeWords(target TargetEvidence) string {
 // required never makes an earlier advisory result read as required.
 func EvidenceWords(evidence Evidence, target TargetEvidence, environment int, accepted bool) string {
 	result := target.Outcomes[environment]
-	return targetWords(evidence.Plan, target.Target, result, evidence.TestsReading(result.TargetResult), accepted)
+	return targetWords(evidence.Plan, result, evidence.TestsReading(result.TargetResult), accepted)
 }
 
 // EvidenceFor finds what the finished checks of a branch's tree

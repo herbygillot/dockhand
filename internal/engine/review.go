@@ -42,7 +42,6 @@ type ReviewReport struct {
 	// Author is who opened the pull request, whose Portfiles the review
 	// evaluates.
 	Author string
-	State  forge.PullRequestState
 	// Login is who would post it, and Permission their role on the
 	// repository: admin, maintain, write, triage, read, or none, or
 	// AccessUnknown where the forge wouldn't say.
@@ -123,7 +122,7 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 		return report, e.readingPullRequest(number, err)
 	}
 	pr := observed.PullRequest
-	report.Title, report.State, report.Ref.URL, report.Author = pr.Title, pr.State, pr.Ref.URL, pr.Author
+	report.Title, report.Ref.URL, report.Author = pr.Title, pr.Ref.URL, pr.Author
 	if report.Login, err = f.AuthenticatedUser(ctx); err != nil {
 		return report, loginError("review", err)
 	}

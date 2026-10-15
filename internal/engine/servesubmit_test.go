@@ -54,7 +54,7 @@ func TestServeSubmitsOnlyWhatPassedWithNothingToLookAt(t *testing.T) {
 	branch := servePrepared(t, e)
 	committedUpdate(t, e) // a person's branch, which serve never submits
 
-	candidates, err := e.ServeCandidates(t.Context())
+	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Len(t, candidates, 1, "only the branch serve prepared, and only once its check passed")
 	require.Equal(t, branch.ID, candidates[0].Branch.ID)
@@ -66,7 +66,7 @@ func TestServeSubmitsOnlyWhatPassedWithNothingToLookAt(t *testing.T) {
 	require.Contains(t, fake.Created[0].Desired.Body, ServeNote, "the pull request says no person reviewed it")
 	require.Contains(t, fake.Created[0].Desired.Body, "- [ ] tested basic functionality of all binary files?", "serve states nothing only a person can")
 
-	again, err := e.ServeCandidates(t.Context())
+	again, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, again, "a branch with a pull request is done")
 
@@ -92,7 +92,7 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 	status, err := e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
 	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, HoldLines(status.Held))
-	candidates, err := e.ServeCandidates(t.Context())
+	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, HoldLines(candidates[0].Held))
 	require.Len(t, candidates[0].Plan.Upstream, 1)
@@ -119,7 +119,7 @@ func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
 	status, err := e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
 	require.Equal(t, held, HoldLines(status.Held), "the attention list says why")
-	candidates, err := e.ServeCandidates(t.Context())
+	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, held, HoldLines(candidates[0].Held))
 	require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{},
@@ -146,7 +146,7 @@ func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
 	status, err := e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
 	require.Equal(t, held, HoldLines(status.Held))
-	candidates, err := e.ServeCandidates(t.Context())
+	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, held, HoldLines(candidates[0].Held))
 	require.Empty(t, fake.Created)
@@ -175,7 +175,7 @@ func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
 			p.upstream = [2]map[string]string{{"go.mod": "module m\n\ngo 1.25.8\n"}, {"go.mod": "module m\n\ngo 1.26.8\n"}}
 			servePrepared(t, e)
 
-			candidates, err := e.ServeCandidates(t.Context())
+			candidates, _, err := e.serveCandidates(t.Context())
 			require.NoError(t, err)
 			require.Empty(t, candidates[0].Held)
 			require.Len(t, candidates[0].Plan.Upstream, 1)
@@ -196,7 +196,7 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	fake.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.1"}}
 	servePrepared(t, e)
 
-	candidates, err := e.ServeCandidates(t.Context())
+	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"#34777 is open for the same port: jq: update to 1.8.1"}, HoldLines(candidates[0].Held))
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
@@ -281,7 +281,7 @@ func TestPassingIsOneDefinitionForSubmitAndServe(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, passing.Ready)
 	require.Equal(t, 1, passing.Others, "its check no longer covers its files")
-	candidates, err := e.ServeCandidates(t.Context())
+	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, candidates, "and serve submits it no more than submit --passing would")
 }
@@ -379,7 +379,7 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.RunPassed, checked.State, checked.Detail)
 
-	candidates, err := e.ServeCandidates(t.Context())
+	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
 	require.Equal(t, []string{"jq's git.branch jq-1.8.1 named " + chosen[:7] + " when its update chose it, and " + moved[:7] + " when " + checked.Name() + " planned it: the check built another source than the update chose"}, HoldLines(candidates[0].Held))
