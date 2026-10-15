@@ -29,10 +29,9 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 	require.ErrorContains(t, err, `"x" is not a pull request number`)
 	out, said, err := dockhand(t, "review", "34905")
 	require.Contains(t, said, "Experimental: dockhand evaluates #34905's Portfiles, its author's,", "the release bar's notice")
-	require.NoError(t, err)
+	require.EqualError(t, err, "nothing was posted: without a terminal, --comment or --request-changes posts it")
 	require.Contains(t, out, "review of #34905 \"Update jq docs\", as @ada (read access to macports/macports-ports)\n  1 commit changing jq\n")
 	require.Contains(t, out, `should start with the port it changes: "jq: …" [subject-port]`)
-	require.Contains(t, out, "Nothing was posted; --comment or --request-changes posts it.\n")
 	require.Empty(t, g.Reviews)
 
 	out, _, err = dockhand(t, "review", "34905", "--markdown")

@@ -5,9 +5,21 @@ import (
 	"fmt"
 )
 
-// ExitError carries the exit code a command's outcome calls for (Design
-// v3 §12): 2 for a failed check, 3 for attention needed, 130 for an
-// interrupt.
+// The exit codes a command's outcome calls for (Design v3 §12), named so
+// no site chooses a bare number and none reads one back as control flow.
+const (
+	// ExitFailure is an error, a refusal among them.
+	ExitFailure = 1
+	// ExitCheckFailed is a check that failed.
+	ExitCheckFailed = 2
+	// ExitAttention is an outcome that needs a person's look: a hold, a
+	// look left incomplete, or archives that don't match.
+	ExitAttention = 3
+	// ExitInterrupted is an interrupt.
+	ExitInterrupted = 130
+)
+
+// ExitError carries the exit code a command's outcome calls for.
 type ExitError struct {
 	Code    int
 	Message string
@@ -16,12 +28,12 @@ type ExitError struct {
 func (e *ExitError) Error() string { return e.Message }
 
 // ExitCode is the process exit code for err: its own when it carries one,
-// however wrapped, else 1.
+// however wrapped, else ExitFailure.
 func ExitCode(err error) int {
 	if exit := new(ExitError); errors.As(err, &exit) {
 		return exit.Code
 	}
-	return 1
+	return ExitFailure
 }
 
 func exitf(code int, format string, args ...any) error {

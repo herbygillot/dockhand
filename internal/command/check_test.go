@@ -376,7 +376,7 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 		plan.Builds = append(plan.Builds, model.EnvironmentPlan{Environment: arm, Order: order})
 	}
 	require.EqualError(t, confirmVariantBuilds(Streams{In: strings.NewReader("")}, plan, false),
-		"nothing was checked: --variants each makes 20 builds here; without a terminal, --yes builds them")
+		"nothing was checked (--variants each makes 20 builds here): without a terminal, --yes builds them")
 	require.NoError(t, confirmVariantBuilds(Streams{}, plan, true))
 	var asked strings.Builder
 	require.NoError(t, confirmVariantBuilds(Streams{In: strings.NewReader("y\n"), Out: &asked, Err: &asked, interactive: true}, plan, false))

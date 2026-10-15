@@ -523,9 +523,9 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	require.Contains(t, errs, "jq-update: #34901 is merged")
 
 	out, _, err := dockhand(t, "clean", "--merged")
-	require.NoError(t, err)
+	require.Equal(t, ExitFailure, ExitCode(err))
 	require.Contains(t, out, "jq-update (#34901, merged at ")
-	require.Contains(t, out, "  remove   worktree ~/Source/macports-branches/jq-update\n  remove   branch dockhand/jq-update\n  remove   ada/macports-ports:dockhand/jq-update\nNothing was removed; --yes removes these.\n")
+	require.Contains(t, out, "  remove   worktree ~/Source/macports-branches/jq-update\n  remove   branch dockhand/jq-update\n  remove   ada/macports-ports:dockhand/jq-update\n")
 	require.DirExists(t, dir)
 
 	out, _, err = dockhand(t, "clean", "--yes")
@@ -937,7 +937,7 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	require.ErrorContains(t, err, "open-work is open, so there's nothing to clean")
 
 	out, _, err = dockhand(t, "clean", "jq-update")
-	require.NoError(t, err)
+	require.Equal(t, ExitFailure, ExitCode(err))
 	require.Contains(t, out, "jq-update (#34901, merged at ")
 	require.NotContains(t, out, "other-work", "an archived branch not named is left")
 	require.Contains(t, out, "  remove   ada/macports-ports:dockhand/jq-update\n")

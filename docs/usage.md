@@ -360,9 +360,9 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
     - `submit --check`'s is the submission's, with `check`;
     - `check`'s is the check's, with the `baseline` that `check.baseline` runs, whose `run.baseline_of` names the check it looks into.
   - A command that refuses before doing anything reports only its error.
-- **Exit codes:** 0 for success, 1 for an error, 2 for a failed check, 3 when something needs attention (`status --attention`, a `bump` held for a look, an update that can't tell which release is the newest, or a batch some of whose ports need a look), and 130 for an interrupt. A batch none of whose ports could be done exits 1.
+- **Exit codes:** 0 for success, 1 for an error, 2 for a failed check, 3 when something needs attention (`status --attention`, a `bump` held for a look, an update that can't tell which release is the newest, a batch some of whose ports need a look, or `checksums --plan` finding distfiles that don't match), and 130 for an interrupt. A batch none of whose ports could be done exits 1.
 - **Long lists** a line would carry, as a check's changed ports and build order or an update's dependents, name their first few and count the rest, "18 ports: terraform-1.16, terraform-1.17, terraform-1.18 and 15 more"; `--json` has every one.
-- **Without a terminal**, nothing is asked. A command that would ask refuses and says what it needs, or proceeds where `-y` is given. `tidy` applies only a plan made of dockhand's own edits, or one you give it.
+- **Without a terminal**, nothing is asked. A command that would ask refuses in one sentence, as "nothing was removed: without a terminal, --yes removes these", and exits 1, `clean` and `review` included, or proceeds where `-y` is given; a question with a safe way on, as stopping a running check a script replaces, takes it. `tidy` applies only a plan made of dockhand's own edits, or one you give it.
 
 ## Settings
 

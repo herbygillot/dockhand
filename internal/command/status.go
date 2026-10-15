@@ -138,7 +138,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 	if attentionOnly {
 		writeAttention(out, rows)
 		if len(rows) > 0 {
-			return &ExitError{Code: 3}
+			return &ExitError{Code: ExitAttention}
 		}
 		return nil
 	}

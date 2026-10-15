@@ -69,14 +69,13 @@ func TestCleanRemovesWhatChecksLeft(t *testing.T) {
 	vm := builder.left[0]
 
 	out, _, err := dockhand(t, "clean")
-	require.NoError(t, err)
+	require.Equal(t, ExitFailure, ExitCode(err), "a script's clean without --yes removes nothing, and refuses")
 	require.Equal(t, "Left by checks\n"+
 		"  remove   VM "+vm+", left by check-1\n"+
-		"  keep     VM vm-elsewhere: no check of this checkout made it\n"+
-		"Nothing was removed; --yes removes these.\n", out)
+		"  keep     VM vm-elsewhere: no check of this checkout made it\n", out)
 
 	result, err := jsonOf(t, "clean")
-	require.NoError(t, err)
+	require.Equal(t, ExitFailure, ExitCode(err))
 	require.Equal(t, vm, dig(t, result.Result, "leftovers", 0, "ref"))
 	require.Equal(t, "check-1", dig(t, result.Result, "leftovers", 0, "check"))
 	require.Equal(t, false, dig(t, result.Result, "leftovers", 0, "removed"))

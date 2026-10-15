@@ -170,7 +170,7 @@ true, it runs that baseline by itself.`,
 			// check.baseline runs the baseline the failed check pointed to,
 			// by itself, when it pointed to one. The report has said why
 			// if it couldn't tell.
-			if exit := new(ExitError); errors.As(err, &exit) && exit.Code == 2 && s.file.Check.Baseline && !enqueue {
+			if exit := new(ExitError); errors.As(err, &exit) && exit.Code == ExitCheckFailed && s.file.Check.Baseline && !enqueue {
 				finished, _ := e.RunNamed(ctx, run.Name())
 				if ports, _, _ := e.BaselineCandidates(ctx, finished); len(ports) > 0 {
 					fmt.Fprintln(streams.Out, "check.baseline runs it now:")
@@ -584,7 +584,7 @@ func waitFor(ctx context.Context, e *engine.Engine, id model.RunID) (model.Run, 
 		}
 		select {
 		case <-ctx.Done():
-			return run, &ExitError{Code: 130, Message: fmt.Sprintf("stopped following %s; it continues (dockhand wait %s)", run.Name(), run.Name())}
+			return run, &ExitError{Code: ExitInterrupted, Message: fmt.Sprintf("stopped following %s; it continues (dockhand wait %s)", run.Name(), run.Name())}
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
@@ -632,11 +632,11 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 		if err := hintBaseline(ctx, e, out, run); err != nil {
 			fmt.Fprintf(streams.Err, "baseline: %v\n", err)
 		}
-		return exitf(2, "%s failed for %s: %s. Logs: dockhand logs %s", run.Name(), engine.Describe(revision), run.Detail, run.Name())
+		return exitf(ExitCheckFailed, "%s failed for %s: %s. Logs: dockhand logs %s", run.Name(), engine.Describe(revision), run.Detail, run.Name())
 	case model.RunCanceled:
 		return stoppedExit(run, evidence)
 	}
-	return exitf(3, "%s needs attention: %s", run.Name(), run.Detail)
+	return exitf(ExitAttention, "%s needs attention: %s", run.Name(), run.Detail)
 }
 
 // failureLines is how many of a failed step's last lines a check's
@@ -672,9 +672,9 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 // or nothing, when it finished nothing, as one cancelled while queued.
 func stoppedExit(run model.Run, evidence engine.Evidence) error {
 	if !evidence.Recorded() {
-		return exitf(130, "%s stopped before anything finished", run.Name())
+		return exitf(ExitInterrupted, "%s stopped before anything finished", run.Name())
 	}
-	return exitf(130, "%s stopped; finished results are kept", run.Name())
+	return exitf(ExitInterrupted, "%s stopped; finished results are kept", run.Name())
 }
 
 // stopWords say what cancelling a check did: one only queued is cancelled
@@ -864,7 +864,7 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 	case model.RunCanceled:
 		return stoppedExit(run, base)
 	case model.RunAttention:
-		return exitf(3, "%s needs attention: %s", run.Name(), run.Detail)
+		return exitf(ExitAttention, "%s needs attention: %s", run.Name(), run.Detail)
 	}
 	return nil
 }
@@ -970,8 +970,9 @@ func replaceActive(ctx context.Context, e *engine.Engine, streams Streams, branc
 	defer session.End(context.WithoutCancel(ctx))
 	var stopped []string
 	for _, run := range runs {
-		if run.State == model.RunRunning && streams.terminal() {
-			ok, err := confirm(streams, fmt.Sprintf("? stop %s, which is running? [y/N] ", run.Name()))
+		if run.State == model.RunRunning {
+			// A script that asked for a new check replaces it.
+			ok, _, err := streams.decide(false, decision{question: fmt.Sprintf("? stop %s, which is running? [y/N] ", run.Name()), nobody: answer(true)})
 			if err != nil {
 				return stopped, err
 			}
@@ -1028,10 +1029,8 @@ func confirmVariantBuilds(streams Streams, plan model.Plan, yes bool) error {
 	if !plan.EachVariant || builds <= variantBuildsToAsk || yes {
 		return nil
 	}
-	if !streams.terminal() {
-		return fmt.Errorf("nothing was checked: --variants each makes %d builds here; without a terminal, --yes builds them", builds)
-	}
-	ok, err := confirm(streams, fmt.Sprintf("? --variants each makes %d builds, each a whole build; go ahead? [y/N] ", builds))
+	ok, _, err := streams.decide(false, decision{question: fmt.Sprintf("? --variants each makes %d builds, each a whole build; go ahead? [y/N] ", builds),
+		undone: fmt.Sprintf("nothing was checked (--variants each makes %d builds here)", builds), byYes: "--yes builds them"})
 	if err != nil {
 		return err
 	}

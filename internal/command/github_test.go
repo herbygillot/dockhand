@@ -468,7 +468,7 @@ func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 	require.NoError(t, err)
 
 	out, _, err := dockhand(t, "clean")
-	require.NoError(t, err)
+	require.Equal(t, ExitFailure, ExitCode(err))
 	require.Contains(t, out, "  remove   ada/macports-ports:"+checked+"\n")
 	_, _, err = dockhand(t, "clean", "--yes")
 	require.NoError(t, err)

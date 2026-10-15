@@ -226,7 +226,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	// Exit 3, attention: a script can't take an incomplete look for a
 	// whole one. What's said is above, so the exit says nothing more.
 	if unknown > 0 {
-		return &ExitError{Code: 3}
+		return &ExitError{Code: ExitAttention}
 	}
 	return nil
 }
@@ -330,15 +330,13 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 		fmt.Fprintln(out, "Nothing was started (--plan).")
 		return nil
 	}
-	if !options.yes {
-		if !streams.terminal() {
-			return errors.New("nothing was started: without a terminal, --yes starts what is shown")
-		}
-		ok, err := confirm(streams, "? go ahead? [y/N] ")
-		if err != nil || !ok {
-			fmt.Fprintln(out, "Nothing was started.")
-			return err
-		}
+	ok, _, err := streams.decide(options.yes, decision{question: "? go ahead? [y/N] ", undone: "nothing was started", byYes: "--yes starts what is shown"})
+	if err != nil {
+		return err
+	}
+	if !ok {
+		fmt.Fprintln(out, "Nothing was started.")
+		return nil
 	}
 	prepared := e.PrepareOutdated(ctx, plan, engine.PrepareOptions{Origin: model.OriginPerson, Check: options.check, Environments: environments, Tests: model.TestPolicy(s.file.Check.Tests)})
 	streams.emit(preparedView(prepared, plan, report))
@@ -428,9 +426,9 @@ func writePrepared(ctx context.Context, e *engine.Engine, out io.Writer, prepare
 	// an update --outdated whose nine ports all failed read 3 as well.
 	switch {
 	case failed > 0 && tidied == 0:
-		return &ExitError{Code: 1}
+		return &ExitError{Code: ExitFailure}
 	case failed > 0:
-		return &ExitError{Code: 3}
+		return &ExitError{Code: ExitAttention}
 	}
 	return nil
 }

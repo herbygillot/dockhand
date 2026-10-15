@@ -101,8 +101,8 @@ kept.
 				return nil
 			}
 			if !streams.terminal() {
-				if !yes {
-					return errors.New("nothing was submitted: without a terminal, --yes submits exactly what is shown")
+				if _, _, err := streams.decide(yes, decision{undone: "nothing was submitted", byYes: "--yes submits exactly what is shown"}); err != nil {
+					return err
 				}
 				return finishSubmit(ctx, e, streams, plan, ready, s.file.Submit.RerequestReview)
 			}
@@ -316,7 +316,7 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 			view.Held = held
 			streams.emit(view)
 			name := plan.Branch.ShortName()
-			return exitf(3, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: dockhand submit --branch %s", name, strings.Join(held, "; "), name)
+			return exitf(ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: dockhand submit --branch %s", name, strings.Join(held, "; "), name)
 		}
 	}
 	fmt.Fprintln(streams.Out)
@@ -766,16 +766,12 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	}
 	who := "@" + strings.Join(observed.Observed.ChangesRequestedBy, ", @")
 	if rerequest != "always" {
-		if !streams.terminal() {
+		again, how, err := streams.decide(false, decision{question: fmt.Sprintf("? ask %s to review again? [Y/n] ", who), yes: true, nobody: answer(false)})
+		if how == AnsweredNobody {
 			fmt.Fprintf(streams.Out, "%s requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n", who)
-			return nil
 		}
-		answer, err := ask(streams, fmt.Sprintf("? ask %s to review again? [Y/n] ", who))
-		if err != nil {
+		if err != nil || !again {
 			return err
-		}
-		if strings.EqualFold(answer, "n") || strings.EqualFold(answer, "no") {
-			return nil
 		}
 	}
 	if _, err := e.RequestReview(ctx, plan.Branch); err != nil {

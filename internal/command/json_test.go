@@ -208,7 +208,7 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	g.PRs[34901].State = forge.PullRequestMerged
 	t.Setenv("MACPORTS_TREE", w.clone)
 	preview, err := jsonOf(t, "clean")
-	require.NoError(t, err)
+	require.Equal(t, ExitFailure, ExitCode(err), "a preview without --yes removes nothing, and refuses")
 	require.Equal(t, false, preview.Result["applied"])
 	require.Equal(t, false, dig(t, preview.Result, "branches", 0, "steps", 0, "removed"))
 	cleaned, err := jsonOf(t, "clean", "--yes")

@@ -57,8 +57,10 @@ access. --markdown prints the text, for pasting.`,
 			case comment || requestChanges:
 				return postReview(ctx, e, streams, report, body, requestChanges)
 			case !streams.terminal():
-				fmt.Fprintln(streams.Out, "Nothing was posted; --comment or --request-changes posts it.")
-				return e.RecordReview(ctx, report, "")
+				if err := e.RecordReview(ctx, report, ""); err != nil {
+					return err
+				}
+				return &ExitError{Code: ExitFailure, Message: "nothing was posted: without a terminal, --comment or --request-changes posts it"}
 			}
 			for {
 				choices := "c comment · r request changes · e edit first · n don't post"

@@ -485,7 +485,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 			writeLeft(out, update.ChecksumsLeft)
 			if len(update.Differing) > 0 {
 				fmt.Fprintf(out, "%d of %s don't match their checksums: %s\n", len(update.Differing), prose.Plural(update.Compared, "distfile"), strings.Join(update.Differing, ", "))
-				return branch, update, &ExitError{Code: 3}
+				return branch, update, &ExitError{Code: ExitAttention}
 			}
 		}
 		return branch, update, nil
@@ -668,7 +668,7 @@ func uncertainUpdate(port string, aside []engine.SetAside, linked linkedOptions,
 	if started {
 		kept = "\nKept: " + branch.Name + ", with nothing changed."
 	}
-	return exitf(3, "can't tell whether %s is current, so nothing was changed: %s\nIf %s is a release: dockhand %s %s %s%s", port, setAsideWords(aside), aside[0].Tag, verb, port, aside[0].Source, kept)
+	return exitf(ExitAttention, "can't tell whether %s is current, so nothing was changed: %s\nIf %s is a release: dockhand %s %s %s%s", port, setAsideWords(aside), aside[0].Tag, verb, port, aside[0].Source, kept)
 }
 
 // heldBeforeEdit is bump held before its edit for what would hold its
@@ -679,7 +679,7 @@ func heldBeforeEdit(request engine.UpdateRequest, held []string) error {
 	if request.Version != "" {
 		next += " " + request.Version
 	}
-	return exitf(3, "%s waits for your look, so nothing was changed: %s\nOnce it's fine: %s --new --submit", request.Port, strings.Join(held, "; "), next)
+	return exitf(ExitAttention, "%s waits for your look, so nothing was changed: %s\nOnce it's fine: %s --new --submit", request.Port, strings.Join(held, "; "), next)
 }
 
 // writeStealth shows each changed archive's checksums, before and after.

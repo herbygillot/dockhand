@@ -156,16 +156,13 @@ cancel stops a check. None means another.`,
 				fmt.Fprintln(streams.Out, "Nothing to remove.")
 				return nil
 			}
-			if !yes {
-				if !streams.terminal() {
-					fmt.Fprintln(streams.Out, "Nothing was removed; --yes removes these.")
-					return nil
-				}
-				ok, err := confirm(streams, fmt.Sprintf("? Remove %s? [y/N] ", prose.Plural(removable, "item")))
-				if err != nil || !ok {
-					fmt.Fprintln(streams.Out, "Nothing was removed.")
-					return err
-				}
+			ok, _, err := streams.decide(yes, decision{question: fmt.Sprintf("? Remove %s? [y/N] ", prose.Plural(removable, "item")), undone: "nothing was removed", byYes: "--yes removes these"})
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintln(streams.Out, "Nothing was removed.")
+				return nil
 			}
 			done, err := e.ApplyClean(ctx, plans)
 			removed, leftoverErr := e.RemoveLeftovers(ctx, session, leftovers)
