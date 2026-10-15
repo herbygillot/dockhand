@@ -30,3 +30,17 @@ the project's plan/command-package-split-coalesced-2026-10-15.md, checked at
   `view`, the `run` library, and the verbs, `bump` among them.
 - v0.5.0: status and check cut as wave 2 right after 5.5, which takes
   `submitNext`.
+
+## Resettled, the same evening
+
+At the person's ask to resettle (21:16Z, relayed with the project's
+plan/v0.4.0-resettled-2026-10-15.md, read at c10e2ea4): no order changes,
+and five stale lines fixed. v0.3.1 is cut on release/v0.3 from 3892f092
+with 147dc4a9 (07fae561 on main), v0.3.1-rc1 on 147dc4a9; Submit's B4
+(82d75484), D-C4 (c10e2ea4), the setup.py item (4ba5aae6), and the
+distfile and patch items (b495055a) are marked done; `auth` went with D-C4
+and stays in setup's `SuggestFor`; part 3's setup verb takes what 7a rows 3
+and 4 and 7b row 4 leave, bridge 1 being settled in hygiene; and PR #4
+also wires up `interrupted` (356d5693), merges cleanly onto c10e2ea4, and
+holds up only hygiene. Open with the person: whether the fork another
+account owns holds, part 2 item 2's, rather than warns.
