@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -363,7 +364,7 @@ func (e *Engine) assessedHolds(ctx context.Context, branch model.Branch, tree mo
 	if err != nil {
 		return nil, "", err
 	}
-	slices.SortFunc(assessments, func(a, b model.Assessment) int { return strings.Compare(a.Port, b.Port) })
+	slices.SortFunc(assessments, func(a, b model.Assessment) int { return macports.ComparePortNames(a.Port, b.Port) })
 	var held []model.Concern
 	state := AssessmentAvailable
 	for _, a := range assessments {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -235,7 +236,7 @@ func (e *Engine) Outdated(ctx context.Context, request OutdatedRequest) (Outdate
 		return OutdatedReport{}, err
 	}
 	ports, err := reader.Outdated(ctx, master, request)
-	slices.SortFunc(ports, func(a, b OutdatedPort) int { return strings.Compare(a.Port, b.Port) })
+	slices.SortFunc(ports, func(a, b OutdatedPort) int { return macports.ComparePortNames(a.Port, b.Port) })
 	return OutdatedReport{Master: master, Ports: ports}, err
 }
 

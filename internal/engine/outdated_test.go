@@ -23,6 +23,8 @@ func (n *newReleases) Outdated(_ context.Context, _ model.ObjectID, request Outd
 	return []OutdatedPort{
 		{Port: "lost", Problem: "no forge could be found for its master_sites"},
 		{Port: "libharbor", Current: "2", Newest: "2"},
+		{Port: "terraform-1.10", Current: "1.10.5", Newest: "1.10.5"},
+		{Port: "terraform-1.2", Current: "1.2.9", Newest: "1.2.9"},
 		{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true, Release: &model.Release{Version: "1.8.1", Forge: "github", Tag: "jq-1.8.1", Commit: "found by outdated"}},
 	}, nil
 }
@@ -40,7 +42,11 @@ func TestOutdatedPortsArePreparedOneBranchEach(t *testing.T) {
 	report, err := e.Outdated(t.Context(), OutdatedRequest{Maintainers: []string{"@ada"}})
 	require.NoError(t, err)
 	require.Equal(t, f.upstreamMaster(t), report.Master, "outdated looks at master as fetched now")
-	require.Equal(t, []string{"jq", "libharbor", "lost"}, []string{report.Ports[0].Port, report.Ports[1].Port, report.Ports[2].Port})
+	var names []string
+	for _, port := range report.Ports {
+		names = append(names, port.Port)
+	}
+	require.Equal(t, []string{"jq", "libharbor", "lost", "terraform-1.2", "terraform-1.10"}, names, "in MacPorts' name order, 1.2 before 1.10")
 
 	plan, err := e.PlanOutdated(t.Context(), report)
 	require.NoError(t, err)

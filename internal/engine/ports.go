@@ -286,6 +286,6 @@ func dependentsIn(index *portindex.Index, directories []string) ([]Dependent, er
 	for i, dependent := range dependents {
 		all[i] = *dependent
 	}
-	slices.SortFunc(all, func(a, b Dependent) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(all, func(a, b Dependent) int { return macports.ComparePortNames(a.Name, b.Name) })
 	return all, nil
 }
