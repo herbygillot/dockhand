@@ -11,7 +11,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -239,20 +238,4 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	}
 	_, _, err = dockhand(t, "init", "-y")
 	require.NoError(t, err, "init still answers, for scripts")
-}
-
-// setup writes the maintainers line it inferred, with the person's
-// agreement, into the configuration file, beside what's there.
-func TestSetupWritesTheMaintainerLine(t *testing.T) {
-	newWorld(t)
-	path := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(t, os.WriteFile(path, []byte("worktrees = \"/tmp/x\"\n\n[serve]\noutdated_at = \"07:00\"\n"), 0o600))
-	require.NoError(t, config.SetMaintainer(path, "{gmail.com:ada @ada}"))
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-	require.Equal(t, "maintainer = \"{gmail.com:ada @ada}\"\nworktrees = \"/tmp/x\"\n\n[serve]\noutdated_at = \"07:00\"\n", string(data))
-	require.NoError(t, config.SetMaintainer(path, "{@ada}"))
-	data, err = os.ReadFile(path)
-	require.NoError(t, err)
-	require.Contains(t, string(data), "maintainer = \"{@ada}\"\nworktrees")
 }

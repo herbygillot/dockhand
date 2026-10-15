@@ -258,7 +258,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		switch command.Name() {
 		case "status", "path", "diff", "impact", "check", "retry", "wait", "queue", "config", "setup",
 			"start", "adopt", "bump", "update", "checksums", "revbump", "create", "edit", "tidy", "submit", "rebase", "review",
-			"cancel", "logs", "restore", "archive", "clean", "explain", "outdated":
+			"cancel", "logs", "undo", "restore", "archive", "clean", "explain", "outdated":
 			supportsJSON(command)
 		}
 	}
