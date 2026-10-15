@@ -50,7 +50,9 @@ description; --note "" takes it out.
 
 Every push is conditional on the fork's branch being where submit last saw
 it, so nobody else's push is ever overwritten. A description you edited on
-GitHub is kept.
+GitHub is kept; --rewrite-description replaces it with dockhand's, as for
+a branch you adopted whose description dockhand didn't write, your --note
+kept.
 
 --plan shows the preview and changes nothing, here or on GitHub.`,
 		Args: cobra.NoArgs,
@@ -142,6 +144,7 @@ GitHub is kept.
 	cmd.Flags().BoolVar(&ready, "ready", false, "take the pull request out of draft once it is submitted")
 	cmd.Flags().StringSliceVar(&request.Accept, "accept", nil, "acknowledge a failed extra or revision-bump-only port for this exact commit")
 	cmd.Flags().StringVar(&request.Title, "title", "", "the pull request's title (default: the commit subject)")
+	cmd.Flags().BoolVar(&request.Rewrite, "rewrite-description", false, "replace the pull request's description with dockhand's, a description you wrote included; your --note is kept")
 	cmd.Flags().StringVar(&note, "note", "", "your own note in the pull request's description, kept as dockhand rewrites it; \"\" takes it out")
 	cmd.Flags().StringSliceVar(&request.Types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for an update dockhand made)")
 	cmd.Flags().StringVar(&request.Remote, "remote", "", "the Git remote of your fork, when several could be")
@@ -155,6 +158,7 @@ GitHub is kept.
 	cmd.MarkFlagsMutuallyExclusive("passing", "title")
 	cmd.MarkFlagsMutuallyExclusive("passing", "accept")
 	cmd.MarkFlagsMutuallyExclusive("passing", "note")
+	cmd.MarkFlagsMutuallyExclusive("passing", "rewrite-description")
 	return cmd
 }
 
@@ -699,6 +703,8 @@ func pullRequestWords(plan engine.SubmitPlan) string {
 	switch {
 	case plan.Theirs:
 		words += "; its title and description are theirs, and stay as they are"
+	case plan.Request.Rewrite:
+		words += "; replaces its whole description with dockhand's (--rewrite-description)"
 	case len(refreshing) == 0 && yours:
 		words += "; its description is yours, and stays as it is"
 	case len(refreshing) == 0:

@@ -52,6 +52,12 @@ type SubmitRequest struct {
 	// TestedBinaries and TestedVariants are the person's statements for
 	// the template's last two items.
 	TestedBinaries, TestedVariants bool
+	// Rewrite replaces an open pull request's description with the one
+	// dockhand composes, a person's own included, their note kept: an
+	// adopted branch's description, which nothing recorded dockhand
+	// writing, is otherwise theirs and stays (#34756 kept September's
+	// Tested on under the v0.3.0 commit). Never someone else's.
+	Rewrite bool
 	// Note replaces the branch's note, which the description gives under
 	// Description (model.Branch.Note), and empty clears it; nil keeps the
 	// one recorded. It is recorded once the submission is applied.
@@ -172,6 +178,11 @@ func (p *SubmitPlan) Answer(testedBinaries, testedVariants bool) {
 		last := ""
 		if p.Branch.PullRequest != nil {
 			last = p.Branch.PullRequest.Body
+		}
+		if p.Request.Rewrite && !p.Theirs {
+			p.Sections = DescriptionSections{Description: SectionRefreshed, Types: SectionRefreshed, TestedOn: SectionRefreshed}
+			p.BodyKept, p.NoteLeftOut = false, false
+			return
 		}
 		p.Body, p.Sections = prdescription.Merge(p.Existing.PullRequest.Body, last, p.Body, len(p.Request.Types) > 0)
 		p.Written = prdescription.Written(p.Body, last, p.Sections)
@@ -347,6 +358,9 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		if plan.Theirs && plan.Note != "" {
 			return plan, fmt.Errorf("--note: #%d was opened from %s, so its description stays theirs; say it in a comment on #%d instead", plan.Branch.PullRequest.Number, plan.HeadRepository, plan.Branch.PullRequest.Number)
 		}
+	}
+	if request.Rewrite && plan.Theirs {
+		return plan, fmt.Errorf("--rewrite-description: #%d was opened from %s, so its description stays theirs", plan.Branch.PullRequest.Number, plan.HeadRepository)
 	}
 	e.title(&plan)
 	plan.UnfoundBuilds, plan.BuildsProblem = e.unfoundBuilds(ctx, plan.Commits)

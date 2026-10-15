@@ -330,6 +330,22 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 		require.Contains(t, g.PRs[34901].Body, "What I tested by hand.")
 		require.Contains(t, g.PRs[34901].Body, "- [ ] enhancement")
 	}
+
+	// --rewrite-description replaces it, a person's own Description
+	// included, when they ask: an adopted branch's description, which
+	// nothing recorded dockhand writing, kept September's Tested on under
+	// the v0.3.0 port's commit (#34756).
+	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--rewrite-description")
+	require.NoError(t, err)
+	require.Regexp(t, `  PR       updates #\d+; replaces its whole description with dockhand's \(--rewrite-description\)\n`, out)
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes", "--rewrite-description")
+	require.NoError(t, err)
+	require.NotContains(t, g.PRs[34901].Body, "What I tested by hand.")
+	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nBuilt against the new libonig.\n\n###### Type(s)")
+	require.Contains(t, g.PRs[34901].Body, "- [x] enhancement")
+	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out, "dockhand's again, once rewritten")
 }
 
 // Every part refreshed is named, in the description's order.
