@@ -31,6 +31,9 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		if err != nil {
 			return result, wheelsOnly(ctx, s.PyPI, item.artifact.Name, item.artifact.URLs, item.info.Version, err)
 		}
+		if subdir, differs := store.SharedMirrorCopy(ctx, item.info, download); differs && !slices.ContainsFunc(result.MirrorConflicts, func(c MirrorConflict) bool { return c.Name == download.Name }) {
+			result.MirrorConflicts = append(result.MirrorConflicts, MirrorConflict{Name: download.Name, Subdir: subdir})
+		}
 		group := item.artifact.Group
 		if differs(group, download) && !slices.Contains(result.Differing, item.artifact.Name) {
 			result.Differing = append(result.Differing, item.artifact.Name)
@@ -103,6 +106,13 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		}
 	}
 	return result, nil
+}
+
+// MirrorConflict is an archive MacPorts' mirror already holds another file
+// of, under a dist_subdir other ports share (distfetch.SharedMirrorCopy).
+type MirrorConflict struct {
+	Name   string `json:"name"`
+	Subdir string `json:"subdir"`
 }
 
 // differs reports a download whose checksums aren't what its group

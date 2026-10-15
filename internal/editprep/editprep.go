@@ -36,6 +36,9 @@ type Stealth = portedit.Stealth
 
 // ChecksumLeft is what a checksum refresh left as it was, with why.
 type ChecksumLeft = portedit.ChecksumLeft
+
+// MirrorConflict is an archive MacPorts' mirror holds another file of.
+type MirrorConflict = portedit.MirrorConflict
 type StealthDistfile = portedit.StealthDistfile
 type StealthRequest = portedit.StealthRequest
 

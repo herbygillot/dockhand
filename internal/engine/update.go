@@ -432,9 +432,22 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			update.Upstream.Changes = append(update.Upstream.Changes, model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: update.Renamed, Hold: true, Class: model.Introduced,
 				Message: fmt.Sprintf("upstream moved: GitHub answers %s as %s, by a redirect; the Portfile's github.setup may follow", update.Release.Repository, update.Renamed)})
 		}
+		// An archive MacPorts' mirror already holds another file of, under
+		// a dist_subdir other ports share, fails the check at its checksum
+		// where MacPorts fetches the mirror's first: gopls's, under go/
+		// (field testing at f86cec28). It holds, with the fix.
+		if update.Upstream != nil {
+			for _, conflict := range result.MirrorConflicts {
+				update.Upstream.Changes = append(update.Upstream.Changes, model.UpstreamChange{Kind: "mirror", Rule: mirrorConflictRule, Subject: conflict.Name, Hold: true, Class: model.Introduced,
+					Message: mirrorConflictWords(conflict)})
+			}
+		}
 	}
 	if request.Action == model.EditChecksums {
 		update.ChecksumsLeft, update.Differing = result.Left, result.Differing
+		for _, conflict := range result.MirrorConflicts {
+			update.ChecksumsLeft = append(update.ChecksumsLeft, editprep.ChecksumLeft{Kind: "mirror", What: conflict.Name, Reason: mirrorConflictWords(conflict)})
+		}
 		names := map[string]bool{}
 		for _, download := range result.Downloads {
 			names[download.Name] = true
@@ -1293,6 +1306,15 @@ func editRecorded(branch model.BranchID, id model.EditID) func(store.Reader) boo
 // upstreamMovedRule is the comparison's finding that GitHub answers the
 // release's repository by another name.
 const upstreamMovedRule = "upstream-moved"
+
+// mirrorConflictRule is the finding that MacPorts' mirror already holds
+// another file of an archive's name under a shared dist_subdir.
+const mirrorConflictRule = "mirror-conflict"
+
+// mirrorConflictWords says a mirror conflict and its fix.
+func mirrorConflictWords(conflict editprep.MirrorConflict) string {
+	return fmt.Sprintf("MacPorts' mirror already has a different %s under %s/, which MacPorts may fetch first and fail its checksum; dist_subdir ${name} keeps this port's apart", conflict.Name, conflict.Subdir)
+}
 
 func (e *Engine) renamed(ctx context.Context, release model.Release) string {
 	if release.Forge != forge.GitHub || release.Repository == "" {

@@ -96,6 +96,9 @@ type Result struct {
 	// Differing the archives whose checksums weren't as declared.
 	Left      []ChecksumLeft `json:",omitempty"`
 	Differing []string       `json:",omitempty"`
+	// MirrorConflicts are archives MacPorts' mirror holds another file of,
+	// under a dist_subdir other ports share.
+	MirrorConflicts []MirrorConflict `json:",omitempty"`
 	// Crates are the archives of the Git-pinned crates a Cargo update
 	// fetched for their checksums: dependencies, not the port's source, so
 	// no pair is theirs to compare.

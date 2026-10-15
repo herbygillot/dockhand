@@ -81,6 +81,26 @@ func (s *Store) Shipped(ctx context.Context, info macports.PortInfo, plan []macp
 	return shipped, nil
 }
 
+// SharedMirrorCopy reports whether MacPorts' mirror already holds another
+// file of a just-fetched archive's name, under a dist_subdir the port
+// shares with others, as the golang PortGroup's "go": MacPorts may fetch
+// the mirror's first, and the check fails at its checksum. gopls 0.24.0's
+// tools-0.24.0.tar.gz met x/tools' own under go/ (field testing at
+// f86cec28). A dist_subdir of the port's own, its name or under it, holds
+// only its archives, and isn't asked; nor is one the mirror has no copy of.
+func (s *Store) SharedMirrorCopy(ctx context.Context, info macports.PortInfo, download Download) (subdir string, differs bool) {
+	subdir = strings.Trim(info.Options["dist_subdir"], "/")
+	if s.client.Mirror == "" || subdir == "" || subdir == info.Name || strings.HasPrefix(subdir, info.Name+"/") {
+		return subdir, false
+	}
+	mirrored, err := s.Fetch(ctx, info, Source{Name: download.Name, URL: strings.TrimRight(s.client.Mirror, "/") + "/" + subdir + "/" + url.PathEscape(download.Name)})
+	defer discard(mirrored)
+	if err != nil {
+		return subdir, false
+	}
+	return subdir, Differs(download.Checksum, mirrored.Checksum)
+}
+
 // FetchPlan is a fetch plan of direct sources, each at its one location.
 func FetchPlan(sources []Source) []macports.Distfile {
 	plan := make([]macports.Distfile, len(sources))

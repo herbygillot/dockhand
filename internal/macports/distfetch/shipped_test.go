@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 )
 
 // Shipped takes upstream's archive only as the Portfile's checksums declare
@@ -86,4 +87,38 @@ func TestShippedTakesTheFirstLocationThatServes(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	require.Equal(t, []string{"/mirror/fixture/source-2.tar.gz"}, asked, "under the port's dist_subdir, its name")
+}
+
+// MacPorts' mirror holding another file of an archive's name, under a
+// dist_subdir other ports share, is said: gopls 0.24.0's
+// tools-0.24.0.tar.gz met x/tools' own under go/ (field testing at
+// f86cec28). The same file, none at all, or a subdir of the port's own
+// isn't.
+func TestASharedMirrorSubdirsOtherFileIsSaid(t *testing.T) {
+	t.Parallel()
+	mirrored := map[string]string{"/go/tools-0.24.0.tar.gz": "x/tools' own"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, ok := mirrored[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprint(w, body)
+	}))
+	defer server.Close()
+	store := Client{Mirror: server.URL}.Store("")
+	info := macports.PortInfo{Name: "gopls", Options: map[string]string{"dist_subdir": "go"}}
+	download := Download{Checksum: portfile.Checksum{Name: "tools-0.24.0.tar.gz", SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("gopls's"))), Size: 7}}
+	subdir, differs := store.SharedMirrorCopy(t.Context(), info, download)
+	require.Equal(t, "go", subdir)
+	require.True(t, differs)
+
+	same := Download{Checksum: portfile.Checksum{Name: "tools-0.24.0.tar.gz", SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("x/tools' own"))), Size: 12}}
+	_, differs = store.SharedMirrorCopy(t.Context(), info, same)
+	require.False(t, differs)
+	_, differs = store.SharedMirrorCopy(t.Context(), info, Download{Checksum: portfile.Checksum{Name: "absent.tar.gz"}})
+	require.False(t, differs)
+	info.Options["dist_subdir"] = "gopls"
+	_, differs = store.SharedMirrorCopy(t.Context(), info, download)
+	require.False(t, differs, "a subdir of the port's own isn't asked")
 }
