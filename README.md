@@ -113,6 +113,13 @@ What the release-candidate test finds that's rough but harms nothing is listed h
 - A fetch during `update` that a server refuses, as a 404 does, holds the branch until a file in it is edited, even once the archive is served again; a rate limit or an outage is fetched again at the next look. Editing a file in the port's directory releases it.
 - A fault in dockhand's own handling of a Tart guest is said at once where dockhand knows it for its own, as results it can't read; any other error the guest meets is tried again, up to three times, cloning a VM each time, before the check reports it.
 - `serve` has printed a check's "passed" line twice (check-130, field testing, 2026-10-02). It hasn't recurred, and it changes nothing but the output.
+- A GitHub tag that upstream moves after a check isn't noticed: a later check can reuse the earlier build, and `submit` says it passed, though the archive at that tag has changed. If upstream has retagged a release, run `dockhand checksums <port>`, then `dockhand check --fresh`.
+- With `GH_TOKEN` or `GITHUB_TOKEN` set, `submit`'s preview doesn't name the account that will open the pull request. `submit` still refuses to push to a fork that account doesn't own. `dockhand auth status` names the account and where its login comes from.
+- `submit --json` doesn't say who requested changes on the pull request, or whether they were asked to review again. The text output says both.
+- `dockhand path` says there's no tracked branch for a merged branch whose worktree `clean` kept, because its fork branch moved after the merge. `status --all` lists it, and `git worktree list` shows where its worktree is.
+- `check` and `serve` don't refuse a Tart older than 2.39.0, as `setup` does. `dockhand setup tart` says when Tart is too old; update Tart before checking.
+- `create` for a Go module older than go 1.17, whose go.sum names modules its go.mod doesn't, writes a draft with zero checksums and an empty `go.vendors`, and exits 0. Its `checksums_problem` names the modules to add. Add their rows before checking.
+- With a base image deleted and its golden copy kept, `check` says `dockhand setup tart <release>` makes it, which reads as a full build of an hour or more. `setup` restores it from the golden copy in about a minute.
 
 ## Requirements
 
