@@ -366,6 +366,22 @@ type submittedJSON struct {
 	Created bool   `json:"created"`
 	Pushed  bool   `json:"pushed"`
 	Draft   bool   `json:"draft"`
+	// UpdatedTitle and UpdatedDescription say what was rewritten of a pull
+	// request that existed.
+	UpdatedTitle       bool `json:"updated_title"`
+	UpdatedDescription bool `json:"updated_description"`
+	// ChangesRequestedBy are the reviewers whose last review of a pull
+	// request that existed requested changes, as GitHub last reported
+	// them, and whether submit asked each to review again
+	// (submit.rerequest_review).
+	ChangesRequestedBy []changesRequestedJSON `json:"changes_requested_by"`
+}
+
+// changesRequestedJSON is a reviewer who requested changes, and whether
+// submit asked them to review again.
+type changesRequestedJSON struct {
+	Login       string `json:"login"`
+	Rerequested bool   `json:"rerequested"`
 }
 
 func submitView(plan engine.SubmitPlan) submitJSON {

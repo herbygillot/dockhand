@@ -691,11 +691,21 @@ func (e *Engine) openPullRequests(ctx context.Context, ports []string, except in
 	return others, ""
 }
 
-// Submitted is what submit did.
+// Submitted is what submit did: the pull request it opened or updated,
+// and whether it pushed, and rewrote an existing one's title or
+// description.
 type Submitted struct {
 	PullRequest forge.PullRequest
 	Created     bool
 	Pushed      bool
+	Edited      SubmitEdits
+}
+
+// SubmitEdits are what a submission rewrote of an existing pull request:
+// its title, its description, or both. A pull request whose description
+// is its author's (SubmitPlan.Theirs) is rewritten in neither.
+type SubmitEdits struct {
+	Title, Body bool
 }
 
 // ErrStaleSubmit reports a plan whose branch or fork moved since it was
@@ -743,7 +753,10 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		ref := plan.Existing.PullRequest.Ref
 		input.ExistingPR = &ref
 		observed = *plan.Existing
-		if !plan.Theirs && (plan.Title != plan.Existing.PullRequest.Title || plan.Body != plan.Existing.PullRequest.Body) {
+		if !plan.Theirs {
+			result.Edited = SubmitEdits{Title: plan.Title != plan.Existing.PullRequest.Title, Body: plan.Body != plan.Existing.PullRequest.Body}
+		}
+		if result.Edited.Title || result.Edited.Body {
 			observed, err = e.forge().Update(ctx, input)
 		}
 	}

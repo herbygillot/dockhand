@@ -696,16 +696,13 @@ func pullRequestWords(plan engine.SubmitPlan) string {
 
 // updatedWords says what submit changed on a pull request it pushed
 // nothing to: its title, its description, both, or nothing at all.
-func updatedWords(plan engine.SubmitPlan, number int) string {
-	existing := plan.Existing.PullRequest
-	title := !plan.Theirs && plan.Title != existing.Title
-	body := !plan.Theirs && plan.Body != existing.Body
+func updatedWords(edited engine.SubmitEdits, number int) string {
 	switch {
-	case title && body:
+	case edited.Title && edited.Body:
 		return fmt.Sprintf("Updated #%d's title and description", number)
-	case title:
+	case edited.Title:
 		return fmt.Sprintf("Updated #%d's title", number)
-	case body:
+	case edited.Body:
 		return fmt.Sprintf("Updated #%d's description", number)
 	}
 	return fmt.Sprintf("#%d has nothing new: the fork has its commit, and its title and description are current", number)
@@ -713,7 +710,9 @@ func updatedWords(plan engine.SubmitPlan, number int) string {
 
 // applySubmit submits a plan and reports it. After pushing to a pull
 // request whose reviewers requested changes, it asks them to review again
-// as rerequest says: ask (the default), always, or never.
+// as rerequest says: ask (the default), always, or never. Its JSON names
+// them, and whether each was asked (the rc8 full stage's B4), however it
+// ends once the submission is made.
 func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan engine.SubmitPlan, rerequest string) error {
 	submitted, err := e.ApplySubmit(ctx, plan)
 	if err != nil {
@@ -721,8 +720,9 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	}
 	pr := submitted.PullRequest
 	result := submitView(plan)
-	result.PullRequest = &submittedJSON{Number: pr.Ref.Number, URL: pr.Ref.URL, Created: submitted.Created, Pushed: submitted.Pushed, Draft: plan.Request.Draft}
-	streams.emit(result)
+	result.PullRequest = &submittedJSON{Number: pr.Ref.Number, URL: pr.Ref.URL, Created: submitted.Created, Pushed: submitted.Pushed, Draft: plan.Request.Draft,
+		UpdatedTitle: submitted.Edited.Title, UpdatedDescription: submitted.Edited.Body, ChangesRequestedBy: []changesRequestedJSON{}}
+	defer func() { streams.emit(result) }()
 	switch {
 	case submitted.Created && plan.Request.Draft:
 		fmt.Fprintf(streams.Out, "Opened draft #%d  %s\n", pr.Ref.Number, pr.Ref.URL)
@@ -733,10 +733,16 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	case submitted.Pushed:
 		fmt.Fprintf(streams.Out, "Updated #%d: pushed up to %s\n", pr.Ref.Number, engine.Short(model.ObjectID(plan.Commit)))
 	default:
-		fmt.Fprintln(streams.Out, updatedWords(plan, pr.Ref.Number))
+		fmt.Fprintln(streams.Out, updatedWords(submitted.Edited, pr.Ref.Number))
 	}
 	observed := plan.Branch.PullRequest
-	if !submitted.Pushed || submitted.Created || observed == nil || observed.Observed == nil || len(observed.Observed.ChangesRequestedBy) == 0 || rerequest == "never" {
+	if submitted.Created || observed == nil || observed.Observed == nil {
+		return nil
+	}
+	for _, login := range observed.Observed.ChangesRequestedBy {
+		result.PullRequest.ChangesRequestedBy = append(result.PullRequest.ChangesRequestedBy, changesRequestedJSON{Login: login})
+	}
+	if !submitted.Pushed || len(observed.Observed.ChangesRequestedBy) == 0 || rerequest == "never" {
 		return nil
 	}
 	who := "@" + strings.Join(observed.Observed.ChangesRequestedBy, ", @")
@@ -749,8 +755,12 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 			return err
 		}
 	}
-	if _, err := e.RequestReview(ctx, plan.Branch); err != nil {
+	asked, err := e.RequestReview(ctx, plan.Branch)
+	if err != nil {
 		return err
+	}
+	for i, requested := range result.PullRequest.ChangesRequestedBy {
+		result.PullRequest.ChangesRequestedBy[i].Rerequested = slices.Contains(asked, requested.Login)
 	}
 	fmt.Fprintf(streams.Out, "Asked %s to review again.\n", who)
 	return nil

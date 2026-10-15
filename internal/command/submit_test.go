@@ -401,9 +401,11 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	require.Contains(t, g.PRs[34901].Body, "#### Description\n\n> **Author's note:** Fixed upstream.\n\n###### Type(s)")
 	require.NotContains(t, g.PRs[34901].Body, "permission error")
 
-	out, _, err = dockhand(t, "submit", "--no-check", "--yes", "--note", "")
+	updated, err := jsonOf(t, "submit", "--no-check", "--yes", "--note", "")
 	require.NoError(t, err)
-	require.Contains(t, out, "Updated #34901's description\n")
+	pr, _ := updated.Result["pull_request"].(map[string]any)
+	require.Equal(t, true, pr["updated_description"], "the JSON says what was rewritten")
+	require.Equal(t, false, pr["updated_title"])
 	require.NotContains(t, g.PRs[34901].Body, "Author's note")
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
@@ -738,6 +740,27 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, out, "ryandesign")
 	require.Equal(t, []string{"ryandesign"}, g.Rerequested, "never asks")
+
+	// The JSON names who requested changes, and whether each was asked to
+	// review again (the rc8 full stage's B4), as the text says it.
+	pullRequest := func(env decoded) map[string]any {
+		t.Helper()
+		pr, ok := env.Result["pull_request"].(map[string]any)
+		require.True(t, ok, "%v", env.Result)
+		return pr
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"ask\"\n"), 0o644))
+	fix("# without a terminal")
+	result, err := jsonOf(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.Equal(t, []any{map[string]any{"login": "ryandesign", "rerequested": false}}, pullRequest(result)["changes_requested_by"])
+	require.Equal(t, false, pullRequest(result)["updated_title"])
+	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"always\"\n"), 0o644))
+	fix("# always")
+	result, err = jsonOf(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.Equal(t, []any{map[string]any{"login": "ryandesign", "rerequested": true}}, pullRequest(result)["changes_requested_by"])
+	require.Equal(t, []string{"ryandesign", "ryandesign"}, g.Rerequested)
 }
 
 func TestAdoptRecognizesARenamedBranch(t *testing.T) {
