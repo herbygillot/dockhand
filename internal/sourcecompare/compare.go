@@ -451,7 +451,8 @@ func quotable(line string) string {
 // only project(nuspell VERSION 5.1.9), and gives the first such line as it
 // now reads: each line that differs reads as the new one once the old
 // version in it is the new one, and declares the project's version as its
-// build system does. A line added or removed, or changed in anything else,
+// build system does, or is in a setup.py, which may write it anywhere
+// (project.WritesVersion). A line added or removed, or changed in anything else,
 // is a change to the build, as find_package(SomeLibrary 1.0) moving with
 // the project's version is (the update-workflow review's finding 2).
 func versionOnly(name string, old, now []byte, versions Versions) (string, bool) {
@@ -467,8 +468,7 @@ func versionOnly(name string, old, now []byte, versions Versions) (string, bool)
 		if before[i] == after[i] {
 			continue
 		}
-		spelled := strings.ReplaceAll(before[i], versions.Old, versions.New) == after[i] && project.DeclaresVersion(name, after[i], versions.New)
-		if !spelled && !project.DeclaresVersionPart(name, before[i], after[i], versions.Old, versions.New) {
+		if !project.WritesVersion(name, before[i], after[i], versions.Old, versions.New) && !project.DeclaresVersionPart(name, before[i], after[i], versions.Old, versions.New) {
 			return "", false
 		}
 		if first == "" {

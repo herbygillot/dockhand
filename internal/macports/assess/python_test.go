@@ -1,6 +1,7 @@
 package assess
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -149,4 +150,25 @@ func TestASetupFileTheBackendDoesntReadHoldsNothing(t *testing.T) {
 	require.Equal(t, []string{"· upstream's setup.cfg changed; the project builds with hatchling.build, which doesn't read setup.cfg, so it holds nothing"}, compare("hatchling.build", flake[0], flake[1]))
 	require.Equal(t, []string{"! upstream's setup.cfg changed; the build may need the Portfile to follow"}, compare("setuptools.build_meta", flake[0], flake[1]))
 	require.Equal(t, []string{"! upstream's setup.cfg changed; the build may need the Portfile to follow"}, compare("_custom_build", flake[0], flake[1]), "a backend of the project's own may read it")
+}
+
+// A setup.py whose every changed line differs only by the old version
+// written as the new holds nothing, a constant the version is read from
+// as well as version= (field testing at f41fbad6: py-kubernetes 37.0.0 to
+// 37.0.1, held as "setup.py changed", where its change was CLIENT_VERSION
+// alone). A line changed in anything else still holds.
+func TestASetupPyChangingOnlyItsVersionHoldsNothing(t *testing.T) {
+	port := pythonApp("py-kubernetes", "313", "313")
+	compare := func(before, after string) []string {
+		reading := func(top, setup string) project.Reading {
+			return read(t, top, map[string]string{"setup.py": setup}, project.Spec{})
+		}
+		return messages(Assess(Input{Port: port, Base: port, Versions: sourcecompare.Versions{Old: "37.0.0", New: "37.0.1"},
+			Pairs: []Pair{{Archive: "kubernetes.tar.gz", Before: reading("kubernetes-37.0.0", before), After: reading("kubernetes-37.0.1", after)}}}).Changes)
+	}
+	setup := "from setuptools import setup\n\nCLIENT_VERSION = \"%s\"\nPACKAGE_NAME = \"kubernetes\"\n\nsetup(name=PACKAGE_NAME, version=CLIENT_VERSION%s)\n"
+	require.Equal(t, []string{"· upstream's setup.py changed only the version it names: \"CLIENT_VERSION = \\\"37.0.1\\\"\""},
+		compare(fmt.Sprintf(setup, "37.0.0", ""), fmt.Sprintf(setup, "37.0.1", "")))
+	require.Equal(t, []string{"! upstream's setup.py changed; the build may need the Portfile to follow"},
+		compare(fmt.Sprintf(setup, "37.0.0", ""), fmt.Sprintf(setup, "37.0.1", ", python_requires=\">=3.10\"")), "a line changed in anything else")
 }

@@ -150,6 +150,26 @@ func DeclaresVersion(name, line, version string) bool {
 	return false
 }
 
+// versionWrittenAnywhere are the build files that may write the project's
+// version on any line, as a constant their version declaration reads:
+// py-kubernetes' setup.py sets CLIENT_VERSION = "37.0.1" and passes it on
+// as version=, and was held as "setup.py changed" (field testing at
+// f41fbad6, 37.0.0 to 37.0.1). pyproject.toml is one too, wherever it
+// reaches a build file's comparison rather than a manifest's.
+var versionWrittenAnywhere = []string{"setup.py", "pyproject.toml"}
+
+// WritesVersion reports whether a line of a build file, as it reads in
+// each version, differs only by the old version written as the new, where
+// it is the project's version: a line declaring it as its build system
+// does (DeclaresVersion), or any line of a file that may write it
+// anywhere (setup.py's and pyproject.toml's).
+func WritesVersion(name, before, after, old, now string) bool {
+	if old == "" || now == "" || old == now || strings.ReplaceAll(before, old, now) != after {
+		return false
+	}
+	return DeclaresVersion(name, after, now) || slices.Contains(versionWrittenAnywhere, path.Base(name))
+}
+
 // cmakeVersionPart is a CMakeLists.txt setting one part of its project's
 // version, where it spells the version in parts: fluent-bit's
 // set(FLB_VERSION_PATCH 3).
