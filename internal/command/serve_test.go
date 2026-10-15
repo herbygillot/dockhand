@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/macos"
 )
 
 // syncBuffer is a buffer two goroutines may share.
@@ -174,15 +175,42 @@ func TestStatusSaysServesOtherBuild(t *testing.T) {
 	require.Equal(t, "serve: running (pid 7) · queue: empty", serveWords(engine.ServeState{Running: true, PID: 7}), "a serve that didn't say runs as this does")
 }
 
-func TestServeInstallsALaunchdAgent(t *testing.T) {
-	w := checkedBranch(t)
+// withLaunchd stands launchctl in for serve's agent: launchd loads the
+// agent at a bootstrap and lets it go at a bootout, after bootout returns
+// for prints, as launchd does (the rc10 full stage's B7). It keeps every
+// call but a print.
+func withLaunchd(t *testing.T, printsUntilGone int) *[][]string {
+	t.Helper()
 	var calls [][]string
+	loaded, going := false, 0
 	realLaunchctl, realOS := launchctl, agentOS
 	t.Cleanup(func() { launchctl, agentOS = realLaunchctl, realOS })
-	launchctl = func(_ context.Context, args ...string) error {
+	launchctl = func(_ context.Context, args ...string) ([]byte, error) {
+		switch args[0] {
+		case "print":
+			if loaded && going > 0 {
+				if going--; going == 0 {
+					loaded = false
+				}
+			}
+			if !loaded {
+				return []byte("Could not find service \"" + AgentLabel + "\" in domain for port"), errors.New("exit status 113")
+			}
+			return []byte("state = running"), nil
+		case "bootstrap":
+			loaded, going = true, 0
+		case "bootout":
+			going = printsUntilGone + 1
+		}
 		calls = append(calls, args)
-		return nil
+		return nil, nil
 	}
+	return &calls
+}
+
+func TestServeInstallsALaunchdAgent(t *testing.T) {
+	w := checkedBranch(t)
+	calls := withLaunchd(t, 2)
 	agentOS = "linux"
 	_, _, err := dockhand(t, "serve", "--install")
 	require.ErrorContains(t, err, "launchd agent, which is macOS's")
@@ -199,22 +227,27 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	require.Regexp(t, `<key>KeepAlive</key><dict><key>PathState</key><dict><key>[^<]+</key><true/></dict></dict>`, string(plist))
 	require.Contains(t, string(plist), "<key>ProcessType</key><string>Background</string>")
 	require.NotContains(t, string(plist), "--no-notify")
-	require.Len(t, calls, 2)
-	require.Equal(t, "bootout", calls[0][0])
-	require.Equal(t, "bootstrap", calls[1][0])
+	require.Len(t, *calls, 2)
+	require.Equal(t, "bootout", (*calls)[0][0])
+	require.Equal(t, "bootstrap", (*calls)[1][0])
 	// Flags given beside --install shape the agent's runs.
 	_, _, err = dockhand(t, "serve", "--install", "--no-notify", "--submit-passing")
 	require.NoError(t, err)
 	plist, err = os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
 	require.NoError(t, err)
 	require.Contains(t, string(plist), "<string>"+filepath.Join(w.home, ".dockhand", "dockhand.db")+"</string><string>--no-notify</string><string>--submit-passing</string></array>")
-	calls = nil
+	*calls = nil
 
+	// Uninstall waits until launchd has let the agent go, which it does
+	// after bootout returns, so a status read at once doesn't find it.
 	out, _, err = dockhand(t, "serve", "--uninstall")
 	require.NoError(t, err)
 	require.Contains(t, out, "Removed the serve agent")
-	require.Len(t, calls, 1, "uninstall only boots it out")
+	require.Len(t, *calls, 1, "uninstall only boots it out")
 	require.NoFileExists(t, filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
+	loaded, err := macos.LaunchAgent{Label: AgentLabel, Launchctl: launchctl}.Loaded(t.Context())
+	require.NoError(t, err)
+	require.False(t, loaded, "gone when uninstall returns")
 }
 
 func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
@@ -357,9 +390,7 @@ func TestNotificationsCanBeTurnedOff(t *testing.T) {
 // anyone on the Mac can read the agent's file; the install says so.
 func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
 	w := checkedBranch(t)
-	realLaunchctl, realOS := launchctl, agentOS
-	t.Cleanup(func() { launchctl, agentOS = realLaunchctl, realOS })
-	launchctl = func(context.Context, ...string) error { return nil }
+	withLaunchd(t, 0)
 	agentOS = "darwin"
 	git, err := exec.LookPath("git")
 	require.NoError(t, err)

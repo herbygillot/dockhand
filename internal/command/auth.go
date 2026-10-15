@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
 	"github.com/herbygillot/dockhand/internal/github"
-	"github.com/herbygillot/dockhand/internal/subprocess"
+	"github.com/herbygillot/dockhand/internal/macos"
 )
 
 // credentials is where the GitHub login is kept.
@@ -26,14 +25,7 @@ var (
 	authFlow    credential.DeviceFlow = &github.DeviceFlow{}
 	authStore   credentials           = keychain.Store{}
 	authAPI                           = github.SystemClient
-	openBrowser                       = func(ctx context.Context, url string) error {
-		path, err := exec.LookPath("open")
-		if err != nil {
-			return err
-		}
-		_, err = subprocess.Run(ctx, subprocess.Spec{Tool: "open", Path: path, Args: []string{url}, Limit: 1 << 16})
-		return err
-	}
+	openBrowser                       = macos.Open
 )
 
 // overridingToken is the variable whose token takes precedence over

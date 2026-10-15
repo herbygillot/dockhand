@@ -20,7 +20,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 // servePoll is how often serve looks for work and a standby for the leader.
@@ -179,30 +178,21 @@ func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain, subm
 	return options
 }
 
-// notificationTimeout bounds posting one notification, so an osascript
-// that never returns is stopped rather than left running.
-const notificationTimeout = 10 * time.Second
-
-// postNotification shows a notification; tests stand in for it.
+// postNotification shows a notification (macos.Notify); tests stand in
+// for it.
 var postNotification = func(title, text string) error {
 	if runtime.GOOS != "darwin" {
 		return nil
 	}
-	quote := func(value string) string { return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value) + `"` }
-	ctx, cancel := context.WithTimeout(context.Background(), notificationTimeout)
-	defer cancel()
-	_, err := subprocess.Run(ctx, subprocess.Spec{Tool: "osascript", Path: "osascript", Args: []string{"-e", "display notification " + quote(text) + " with title " + quote("dockhand · "+title)}, Limit: 1 << 16})
-	return err
+	return macos.Notify(context.Background(), title, text)
 }
 
 // AgentLabel names serve's launchd agent.
 const AgentLabel = "io.github.herbygillot.dockhand.serve"
 
-// launchctl runs launchctl; tests stand in for it.
-var launchctl = func(ctx context.Context, args ...string) error {
-	_, err := subprocess.Run(ctx, subprocess.Spec{Tool: "launchctl", Path: "launchctl", Command: strings.Join(args, " "), Args: args, Combined: true, Limit: 1 << 20})
-	return err
-}
+// launchctl runs launchctl for serve's agent (macos.LaunchAgent), and
+// returns what it wrote; tests stand in for it, nil being launchctl's own.
+var launchctl func(ctx context.Context, args ...string) ([]byte, error)
 
 // agentOS is the operating system serve --install targets; tests set it.
 var agentOS = runtime.GOOS
@@ -216,11 +206,11 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 		return err
 	}
 	plist := filepath.Join(home, "Library", "LaunchAgents", AgentLabel+".plist")
-	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	// Stopping an agent that is not loaded is not an error here.
-	_ = launchctl(ctx, "bootout", domain+"/"+AgentLabel)
+	// Both wait until launchd has let go of the agent, which bootout
+	// returns before (the rc10 full stage's B7).
+	agent := macos.LaunchAgent{Label: AgentLabel, Path: plist, Launchctl: launchctl}
 	if !install {
-		if err := os.Remove(plist); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := agent.Remove(ctx); err != nil {
 			return err
 		}
 		fmt.Fprintln(streams.Out, "Removed the serve agent; serve no longer starts at login.")
@@ -257,16 +247,10 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 		return err
 	}
 	logs := filepath.Join(filepath.Dir(database), "logs", "serve.log")
-	data := agentPlist(append(arguments, flags...), environment, logs)
-	for _, dir := range []string{filepath.Dir(plist), filepath.Dir(logs)} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-	if err := os.WriteFile(plist, data, 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Dir(logs), 0o755); err != nil {
 		return err
 	}
-	if err := launchctl(ctx, "bootstrap", domain, plist); err != nil {
+	if err := agent.Install(ctx, agentJob(append(arguments, flags...), environment, logs)); err != nil {
 		return err
 	}
 	fmt.Fprintf(streams.Out, "serve now starts at login and restarts if it stops.\n  Agent  %s\n  Log    %s\n", tilde(plist), tilde(logs))
@@ -317,15 +301,15 @@ func agentEnvironment() ([][2]string, error) {
 	return environment, nil
 }
 
-// agentPlist is the launchd property list that runs serve for one ports
-// checkout and database, kept alive in the background. launchd's PATH is
-// minimal, so the installing shell's PATH is kept, for git and MacPorts.
-func agentPlist(arguments []string, environment [][2]string, log string) []byte {
+// agentJob is the launchd job that runs serve for one ports checkout and
+// database, kept alive in the background. launchd's PATH is minimal, so
+// the installing shell's PATH is kept, for git and MacPorts.
+func agentJob(arguments []string, environment [][2]string, log string) macos.LaunchdJob {
 	variables := map[string]string{}
 	for _, variable := range environment {
 		variables[variable[0]] = variable[1]
 	}
 	// Kept alive while dockhand is installed, and not after port uninstall
 	// removes it.
-	return macos.LaunchdJob{Label: AgentLabel, Arguments: arguments, Log: log, Environment: variables, KeepAlive: true, KeepAliveWhile: arguments[0], ProcessType: "Background"}.Plist()
+	return macos.LaunchdJob{Label: AgentLabel, Arguments: arguments, Log: log, Environment: variables, KeepAlive: true, KeepAliveWhile: arguments[0], ProcessType: "Background"}
 }

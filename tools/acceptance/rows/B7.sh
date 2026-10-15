@@ -13,14 +13,9 @@ act() {
 	dh status || :
 	dh_json serve --uninstall || :
 	# launchd unloads the agent after bootout returns, a few seconds on:
-	# read at once, rc6's and rc10's runs found it still there. It's read
-	# until it's gone, up to thirty seconds.
-	local waited=0
-	while launchctl print "gui/$(id -u)" 2>/dev/null | grep -i dockhand >"$ROW_DIR/agents" && [ "$waited" -lt 30 ]; do
-		sleep 2
-		waited=$((waited + 2))
-	done
-	printf '%s\n' "$waited" >"$ROW_DIR/agents.waited"
+	# read at once, rc6's and rc10's runs found it still there. --uninstall
+	# waits until launchd has let it go, so it's read once, at once.
+	launchctl print "gui/$(id -u)" 2>/dev/null | grep -i dockhand >"$ROW_DIR/agents" || :
 }
 # serve's agent goes when the row does, skipped or not, as A7's and A8's
 # do (the rc6 full stage).
@@ -29,6 +24,6 @@ teardown() {
 }
 
 assert() {
-	[ ! -s "$ROW_DIR/agents" ] || { row_fail "serve --uninstall left an agent, there after $(cat "$ROW_DIR/agents.waited" 2>/dev/null)s"; return; }
+	[ ! -s "$ROW_DIR/agents" ] || { row_fail "serve --uninstall returned with launchd still holding its agent"; return; }
 	judged "the daily look ran, PR states refreshed, the login renewed without a prompt, and notifications arrived"
 }

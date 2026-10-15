@@ -327,7 +327,7 @@ Between checks it:
 
 Serve opens no pull requests by default. With `--submit-passing`, or `serve.submit_passing = true`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream or commit-rule finding, one whose archives couldn't be compared, one needing `--accept`, or one for a port another open pull request updates; those wait on the attention list, and the pull request says serve opened it without a person's review. `--no-submit-passing` turns it off for one run.
 
-`--install` runs the agent with the flags given beside it, such as `--no-notify`, and with the settings serve was installed under: `--git`, `--db`, and the environment variables below that serve reads, each path made absolute. Run it again after changing them. `--uninstall` removes it.
+`--install` runs the agent with the flags given beside it, such as `--no-notify`, and with the settings serve was installed under: `--git`, `--db`, and the environment variables below that serve reads, each path made absolute. Run it again after changing them. `--uninstall` removes it. Both wait until launchd has let go of the agent, which it does a few seconds after it's told to, up to thirty seconds, and say so where it hasn't.
 
 ## Cleaning up
 
