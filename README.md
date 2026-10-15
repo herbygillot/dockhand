@@ -1,5 +1,5 @@
 > [!NOTE]
-> **This is dockhand v3, and it is new.** Its commands, output, and configuration may still change before it is released. Its database, `~/.dockhand/dockhand.db`, is migrated forward by each newer dockhand and never discarded. v2 is kept at the tag `v2-final`; the two never share a database.
+> **This is dockhand v0.3.0, the first release of its third design.** Commands, output, and configuration may still change in later 0.x releases. Its database, `~/.dockhand/dockhand.db`, is migrated forward by each newer dockhand and never discarded. v2 is kept at the tag `v2-final`; the two never share a database.
 
 <p align="center">
   <picture>
@@ -42,7 +42,7 @@ dockhand tidy                     # one commit, "jq: update to 1.8.1"
 dockhand submit                   # push to your fork and open the pull request
 ```
 
-`update` changes only the branch's own files, which `dockhand diff` shows, and the steps after it, which build, commit, and push, each show what they will do before they do it; `--plan` on any of them shows the plan and changes nothing. `update jq --new --submit` runs the whole sequence, previewing each step, and `bump jq` runs it asking nothing, stopping wherever you should look. If the check fails, the branch stays as it is. `dockhand logs check-12 --port jq` prints the log, and you fix the Portfile in the worktree and run `check` again. Checks build the files as they are on disk, so there is nothing to commit first. Once the branch has commits, a check with edits on top asks whether to build the commits or the files on disk; `--head` or `--working-tree` says which without a terminal.
+`update` changes only the branch's own files, which `dockhand diff` shows, and the steps after it, which build, commit, and push, each show what they will do before they do it; `--plan` on any of them shows the plan and changes nothing. `update jq --new --submit` runs the whole sequence, previewing each step, and `bump jq` runs it asking nothing, stopping wherever you should look. If the check fails, the branch stays as it is. `dockhand logs check-12 --port jq` prints the log, and you fix the Portfile in the worktree and run `check` again. Checks build the files as they are on disk, committed or not, so there is nothing to commit first; `--head` builds only the commits.
 
 `status` shows every open branch: its ports, its edits, its latest check, and its pull request, under a list of what needs you, each with the command that moves it forward. Inside a branch's worktree, `status` shows that branch in detail.
 
@@ -51,6 +51,7 @@ dockhand submit                   # push to your fork and open the pull request
 ```sh
 dockhand setup                    # what is set up, and what is missing
 dockhand check --on sequoia --on tahoe      # both releases, and both must pass
+dockhand check --on ci                      # MacPorts CI's releases: sonoma, sequoia, tahoe
 ```
 
 - **tart**, the default: a fresh clone of dockhand's own image for each macOS release, deleted afterwards. It needs an Apple silicon Mac with [Tart](https://tart.run) (`sudo port install tart`). The first image is this Mac's release; `setup tart sequoia` adds another. Ports that need the full Xcode build only in an Xcode image, which `setup tart --xcode ~/Downloads/Xcode_26.xip` adds beside the release's base image, made first. Without one, those ports are reported as not built, and never as failed.
@@ -68,13 +69,13 @@ dockhand serve --drain                    # run the queued checks, then exit
 dockhand submit --passing                 # go through the ones that passed
 ```
 
-`--mine` means the ports whose `maintainers` line names you, from `maintainer` in `~/.dockhand/config.toml`. Left running, `dockhand serve` runs the checks you queue, such as with `check -d`, looks for new releases of your ports each day, and follows your pull requests' reviews and CI. It posts macOS notifications as checks finish and pull requests change, and `serve --install` makes it a launchd agent that starts at login; when dockhand is upgraded, the agent finishes its checks and starts again on the new build. It acts on GitHub only as the account it started as: logged out, it reads pull requests without a login and opens, pushes, and checks there nothing until you log in again. It opens no pull requests unless you ask it to, with `serve.submit_passing`, and then within a daily limit.
+`--mine` means the ports whose `maintainers` line names you, from `maintainer` in `~/.dockhand/config.toml`. Left running, `dockhand serve` runs the checks you queue, such as with `check -d`, looks for new releases of your ports each day and lists them, unless `serve.for_outdated` says to prepare or check them, and follows your pull requests' reviews and CI. It posts macOS notifications as checks finish and pull requests change, and `serve --install` makes it a launchd agent that starts at login; when dockhand is upgraded, the agent finishes its checks and starts again on the new build. It acts on GitHub only as the account it started as: logged out, it reads pull requests without a login and opens, pushes, and checks there nothing until you log in again. It opens no pull requests unless you ask it to, with `serve.for_outdated = "check"` and `serve.submit_passing`, and then at most `serve.submit_limit` a day.
 
 ## Other kinds of change
 
 | Command | What it does |
 | --- | --- |
-| `create <url>` | writes a new port's first Portfile from its GitHub project, marking what it guessed |
+| `create <url>` or `create crates:NAME`, `pypi:`, `go:` | writes a new port's first Portfile from its project or its registry name, marking what it guessed |
 | `revbump <port>... --subject "rebuild for …"` | bumps revisions for a rebuild, with the reason as the commit subject |
 | `update <port> --revbump-dependents` | also bumps the ports that link the updated library |
 | `checksums <port>` | fills in checksums after you edit a version by hand, and handles stealth updates |
@@ -98,9 +99,9 @@ Read what `--plan` shows for these before you go on. Two commands are **experime
 
 Building in Tart needs an Apple silicon Mac. An Intel Mac, like any other, prepares changes here and checks them on GitHub Actions, `--on github`, which runs MacPorts' own workflow in your fork.
 
-## Known issues
+## Known issues in v0.3.0
 
-What the release-candidate test finds that's rough but harms nothing is listed here, with its workaround.
+v0.3.0's acceptance test found these; each is rough, harms nothing, and has a workaround.
 
 - A check builds on this Mac's release unless told otherwise, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--on ci` checks on all three.
 - A Go port whose module moved hosts, as pomo moved from GitHub to Codeberg, is planned without naming the move. Compare the new release's `go.mod` module path with the Portfile's before `tidy`.
@@ -114,7 +115,7 @@ What the release-candidate test finds that's rough but harms nothing is listed h
 - A fault in dockhand's own handling of a Tart guest is said at once where dockhand knows it for its own, as results it can't read; any other error the guest meets is tried again, up to three times, cloning a VM each time, before the check reports it.
 - `serve` has printed a check's "passed" line twice (check-130, field testing, 2026-10-02). It hasn't recurred, and it changes nothing but the output.
 - A GitHub tag that upstream moves after a check isn't noticed: a later check can reuse the earlier build, and `submit` says it passed, though the archive at that tag has changed. If upstream has retagged a release, run `dockhand checksums <port>`, then `dockhand check --fresh`.
-- With `GH_TOKEN` or `GITHUB_TOKEN` set, `submit`'s preview doesn't name the account that will open the pull request. `submit` still refuses to push to a fork that account doesn't own. `dockhand auth status` names the account and where its login comes from.
+- With `GH_TOKEN` or `GITHUB_TOKEN` set, `submit`'s preview doesn't name the account that will open the pull request. `submit` still refuses to push to a fork that account doesn't own. `dockhand auth status`, the old login command, hidden from `--help` but kept for this, names the account and where its login comes from.
 - `submit --json` doesn't say who requested changes on the pull request, or whether they were asked to review again. The text output says both.
 - `dockhand path` says there's no tracked branch for a merged branch whose worktree `clean` kept, because its fork branch moved after the merge. `status --all` lists it, and `git worktree list` shows where its worktree is.
 - `check` and `serve` don't refuse a Tart older than 2.39.0, as `setup` does. `dockhand setup tart` says when Tart is too old; update Tart before checking.
@@ -134,7 +135,7 @@ What the release-candidate test finds that's rough but harms nothing is listed h
 Build from source with Go 1.27.1 or newer. The dependencies are vendored, so the build needs no network:
 
 ```sh
-git clone https://github.com/herbygillot/dockhand.git
+git clone --branch v0.3.0 https://github.com/herbygillot/dockhand.git
 cd dockhand
 make build
 mkdir -p "$HOME/.local/bin" && install -m 755 dockhand "$HOME/.local/bin/dockhand"
