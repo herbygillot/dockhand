@@ -431,9 +431,12 @@ type pullRequestJSON struct {
 type latestJSON struct {
 	Run      runJSON      `json:"run"`
 	Revision revisionJSON `json:"revision"`
-	// Current is true when it checked exactly the files as they are now.
-	Current bool         `json:"current"`
-	Targets []targetJSON `json:"targets"`
+	// Current is true when it checked exactly the files as they are now,
+	// with Included, the untracked files it took in with --include, as
+	// they are on disk now.
+	Current  bool         `json:"current"`
+	Included []string     `json:"included,omitempty"`
+	Targets  []targetJSON `json:"targets"`
 }
 
 type branchJSON struct {
@@ -461,7 +464,10 @@ type branchJSON struct {
 	Changed []string          `json:"changed_ports"`
 	Notes   map[string]string `json:"port_notes,omitempty"`
 	// Releases are where the branch's updates found their versions.
-	Releases    []releaseJSON    `json:"releases"`
+	Releases []releaseJSON `json:"releases"`
+	// Latest is the branch's newest finished check, null until one has
+	// finished: a check still running is among Active, and isn't the
+	// latest until it ends, where null read as no check while one ran.
 	Latest      *latestJSON      `json:"latest_check"`
 	Active      []runJSON        `json:"active_checks"`
 	PullRequest *pullRequestJSON `json:"pull_request"`
@@ -539,7 +545,7 @@ func branchView(status engine.BranchStatus) branchJSON {
 		view.Active = append(view.Active, active)
 	}
 	if status.Latest != nil && status.LatestRevision != nil {
-		latest := latestJSON{Run: runView(*status.Latest), Revision: revisionView(*status.LatestRevision), Current: status.Current, Targets: []targetJSON{}}
+		latest := latestJSON{Run: runView(*status.Latest), Revision: revisionView(*status.LatestRevision), Current: status.Current, Included: status.Included, Targets: []targetJSON{}}
 		if status.Evidence != nil {
 			latest.Targets = evidenceView(*status.Evidence)
 		}

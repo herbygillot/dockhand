@@ -51,6 +51,11 @@ type BranchStatus struct {
 	// Current is true when Latest checked exactly the files as they are
 	// now, whatever their history.
 	Current bool
+	// Included are the untracked files Latest's snapshot took in with
+	// --include, which the files as they are now are compared with: a
+	// check that passed with an untracked patch included read as of files
+	// that had changed since, and asked for a check of the same files.
+	Included []string
 	// LatestRevision is what Latest checked.
 	LatestRevision *model.Revision
 	// Held are the findings of its files' recorded assessments that hold
@@ -183,7 +188,11 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 	status.Tree = trees[head]
 	// Status only reads: a worktree clean removed isn't checked out again
 	// for it, so its files are the branch's committed ones.
-	if worktree, err := e.openWorktree(ctx, branch); err == nil {
+	worktree, err := e.openWorktree(ctx, branch)
+	if err != nil {
+		worktree = nil
+	}
+	if worktree != nil {
 		if status.Edited, err = worktree.TrackedChanges(ctx); err != nil {
 			return status, err
 		}
@@ -279,12 +288,50 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 	if err != nil || status.Latest == nil || status.Pruned {
 		return status, err
 	}
+	if !status.Current && worktree != nil {
+		if err := e.compareIncluded(ctx, worktree, &status); err != nil {
+			return status, err
+		}
+	}
 	evidence, err := e.evidenceNow(ctx, *status.Latest, checks)
 	status.Evidence = &evidence
 	if status.Current {
 		status.Moved = preparedSources(status.Evidence, edits)
 	}
 	return status, err
+}
+
+// compareIncluded compares the files as they are now with a snapshot that
+// took in untracked files with --include, as they are now: where the
+// snapshot holds files untracked now, and the files with them are what it
+// checked, it stands as current, and Included names them. Untracked files
+// it didn't take in are left out, as a capture leaves them.
+func (e *Engine) compareIncluded(ctx context.Context, worktree *git.Repository, status *BranchStatus) error {
+	revision := status.LatestRevision
+	if revision == nil || revision.Kind != model.RevisionSnapshot {
+		return nil
+	}
+	untracked, err := worktree.Untracked(ctx)
+	if err != nil {
+		return err
+	}
+	var included []string
+	for _, path := range untracked {
+		if file, _, err := e.Repo.File(ctx, string(revision.Source.Tree), path); err == nil && file.Exists {
+			included = append(included, path)
+		}
+	}
+	if len(included) == 0 {
+		return nil
+	}
+	tree, err := worktree.WithFiles(ctx, status.Tree, included)
+	if err != nil {
+		return nil
+	}
+	if model.ObjectID(tree) == revision.Source.Tree {
+		status.Current, status.Included = true, included
+	}
+	return nil
 }
 
 // landedOnMaster is the master dockhand last fetched where, for each path

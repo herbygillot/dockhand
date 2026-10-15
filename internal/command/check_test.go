@@ -435,3 +435,40 @@ func TestStatusNamesAPortBuiltWithInclude(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "  Ports    none committed; vx built from untracked files (check --include)\n")
 }
+
+// A check that took in an untracked file with --include stands for the
+// files as they are while that file is as it was: status compares them
+// with it, and says it, where it read "the files have changed since" and
+// asked for a check of the same files. Once the file changes, it doesn't.
+func TestStatusComparesTheFilesACheckIncluded(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "passed")
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	patch := filepath.Join(dir, "textproc", "jq", "files", "fix.diff")
+	require.NoError(t, os.MkdirAll(filepath.Dir(patch), 0o755))
+	require.NoError(t, os.WriteFile(patch, []byte("--- a\n+++ b\n"), 0o644))
+	_, _, err = dockhand(t, "check", "--include", "textproc/jq/files/fix.diff")
+	require.NoError(t, err)
+	out, _, err := dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "with textproc/jq/files/fix.diff included, untracked")
+	require.NotContains(t, out, "changed since")
+	result, err := jsonOf(t, "status")
+	require.NoError(t, err)
+	require.Equal(t, true, dig(t, result.Result, "branches", 0, "latest_check", "current"))
+	require.Equal(t, []any{"textproc/jq/files/fix.diff"}, dig(t, result.Result, "branches", 0, "latest_check", "included"))
+
+	require.NoError(t, os.WriteFile(patch, []byte("--- a\n+++ c\n"), 0o644))
+	result, err = jsonOf(t, "status")
+	require.NoError(t, err)
+	require.Equal(t, false, dig(t, result.Result, "branches", 0, "latest_check", "current"), "the included file changed")
+}

@@ -90,6 +90,12 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.Equal(t, "check-1", dig(t, listed.Result, "runs", 0, "name"))
 	require.Equal(t, "jq-update", dig(t, listed.Result, "runs", 0, "branch"))
 	require.Equal(t, "serve: not running · queue: 1 run", listed.Result["serve"])
+	// While the branch's first check waits, its latest check is null, and
+	// the check is among its active ones.
+	waiting, err := jsonOf(t, "status")
+	require.NoError(t, err)
+	require.Nil(t, dig(t, waiting.Result, "branches", 0, "latest_check"))
+	require.Equal(t, "check-1", dig(t, waiting.Result, "branches", 0, "active_checks", 0, "name"))
 	require.Equal(t, map[string]any{"running": false, "queue": float64(1), "stopped": float64(0)}, listed.Result["serve_state"],
 		"serve's state as fields a script reads (the hugo exercise's certigo run, finding 6)")
 

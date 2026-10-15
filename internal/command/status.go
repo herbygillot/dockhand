@@ -430,6 +430,11 @@ func checkState(s engine.BranchStatus) string {
 			}
 			return "passed, but needs another check"
 		}
+		// Untracked files a check took in with --include are compared as
+		// it had them, and said: they're in no commit yet.
+		if s.Current && len(s.Included) > 0 {
+			return fmt.Sprintf("passed for %s, with %s included, untracked", engine.Describe(*s.LatestRevision), prose.And(s.Included))
+		}
 		// A check of the working files that tidy then committed unchanged
 		// checked the commit's files, as submit credits it.
 		if s.Current && (s.LatestRevision.Kind == model.RevisionCommit || s.Commits > 0 && len(s.Edited) == 0) {
