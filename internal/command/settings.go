@@ -124,12 +124,8 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	e.Providers[buildenv.GitHub] = github
 	// Tart builds wherever Tart is installed; its images are checked when a
 	// check names a release.
-	if _, err := lookTart("tart"); err == nil || testTart != nil {
-		provider := &tart.Provider{Repo: e.Repo, Index: e.PortIndex, TestTimeout: file.Providers.Tart.Timeout(), BuildTimeout: file.Providers.Tart.BuildBound()}
-		if testTart != nil {
-			testTart(provider)
-		}
-		e.Providers[buildenv.Tart] = provider
+	if _, err := lookTart("tart"); err == nil {
+		e.Providers[buildenv.Tart] = &tart.Provider{Repo: e.Repo, Index: e.PortIndex, TestTimeout: file.Providers.Tart.Timeout(), BuildTimeout: file.Providers.Tart.BuildBound()}
 	}
 	if testLeftovers != nil {
 		e.Providers[testLeftovers.Name()] = testLeftovers
@@ -171,10 +167,6 @@ var testActions ghactions.API
 // testLeftovers, when set, is a provider with environments left behind,
 // registered under its name in place of whichever the configuration made.
 var testLeftovers buildenv.LeftoverProvider
-
-// testTart, when set, registers the Tart provider whether or not Tart is
-// installed, and adjusts it for a test.
-var testTart func(*tart.Provider)
 
 // lookTart finds Tart; the tests find none, so they don't depend on the
 // machine they run on.

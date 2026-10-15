@@ -218,3 +218,18 @@ func TestHoldsMajorsHoldsUnlessAllowed(t *testing.T) {
 	_, err = parse("config.toml", "[holds]\nmajors = \"sometimes\"\n")
 	require.ErrorContains(t, err, "holds.majors")
 }
+
+// The maintainers line setup inferred is written beside what the file
+// holds, and written again in its place.
+func TestSetMaintainerWritesTheLineBesideWhatsThere(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte("worktrees = \"/tmp/x\"\n\n[serve]\noutdated_at = \"07:00\"\n"), 0o600))
+	require.NoError(t, SetMaintainer(path, "{gmail.com:ada @ada}"))
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "maintainer = \"{gmail.com:ada @ada}\"\nworktrees = \"/tmp/x\"\n\n[serve]\noutdated_at = \"07:00\"\n", string(data))
+	require.NoError(t, SetMaintainer(path, "{@ada}"))
+	data, err = os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "maintainer = \"{@ada}\"\nworktrees")
+}

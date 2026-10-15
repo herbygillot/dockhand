@@ -375,7 +375,6 @@ checked out here, in your browser, and prints its address.`,
 				return fmt.Errorf("%s has no pull request yet; dockhand submit -b %s opens one", branch.ShortName(), branch.ShortName())
 			}
 			address := fmt.Sprintf("https://github.com/%s/pull/%d", pr.Repository, pr.Number)
-			streams.emit(map[string]any{"branch": branch.ShortName(), "url": address})
 			fmt.Fprintln(streams.Out, address)
 			return openBrowser(ctx, address)
 		},

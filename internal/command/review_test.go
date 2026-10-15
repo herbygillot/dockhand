@@ -12,7 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
-func TestTidyAppliesDockhandsOwnEditsAndRestoreUndoesIt(t *testing.T) {
+func TestTidyAppliesDockhandsOwnEditsAndUndoPutsThemBack(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -37,9 +37,10 @@ func TestTidyAppliesDockhandsOwnEditsAndRestoreUndoesIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "nothing to tidy")
 
-	out, _, err = dockhand(t, "restore", "tidy-1")
+	undone, err := jsonOf(t, "undo", "tidy-1")
 	require.NoError(t, err)
-	require.Contains(t, out, "Restored dockhand/jq-update to its history before tidy-1")
+	require.Equal(t, "tidy-1", undone.Result["checkpoint"])
+	require.Equal(t, "jq-update", undone.Result["branch"])
 	require.Equal(t, "M textproc/jq/Portfile", testsupport.Git(t, dir, "status", "--porcelain"))
 }
 

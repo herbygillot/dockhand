@@ -43,7 +43,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				all = append(all, configSetting{Key: key, Value: value, Source: source})
 			}
 			add("worktrees", tildeOrEmpty(file.Worktrees), "~/Source/macports-branches")
-			add("maintainer", file.Maintainer, "(none; create asks for it)")
+			add("maintainer", file.Maintainer, "(none; create writes nomaintainer)")
 			add("check.on", strings.Join(file.Check.On, ", "), "command when [providers.command] is set up, else Tart on this Mac's release")
 			add("check.tests", file.Check.Tests, "declared")
 			baselineValue := ""
