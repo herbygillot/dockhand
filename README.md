@@ -1,5 +1,5 @@
 > [!NOTE]
-> **This is dockhand v0.3.0, the first release of its third design.** Commands, output, and configuration may still change in later 0.x releases. Its database, `~/.dockhand/dockhand.db`, is migrated forward by each newer dockhand and never discarded. v2 is kept at the tag `v2-final`; the two never share a database.
+> **This is dockhand v0.3.1, the first point release of its third design.** Commands, output, and configuration still change in 0.x releases, and v0.4.0, which `main` is moving toward, changes some: `-b` names only an existing branch, with `--new=<name>` to start one, the hidden `auth` command goes, with `setup` naming your GitHub login, and `ship` comes to take a port from release to pull request in one command. Its database, `~/.dockhand/dockhand.db`, is migrated forward by each newer dockhand and never discarded. v2 is kept at the tag `v2-final`; the two never share a database.
 
 <p align="center">
   <picture>
@@ -99,9 +99,9 @@ Read what `--plan` shows for these before you go on. Two commands are **experime
 
 Building in Tart needs an Apple silicon Mac. An Intel Mac, like any other, prepares changes here and checks them on GitHub Actions, `--on github`, which runs MacPorts' own workflow in your fork.
 
-## Known issues in v0.3.0
+## Known issues in v0.3.1
 
-v0.3.0's acceptance test found these; each is rough, harms nothing, and has a workaround.
+v0.3.0's acceptance test found these, and v0.3.1 keeps them; each is rough, harms nothing, and has a workaround. v0.4.0 is to fix them, and `main` has several of those fixes already.
 
 - A check builds on this Mac's release unless told otherwise, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--on ci` checks on all three.
 - A Go port whose module moved hosts, as pomo moved from GitHub to Codeberg, is planned without naming the move. Compare the new release's `go.mod` module path with the Portfile's before `tidy`.
@@ -115,6 +115,7 @@ v0.3.0's acceptance test found these; each is rough, harms nothing, and has a wo
 - A fault in dockhand's own handling of a Tart guest is said at once where dockhand knows it for its own, as results it can't read; any other error the guest meets is tried again, up to three times, cloning a VM each time, before the check reports it.
 - `serve` has printed a check's "passed" line twice (check-130, field testing, 2026-10-02). It hasn't recurred, and it changes nothing but the output.
 - A GitHub tag that upstream moves after a check isn't noticed: a later check can reuse the earlier build, and `submit` says it passed, though the archive at that tag has changed. If upstream has retagged a release, run `dockhand checksums <port>`, then `dockhand check --fresh`.
+- With `GH_TOKEN` or `GITHUB_TOKEN` set, `submit`'s preview doesn't name the account that will open the pull request. `submit` still refuses to push to a fork that account doesn't own. `dockhand auth status`, the old login command, hidden from `--help` but kept for this, names the account and where its login comes from.
 - `submit --json` doesn't say who requested changes on the pull request, or whether they were asked to review again. The text output says both.
 - `dockhand path` says there's no tracked branch for a merged branch whose worktree `clean` kept, because its fork branch moved after the merge. `status --all` lists it, and `git worktree list` shows where its worktree is.
 - `check` and `serve` don't refuse a Tart older than 2.39.0, as `setup` does. `dockhand setup tart` says when Tart is too old; update Tart before checking.
@@ -131,10 +132,16 @@ v0.3.0's acceptance test found these; each is rough, harms nothing, and has a wo
 
 ### Installing
 
-Build from source with Go 1.27.1 or newer. The dependencies are vendored, so the build needs no network:
+With MacPorts:
 
 ```sh
-git clone --branch v0.3.0 https://github.com/herbygillot/dockhand.git
+sudo port install dockhand
+```
+
+Or build from source with Go 1.27.1 or newer. The dependencies are vendored, so the build needs no network:
+
+```sh
+git clone --branch v0.3.1 https://github.com/herbygillot/dockhand.git
 cd dockhand
 make build
 mkdir -p "$HOME/.local/bin" && install -m 755 dockhand "$HOME/.local/bin/dockhand"

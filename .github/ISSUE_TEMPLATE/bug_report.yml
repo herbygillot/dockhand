@@ -1,0 +1,39 @@
+name: Bug report
+description: Something dockhand did that it shouldn't have, or didn't do that it should.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: dockhand --version
+      description: The whole line it prints, which names the build.
+      placeholder: dockhand v0.3.1 (147dc4a90c51)
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: The command you ran
+      description: As you typed it, with the port or branch it was about.
+      render: sh
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened, and what you expected
+      description: What it printed, as much as bears on it, and what you thought it would do.
+    validations:
+      required: true
+  - type: input
+    id: check
+    attributes:
+      label: Check ID
+      description: Where a check was involved, its name, as check-42. `dockhand logs check-42` shows what it recorded.
+      placeholder: check-42
+  - type: input
+    id: mac
+    attributes:
+      label: macOS and MacPorts
+      description: This Mac's macOS release, and `port version`.
+      placeholder: macOS 26.1, MacPorts 2.12.6
