@@ -44,3 +44,15 @@ and 4 and 7b row 4 leave, bridge 1 being settled in hygiene; and PR #4
 also wires up `interrupted` (356d5693), merges cleanly onto c10e2ea4, and
 holds up only hygiene. The fork another account owns stays a warning, at
 the person's "Keep the warning" (21:34Z).
+
+## The split's first wave moves to v0.5.0
+
+At the person's adoption of the step-back review's three recommendations
+(2026-10-15, 23:33Z and 23:34Z, relayed with the project's
+plan/roadmap-trim-2026-10-15.md): recommendation 3 moves part 3's wave 1,
+`view`, the `run` library, the verb packages with `bump` and `setup` among
+them, and `cmdtest`, to v0.5.0, cut right after 5.5 with status and check
+as one split. `term` stays at the end of part 1, and `compose`, with
+`engine.Setup`'s move, stays with X1 in part 3. Part 3 is about 5
+batches, v0.4.0 about 19. Recommendation 2, the roadmap cut to Next and
+Decisions, comes in the commit that marks part 1 done.
