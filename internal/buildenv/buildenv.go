@@ -108,6 +108,10 @@ type Target struct {
 	// a build that fetched another commit, which built another source, and
 	// reports what it fetched (Build.Fetched).
 	Git *model.GitSource
+	// Tag is the GitHub tag a target's archive is fetched by, from the
+	// plan, with the commit it named when the check was planned; nil for
+	// a port fetched otherwise. Reuse compares it (reuse.Target.TagMoved).
+	Tag *model.GitSource
 }
 
 // Build is how a provider learns what to skip and records what happened.

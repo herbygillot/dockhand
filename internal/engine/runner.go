@@ -449,6 +449,9 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 				if source, ok := planned.Git[id]; ok {
 					next.Git = &source
 				}
+				if tag, ok := planned.Tags[id]; ok {
+					next.Tag = &tag
+				}
 				remaining = append(remaining, next)
 			}
 		}
@@ -487,6 +490,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}
 		if attempt == 0 && !d.plan.Fresh {
 			d.sayNotReusable(ctx, environment, targets)
+			d.sayTagMoved(ctx, environment, targets)
 		}
 		var reused map[model.TargetID]reuse.Candidate
 		if attempt == 0 && identity == "" && !d.plan.Fresh && d.anotherCanReuse(ctx, environment) {

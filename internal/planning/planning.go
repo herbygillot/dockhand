@@ -34,6 +34,9 @@ type Evaluated struct {
 	// the engine resolves to the commit its build is expected to fetch;
 	// nil for a port fetched otherwise.
 	Git *model.GitSource
+	// Tag is the GitHub tag a port fetched as an archive takes its source
+	// from (PortInfo.GitHubTag); nil for one fetched otherwise.
+	Tag *model.GitSource
 }
 
 // Dependency is a port another depends on. ByFile is one Base would find
@@ -82,6 +85,9 @@ func Evaluate(port macports.PortInfo, platform model.Platform) (Evaluated, error
 	}
 	if git {
 		evaluated.Git = &source
+	}
+	if tag, ok := port.GitHubTag(); ok {
+		evaluated.Tag = &tag
 	}
 	return evaluated, nil
 }
@@ -314,6 +320,12 @@ func EnvironmentPlan(environment model.Environment, targets, candidates []model.
 			}
 			planned.Git[id] = *source
 		}
+		if tag := evaluation[id].Tag; tag != nil {
+			if planned.Tags == nil {
+				planned.Tags = map[model.TargetID]model.GitSource{}
+			}
+			planned.Tags[id] = *tag
+		}
 	}
 	for _, c := range candidates {
 		if reason := reasons[c.ID]; reason != "" {
@@ -333,17 +345,25 @@ func EnvironmentPlan(environment model.Environment, targets, candidates []model.
 // built against it, stands only for the commit its tag names now (the
 // engine's Counts), which a check that left it out must still say. A
 // submission compares that commit with what its tag names then, as it does
-// for what the check built.
+// for what the check built. A GitHub tag a left-out target's archive is
+// fetched by is given the same way (EnvironmentPlan.Tags).
 func OmittedSources(planned *model.EnvironmentPlan, omitted []model.PlanTarget, reasons map[model.TargetID]string, evaluation Evaluation) {
 	for _, target := range omitted {
-		source := evaluation[target.ID].Git
-		if source == nil || reasons[target.ID] != "" {
+		if reasons[target.ID] != "" {
 			continue
 		}
-		if planned.Git == nil {
-			planned.Git = map[model.TargetID]model.GitSource{}
+		if source := evaluation[target.ID].Git; source != nil {
+			if planned.Git == nil {
+				planned.Git = map[model.TargetID]model.GitSource{}
+			}
+			planned.Git[target.ID] = *source
 		}
-		planned.Git[target.ID] = *source
+		if tag := evaluation[target.ID].Tag; tag != nil {
+			if planned.Tags == nil {
+				planned.Tags = map[model.TargetID]model.GitSource{}
+			}
+			planned.Tags[target.ID] = *tag
+		}
 	}
 }
 

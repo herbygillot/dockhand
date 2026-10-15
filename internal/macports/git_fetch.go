@@ -38,3 +38,33 @@ func (p PortInfo) GitSource() (source model.GitSource, git bool, err error) {
 	}
 	return model.GitSource{URL: url, Ref: branch}, true, nil
 }
+
+// GitHubTag is the GitHub tag a port fetched as an archive of a tag takes
+// its source from, as the github PortGroup's github.setup sets it: git.url,
+// the project's repository, and git.branch, the tag it makes of the
+// version. ok is false for a port fetched with Git, one not set up from
+// GitHub, and one whose github.tarball_from fetches an uploaded release
+// asset, which a tag's commit doesn't make.
+func (p PortInfo) GitHubTag() (source model.GitSource, ok bool) {
+	fetch, _, err := p.option("fetch.type")
+	if err != nil || fetch == "git" {
+		return model.GitSource{}, false
+	}
+	author, _, err := p.option("github.author")
+	if err != nil || author == "" {
+		return model.GitSource{}, false
+	}
+	from, _, err := p.option("github.tarball_from")
+	if err != nil || from != "" && from != "tarball" && from != "tags" && from != "archive" {
+		return model.GitSource{}, false
+	}
+	url, _, err := p.option("git.url")
+	if err != nil || url == "" {
+		return model.GitSource{}, false
+	}
+	tag, _, err := p.option("git.branch")
+	if err != nil || tag == "" {
+		return model.GitSource{}, false
+	}
+	return model.GitSource{URL: url, Ref: tag}, true
+}

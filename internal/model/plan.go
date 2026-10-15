@@ -215,6 +215,12 @@ type EnvironmentPlan struct {
 	// where it fetched that commit, and a submission compares that commit
 	// with what the tag names then.
 	Git map[TargetID]GitSource `json:",omitempty"`
+	// Tags are the targets here fetched as a GitHub tag's archive, each
+	// with the commit its tag named when the check was planned, read with
+	// git ls-remote: a tag binds nothing, and an archive fetched by a moved
+	// tag isn't the one the Portfile's checksums describe (the rc8 full
+	// stage's D-N5, dh-fixture-retag). Reuse and a submission read them.
+	Tags map[TargetID]GitSource `json:",omitempty"`
 }
 
 // Builds reports whether the environment's plan has the target in its
@@ -471,6 +477,18 @@ func (b EnvironmentPlan) validate(p Plan) error {
 		}
 		if problem := source.problem(); problem != "" {
 			return invalid("plan %s: %s's Git source %s", where, id, problem)
+		}
+	}
+	for id, tag := range b.Tags {
+		omitted := slices.ContainsFunc(p.Omitted, func(target PlanTarget) bool { return target.ID == id })
+		if _, excluded := p.ExclusionIn(b.Environment, id); !earlier[id] && (!omitted || excluded) {
+			return invalid("plan %s has a GitHub tag for %s, which it neither builds nor would build but for --only", where, id)
+		}
+		if _, git := b.Git[id]; git {
+			return invalid("plan %s has both a Git source and a GitHub tag for %s", where, id)
+		}
+		if problem := tag.problem(); problem != "" {
+			return invalid("plan %s: %s's GitHub tag %s", where, id, problem)
 		}
 	}
 	return nil

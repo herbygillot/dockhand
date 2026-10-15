@@ -192,6 +192,9 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	if err := e.resolveGitSources(ctx, decision.Builds); err != nil {
 		return plan, err
 	}
+	if err := e.resolveTags(ctx, decision.Builds); err != nil {
+		return plan, err
+	}
 	if len(plan.Unresolved) > 0 {
 		plan.Builds = decision.Builds
 		return plan, nil
@@ -233,6 +236,53 @@ func (e *Engine) resolveGitSources(ctx context.Context, builds []model.Environme
 		}
 	}
 	return nil
+}
+
+// resolveTags reads, with git ls-remote, the commit each GitHub tag an
+// archive is fetched by names now, once a repository and tag for the plan
+// (EnvironmentPlan.Tags). It spends none of GitHub's API budget. One that
+// can't be read is said to be, and a later comparison then says nothing
+// of whether it moved. A port set up from a commit rather than a tag has
+// nothing to move, and none.
+func (e *Engine) resolveTags(ctx context.Context, builds []model.EnvironmentPlan) error {
+	resolved := map[[2]string]model.GitSource{}
+	for _, planned := range builds {
+		for _, id := range slices.Sorted(maps.Keys(planned.Tags)) {
+			source := planned.Tags[id]
+			key := [2]string{source.URL, source.Ref}
+			if _, done := resolved[key]; !done {
+				resolved[key] = e.resolveTag(ctx, source)
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+			}
+			if pinned := resolved[key]; pinned.Commit == "" && git.ValidAbbreviation(pinned.Ref) {
+				// No tag by that name, and the name is a commit's: a
+				// version set up from a commit binds its source.
+				delete(planned.Tags, id)
+				continue
+			}
+			planned.Tags[id] = resolved[key]
+		}
+	}
+	return nil
+}
+
+// resolveTag reads which commit a GitHub tag names now.
+func (e *Engine) resolveTag(ctx context.Context, source model.GitSource) model.GitSource {
+	ctx, cancel := context.WithTimeout(ctx, gitResolveTimeout)
+	defer cancel()
+	tags, err := git.ListRemoteTags(ctx, e.Repo.Executable, source.URL, source.Ref)
+	source.ResolvedAt = e.now()
+	switch {
+	case err != nil:
+		source.Unresolved = "its tags couldn't be read: " + err.Error()
+	case len(tags) == 0:
+		source.Unresolved = fmt.Sprintf("%s has no tag %s", source.URL, source.Ref)
+	default:
+		source.Commit = model.ObjectID(tags[0].Object)
+	}
+	return source
 }
 
 // resolveGit reads which commit a Git source's ref names now.

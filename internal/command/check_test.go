@@ -138,6 +138,13 @@ func TestCheckPlanSaysWhatAGitFetchMustCheckOut(t *testing.T) {
 	require.Equal(t, gitSourceJSON{URL: tag.URL, Branch: "v4", Commit: string(commit), ResolvedAt: tag.ResolvedAt}, view.Builds[1].Git["libharbor"])
 	require.NotContains(t, view.Builds[1].Git, "harbor-cli", "fetched otherwise there")
 	require.Nil(t, view.Builds[0].OmittedGit, "nothing left out")
+	require.Nil(t, view.Builds[0].Tags, "nothing fetched as a GitHub tag's archive")
+
+	// A port fetched as a GitHub tag's archive has its tag's commit under
+	// tags (D-N5), and isn't said among what Git fetches.
+	plan.Builds[0].Git = map[model.TargetID]model.GitSource{"harbor-cli": cli}
+	plan.Builds[0].Tags = map[model.TargetID]model.GitSource{"libharbor": tag}
+	require.Equal(t, map[string]gitSourceJSON{"libharbor": gitSourceView(tag)}, planView(plan).Builds[0].Tags)
 }
 
 // A Git-fetched target --only left out has the commit its tag names

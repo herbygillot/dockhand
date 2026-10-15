@@ -550,3 +550,101 @@ func TestABuildThatFetchedAnotherCommitFailsAtFetch(t *testing.T) {
 	require.Len(t, provider.jobs, jobs+1, "no later check reuses a build that didn't say what it fetched")
 	require.Equal(t, model.TargetID("libharbor"), provider.jobs[jobs].Targets[0].ID)
 }
+
+// githubHarbor is the harbor ports, with libharbor fetched as the archive
+// of a GitHub tag, ref, in its repository at url, as the github PortGroup
+// sets it up.
+func githubHarbor(url, ref string) fakePorts {
+	ports := harborPorts()
+	libharbor := port("libharbor")
+	libharbor.Options = map[string]string{"fetch.type": "standard", "github.author": "harbor", "github.project": "libharbor", "git.url": url, "git.branch": ref}
+	ports.directories["devel/libharbor"] = []macports.PortInfo{libharbor}
+	return ports
+}
+
+// A port fetched as a GitHub tag's archive has the commit its tag names
+// recorded in the plan, read with git ls-remote (D-N5). A check doesn't
+// reuse its build once the tag names another commit, and says why; a
+// submission resting on the check is held. A version set up from a
+// commit records no tag, and a tag the repository lacks is said.
+func TestAMovedGitHubTagIsSaidByCheckAndSubmit(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	url, first, move := harborRepository(t)
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	revision := harborBranch(t, e)
+	e.PortReader = githubHarbor(url, "v4")
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}))
+	plan := func() model.Plan {
+		t.Helper()
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		return plan
+	}
+	check := func() model.Run {
+		t.Helper()
+		queued, err := e.Enqueue(t.Context(), branch, plan(), model.OriginPerson)
+		require.NoError(t, err)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+		return run
+	}
+
+	planned, _ := plan().In(tahoeArm)
+	tag := planned.Tags["libharbor"]
+	require.Equal(t, url, tag.URL)
+	require.Equal(t, "v4", tag.Ref)
+	require.Equal(t, model.ObjectID(first), tag.Commit)
+	require.NotContains(t, planned.Tags, model.TargetID("harbor-cli"), "a port fetched otherwise has no tag")
+	require.NotContains(t, planned.Git, model.TargetID("libharbor"), "it isn't fetched with Git")
+
+	built := check()
+	require.Len(t, provider.jobs, 1)
+	check()
+	require.Len(t, provider.jobs, 1, "the tag names what was built: everything is reused")
+	evidence, found, err := e.EvidenceFor(t.Context(), branch.ID, revision.Source.Tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Empty(t, e.movedSources(t.Context(), &evidence))
+
+	second := move()
+	moved := e.movedSources(t.Context(), &evidence)
+	require.Len(t, moved, 1)
+	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "libharbor", Rule: "tag-moved", Subject: second, Class: model.Introduced,
+		Detail: "v4 now names " + second[:7] + ", not " + first[:7] + ", as when " + evidence.Run.Name() + " built it; dockhand checksums libharbor handles a stealth update"}, moved[0])
+	require.Contains(t, HoldLines(SubmitPlan{Moved: moved}.held()), moved[0].Detail, "it holds a submission nobody looks over")
+
+	again := check()
+	require.Len(t, provider.jobs, 2)
+	require.Equal(t, []model.TargetID{"libharbor"}, func() []model.TargetID {
+		var ids []model.TargetID
+		for _, target := range provider.jobs[1].Targets {
+			ids = append(ids, target.ID)
+		}
+		return ids
+	}(), "libharbor builds again; the rest is reused")
+	var said []string
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		events, err := r.RunEvents(again.ID, 0, 1000)
+		for _, event := range events {
+			said = append(said, event.Message)
+		}
+		return err
+	}))
+	require.Contains(t, strings.Join(said, "\n"), "libharbor builds again: v4 now names "+second[:7]+", not "+first[:7]+", as when "+built.Name()+" built it; dockhand checksums libharbor handles a stealth update")
+
+	e.PortReader = githubHarbor(url, second[:9])
+	planned, _ = plan().In(tahoeArm)
+	require.NotContains(t, planned.Tags, model.TargetID("libharbor"), "a commit binds its source")
+	e.PortReader = githubHarbor(url, "v9")
+	planned, _ = plan().In(tahoeArm)
+	require.Equal(t, url+" has no tag v9", planned.Tags["libharbor"].Unresolved)
+}

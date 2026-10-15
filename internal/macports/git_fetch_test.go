@@ -43,3 +43,35 @@ func TestAGitFetchedPortDeclaresItsRepositoryAndRef(t *testing.T) {
 	}
 	require.False(t, PortInfo{OptionErrors: map[string]string{"fetch.type": "can't read \"x\""}}.GitFetched(), "unsettled isn't fetched with Git")
 }
+
+// A port the github PortGroup sets up to fetch a tag's archive takes its
+// source from that tag, git.branch, in its repository, git.url: the tag
+// a check records the commit of. One fetched with Git, not set up from
+// GitHub, or fetching an uploaded release asset takes none.
+func TestAGitHubArchivePortTakesItsSourceFromATag(t *testing.T) {
+	t.Parallel()
+	options := func(more ...string) PortInfo {
+		port := PortInfo{Options: map[string]string{"fetch.type": "standard", "github.author": "harbor", "github.project": "harbor",
+			"git.url": "https://github.com/harbor/harbor.git", "git.branch": "v4.0"}}
+		for i := 0; i < len(more); i += 2 {
+			port.Options[more[i]] = more[i+1]
+		}
+		return port
+	}
+	for _, from := range []string{"", "tarball", "tags", "archive"} {
+		tag, ok := options("github.tarball_from", from).GitHubTag()
+		require.True(t, ok, from)
+		require.Equal(t, model.GitSource{URL: "https://github.com/harbor/harbor.git", Ref: "v4.0"}, tag)
+	}
+	for name, port := range map[string]PortInfo{
+		"fetched with Git":     options("fetch.type", "git"),
+		"not from GitHub":      options("github.author", ""),
+		"a release asset":      options("github.tarball_from", "releases"),
+		"no tag":               options("git.branch", ""),
+		"fetch.type unsettled": {Options: options().Options, OptionErrors: map[string]string{"fetch.type": "can't read \"x\""}},
+		"git.branch unsettled": {Options: options().Options, OptionErrors: map[string]string{"git.branch": "can't read \"x\""}},
+	} {
+		_, ok := port.GitHubTag()
+		require.False(t, ok, name)
+	}
+}

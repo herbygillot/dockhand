@@ -8,22 +8,36 @@ import (
 )
 
 // Candidate is an earlier build that may stand for a target's build now:
-// its result, what it read, and the execution that built it.
+// its result, what it read, and the execution that built it, with the
+// commit the GitHub tag its archive was fetched by named when that check
+// was planned (EnvironmentPlan.Tags), where it recorded one.
 type Candidate struct {
 	Result model.TargetResult
 	Inputs model.TargetInputs
 	Origin model.GuestExecution
+	Tagged *model.GitSource
 }
 
 // Target is one target an environment has left to build: what the plan
 // says it needs built first there, the source its build is expected to
-// fetch where it is fetched with Git there, and its earlier builds there,
+// fetch where it is fetched with Git there, the GitHub tag its archive is
+// fetched by and the commit it names now, and its earlier builds there,
 // newest first.
 type Target struct {
 	model.PlanTarget
 	DependsOn []model.TargetID
 	Git       *model.GitSource
+	Tag       *model.GitSource
 	Earlier   []Candidate
+}
+
+// TagMoved reports whether the GitHub tag a target's archive is fetched by
+// names another commit now than when an earlier build's check was planned
+// (D-N5): the archive fetched now isn't the one it built, though the
+// Portfile is the same. It is false where either commit isn't known, as
+// for a build before plans recorded tags.
+func (t Target) TagMoved(c Candidate) bool {
+	return t.Tag != nil && c.Tagged != nil && t.Tag.Commit != "" && c.Tagged.Commit != "" && t.Tag.Commit != c.Tagged.Commit
 }
 
 // Choice is what an environment's targets reuse: an earlier build for each
@@ -38,7 +52,8 @@ type Choice struct {
 // (decision 28), given the environment's identity now and the revision's
 // trees by path (Paths). A target reuses its newest earlier build whose
 // result stands, by the check's test policy (stands), and whose inputs are
-// what it would read now (Current). The rest build.
+// what it would read now (Current), and whose GitHub tag hasn't moved
+// since (TagMoved). The rest build.
 //
 // A target fetched with Git is reused only for the commit its plan expects
 // (Current), and what was built against another commit's build of it, or
@@ -55,7 +70,7 @@ func Choose(targets []Target, identity string, trees map[string]model.ObjectID, 
 	choice := Choice{Reused: map[model.TargetID]Candidate{}}
 	for _, target := range targets {
 		for _, c := range target.Earlier {
-			if stands(c.Result) && Current(c.Inputs, identity, target.PlanTarget, target.Git, trees) {
+			if stands(c.Result) && Current(c.Inputs, identity, target.PlanTarget, target.Git, trees) && !target.TagMoved(c) {
 				choice.Reused[target.ID] = c
 				break
 			}

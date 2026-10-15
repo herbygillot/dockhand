@@ -21,13 +21,15 @@ const reuseCandidates = 5
 
 // earlier are the targets an environment has left to build, each with
 // its newest passed builds there that recorded what they read (Reusable),
-// and the paths those builds read.
+// and the paths those builds read. A target fetched by a GitHub tag has
+// each build's tag commit from its check's plan (EnvironmentPlan.Tags).
 func (d *driver) earlier(ctx context.Context, environment model.Environment, remaining []buildenv.Target) ([]reuse.Target, []string, error) {
 	targets := make([]reuse.Target, len(remaining))
 	var paths []string
+	plans := map[model.RunID]model.Plan{}
 	err := d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
 		for i, target := range remaining {
-			targets[i] = reuse.Target{PlanTarget: target.PlanTarget, DependsOn: target.DependsOn, Git: target.Git}
+			targets[i] = reuse.Target{PlanTarget: target.PlanTarget, DependsOn: target.DependsOn, Git: target.Git, Tag: target.Tag}
 			builds, err := r.Reusable(target.ID, environment, reuseCandidates)
 			if err != nil {
 				return err
@@ -37,13 +39,74 @@ func (d *driver) earlier(ctx context.Context, environment model.Environment, rem
 				if err != nil {
 					return err
 				}
-				targets[i].Earlier = append(targets[i].Earlier, reuse.Candidate{Result: build.Result, Inputs: inputs, Origin: build.Execution})
+				candidate := reuse.Candidate{Result: build.Result, Inputs: inputs, Origin: build.Execution}
+				if target.Tag != nil {
+					if candidate.Tagged, err = tagged(r, plans, build.Execution, target.ID); err != nil {
+						return err
+					}
+				}
+				targets[i].Earlier = append(targets[i].Earlier, candidate)
 				paths = append(paths, reuse.Paths(inputs)...)
 			}
 		}
 		return nil
 	})
 	return targets, paths, err
+}
+
+// tagged is the GitHub tag a target's archive was fetched by in an earlier
+// build's check, with the commit it named then, from that check's plan;
+// nil where the plan recorded none, or isn't kept. Plans are read once a
+// check (plans).
+func tagged(r store.Reader, plans map[model.RunID]model.Plan, origin model.GuestExecution, id model.TargetID) (*model.GitSource, error) {
+	plan, ok := plans[origin.Run]
+	if !ok {
+		run, err := r.Run(origin.Run)
+		if err == nil {
+			plan, err = r.Plan(run.Plan)
+		}
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+		plans[origin.Run] = plan
+	}
+	planned, _ := plan.In(origin.Environment)
+	if tag, ok := planned.Tags[id]; ok {
+		return &tag, nil
+	}
+	return nil, nil
+}
+
+// sayTagMoved says, of each target whose newest earlier build here stands
+// but was fetched by a GitHub tag that names another commit now, that it
+// builds again, and why (D-N5): the archive fetched now isn't the one that
+// build checked, and dockhand checksums handles a stealth update.
+func (d *driver) sayTagMoved(ctx context.Context, environment model.Environment, targets []reuse.Target) {
+	for _, target := range targets {
+		if len(target.Earlier) == 0 {
+			continue
+		}
+		newest := target.Earlier[0]
+		if !target.TagMoved(newest) || !d.plan.Tests.Stands(newest.Result) {
+			continue
+		}
+		built := "an earlier check"
+		_ = d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
+			if run, err := r.Run(newest.Origin.Run); err == nil {
+				built = run.Name()
+			}
+			return nil
+		})
+		d.emit(ctx, "execution.state", fmt.Sprintf("%s: %s: %s builds again: %s", d.run.Name(), describeEnvironment(environment), target.ID, TagMovedWords(*newest.Tagged, *target.Tag, built, target.Target.Name)))
+	}
+}
+
+// TagMovedWords say that a GitHub tag names another commit now than when a
+// check built a port, and what handles a stealth update: "v1.0.0 now names
+// d4c0fdb, not 1d15bc8, as when check-41 built it; dockhand checksums foo
+// handles a stealth update".
+func TagMovedWords(then, now model.GitSource, built, port string) string {
+	return fmt.Sprintf("%s now names %s, not %s, as when %s built it; dockhand checksums %s handles a stealth update", now.Ref, short(now.Commit), short(then.Commit), built, port)
 }
 
 // sayNotReusable says, of each target whose newest earlier build here

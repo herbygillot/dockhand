@@ -172,3 +172,31 @@ func TestWhatWasBuiltAgainstAnotherSourceIsOneRule(t *testing.T) {
 	require.Equal(t, map[model.TargetID]bool{"cli": true, "app": true, "tools": true}, AgainstOtherSources(targets(b), chosen),
 		"the tag moved: cli was built against lib's build of a, and app against that cli")
 }
+
+// A target fetched as a GitHub tag's archive doesn't reuse a build whose
+// check found the tag naming another commit than it names now (D-N5): the
+// same Portfile fetches another archive. A build whose tag commit, or the
+// target's now, isn't known is reused as before.
+func TestATargetDoesntReuseABuildPastAMovedTag(t *testing.T) {
+	now := map[string]model.ObjectID{"devel/lib": "1", macports.ResourcesDirectory: "5"}
+	inputs := model.NewTargetInputs("origin a", "devel/lib", "1", "5", nil, []model.ActivePort{})
+	tag := func(commit model.ObjectID) *model.GitSource {
+		return &model.GitSource{URL: "https://github.com/harbor/lib.git", Ref: "v1.0.0", Commit: commit}
+	}
+	target := func(current *model.GitSource, tagged *model.GitSource) []Target {
+		return []Target{{PlanTarget: model.PlanTarget{ID: "lib", Target: model.Target{Name: "lib"}, Directory: "devel/lib"}, Tag: current,
+			Earlier: []Candidate{{Result: model.TargetResult{Target: "lib", Outcome: model.OutcomePassed}, Inputs: inputs, Tagged: tagged}}}}
+	}
+	stands := func(model.TargetResult) bool { return true }
+	none := func(Candidate) bool { return false }
+	require.Contains(t, Choose(target(tag("1d15bc8"), tag("1d15bc8")), "origin a", now, stands, none).Reused, model.TargetID("lib"), "the tag names what was built")
+	require.Empty(t, Choose(target(tag("d4c0fdb"), tag("1d15bc8")), "origin a", now, stands, none).Reused, "the tag moved")
+	require.True(t, target(tag("d4c0fdb"), tag("1d15bc8"))[0].TagMoved(target(nil, tag("1d15bc8"))[0].Earlier[0]))
+	for name, pair := range map[string][2]*model.GitSource{
+		"no tag recorded then": {tag("d4c0fdb"), nil},
+		"no tag now":           {nil, tag("1d15bc8")},
+		"unread now":           {tag(""), tag("1d15bc8")},
+	} {
+		require.Contains(t, Choose(target(pair[0], pair[1]), "origin a", now, stands, none).Reused, model.TargetID("lib"), name)
+	}
+}

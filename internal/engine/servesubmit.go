@@ -175,6 +175,11 @@ func (p SubmitPlan) Concerns() []model.Concern {
 // result of it stands only where it built that commit (Counts). Each
 // repository and ref is read once; one that can't be read now isn't said
 // to have moved, as the check's own evidence says what it built.
+//
+// So are the ports fetched as a GitHub tag's archive whose tag names
+// another commit now (D-N5, tag-moved): the archive the pull request's
+// checksums describe may not be the one fetched now, a stealth update.
+// Their tags are read with git ls-remote, as the check read them.
 func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.Concern {
 	if evidence == nil {
 		return nil
@@ -193,6 +198,20 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "source-moved", Subject: string(current.Commit), Class: model.Introduced,
 			Detail: fmt.Sprintf("%s's git.branch %s named %s when %s planned it, and names %s now: the check built another source than this would submit", target.Target.Name, planned.Ref, short(planned.Commit), evidence.Run.Name(), short(current.Commit))})
+	}
+	tags := map[[2]string]model.GitSource{}
+	for _, p := range plannedTags(evidence.Plan) {
+		target, planned := p.target, p.source
+		key := [2]string{planned.URL, planned.Ref}
+		if _, read := tags[key]; !read {
+			tags[key] = e.resolveTag(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
+		}
+		current := tags[key]
+		if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
+			continue
+		}
+		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "tag-moved", Subject: string(current.Commit), Class: model.Introduced,
+			Detail: TagMovedWords(planned, current, evidence.Run.Name(), target.Target.Name)})
 	}
 	return concerns
 }
@@ -266,10 +285,24 @@ type plannedSource struct {
 // target's once for each repository and ref its environments evaluate,
 // since one resolution serves every environment (resolveGitSources).
 func plannedSources(plan model.Plan) []plannedSource {
+	return plannedBy(plan, func(build model.EnvironmentPlan) map[model.TargetID]model.GitSource { return build.Git })
+}
+
+// plannedTags are the GitHub tags a plan's targets fetched as an archive
+// are fetched by, with the commit each named as the check was planned
+// (EnvironmentPlan.Tags), as plannedSources has them.
+func plannedTags(plan model.Plan) []plannedSource {
+	return plannedBy(plan, func(build model.EnvironmentPlan) map[model.TargetID]model.GitSource { return build.Tags })
+}
+
+// plannedBy are a plan's targets with the sources one of its environment
+// plans' maps (of) has for them, each target's once for each repository
+// and ref.
+func plannedBy(plan model.Plan, of func(model.EnvironmentPlan) map[model.TargetID]model.GitSource) []plannedSource {
 	var planned []plannedSource
 	for _, target := range slices.Concat(plan.Targets, plan.Omitted) {
 		for _, build := range plan.Builds {
-			source, ok := build.Git[target.ID]
+			source, ok := of(build)[target.ID]
 			if ok && !slices.ContainsFunc(planned, func(p plannedSource) bool {
 				return p.target.ID == target.ID && p.source.URL == source.URL && p.source.Ref == source.Ref
 			}) {

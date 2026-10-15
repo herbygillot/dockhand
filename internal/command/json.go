@@ -255,6 +255,11 @@ type buildJSON struct {
 	// earlier check's result of one stands only where it fetched that
 	// commit.
 	OmittedGit map[string]gitSourceJSON `json:"omitted_git,omitempty"`
+	// Tags are the targets there fetched as a GitHub tag's archive, built
+	// or left out by --only, and the commit each one's tag named as the
+	// check was planned: a later check doesn't reuse a build past a tag
+	// that moved, and a submission is held on one.
+	Tags map[string]gitSourceJSON `json:"tags,omitempty"`
 }
 
 // gitSourceJSON is what a Git-fetched target's build is expected to fetch:
@@ -327,6 +332,12 @@ func planView(plan model.Plan) planJSON {
 				}
 				build.OmittedGit[string(target.ID)] = gitSourceView(source)
 			}
+		}
+		for id, tag := range planned.Tags {
+			if build.Tags == nil {
+				build.Tags = map[string]gitSourceJSON{}
+			}
+			build.Tags[string(id)] = gitSourceView(tag)
 		}
 		view.Builds = append(view.Builds, build)
 		for _, exclusion := range planned.Exclusions {

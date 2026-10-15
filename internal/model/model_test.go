@@ -126,6 +126,10 @@ func TestPlanValidation(t *testing.T) {
 	require.True(t, unmet)
 	omitted := p.Omitted[0]
 	require.True(t, p.Excludes(omitted, intel))
+	tagged := plan()
+	tagged.Builds = slices.Clone(tagged.Builds)
+	tagged.Builds[0].Tags = map[TargetID]GitSource{"libharbor": resolvedGit()}
+	require.NoError(t, tagged.Validate(), "a GitHub tag of a target built there")
 	require.False(t, p.Excludes(omitted, arm), "required on arm64, though this check doesn't build it")
 
 	for name, change := range map[string]func(*Plan){
@@ -183,6 +187,16 @@ func TestPlanValidation(t *testing.T) {
 			source := resolvedGit()
 			source.Abbreviation = "aaaaaaa"
 			p.Builds[0].Git = map[TargetID]GitSource{"libharbor": source}
+		},
+		"a GitHub tag for what isn't built": func(p *Plan) {
+			p.Builds[0].Tags = map[TargetID]GitSource{"harbor-lost": resolvedGit()}
+		},
+		"a GitHub tag and a Git source for one target": func(p *Plan) {
+			p.Builds[0].Git = map[TargetID]GitSource{"libharbor": resolvedGit()}
+			p.Builds[0].Tags = map[TargetID]GitSource{"libharbor": resolvedGit()}
+		},
+		"a GitHub tag neither resolved nor said why": func(p *Plan) {
+			p.Builds[0].Tags = map[TargetID]GitSource{"libharbor": {URL: resolvedGit().URL, Ref: "v4", ResolvedAt: at}}
 		},
 	} {
 		p := plan()
