@@ -101,7 +101,7 @@ Building in Tart needs an Apple silicon Mac. An Intel Mac, like any other, prepa
 
 ## Known issues in v0.3.1
 
-v0.3.0's acceptance test found these, and v0.3.1 keeps them; each is rough, harms nothing, and has a workaround. v0.4.0 is to fix them, and `main` has several of those fixes already.
+v0.3.0's acceptance test found these, and v0.3.1 keeps them; each is rough, harms nothing, and has a workaround. They're planned for v0.4.0.
 
 - A check builds on this Mac's release unless told otherwise, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--on ci` checks on all three.
 - A Go port whose module moved hosts, as pomo moved from GitHub to Codeberg, is planned without naming the move. Compare the new release's `go.mod` module path with the Portfile's before `tidy`.
@@ -118,6 +118,7 @@ v0.3.0's acceptance test found these, and v0.3.1 keeps them; each is rough, harm
 - With `GH_TOKEN` or `GITHUB_TOKEN` set, `submit`'s preview doesn't name the account that will open the pull request. `submit` still refuses to push to a fork that account doesn't own. `dockhand auth status`, the old login command, hidden from `--help` but kept for this, names the account and where its login comes from.
 - `submit --json` doesn't say who requested changes on the pull request, or whether they were asked to review again. The text output says both.
 - `dockhand path` says there's no tracked branch for a merged branch whose worktree `clean` kept, because its fork branch moved after the merge. `status --all` lists it, and `git worktree list` shows where its worktree is.
+- `update <port> --new --plan` for a port whose obsolete stub's version moves with its release, as terraform-1.16's does, says the stub "stays at" its old version, while the plan's diff moves it with the release. The diff is right, and the update makes it; read the diff rather than that line.
 - `check` and `serve` don't refuse a Tart older than 2.39.0, as `setup` does. `dockhand setup tart` says when Tart is too old; update Tart before checking.
 - `create` for a Go module older than go 1.17, whose go.sum names modules its go.mod doesn't, writes a draft with zero checksums and an empty `go.vendors`, and exits 0. Its `checksums_problem` names the modules to add. Add their rows before checking.
 - With a base image deleted and its golden copy kept, `check` says `dockhand setup tart <release>` makes it, which reads as a full build of an hour or more. `setup` restores it from the golden copy in about a minute.
