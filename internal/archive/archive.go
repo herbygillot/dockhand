@@ -29,6 +29,20 @@ var errScanLimit = errors.New("archive: exceeds scan limit")
 // (field testing's batch 10, finding 2).
 var ErrBinary = errors.New("a binary package, with no source to compare")
 
+// BinaryError is a file that's a binary, ErrBinary's: the file, and what
+// its first bytes say it is, "a macOS installer package". A caller with a
+// better name for the file, the distfile's own where the file is a
+// download's temporary one, sets File.
+type BinaryError struct {
+	File, Kind string
+}
+
+func (e *BinaryError) Error() string {
+	return fmt.Sprintf("%v: %s is %s", ErrBinary, e.File, e.Kind)
+}
+
+func (e *BinaryError) Is(target error) bool { return target == ErrBinary }
+
 // binaryKind names the binary a file's first bytes say it is, or nothing.
 func binaryKind(header []byte) string {
 	if len(header) < 4 {
@@ -110,7 +124,7 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 	reader := bufio.NewReader(file)
 	header, _ := reader.Peek(4)
 	if kind := binaryKind(header); kind != "" {
-		return fmt.Errorf("%w: %s is %s", ErrBinary, path.Base(filename), kind)
+		return &BinaryError{File: path.Base(filename), Kind: kind}
 	}
 	if len(header) >= 2 && string(header[:2]) == "PK" {
 		stat, err := file.Stat()

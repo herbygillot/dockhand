@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	archivefile "github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
@@ -1001,4 +1002,13 @@ func TestAnUpdatesRecordKeepsTheSubportsItCantSee(t *testing.T) {
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Equal(t, []string{"jq", "jq-legacy"}, plan.Ports)
+}
+
+// A binary distfile is said by its own name and what it is: the line read
+// "1password-cli ships source-906474379 is a macOS installer package",
+// the temporary file's name in a sentence that didn't parse (field
+// testing at 5eb101a3).
+func TestABinaryDistfileIsSaidByItsName(t *testing.T) {
+	err := fmt.Errorf("reading: %w", &archivefile.BinaryError{File: "op_apple_universal_v2.31.0.pkg", Kind: "a macOS installer package"})
+	require.Equal(t, "1password-cli ships a macOS installer package (op_apple_universal_v2.31.0.pkg), with no source to compare", binaryReason("1password-cli", err))
 }

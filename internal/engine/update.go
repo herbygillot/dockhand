@@ -1108,7 +1108,7 @@ func (e *Engine) assessUpstream(ctx context.Context, result editprep.Result, ver
 			// as for a port that fetches none (field testing's batch 10,
 			// finding 2: 1password-cli).
 			read = append(read, model.Coverage{Path: path.Dir(result.Target.Portfile), Relevance: "unknown", Treatment: "inspected", Policy: notCompared,
-				Reason: result.Target.Name + " ships " + strings.TrimPrefix(err.Error(), archivefile.ErrBinary.Error()+": ")})
+				Reason: binaryReason(result.Target.Name, err)})
 			pairs = nil
 		case err != nil:
 			problem = err.Error()
@@ -1183,8 +1183,12 @@ func (e *Engine) readPairs(ctx context.Context, pairs []editprep.ArchivePair, ba
 		var readings [2]project.Reading
 		for i, archive := range []distfetch.Download{pair.Previous, pair.Next} {
 			reading, err := e.readings().Read(ctx, archive.Path, archive.SHA256, project.Spec{Subdirectory: macports.SourceSubdirectory(ports[i].Options["worksrcdir"])})
-			if errors.Is(err, archivefile.ErrBinary) {
-				return nil, err
+			// Named for the distfile, not the temporary file it was
+			// fetched to: "ships source-906474379 is a macOS installer
+			// package" (field testing at 5eb101a3, 1password-cli).
+			if binary := new(archivefile.BinaryError); errors.As(err, &binary) {
+				binary.File = archive.Name
+				return nil, binary
 			}
 			if err != nil {
 				return nil, fmt.Errorf("reading %s: %v", path.Base(archive.Path), err)
@@ -1289,4 +1293,14 @@ func (e *Engine) renamed(ctx context.Context, release model.Release) string {
 		return ""
 	}
 	return description.Name
+}
+
+// binaryReason says a port ships a binary, not source: "1password-cli
+// ships a macOS installer package (op_apple_universal_v2.31.0.pkg), with
+// no source to compare".
+func binaryReason(port string, err error) string {
+	if binary := new(archivefile.BinaryError); errors.As(err, &binary) {
+		return fmt.Sprintf("%s ships %s (%s), with no source to compare", port, binary.Kind, binary.File)
+	}
+	return port + " ships a binary package, with no source to compare"
 }
