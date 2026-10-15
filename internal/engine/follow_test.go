@@ -177,3 +177,64 @@ func TestStalePullRequestsAreReadAndADrainNamesTheUnwatched(t *testing.T) {
 	require.True(t, stale, "older than serve reads them")
 	require.Equal(t, []string{"#34901"}, e.followedPullRequests(t.Context()))
 }
+
+// batchReader is GitHub reading every pull request at once, as GraphQL
+// does, from the fake's pull requests; partial names those whose reading
+// couldn't say everything, which are read one at a time.
+type batchReader struct {
+	*forgetest.GitHub
+	partial map[int]bool
+	read    int
+}
+
+func (b *batchReader) ReadPullRequests(ctx context.Context, refs []forge.PullRequestRef) ([]forge.PullRequestReading, error) {
+	b.read++
+	var readings []forge.PullRequestReading
+	for _, ref := range refs {
+		pr, ok := b.PRs[ref.Number]
+		if !ok {
+			readings = append(readings, forge.PullRequestReading{Ref: ref})
+			continue
+		}
+		status, _ := b.Inspect(ctx, ref)
+		readings = append(readings, forge.PullRequestReading{Ref: ref, Found: true, Partial: b.partial[ref.Number], PullRequest: *pr, Status: status})
+	}
+	return readings, nil
+}
+
+// Where the forge reads every pull request at once, the refresh reads
+// them so, and reads one at a time only one whose reading couldn't say
+// everything (SQL-O8's GraphQL read).
+func TestPullRequestsAreReadAtOnceWhereTheForgeCan(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	number := submitted.PullRequest.Ref.Number
+	fake.Statuses = map[int]forge.PullRequestStatus{number: {Review: "approved", Approvals: 1, Checks: forge.CheckSummary{Total: 2, Passed: 2}}}
+	reader := &batchReader{GitHub: fake, partial: map[int]bool{}}
+	e.Forge = reader
+	fake.Observed = 0
+	refreshed, err := e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, reader.read)
+	require.Zero(t, fake.Observed, "not read one at a time")
+	require.Equal(t, []string{"#34901 is open", "#34901: approved", "#34901: CI passing"}, refreshed.Branches[0].Changes)
+
+	reader.partial[number] = true
+	fake.Statuses[number] = forge.PullRequestStatus{Review: "approved", Approvals: 1, Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 15"}}}
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, fake.Observed, "a partial reading is read again by itself")
+	require.Equal(t, []string{"#34901: CI failing"}, refreshed.Branches[0].Changes)
+
+	delete(fake.PRs, number)
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.EqualError(t, refreshed.Branches[0].Err, "#34901 was not found")
+}

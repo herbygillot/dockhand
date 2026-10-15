@@ -122,6 +122,26 @@ type PullRequestObservation struct {
 	ObservedAt  time.Time
 }
 
+// PullRequestReading is a pull request as one read over many gives it:
+// its state and head, and, while it's open, its draft, reviews, and checks.
+// Found is false where the forge hasn't it; Partial, where the read
+// couldn't say all of its reviews or checks, and Inspect must.
+type PullRequestReading struct {
+	Ref         PullRequestRef
+	Found       bool
+	Partial     bool
+	PullRequest PullRequest
+	Status      PullRequestStatus
+}
+
+// PullRequestReader reads many pull requests in a few requests, with their
+// reviews and checks, as GitHub's GraphQL API does, where Observe and
+// Inspect take about five a pull request. A forge that can't is simply
+// not a reader.
+type PullRequestReader interface {
+	ReadPullRequests(context.Context, []PullRequestRef) ([]PullRequestReading, error)
+}
+
 // PullRequestInspector reports mergeability, review, and check status for a
 // pull request. A forge that cannot report these is simply not an inspector.
 type PullRequestInspector interface {

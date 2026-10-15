@@ -61,18 +61,22 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 	}
 	var result RefreshResult
 	var observed []observedPullRequest
+	read, err := e.readPullRequests(ctx, branches)
+	if refused(err) {
+		return RefreshResult{Refused: err}, nil
+	}
 	for _, branch := range branches {
 		if branch.PullRequest == nil {
 			continue
 		}
-		next, err := e.observePullRequest(ctx, branch.PullRequest)
-		if errors.Is(err, github.ErrAuthentication) || errors.Is(err, github.ErrLoginEnded) {
+		next, err := read(ctx, branch.PullRequest)
+		if refused(err) {
 			result.Refused = err
 			break
 		}
 		observed = append(observed, observedPullRequest{branch: branch, next: next, err: err})
 	}
-	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		result.Branches = nil
 		for _, o := range observed {
 			refreshed := Refreshed{Branch: o.branch, Err: o.err}
@@ -88,6 +92,69 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 	return result, err
 }
 
+// refused reports a read the forge refused altogether, as it refuses a
+// rejected or ended login for every pull request.
+func refused(err error) bool {
+	return errors.Is(err, github.ErrAuthentication) || errors.Is(err, github.ErrLoginEnded)
+}
+
+// readPullRequests reads the branches' pull requests in one read over all
+// of them, where the forge can (forge.PullRequestReader, GitHub's GraphQL
+// API), and gives what reads each: what that read found, or
+// observePullRequest's own read for one it couldn't say all of, or where
+// the forge can't read many at once. A read over all of them that fails,
+// but for a refusal, leaves each to its own.
+func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) (func(context.Context, *model.PullRequest) (model.PullRequestObservation, error), error) {
+	reader, ok := e.forge().(forge.PullRequestReader)
+	if !ok {
+		return e.observePullRequest, nil
+	}
+	var refs []forge.PullRequestRef
+	for _, branch := range branches {
+		if pr := branch.PullRequest; pr != nil {
+			refs = append(refs, pullRequestRef(pr.Repository, pr.Number))
+		}
+	}
+	if len(refs) == 0 {
+		return e.observePullRequest, nil
+	}
+	readings, err := reader.ReadPullRequests(ctx, refs)
+	switch {
+	// GitHub's GraphQL API takes only a signed-in request, and a public
+	// pull request is read without one, a request at a time.
+	case errors.Is(err, github.ErrNoCredentials):
+		return e.observePullRequest, nil
+	case err != nil:
+		return e.observePullRequest, err
+	}
+	byNumber := map[forge.PullRequestRef]forge.PullRequestReading{}
+	for _, reading := range readings {
+		byNumber[reading.Ref] = reading
+	}
+	return func(ctx context.Context, pr *model.PullRequest) (model.PullRequestObservation, error) {
+		reading, ok := byNumber[pullRequestRef(pr.Repository, pr.Number)]
+		switch {
+		case !ok || reading.Partial:
+			return e.observePullRequest(ctx, pr)
+		case !reading.Found:
+			return model.PullRequestObservation{}, fmt.Errorf("#%d was not found", pr.Number)
+		}
+		return e.observation(reading.PullRequest, reading.Status), nil
+	}, nil
+}
+
+// observation is a pull request's reading as the branch records it: its
+// state and head, and while it's open, its draft, review, and checks.
+func (e *Engine) observation(now forge.PullRequest, status forge.PullRequestStatus) model.PullRequestObservation {
+	next := model.PullRequestObservation{State: model.PullRequestState(now.State), Head: model.ObjectID(now.RemoteHead), Review: model.ReviewNone, Checks: model.ChecksNone, At: e.now()}
+	if next.State != model.PullRequestOpen {
+		return next
+	}
+	next.Draft, next.Review, next.Failing, next.ChangesRequestedBy, next.ReviewedAt = status.Draft, model.PullRequestReview(status.Review), status.Checks.Failing, status.ChangesRequestedBy, status.ReviewedAt
+	next.Checks = checksOf(status.Checks)
+	return next
+}
+
 // observePullRequest reads a pull request, its reviews and checks with it
 // while it's open.
 func (e *Engine) observePullRequest(ctx context.Context, pr *model.PullRequest) (model.PullRequestObservation, error) {
@@ -99,18 +166,14 @@ func (e *Engine) observePullRequest(ctx context.Context, pr *model.PullRequest) 
 	if err != nil {
 		return model.PullRequestObservation{}, err
 	}
-	now := observed.PullRequest
-	next := model.PullRequestObservation{State: model.PullRequestState(now.State), Head: model.ObjectID(now.RemoteHead), Review: model.ReviewNone, Checks: model.ChecksNone, At: e.now()}
-	if next.State != model.PullRequestOpen {
-		return next, nil
+	if observed.PullRequest.State != forge.PullRequestOpen {
+		return e.observation(observed.PullRequest, forge.PullRequestStatus{}), nil
 	}
 	status, err := e.forge().Inspect(ctx, ref)
 	if err != nil {
 		return model.PullRequestObservation{}, err
 	}
-	next.Draft, next.Review, next.Failing, next.ChangesRequestedBy, next.ReviewedAt = status.Draft, model.PullRequestReview(status.Review), status.Checks.Failing, status.ChangesRequestedBy, status.ReviewedAt
-	next.Checks = checksOf(status.Checks)
-	return next, nil
+	return e.observation(observed.PullRequest, status), nil
 }
 
 // checksOf is how a pull request's checks stand, from their counts.
