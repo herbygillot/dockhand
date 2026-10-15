@@ -33,8 +33,9 @@ worktree, or naming one, it shows that branch in detail.
 
 --attention prints only what needs you, for a prompt or a script, and exits
 3 when anything does. --port finds every branch touching a port. --all
-includes merged and archived branches. --refresh reads your pull requests
-from GitHub first; serve does that every few minutes.`,
+includes merged and archived branches. Your pull requests' state, reviews,
+and CI are read from GitHub first where what's recorded is older than serve
+reads them, every five minutes; --refresh reads them whatever their age.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := s.open(cmd.Context())
@@ -55,6 +56,11 @@ from GitHub first; serve does that every few minutes.`,
 					}
 					return err
 				}
+			} else if !attentionOnly {
+				// What's recorded of the pull requests, older than serve
+				// reads them, is read now (SQL-O8); --attention, for a
+				// prompt, reads nothing.
+				readStalePullRequests(cmd.Context(), e, streams.Err)
 			}
 			return showStatus(cmd.Context(), e, streams, args, attentionOnly, all, port)
 		},
@@ -236,7 +242,7 @@ func attentionFor(s engine.BranchStatus) []attention {
 	if rows := pullRequestAttention(s); len(rows) > 0 {
 		return rows
 	}
-	if pr := s.Branch.PullRequest; pr != nil && s.Branch.Origin == model.OriginServe && (pr.Observed == nil || pr.Observed.State == "open") {
+	if pr := s.Branch.PullRequest; pr != nil && s.Branch.Origin == model.OriginServe && (pr.Observed == nil || pr.Observed.State == model.PullRequestOpen) {
 		return row("·", fmt.Sprintf("#%d opened by serve, without a person's review", pr.Number), "dockhand status "+name)
 	}
 	// A branch set aside asks nothing of its checks.
@@ -323,7 +329,7 @@ func attentionFor(s engine.BranchStatus) []attention {
 // someone else's push, requested changes, or failing CI.
 func pullRequestAttention(s engine.BranchStatus) []attention {
 	pr := s.Branch.PullRequest
-	if pr == nil || pr.Observed == nil || pr.Observed.State != "open" {
+	if pr == nil || pr.Observed == nil || pr.Observed.State != model.PullRequestOpen {
 		return nil
 	}
 	name, age := s.Branch.ShortName(), " ("+ago(pr.Observed.At)+")"
@@ -334,12 +340,12 @@ func pullRequestAttention(s engine.BranchStatus) []attention {
 	switch {
 	case s.SomeoneElsePushed():
 		return []attention{{mark: "!", branch: name, what: fmt.Sprintf("someone else pushed to #%d%s", pr.Number, age), next: "dockhand submit --branch " + name + " (it shows the comparison)"}}
-	case pr.Observed.Review == "changes-requested":
+	case pr.Observed.Review == model.ReviewChangesRequested:
 		if !pr.Observed.ReviewedAt.IsZero() {
 			age = " (" + ago(pr.Observed.ReviewedAt) + ")"
 		}
 		return []attention{{mark: "!", branch: name, what: fmt.Sprintf("#%d changes requested%s", pr.Number, age), next: next}}
-	case pr.Observed.Checks == "failing":
+	case pr.Observed.Checks == model.ChecksFailing:
 		return []attention{{mark: "✗", branch: name, what: fmt.Sprintf("#%d MacPorts CI failing: %s%s", pr.Number, strings.Join(s.Failing(), ", "), age),
 			next: "open " + github.PullRequestChecksURL(pr.Repository, pr.Number)}}
 	}
@@ -454,19 +460,19 @@ func prWords(s engine.BranchStatus) string {
 	}
 	if observed := pr.Observed; observed != nil {
 		switch {
-		case observed.State != "open":
-			words += " " + observed.State
-		case observed.Review == "changes-requested":
+		case observed.State != model.PullRequestOpen:
+			words += " " + string(observed.State)
+		case observed.Review == model.ReviewChangesRequested:
 			words += " changes requested"
-		case observed.Review == "approved":
+		case observed.Review == model.ReviewApproved:
 			words += " approved"
 		}
 		switch observed.Checks {
-		case "passing":
+		case model.ChecksPassing:
 			words += ", CI ✓"
-		case "failing":
+		case model.ChecksFailing:
 			words += ", CI ✗"
-		case "pending":
+		case model.ChecksPending:
 			words += ", CI …"
 		}
 	}
@@ -620,14 +626,16 @@ func writeNextFor(ctx context.Context, e *engine.Engine, out io.Writer, id model
 }
 
 // refreshPullRequests reads the pull requests and says what changed, and
-// what could not be read; GitHub refusing the read altogether is its
-// error.
+// what could not be read. GitHub refusing the read altogether is its
+// error, worded once for every command that reads them (status, clean),
+// and said, as its caller goes on by what was last read; the store's is
+// returned as it is.
 func refreshPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) error {
 	refreshed, err := e.RefreshPullRequests(ctx)
 	if err != nil {
-		return fmt.Errorf("could not read pull requests: %w", err)
+		return err
 	}
-	for _, r := range refreshed {
+	for _, r := range refreshed.Branches {
 		if r.Err != nil {
 			fmt.Fprintf(out, "%s: could not read #%d: %v\n", r.Branch.ShortName(), r.Branch.PullRequest.Number, r.Err)
 		}
@@ -635,7 +643,58 @@ func refreshPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) e
 			fmt.Fprintf(out, "%s: %s\n", r.Branch.ShortName(), change)
 		}
 	}
+	if refreshed.Refused != nil {
+		return refusedRead{refreshed.Refused}
+	}
 	return nil
+}
+
+// refusedRead is GitHub refusing to let the pull requests be read at
+// all, as a revoked login: one error for every pull request.
+type refusedRead struct{ err error }
+
+func (r refusedRead) Error() string { return "could not read pull requests: " + r.err.Error() }
+func (r refusedRead) Unwrap() error { return r.err }
+
+// staleReadTimeout bounds the read status makes by itself, so a slow or
+// unreachable GitHub delays it only so long.
+const staleReadTimeout = 20 * time.Second
+
+// readStalePullRequests reads the pull requests where what's recorded of
+// them is older than serve reads them (engine.PullRequestsStale), as a
+// plain status does by itself, where it said "CI not read yet" until
+// --refresh. It says what changed; a read that fails, wholly or for some,
+// is said in one line, and status goes on by what was last read.
+func readStalePullRequests(ctx context.Context, e *engine.Engine, out io.Writer) {
+	if stale, err := e.PullRequestsStale(ctx); err != nil || !stale {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, staleReadTimeout)
+	defer cancel()
+	refreshed, err := e.RefreshPullRequests(ctx)
+	if err == nil {
+		err = refreshed.Refused
+	}
+	var failed []string
+	for _, r := range refreshed.Branches {
+		if r.Err != nil {
+			failed = append(failed, fmt.Sprintf("#%d", r.Branch.PullRequest.Number))
+			if err == nil {
+				err = r.Err
+			}
+		}
+		for _, change := range r.Changes {
+			fmt.Fprintf(out, "%s: %s\n", r.Branch.ShortName(), change)
+		}
+	}
+	switch {
+	case refreshed.Refused != nil:
+		fmt.Fprintf(out, "Pull requests not read now, so as last read: %v\n", err)
+	case len(failed) > 0:
+		fmt.Fprintf(out, "%s not read now, so as last read: %v\n", strings.Join(failed, ", "), err)
+	case err != nil:
+		fmt.Fprintf(out, "Pull requests not read now, so as last read: %v\n", err)
+	}
 }
 
 // portWords are what a branch changes as status says it, a port read

@@ -122,7 +122,7 @@ func newServer(e *Engine, options ServeOptions) *server {
 		options.Poll = 2 * time.Second
 	}
 	if options.Refresh <= 0 {
-		options.Refresh = 5 * time.Minute
+		options.Refresh = PullRequestRefresh
 	}
 	if options.CleanupEvery <= 0 {
 		options.CleanupEvery = CleanupEvery
@@ -416,6 +416,12 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			// Cleanup waits for a quiet moment, so it never delays a check.
 			if options.Drain {
 				s.say("serve: the queue is empty")
+				// A drain follows no pull request after it ends, which a
+				// person reading "the queue is empty" took it to (SQL-O8's
+				// item, the person's decision 6).
+				if open := e.followedPullRequests(running); len(open) > 0 {
+					s.say("serve: %s open, which this drain leaves unwatched: %s; dockhand serve follows them", prose.Plural(len(open), "pull request"), prose.And(open))
+				}
 				return nil
 			}
 			cleaned.maybe(running)
@@ -575,6 +581,9 @@ func (f *follower) maybe(ctx context.Context) {
 	}
 	f.last = time.Now()
 	refreshed, err := f.s.e.RefreshPullRequests(ctx)
+	if err == nil {
+		err = refreshed.Refused
+	}
 	problems := map[string]bool{}
 	report := func(problem string) {
 		problems[problem] = true
@@ -582,20 +591,21 @@ func (f *follower) maybe(ctx context.Context) {
 			f.s.say("%s", problem)
 		}
 	}
-	if err != nil {
+	switch {
+	// A login that can't renew itself is said once, and notified once a
+	// process, rather than as each pull request it couldn't read (the
+	// auth flow review's plan, step 4). It refuses the whole read, which
+	// reported it as any other refusal, unnotified, since the read stopped
+	// at the first refusal (SQL-O8's refresh).
+	case errors.Is(err, github.ErrLoginEnded):
+		report("serve: dockhand's GitHub login can't renew itself, so pull requests can't be read; run dockhand setup github, which serve uses without a restart")
+		if f.s.loginEnded.CompareAndSwap(false, true) {
+			f.s.notify("GitHub login", "dockhand's GitHub login can't renew itself; run dockhand setup github")
+		}
+	case err != nil:
 		report(fmt.Sprintf("serve: could not read pull requests: %v", err))
 	}
-	for _, r := range refreshed {
-		// A login that can't renew itself is said once, and notified
-		// once a process, rather than as each pull request it couldn't
-		// read (the auth flow review's plan, step 4).
-		if errors.Is(r.Err, github.ErrLoginEnded) {
-			report("serve: dockhand's GitHub login can't renew itself, so pull requests can't be read; run dockhand setup github, which serve uses without a restart")
-			if f.s.loginEnded.CompareAndSwap(false, true) {
-				f.s.notify("GitHub login", "dockhand's GitHub login can't renew itself; run dockhand setup github")
-			}
-			continue
-		}
+	for _, r := range refreshed.Branches {
 		if r.Err != nil {
 			report(fmt.Sprintf("serve: could not read %s's #%d: %v", r.Branch.ShortName(), r.Branch.PullRequest.Number, r.Err))
 		}

@@ -310,7 +310,7 @@ func (e *Engine) ArchiveBranch(ctx context.Context, request ArchiveRequest) (Arc
 	branch, err := e.Archive(ctx, request.Branch, request.Undo)
 	result := Archived{Branch: branch}
 	if pr := branch.PullRequest; err == nil && pr != nil && !request.Undo {
-		result.PullRequestOpen = pr.Observed == nil || pr.Observed.State == string(forge.PullRequestOpen)
+		result.PullRequestOpen = pr.Observed == nil || pr.Observed.State == model.PullRequestOpen
 		if observed, err := e.forge().Observe(ctx, pullRequestRef(pr.Repository, pr.Number)); err == nil && observed.Found {
 			result.PullRequestOpen = observed.PullRequest.State == forge.PullRequestOpen
 		}

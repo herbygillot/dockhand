@@ -550,7 +550,7 @@ func branchView(status engine.BranchStatus) branchJSON {
 			Head: pr.Head, Pushed: string(pr.Pushed), Draft: pr.Draft}
 		if observed := pr.Observed; observed != nil {
 			at := observed.At
-			view.PullRequest.State, view.PullRequest.Review, view.PullRequest.Checks, view.PullRequest.Failing, view.PullRequest.ObservedAt = observed.State, observed.Review, observed.Checks, observed.Failing, &at
+			view.PullRequest.State, view.PullRequest.Review, view.PullRequest.Checks, view.PullRequest.Failing, view.PullRequest.ObservedAt = string(observed.State), string(observed.Review), string(observed.Checks), observed.Failing, &at
 		}
 	}
 	return view

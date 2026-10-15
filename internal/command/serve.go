@@ -26,7 +26,7 @@ import (
 var servePoll = 2 * time.Second
 
 // serveRefresh is how often serve reads your pull requests from GitHub.
-var serveRefresh = 5 * time.Minute
+var serveRefresh = engine.PullRequestRefresh
 
 // serveGrace is how long serve's executable may be missing before serve
 // takes dockhand as uninstalled.

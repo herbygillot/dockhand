@@ -81,25 +81,54 @@ func (p PullRequest) HeadParts() (repository, branch string) {
 
 // PullRequestObservation is a pull request as the forge last reported it.
 type PullRequestObservation struct {
-	// State is open, closed, or merged.
-	State string
-	Draft bool `json:",omitempty"`
-	// Review is approved, changes-requested, or none.
-	Review string
+	State  PullRequestState
+	Draft  bool `json:",omitempty"`
+	Review PullRequestReview
 	// ChangesRequestedBy are the reviewers whose latest review asks for
 	// changes.
 	ChangesRequestedBy []string `json:",omitempty"`
 	// ReviewedAt is when the review that sets Review was made; zero where
 	// none does, or for an observation from before it was kept.
 	ReviewedAt time.Time `json:",omitzero"`
-	// Checks is passing, failing, pending, or none; Failing names the
-	// checks that concluded unsuccessfully.
-	Checks  string
+	// Failing names the checks that concluded unsuccessfully.
+	Checks  PullRequestChecks
 	Failing []string `json:",omitempty"`
 	// Head is the commit the pull request was at.
 	Head ObjectID
 	At   time.Time
 }
+
+// PullRequestState is a pull request's state as last observed.
+type PullRequestState string
+
+const (
+	PullRequestOpen   PullRequestState = "open"
+	PullRequestClosed PullRequestState = "closed"
+	PullRequestMerged PullRequestState = "merged"
+)
+
+// PullRequestReview is what a pull request's reviews ask, as last
+// observed: the latest review of each reviewer, changes requested by any
+// of them deciding it.
+type PullRequestReview string
+
+const (
+	ReviewNone             PullRequestReview = "none"
+	ReviewApproved         PullRequestReview = "approved"
+	ReviewChangesRequested PullRequestReview = "changes-requested"
+)
+
+// PullRequestChecks is how a pull request's checks stand at its head, as
+// last observed: failing where any failed, pending where any hasn't
+// finished, passing where all passed, and none where it has none.
+type PullRequestChecks string
+
+const (
+	ChecksNone    PullRequestChecks = "none"
+	ChecksPending PullRequestChecks = "pending"
+	ChecksPassing PullRequestChecks = "passing"
+	ChecksFailing PullRequestChecks = "failing"
+)
 
 // Branch is the unit of work.
 type Branch struct {

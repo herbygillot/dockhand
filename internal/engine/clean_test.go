@@ -31,8 +31,8 @@ func mergedBranch(t *testing.T) (fixture, *Engine, *forgetest.GitHub, model.Bran
 	fake.PRs[submitted.PullRequest.Ref.Number].State = forge.PullRequestMerged
 	refreshed, err := e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, model.BranchMerged, refreshed[0].Branch.State)
-	return f, e, fake, refreshed[0].Branch
+	require.Equal(t, model.BranchMerged, refreshed.Branches[0].Branch.State)
+	return f, e, fake, refreshed.Branches[0].Branch
 }
 
 func whats(plans []CleanBranch) map[string]string {

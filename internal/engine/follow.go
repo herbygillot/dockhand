@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -20,67 +21,117 @@ type Refreshed struct {
 	Err     error
 }
 
-// RefreshPullRequests reads every open branch's pull request from the
-// forge (Design v3 §6.13): its state, reviews, and checks. A merged pull
-// request marks its branch merged, and a closed one closed; what changed
-// is recorded as events. A pull request that can't be read is reported and
-// the rest are read.
-func (e *Engine) RefreshPullRequests(ctx context.Context) ([]Refreshed, error) {
+// RefreshResult is what reading the pull requests found: each branch's,
+// and Refused, where the forge refused the read altogether, as a revoked
+// login is refused for every pull request: said once, not as each
+// branch's, where it was said five times and status went on to exit 0 (the
+// rc6 full stage, D-C3). What was read before it was refused is kept.
+type RefreshResult struct {
+	Branches []Refreshed
+	Refused  error
+}
+
+// PullRequestRefresh is how often serve reads the pull requests, and how
+// old their reading is before status reads them itself.
+const PullRequestRefresh = 5 * time.Minute
+
+// observedPullRequest is one branch's pull request as just read, or why
+// it couldn't be.
+type observedPullRequest struct {
+	branch model.Branch
+	next   model.PullRequestObservation
+	err    error
+}
+
+// RefreshPullRequests reads every open or closed branch's pull request
+// from the forge (Design v3 §6.13): its state, reviews, and checks, all of
+// them first, outside any transaction, as the store's rule is, and then
+// writes what was read in one (the SQL study's O8, which status and serve
+// share). A merged pull request marks its branch merged, and a closed one
+// closed; what changed is recorded as events. A pull request that can't be
+// read is reported and the rest are read; the error is the store's.
+func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error) {
 	var branches []model.Branch
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		branches, err = r.Branches(store.BranchFilter{States: []model.BranchState{model.BranchOpen, model.BranchClosed}})
 		return err
 	}); err != nil {
-		return nil, err
+		return RefreshResult{}, err
 	}
-	var all []Refreshed
+	var result RefreshResult
+	var observed []observedPullRequest
 	for _, branch := range branches {
 		if branch.PullRequest == nil {
 			continue
 		}
-		refreshed, err := e.refresh(ctx, branch)
-		// A credential GitHub rejects is rejected for every pull request:
-		// it's the read's error, said once, not each branch's, as a revoked
-		// login was said five times and status went on to exit 0 (the rc6
-		// full stage, D-C3).
-		if errors.Is(err, github.ErrAuthentication) {
-			return all, err
+		next, err := e.observePullRequest(ctx, branch.PullRequest)
+		if errors.Is(err, github.ErrAuthentication) || errors.Is(err, github.ErrLoginEnded) {
+			result.Refused = err
+			break
 		}
-		refreshed.Err = err
-		all = append(all, refreshed)
+		observed = append(observed, observedPullRequest{branch: branch, next: next, err: err})
 	}
-	return all, nil
+	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		result.Branches = nil
+		for _, o := range observed {
+			refreshed := Refreshed{Branch: o.branch, Err: o.err}
+			if o.err == nil {
+				if err := recordPullRequest(tx, o.branch, o.next, &refreshed); err != nil {
+					return err
+				}
+			}
+			result.Branches = append(result.Branches, refreshed)
+		}
+		return nil
+	})
+	return result, err
 }
 
-func (e *Engine) refresh(ctx context.Context, branch model.Branch) (Refreshed, error) {
-	refreshed := Refreshed{Branch: branch}
-	pr := branch.PullRequest
+// observePullRequest reads a pull request, its reviews and checks with it
+// while it's open.
+func (e *Engine) observePullRequest(ctx context.Context, pr *model.PullRequest) (model.PullRequestObservation, error) {
 	ref := pullRequestRef(pr.Repository, pr.Number)
 	observed, err := e.forge().Observe(ctx, ref)
 	if errors.Is(err, forge.ErrNotFound) {
-		return refreshed, fmt.Errorf("#%d was not found", pr.Number)
+		return model.PullRequestObservation{}, fmt.Errorf("#%d was not found", pr.Number)
 	}
 	if err != nil {
-		return refreshed, err
+		return model.PullRequestObservation{}, err
 	}
 	now := observed.PullRequest
-	next := model.PullRequestObservation{State: string(now.State), Head: model.ObjectID(now.RemoteHead), Review: "none", Checks: "none", At: e.now()}
-	if now.State == forge.PullRequestOpen {
-		status, err := e.forge().Inspect(ctx, ref)
-		if err != nil {
-			return refreshed, err
-		}
-		next.Draft, next.Review, next.Failing, next.ChangesRequestedBy, next.ReviewedAt = status.Draft, status.Review, status.Checks.Failing, status.ChangesRequestedBy, status.ReviewedAt
-		switch checks := status.Checks; {
-		case checks.Failed > 0:
-			next.Checks = "failing"
-		case checks.Pending > 0:
-			next.Checks = "pending"
-		case checks.Total > 0:
-			next.Checks = "passing"
-		}
+	next := model.PullRequestObservation{State: model.PullRequestState(now.State), Head: model.ObjectID(now.RemoteHead), Review: model.ReviewNone, Checks: model.ChecksNone, At: e.now()}
+	if next.State != model.PullRequestOpen {
+		return next, nil
 	}
+	status, err := e.forge().Inspect(ctx, ref)
+	if err != nil {
+		return model.PullRequestObservation{}, err
+	}
+	next.Draft, next.Review, next.Failing, next.ChangesRequestedBy, next.ReviewedAt = status.Draft, model.PullRequestReview(status.Review), status.Checks.Failing, status.ChangesRequestedBy, status.ReviewedAt
+	next.Checks = checksOf(status.Checks)
+	return next, nil
+}
+
+// checksOf is how a pull request's checks stand, from their counts.
+func checksOf(checks forge.CheckSummary) model.PullRequestChecks {
+	switch {
+	case checks.Failed > 0:
+		return model.ChecksFailing
+	case checks.Pending > 0:
+		return model.ChecksPending
+	case checks.Total > 0:
+		return model.ChecksPassing
+	}
+	return model.ChecksNone
+}
+
+// recordPullRequest writes a pull request's new reading on its branch, as
+// the branch stands in the transaction, with what changed since its last
+// reading as events, and the branch's state as the pull request's moves
+// it: merged, closed, or open again.
+func recordPullRequest(tx store.Tx, branch model.Branch, next model.PullRequestObservation, refreshed *Refreshed) error {
+	pr := branch.PullRequest
 	previous := pr.Observed
 	if previous == nil {
 		previous = &model.PullRequestObservation{}
@@ -88,48 +139,95 @@ func (e *Engine) refresh(ctx context.Context, branch model.Branch) (Refreshed, e
 	if previous.State != next.State {
 		refreshed.Changes = append(refreshed.Changes, fmt.Sprintf("#%d is %s", pr.Number, next.State))
 	}
-	if next.State == string(forge.PullRequestOpen) {
-		if previous.Review != next.Review && next.Review != "none" {
+	if next.State == model.PullRequestOpen {
+		if previous.Review != next.Review && next.Review != model.ReviewNone {
 			refreshed.Changes = append(refreshed.Changes, fmt.Sprintf("#%d: %s", pr.Number, reviewWords(next.Review)))
 		}
-		if previous.Checks != next.Checks && (next.Checks == "failing" || next.Checks == "passing") {
+		if previous.Checks != next.Checks && (next.Checks == model.ChecksFailing || next.Checks == model.ChecksPassing) {
 			refreshed.Changes = append(refreshed.Changes, fmt.Sprintf("#%d: CI %s", pr.Number, next.Checks))
 		}
 	}
+	current, err := tx.Branch(branch.ID)
+	if err != nil || current.PullRequest == nil || current.PullRequest.Number != pr.Number {
+		return err
+	}
+	current.PullRequest.Observed = &next
+	current.PullRequest.Draft = next.Draft
+	switch {
+	case next.State == model.PullRequestMerged && current.State.CanBecome(model.BranchMerged):
+		current.State = model.BranchMerged
+	case next.State == model.PullRequestClosed && current.State == model.BranchOpen:
+		current.State = model.BranchClosed
+	case next.State == model.PullRequestOpen && current.State == model.BranchClosed:
+		current.State = model.BranchOpen
+	}
+	if err := tx.UpdateBranch(current); err != nil {
+		return err
+	}
+	refreshed.Branch = current
+	for _, change := range refreshed.Changes {
+		if _, err := tx.AppendEvent(model.Event{At: next.At, Branch: branch.ID, Kind: "pr.observed", Level: model.LevelInfo, Message: branch.ShortName() + ": " + change}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refresh reads one branch's pull request and writes what it found, as
+// RefreshPullRequests does for every branch's.
+func (e *Engine) refresh(ctx context.Context, branch model.Branch) (Refreshed, error) {
+	next, err := e.observePullRequest(ctx, branch.PullRequest)
+	if err != nil {
+		return Refreshed{Branch: branch}, err
+	}
+	refreshed := Refreshed{Branch: branch}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		current, err := tx.Branch(branch.ID)
-		if err != nil || current.PullRequest == nil || current.PullRequest.Number != pr.Number {
-			return err
-		}
-		current.PullRequest.Observed = &next
-		current.PullRequest.Draft = next.Draft
-		switch {
-		case next.State == string(forge.PullRequestMerged) && current.State.CanBecome(model.BranchMerged):
-			current.State = model.BranchMerged
-		case next.State == string(forge.PullRequestClosed) && current.State == model.BranchOpen:
-			current.State = model.BranchClosed
-		case next.State == string(forge.PullRequestOpen) && current.State == model.BranchClosed:
-			current.State = model.BranchOpen
-		}
-		if err := tx.UpdateBranch(current); err != nil {
-			return err
-		}
-		refreshed.Branch = current
-		for _, change := range refreshed.Changes {
-			if _, err := tx.AppendEvent(model.Event{At: next.At, Branch: branch.ID, Kind: "pr.observed", Level: model.LevelInfo, Message: branch.ShortName() + ": " + change}); err != nil {
-				return err
-			}
-		}
-		return nil
+		refreshed.Changes = nil
+		return recordPullRequest(tx, branch, next, &refreshed)
 	})
 	return refreshed, err
 }
 
-func reviewWords(review string) string {
+// followedPullRequests are the open branches' pull requests that were open
+// when last read, or haven't been read, as "#35353", by number.
+func (e *Engine) followedPullRequests(ctx context.Context) []string {
+	var open []string
+	_ = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		branches, err := r.Branches(store.BranchFilter{States: []model.BranchState{model.BranchOpen}})
+		for _, branch := range branches {
+			if pr := branch.PullRequest; pr != nil && (pr.Observed == nil || pr.Observed.State == model.PullRequestOpen) {
+				open = append(open, fmt.Sprintf("#%d", pr.Number))
+			}
+		}
+		return err
+	})
+	return open
+}
+
+// PullRequestsStale reports whether the open branches' pull requests were
+// last read longer ago than serve reads them, or never: status then reads
+// them itself, where it said "CI not read yet" until --refresh. One with
+// no pull request, or none open, isn't stale.
+func (e *Engine) PullRequestsStale(ctx context.Context) (bool, error) {
+	stale := false
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		branches, err := r.Branches(store.BranchFilter{States: []model.BranchState{model.BranchOpen}})
+		for _, branch := range branches {
+			pr := branch.PullRequest
+			if pr != nil && (pr.Observed == nil || e.now().Sub(pr.Observed.At) > PullRequestRefresh) {
+				stale = true
+			}
+		}
+		return err
+	})
+	return stale, err
+}
+
+func reviewWords(review model.PullRequestReview) string {
 	switch review {
-	case "changes-requested":
+	case model.ReviewChangesRequested:
 		return "changes requested"
-	case "approved":
+	case model.ReviewApproved:
 		return "approved"
 	}
 	return "no review yet"

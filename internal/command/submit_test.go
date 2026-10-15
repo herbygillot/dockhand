@@ -474,13 +474,23 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	out, _, err := dockhand(t, "status")
+	// status reads a pull request it has no reading of, or an old one,
+	// itself (SQL-O8); one it can't read now is said as last read, and
+	// status goes on.
+	g.ObserveErr = errors.New("dial tcp: connection refused")
+	out, errs, err := dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  PR       #34901 · CI not read yet (dockhand status --refresh)\n", "until something reads it, status says how")
+	require.Contains(t, errs, "#34901 not read now, so as last read: dial tcp: connection refused\n")
+	g.ObserveErr = nil
+	out, errs, err = dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, errs, "jq-update: #34901 is open\n")
+	require.Contains(t, out, "  PR       #34901\n", "read now")
 
 	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, Checks: forge.CheckSummary{Total: 2, Passed: 2}}
 	t.Setenv("MACPORTS_TREE", w.clone)
-	out, errs, err := dockhand(t, "status", "--refresh")
+	out, errs, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 	require.Contains(t, errs, "jq-update: #34901: changes requested\n")
 	require.Contains(t, out, "Needs you\n  ! jq-update  #34901 changes requested (just now)  dockhand edit jq\n")

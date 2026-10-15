@@ -33,19 +33,20 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 		Checks: forge.CheckSummary{Total: 3, Passed: 2, Failed: 1, Failing: []string{"macOS 15"}}}}
 	refreshed, err := e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
-	require.Len(t, refreshed, 1)
-	require.NoError(t, refreshed[0].Err)
-	require.Equal(t, []string{"#34901 is open", "#34901: changes requested", "#34901: CI failing"}, refreshed[0].Changes)
+	require.NoError(t, refreshed.Refused)
+	require.Len(t, refreshed.Branches, 1)
+	require.NoError(t, refreshed.Branches[0].Err)
+	require.Equal(t, []string{"#34901 is open", "#34901: changes requested", "#34901: CI failing"}, refreshed.Branches[0].Changes)
 	statuses, err := e.Status(t.Context())
 	require.NoError(t, err)
 	observed := statuses[0].Branch.PullRequest.Observed
-	require.Equal(t, "changes-requested", observed.Review)
+	require.Equal(t, model.ReviewChangesRequested, observed.Review)
 	require.Equal(t, []string{"macOS 15"}, statuses[0].Failing())
 	require.False(t, statuses[0].SomeoneElsePushed())
 
 	again, err := e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
-	require.Empty(t, again[0].Changes, "nothing new, nothing said")
+	require.Empty(t, again.Branches[0].Changes, "nothing new, nothing said")
 
 	// Someone else pushes to the pull request's branch.
 	other := filepath.Join(t.TempDir(), "other")
@@ -65,15 +66,15 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 	delete(fake.PRs, number)
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
-	require.EqualError(t, refreshed[0].Err, "#34901 was not found")
+	require.EqualError(t, refreshed.Branches[0].Err, "#34901 was not found")
 	fake.PRs[number] = pr
 
 	// And it is merged.
 	fake.PRs[number].State = forge.PullRequestMerged
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, []string{"#34901 is merged"}, refreshed[0].Changes)
-	require.Equal(t, model.BranchMerged, refreshed[0].Branch.State)
+	require.Equal(t, []string{"#34901 is merged"}, refreshed.Branches[0].Changes)
+	require.Equal(t, model.BranchMerged, refreshed.Branches[0].Branch.State)
 	open, err := e.Status(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, open, "a merged branch leaves the open list")
@@ -138,7 +139,41 @@ func TestARejectedLoginFailsTheReadOnce(t *testing.T) {
 	}
 	fake.ObserveErr = fmt.Errorf("%w: GitHub rejected the credential from Dockhand macOS Keychain", github.ErrAuthentication)
 	fake.Observed = 0
-	_, err := e.RefreshPullRequests(t.Context())
-	require.ErrorIs(t, err, github.ErrAuthentication)
+	refreshed, err := e.RefreshPullRequests(t.Context())
+	require.NoError(t, err, "the store's error alone")
+	require.ErrorIs(t, refreshed.Refused, github.ErrAuthentication)
+	require.Empty(t, refreshed.Branches)
 	require.Equal(t, 1, fake.Observed, "the read stops at the first rejection")
+}
+
+// The pull requests are stale for status where what's recorded of an
+// open branch's is older than serve reads them, or was never read; a drain
+// names the open ones it leaves unwatched (SQL-O8).
+func TestStalePullRequestsAreReadAndADrainNamesTheUnwatched(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	stale, err := e.PullRequestsStale(t.Context())
+	require.NoError(t, err)
+	require.False(t, stale, "no pull request, nothing stale")
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	_, err = e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	stale, err = e.PullRequestsStale(t.Context())
+	require.NoError(t, err)
+	require.True(t, stale, "never read")
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	stale, err = e.PullRequestsStale(t.Context())
+	require.NoError(t, err)
+	require.False(t, stale, "just read")
+	later := time.Now().Add(PullRequestRefresh + time.Minute)
+	e.options.Now = func() time.Time { return later }
+	stale, err = e.PullRequestsStale(t.Context())
+	require.NoError(t, err)
+	require.True(t, stale, "older than serve reads them")
+	require.Equal(t, []string{"#34901"}, e.followedPullRequests(t.Context()))
 }
