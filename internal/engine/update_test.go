@@ -969,6 +969,15 @@ func TestAnObsoleteStubTheEditMovedIsntUpdatedAgain(t *testing.T) {
 		return err
 	}))
 	require.Len(t, edits, 1, "the port's edit alone")
+
+	// Without --with-obsolete, and as a plan, it's said as moved too: the
+	// plan said it "stays at 1.7.1" where its diff moved it (the
+	// v0.3.1-rc1 quick stage, terraform-1.16).
+	other, err := e.Start(t.Context(), StartRequest{Name: "jq-plan"})
+	require.NoError(t, err)
+	planned, err := e.Update(t.Context(), UpdateRequest{Branch: other, Action: model.EditUpdate, Port: "jq", Plan: true})
+	require.NoError(t, err)
+	require.Equal(t, &ObsoleteStub{Port: "jq-old", Version: "1.7.1", Moved: true}, planned.Obsolete)
 }
 
 // An update's own record says what it changed where this Mac's

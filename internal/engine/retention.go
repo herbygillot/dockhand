@@ -56,10 +56,21 @@ func LogCleanupWords(done LogCleanup, after time.Duration) string {
 // HistoryWords says what cleanup removed of build history.
 func HistoryWords(pruned store.Pruned, assessments int, after time.Duration) string {
 	var words []string
-	if pruned != (store.Pruned{}) {
-		words = append(words, fmt.Sprintf("removed what branches ended past %s recorded of %s: %s and %s, %s and %s, keeping what reuse may choose and each one's newest check",
-			AgeWords(after), prose.Plural(pruned.Runs, "check"), prose.Plural(pruned.Results, "result"), prose.Plural(pruned.Executions, "provider run"),
-			prose.Plural(pruned.Plans, "plan"), prose.Plural(pruned.Revisions, "revision")))
+	// What was removed is counted, and nothing else: "recorded of 0
+	// checks: 1 result" read as a contradiction where a result outlived
+	// its check's removal (the v0.3.1-rc1 quick stage).
+	var removed []string
+	for _, count := range []struct {
+		n    int
+		noun string
+	}{{pruned.Runs, "check"}, {pruned.Results, "result"}, {pruned.Executions, "provider run"}, {pruned.Plans, "plan"}, {pruned.Revisions, "revision"}} {
+		if count.n > 0 {
+			removed = append(removed, prose.Plural(count.n, count.noun))
+		}
+	}
+	if len(removed) > 0 {
+		words = append(words, fmt.Sprintf("removed %s that branches ended past %s had recorded, keeping what reuse may choose and each branch's newest check",
+			prose.And(removed), AgeWords(after)))
 	}
 	if assessments > 0 {
 		words = append(words, fmt.Sprintf("removed %s of trees open branches moved past, assessments and change records", prose.Plural(assessments, "record")))

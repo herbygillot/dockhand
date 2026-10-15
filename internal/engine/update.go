@@ -236,16 +236,21 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		return update, err
 	}
 	update.Obsolete = obsoleteStub(update)
-	if update.Obsolete == nil || !request.WithObsolete || update.Obsolete.Version == update.After.Version {
+	if update.Obsolete == nil || update.Obsolete.Version == update.After.Version {
 		return update, nil
 	}
 	// One the edit moved already, as a version line inside the main
 	// port's `if {${subport} eq ${name}}` moves with a shared release,
 	// has nothing left to update: terraform's did, and updating it again
 	// found no version input and said the whole update failed (field
-	// testing at a3c43ef7, terraform-1.16 1.16.6).
+	// testing at a3c43ef7, terraform-1.16 1.16.6). It moved with or
+	// without --with-obsolete, and is said so: the plan said it "stays at
+	// 1.16.0" where its diff moved it (the v0.3.1-rc1 quick stage).
 	if moved, ok := update.familyAfter.Ports[update.Obsolete.Port]; ok && moved.Version == update.After.Version {
 		update.Obsolete.Moved = true
+		return update, nil
+	}
+	if !request.WithObsolete {
 		return update, nil
 	}
 	follow := UpdateRequest{Branch: update.Branch, Action: model.EditUpdate, Port: update.Obsolete.Port, Version: update.After.Version,

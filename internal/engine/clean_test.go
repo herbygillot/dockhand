@@ -355,7 +355,12 @@ func TestCleanupKeepsAnEndedBranchsNewestCheck(t *testing.T) {
 	report, err := e.Cleanup(t.Context(), session(t, e), 15*24*time.Hour)
 	require.NoError(t, err)
 	require.Equal(t, 2, report.History.Runs, "all but the newest")
-	require.Contains(t, HistoryWords(report.History, report.Assessments, 15*24*time.Hour), "removed what branches ended past 15 days recorded of 2 checks")
+	require.Contains(t, HistoryWords(report.History, report.Assessments, 15*24*time.Hour), "removed 2 checks, ")
+	require.Contains(t, HistoryWords(report.History, report.Assessments, 15*24*time.Hour), " that branches ended past 15 days had recorded, keeping what reuse may choose and each branch's newest check")
+	// What wasn't removed isn't counted: "recorded of 0 checks: 1 result"
+	// read as a contradiction (the v0.3.1-rc1 quick stage).
+	require.Equal(t, "removed 1 result that branches ended past 1 day had recorded, keeping what reuse may choose and each branch's newest check",
+		HistoryWords(store.Pruned{Results: 1}, 0, 24*time.Hour))
 	status, err := e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
 	require.True(t, status.Pruned)
