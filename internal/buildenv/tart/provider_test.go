@@ -49,6 +49,8 @@ type fakeMac struct {
 	events     []string
 	guest      *fakeGuest
 	run        *fakeRun
+	// version is Tart's; 2.40.1 when empty.
+	version string
 }
 
 func (m *fakeMac) log(event string) {
@@ -56,6 +58,13 @@ func (m *fakeMac) log(event string) {
 	defer m.mu.Unlock()
 	m.events = append(m.events, event)
 }
+func (m *fakeMac) Version(context.Context) (string, error) {
+	if m.version == "" {
+		return "2.40.1", nil
+	}
+	return m.version, nil
+}
+
 func (m *fakeMac) Images(context.Context) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -743,6 +752,12 @@ func TestEnvironmentsAreReleasesWithImages(t *testing.T) {
 	require.ErrorContains(t, err, "no Tart image for macOS 15 (Sequoia): dockhand setup tart sequoia makes dockhand-base-sequoia", "an Xcode image is an add-on to the base image")
 	_, err = p.Environments(t.Context(), "leopard")
 	require.ErrorContains(t, err, "unknown release")
+
+	// A Tart older than setup takes is refused before any VM starts, as
+	// setup refuses it (the rc9 full stage's F8).
+	mac.version = "2.38.0"
+	_, err = p.Environments(t.Context(), "")
+	require.EqualError(t, err, "Tart 2.38.0 is older than 2.39.0, which dockhand needs: it can't list its VMs while one with an ASIF disk runs (openai/tart#1344); sudo port upgrade tart")
 }
 
 // A guest that finishes between a read and the look at whether it's still

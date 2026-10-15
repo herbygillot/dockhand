@@ -33,6 +33,16 @@ var ErrListingBlocked = errors.New("tart: a running VM with an ASIF disk keeps T
 // on 2.37.0.
 var ASIFVersion = []int{2, 39, 0}
 
+// MinimumVersion is ASIFVersion as Tart writes it, "2.39.0": the oldest
+// Tart dockhand takes, at setup and before a check starts a VM.
+func MinimumVersion() string {
+	parts := make([]string, len(ASIFVersion))
+	for i, n := range ASIFVersion {
+		parts[i] = strconv.Itoa(n)
+	}
+	return strings.Join(parts, ".")
+}
+
 // HandlesASIF reports whether a Tart version, as `tart --version` prints
 // it, is ASIFVersion or newer.
 func HandlesASIF(version string) bool {

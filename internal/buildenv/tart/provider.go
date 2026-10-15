@@ -137,6 +137,17 @@ func (p *Provider) Environments(ctx context.Context, releases string) ([]model.E
 	if err != nil {
 		return nil, err
 	}
+	// A Tart older than setup takes is refused before any VM starts, as
+	// setup refuses it: check-100 started one on 2.38.0 and passed, where
+	// its listing can block while an ASIF VM runs (the rc9 full stage's
+	// F8, openai/tart#1344).
+	version, err := m.Version(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading Tart's version: %w", err)
+	}
+	if !tartvm.HandlesASIF(version) {
+		return nil, fmt.Errorf("Tart %s is older than %s, which dockhand needs: it can't list its VMs while one with an ASIF disk runs (openai/tart#1344); sudo port upgrade tart", strings.TrimSpace(version), tartvm.MinimumVersion())
+	}
 	images, err := m.Images(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing dockhand's Tart images: %w", err)

@@ -36,6 +36,8 @@ type machine interface {
 	// Reach is the guest of a running clone over SSH, held to the host keys
 	// recorded for the image it was cloned from.
 	Reach(ctx context.Context, vm, image string) (guest, error)
+	// Version is Tart's, as `tart --version` prints it.
+	Version(ctx context.Context) (string, error)
 }
 
 // run is a VM this process started.
