@@ -243,7 +243,6 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	root.AddGroup(&cobra.Group{ID: "occasional", Title: "Occasional:"})
 	for _, command := range []*cobra.Command{
 		providersCommand(&settings, streams),
-		authCommand(streams),
 		undoCommand(&settings, streams),
 		restoreCommand(&settings, streams),
 		archiveCommand(&settings, streams),
@@ -257,7 +256,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	// The commands whose results --json reports; any other refuses it.
 	for _, command := range root.Commands() {
 		switch command.Name() {
-		case "status", "path", "diff", "impact", "check", "retry", "wait", "queue", "config",
+		case "status", "path", "diff", "impact", "check", "retry", "wait", "queue", "config", "setup",
 			"start", "adopt", "bump", "update", "checksums", "revbump", "create", "edit", "tidy", "submit", "rebase", "review",
 			"cancel", "logs", "restore", "archive", "clean", "explain", "outdated":
 			supportsJSON(command)

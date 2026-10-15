@@ -71,7 +71,9 @@ act() {
 		# Straight to the row's file, a line each with when: dh writes
 		# to out.log, which left this file empty (rc11's soak).
 		printf '%s ' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$ROW_DIR/auth"
-		"$DH_BIN" auth status >>"$ROW_DIR/auth" 2>&1 || printf '[exit %d]\n' "$?" >>"$ROW_DIR/auth"
+		# setup --json's login, a line each: the account, where its
+		# token comes from, and until when it renews, or why there's none.
+		"$DH_BIN" --json setup 2>&1 | jq -c '.result.github // .error' >>"$ROW_DIR/auth" 2>&1 || printf '[failed]\n' >>"$ROW_DIR/auth"
 	done
 	fault_tart list 2>/dev/null >"$ROW_DIR/vms" || :
 	dh serve --uninstall || :

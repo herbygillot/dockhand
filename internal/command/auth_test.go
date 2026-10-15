@@ -79,13 +79,13 @@ func withAuth(t *testing.T, flow credential.DeviceFlow) memoryStore {
 	return store
 }
 
-func TestAuthLoginStatusAndLogout(t *testing.T) {
+func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	path := os.Getenv("PATH")
 	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	var opened string
 	openBrowser = func(_ context.Context, url string) error { opened = url; return nil }
 
-	out, errs, err := dockhand(t, "auth", "login")
+	out, errs, err := dockhand(t, "setup", "github")
 	require.NoError(t, err)
 	require.Contains(t, errs, "Copy this one-time code: ABCD-1234\nOpening https://github.com/login/device in your browser...\n")
 	require.Equal(t, "https://github.com/login/device", opened)
@@ -102,37 +102,42 @@ func TestAuthLoginStatusAndLogout(t *testing.T) {
 	out, _, err = dockhand(t, "init")
 	require.NoError(t, err)
 	until := time.Now().AddDate(0, 6, 0).Format("2 January 2006")
-	require.Contains(t, out, "  Publishing   ✓ GitHub login in the Keychain, renewing itself until "+until+"\n")
+	require.Contains(t, out, "  Publishing   ✓ ada, from dockhand's login in the Keychain, renewing itself until "+until+"\n")
+	// setup --json says the same for a script, as auth status --json did
+	// before it went (the rc9 full stage's D-C4).
+	out, _, err = dockhand(t, "--json", "setup")
+	require.NoError(t, err)
+	var report struct {
+		Result setupReport `json:"result"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &report), out)
+	require.Equal(t, "ada", report.Result.GitHub.Account)
+	require.Equal(t, "Dockhand macOS Keychain", report.Result.GitHub.Source)
+	require.NotNil(t, report.Result.GitHub.RenewsUntil)
+	require.NotEmpty(t, report.Result.Checkout)
+	require.NotEmpty(t, report.Result.Git.Version)
+	require.Equal(t, "macports/macports-ports", report.Result.Upstream.Repository)
+	t.Setenv("GH_TOKEN", "secret-token")
+	_, said := publishing(t.Context())
+	require.Equal(t, githubLoginJSON{Account: "ada", Source: "GH_TOKEN"}, said, "GH_TOKEN takes precedence, and doesn't renew")
+	t.Setenv("GH_TOKEN", "")
 	t.Setenv("PATH", emptyPath)
 
-	out, _, err = dockhand(t, "auth", "status")
-	require.NoError(t, err)
-	require.Equal(t, "Logged in to github.com as ada, using Dockhand macOS Keychain.\nIt renews itself until "+until+", six months from its last use.\n", out)
-	// With --json, the same, for a script (the rc6 full stage, D-C5).
-	out, _, err = dockhand(t, "--json", "auth", "status")
-	require.NoError(t, err)
-	var envelope struct {
-		Result authStatusJSON `json:"result"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &envelope), out)
-	require.Equal(t, "ada", envelope.Result.Account)
-	require.Equal(t, "Dockhand macOS Keychain", envelope.Result.Source)
-	require.NotNil(t, envelope.Result.RenewsUntil)
-
-	out, _, err = dockhand(t, "auth", "logout")
+	out, _, err = dockhand(t, "setup", "github", "--logout")
 	require.NoError(t, err)
 	require.Contains(t, out, "Removed dockhand's GitHub login from the Keychain.")
 	require.Contains(t, out, "GitHub still has dockhand authorized until you revoke it: https://github.com/settings/connections/applications/fixture-client\n")
-	out, _, err = dockhand(t, "auth", "logout")
+	out, _, err = dockhand(t, "setup", "github", "--logout")
 	require.NoError(t, err)
 	require.Equal(t, "dockhand keeps no GitHub login in the Keychain.\n", out)
-	_, _, err = dockhand(t, "auth", "status")
-	require.Error(t, err, "no login anywhere")
+	line, said := publishing(t.Context())
+	require.Equal(t, "· not set up: dockhand setup github, when you're ready to submit", line, "no login anywhere")
+	require.Equal(t, githubLoginJSON{Problem: "not set up"}, said)
 }
 
 func TestAFailedLoginSavesNothing(t *testing.T) {
 	store := withAuth(t, deviceFlow{err: errors.New("the code expired")})
-	_, errs, err := dockhand(t, "auth", "login", "--no-browser")
+	_, errs, err := dockhand(t, "setup", "github", "--no-browser")
 	require.ErrorContains(t, err, "the code expired")
 	require.Contains(t, errs, "Open https://github.com/login/device, enter the code, and authorize dockhand.")
 	require.Empty(t, store)
@@ -144,20 +149,23 @@ func TestAFailedLoginSavesNothing(t *testing.T) {
 func TestALoginThatCantRenewIsSaid(t *testing.T) {
 	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	store[github.CredentialKey] = "gho_a_bare_token_from_an_earlier_dockhand"
-	require.Equal(t, "! the saved GitHub login is from an earlier dockhand; run dockhand setup github", publishing(t.Context()))
+	line, _ := publishing(t.Context())
+	require.Equal(t, "! the saved GitHub login is from an earlier dockhand; run dockhand setup github", line)
 	expired := login("secret-token", "ada")
-	expired.RefreshExpiry = time.Now().Add(-time.Hour)
+	expired.AccessExpiry, expired.RefreshExpiry = time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)
 	saved, err := expired.Encode()
 	require.NoError(t, err)
 	store[github.CredentialKey] = saved
-	require.Equal(t, "! the GitHub login expired after six months unused; run dockhand setup github", publishing(t.Context()))
+	line, said := publishing(t.Context())
+	require.Equal(t, "! the GitHub login expired after six months unused; run dockhand setup github", line)
+	require.Equal(t, githubLoginJSON{Problem: "the GitHub login expired after six months unused; run dockhand setup github"}, said)
 }
 
 func TestADeviceFlowAddressThatIsntHTTPSIsntOpened(t *testing.T) {
 	withAuth(t, plainFlow{})
 	opened := ""
 	openBrowser = func(_ context.Context, url string) error { opened = url; return nil }
-	_, _, err := dockhand(t, "auth", "login")
+	_, _, err := dockhand(t, "setup", "github")
 	require.ErrorContains(t, err, "isn't an https address; nothing was opened")
 	require.Empty(t, opened)
 }

@@ -1,5 +1,5 @@
 # stages: full
-# D-C2: auth logout while serve runs, then the login back: serve says
+# D-C2: setup github --logout while serve runs, then the login back: serve says
 # once that it has no GitHub login, reads the pull request it follows
 # without one, and says when the login is back, with no restart.
 #
@@ -31,7 +31,7 @@ act() {
 	dh serve --install || return 0
 	sleep 20
 	dh_quiet --json queue | jq -r '.result.serve_state.pid // empty' >"$ROW_DIR/pid.before"
-	dh auth logout || :
+	dh setup github --logout || :
 	gh pr close "$url" >>"$ROW_DIR/out.log" 2>&1 || :
 	[ -f "$hosts" ] && gh_kept=$(cat "$hosts") && rm -f "$hosts"
 	# serve reads pull requests every five minutes, and its login each

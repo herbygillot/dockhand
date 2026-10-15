@@ -150,7 +150,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Limit | Value | When it's hit | Where | |
 | --- | --- | --- | --- | --- |
 | The access token | 8 h, GitHub's; renewed 5 min before it expires, or when GitHub rejects it | renewed with the refresh token | `github/credentials.go` (`renewBefore`) |  |
-| The refresh token | 6 months from its last use, GitHub's | "the GitHub login expired after six months unused; run dockhand auth login" | `github/login.go` |  |
+| The refresh token | 6 months from its last use, GitHub's | "the GitHub login expired after six months unused; run dockhand setup github" | `github/login.go` |  |
 | Waiting for another dockhand's renewal | 30 s, on `~/.dockhand/github-login.lock` | "waiting to renew the GitHub login, which another dockhand is renewing" | `github/login.go` (`lockWait`) |  |
 | A request GitHub rejects | tried once more, with a token asked anew, where it was dockhand's login or gh's | the rejection, naming where the token came from | `github/credentials.go` |  |
 

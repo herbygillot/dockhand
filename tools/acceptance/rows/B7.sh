@@ -6,10 +6,10 @@
 act() {
 	host_only "serve as a launchd agent overnight" || return 0
 	allow_change "*"
-	dh auth status || :
+	dh setup || :
 	dh serve --install || return 0
 	checkpoint "leave serve running overnight, past the token's 8-hour expiry and serve.outdated_at; note whether notifications arrived in $ROW_DIR/notes" || return 0
-	dh auth status || :
+	dh setup || :
 	dh status || :
 	dh_json serve --uninstall || :
 	# launchd unloads the agent after bootout returns, a few seconds on:

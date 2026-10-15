@@ -12,10 +12,10 @@ act() {
 	# while the person enters the code.
 	# The code is issued once the person says they're there (device_login).
 	device_login "A2 logs dockhand in as the test account" || :
-	dh auth status || :
+	dh setup || :
 	dh providers || :
 }
 assert() {
 	grep -q '^\$ dockhand setup' "$ROW_DIR/out.log" || { row_fail "setup never ran"; return; }
-	judged "setup said what each step did (checkout, worktrees, Tart image, login), and auth status names the test account"
+	judged "setup said what each step did (checkout, worktrees, Tart image, login), and setup, run again, names the test account and where its login comes from"
 }

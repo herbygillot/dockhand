@@ -20,7 +20,7 @@ const renewBefore = 5 * time.Minute
 
 // credentials is the token a client's requests carry, asked of its source
 // as they need it, rather than once when the client was made: serve made
-// its client once, and a new auth login, or a login renewed, reached it
+// its client once, and a login made or renewed meanwhile reached it
 // only when it was started again (the GitHub auth flow review's plan,
 // step 1, 2026-10-02).
 type credentials struct {

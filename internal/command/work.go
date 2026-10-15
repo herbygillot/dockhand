@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -90,12 +91,16 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	}
 	defer e.Close()
 	out := streams.Out
+	report := setupReport{Checkout: e.Clone(), Providers: []string{}}
+	defer func() { streams.emit(report) }()
 
 	upstream, err := e.UpstreamRemote(cmd.Context())
 	if err != nil {
 		return err
 	}
+	report.Upstream = setupUpstreamJSON{Repository: engine.UpstreamRepository, FetchedFrom: e.Upstream()}
 	if upstream != nil {
+		report.Upstream.Remote = upstream.Name
 		fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", tilde(e.Clone()), engine.UpstreamRepository, upstream.Name)
 	} else {
 		fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", tilde(e.Clone()), engine.UpstreamRepository, e.Upstream())
@@ -133,21 +138,27 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	if chosen == "" {
 		chosen = e.DefaultWorktrees()
 	}
+	report.Git = setupGitJSON{Version: gitVersion.String(), Path: gitVersion.Path}
+	report.Worktrees, report.Records = chosen, options.Database
 	fmt.Fprintf(out, "  Git          ✓ %s at %s\n", gitVersion, tilde(gitVersion.Path))
 	fmt.Fprintf(out, "  Branches     worktrees in %s\n", tilde(chosen))
 	if tclsh := portTclsh(); tclsh != "" {
-		fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", tilde(filepath.Dir(filepath.Dir(tclsh))))
+		report.MacPorts = filepath.Dir(filepath.Dir(tclsh))
+		fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", tilde(report.MacPorts))
 	} else {
 		fmt.Fprintf(out, "  Authoring    ! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports\n")
 	}
 	for i, line := range providerLines(cmd.Context(), file) {
+		report.Providers = append(report.Providers, line)
 		label := ""
 		if i == 0 {
 			label = "Providers"
 		}
 		fmt.Fprintf(out, "  %-12s %s\n", label, line)
 	}
-	fmt.Fprintf(out, "  Publishing   %s\n", publishing(cmd.Context()))
+	var publishLine string
+	publishLine, report.GitHub = publishing(cmd.Context())
+	fmt.Fprintf(out, "  Publishing   %s\n", publishLine)
 	fmt.Fprintf(out, "  Records      %s\n", tilde(options.Database))
 	if legacy, err := e.LegacyBranchNames(cmd.Context()); err == nil && len(legacy) > 0 {
 		fmt.Fprintf(out, "  Old branches · %s from before v3 that nothing tracks: dockhand clean --legacy sorts them\n", prose.Plural(len(legacy), "branch"))
@@ -399,18 +410,70 @@ func portTclsh() string {
 	return ""
 }
 
-// publishing says where submit's GitHub login would come from, without
-// asking GitHub.
-func publishing(ctx context.Context) string {
-	if name := overridingToken(); name != "" {
-		return "✓ GitHub token from " + name
-	}
-	login, err := github.SavedLogin(ctx, authStore)
+// setupReport is what setup reports, as --json gives it: the checkout,
+// where master comes from, the Git dockhand runs, where worktrees go,
+// MacPorts, the places a check can build, as setup words each, the GitHub
+// login, and the records. It is the command package review's SetupReport,
+// which part 3's engine.Setup returns, and it stands for auth status
+// --json, which it replaces (the rc9 full stage's D-C4).
+type setupReport struct {
+	Checkout  string            `json:"checkout"`
+	Upstream  setupUpstreamJSON `json:"upstream"`
+	Git       setupGitJSON      `json:"git"`
+	Worktrees string            `json:"worktrees"`
+	// MacPorts is the prefix whose port-tclsh dockhand evaluates with;
+	// empty where there's none.
+	MacPorts  string          `json:"macports"`
+	Providers []string        `json:"providers"`
+	GitHub    githubLoginJSON `json:"github"`
+	Records   string          `json:"records"`
+}
+
+// setupUpstreamJSON is MacPorts' repository, the checkout's remote for it
+// where it has one, and where master is fetched from.
+type setupUpstreamJSON struct {
+	Repository  string `json:"repository"`
+	Remote      string `json:"remote,omitempty"`
+	FetchedFrom string `json:"fetched_from"`
+}
+
+type setupGitJSON struct {
+	Version string `json:"version"`
+	Path    string `json:"path"`
+}
+
+// githubLoginJSON is the GitHub login submit would use: its account and
+// where its token comes from, as GitHub was asked, until when dockhand's
+// own login renews itself, or why there's none to use.
+type githubLoginJSON struct {
+	Account     string     `json:"account,omitempty"`
+	Source      string     `json:"source,omitempty"`
+	RenewsUntil *time.Time `json:"renews_until,omitempty"`
+	Problem     string     `json:"problem,omitempty"`
+}
+
+// publishing says whose GitHub login submit would use, asked of GitHub,
+// and where its token comes from, with the same as JSON: GH_TOKEN or
+// GITHUB_TOKEN, dockhand's login in the Keychain, or the GitHub CLI's.
+func publishing(ctx context.Context) (string, githubLoginJSON) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	status, err := authAPI(authStore).LoginStatus(ctx)
 	switch {
 	case err == nil:
-		return "✓ GitHub login in the Keychain, renewing itself until " + login.RefreshExpiry.Local().Format("2 January 2006")
+		login := githubLoginJSON{Account: status.Account, Source: string(status.Source)}
+		line := "✓ " + status.Account + ", from " + status.Source.Words()
+		if !status.RenewsUntil.IsZero() {
+			login.RenewsUntil = &status.RenewsUntil
+			line += ", renewing itself until " + status.RenewsUntil.Local().Format("2 January 2006")
+		}
+		return line, login
 	case errors.Is(err, github.ErrLoginEnded):
-		return "! " + strings.TrimPrefix(err.Error(), github.ErrAuthentication.Error()+": ")
+		problem := strings.TrimPrefix(err.Error(), github.ErrAuthentication.Error()+": ")
+		return "! " + problem, githubLoginJSON{Problem: problem}
+	case errors.Is(err, github.ErrNoCredentials):
+		return "· not set up: dockhand setup github, when you're ready to submit", githubLoginJSON{Problem: "not set up"}
 	}
-	return "· not set up: dockhand setup github, when you're ready to submit"
+	problem := "GitHub couldn't say whose the login is: " + err.Error()
+	return "! " + problem, githubLoginJSON{Problem: problem}
 }

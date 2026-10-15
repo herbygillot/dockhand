@@ -201,7 +201,7 @@ Using this ports repository; upstream is macports/macports-ports.
   Providers    tart    · not set up: dockhand providers setup tart   (macOS 26, ≈ 30 min, 45 GB)
                github  · needs a GitHub login and your fork's Actions enabled
                prefix  · optional: dockhand providers setup prefix
-  Publishing   · not set up: dockhand auth login, when you're ready to submit
+  Publishing   · not set up: dockhand setup github, when you're ready to submit
 
 Next: dockhand start <name>, or dockhand outdated --mine
 ```

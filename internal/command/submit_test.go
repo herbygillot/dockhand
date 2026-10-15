@@ -60,6 +60,7 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.Contains(t, out, "jq-update · ready to submit\n"+
 		"  Title    jq: update to 1.8.1\n"+
 		"  From     ada/macports-ports:dockhand/jq-update\n"+
+		"  As       ada, from GH_TOKEN\n"+
 		"  To       macports/macports-ports:master\n"+
 		"  Commits  1, follows MacPorts' commit rules\n")
 	require.Contains(t, out, "  Checks   none (--no-check); the pull request says MacPorts CI is its only check\n")
@@ -83,6 +84,13 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "  To       ada/macports-ports:master\n           a sandbox, not macports/macports-ports, as DOCKHAND_PULL_REQUESTS says\n")
 	t.Setenv("DOCKHAND_PULL_REQUESTS", "")
+	// The JSON names the account, where its token comes from, and whose
+	// the fork is (the rc9 full stage's D-C4).
+	named, err := jsonOf(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, "ada", named.Result["account"])
+	require.Equal(t, "GH_TOKEN", named.Result["login_source"])
+	require.Equal(t, "ada", named.Result["fork_owner"])
 	_, _, err = dockhand(t, "submit", "--plan", "--check")
 	require.ErrorContains(t, err, "--plan previews one branch's submission")
 
@@ -997,4 +1005,24 @@ func TestCheckWordsSayWhatWasntBuilt(t *testing.T) {
 	}}}
 	said := checkWords(engine.SubmitPlan{Evidence: &evidence})
 	require.Equal(t, "check-323: grafana isn't built for these files on "+engine.DescribeEnvironment(tahoe), said)
+}
+
+// A submission that pushes to a fork its login doesn't own, as a sandbox
+// or --remote lets it, says so beneath the account it pushes as (the rc9
+// full stage's D-C4); someone else's pull request, pushed to as theirs,
+// doesn't.
+func TestASubmissionToAnotherAccountsForkIsSaid(t *testing.T) {
+	plan := engine.SubmitPlan{HeadRepository: "herbyg-test/macports-ports", Repository: "herbyg-test/macports-ports",
+		Login: forge.Login{Account: "herbygillot", Source: "Dockhand macOS Keychain", From: "dockhand's login in the Keychain"}}
+	var out bytes.Buffer
+	writeSubmitPlan(&out, plan)
+	require.Contains(t, out.String(), "  As       herbygillot, from dockhand's login in the Keychain\n"+
+		"           ! herbyg-test/macports-ports is herbyg-test's, and this pushes and writes the pull request as herbygillot\n")
+	plan.Theirs = true
+	out.Reset()
+	writeSubmitPlan(&out, plan)
+	require.NotContains(t, out.String(), "is herbyg-test's")
+	plan.Theirs, plan.HeadRepository = false, "HerbyGillot/macports-ports"
+	_, another := plan.ForkOwner()
+	require.False(t, another, "GitHub's logins are the same in any case")
 }

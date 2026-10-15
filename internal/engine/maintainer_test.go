@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
@@ -34,6 +35,10 @@ type signedOut struct{ *forgetest.GitHub }
 
 func (signedOut) AuthenticatedUser(context.Context) (string, error) {
 	return "", errors.New("github: not signed in")
+}
+
+func (signedOut) Login(context.Context) (forge.Login, error) {
+	return forge.Login{}, errors.New("github: not signed in")
 }
 
 // The maintainer suggested to a person whose config names none is their

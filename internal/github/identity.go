@@ -68,3 +68,43 @@ func (w *IdentityWatcher) Current(ctx context.Context) (Identity, error) {
 	w.secret, w.current, w.checked = token.Secret, Identity{Account: account, Source: token.Source}, time.Now()
 	return w.current, nil
 }
+
+// LoginStatus is who a client acts as, where its token comes from, and,
+// for dockhand's own login in the Keychain, until when it renews itself
+// unused (zero for any other): what setup and submit's preview say of the
+// login (the rc9 full stage's D-C4, where GH_TOKEN held another account's
+// token and the preview named none).
+type LoginStatus struct {
+	Identity
+	RenewsUntil time.Time
+}
+
+// LoginStatus asks GitHub whose the client's token is, and says where the
+// token came from; ErrNoCredentials where there is none.
+func (c *Client) LoginStatus(ctx context.Context) (LoginStatus, error) {
+	account, err := c.AuthenticatedUser(ctx)
+	if err != nil {
+		return LoginStatus{}, err
+	}
+	status := LoginStatus{Identity: Identity{Account: account, Source: c.CredentialSource()}}
+	if system, ok := c.Credentials.(SystemCredentials); ok && status.Source == SourceKeychain && system.Store != nil {
+		if login, err := SavedLogin(ctx, system.Store); err == nil {
+			status.RenewsUntil = login.RefreshExpiry
+		}
+	}
+	return status, nil
+}
+
+// Words say where a token comes from, as a person reads it: "GH_TOKEN",
+// "dockhand's login in the Keychain", "the GitHub CLI's login".
+func (s CredentialSource) Words() string {
+	switch s {
+	case SourceKeychain:
+		return "dockhand's login in the Keychain"
+	case SourceGitHubCLI:
+		return "the GitHub CLI's login"
+	case SourceExplicit:
+		return "a token given to dockhand"
+	}
+	return string(s)
+}

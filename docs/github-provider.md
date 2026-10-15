@@ -4,7 +4,7 @@
 
 ## Setting it up
 
-- A GitHub login: `dockhand auth login`.
+- A GitHub login: `dockhand setup github`.
 - Your fork, with a Git remote that pushes to it: `git remote add fork https://github.com/<you>/macports-ports.git`.
 - Actions enabled for your fork, on its Actions tab. GitHub turns them off for new forks.
 

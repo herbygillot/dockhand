@@ -91,6 +91,10 @@ type SubmitPlan struct {
 	BuildsProblem string
 
 	Repository, HeadRepository, PushURL string
+	// Login is who the submission pushes and writes the pull request as,
+	// and where its token comes from, which the preview names (the rc9
+	// full stage's D-C4).
+	Login forge.Login
 	// RemoteHead is the fork's branch as it was seen.
 	RemoteHead git.RefValue
 	// Replaces is true when the push replaces history rather than adding
@@ -227,6 +231,17 @@ func (p *SubmitPlan) Describe(body string) {
 
 // Head is the fork's head as "owner/repo:branch".
 func (p SubmitPlan) Head() string { return p.HeadRepository + ":" + p.RemoteBranch() }
+
+// ForkOwner is the account that owns the repository the submission pushes
+// to, and whether it isn't the login's own: a fork's owner check gives way
+// under DOCKHAND_PULL_REQUESTS's sandbox and to --remote, so GitHub's
+// permission is all that lets the login push there, and the pull request
+// is the login's, not the owner's (the rc9 full stage's D-C4). Pushing to
+// someone else's pull request (Theirs) is that already, and isn't another.
+func (p SubmitPlan) ForkOwner() (owner string, another bool) {
+	owner, _, _ = strings.Cut(p.HeadRepository, "/")
+	return owner, !p.Theirs && p.Login.Account != "" && owner != "" && !strings.EqualFold(owner, p.Login.Account)
+}
 
 // RemoteBranch is the fork's branch submit pushes to: the one the pull
 // request was opened from, which renaming the local branch does not move
@@ -469,10 +484,11 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 // stands.
 func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan *SubmitPlan) error {
 	f := e.forge()
-	login, err := f.AuthenticatedUser(ctx)
-	if err != nil {
+	var err error
+	if plan.Login, err = f.Login(ctx); err != nil {
 		return loginError("submit", err)
 	}
+	login := plan.Login.Account
 	remotes, err := worktree.Remotes(ctx)
 	if err != nil {
 		return err

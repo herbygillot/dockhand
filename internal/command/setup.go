@@ -15,7 +15,7 @@ import (
 )
 
 // setupGitHubCommand logs in to GitHub, or with --logout removes the
-// login: setup's part that was auth login and auth logout.
+// login.
 func setupGitHubCommand(streams Streams) *cobra.Command {
 	clientID := firstOf(os.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID)
 	var noBrowser, logout bool

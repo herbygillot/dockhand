@@ -1,6 +1,6 @@
 # stages: full
 # D-C1: no login at all: read-only commands work, and submit refuses,
-# naming auth login.
+# naming setup github.
 #
 # Its submit names a branch of its own, made while logged in: on the
 # ports checkout's master, with earlier rows' branches set aside, submit
@@ -32,7 +32,7 @@ setup() {
 act() {
 	host_only "the test user's own Keychain" || return 0
 	login_keep || { row_result "not run" "dockhand has no login in the Keychain to log out of"; return 0; }
-	dh auth logout || :
+	dh setup github --logout || :
 	[ -f "$DC1_HOSTS" ] && DC1_GH=$(cat "$DC1_HOSTS") && rm -f "$DC1_HOSTS"
 	(
 		unset GH_TOKEN GITHUB_TOKEN
@@ -51,6 +51,6 @@ teardown() {
 }
 assert() {
 	[ "$(cat "$ROW_DIR/json/1.json.exit")" = 0 ] || { row_fail "status failed without a login"; return; }
-	jq -r '.error // empty' "$ROW_DIR/json/3.json" | grep -q 'auth login' &&
-		row_pass "read-only commands worked; submit named auth login" || row_fail "submit didn't name auth login"
+	jq -r '.error // empty' "$ROW_DIR/json/3.json" | grep -q 'setup github' &&
+		row_pass "read-only commands worked; submit named setup github" || row_fail "submit didn't name setup github"
 }

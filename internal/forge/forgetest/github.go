@@ -125,6 +125,11 @@ func (g *GitHub) Repository(_, name string) (forge.Repository, error) {
 
 func (g *GitHub) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
 
+// Login is ada's, from GH_TOKEN.
+func (g *GitHub) Login(context.Context) (forge.Login, error) {
+	return forge.Login{Account: "ada", Source: "GH_TOKEN", From: "GH_TOKEN"}, nil
+}
+
 func (g *GitHub) NameFromRemote(url string) (string, error) {
 	for name, path := range g.Repos {
 		if path == url {

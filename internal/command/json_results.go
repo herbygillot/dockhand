@@ -297,11 +297,18 @@ func tidyView(plan engine.TidyPlan) tidyJSON {
 }
 
 type submitJSON struct {
-	Branch      string         `json:"branch"`
-	Title       string         `json:"title"`
-	Commit      string         `json:"commit"`
-	Commits     int            `json:"commits"`
-	From        string         `json:"from"`
+	Branch  string `json:"branch"`
+	Title   string `json:"title"`
+	Commit  string `json:"commit"`
+	Commits int    `json:"commits"`
+	From    string `json:"from"`
+	// Account is who the submission pushes and writes the pull request
+	// as; LoginSource where its token comes from, as auth status named it;
+	// ForkOwner the account that owns where it pushes, another's under a
+	// sandbox or --remote.
+	Account     string         `json:"account"`
+	LoginSource string         `json:"login_source"`
+	ForkOwner   string         `json:"fork_owner"`
 	To          string         `json:"to"`
 	Push        string         `json:"push"`
 	Checks      string         `json:"checks"`
@@ -385,7 +392,9 @@ type changesRequestedJSON struct {
 }
 
 func submitView(plan engine.SubmitPlan) submitJSON {
+	owner, _ := plan.ForkOwner()
 	view := submitJSON{Branch: plan.Branch.ShortName(), Title: plan.Title, Commit: plan.Commit, Commits: len(plan.Commits), From: plan.Head(), To: plan.Repository + ":" + engine.UpstreamBranch,
+		Account: plan.Login.Account, LoginSource: plan.Login.Source, ForkOwner: owner,
 		Push: pushWords(plan), Checks: checkWords(plan), Findings: findingsView(plan.Findings), Blocking: nonNil(plan.Blocking), LeftOut: nonNil(plan.LeftOut), Body: plan.Body,
 		Upstream: []portUpstreamJSON{}, ModifiedBuilds: nonNil(plan.ModifiedBuilds), UnfoundBuilds: []unfoundBuildJSON{}, BuildsProblem: plan.BuildsProblem}
 	for _, found := range plan.Upstream {

@@ -128,6 +128,16 @@ type PullRequestInspector interface {
 	Inspect(context.Context, PullRequestRef) (PullRequestStatus, error)
 }
 
+// Login is who a forge's requests are made as, and where its token comes
+// from: Source as the forge names it, and From as a person reads it; with
+// RenewsUntil, for a login that renews itself unused, until when.
+type Login struct {
+	Account     string
+	Source      string
+	From        string
+	RenewsUntil time.Time
+}
+
 // Accounts is what a forge knows about names: its own, the caller's, the
 // repository a remote URL names, and a repository's facts. Authenticate
 // checks the credentials and nothing else.

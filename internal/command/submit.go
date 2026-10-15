@@ -422,6 +422,10 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	}
 	fmt.Fprintf(out, "  Title    %s\n", title)
 	fmt.Fprintf(out, "  From     %s\n", plan.Head())
+	fmt.Fprintf(out, "  As       %s\n", loginWords(plan))
+	if owner, another := plan.ForkOwner(); another {
+		fmt.Fprintf(out, "           ! %s is %s's, and this pushes and writes the pull request as %s\n", plan.HeadRepository, owner, plan.Login.Account)
+	}
 	fmt.Fprintf(out, "  To       %s:%s\n", plan.Repository, engine.UpstreamBranch)
 	if !strings.EqualFold(plan.Repository, engine.UpstreamRepository) {
 		fmt.Fprintf(out, "           a sandbox, not %s, as %s says\n", engine.UpstreamRepository, pullRequestsVariable)
@@ -692,6 +696,15 @@ func pullRequestWords(plan engine.SubmitPlan) string {
 		}
 	}
 	return words
+}
+
+// loginWords say who a submission pushes and writes the pull request as,
+// and where the token comes from: "ada, from GH_TOKEN".
+func loginWords(plan engine.SubmitPlan) string {
+	if plan.Login.From == "" {
+		return plan.Login.Account
+	}
+	return plan.Login.Account + ", from " + plan.Login.From
 }
 
 // updatedWords says what submit changed on a pull request it pushed

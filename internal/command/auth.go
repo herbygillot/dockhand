@@ -8,9 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
-
-	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
@@ -39,88 +36,8 @@ var (
 	}
 )
 
-func authCommand(streams Streams) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:    "auth",
-		Short:  "Log in to GitHub, for submit (now dockhand setup github)",
-		Hidden: true,
-		Args:   cobra.NoArgs,
-		RunE:   func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
-	}
-	cmd.AddCommand(authLoginCommand(streams), authStatusCommand(streams), authLogoutCommand(streams))
-	return cmd
-}
-
-func authLoginCommand(streams Streams) *cobra.Command {
-	clientID := firstOf(os.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID)
-	var noBrowser bool
-	cmd := &cobra.Command{
-		Use:   "login",
-		Short: "Log in to GitHub and keep the login in the macOS Keychain",
-		Long: `Logs in to GitHub with a one-time code, authorizing dockhand to open pull
-requests from your fork (the public_repo scope), and keeps the login in the
-macOS Keychain. GH_TOKEN or GITHUB_TOKEN, when set, take precedence over it.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return githubLogin(cmd.Context(), streams, clientID, noBrowser)
-		},
-	}
-	cmd.Flags().StringVar(&clientID, "client-id", clientID, "the GitHub OAuth application's client ID (DOCKHAND_GITHUB_CLIENT_ID)")
-	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the address instead of opening a browser")
-	return cmd
-}
-
-// authStatusJSON is auth status's result: the account, where its token
-// comes from, and, for the Keychain's login, until when it renews itself.
-type authStatusJSON struct {
-	Account     string     `json:"account"`
-	Source      string     `json:"source"`
-	RenewsUntil *time.Time `json:"renews_until,omitempty"`
-}
-
-func authStatusCommand(streams Streams) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "status",
-		Short: "Show which GitHub account submit would use",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			client := authAPI(authStore)
-			account, err := client.AuthenticatedUser(cmd.Context())
-			if err != nil {
-				return err
-			}
-			result := authStatusJSON{Account: account, Source: string(client.CredentialSource())}
-			fmt.Fprintf(streams.Out, "Logged in to github.com as %s, using %s.\n", account, client.CredentialSource())
-			if client.CredentialSource() == github.SourceKeychain {
-				if login, err := github.SavedLogin(cmd.Context(), authStore); err == nil {
-					fmt.Fprintf(streams.Out, "It renews itself until %s, six months from its last use.\n", login.RefreshExpiry.Local().Format("2 January 2006"))
-					result.RenewsUntil = &login.RefreshExpiry
-				}
-			}
-			streams.emit(result)
-			return nil
-		},
-	}
-	// The one auth command whose result a script reads (the rc6 full
-	// stage's D-C5 asked it for --json, and was refused).
-	supportsJSON(cmd)
-	return cmd
-}
-
-func authLogoutCommand(streams Streams) *cobra.Command {
-	return &cobra.Command{
-		Use:   "logout",
-		Short: "Remove dockhand's GitHub login from the macOS Keychain",
-		Long: `Removes only the login dockhand keeps in the macOS Keychain. GH_TOKEN,
-GITHUB_TOKEN, and the GitHub CLI's login are untouched. GitHub keeps dockhand
-authorized until you revoke it on GitHub's page for it, which logout names.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return githubLogout(cmd.Context(), streams)
-		},
-	}
-}
-
+// overridingToken is the variable whose token takes precedence over
+// dockhand's login, GH_TOKEN or GITHUB_TOKEN, or empty.
 func overridingToken() string {
 	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
 		if strings.TrimSpace(os.Getenv(name)) != "" {

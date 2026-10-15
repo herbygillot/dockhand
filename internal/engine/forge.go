@@ -10,6 +10,8 @@ import (
 // your remotes name, the pull requests, and dockhand's own repository.
 type Forge interface {
 	AuthenticatedUser(ctx context.Context) (string, error)
+	// Login is who you are, and where the token comes from.
+	Login(ctx context.Context) (forge.Login, error)
 	NameFromRemote(url string) (string, error)
 	RepositoryInfo(ctx context.Context, name string) (forge.RepositoryInfo, error)
 	Find(ctx context.Context, query forge.PullRequestQuery) (forge.PullRequestObservation, error)

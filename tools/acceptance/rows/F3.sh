@@ -18,13 +18,13 @@ act() {
 	local layout
 	for layout in ssh https swapped; do
 		checkpoint "set the remotes as the $layout layout in $MACPORTS_TREE" || return 0
-		dh_json auth status || :
+		dh_json setup || :
 		# --no-check: setup makes no check, and the preview judged here is
 		# the fork's and upstream's, not the check's.
 		dh_json submit -b "$F3_BRANCH" --plan --no-check || :
 	done
 	checkpoint "rename the fork on GitHub, then put the remotes back as they were, still naming its old name" || return 0
-	dh_json auth status || :
+	dh_json setup || :
 	# submit, which finds the fork, refuses one GitHub renamed, naming the
 	# new name and the git remote set-url to run, where it read "invalid
 	# or archived" (the rc8 full stage).

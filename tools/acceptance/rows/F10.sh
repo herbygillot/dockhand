@@ -12,7 +12,7 @@ act() {
 	LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 "$DH_BIN" outdated "${ACCEPT_GO_PORT:?}" "${ACCEPT_RUST_PORT:?}" >>"$ROW_DIR/out.log" 2>&1 || status=$?
 	case $status in 0 | 3) ;; *) echo "[exit $status]" >>"$ROW_DIR/out.log" ;; esac
 	checkpoint "set the clock five minutes off (System Settings), then resume" || return 0
-	dh_json auth status || :
+	dh_json setup || :
 	dh_json status --refresh || :
 	checkpoint "put the clock right; the clock change is read when the run spans 2026-11-01" || return 0
 }

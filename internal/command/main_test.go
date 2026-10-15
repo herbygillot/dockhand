@@ -7,8 +7,10 @@ import (
 	"os/exec"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -53,6 +55,13 @@ func TestMain(m *testing.M) {
 	// Nor this Mac's GitHub login, read afresh by serve's identity check:
 	// a serve test's login is no one's, unless the test gives it one.
 	serveIdentity = func() func(context.Context) (string, error) { return nil }
+	// Nor this Mac's GitHub login, in its Keychain, GH_TOKEN, or the
+	// GitHub CLI, which setup asks GitHub about: a test's login is no
+	// one's, unless the test gives it one (withAuth).
+	authStore = memoryStore{}
+	authAPI = func(credential.Store) *github.Client {
+		return &github.Client{Credentials: github.TokenSourceFunc(func(context.Context) (github.Token, error) { return github.Token{}, github.ErrNoCredentials })}
+	}
 	// The executable is the test binary, which isn't dockhand.
 	startCleanup = func(engine.Options) error { return nil }
 	cleanup := testsupport.IsolateHome()
