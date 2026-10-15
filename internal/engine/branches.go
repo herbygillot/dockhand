@@ -346,13 +346,25 @@ func (e *Engine) placeWorktree(ctx context.Context, branch model.Branch) (model.
 		branch.Worktree, branch.Managed = directory, true
 		message = "checked out in " + directory
 	}
-	return branch, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		if err := tx.UpdateBranch(branch); err != nil {
+	// The worktree goes on the record as stored: the branch adopt has in
+	// hand carries its creation time as the clock gave it, finer than the
+	// store keeps, which the store refused as changing it, and the
+	// worktree, made, was said not to be (the v0.3.0 port's adopt).
+	worktree, managed := branch.Worktree, branch.Managed
+	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		stored, err := tx.Branch(branch.ID)
+		if err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.worktree", Level: model.LevelInfo, Message: message})
+		stored.Worktree, stored.Managed = worktree, managed
+		if err := tx.UpdateBranch(stored); err != nil {
+			return err
+		}
+		branch = stored
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.worktree", Level: model.LevelInfo, Message: message})
 		return err
 	})
+	return branch, err
 }
 
 // carryRename moves a tracked branch renamed with Git to its new name, and

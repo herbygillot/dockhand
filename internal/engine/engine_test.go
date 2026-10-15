@@ -260,6 +260,20 @@ func TestAdoptTracksABranchAsItStands(t *testing.T) {
 	require.DirExists(t, filepath.Join(elsewhere.Branch.Worktree, "_resources"))
 	require.Zero(t, elsewhere.Commits)
 
+	// A clock finer than the store's milliseconds, as a real one is: the
+	// worktree, made, was said not to be, "branch …'s creation time is
+	// fixed" (the v0.3.0 port's adopt, 2026-10-15).
+	options := f.options
+	options.Now = func() time.Time { return at.Add(1234567 * time.Nanosecond) }
+	fine, err := Open(t.Context(), options)
+	require.NoError(t, err)
+	t.Cleanup(func() { fine.Close() })
+	testsupport.Git(t, f.clone, "branch", "finer", "master")
+	finer, err := fine.Adopt(t.Context(), AdoptRequest{Branch: "finer"})
+	require.NoError(t, err)
+	require.Empty(t, finer.Unplaced)
+	require.Equal(t, fine.worktreeDirectory("finer"), finer.Placed)
+
 	_, err = e.Adopt(t.Context(), AdoptRequest{Branch: "master"})
 	require.ErrorContains(t, err, "what branches start from")
 	_, err = e.Adopt(t.Context(), AdoptRequest{Branch: "absent"})
