@@ -180,7 +180,7 @@ func TestGoGeneratorRefusesAnUnprunedGraphGoModLeavesShort(t *testing.T) {
 	in := Input{Archive: sourceArchive(t, map[string]string{"root/go.mod": manifest, "root/go.sum": sum}), Worksrcdir: "root", Package: "github.com/owner/fixture", Tag: "v1.5.0"}
 	_, err := Generate(t.Context(), Go, script, in)
 	require.ErrorContains(t, err, "go.mod says go 1.14, before 1.17")
-	require.ErrorContains(t, err, "go.sum has the source of github.com/rivo/uniseg too")
+	require.ErrorContains(t, err, "go.sum has the source of github.com/rivo/uniseg too, which go.vendors needs by hand: add github.com/rivo/uniseg lock v0.1.0, as go.sum pins it, with the checksums port -v checksum reports for its archive")
 	require.NotContains(t, err.Error(), "golang.org/x/text", "a module go.sum has only the go.mod of isn't built")
 
 	in.Archive = sourceArchive(t, map[string]string{"root/go.mod": strings.Replace(manifest, "go 1.14", "go 1.17", 1), "root/go.sum": sum})

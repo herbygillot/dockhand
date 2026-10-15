@@ -199,23 +199,41 @@ func unprunedGraph(ctx context.Context, in Input, mod *modfile.File) error {
 			required[row[0]] = true
 		}
 	}
-	var missing []string
+	// Each one go.sum has the source of, at the newest version it pins:
+	// the row to add names it, and the lock go2port would write for it.
+	pinned := map[string]string{}
 	for _, line := range strings.Split(string(sum), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 2 || strings.HasSuffix(fields[1], "/go.mod") || required[fields[0]] || slices.Contains(missing, fields[0]) {
+		if len(fields) < 2 || strings.HasSuffix(fields[1], "/go.mod") || required[fields[0]] {
 			continue
 		}
-		missing = append(missing, fields[0])
+		if was, ok := pinned[fields[0]]; !ok || semver.Compare(fields[1], was) > 0 {
+			pinned[fields[0]] = fields[1]
+		}
 	}
-	if len(missing) == 0 {
+	if len(pinned) == 0 {
 		return nil
 	}
 	version := "no Go version"
 	if mod.Go != nil {
 		version = "go " + mod.Go.Version
 	}
-	slices.Sort(missing)
-	return fmt.Errorf("dependency: go.mod says %s, before 1.17, so it needn't require every module its build reads, and go2port writes go.mod's alone; go.sum has the source of %s too, which go.vendors needs by hand", version, strings.Join(missing, ", "))
+	var missing, rows []string
+	for _, path := range slices.Sorted(maps.Keys(pinned)) {
+		lock := pinned[path]
+		if module.IsPseudoVersion(lock) {
+			if rev, err := module.PseudoVersionRev(lock); err == nil {
+				lock = rev
+			}
+		}
+		missing = append(missing, path)
+		rows = append(rows, path+" lock "+lock)
+	}
+	// The golang PortGroup fetches each row's archive from its host, a
+	// GitHub module's from codeload, not the module proxy, so its
+	// checksums are that archive's, which port -v checksum reports; the
+	// checksums refresh sets go.vendors aside, as go.sum's own.
+	return fmt.Errorf("dependency: go.mod says %s, before 1.17, so it needn't require every module its build reads, and go2port writes go.mod's alone; go.sum has the source of %s too, which go.vendors needs by hand: add %s, as go.sum pins %s, with the checksums port -v checksum reports for %s archive", version, strings.Join(missing, ", "), strings.Join(rows, "; "), map[bool]string{true: "it", false: "them"}[len(rows) == 1], map[bool]string{true: "its", false: "each one's"}[len(rows) == 1])
 }
 
 func goRows(values []string) ([][]string, error) {
