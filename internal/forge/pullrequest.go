@@ -50,9 +50,6 @@ type PullRequest struct {
 	Author              string `json:",omitempty"`
 	MaintainerCanModify bool   `json:",omitempty"`
 	ObservedAt          time.Time
-	// Status is the forge's latest report on mergeability, review, and
-	// checks for an open pull request.
-	Status *PullRequestStatus `json:",omitempty"`
 }
 
 // PullRequestStatus is what a forge reported about a pull request's head
@@ -142,12 +139,6 @@ type PullRequestReader interface {
 	ReadPullRequests(context.Context, []PullRequestRef) ([]PullRequestReading, error)
 }
 
-// PullRequestInspector reports mergeability, review, and check status for a
-// pull request. A forge that cannot report these is simply not an inspector.
-type PullRequestInspector interface {
-	Inspect(context.Context, PullRequestRef) (PullRequestStatus, error)
-}
-
 // Login is who a forge's requests are made as, and where its token comes
 // from: Source as the forge names it, and From as a person reads it; with
 // RenewsUntil, for a login that renews itself unused, until when.
@@ -156,28 +147,6 @@ type Login struct {
 	Source      string
 	From        string
 	RenewsUntil time.Time
-}
-
-// Accounts is what a forge knows about names: its own, the caller's, the
-// repository a remote URL names, and a repository's facts. Authenticate
-// checks the credentials and nothing else.
-type Accounts interface {
-	Name() string
-	Authenticate(context.Context) error
-	AuthenticatedUser(context.Context) (string, error)
-	NameFromRemote(string) (string, error)
-	RepositoryInfo(context.Context, string) (RepositoryInfo, error)
-}
-
-// PullRequests finds, observes, and writes pull requests. One that can
-// report a pull request's status is also a PullRequestInspector. Find
-// reports no match as an observation not Found; Observe reports a pull
-// request the forge doesn't have as ErrNotFound.
-type PullRequests interface {
-	Find(context.Context, PullRequestQuery) (PullRequestObservation, error)
-	Observe(context.Context, PullRequestRef) (PullRequestObservation, error)
-	Create(context.Context, PullRequestInput) (PullRequestObservation, error)
-	Update(context.Context, PullRequestInput) (PullRequestObservation, error)
 }
 
 // PullRequestInput is a pull request to open, or an existing one to

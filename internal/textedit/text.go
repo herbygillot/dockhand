@@ -5,8 +5,6 @@ type Span struct {
 	End   int
 }
 
-func (s Span) Bytes(src []byte) []byte { return src[s.Start:s.End] }
-
 func (s Span) Text(src []byte) string { return string(src[s.Start:s.End]) }
 
 func (s Span) Len() int { return s.End - s.Start }

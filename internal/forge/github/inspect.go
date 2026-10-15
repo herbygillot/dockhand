@@ -113,5 +113,3 @@ func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.P
 	status.Checks.Failing = slices.Compact(status.Checks.Failing)
 	return status, nil
 }
-
-var _ forge.PullRequestInspector = (*Client)(nil)

@@ -96,8 +96,10 @@ func TestAuthenticationChecksIdentityAndCachesOnlyTheCredential(t *testing.T) {
 		sourceCalls++
 		return github.Token{Secret: "fixture-token"}, nil
 	})}
-	require.NoError(t, client.Authenticate(t.Context()))
-	require.NoError(t, client.Authenticate(t.Context()))
+	_, err := client.AuthenticatedUser(t.Context())
+	require.NoError(t, err)
+	_, err = client.AuthenticatedUser(t.Context())
+	require.NoError(t, err)
 	require.Equal(t, 1, sourceCalls)
 	require.Equal(t, 2, requests)
 }
@@ -111,7 +113,8 @@ func TestExplicitCredentialTakesPriority(t *testing.T) {
 	client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "explicit"}, Credentials: github.TokenSourceFunc(func(context.Context) (github.Token, error) {
 		return github.Token{}, assert.AnError
 	})}
-	require.NoError(t, client.Authenticate(t.Context()))
+	_, err := client.AuthenticatedUser(t.Context())
+	require.NoError(t, err)
 }
 
 func TestAuthenticationFailsBeforeWritesAndDoesNotLeakCredentials(t *testing.T) {
@@ -120,7 +123,7 @@ func TestAuthenticationFailsBeforeWritesAndDoesNotLeakCredentials(t *testing.T) 
 		server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
 		defer server.Close()
 		client := &github.Client{Config: github.Config{BaseURL: server.URL}}
-		err := client.Authenticate(t.Context())
+		_, err := client.AuthenticatedUser(t.Context())
 		require.ErrorIs(t, err, github.ErrAuthentication)
 		require.Zero(t, requests)
 		_, err = (&forgegithub.Client{Client: client}).Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: forge.PullRequestContent{Title: "update"}})
@@ -135,7 +138,7 @@ func TestAuthenticationFailsBeforeWritesAndDoesNotLeakCredentials(t *testing.T) 
 		}))
 		defer server.Close()
 		client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: token}}
-		err := client.Authenticate(t.Context())
+		_, err := client.AuthenticatedUser(t.Context())
 		require.ErrorIs(t, err, github.ErrAuthentication)
 		require.NotContains(t, err.Error(), token)
 	})
@@ -145,7 +148,7 @@ func TestAuthenticationFailsBeforeWritesAndDoesNotLeakCredentials(t *testing.T) 
 		}))
 		defer server.Close()
 		client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "fixture"}}
-		err := client.Authenticate(t.Context())
+		_, err := client.AuthenticatedUser(t.Context())
 		require.Error(t, err)
 		require.NotErrorIs(t, err, github.ErrAuthentication)
 	})
@@ -179,7 +182,7 @@ func TestRejectedCredentialsIdentifySourceWithoutFallback(t *testing.T) {
 			defer server.Close()
 			client := &github.Client{Config: github.Config{BaseURL: server.URL}, Credentials: github.SystemCredentials{Store: saved}}
 			for i := 0; i < 2; i++ {
-				err := client.Authenticate(t.Context())
+				_, err := client.AuthenticatedUser(t.Context())
 				require.ErrorIs(t, err, forge.ErrAuthentication)
 				require.Contains(t, err.Error(), string(source))
 				require.Contains(t, err.Error(), "no alternative credential was tried")
