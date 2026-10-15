@@ -335,7 +335,7 @@ func writeClean(out io.Writer, plans []engine.CleanBranch, done bool) int {
 		// An unmerged branch's Git branch stays, but for one with nothing
 		// master lacks, which goes with its worktree; one master
 		// supersedes is said whether or not it has a worktree.
-		branchStep := slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return strings.HasPrefix(s.What, "branch ") })
+		branchStep := slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return s.Kind == engine.CleanBranchRef })
 		switch {
 		case plan.Branch.State == model.BranchMerged || branchStep:
 		case plan.Superseded != "":

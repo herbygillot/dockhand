@@ -27,6 +27,12 @@ type Status struct {
 	Host  macos.Release
 }
 
+// HasHostImage reports whether there's a base image of this Mac's own
+// macOS, which setup offers to make where there isn't.
+func (s Status) HasHostImage() bool {
+	return slices.ContainsFunc(s.Base, func(release macos.Release) bool { return release.Darwin == s.Host.Darwin })
+}
+
 // Status lists dockhand's images by release.
 func (p *Provider) Status(ctx context.Context) (Status, error) {
 	m, err := p.vms()

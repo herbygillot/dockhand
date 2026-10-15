@@ -408,6 +408,8 @@ func submitView(plan engine.SubmitPlan) submitJSON {
 }
 
 type cleanStepJSON struct {
+	// Kind is what it removes: worktree, branch, fork, or check.
+	Kind    string `json:"kind"`
 	What    string `json:"what"`
 	Why     string `json:"why,omitempty"`
 	Kept    string `json:"kept,omitempty"`
@@ -449,7 +451,7 @@ func cleanView(plans []engine.CleanBranch) []cleanBranchJSON {
 	for _, plan := range plans {
 		view := cleanBranchJSON{Branch: plan.Branch.ShortName(), Merged: string(plan.Merged), Steps: []cleanStepJSON{}, Superseded: plan.Superseded}
 		for _, step := range plan.Steps {
-			view.Steps = append(view.Steps, cleanStepJSON{What: step.What, Why: step.Why, Kept: step.Kept, Removed: step.Done})
+			view.Steps = append(view.Steps, cleanStepJSON{Kind: string(step.Kind), What: step.What, Why: step.Why, Kept: step.Kept, Removed: step.Done})
 		}
 		views = append(views, view)
 	}

@@ -31,13 +31,25 @@ type CleanStep struct {
 	Why string
 	// Done is true once it was removed.
 	Done bool
+	// Kind is what it is: a worktree, a local branch, a fork's branch, or
+	// what a check left, which a command reads where it read What's words.
+	Kind CleanKind
 
-	kind     string
 	path     string
 	remote   string
 	name     string
 	expected string
 }
+
+// CleanKind is what a step of clean removes.
+type CleanKind string
+
+const (
+	CleanWorktree  CleanKind = "worktree"
+	CleanBranchRef CleanKind = "branch"
+	CleanFork      CleanKind = "fork"
+	CleanCheck     CleanKind = "check"
+)
 
 // CleanBranch is what clean would do for one merged branch.
 type CleanBranch struct {
@@ -127,7 +139,7 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 
 	worktreeKept := false
 	if branch.Managed && exists(branch.Worktree) {
-		step := CleanStep{What: "worktree " + branch.Worktree, kind: "worktree", path: branch.Worktree}
+		step := CleanStep{What: "worktree " + branch.Worktree, Kind: CleanWorktree, path: branch.Worktree}
 		if beyond != "" {
 			step.Kept = beyond
 		} else if dirty, err := e.dirty(ctx, branch.Worktree); err != nil {
@@ -139,7 +151,7 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 		plan.Steps = append(plan.Steps, step)
 	}
 	if hasBranch {
-		step := CleanStep{What: "branch " + branch.Name, kind: "branch", expected: head}
+		step := CleanStep{What: "branch " + branch.Name, Kind: CleanBranchRef, expected: head}
 		switch {
 		case beyond != "":
 			step.Kept = beyond
@@ -158,7 +170,7 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 	}
 	if pr := branch.PullRequest; pr != nil && pr.Head != "" && plan.Merged != "" {
 		repository, name := pr.HeadParts()
-		step := CleanStep{What: pr.Head, kind: "fork", expected: string(plan.Merged)}
+		step := CleanStep{What: pr.Head, Kind: CleanFork, expected: string(plan.Merged)}
 		remote, err := e.remoteFor(ctx, repository)
 		switch {
 		case err != nil:
@@ -239,7 +251,7 @@ func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repos
 		}
 		seen[commit] = true
 		name := buildenv.CheckBranchPrefix + commit[:12]
-		step := CleanStep{What: repository + ":" + name, kind: "check", name: name, expected: commit}
+		step := CleanStep{What: repository + ":" + name, Kind: CleanCheck, name: name, expected: commit}
 		if remoteErr != nil {
 			step.Kept = remoteErr.Error()
 			steps = append(steps, step)
@@ -302,7 +314,7 @@ func (e *Engine) planCleanWorktree(ctx context.Context, branch model.Branch) (Cl
 	plan := CleanBranch{Branch: branch}
 	removing := ""
 	if branch.Managed && exists(branch.Worktree) {
-		step := CleanStep{What: "worktree " + branch.Worktree, kind: "worktree", path: branch.Worktree}
+		step := CleanStep{What: "worktree " + branch.Worktree, Kind: CleanWorktree, path: branch.Worktree}
 		dirty, err := e.dirty(ctx, branch.Worktree)
 		if err != nil {
 			return plan, err
@@ -341,7 +353,7 @@ func (e *Engine) planCleanWorktree(ctx context.Context, branch model.Branch) (Cl
 	if err != nil {
 		return plan, err
 	}
-	plan.Steps = append(plan.Steps, CleanStep{What: "branch " + branch.Name, kind: "branch", expected: head, Kept: kept, Why: "it has nothing master lacks"})
+	plan.Steps = append(plan.Steps, CleanStep{What: "branch " + branch.Name, Kind: CleanBranchRef, expected: head, Kept: kept, Why: "it has nothing master lacks"})
 	return plan, nil
 }
 
@@ -394,7 +406,7 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 				continue
 			}
 			var err error
-			switch step.kind {
+			switch step.Kind {
 			case "worktree":
 				if dirty, dirtyErr := e.dirty(ctx, step.path); dirtyErr != nil || dirty != "" {
 					step.Kept = dirty
@@ -407,7 +419,7 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 				}
 			case "branch":
 				// A worktree found dirty while clean ran keeps its branch.
-				if slices.ContainsFunc(plan.Steps, func(s CleanStep) bool { return s.kind == "worktree" && s.Kept != "" }) {
+				if slices.ContainsFunc(plan.Steps, func(s CleanStep) bool { return s.Kind == CleanWorktree && s.Kept != "" }) {
 					step.Kept = "the worktree it is checked out in is kept"
 					continue
 				}

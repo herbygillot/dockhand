@@ -217,6 +217,7 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	require.Equal(t, ExitFailure, ExitCode(err), "a preview without --yes removes nothing, and refuses")
 	require.Equal(t, false, preview.Result["applied"])
 	require.Equal(t, false, dig(t, preview.Result, "branches", 0, "steps", 0, "removed"))
+	require.Equal(t, "worktree", dig(t, preview.Result, "branches", 0, "steps", 0, "kind"), "what each step removes")
 	cleaned, err := jsonOf(t, "clean", "--yes")
 	require.NoError(t, err)
 	require.Equal(t, true, dig(t, cleaned.Result, "branches", 0, "steps", 0, "removed"))

@@ -76,7 +76,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 	}
 	if images := images(); images != nil {
 		status, err := images.Status(ctx)
-		if err == nil && !hostImage(status) && yesTo(streams, fmt.Sprintf("? Make the Tart image for this Mac's macOS now? It downloads macOS and takes up to %s of disk. [y/N] ", tart.SetupDisk), false) {
+		if err == nil && !status.HasHostImage() && yesTo(streams, fmt.Sprintf("? Make the Tart image for this Mac's macOS now? It downloads macOS and takes up to %s of disk. [y/N] ", tart.SetupDisk), false) {
 			setup := setupTartCommand(s, streams)
 			setup.SetContext(ctx)
 			if err := setup.RunE(setup, nil); err != nil {
@@ -85,16 +85,6 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 		}
 	}
 	return written, nil
-}
-
-// hostImage says whether Tart has a base image of this Mac's macOS.
-func hostImage(status tart.Status) bool {
-	for _, release := range status.Base {
-		if release.Darwin == status.Host.Darwin {
-			return true
-		}
-	}
-	return false
 }
 
 // yesTo asks a yes-or-no question, with the answer an empty line gives.

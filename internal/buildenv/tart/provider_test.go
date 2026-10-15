@@ -854,3 +854,15 @@ func TestAnArchiveGivenToTheGuestIsNamed(t *testing.T) {
 	require.Equal(t, "giving the guest libharbor, from the archive kept of its build", givingWords(buildenv.Archive{Target: "libharbor", Port: "libharbor", Name: "libharbor-3_0.darwin_25.arm64.tbz2"}))
 	require.Equal(t, "giving the guest rust-1.91.0_0.darwin_27.arm64.tbz2, from the archive an earlier guest installed it from", givingWords(buildenv.Archive{Port: "rust", Name: "rust-1.91.0_0.darwin_27.arm64.tbz2"}))
 }
+
+// A status has the host's image where a base image is of this Mac's own
+// release, by Darwin version.
+func TestAStatusHasTheHostsImage(t *testing.T) {
+	tahoe, err := macos.ReleaseForDarwin(25)
+	require.NoError(t, err)
+	sequoia, err := macos.ReleaseForDarwin(24)
+	require.NoError(t, err)
+	require.True(t, Status{Base: []macos.Release{sequoia, tahoe}, Host: tahoe}.HasHostImage())
+	require.False(t, Status{Base: []macos.Release{sequoia}, Host: tahoe}.HasHostImage())
+	require.False(t, Status{Host: tahoe}.HasHostImage())
+}
