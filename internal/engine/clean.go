@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -891,4 +894,62 @@ const LowSpacePause = time.Hour
 // runs, so one that fails isn't tried again at once.
 func (e *Engine) StampCleanup() error {
 	return e.stampServeFile("cleanup.stamp", e.now())
+}
+
+// superseded says the ports master declares at other versions than a
+// branch started from, as a newer update in master leaves them; empty
+// where it has none.
+func superseded(moves []portMove) string {
+	var moved []string
+	for _, move := range moves {
+		if move.master != move.was {
+			moved = append(moved, fmt.Sprintf("%s at %s, where the branch took %s to %s", move.port, move.master, move.was, move.mine))
+		}
+	}
+	if len(moved) == 0 {
+		return ""
+	}
+	return "master has " + strings.Join(moved, "; ")
+}
+
+// portMove is a port a branch changes, with the version its Portfile
+// declares where the branch started, in the branch, and on master.
+type portMove struct {
+	port, was, mine, master string
+}
+
+// portMoves are the ports a branch changes whose Portfiles declare their
+// versions as literals (portfile.DeclaredVersion), where it started and on
+// master; one that doesn't says nothing.
+func (e *Engine) portMoves(ctx context.Context, master, head string) ([]portMove, error) {
+	base, err := e.Repo.MergeBase(ctx, head, master)
+	if err != nil {
+		return nil, err
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{base, head, master})
+	if err != nil {
+		return nil, err
+	}
+	changed, err := e.Repo.ChangedPaths(ctx, trees[base], trees[head])
+	if err != nil {
+		return nil, err
+	}
+	declared := func(tree, directory string) (string, bool) {
+		_, data, err := e.Repo.File(ctx, tree, directory+"/Portfile")
+		if err != nil || data == nil {
+			return "", false
+		}
+		return portfile.DeclaredVersion(data, "")
+	}
+	var moves []portMove
+	for _, directory := range macports.ScopeOf(changed).Ports {
+		was, ok := declared(trees[base], directory)
+		now, okNow := declared(trees[master], directory)
+		if !ok || !okNow {
+			continue
+		}
+		mine, _ := declared(trees[head], directory)
+		moves = append(moves, portMove{port: path.Base(directory), was: was, mine: mine, master: now})
+	}
+	return moves, nil
 }

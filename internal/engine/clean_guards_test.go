@@ -161,57 +161,6 @@ func TestCleanChecksAgainAsItRemoves(t *testing.T) {
 	require.Equal(t, moved, testsupport.Git(t, f.clone, "rev-parse", "dockhand/jq-update"), "the commit is still there")
 }
 
-// A branch from before v3 whose change master has goes, but not the
-// fork's branch of the same name where it holds another commit; and one
-// that moved while clean ran is kept, the fork's likewise.
-func TestLegacyCleanupKeepsWhatHoldsAnotherCommit(t *testing.T) {
-	t.Parallel()
-	legacy := func(t *testing.T) (fixture, *Engine, string) {
-		f := setup(t)
-		e := f.open(t)
-		f.withFork(t, e)
-		name := "dockhand/bump/libharbor-4f2a"
-		testsupport.Git(t, f.clone, "switch", "-q", "-c", name, "master")
-		write(t, f.clone, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\n"})
-		testsupport.Git(t, f.clone, "commit", "-q", "-am", "libharbor: update to 2, mine")
-		testsupport.Git(t, f.clone, "push", "-q", "fork", name)
-		testsupport.Git(t, f.clone, "switch", "-q", "master")
-		return f, e, name
-	}
-
-	f, e, name := legacy(t)
-	testsupport.Git(t, f.clone, "push", "-q", "-f", "fork", "master:"+name)
-	plans, err := e.PlanLegacy(t.Context())
-	require.NoError(t, err)
-	require.Len(t, plans, 1)
-	require.Equal(t, LegacyOnMaster, plans[0].Kind)
-	require.Equal(t, "ada/macports-ports:"+name+" holds another commit", plans[0].ForkKept)
-	done, err := e.RemoveLegacy(t.Context(), plans)
-	require.NoError(t, err)
-	require.True(t, done[0].Done)
-	require.NotEmpty(t, testsupport.Git(t, f.clone, "ls-remote", "fork", "refs/heads/"+name), "the fork's, holding another commit, stays")
-
-	f, e, name = legacy(t)
-	plans, err = e.PlanLegacy(t.Context())
-	require.NoError(t, err)
-	require.Empty(t, plans[0].ForkKept)
-	testsupport.Git(t, f.clone, "push", "-q", "-f", "fork", "master:"+name)
-	done, err = e.RemoveLegacy(t.Context(), plans)
-	require.NoError(t, err)
-	require.Equal(t, "ada/macports-ports:"+name+" moved while clean ran", done[0].ForkKept)
-	require.True(t, done[0].Done, "the local branch went")
-
-	f, e, name = legacy(t)
-	plans, err = e.PlanLegacy(t.Context())
-	require.NoError(t, err)
-	testsupport.Git(t, f.clone, "branch", "-q", "-f", name, "master")
-	done, err = e.RemoveLegacy(t.Context(), plans)
-	require.NoError(t, err)
-	require.Equal(t, "it moved while clean ran", done[0].Kept)
-	require.False(t, done[0].Done)
-	require.NotEmpty(t, testsupport.Git(t, f.clone, "branch", "--list", name))
-}
-
 // A merged branch's name is said from its record, not as a name nothing
 // has: path, which only reads, gives the worktree clean kept, and says one
 // cleaned has none; a command that changes a branch is refused, saying

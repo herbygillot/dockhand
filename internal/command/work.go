@@ -160,9 +160,6 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	publishLine, report.GitHub = publishing(cmd.Context())
 	fmt.Fprintf(out, "  Publishing   %s\n", publishLine)
 	fmt.Fprintf(out, "  Records      %s\n", tilde(options.Database))
-	if legacy, err := e.LegacyBranchNames(cmd.Context()); err == nil && len(legacy) > 0 {
-		fmt.Fprintf(out, "  Old branches · %s from before v3 that nothing tracks: dockhand clean --legacy sorts them\n", prose.Plural(len(legacy), "branch"))
-	}
 	fmt.Fprintln(out)
 	if offer && streams.terminal() && !yes {
 		written, err := offerSetup(cmd.Context(), s, e, streams, file, configPath)

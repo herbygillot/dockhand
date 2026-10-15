@@ -36,7 +36,7 @@ func cleanStates(merged, closed, archived bool) []model.BranchState {
 }
 
 func cleanCommand(s *settings, streams Streams) *cobra.Command {
-	var merged, closed, archived, legacy, yes, automatic bool
+	var merged, closed, archived, yes, automatic bool
 	cmd := &cobra.Command{
 		Use:   "clean [branch...] [--merged] [--closed] [--archived]",
 		Short: "Remove what merged branches leave behind",
@@ -59,13 +59,6 @@ deletes when it ends, and a later attempt of the same check when it starts.
 One is removed only when a check of this checkout made it and no process
 is running that check; one no check of this checkout made is kept, since
 another database may be using it.
-
---legacy also sorts the branches earlier dockhand made before v3,
-dockhand/bump/<port>-<id>, which nothing tracks: one master has every
-commit of, by its change, goes, with your fork's branch where it holds the
-same commit; one whose port master has at another version, as a newer
-update would leave it, is named for you to look at; and the rest are left
-for dockhand adopt. Without it, clean says how many there are.
 
 It reads your open pull requests' state first, as status --refresh does,
 so a branch merged since dockhand last looked is cleaned with the rest.
@@ -98,9 +91,6 @@ cancel stops a check. None means another.`,
 			}
 			var plans []engine.CleanBranch
 			if len(args) > 0 {
-				if legacy {
-					return errors.New("--legacy sorts the branches from before v3, not branches named")
-				}
 				var named []model.Branch
 				for _, name := range args {
 					branch, err := e.ResolveRecord(ctx, name)
@@ -113,17 +103,12 @@ cancel stops a check. None means another.`,
 					return err
 				}
 			} else {
-				// --legacy names what to clean by itself: clean --legacy
-				// --merged=false refused as naming nothing (field testing's
-				// cleanup, af03bbab).
 				states := cleanStates(merged, closed, archived)
-				if len(states) == 0 && !legacy {
-					return errors.New("nothing to clean: --merged, --closed, or --legacy names what")
+				if len(states) == 0 {
+					return errors.New("nothing to clean: --merged or --closed names what")
 				}
-				if len(states) > 0 {
-					if plans, err = e.PlanClean(ctx, states...); err != nil {
-						return err
-					}
+				if plans, err = e.PlanClean(ctx, states...); err != nil {
+					return err
 				}
 			}
 			session, err := startSession(ctx, e, model.SessionForeground)
@@ -139,19 +124,8 @@ cancel stops a check. None means another.`,
 					return err
 				}
 			}
-			var older []engine.LegacyBranch
-			if legacy {
-				if older, err = e.PlanLegacy(ctx); err != nil {
-					return err
-				}
-			}
-			streams.emit(map[string]any{"branches": cleanView(plans), "leftovers": leftoversView(leftovers), "legacy": legacyView(older), "applied": false})
-			removable := writeClean(streams.Out, plans, false) + writeLeftovers(streams.Out, leftovers, false) + writeLegacy(streams.Out, older, false)
-			if !legacy && len(args) == 0 {
-				if names, err := e.LegacyBranchNames(ctx); err == nil && len(names) > 0 {
-					fmt.Fprintf(streams.Out, "· %s from before v3 (dockhand/bump/…), which nothing tracks; dockhand clean --legacy sorts them\n", prose.Plural(len(names), "branch"))
-				}
-			}
+			streams.emit(map[string]any{"branches": cleanView(plans), "leftovers": leftoversView(leftovers), "applied": false})
+			removable := writeClean(streams.Out, plans, false) + writeLeftovers(streams.Out, leftovers, false)
 			if removable == 0 {
 				fmt.Fprintln(streams.Out, "Nothing to remove.")
 				return nil
@@ -166,18 +140,14 @@ cancel stops a check. None means another.`,
 			}
 			done, err := e.ApplyClean(ctx, plans)
 			removed, leftoverErr := e.RemoveLeftovers(ctx, session, leftovers)
-			older, legacyErr := e.RemoveLegacy(ctx, older)
-			streams.emit(map[string]any{"branches": cleanView(done), "leftovers": leftoversView(removed), "legacy": legacyView(older), "applied": true})
+			streams.emit(map[string]any{"branches": cleanView(done), "leftovers": leftoversView(removed), "applied": true})
 			// What was done is one line a branch, its plan having been
 			// shown in full: thirty branches' blocks printed twice were
 			// a lot to read (field testing's cleanup, af03bbab).
 			fmt.Fprintln(streams.Out)
 			writeCleanDone(streams.Out, done)
 			writeLeftovers(streams.Out, removed, true)
-			if n := removedLegacy(older); n > 0 {
-				fmt.Fprintf(streams.Out, "removed  %s from before v3\n", prose.Plural(n, "branch"))
-			}
-			return errors.Join(err, leftoverErr, legacyErr)
+			return errors.Join(err, leftoverErr)
 		},
 	}
 	cmd.Flags().BoolVar(&merged, "merged", true, "merged branches: their worktree, local branch, and fork branch")
@@ -186,66 +156,10 @@ cancel stops a check. None means another.`,
 	// archive takes the worktree itself now (the command-line UX review,
 	// §5); --archived stays for one archived before, hidden.
 	_ = cmd.Flags().MarkHidden("archived")
-	cmd.Flags().BoolVar(&legacy, "legacy", false, "also sort the branches from before v3, removing those master has")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
 	_ = cmd.Flags().MarkHidden("automatic")
 	return cmd
-}
-
-// writeLegacy says what clean does with the branches from before v3, as
-// planned or done, and how many it would remove.
-func writeLegacy(out io.Writer, branches []engine.LegacyBranch, done bool) int {
-	if len(branches) == 0 {
-		return 0
-	}
-	count := 0
-	fmt.Fprintln(out, "Branches from before v3 (dockhand/bump/…):")
-	for _, branch := range branches {
-		name := branch.Name
-		if branch.ForkOnly {
-			name = branch.Fork + " (on your fork only)"
-		}
-		switch {
-		case branch.Kind == engine.LegacyOnMaster && branch.Kept != "":
-			fmt.Fprintf(out, "  keep     %s: %s\n", name, branch.Kept)
-		case branch.Kind == engine.LegacyOnMaster:
-			verb := "remove "
-			if done && branch.Done {
-				verb = "removed"
-			} else {
-				count++
-			}
-			fmt.Fprintf(out, "  %s  %s: %s\n", verb, name, branch.Detail)
-			if branch.Fork != "" && !branch.ForkOnly {
-				fmt.Fprintf(out, "  %s  %s, which holds the same commit\n", verb, branch.Fork)
-				if !done || !branch.Done {
-					count++
-				}
-			}
-			if branch.ForkKept != "" {
-				fmt.Fprintf(out, "  keep     your fork's branch: %s\n", branch.ForkKept)
-			}
-		case branch.Kind == engine.LegacySuperseded && branch.ForkOnly:
-			fmt.Fprintf(out, "  look     %s: %s; removing it from your fork is yours once you've looked\n", name, branch.Detail)
-		case branch.Kind == engine.LegacySuperseded:
-			fmt.Fprintf(out, "  look     %s: %s; git branch -D %s removes it once you've looked\n", name, branch.Detail, branch.Name)
-		case branch.ForkOnly:
-			fmt.Fprintf(out, "  keep     %s: %s; fetch it here, and dockhand adopt %s takes it up\n", name, branch.Detail, branch.Name)
-		default:
-			fmt.Fprintf(out, "  keep     %s: %s; dockhand adopt %s takes it up\n", name, branch.Detail, branch.Name)
-		}
-	}
-	return count
-}
-
-func legacyView(branches []engine.LegacyBranch) []map[string]any {
-	view := []map[string]any{}
-	for _, branch := range branches {
-		view = append(view, map[string]any{"name": branch.Name, "head": branch.Head, "kind": string(branch.Kind), "detail": branch.Detail,
-			"fork_only": branch.ForkOnly, "fork": branch.Fork, "fork_kept": branch.ForkKept, "kept": branch.Kept, "removed": branch.Done})
-	}
-	return view
 }
 
 // cleanAutomatically is decision 36's automatic pass, as a command starts it
@@ -405,15 +319,4 @@ func writeCleanDone(out io.Writer, plans []engine.CleanBranch) {
 			fmt.Fprintln(out, line)
 		}
 	}
-}
-
-// removedLegacy counts the branches from before v3 clean removed.
-func removedLegacy(branches []engine.LegacyBranch) int {
-	n := 0
-	for _, branch := range branches {
-		if branch.Done {
-			n++
-		}
-	}
-	return n
 }

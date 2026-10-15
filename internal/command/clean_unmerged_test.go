@@ -9,7 +9,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -91,31 +90,9 @@ func TestCleanAddsWhatItsFlagsName(t *testing.T) {
 	require.Empty(t, cleanStates(false, false, false))
 }
 
-// clean --legacy says what it does with each branch from before v3: one
-// master has goes, with your fork's holding the same commit; one master
-// superseded is for a look; the rest are adopt's.
-func TestCleanSaysWhatItDoesWithBranchesFromBeforeV3(t *testing.T) {
-	plans := []engine.LegacyBranch{
-		{Name: "dockhand/bump/jq-9c1d", Kind: engine.LegacySuperseded, Detail: "master has jq at 1.8.1, where the branch took 1.7.1 to 1.8.0"},
-		{Name: "dockhand/bump/libharbor-4f2a", Kind: engine.LegacyOnMaster, Detail: `master has the same change as its "libharbor: update to 2"`, Fork: "ada/macports-ports:dockhand/bump/libharbor-4f2a"},
-		{Name: "dockhand/bump/newport-77aa", Kind: engine.LegacyUnfinished, Detail: "takes newport from 1 to 2, which master still has at 1"},
-		{Name: "dockhand/bump/xplr-atgg", Kind: engine.LegacyOnMaster, Detail: `master has the same change as its "xplr: update to 1.0"`, ForkOnly: true, Fork: "ada/macports-ports:dockhand/bump/xplr-atgg"},
-	}
-	var out bytes.Buffer
-	require.Equal(t, 3, writeLegacy(&out, plans, false))
-	require.Equal(t, "Branches from before v3 (dockhand/bump/…):\n"+
-		"  look     dockhand/bump/jq-9c1d: master has jq at 1.8.1, where the branch took 1.7.1 to 1.8.0; git branch -D dockhand/bump/jq-9c1d removes it once you've looked\n"+
-		"  remove   dockhand/bump/libharbor-4f2a: master has the same change as its \"libharbor: update to 2\"\n"+
-		"  remove   ada/macports-ports:dockhand/bump/libharbor-4f2a, which holds the same commit\n"+
-		"  keep     dockhand/bump/newport-77aa: takes newport from 1 to 2, which master still has at 1; dockhand adopt dockhand/bump/newport-77aa takes it up\n"+
-		"  remove   ada/macports-ports:dockhand/bump/xplr-atgg (on your fork only): master has the same change as its \"xplr: update to 1.0\"\n", out.String())
-	require.Zero(t, writeLegacy(&out, nil, false))
-}
-
 // On a terminal, archive asks what to do with a worktree's edits: commit
 // them, where tidy's plan needs no words, or discard them, and then takes
-// the worktree; an open pull request is said, never closed. clean
-// --legacy names what to clean by itself.
+// the worktree; an open pull request is said, never closed.
 func TestArchiveAsksCommitOrDiscard(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
@@ -146,8 +123,8 @@ func TestArchiveAsksCommitOrDiscard(t *testing.T) {
 	require.NoError(t, err)
 	require.NoDirExists(t, scratch)
 
-	_, _, err = dockhand(t, "clean", "--legacy", "--merged=false")
-	require.NoError(t, err, "--legacy names what to clean")
 	_, _, err = dockhand(t, "clean", "--merged=false")
-	require.ErrorContains(t, err, "nothing to clean: --merged, --closed, or --legacy names what")
+	require.ErrorContains(t, err, "nothing to clean: --merged or --closed names what")
+	_, _, err = dockhand(t, "clean", "--legacy")
+	require.ErrorContains(t, err, "unknown flag: --legacy", "bridge 1 is gone")
 }
