@@ -40,7 +40,7 @@ func generateCargo(ctx context.Context, executable string, in Input) (GeneratedB
 			}
 			if !crate.Reference.declarable() || in.Git == GitOnline {
 				if in.Git != GitOnline && in.Git != GitMixed {
-					return GeneratedBlocks{}, fmt.Errorf("dependency: %s is pinned to Git %s; cargo.crates_github declares branches only, so an offline build cannot resolve it: pin a branch upstream, or let the port resolve Git sources online with an empty cargo.offline_cmd", pkg.Name, crate.Reference)
+					return GeneratedBlocks{}, fmt.Errorf("dependency: %s is pinned to Git %s; cargo.crates_github declares branches only, so an offline build cannot resolve it: pin a branch upstream, or let the port resolve Git sources online with a cargo.offline_cmd without --offline or --frozen", pkg.Name, crate.Reference)
 				}
 				online = append(online, crate)
 				continue

@@ -53,3 +53,24 @@ func TestARegeneratedBlocksEntriesAreCounted(t *testing.T) {
 	_, _, err = Entries(Cargo, []string{"a", "1.0"}, nil)
 	require.Error(t, err)
 }
+
+// A cargo port's build resolves Git sources online where the arguments
+// cargo build runs with hold neither --offline nor --frozen: an empty
+// cargo.offline_cmd, rust-glancer's {--locked}, or tart-softnet's --frozen
+// deleted from build.pre_args (field testing at c97bca63). Where the build
+// isn't cargo's own, cargo.offline_cmd says it; one not read is offline.
+func TestACargoBuildResolvesOnlineWithoutOfflineFlags(t *testing.T) {
+	cargo := func(offline, pre string) map[string]string {
+		return map[string]string{"cargo.offline_cmd": offline, "build.cmd": "/opt/local/bin/cargo build", "build.pre_args": pre}
+	}
+	require.True(t, ResolvesOnline(cargo("--locked", "--release --locked -v -j18")), "rust-glancer")
+	require.True(t, ResolvesOnline(cargo("--frozen", "--release -v -j18")), "tart-softnet")
+	require.True(t, ResolvesOnline(cargo("", "--release -v -j18")), "an empty cargo.offline_cmd")
+	require.False(t, ResolvesOnline(cargo("--frozen", "--release --frozen -v -j18")), "the PortGroup's default")
+	require.False(t, ResolvesOnline(cargo("--offline", "--release --offline -v")))
+	require.True(t, ResolvesOnline(map[string]string{"cargo.offline_cmd": "--locked", "build.cmd": "make", "build.pre_args": ""}), "a make build, by cargo.offline_cmd")
+	require.False(t, ResolvesOnline(map[string]string{}), "not read")
+	require.Equal(t, GitOnline, gitPolicy(cargo("--locked", "--release --locked"), false))
+	require.Equal(t, GitMixed, gitPolicy(cargo("--locked", "--release --locked"), true))
+	require.Equal(t, GitDeclared, gitPolicy(cargo("--frozen", "--release --frozen"), true))
+}

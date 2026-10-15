@@ -673,7 +673,10 @@ func uncertainUpdate(port string, aside []engine.SetAside, linked linkedOptions,
 	if started {
 		kept = "\nKept: " + branch.Name + ", with nothing changed."
 	}
-	return exitf(ExitAttention, "can't tell whether %s is current, so nothing was changed: %s\nIf %s is a release: dockhand %s %s %s%s", port, setAsideWords(aside), aside[0].Tag, verb, port, aside[0].Source, kept)
+	// One that isn't a release, as certgraph's tag on an older commit
+	// isn't, is better left out by the port's own livecheck than updated
+	// to "after a look" (field testing at c97bca63).
+	return exitf(ExitAttention, "can't tell whether %s is current, so nothing was changed: %s\nIf %s is a release: dockhand %s %s %s\nIf it isn't, as an old tag spelled oddly: a livecheck.regex in the Portfile that leaves %s out keeps it out of later looks%s", port, setAsideWords(aside), aside[0].Tag, verb, port, aside[0].Source, aside[0].Tag, kept)
 }
 
 // heldBeforeEdit is bump held before its edit for what would hold its

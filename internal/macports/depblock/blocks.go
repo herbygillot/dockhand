@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -97,8 +98,7 @@ func Inspect(src []byte, options map[string]string) (*Plan, error) {
 	// update (field testing's batch 13, bumped by hand twice). One that
 	// builds offline needs its crates declared, which an update adds.
 	_, cargo := options[Cargo]
-	offline, read := options["cargo.offline_cmd"]
-	online := read && strings.TrimSpace(offline) == ""
+	online := ResolvesOnline(options)
 	if cargo && !online || options[Cargo] != "" || len(commands[Cargo]) > 0 || options[CargoGit] != "" || len(commands[CargoGit]) > 0 {
 		if kind != "" {
 			return nil, fmt.Errorf("dependency: mixed Go and Cargo declarations require manual preparation")
@@ -476,6 +476,9 @@ func Differences(kind string, declared, generated []string) ([]Difference, error
 	if err != nil {
 		return nil, err
 	}
+	if kind == Go {
+		sameMajor(before, after)
+	}
 	names := slices.Collect(maps.Keys(before))
 	for name := range after {
 		if _, ok := before[name]; !ok {
@@ -498,6 +501,34 @@ func Differences(kind string, declared, generated []string) ([]Difference, error
 		differences = append(differences, difference)
 	}
 	return differences, nil
+}
+
+// goMajor is a Go module path's major version suffix, as /v2.
+var goMajor = regexp.MustCompile(`/v[2-9][0-9]*$`)
+
+// sameMajor drops, from Go rows by module, a module declared without the
+// major version suffix the generator writes, as an older go2port wrote
+// go-md2man for go-md2man/v2, where the rows are otherwise the same, at the
+// same lock: one row, not an override (field testing at c97bca63,
+// certstrap's go-md2man/v2 and blackfriday/v2).
+func sameMajor(declared, generated map[string][]string) {
+	for name, rows := range generated {
+		bare := goMajor.ReplaceAllString(name, "")
+		if bare == name {
+			continue
+		}
+		if _, both := declared[name]; both {
+			continue
+		}
+		old, ok := declared[bare]
+		if _, alsoGenerated := generated[bare]; !ok || alsoGenerated || len(old) != 1 || len(rows) != 1 {
+			continue
+		}
+		if strings.TrimPrefix(old[0], bare) == strings.TrimPrefix(rows[0], name) {
+			delete(declared, bare)
+			delete(generated, name)
+		}
+	}
 }
 
 func Equivalent(kind string, a, b []string) bool {

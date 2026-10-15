@@ -325,7 +325,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	generated = generated.KeepingDeclared(plan.Values[depblock.CargoGit])
 	if len(generated.Online) > 0 {
-		progress.Report(ctx, "Leaving %d Git-pinned crates to Cargo's online resolution at build time because cargo.offline_cmd is empty: %s", len(generated.Online), depblock.GitSummary(generated.Online))
+		progress.Report(ctx, "Leaving %d Git-pinned crates to Cargo's online resolution at build time, since its build resolves Git sources online: %s", len(generated.Online), depblock.GitSummary(generated.Online))
 	}
 	values, gitDownloads, err := s.gitCrateChecksums(ctx, request, input, plan, result.Files[0].After, generated)
 	if err != nil {

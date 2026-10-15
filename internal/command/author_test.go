@@ -528,7 +528,7 @@ func TestAnUncertainNewestReleaseIsNamedNotChosen(t *testing.T) {
 
 	_, _, err := dockhand(t, "update", "jq", "--new")
 	require.Equal(t, 3, ExitCode(err), "it needs a look")
-	require.EqualError(t, err, "can't tell whether jq is current, so nothing was changed: jq-1.9.0 compares newer, but its commit is older than jq-1.7.1's\nIf jq-1.9.0 is a release: dockhand update jq 1.9.0")
+	require.EqualError(t, err, "can't tell whether jq is current, so nothing was changed: jq-1.9.0 compares newer, but its commit is older than jq-1.7.1's\nIf jq-1.9.0 is a release: dockhand update jq 1.9.0\nIf it isn't, as an old tag spelled oddly: a livecheck.regex in the Portfile that leaves jq-1.9.0 out keeps it out of later looks")
 	_, _, err = bumpOn(t, "jq")
 	require.Equal(t, 3, ExitCode(err))
 	require.ErrorContains(t, err, "\nIf jq-1.9.0 is a release: dockhand bump jq 1.9.0")

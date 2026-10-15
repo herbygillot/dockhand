@@ -51,12 +51,38 @@ const (
 	GitOnline GitPolicy = "online"
 )
 
-// gitPolicy derives the port's policy from its evaluated offline mode and whether
-// it declares cargo.crates_github. An empty cargo.offline_cmd is the maintained
-// workaround for Git sources the PortGroup cannot replace.
+// ResolvesOnline reports whether a cargo port's build lets Cargo fetch what
+// it needs as it builds: the arguments cargo build runs with hold neither
+// --offline nor --frozen (which implies it). The cargo PortGroup gives it
+// cargo.offline_cmd, --frozen unless a Portfile says otherwise, in
+// build.pre_args: an empty one is the maintained workaround for Git sources
+// the PortGroup can't replace, rust-glancer's {--locked} resolves them
+// online too, and tart-softnet deletes --frozen from build.pre_args
+// itself (field testing at c97bca63; Later's tart-softnet). Where the
+// build isn't cargo's own, or its arguments weren't read, cargo.offline_cmd
+// says it; one not read is offline. depblock's one rule for both its
+// readers.
+func ResolvesOnline(options map[string]string) bool {
+	offline := func(args string) bool {
+		for _, arg := range strings.Fields(args) {
+			if arg == "--offline" || arg == "--frozen" {
+				return true
+			}
+		}
+		return false
+	}
+	if args, read := options["build.pre_args"]; read && strings.HasSuffix(strings.TrimSpace(options["build.cmd"]), "cargo build") {
+		return !offline(args)
+	}
+	args, read := options["cargo.offline_cmd"]
+	return read && !offline(args)
+}
+
+// gitPolicy derives the port's policy from whether its build resolves
+// Git sources online (ResolvesOnline) and whether it declares
+// cargo.crates_github.
 func gitPolicy(options map[string]string, declared bool) GitPolicy {
-	offline, present := options["cargo.offline_cmd"]
-	if !present || strings.TrimSpace(offline) != "" {
+	if !ResolvesOnline(options) {
 		return GitDeclared
 	}
 	if declared {

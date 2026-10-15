@@ -43,3 +43,21 @@ func TestAGoModuleKeptByHandIsKept(t *testing.T) {
 	require.True(t, GoSumPins(gosum, "github.com/x/y", "v1.1.0"), "by its go.mod's line")
 	require.False(t, GoSumPins(gosum, "gopkg.in/check.v1", "v1.0.0-20201130134442-10cb98267c6c"))
 }
+
+// A module declared without the major version suffix the generator
+// writes, at the same lock, is the same row, not an override: an older
+// go2port wrote go-md2man for go-md2man/v2 (field testing at c97bca63,
+// certstrap). At another lock it differs, as any row does.
+func TestAGoModuleWithoutItsMajorSuffixIsTheSameRow(t *testing.T) {
+	t.Parallel()
+	sha := strings.Repeat("a", 64)
+	declared := []string{"github.com/cpuguy83/go-md2man", "lock", "v2.0.4", "sha256", sha, "size", "10"}
+	generated := []string{"github.com/cpuguy83/go-md2man/v2", "lock", "v2.0.4", "sha256", sha, "size", "10"}
+	differences, err := Differences(Go, declared, generated)
+	require.NoError(t, err)
+	require.Empty(t, differences)
+	moved := []string{"github.com/cpuguy83/go-md2man/v2", "lock", "v2.0.5", "sha256", sha, "size", "10"}
+	differences, err = Differences(Go, declared, moved)
+	require.NoError(t, err)
+	require.NotEmpty(t, differences)
+}
