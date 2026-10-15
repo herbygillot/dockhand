@@ -62,17 +62,12 @@ func (e *Engine) PassingBranches(ctx context.Context) (Passing, error) {
 // itself.
 const ServeNote = "Opened by `dockhand serve` for an update it prepared and checked, without a person's review."
 
-// ServeCandidates are the passing branches (PassingBranches) serve itself
-// started, with no pull request yet. Each is planned as submit would plan
-// it, and held when anything asks for a person (SubmitPlan.held).
-func (e *Engine) ServeCandidates(ctx context.Context) ([]ServeCandidate, error) {
-	candidates, _, err := e.serveCandidates(ctx)
-	return candidates, err
-}
-
-// serveCandidates are ServeCandidates, and the passing branches a person
-// started, which serve leaves to them: update --outdated --check's seven
-// passing branches waited, unsaid (field testing's seventh report).
+// serveCandidates are the passing branches (PassingBranches) serve itself
+// started, with no pull request yet, each planned as submit would plan it
+// and held when anything asks for a person (SubmitPlan.held); and the
+// passing branches a person started, which serve leaves to them: update
+// --outdated --check's seven passing branches waited, unsaid (field
+// testing's seventh report).
 func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model.Branch, error) {
 	passing, err := e.PassingBranches(ctx)
 	if err != nil {

@@ -126,12 +126,6 @@ func pullRequestBody(facts bodyFacts) string {
 	return prdescription.Compose(facts.description())
 }
 
-// ownedSections are the part of the description dockhand keeps up to date:
-// Tested on through Verification.
-func ownedSections(facts bodyFacts) string {
-	return prdescription.Owned(facts.description())
-}
-
 // report is one environment's report as the description gives it: what
 // it observed, the release and tools the environment states, for what it
 // didn't report, who built it, and the runs behind it, each with its

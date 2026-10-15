@@ -248,13 +248,12 @@ func (e *Engine) outdatedReader() (OutdatedReader, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &surveyedPorts{e: e, service: &outdated.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), Index: ports.Index, Workspaces: &workspace.Registry{}}}, nil
+		return &surveyedPorts{service: &outdated.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), Index: ports.Index, Workspaces: &workspace.Registry{}}}, nil
 	})
 }
 
 // surveyedPorts reads outdated ports with the outdated package's service.
 type surveyedPorts struct {
-	e       *Engine
 	service *outdated.Service
 }
 

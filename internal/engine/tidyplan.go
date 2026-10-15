@@ -297,7 +297,7 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	if err != nil {
 		return TidyPlan{}, err
 	}
-	plan := TidyPlan{Branch: branch, Worktree: branch.Worktree, Base: saved.Base, Head: head, Final: final, BaseTree: trees[saved.Base], History: history, Index: saved.Index}
+	plan := TidyPlan{Branch: branch, Base: saved.Base, Head: head, Final: final, BaseTree: trees[saved.Base], History: history, Index: saved.Index}
 	changed, err := worktree.ChangedPaths(ctx, plan.BaseTree, final)
 	if err != nil {
 		return TidyPlan{}, err

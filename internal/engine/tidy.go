@@ -69,8 +69,7 @@ func (g TidyGroup) Subject() string {
 // TidyPlan is a proposed series of commits for a branch, bound to the
 // branch head and working files it was made from.
 type TidyPlan struct {
-	Branch   model.Branch
-	Worktree string
+	Branch model.Branch
 	// Base and Head are commits; Final is the tree the series ends at,
 	// the working files as they were captured, and BaseTree the base's.
 	Base, Head, Final, BaseTree string
@@ -153,7 +152,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if err != nil {
 		return TidyPlan{}, err
 	}
-	plan := TidyPlan{Branch: branch, Worktree: branch.Worktree, Base: base, Head: head, Final: final, BaseTree: trees[base], History: history, Index: index}
+	plan := TidyPlan{Branch: branch, Base: base, Head: head, Final: final, BaseTree: trees[base], History: history, Index: index}
 	changed, err := worktree.ChangedPaths(ctx, trees[base], final)
 	if err != nil {
 		return TidyPlan{}, err
