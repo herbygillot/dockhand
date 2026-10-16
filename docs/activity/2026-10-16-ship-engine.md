@@ -65,3 +65,19 @@ Built in slices, each committed on its own.
   The driver reads it, where it read executions and then each one's
   results; evidence and `Logs` adopt it with v0.5.0's revision analysis,
   as the study placed them.
+
+## ship's one engine path
+
+- `engine.Ship(target, options)` moves one target through ship's stages
+  on serve's preparation path: the update from fresh master with the
+  upstream archives compared, in a branch started once there's an edit;
+  the commit; and to `ShipCheck`, a check queued where `options.Where`
+  says. `ShipTarget` takes a pinned version, bump's `[version]`, beside
+  the newest; `ShipOptions` carries `To` (commit, check, submit) and the
+  consent answer, `Answered`.
+- Every "may this go on unattended?" question goes through `goOn`: before
+  the edit, the majors hold where nobody looks over the update; before
+  the commit, `AppliesUnasked`. Layer 1's readiness replaces it.
+- `PrepareOutdated`'s `prepareOne` is `Ship` now, serve's preparation
+  answered `AnsweredNobody`, a person's `update --outdated` asked.
+  Submitting through `Ship`, and `ship` itself, are item 4.

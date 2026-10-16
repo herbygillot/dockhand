@@ -179,3 +179,17 @@ func TestUncheckedPortsAreSaidAhead(t *testing.T) {
 	require.Empty(t, plan.Updates)
 	require.Equal(t, []SkippedUpdate{{Port: "browsh", Reason: "the release of v1.8.3 has no files yet"}}, plan.Skipped)
 }
+
+// ship's one "may this go on?" question holds a new major version for an
+// update nobody looks over before anything is prepared, and lets a person
+// asked take it on; a pinned version, bump's [version], is the target's.
+func TestShipAsksOnceWhetherItMayGoOn(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	target := ShipTarget{Port: "jq", Current: "1.7.1", Version: "2.0.0", Name: "jq-2.0.0"}
+	done := e.Ship(t.Context(), target, ShipOptions{Origin: model.OriginServe, To: ShipCommit, Answered: model.AnsweredNobody})
+	require.Equal(t, "jq moves from 1.7.1 to 2.0.0, a new major version, which holds.majors holds for a look; nothing was prepared", done.Problem)
+	require.False(t, done.Update.Started, "nothing was started")
+	require.NoError(t, e.goOn(shipEdit, target, ShipOptions{Answered: model.AnsweredAsked}, nil), "a person asked goes on")
+}

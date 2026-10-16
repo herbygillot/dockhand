@@ -400,68 +400,17 @@ func (e *Engine) PrepareOutdated(ctx context.Context, plan OutdatedPlan, options
 }
 
 func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options PrepareOptions) PreparedUpdate {
-	done := PreparedUpdate{Planned: planned}
-	// What serve prepares nobody looks over: a major version is held
-	// before anything is prepared (holds.majors).
+	to, answered := ShipCommit, model.AnsweredAsked
+	if options.Check {
+		to = ShipCheck
+	}
+	// What serve prepares nobody looks over.
 	if options.Origin == model.OriginServe {
-		if major := e.majorHold(planned.Port.Port, planned.Port.Current, planned.Port.Newest); major != nil {
-			done.Problem = major.Detail + "; nothing was prepared"
-			return done
-		}
+		answered = model.AnsweredNobody
 	}
-	var err error
-	done.Update, err = e.Update(ctx, UpdateRequest{Start: &StartRequest{Name: planned.Name, Origin: options.Origin}, Action: model.EditUpdate, Port: planned.Port.Port, Version: planned.Port.Newest,
-		Release: planned.Port.Release, CompareUpstream: true, NoHandBranch: true})
-	done.Branch = done.Update.Branch
-	if err != nil {
-		done.Problem = err.Error()
-		if !done.Update.Started {
-			done.Problem += "; no branch was started"
-		}
-		return done
-	}
-	if done.Update.Current {
-		done.Problem = "nothing to change: it is already at " + done.Update.After.String()
-		return done
-	}
-	branch := done.Branch
-	tidy, err := e.PlanTidy(ctx, TidyRequest{Branch: branch})
-	if err != nil {
-		done.Problem = err.Error()
-		return done
-	}
-	if tidy.AppliesUnasked(model.AnsweredNobody, false) != nil {
-		done.Problem = "the edit needs a look before it is committed: dockhand tidy --branch " + branch.ShortName()
-		return done
-	}
-	if _, err := e.ApplyTidy(ctx, tidy); err != nil {
-		done.Problem = err.Error()
-		return done
-	}
-	done.Tidied = true
-	if !options.Check {
-		return done
-	}
-	capture, err := e.Capture(ctx, CaptureRequest{Branch: branch, Mode: CaptureHead})
-	if err != nil {
-		done.Problem = err.Error()
-		return done
-	}
-	checkPlan, err := e.PlanCheck(ctx, PlanRequest{Revision: capture.Revision, Environments: options.Where.Environments, Span: options.Where.Span, Profile: options.Where.Profile, Tests: options.Tests})
-	if err != nil {
-		done.Problem = err.Error()
-		return done
-	}
-	if !checkPlan.Runnable() {
-		done.Problem = "its check can't be planned: " + unresolvedWords(checkPlan)
-		return done
-	}
-	run, err := e.Enqueue(ctx, branch, checkPlan, options.Origin)
-	if err != nil {
-		done.Problem = err.Error()
-		return done
-	}
-	done.Run = &run
+	done := e.Ship(ctx, ShipTarget{Port: planned.Port.Port, Current: planned.Port.Current, Version: planned.Port.Newest, Release: planned.Port.Release, Name: planned.Name},
+		ShipOptions{Origin: options.Origin, To: to, Where: options.Where, Tests: options.Tests, Answered: answered})
+	done.Planned = planned
 	return done
 }
 
