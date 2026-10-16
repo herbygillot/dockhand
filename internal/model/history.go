@@ -238,8 +238,7 @@ type Checkpoint struct {
 	// Before is the branch head it replaced, and After the one it wrote.
 	Before, After ObjectID
 	// BaseBefore and BaseAfter are the master the branch started from
-	// before and after: a rebase moves it, and a tidy doesn't. Empty for
-	// checkpoints recorded before they were kept.
+	// before and after: a rebase moves it, and a tidy doesn't.
 	BaseBefore, BaseAfter ObjectID
 	// Index is the tree the index held before the rewrite, which can hold
 	// staged content neither Before nor the working files have. IndexRef

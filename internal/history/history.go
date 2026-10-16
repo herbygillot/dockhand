@@ -117,7 +117,7 @@ func (h *Transitions) RecordRestore(ctx context.Context, checkpoint model.Checkp
 		}
 		// The history put back starts from the master it started from
 		// then, whatever the branch's base is now.
-		if checkpoint.BaseBefore != "" && current.Base != checkpoint.BaseBefore {
+		if current.Base != checkpoint.BaseBefore {
 			message += fmt.Sprintf(", back onto master %s", short(checkpoint.BaseBefore))
 			current.Base = checkpoint.BaseBefore
 			if err := tx.UpdateBranch(current); err != nil {

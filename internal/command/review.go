@@ -484,15 +484,6 @@ func restoreCheckpoint(ctx context.Context, e *engine.Engine, streams Streams, n
 		fmt.Fprintf(streams.Out, "Restored %s to its history before %s (%s). The files are unchanged.\n", branch.Name, checkpoint.Name(), engine.Short(checkpoint.Before))
 		return nil
 	}
-	fmt.Fprintf(streams.Out, "Restored %s to its history and files before %s (%s)", branch.Name, checkpoint.Name(), engine.Short(checkpoint.Before))
-	if checkpoint.BaseBefore != "" {
-		fmt.Fprintf(streams.Out, ", on master %s again.\n", engine.Short(branch.Base))
-		return nil
-	}
-	// A rebase recorded before checkpoints kept the base leaves the
-	// branch's base where the rebase moved it, which the history put
-	// back doesn't start from.
-	fmt.Fprintf(streams.Out, ".\n%s didn't record the master it moved %s from, so dockhand still takes it to start from master %s. dockhand rebase puts its commits there.\n",
-		checkpoint.Name(), branch.Name, engine.Short(branch.Base))
+	fmt.Fprintf(streams.Out, "Restored %s to its history and files before %s (%s), on master %s again.\n", branch.Name, checkpoint.Name(), engine.Short(checkpoint.Before), engine.Short(branch.Base))
 	return nil
 }

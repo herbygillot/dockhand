@@ -3,7 +3,6 @@ package command
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,7 +66,6 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	_, _, err = dockhand(t, "check")
 	require.NoError(t, err)
 	oldMaster := testsupport.Git(t, w.upstream, "rev-parse", "--short=7", "HEAD~1")
-	newMaster := testsupport.Git(t, w.upstream, "rev-parse", "--short=7", "HEAD")
 
 	// Restoring a rebase puts back its history, files, and master.
 	out, _, err = dockhand(t, "restore", "rebase-2")
@@ -82,16 +80,6 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	require.Contains(t, out, "Checkpoint rebase-3 keeps the old history")
 	require.Contains(t, out, "check-3 checked these files already: passed for this commit.\nNext: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch notes\n", "no remote pushes to a fork in this world")
 	require.NotContains(t, out, "Next: dockhand check")
-
-	// One recorded before checkpoints kept the base says what it leaves.
-	db, err := sql.Open("sqlite", filepath.Join(w.home, ".dockhand", "dockhand.db"))
-	require.NoError(t, err)
-	_, err = db.ExecContext(t.Context(), "UPDATE checkpoints SET base_before='', base_after='' WHERE number=3")
-	require.NoError(t, err)
-	require.NoError(t, db.Close())
-	out, _, err = dockhand(t, "restore", "rebase-3")
-	require.NoError(t, err)
-	require.Contains(t, out, ".\nrebase-3 didn't record the master it moved dockhand/notes from, so dockhand still takes it to start from master "+newMaster+". dockhand rebase puts its commits there.\n")
 
 	out, _, err = dockhand(t, "archive")
 	require.NoError(t, err)

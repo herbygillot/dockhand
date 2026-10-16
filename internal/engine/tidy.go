@@ -1026,6 +1026,9 @@ func (e *Engine) restore(ctx context.Context, checkpoint model.Checkpoint, branc
 	case checkpoint.RestoredAt != nil:
 		return checkpoint, branch, fmt.Errorf("%s was already restored", name)
 	}
+	if err := checkpoint.Validate(); err != nil {
+		return checkpoint, branch, err
+	}
 	worktree, err := e.worktree(ctx, branch)
 	if err != nil {
 		return checkpoint, branch, err
