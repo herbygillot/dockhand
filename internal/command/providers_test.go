@@ -269,7 +269,9 @@ func TestProviderLinesSayAnImageBehindThisMacsMacPorts(t *testing.T) {
 	images := &fakeImages{}
 	useImages(t, images)
 	tahoe := release(t, "tahoe")
-	images.status = tart.Status{Host: tahoe, Base: []macos.Release{tahoe}, Xcode: []macos.Release{tahoe},
-		Behind: []tart.BehindImage{{Release: tahoe, Xcode: true, MacPorts: "2.12.6", Host: "2.12.7"}}}
-	require.Contains(t, providers(t), "tart     ✓ images for macOS 26, with Xcode for 26; macOS 26's Xcode image has MacPorts 2.12.6, older than this Mac's 2.12.7: dockhand setup tart tahoe --rebuild --xcode <Xcode>\n")
+	sequoia := release(t, "sequoia")
+	images.status = tart.Status{Host: tahoe, Base: []macos.Release{sequoia, tahoe}, Xcode: []macos.Release{tahoe},
+		Behind: []tart.BehindImage{{Release: sequoia, MacPorts: "2.12.6", Host: "2.12.7"}, {Release: tahoe, Xcode: true, MacPorts: "2.12.6", Host: "2.12.7"}}}
+	require.Contains(t, providers(t), "tart     ✓ images for macOS 15, 26, with Xcode for 26; macOS 15's image and macOS 26's Xcode image have MacPorts 2.12.6, older than this Mac's 2.12.7: "+
+		"dockhand setup tart sequoia --rebuild; dockhand setup tart tahoe --rebuild --xcode <folder> (Xcode "+tahoe.Xcode+"'s .xip, or a folder xcodes downloads it into)\n", "one clause, each image's rebuild in it")
 }

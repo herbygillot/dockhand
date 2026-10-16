@@ -172,3 +172,12 @@ func TestReadiness(t *testing.T) {
 	require.Equal(t, Ready, Status{Host: tahoe, Base: []macos.Release{sequoia, tahoe}}.Readiness())
 	require.Equal(t, Ready, Status{Base: []macos.Release{sequoia}}.Readiness(), "a host release not known")
 }
+
+// An image made now installs this Mac's MacPorts where it's newer than the
+// floor, so a stale image's rebuild clears its staleness: a hard 2.12.6
+// made it again as stale (field testing, 2026-10-16).
+func TestANewImageInstallsThisMacsMacPorts(t *testing.T) {
+	require.Equal(t, "2.12.7", (&Provider{macPorts: "2.12.7"}).newMacPorts(t.Context()))
+	require.Equal(t, DefaultMacPorts, (&Provider{macPorts: "2.11.5"}).newMacPorts(t.Context()), "never older than the floor")
+	require.Equal(t, DefaultMacPorts, (&Provider{macPorts: DefaultMacPorts}).newMacPorts(t.Context()))
+}

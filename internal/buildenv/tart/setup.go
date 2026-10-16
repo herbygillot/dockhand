@@ -146,9 +146,23 @@ type SetupOptions struct {
 	Xcodes map[string]string
 }
 
-// DefaultMacPorts is the MacPorts an image installs unless asked for
-// another.
+// DefaultMacPorts is the oldest MacPorts an image installs unless asked
+// for another; one made installs this Mac's where it's newer
+// (newMacPorts).
 const DefaultMacPorts = macports.DefaultBaseVersion
+
+// newMacPorts is the MacPorts an image made now installs: this Mac's,
+// where it's newer than DefaultMacPorts, else DefaultMacPorts.
+func (p *Provider) newMacPorts(ctx context.Context) string {
+	host := p.macPorts
+	if host == "" {
+		host = HostMacPorts(ctx, macports.FindTclsh())
+	}
+	if host != "" && !macports.BaseAtLeast(DefaultMacPorts, host) {
+		return host
+	}
+	return DefaultMacPorts
+}
 
 // SetupResult is the image setup made, or found ready.
 type SetupResult struct {
@@ -208,7 +222,16 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 		if options.Xcode != "" {
 			image, disk = xcodeImage(release), XcodeDisk
 		}
-		if progress != nil && (options.Rebuild || !has(image)) {
+		making := options.Rebuild || !has(image)
+		// An image made now installs this Mac's MacPorts, where it's newer
+		// than the floor, so the image builds with what reads its ports:
+		// a hard 2.12.6 left the rebuild a stale image's hint named as
+		// stale as before (field testing, 2026-10-16). One that exists is
+		// checked against the floor, as before.
+		if making && options.MacPortsVersion == "" {
+			options.MacPortsVersion = p.newMacPorts(ctx)
+		}
+		if progress != nil && making {
 			fmt.Fprintf(progress, "Making %s for macOS %s (%s), which takes up to %s of disk.\n", image, release.Product, release.Name, disk)
 		}
 	}

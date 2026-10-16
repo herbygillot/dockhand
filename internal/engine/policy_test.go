@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -66,12 +67,22 @@ func (*behindProvider) MacPortsBehind(context.Context, model.Environment) (strin
 	return "2.12.6", "2.12.7"
 }
 
-// A plan says an environment whose MacPorts is older than this Mac's, which
-// reads its ports, with how to make its image again (the person's "yes",
-// 2026-10-16).
+// A plan says the environments it builds on whose MacPorts is older than
+// this Mac's, which reads their ports, in one line, with how to make each
+// image again, an Xcode image's Xcode named; one it builds nothing on isn't
+// said (the person's "yes", 2026-10-16; field testing, the same day).
 func TestPlanNotesSayAnEnvironmentBehindThisMacsMacPorts(t *testing.T) {
 	e := &Engine{Providers: map[string]buildenv.Provider{buildenv.Tart: &behindProvider{}}}
-	xcode := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
-	notes := e.PlanNotes(t.Context(), model.Plan{Environments: []model.Environment{xcode}, Tests: model.TestsDeclared})
-	require.Equal(t, []string{"tart macOS 26 (Tahoe) arm64 with Xcode builds with MacPorts 2.12.6, older than this Mac's 2.12.7, which reads its ports; dockhand setup tart tahoe --rebuild --xcode <Xcode> makes it again"}, notes)
+	at := func(darwin string) model.Environment {
+		return model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: darwin, Architecture: "arm64"}}
+	}
+	xcode := at("25")
+	xcode.DeveloperTools = model.DeveloperToolsXcode
+	monterey, sonoma := at("21"), at("23")
+	tahoe, err := macos.ReleaseForDarwin(25)
+	require.NoError(t, err)
+	plan := model.Plan{Environments: []model.Environment{monterey, sonoma, xcode}, Tests: model.TestsDeclared,
+		Builds: []model.EnvironmentPlan{{Environment: monterey, Order: []model.TargetID{"jq"}}, {Environment: sonoma}, {Environment: xcode, Order: []model.TargetID{"jq"}}}}
+	require.Equal(t, []string{"tart macOS 12 (Monterey) arm64 and tart macOS 26 (Tahoe) arm64 with Xcode build with MacPorts 2.12.6, older than this Mac's 2.12.7, which reads their ports; to make them again: " +
+		"dockhand setup tart monterey --rebuild; dockhand setup tart tahoe --rebuild --xcode <folder> (Xcode " + tahoe.Xcode + "'s .xip, or a folder xcodes downloads it into)"}, e.PlanNotes(t.Context(), plan))
 }

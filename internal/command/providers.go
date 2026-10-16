@@ -118,7 +118,7 @@ new one has passed.`,
 	}
 	cmd.Flags().BoolVar(&options.Check, "check", false, "check the image in a disposable clone, making nothing")
 	cmd.Flags().BoolVar(&options.Rebuild, "rebuild", false, "make a replacement even when the image exists")
-	cmd.Flags().StringVar(&options.MacPortsVersion, "macports-version", "", "the MacPorts the image installs (default "+tart.DefaultMacPorts+")")
+	cmd.Flags().StringVar(&options.MacPortsVersion, "macports-version", "", "the MacPorts the image installs (default this Mac's, at least "+tart.DefaultMacPorts+")")
 	cmd.Flags().StringVar(&options.Xcode, "xcode", "", "make the release's Xcode image, from an Xcode .xip or a folder of them")
 	return cmd
 }
@@ -186,12 +186,27 @@ func tartReadiness(ctx context.Context) string {
 	}
 	// An image keeps the MacPorts it was made with, which falls behind
 	// this Mac's, which reads its ports (the person's "yes", 2026-10-16).
-	for _, behind := range status.Behind {
-		which, rebuild := "image", "dockhand setup tart "+behind.Release.Slug+" --rebuild"
-		if behind.Xcode {
-			which, rebuild = "Xcode image", rebuild+" --xcode <Xcode>"
+	// The images behind are said in one clause for each pair of versions,
+	// each with its rebuild, an Xcode image's Xcode named where it said
+	// <Xcode> (field testing, 2026-10-16).
+	type versions struct{ image, host string }
+	var order []versions
+	behind := map[versions][]string{}
+	rebuilds := map[versions][]string{}
+	for _, image := range status.Behind {
+		key := versions{image.MacPorts, image.Host}
+		if _, seen := behind[key]; !seen {
+			order = append(order, key)
 		}
-		line += fmt.Sprintf("; macOS %s's %s has MacPorts %s, older than this Mac's %s: %s", behind.Release.Product, which, behind.MacPorts, behind.Host, rebuild)
+		which, rebuild := "macOS "+image.Release.Product+"'s image", "dockhand setup tart "+image.Release.Slug+" --rebuild"
+		if image.Xcode {
+			which, rebuild = "macOS "+image.Release.Product+"'s Xcode image", rebuild+" --xcode <folder> (Xcode "+image.Release.Xcode+"'s .xip, or a folder xcodes downloads it into)"
+		}
+		behind[key], rebuilds[key] = append(behind[key], which), append(rebuilds[key], rebuild)
+	}
+	for _, key := range order {
+		has := map[bool]string{true: "has", false: "have"}[len(behind[key]) == 1]
+		line += fmt.Sprintf("; %s %s MacPorts %s, older than this Mac's %s: %s", prose.And(behind[key]), has, key.image, key.host, strings.Join(rebuilds[key], "; "))
 	}
 	return line
 }

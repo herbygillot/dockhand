@@ -260,7 +260,7 @@ dockhand setup tart --check       # check the image in a disposable clone
 dockhand setup tart --rebuild     # a replacement, keeping the old one until the new one passes
 ```
 
-An image starts from Cirrus Labs' vanilla macOS image, and holds the Command Line Tools of the release's pinned generation and MacPorts: the release dockhand pins, unless `--macports-version` names another. Making one downloads the vanilla image the first time and takes up to 60 GB of disk. A golden copy is kept beside it, and a lost image is restored from it. Golden Gate, macOS 27, needs Tart 2.39.0 or newer, since its images have ASIF disks, which older Tart can't list while they run; setup says so before it starts anything.
+An image starts from Cirrus Labs' vanilla macOS image, and holds the Command Line Tools of the release's pinned generation and MacPorts: this Mac's, never older than the 2.12.6 dockhand pins, unless `--macports-version` names another. Making one downloads the vanilla image the first time and takes up to 60 GB of disk. A golden copy is kept beside it, and a lost image is restored from it. Golden Gate, macOS 27, needs Tart 2.39.0 or newer, since its images have ASIF disks, which older Tart can't list while they run; setup says so before it starts anything.
 
 Setup records what each image was made from: the vanilla image by digest, and the tools and MacPorts it installed. A check's results stand for the image it ran in. Once an image is made again from a newer vanilla image, or with other tools, what passed in the old one no longer counts, and `status` names the ports to check again. Rebuilding from the same source with the same tools keeps them.
 
