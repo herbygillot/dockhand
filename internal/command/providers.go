@@ -110,6 +110,19 @@ new one has passed.`,
 				fmt.Fprintf(streams.Out, "This Mac has MacPorts %s. Checks read ports with it and build them with the image's %s; --rebuild --macports-version %s makes them the same.\n",
 					host, result.MacPorts, host)
 			}
+			// An Xcode image is an add-on beside the release's base image,
+			// which keeps its own MacPorts: one made again with --xcode
+			// left the base, and its golden copy, on 2.12.6, unsaid (field
+			// testing, 2026-10-16).
+			if result.Xcode != "" {
+				if status, err := images.Status(cmd.Context()); err == nil {
+					for _, behind := range status.Behind {
+						if !behind.Xcode && behind.Release.Slug == result.Release.Slug {
+							fmt.Fprintf(streams.Out, "Its base image keeps MacPorts %s, older than this Mac's %s: dockhand setup tart %s --rebuild makes it again.\n", behind.MacPorts, behind.Host, behind.Release.Slug)
+						}
+					}
+				}
+			}
 			// Not a Next: line, which names only what the branch as it
 			// stands would accept, and setup has no branch.
 			fmt.Fprintf(streams.Out, "Checks build on it with --on tart:%s.\n", result.Release.Slug)

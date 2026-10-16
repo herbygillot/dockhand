@@ -275,3 +275,19 @@ func TestProviderLinesSayAnImageBehindThisMacsMacPorts(t *testing.T) {
 	require.Contains(t, providers(t), "tart     ✓ images for macOS 15, 26, with Xcode for 26; macOS 15's image and macOS 26's Xcode image have MacPorts 2.12.6, older than this Mac's 2.12.7: "+
 		"dockhand setup tart sequoia --rebuild; dockhand setup tart tahoe --rebuild --xcode <folder> (Xcode "+tahoe.Xcode+"'s .xip, or a folder xcodes downloads it into)\n", "one clause, each image's rebuild in it")
 }
+
+// An Xcode image made again says where its release's base image keeps an
+// older MacPorts, which --xcode leaves as it is (field testing,
+// 2026-10-16).
+func TestAnXcodeRebuildSaysItsBaseKeepsAnOlderMacPorts(t *testing.T) {
+	newWorld(t)
+	images := &fakeImages{}
+	useImages(t, images)
+	tahoe := release(t, "tahoe")
+	images.result = tart.SetupResult{Image: "dockhand-xcode-tahoe", Release: tahoe, MacPorts: "2.12.7", CommandLineTools: "26.0", Xcode: "26.0"}
+	images.status = tart.Status{Host: tahoe, Base: []macos.Release{tahoe}, Xcode: []macos.Release{tahoe},
+		Behind: []tart.BehindImage{{Release: tahoe, MacPorts: "2.12.6", Host: "2.12.7"}}}
+	out, _, err := dockhand(t, "setup", "tart", "tahoe", "--rebuild", "--xcode", t.TempDir())
+	require.NoError(t, err)
+	require.Contains(t, out, "Its base image keeps MacPorts 2.12.6, older than this Mac's 2.12.7: dockhand setup tart tahoe --rebuild makes it again.\n")
+}

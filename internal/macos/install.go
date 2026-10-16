@@ -199,7 +199,13 @@ func InstallXcode(ctx context.Context, run Command, archive string) error {
 	install := `set -eu
 archive=$1
 work=$(/usr/bin/mktemp -d /private/tmp/dockhand-xcode.XXXXXX)
-trap 'status=$?; if [ "$status" -eq 0 ]; then /bin/rm -rf "$work"; else printf "Xcode installation failed; workspace retained at %s\n" "$work" >&2; fi' EXIT
+# A failure leaves the workspace, removing nothing recursively, but names
+# no path in it: the VM it's in is deleted when setup fails, so the path
+# named nothing anyone could reach (field testing, 2026-10-16). The
+# guest's macOS and free space are said instead, which a failed expansion
+# turns on: monterey's failed with Xcode 14.0.1 where ventura's expanded
+# 14.3.1, the same size.
+trap 'status=$?; if [ "$status" -eq 0 ]; then /bin/rm -rf "$work"; else printf "Xcode installation failed on macOS %s; %s GB was free in /private/tmp\n" "$(/usr/bin/sw_vers -productVersion)" "$(/bin/df -g /private/tmp | /usr/bin/awk '"'"'NR==2 {print $4}'"'"')" >&2; fi' EXIT
 /bin/mv "$archive" "$work/Xcode.xip"
 cd "$work"
 printf 'Expanding Xcode archive...\n'

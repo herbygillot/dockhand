@@ -52,7 +52,9 @@ func TestFailedXcodeExpansionPreservesDiagnosticsWithoutRecursiveCleanup(t *test
 		return output, err
 	}, archive)
 	require.ErrorContains(t, err, "fixture extraction failure")
-	require.Contains(t, string(output), "workspace retained")
+	require.Contains(t, string(output), "Xcode installation failed on macOS ")
+	require.Contains(t, string(output), " GB was free in /private/tmp\n", "the free space, which a failed expansion turns on")
+	require.NotContains(t, string(output), "workspace retained", "a path in a VM setup deletes named nothing reachable")
 	paths, err := filepath.Glob(filepath.Join(root, "work.*", "Xcode.xip"))
 	require.NoError(t, err)
 	require.Len(t, paths, 1)
