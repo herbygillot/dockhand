@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // Severity is how much a finding matters.
@@ -52,7 +53,7 @@ type Finding struct {
 func (f Finding) String() string {
 	at := f.Where
 	if f.Commit != "" {
-		at = "commit " + short(f.Commit)
+		at = "commit " + model.ObjectID(f.Commit).Short()
 	}
 	code := ""
 	if f.Code != "" {
@@ -151,13 +152,6 @@ func namesPort(prefix string, ports []string) bool {
 		}
 	}
 	return false
-}
-
-func short(id string) string {
-	if len(id) > 7 {
-		return id[:7]
-	}
-	return id
 }
 
 // Portfile is one Portfile as a branch changes it.

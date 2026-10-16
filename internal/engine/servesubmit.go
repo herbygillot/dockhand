@@ -193,7 +193,7 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "source-moved", Subject: string(current.Commit), Class: model.Introduced,
-			Detail: fmt.Sprintf("%s's git.branch %s named %s when %s planned it, and names %s now: the check built another source than this would submit", target.Target.Name, planned.Ref, short(planned.Commit), evidence.Run.Name(), short(current.Commit))})
+			Detail: fmt.Sprintf("%s's git.branch %s named %s when %s planned it, and names %s now: the check built another source than this would submit", target.Target.Name, planned.Ref, planned.Commit.Short(), evidence.Run.Name(), current.Commit.Short())})
 	}
 	tags := map[[2]string]model.GitSource{}
 	for _, p := range plannedTags(evidence.Plan) {
@@ -237,7 +237,7 @@ func preparedSources(evidence *Evidence, edits []model.Edit) []model.Concern {
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "release-moved", Subject: string(planned.Commit), Class: model.Introduced,
-			Detail: fmt.Sprintf("%s's git.branch %s named %s when its update chose it, and %s when %s planned it: the check built another source than the update chose", target.Target.Name, planned.Ref, short(model.ObjectID(chosen.Commit)), short(planned.Commit), evidence.Run.Name())})
+			Detail: fmt.Sprintf("%s's git.branch %s named %s when its update chose it, and %s when %s planned it: the check built another source than the update chose", target.Target.Name, planned.Ref, model.ObjectID(chosen.Commit).Short(), planned.Commit.Short(), evidence.Run.Name())})
 	}
 	return concerns
 }
@@ -264,7 +264,7 @@ func assessedSources(evidence *Evidence, upstream []PortComparison) []model.Conc
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "assessment-moved", Subject: string(planned.Commit), Class: model.Introduced,
-			Detail: fmt.Sprintf("%s's assessment read %s, and %s planned %s: what upstream's change was judged of isn't the source the check built", target.Target.Name, short(model.ObjectID(read)), evidence.Run.Name(), short(planned.Commit))})
+			Detail: fmt.Sprintf("%s's assessment read %s, and %s planned %s: what upstream's change was judged of isn't the source the check built", target.Target.Name, model.ObjectID(read).Short(), evidence.Run.Name(), planned.Commit.Short())})
 	}
 	return concerns
 }

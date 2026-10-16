@@ -704,7 +704,7 @@ func hintBaseline(ctx context.Context, e *engine.Engine, out io.Writer, run mode
 	if len(ports) > 1 {
 		fails = "fail"
 	}
-	fmt.Fprintf(out, "To see whether %s %s at master %s too: dockhand check --baseline --branch %s\n", strings.Join(ports, ", "), fails, engine.Short(base), branch.ShortName())
+	fmt.Fprintf(out, "To see whether %s %s at master %s too: dockhand check --baseline --branch %s\n", strings.Join(ports, ", "), fails, base.Short(), branch.ShortName())
 	return nil
 }
 
@@ -825,7 +825,7 @@ func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Bas
 	for _, target := range baseline.Plan.Targets {
 		names = append(names, string(target.ID))
 	}
-	fmt.Fprintf(out, "%s · baseline of %s: %s at master %s\n", branch.ShortName(), baseline.Of.Name(), strings.Join(names, ", "), engine.Short(baseline.Revision.Source.Commit))
+	fmt.Fprintf(out, "%s · baseline of %s: %s at master %s\n", branch.ShortName(), baseline.Of.Name(), strings.Join(names, ", "), baseline.Revision.Source.Commit.Short())
 	if len(baseline.New) > 0 {
 		fmt.Fprintf(out, "  · left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
 	}
@@ -860,7 +860,7 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 		streams.emit(result)
 	}
 	fmt.Fprintln(out)
-	writeBaselineResults(out, base, branch, engine.Short(revision.Source.Commit))
+	writeBaselineResults(out, base, branch, revision.Source.Commit.Short())
 	switch run.State {
 	case model.RunCanceled:
 		return stoppedExit(run, base)

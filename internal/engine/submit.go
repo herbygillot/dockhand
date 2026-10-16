@@ -337,7 +337,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	for _, commit := range plan.Commits {
 		if commit.Merge() {
-			plan.Blocking = append(plan.Blocking, fmt.Sprintf("commit %s is a merge; MacPorts asks for a rebase instead", short(model.ObjectID(commit.ID))))
+			plan.Blocking = append(plan.Blocking, fmt.Sprintf("commit %s is a merge; MacPorts asks for a rebase instead", model.ObjectID(commit.ID).Short()))
 		}
 	}
 
@@ -549,7 +549,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	if last := plan.Branch.PullRequest; last != nil && last.Pushed != "" && pr.RemoteHead != last.Pushed && string(pr.RemoteHead) != plan.Commit {
 		plan.OthersPushed = pr.RemoteHead
 		plan.Blocking = append(plan.Blocking, fmt.Sprintf("someone else pushed to #%d: it is at %s, and dockhand last pushed %s. Fetch it (git fetch %s %s) and compare before submitting again; nothing will be pushed over it",
-			pr.Ref.Number, short(pr.RemoteHead), short(last.Pushed), remoteName, plan.RemoteBranch()))
+			pr.Ref.Number, pr.RemoteHead.Short(), last.Pushed.Short(), remoteName, plan.RemoteBranch()))
 	}
 	return nil
 }
@@ -699,6 +699,11 @@ func (e *Engine) openPullRequests(ctx context.Context, ports []string, except in
 			return nil, err.Error()
 		}
 		for _, pr := range found {
+			// GitHub's search matches a word anywhere in a title; one for the
+			// port names it as a MacPorts subject does.
+			if !slices.Contains(commitmsg.SubjectPorts(pr.Title), port) {
+				continue
+			}
 			if pr.Number != except && !slices.ContainsFunc(others, func(o forge.PullRequestSummary) bool { return o.Number == pr.Number }) {
 				others = append(others, pr)
 			}
@@ -777,7 +782,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		}
 	}
 	if err != nil {
-		return result, fmt.Errorf("pushed %s to %s, but the pull request was not written: %w; dockhand submit again finishes it", short(model.ObjectID(plan.Commit)), plan.Head(), err)
+		return result, fmt.Errorf("pushed %s to %s, but the pull request was not written: %w; dockhand submit again finishes it", model.ObjectID(plan.Commit).Short(), plan.Head(), err)
 	}
 	// The window a kill is worst in: GitHub has the pull request, and the
 	// record hasn't it yet (the rc6 full stage, D-I4).
@@ -826,11 +831,11 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 			verb = "opened"
 		}
 		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchSubmit, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, short(model.ObjectID(plan.Commit)))})
+			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short())})
 		return err
 	})
 	if err != nil {
-		return result, fmt.Errorf("#%d is open with %s, but recording it failed: %w; dockhand submit again finds it and records it", observed.PullRequest.Ref.Number, short(model.ObjectID(plan.Commit)), err)
+		return result, fmt.Errorf("#%d is open with %s, but recording it failed: %w; dockhand submit again finds it and records it", observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short(), err)
 	}
 	return result, nil
 }

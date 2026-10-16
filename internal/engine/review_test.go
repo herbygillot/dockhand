@@ -210,7 +210,7 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 	require.Equal(t, []Dependent{{Name: "jaq", Directory: "textproc/jaq", On: []string{"jq"}, Phases: []string{"library"}}}, report.Dependents)
 	markdown := report.Markdown()
 	require.Contains(t, markdown, "What upstream's change means, comparing the source archives with the base's:\n- upstream's COPYING changed; the Portfile's license line may need to follow\n")
-	require.Contains(t, markdown, "1 dependent, from the index at "+short(model.ObjectID(report.Base))+": jaq (library); candidates to look at.")
+	require.Contains(t, markdown, "1 dependent, from the index at "+model.ObjectID(report.Base).Short()+": jaq (library); candidates to look at.")
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		recorded, err := r.Assessments(store.AssessmentFilter{})
 		require.Empty(t, recorded, "a review records no assessment")

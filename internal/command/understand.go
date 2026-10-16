@@ -203,7 +203,7 @@ func treePaths(branch model.Branch, args []string) []string {
 
 func writeDiffSummary(out io.Writer, diff engine.BranchDiff) {
 	status := diff.Status
-	line := fmt.Sprintf("%s · from master %s", status.Branch.ShortName(), engine.Short(status.Branch.Base))
+	line := fmt.Sprintf("%s · from master %s", status.Branch.ShortName(), status.Branch.Base.Short())
 	if len(status.Edited) > 0 {
 		line += " · with uncommitted edits to " + prose.Plural(len(status.Edited), "file")
 	}

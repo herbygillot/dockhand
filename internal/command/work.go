@@ -210,11 +210,11 @@ tracked files.`,
 			}
 			streams.emit(map[string]any{"branch": branchRef(branch)})
 			if here {
-				fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now) in this checkout, and switched to it.\n", branch.Name, engine.Short(branch.Base))
+				fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now) in this checkout, and switched to it.\n", branch.Name, branch.Base.Short())
 				return nil
 			}
 			fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now)\nDirectory: %s\nNext: cd \"$(dockhand path %s)\"\n",
-				branch.Name, engine.Short(branch.Base), config.Tilde(branch.Worktree), branch.ShortName())
+				branch.Name, branch.Base.Short(), config.Tilde(branch.Worktree), branch.ShortName())
 			return nil
 		},
 	}
@@ -272,7 +272,7 @@ edit and you have write access, and never rewrites their description.`,
 				}
 				return nil
 			}
-			fmt.Fprintf(streams.Out, "Adopted %s: %s above master %s%s.\n", adoption.Branch.Name, prose.Plural(adoption.Commits, "commit"), engine.Short(adoption.Branch.Base), describeScope(adoption.Scope, adoption.Uncommitted))
+			fmt.Fprintf(streams.Out, "Adopted %s: %s above master %s%s.\n", adoption.Branch.Name, prose.Plural(adoption.Commits, "commit"), adoption.Branch.Base.Short(), describeScope(adoption.Scope, adoption.Uncommitted))
 			writePlaced(streams.Out, adoption)
 			return nil
 		},

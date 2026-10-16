@@ -184,7 +184,7 @@ func TestASubjectSaysWhoseCommitItCameFrom(t *testing.T) {
 	at := slices.IndexFunc(plan.Groups, func(g TidyGroup) bool { return g.Directory == "textproc/jq" })
 	require.GreaterOrEqual(t, at, 0)
 	jq := plan.Groups[at]
-	require.Contains(t, jq.Notes, "subject from your commit "+short(model.ObjectID(jq.Combines[0].ID)))
+	require.Contains(t, jq.Notes, "subject from your commit "+model.ObjectID(jq.Combines[0].ID).Short())
 
 	f := setup(t)
 	e := f.open(t)
@@ -196,7 +196,7 @@ func TestASubjectSaysWhoseCommitItCameFrom(t *testing.T) {
 	proposal, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Len(t, proposal.Groups, 1)
-	require.Contains(t, proposal.Groups[0].Notes, "subject from dockhand's commit "+short(model.ObjectID(proposal.Groups[0].Combines[0].ID)))
+	require.Contains(t, proposal.Groups[0].Notes, "subject from dockhand's commit "+model.ObjectID(proposal.Groups[0].Combines[0].ID).Short())
 }
 
 // A subject a person gives settles the block a missing one made, and only

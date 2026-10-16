@@ -95,3 +95,9 @@ func TestTheOtherBuildsCommitsName(t *testing.T) {
 		commitmsg.OtherBuilds([]string{old, current, "a hand commit\n", old}))
 	require.Empty(t, commitmsg.OtherBuilds([]string{current}))
 }
+
+func TestSubjectPorts(t *testing.T) {
+	require.Equal(t, []string{"gojq", "jq"}, commitmsg.SubjectPorts("gojq, jq: rebuild"))
+	require.Equal(t, []string{"jq"}, commitmsg.SubjectPorts("jq: update to 1.8.1"))
+	require.Nil(t, commitmsg.SubjectPorts("Update jq"))
+}

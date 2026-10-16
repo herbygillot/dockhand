@@ -203,7 +203,7 @@ func TestBranchesKeepTheirRules(t *testing.T) {
 	}))
 
 	merged := b
-	merged.State = model.BranchMerged
+	merged.State, merged.EndedAt = model.BranchMerged, at.Add(time.Hour)
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(merged) }))
 	reopened := merged
 	reopened.State = model.BranchOpen
@@ -224,7 +224,7 @@ func TestBranchesKeepTheirRules(t *testing.T) {
 		require.ErrorIs(t, err, store.ErrNotFound)
 		return nil
 	}))
-	reused.State = model.BranchMerged
+	reused.State, reused.EndedAt = model.BranchMerged, at.Add(2*time.Hour)
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(reused) }))
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
 		got, err := r.MergedBranchNamed(b.Name)
@@ -766,7 +766,7 @@ func TestArchivesGoWhenNoLiveResultNamesThem(t *testing.T) {
 		return digests
 	}
 	require.Equal(t, []string{"sha256:aa", "sha256:ab", "sha256:bb"}, prune(), "no result names two, and libharbor's older build is superseded")
-	b.State = model.BranchMerged
+	b.State, b.EndedAt = model.BranchMerged, at
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
 	require.Equal(t, []string{"sha256:cc"}, prune(), "a retired branch's goes, but for what reuse may choose")
 	require.Empty(t, prune())
@@ -801,8 +801,8 @@ func TestABranchRecordsWhenItEnded(t *testing.T) {
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
 	require.True(t, read().EndedAt.IsZero(), "opened again")
 	b.State = model.BranchClosed
-	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
-	require.WithinDuration(t, time.Now(), read().EndedAt, time.Minute, "the moment it left open, where none was given")
+	require.ErrorContains(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }), "leaves open, so it says when",
+		"the store invents no time (the architecture review's X5)")
 }
 
 // What an ended branch recorded of its checks goes once it's been ended

@@ -298,7 +298,7 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 		return err
 	}
 	if plan.Commit != bound {
-		return fmt.Errorf("%s moved to %s while it was checked; nothing was submitted, since submit --check binds %s", plan.Branch.ShortName(), engine.Short(model.ObjectID(plan.Commit)), engine.Short(model.ObjectID(bound)))
+		return fmt.Errorf("%s moved to %s while it was checked; nothing was submitted, since submit --check binds %s", plan.Branch.ShortName(), model.ObjectID(plan.Commit).Short(), model.ObjectID(bound).Short())
 	}
 	streams.emit(submitView(plan))
 	if len(plan.Blocking) > 0 {
@@ -460,7 +460,7 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 		fmt.Fprintf(out, "  %s\n", finding)
 	}
 	for _, commit := range plan.ModifiedBuilds {
-		fmt.Fprintf(out, "  ! commit %s's Generated-By names a dockhand built from uncommitted source, which nobody else can find; tidy it again with a build of a pushed commit\n", engine.Short(model.ObjectID(commit)))
+		fmt.Fprintf(out, "  ! commit %s's Generated-By names a dockhand built from uncommitted source, which nobody else can find; tidy it again with a build of a pushed commit\n", model.ObjectID(commit).Short())
 	}
 	for _, build := range plan.UnfoundBuilds {
 		fmt.Fprintf(out, "  ! %s\n", unfoundBuildWords(build))
@@ -537,15 +537,15 @@ func pushWords(plan engine.SubmitPlan) string {
 	// What the blocker holds isn't said as what the push would do (the
 	// rc6 full stage, D-S1: "replaces the fork's branch at d2b5022 …").
 	case plan.OthersPushed != "":
-		return "won't push: someone else pushed " + engine.Short(plan.OthersPushed)
+		return "won't push: someone else pushed " + plan.OthersPushed.Short()
 	case plan.RemoteHead.Exists && plan.RemoteHead.Object == plan.Commit:
-		return "nothing new; the fork already has " + engine.Short(model.ObjectID(plan.Commit))
+		return "nothing new; the fork already has " + model.ObjectID(plan.Commit).Short()
 	case plan.Replaces:
-		return fmt.Sprintf("replaces the fork's branch at %s with %s, only if it is still there", engine.Short(model.ObjectID(plan.RemoteHead.Object)), engine.Short(model.ObjectID(plan.Commit)))
+		return fmt.Sprintf("replaces the fork's branch at %s with %s, only if it is still there", model.ObjectID(plan.RemoteHead.Object).Short(), model.ObjectID(plan.Commit).Short())
 	case plan.RemoteHead.Exists:
-		return fmt.Sprintf("adds to the fork's branch, up to %s", engine.Short(model.ObjectID(plan.Commit)))
+		return fmt.Sprintf("adds to the fork's branch, up to %s", model.ObjectID(plan.Commit).Short())
 	}
-	return "creates the fork's branch at " + engine.Short(model.ObjectID(plan.Commit))
+	return "creates the fork's branch at " + model.ObjectID(plan.Commit).Short()
 }
 
 func checkWords(plan engine.SubmitPlan) string {
@@ -635,7 +635,7 @@ func otherWords(plan engine.SubmitPlan) string {
 func unfoundBuildWords(build engine.UnfoundBuild) string {
 	var commits []string
 	for _, commit := range build.Commits {
-		commits = append(commits, engine.Short(model.ObjectID(commit)))
+		commits = append(commits, model.ObjectID(commit).Short())
 	}
 	words := fmt.Sprintf("commit %s's Generated-By names dockhand %s", commits[0], build.Build)
 	if len(commits) > 1 {
@@ -743,7 +743,7 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	case submitted.Pushed && plan.Replaces:
 		fmt.Fprintf(streams.Out, "Updated #%d: replaced its history with %s (the fork's branch was where submit saw it)\n", pr.Ref.Number, prose.Plural(len(plan.Commits), "commit"))
 	case submitted.Pushed:
-		fmt.Fprintf(streams.Out, "Updated #%d: pushed up to %s\n", pr.Ref.Number, engine.Short(model.ObjectID(plan.Commit)))
+		fmt.Fprintf(streams.Out, "Updated #%d: pushed up to %s\n", pr.Ref.Number, model.ObjectID(plan.Commit).Short())
 	default:
 		fmt.Fprintln(streams.Out, updatedWords(submitted.Edited, pr.Ref.Number))
 	}

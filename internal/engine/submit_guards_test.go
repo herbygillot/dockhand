@@ -92,7 +92,7 @@ func TestSubmitHoldsAMergeCommit(t *testing.T) {
 	// A side commit merged in, as a pull of master would leave.
 	side := testsupport.Git(t, branch.Worktree, "commit-tree", "HEAD~1^{tree}", "-p", "HEAD~1", "-m", "side")
 	testsupport.Git(t, branch.Worktree, "merge", "-q", "--no-ff", "--no-edit", side)
-	merge := short(model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")))
+	merge := (model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))).Short()
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Contains(t, plan.Blocking, "commit "+merge+" is a merge; MacPorts asks for a rebase instead")

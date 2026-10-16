@@ -36,7 +36,7 @@ func TestASavedPlanIsHeldOrRefusedForWhatItLacks(t *testing.T) {
 	moved.Base = saved.Head
 	_, err = e.LoadTidyPlan(t.Context(), encode(moved))
 	require.ErrorIs(t, err, ErrStalePlan)
-	require.ErrorContains(t, err, "its base moved from "+short(model.ObjectID(saved.Head))+" to "+short(plan.Branch.Base))
+	require.ErrorContains(t, err, "its base moved from "+model.ObjectID(saved.Head).Short()+" to "+plan.Branch.Base.Short())
 
 	unsigned := saved
 	unsigned.Commits = append([]savedCommit(nil), saved.Commits...)

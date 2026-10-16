@@ -183,11 +183,7 @@ func Compose(facts Facts) string {
 			if !ok {
 				ports, change = "", commit.subject()
 			}
-			id := commit.ID
-			if len(id) > 7 {
-				id = id[:7]
-			}
-			fmt.Fprintf(&b, "| %s | %s | %s |\n", id, escape(ports), escape(change))
+			fmt.Fprintf(&b, "| %s | %s | %s |\n", model.ObjectID(commit.ID).Short(), escape(ports), escape(change))
 		}
 		fmt.Fprintln(&b)
 	}

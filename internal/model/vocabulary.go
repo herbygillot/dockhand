@@ -11,6 +11,15 @@ import (
 // ObjectID is a full Git object identifier for a commit, tree, or blob.
 type ObjectID string
 
+// Short abbreviates a commit for people: its first seven characters (the
+// architecture review's H1: three copies and engine.Short, one now).
+func (id ObjectID) Short() string {
+	if len(id) > 7 {
+		return string(id[:7])
+	}
+	return string(id)
+}
+
 // RepositoryID identifies a registered ports repository: one clone, with its
 // linked worktrees.
 type RepositoryID string

@@ -194,7 +194,7 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 	committer.When = e.now()
 	rebased, err := worktree.Replay(ctx, string(master), string(current.Base), head, committer)
 	if errors.Is(err, git.ErrRebaseConflict) {
-		return Rebased{}, fmt.Errorf("%w; %s is as it was. Resolve it by hand with git rebase %s, or ask for help on the PR", err, current.ShortName(), short(master))
+		return Rebased{}, fmt.Errorf("%w; %s is as it was. Resolve it by hand with git rebase %s, or ask for help on the PR", err, current.ShortName(), master.Short())
 	}
 	if err != nil {
 		return Rebased{}, err
@@ -208,7 +208,7 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 		// Master has every change the branch makes: it was merged, by
 		// its pull request or another's, and moving it onto master would
 		// leave a branch that changes nothing.
-		return Rebased{}, fmt.Errorf("master %s already has every change %s makes, so there's nothing to rebase; dockhand clean %s removes it once its pull request is merged", short(master), current.ShortName(), current.ShortName())
+		return Rebased{}, fmt.Errorf("master %s already has every change %s makes, so there's nothing to rebase; dockhand clean %s removes it once its pull request is merged", master.Short(), current.ShortName(), current.ShortName())
 	}
 	result.Commits = len(replayed)
 	var messages []string
@@ -267,6 +267,9 @@ func (e *Engine) Archive(ctx context.Context, branch model.Branch, undo bool) (m
 			return fmt.Errorf("%s is %s, so it can't be %s", current.ShortName(), current.State, verb)
 		}
 		current.State = next
+		if next != model.BranchOpen {
+			current.EndedAt = e.now()
+		}
 		if err := tx.UpdateBranch(current); err != nil {
 			return err
 		}

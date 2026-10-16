@@ -158,7 +158,7 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 		if err != nil {
 			return report, err
 		}
-		report.Behind = fmt.Sprintf("master here is behind #%d's base, %s past it to its head where the pull request has %s, so it's reviewed from %s, before its own", number, prose.Plural(len(report.Commits), "commit"), prose.Plural(n, "commit"), short(model.ObjectID(own)))
+		report.Behind = fmt.Sprintf("master here is behind #%d's base, %s past it to its head where the pull request has %s, so it's reviewed from %s, before its own", number, prose.Plural(len(report.Commits), "commit"), prose.Plural(n, "commit"), model.ObjectID(own).Short())
 		report.Base = own
 		if report.Commits, err = e.Repo.History(ctx, report.Base, report.Head); err != nil {
 			return report, err
@@ -252,7 +252,7 @@ func reviewFindings(findings []commitrules.Finding) []model.ReviewFinding {
 // Portfile line are also posted as comments on that line.
 func (r ReviewReport) Markdown() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Reviewed at %s with [dockhand](https://github.com/herbygillot/dockhand)'s commit rules.\n\n", short(model.ObjectID(r.Head)))
+	fmt.Fprintf(&b, "Reviewed at %s with [dockhand](https://github.com/herbygillot/dockhand)'s commit rules.\n\n", model.ObjectID(r.Head).Short())
 	fmt.Fprintf(&b, "%s.\n", r.Summary())
 	if len(r.Findings) > 0 {
 		b.WriteString("\n")
@@ -263,7 +263,7 @@ func (r ReviewReport) Markdown() string {
 		b.WriteString("\nThe commits and Portfiles follow the rules dockhand checks.\n")
 	}
 	if len(r.Resolved) > 0 {
-		fmt.Fprintf(&b, "\nResolved since the review at %s:\n", short(r.Previous.Head))
+		fmt.Fprintf(&b, "\nResolved since the review at %s:\n", r.Previous.Head.Short())
 		for _, finding := range r.Resolved {
 			fmt.Fprintf(&b, "- ~~%s~~ [%s]\n", finding.Message, finding.Code)
 		}
@@ -330,7 +330,7 @@ func (r ReviewReport) DependentsWords() string {
 	if more := len(r.Dependents) - len(named); more > 0 {
 		words += fmt.Sprintf(", and %d more", more)
 	}
-	return fmt.Sprintf("%s, from the index at %s: %s; candidates to look at.", prose.Plural(len(r.Dependents), "dependent"), short(model.ObjectID(r.Base)), words)
+	return fmt.Sprintf("%s, from the index at %s: %s; candidates to look at.", prose.Plural(len(r.Dependents), "dependent"), model.ObjectID(r.Base).Short(), words)
 }
 
 // Comments are the findings on a Portfile line, as comments on that line.
@@ -356,7 +356,7 @@ func (e *Engine) RecordReview(ctx context.Context, report ReviewReport, posted s
 			Findings: reviewFindings(report.Findings), Posted: posted, At: e.now()}); err != nil {
 			return err
 		}
-		message := fmt.Sprintf("reviewed #%d at %s: %s", report.Ref.Number, short(model.ObjectID(report.Head)), prose.Plural(len(report.Findings), "finding"))
+		message := fmt.Sprintf("reviewed #%d at %s: %s", report.Ref.Number, model.ObjectID(report.Head).Short(), prose.Plural(len(report.Findings), "finding"))
 		if posted != "" {
 			message += ", posted as " + strings.ReplaceAll(posted, "-", " ")
 		}

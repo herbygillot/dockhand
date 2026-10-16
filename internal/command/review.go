@@ -433,9 +433,9 @@ func restoreCheckpoint(ctx context.Context, e *engine.Engine, streams Streams, n
 	}
 	streams.emit(map[string]any{"checkpoint": checkpoint.Name(), "branch": branch.ShortName(), "head": checkpoint.Before, "base": branch.Base})
 	if checkpoint.Kind != model.CheckpointRebase {
-		fmt.Fprintf(streams.Out, "Restored %s to its history before %s (%s). The files are unchanged.\n", branch.Name, checkpoint.Name(), engine.Short(checkpoint.Before))
+		fmt.Fprintf(streams.Out, "Restored %s to its history before %s (%s). The files are unchanged.\n", branch.Name, checkpoint.Name(), checkpoint.Before.Short())
 		return nil
 	}
-	fmt.Fprintf(streams.Out, "Restored %s to its history and files before %s (%s), on master %s again.\n", branch.Name, checkpoint.Name(), engine.Short(checkpoint.Before), engine.Short(branch.Base))
+	fmt.Fprintf(streams.Out, "Restored %s to its history and files before %s (%s), on master %s again.\n", branch.Name, checkpoint.Name(), checkpoint.Before.Short(), branch.Base.Short())
 	return nil
 }

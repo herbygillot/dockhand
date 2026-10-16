@@ -102,6 +102,23 @@ func Unchanged(had, want string) bool {
 	return without(had) == without(want)
 }
 
+// SubjectPorts are the ports a subject in MacPorts' form names, "a, b:
+// what changed": the names before its first colon; none where it has no
+// colon. A pull request's title takes the same form.
+func SubjectPorts(subject string) []string {
+	prefix, _, ok := strings.Cut(subject, ":")
+	if !ok {
+		return nil
+	}
+	var ports []string
+	for name := range strings.SplitSeq(prefix, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			ports = append(ports, name)
+		}
+	}
+	return ports
+}
+
 // Subject composes the commit subject MacPorts asks for, "<port>: <what
 // changed>". The person writes only what follows the port name, so a
 // subject that already carries it is refused rather than doubled.

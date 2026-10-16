@@ -14,7 +14,7 @@ import (
 	githubapi "github.com/herbygillot/dockhand/internal/github"
 )
 
-func TestOpenPullRequestsMatchTheSubjectsPortList(t *testing.T) {
+func TestOpenPullRequestsAreTheSearchsPullRequests(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/search/issues", r.URL.Path)
 		assert.Equal(t, `repo:macports/macports-ports is:pr is:open in:title "jq"`, r.URL.Query().Get("q"))
@@ -33,7 +33,8 @@ func TestOpenPullRequestsMatchTheSubjectsPortList(t *testing.T) {
 	require.Equal(t, []forge.PullRequestSummary{
 		{Number: 1, Title: "jq: update to 1.8.0", URL: "https://github.com/macports/macports-ports/pull/1"},
 		{Number: 2, Title: "gojq, jq: rebuild", URL: "u2"},
-	}, found)
+		{Number: 3, Title: "jqp: update to 0.8", URL: "u3"},
+	}, found, "which name the port is the caller's rule")
 	_, err = client.OpenPullRequests(t.Context(), "macports/macports-ports", `jq" OR`)
 	require.Error(t, err)
 }

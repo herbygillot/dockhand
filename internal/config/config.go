@@ -23,7 +23,11 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
+	// buildenv for its constants alone: the providers' names, which
+	// check.on and capacity name, and their timeout defaults.
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	// macports for the maintainers line's rules, which maintainer is
+	// checked against as it's read.
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/prose"
 )

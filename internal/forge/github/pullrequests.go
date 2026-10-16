@@ -144,7 +144,9 @@ func (c *Client) Update(ctx context.Context, input forge.PullRequestInput) (forg
 }
 
 // OpenPullRequests finds a repository's open pull requests whose titles
-// name a port the way a MacPorts subject does, "port:" or "port,".
+// contain a word, as GitHub's search reads it; which of them name a port
+// is MacPorts' subject rule, the caller's (commitmsg.SubjectPorts; the
+// architecture review's H2).
 func (c *Client) OpenPullRequests(ctx context.Context, repository, port string) ([]forge.PullRequestSummary, error) {
 	if !githubapi.ValidRepositoryName(repository) || port == "" || strings.ContainsAny(port, "\" \t\r\n") {
 		return nil, fmt.Errorf("github: invalid pull-request search")
@@ -161,27 +163,12 @@ func (c *Client) OpenPullRequests(ctx context.Context, repository, port string) 
 	var found []forge.PullRequestSummary
 	for _, issue := range result.Issues {
 		title := issue.GetTitle()
-		if !issue.IsPullRequest() || !namesPort(title, port) {
+		if !issue.IsPullRequest() {
 			continue
 		}
 		found = append(found, forge.PullRequestSummary{Number: issue.GetNumber(), Title: title, URL: issue.GetHTMLURL()})
 	}
 	return found, nil
-}
-
-// namesPort reports whether a title begins with a port list, "a, b: …",
-// that includes the port.
-func namesPort(title, port string) bool {
-	prefix, _, ok := strings.Cut(title, ":")
-	if !ok {
-		return false
-	}
-	for name := range strings.SplitSeq(prefix, ",") {
-		if strings.TrimSpace(name) == port {
-			return true
-		}
-	}
-	return false
 }
 
 // appRestricted is GitHub's refusal of an app an organization hasn't

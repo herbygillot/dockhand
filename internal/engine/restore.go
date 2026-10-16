@@ -108,7 +108,7 @@ func (e *Engine) restore(ctx context.Context, checkpoint model.Checkpoint, branc
 	}
 	if model.ObjectID(head) != checkpoint.After {
 		return checkpoint, branch, fmt.Errorf("%s has moved on since %s (it is at %s, not %s); restoring would discard that work, so nothing was changed",
-			branch.Name, name, short(model.ObjectID(head)), short(checkpoint.After))
+			branch.Name, name, model.ObjectID(head).Short(), checkpoint.After.Short())
 	}
 	if checkpoint.Index != "" {
 		// The rewrite left the index at its new head's tree; anything

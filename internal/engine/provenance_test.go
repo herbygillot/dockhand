@@ -63,7 +63,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	require.Equal(t, []string{dirty}, plan.ModifiedBuilds)
 	require.Empty(t, plan.Blocking)
 	for _, held := range HoldLines(plan.held()) {
-		for _, said := range []string{"Generated-By", unpushed, "v0.3.0", short(model.ObjectID(first)), short(model.ObjectID(local))} {
+		for _, said := range []string{"Generated-By", unpushed, "v0.3.0", model.ObjectID(first).Short(), model.ObjectID(local).Short()} {
 			require.NotContains(t, held, said, "nothing holds a submission nobody looks over")
 		}
 	}

@@ -216,6 +216,7 @@ func recordPullRequest(tx store.Tx, branch model.Branch, next model.PullRequestO
 	}
 	current.PullRequest.Observed = &next
 	current.PullRequest.Draft = next.Draft
+	was := current.State
 	switch {
 	case next.State == model.PullRequestMerged && current.State.CanBecome(model.BranchMerged):
 		current.State = model.BranchMerged
@@ -223,6 +224,11 @@ func recordPullRequest(tx store.Tx, branch model.Branch, next model.PullRequestO
 		current.State = model.BranchClosed
 	case next.State == model.PullRequestOpen && current.State == model.BranchClosed:
 		current.State = model.BranchOpen
+	}
+	// It ended when GitHub was seen to say so; the store records the time
+	// it's given, and invents none (the architecture review's X5).
+	if was == model.BranchOpen && current.State != model.BranchOpen {
+		current.EndedAt = next.At
 	}
 	if err := tx.UpdateBranch(current); err != nil {
 		return err

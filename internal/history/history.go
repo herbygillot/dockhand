@@ -118,7 +118,7 @@ func (h *Transitions) RecordRestore(ctx context.Context, checkpoint model.Checkp
 		// The history put back starts from the master it started from
 		// then, whatever the branch's base is now.
 		if current.Base != checkpoint.BaseBefore {
-			message += fmt.Sprintf(", back onto master %s", short(checkpoint.BaseBefore))
+			message += fmt.Sprintf(", back onto master %s", checkpoint.BaseBefore.Short())
 			current.Base = checkpoint.BaseBefore
 			if err := tx.UpdateBranch(current); err != nil {
 				return err
@@ -164,7 +164,7 @@ func (h *Transitions) SetBase(tx store.Tx, id model.BranchID, base model.ObjectI
 	if err := tx.UpdateBranch(current); err != nil {
 		return err
 	}
-	message := fmt.Sprintf("rebased %s from master %s onto %s", current.Name, short(previous), short(base))
+	message := fmt.Sprintf("rebased %s from master %s onto %s", current.Name, previous.Short(), base.Short())
 	if checkpoint != "" {
 		message += " (checkpoint " + checkpoint + ")"
 	}
@@ -294,12 +294,4 @@ func (h *Transitions) dropCheckpointRefs(ctx context.Context, checkpoint model.C
 // finishes the record.
 func Unfinished(what string, err error) error {
 	return fmt.Errorf("%s, but recording it failed: %w; the next dockhand tidy, rebase, or restore of this branch finishes the record", what, err)
-}
-
-// short abbreviates a commit for people.
-func short(id model.ObjectID) string {
-	if len(id) > 7 {
-		return string(id[:7])
-	}
-	return string(id)
 }

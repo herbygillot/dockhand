@@ -176,7 +176,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	if none {
 		return noneChecked(report)
 	}
-	ports, master := prose.Plural(len(report.Ports), "port"), engine.Short(report.Master)
+	ports, master := prose.Plural(len(report.Ports), "port"), report.Master.Short()
 	var line string
 	alone := len(report.Ports) == 1 && newer == 0 && unknown == 0 && unready == 0
 	// What couldn't be checked leads, and the result is the rest's, which
@@ -281,7 +281,7 @@ func noneChecked(report engine.OutdatedReport) error {
 		}
 	}
 	problem, _, _ := strings.Cut(report.Ports[0].Problem, "\n")
-	return fmt.Errorf("no port could be checked, at master %s: %s", engine.Short(report.Master), problem)
+	return fmt.Errorf("no port could be checked, at master %s: %s", report.Master.Short(), problem)
 }
 
 // updateOutdated is update --outdated: it shows how it splits the work,

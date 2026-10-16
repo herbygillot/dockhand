@@ -132,7 +132,7 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 			return err
 		}
 		_, err := tx.AppendEvent(model.Event{At: branch.CreatedAt, Branch: branch.ID, Kind: model.EventBranchStart, Level: model.LevelVerbose,
-			Message: fmt.Sprintf("started %s from master %s in %s", name, short(base), directory)})
+			Message: fmt.Sprintf("started %s from master %s in %s", name, base.Short(), directory)})
 		return err
 	}, branchRecorded(branch.ID)); err != nil {
 		return model.Branch{}, errors.Join(err, undo())
@@ -298,7 +298,7 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 			return err
 		}
 		_, err := tx.AppendEvent(model.Event{At: adoption.Branch.CreatedAt, Branch: adoption.Branch.ID, Kind: model.EventBranchAdopt, Level: model.LevelVerbose,
-			Message: fmt.Sprintf("adopted %s: %d commits above master %s", name, adoption.Commits, short(model.ObjectID(base)))})
+			Message: fmt.Sprintf("adopted %s: %d commits above master %s", name, adoption.Commits, model.ObjectID(base).Short())})
 		return err
 	})
 	if err == nil && worktree == "" {
@@ -638,16 +638,6 @@ func (e *Engine) checkOutAgain(ctx context.Context, branch model.Branch) error {
 		return err
 	})
 }
-
-func short(id model.ObjectID) string {
-	if len(id) > 7 {
-		return string(id[:7])
-	}
-	return string(id)
-}
-
-// Short abbreviates a commit for people.
-func Short(id model.ObjectID) string { return short(id) }
 
 func listPaths(paths []string) string {
 	if len(paths) > 3 {

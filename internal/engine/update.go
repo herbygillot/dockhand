@@ -52,11 +52,12 @@ type UpdateRequest struct {
 	// finds one: the update takes it rather than asking upstream again,
 	// and checks it against the Portfile as any. Its version is Version's.
 	Release *model.Release
-	// KeepOldChecksums refreshes a legacy checksum group's values in place
-	// instead of rewriting it as rmd160, sha256, and size.
-	KeepOldChecksums bool
-	// SharedRelease moves every subport that shares the port's release.
-	SharedRelease bool
+	// EditIntent is what the person authorized for the edit, which it
+	// records: SharedRelease moves every subport that shares the port's
+	// release, and KeepOldChecksums refreshes a legacy checksum group's
+	// values in place (the architecture review's C4c: embedded, not
+	// copied field by field).
+	model.EditIntent
 	// Subject is the reason for a revision bump, the commit subject after
 	// the port's name: "rebuild for poppler 25.09.0".
 	Subject string
@@ -353,7 +354,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		return Update{}, err
 	}
 	input := editprep.Request{
-		EditIntent: model.EditIntent{SharedRelease: request.SharedRelease, KeepOldChecksums: request.KeepOldChecksums},
+		EditIntent: request.EditIntent,
 		Action:     request.Action,
 		Source:     model.Source{Tree: model.ObjectID(captured), Base: model.ObjectID(base)},
 		Selection:  macports.Selection{Selector: request.Port},

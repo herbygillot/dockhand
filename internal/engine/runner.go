@@ -605,14 +605,25 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			fault := strings.TrimPrefix(err.Error(), buildenv.ErrDockhandFault.Error()+": ")
 			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", DescribeEnvironment(environment), fault))
 			return nil
-		case err != nil:
-			// Infrastructure trouble, and what no provider classified, is
+		case errors.Is(err, buildenv.ErrInfrastructure):
+			// Infrastructure trouble, a VM or a runner that failed, is
 			// tried again.
 			d.emit(ctx, model.EventExecutionRetry, fmt.Sprintf("%s: %v", DescribeEnvironment(environment), err))
 			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
 				return err
 			}
 			continue
+		case err != nil:
+			// What a provider didn't mark as infrastructure isn't a VM's
+			// flake, as a platform this dockhand doesn't know isn't:
+			// another attempt would meet it again, so it's said at once,
+			// as dockhand's, where three attempts cloned three VMs for it
+			// (the architecture review's X2, finished).
+			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
+				return err
+			}
+			d.problem(fmt.Sprintf("dockhand: %s: %v; the provider didn't mark it as trouble another attempt could clear, so none was made", DescribeEnvironment(environment), err))
+			return nil
 		}
 		return d.endExecution(ctx, execution, model.ExecutionFinished, "")
 	}

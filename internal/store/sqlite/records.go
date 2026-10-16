@@ -1,13 +1,11 @@
 package sqlite
 
 import (
-	"cmp"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -117,7 +115,10 @@ func (t *tx) AddBranch(b model.Branch) error {
 	repository, number, head, pushed, body, draft, observed, adopted := pullRequestColumns(b.PullRequest)
 	var ended any
 	if b.State != model.BranchOpen {
-		ended = millis(cmp.Or(b.EndedAt, time.Now()))
+		if b.EndedAt.IsZero() {
+			return fmt.Errorf("branch %s is %s, so it says when it ended", b.Name, b.State)
+		}
+		ended = millis(b.EndedAt)
 	}
 	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, millis(b.CreatedAt), b.Origin, b.Note, ended, strings.Join(b.Ports, " "))
@@ -125,22 +126,23 @@ func (t *tx) AddBranch(b model.Branch) error {
 }
 
 // endedAt is when a branch going from one state to another ended: none
-// once it's open, the time given or now as it leaves open, and else when
-// it ended before, unless a time is given.
-func endedAt(current, next model.Branch) any {
+// once it's open, the time given as it leaves open, which it must give,
+// since the store invents none (the architecture review's X5), and else
+// when it ended before, unless a time is given.
+func endedAt(current, next model.Branch) (any, error) {
 	ended := current.EndedAt
 	switch {
 	case next.State == model.BranchOpen:
-		return nil
-	case current.State == model.BranchOpen:
-		ended = cmp.Or(next.EndedAt, time.Now())
+		return nil, nil
+	case current.State == model.BranchOpen && next.EndedAt.IsZero():
+		return nil, fmt.Errorf("branch %s leaves open, so it says when", next.Name)
 	case !next.EndedAt.IsZero():
 		ended = next.EndedAt
 	}
 	if ended.IsZero() {
-		return nil
+		return nil, nil
 	}
-	return millis(ended)
+	return millis(ended), nil
 }
 
 func (t *tx) UpdateBranch(b model.Branch) error {
@@ -160,9 +162,13 @@ func (t *tx) UpdateBranch(b model.Branch) error {
 	if !current.CreatedAt.Equal(b.CreatedAt) {
 		return fmt.Errorf("%w: branch %s's creation time is fixed", store.ErrConflict, b.ID)
 	}
+	ended, err := endedAt(current, b)
+	if err != nil {
+		return err
+	}
 	repository, number, head, pushed, body, draft, observed, adopted := pullRequestColumns(b.PullRequest)
 	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, pr_adopted=?, note=?, ended_at=?, ports=? WHERE repository_id=? AND id=?",
-		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, b.Note, endedAt(current, b), strings.Join(b.Ports, " "), t.repo, b.ID)
+		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, b.Note, ended, strings.Join(b.Ports, " "), t.repo, b.ID)
 }
 
 const revisionColumns = "id, branch_id, kind, snapshot, commit_id, tree_id, base_id, head_id, created_at"

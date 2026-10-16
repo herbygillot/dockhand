@@ -480,10 +480,10 @@ func TestOtherOpenPullRequestsLeaveOutTheBranchsOwn(t *testing.T) {
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
-	fake.Others = []forge.PullRequestSummary{{Number: 35044, Title: "flatbuffers: update"}, {Number: 34620, Title: "libuv: update"}}
+	fake.Others = []forge.PullRequestSummary{{Number: 35044, Title: "flatbuffers: update"}, {Number: 34620, Title: "libsigmf, flatbuffers: rebuild"}, {Number: 35000, Title: "libuv: update for flatbuffers"}}
 	others, problem := e.openPullRequests(t.Context(), []string{"flatbuffers", "libsigmf"}, 35044)
 	require.Empty(t, problem)
-	require.Equal(t, []forge.PullRequestSummary{{Number: 34620, Title: "libuv: update"}}, others)
+	require.Equal(t, []forge.PullRequestSummary{{Number: 34620, Title: "libsigmf, flatbuffers: rebuild"}}, others, "a title naming the port as a subject does, once")
 }
 
 // A Portfile the branch adds, which its base doesn't have, is a new port,

@@ -134,7 +134,7 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 		fmt.Fprintln(out, "  ✓ the commits and Portfiles follow the rules dockhand checks")
 	}
 	for _, finding := range report.Resolved {
-		fmt.Fprintf(out, "  ✓ resolved since %s: %s [%s]\n", engine.Short(report.Previous.Head), finding.Message, finding.Code)
+		fmt.Fprintf(out, "  ✓ resolved since %s: %s [%s]\n", report.Previous.Head.Short(), finding.Message, finding.Code)
 	}
 	switch lines := comparisonLines(report.Upstream); {
 	case report.UpstreamUnread != "":
@@ -147,7 +147,7 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 		// 5.18.0 by then).
 		heading := "  Upstream:"
 		if report.Head != "" && report.Base != "" {
-			heading = fmt.Sprintf("  Upstream, against MacPorts' ports at the pull request's %s, off master at %s:", engine.Short(model.ObjectID(report.Head)), engine.Short(model.ObjectID(report.Base)))
+			heading = fmt.Sprintf("  Upstream, against MacPorts' ports at the pull request's %s, off master at %s:", model.ObjectID(report.Head).Short(), model.ObjectID(report.Base).Short())
 		}
 		fmt.Fprintln(out, heading)
 		for _, line := range lines {

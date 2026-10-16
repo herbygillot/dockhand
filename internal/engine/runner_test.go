@@ -99,7 +99,7 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 		return p.fault
 	}
 	if failing && !p.partial && p.interrupts == "" {
-		return errors.New("the VM did not start")
+		return fmt.Errorf("%w: the VM did not start", buildenv.ErrInfrastructure)
 	}
 	if p.says != "" {
 		progress.Report(ctx, "%s", p.says)
@@ -170,7 +170,7 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 			}
 		}
 		if failing && p.partial && i == 0 {
-			return errors.New("the VM stopped answering")
+			return fmt.Errorf("%w: the VM stopped answering", buildenv.ErrInfrastructure)
 		}
 	}
 	return nil
@@ -400,10 +400,10 @@ func TestRepeatedInfrastructureTroubleNeedsAttention(t *testing.T) {
 	require.Contains(t, run.Detail, "failed 3 times")
 }
 
-// What a provider says is infrastructure, and what it doesn't classify, is
-// tried again; a fault in dockhand's own handling, as a guest program
-// reporting a target its job didn't ask for, is said at once, as
-// dockhand's, where it cloned a VM for each of three attempts (the
+// What a provider says is infrastructure is tried again; a fault in
+// dockhand's own handling, as a guest program reporting a target its job
+// didn't ask for, and what a provider doesn't classify, are said at once,
+// as dockhand's, where each cloned a VM for each of three attempts (the
 // architecture review's X2).
 func TestOnlyWhatAnotherAttemptCouldFixIsTriedAgain(t *testing.T) {
 	t.Parallel()
@@ -414,7 +414,8 @@ func TestOnlyWhatAnotherAttemptCouldFixIsTriedAgain(t *testing.T) {
 		detail   string
 	}{
 		{"infrastructure", fmt.Errorf("%w: the VM stopped", buildenv.ErrInfrastructure), model.MaxAttempts, "failed 3 times for reasons of its own"},
-		{"unclassified", errors.New("the VM did not start"), model.MaxAttempts, "failed 3 times for reasons of its own"},
+		{"unclassified", errors.New("release 30 isn't one this dockhand knows"), 1,
+			"dockhand: command macOS 26 (Tahoe) arm64: release 30 isn't one this dockhand knows; the provider didn't mark it as trouble another attempt could clear, so none was made"},
 		{"dockhand's own", fmt.Errorf("%w: the guest reported %q, which this job didn't ask for", buildenv.ErrDockhandFault, "fd"), 1,
 			`dockhand: command macOS 26 (Tahoe) arm64: the guest reported "fd", which this job didn't ask for; the fault is dockhand's own, so another attempt would repeat it, and none was made`},
 	} {

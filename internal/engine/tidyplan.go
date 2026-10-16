@@ -90,7 +90,7 @@ func (p TidyPlan) combine(members []TidyGroup, numbers []int, chosen git.Signatu
 				}
 			}
 			if len(elsewhere) > 0 {
-				group.Notes = append(group.Notes, fmt.Sprintf("commit %s %q also changes %s; its changes are split between commits", short(model.ObjectID(commit.ID)), commit.Subject(), strings.Join(elsewhere, ", ")))
+				group.Notes = append(group.Notes, fmt.Sprintf("commit %s %q also changes %s; its changes are split between commits", model.ObjectID(commit.ID).Short(), commit.Subject(), strings.Join(elsewhere, ", ")))
 			}
 		}
 	}
@@ -262,7 +262,7 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	}
 	switch {
 	case string(branch.Base) != saved.Base:
-		return TidyPlan{}, fmt.Errorf("%w: its base moved from %s to %s; make a new plan with dockhand tidy --plan --out", ErrStalePlan, short(model.ObjectID(saved.Base)), short(branch.Base))
+		return TidyPlan{}, fmt.Errorf("%w: its base moved from %s to %s; make a new plan with dockhand tidy --plan --out", ErrStalePlan, model.ObjectID(saved.Base).Short(), branch.Base.Short())
 	case head != saved.Head:
 		return TidyPlan{}, fmt.Errorf("%w: it has new commits; make a new plan with dockhand tidy --plan --out", ErrStalePlan)
 	case final != saved.Working:
@@ -307,7 +307,7 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 		for _, id := range commit.Combines {
 			at := slices.IndexFunc(history, func(c git.HistoryCommit) bool { return c.ID == id })
 			if at < 0 {
-				return TidyPlan{}, fmt.Errorf("commit %d combines %s, which is not on the branch", i+1, short(model.ObjectID(id)))
+				return TidyPlan{}, fmt.Errorf("commit %d combines %s, which is not on the branch", i+1, model.ObjectID(id).Short())
 			}
 			group.Combines = append(group.Combines, history[at])
 		}

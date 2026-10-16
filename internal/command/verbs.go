@@ -42,7 +42,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 				return err
 			}
 			if started {
-				fmt.Fprintf(streams.Out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
+				fmt.Fprintf(streams.Out, "Started %s from master %s (fetched just now)\n", branch.Name, branch.Base.Short())
 			}
 			directory, err := e.Edit(ctx, branch, args[0])
 			if err != nil {
@@ -112,7 +112,7 @@ since a rebuild has its own reason.`,
 			}
 			out := streams.Out
 			if started {
-				fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
+				fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, branch.Base.Short())
 			}
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), prose.Plural(len(args), "port"))
 			width := 0
@@ -238,12 +238,12 @@ rebase that conflicts is abandoned with the branch as it was.`,
 			}
 			streams.emit(result)
 			if rebased.UpToDate {
-				fmt.Fprintf(streams.Out, "%s already starts from master %s (fetched just now).\n", branch.ShortName(), engine.Short(rebased.To))
+				fmt.Fprintf(streams.Out, "%s already starts from master %s (fetched just now).\n", branch.ShortName(), rebased.To.Short())
 				return nil
 			}
 			name := rebased.Checkpoint.Name()
 			fmt.Fprintf(streams.Out, "Rebased %s (%s) from master %s onto %s.\nCheckpoint %s keeps the old history (dockhand undo %s).\n",
-				branch.ShortName(), prose.Plural(rebased.Commits, "commit"), engine.Short(rebased.From), engine.Short(rebased.To), name, name)
+				branch.ShortName(), prose.Plural(rebased.Commits, "commit"), rebased.From.Short(), rebased.To.Short(), name, name)
 			if len(rebased.OlderBuilds) > 0 {
 				fmt.Fprintf(streams.Out, "The rebased commits keep their Generated-By, naming an older dockhand, %s; tidy names this build in a commit it writes again.\n", strings.Join(rebased.OlderBuilds, ", "))
 			}

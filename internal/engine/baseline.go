@@ -100,7 +100,7 @@ func (e *Engine) planBaseline(ctx context.Context, branch model.Branch, ports []
 		where[target.ID] = rebuildWhere(evidence, target.ID)
 	}
 	if len(also) == 0 {
-		return baseline, fmt.Errorf("%s: master %s has none of them, so there is nothing to compare", strings.Join(baseline.New, ", "), short(base))
+		return baseline, fmt.Errorf("%s: master %s has none of them, so there is nothing to compare", strings.Join(baseline.New, ", "), base.Short())
 	}
 	if baseline.Revision, err = e.baseRevision(ctx, branch, base, baseTree, record); err != nil {
 		return baseline, err
@@ -115,10 +115,10 @@ func (e *Engine) planBaseline(ctx context.Context, branch model.Branch, ports []
 		for _, unresolved := range baseline.Plan.Unresolved {
 			reasons = append(reasons, unresolved.Target.Name+": "+unresolved.Reason)
 		}
-		return baseline, fmt.Errorf("master %s can't be planned: %s", short(base), strings.Join(reasons, "; "))
+		return baseline, fmt.Errorf("master %s can't be planned: %s", base.Short(), strings.Join(reasons, "; "))
 	}
 	if len(baseline.Plan.Targets) == 0 {
-		return baseline, fmt.Errorf("master %s builds none of %s anywhere this check built", short(base), strings.Join(also, ", "))
+		return baseline, fmt.Errorf("master %s builds none of %s anywhere this check built", base.Short(), strings.Join(also, ", "))
 	}
 	return baseline, nil
 }

@@ -106,7 +106,7 @@ its go-get answer.`,
 					}
 				}
 				if branch, err = e.Start(ctx, engine.StartRequest{Name: free, Base: base, Ports: []string{name}}); err == nil {
-					fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
+					fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, branch.Base.Short())
 				}
 			default:
 				branch, err = e.Current(ctx)

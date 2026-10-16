@@ -36,7 +36,6 @@ var commandImports = map[string]string{
 	"internal/github":               "composition and auth: GitHub's client and login",
 	"internal/credential":           "auth: where the login is kept",
 	"internal/credential/keychain":  "auth: the macOS Keychain",
-	"internal/subprocess":           "a one-shot command run to completion, bounded: open, osascript, launchctl",
 	"github.com/spf13/cobra":        "the command line itself",
 	"golang.org/x/sys/unix":         "whether a stream is a terminal",
 	// Where a port's own build begins is the result's (model.OwnBuild);
@@ -55,6 +54,7 @@ func TestCommandTalksToTheEngine(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	require.NoError(t, err)
 	files := token.NewFileSet()
+	used := map[string]bool{}
 	for _, entry := range entries {
 		name := entry.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -68,6 +68,7 @@ func TestCommandTalksToTheEngine(t *testing.T) {
 			if !strings.Contains(strings.Split(path, "/")[0], ".") {
 				continue // the standard library
 			}
+			used[strings.TrimPrefix(path, module)] = true
 			if _, allowed := commandImports[strings.TrimPrefix(path, module)]; !allowed {
 				t.Errorf("%s imports %s: move the decision it serves into the engine, or name the import and why in commandImports", name, path)
 			}
@@ -82,5 +83,11 @@ func TestCommandTalksToTheEngine(t *testing.T) {
 			}
 			return true
 		})
+	}
+	// The list shrinks as command does (the architecture review's X4).
+	for local := range commandImports {
+		if !used[local] {
+			t.Errorf("commandImports names %s, which command no longer imports; take it off", local)
+		}
 	}
 }

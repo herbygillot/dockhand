@@ -254,7 +254,7 @@ func attentionFor(s engine.BranchStatus) []attention {
 	// Work that landed on master by another route asks nothing more of
 	// checks, only to be set aside (cleaning up duckdb-cxx14, finding 1).
 	if s.OnMaster != "" && s.Branch.PullRequest == nil {
-		return row("·", "its changes are on master already, as of "+engine.Short(s.OnMaster), "dockhand archive "+name)
+		return row("·", "its changes are on master already, as of "+s.OnMaster.Short(), "dockhand archive "+name)
 	}
 	if s.Latest == nil || !s.Current || len(s.Active) > 0 {
 		if s.Latest != nil && !s.Current && s.Latest.State == model.RunPassed && len(s.Active) == 0 {
@@ -562,7 +562,7 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 			ports = "none yet"
 		}
 		fmt.Fprintf(out, "  Ports    %s\n", ports)
-		fmt.Fprintf(out, "  Work     %s above master %s\n", workWords(status), engine.Short(branch.Base))
+		fmt.Fprintf(out, "  Work     %s above master %s\n", workWords(status), branch.Base.Short())
 		writeReleases(out, status)
 		if len(status.Edited) > 0 {
 			fmt.Fprintf(out, "  Edited   %s\n", strings.Join(status.Edited, ", "))

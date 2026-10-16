@@ -106,7 +106,7 @@ func (d *driver) sayTagMoved(ctx context.Context, environment model.Environment,
 // d4c0fdb, not 1d15bc8, as when check-41 built it; dockhand checksums foo
 // handles a stealth update".
 func TagMovedWords(then, now model.GitSource, built, port string) string {
-	return fmt.Sprintf("%s now names %s, not %s, as when %s built it; dockhand checksums %s handles a stealth update", now.Ref, short(now.Commit), short(then.Commit), built, port)
+	return fmt.Sprintf("%s now names %s, not %s, as when %s built it; dockhand checksums %s handles a stealth update", now.Ref, now.Commit.Short(), then.Commit.Short(), built, port)
 }
 
 // sayNotReusable says, of each target whose newest earlier build here

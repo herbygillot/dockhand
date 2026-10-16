@@ -158,7 +158,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if above, err := worktree.IsAncestor(ctx, base, head); err != nil {
 		return TidyPlan{}, err
 	} else if !above {
-		return TidyPlan{}, fmt.Errorf("%s is not above its base %s; rebase it onto master first", branch.Name, short(branch.Base))
+		return TidyPlan{}, fmt.Errorf("%s is not above its base %s; rebase it onto master first", branch.Name, branch.Base.Short())
 	}
 	history, err := worktree.History(ctx, base, head)
 	if err != nil {
@@ -166,7 +166,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	}
 	for _, commit := range history {
 		if commit.Merge() {
-			return TidyPlan{}, fmt.Errorf("%s has a merge commit, %s; tidy never flattens a merge by itself. Rebase onto master (git rebase %s), then tidy", branch.Name, short(model.ObjectID(commit.ID)), short(branch.Base))
+			return TidyPlan{}, fmt.Errorf("%s has a merge commit, %s; tidy never flattens a merge by itself. Rebase onto master (git rebase %s), then tidy", branch.Name, model.ObjectID(commit.ID).Short(), branch.Base.Short())
 		}
 	}
 	trees, err := worktree.CommitTrees(ctx, []string{base, head})
@@ -272,7 +272,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 			if slices.ContainsFunc(commit.Paths, func(p string) bool { return slices.Contains(paths, p) }) {
 				group.Combines = append(group.Combines, commit)
 				if others := otherGroups(commit.Paths, directory); len(others) > 0 {
-					group.Notes = append(group.Notes, fmt.Sprintf("commit %s %q also changes %s; its changes are split between commits", short(model.ObjectID(commit.ID)), commit.Subject(), strings.Join(others, ", ")))
+					group.Notes = append(group.Notes, fmt.Sprintf("commit %s %q also changes %s; its changes are split between commits", model.ObjectID(commit.ID).Short(), commit.Subject(), strings.Join(others, ", ")))
 				}
 			}
 		}
@@ -294,7 +294,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 		if chained {
 			for _, commit := range group.Combines {
 				if body(commit.Message) != "" {
-					group.Notes = append(group.Notes, fmt.Sprintf("commit %s %q has a message body that this commit would not keep", short(model.ObjectID(commit.ID)), commit.Subject()))
+					group.Notes = append(group.Notes, fmt.Sprintf("commit %s %q has a message body that this commit would not keep", model.ObjectID(commit.ID).Short(), commit.Subject()))
 				}
 			}
 		} else if directory != "" && !group.Created {
@@ -319,7 +319,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 				if commitmsg.Attributed(chosen.Message) {
 					whose = "dockhand's"
 				}
-				group.Notes = append(group.Notes, fmt.Sprintf("subject from %s commit %s", whose, short(model.ObjectID(chosen.ID))))
+				group.Notes = append(group.Notes, fmt.Sprintf("subject from %s commit %s", whose, model.ObjectID(chosen.ID).Short()))
 			} else if standing != "" {
 				subject = standing
 				group.Notes = append(group.Notes, "subject from dockhand's edits, which the other changes leave standing")

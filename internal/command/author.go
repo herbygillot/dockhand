@@ -176,7 +176,7 @@ whether every distfile matches its checksums, starting no branch where
 none is open, and exits 3 where any doesn't.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			request := engine.UpdateRequest{Action: model.EditChecksums, Port: args[0], KeepOldChecksums: keepOld, KeepRevision: keepRevision, Plan: plan}
+			request := engine.UpdateRequest{Action: model.EditChecksums, Port: args[0], EditIntent: model.EditIntent{KeepOldChecksums: keepOld}, KeepRevision: keepRevision, Plan: plan}
 			_, _, err := author(cmd.Context(), s, streams, where, "checksums", request, linkedOptions{})
 			return err
 		},
@@ -218,7 +218,7 @@ func (v versionUpdate) request(args []string, plan bool) (engine.UpdateRequest, 
 	if len(v.linked.except) > 0 && !v.linked.revbump {
 		return engine.UpdateRequest{}, errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
 	}
-	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], KeepOldChecksums: v.keepOld, SharedRelease: v.shared, WithObsolete: v.obsolete, Plan: plan, CompareUpstream: true, LookForOthers: true}
+	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], EditIntent: model.EditIntent{KeepOldChecksums: v.keepOld, SharedRelease: v.shared}, WithObsolete: v.obsolete, Plan: plan, CompareUpstream: true, LookForOthers: true}
 	if len(args) == 2 {
 		request.Version = args[1]
 	}
@@ -400,7 +400,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		if beside != "" {
 			why = fmt.Sprintf(", since %s doesn't change %s", beside, request.Port)
 		}
-		fmt.Fprintf(out, "Planned on master %s (fetched just now)%s; --new without --plan starts the branch\n", engine.Short(update.Base), why)
+		fmt.Fprintf(out, "Planned on master %s (fetched just now)%s; --new without --plan starts the branch\n", update.Base.Short(), why)
 		// The dependents are the index's at the master planned on.
 		branch.Base = update.Base
 	}
@@ -622,7 +622,7 @@ func nextIn(ctx context.Context, e *engine.Engine, branch model.Branch, steps ..
 // started.
 func announce(out io.Writer, branch model.Branch, started bool) {
 	if started {
-		fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
+		fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, branch.Base.Short())
 	}
 	fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), config.Tilde(branch.Worktree))
 }
@@ -723,7 +723,7 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 			indexed = append(indexed, dependent.Name)
 		}
 	}
-	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", engine.Short(done.Base), orNone(prose.Few(indexed, 12, "port")))
+	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", done.Base.Short(), orNone(prose.Few(indexed, 12, "port")))
 	if len(under) > 0 {
 		fmt.Fprintf(out, "  · under a variant, found in the Portfile, which the index doesn't record: %s\n", strings.Join(under, ", "))
 	}

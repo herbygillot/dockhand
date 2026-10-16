@@ -211,7 +211,7 @@ func writeClean(out io.Writer, plans []engine.CleanBranch, done bool) int {
 		case pr != nil && plan.Branch.State == model.BranchClosed:
 			line += fmt.Sprintf(" (#%d, closed unmerged)", pr.Number)
 		case pr != nil:
-			line += fmt.Sprintf(" (#%d, merged at %s)", pr.Number, engine.Short(plan.Merged))
+			line += fmt.Sprintf(" (#%d, merged at %s)", pr.Number, plan.Merged.Short())
 		}
 		fmt.Fprintln(out, line)
 		for _, step := range plan.Steps {

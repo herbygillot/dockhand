@@ -93,7 +93,7 @@ func refWords(ref string) string {
 // commit, shortened, or the abbreviation it begins with.
 func expectedWords(source model.GitSource) string {
 	if source.Commit != "" {
-		return short(source.Commit)
+		return source.Commit.Short()
 	}
 	return source.Abbreviation
 }
@@ -120,9 +120,9 @@ func LeftOutSourceWords(source model.GitSource) string {
 func sourceWords(source model.GitSource, fetch, unknown string) string {
 	switch {
 	case source.Commit != "" && strings.EqualFold(source.Ref, string(source.Commit)):
-		return fmt.Sprintf("git.branch is commit %s, %s", short(source.Commit), fetch)
+		return fmt.Sprintf("git.branch is commit %s, %s", source.Commit.Short(), fetch)
 	case source.Commit != "":
-		return fmt.Sprintf("%s names %s now, %s", refWords(source.Ref), short(source.Commit), fetch)
+		return fmt.Sprintf("%s names %s now, %s", refWords(source.Ref), source.Commit.Short(), fetch)
 	case source.Abbreviation != "":
 		return fmt.Sprintf("git.branch abbreviates a commit, %s, %s", source.Abbreviation, fetch)
 	}
@@ -132,7 +132,7 @@ func sourceWords(source model.GitSource, fetch, unknown string) string {
 // movedWords say why a build that fetched another commit than its plan
 // expected failed at fetch.
 func movedWords(source model.GitSource, fetched model.ObjectID) string {
-	return fmt.Sprintf("the source moved: %s named %s when the check was planned, and the build fetched %s; a new check builds what it names now", refWords(source.Ref), expectedWords(source), short(fetched))
+	return fmt.Sprintf("the source moved: %s named %s when the check was planned, and the build fetched %s; a new check builds what it names now", refWords(source.Ref), expectedWords(source), fetched.Short())
 }
 
 // FetchedWords say what a Git-fetched target's build fetched, for its
@@ -145,11 +145,11 @@ func FetchedWords(source model.GitSource, fetched model.ObjectID) string {
 	case fetched == "":
 		return fmt.Sprintf("which commit of %s it fetched isn't known: its provider didn't say; %s was expected", refWords(source.Ref), expectedWords(source))
 	case source.BuiltBy(fetched):
-		return fmt.Sprintf("fetched %s, the commit %s named when the check was planned", short(fetched), refWords(source.Ref))
+		return fmt.Sprintf("fetched %s, the commit %s named when the check was planned", fetched.Short(), refWords(source.Ref))
 	case source.Moved(fetched):
-		return fmt.Sprintf("fetched %s, not %s, which %s named when the check was planned", short(fetched), expectedWords(source), refWords(source.Ref))
+		return fmt.Sprintf("fetched %s, not %s, which %s named when the check was planned", fetched.Short(), expectedWords(source), refWords(source.Ref))
 	}
-	return fmt.Sprintf("fetched %s of %s, which couldn't be resolved when the check was planned", short(fetched), refWords(source.Ref))
+	return fmt.Sprintf("fetched %s of %s, which couldn't be resolved when the check was planned", fetched.Short(), refWords(source.Ref))
 }
 
 // UnmetWords say what an unmet target needs: "needs Xcode", or "needs
@@ -315,7 +315,7 @@ func ReleaseWords(port string, release model.Release) string {
 		words += " of " + release.Repository
 	}
 	if release.Tag != "" && release.Commit != "" {
-		words += " at " + Short(model.ObjectID(release.Commit))
+		words += " at " + model.ObjectID(release.Commit).Short()
 	}
 	return words
 }

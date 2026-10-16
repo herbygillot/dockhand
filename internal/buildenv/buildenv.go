@@ -66,7 +66,8 @@ var ErrNeedsAttention = errors.New("another attempt won't fix it")
 // the environment or what it built: a guest program reporting what this
 // dockhand can't read, or a target its job didn't ask for. Another attempt
 // would repeat it, so the runner says it at once, as dockhand's. What's
-// marked neither way is tried again, as infrastructure is.
+// marked none of the three is said at once too, as dockhand's: only
+// infrastructure is tried again.
 var ErrDockhandFault = errors.New("a fault in dockhand")
 
 // Job is one guest execution's work.

@@ -22,7 +22,7 @@ func TestCaptureNumbersSnapshotsAndReusesUnchangedOnes(t *testing.T) {
 	clean, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Equal(t, model.RevisionCommit, clean.Revision.Kind, "files exactly at the commit are the commit")
-	require.Equal(t, "commit "+short(branch.Base), Describe(clean.Revision))
+	require.Equal(t, "commit "+branch.Base.Short(), Describe(clean.Revision))
 
 	write(t, dir, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n", "notes.txt": "mine\n"})
 	first, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})

@@ -60,7 +60,7 @@ func Describe(revision model.Revision) string {
 		}
 		return fmt.Sprintf("snapshot %d", revision.Snapshot)
 	}
-	return "commit " + short(revision.Source.Commit)
+	return "commit " + revision.Source.Commit.Short()
 }
 
 // Capture records what a check will build: the committed tip when the
