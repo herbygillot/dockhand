@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -57,7 +56,7 @@ each event as a line, for scrollback, SSH sessions, and screen readers.`,
 				return err
 			}
 			defer end()
-			if plain || !streams.terminal() || !outputTerminal(streams) {
+			if plain || !streams.terminal() || !streams.outTerminal() {
 				err = watchPlain(ctx, e, streams)
 			} else {
 				err = watchLive(ctx, e, streams)
@@ -71,16 +70,6 @@ each event as a line, for scrollback, SSH sessions, and screen readers.`,
 	}
 	cmd.Flags().BoolVar(&plain, "plain", false, "print events as lines, not a view that redraws")
 	return cmd
-}
-
-// outputTerminal reports whether the output is a terminal that can be
-// redrawn.
-func outputTerminal(streams Streams) bool {
-	if streams.interactive {
-		return true
-	}
-	file, ok := streams.Out.(*os.File)
-	return ok && isTerminal(file.Fd())
 }
 
 // journalCursor reads the journal's events past the last one it saw, at

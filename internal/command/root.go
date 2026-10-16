@@ -53,30 +53,34 @@ func (s Streams) stderrLine() *statusLine {
 }
 
 // errTerminal reports whether errors and progress go to a terminal, where
-// a line can be redrawn; a --json command line's never do.
-func (s Streams) errTerminal() bool {
-	if s.json() {
-		return false
-	}
-	if s.interactive {
-		return true
-	}
-	file, ok := s.Err.(*os.File)
-	return ok && isTerminal(file.Fd())
-}
+// a line can be redrawn.
+func (s Streams) errTerminal() bool { return s.onTerminal(s.Err) }
 
 // terminal reports whether the input is an interactive terminal, the only
-// place a command may ask a question. /dev/null is a character device too,
-// so this asks the terminal driver rather than the file's mode.
-func (s Streams) terminal() bool {
-	// A --json command line is a script's: it never asks.
+// place a command may ask a question.
+func (s Streams) terminal() bool { return s.onTerminal(s.In) }
+
+// outTerminal reports whether the output is a terminal that can be
+// redrawn.
+func (s Streams) outTerminal() bool { return s.onTerminal(s.Out) }
+
+// onTerminal reports whether one of the streams is a terminal. A --json
+// command line's never is: it's a script's, which never asks and reads
+// no redrawn line. /dev/null is a character device too, so this asks the
+// terminal driver rather than the file's mode, of the file under the
+// writer Run puts before the output, which watch's live view never saw
+// past (the command package review's three predicates, folded).
+func (s Streams) onTerminal(stream any) bool {
 	if s.json() {
 		return false
 	}
 	if s.interactive {
 		return true
 	}
-	file, ok := s.In.(*os.File)
+	if w, ok := stream.(*switchWriter); ok {
+		stream = w.w
+	}
+	file, ok := stream.(*os.File)
 	return ok && isTerminal(file.Fd())
 }
 
