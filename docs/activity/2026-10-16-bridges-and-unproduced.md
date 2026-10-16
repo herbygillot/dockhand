@@ -13,9 +13,8 @@ Bridges deleted:
   master; now it validates the checkpoint first, so an older row is refused
   before any Git change.
 - **Plans from before each environment had its own** (2026-09-27). Reading
-  one says what it is, instead of converting it. A branch still open from
-  before then on the person's Mac would have checks clean, evidence, and
-  reuse can no longer read.
+  one says what it is, instead of converting it. The person's Mac has none:
+  all 366 of its plans have their own, the oldest from 2026-09-28.
 - **JSON tidy plans** (version 1, before 2026-09-28): a JSON file is now
   not a saved tidy plan, as any other file is.
 - **The `Assisted-By: Dockhand` and `Generated-by:` trailers** (before
