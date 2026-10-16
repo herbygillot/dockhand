@@ -187,15 +187,31 @@ func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
 
 // Another open pull request for the port holds serve's, which would
 // otherwise open a second one for the same update; so does not knowing,
-// when the search fails.
+// when the search fails. One already open holds it before the edit, as it
+// holds bump's, so nothing is prepared or checked (Codex's review of
+// 832f059e, high 1); one opened while it was checked holds it at
+// submission.
 func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
 	fake.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.1"}}
-	servePrepared(t, e)
+	e.OutdatedReader = &newReleases{}
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	report, err := e.Outdated(t.Context(), OutdatedRequest{Maintainers: []string{"@ada"}})
+	require.NoError(t, err)
+	plan, err := e.PlanOutdated(t.Context(), report)
+	require.NoError(t, err)
+	early := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: model.OriginServe, To: ShipCheck, Where: Where{Environments: []model.Environment{{Provider: "command"}}}, Tests: model.TestsDeclared})
+	require.Len(t, early, 1)
+	require.Equal(t, "jq is held for a look before its edit: #34777 is open for the same port: jq: update to 1.8.1; no branch was started", early[0].Problem)
+	require.Nil(t, early[0].Run, "nothing is checked")
 
+	fake.Others = nil
+	servePrepared(t, e)
+	fake.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.1"}}
 	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"#34777 is open for the same port: jq: update to 1.8.1"}, HoldLines(candidates[0].Held))

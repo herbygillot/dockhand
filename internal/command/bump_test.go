@@ -154,13 +154,13 @@ func TestBumpHoldsWhatServeWould(t *testing.T) {
 
 	_, _, err := bumpOn(t, "jq", "--tested-binaries")
 	require.Equal(t, 3, ExitCode(err), "it needs your attention")
-	require.EqualError(t, err, "jq waits for your look, so nothing was changed: #34777 is open for the same port: jq: update to 1.8.0\nOnce it's fine: dockhand update jq --new --submit")
+	require.EqualError(t, err, "jq waits for your look, so nothing was changed: #34777 is open for the same port: jq: update to 1.8.0\nOnce it's fine: dockhand ship jq, on a terminal")
 	require.Equal(t, 1, g.Searches, "looked for once, before the edit")
 	g.SearchErr = errors.New("rate limited")
 	g.Others = nil
 	_, _, err = bumpOn(t, "jq", "1.8.1")
 	require.Equal(t, 3, ExitCode(err))
-	require.EqualError(t, err, "jq waits for your look, so nothing was changed: couldn't look for other open pull requests: rate limited\nOnce it's fine: dockhand update jq 1.8.1 --new --submit")
+	require.EqualError(t, err, "jq waits for your look, so nothing was changed: couldn't look for other open pull requests: rate limited\nOnce it's fine: dockhand update jq 1.8.1 --new, then dockhand ship -p jq on a terminal")
 	held, err := jsonOf(t, "bump", "jq")
 	require.Equal(t, 3, ExitCode(err))
 	require.Nil(t, held.Result, "a refusal before anything is done reports only its error")

@@ -82,9 +82,9 @@ func (s Streams) emit(result any) {
 
 // linkSteps makes whole the command's one result, with each later step's
 // inside it, so a script reads one shape wherever the command stopped:
-// update --submit's and bump's are the update's, submit --check's the
-// submission's, and check's the check's. A command already gathering keeps
-// its own, as update --submit keeps it through submit --check.
+// ship's and bump's are the batch's, each change's update with its later
+// steps inside, and check's the check's. A command already gathering
+// keeps its own, as ship keeps its batch through each change's submission.
 func (s Streams) linkSteps(whole gatherer) {
 	if s.json() && s.mode.whole == nil {
 		s.mode.whole = whole

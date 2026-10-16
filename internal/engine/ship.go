@@ -44,8 +44,11 @@ type ShipOptions struct {
 }
 
 // Unattended reports whether nobody looks over what ship does before it
-// goes on: no person was there to ask, as for serve, or a script.
-func (o ShipOptions) Unattended() bool { return o.Answered == model.AnsweredNobody }
+// goes on: no person was there to ask, as for serve or a script, or one
+// answered --yes, which skips the question and approves nothing shown
+// after it; the command's ship reads model.Answered the same way (Codex's
+// review of 832f059e, high 1).
+func (o ShipOptions) Unattended() bool { return o.Answered != model.AnsweredAsked }
 
 // goOn is the one place ship asks "may this go on unattended?" at a
 // stage, from what the stage found, and why not: before the edit, a major
@@ -59,7 +62,13 @@ func (e *Engine) goOn(stage ShipStage, target ShipTarget, options ShipOptions, t
 			return fmt.Errorf("%s; nothing was prepared", major.Detail)
 		}
 	case stage == ShipCommit && tidy != nil:
-		if tidy.AppliesUnasked(options.Answered, false) != nil {
+		// --yes approves no plan it hasn't shown: where nobody looks, only
+		// dockhand's own edits are committed unasked.
+		answered := options.Answered
+		if options.Unattended() {
+			answered = model.AnsweredNobody
+		}
+		if tidy.AppliesUnasked(answered, false) != nil {
 			return fmt.Errorf("the edit needs a look before it is committed: dockhand tidy --branch %s", tidy.Branch.ShortName())
 		}
 	}
@@ -79,8 +88,12 @@ func (e *Engine) Ship(ctx context.Context, target ShipTarget, options ShipOption
 		return done
 	}
 	var err error
+	// Unattended, the update holds what nobody looks over before it edits,
+	// another open pull request for the port among them, as the command's
+	// ship does: serve's prepared and checked one before the hold came at
+	// submission (Codex's review, high 1).
 	done.Update, err = e.Update(ctx, UpdateRequest{Start: &StartRequest{Name: target.Name, Origin: options.Origin}, Action: model.EditUpdate, Port: target.Port, Version: target.Version,
-		Release: target.Release, CompareUpstream: true, NoHandBranch: true})
+		Release: target.Release, CompareUpstream: true, NoHandBranch: true, Unattended: options.Unattended()})
 	done.Branch = done.Update.Branch
 	if err != nil {
 		done.Problem = err.Error()

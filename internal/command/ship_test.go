@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -169,4 +170,58 @@ func TestShipTakesEachStagesFlags(t *testing.T) {
 	require.Len(t, g.PRs, 1)
 	require.Equal(t, []bool{true}, g.Drafts)
 	require.Contains(t, g.PRs[34901].Body, "- [x] bugfix")
+}
+
+// ship decides as serve's preparation does wherever nobody looks, --yes
+// included: a plan of dockhand's own edits goes on, one with the person's
+// is held for a look, and another open pull request holds the update
+// before its edit (Codex's review of 832f059e, high 1; serve's half is
+// engine's TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor and
+// TestShipHoldsWhatNobodyLooksOver).
+func TestShipWithYesHoldsWhatServeWould(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "passed")
+	g := withGitHub(t, w)
+
+	// Another open pull request: held before the edit, no branch started.
+	g.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	_, _, err := dockhand(t, "ship", "jq", "--yes")
+	require.ErrorContains(t, err, "jq waits for your look, so nothing was changed: #34777 is open for the same port: jq: update to 1.8.0\nOnce it's fine: dockhand ship jq, on a terminal")
+	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+	g.Others = nil
+
+	// A hand edit: --yes skips ship's question, and approves no plan.
+	_, _, err = dockhand(t, "start", "notes")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "Source", "macports-branches", "notes")
+	_, _, err = dockhand(t, "edit", "jq", "-b", "notes", "--no-open")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n# by hand\n"), 0o644))
+	_, _, err = dockhand(t, "ship", "-b", "notes", "--yes", "--to", "commit")
+	require.ErrorContains(t, err, "this plan needs review before it is applied")
+	require.Contains(t, testsupport.Git(t, dir, "status", "--porcelain"), "textproc/jq/Portfile", "nothing was committed")
+}
+
+// A pass stands for a check asked of the same files only where it built
+// as the check asks: ship --tests required after a pass with declared
+// tests checks again (Codex's review of 832f059e, medium 4).
+func TestShipChecksAgainWhereAPassAskedLess(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "passed")
+	g := withGitHub(t, w)
+	g.Others = nil
+
+	_, _, err := dockhand(t, "ship", "jq", "--to", "check", "--yes")
+	require.NoError(t, err)
+	out, _, err := dockhand(t, "ship", "jq", "--to", "check", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "passed for this commit already; nothing to check", "the same ask stands")
+	out, _, err = dockhand(t, "ship", "jq", "--to", "check", "--yes", "--tests", "required")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-1.8.1 · checking commit ", "required tests weren't what passed")
+	require.NotContains(t, out, "nothing to check")
 }

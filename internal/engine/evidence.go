@@ -341,3 +341,85 @@ func kindWords(target model.PlanTarget) string {
 	}
 	return "changed"
 }
+
+// Covered reports whether the finished checks of a branch's tree stand
+// for a check asked of it, the plan want proposes: every target want
+// builds, in every environment it builds there, passed under a test
+// policy at least as strict as want's. A pass on fewer releases, or with
+// advisory tests where tests are required, doesn't stand for it; one on
+// more, or stricter, does (Codex's review of 832f059e, medium 4). It
+// returns the newest check behind them.
+func (e *Engine) Covered(ctx context.Context, branch model.BranchID, tree model.ObjectID, want model.Plan) (model.Run, bool, error) {
+	judged, found, err := e.EvidenceFor(ctx, branch, tree)
+	if err != nil || !found || judged.Unfinished() || len(judged.Failed()) > 0 {
+		return model.Run{}, false, err
+	}
+	return judged.Run, coversPlan(judged.Plan.Environments, judged.Plan.Tests, func(id model.TargetID, environment int) (Cell, bool) {
+		for _, target := range judged.Targets {
+			if target.Target.ID == id {
+				return target.Outcomes[environment], true
+			}
+		}
+		return Cell{}, false
+	}, want), nil
+}
+
+// PlanCovers reports whether a check still to finish, have, would stand
+// for want once it passed: every environment want builds in, every target
+// want builds, and a test policy at least as strict. A rerun follows such
+// a check, and queues another for one that doesn't.
+func PlanCovers(have, want model.Plan) bool {
+	if testsRank(have.Tests) < testsRank(want.Tests) || have.Fresh != want.Fresh || have.Variants != want.Variants || have.EachVariant != want.EachVariant {
+		return false
+	}
+	for _, environment := range want.Environments {
+		if !slices.Contains(have.Environments, environment) {
+			return false
+		}
+	}
+	for _, target := range want.Targets {
+		if !slices.ContainsFunc(have.Targets, func(other model.PlanTarget) bool { return other.ID == target.ID }) {
+			return false
+		}
+	}
+	return true
+}
+
+// coversPlan is Covered's judgment: each of want's targets, where want
+// builds it, a cell of the evidence that passed and stands under want's
+// tests, or one the environment can't build (unmet) either way.
+func coversPlan(environments []model.Environment, tests model.TestPolicy, cell func(model.TargetID, int) (Cell, bool), want model.Plan) bool {
+	if testsRank(tests) < testsRank(want.Tests) {
+		return false
+	}
+	for _, build := range want.Builds {
+		at := slices.Index(environments, build.Environment)
+		if at < 0 {
+			return false
+		}
+		for _, id := range build.Order {
+			found, ok := cell(id, at)
+			switch {
+			case !ok:
+				return false
+			case found.Kind == CellUnmet:
+				// The environment can't build it, for this check as for that.
+			case found.Kind != CellRecorded || !want.Tests.Stands(found.TargetResult):
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// testsRank orders test policies by how much a pass under them shows:
+// skipped tests, then declared ones reported, then required ones.
+func testsRank(policy model.TestPolicy) int {
+	switch policy {
+	case model.TestsRequired:
+		return 2
+	case model.TestsDeclared:
+		return 1
+	}
+	return 0
+}

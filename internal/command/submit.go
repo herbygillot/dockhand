@@ -245,7 +245,10 @@ func prepareSubmit(ctx context.Context, s *settings, e *engine.Engine, streams S
 	}
 	request.PendingCheck = false
 	pending := pendingSubmit{request: request, bound: plan.Commit, unattended: place.Unattended}
-	if !plan.CheckNeeded {
+	// What submit needs may stand already, and still not be the check
+	// asked, --build or --tests another's: queueHead says which, and
+	// queues only what doesn't stand (Codex's review, medium 4).
+	if !plan.CheckNeeded && !place.Explicit() && tests == "" {
 		return pending, nil, nil
 	}
 	// A check nobody looks over builds on build.unattended's profile.

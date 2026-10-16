@@ -309,7 +309,7 @@ type carried struct {
 // nothing more to do.
 func shipOne(ctx context.Context, s *settings, streams Streams, target shipTarget, stage engine.ShipStage, unattended bool, version versionUpdate) (*carried, error) {
 	linked := version.linked
-	linked.unattended, linked.yes, linked.goesOn = unattended, true, true
+	linked.unattended, linked.goesOn = unattended, true
 	var branch model.Branch
 	if target.port != "" {
 		if stage != engine.ShipCommit {
@@ -339,7 +339,7 @@ func shipOne(ctx context.Context, s *settings, streams Streams, target shipTarge
 		return nil, err
 	}
 	defer e.Close()
-	branch, applied, err := tidyBranch(ctx, e, streams, branch, linked.yes, "nothing was checked or submitted")
+	branch, applied, err := tidyBranch(ctx, e, streams, branch, "nothing was checked or submitted")
 	if err != nil || !applied || stage == engine.ShipCommit {
 		return nil, err
 	}
@@ -408,12 +408,9 @@ func whereReady(ctx context.Context, s *settings, linked linkedOptions) error {
 }
 
 // checkHead queues a check of a branch's committed head where place says,
-// as check --head would; nil where a check already passed for it.
+// as check --head would; nil where checks that passed for it already stand
+// for this one (queueHead).
 func checkHead(ctx context.Context, s *settings, e *engine.Engine, streams Streams, branch model.Branch, place engine.WhereRequest, tests string) (*model.Run, error) {
-	if status, err := e.BranchStatus(ctx, branch); err == nil && status.CheckStanding() == engine.CheckPassed && len(status.Edited) == 0 {
-		fmt.Fprintf(streams.Out, "%s: %s passed for this commit already; nothing to check.\n", branch.ShortName(), status.Latest.Name())
-		return nil, nil
-	}
 	return queueHead(ctx, s, e, streams, branch, place, tests, "")
 }
 
@@ -431,6 +428,16 @@ func queueHead(ctx context.Context, s *settings, e *engine.Engine, streams Strea
 	if err != nil {
 		return nil, err
 	}
+	// Checks that passed for these files stand for this one only where
+	// they built everywhere it builds, with tests as strict: a pass of
+	// minmax didn't stand for --build all, nor declared tests for --tests
+	// required (Codex's review of 832f059e, medium 4).
+	if passed, ok, err := e.Covered(ctx, branch.ID, proposal.Capture.Revision.Source.Tree, proposal.Plan); err != nil {
+		return nil, err
+	} else if ok {
+		fmt.Fprintf(streams.Out, "%s: %s passed for this commit already; nothing to check.\n", branch.ShortName(), passed.Name())
+		return nil, nil
+	}
 	fmt.Fprintf(streams.Out, "\n%s · checking %s%s\n", branch.ShortName(), engine.Describe(proposal.Capture.Revision), then)
 	writePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.Remedy)
 	writePushes(streams.Out, proposal.Plan)
@@ -438,7 +445,17 @@ func queueHead(ctx context.Context, s *settings, e *engine.Engine, streams Strea
 		return nil, errors.New("nothing was checked: " + unrunnable(proposal.Plan))
 	}
 	run, err := e.Enqueue(ctx, branch, proposal.Plan, model.OriginPerson)
+	// A check of these files still to finish is followed where it would
+	// stand for this one, and otherwise said, since a branch has one check
+	// at a time.
 	if active := new(engine.ActiveRunError); errors.As(err, &active) && active.SameRevision {
+		running, planErr := e.Plan(ctx, active.Run.Plan)
+		if planErr != nil {
+			return nil, planErr
+		}
+		if !engine.PlanCovers(running, proposal.Plan) {
+			return nil, fmt.Errorf("%s is %s for these files, but not everywhere or with tests as strict as this check asks; dockhand cancel %s, then ship again, or wait for it and ship again", active.Run.Name(), active.Run.State, active.Run.Name())
+		}
 		fmt.Fprintf(streams.Out, "%s is already %s for these files; following it.\n", active.Run.Name(), active.Run.State)
 		return &active.Run, nil
 	}

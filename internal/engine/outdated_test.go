@@ -192,4 +192,15 @@ func TestShipAsksOnceWhetherItMayGoOn(t *testing.T) {
 	require.Equal(t, "jq moves from 1.7.1 to 2.0.0, a new major version, which holds.majors holds for a look; nothing was prepared", done.Problem)
 	require.False(t, done.Update.Started, "nothing was started")
 	require.NoError(t, e.goOn(shipEdit, target, ShipOptions{Answered: model.AnsweredAsked}, nil), "a person asked goes on")
+
+	// --yes skips the question, and nobody looks after it: it holds as
+	// nobody's does, before the edit and at the commit, as the command's
+	// ship does (Codex's review of 832f059e, high 1).
+	yes := ShipOptions{Answered: model.AnsweredYes}
+	require.True(t, yes.Unattended())
+	require.Error(t, e.goOn(shipEdit, target, yes, nil), "a new major version holds --yes too")
+	handEdit := TidyPlan{Groups: []TidyGroup{{Directory: "textproc/jq", Message: "jq: by hand"}}}
+	require.False(t, handEdit.Unambiguous())
+	require.ErrorContains(t, e.goOn(ShipCommit, target, yes, &handEdit), "the edit needs a look before it is committed")
+	require.ErrorContains(t, e.goOn(ShipCommit, target, ShipOptions{Answered: model.AnsweredNobody}, &handEdit), "the edit needs a look before it is committed")
 }

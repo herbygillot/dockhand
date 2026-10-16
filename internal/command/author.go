@@ -289,7 +289,7 @@ func (v versionUpdate) request(args []string, plan bool) (engine.UpdateRequest, 
 // as tidy previews them, where it has any, and returns the branch as it is
 // after; applied is false where the person declined, which undone says.
 // yes applies an unambiguous plan without asking (decideTidy).
-func tidyBranch(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, yes bool, undone string) (model.Branch, bool, error) {
+func tidyBranch(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, undone string) (model.Branch, bool, error) {
 	out := streams.Out
 	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
 	if err != nil {
@@ -299,7 +299,11 @@ func tidyBranch(ctx context.Context, e *engine.Engine, streams Streams, branch m
 		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), describeWork(proposal))
 		streams.emit(tidyView(proposal))
 		writeTidyPlan(out, proposal, false)
-		applied, err := decideTidy(ctx, e, streams, proposal, false, yes, "")
+		// A plan of dockhand's own edits is applied unasked; one with the
+		// person's is reviewed on a terminal, and held where nobody looks,
+		// --yes or no terminal: --yes skips ship's question, and approves no
+		// plan it hasn't shown (Codex's review of 832f059e, high 1).
+		applied, err := decideTidy(ctx, e, streams, proposal, false, proposal.Unambiguous(), "")
 		if err != nil {
 			return branch, false, fmt.Errorf("%w; %s", err, undone)
 		}
@@ -312,10 +316,10 @@ func tidyBranch(ctx context.Context, e *engine.Engine, streams Streams, branch m
 	return branch, err == nil, err
 }
 
-// linkedOptions are update's --revbump-dependents and --except, and
-// --submit, which goes on from the edit, with what it passes on: submit
-// --check's --on, --tested-binaries, and --tested-variants, and --yes, which
-// applies an unambiguous tidy without asking. unattended is bump's: nobody
+// linkedOptions are the edit's --revbump-dependents and --except, and what
+// ship and bump pass on to the stages after it: where to check, the tests,
+// and the pull request's words. unattended is bump's and ship's with --yes
+// or no terminal: nobody
 // looks before the submission, so it holds what serve's would.
 type linkedOptions struct {
 	revbump bool
@@ -331,7 +335,6 @@ type linkedOptions struct {
 	tests      string
 	types      []string
 	draft      bool
-	yes        bool
 	unattended bool
 	// title, note, and skipNotification are submit's, passed on; noteSet
 	// is whether --note was given, "" taking a note out. bump took none, so
@@ -694,15 +697,17 @@ func uncertainUpdate(port string, aside []engine.SetAside, linked linkedOptions,
 	return exitf(ExitAttention, "can't tell whether %s is current, so nothing was changed: %s\nIf %s is a release: dockhand %s %s %s\nIf it isn't, as an old tag spelled oddly: a livecheck.regex in the Portfile that leaves %s out keeps it out of later looks%s", port, setAsideWords(aside), aside[0].Tag, verb, port, aside[0].Source, aside[0].Tag, kept)
 }
 
-// heldBeforeEdit is bump held before its edit for what would hold its
-// submission after the check, said as a held submission is. After a look,
-// update --submit goes ahead, since a person watches it.
+// heldBeforeEdit is an update nobody looks over, bump's or ship's with
+// --yes, held before its edit for what would hold its submission after
+// the check, said as a held submission is. After a look, ship on a
+// terminal goes ahead, since a person answers it; it named update
+// --submit, which v0.4.0 removed (Codex's review's tests, rc2).
 func heldBeforeEdit(request engine.UpdateRequest, held []string) error {
-	next := "dockhand update " + request.Port
+	next := "dockhand ship " + request.Port + ", on a terminal"
 	if request.Version != "" {
-		next += " " + request.Version
+		next = fmt.Sprintf("dockhand update %s %s --new, then dockhand ship -p %s on a terminal", request.Port, request.Version, request.Port)
 	}
-	return exitf(ExitAttention, "%s waits for your look, so nothing was changed: %s\nOnce it's fine: %s --new --submit", request.Port, strings.Join(held, "; "), next)
+	return exitf(ExitAttention, "%s waits for your look, so nothing was changed: %s\nOnce it's fine: %s", request.Port, strings.Join(held, "; "), next)
 }
 
 // writeStealth shows each changed archive's checksums, before and after.
