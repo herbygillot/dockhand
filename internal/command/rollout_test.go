@@ -118,3 +118,30 @@ func TestStartOffersAnArchivedBranchsName(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, undone, "notes-archived is back among your open branches.\n")
 }
+
+// A branch renamed with Git onto a name an archived record holds, its own
+// Git branch gone, is followed: the archived record is renamed aside, and
+// status goes on, where every status failed on the name's uniqueness (the
+// rc1 full stage, D-S5).
+func TestStatusFollowsARenameOntoAnArchivedBranchsName(t *testing.T) {
+	w := newWorld(t)
+	_, _, err := dockhand(t, "start", "ds5-after")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "archive", "ds5-after")
+	require.NoError(t, err)
+	testsupport.Git(t, w.clone, "branch", "-q", "-D", "dockhand/ds5-after")
+	_, _, err = dockhand(t, "start", "ds5-before")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "Source", "macports-branches", "ds5-before")
+	testsupport.Git(t, dir, "branch", "-m", "dockhand/ds5-before", "dockhand/ds5-after")
+
+	t.Setenv("MACPORTS_TREE", w.clone)
+	out, errs, err := dockhand(t, "status")
+	require.NoError(t, err, errs)
+	require.Contains(t, out, "Followed ds5-before, renamed by hand to ds5-after.\n")
+	out, _, err = dockhand(t, "status", "--all")
+	require.NoError(t, err)
+	require.Contains(t, out, "ds5-after-archived (archived)", "the archived record, renamed aside")
+	_, _, err = dockhand(t, "--json", "status")
+	require.NoError(t, err)
+}

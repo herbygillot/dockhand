@@ -56,6 +56,12 @@ func (e *Engine) followRenames(ctx context.Context, name string) (map[model.Bran
 			continue
 		}
 		if _, err := e.carryRename(ctx, renamed, current); err != nil {
+			// A name another record keeps leaves the branch untracked,
+			// as a branch two records could be is, rather than failing
+			// every status (the rc1 full stage, D-S5).
+			if held := new(RenameHeldError); errors.As(err, &held) {
+				continue
+			}
 			return followed, err
 		}
 		tracked[current] = true

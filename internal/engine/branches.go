@@ -475,6 +475,22 @@ func (e *Engine) carryRename(ctx context.Context, renamed model.Branch, name str
 		renamed.Worktree = checkouts[0]
 	}
 	return renamed, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		// A record that isn't merged may hold the name still, an archived
+		// branch's whose Git branch went: it's renamed aside, as start
+		// renames one, so the record carries over; one open, or with a pull
+		// request, keeps the name, and the rename isn't followed. A
+		// rename onto an archived branch's name failed every status, on
+		// the index of one name a branch (the rc1 full stage, D-S5).
+		if holder, err := tx.BranchNamed(name); err == nil && holder.ID != renamed.ID {
+			if holder.State == model.BranchOpen || holder.PullRequest != nil {
+				return &RenameHeldError{Name: name, Holder: holder}
+			}
+			if err := e.renameAside(ctx, tx, holder); err != nil {
+				return err
+			}
+		} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
 		if err := tx.UpdateBranch(renamed); err != nil {
 			return err
 		}
@@ -482,6 +498,44 @@ func (e *Engine) carryRename(ctx context.Context, renamed model.Branch, name str
 			Message: fmt.Sprintf("%s was renamed %s with Git; its record carries over", old, name)})
 		return err
 	})
+}
+
+// RenameHeldError is a Git rename onto a name another record holds, open
+// or with a pull request, which keeps it: the renamed branch stays
+// untracked under its new name.
+type RenameHeldError struct {
+	Name   string
+	Holder model.Branch
+}
+
+func (r *RenameHeldError) Error() string {
+	return fmt.Sprintf("%s was renamed with Git onto a name %s's record holds, %s, which keeps it", r.Name, r.Holder.ShortName(), r.Holder.State)
+}
+
+// renameAside renames an archived or closed record aside, as
+// <name>-archived (-2, -3 where that's taken), within tx: its Git branch is
+// gone, a Git rename having taken the name.
+func (e *Engine) renameAside(ctx context.Context, tx store.Tx, holder model.Branch) error {
+	old := holder.ShortName()
+	name := archivedName(old)
+	for i := 2; ; i++ {
+		_, err := tx.BranchNamed(BranchName(name))
+		_, _, gitErr := e.Repo.Branch(ctx, BranchName(name))
+		if errors.Is(err, store.ErrNotFound) && errors.Is(gitErr, git.ErrBranchMissing) {
+			break
+		}
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		name = fmt.Sprintf("%s-%d", archivedName(old), i)
+	}
+	holder.Name = BranchName(name)
+	if err := tx.UpdateBranch(holder); err != nil {
+		return err
+	}
+	_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: holder.ID, Kind: model.EventBranchRename, Level: model.LevelInfo,
+		Message: fmt.Sprintf("renamed %s to %s, %s, as a branch renamed with Git took its name", old, name, holder.State)})
+	return err
 }
 
 // renamedFrom finds the tracked branch a Git branch was renamed from: one
