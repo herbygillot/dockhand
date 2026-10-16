@@ -81,14 +81,26 @@ act() {
 			printf '%s: %s\n' "$line" "$why" >>"$ROW_DIR/a10.notrun"
 			continue
 		fi
-		case "$words" in *"--branch "*)
-			name=${words#*--branch }
+		# A name the docs give is the row's own for this run, since an
+		# earlier run's archived record holds it (the rc7 full stage): -b and
+		# --branch name a branch, started first as the text assumes, and
+		# --new=<name> one to start (the rc1 full stage: ship -b jq-1.8.1,
+		# --new=poppler-25.09).
+		for flag in --branch -b; do
+			case " $words " in *" $flag "*)
+				name=" $words "
+				name=${name#* $flag }
+				name=${name%% *}
+				words=$(printf '%s' " $words " | sed "s| $flag $name | $flag $(run_name "$name") |; s/^ //; s/ \$//")
+				name=$(run_name "$name")
+				"$DH_BIN" path "$name" >/dev/null 2>&1 || dh start "$name" >/dev/null 2>&1 || :
+				;;
+			esac
+		done
+		case "$words" in *"--new="*)
+			name=${words#*--new=}
 			name=${name%% *}
-			# A name the docs give is the row's own for this run, since an
-			# earlier run's archived record holds it (the rc7 full stage).
-			words=${words/--branch $name/--branch $(run_name "$name")}
-			name=$(run_name "$name")
-			"$DH_BIN" path "$name" >/dev/null 2>&1 || dh start "$name" >/dev/null 2>&1 || :
+			words=${words/--new=$name/--new=$(run_name "$name")}
 			;;
 		esac
 		case " submit check ship " in *" $verb "*)

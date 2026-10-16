@@ -49,9 +49,23 @@ a5_status() {
 	DOCKHAND_DB="$ROW_DIR/db/dockhand.db" "$bin" --json --tree "$ACCEPT_REAL_TREE" status --all >"$out" 2>"$out.err"
 }
 
+# a5_refused_live is whether a status was refused for processes working
+# on the database, which the candidate does rather than migrate under them.
+a5_refused_live() { jq -r '.error // ""' "$1" 2>/dev/null | grep -q 'would leave them unable to record what they do'; }
+
 act() {
 	a5_status "$ROW_DIR/old/dockhand" "$ROW_DIR/before.json" || :
+	# The older build's status starts its automatic cleanup in the
+	# background, and the candidate rightly won't migrate while that runs
+	# (the rc1 full stage): it's waited for, up to two minutes, as a person
+	# would, rather than read as nothing to migrate.
+	local tries=0
 	a5_status "$DH_BIN" "$ROW_DIR/after.json" || :
+	while a5_refused_live "$ROW_DIR/after.json" && [ "$tries" -lt 12 ]; do
+		sleep 10
+		tries=$((tries + 1))
+		a5_status "$DH_BIN" "$ROW_DIR/after.json" || :
+	done
 	a5_status "$ROW_DIR/old/dockhand" "$ROW_DIR/refused.json" || :
 }
 
@@ -65,6 +79,10 @@ assert() {
 	fi
 	if [ "$(jq -r .exit_code "$ROW_DIR/before.json" 2>/dev/null)" != 0 ]; then
 		row_fail "the older build couldn't read the copy: $(jq -r '.error // empty' "$ROW_DIR/before.json") $(tail -2 "$ROW_DIR/before.json.err")"
+		return
+	fi
+	if a5_refused_live "$ROW_DIR/after.json"; then
+		row_fail "the candidate still refused to migrate after two minutes, for processes working on the database: $(jq -r .error "$ROW_DIR/after.json")"
 		return
 	fi
 	if ! grep -q "^Migrated dockhand's database from schema" "$ROW_DIR/after.json.err"; then

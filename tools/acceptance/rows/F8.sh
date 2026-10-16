@@ -27,7 +27,9 @@ act() {
 exec "%s" "$@"
 ' "$real" >"$brew/tart"
 	chmod +x "$brew/tart"
-	PATH="$brew:$PATH" dh_json providers || :
+	# setup is the health report providers was, and offers nothing without
+	# a terminal (the rc1 full stage: providers is gone).
+	PATH="$brew:$PATH" dh_json setup </dev/null || :
 }
 assert() {
 	grep -q '2.39' "$ROW_DIR/out.log" || { row_fail "the old Tart wasn't refused by version"; return; }
