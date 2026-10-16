@@ -1464,3 +1464,44 @@ INSERT INTO sessions VALUES('repo_1','ses_stale','foreground',105,'p','v0.3.0',%
 	require.Equal(t, schemaVersion, s.Migration().To)
 	require.NoError(t, s.Close())
 }
+
+// A check's records come in one read: the run, its plan, its executions,
+// and each one's results, with each reused result's origin and the
+// inputs its results name (the SQL study's O2).
+func TestACheckIsReadWhole(t *testing.T) {
+	f := open(t)
+	b, r, p := f.seed(t)
+	earlier, run := f.run(t, b, r, p), f.run(t, b, r, p)
+	built := model.GuestExecution{ID: "ex_built", Run: earlier.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}
+	reusing := model.GuestExecution{ID: "ex_reusing", Run: run.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}
+	inputs := model.NewTargetInputs("source sha256:a; setup 2", "devel/libharbor", "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222", nil, nil)
+	var key string
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		var err error
+		if key, err = tx.RecordInputs(inputs); err != nil {
+			return err
+		}
+		if err := tx.AddExecution(built); err != nil {
+			return err
+		}
+		if err := tx.AddExecution(reusing); err != nil {
+			return err
+		}
+		if err := tx.RecordResult(model.TargetResult{Execution: built.ID, Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsNone, Inputs: key, RecordedAt: at}); err != nil {
+			return err
+		}
+		return tx.RecordResult(model.TargetResult{Execution: reusing.ID, Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsNone, Inputs: key, ReusedFrom: built.ID, RecordedAt: at})
+	}))
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+		check, err := rd.Check(run.ID)
+		require.NoError(t, err)
+		require.Equal(t, run.ID, check.Run.ID)
+		require.Equal(t, p.ID, check.Plan.ID)
+		require.Len(t, check.Executions, 1)
+		require.Len(t, check.Results[reusing.ID], 1)
+		require.Equal(t, earlier.ID, check.Origins[built.ID].Run.ID)
+		require.Equal(t, built.ID, check.Origins[built.ID].Execution.ID)
+		require.Contains(t, check.Inputs, key)
+		return nil
+	}))
+}

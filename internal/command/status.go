@@ -524,7 +524,7 @@ func observing(ctx context.Context, e *engine.Engine) (context.Context, *coord.S
 	if session, ok := ctx.Value(observerKey{}).(*coord.Session); ok {
 		return ctx, session, func() {}, nil
 	}
-	session, err := startSession(ctx, e, model.SessionObserver)
+	session, err := e.Session(ctx, model.SessionObserver)
 	if err != nil {
 		return ctx, nil, func() {}, err
 	}

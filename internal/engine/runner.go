@@ -449,19 +449,14 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		var executions []model.GuestExecution
 		var results map[model.TargetID]model.TargetResult
 		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-			var err error
-			if executions, err = r.Executions(d.run.ID); err != nil {
+			// The check's records in one read (the SQL study's O2).
+			check, err := r.Check(d.run.ID)
+			if err != nil {
 				return err
 			}
-			executions = slices.DeleteFunc(executions, func(x model.GuestExecution) bool { return x.Environment != environment })
+			executions = slices.DeleteFunc(check.Executions, func(x model.GuestExecution) bool { return x.Environment != environment })
 			slices.SortFunc(executions, func(a, b model.GuestExecution) int { return a.Attempt - b.Attempt })
-			recorded := map[model.ExecutionID][]model.TargetResult{}
-			for _, execution := range executions {
-				if recorded[execution.ID], err = r.Results(execution.ID); err != nil {
-					return err
-				}
-			}
-			results = evidence.Merged(executions, recorded)
+			results = evidence.Merged(executions, check.Results)
 			return nil
 		}); err != nil {
 			return err

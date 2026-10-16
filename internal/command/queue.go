@@ -136,7 +136,7 @@ the check runs here, as a foreground check would.`,
 			if run.State.Terminal() {
 				return report(ctx, e, run, streams)
 			}
-			session, err := startSession(ctx, e, model.SessionForeground)
+			session, err := e.Session(ctx, model.SessionForeground)
 			if err != nil {
 				return err
 			}
@@ -185,7 +185,7 @@ worktree, with no check named, the branch's latest.`,
 				}
 				return fmt.Errorf("%s already %s", run.Name(), run.State)
 			}
-			session, err := startSession(ctx, e, model.SessionForeground)
+			session, err := e.Session(ctx, model.SessionForeground)
 			if err != nil {
 				return err
 			}

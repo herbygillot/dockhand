@@ -90,7 +90,7 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 				return err
 			}
 			defer e.Close()
-			session, err := startSession(ctx, e, model.SessionServe)
+			session, err := e.Session(ctx, model.SessionServe)
 			if err != nil {
 				return err
 			}

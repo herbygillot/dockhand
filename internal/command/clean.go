@@ -109,7 +109,7 @@ cancel stops a check. None means another.`,
 					return err
 				}
 			}
-			session, err := startSession(ctx, e, model.SessionForeground)
+			session, err := e.Session(ctx, model.SessionForeground)
 			if err != nil {
 				return err
 			}
@@ -159,7 +159,7 @@ cancel stops a check. None means another.`,
 // cleanAutomatically is decision 36's automatic pass, as a command starts it
 // apart from itself once its own work is done, and says what it removed.
 func cleanAutomatically(ctx context.Context, e *engine.Engine, streams Streams, file config.File) error {
-	session, err := startSession(ctx, e, model.SessionForeground)
+	session, err := e.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return err
 	}

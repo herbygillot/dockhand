@@ -48,3 +48,20 @@ Built in slices, each committed on its own.
   answer anything (`BaselineCandidates`, of the finished run), where it
   first branched on the check's exit code being `ExitCheckFailed` (7b row
   8).
+
+## One session and one drive-or-follow, and a check's records in one read
+
+- `engine.Session(ctx, kind)`, the one `coord.Coordinator` a command builds,
+  where command's `startSession` built its own (ten callers);
+  `engine.Leader`; and `engine.SeeThrough(ctx, session, run, drive)`, which
+  drives a run here or follows serve driving it, and follows a serve that
+  took it meanwhile, returning it as taker (the split's 7b row 2, and the
+  review's one drive-or-follow). command's `follow` keeps the journal it
+  prints and the report, and words an ended context as
+  `ExitInterrupted`.
+- `Reader.Check(run)`, the SQL study's O2: the run, its plan, its
+  executions, every execution's results in one query, each reused result's
+  origin execution with its run, and the inputs records its results name.
+  The driver reads it, where it read executions and then each one's
+  results; evidence and `Logs` adopt it with v0.5.0's revision analysis,
+  as the study placed them.

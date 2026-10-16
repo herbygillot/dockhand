@@ -341,7 +341,7 @@ func TestAResumedGitHubCheckReadsTheRunItLeft(t *testing.T) {
 	defer e.Close()
 	run, err := e.RunNamed(ctx, "check-1")
 	require.NoError(t, err)
-	serving, err := startSession(ctx, e, model.SessionServe)
+	serving, err := e.Session(ctx, model.SessionServe)
 	require.NoError(t, err)
 	stopping, stop := context.WithCancel(ctx)
 	f.hold = func() bool {

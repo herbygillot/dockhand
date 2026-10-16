@@ -14,11 +14,9 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
-	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -219,12 +217,12 @@ true, it runs that baseline by itself.`,
 // followed when serve leads, otherwise run here; with enqueue, only
 // queued, saying whether anything will run it.
 func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams Streams, enqueue bool) error {
-	session, err := startSession(ctx, e, model.SessionForeground)
+	session, err := e.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return err
 	}
 	defer session.End(context.WithoutCancel(ctx))
-	leader, err := session.Holder(ctx, coord.LeaderResource)
+	leader, err := e.Leader(ctx, session)
 	if err != nil {
 		return err
 	}
@@ -450,17 +448,6 @@ func writeExclusions(out io.Writer, plan model.Plan) {
 	}
 }
 
-// startSession records this process's session and keeps its heartbeat.
-func startSession(ctx context.Context, e *engine.Engine, kind model.SessionKind) (*coord.Session, error) {
-	c := &coord.Coordinator{Store: e.Store, Repository: e.Repository}
-	session, err := c.Start(ctx, kind, buildinfo.Current().String())
-	if err != nil {
-		return nil, err
-	}
-	go session.KeepAlive(ctx)
-	return session, nil
-}
-
 // follow shows a run's progress until it ends, driving it here when drive
 // is set, and reports its outcome.
 func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams Streams, drive bool) error {
@@ -478,22 +465,14 @@ func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 			}
 		}
 	}()
-	var err error
-	if drive {
-		var driven model.Run
-		// Driven only to see its own run through, the engine's and the
-		// providers' reports are the work behind the scenes here: the
-		// journal and the report say what matters (-v shows them).
-		driven, err = e.Drive(progress.Quiet(ctx), session, run.ID)
-		// A serve that started meanwhile may have taken the run; then it
-		// is followed instead.
-		if held := new(coord.HeldError); errors.As(err, &held) {
-			fmt.Fprintf(streams.Err, "%s was taken by serve (pid %d); following it.\n", run.Name(), held.Holder.PID)
-			driven, err = waitFor(ctx, e, run.ID)
-		}
-		run = driven
-	} else {
-		run, err = waitFor(ctx, e, run.ID)
+	// A serve that started meanwhile may have taken the run; then it is
+	// followed instead, and said.
+	run, taker, err := e.SeeThrough(ctx, session, run.ID, drive)
+	if taker != nil {
+		fmt.Fprintf(streams.Err, "%s was taken by serve (pid %d); following it.\n", run.Name(), taker.PID)
+	}
+	if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		err = &ExitError{Code: ExitInterrupted, Message: fmt.Sprintf("stopped following %s; it continues (dockhand wait %s)", run.Name(), run.Name())}
 	}
 	stop()
 	<-done
@@ -523,21 +502,6 @@ func (j *journal) show(ctx context.Context) {
 			// A kept archive found altered, or gone, is marked, where it
 			// was in the journal alone (the rc8 full stage's D-T1).
 			fmt.Fprintf(j.out, "  ! %s\n", event.Message)
-		}
-	}
-}
-
-// waitFor polls a run until it ends or ctx does.
-func waitFor(ctx context.Context, e *engine.Engine, id model.RunID) (model.Run, error) {
-	for {
-		run, err := e.Run(ctx, id)
-		if err != nil || run.State.Terminal() {
-			return run, err
-		}
-		select {
-		case <-ctx.Done():
-			return run, &ExitError{Code: ExitInterrupted, Message: fmt.Sprintf("stopped following %s; it continues (dockhand wait %s)", run.Name(), run.Name())}
-		case <-time.After(500 * time.Millisecond):
 		}
 	}
 }
@@ -916,7 +880,7 @@ func replaceActive(ctx context.Context, e *engine.Engine, streams Streams, branc
 			return nil, fmt.Errorf("%s keeps running; nothing new was queued", run.Name())
 		}
 	}
-	session, err := startSession(ctx, e, model.SessionForeground)
+	session, err := e.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return nil, err
 	}

@@ -530,6 +530,48 @@ func (t *tx) UpdateExecution(e model.GuestExecution) error {
 
 const resultColumns = "r.execution_id, r.target_id, r.outcome, r.phase, r.tests, r.log, r.steps, r.detail, r.builders, r.inputs, r.archive, r.reused_from, r.recorded_at"
 
+func (t *tx) Check(id model.RunID) (store.Check, error) {
+	check := store.Check{Results: map[model.ExecutionID][]model.TargetResult{}, Origins: map[model.ExecutionID]store.Origin{}, Inputs: map[string]model.TargetInputs{}}
+	var err error
+	if check.Run, err = t.Run(id); err != nil {
+		return store.Check{}, err
+	}
+	if check.Plan, err = t.Plan(check.Run.Plan); err != nil {
+		return store.Check{}, err
+	}
+	if check.Executions, err = t.Executions(id); err != nil {
+		return store.Check{}, err
+	}
+	// Every execution's results in one query, where each was read alone.
+	results, err := t.results("SELECT "+resultColumns+" FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id WHERE r.repository_id=? AND e.run_id=? ORDER BY r.recorded_at, r.rowid", t.repo, id)
+	if err != nil {
+		return store.Check{}, err
+	}
+	for _, result := range results {
+		check.Results[result.Execution] = append(check.Results[result.Execution], result)
+		if result.ReusedFrom != "" {
+			if _, ok := check.Origins[result.ReusedFrom]; !ok {
+				var origin store.Origin
+				if origin.Execution, err = t.execution(result.ReusedFrom); err != nil {
+					return store.Check{}, err
+				}
+				if origin.Run, err = t.Run(origin.Execution.Run); err != nil {
+					return store.Check{}, err
+				}
+				check.Origins[result.ReusedFrom] = origin
+			}
+		}
+		if result.Inputs != "" {
+			if _, ok := check.Inputs[result.Inputs]; !ok {
+				if check.Inputs[result.Inputs], err = t.Inputs(result.Inputs); err != nil {
+					return store.Check{}, err
+				}
+			}
+		}
+	}
+	return check, nil
+}
+
 func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) {
 	return t.results("SELECT "+resultColumns+" FROM results r WHERE r.repository_id=? AND r.execution_id=? ORDER BY r.recorded_at, r.rowid", t.repo, execution)
 }

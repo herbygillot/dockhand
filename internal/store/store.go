@@ -134,6 +134,8 @@ type Reader interface {
 	RunNumbered(number int) (model.Run, error)
 	Runs(filter RunFilter) ([]model.Run, error)
 	Executions(run model.RunID) ([]model.GuestExecution, error)
+	// Check is a check's records, read together (the SQL study's O2).
+	Check(run model.RunID) (Check, error)
 	// Execution reads one provider run by its ID.
 	Execution(id model.ExecutionID) (model.GuestExecution, error)
 	// ExecutionsReferred are the provider runs whose provider knows them by
@@ -338,3 +340,23 @@ func (e *LiveUnderMigrationError) Error() string {
 }
 
 func (e *LiveUnderMigrationError) Unwrap() error { return ErrLiveUnderMigration }
+
+// Check is a check's records read in one call, where four places read a
+// run's executions and each one's results row by row (the SQL study's
+// O2): the run, its plan, its executions by attempt, each one's results in
+// the order recorded, each reused result's origin execution with the run
+// it belongs to, and the inputs records its results name.
+type Check struct {
+	Run        model.Run
+	Plan       model.Plan
+	Executions []model.GuestExecution
+	Results    map[model.ExecutionID][]model.TargetResult
+	Origins    map[model.ExecutionID]Origin
+	Inputs     map[string]model.TargetInputs
+}
+
+// Origin is the execution a reused result was built in, and its run.
+type Origin struct {
+	Execution model.GuestExecution
+	Run       model.Run
+}

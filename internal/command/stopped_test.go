@@ -26,7 +26,7 @@ func TestAKilledCheckReadsAsStopped(t *testing.T) {
 	defer e.Close()
 	run, err := e.RunNamed(ctx, "check-1")
 	require.NoError(t, err)
-	killed, err := startSession(ctx, e, model.SessionForeground)
+	killed, err := e.Session(ctx, model.SessionForeground)
 	require.NoError(t, err)
 	lease, err := killed.Acquire(ctx, engine.RunResource(run.ID))
 	require.NoError(t, err)
