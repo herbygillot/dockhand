@@ -160,8 +160,6 @@ const (
 	OutcomeInterrupted Outcome = "interrupted"
 	// OutcomeNotRun is a target the execution never reached.
 	OutcomeNotRun Outcome = "not-run"
-	// OutcomeUnevaluated is a target the guest could not evaluate.
-	OutcomeUnevaluated Outcome = "unevaluated"
 	// OutcomeUnmet is a target its environment can't build, because it
 	// lacks what the target needs (Plan.Unmet). The plan decides it when
 	// the check is accepted, and no provider records it. It says nothing
@@ -371,7 +369,7 @@ func resultWords(target TargetID, builder string, outcome Outcome, phase Phase, 
 		of += " on " + builder
 	}
 	switch outcome {
-	case OutcomePassed, OutcomeFailed, OutcomeBlocked, OutcomeInterrupted, OutcomeNotRun, OutcomeUnevaluated:
+	case OutcomePassed, OutcomeFailed, OutcomeBlocked, OutcomeInterrupted, OutcomeNotRun:
 	default:
 		return invalid("result for %s has unknown outcome %q", of, outcome)
 	}

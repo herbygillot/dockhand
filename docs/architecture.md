@@ -28,7 +28,7 @@ internal/model         the records' vocabulary; imports nothing from dockhand
 | `Plan` | what a check of one revision covers: the changed targets, extras, and prerequisites, and each environment's own plan (`EnvironmentPlan`): its build order, dependencies, what needs Xcode, what it can't meet, its exclusions with their reasons, and each Git-fetched target's expected commit |
 | `Run` | one accepted check request, `check-42`, of one plan on one or more environments |
 | `GuestExecution` | one run's work in one environment and attempt, `tart_7y62p4sigena6xlr`, with the provider's own reference and what the guest reported of itself |
-| `TargetResult` | one target's outcome and phases in one execution: passed, failed, blocked by a failed prerequisite, unmet by the environment, interrupted, or unevaluated |
+| `TargetResult` | one target's outcome and phases in one execution: passed, failed, blocked by a failed prerequisite, unmet by the environment, not run, or interrupted |
 | `Assessment` | what upstream's change means for one port a revision changes, against the base it was captured on: findings, what couldn't be compared, and coverage, under a version of the rules |
 | `Session`, `Lease`, `Event` | the processes sharing the database, who holds what, and the journal `watch` and `check` follow |
 

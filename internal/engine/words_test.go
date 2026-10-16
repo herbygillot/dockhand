@@ -26,7 +26,6 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, false, "✗ failed at install"},
 		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, true, "✗ failed at install, accepted: cause not established"},
 		{model.TargetResult{Outcome: model.OutcomeBlocked}, false, "✗ blocked by a failed changed dependency"},
-		{model.TargetResult{Outcome: model.OutcomeUnevaluated}, false, "✗ could not evaluate"},
 		{model.TargetResult{Outcome: model.OutcomeNotRun}, false, "· not run"},
 		{model.TargetResult{Outcome: model.OutcomeInterrupted}, false, "· interrupted"},
 	} {

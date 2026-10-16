@@ -153,8 +153,6 @@ type ConcernClass string
 const (
 	// Introduced is new with the candidate, as any change is.
 	Introduced ConcernClass = "introduced"
-	// Resolved is the base's, and gone from the candidate.
-	Resolved ConcernClass = "resolved"
 	// Present is the base's too: said, and holding nothing, since an
 	// update isn't an audit of everything the port already was.
 	Present ConcernClass = "present"
