@@ -16,7 +16,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/config"
-	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -108,7 +107,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 
 func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []string, attentionOnly, all bool, where branchFlags) error {
 	port := where.port
-	ctx, _, end, err := observing(ctx, e)
+	ctx, _, end, err := e.Observing(ctx)
 	if err != nil {
 		return err
 	}
@@ -177,7 +176,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		if serve, err = readServe(ctx, e); err != nil {
 			return err
 		}
-		_, session, _, err := observing(ctx, e)
+		_, session, _, err := e.Observing(ctx)
 		if err != nil {
 			return err
 		}
@@ -257,12 +256,31 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 }
 
 // attention is one row of what needs you, with the command that moves it.
-type attention struct{ mark, branch, what, next string }
+type attention struct {
+	kind               attentionKind
+	branch, what, next string
+}
+
+// attentionKind is what an attention row asks of the person, typed, where
+// its JSON kind was read back from the glyph its text printed (the command
+// package review's concept 6).
+type attentionKind string
+
+const (
+	attentionFailed   attentionKind = "failed"
+	attentionNeedsYou attentionKind = "needs_you"
+	attentionReady    attentionKind = "ready"
+)
+
+// mark is the kind's glyph in the text.
+func (k attentionKind) mark() string {
+	return map[attentionKind]string{attentionFailed: "✗", attentionNeedsYou: "!", attentionReady: "·"}[k]
+}
 
 // judgeStopped marks the statuses whose check stopped when the process
 // running it ended, which only a session can judge.
 func judgeStopped(ctx context.Context, e *engine.Engine, statuses []engine.BranchStatus) error {
-	_, session, end, err := observing(ctx, e)
+	_, session, end, err := e.Observing(ctx)
 	if err != nil {
 		return err
 	}
@@ -283,8 +301,8 @@ func judgedStatus(ctx context.Context, e *engine.Engine, branch model.Branch) (e
 
 func attentionFor(s engine.BranchStatus) []attention {
 	name := s.Branch.ShortName()
-	row := func(mark, what, next string) []attention {
-		return []attention{{mark: mark, branch: name, what: what, next: next}}
+	row := func(kind attentionKind, what, next string) []attention {
+		return []attention{{kind: kind, branch: name, what: what, next: next}}
 	}
 	if s.Cleaned() {
 		return nil
@@ -294,19 +312,19 @@ func attentionFor(s engine.BranchStatus) []attention {
 		// request merged: a branch cleaned by hand after its merge read as
 		// trouble, adopt suggested, until --refresh (the sand-runner
 		// session, batch 31).
-		return row("!", fmt.Sprintf("its Git branch is gone, and its pull request, #%d, may have merged", s.Branch.PullRequest.Number), "dockhand status --refresh reads it; dockhand adopt <new name>, if you renamed the branch")
+		return row(attentionNeedsYou, fmt.Sprintf("its Git branch is gone, and its pull request, #%d, may have merged", s.Branch.PullRequest.Number), "dockhand status --refresh reads it; dockhand adopt <new name>, if you renamed the branch")
 	}
 	if s.Missing {
-		return row("!", "its Git branch is gone", "dockhand adopt <new name>, if you renamed it")
+		return row(attentionNeedsYou, "its Git branch is gone", "dockhand adopt <new name>, if you renamed it")
 	}
 	if run := s.Stopped; run != nil {
-		return row("!", run.Name()+" stopped: the process running it ended; dockhand wait "+run.Name()+" resumes it, and dockhand cancel "+run.Name()+" ends it", "dockhand wait "+run.Name())
+		return row(attentionNeedsYou, run.Name()+" stopped: the process running it ended; dockhand wait "+run.Name()+" resumes it, and dockhand cancel "+run.Name()+" ends it", "dockhand wait "+run.Name())
 	}
 	if rows := pullRequestAttention(s); len(rows) > 0 {
 		return rows
 	}
 	if pr := s.Branch.PullRequest; pr != nil && s.Branch.Origin == model.OriginServe && (pr.Observed == nil || pr.Observed.State == model.PullRequestOpen) {
-		return row("·", fmt.Sprintf("#%d opened by serve, without a person's review", pr.Number), "dockhand status "+name)
+		return row(attentionReady, fmt.Sprintf("#%d opened by serve, without a person's review", pr.Number), "dockhand status "+name)
 	}
 	// A branch set aside asks nothing of its checks.
 	if s.Branch.State == model.BranchArchived {
@@ -315,11 +333,11 @@ func attentionFor(s engine.BranchStatus) []attention {
 	// Work that landed on master by another route asks nothing more of
 	// checks, only to be set aside (cleaning up duckdb-cxx14, finding 1).
 	if s.OnMaster != "" && s.Branch.PullRequest == nil {
-		return row("·", "its changes are on master already, as of "+s.OnMaster.Short(), "dockhand archive "+name)
+		return row(attentionReady, "its changes are on master already, as of "+s.OnMaster.Short(), "dockhand archive "+name)
 	}
 	if s.Latest == nil || !s.Current || len(s.Active) > 0 {
 		if s.Latest != nil && !s.Current && s.Latest.State == model.RunPassed && len(s.Active) == 0 {
-			return row("!", engine.Describe(*s.LatestRevision)+" passed; the files have changed since", "dockhand check --branch "+name)
+			return row(attentionNeedsYou, engine.Describe(*s.LatestRevision)+" passed; the files have changed since", "dockhand check --branch "+name)
 		}
 		return nil
 	}
@@ -332,14 +350,14 @@ func attentionFor(s engine.BranchStatus) []attention {
 		for _, target := range s.Evidence.Failed() {
 			for i, result := range target.Outcomes {
 				if result.Outcome == model.OutcomeFailed {
-					return row("✗", fmt.Sprintf("%s failed at %s on %s (%s)", target.Target.Target.Name, result.Phase, engine.DescribeEnvironment(s.Evidence.Plan.Environments[i]), run.Name()),
+					return row(attentionFailed, fmt.Sprintf("%s failed at %s on %s (%s)", target.Target.Target.Name, result.Phase, engine.DescribeEnvironment(s.Evidence.Plan.Environments[i]), run.Name()),
 						fmt.Sprintf("dockhand logs %s %s", run.Name(), target.Target.Target.Name))
 				}
 			}
 		}
-		return row("✗", run.Name()+" failed: "+run.Detail, "dockhand logs "+run.Name())
+		return row(attentionFailed, run.Name()+" failed: "+run.Detail, "dockhand logs "+run.Name())
 	case model.RunAttention:
-		return row("!", run.Name()+" needs attention: "+run.Detail, "dockhand logs "+run.Name())
+		return row(attentionNeedsYou, run.Name()+" needs attention: "+run.Detail, "dockhand logs "+run.Name())
 	case model.RunPassed:
 		var unchecked, remade []string
 		var why string
@@ -361,13 +379,13 @@ func attentionFor(s engine.BranchStatus) []attention {
 		}
 		switch {
 		case len(remade) > 0:
-			return row("!", fmt.Sprintf("%s passed, but since then %s; %s must be built there again", run.Name(), why, strings.Join(remade, ", ")), again)
+			return row(attentionNeedsYou, fmt.Sprintf("%s passed, but since then %s; %s must be built there again", run.Name(), why, strings.Join(remade, ", ")), again)
 		case len(unchecked) > 0:
-			return row("!", fmt.Sprintf("%s passed, but no check of these files built %s", run.Name(), strings.Join(unchecked, ", ")), again)
+			return row(attentionNeedsYou, fmt.Sprintf("%s passed, but no check of these files built %s", run.Name(), strings.Join(unchecked, ", ")), again)
 		case len(s.Edited) > 0:
-			return row("·", engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
+			return row(attentionReady, engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
 		case s.Branch.PullRequest == nil && len(s.Held) > 0:
-			return row("!", "passed; held for a look: "+engine.HoldLines(s.Held)[0], submitNext(s, name))
+			return row(attentionNeedsYou, "passed; held for a look: "+engine.HoldLines(s.Held)[0], submitNext(s, name))
 		case s.Branch.PullRequest == nil && len(s.Moved) > 0:
 			// The check built another source than the update chose: serve
 			// waits for a look, and a person's submission shows it.
@@ -375,14 +393,14 @@ func attentionFor(s engine.BranchStatus) []attention {
 			if s.Branch.Origin == model.OriginServe {
 				what = "passed; held for a look: " + s.Moved[0].Detail
 			}
-			return row("!", what, submitNext(s, name))
+			return row(attentionNeedsYou, what, submitNext(s, name))
 		case s.Branch.PullRequest == nil && s.Assessment == engine.AssessmentPending:
 			// Status collects nothing; submitting assesses what isn't yet.
-			return row("·", "passed; what upstream's change means isn't assessed yet, which submitting does", submitNext(s, name))
+			return row(attentionReady, "passed; what upstream's change means isn't assessed yet, which submitting does", submitNext(s, name))
 		case s.Branch.PullRequest == nil:
-			return row("·", "passed; waiting for you to submit", submitNext(s, name))
+			return row(attentionReady, "passed; waiting for you to submit", submitNext(s, name))
 		case !s.Pushed():
-			return row("·", fmt.Sprintf("passed; #%d does not have it yet", s.Branch.PullRequest.Number), submitNext(s, name))
+			return row(attentionReady, fmt.Sprintf("passed; #%d does not have it yet", s.Branch.PullRequest.Number), submitNext(s, name))
 		}
 	}
 	return nil
@@ -402,14 +420,14 @@ func pullRequestAttention(s engine.BranchStatus) []attention {
 	}
 	switch {
 	case s.SomeoneElsePushed():
-		return []attention{{mark: "!", branch: name, what: fmt.Sprintf("someone else pushed to #%d%s", pr.Number, age), next: "dockhand submit --branch " + name + " (it shows the comparison)"}}
+		return []attention{{kind: attentionNeedsYou, branch: name, what: fmt.Sprintf("someone else pushed to #%d%s", pr.Number, age), next: "dockhand submit --branch " + name + " (it shows the comparison)"}}
 	case pr.Observed.Review == model.ReviewChangesRequested:
 		if !pr.Observed.ReviewedAt.IsZero() {
 			age = " (" + engine.Ago(pr.Observed.ReviewedAt) + ")"
 		}
-		return []attention{{mark: "!", branch: name, what: fmt.Sprintf("#%d changes requested%s", pr.Number, age), next: next}}
+		return []attention{{kind: attentionNeedsYou, branch: name, what: fmt.Sprintf("#%d changes requested%s", pr.Number, age), next: next}}
 	case pr.Observed.Checks == model.ChecksFailing:
-		return []attention{{mark: "✗", branch: name, what: fmt.Sprintf("#%d MacPorts CI failing: %s%s", pr.Number, strings.Join(s.Failing(), ", "), age),
+		return []attention{{kind: attentionFailed, branch: name, what: fmt.Sprintf("#%d MacPorts CI failing: %s%s", pr.Number, strings.Join(s.Failing(), ", "), age),
 			next: "open " + github.PullRequestChecksURL(pr.Repository, pr.Number)}}
 	}
 	return nil
@@ -428,7 +446,7 @@ func submitNext(s engine.BranchStatus, name string) string {
 func writeAttention(out io.Writer, rows []attention) {
 	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, row := range rows {
-		fmt.Fprintf(table, "  %s %s\t%s\t%s\n", row.mark, row.branch, row.what, row.next)
+		fmt.Fprintf(table, "  %s %s\t%s\t%s\n", row.kind.mark(), row.branch, row.what, row.next)
 	}
 	table.Flush()
 }
@@ -533,7 +551,7 @@ func prWords(s engine.BranchStatus) string {
 
 // readServe is serve's state, as this command's observer sees it.
 func readServe(ctx context.Context, e *engine.Engine) (engine.ServeState, error) {
-	_, session, end, err := observing(ctx, e)
+	_, session, end, err := e.Observing(ctx)
 	if err != nil {
 		return engine.ServeState{}, err
 	}
@@ -547,10 +565,9 @@ func serveWords(s engine.ServeState) string {
 	line := "serve: not running"
 	if s.Running {
 		line = fmt.Sprintf("serve: running (pid %d)", s.PID)
-		// A serve on another build than this command's, as one port
-		// upgrade left running, is said (the rc3 full stage, A7).
-		if build := buildinfo.Current().String(); s.Build != "" && s.Build != build {
-			line += fmt.Sprintf(" · on dockhand %s, where this is %s", s.Build, build)
+		// A serve on another build than this command's is said.
+		if build, upgraded := s.Upgraded(); upgraded {
+			line += fmt.Sprintf(" · on dockhand %s, where this is %s", build, buildinfo.Current())
 		}
 		// A serve not acting on GitHub, as its login stands, says why.
 		if s.NotActing != "" {
@@ -572,24 +589,6 @@ func serveWords(s engine.ServeState) string {
 		return line + fmt.Sprintf(" · queue: %s, %d stopped", prose.Plural(s.Queue, "run"), s.Stopped)
 	}
 	return line + " · queue: " + prose.Plural(s.Queue, "run")
-}
-
-type observerKey struct{}
-
-// observing gives a command one observer session, a session that only reads
-// and judges who is alive, on ctx, which every judgment made under ctx
-// shares. Each session is a row and two journal events, and status judged
-// twice a render, which watch redrew every 30 seconds. A ctx that has one
-// keeps it, and ending it is its opener's.
-func observing(ctx context.Context, e *engine.Engine) (context.Context, *coord.Session, func(), error) {
-	if session, ok := ctx.Value(observerKey{}).(*coord.Session); ok {
-		return ctx, session, func() {}, nil
-	}
-	session, err := e.Session(ctx, model.SessionObserver)
-	if err != nil {
-		return ctx, nil, func() {}, err
-	}
-	return context.WithValue(ctx, observerKey{}, session), session, func() { session.End(context.WithoutCancel(ctx)) }, nil
 }
 
 func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch) error {

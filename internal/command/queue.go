@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -221,8 +220,8 @@ log.`,
 			if len(args) == 0 {
 				run, err = latestOf(ctx, e, streams, where, "name a check, such as check-42, a provider run, or a branch with -b or -p; in a branch's worktree, logs shows the branch's latest check")
 			} else {
-				run, only, err = checkOrRun(ctx, e, args[0])
-				if err != nil && port == "" && !checkName.MatchString(args[0]) {
+				run, only, err = e.RunOrExecution(ctx, args[0])
+				if err != nil && port == "" && !engine.IsCheckName(args[0]) {
 					// Not a check or a provider run: a port, in the
 					// branch's latest check, where there's one here.
 					if latest, ok := latestLogging(ctx, e, args[0]); ok {
@@ -451,7 +450,7 @@ func latestOf(ctx context.Context, e *engine.Engine, streams Streams, where bran
 
 // checkOrRunName reports whether name is a check's or a provider run's.
 func checkOrRunName(ctx context.Context, s *settings, name string) bool {
-	if checkName.MatchString(name) {
+	if engine.IsCheckName(name) {
 		return true
 	}
 	e, err := s.open(ctx)
@@ -459,26 +458,8 @@ func checkOrRunName(ctx context.Context, s *settings, name string) bool {
 		return false
 	}
 	defer e.Close()
-	_, _, err = checkOrRun(ctx, e, name)
+	_, _, err = e.RunOrExecution(ctx, name)
 	return err == nil
-}
-
-// checkName is a check's name, check-42 or 42.
-var checkName = regexp.MustCompile(`^(check-)?[0-9]+$`)
-
-// checkOrRun is the check a name means, check-42, or the provider run it
-// means, with the run's check.
-func checkOrRun(ctx context.Context, e *engine.Engine, name string) (model.Run, model.ExecutionID, error) {
-	run, err := e.RunNamed(ctx, name)
-	if err == nil || checkName.MatchString(name) {
-		return run, "", err
-	}
-	execution, runErr := e.ExecutionNamed(ctx, name)
-	if runErr != nil {
-		return model.Run{}, "", fmt.Errorf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL", name)
-	}
-	run, err = e.Run(ctx, execution.Run)
-	return run, execution.ID, err
 }
 
 // stoppedRun reports whether a run recorded as running stopped when the
@@ -487,7 +468,7 @@ func stoppedRun(ctx context.Context, e *engine.Engine, run model.Run) bool {
 	if run.State != model.RunRunning {
 		return false
 	}
-	ctx, session, end, err := observing(ctx, e)
+	ctx, session, end, err := e.Observing(ctx)
 	if err != nil {
 		return false
 	}

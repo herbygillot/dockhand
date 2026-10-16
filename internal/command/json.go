@@ -605,10 +605,9 @@ type attentionJSON struct {
 }
 
 func attentionView(rows []attention) []attentionJSON {
-	kinds := map[string]string{"✗": "failed", "!": "needs_you", "·": "ready"}
 	views := []attentionJSON{}
 	for _, row := range rows {
-		views = append(views, attentionJSON{Kind: kinds[row.mark], Branch: row.branch, What: row.what, Next: row.next})
+		views = append(views, attentionJSON{Kind: string(row.kind), Branch: row.branch, What: row.what, Next: row.next})
 	}
 	return views
 }

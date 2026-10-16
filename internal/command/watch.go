@@ -26,7 +26,7 @@ var watchRedraw = 30 * time.Second
 // view redrawn on a terminal, else events as lines; it only observes.
 func statusWatch(ctx context.Context, e *engine.Engine, streams Streams, plain bool) error {
 	// One observer for the whole watch, however often it redraws.
-	ctx, _, end, err := observing(ctx, e)
+	ctx, _, end, err := e.Observing(ctx)
 	if err != nil {
 		return err
 	}

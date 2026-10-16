@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/coord"
@@ -444,6 +445,28 @@ func (e *Engine) LatestCheck(ctx context.Context, branch model.BranchID) (run mo
 		return model.Run{}, false, err
 	}
 	return runs[0], true, nil
+}
+
+// checkName is a check's name, check-42 or 42.
+var checkName = regexp.MustCompile(`^(check-)?[0-9]+$`)
+
+// IsCheckName reports whether name is spelled as a check's, check-42 or 42.
+func IsCheckName(name string) bool { return checkName.MatchString(name) }
+
+// RunOrExecution is the check a name means, check-42, or the provider run
+// it means, by its ID or its provider's own reference, with that run's
+// check (the command package split's 7a row 11).
+func (e *Engine) RunOrExecution(ctx context.Context, name string) (model.Run, model.ExecutionID, error) {
+	run, err := e.RunNamed(ctx, name)
+	if err == nil || IsCheckName(name) {
+		return run, "", err
+	}
+	execution, runErr := e.ExecutionNamed(ctx, name)
+	if runErr != nil {
+		return model.Run{}, "", fmt.Errorf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL", name)
+	}
+	run, err = e.Run(ctx, execution.Run)
+	return run, execution.ID, err
 }
 
 // RunNamed finds a run by the name people type, check-42, or its number.

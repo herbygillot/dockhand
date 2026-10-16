@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -1026,7 +1027,7 @@ type Serving struct {
 	LoginProblem string `json:"login_problem,omitempty"`
 }
 
-// ServeState is serve's state for the repository, as status and queue
+// ServeState is serve's state for the repository, as status
 // show it: whether a serve leads it, as which process, and whether that
 // serve opens pull requests for the updates it prepared that pass; and the
 // checks queued or running, with how many of those have stopped.
@@ -1042,6 +1043,13 @@ type ServeState struct {
 	LoginProblem string
 	Queue        int
 	Stopped      int
+}
+
+// Upgraded is the build a running serve runs where it isn't this
+// process's, as one port upgrade left running (the rc3 full stage, A7);
+// false where it's the same, or unknown.
+func (s ServeState) Upgraded() (string, bool) {
+	return s.Build, s.Running && s.Build != "" && s.Build != buildinfo.Current().String()
 }
 
 // ServeState reads serve's state. Judging who is alive takes a session.

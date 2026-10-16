@@ -24,6 +24,25 @@ func (e *Engine) Session(ctx context.Context, kind model.SessionKind) (*coord.Se
 	return session, nil
 }
 
+type observerKey struct{}
+
+// Observing gives a command one observer session, a session that only
+// reads and judges who is alive, on ctx, which every judgment made under
+// ctx shares. Each session is a row and two journal events, and status
+// judged twice a render, which watch redrew every 30 seconds. A ctx that
+// has one keeps it, and ending it is its opener's (the command package
+// split's 7b row 2).
+func (e *Engine) Observing(ctx context.Context) (context.Context, *coord.Session, func(), error) {
+	if session, ok := ctx.Value(observerKey{}).(*coord.Session); ok {
+		return ctx, session, func() {}, nil
+	}
+	session, err := e.Session(ctx, model.SessionObserver)
+	if err != nil {
+		return ctx, nil, func() {}, err
+	}
+	return context.WithValue(ctx, observerKey{}, session), session, func() { session.End(context.WithoutCancel(ctx)) }, nil
+}
+
 // Leader is the serve leading the queue, which runs what's queued; nil
 // where none leads, and a check runs where it's asked.
 func (e *Engine) Leader(ctx context.Context, session *coord.Session) (*model.Session, error) {

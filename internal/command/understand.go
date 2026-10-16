@@ -51,7 +51,8 @@ MacPorts' distfiles mirror.`,
 			if archives {
 				return diffArchives(ctx, e, streams, branch, args, stat)
 			}
-			diff, err := e.Diff(ctx, branch, treePaths(branch, args))
+			here, _ := os.Getwd()
+			diff, err := e.Diff(ctx, branch, engine.TreePaths(branch, here, args))
 			if err != nil {
 				return err
 			}
@@ -171,34 +172,6 @@ type archiveDiffJSON struct {
 	Removed       int    `json:"removed"`
 	Patch         string `json:"patch,omitempty"`
 	Problem       string `json:"problem,omitempty"`
-}
-
-// treePaths takes paths a person typed from where they are, when that is
-// in the branch's worktree, else from the top of the tree.
-func treePaths(branch model.Branch, args []string) []string {
-	root, err := filepath.EvalSymlinks(branch.Worktree)
-	here, hereErr := os.Getwd()
-	if hereErr == nil {
-		here, hereErr = filepath.EvalSymlinks(here)
-	}
-	var paths []string
-	for _, arg := range args {
-		path := filepath.ToSlash(filepath.Clean(arg))
-		if err == nil && hereErr == nil && branch.Worktree != "" {
-			full := arg
-			if !filepath.IsAbs(full) {
-				full = filepath.Join(here, arg)
-			}
-			if rel, relErr := filepath.Rel(root, full); relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-				path = filepath.ToSlash(rel)
-			}
-		}
-		if path == "." {
-			continue
-		}
-		paths = append(paths, path)
-	}
-	return paths
 }
 
 func writeDiffSummary(out io.Writer, diff engine.BranchDiff) {

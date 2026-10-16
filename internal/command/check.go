@@ -827,7 +827,7 @@ func baselineWords(base, branch model.TargetResult, check string) string {
 // stopped only after asking, on a terminal; without one, --replace is the
 // consent. Finished results are kept. It returns the runs it stopped.
 func replaceActive(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, revision model.Revision, replace bool) ([]string, error) {
-	judging, observer, end, err := observing(ctx, e)
+	judging, observer, end, err := e.Observing(ctx)
 	if err != nil {
 		return nil, err
 	}

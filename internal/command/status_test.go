@@ -327,7 +327,7 @@ func TestStatusSaysAReleaseMovedBeforeItsCheck(t *testing.T) {
 		Moved:          []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Class: model.Introduced, Detail: detail}}}
 	rows := attentionFor(status)
 	require.Len(t, rows, 1)
-	require.Equal(t, attention{mark: "!", branch: "libharbor-4", what: "passed; " + detail, next: "dockhand submit --branch libharbor-4"}, rows[0])
+	require.Equal(t, attention{kind: attentionNeedsYou, branch: "libharbor-4", what: "passed; " + detail, next: "dockhand submit --branch libharbor-4"}, rows[0])
 
 	status.Branch.Origin = model.OriginServe
 	require.Equal(t, "passed; held for a look: "+detail, attentionFor(status)[0].what)
@@ -399,9 +399,9 @@ func TestAnArchivedBranchAsksNothingOfItsChecks(t *testing.T) {
 func TestStatusSaysABranchsWorkIsOnMasterAlready(t *testing.T) {
 	branch := model.Branch{Name: "dockhand/duckdb-cxx14", State: model.BranchOpen}
 	status := engine.BranchStatus{Branch: branch, OnMaster: model.ObjectID(strings.Repeat("e", 40))}
-	require.Equal(t, []attention{{mark: "·", branch: "duckdb-cxx14", what: "its changes are on master already, as of eeeeeee", next: "dockhand archive duckdb-cxx14"}}, attentionFor(status))
+	require.Equal(t, []attention{{kind: attentionReady, branch: "duckdb-cxx14", what: "its changes are on master already, as of eeeeeee", next: "dockhand archive duckdb-cxx14"}}, attentionFor(status))
 	status.Branch.PullRequest = &model.PullRequest{Number: 35100}
-	require.NotContains(t, attentionFor(status), attention{mark: "·", branch: "duckdb-cxx14", what: "its changes are on master already, as of eeeeeee", next: "dockhand archive duckdb-cxx14"})
+	require.NotContains(t, attentionFor(status), attention{kind: attentionReady, branch: "duckdb-cxx14", what: "its changes are on master already, as of eeeeeee", next: "dockhand archive duckdb-cxx14"})
 }
 
 // A submission's JSON lists its concerns, a moved tag's among them, with

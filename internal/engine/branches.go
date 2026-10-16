@@ -584,6 +584,32 @@ func (e *Engine) Path(ctx context.Context, selector string) (string, error) {
 	return e.BranchPath(ctx, branch)
 }
 
+// TreePaths are paths a person typed, taken from where they are, here,
+// when that is in the branch's worktree, else from the top of the tree,
+// for diff and path (the command package split's 7a row 10).
+func TreePaths(branch model.Branch, here string, args []string) []string {
+	root, err := filepath.EvalSymlinks(branch.Worktree)
+	here, hereErr := filepath.EvalSymlinks(here)
+	var paths []string
+	for _, arg := range args {
+		path := filepath.ToSlash(filepath.Clean(arg))
+		if err == nil && hereErr == nil && branch.Worktree != "" {
+			full := arg
+			if !filepath.IsAbs(full) {
+				full = filepath.Join(here, arg)
+			}
+			if rel, relErr := filepath.Rel(root, full); relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				path = filepath.ToSlash(rel)
+			}
+		}
+		if path == "." {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return paths
+}
+
 // BranchPath is the directory a branch is checked out in, its worktree
 // placed or checked out again where clean took it; a merged branch's only
 // where it's still there.
