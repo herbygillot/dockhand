@@ -443,7 +443,11 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		return branch, update, nil
 	}
 	if request.Action == model.EditUpdate {
-		fmt.Fprintf(out, "%s: %s → %s%s\n", update.Port, update.Before, update.After, releaseLabel(update.Release))
+		var source string
+		if update.Release != nil && engine.ReleaseSource(*update.Release) != "" {
+			source = "   (" + engine.ReleaseSource(*update.Release) + ")"
+		}
+		fmt.Fprintf(out, "%s: %s → %s%s\n", update.Port, update.Before, update.After, source)
 		// A plain bump read the same for semgrep's 0.14.0 to 1.179.0
 		// (field testing, 2026-10-02).
 		if update.CrossesMajor {
@@ -717,18 +721,9 @@ func checksumWords(sum portfile.Checksum) string {
 		words = append(words, "rmd160 "+short(sum.RMD160))
 	}
 	if sum.Size != 0 {
-		words = append(words, "size "+thousands(sum.Size))
+		words = append(words, "size "+prose.Count(int(sum.Size)))
 	}
 	return strings.Join(words, "   ")
-}
-
-// thousands writes a number with commas: 7,114,508.
-func thousands(n int64) string {
-	digits := strconv.FormatInt(n, 10)
-	for i := len(digits) - 3; i > 0; i -= 3 {
-		digits = digits[:i] + "," + digits[i:]
-	}
-	return digits
 }
 
 // revbumpLinked has the engine bump the revision of the ports that link
@@ -767,44 +762,6 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 	}
 	fmt.Fprintf(out, "Revision bumped %s; subject \"<port>: %s\" recorded for tidy.\n", prose.Plural(len(done.Bumped), "port"), done.Subject)
 	return names, nil
-}
-
-func releaseLabel(release *model.Release) string {
-	switch {
-	case release == nil:
-		return ""
-	case release.Tag != "":
-		forge := release.Forge
-		switch forge {
-		case "github":
-			forge = "GitHub"
-		case "gitlab":
-			forge = "GitLab"
-		}
-		return fmt.Sprintf("   (%s tag %s)", strings.TrimSpace(forge), release.Tag)
-	case release.Archive:
-		return "   (from its distfiles)"
-	}
-	return ""
-}
-
-// releaseWords says where an update's version came from, for status: "jq
-// 1.8.1, GitHub tag jq-1.8.1 of jqlang/jq at 1a2b3c4".
-func releaseWords(port string, release model.Release) string {
-	words := port + " " + release.Version
-	switch {
-	case release.Tag != "":
-		words += ", " + strings.TrimSuffix(strings.TrimPrefix(releaseLabel(&release), "   ("), ")")
-		if release.Repository != "" {
-			words += " of " + release.Repository
-		}
-		if release.Commit != "" {
-			words += " at " + engine.Short(model.ObjectID(release.Commit))
-		}
-	case release.Archive:
-		words += ", from its distfiles"
-	}
-	return words
 }
 
 // unbranchedPlan reports whether a version update's plan has no branch to
@@ -962,7 +919,7 @@ func writePatches(out io.Writer, update engine.Update) {
 		if update.Release != nil && update.Release.Version != "" {
 			source = update.Release.Version + "'s source"
 		}
-		fmt.Fprintf(out, "· %s to %s\n", appliesWords(update.PatchesApplied, len(update.PatchProblems)), source)
+		fmt.Fprintf(out, "· %s to %s\n", engine.PatchesApply(update.PatchesApplied, len(update.PatchProblems)), source)
 	}
 	for _, problem := range update.PatchProblems {
 		fmt.Fprintf(out, "! patch %s\n", problem)
@@ -973,18 +930,6 @@ func writePatches(out io.Writer, update engine.Update) {
 	for _, unchecked := range update.PatchesUnchecked {
 		fmt.Fprintf(out, "· patch %s\n", unchecked)
 	}
-}
-
-// appliesWords says how many patches apply, "6 patches apply", or of how
-// many, where others don't.
-func appliesWords(applied, rejected int) string {
-	switch {
-	case rejected > 0:
-		return fmt.Sprintf("%d of %d patches apply", applied, applied+rejected)
-	case applied == 1:
-		return "1 patch applies"
-	}
-	return fmt.Sprintf("%d patches apply", applied)
 }
 
 // writeUpstream reports what comparing the upstream archives found.

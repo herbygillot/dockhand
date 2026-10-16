@@ -4,9 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/config"
 )
 
 func TestConfigShowsWhatIsInEffect(t *testing.T) {
@@ -43,4 +46,20 @@ func TestConfigShowsWhatIsInEffect(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("maintainer = \"{@ada\"\n"), 0o644))
 	_, _, err = dockhand(t, "config")
 	require.ErrorContains(t, err, "maintainer: \"{@ada\" leaves a group open")
+}
+
+// Every setting config shows has its default in config's table, apart
+// from each release's Xcode, which the facts table gives.
+func TestEverySettingHasItsDefaultInTheTable(t *testing.T) {
+	newWorld(t)
+	out, _, err := dockhand(t, "config")
+	require.NoError(t, err)
+	defaults := config.Defaults()
+	_, settings, _ := strings.Cut(out, "\n\n")
+	for _, line := range strings.Split(strings.TrimSpace(settings), "\n") {
+		key := strings.Fields(line)[0]
+		if !strings.HasPrefix(key, "providers.tart.xcode.") {
+			require.Contains(t, defaults, key)
+		}
+	}
 }

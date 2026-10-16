@@ -48,7 +48,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 			}
 			portfile := filepath.Join(branch.Worktree, filepath.FromSlash(directory), "Portfile")
 			streams.emit(map[string]any{"branch": branchRef(branch), "started": started, "directory": directory, "portfile": portfile})
-			editor := firstOf(os.Getenv("VISUAL"), os.Getenv("EDITOR"))
+			editor := editorCommand()
 			// --no-open only brings the port's files in, for an editor of
 			// the person's own, where EDITOR=true stood in for it (field
 			// testing's batch 13).
@@ -57,10 +57,8 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 				return nil
 			}
 			fmt.Fprintf(streams.Err, "%s · %s\n", branch.ShortName(), tilde(portfile))
-			command := exec.CommandContext(ctx, "sh", "-c", editor+` "$1"`, "sh", portfile)
-			command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
-			if err := command.Run(); err != nil {
-				return fmt.Errorf("the editor failed: %w", err)
+			if err := runEditor(ctx, editor, portfile); err != nil {
+				return err
 			}
 			fmt.Fprintln(streams.Out, "Next: "+nextIn(ctx, e, branch, "dockhand checksums "+args[0]+" (if you changed the version)", "dockhand check"))
 			return nil
@@ -380,4 +378,21 @@ func commitOrDiscard(ctx context.Context, e *engine.Engine, streams Streams, req
 		return e.ArchiveBranch(ctx, request)
 	}
 	return archived, nil
+}
+
+// editorCommand is the person's editor, $VISUAL or else $EDITOR, as a
+// shell command; empty where neither is set.
+func editorCommand() string {
+	return firstOf(os.Getenv("VISUAL"), os.Getenv("EDITOR"))
+}
+
+// runEditor opens path in editor on the terminal dockhand runs on, and
+// waits for it.
+func runEditor(ctx context.Context, editor, path string) error {
+	command := exec.CommandContext(ctx, "sh", "-c", editor+` "$1"`, "sh", path)
+	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("the editor failed: %w", err)
+	}
+	return nil
 }

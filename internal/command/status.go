@@ -184,10 +184,10 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 	if found, ok := e.LastOutdatedLook(); ok && (len(found.Outdated) > 0 || len(found.Uncertain) > 0) {
 		fmt.Fprintln(out)
 		if len(found.Outdated) > 0 {
-			fmt.Fprintf(out, "Your ports: %s newer releases, as serve found %s (dockhand update --outdated --mine)\n", prose.Plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], ago(found.CheckedAt))
+			fmt.Fprintf(out, "Your ports: %s newer releases, as serve found %s (dockhand update --outdated --mine)\n", prose.Plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], engine.Ago(found.CheckedAt))
 		}
 		if len(found.Uncertain) > 0 {
-			fmt.Fprintf(out, "Your ports: %s may have newer releases, for your look, as serve found %s (dockhand outdated %s)\n", prose.Plural(len(found.Uncertain), "port"), ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
+			fmt.Fprintf(out, "Your ports: %s may have newer releases, for your look, as serve found %s (dockhand outdated %s)\n", prose.Plural(len(found.Uncertain), "port"), engine.Ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
 		}
 	}
 	fmt.Fprintf(out, "\n%s\n", serveWords(serve))
@@ -333,7 +333,7 @@ func pullRequestAttention(s engine.BranchStatus) []attention {
 	if pr == nil || pr.Observed == nil || pr.Observed.State != model.PullRequestOpen {
 		return nil
 	}
-	name, age := s.Branch.ShortName(), " ("+ago(pr.Observed.At)+")"
+	name, age := s.Branch.ShortName(), " ("+engine.Ago(pr.Observed.At)+")"
 	next := "dockhand status " + name
 	if ports := s.Scope.PortNames(); len(ports) > 0 {
 		next = "dockhand edit " + ports[0]
@@ -343,7 +343,7 @@ func pullRequestAttention(s engine.BranchStatus) []attention {
 		return []attention{{mark: "!", branch: name, what: fmt.Sprintf("someone else pushed to #%d%s", pr.Number, age), next: "dockhand submit --branch " + name + " (it shows the comparison)"}}
 	case pr.Observed.Review == model.ReviewChangesRequested:
 		if !pr.Observed.ReviewedAt.IsZero() {
-			age = " (" + ago(pr.Observed.ReviewedAt) + ")"
+			age = " (" + engine.Ago(pr.Observed.ReviewedAt) + ")"
 		}
 		return []attention{{mark: "!", branch: name, what: fmt.Sprintf("#%d changes requested%s", pr.Number, age), next: next}}
 	case pr.Observed.Checks == model.ChecksFailing:
@@ -351,20 +351,6 @@ func pullRequestAttention(s engine.BranchStatus) []attention {
 			next: "open " + github.PullRequestChecksURL(pr.Repository, pr.Number)}}
 	}
 	return nil
-}
-
-// ago says how old an observation is, roughly.
-func ago(at time.Time) string {
-	elapsed := time.Since(at)
-	switch {
-	case elapsed < time.Minute:
-		return "just now"
-	case elapsed < time.Hour:
-		return fmt.Sprintf("%dm ago", int(elapsed.Minutes()))
-	case elapsed < 48*time.Hour:
-		return fmt.Sprintf("%dh ago", int(elapsed.Hours()))
-	}
-	return fmt.Sprintf("%dd ago", int(elapsed.Hours()/24))
 }
 
 // submitNext is the submit a branch is ready for, with the fork it needs
@@ -604,7 +590,7 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 // submit's preview marks it.
 func writeReleases(out io.Writer, status engine.BranchStatus) {
 	for _, found := range status.Releases {
-		fmt.Fprintf(out, "  Release  %s\n", releaseWords(found.Port, found.Release))
+		fmt.Fprintf(out, "  Release  %s\n", engine.ReleaseWords(found.Port, found.Release))
 	}
 	for _, moved := range status.Moved {
 		fmt.Fprintf(out, "           ! %s\n", moved.Detail)

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -786,7 +785,7 @@ func confirm(streams Streams, question string) (bool, error) {
 
 // editText opens text in $VISUAL or $EDITOR and returns what was saved.
 func editText(ctx context.Context, text string) (string, error) {
-	editor := firstOf(os.Getenv("VISUAL"), os.Getenv("EDITOR"))
+	editor := editorCommand()
 	if editor == "" {
 		return "", errors.New("set $EDITOR to edit the description here, or edit it on GitHub after submitting; dockhand keeps your edits")
 	}
@@ -799,10 +798,8 @@ func editText(ctx context.Context, text string) (string, error) {
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		return "", err
 	}
-	command := exec.CommandContext(ctx, "sh", "-c", editor+` "$1"`, "sh", path)
-	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if err := command.Run(); err != nil {
-		return "", fmt.Errorf("the editor failed: %w", err)
+	if err := runEditor(ctx, editor, path); err != nil {
+		return "", err
 	}
 	data, err := os.ReadFile(path)
 	return string(data), err

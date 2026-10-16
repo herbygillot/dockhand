@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -232,4 +234,25 @@ func TestSetMaintainerWritesTheLineBesideWhatsThere(t *testing.T) {
 	data, err = os.ReadFile(path)
 	require.NoError(t, err)
 	require.Contains(t, string(data), "maintainer = \"{@ada}\"\nworktrees")
+}
+
+// The defaults table says what an empty file's accessors fall back on.
+func TestDefaultsAreWhatTheAccessorsFallBackOn(t *testing.T) {
+	var f File
+	defaults := Defaults()
+	hour, minute := f.Serve.Time()
+	require.Equal(t, defaults["serve.outdated_at"], fmt.Sprintf("%02d:%02d", hour, minute))
+	require.Equal(t, defaults["serve.for_outdated"], f.Serve.Mode())
+	require.Equal(t, defaults["serve.submit_limit"], strconv.Itoa(f.Serve.Limit()))
+	require.Equal(t, defaults["cleanup.after"], ageWords(f.Cleanup.Age()))
+	require.Equal(t, "15d", defaults["cleanup.after"])
+	require.Equal(t, defaults["providers.tart.capacity"], strconv.Itoa(f.Capacity("tart")))
+	require.Equal(t, defaults["providers.command.capacity"], strconv.Itoa(f.Capacity("command")))
+	require.Equal(t, defaults["providers.github.capacity"], strconv.Itoa(f.Capacity("github")))
+	require.Equal(t, "30m", defaults["providers.tart.test_timeout"])
+	require.Equal(t, "6h", defaults["providers.tart.build_timeout"])
+	require.Equal(t, "30 GB", defaults["cleanup.min_free"])
+	require.Equal(t, defaults["serve.notify"], strconv.FormatBool(f.Serve.Notifies()))
+	require.Equal(t, defaults["cleanup.automatic"], strconv.FormatBool(f.Cleanup.On()))
+	require.Equal(t, defaults["holds.majors"] == "hold", f.Holds.HoldMajors())
 }

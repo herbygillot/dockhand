@@ -6,9 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"strconv"
 )
 
 // targetWords is how one target's result in one environment reads, on the
@@ -216,12 +219,8 @@ func CoverageWords(comparison model.UpstreamComparison) string {
 	if len(read) > 0 {
 		parts = append(parts, "compared "+namedList(read))
 	}
-	switch applied {
-	case 0:
-	case 1:
-		parts = append(parts, "1 patch applies")
-	default:
-		parts = append(parts, fmt.Sprintf("%d patches apply", applied))
+	if applied > 0 {
+		parts = append(parts, PatchesApply(applied, 0))
 	}
 	if unchecked > 0 {
 		parts = append(parts, prose.Plural(unchecked, "patch")+" unchecked")
@@ -272,6 +271,68 @@ func namedList(items []string) string {
 		return strings.Join(items, ", ")
 	}
 	return fmt.Sprintf("%s, and %d more", strings.Join(items[:coverageNamed], ", "), len(items)-coverageNamed)
+}
+
+// PatchesApply says how many patches apply, "6 patches apply", or of how
+// many, where others don't.
+func PatchesApply(applied, rejected int) string {
+	switch {
+	case rejected > 0:
+		return fmt.Sprintf("%d of %d patches apply", applied, applied+rejected)
+	case applied == 1:
+		return "1 patch applies"
+	}
+	return fmt.Sprintf("%d patches apply", applied)
+}
+
+// ReleaseSource says where a release was found: "GitHub tag jq-1.8.1", or
+// "from its distfiles"; nothing where neither says.
+func ReleaseSource(release model.Release) string {
+	switch {
+	case release.Tag != "":
+		forge := release.Forge
+		switch forge {
+		case "github":
+			forge = "GitHub"
+		case "gitlab":
+			forge = "GitLab"
+		}
+		return strings.TrimSpace(forge + " tag " + release.Tag)
+	case release.Archive:
+		return "from its distfiles"
+	}
+	return ""
+}
+
+// ReleaseWords says where an update's version came from, as status says
+// it: "jq 1.8.1, GitHub tag jq-1.8.1 of jqlang/jq at 1a2b3c4".
+func ReleaseWords(port string, release model.Release) string {
+	words := port + " " + release.Version
+	if source := ReleaseSource(release); source != "" {
+		words += ", " + source
+	}
+	if release.Tag != "" && release.Repository != "" {
+		words += " of " + release.Repository
+	}
+	if release.Tag != "" && release.Commit != "" {
+		words += " at " + Short(model.ObjectID(release.Commit))
+	}
+	return words
+}
+
+// Ago says how old an observation is, roughly: "just now", "5m ago", "3d
+// ago".
+func Ago(at time.Time) string {
+	elapsed := time.Since(at)
+	switch {
+	case elapsed < time.Minute:
+		return "just now"
+	case elapsed < time.Hour:
+		return fmt.Sprintf("%dm ago", int(elapsed.Minutes()))
+	case elapsed < 48*time.Hour:
+		return fmt.Sprintf("%dh ago", int(elapsed.Hours()))
+	}
+	return fmt.Sprintf("%dd ago", int(elapsed.Hours()/24))
 }
 
 // AgeWords says an age as a person would: 15 days, 36 hours, 90 minutes.
@@ -384,4 +445,96 @@ func ComparisonLines(comparisons []PortComparison) []ComparisonLine {
 		}
 	}
 	return lines
+}
+
+func describeEnvironment(environment model.Environment) string {
+	return DescribeEnvironment(environment)
+}
+
+// DescribeEnvironment words where a check builds for a person: the provider,
+// and the release it builds on by its macOS name, "tart macOS 26 (Tahoe)
+// arm64", or its raw platform where the release is unknown, with its
+// developer tools where the provider states them.
+func DescribeEnvironment(environment model.Environment) string {
+	switch environment.DeveloperTools {
+	case model.DeveloperToolsXcode:
+		return describePlace(environment) + " with Xcode"
+	case model.DeveloperToolsCommandLine:
+		return describePlace(environment) + " with the Command Line Tools"
+	}
+	return describePlace(environment)
+}
+
+// EnvironmentHeading is an environment's short name, for a column heading
+// where its full words are shown elsewhere: its release alone, macOS 26,
+// with its architecture where another environment of all shares the
+// release, and its provider where all has several. An environment with no
+// platform is its provider.
+func EnvironmentHeading(environment model.Environment, all []model.Environment) string {
+	platform := environment.Platform
+	if platform.Version == "" && platform.Architecture == "" {
+		return environment.Provider
+	}
+	var parts []string
+	providers := map[string]bool{}
+	shared := 0
+	for _, other := range all {
+		providers[other.Provider] = true
+		if other.Provider == environment.Provider && other.Platform.OS == platform.OS && other.Platform.Version == platform.Version {
+			shared++
+		}
+	}
+	if len(providers) > 1 {
+		parts = append(parts, environment.Provider)
+	}
+	parts = append(parts, releaseWords(platform))
+	if shared > 1 && platform.Architecture != "" {
+		parts = append(parts, platform.Architecture)
+	}
+	return strings.Join(parts, " ")
+}
+
+// releaseWords name a platform's release: macOS 26, or Darwin 30 where the
+// release is unknown, whose Darwin version isn't macOS's.
+func releaseWords(platform model.Platform) string {
+	if platform.OS == "darwin" || platform.OS == "" {
+		if darwin, err := strconv.Atoi(platform.Version); err == nil {
+			if release, err := macos.ReleaseForDarwin(darwin); err == nil {
+				return "macOS " + release.Product
+			}
+		}
+		return "Darwin " + platform.Version
+	}
+	return strings.TrimSpace(platform.OS + " " + platform.Version)
+}
+
+func describePlace(environment model.Environment) string {
+	platform := environment.Platform
+	if platform.Version == "" && platform.Architecture == "" {
+		return environment.Provider
+	}
+	if platform.OS == "" {
+		platform.OS = "darwin"
+	}
+	// A release macos doesn't know keeps its Darwin version, which isn't
+	// macOS's: Darwin 25 is macOS 26.
+	described := macos.Describe(platform)
+	if rest, ok := strings.CutPrefix(described, "darwin "); ok {
+		described = "Darwin " + rest
+	}
+	return environment.Provider + " " + described
+}
+
+// providerWords says how a provider built, as a pull request's Tested on
+// line says it.
+func providerWords(provider string) string {
+	switch provider {
+	case buildenv.Tart:
+		return provider + ": built in a clean VM"
+	case buildenv.Prefix:
+		return provider + ": built in a MacPorts prefix on the author's Mac"
+	case buildenv.GitHub:
+		return provider + ": MacPorts' CI workflow in the author's fork"
+	}
+	return provider + ": built by the author's own command"
 }

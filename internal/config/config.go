@@ -8,6 +8,7 @@
 package config
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"math"
@@ -24,6 +25,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // PathVariable names another configuration file, for tests and experiments.
@@ -95,25 +97,22 @@ type Serve struct {
 // Mode is for_outdated, list when unset.
 func (s Serve) Mode() string {
 	if s.ForOutdated == "" {
-		return "list"
+		return DefaultForOutdated
 	}
 	return s.ForOutdated
 }
 
 // Time is outdated_at as hours and minutes.
 func (s Serve) Time() (hour, minute int) {
-	hour, minute = 7, 0
-	if s.OutdatedAt != "" {
-		// Load checked the form, so there is nothing to report here.
-		_, _ = fmt.Sscanf(s.OutdatedAt, "%d:%d", &hour, &minute)
-	}
+	// Load checked the form, so there is nothing to report here.
+	_, _ = fmt.Sscanf(cmp.Or(s.OutdatedAt, DefaultOutdatedAt), "%d:%d", &hour, &minute)
 	return hour, minute
 }
 
 // Limit is submit_limit, 10 when unset.
 func (s Serve) Limit() int {
 	if s.SubmitLimit <= 0 {
-		return 10
+		return DefaultSubmitLimit
 	}
 	return s.SubmitLimit
 }
@@ -129,7 +128,7 @@ type Cleanup struct {
 	// Automatic turns it off when false; it is on when unset.
 	Automatic *bool `toml:"automatic"`
 	// After is how long something goes unused before it is removed, such
-	// as "7d" or "36h"; 7 days when unset.
+	// as "7d" or "36h"; 15 days when unset.
 	After string `toml:"after"`
 	// MinFree is the free space, such as "30GB", below which cleanup runs
 	// at once rather than waiting for its day; 30 GB when unset.
@@ -303,13 +302,73 @@ func (f File) Capacity(provider string) int {
 		if f.Providers.GitHub.Capacity > 0 {
 			return f.Providers.GitHub.Capacity
 		}
-		return 2
+		return DefaultGitHubCapacity
 	case buildenv.Tart:
 		if f.Providers.Tart.Capacity > 0 {
 			return f.Providers.Tart.Capacity
 		}
 	}
-	return 1
+	return DefaultCapacity
+}
+
+// The defaults config's accessors fall back on, where neither a flag, the
+// environment, nor the file sets a value.
+const (
+	DefaultForOutdated = "list"
+	DefaultOutdatedAt  = "07:00"
+	DefaultSubmitLimit = 10
+	// DefaultCapacity is a provider's, Tart's and a command's, apart from
+	// GitHub's: macOS runs two VMs at most, the person's own among them.
+	DefaultCapacity       = 1
+	DefaultGitHubCapacity = 2
+)
+
+// Defaults are every setting's default as dockhand config shows it, keyed
+// as the file names it: one table, so a default changed in the code is
+// the one config says, and build profiles and ship add a row rather than
+// a literal (the command package review's config.Defaults). Where the
+// default is a rule rather than a value, the row says the rule. Each
+// release's Xcode, providers.tart.xcode.<release>, is MacPorts' arm64
+// buildbot's for it, which config reads from the facts table instead.
+func Defaults() map[string]string {
+	return map[string]string{
+		"worktrees":                      "~/Source/macports-branches",
+		"maintainer":                     "(none; create writes nomaintainer)",
+		"check.on":                       "command when [providers.command] is set up, else Tart on this Mac's release",
+		"check.tests":                    "declared",
+		"check.baseline":                 "false",
+		"submit.rerequest_review":        "ask",
+		"cleanup.automatic":              "true",
+		"cleanup.after":                  ageWords(DefaultCleanupAfter),
+		"cleanup.min_free":               prose.Bytes(DefaultMinFree),
+		"holds.majors":                   "hold",
+		"serve.for_outdated":             DefaultForOutdated,
+		"serve.outdated_at":              DefaultOutdatedAt,
+		"serve.submit_passing":           "false",
+		"serve.submit_limit":             strconv.Itoa(DefaultSubmitLimit),
+		"serve.notify":                   "true",
+		"providers.tart.capacity":        strconv.Itoa(DefaultCapacity),
+		"providers.tart.test_timeout":    ageWords(buildenv.DefaultTestTimeout),
+		"providers.tart.build_timeout":   ageWords(buildenv.DefaultBuildTimeout),
+		"providers.command":              "(not set up)",
+		"providers.command.run":          "",
+		"providers.command.name":         "command",
+		"providers.command.capacity":     strconv.Itoa(DefaultCapacity),
+		"providers.github.remote":        "the one remote pushing to your fork",
+		"providers.github.capacity":      strconv.Itoa(DefaultGitHubCapacity),
+		"providers.github.build_timeout": ageWords(buildenv.DefaultBuildTimeout),
+	}
+}
+
+// ageWords is a duration as the file writes one: 15d, 6h, 30m.
+func ageWords(age time.Duration) string {
+	switch {
+	case age%(24*time.Hour) == 0:
+		return fmt.Sprintf("%dd", age/(24*time.Hour))
+	case age%time.Hour == 0:
+		return fmt.Sprintf("%dh", age/time.Hour)
+	}
+	return fmt.Sprintf("%dm", age/time.Minute)
 }
 
 // Path is the configuration file to use: $DOCKHAND_CONFIG, or

@@ -106,7 +106,7 @@ func (p TidyPlan) combine(members []TidyGroup, numbers []int, chosen git.Signatu
 		}
 	}
 	if group.Message == "" {
-		group.Blocking = append(group.Blocking, fmt.Sprintf("the commit combining %s needs a subject", strings.Join(joined, ", ")))
+		group.needsSubject(fmt.Sprintf("the commit combining %s needs a subject", strings.Join(joined, ", ")))
 	}
 	switch authors := authorsOf(group.Combines); {
 	case len(authors) == 0:
@@ -312,7 +312,7 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 			group.Combines = append(group.Combines, history[at])
 		}
 		if group.Subject() == "" {
-			group.Blocking = append(group.Blocking, fmt.Sprintf("commit %d needs a subject", i+1))
+			group.needsSubject(fmt.Sprintf("commit %d needs a subject", i+1))
 		}
 		if group.Author.Name == "" || !strings.Contains(group.Author.Email, "@") {
 			group.Blocking = append(group.Blocking, fmt.Sprintf("commit %d needs an author with a name and an email", i+1))

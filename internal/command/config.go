@@ -35,6 +35,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				return err
 			}
 			var all []configSetting
+			defaults := config.Defaults()
 			add := func(key, value, fallback string) {
 				source := "file"
 				if value == "" {
@@ -42,46 +43,47 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				}
 				all = append(all, configSetting{Key: key, Value: value, Source: source})
 			}
-			add("worktrees", tildeOrEmpty(file.Worktrees), "~/Source/macports-branches")
-			add("maintainer", file.Maintainer, "(none; create writes nomaintainer)")
-			add("check.on", strings.Join(file.Check.On, ", "), "command when [providers.command] is set up, else Tart on this Mac's release")
-			add("check.tests", file.Check.Tests, "declared")
+			set := func(key, value string) { add(key, value, defaults[key]) }
+			set("worktrees", tildeOrEmpty(file.Worktrees))
+			set("maintainer", file.Maintainer)
+			set("check.on", strings.Join(file.Check.On, ", "))
+			set("check.tests", file.Check.Tests)
 			baselineValue := ""
 			if file.Check.Baseline {
 				baselineValue = "true"
 			}
-			add("check.baseline", baselineValue, "false")
-			add("submit.rerequest_review", file.Submit.RerequestReview, "ask")
+			set("check.baseline", baselineValue)
+			set("submit.rerequest_review", file.Submit.RerequestReview)
 			automatic := ""
 			if file.Cleanup.Automatic != nil {
 				automatic = fmt.Sprint(*file.Cleanup.Automatic)
 			}
-			add("cleanup.automatic", automatic, "true")
-			add("cleanup.after", file.Cleanup.After, "15d")
+			set("cleanup.automatic", automatic)
+			set("cleanup.after", file.Cleanup.After)
 			// min_free as written, with what it reads as: config left it
 			// out (the acceptance harness's row C10, 2026-10-03).
 			minFree := ""
 			if file.Cleanup.MinFree != "" {
 				minFree = fmt.Sprintf("%s (%s)", file.Cleanup.MinFree, prose.Bytes(int64(file.Cleanup.Free())))
 			}
-			add("cleanup.min_free", minFree, prose.Bytes(config.DefaultMinFree))
-			add("holds.majors", file.Holds.Majors, "hold")
-			add("serve.for_outdated", file.Serve.ForOutdated, "list")
-			add("serve.outdated_at", file.Serve.OutdatedAt, "07:00")
+			set("cleanup.min_free", minFree)
+			set("holds.majors", file.Holds.Majors)
+			set("serve.for_outdated", file.Serve.ForOutdated)
+			set("serve.outdated_at", file.Serve.OutdatedAt)
 			submitPassing := ""
 			if file.Serve.SubmitPassing {
 				submitPassing = "true"
 			}
-			add("serve.submit_passing", submitPassing, "false")
-			add("serve.submit_limit", positive(file.Serve.SubmitLimit), "10")
+			set("serve.submit_passing", submitPassing)
+			set("serve.submit_limit", positive(file.Serve.SubmitLimit))
 			notify := ""
 			if file.Serve.Notify != nil {
 				notify = fmt.Sprint(*file.Serve.Notify)
 			}
-			add("serve.notify", notify, "true")
-			add("providers.tart.capacity", positive(file.Providers.Tart.Capacity), "1")
-			add("providers.tart.test_timeout", file.Providers.Tart.TestTimeout, "30m")
-			add("providers.tart.build_timeout", file.Providers.Tart.BuildTimeout, "6h")
+			set("serve.notify", notify)
+			set("providers.tart.capacity", positive(file.Providers.Tart.Capacity))
+			set("providers.tart.test_timeout", file.Providers.Tart.TestTimeout)
+			set("providers.tart.build_timeout", file.Providers.Tart.BuildTimeout)
 			// Each release's Xcode image installs what MacPorts' arm64
 			// buildbot for it runs, unless the file names another.
 			xcodes, err := tart.Xcodes(file.Providers.Tart.Xcode)
@@ -99,15 +101,15 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				add("providers.tart.xcode."+xcode.Release.Slug, configured, builder)
 			}
 			if command := file.Providers.Command; command != nil {
-				add("providers.command.run", command.Run, "")
-				add("providers.command.name", command.Name, "command")
-				add("providers.command.capacity", positive(command.Capacity), "1")
+				set("providers.command.run", command.Run)
+				set("providers.command.name", command.Name)
+				set("providers.command.capacity", positive(command.Capacity))
 			} else {
-				add("providers.command", "", "(not set up)")
+				set("providers.command", "")
 			}
-			add("providers.github.remote", file.Providers.GitHub.Remote, "the one remote pushing to your fork")
-			add("providers.github.capacity", positive(file.Providers.GitHub.Capacity), "2")
-			add("providers.github.build_timeout", file.Providers.GitHub.BuildTimeout, "6h")
+			set("providers.github.remote", file.Providers.GitHub.Remote)
+			set("providers.github.capacity", positive(file.Providers.GitHub.Capacity))
+			set("providers.github.build_timeout", file.Providers.GitHub.BuildTimeout)
 			streams.emit(map[string]any{"file": path, "database": options.Database, "settings": all})
 			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", tilde(path), tilde(options.Database))
 			width := 0

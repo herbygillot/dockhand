@@ -198,3 +198,20 @@ func TestASubjectSaysWhoseCommitItCameFrom(t *testing.T) {
 	require.Len(t, proposal.Groups, 1)
 	require.Contains(t, proposal.Groups[0].Notes, "subject from dockhand's commit "+short(model.ObjectID(proposal.Groups[0].Combines[0].ID)))
 }
+
+// A subject a person gives settles the block a missing one made, and only
+// that (the command package review's 2a: editSubjects dropped every
+// blocking line containing "needs a subject").
+func TestSetSubjectSettlesTheMissingSubject(t *testing.T) {
+	group := TidyGroup{Message: "\n\nBody kept.\n", FromEdits: true}
+	group.needsSubject("commit 1 needs a subject")
+	group.Blocking = append(group.Blocking, "commit 1 needs an author with a name and an email")
+	group.SetSubject("jq: update to 1.8.1")
+	require.Equal(t, "jq: update to 1.8.1\n\nBody kept.\n", group.Message)
+	require.Equal(t, []string{"commit 1 needs an author with a name and an email"}, group.Blocking)
+	require.False(t, group.FromEdits)
+
+	group = TidyGroup{Message: "jq: update"}
+	group.SetSubject("jq: update to 1.8.1")
+	require.Equal(t, "jq: update to 1.8.1\n", group.Message)
+}

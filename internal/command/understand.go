@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 )
@@ -374,7 +375,7 @@ checked out here, in your browser, and prints its address.`,
 			if pr == nil {
 				return fmt.Errorf("%s has no pull request yet; dockhand submit -b %s opens one", branch.ShortName(), branch.ShortName())
 			}
-			address := fmt.Sprintf("https://github.com/%s/pull/%d", pr.Repository, pr.Number)
+			address := github.PullRequestURL(pr.Repository, pr.Number)
 			fmt.Fprintln(streams.Out, address)
 			return openBrowser(ctx, address)
 		},

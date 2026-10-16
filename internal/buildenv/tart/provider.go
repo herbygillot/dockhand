@@ -595,13 +595,8 @@ func (p *Provider) testTimeout() time.Duration {
 	if p.TestTimeout > 0 {
 		return p.TestTimeout
 	}
-	return 30 * time.Minute
+	return buildenv.DefaultTestTimeout
 }
-
-// BuildTimeout is a target's build's bound where the configuration sets
-// none: GitHub's cap on a job, which a build that's run that long would
-// meet there too (D16).
-const BuildTimeout = 6 * time.Hour
 
 // LintTimeout bounds a target's lint, which takes seconds (D16).
 const LintTimeout = 10 * time.Minute
@@ -610,7 +605,7 @@ func (p *Provider) buildTimeout() time.Duration {
 	if p.BuildTimeout > 0 {
 		return p.BuildTimeout
 	}
-	return BuildTimeout
+	return buildenv.DefaultBuildTimeout
 }
 
 func (p *Provider) poll() time.Duration {

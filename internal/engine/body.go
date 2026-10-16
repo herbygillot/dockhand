@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -157,18 +156,6 @@ func dockhandUpdate(commits []git.HistoryCommit, edits []model.Edit) bool {
 		})
 	}
 	return updated
-}
-
-func providerWords(provider string) string {
-	switch provider {
-	case buildenv.Tart:
-		return provider + ": built in a clean VM"
-	case buildenv.Prefix:
-		return provider + ": built in a MacPorts prefix on the author's Mac"
-	case buildenv.GitHub:
-		return provider + ": MacPorts' CI workflow in the author's fork"
-	}
-	return provider + ": built by the author's own command"
 }
 
 // allBuilt reports whether every target passed or was accepted.

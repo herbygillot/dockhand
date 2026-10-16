@@ -322,22 +322,9 @@ func editSubjects(streams Streams, plan *engine.TidyPlan) error {
 		if err != nil {
 			return err
 		}
-		if answer == "" {
-			continue
+		if answer != "" {
+			group.SetSubject(answer)
 		}
-		_, rest, _ := strings.Cut(group.Message, "\n")
-		group.Message = answer + "\n" + rest
-		if rest == "" {
-			group.Message = answer + "\n"
-		}
-		var kept []string
-		for _, blocking := range group.Blocking {
-			if !strings.Contains(blocking, "needs a subject") {
-				kept = append(kept, blocking)
-			}
-		}
-		group.Blocking = kept
-		group.FromEdits = false
 	}
 	return nil
 }

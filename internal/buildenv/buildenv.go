@@ -41,6 +41,15 @@ const (
 	Prefix = "prefix"
 )
 
+// DefaultTestTimeout bounds a target's tests where the configuration sets
+// none.
+const DefaultTestTimeout = 30 * time.Minute
+
+// DefaultBuildTimeout bounds a target's build where the configuration sets
+// none: GitHub's cap on a job, ghactions.JobCap, which a build that's run
+// that long would meet there too (D16).
+const DefaultBuildTimeout = 6 * time.Hour
+
 // ErrInfrastructure marks trouble with a provider's environment rather
 // than with what it built: a VM that would not start, a script that wrote
 // no result. The runner tries such an execution again, up to
