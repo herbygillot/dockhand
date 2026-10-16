@@ -182,17 +182,6 @@ func (s Spec) MatchText(tag string) (string, error) {
 	}
 }
 
-func (s Spec) EvidenceURL(tag string) (string, error) {
-	web, err := s.webURL()
-	if err != nil {
-		return "", err
-	}
-	if s.Forge == GitLab {
-		return appendPath(web, "-", "tags", tag)
-	}
-	return appendPath(web, "archive", "refs", "tags", tag+".tar.gz")
-}
-
 func interpret(port macports.PortInfo, forge Forge, prefix, instance string) (Spec, error) {
 	keys := macports.ForgeOptions(prefix)
 	if forge == GitLab {

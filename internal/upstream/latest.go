@@ -235,16 +235,10 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	for _, aside := range setAside {
 		asideTags = append(asideTags, aside.Tag)
 	}
-	source := string(spec.Forge) + "-" + string(spec.Catalog)
 	if comparison <= 0 && len(setAside) > 0 {
 		result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
-		evidenceURL, err := spec.EvidenceURL(setAside[0].Tag)
-		if err != nil {
-			return result, err
-		}
 		result.Assessment, result.SetAside, result.CandidateVersion = Uncertain, setAside, setAside[0].Version
 		result.Detail = fmt.Sprintf("Can't tell whether current at %s: set aside %s, older than %s though it compares newer", port.Version, strings.Join(asideTags, ", "), current)
-		result.Evidence = []Observation{{Source: source, Version: setAside[0].Version, URL: evidenceURL, ObservedAt: result.ObservedAt}}
 		return result, nil
 	}
 	tag, err := repository.Tag(ctx, tags[index])
@@ -255,10 +249,6 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		return result, fmt.Errorf("upstream: invalid selected tag observation")
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
-	evidenceURL, err := spec.EvidenceURL(tag.Name)
-	if err != nil {
-		return result, err
-	}
 	catalog := "tags"
 	if spec.Catalog == portsource.Releases {
 		catalog = "published releases"
@@ -269,7 +259,6 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		result.SetAside = setAside
 		result.Detail += fmt.Sprintf("; set aside %s, older than %s though it compares newer", strings.Join(asideTags, ", "), current)
 	}
-	result.Evidence = []Observation{{Source: source, Version: release.Version, URL: evidenceURL, ObservedAt: result.ObservedAt}}
 	return result, nil
 }
 

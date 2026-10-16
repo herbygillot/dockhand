@@ -82,14 +82,6 @@ type Catalog interface {
 	Repository(instance, name string) (forge.Repository, error)
 }
 
-type Observation struct {
-	Source     string
-	Version    string
-	URL        string
-	ObservedAt time.Time
-	Error      string
-}
-
 type Result struct {
 	// Release is the release selected, current or newer; nil where the
 	// assessment is Unknown or Uncertain.
@@ -105,7 +97,6 @@ type Result struct {
 	// Head is the branch a port tracks and the commit it names now, for a
 	// port that tracks a branch; nil for any other.
 	Head       *Head
-	Evidence   []Observation
 	Detail     string
 	ObservedAt time.Time
 	// RetryAt is when a rate limit that kept the port from being checked
