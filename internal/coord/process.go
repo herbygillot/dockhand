@@ -18,10 +18,6 @@ type Liveness interface {
 	Alive(Process) (bool, error)
 }
 
-// ErrUnsupported reports a platform where dockhand cannot read a process's
-// start time.
-var ErrUnsupported = errors.New("process start time unavailable on this platform")
-
 // Self identifies the running process.
 func Self() (Process, error) {
 	start, err := processStart(os.Getpid())
