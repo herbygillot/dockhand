@@ -18,3 +18,20 @@ Built in slices, each committed on its own.
   something blocks it. tidy's unasked path and serve's preparation read it,
   where each judged `Unambiguous` on its own (7b row 6); it's ship's
   "commit if unambiguous".
+
+## CaptureAuto and the active check
+
+- `engine.CaptureAuto`, the files a command asking for none in particular
+  means, which check's `captureMode` decided from three engine facts
+  (`Current`, `Edited`, `CommitsAhead`): the working files of the branch
+  checked out here, or of a named one with no commits of its own; a named
+  branch's committed tip where its worktree has no edits; and a refusal
+  where it has both. `CaptureRequest.Named` says a flag named the branch.
+  check's flags now only pick a mode, or `CaptureAuto`.
+- `engine.ActiveCheck`, the branch's one check queued or running, with
+  `ActiveRunError.Stopped` judged by it, and `engine.Replace`, which stops
+  the runs a new check replaces and returns each as it is after
+  (`Enqueue(Replace)`, row 7). check's `replaceActive` keeps the question
+  to a person before a running check is stopped, and the words; it judges
+  with an observer session and stops with a foreground one, where it held a
+  foreground session for both.

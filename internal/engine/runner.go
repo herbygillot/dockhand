@@ -38,6 +38,46 @@ func (e *Engine) Enqueue(ctx context.Context, branch model.Branch, plan model.Pl
 	return e.enqueue(ctx, branch, plan, origin, "")
 }
 
+// ActiveCheck is the branch's one check queued or running, beside which a
+// new one of revision would stand: nil where there's none, and with it
+// every run that holds the branch, which replacing it stops. A baseline
+// looks beside the check it explains, and a run asked to stop is on its way
+// out: neither is the branch's one check. Stopped is judged with session.
+func (e *Engine) ActiveCheck(ctx context.Context, session *coord.Session, branch model.Branch, revision model.Revision) (*ActiveRunError, []model.Run, error) {
+	runs, err := e.Runs(ctx, store.RunFilter{Branch: branch.ID, States: []model.RunState{model.RunQueued, model.RunRunning}})
+	if err != nil {
+		return nil, nil, err
+	}
+	runs = slices.DeleteFunc(runs, func(run model.Run) bool { return run.BaselineOf != "" || run.CancelRequested != nil })
+	if len(runs) == 0 {
+		return nil, nil, nil
+	}
+	active := &ActiveRunError{Run: runs[0], SameRevision: runs[0].Revision == revision.ID}
+	if active.Checking, err = e.Revision(ctx, runs[0].Revision); err != nil {
+		return nil, nil, err
+	}
+	if active.Stopped, err = Stopped(ctx, session, runs[0]); err != nil {
+		return nil, nil, err
+	}
+	return active, runs, nil
+}
+
+// Replace stops the runs a new check replaces, keeping what they finished:
+// a queued one canceled at once, a running one asked to stop, which its
+// process does at its next step. It returns each as it is after
+// (Enqueue(Replace), the command package review's row 7).
+func (e *Engine) Replace(ctx context.Context, session *coord.Session, runs []model.Run) ([]model.Run, error) {
+	var replaced []model.Run
+	for _, run := range runs {
+		after, err := e.RequestCancel(ctx, session, run.ID)
+		if err != nil {
+			return replaced, err
+		}
+		replaced = append(replaced, after)
+	}
+	return replaced, nil
+}
+
 func (e *Engine) enqueue(ctx context.Context, branch model.Branch, plan model.Plan, origin model.Origin, baselineOf model.RunID) (model.Run, error) {
 	var run model.Run
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
@@ -90,6 +130,9 @@ func (e *Engine) queue(tx store.Tx, run model.Run, why string) (model.Run, error
 // time (decision 29).
 type ActiveRunError struct {
 	Run model.Run
+	// Stopped is a run recorded as running whose process ended, which
+	// dockhand wait resumes (ActiveCheck judges it).
+	Stopped bool
 	// Checking is what it checks, and SameRevision whether that is what
 	// the new check would have.
 	Checking     model.Revision
@@ -98,6 +141,9 @@ type ActiveRunError struct {
 
 func (a *ActiveRunError) Error() string {
 	name := a.Run.Name()
+	if a.Stopped && a.SameRevision {
+		return fmt.Sprintf("%s stopped before it finished these files, when the process running it ended; dockhand wait %s resumes it", name, name)
+	}
 	if a.SameRevision {
 		return fmt.Sprintf("%s is already %s for these files; dockhand wait %s follows it", name, a.Run.State, name)
 	}

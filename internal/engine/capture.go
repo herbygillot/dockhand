@@ -24,6 +24,10 @@ const (
 	CaptureStaged CaptureMode = "staged"
 	// CaptureHead captures the committed tip.
 	CaptureHead CaptureMode = "head"
+	// CaptureAuto captures what a command asking for no files in
+	// particular means (autoMode): ship's, and check's without --head,
+	// --staged, or --working-tree.
+	CaptureAuto CaptureMode = "auto"
 )
 
 // CaptureRequest asks for a revision of a branch to check.
@@ -36,6 +40,38 @@ type CaptureRequest struct {
 	// same files is still found, and new files are a snapshot numbered
 	// only when a check records it.
 	Plan bool
+	// Named is a branch a flag named, rather than the one checked out
+	// where the command runs, which CaptureAuto reads.
+	Named bool
+}
+
+// autoMode is what CaptureAuto captures: the working files of the branch
+// checked out here, or of one a flag named that has no commits of its own,
+// whose working files are all there is of it (the txt run's finding 2);
+// the committed tip of a named branch whose worktree has no edits; and a
+// refusal where it has both, since neither is plainly meant.
+func (e *Engine) autoMode(ctx context.Context, branch model.Branch, named bool) (CaptureMode, error) {
+	if !named {
+		return CaptureWorking, nil
+	}
+	if here, err := e.Current(ctx); err == nil && here.ID == branch.ID {
+		return CaptureWorking, nil
+	}
+	edits, err := e.Edited(ctx, branch)
+	if err != nil {
+		return "", err
+	}
+	if len(edits) == 0 {
+		return CaptureHead, nil
+	}
+	commits, err := e.CommitsAhead(ctx, branch)
+	if err != nil {
+		return "", err
+	}
+	if commits == 0 {
+		return CaptureWorking, nil
+	}
+	return "", fmt.Errorf("%s's worktree has edits (%s); choose --head for the committed tip or --working-tree for the files", branch.ShortName(), strings.Join(edits, ", "))
 }
 
 // Capture is the revision a check covers.
@@ -69,6 +105,13 @@ func Describe(revision model.Revision) string {
 // checking twice without an edit checks the same snapshot.
 func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, error) {
 	branch := request.Branch
+	if request.Mode == CaptureAuto {
+		mode, err := e.autoMode(ctx, branch, request.Named)
+		if err != nil {
+			return Capture{}, err
+		}
+		request.Mode = mode
+	}
 	worktree, err := e.worktree(ctx, branch)
 	if err != nil {
 		return Capture{}, err

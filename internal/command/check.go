@@ -90,15 +90,12 @@ true, it runs that baseline by itself.`,
 			if baseline {
 				return runBaseline(ctx, e, streams, branch, only, enqueue)
 			}
-			mode, err := captureMode(ctx, e, branch, where.explicit(), head, staged, workingTree)
-			if err != nil {
-				return err
-			}
+			mode := captureMode(head, staged, workingTree)
 			place, err := e.Where(ctx, engine.WhereRequest{On: on, Build: build})
 			if err != nil {
 				return err
 			}
-			capture, err := e.Capture(ctx, engine.CaptureRequest{Branch: branch, Mode: mode, Include: include, Plan: plan})
+			capture, err := e.Capture(ctx, engine.CaptureRequest{Branch: branch, Mode: mode, Named: where.explicit(), Include: include, Plan: plan})
 			if err != nil {
 				return err
 			}
@@ -251,40 +248,18 @@ func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams Str
 	return follow(ctx, e, session, run, streams, true)
 }
 
-// captureMode is what a check captures: what was asked for; else the
-// working files in the branch's own worktree; else, for a --branch checked
-// out elsewhere, its committed tip when that worktree has no edits.
-func captureMode(ctx context.Context, e *engine.Engine, branch model.Branch, named bool, head, staged, workingTree bool) (engine.CaptureMode, error) {
+// captureMode is the files check's flags ask for, or CaptureAuto where
+// none does.
+func captureMode(head, staged, workingTree bool) engine.CaptureMode {
 	switch {
 	case head:
-		return engine.CaptureHead, nil
+		return engine.CaptureHead
 	case staged:
-		return engine.CaptureStaged, nil
-	case workingTree || !named:
-		return engine.CaptureWorking, nil
+		return engine.CaptureStaged
+	case workingTree:
+		return engine.CaptureWorking
 	}
-	here, err := e.Current(ctx)
-	if err == nil && here.ID == branch.ID {
-		return engine.CaptureWorking, nil
-	}
-	edits, err := e.Edited(ctx, branch)
-	if err != nil {
-		return "", err
-	}
-	if len(edits) == 0 {
-		return engine.CaptureHead, nil
-	}
-	// A branch with no commits has nothing at its head but its base, so
-	// its working files are the only thing of it to check (the txt run's
-	// finding 2).
-	commits, err := e.CommitsAhead(ctx, branch)
-	if err != nil {
-		return "", err
-	}
-	if commits == 0 {
-		return engine.CaptureWorking, nil
-	}
-	return "", fmt.Errorf("%s's worktree has edits (%s); choose --head for the committed tip or --working-tree for the files", branch.ShortName(), strings.Join(edits, ", "))
+	return engine.CaptureAuto
 }
 
 // writePushes says where a check pushes: "only checking" never hides a
@@ -917,63 +892,56 @@ func baselineWords(base, branch model.TargetResult, check string) string {
 // stopped only after asking, on a terminal; without one, --replace is the
 // consent. Finished results are kept. It returns the runs it stopped.
 func replaceActive(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, revision model.Revision, replace bool) ([]string, error) {
-	runs, err := e.Runs(ctx, store.RunFilter{Branch: branch.ID, States: []model.RunState{model.RunQueued, model.RunRunning}})
+	judging, observer, end, err := observing(ctx, e)
 	if err != nil {
 		return nil, err
 	}
-	// A baseline looks beside the check it explains, and a run asked to
-	// stop is on its way out: neither is the branch's one check.
-	runs = slices.DeleteFunc(runs, func(run model.Run) bool { return run.BaselineOf != "" || run.CancelRequested != nil })
-	if len(runs) == 0 {
-		return nil, nil
+	active, runs, err := e.ActiveCheck(judging, observer, branch, revision)
+	end()
+	if err != nil || active == nil {
+		return nil, err
 	}
-	current := runs[0]
 	if !replace {
-		if current.Revision == revision.ID && stoppedRun(ctx, e, current) {
+		switch {
+		case active.SameRevision && active.Stopped:
 			// Stopped, not running: wait resumes it, where "already
 			// running" sent a person to follow a run nothing was running
 			// (field testing's rust check, 2026-10-15).
-			return nil, fmt.Errorf("%s stopped before it finished these files, when the process running it ended; dockhand wait %s resumes it, or --replace checks again, keeping what it finished", current.Name(), current.Name())
+			return nil, fmt.Errorf("%v, or --replace checks again, keeping what it finished", active)
+		case active.SameRevision:
+			return nil, active
 		}
-		if current.Revision == revision.ID {
-			return nil, fmt.Errorf("%s is already %s for these files; dockhand wait %s follows it", current.Name(), current.State, current.Name())
+		return nil, fmt.Errorf("%s is %s for %s; --replace stops it, keeping what it finished, and checks %s instead", active.Run.Name(), active.Run.State, engine.Describe(active.Checking), engine.Describe(revision))
+	}
+	for _, run := range runs {
+		if run.State != model.RunRunning {
+			continue
 		}
-		checking, err := e.Revision(ctx, current.Revision)
+		// A script that asked for a new check replaces it.
+		ok, _, err := streams.decide(false, decision{question: fmt.Sprintf("? stop %s, which is running? [y/N] ", run.Name()), nobody: answer(true)})
 		if err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("%s is %s for %s; --replace stops it, keeping what it finished, and checks %s instead", current.Name(), current.State, engine.Describe(checking), engine.Describe(revision))
+		if !ok {
+			return nil, fmt.Errorf("%s keeps running; nothing new was queued", run.Name())
+		}
 	}
 	session, err := startSession(ctx, e, model.SessionForeground)
 	if err != nil {
 		return nil, err
 	}
 	defer session.End(context.WithoutCancel(ctx))
+	replaced, err := e.Replace(ctx, session, runs)
 	var stopped []string
-	for _, run := range runs {
-		if run.State == model.RunRunning {
-			// A script that asked for a new check replaces it.
-			ok, _, err := streams.decide(false, decision{question: fmt.Sprintf("? stop %s, which is running? [y/N] ", run.Name()), nobody: answer(true)})
-			if err != nil {
-				return stopped, err
-			}
-			if !ok {
-				return stopped, fmt.Errorf("%s keeps running; nothing new was queued", run.Name())
-			}
-		}
-		wasQueued := run.State == model.RunQueued
-		run, err = e.RequestCancel(ctx, session, run.ID)
-		if err != nil {
-			return stopped, err
-		}
+	for i, run := range replaced {
 		if run.State == model.RunCanceled {
-			fmt.Fprintln(streams.Out, stopWords(run, wasQueued))
+			fmt.Fprintln(streams.Out, stopWords(run, runs[i].State == model.RunQueued))
 		} else {
 			fmt.Fprintf(streams.Out, "%s: stop requested; the process running it stops it at its next step.\n", run.Name())
 		}
 		stopped = append(stopped, run.Name())
 	}
-	return stopped, nil
+	return stopped, err
 }
 
 // writeVariants says what --variants builds: the one port with its
