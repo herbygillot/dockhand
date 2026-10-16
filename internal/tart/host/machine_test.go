@@ -20,22 +20,20 @@ func fixtureMachine(t *testing.T, script string) Machine {
 	return Machine{Client: tart.Client{Executable: executable, Home: root}}
 }
 
-func TestCloneInheritsOperationAndImageLocks(t *testing.T) {
+// Clone hands tart the image lock it holds, so the image is read-locked
+// for as long as tart clones it.
+func TestCloneInheritsTheImageLock(t *testing.T) {
 	m := fixtureMachine(t, `
 case "$1" in
  list) printf '[]' ;;
  clone)
-  [ -e /dev/fd/3 ] && [ -e /dev/fd/4 ]
+  [ -e /dev/fd/3 ]
   [ "$2" = base ] && [ "$3" = candidate ]
   [ "$TART_NO_AUTO_PRUNE" = 1 ]
   printf done > "$TART_HOME/cloned"
  ;;
 esac
 `)
-	guard, err := os.Create(filepath.Join(m.Client.Home, "operation.lock"))
-	require.NoError(t, err)
-	defer guard.Close()
-	m.Guard = guard
 	require.NoError(t, m.Clone(t.Context(), "base", "candidate"))
 	require.FileExists(t, filepath.Join(m.Client.Home, "cloned"))
 }

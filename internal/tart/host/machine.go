@@ -12,10 +12,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/tart"
 )
 
-// Machine carries the runtime and optional operation lock inherited by commands.
+// Machine carries the runtime commands run with.
 type Machine struct {
 	Client tart.Client
-	Guard  *os.File
 	// Blocked, when set, is called each time the listing is blocked by a
 	// running ASIF VM (tart.ErrListingBlocked); it waits and returns nil to
 	// list again, or returns an error to give up. Without it the listing's
@@ -25,7 +24,7 @@ type Machine struct {
 
 func (n Machine) list(ctx context.Context) ([]tart.Image, error) {
 	for {
-		vms, err := n.Client.Images(ctx, tart.RunOptions{ExtraFiles: []*os.File{n.Guard}})
+		vms, err := n.Client.Images(ctx, tart.RunOptions{})
 		if !errors.Is(err, tart.ErrListingBlocked) || n.Blocked == nil {
 			return vms, err
 		}
@@ -36,7 +35,7 @@ func (n Machine) list(ctx context.Context) ([]tart.Image, error) {
 }
 
 func (n Machine) run(ctx context.Context, imageGuard *os.File, args ...string) ([]byte, error) {
-	return n.Client.Run(ctx, tart.RunOptions{ExtraFiles: []*os.File{n.Guard, imageGuard}}, args...)
+	return n.Client.Run(ctx, tart.RunOptions{ExtraFiles: []*os.File{imageGuard}}, args...)
 }
 func (n Machine) Version(ctx context.Context) (string, error) {
 	out, err := n.run(ctx, nil, "--version")
@@ -113,7 +112,7 @@ func (n Machine) IP(ctx context.Context, vm string, wait int) (string, error) {
 
 // DiskFormat reports a VM's disk format, "raw" or "asif", from `tart get`.
 func (n Machine) DiskFormat(ctx context.Context, name string) (string, error) {
-	vm, err := n.Client.Get(ctx, tart.RunOptions{ExtraFiles: []*os.File{n.Guard}}, name)
+	vm, err := n.Client.Get(ctx, tart.RunOptions{}, name)
 	return vm.DiskFormat, err
 }
 
