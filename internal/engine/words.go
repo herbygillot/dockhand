@@ -15,8 +15,8 @@ import (
 // terminal and in the pull request alike, so the two never word one result
 // differently (Design v3 §7): excluded there by the plan, and why, passed, passed
 // with its tests failing or timing out where they didn't count, failed at
-// a phase, blocked by a failed changed dependency, not run, interrupted, or
-// could not evaluate. Reading says how the tests counted, "advisory" when empty
+// a phase, blocked by a failed changed dependency, not run, or interrupted.
+// Reading says how the tests counted, "advisory" when empty
 // (Evidence.testsReading). Accepted marks a failure submit --accept
 // acknowledged.
 func targetWords(plan model.Plan, result Cell, reading string, accepted bool) string {
@@ -66,8 +66,6 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted bool) st
 		}
 	case model.OutcomeBlocked:
 		words = "✗ blocked by a failed changed dependency"
-	case model.OutcomeUnevaluated:
-		words = "✗ could not evaluate"
 	case model.OutcomeNotRun:
 		return "· not run"
 	default:
