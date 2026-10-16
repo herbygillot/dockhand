@@ -271,7 +271,7 @@ the whole log.`,
 			}
 			if port == "" {
 				streams.emit(logsView(logs))
-				return writeLogs(streams.Out, logs)
+				return writeLogs(streams.Out, logs, stoppedRun(ctx, e, logs.Run))
 			}
 			chosen, others, ok := portLogs(logs, port)
 			if !ok {
@@ -470,13 +470,38 @@ func checkOrRun(ctx context.Context, e *engine.Engine, name string) (model.Run, 
 	return run, execution.ID, err
 }
 
-func writeLogs(out io.Writer, logs engine.RunLogs) error {
-	fmt.Fprintf(out, "%s · %s", logs.Run.Name(), logs.Run.State)
+// stoppedRun reports whether a run recorded as running stopped when the
+// process running it ended, which dockhand wait resumes.
+func stoppedRun(ctx context.Context, e *engine.Engine, run model.Run) bool {
+	if run.State != model.RunRunning {
+		return false
+	}
+	ctx, session, end, err := observing(ctx, e)
+	if err != nil {
+		return false
+	}
+	defer end()
+	stopped, err := engine.Stopped(ctx, session, run)
+	return err == nil && stopped
+}
+
+// writeLogs says what a check recorded, its state first: a run whose
+// process ended is said as stopped, where it read "running" (field
+// testing's rust check, 2026-10-15).
+func writeLogs(out io.Writer, logs engine.RunLogs, stopped bool) error {
+	if stopped {
+		name := logs.Run.Name()
+		fmt.Fprintf(out, "%s · stopped: the process running it ended; dockhand wait %s resumes it\n", name, name)
+	} else {
+		fmt.Fprintf(out, "%s · %s", logs.Run.Name(), logs.Run.State)
+	}
 	// A passed check's detail is "passed" again.
-	if logs.Run.Detail != "" && logs.Run.Detail != string(logs.Run.State) {
+	if !stopped && logs.Run.Detail != "" && logs.Run.Detail != string(logs.Run.State) {
 		fmt.Fprintf(out, ": %s", logs.Run.Detail)
 	}
-	fmt.Fprintln(out)
+	if !stopped {
+		fmt.Fprintln(out)
+	}
 	if len(logs.Executions) == 0 && logs.Run.State.Terminal() {
 		fmt.Fprintln(out, "  nothing is recorded of its provider runs: it reached none, or its branch ended and cleanup kept the check alone (cleanup.after)")
 	}

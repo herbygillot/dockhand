@@ -55,6 +55,10 @@ type Options struct {
 	// Tclsh is MacPorts' port-tclsh, which evaluates Portfiles;
 	// macports.FindTclsh's when empty.
 	Tclsh string
+	// MigrateUnderLive migrates the database's schema though dockhand
+	// processes that read the older one are working: a person's answer to
+	// store.LiveUnderMigrationError, which the migration is otherwise.
+	MigrateUnderLive bool
 	// Now defaults to time.Now.
 	Now func() time.Time
 	// Poll is how often a driver looks for a cancel request; a second when
@@ -177,7 +181,7 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := sqlite.Open(ctx, options.Database, sqlite.Options{})
+	s, err := sqlite.Open(ctx, options.Database, sqlite.Options{MigrateUnderLive: options.MigrateUnderLive})
 	if err != nil {
 		return nil, err
 	}
@@ -226,6 +230,11 @@ func (e *Engine) PullRequestRepository() string {
 func (e *Engine) Sandboxed() bool {
 	return !strings.EqualFold(e.PullRequestRepository(), UpstreamRepository)
 }
+
+// LiveUnderMigrationError is a migration Open refused, since dockhand
+// processes that read the older schema are working; Options.
+// MigrateUnderLive is a person's answer to it.
+type LiveUnderMigrationError = store.LiveUnderMigrationError
 
 // Tclsh is the port-tclsh the engine evaluates Portfiles with, and
 // empty where there's none: the one named, else this Mac's MacPorts'.

@@ -3,6 +3,8 @@ package command
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +32,8 @@ type settings struct {
 	// with, for the cleanup that follows the command's work.
 	opened     *engine.Engine
 	openedWith engine.Options
+	// streams are the command's, for a question opening the engine asks.
+	streams Streams
 }
 
 func (s *settings) flags(root *cobra.Command) {
@@ -96,6 +100,18 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 		return nil, err
 	}
 	e, err := engine.Open(ctx, options)
+	if refused := new(engine.LiveUnderMigrationError); errors.As(err, &refused) && s.streams.terminal() {
+		// A person decides: their checks can be resumed by this build
+		// once they stop, as dockhand wait resumes a stopped check.
+		migrate, askErr := s.streams.askYes(fmt.Sprintf("%v.\n? Migrate anyway? What they're doing stops, and this dockhand can resume a stopped check. [y/N] ", refused), false)
+		if askErr != nil {
+			return nil, askErr
+		}
+		if migrate {
+			options.MigrateUnderLive = true
+			e, err = engine.Open(ctx, options)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

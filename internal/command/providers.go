@@ -184,6 +184,15 @@ func tartReadiness(ctx context.Context) string {
 	if status.Readiness() == tart.NotForHost {
 		line += "; none for this Mac's " + host + ": dockhand setup tart"
 	}
+	// An image keeps the MacPorts it was made with, which falls behind
+	// this Mac's, which reads its ports (the person's "yes", 2026-10-16).
+	for _, behind := range status.Behind {
+		which, rebuild := "image", "dockhand setup tart "+behind.Release.Slug+" --rebuild"
+		if behind.Xcode {
+			which, rebuild = "Xcode image", rebuild+" --xcode <Xcode>"
+		}
+		line += fmt.Sprintf("; macOS %s's %s has MacPorts %s, older than this Mac's %s: %s", behind.Release.Product, which, behind.MacPorts, behind.Host, rebuild)
+	}
 	return line
 }
 

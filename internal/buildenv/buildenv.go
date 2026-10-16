@@ -206,6 +206,15 @@ type OwnTestsProvider interface {
 	RunsOwnTests() bool
 }
 
+// A MacPortsProvider says where an environment builds with an older
+// MacPorts than this Mac's, which reads its ports, as a Tart image keeps
+// the MacPorts it was made with: the environment's version and this
+// Mac's, or empty where it isn't behind or can't be told.
+type MacPortsProvider interface {
+	Provider
+	MacPortsBehind(ctx context.Context, environment model.Environment) (environmentVersion, hostVersion string)
+}
+
 // An IdentityProvider says what an environment is made from and with: its
 // identity by origin (decision 28), such as a Tart image's source by
 // digest, the setup that made it, its tools and MacPorts, and the guest

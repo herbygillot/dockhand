@@ -652,9 +652,9 @@ func TestAGuestMacPortsNewerThanAskedIsTaken(t *testing.T) {
 	_, err = testProvisioner(t, older).Run(t.Context(), Options{})
 	require.ErrorContains(t, err, "asked for MacPorts "+macports.DefaultBaseVersion+" or newer")
 
-	require.True(t, baseAtLeast("2.12.7", "2.12.6"))
-	require.True(t, baseAtLeast("2.13", "2.12.6"))
-	require.True(t, baseAtLeast("2.12.6", "2.12.6"))
-	require.False(t, baseAtLeast("2.12.5", "2.12.6"))
-	require.False(t, baseAtLeast("2.9.9", "2.12.6"))
+	require.True(t, macports.BaseAtLeast("2.12.7", "2.12.6"))
+	require.True(t, macports.BaseAtLeast("2.13", "2.12.6"))
+	require.True(t, macports.BaseAtLeast("2.12.6", "2.12.6"))
+	require.False(t, macports.BaseAtLeast("2.12.5", "2.12.6"))
+	require.False(t, macports.BaseAtLeast("2.9.9", "2.12.6"))
 }

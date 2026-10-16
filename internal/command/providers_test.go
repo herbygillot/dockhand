@@ -262,3 +262,14 @@ func providers(t *testing.T) string {
 	require.NoError(t, err)
 	return strings.Join(providerLines(t.Context(), file), "\n") + "\n"
 }
+
+// An image whose MacPorts is older than this Mac's is said, with how to
+// make it again.
+func TestProviderLinesSayAnImageBehindThisMacsMacPorts(t *testing.T) {
+	images := &fakeImages{}
+	useImages(t, images)
+	tahoe := release(t, "tahoe")
+	images.status = tart.Status{Host: tahoe, Base: []macos.Release{tahoe}, Xcode: []macos.Release{tahoe},
+		Behind: []tart.BehindImage{{Release: tahoe, Xcode: true, MacPorts: "2.12.6", Host: "2.12.7"}}}
+	require.Contains(t, providers(t), "tart     ✓ images for macOS 26, with Xcode for 26; macOS 26's Xcode image has MacPorts 2.12.6, older than this Mac's 2.12.7: dockhand setup tart tahoe --rebuild --xcode <Xcode>\n")
+}

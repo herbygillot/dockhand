@@ -36,28 +36,31 @@ var supportedFamilies = [][2]int{{2, 11}, {2, 12}}
 
 // admitBase judges the version Base reports once its package is loaded,
 // before mportinit reads the host's configuration. Released versions of a
-// supported family are admitted by default; a development build only when
-// adapter is PreviewAdapter, and nothing else is; the startup checks run
-// either way.
-func admitBase(version, adapter string) error {
+// supported family are admitted by default, and a release of a newer one
+// with a warning, which it returns: on the day MacPorts ships a new
+// family, every command that reads a Portfile was refused until a
+// dockhand release named it (the person's "yes", 2026-10-16). A
+// development build is admitted only when adapter is PreviewAdapter, and
+// an older family never; the startup checks run either way.
+func admitBase(version, adapter string) (warning string, err error) {
 	supported := make([]string, len(supportedFamilies))
 	for i, family := range supportedFamilies {
 		supported[i] = fmt.Sprintf("%d.%d", family[0], family[1])
 	}
 	releases := "released MacPorts Base " + strings.Join(supported, " and ")
 	if adapter != "" && adapter != PreviewAdapter {
-		return fmt.Errorf("%w: unknown MacPorts Base adapter %q; the one adapter that can be selected is %q", macports.ErrStartup, adapter, PreviewAdapter)
+		return "", fmt.Errorf("%w: unknown MacPorts Base adapter %q; the one adapter that can be selected is %q", macports.ErrStartup, adapter, PreviewAdapter)
 	}
 	unrecognized := fmt.Errorf("%w: MacPorts Base reports version %q, which this dockhand does not recognize; it evaluates Portfiles with %s; check the selected --prefix/port-tclsh installation", macports.ErrStartup, version, releases)
 	parts := strings.Split(version, ".")
 	if len(parts) != 3 {
-		return unrecognized
+		return "", unrecognized
 	}
 	var numbers [3]int
 	for i, part := range parts {
 		number, err := strconv.Atoi(part)
 		if err != nil || number < 0 {
-			return unrecognized
+			return "", unrecognized
 		}
 		numbers[i] = number
 	}
@@ -65,22 +68,22 @@ func admitBase(version, adapter string) error {
 	development := numbers[2] >= 90
 	if development {
 		if adapter == PreviewAdapter {
-			return nil
+			return "", nil
 		}
-		return fmt.Errorf("%w: MacPorts Base %s is a development build; this dockhand evaluates Portfiles with %s, since a development Base can ask the host questions this dockhand does not observe; choose a released installation with --prefix", macports.ErrStartup, version, releases)
+		return "", fmt.Errorf("%w: MacPorts Base %s is a development build; this dockhand evaluates Portfiles with %s, since a development Base can ask the host questions this dockhand does not observe; choose a released installation with --prefix", macports.ErrStartup, version, releases)
 	}
 	if adapter == PreviewAdapter {
-		return fmt.Errorf("%w: the %s adapter is for development builds of MacPorts Base, and %s is a release", macports.ErrStartup, PreviewAdapter, version)
+		return "", fmt.Errorf("%w: the %s adapter is for development builds of MacPorts Base, and %s is a release", macports.ErrStartup, PreviewAdapter, version)
 	}
 	for _, supported := range supportedFamilies {
 		if family == supported {
-			return nil
+			return "", nil
 		}
 	}
 	if oldest := supportedFamilies[0]; family[0] < oldest[0] || family[0] == oldest[0] && family[1] < oldest[1] {
-		return fmt.Errorf("%w: MacPorts Base %s is older than this dockhand evaluates Portfiles with (%s); update it with `sudo port selfupdate`, or choose another installation with --prefix", macports.ErrStartup, version, releases)
+		return "", fmt.Errorf("%w: MacPorts Base %s is older than this dockhand evaluates Portfiles with (%s); update it with `sudo port selfupdate`, or choose another installation with --prefix", macports.ErrStartup, version, releases)
 	}
-	return fmt.Errorf("%w: MacPorts Base %s is newer than this dockhand evaluates Portfiles with (%s); commands that evaluate Portfiles are unavailable until dockhand supports it, while status and recorded evidence remain usable", macports.ErrStartup, version, releases)
+	return fmt.Sprintf("MacPorts Base %s is newer than this dockhand was built against (%s); what it reads of Portfiles may be wrong where Base changed, until a dockhand release names it", version, strings.TrimPrefix(releases, "released MacPorts Base ")), nil
 }
 
 func decodeRuntime(reply string) (macports.Runtime, error) {

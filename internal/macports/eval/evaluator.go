@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fetchguard"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -103,8 +104,12 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 	if err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
 	}
-	if err := admitBase(version, e.Adapter); err != nil {
+	warning, err := admitBase(version, e.Adapter)
+	if err != nil {
 		return fail(err)
+	}
+	if warning != "" {
+		progress.ReportOnce(ctx, "%s", warning)
 	}
 	reply, err := session.Call(ctx, "initialize", tree.Root(), tree.Base())
 	if err != nil {

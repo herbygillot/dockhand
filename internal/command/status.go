@@ -239,7 +239,7 @@ func attentionFor(s engine.BranchStatus) []attention {
 		return row("!", "its Git branch is gone", "dockhand adopt <new name>, if you renamed it")
 	}
 	if run := s.Stopped; run != nil {
-		return row("!", run.Name()+" stopped: the process running it ended; dockhand cancel "+run.Name()+" ends it", "dockhand wait "+run.Name())
+		return row("!", run.Name()+" stopped: the process running it ended; dockhand wait "+run.Name()+" resumes it, and dockhand cancel "+run.Name()+" ends it", "dockhand wait "+run.Name())
 	}
 	if rows := pullRequestAttention(s); len(rows) > 0 {
 		return rows

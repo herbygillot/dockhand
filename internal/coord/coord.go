@@ -192,6 +192,13 @@ func (s *Session) KeepAlive(ctx context.Context) {
 			switch {
 			case ctx.Err() != nil:
 				return
+			case errors.Is(err, store.ErrSchema):
+				// A newer build migrated the database: no beat will land
+				// again, and this process's next read fails as this did.
+				// Said as what it is, not as a heartbeat another dockhand
+				// may take over from (the v0.3.1 port update, 2026-10-15).
+				progress.Report(ctx, "%v. This dockhand can't record its work any more, so it stops; a newer one resumes a stopped check, with dockhand wait.", err)
+				return
 			case err != nil && !failing:
 				failing = true
 				progress.Report(ctx, "Couldn't record that this dockhand is still running (%v); trying again every %s. After %s without it, another dockhand may take over its work.", err, s.c.heartbeat(), s.c.hungAfter())

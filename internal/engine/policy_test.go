@@ -56,3 +56,22 @@ func TestAnEarlierAdvisoryResultKeepsItsPolicy(t *testing.T) {
 	require.Empty(t, submission.Blocking)
 	require.Contains(t, submission.Body, "| libharbor | ✓ build passed; tests failed (advisory, check-1) |")
 }
+
+// behindProvider builds with an older MacPorts than this Mac's.
+type behindProvider struct{ scriptedProvider }
+
+func (*behindProvider) Name() string { return buildenv.Tart }
+
+func (*behindProvider) MacPortsBehind(context.Context, model.Environment) (string, string) {
+	return "2.12.6", "2.12.7"
+}
+
+// A plan says an environment whose MacPorts is older than this Mac's, which
+// reads its ports, with how to make its image again (the person's "yes",
+// 2026-10-16).
+func TestPlanNotesSayAnEnvironmentBehindThisMacsMacPorts(t *testing.T) {
+	e := &Engine{Providers: map[string]buildenv.Provider{buildenv.Tart: &behindProvider{}}}
+	xcode := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	notes := e.PlanNotes(t.Context(), model.Plan{Environments: []model.Environment{xcode}, Tests: model.TestsDeclared})
+	require.Equal(t, []string{"tart macOS 26 (Tahoe) arm64 with Xcode builds with MacPorts 2.12.6, older than this Mac's 2.12.7, which reads its ports; dockhand setup tart tahoe --rebuild --xcode <Xcode> makes it again"}, notes)
+}

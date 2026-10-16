@@ -1437,3 +1437,30 @@ func TestADamagedDatabaseIsSaidPlainly(t *testing.T) {
 		require.Equal(t, content, after, "left as it was")
 	}
 }
+
+// A migration is refused while a serve or a foreground process that reads
+// the older schema has a fresh heartbeat, naming them, since none of them
+// could record its work after it; an observer, an ended process, or a
+// heartbeat gone stale doesn't hold it, and a person's answer migrates
+// anyway (the v0.3.1 port update, 2026-10-15).
+func TestAMigrationWaitsForTheProcessesOnTheOlderSchema(t *testing.T) {
+	now := time.Now().UnixMilli()
+	sessions := fmt.Sprintf(`
+INSERT INTO sessions VALUES('repo_1','ses_check','foreground',101,'p','v0.3.1',%[1]d,%[1]d,NULL);
+INSERT INTO sessions VALUES('repo_1','ses_serve','serve',102,'p','v0.3.1',%[1]d,%[1]d,NULL);
+INSERT INTO sessions VALUES('repo_1','ses_watch','observer',103,'p','v0.3.1',%[1]d,%[1]d,NULL);
+INSERT INTO sessions VALUES('repo_1','ses_ended','foreground',104,'p','v0.3.0',%[1]d,%[1]d,%[1]d);
+INSERT INTO sessions VALUES('repo_1','ses_stale','foreground',105,'p','v0.3.0',%[2]d,%[2]d,NULL);
+`, now, now-int64(time.Hour/time.Millisecond))
+	path := schemaAt(t, schemaVersion-1, schema23Records+sessions)
+	_, err := Open(t.Context(), path, Options{})
+	refused := new(store.LiveUnderMigrationError)
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, &store.LiveUnderMigrationError{Processes: 2, Builds: []string{"v0.3.1"}, From: schemaVersion - 1, To: schemaVersion}, refused)
+	require.ErrorContains(t, err, fmt.Sprintf("2 dockhand processes are working on schema %d (v0.3.1): migrating the database to schema %d would leave them unable to record what they do", schemaVersion-1, schemaVersion))
+
+	s, err := Open(t.Context(), path, Options{MigrateUnderLive: true})
+	require.NoError(t, err, "a person's answer migrates")
+	require.Equal(t, schemaVersion, s.Migration().To)
+	require.NoError(t, s.Close())
+}

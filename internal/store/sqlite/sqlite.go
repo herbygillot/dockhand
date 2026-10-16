@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -64,6 +65,14 @@ const journalSizeLimit = 64 << 20
 type Options struct {
 	BusyTimeout      time.Duration
 	OperationTimeout time.Duration
+	// MigrateUnderLive migrates the schema though dockhand processes that
+	// read the older one are working, a person's answer; otherwise such a
+	// migration is refused (store.LiveUnderMigrationError).
+	MigrateUnderLive bool
+	// LiveWithin is how recent a heartbeat says a process is working:
+	// coord's two minutes, after which another dockhand may take over its
+	// work, when zero.
+	LiveWithin time.Duration
 }
 
 // Store is a dockhand v3 database.
@@ -310,6 +319,11 @@ func (s *Store) prepareSchema(ctx context.Context) error {
 		case app == applicationID && version == schemaVersion:
 			return nil
 		case app == applicationID && version > 0 && version < schemaVersion:
+			if !s.options.MigrateUnderLive {
+				if err := t.refuseUnderLive(ctx, version, s.options.LiveWithin); err != nil {
+					return err
+				}
+			}
 			return t.migrate(ctx, version)
 		case app == applicationID && version > schemaVersion:
 			return fmt.Errorf("%w: %s has schema %d, newer than this dockhand supports (%d); use a newer build", store.ErrSchema, s.path, version, schemaVersion)
@@ -329,6 +343,39 @@ func (s *Store) prepareSchema(ctx context.Context) error {
 		}
 		return t.migrate(ctx, 0)
 	})
+}
+
+// refuseUnderLive refuses a migration from version while a serve or a
+// foreground process, whose sessions every schema has kept alike, has a
+// heartbeat within live: each reads this schema, and couldn't record its
+// work after the migration. Observers only read, and stop.
+func (t *tx) refuseUnderLive(ctx context.Context, version int, live time.Duration) error {
+	if live <= 0 {
+		live = 2 * time.Minute
+	}
+	rows, err := t.conn.QueryContext(ctx, "SELECT version FROM sessions WHERE ended_at IS NULL AND kind<>'observer' AND heartbeat_at>=?", millis(time.Now().Add(-live)))
+	if err != nil {
+		return storageError(err)
+	}
+	defer rows.Close()
+	refused := &store.LiveUnderMigrationError{From: version, To: schemaVersion}
+	for rows.Next() {
+		var build string
+		if err := rows.Scan(&build); err != nil {
+			return storageError(err)
+		}
+		refused.Processes++
+		if !slices.Contains(refused.Builds, build) {
+			refused.Builds = append(refused.Builds, build)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return storageError(err)
+	}
+	if refused.Processes > 0 {
+		return refused
+	}
+	return nil
 }
 
 // migrate brings the schema from version up to schemaVersion, within the

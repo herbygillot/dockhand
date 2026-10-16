@@ -53,8 +53,8 @@ func TestStartupChecksSplitAroundInitialization(t *testing.T) {
 }
 
 // The version is judged from what Base reports before mportinit: released
-// 2.11 and 2.12 by default, a development build only with the preview
-// adapter.
+// 2.11 and 2.12 by default, a newer release with a warning, a development
+// build only with the preview adapter.
 func TestBaseVersionGate(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ version, adapter, want string }{
@@ -67,17 +67,22 @@ func TestBaseVersionGate(t *testing.T) {
 		{"2.12.6", PreviewAdapter, "2.12.6 is a release"},
 		{"2.10.7", "", "older than this dockhand"},
 		{"1.9.2", "", "sudo port selfupdate"},
-		{"2.13.0", "", "newer than this dockhand"},
-		{"3.0.0", "", "status and recorded evidence remain usable"},
+		{"2.13.0", "", ""},
+		{"3.0.0", "", ""},
 		{"unknown", "", `version "unknown", which this dockhand does not recognize`},
 		{"2.12", "", "does not recognize"},
 		{"2.12.0-beta1", "", "does not recognize"},
 		{"2.12.6", "base212", `unknown MacPorts Base adapter "base212"`},
 	} {
 		t.Run(test.version+"/"+test.adapter, func(t *testing.T) {
-			err := admitBase(test.version, test.adapter)
+			warning, err := admitBase(test.version, test.adapter)
 			if test.want == "" {
 				require.NoError(t, err)
+				if newer := test.version == "2.13.0" || test.version == "3.0.0"; newer {
+					require.Equal(t, "MacPorts Base "+test.version+" is newer than this dockhand was built against (2.11 and 2.12); what it reads of Portfiles may be wrong where Base changed, until a dockhand release names it", warning)
+				} else {
+					require.Empty(t, warning)
+				}
 				return
 			}
 			require.ErrorIs(t, err, macports.ErrStartup)

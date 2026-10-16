@@ -42,7 +42,7 @@ func TestAKilledCheckReadsAsStopped(t *testing.T) {
 	require.Contains(t, out, "Next: dockhand wait check-1\n")
 	out, _, err = dockhand(t, "status", "--all")
 	require.NoError(t, err)
-	require.Contains(t, out, "check-1 stopped: the process running it ended; dockhand cancel check-1 ends it")
+	require.Contains(t, out, "check-1 stopped: the process running it ended; dockhand wait check-1 resumes it, and dockhand cancel check-1 ends it")
 	require.Contains(t, out, "dockhand wait check-1")
 	require.Contains(t, out, "stopped (check-1)")
 	require.Contains(t, out, "serve: not running · queue: 1 run, 1 stopped\n")
@@ -60,6 +60,15 @@ func TestAKilledCheckReadsAsStopped(t *testing.T) {
 	result, err = jsonOf(t, "queue")
 	require.NoError(t, err)
 	require.Equal(t, true, dig(t, result.Result, "runs", 0, "stopped"))
+
+	// logs and a check of the same files say it's stopped, and how to
+	// resume it, where they said it was running (field testing's rust
+	// check, 2026-10-15).
+	out, _, err = dockhand(t, "logs", "check-1")
+	require.NoError(t, err)
+	require.Contains(t, out, "check-1 · stopped: the process running it ended; dockhand wait check-1 resumes it\n")
+	_, _, err = dockhand(t, "check", "-d")
+	require.EqualError(t, err, "check-1 stopped before it finished these files, when the process running it ended; dockhand wait check-1 resumes it, or --replace checks again, keeping what it finished")
 
 	_, errs, err := dockhand(t, "wait", "check-1")
 	require.NoError(t, err)

@@ -17,6 +17,7 @@ import (
 	"crypto/rand"
 	"encoding/base32"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -44,6 +45,10 @@ var (
 	// writer behind another. No caller tells one cause from another; each
 	// fails what it was doing, and says why.
 	ErrUnavailable = errors.New("storage unavailable")
+	// ErrLiveUnderMigration refuses a migration while dockhand processes
+	// that read the schema it would replace are working: after it, none
+	// of them could record what it does (LiveUnderMigrationError).
+	ErrLiveUnderMigration = errors.New("dockhand processes are working on the database's schema")
 	// ErrUncertain reports a commit whose outcome is unknown: the write
 	// may have landed or not, as when a cancel arrives while the commit
 	// syncs. A writer that would undo work outside the store on a failed
@@ -308,3 +313,28 @@ func (p *Pruned) Add(other Pruned) {
 	p.Changes += other.Changes
 	p.Inputs += other.Inputs
 }
+
+// LiveUnderMigrationError is a migration refused while dockhand processes
+// with fresh heartbeats read the schema it would replace (the v0.3.1 port
+// update, 2026-10-15: a main build migrated the database under v0.3.1's
+// running check, which then couldn't record itself and stopped): how
+// many, the builds they run, and the migration's schemas.
+type LiveUnderMigrationError struct {
+	Processes int
+	Builds    []string
+	From, To  int
+}
+
+func (e *LiveUnderMigrationError) Error() string {
+	builds := ""
+	if len(e.Builds) > 0 {
+		builds = " (" + strings.Join(e.Builds, ", ") + ")"
+	}
+	processes := "1 dockhand process is"
+	if e.Processes != 1 {
+		processes = fmt.Sprintf("%d dockhand processes are", e.Processes)
+	}
+	return fmt.Sprintf("%s working on schema %d%s: migrating the database to schema %d would leave them unable to record what they do; wait for them to finish, or stop them, and run this again", processes, e.From, builds, e.To)
+}
+
+func (e *LiveUnderMigrationError) Unwrap() error { return ErrLiveUnderMigration }

@@ -25,6 +25,17 @@ type Status struct {
 	Base  []macos.Release
 	Xcode []macos.Release
 	Host  macos.Release
+	// Behind are the images whose MacPorts is older than this Mac's, which
+	// reads the ports they build.
+	Behind []BehindImage
+}
+
+// BehindImage is an image with an older MacPorts than this Mac's: its
+// release, whether it's the Xcode image, and the two versions.
+type BehindImage struct {
+	Release        macos.Release
+	Xcode          bool
+	MacPorts, Host string
 }
 
 // HasHostImage reports whether there's a base image of this Mac's own
@@ -74,12 +85,25 @@ func (p *Provider) Status(ctx context.Context) (Status, error) {
 		return Status{}, fmt.Errorf("listing dockhand's Tart images: %w", err)
 	}
 	var status Status
+	runtime, resolveErr := p.Tart.Resolve()
+	behind := func(release macos.Release, name string, xcode bool) {
+		if resolveErr != nil {
+			return
+		}
+		if manifest, found, err := tartvm.ReadImageRecord(runtime.Home, name); err == nil && found {
+			if version, host := p.behind(ctx, manifest.MacPortsVersion); version != "" {
+				status.Behind = append(status.Behind, BehindImage{Release: release, Xcode: xcode, MacPorts: version, Host: host})
+			}
+		}
+	}
 	for _, release := range macos.Known() {
 		if slices.Contains(images, baseImage(release)) {
 			status.Base = append(status.Base, release)
+			behind(release, baseImage(release), false)
 		}
 		if slices.Contains(images, xcodeImage(release)) {
 			status.Xcode = append(status.Xcode, release)
+			behind(release, xcodeImage(release), true)
 		}
 	}
 	if darwin, err := p.hostRelease(); err == nil {

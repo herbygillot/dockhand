@@ -343,7 +343,7 @@ func (p *Provisioner) check(ctx context.Context, machine machine, config Config,
 	if checked.Platform != config.Platform {
 		return Result{}, fmt.Errorf("setup: image platform is %+v; expected %+v", checked.Platform, config.Platform)
 	}
-	if !baseAtLeast(checked.MacPortsVersion, config.MacPortsVersion) {
+	if !macports.BaseAtLeast(checked.MacPortsVersion, config.MacPortsVersion) {
 		return Result{}, fmt.Errorf("setup: image has MacPorts %s; expected %s or newer; rerun with --rebuild", checked.MacPortsVersion, config.MacPortsVersion)
 	}
 	if !macos.SameXcode(checked.XcodeVersion, config.XcodeVersion) {
@@ -452,7 +452,7 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err != nil {
 		return Result{}, err
 	}
-	if checked.Platform != config.Platform || !baseAtLeast(checked.MacPortsVersion, config.MacPortsVersion) || !macos.SameXcode(checked.XcodeVersion, config.XcodeVersion) {
+	if checked.Platform != config.Platform || !macports.BaseAtLeast(checked.MacPortsVersion, config.MacPortsVersion) || !macos.SameXcode(checked.XcodeVersion, config.XcodeVersion) {
 		return Result{}, fmt.Errorf("setup: provisioned image has MacPorts %s and Xcode %q on %+v; asked for MacPorts %s or newer and Xcode %q on %+v",
 			checked.MacPortsVersion, checked.XcodeVersion, checked.Platform, config.MacPortsVersion, config.XcodeVersion, config.Platform)
 	}
@@ -509,7 +509,7 @@ func (p *Provisioner) upgrade(ctx context.Context, machine machine, config Confi
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %w", errUnsuitable, err)
 	}
-	if checked.Platform != config.Platform || !baseAtLeast(checked.MacPortsVersion, config.MacPortsVersion) || !macos.SameXcode(checked.XcodeVersion, config.XcodeVersion) {
+	if checked.Platform != config.Platform || !macports.BaseAtLeast(checked.MacPortsVersion, config.MacPortsVersion) || !macos.SameXcode(checked.XcodeVersion, config.XcodeVersion) {
 		return Result{}, fmt.Errorf("%w: it has MacPorts %s and Xcode %q on %+v", errUnsuitable, checked.MacPortsVersion, checked.XcodeVersion, checked.Platform)
 	}
 	if err := toolsGeneration(checked, release); err != nil {
@@ -627,26 +627,4 @@ func (p *Provisioner) say(format string, args ...any) {
 	if p.Progress != nil {
 		_, _ = fmt.Fprintf(p.Progress, format+"\n", args...)
 	}
-}
-
-// baseAtLeast reports a MacPorts base that is the one asked for or newer.
-// MacPorts' installer runs selfupdate, which takes the guest past the
-// version it installed where a newer one is out: 2.12.7 came out on
-// 2026-10-13, and setup, which asked for 2.12.6, rejected the image it had
-// just made after six minutes' work (the v0.3.1 quick stage, 2026-10-15).
-func baseAtLeast(have, want string) bool {
-	a, b := strings.Split(have, "."), strings.Split(want, ".")
-	for i := range max(len(a), len(b)) {
-		x, y := 0, 0
-		if i < len(a) {
-			x, _ = strconv.Atoi(a[i])
-		}
-		if i < len(b) {
-			y, _ = strconv.Atoi(b[i])
-		}
-		if x != y {
-			return x > y
-		}
-	}
-	return true
 }

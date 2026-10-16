@@ -3,6 +3,8 @@ package macports
 import (
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 // Facts about MacPorts that every layer shares.
@@ -26,4 +28,27 @@ func FindTclsh() string {
 		}
 	}
 	return ""
+}
+
+// BaseAtLeast reports a MacPorts Base version that is want or newer,
+// compared release number by release number. MacPorts' installer runs
+// selfupdate, which takes a guest past the version it installed where a
+// newer one is out: 2.12.7 came out on 2026-10-13, and setup, which asked
+// for 2.12.6, rejected the image it had just made (the v0.3.1 quick stage,
+// 2026-10-15).
+func BaseAtLeast(have, want string) bool {
+	a, b := strings.Split(have, "."), strings.Split(want, ".")
+	for i := range max(len(a), len(b)) {
+		x, y := 0, 0
+		if i < len(a) {
+			x, _ = strconv.Atoi(a[i])
+		}
+		if i < len(b) {
+			y, _ = strconv.Atoi(b[i])
+		}
+		if x != y {
+			return x > y
+		}
+	}
+	return true
 }

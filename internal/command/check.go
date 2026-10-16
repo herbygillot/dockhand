@@ -132,7 +132,7 @@ true, it runs that baseline by itself.`,
 					fmt.Fprintf(out, "  %s is a new port's: dockhand check --include %s/Portfile builds it, and git sparse-checkout add %s lets git add take it\n", directory, directory, directory)
 				}
 			}
-			writePlan(out, proposed, e.PolicyNotes(proposed), e.Remedy)
+			writePlan(out, proposed, e.PlanNotes(ctx, proposed), e.Remedy)
 			writePushes(out, proposed)
 			revision, planned := revisionView(capture.Revision), planView(proposed)
 			streams.emit(checkJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []targetJSON{}})
@@ -798,7 +798,7 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams Streams, bra
 		return err
 	}
 	writeBaselineHeader(streams.Out, branch, baseline)
-	writePlan(streams.Out, baseline.Plan, e.PolicyNotes(baseline.Plan), e.Remedy)
+	writePlan(streams.Out, baseline.Plan, e.PlanNotes(ctx, baseline.Plan), e.Remedy)
 	planned := planView(baseline.Plan)
 	streams.emit(checkJSON{Branch: branch.ShortName(), Plan: &planned, Targets: []targetJSON{}})
 	return nil
@@ -955,6 +955,12 @@ func replaceActive(ctx context.Context, e *engine.Engine, streams Streams, branc
 	}
 	current := runs[0]
 	if !replace {
+		if current.Revision == revision.ID && stoppedRun(ctx, e, current) {
+			// Stopped, not running: wait resumes it, where "already
+			// running" sent a person to follow a run nothing was running
+			// (field testing's rust check, 2026-10-15).
+			return nil, fmt.Errorf("%s stopped before it finished these files, when the process running it ended; dockhand wait %s resumes it, or --replace checks again, keeping what it finished", current.Name(), current.Name())
+		}
 		if current.Revision == revision.ID {
 			return nil, fmt.Errorf("%s is already %s for these files; dockhand wait %s follows it", current.Name(), current.State, current.Name())
 		}

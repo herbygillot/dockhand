@@ -123,6 +123,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	if streams.status == nil {
 		streams.status = &statusLine{w: streams.Err}
 	}
+	settings.streams = streams
 	var asJSON bool
 	var verbosity int
 	root := &cobra.Command{

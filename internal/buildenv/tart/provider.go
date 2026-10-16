@@ -92,6 +92,10 @@ type Provider struct {
 	starting sync.Mutex
 	// xcodes stands in for xcodes in tests.
 	xcodes string
+	// hostMacPorts is this Mac's MacPorts version, read once; macPorts
+	// stands in for it in tests.
+	hostMacPorts sync.Once
+	macPorts     string
 }
 
 func (p *Provider) Name() string { return buildenv.Tart }
@@ -221,6 +225,42 @@ func image(release macos.Release, environment model.Environment) string {
 		return xcodeImage(release)
 	}
 	return baseImage(release)
+}
+
+// MacPortsBehind says where an environment's image has an older MacPorts
+// than this Mac's, which reads the ports it builds
+// (buildenv.MacPortsProvider): the image's version and this Mac's, or
+// empty where it isn't behind, or either can't be told. An image keeps the
+// MacPorts it was made with (the person's "yes", 2026-10-16: #35553 was
+// checked on a Tahoe image's 2.12.6 while this Mac had 2.12.7, unsaid).
+func (p *Provider) MacPortsBehind(ctx context.Context, environment model.Environment) (imageVersion, hostVersion string) {
+	release, err := tartvm.ReleaseForPlatform(environment.Platform)
+	if err != nil {
+		return "", ""
+	}
+	runtime, err := p.Tart.Resolve()
+	if err != nil {
+		return "", ""
+	}
+	manifest, found, err := tartvm.ReadImageRecord(runtime.Home, image(release, environment))
+	if err != nil || !found {
+		return "", ""
+	}
+	return p.behind(ctx, manifest.MacPortsVersion)
+}
+
+// behind is an image's MacPorts version and this Mac's, where the image's
+// is older.
+func (p *Provider) behind(ctx context.Context, version string) (imageVersion, hostVersion string) {
+	p.hostMacPorts.Do(func() {
+		if p.macPorts == "" {
+			p.macPorts = HostMacPorts(ctx, macports.FindTclsh())
+		}
+	})
+	if version == "" || p.macPorts == "" || macports.BaseAtLeast(version, p.macPorts) {
+		return "", ""
+	}
+	return version, p.macPorts
 }
 
 // Identity is an environment's identity by origin
