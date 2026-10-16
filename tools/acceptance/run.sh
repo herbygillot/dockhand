@@ -6,7 +6,7 @@
 #   tools/acceptance/run.sh --stage quick|full --candidate <rc> [--rows "A3 B1" | --rows-file <file>] [--dry-run]
 #
 # --rows-file names the rows in a file, one ID a line, blank lines and
-# lines from # on aside, as a rerun list (rerun-rc7): run in their IDs'
+# lines from # on aside, as a rerun list: run in their IDs'
 # order, as --rows's, and refused whole where one names no row.
 #
 # --dry-run walks the full stage's rows in the quick stage's scratch
