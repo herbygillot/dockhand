@@ -68,9 +68,10 @@ func TestServeDrainsTheQueue(t *testing.T) {
 	require.Contains(t, out, "serve: leading (pid ")
 	require.Contains(t, out, "builds on command (1 check at a time), github (2 checks at a time) · opens no pull requests; it only checks\n")
 	require.Contains(t, out, "check-1 jq-update: running\ncheck-1 jq-update: passed\nserve: the queue is empty\n")
-	out, _, err = dockhand(t, "queue")
+	out, _, err = dockhand(t, "status", "--all")
 	require.NoError(t, err)
-	require.Equal(t, "serve: not running · queue: empty\n", out)
+	require.NotContains(t, out, "Checks queued and running")
+	require.Contains(t, out, "\nserve: not running · queue: empty\n")
 }
 
 func TestACheckIsHandedToServe(t *testing.T) {

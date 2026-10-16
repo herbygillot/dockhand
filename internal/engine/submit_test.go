@@ -446,7 +446,7 @@ func TestAReadyTheOrganizationRefusesGoesThroughTheGitHubCLI(t *testing.T) {
 	require.True(t, byCLI)
 	require.False(t, readied.PullRequest.Draft)
 	require.Equal(t, []int{readied.PullRequest.Number}, cli.readied)
-	events, err := e.Events(t.Context(), 0)
+	events, err := e.Events(t.Context(), 0, "")
 	require.NoError(t, err)
 	require.Equal(t, fmt.Sprintf("marked #%d ready for review with the GitHub CLI", readied.PullRequest.Number), events[len(events)-1].Message)
 }

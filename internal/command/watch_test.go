@@ -24,7 +24,7 @@ func TestWatchPrintsEventsAsLinesWithoutATerminal(t *testing.T) {
 	var watched syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- Run(ctx, []string{"watch"}, Streams{In: strings.NewReader(""), Out: &watched, Err: &watched})
+		done <- Run(ctx, []string{"status", "--watch"}, Streams{In: strings.NewReader(""), Out: &watched, Err: &watched})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(watched.String(), "Watching; events follow") }, settle, 10*time.Millisecond)
 	require.Contains(t, watched.String(), "jq-update", "status comes first")
@@ -34,7 +34,7 @@ func TestWatchPrintsEventsAsLinesWithoutATerminal(t *testing.T) {
 	require.Eventually(t, func() bool { return strings.Contains(watched.String(), "  jq-update  check-1 passed") }, settle, 10*time.Millisecond)
 	require.NotContains(t, watched.String(), "session", "sessions coming and going are not news")
 	stop()
-	require.NoError(t, <-done, "being stopped is how watch ends")
+	require.NoError(t, <-done, "being stopped is how a watch ends")
 }
 
 func TestWatchRedrawsAndRunsWhatIsTyped(t *testing.T) {
@@ -47,9 +47,9 @@ func TestWatchRedrawsAndRunsWhatIsTyped(t *testing.T) {
 	var view syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- Run(t.Context(), []string{"watch"}, Streams{In: typed, Out: &view, Err: &view, interactive: true})
+		done <- Run(t.Context(), []string{"status", "--watch"}, Streams{In: typed, Out: &view, Err: &view, interactive: true})
 	}()
-	draws := func() int { return strings.Count(view.String(), "dockhand watch · ") }
+	draws := func() int { return strings.Count(view.String(), "dockhand status --watch · ") }
 	require.Eventually(t, func() bool { return draws() == 1 }, settle, 10*time.Millisecond)
 	require.True(t, strings.HasPrefix(view.String(), enterView), "the view has a screen of its own")
 	require.Contains(t, view.String(), "c check · l logs · t tidy · s submit, each <branch> · q quits")

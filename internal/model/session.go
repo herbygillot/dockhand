@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"slices"
+	"strings"
+	"time"
+)
 
 // SessionID identifies one dockhand process's session with the database.
 type SessionID string
@@ -120,6 +124,19 @@ const (
 	EventBranchClean         EventKind = "branch.clean"
 )
 
+// ChangesStatus reports whether an event of the kind can change what
+// status shows: a run's state, a branch's, a pull request's, and serve's
+// work, as against a check's progress, a target's result before its run
+// ends, and sessions' comings and goings, which a live status needn't
+// redraw for (SQL-O6). A checkpoint is a branch's.
+func (k EventKind) ChangesStatus() bool {
+	switch k {
+	case EventRunState, EventRunCancel, EventServeSubmit, EventPullRequestObserved, EventReview, EventCleanup:
+		return true
+	}
+	return strings.HasPrefix(string(k), "branch.")
+}
+
 // CheckpointEvent is the event a tidy's or a rebase's checkpoint is
 // recorded by: branch.tidy, branch.rebase.
 func CheckpointEvent(kind CheckpointKind) EventKind { return EventKind("branch." + string(kind)) }
@@ -133,3 +150,13 @@ const (
 	LevelVerbose EventLevel = "verbose"
 	LevelDebug   EventLevel = "debug"
 )
+
+// AtLeast are the levels at least as important as l, info first: info
+// alone for info, and every level for debug. An empty level is every one.
+func (l EventLevel) AtLeast() []EventLevel {
+	levels := []EventLevel{LevelInfo, LevelVerbose, LevelDebug}
+	if i := slices.Index(levels, l); i >= 0 {
+		return levels[:i+1]
+	}
+	return levels
+}

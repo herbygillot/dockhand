@@ -115,7 +115,7 @@ func TestADeadHoldersLeaseIsTakenAtOnceAndItsWritesAreFenced(t *testing.T) {
 
 	var events []model.Event
 	require.NoError(t, f.c.Store.View(t.Context(), f.c.Repository, func(r store.Reader) error {
-		events, err = r.Events(0, 500)
+		events, err = r.Events(0, 500, "")
 		return err
 	}))
 	last := events[len(events)-1]

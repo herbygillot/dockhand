@@ -1075,7 +1075,7 @@ func TestEventsAreAJournal(t *testing.T) {
 		return err
 	}), model.ErrInvalid)
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
-		tail, err := r.Events(sequences[0], 0)
+		tail, err := r.Events(sequences[0], 0, "")
 		require.NoError(t, err)
 		require.Len(t, tail, 2, "an observer reads what came after the last event it saw")
 		require.Equal(t, model.EventKind("guest.clone"), tail[0].Kind)

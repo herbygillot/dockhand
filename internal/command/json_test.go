@@ -85,10 +85,11 @@ func TestJSONEnvelopes(t *testing.T) {
 	queued, err := jsonOf(t, "check", "-d")
 	require.NoError(t, err)
 	require.Equal(t, "queued", dig(t, queued.Result, "run", "state"))
-	listed, err := jsonOf(t, "queue")
+	// status lists the queue, as queue did.
+	listed, err := jsonOf(t, "status", "--all")
 	require.NoError(t, err)
-	require.Equal(t, "check-1", dig(t, listed.Result, "runs", 0, "name"))
-	require.Equal(t, "jq-update", dig(t, listed.Result, "runs", 0, "branch"))
+	require.Equal(t, "check-1", dig(t, listed.Result, "queue", 0, "name"))
+	require.Equal(t, "jq-update", dig(t, listed.Result, "queue", 0, "branch"))
 	require.Equal(t, "serve: not running · queue: 1 run", listed.Result["serve"])
 	// While the branch's first check waits, its latest check is null, and
 	// the check is among its active ones.
@@ -118,6 +119,7 @@ func TestJSONEnvelopes(t *testing.T) {
 	everything, err := jsonOf(t, "status", "--all")
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{"running": false, "queue": float64(0), "stopped": float64(0)}, everything.Result["serve_state"])
+	require.Equal(t, []any{}, everything.Result["queue"], "an empty queue is said")
 
 	attention, err := jsonOf(t, "status", "--attention")
 	require.Error(t, err)
@@ -142,10 +144,10 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.Equal(t, "failed", dig(t, failed.Result, "targets", 0, "results", 0, "outcome"))
 	require.Equal(t, "install", dig(t, failed.Result, "targets", 0, "results", 0, "phase"))
 
-	refused, err := jsonOf(t, "watch")
+	refused, err := jsonOf(t, "status", "--watch")
 	require.Error(t, err)
 	require.Equal(t, 1, refused.ExitCode)
-	require.Equal(t, "--json isn't available for dockhand watch yet; its output is text only", *refused.Error)
+	require.Equal(t, "--watch keeps the whole status current; it takes no branch, --attention, --all, --port, or --json", *refused.Error)
 	require.Nil(t, refused.Result)
 
 	unknown, err := jsonOf(t, "status", "--no-such-flag")

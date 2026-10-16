@@ -137,7 +137,7 @@ func TestCleanupPrunesTheJournal(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, report.Events)
 	require.Equal(t, 2, report.Sessions, "the ended one and the quiet one")
-	events, err := e.Events(t.Context(), 0)
+	events, err := e.Events(t.Context(), 0, "")
 	require.NoError(t, err)
 	var messages []string
 	for _, event := range events {
@@ -236,7 +236,7 @@ func TestCleanupRemovesArchivesNoLiveResultNames(t *testing.T) {
 		require.NoFileExists(t, filepath.Join(directory, name))
 		require.NoDirExists(t, filepath.Join(directory, name))
 	}
-	events, err := e.Events(t.Context(), 0)
+	events, err := e.Events(t.Context(), 0, "")
 	require.NoError(t, err)
 	require.True(t, slices.ContainsFunc(events, func(event model.Event) bool {
 		return event.Message == "removed 1 kept archive, 4 bytes, that neither reuse nor an open branch's newest results name; 1 archive kept, 9 bytes"

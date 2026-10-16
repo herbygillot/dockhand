@@ -54,12 +54,8 @@ func TestAKilledCheckReadsAsStopped(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{"running": false, "queue": float64(1), "stopped": float64(1)}, result.Result["serve_state"])
 
-	out, _, err = dockhand(t, "queue")
-	require.NoError(t, err)
-	require.Contains(t, out, "stopped  the process running it ended; dockhand wait check-1 resumes it, cancel ends it\n")
-	result, err = jsonOf(t, "queue")
-	require.NoError(t, err)
-	require.Equal(t, true, dig(t, result.Result, "runs", 0, "stopped"))
+	require.Contains(t, out, "stopped  the process running it ended; dockhand wait check-1 resumes it, cancel ends it\n", "the queue says it too")
+	require.Equal(t, true, dig(t, result.Result, "queue", 0, "stopped"))
 
 	// logs and a check of the same files say it's stopped, and how to
 	// resume it, where they said it was running (field testing's rust

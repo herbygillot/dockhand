@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -22,7 +23,7 @@ import (
 )
 
 func statusCommand(s *settings, streams Streams) *cobra.Command {
-	var attentionOnly, all, refresh bool
+	var attentionOnly, all, refresh, watch, plain bool
 	var port string
 	cmd := &cobra.Command{
 		Use:   "status [branch]",
@@ -32,18 +33,41 @@ request, each in a column of its own, under a list of what needs you, each
 row ending with the command that moves it forward. Inside a branch's
 worktree, or naming one, it shows that branch in detail.
 
+Below the branches, the checks queued and running, each with its branch,
+what it checks, where, and its state; a check whose process ended is said
+to be stopped, for dockhand wait to resume.
+
 --attention prints only what needs you, for a prompt or a script, and exits
 3 when anything does. --port finds every branch touching a port. --all
-includes merged and archived branches. Your pull requests' state, reviews,
+includes merged and archived branches.
+
+--watch keeps status current as serve works, redrawn whenever what it
+shows changes, as a check ends or a pull request is reviewed; it only
+observes. On a terminal, a line of input runs a command on a branch, with
+that command's own confirmations, then returns to the view:
+  c <branch>  check       l <branch>  logs of its latest check
+  t <branch>  tidy        s <branch>  submit
+Enter redraws, and q quits; inside a branch's worktree the branch may be
+left out. --plain, and any output that isn't a terminal, prints status once
+and then each event as a line, for scrollback, SSH, and screen readers. Your pull requests' state, reviews,
 and CI are read from GitHub first where what's recorded is older than serve
 reads them, every five minutes; --refresh reads them whatever their age.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if plain && !watch {
+				return errors.New("--plain goes with --watch")
+			}
+			if watch && (len(args) > 0 || attentionOnly || all || port != "" || streams.json()) {
+				return errors.New("--watch keeps the whole status current; it takes no branch, --attention, --all, --port, or --json")
+			}
 			e, err := s.open(cmd.Context())
 			if err != nil {
 				return err
 			}
 			defer e.Close()
+			if watch {
+				return statusWatch(cmd.Context(), e, streams, plain)
+			}
 			if refresh {
 				// A read GitHub refused, as with a revoked login, is the
 				// command's error: status is still shown, from what's
@@ -70,6 +94,8 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 	cmd.Flags().BoolVar(&attentionOnly, "attention", false, "print only what needs you; exit 3 when anything does")
 	cmd.Flags().BoolVar(&all, "all", false, "include merged, closed, and archived branches")
 	cmd.Flags().StringVar(&port, "port", "", "only the branches touching this port")
+	cmd.Flags().BoolVar(&watch, "watch", false, "keep status current as serve works, until q or Ctrl-C")
+	cmd.Flags().BoolVar(&plain, "plain", false, "with --watch, print events as lines, not a view that redraws")
 	return cmd
 }
 
@@ -121,8 +147,16 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		rows = append(rows, attentionFor(status)...)
 	}
 	var serve engine.ServeState
+	var queue []engine.QueuedCheck
 	if !attentionOnly {
 		if serve, err = readServe(ctx, e); err != nil {
+			return err
+		}
+		_, session, _, err := observing(ctx, e)
+		if err != nil {
+			return err
+		}
+		if queue, err = e.Queue(ctx, session); err != nil {
 			return err
 		}
 	}
@@ -136,6 +170,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 			}
 			view := serveView(serve)
 			result.Serve, result.ServeState = serveWords(serve), &view
+			result.Queue = queueView(queue)
 		}
 		streams.emit(result)
 	}
@@ -191,6 +226,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 			fmt.Fprintf(out, "Your ports: %s may have newer releases, for your look, as serve found %s (dockhand outdated %s)\n", prose.Plural(len(found.Uncertain), "port"), engine.Ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
 		}
 	}
+	writeQueue(out, queue)
 	fmt.Fprintf(out, "\n%s\n", serveWords(serve))
 	return nil
 }
@@ -206,7 +242,7 @@ func judgeStopped(ctx context.Context, e *engine.Engine, statuses []engine.Branc
 		return err
 	}
 	defer end()
-	return engine.JudgeStopped(ctx, session, statuses)
+	return e.JudgeStopped(ctx, session, statuses)
 }
 
 // judgedStatus is one branch's status, with a stopped check marked.

@@ -6,70 +6,41 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
-
-	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
-// watchPoll is how often watch looks at the journal.
+// watchPoll is how often status --watch looks at the journal.
 var watchPoll = time.Second
 
 // watchRedraw is how often the live view is redrawn with nothing new, so
 // its ages stay true.
 var watchRedraw = 30 * time.Second
 
-func watchCommand(s *settings, streams Streams) *cobra.Command {
-	var plain bool
-	cmd := &cobra.Command{
-		Use:   "watch",
-		Short: "Show status live, as serve works",
-		Long: `Shows status and keeps it current: the view is redrawn whenever something
-is journaled, such as a check's progress, a result, or a pull request's
-review. It only observes; serve does the work, and opening it starts
-nothing.
-
-On a terminal, a line of input runs a command on a branch with that
-command's own confirmations, then returns to the view:
-  c <branch>  check       l <branch>  logs of its latest check
-  t <branch>  tidy        s <branch>  submit
-Enter redraws, and q quits. Inside a branch's worktree the branch may be
-left out.
-
---plain, and any output that is not a terminal, prints status once and then
-each event as a line, for scrollback, SSH sessions, and screen readers.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx := cmd.Context()
-			e, err := s.open(ctx)
-			if err != nil {
-				return err
-			}
-			defer e.Close()
-			// One observer for the whole watch, however often it redraws.
-			ctx, _, end, err := observing(ctx, e)
-			if err != nil {
-				return err
-			}
-			defer end()
-			if plain || !streams.terminal() || !streams.outTerminal() {
-				err = watchPlain(ctx, e, streams)
-			} else {
-				err = watchLive(ctx, e, streams)
-			}
-			// Being stopped is how watch ends.
-			if ctx.Err() != nil && (err == nil || errors.Is(err, ctx.Err())) {
-				return nil
-			}
-			return err
-		},
+// statusWatch is status --watch: status kept current as serve works, a
+// view redrawn on a terminal, else events as lines; it only observes.
+func statusWatch(ctx context.Context, e *engine.Engine, streams Streams, plain bool) error {
+	// One observer for the whole watch, however often it redraws.
+	ctx, _, end, err := observing(ctx, e)
+	if err != nil {
+		return err
 	}
-	cmd.Flags().BoolVar(&plain, "plain", false, "print events as lines, not a view that redraws")
-	return cmd
+	defer end()
+	if plain || !streams.terminal() || !streams.outTerminal() {
+		err = watchPlain(ctx, e, streams)
+	} else {
+		err = watchLive(ctx, e, streams)
+	}
+	// Being stopped is how a watch ends.
+	if ctx.Err() != nil && (err == nil || errors.Is(err, ctx.Err())) {
+		return nil
+	}
+	return err
 }
 
 // journalCursor reads the journal's events past the last one it saw, at
@@ -88,15 +59,11 @@ func (c *journalCursor) start(ctx context.Context) error {
 }
 
 func (c *journalCursor) next(ctx context.Context) ([]model.Event, error) {
-	events, err := c.e.Events(ctx, c.last)
-	var news []model.Event
-	for _, event := range events {
-		c.last = event.Sequence
-		if event.Level == model.LevelInfo {
-			news = append(news, event)
-		}
+	events, err := c.e.Events(ctx, c.last, model.LevelInfo)
+	if len(events) > 0 {
+		c.last = events[len(events)-1].Sequence
 	}
-	return news, err
+	return events, err
 }
 
 // watchPlain prints status once, then each event as it is journaled.
@@ -165,8 +132,9 @@ const (
 	clearView = "\x1b[H\x1b[2J"
 )
 
-// watchLive redraws status on a terminal as the journal changes, and runs
-// the commands typed at it.
+// watchLive redraws status on a terminal as what it shows changes, and
+// runs the commands typed at it. A check's progress isn't redrawn for: it
+// redrew every branch's status each second of every check (SQL-O6).
 func watchLive(ctx context.Context, e *engine.Engine, streams Streams) error {
 	fmt.Fprint(streams.Out, enterView)
 	defer fmt.Fprint(streams.Out, leaveView)
@@ -199,7 +167,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams) error {
 			fmt.Fprintf(&view, "status: %v\n", err)
 		}
 		drawn = time.Now()
-		fmt.Fprintf(streams.Out, "%sdockhand watch · %s · c check · l logs · t tidy · s submit, each <branch> · q quits\n\n%s\n> ",
+		fmt.Fprintf(streams.Out, "%sdockhand status --watch · %s · c check · l logs · t tidy · s submit, each <branch> · q quits\n\n%s\n> ",
 			clearView, drawn.Format("15:04:05"), strings.TrimRight(view.String(), "\n"))
 	}
 	draw()
@@ -248,7 +216,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams) error {
 			if err != nil {
 				return err
 			}
-			if len(events) > 0 || time.Since(drawn) >= watchRedraw {
+			if slices.ContainsFunc(events, func(event model.Event) bool { return event.Kind.ChangesStatus() }) || time.Since(drawn) >= watchRedraw {
 				draw()
 			}
 		}

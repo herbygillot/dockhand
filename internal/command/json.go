@@ -619,6 +619,9 @@ type statusJSON struct {
 	// Serve is serve's state as a line, and ServeState as fields.
 	Serve      string     `json:"serve,omitempty"`
 	ServeState *serveJSON `json:"serve_state,omitempty"`
+	// Queue is the checks queued and running, oldest first, beside the
+	// branches: what queue listed.
+	Queue *[]queuedRunJSON `json:"queue,omitempty"`
 }
 
 // serveJSON is serve's state as fields, beside its line.
@@ -642,12 +645,6 @@ func nonNil[T any](values []T) []T {
 		return []T{}
 	}
 	return values
-}
-
-type queueJSON struct {
-	Serve      string          `json:"serve"`
-	ServeState serveJSON       `json:"serve_state"`
-	Runs       []queuedRunJSON `json:"runs"`
 }
 
 type queuedRunJSON struct {

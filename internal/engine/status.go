@@ -107,15 +107,27 @@ func Stopped(ctx context.Context, session *coord.Session, run model.Run) (bool, 
 	return err == nil && holder == nil, err
 }
 
-// JudgeStopped marks the statuses whose active run has stopped.
-func JudgeStopped(ctx context.Context, session *coord.Session, statuses []BranchStatus) error {
+// JudgeStopped marks the statuses whose active run has stopped, their
+// holders read in one transaction (SQL-O4).
+func (e *Engine) JudgeStopped(ctx context.Context, session *coord.Session, statuses []BranchStatus) error {
+	var active []model.Run
+	for _, status := range statuses {
+		active = append(active, status.Active...)
+	}
+	if len(active) == 0 {
+		return nil
+	}
+	var holders map[string]*model.Session
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		holders, err = session.Holders(r, runResources(active)...)
+		return err
+	}); err != nil {
+		return err
+	}
 	for i := range statuses {
 		for _, run := range statuses[i].Active {
-			stopped, err := Stopped(ctx, session, run)
-			if err != nil {
-				return err
-			}
-			if stopped {
+			if run.State == model.RunRunning && holders[RunResource(run.ID)] == nil {
 				statuses[i].Stopped = &run
 			}
 		}

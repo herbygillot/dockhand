@@ -19,98 +19,48 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
-	"github.com/herbygillot/dockhand/internal/store"
 )
 
-func queueCommand(s *settings, streams Streams) *cobra.Command {
-	return &cobra.Command{
-		Use:   "queue",
-		Short: "List the checks queued and running",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx := cmd.Context()
-			e, err := s.open(ctx)
-			if err != nil {
-				return err
-			}
-			defer e.Close()
-			runs, err := e.Runs(ctx, store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
-			if err != nil {
-				return err
-			}
-			ctx, session, end, err := observing(ctx, e)
-			if err != nil {
-				return err
-			}
-			defer end()
-			serve, err := readServe(ctx, e)
-			if err != nil {
-				return err
-			}
-			if streams.json() {
-				result := queueJSON{Serve: serveWords(serve), ServeState: serveView(serve), Runs: []queuedRunJSON{}}
-				for i := len(runs) - 1; i >= 0; i-- {
-					queued, err := checkResult(ctx, e, runs[i])
-					if err != nil {
-						return err
-					}
-					row := queuedRunJSON{runJSON: *queued.Run, Branch: queued.Branch, Revision: queued.Revision.Description, Environments: queued.Plan.Environments}
-					if row.Stopped, err = engine.Stopped(ctx, session, runs[i]); err != nil {
-						return err
-					}
-					result.Runs = append(result.Runs, row)
-				}
-				streams.emit(result)
-			}
-			fmt.Fprintln(streams.Out, serveWords(serve))
-			if len(runs) == 0 {
-				return nil
-			}
-			fmt.Fprintln(streams.Out)
-			table := tabwriter.NewWriter(streams.Out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(table, "RUN\tBRANCH\tSOURCE\tON\tSTATE\tDETAIL")
-			for i := len(runs) - 1; i >= 0; i-- {
-				run := runs[i]
-				row, err := queueRow(ctx, e, session, run)
-				if err != nil {
-					return err
-				}
-				fmt.Fprintln(table, row)
-			}
-			return table.Flush()
-		},
+// writeQueue is status's list of the checks queued and running, oldest
+// first, where queue listed them: each with its branch, what it checks,
+// where, and its state, a run whose process ended said to be stopped.
+func writeQueue(out io.Writer, queue []engine.QueuedCheck) {
+	if len(queue) == 0 {
+		return
 	}
+	fmt.Fprintln(out, "\nChecks queued and running")
+	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(table, "  RUN\tBRANCH\tSOURCE\tON\tSTATE\tDETAIL")
+	for _, queued := range queue {
+		run := queued.Run
+		var on []string
+		for _, environment := range queued.Plan.Environments {
+			on = append(on, engine.DescribeEnvironment(environment))
+		}
+		state, detail := string(run.State), run.Detail
+		if run.Origin == model.OriginServe && detail == "" {
+			detail = "started by serve"
+		}
+		if queued.Stopped {
+			state, detail = "stopped", "the process running it ended; dockhand wait "+run.Name()+" resumes it, cancel ends it"
+		}
+		fmt.Fprintf(table, "  %s\t%s\t%s\t%s\t%s\t%s\n", run.Name(), queued.Branch.ShortName(), engine.Describe(queued.Revision), strings.Join(on, ", "), state, detail)
+	}
+	_ = table.Flush()
 }
 
-func queueRow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run) (string, error) {
-	branch, err := e.Branch(ctx, run.Branch)
-	if err != nil {
-		return "", err
+// queueView is the queue for status's JSON.
+func queueView(queue []engine.QueuedCheck) *[]queuedRunJSON {
+	rows := []queuedRunJSON{}
+	for _, queued := range queue {
+		row := queuedRunJSON{runJSON: runView(queued.Run), Branch: queued.Branch.ShortName(), Revision: engine.Describe(queued.Revision), Environments: []environmentJSON{}}
+		row.Stopped = queued.Stopped
+		for _, environment := range queued.Plan.Environments {
+			row.Environments = append(row.Environments, environmentView(environment))
+		}
+		rows = append(rows, row)
 	}
-	revision, err := e.Revision(ctx, run.Revision)
-	if err != nil {
-		return "", err
-	}
-	plan, err := e.Plan(ctx, run.Plan)
-	if err != nil {
-		return "", err
-	}
-	var on []string
-	for _, environment := range plan.Environments {
-		on = append(on, engine.DescribeEnvironment(environment))
-	}
-	state, detail := string(run.State), run.Detail
-	if run.Origin == model.OriginServe && detail == "" {
-		detail = "started by serve"
-	}
-	stopped, err := engine.Stopped(ctx, session, run)
-	if err != nil {
-		return "", err
-	}
-	if stopped {
-		state, detail = "stopped", "the process running it ended; dockhand wait "+run.Name()+" resumes it, cancel ends it"
-	}
-	return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", run.Name(), branch.ShortName(), engine.Describe(revision), strings.Join(on, ", "), state, detail), nil
+	return &rows
 }
 
 func waitCommand(s *settings, streams Streams) *cobra.Command {

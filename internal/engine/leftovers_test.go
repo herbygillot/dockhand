@@ -120,7 +120,7 @@ func TestLeftoversGoOnlyWhenNoProcessDrivesTheirCheck(t *testing.T) {
 
 	var events []model.Event
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
-		events, err = r.Events(0, 1000)
+		events, err = r.Events(0, 1000, "")
 		return err
 	}))
 	require.True(t, slices.ContainsFunc(events, func(event model.Event) bool {

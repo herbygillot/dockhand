@@ -355,25 +355,40 @@ func (s *Session) TakeIfUnattended(ctx context.Context, resource string) (lease 
 func (s *Session) Holder(ctx context.Context, resource string) (*model.Session, error) {
 	var holder *model.Session
 	err := s.c.Store.View(ctx, s.c.Repository, func(r store.Reader) error {
+		holders, err := s.Holders(r, resource)
+		holder = holders[resource]
+		return err
+	})
+	return holder, err
+}
+
+// Holders are the live sessions holding resources, read in the caller's
+// transaction, so a list of runs and their holders is one consistent read
+// rather than a View each (SQL-O4); a resource no live session holds has
+// no entry. The liveness judgment is Judge's, as Holder's.
+func (s *Session) Holders(r store.Reader, resources ...string) (map[string]*model.Session, error) {
+	holders := map[string]*model.Session{}
+	for _, resource := range resources {
 		lease, err := r.Lease(resource)
 		if errors.Is(err, store.ErrNotFound) || err == nil && lease.Holder == "" {
-			return nil
+			continue
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 		other, err := r.Session(lease.Holder)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		verdict, err := s.Judge(other)
-		if err != nil || verdict.Dead {
-			return err
+		if err != nil {
+			return nil, err
 		}
-		holder = &other
-		return nil
-	})
-	return holder, err
+		if !verdict.Dead {
+			holders[resource] = &other
+		}
+	}
+	return holders, nil
 }
 
 // Emit appends an event from this session within a transaction, stamping

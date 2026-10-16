@@ -216,7 +216,6 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		openCommand(&settings, streams),
 		impactCommand(&settings, streams),
 		outdatedCommand(&settings, streams),
-		watchCommand(&settings, streams),
 	} {
 		command.GroupID = "understand"
 		root.AddCommand(command)
@@ -242,7 +241,6 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	}
 	root.AddGroup(&cobra.Group{ID: "queue", Title: "Keep work moving:"})
 	for _, command := range []*cobra.Command{
-		queueCommand(&settings, streams),
 		waitCommand(&settings, streams),
 		cancelCommand(&settings, streams),
 		serveCommand(&settings, streams),
@@ -309,9 +307,21 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 // unknownCommand refuses a word that names no command, as cobra.NoArgs
 // does, with cobra's own suggestions, which NoArgs leaves out: v0.3.0's
 // init, auth, providers, and restore point at what replaced them.
+// foldedCommands are the commands folded into another, and what does
+// their work now.
+var foldedCommands = map[string]string{
+	"queue": "dockhand status lists the checks queued and running",
+	"watch": "dockhand status --watch keeps it current",
+}
+
 func unknownCommand(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return nil
+	}
+	// A command folded into another says where it went (the second
+	// look's §6).
+	if moved, ok := foldedCommands[args[0]]; ok && !cmd.HasParent() {
+		return fmt.Errorf("%s is part of status now: %s", args[0], moved)
 	}
 	message := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
 	if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {

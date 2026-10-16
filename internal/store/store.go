@@ -167,7 +167,9 @@ type Reader interface {
 	Session(id model.SessionID) (model.Session, error)
 	Lease(resource string) (model.Lease, error)
 	// Events lists events after a sequence number, oldest first.
-	Events(after int64, limit int) ([]model.Event, error)
+	// Events are the events after a sequence, at least as important as
+	// level, every level where it is empty (SQL-O5).
+	Events(after int64, limit int, level model.EventLevel) ([]model.Event, error)
 	// RunEvents are one run's events after a sequence, oldest first, at
 	// most limit; LastEvent is the journal's newest sequence, 0 when it has
 	// none.

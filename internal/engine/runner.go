@@ -1146,13 +1146,14 @@ func (e *Engine) Plan(ctx context.Context, id model.PlanID) (model.Plan, error) 
 	return plan, err
 }
 
-// Events reads the journal past a sequence number, oldest first: what
+// Events reads the journal past a sequence number, at least as important
+// as level (every level where it is empty), oldest first: what
 // observers tail (Design v3 §11).
-func (e *Engine) Events(ctx context.Context, after int64) ([]model.Event, error) {
+func (e *Engine) Events(ctx context.Context, after int64, level model.EventLevel) ([]model.Event, error) {
 	var events []model.Event
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		for {
-			batch, err := r.Events(after, 500)
+			batch, err := r.Events(after, 500, level)
 			if err != nil || len(batch) == 0 {
 				return err
 			}
@@ -1198,8 +1199,17 @@ func (e *Engine) LatestEvent(ctx context.Context) (int64, error) {
 // asked for, then serve's own, oldest first. Runs a live session holds,
 // this one included, are left out.
 func (e *Engine) Candidates(ctx context.Context, session *coord.Session) ([]model.Run, error) {
-	runs, err := e.Runs(ctx, store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
-	if err != nil {
+	var runs []model.Run
+	var holders map[string]*model.Session
+	// The runs and their holders in one read (SQL-O4), every 2 s in serve.
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		if runs, err = r.Runs(store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}}); err != nil {
+			return err
+		}
+		holders, err = session.Holders(r, runResources(runs)...)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	rank := func(run model.Run) int {
@@ -1219,15 +1229,64 @@ func (e *Engine) Candidates(ctx context.Context, session *coord.Session) ([]mode
 	})
 	var candidates []model.Run
 	for _, run := range runs {
-		holder, err := session.Holder(ctx, RunResource(run.ID))
-		if err != nil {
-			return nil, err
-		}
-		if holder == nil {
+		if holders[RunResource(run.ID)] == nil {
 			candidates = append(candidates, run)
 		}
 	}
 	return candidates, nil
+}
+
+// runResources are the runs' lease resources.
+func runResources(runs []model.Run) []string {
+	var resources []string
+	for _, run := range runs {
+		resources = append(resources, RunResource(run.ID))
+	}
+	return resources
+}
+
+// QueuedCheck is a check queued or running, with its branch, what it
+// checks, and its plan, and whether it stopped: running, and held by no
+// live process (Stopped).
+type QueuedCheck struct {
+	Run      model.Run
+	Branch   model.Branch
+	Revision model.Revision
+	Plan     model.Plan
+	Stopped  bool
+}
+
+// Queue is every check queued or running, oldest first, each with what
+// queue and status say of it, read in one transaction with their holders,
+// where each took four Views and a Holder's (SQL-O3, O4).
+func (e *Engine) Queue(ctx context.Context, session *coord.Session) ([]QueuedCheck, error) {
+	var queue []QueuedCheck
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		runs, err := r.Runs(store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
+		if err != nil {
+			return err
+		}
+		slices.Reverse(runs)
+		holders, err := session.Holders(r, runResources(runs)...)
+		if err != nil {
+			return err
+		}
+		for _, run := range runs {
+			checked := QueuedCheck{Run: run, Stopped: run.State == model.RunRunning && holders[RunResource(run.ID)] == nil}
+			if checked.Branch, err = r.Branch(run.Branch); err != nil {
+				return err
+			}
+			if checked.Revision, err = r.Revision(run.Revision); err != nil {
+				return err
+			}
+			if checked.Plan, err = r.Plan(run.Plan); err != nil {
+				return err
+			}
+			queue = append(queue, checked)
+		}
+		return nil
+	})
+	return queue, err
 }
 
 // RunProviders are the providers a run's plan builds on, each once.

@@ -173,7 +173,7 @@ func TestARebaseCountsWhatItReplays(t *testing.T) {
 
 	rebases := func() int {
 		t.Helper()
-		events, err := e.Events(t.Context(), 0)
+		events, err := e.Events(t.Context(), 0, "")
 		require.NoError(t, err)
 		return len(slices.DeleteFunc(events, func(event model.Event) bool { return event.Kind != "branch.rebase" }))
 	}

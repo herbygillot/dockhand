@@ -259,7 +259,7 @@ func TestUpdateEditsWorkingFilesAndCommitsNothing(t *testing.T) {
 	require.Equal(t, "M textproc/jq/Portfile", testsupport.Git(t, branch.Worktree, "status", "--porcelain"))
 
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
-		events, err := r.Events(0, 100)
+		events, err := r.Events(0, 100, "")
 		require.NoError(t, err)
 		last := events[len(events)-1]
 		require.Equal(t, model.EventBranchEdit, last.Kind)

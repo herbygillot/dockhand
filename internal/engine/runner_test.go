@@ -1402,7 +1402,7 @@ func TestAnEnvironmentThatCantReuseSaysSo(t *testing.T) {
 	github := model.Environment{Provider: "github", Platform: tahoeArm.Platform}
 	said := func(t *testing.T, e *Engine) []string {
 		t.Helper()
-		events, err := e.Events(t.Context(), 0)
+		events, err := e.Events(t.Context(), 0, "")
 		require.NoError(t, err)
 		var messages []string
 		for _, event := range events {

@@ -168,11 +168,16 @@ func (t *tx) CountEvents(kind model.EventKind, since time.Time) (int, error) {
 	return count, storageError(err)
 }
 
-func (t *tx) Events(after int64, limit int) ([]model.Event, error) {
+func (t *tx) Events(after int64, limit int, level model.EventLevel) ([]model.Event, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
-	return t.events("SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND sequence>? ORDER BY sequence LIMIT ?", t.repo, after, limit)
+	levels := level.AtLeast()
+	args := []any{t.repo, after}
+	for _, l := range levels {
+		args = append(args, l)
+	}
+	return t.events("SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND sequence>? AND level IN ("+placeholders(len(levels))+") ORDER BY sequence LIMIT ?", append(args, limit)...)
 }
 
 func (t *tx) RunEvents(run model.RunID, after int64, limit int) ([]model.Event, error) {

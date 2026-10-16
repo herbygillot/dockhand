@@ -172,7 +172,7 @@ func TestStartMakesASparseWorktreeFromFreshMaster(t *testing.T) {
 	require.Empty(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/occupied"), "a refusal creates no branch")
 
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
-		events, err := r.Events(0, 0)
+		events, err := r.Events(0, 0, "")
 		require.NoError(t, err)
 		require.Equal(t, model.EventBranchStart, events[len(events)-1].Kind)
 		return nil
