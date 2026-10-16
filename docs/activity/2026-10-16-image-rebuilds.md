@@ -42,3 +42,4 @@ space was ample. That leaves the copy.
   was cut short or changed". Where they match and xip still fails, the
   failure says the copy matched, with its size and sha256.
 - The setup protocol stays 3: an image made now holds what it did; the provisioning pin moves (protocol_test's setupPin).
+- An Xcode rebuild's note on its base image says the rebuild that makes it is the one without --xcode, where it read as the command just run (field testing, after monterey's rerun passed on b717dbad).

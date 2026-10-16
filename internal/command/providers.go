@@ -118,7 +118,7 @@ new one has passed.`,
 				if status, err := images.Status(cmd.Context()); err == nil {
 					for _, behind := range status.Behind {
 						if !behind.Xcode && behind.Release.Slug == result.Release.Slug {
-							fmt.Fprintf(streams.Out, "Its base image keeps MacPorts %s, older than this Mac's %s: dockhand setup tart %s --rebuild makes it again.\n", behind.MacPorts, behind.Host, behind.Release.Slug)
+							fmt.Fprintf(streams.Out, "Its base image keeps MacPorts %s, older than this Mac's %s: dockhand setup tart %s --rebuild, without --xcode, makes the base image again.\n", behind.MacPorts, behind.Host, behind.Release.Slug)
 						}
 					}
 				}
