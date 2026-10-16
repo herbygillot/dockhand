@@ -98,7 +98,12 @@ type BranchFilter struct {
 type RunFilter struct {
 	Branch model.BranchID
 	States []model.RunState
-	Limit  int
+	// Tree selects the runs of revisions with this tree (SQL-O1).
+	Tree model.ObjectID
+	// NoBaselines leaves baselines out. They're in by default, since serve
+	// runs them from the queue like any check.
+	NoBaselines bool
+	Limit       int
 }
 
 // AssessmentFilter selects assessments, newest first; empty fields select

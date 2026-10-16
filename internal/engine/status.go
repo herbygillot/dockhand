@@ -421,6 +421,19 @@ func (e *Engine) Runs(ctx context.Context, filter store.RunFilter) ([]model.Run,
 	return runs, err
 }
 
+// LatestCheck is a branch's newest check, in any state, a baseline aside:
+// the one logs, retry, wait, and watch's l land on, a branch having one
+// check at a time (SQL-O1). A baseline is named by its own name. Status's
+// verdict reads the newest finished one instead, until layer 1's
+// branchstate takes it. ok is false where the branch has none.
+func (e *Engine) LatestCheck(ctx context.Context, branch model.BranchID) (run model.Run, ok bool, err error) {
+	runs, err := e.Runs(ctx, store.RunFilter{Branch: branch, NoBaselines: true, Limit: 1})
+	if err != nil || len(runs) == 0 {
+		return model.Run{}, false, err
+	}
+	return runs[0], true, nil
+}
+
 // RunNamed finds a run by the name people type, check-42, or its number.
 func (e *Engine) RunNamed(ctx context.Context, name string) (model.Run, error) {
 	var number int

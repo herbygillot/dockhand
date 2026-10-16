@@ -1505,3 +1505,44 @@ func TestACheckIsReadWhole(t *testing.T) {
 		return nil
 	}))
 }
+
+// Runs selects a tree's runs, and leaves baselines out where asked, in
+// SQL: "runs of a tree" read every revision and run of the branch to join
+// them in Go (SQL-O1).
+func TestRunsOfATreeAndWithoutBaselines(t *testing.T) {
+	f := open(t)
+	b, r, p := f.seed(t)
+	other := model.Revision{ID: "rev_2", Branch: b.ID, Kind: model.RevisionSnapshot, Snapshot: 2, Source: model.Source{Tree: "tree2", Base: "base"}, Head: "head", CreatedAt: at}
+	otherPlan := p
+	otherPlan.ID, otherPlan.Revision = "plan_2", other.ID
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddRevision(other); err != nil {
+			return err
+		}
+		return tx.AddPlan(otherPlan)
+	}))
+	first := f.run(t, b, r, p)
+	second := f.run(t, b, other, otherPlan)
+	baseline := model.Run{ID: "run_3", Branch: b.ID, Revision: r.ID, Plan: p.ID, Number: 3, Origin: model.OriginPerson, State: model.RunQueued, CreatedAt: at, BaselineOf: first.ID}
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.AddRun(baseline) }))
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+		ofTree, err := rd.Runs(store.RunFilter{Branch: b.ID, Tree: "tree"})
+		require.NoError(t, err)
+		require.Equal(t, []model.RunID{baseline.ID, first.ID}, runIDs(ofTree))
+		checks, err := rd.Runs(store.RunFilter{Branch: b.ID, Tree: "tree", NoBaselines: true})
+		require.NoError(t, err)
+		require.Equal(t, []model.RunID{first.ID}, runIDs(checks))
+		latest, err := rd.Runs(store.RunFilter{Branch: b.ID, NoBaselines: true, Limit: 1})
+		require.NoError(t, err)
+		require.Equal(t, []model.RunID{second.ID}, runIDs(latest))
+		return nil
+	}))
+}
+
+func runIDs(runs []model.Run) []model.RunID {
+	var ids []model.RunID
+	for _, run := range runs {
+		ids = append(ids, run.ID)
+	}
+	return ids
+}

@@ -285,24 +285,34 @@ func watchVerb(ctx context.Context, e *engine.Engine, line string) (args []strin
 	case "s":
 		return with("submit"), false, nil
 	case "l":
-		filter := store.RunFilter{}
+		// The branch named, else the one checked out here; with neither,
+		// the newest check of any branch.
+		var latest model.Run
+		var ok bool
+		var err error
 		if branch != "" {
-			found, err := e.Resolve(ctx, branch)
-			if err != nil {
-				return nil, false, err
+			found, resolveErr := e.Resolve(ctx, branch)
+			if resolveErr != nil {
+				return nil, false, resolveErr
 			}
-			filter.Branch = found.ID
-		} else if current, err := e.Current(ctx); err == nil {
-			filter.Branch = current.ID
+			latest, ok, err = e.LatestCheck(ctx, found.ID)
+		} else if current, currentErr := e.Current(ctx); currentErr == nil {
+			latest, ok, err = e.LatestCheck(ctx, current.ID)
+		} else {
+			var runs []model.Run
+			runs, err = e.Runs(ctx, store.RunFilter{NoBaselines: true, Limit: 1})
+			ok = len(runs) > 0
+			if ok {
+				latest = runs[0]
+			}
 		}
-		runs, err := e.Runs(ctx, filter)
 		if err != nil {
 			return nil, false, err
 		}
-		if len(runs) == 0 {
+		if !ok {
 			return nil, false, errors.New("no checks to show the logs of")
 		}
-		return []string{"logs", runs[0].Name()}, false, nil
+		return []string{"logs", latest.Name()}, false, nil
 	}
 	return nil, false, fmt.Errorf("%q: c, l, t, or s and a branch; Enter redraws; q quits", fields[0])
 }

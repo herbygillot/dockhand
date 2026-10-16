@@ -246,24 +246,7 @@ func treeRuns(r store.Reader, branch model.BranchID, tree model.ObjectID) ([]mod
 // runsOfTree are a branch's checks of a tree in the given states, newest
 // first, baselines aside.
 func runsOfTree(r store.Reader, branch model.BranchID, tree model.ObjectID, states ...model.RunState) ([]model.Run, error) {
-	revisions, err := r.Revisions(branch)
-	if err != nil {
-		return nil, err
-	}
-	matching := map[model.RevisionID]bool{}
-	for _, revision := range revisions {
-		if revision.Source.Tree == tree {
-			matching[revision.ID] = true
-		}
-	}
-	if len(matching) == 0 {
-		return nil, nil
-	}
-	runs, err := r.Runs(store.RunFilter{Branch: branch, States: states})
-	if err != nil {
-		return nil, err
-	}
-	return slices.DeleteFunc(runs, func(run model.Run) bool { return !matching[run.Revision] || run.BaselineOf != "" }), nil
+	return r.Runs(store.RunFilter{Branch: branch, Tree: tree, States: states, NoBaselines: true})
 }
 
 // requiredEnvironments are the environments build.default's profile builds

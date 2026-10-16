@@ -298,6 +298,20 @@ func runsQuery(repository model.RepositoryID, filter store.RunFilter) (string, [
 		query += " AND branch_id=?"
 		args = append(args, filter.Branch)
 	}
+	if filter.Tree != "" {
+		query += " AND revision_id IN (SELECT id FROM revisions WHERE repository_id=? AND tree_id=?)"
+		args = append(args, repository, filter.Tree)
+	}
+	if filter.NoBaselines {
+		query += " AND baseline_of=''"
+	}
+	if filter.Tree != "" {
+		query += " AND revision_id IN (SELECT id FROM revisions WHERE repository_id=? AND tree_id=?)"
+		args = append(args, repository, filter.Tree)
+	}
+	if filter.NoBaselines {
+		query += " AND baseline_of=''"
+	}
 	if len(filter.States) > 0 {
 		query += " AND state IN (" + placeholders(len(filter.States)) + ")"
 		for _, s := range filter.States {

@@ -189,15 +189,11 @@ func rebuildWhere(evidence Evidence, id model.TargetID) planning.Limited {
 // latestCheck is a branch's newest finished check, not a baseline: the
 // one a baseline looks into.
 func latestCheck(r store.Reader, branch model.BranchID) (model.Run, bool, error) {
-	runs, err := r.Runs(store.RunFilter{Branch: branch, States: []model.RunState{model.RunPassed, model.RunFailed, model.RunAttention}})
-	if err != nil {
+	runs, err := r.Runs(store.RunFilter{Branch: branch, States: []model.RunState{model.RunPassed, model.RunFailed, model.RunAttention}, NoBaselines: true, Limit: 1})
+	if err != nil || len(runs) == 0 {
 		return model.Run{}, false, err
 	}
-	i := slices.IndexFunc(runs, func(run model.Run) bool { return run.BaselineOf == "" })
-	if i < 0 {
-		return model.Run{}, false, nil
-	}
-	return runs[i], true, nil
+	return runs[0], true, nil
 }
 
 // atBase sorts ports a check built into those whose Portfile master has

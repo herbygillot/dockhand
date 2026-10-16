@@ -432,14 +432,14 @@ func latestCheckHere(ctx context.Context, e *engine.Engine, unnamed string) (mod
 	if err != nil {
 		return model.Run{}, err
 	}
-	runs, err := e.Runs(ctx, store.RunFilter{Branch: branch.ID, Limit: 1})
+	run, ok, err := e.LatestCheck(ctx, branch.ID)
 	if err != nil {
 		return model.Run{}, err
 	}
-	if len(runs) == 0 {
+	if !ok {
 		return model.Run{}, fmt.Errorf("%s has no check yet: dockhand check", branch.ShortName())
 	}
-	return runs[0], nil
+	return run, nil
 }
 
 // namedOrLatest is the check args name, or with none, the latest check of
