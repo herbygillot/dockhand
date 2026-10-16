@@ -684,7 +684,6 @@ func (c *cleaner) maybe(ctx context.Context) {
 // status.
 type OutdatedLook struct {
 	CheckedAt time.Time `json:"checked_at"`
-	Master    string    `json:"master"`
 	Outdated  []string  `json:"outdated"`
 	// Uncertain are the ports that may have a newer release, which serve
 	// neither calls current nor prepares: a person looks. SetAside are the
@@ -831,7 +830,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		}
 	}
 	last, _ := e.LastOutdatedLook()
-	look := OutdatedLook{CheckedAt: now, Master: string(found.Master), Outdated: names, Uncertain: uncertain, SetAside: setAside}
+	look := OutdatedLook{CheckedAt: now, Outdated: names, Uncertain: uncertain, SetAside: setAside}
 	// A retry's look adds to the day's, which it went over only part of.
 	if retrying {
 		for _, name := range last.Outdated {
