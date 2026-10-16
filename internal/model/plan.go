@@ -345,6 +345,85 @@ func (p Plan) GitIn(environment Environment, id TargetID) (GitSource, bool) {
 	return source, ok
 }
 
+// Untested are the plan's targets that declare no tests in some
+// environment, and Tested those that do somewhere, each named once: what
+// a plan requiring tests asks nothing of, and what it does.
+func (p Plan) Untested() (tested, untested []string) {
+	for _, build := range p.Builds {
+		for _, id := range build.Untested {
+			if target, ok := p.Target(id); ok && !slices.Contains(untested, string(target.ID)) {
+				untested = append(untested, string(target.ID))
+			}
+		}
+	}
+	for _, build := range p.Builds {
+		for _, id := range build.Order {
+			if !slices.Contains(build.Untested, id) && !slices.Contains(tested, string(id)) {
+				tested = append(tested, string(id))
+			}
+		}
+	}
+	return tested, untested
+}
+
+// SameOrder reports whether every environment builds its targets in the
+// plan's own order, so one order says them all.
+func (p Plan) SameOrder() bool {
+	var order []TargetID
+	for _, target := range p.Targets {
+		order = append(order, target.ID)
+	}
+	for _, planned := range p.Builds {
+		own := slices.DeleteFunc(slices.Clone(order), func(id TargetID) bool { return !planned.Builds(id) })
+		if !slices.Equal(own, planned.Order) {
+			return false
+		}
+	}
+	return true
+}
+
+// GroupedExclusion is a port a plan doesn't build, for one reason, and the
+// environments that leave it out for it.
+type GroupedExclusion struct {
+	Target       TargetID
+	Reason       string
+	Environments []Environment
+}
+
+// GroupedExclusions are the plan's exclusions grouped by port and reason,
+// in the order the environments first say them; one every environment
+// says has them all (Everywhere).
+func (p Plan) GroupedExclusions() []GroupedExclusion {
+	var all []GroupedExclusion
+	for _, planned := range p.Builds {
+		for _, exclusion := range planned.Exclusions {
+			i := slices.IndexFunc(all, func(x GroupedExclusion) bool {
+				return x.Target == exclusion.Target.ID() && x.Reason == exclusion.Reason
+			})
+			if i < 0 {
+				all = append(all, GroupedExclusion{Target: exclusion.Target.ID(), Reason: exclusion.Reason})
+				i = len(all) - 1
+			}
+			all[i].Environments = append(all[i].Environments, planned.Environment)
+		}
+	}
+	return all
+}
+
+// Everywhere reports whether every environment of plan leaves the port
+// out for this reason.
+func (x GroupedExclusion) Everywhere(plan Plan) bool { return len(x.Environments) == len(plan.Builds) }
+
+// BuildCount is how many builds the plan makes: each target once in each
+// environment that builds it.
+func (p Plan) BuildCount() int {
+	count := 0
+	for _, planned := range p.Builds {
+		count += len(planned.Order)
+	}
+	return count
+}
+
 // Target finds a plan target by ID.
 func (p Plan) Target(id TargetID) (PlanTarget, bool) {
 	for _, target := range p.Targets {

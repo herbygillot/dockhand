@@ -761,7 +761,7 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	who := "@" + strings.Join(observed.Observed.ChangesRequestedBy, ", @")
 	if rerequest != "always" {
 		again, how, err := streams.decide(false, decision{question: fmt.Sprintf("? ask %s to review again? [Y/n] ", who), yes: true, nobody: answer(false)})
-		if how == AnsweredNobody {
+		if how == model.AnsweredNobody {
 			fmt.Fprintf(streams.Out, "%s requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n", who)
 		}
 		if err != nil || !again {

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // A decision is taken by --yes, asked on a terminal, and otherwise refused
@@ -18,27 +20,27 @@ func TestADecisionSaysHowItWasAnswered(t *testing.T) {
 	ok, how, err := script.decide(true, d)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, AnsweredYes, how)
+	require.Equal(t, model.AnsweredYes, how)
 
 	ok, how, err = script.decide(false, d)
 	require.EqualError(t, err, "nothing was removed: without a terminal, --yes removes these")
 	require.Equal(t, ExitFailure, ExitCode(err))
 	require.False(t, ok)
-	require.Equal(t, AnsweredNobody, how)
+	require.Equal(t, model.AnsweredNobody, how)
 
 	safe := d
 	safe.nobody = answer(true)
 	ok, how, err = script.decide(false, safe)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, AnsweredNobody, how)
+	require.Equal(t, model.AnsweredNobody, how)
 
 	var asked bytes.Buffer
 	terminal := Streams{In: strings.NewReader("y\n"), Out: &bytes.Buffer{}, Err: &asked, interactive: true}
 	ok, how, err = terminal.decide(false, d)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, AnsweredAsked, how)
+	require.Equal(t, model.AnsweredAsked, how)
 	require.Equal(t, "? Remove 2 items? [y/N] ", asked.String())
 
 	defaulted := Streams{In: strings.NewReader("\n"), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, interactive: true}

@@ -430,7 +430,7 @@ func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options 
 		done.Problem = err.Error()
 		return done
 	}
-	if !tidy.Unambiguous() {
+	if tidy.AppliesUnasked(model.AnsweredNobody, false) != nil {
 		done.Problem = "the edit needs a look before it is committed: dockhand tidy --branch " + branch.ShortName()
 		return done
 	}

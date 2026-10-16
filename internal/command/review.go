@@ -149,11 +149,12 @@ func decideTidy(ctx context.Context, e *engine.Engine, streams Streams, proposal
 	// does elsewhere: a hand edit's plan tidy proposed itself had no way
 	// to be taken without a terminal (field testing's seventh report).
 	if explicit || !streams.terminal() || yes {
-		if !explicit && !yes && !proposal.Unambiguous() {
-			return false, errors.New("this plan needs review before it is applied: review it on a terminal, apply it as shown with --yes, or make one commit with --squash --message \"port: what changed\"")
+		answered := model.AnsweredNobody
+		if yes {
+			answered = model.AnsweredYes
 		}
-		if blocking := proposal.Blocking(); len(blocking) > 0 {
-			return false, fmt.Errorf("nothing was applied: %s", strings.Join(blocking, "; "))
+		if err := proposal.AppliesUnasked(answered, explicit); err != nil {
+			return false, err
 		}
 		return true, applyTidy(ctx, e, streams, proposal)
 	}

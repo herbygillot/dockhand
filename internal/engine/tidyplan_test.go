@@ -215,3 +215,17 @@ func TestSetSubjectSettlesTheMissingSubject(t *testing.T) {
 	group.SetSubject("jq: update to 1.8.1")
 	require.Equal(t, "jq: update to 1.8.1\n", group.Message)
 }
+
+// A plan applies unasked where it's dockhand's own edits and nobody was
+// there to ask, or the person answered for it, and never while something
+// blocks it (ship's "commit if unambiguous").
+func TestAPlanAppliesUnasked(t *testing.T) {
+	own := TidyPlan{Groups: []TidyGroup{{Directory: "textproc/jq", FromEdits: true, Message: "jq: update to 1.8.1\n"}}}
+	require.NoError(t, own.AppliesUnasked(model.AnsweredNobody, false))
+	hand := TidyPlan{Groups: []TidyGroup{{Directory: "textproc/jq", Message: "jq: fix\n"}}}
+	require.ErrorContains(t, hand.AppliesUnasked(model.AnsweredNobody, false), "needs review")
+	require.NoError(t, hand.AppliesUnasked(model.AnsweredYes, false))
+	require.NoError(t, hand.AppliesUnasked(model.AnsweredNobody, true), "a plan the person gave")
+	hand.Groups[0].needsSubject("commit 1 needs a subject")
+	require.ErrorContains(t, hand.AppliesUnasked(model.AnsweredYes, false), "nothing was applied: commit 1 needs a subject")
+}

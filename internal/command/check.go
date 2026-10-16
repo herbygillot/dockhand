@@ -348,21 +348,7 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 	// Tests required ask nothing of a port that declares none, which
 	// passes under any policy: said, so its ✓ isn't read as tests passed.
 	if plan.Tests == model.TestsRequired {
-		var untested, tested []string
-		for _, build := range plan.Builds {
-			for _, id := range build.Untested {
-				if target, ok := plan.Target(id); ok && !slices.Contains(untested, string(target.ID)) {
-					untested = append(untested, string(target.ID))
-				}
-			}
-		}
-		for _, build := range plan.Builds {
-			for _, id := range build.Order {
-				if !slices.Contains(build.Untested, id) && !slices.Contains(tested, string(id)) {
-					tested = append(tested, string(id))
-				}
-			}
-		}
+		tested, untested := plan.Untested()
 		// Which do declare them is said too, beside those that don't, so
 		// "asks nothing" of a stub isn't read as of the port (field
 		// testing's py-mlx-vlm, 2026-10-04).
@@ -453,16 +439,11 @@ func writeOrder(out io.Writer, plan model.Plan) {
 		}
 		return prose.FewJoined(words, listShown, "port", " → ")
 	}
-	var order []model.TargetID
-	for _, target := range plan.Targets {
-		order = append(order, target.ID)
-	}
-	agree := true
-	for _, planned := range plan.Builds {
-		own := slices.DeleteFunc(slices.Clone(order), func(id model.TargetID) bool { return !planned.Builds(id) })
-		agree = agree && slices.Equal(own, planned.Order)
-	}
-	if agree {
+	if plan.SameOrder() {
+		var order []model.TargetID
+		for _, target := range plan.Targets {
+			order = append(order, target.ID)
+		}
 		fmt.Fprintf(out, "Order       %s\n", names(order))
 		return
 	}
@@ -479,27 +460,16 @@ func writeOrder(out io.Writer, plan model.Plan) {
 // for a port every environment excludes for the same reason, and with the
 // environments where only some do.
 func writeExclusions(out io.Writer, plan model.Plan) {
-	type excluded struct {
-		name, reason string
-		where        []string
-	}
-	var all []excluded
-	for _, planned := range plan.Builds {
-		for _, exclusion := range planned.Exclusions {
-			i := slices.IndexFunc(all, func(x excluded) bool { return x.name == string(exclusion.Target.ID()) && x.reason == exclusion.Reason })
-			if i < 0 {
-				all = append(all, excluded{name: string(exclusion.Target.ID()), reason: exclusion.Reason})
-				i = len(all) - 1
-			}
-			all[i].where = append(all[i].where, engine.DescribeEnvironment(planned.Environment))
-		}
-	}
-	for _, x := range all {
-		if len(x.where) == len(plan.Builds) {
-			fmt.Fprintf(out, "Excluded    %s: %s\n", x.name, x.reason)
+	for _, x := range plan.GroupedExclusions() {
+		if x.Everywhere(plan) {
+			fmt.Fprintf(out, "Excluded    %s: %s\n", x.Target, x.Reason)
 			continue
 		}
-		fmt.Fprintf(out, "Excluded    %s on %s: %s\n", x.name, strings.Join(x.where, "; "), x.reason)
+		var where []string
+		for _, environment := range x.Environments {
+			where = append(where, engine.DescribeEnvironment(environment))
+		}
+		fmt.Fprintf(out, "Excluded    %s on %s: %s\n", x.Target, strings.Join(where, "; "), x.Reason)
 	}
 }
 
@@ -1033,10 +1003,7 @@ const variantBuildsToAsk = 12
 // confirmVariantBuilds asks before a --variants each check makes more
 // than variantBuildsToAsk builds; without a terminal, --yes goes ahead.
 func confirmVariantBuilds(streams Streams, plan model.Plan, yes bool) error {
-	builds := 0
-	for _, planned := range plan.Builds {
-		builds += len(planned.Order)
-	}
+	builds := plan.BuildCount()
 	if !plan.EachVariant || builds <= variantBuildsToAsk || yes {
 		return nil
 	}

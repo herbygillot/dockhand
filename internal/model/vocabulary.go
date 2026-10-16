@@ -131,3 +131,16 @@ func CompareTargets(a, b Target) int {
 	}
 	return cmp.Compare(len(aVariants), len(bVariants))
 }
+
+// Answered is how a decision a person would make was made: a person asked
+// on a terminal, --yes for a script, or nobody there to ask. Holds, an
+// unasked tidy, and the unattended build profile read it alike, since a
+// terminal alone doesn't say whether a person looked (the command package
+// review's concept 4).
+type Answered string
+
+const (
+	AnsweredAsked  Answered = "asked"
+	AnsweredYes    Answered = "--yes"
+	AnsweredNobody Answered = "nobody there"
+)

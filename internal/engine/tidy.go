@@ -127,6 +127,22 @@ func (p TidyPlan) Unambiguous() bool {
 	return true
 }
 
+// AppliesUnasked says whether the plan may be applied with nobody
+// reviewing it on a terminal, and why not: one made only of dockhand's own
+// edits (Unambiguous) where nobody was there to ask, any the person
+// answered for with --yes or by giving the plan itself (explicit), and
+// none while something blocks it. It's ship's "commit if unambiguous" and
+// tidy's alike (the command package split's 7b row 6).
+func (p TidyPlan) AppliesUnasked(answered model.Answered, explicit bool) error {
+	if !explicit && answered != model.AnsweredYes && !p.Unambiguous() {
+		return errors.New("this plan needs review before it is applied: review it on a terminal, apply it as shown with --yes, or make one commit with --squash --message \"port: what changed\"")
+	}
+	if blocking := p.Blocking(); len(blocking) > 0 {
+		return fmt.Errorf("nothing was applied: %s", strings.Join(blocking, "; "))
+	}
+	return nil
+}
+
 // Blocking lists what must be settled before the plan can be applied.
 func (p TidyPlan) Blocking() []string {
 	var all []string

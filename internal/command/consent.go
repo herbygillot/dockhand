@@ -3,18 +3,8 @@ package command
 import (
 	"fmt"
 	"strings"
-)
 
-// Answered is how a decision a person would make was made: a person asked
-// on a terminal, --yes for a script, or nobody there to ask. Holds and the
-// unattended build profile read it alike, since a terminal alone doesn't
-// say whether a person looked (the command package review's concept 4).
-type Answered string
-
-const (
-	AnsweredAsked  Answered = "asked"
-	AnsweredYes    Answered = "--yes"
-	AnsweredNobody Answered = "nobody there"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // decision is a yes-or-no question a command asks before it acts: what it
@@ -40,18 +30,18 @@ func answer(yes bool) *bool { return &yes }
 // terminal, --yes removes these", exit 1. Seven commands each wrote the
 // refusal their own way, two of them exiting 0 (clean's and review --pr's).
 // It says how it was answered; a person's no is an answer, not an error.
-func (s Streams) decide(yes bool, d decision) (bool, Answered, error) {
+func (s Streams) decide(yes bool, d decision) (bool, model.Answered, error) {
 	if yes {
-		return true, AnsweredYes, nil
+		return true, model.AnsweredYes, nil
 	}
 	if !s.terminal() {
 		if d.nobody != nil {
-			return *d.nobody, AnsweredNobody, nil
+			return *d.nobody, model.AnsweredNobody, nil
 		}
-		return false, AnsweredNobody, &ExitError{Code: ExitFailure, Message: fmt.Sprintf("%s: without a terminal, %s", d.undone, d.byYes)}
+		return false, model.AnsweredNobody, &ExitError{Code: ExitFailure, Message: fmt.Sprintf("%s: without a terminal, %s", d.undone, d.byYes)}
 	}
 	ok, err := s.askYes(d.question, d.yes)
-	return ok, AnsweredAsked, err
+	return ok, model.AnsweredAsked, err
 }
 
 // askYes asks a yes-or-no question on the terminal, with the answer an
