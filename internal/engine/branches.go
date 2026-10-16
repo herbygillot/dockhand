@@ -581,6 +581,14 @@ func (e *Engine) Path(ctx context.Context, selector string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return e.BranchPath(ctx, branch)
+}
+
+// BranchPath is the directory a branch is checked out in, its worktree
+// placed or checked out again where clean took it; a merged branch's only
+// where it's still there.
+func (e *Engine) BranchPath(ctx context.Context, branch model.Branch) (string, error) {
+	var err error
 	if branch.State == model.BranchMerged {
 		if branch.Worktree != "" && exists(branch.Worktree) {
 			return branch.Worktree, nil

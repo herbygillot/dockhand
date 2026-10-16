@@ -316,11 +316,14 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, nu
 }
 
 func pathCommand(s *settings, streams Streams) *cobra.Command {
-	return &cobra.Command{
+	var where branchFlags
+	cmd := &cobra.Command{
 		Use:   "path [branch]",
 		Short: "Print a branch's directory",
 		Long: `Prints the directory a tracked branch is checked out in, for cd "$(dockhand
-path <branch>)" or an editor. Without a name, the branch checked out here.`,
+path <branch>)" or an editor; -p and --pr name the branch by its port or
+its pull request, and -b by its exact name, as the argument does. Without
+any, the branch checked out here.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := s.open(cmd.Context())
@@ -328,19 +331,35 @@ path <branch>)" or an editor. Without a name, the branch checked out here.`,
 				return err
 			}
 			defer e.Close()
-			selector := ""
-			if len(args) == 1 {
-				selector = args[0]
-			}
-			path, err := e.Path(cmd.Context(), selector)
-			if err != nil {
-				return err
+			var path string
+			switch {
+			case len(args) == 1 && where.explicit():
+				return errors.New("name the branch once: as the argument, or with -b, -p, or --pr")
+			case where.explicit():
+				branch, err := where.resolve(cmd.Context(), e, streams)
+				if err != nil {
+					return err
+				}
+				path, err = e.BranchPath(cmd.Context(), branch)
+				if err != nil {
+					return err
+				}
+			default:
+				selector := ""
+				if len(args) == 1 {
+					selector = args[0]
+				}
+				if path, err = e.Path(cmd.Context(), selector); err != nil {
+					return err
+				}
 			}
 			streams.emit(map[string]string{"path": path})
 			fmt.Fprintln(streams.Out, path)
 			return nil
 		},
 	}
+	where.register(cmd, s, "print the directory of")
+	return cmd
 }
 
 func describeScope(scope engine.Scope, uncommitted []string) string {

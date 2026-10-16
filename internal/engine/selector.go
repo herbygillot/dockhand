@@ -187,7 +187,7 @@ func (e *Engine) portSelection(ctx context.Context, port string, start bool, wha
 	case len(found) > 1:
 		return Selection{Choices: found}, nil
 	case !start:
-		return Selection{}, fmt.Errorf("%w changes %s; dockhand status --port %s lists every branch touching it", ErrNoBranch, port, port)
+		return Selection{}, fmt.Errorf("%w changes %s; dockhand status -p %s lists every branch touching it", ErrNoBranch, port, port)
 	}
 	request := &StartRequest{Ports: []string{port}}
 	if what != "version" {

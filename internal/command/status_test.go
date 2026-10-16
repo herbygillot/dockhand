@@ -99,7 +99,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 
 	out, _, err = dockhand(t, "status", "--port", "fd")
 	require.NoError(t, err)
-	require.Contains(t, out, "No open branches.")
+	require.Equal(t, "No open branch touches fd yet. dockhand update fd starts one.\n", out)
 }
 
 func TestQueueWaitCancelAndLogs(t *testing.T) {
@@ -170,11 +170,11 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "building from ")
 	require.NotContains(t, out, "Steps in", "a person's command records no steps, so the log is printed whole")
-	whole, _, err := dockhand(t, "logs", "check-3", "--port", "jq", "--all")
+	whole, _, err := dockhand(t, "logs", "check-3", "jq", "--full")
 	require.NoError(t, err)
 	require.Equal(t, out, whole)
-	_, _, err = dockhand(t, "logs", "check-3", "--all")
-	require.EqualError(t, err, "--all goes with a port")
+	_, _, err = dockhand(t, "logs", "check-3", "--full")
+	require.EqualError(t, err, "--full goes with a port")
 	// A port named alone is the branch's latest check's (field testing,
 	// 2026-10-02).
 	alone, _, err := dockhand(t, "logs", "jq")
@@ -185,17 +185,17 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 
 	t.Setenv("MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "logs")
-	require.ErrorContains(t, err, "name a check, such as check-42, or a provider run; in a branch's worktree, logs shows the branch's latest check")
+	require.ErrorContains(t, err, "name a check, such as check-42, a provider run, or a branch with -b or -p; in a branch's worktree, logs shows the branch's latest check")
 	_, _, err = dockhand(t, "wait")
-	require.EqualError(t, err, "name a check, such as check-42; in a branch's worktree, wait follows the branch's latest check")
+	require.EqualError(t, err, "name a check, such as check-42, or a branch with -b or -p; in a branch's worktree, wait follows the branch's latest check")
 	_, _, err = dockhand(t, "cancel")
-	require.EqualError(t, err, "name a check, such as check-42; in a branch's worktree, cancel stops the branch's latest check")
+	require.EqualError(t, err, "name a check, such as check-42, or a branch with -b or -p; in a branch's worktree, cancel stops the branch's latest check")
 }
 
 // A port's log, where its provider recorded where each step of the build
 // began, lists the steps with their lines and starts at the port's own
 // build, saying what it left out: hugo's own phases began near line 46,400
-// of 47,000, after its dependencies' (the hugo exercise). --all prints the
+// of 47,000, after its dependencies' (the hugo exercise). --full prints the
 // log alone, whole, as it's printed where no steps were recorded; with
 // --json, the whole log comes with its steps and the line its own build
 // begins on.
@@ -217,11 +217,11 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 		"  install       line 46006\n"
 	var out strings.Builder
 	require.NoError(t, writePortLog(&out, result, data, false))
-	require.Equal(t, steps+"From line 46004, where hugo's own build begins; --all prints the 46003 lines before it too, its dependencies' installs among them.\n\n"+own, out.String())
+	require.Equal(t, steps+"From line 46004, where hugo's own build begins; --full prints the 46003 lines before it too, its dependencies' installs among them.\n\n"+own, out.String())
 
 	out.Reset()
 	require.NoError(t, writePortLog(&out, result, data, true))
-	require.Equal(t, string(data), out.String(), "--all prints the log alone")
+	require.Equal(t, string(data), out.String(), "--full prints the log alone")
 
 	view := portLogView(model.Run{Number: 48}, result, data)
 	require.Equal(t, 46004, view.OwnBuild)

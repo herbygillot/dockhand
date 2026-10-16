@@ -64,11 +64,13 @@ func queueView(queue []engine.QueuedCheck) *[]queuedRunJSON {
 }
 
 func waitCommand(s *settings, streams Streams) *cobra.Command {
-	return &cobra.Command{
+	var where branchFlags
+	cmd := &cobra.Command{
 		Use:   "wait [check]",
 		Short: "Follow a check until it ends",
 		Long: `Follows a check, such as check-42, until it ends, and reports it; in a
-branch's worktree, with no check named, the branch's latest. With serve
+branch's worktree, with no check named, the branch's latest; -b, -p, or
+--pr names a branch, for its latest check from anywhere. With serve
 running, this only observes, and Ctrl-C stops following; with no serve,
 the check runs here, as a foreground check would.`,
 		Args: cobra.MaximumNArgs(1),
@@ -79,7 +81,7 @@ the check runs here, as a foreground check would.`,
 				return err
 			}
 			defer e.Close()
-			run, err := namedOrLatest(ctx, e, args, "name a check, such as check-42; in a branch's worktree, wait follows the branch's latest check")
+			run, err := namedOrLatest(ctx, e, streams, where, args, "name a check, such as check-42, or a branch with -b or -p; in a branch's worktree, wait follows the branch's latest check")
 			if err != nil {
 				return err
 			}
@@ -107,14 +109,18 @@ the check runs here, as a foreground check would.`,
 			return follow(ctx, e, session, run, streams, true)
 		},
 	}
+	where.register(cmd, s, "follow the latest check of")
+	return cmd
 }
 
 func cancelCommand(s *settings, streams Streams) *cobra.Command {
-	return &cobra.Command{
+	var where branchFlags
+	cmd := &cobra.Command{
 		Use:   "cancel [check]",
 		Short: "Stop a check, keeping what finished",
 		Long: `Stops a check, such as check-42, keeping what it finished; in a branch's
-worktree, with no check named, the branch's latest.`,
+worktree, with no check named, the branch's latest; -b, -p, or --pr names a
+branch, for its latest check from anywhere.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -123,7 +129,7 @@ worktree, with no check named, the branch's latest.`,
 				return err
 			}
 			defer e.Close()
-			run, err := namedOrLatest(ctx, e, args, "name a check, such as check-42; in a branch's worktree, cancel stops the branch's latest check")
+			run, err := namedOrLatest(ctx, e, streams, where, args, "name a check, such as check-42, or a branch with -b or -p; in a branch's worktree, cancel stops the branch's latest check")
 			if err != nil {
 				return err
 			}
@@ -154,11 +160,14 @@ worktree, with no check named, the branch's latest.`,
 			return nil
 		},
 	}
+	where.register(cmd, s, "stop the latest check of")
+	return cmd
 }
 
 func logsCommand(s *settings, streams Streams) *cobra.Command {
 	var port string
-	var all bool
+	var full bool
+	var where branchFlags
 	cmd := &cobra.Command{
 		Use:   "logs [check or provider run] [port]",
 		Short: "Show where a check's logs are, or one port's log",
@@ -166,26 +175,40 @@ func logsCommand(s *settings, streams Streams) *cobra.Command {
 one provider run's alone, by the ID a pull request's Tested on names,
 tart_7y62p4sigena6xlr, or by its provider's own reference, such as a workflow
 run's URL. In a branch's worktree, with none named, it shows the branch's
-latest check.
+latest check; -b, -p, or --pr names a branch, for its latest check from
+anywhere.
 
-A port, named after the check or alone, or with --port, prints that port's
-log: logs check-42 semgrep, or logs semgrep for the branch's latest check.
-Where its provider recorded where each step of the build began, as Tart's
-does, it lists them with their lines first, and prints from the port's own
-build on, leaving out its dependencies' installs before it; --all prints
-the whole log.`,
+A port, named after the check or alone, prints that port's log: logs
+check-42 semgrep, or logs semgrep for the branch's latest check; logs -p
+semgrep prints it from the latest check of semgrep's branch. Where its
+provider recorded where each step of the build began, as Tart's does, it
+lists them with their lines first, and prints from the port's own build on,
+leaving out its dependencies' installs before it; --full prints the whole
+log.`,
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// A port named as an argument is --port's (field testing,
-			// 2026-10-02: logs semgrep, and logs check-76 semgrep).
-			if len(args) == 2 {
-				if port != "" && port != args[1] {
-					return fmt.Errorf("name the port once: %s or --port %s", args[1], port)
+			// A port named as an argument (field testing, 2026-10-02: logs
+			// semgrep, and logs check-76 semgrep); with a branch named, the
+			// one argument is the port, and -p's port is the default.
+			// logs check-42 -p jq is check-42's jq log, as it always was:
+			// a check named, -p names only the port.
+			if where.port != "" && len(args) == 1 && checkOrRunName(cmd.Context(), s, args[0]) {
+				port, where = where.port, branchFlags{}
+			}
+			if where.explicit() {
+				if len(args) == 2 {
+					return errors.New("name a check or a branch, not both")
 				}
+				port = where.port
+				if len(args) == 1 {
+					port, args = args[0], nil
+				}
+			}
+			if len(args) == 2 {
 				port, args = args[1], args[:1]
 			}
-			if all && port == "" {
-				return errors.New("--all goes with a port")
+			if full && port == "" {
+				return errors.New("--full goes with a port")
 			}
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -196,7 +219,7 @@ the whole log.`,
 			var run model.Run
 			var only model.ExecutionID
 			if len(args) == 0 {
-				run, err = latestCheckHere(ctx, e, "name a check, such as check-42, or a provider run; in a branch's worktree, logs shows the branch's latest check")
+				run, err = latestOf(ctx, e, streams, where, "name a check, such as check-42, a provider run, or a branch with -b or -p; in a branch's worktree, logs shows the branch's latest check")
 			} else {
 				run, only, err = checkOrRun(ctx, e, args[0])
 				if err != nil && port == "" && !checkName.MatchString(args[0]) {
@@ -246,19 +269,19 @@ the whole log.`,
 			// printed alone, so the log stays as it is.
 			if len(others) > 0 {
 				where := streams.Out
-				if all || len(found.Steps) == 0 {
+				if full || len(found.Steps) == 0 {
 					where = streams.Err
 				}
 				fmt.Fprintf(where, "%s's log on %s, run %s: %s\n", port, engine.DescribeEnvironment(chosen.execution.Environment), chosen.execution.ID, portBuildWords(found))
 				for _, other := range others {
-					fmt.Fprintf(where, "  also on %s, run %s: %s; dockhand logs %s --port %s\n", engine.DescribeEnvironment(other.execution.Environment), other.execution.ID, portBuildWords(other.result), other.execution.ID, port)
+					fmt.Fprintf(where, "  also on %s, run %s: %s; dockhand logs %s %s\n", engine.DescribeEnvironment(other.execution.Environment), other.execution.ID, portBuildWords(other.result), other.execution.ID, port)
 				}
 			}
-			return writePortLog(streams.Out, found, data, all)
+			return writePortLog(streams.Out, found, data, full)
 		},
 	}
-	cmd.Flags().StringVar(&port, "port", "", "print this port's log, from its own build on where its steps were recorded")
-	cmd.Flags().BoolVar(&all, "all", false, "with --port, print the whole log")
+	where.register(cmd, s, "show the latest check of")
+	cmd.Flags().BoolVar(&full, "full", false, "with a port, print the whole log")
 	return cmd
 }
 
@@ -272,7 +295,7 @@ type portLog struct {
 // portLogs are a check's logs of a port, the one to show first, and the
 // others: where it failed, or its tests did, before where it passed, the
 // latest of those. check-65's libuv-devel failed its tests on macOS 15 and
-// passed on 26, and logs --port showed 26's, the last (the hugo exercise).
+// passed on 26, and logs of the port showed 26's, the last (the hugo exercise).
 func portLogs(logs engine.RunLogs, port string) (portLog, []portLog, bool) {
 	var all []portLog
 	for _, execution := range logs.Executions {
@@ -345,7 +368,7 @@ func writePortLog(out io.Writer, result model.TargetResult, data []byte, all boo
 	}
 	if own, ok := result.OwnBuild(); ok && own.Line > 1 {
 		if rest, ok := buildlog.From(data, own.Line); ok {
-			fmt.Fprintf(out, "From line %d, where %s's own build begins; --all prints the %d lines before it too, its dependencies' installs among them.\n\n", own.Line, result.Target, own.Line-1)
+			fmt.Fprintf(out, "From line %d, where %s's own build begins; --full prints the %d lines before it too, its dependencies' installs among them.\n\n", own.Line, result.Target, own.Line-1)
 			_, err := out.Write(rest)
 			return err
 		}
@@ -356,9 +379,6 @@ func writePortLog(out io.Writer, result model.TargetResult, data []byte, all boo
 	return err
 }
 
-// latestCheckHere is the newest check of the branch checked out here, for
-// logs, wait, and cancel with none named; unnamed is what to say where no
-// branch is checked out.
 // latestLogging is the latest check of the branch checked out here, where
 // it recorded a log for port.
 func latestLogging(ctx context.Context, e *engine.Engine, port string) (model.Run, bool) {
@@ -374,6 +394,9 @@ func latestLogging(ctx context.Context, e *engine.Engine, port string) (model.Ru
 	return run, ok
 }
 
+// latestCheckHere is the newest check of the branch checked out here, for
+// the run commands with none named; unnamed is what to say where no branch
+// is checked out.
 func latestCheckHere(ctx context.Context, e *engine.Engine, unnamed string) (model.Run, error) {
 	branch, err := e.Current(ctx)
 	if errors.Is(err, engine.ErrNoBranch) {
@@ -393,13 +416,51 @@ func latestCheckHere(ctx context.Context, e *engine.Engine, unnamed string) (mod
 }
 
 // namedOrLatest is the check args name, or with none, the latest check of
-// the branch checked out here: a branch has one check at a time, so it is
-// the one queued or running, if any is. unnamed says what to do elsewhere.
-func namedOrLatest(ctx context.Context, e *engine.Engine, args []string, unnamed string) (model.Run, error) {
+// the branch -b, -p, or --pr names, else of the one checked out here: a
+// branch has one check at a time, so it is the one queued or running, if
+// any is (the second look's §3). unnamed says what to do elsewhere.
+func namedOrLatest(ctx context.Context, e *engine.Engine, streams Streams, where branchFlags, args []string, unnamed string) (model.Run, error) {
 	if len(args) == 1 {
+		if where.explicit() {
+			return model.Run{}, errors.New("name a check or a branch, not both")
+		}
 		return e.RunNamed(ctx, args[0])
 	}
-	return latestCheckHere(ctx, e, unnamed)
+	return latestOf(ctx, e, streams, where, unnamed)
+}
+
+// latestOf is the latest check of the branch the flags name, else of the
+// one checked out here.
+func latestOf(ctx context.Context, e *engine.Engine, streams Streams, where branchFlags, unnamed string) (model.Run, error) {
+	if !where.explicit() {
+		return latestCheckHere(ctx, e, unnamed)
+	}
+	branch, err := where.resolve(ctx, e, streams)
+	if err != nil {
+		return model.Run{}, err
+	}
+	run, ok, err := e.LatestCheck(ctx, branch.ID)
+	if err != nil {
+		return model.Run{}, err
+	}
+	if !ok {
+		return model.Run{}, fmt.Errorf("%s has no check yet: dockhand check -b %s", branch.ShortName(), branch.ShortName())
+	}
+	return run, nil
+}
+
+// checkOrRunName reports whether name is a check's or a provider run's.
+func checkOrRunName(ctx context.Context, s *settings, name string) bool {
+	if checkName.MatchString(name) {
+		return true
+	}
+	e, err := s.open(ctx)
+	if err != nil {
+		return false
+	}
+	defer e.Close()
+	_, _, err = checkOrRun(ctx, e, name)
+	return err == nil
 }
 
 // checkName is a check's name, check-42 or 42.

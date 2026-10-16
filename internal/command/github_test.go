@@ -317,12 +317,13 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 	require.Contains(t, logged, "  dependencies  line 4\n  install       line 6\n  test          line 8\n")
 	require.Contains(t, logged, "From line 6, where jq's own build begins")
 	require.NotContains(t, logged, "Installing dependencies for jq", "before it")
-	// The port named after the check is --port's (field testing, 2026-10-02).
+	// The port named after the check is the one -p names (field testing,
+	// 2026-10-02).
 	named, _, err := dockhand(t, "logs", "check-1", "jq")
 	require.NoError(t, err)
 	require.Equal(t, logged, named)
 	_, _, err = dockhand(t, "logs", "check-1", "jq", "--port", "fd")
-	require.ErrorContains(t, err, "name the port once: jq or --port fd")
+	require.EqualError(t, err, "name a check or a branch, not both")
 }
 
 // A serve that stops leaves the run going and its branch on the fork, so

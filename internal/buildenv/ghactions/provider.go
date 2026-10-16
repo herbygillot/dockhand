@@ -507,7 +507,7 @@ func verdict(name string, runners []runner) (model.TargetResult, bool) {
 	}
 	result.Builders = parts
 	// The steps are those of the log the result names, by the workflow's
-	// headings, so logs --port starts at the port's own build there (D20);
+	// headings, so logs of a port starts at the port's own build there (D20);
 	// a log without them is shown whole.
 	for _, r := range runners {
 		if built := r.built[name]; built != nil && r.log == result.Log && result.Log != "" {

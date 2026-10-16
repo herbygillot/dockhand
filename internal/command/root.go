@@ -142,7 +142,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 				return cmd.Help()
 			}
 			defer e.Close()
-			return showStatus(cmd.Context(), e, streams, nil, false, false, "")
+			return showStatus(cmd.Context(), e, streams, nil, false, false, branchFlags{})
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")

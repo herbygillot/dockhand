@@ -172,14 +172,17 @@ func revbumpBranch(ctx context.Context, e *engine.Engine, selector, port string,
 
 func retryCommand(s *settings, streams Streams) *cobra.Command {
 	var enqueue bool
+	var where branchFlags
 	cmd := &cobra.Command{
-		Use:   "retry <run>",
+		Use:   "retry [check]",
 		Short: "Run a finished check's exact request again",
 		Long: `Queues a finished check again, such as check-42: the same files, the same
 plan, and the same environments, whatever the branch holds now. check
 captures newer edits instead. Until results are reused port by port, the
-whole plan is built again.`,
-		Args: cobra.ExactArgs(1),
+whole plan is built again. In a branch's worktree, with no check named, the
+branch's latest; -b, -p, or --pr names a branch, for its latest check from
+anywhere.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -187,7 +190,7 @@ whole plan is built again.`,
 				return err
 			}
 			defer e.Close()
-			previous, err := e.RunNamed(ctx, args[0])
+			previous, err := namedOrLatest(ctx, e, streams, where, args, "name a check, such as check-42, or a branch with -b or -p; in a branch's worktree, retry repeats the branch's latest check")
 			if err != nil {
 				return err
 			}
@@ -204,6 +207,7 @@ whole plan is built again.`,
 		},
 	}
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue it and return")
+	where.register(cmd, s, "repeat the latest check of")
 	return cmd
 }
 
@@ -276,6 +280,7 @@ rebase that conflicts is abandoned with the branch as it was.`,
 
 func archiveCommand(s *settings, streams Streams) *cobra.Command {
 	var undo, keep, discard bool
+	var where branchFlags
 	cmd := &cobra.Command{
 		Use:   "archive [branch]",
 		Short: "Set aside a branch you are not working on",
@@ -299,8 +304,10 @@ closes it.`,
 				return err
 			}
 			defer e.Close()
-			var where branchFlags
 			if len(args) == 1 {
+				if where.explicit() {
+					return errors.New("name the branch once: as the argument, or with -b, -p, or --pr")
+				}
 				where.branch = args[0]
 			}
 			branch, err := where.resolve(ctx, e, streams)
@@ -348,6 +355,7 @@ closes it.`,
 	cmd.Flags().BoolVar(&keep, "keep-worktree", false, "keep the worktree")
 	cmd.Flags().BoolVar(&discard, "discard", false, "remove the worktree though it has uncommitted edits or untracked files, which go")
 	cmd.MarkFlagsMutuallyExclusive("keep-worktree", "discard")
+	where.register(cmd, s, "archive")
 	return cmd
 }
 

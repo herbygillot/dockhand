@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -24,7 +25,7 @@ import (
 
 func statusCommand(s *settings, streams Streams) *cobra.Command {
 	var attentionOnly, all, refresh, watch, plain bool
-	var port string
+	var where branchFlags
 	cmd := &cobra.Command{
 		Use:   "status [branch]",
 		Short: "Show your branches, and what needs you",
@@ -38,7 +39,9 @@ what it checks, where, and its state; a check whose process ended is said
 to be stopped, for dockhand wait to resume.
 
 --attention prints only what needs you, for a prompt or a script, and exits
-3 when anything does. --port finds every branch touching a port. --all
+3 when anything does. -b and --pr name a branch, shown in detail; -p finds
+the branches touching a port, shown in detail where one does and listed
+where several do. --all
 includes merged and archived branches.
 
 --watch keeps status current as serve works, redrawn whenever what it
@@ -57,8 +60,11 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 			if plain && !watch {
 				return errors.New("--plain goes with --watch")
 			}
-			if watch && (len(args) > 0 || attentionOnly || all || port != "" || streams.json()) {
-				return errors.New("--watch keeps the whole status current; it takes no branch, --attention, --all, --port, or --json")
+			if watch && (len(args) > 0 || attentionOnly || all || where.explicit() || streams.json()) {
+				return errors.New("--watch keeps the whole status current; it takes no branch, --attention, --all, or --json")
+			}
+			if len(args) > 0 && where.explicit() {
+				return errors.New("name the branch once: as the argument, or with -b, -p, or --pr")
 			}
 			e, err := s.open(cmd.Context())
 			if err != nil {
@@ -76,7 +82,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 					if streams.json() {
 						return err
 					}
-					if shown := showStatus(cmd.Context(), e, streams, args, attentionOnly, all, port); shown != nil {
+					if shown := showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where); shown != nil {
 						return shown
 					}
 					return err
@@ -87,19 +93,21 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 				// prompt, reads nothing.
 				readStalePullRequests(cmd.Context(), e, streams.Err)
 			}
-			return showStatus(cmd.Context(), e, streams, args, attentionOnly, all, port)
+			return showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where)
 		},
 	}
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "read your pull requests' state, reviews, and CI from GitHub first")
 	cmd.Flags().BoolVar(&attentionOnly, "attention", false, "print only what needs you; exit 3 when anything does")
 	cmd.Flags().BoolVar(&all, "all", false, "include merged, closed, and archived branches")
-	cmd.Flags().StringVar(&port, "port", "", "only the branches touching this port")
+	where.register(cmd, s, "show")
+	cmd.Flags().Lookup("port").Usage = "show the branches touching this port: the one in detail, or several listed"
 	cmd.Flags().BoolVar(&watch, "watch", false, "keep status current as serve works, until q or Ctrl-C")
 	cmd.Flags().BoolVar(&plain, "plain", false, "with --watch, print events as lines, not a view that redraws")
 	return cmd
 }
 
-func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []string, attentionOnly, all bool, port string) error {
+func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []string, attentionOnly, all bool, where branchFlags) error {
+	port := where.port
 	ctx, _, end, err := observing(ctx, e)
 	if err != nil {
 		return err
@@ -116,8 +124,16 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		}
 		return showBranch(ctx, e, streams.Out, branch)
 	}
-	if len(args) == 1 {
-		branch, err := e.ResolveRecord(ctx, args[0])
+	// A read reaches a merged branch's record, as path does.
+	if len(args) == 1 || where.branch != "" {
+		branch, err := e.ResolveRecord(ctx, cmp.Or(where.branch, append(args, "")[0]))
+		if err != nil {
+			return err
+		}
+		return one(branch)
+	}
+	if where.pr != 0 {
+		branch, err := where.resolve(ctx, e, streams)
 		if err != nil {
 			return err
 		}
@@ -141,6 +157,15 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 	}
 	if port != "" {
 		statuses = slices.DeleteFunc(statuses, func(s engine.BranchStatus) bool { return !s.Touches(port) })
+		// For a read, several aren't ambiguous: one is shown in detail,
+		// and several listed (the second look's §3).
+		switch {
+		case len(statuses) == 1 && !attentionOnly:
+			return one(statuses[0].Branch)
+		case len(statuses) == 0 && !attentionOnly && !streams.json():
+			fmt.Fprintf(streams.Out, "No open branch touches %s yet. dockhand update %s starts one.\n", port, port)
+			return nil
+		}
 	}
 	var rows []attention
 	for _, status := range statuses {
@@ -308,7 +333,7 @@ func attentionFor(s engine.BranchStatus) []attention {
 			for i, result := range target.Outcomes {
 				if result.Outcome == model.OutcomeFailed {
 					return row("✗", fmt.Sprintf("%s failed at %s on %s (%s)", target.Target.Target.Name, result.Phase, engine.DescribeEnvironment(s.Evidence.Plan.Environments[i]), run.Name()),
-						fmt.Sprintf("dockhand logs %s --port %s", run.Name(), target.Target.Target.Name))
+						fmt.Sprintf("dockhand logs %s %s", run.Name(), target.Target.Target.Name))
 				}
 			}
 		}

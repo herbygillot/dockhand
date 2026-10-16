@@ -543,7 +543,7 @@ func logStepViews(steps []model.LogStep) []logStepJSON {
 	return views
 }
 
-// portLogJSON is logs --port's result: the port's whole log, and where
+// portLogJSON is logs' result for a port: the port's whole log, and where
 // each step of its build began in it.
 type portLogJSON struct {
 	Run  runJSON `json:"run"`

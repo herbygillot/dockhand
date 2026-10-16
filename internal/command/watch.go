@@ -72,7 +72,7 @@ func watchPlain(ctx context.Context, e *engine.Engine, streams Streams) error {
 	if err := cursor.start(ctx); err != nil {
 		return err
 	}
-	if err := showStatus(ctx, e, streams, nil, false, false, ""); err != nil {
+	if err := showStatus(ctx, e, streams, nil, false, false, branchFlags{}); err != nil {
 		return err
 	}
 	fmt.Fprintln(streams.Out, "\nWatching; events follow as they happen. Ctrl-C stops.")
@@ -163,7 +163,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams) error {
 	var drawn time.Time
 	draw := func() {
 		var view bytes.Buffer
-		if err := showStatus(ctx, e, Streams{Out: &view, Err: &view}, nil, false, false, ""); err != nil {
+		if err := showStatus(ctx, e, Streams{Out: &view, Err: &view}, nil, false, false, branchFlags{}); err != nil {
 			fmt.Fprintf(&view, "status: %v\n", err)
 		}
 		drawn = time.Now()
