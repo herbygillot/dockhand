@@ -787,6 +787,11 @@ func TestEnvironmentsAreReleasesWithImages(t *testing.T) {
 	require.ErrorContains(t, err, "no Tart image for macOS 15 (Sequoia): dockhand setup tart sequoia makes dockhand-base-sequoia", "an Xcode image is an add-on to the base image")
 	_, err = p.Environments(t.Context(), "leopard")
 	require.ErrorContains(t, err, "unknown release")
+	// A deleted image whose golden copy is kept is a restore, said as one;
+	// check doesn't make it itself (the person's decision on D-R3).
+	mac.images = append(mac.images, "dockhand-golden-sequoia")
+	_, err = p.Environments(t.Context(), "sequoia")
+	require.EqualError(t, err, "no Tart image for macOS 15 (Sequoia): dockhand setup tart sequoia restores dockhand-base-sequoia from dockhand-golden-sequoia, in about a minute")
 
 	// A Tart older than setup takes is refused before any VM starts, as
 	// setup refuses it (the rc9 full stage's F8).

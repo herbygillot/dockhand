@@ -189,6 +189,13 @@ func (p *Provider) Environments(ctx context.Context, releases string) ([]model.E
 	var environments []model.Environment
 	for _, release := range chosen {
 		if !slices.Contains(images, baseImage(release)) {
+			// Where its golden copy is kept, setup restores it in about a
+			// minute, which "makes" read as an hour's work. check doesn't
+			// restore it itself: that writes tens of gigabytes unasked (the
+			// person's decision on D-R3, 2026-10-16).
+			if golden := tartvm.GoldenName(baseImage(release)); slices.Contains(images, golden) {
+				return nil, fmt.Errorf("no Tart image for macOS %s (%s): dockhand setup tart %s restores %s from %s, in about a minute", release.Product, release.Name, release.Slug, baseImage(release), golden)
+			}
 			return nil, fmt.Errorf("no Tart image for macOS %s (%s): dockhand setup tart %s makes %s", release.Product, release.Name, release.Slug, baseImage(release))
 		}
 		environment := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
