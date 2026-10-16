@@ -3,7 +3,6 @@ package engine
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -122,8 +121,7 @@ func (p TidyPlan) combine(members []TidyGroup, numbers []int, chosen git.Signatu
 }
 
 // TidyPlanVersion is the version of the saved tidy plan format: TOML,
-// whose messages read as they will be written. Version 1 was JSON, whose
-// messages were escaped strings, and is still read.
+// whose messages read as they will be written.
 const TidyPlanVersion = 2
 
 // savedTidyPlan is a tidy plan as a file: the commits to make, bound to
@@ -131,30 +129,30 @@ const TidyPlanVersion = 2
 // made. Messages and authors may be edited in the file; the paths are
 // checked against the branch when it is applied.
 type savedTidyPlan struct {
-	Version int    `json:"version" toml:"version"`
-	Branch  string `json:"branch" toml:"branch"`
-	Base    string `json:"base" toml:"base"`
-	Head    string `json:"head" toml:"head"`
-	Working string `json:"working_tree" toml:"working_tree"`
+	Version int    `toml:"version"`
+	Branch  string `toml:"branch"`
+	Base    string `toml:"base"`
+	Head    string `toml:"head"`
+	Working string `toml:"working_tree"`
 	// Index is the index's tree when the plan was made; absent from plans
 	// saved before it was recorded.
-	Index   string        `json:"index,omitempty" toml:"index,omitempty"`
-	Commits []savedCommit `json:"commits" toml:"commits"`
+	Index   string        `toml:"index,omitempty"`
+	Commits []savedCommit `toml:"commits"`
 }
 
 type savedCommit struct {
-	Message  planMessage `json:"message" toml:"message"`
-	Author   savedAuthor `json:"author" toml:"author"`
-	Paths    []string    `json:"paths" toml:"paths"`
-	Combines []string    `json:"combines,omitempty" toml:"combines,omitempty"`
-	Working  bool        `json:"includes_uncommitted_edits,omitempty" toml:"includes_uncommitted_edits,omitempty"`
-	Notes    []string    `json:"notes,omitempty" toml:"notes,omitempty"`
+	Message  planMessage `toml:"message"`
+	Author   savedAuthor `toml:"author"`
+	Paths    []string    `toml:"paths"`
+	Combines []string    `toml:"combines,omitempty"`
+	Working  bool        `toml:"includes_uncommitted_edits,omitempty"`
+	Notes    []string    `toml:"notes,omitempty"`
 }
 
 type savedAuthor struct {
-	Name  string    `json:"name" toml:"name"`
-	Email string    `json:"email" toml:"email"`
-	When  time.Time `json:"date" toml:"date"`
+	Name  string    `toml:"name"`
+	Email string    `toml:"email"`
+	When  time.Time `toml:"date"`
 }
 
 // planMessage is a commit's message in a saved plan. It is written as a
@@ -223,31 +221,21 @@ func (p TidyPlan) Save() ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// decodeSavedPlan reads a saved plan: TOML, or JSON as version 1 was.
+// decodeSavedPlan reads a saved plan.
 func decodeSavedPlan(data []byte) (savedTidyPlan, error) {
 	var saved savedTidyPlan
-	version, format := TidyPlanVersion, "TOML"
-	if bytes.HasPrefix(bytes.TrimSpace(data), []byte("{")) {
-		version, format = 1, "JSON"
-		decoder := json.NewDecoder(bytes.NewReader(data))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&saved); err != nil {
-			return saved, fmt.Errorf("this is not a saved tidy plan: %w", err)
-		}
-	} else {
-		read, err := toml.Decode(string(data), &saved)
-		if err != nil {
-			return saved, fmt.Errorf("this is not a saved tidy plan: %w", err)
-		}
-		if unknown := read.Undecoded(); len(unknown) > 0 {
-			return saved, fmt.Errorf("this is not a saved tidy plan: a plan has no %s", unknown[0])
-		}
+	read, err := toml.Decode(string(data), &saved)
+	if err != nil {
+		return saved, fmt.Errorf("this is not a saved tidy plan: %w", err)
+	}
+	if unknown := read.Undecoded(); len(unknown) > 0 {
+		return saved, fmt.Errorf("this is not a saved tidy plan: a plan has no %s", unknown[0])
 	}
 	switch {
 	case saved.Version > TidyPlanVersion:
 		return saved, fmt.Errorf("this plan's format is version %d; this dockhand reads version %d", saved.Version, TidyPlanVersion)
-	case saved.Version != version:
-		return saved, fmt.Errorf("this is not a saved tidy plan: a %s plan is version %d", format, version)
+	case saved.Version != TidyPlanVersion:
+		return saved, fmt.Errorf("this is not a saved tidy plan: a plan is version %d", TidyPlanVersion)
 	}
 	return saved, nil
 }

@@ -2,7 +2,6 @@ package engine
 
 import (
 	"bytes"
-	"encoding/json"
 	"slices"
 	"testing"
 	"time"
@@ -113,26 +112,15 @@ func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
 	require.Len(t, loaded.Groups[1].Combines, 1)
 	require.Empty(t, loaded.Blocking())
 
-	// A plan saved as JSON, before, is still read.
-	legacy := saved
-	legacy.Version = 1
-	old, err := json.Marshal(legacy)
-	require.NoError(t, err)
-	loaded, err = e.LoadTidyPlan(t.Context(), old)
-	require.NoError(t, err)
-	require.Equal(t, "libharbor: update to 3, with the github PortGroup it needs", loaded.Groups[0].Subject())
-
 	short := saved
 	short.Commits = short.Commits[:1]
 	_, err = e.LoadTidyPlan(t.Context(), encode(short))
 	require.ErrorContains(t, err, "don't cover exactly the branch's changes: missing textproc/jq/Portfile")
 
-	_, err = e.LoadTidyPlan(t.Context(), []byte(`{"version": 1, "extra": true}`))
-	require.ErrorContains(t, err, "not a saved tidy plan")
 	_, err = e.LoadTidyPlan(t.Context(), []byte("version = 2\nextra = true\n"))
 	require.ErrorContains(t, err, "not a saved tidy plan: a plan has no extra")
-	_, err = e.LoadTidyPlan(t.Context(), []byte(`{"version": 2}`))
-	require.ErrorContains(t, err, "not a saved tidy plan: a JSON plan is version 1")
+	_, err = e.LoadTidyPlan(t.Context(), []byte("version = 1\n"))
+	require.ErrorContains(t, err, "not a saved tidy plan: a plan is version 2")
 	_, err = e.LoadTidyPlan(t.Context(), []byte("version = 3\n"))
 	require.ErrorContains(t, err, "version 3; this dockhand reads version 2")
 
