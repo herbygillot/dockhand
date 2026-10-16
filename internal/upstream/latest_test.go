@@ -209,7 +209,7 @@ func (c *catalog) Tag(ctx context.Context, name string) (forge.Tag, error) {
 	return c.tag(ctx, c.Name(), name)
 }
 
-func TestDiscoveryRecordsMacPortsSourceIdentityAndURL(t *testing.T) {
+func TestDiscoveryRecordsMacPortsSourceIdentity(t *testing.T) {
 	t.Parallel()
 	c := &catalog{releases: []forge.Release{{Tag: "v2.0"}}}
 	service := automaticService(t, c)
@@ -217,7 +217,6 @@ func TestDiscoveryRecordsMacPortsSourceIdentityAndURL(t *testing.T) {
 	result, err := service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)
 	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
-	require.Equal(t, "https://github.com/owner/project/archive/refs/tags/v2.0.tar.gz", result.Evidence[0].URL)
 	require.Equal(t, string(portsource.GitHub), result.Release.Forge)
 	require.Equal(t, "https://github.com", result.Release.Instance)
 	require.Equal(t, c.Name(), result.Release.Repository)
@@ -236,8 +235,6 @@ func TestAutomaticGitLabSelectionUsesTagFeedConvention(t *testing.T) {
 	result, err := service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)
 	require.Equal(t, "1.10", result.CandidateVersion)
-	require.Equal(t, "gitlab-tags", result.Evidence[0].Source)
-	require.Equal(t, "https://gitlab.example.com/root/group/subgroup/project/-/tags/v1.10", result.Evidence[0].URL)
 	require.Equal(t, "https://gitlab.example.com/root", c.instance)
 	require.Equal(t, "group/subgroup/project", result.Release.Repository)
 	require.Equal(t, "https://gitlab.example.com/root", result.Release.Instance)
@@ -432,8 +429,6 @@ func TestOverridingLivecheckSelectsThroughTheCatalog(t *testing.T) {
 	require.Equal(t, "owner/project", result.Release.Repository)
 	require.False(t, result.Release.Archive)
 	require.Equal(t, "Selected v1.10 from the port's livecheck", result.Detail)
-	require.Equal(t, "github-livecheck", result.Evidence[0].Source)
-	require.Equal(t, "https://api.github.com/repos/owner/project/releases/latest", result.Evidence[0].URL)
 	require.Zero(t, c.tagReads, "the tags list is not consulted; the tag itself is")
 	require.Equal(t, "MacPorts/2.12.6 libcurl dockhand/2", c.agent, "the request says it is MacPorts' libcurl fetch run by dockhand, which decides the API's JSON layout")
 	require.Equal(t, 1, c.releaseReads, "releases mode proves the published release")

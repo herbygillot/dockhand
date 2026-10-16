@@ -37,9 +37,14 @@ Never produced, and planned by no roadmap item:
   files, with `coord.ErrUnsupported`. Tart's `!darwin` stub stays, since it
   covers Linux.
 - tools/acceptance/rerun-rc7, rc7's rerun list.
+- `upstream.Result.Evidence` and its `Observation`, where each version was
+  observed, with `portsource.Spec.EvidenceURL` that only it used; the
+  person's "Delete". Nothing read it, and the roadmap named it only as "the
+  release's provenance, until something reads more". The escaping test
+  reads the same URL through `MatchText`.
 
-Left as they are: `distfetch.Client.MaxBytes` stays unset, since a distfile
-may be gigabytes; and `upstream.Result.Evidence`, the person's call.
+Left as it is: `distfetch.Client.MaxBytes` stays unset, since a distfile
+may be gigabytes.
 
 Tests: the whole suite, the Tart guest tests, vet at each commit, lint
 (Linux and darwin), and `deadcode -test`.

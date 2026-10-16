@@ -53,15 +53,12 @@ func TestGitLabSourceRetainsInstanceNamespaceAndAtomMatchText(t *testing.T) {
 	match, err := spec.MatchText("v3.0")
 	require.NoError(t, err)
 	require.Equal(t, "https://gitlab.example.com/root/group/subgroup/project/-/tags/v3.0</id>", match)
-	evidence, err := spec.EvidenceURL("v3.0")
-	require.NoError(t, err)
-	require.Equal(t, "https://gitlab.example.com/root/group/subgroup/project/-/tags/v3.0", evidence)
 }
 
 func TestSourceURLsEscapeTagData(t *testing.T) {
 	spec, err := portsource.Interpret(githubPort(), portsource.Edit)
 	require.NoError(t, err)
-	value, err := spec.EvidenceURL("release/2#meta%-stable")
+	value, err := spec.MatchText("release/2#meta%-stable")
 	require.NoError(t, err)
 	parsed, err := url.Parse(value)
 	require.NoError(t, err)

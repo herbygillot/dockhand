@@ -72,7 +72,6 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 		release.SourceVersion = version
 	}
 	result.finish(release, port.Version, "Selected "+version+" from livecheck", "")
-	result.Evidence = []Observation{{Source: string(portsource.HTTPRegex), Version: version, URL: spec.Livecheck.URL, ObservedAt: result.ObservedAt}}
 	return result, nil
 }
 
