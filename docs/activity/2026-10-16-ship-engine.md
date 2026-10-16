@@ -35,3 +35,16 @@ Built in slices, each committed on its own.
   to a person before a running check is stopped, and the words; it judges
   with an observer session and stops with a foreground one, where it held a
   foreground session for both.
+
+## The baseline comparison, and the auto-run without an exit code
+
+- `engine.BaselineComparison(base, branch)` sets each port's result at the
+  base beside the branch's, in each environment where the baseline built
+  it, and where the check failed it but master doesn't build it: the
+  judgment check's `writeBaselineResults` made while printing (review row
+  6, moved here from 5.5 by the split's coalescing), so the `run` library
+  holds none. The words stay command's.
+- `check.baseline`'s auto-run asks the engine whether a baseline would
+  answer anything (`BaselineCandidates`, of the finished run), where it
+  first branched on the check's exit code being `ExitCheckFailed` (7b row
+  8).

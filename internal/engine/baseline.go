@@ -319,3 +319,42 @@ func (e *Engine) EnqueueBaseline(ctx context.Context, branch model.Branch, basel
 	}
 	return e.enqueue(ctx, branch, baseline.Plan, origin, baseline.Of.ID)
 }
+
+// BaselineRow is one port's result at the base beside the branch's, in one
+// environment: Excluded where the base doesn't build it there, and why.
+type BaselineRow struct {
+	Target      model.TargetID
+	Environment model.Environment
+	Base        model.TargetResult
+	Branch      model.TargetResult
+	Excluded    string
+}
+
+// BaselineComparison sets each port's result at the base beside the
+// branch's, in each environment where the baseline built it, and where the
+// check failed it but master doesn't build it. A baseline rebuilds a port
+// only where it failed, so elsewhere there is nothing to set beside (the
+// command package review's row 6, moved here from check's printing).
+func BaselineComparison(base, branch Evidence) []BaselineRow {
+	var rows []BaselineRow
+	for _, target := range base.Targets {
+		i := slices.IndexFunc(branch.Targets, func(t TargetEvidence) bool { return t.Target.ID == target.Target.ID })
+		for n, result := range target.Outcomes {
+			environment := base.Plan.Environments[n]
+			theirs := model.TargetResult{Outcome: model.OutcomeNotRun}
+			if j := slices.Index(branch.Plan.Environments, environment); i >= 0 && j >= 0 {
+				theirs = branch.Targets[i].Outcomes[j].TargetResult
+			}
+			planned, _ := base.Plan.In(environment)
+			if !planned.Builds(target.Target.ID) && theirs.Outcome != model.OutcomeFailed {
+				continue
+			}
+			row := BaselineRow{Target: target.Target.ID, Environment: environment, Base: result.TargetResult, Branch: theirs}
+			if exclusion, excluded := base.Plan.ExclusionIn(environment, target.Target.ID); excluded {
+				row.Excluded = exclusion.Reason
+			}
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}

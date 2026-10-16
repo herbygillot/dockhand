@@ -178,7 +178,9 @@ true, it runs that baseline by itself.`,
 			// check.baseline runs the baseline the failed check pointed to,
 			// by itself, when it pointed to one. The report has said why
 			// if it couldn't tell.
-			if exit := new(ExitError); errors.As(err, &exit) && exit.Code == ExitCheckFailed && s.file.Check.Baseline && !enqueue {
+			// The engine says whether one would answer anything, from the
+			// finished run, where this read the check's exit code.
+			if s.file.Check.Baseline && !enqueue {
 				finished, _ := e.RunNamed(ctx, run.Name())
 				if ports, _, _ := e.BaselineCandidates(ctx, finished); len(ports) > 0 {
 					fmt.Fprintln(streams.Out, "check.baseline runs it now:")
@@ -824,25 +826,13 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 // the check failed it but master doesn't build it. A baseline rebuilds a
 // port only where it failed, so elsewhere there is nothing to set beside.
 func writeBaselineResults(out io.Writer, base, branch engine.Evidence, master string) {
-	for _, target := range base.Targets {
-		i := slices.IndexFunc(branch.Targets, func(t engine.TargetEvidence) bool { return t.Target.ID == target.Target.ID })
-		for n, result := range target.Outcomes {
-			environment := base.Plan.Environments[n]
-			theirs := model.TargetResult{Outcome: model.OutcomeNotRun}
-			if j := slices.Index(branch.Plan.Environments, environment); i >= 0 && j >= 0 {
-				theirs = branch.Targets[i].Outcomes[j].TargetResult
-			}
-			planned, _ := base.Plan.In(environment)
-			if !planned.Builds(target.Target.ID) && theirs.Outcome != model.OutcomeFailed {
-				continue
-			}
-			fmt.Fprintf(out, "%s at master %s · %s\n", target.Target.ID, master, engine.DescribeEnvironment(environment))
-			if exclusion, excluded := base.Plan.ExclusionIn(environment, target.Target.ID); excluded {
-				fmt.Fprintf(out, "  · not built at the base: %s\n", exclusion.Reason)
-				continue
-			}
-			fmt.Fprintf(out, "  %s\n", baselineWords(result.TargetResult, theirs, branch.Run.Name()))
+	for _, row := range engine.BaselineComparison(base, branch) {
+		fmt.Fprintf(out, "%s at master %s · %s\n", row.Target, master, engine.DescribeEnvironment(row.Environment))
+		if row.Excluded != "" {
+			fmt.Fprintf(out, "  · not built at the base: %s\n", row.Excluded)
+			continue
 		}
+		fmt.Fprintf(out, "  %s\n", baselineWords(row.Base, row.Branch, branch.Run.Name()))
 	}
 }
 
