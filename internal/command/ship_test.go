@@ -2,6 +2,8 @@ package command
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -64,5 +66,36 @@ func TestShipStopsWhereToSays(t *testing.T) {
 	require.NotContains(t, out, "checking commit ")
 	require.Empty(t, g.PRs)
 	_, _, err = dockhand(t, "ship", "jq", "-b", "jq-1.8.1")
-	require.EqualError(t, err, "name ports or a branch, not both")
+	require.EqualError(t, err, "name ports, --mine, --passing, or a branch: one of them")
+}
+
+// --mine ships the person's ports outdated --mine finds newer releases of,
+// at the release it found, and says what it leaves; --passing, the
+// branches whose checks passed and aren't submitted.
+func TestShipMineAndPassing(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "passed")
+	reader := withOutdated(t)
+	g := withGitHub(t, w)
+	g.Others = nil
+	config := filepath.Join(w.home, ".dockhand", "config.toml")
+	data, err := os.ReadFile(config)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"@ada\"\n"), data...), 0o644))
+
+	_, _, err = dockhand(t, "ship", "--mine", "jq")
+	require.EqualError(t, err, "name ports, --mine, --passing, or a branch: one of them")
+	out, errs, err := dockhand(t, "ship", "--mine", "--to", "check")
+	require.NoError(t, err, errs)
+	require.Equal(t, []string{"@ada"}, reader.asked[0].Maintainers)
+	require.Contains(t, out, "  lost: left as it is: no forge could be found for it\n")
+	require.Contains(t, out, "  jq  a version update from master, to check\n")
+	require.Contains(t, out, "jq: 1.7.1 → 1.8.1")
+	require.Empty(t, g.PRs)
+
+	out, errs, err = dockhand(t, "ship", "--passing", "--to", "commit")
+	require.NoError(t, err, errs)
+	require.Contains(t, out, "  jq-1.8.1  its branch, where it stands, to commit\n")
 }

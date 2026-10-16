@@ -19,7 +19,7 @@ func shipCommand(s *settings, streams Streams) *cobra.Command {
 	var version versionUpdate
 	var where branchFlags
 	var to string
-	var yes bool
+	var yes, mine, passing bool
 	cmd := &cobra.Command{
 		Use:   "ship [<port>...]",
 		Short: "Carry a change on to its pull request: update, commit, check, submit",
@@ -48,17 +48,29 @@ says whether any went through: 1 where none did, 3 where some need a look.`,
 			default:
 				return fmt.Errorf("--to %s: commit, check, or submit", to)
 			}
-			if len(args) > 0 && where.explicit() {
-				return errors.New("name ports or a branch, not both")
+			if chosen := len(args) > 0 || mine || passing; chosen && where.explicit() || len(args) > 0 && (mine || passing) || mine && passing {
+				return errors.New("name ports, --mine, --passing, or a branch: one of them")
 			}
 			e, err := s.open(ctx)
 			if err != nil {
 				return err
 			}
-			targets, err := shipTargets(ctx, e, streams, args, where)
+			var targets []shipTarget
+			switch {
+			case mine:
+				targets, err = mineTargets(ctx, s, e, streams)
+			case passing:
+				targets, err = passingTargets(ctx, e)
+			default:
+				targets, err = shipTargets(ctx, e, streams, args, where)
+			}
 			e.Close()
 			if err != nil {
 				return err
+			}
+			if len(targets) == 0 {
+				fmt.Fprintln(streams.Out, "Nothing to ship.")
+				return nil
 			}
 			writeShipPlan(streams.Out, targets, stage)
 			answered := model.AnsweredNobody
@@ -83,6 +95,8 @@ says whether any went through: 1 where none did, 3 where some need a look.`,
 	where.register(cmd, s, "ship")
 	version.flags(cmd, "")
 	cmd.Flags().StringVar(&to, "to", string(engine.ShipSubmit), "how far to carry each change: commit, check, or submit")
+	cmd.Flags().BoolVar(&mine, "mine", false, "your ports with newer releases, as outdated --mine finds them")
+	cmd.Flags().BoolVar(&passing, "passing", false, "the branches whose check passed for their commits, with no pull request of those commits yet")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "ship without asking, holding where serve would")
 	cmd.Flags().StringVar(&version.linked.build, "build", "", "where checks build, by build profile (default build.default's, or build.unattended's where nobody looks)")
 	cmd.MarkFlagsMutuallyExclusive("build", "on")
@@ -94,6 +108,10 @@ says whether any went through: 1 where none did, 3 where some need a look.`,
 type shipTarget struct {
 	port   string
 	branch *model.Branch
+	// version and release are the newest release outdated found, which
+	// the update takes rather than asking upstream again.
+	version string
+	release *model.Release
 }
 
 func (t shipTarget) name() string {
@@ -132,6 +150,47 @@ func shipTargets(ctx context.Context, e *engine.Engine, streams Streams, ports [
 			}
 			return nil, fmt.Errorf("%s is changed in %s; ship -b <branch> names which to carry on", port, strings.Join(names, ", "))
 		}
+	}
+	return targets, nil
+}
+
+// mineTargets are the person's ports with newer releases, as outdated
+// --mine finds them, each at the release it found; the ports it leaves,
+// and why, are said.
+func mineTargets(ctx context.Context, s *settings, e *engine.Engine, streams Streams) ([]shipTarget, error) {
+	request, _, err := outdatedRequest(ctx, s, e, streams, nil, true)
+	if err != nil {
+		return nil, err
+	}
+	report, err := e.Outdated(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := e.PlanOutdated(ctx, report)
+	if err != nil {
+		return nil, err
+	}
+	for _, skipped := range plan.Skipped {
+		fmt.Fprintf(streams.Out, "  %s: left as it is: %s\n", skipped.Port, skipped.Reason)
+	}
+	var targets []shipTarget
+	for _, update := range plan.Updates {
+		targets = append(targets, shipTarget{port: update.Port.Port, version: update.Port.Newest, release: update.Port.Release})
+	}
+	return targets, nil
+}
+
+// passingTargets are the branches whose check passed for their commits,
+// with no pull request of those commits yet: submit --passing's.
+func passingTargets(ctx context.Context, e *engine.Engine) ([]shipTarget, error) {
+	passing, err := e.PassingBranches(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var targets []shipTarget
+	for _, status := range passing.Ready {
+		branch := status.Branch
+		targets = append(targets, shipTarget{branch: &branch})
 	}
 	return targets, nil
 }
@@ -192,6 +251,9 @@ func shipOne(ctx context.Context, s *settings, streams Streams, target shipTarge
 		request, err := version.request([]string{target.port}, false)
 		if err != nil {
 			return err
+		}
+		if target.version != "" {
+			request.Version, request.Release = target.version, target.release
 		}
 		if stage != engine.ShipSubmit {
 			// Committed, and checked where --to says, but not submitted.
