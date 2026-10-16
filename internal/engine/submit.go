@@ -142,8 +142,10 @@ type SubmitPlan struct {
 	// then (movedSources).
 	Moved []model.Concern
 	// Majors are the major-version holds of the branch's updates
-	// (holds.majors), which hold a submission nobody looks over.
+	// (holds.majors), and Floors where it raises the oldest macOS a port
+	// builds on, each of which holds a submission nobody looks over.
 	Majors []model.Concern
+	Floors []model.Concern
 	// Blocking is what stops the submission.
 	Blocking []string
 	// CheckNeeded is true when a PendingCheck plan has no check for its
@@ -390,6 +392,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	squashed := !slices.ContainsFunc(plan.Findings, func(f commitrules.Finding) bool { return f.Code == "follow-up" || f.Code == "merge" })
 	plan.Moved = append(append(preparedSources(plan.Evidence, edits), plan.Moved...), assessedSources(plan.Evidence, plan.Upstream)...)
 	plan.Majors = e.majorHolds(edits)
+	plan.Floors = e.floorHolds(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree))
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: slices.Concat(accepted, request.Accept), Types: request.Types,
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,

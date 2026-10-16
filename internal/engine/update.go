@@ -89,6 +89,10 @@ type UpdateRequest struct {
 	// would hold the submission after the check: nothing is downloaded or
 	// built for it. Submit looks again before publishing.
 	Unattended bool
+	// FollowMoves points github.setup at the repository GitHub now answers
+	// the release's by, where it moved: the person's choice, never made
+	// unasked (part 2's new holds).
+	FollowMoves bool
 	// WithObsolete also moves the obsolete stub the Portfile keeps for the
 	// port, one replaced_by it that fetches nothing, to the same version,
 	// in the same commit: terraform beside terraform-1.16, whose version
@@ -205,6 +209,9 @@ type Update struct {
 	// discovery follows unsaid (field testing, 2026-10-02). Empty where
 	// it's the same, or couldn't be asked.
 	Renamed string
+	// Followed is the repository github.setup was pointed at, where the
+	// update followed a move (FollowMoves).
+	Followed string
 	// RenamedFrom is the branch's name before the update renamed it for
 	// the version it now moves to; empty where it wasn't renamed.
 	RenamedFrom string
@@ -423,6 +430,20 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	// its hosts.
 	if request.Action == model.EditUpdate && len(result.Files) > 0 && update.Release != nil {
 		update.Renamed = e.renamed(ctx, *update.Release)
+		if update.Renamed != "" && request.FollowMoves {
+			for i, file := range result.Files {
+				if path.Base(file.Path) != "Portfile" || file.Delete {
+					continue
+				}
+				moved, n, err := portfile.MoveGitHub(file.After, update.Release.Repository, update.Renamed)
+				if err != nil {
+					return Update{}, fmt.Errorf("%s: --follow-moves: %w", request.Port, err)
+				}
+				if n > 0 {
+					result.Files[i].After, update.Followed = moved, update.Renamed
+				}
+			}
+		}
 	}
 	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && len(result.Files) > 0 {
 		if info, ok := result.PortAfter(update.Port); ok {
@@ -441,8 +462,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		// neither its preview nor the pull request said it had moved
 		// (field testing's batch 10, finding 1).
 		if update.Renamed != "" && update.Upstream != nil {
-			update.Upstream.Changes = append(update.Upstream.Changes, model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: update.Renamed, Hold: true, Class: model.Introduced,
-				Message: fmt.Sprintf("upstream moved: GitHub answers %s as %s, by a redirect; the Portfile's github.setup may follow", update.Release.Repository, update.Renamed)})
+			update.Upstream.Changes = append(update.Upstream.Changes, movedChange(update.Release.Repository, update.Renamed, update.Followed != ""))
 		}
 		// An archive MacPorts' mirror already holds another file of, under
 		// a dist_subdir other ports share, fails the check at its checksum
@@ -1319,6 +1339,32 @@ func editRecorded(branch model.BranchID, id model.EditID) func(store.Reader) boo
 // names it otherwise than the release was found by; empty where it's the
 // same, it isn't GitHub's, or GitHub couldn't be asked, which is no
 // reason to stop an update.
+// movedChange is the comparison's finding that GitHub answers the
+// release's repository by another name. A new owner is said as a transfer,
+// not a rename, since a new owner's release is a person's to trust, more
+// so for what a port installs with privilege (sudosh2's, transferred from
+// squash to WLTBAgent); either holds until --follow-moves points
+// github.setup at it, the person's choice (field testing at 43949b89:
+// gitoxide's, Byron to GitoxideLabs, was followed by hand).
+func movedChange(from, to string, followed bool) model.UpstreamChange {
+	change := model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: to, Hold: !followed, Class: model.Introduced}
+	fromOwner, _, _ := strings.Cut(from, "/")
+	toOwner, _, _ := strings.Cut(to, "/")
+	switch {
+	case followed:
+		change.Message = fmt.Sprintf("upstream moved: GitHub answers %s as %s, and github.setup now names it (--follow-moves)", from, to)
+	case !strings.EqualFold(fromOwner, toOwner):
+		change.Rule = upstreamTransferredRule
+		change.Message = fmt.Sprintf("upstream transferred from %s to %s: GitHub answers %s as %s, by a redirect, and its release is a new owner's to trust; update --follow-moves points github.setup at it", fromOwner, toOwner, from, to)
+	default:
+		change.Message = fmt.Sprintf("upstream renamed: GitHub answers %s as %s, by a redirect; update --follow-moves points github.setup at it", from, to)
+	}
+	return change
+}
+
+// upstreamTransferredRule is movedChange's finding of a new owner.
+const upstreamTransferredRule = "upstream-transferred"
+
 // upstreamMovedRule is the comparison's finding that GitHub answers the
 // release's repository by another name.
 const upstreamMovedRule = "upstream-moved"

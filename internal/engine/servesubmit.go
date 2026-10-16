@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -153,6 +155,9 @@ func (p SubmitPlan) Concerns() []model.Concern {
 	}
 	for _, major := range p.Majors {
 		add(major)
+	}
+	for _, floor := range p.Floors {
+		add(floor)
 	}
 	for _, finding := range p.Findings {
 		add(model.Concern{Origin: model.FromCommitRules, Rule: finding.Code, Detail: "commit rules: " + finding.String()})
@@ -410,6 +415,49 @@ func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (
 
 // majorRule is the hold on an update whose major version moves.
 const majorRule = "major-version"
+
+// The holds on a revision that raises the oldest macOS a port builds on:
+// its platforms' darwin floor, or its macosx_deployment_target. Older Macs
+// lose it, which a person decides (part 2's new holds, the person's order
+// of 2026-10-13); read from the change record, not a Portfile pattern.
+const (
+	darwinFloorRule      = "darwin-floor"
+	deploymentTargetRule = "deployment-target"
+)
+
+// floorHolds are a revision's raised floors, as its change records say:
+// none where they can't be read, as the records then say nothing.
+func (e *Engine) floorHolds(ctx context.Context, branch model.BranchID, base, tree model.ObjectID) []model.Concern {
+	records, err := e.revisionChanges(ctx, branch, base, tree, false)
+	if err != nil {
+		return nil
+	}
+	directories := slices.Sorted(maps.Keys(records))
+	var held []model.Concern
+	for _, directory := range directories {
+		for _, port := range records[directory].Ports {
+			for _, field := range port.Fields {
+				switch field.Field {
+				case "platforms":
+					from, to := macports.DarwinFloor(field.From), macports.DarwinFloor(field.To)
+					if to > from {
+						held = append(held, model.Concern{Origin: model.FromHolds, Port: port.Port, Rule: darwinFloorRule, Subject: strconv.Itoa(to),
+							Detail: fmt.Sprintf("%s now builds on Darwin %d and later, where its platforms said %q: older Macs lose it, which holds for a look", port.Port, to, field.From)})
+					}
+				case "macosx_deployment_target":
+					// Both sides evaluated on this Mac, where Base sets it to
+					// the host's unless the Portfile does: one raised is the
+					// Portfile's.
+					if field.From != "" && field.To != "" && !macports.BaseAtLeast(field.From, field.To) {
+						held = append(held, model.Concern{Origin: model.FromHolds, Port: port.Port, Rule: deploymentTargetRule, Subject: field.To,
+							Detail: fmt.Sprintf("%s raises macosx_deployment_target from %s to %s: older Macs may not run what it builds, which holds for a look", port.Port, field.From, field.To)})
+					}
+				}
+			}
+		}
+	}
+	return held
+}
 
 // majorHold is the hold on an update nobody looks over whose major version
 // moves, unless holds.majors allows it: hyperfine went from 1.21.0 to 2.0.0

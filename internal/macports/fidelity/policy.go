@@ -6,5 +6,6 @@ package fidelity
 // revision changed where this Mac's evaluation can't see (Unseen). Policy
 // 4 is the same rules, raised because update primed records under 3
 // without Unseen, which no later read made again (the architecture
-// re-synthesis, L2c): those are made again now.
-const ChangePolicy = 4
+// re-synthesis, L2c): those are made again now. Policy 5 compares
+// macosx_deployment_target too, which a raised one holds for a look.
+const ChangePolicy = 5

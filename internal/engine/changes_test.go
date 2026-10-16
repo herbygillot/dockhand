@@ -268,3 +268,37 @@ func portNames(ports []model.SubportChange) []string {
 	}
 	return names
 }
+
+// A revision that raises the oldest macOS a port builds on, its platforms'
+// darwin floor or its macosx_deployment_target, holds for a look, read from
+// the change record (part 2's new holds).
+func TestARaisedFloorHolds(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	f.options.Tclsh = testsupport.MacPortsTclsh(t)
+	floored := func(platforms, target string) string {
+		return strings.Replace(zdemo("0", "2.0"), "license MIT\n", "license MIT\nplatforms {darwin >= "+platforms+"}\nmacosx_deployment_target "+target+"\n", 1)
+	}
+	write(t, f.upstream, map[string]string{"devel/zdemo/Portfile": floored("19", "10.15")})
+	testsupport.Git(t, f.upstream, "add", ".")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "zdemo: new port")
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "floor"})
+	require.NoError(t, err)
+	trees, err := e.Repo.CommitTrees(t.Context(), []string{string(branch.Base)})
+	require.NoError(t, err)
+	tree := editTree(t, e, model.ObjectID(trees[string(branch.Base)]), map[string]string{"devel/zdemo/Portfile": floored("21", "12.0")})
+	_, err = e.revisionChanges(t.Context(), branch.ID, branch.Base, tree, true)
+	require.NoError(t, err)
+	var rules []string
+	for _, held := range e.floorHolds(t.Context(), branch.ID, branch.Base, tree) {
+		if held.Port == "zdemo" {
+			rules = append(rules, held.Rule)
+			require.Contains(t, []string{
+				`zdemo now builds on Darwin 21 and later, where its platforms said "{darwin >= 19}": older Macs lose it, which holds for a look`,
+				"zdemo raises macosx_deployment_target from 10.15 to 12.0: older Macs may not run what it builds, which holds for a look",
+			}, held.Detail)
+		}
+	}
+	require.ElementsMatch(t, []string{darwinFloorRule, deploymentTargetRule}, rules)
+}
