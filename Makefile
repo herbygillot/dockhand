@@ -31,11 +31,14 @@ TEST_TIMEOUT ?= 40m
 # The command line's tests set package-level seams and HOME, so they can't
 # run in parallel in one process; they run as COMMAND_SHARDS processes
 # (tools/shard-test.sh), beside every other package's. On a Mac with 18
-# cores, 280 s became 61 s (batch 49). One shard for each three cores, at
-# most six: six on CI's three cores, beside engine's parallel tests, ran
-# serve's tests out of time.
+# cores, 280 s became 61 s (batch 49). One shard for each two cores, at
+# most six: one on CI's three-core Apple-silicon runner, where two made the
+# step slower (10.6 to 12.0 minutes), and two on its four-core Intel one,
+# where command ran alone at the end (19.8 to 13.1 minutes; CI runs 993 and
+# 997, 2026-10-16). It was one for each three: six on three cores ran
+# serve's 5-second waits out, which 8d2cb046 fixed with a 2-minute settle.
 COMMAND_PACKAGE := github.com/herbygillot/dockhand/internal/command
-COMMAND_SHARDS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null | awk '{ n = int($$1 / 3); print (n < 1 ? 1 : (n > 6 ? 6 : n)) }')
+COMMAND_SHARDS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null | awk '{ n = int($$1 / 2); print (n < 1 ? 1 : (n > 6 ? 6 : n)) }')
 
 test:
 	@$(GO) test -timeout $(TEST_TIMEOUT) $$($(GO) list ./... | grep -vxF $(COMMAND_PACKAGE)) & others=$$!; \
