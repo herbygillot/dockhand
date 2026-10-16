@@ -12,6 +12,14 @@ act() {
 	(cd / && env -u MACPORTS_TREE "$DH_BIN" --json status >"$ROW_DIR/outside.json" 2>&1) || :
 	dh_json start ds8 --here </dev/null || :
 }
+# The staged file goes again, from the index and the checkout: it stayed
+# staged in the full stage's checkout from 2026-10-09 until a driver
+# removed it by hand (prime-time, 2026-10-16).
+teardown() {
+	git -C "$MACPORTS_TREE" rm -q --cached --ignore-unmatch _resources/DIRTY.txt 2>/dev/null || :
+	rm -f "$MACPORTS_TREE/_resources/DIRTY.txt"
+	return 0
+}
 assert() {
 	[ "$(cat "$ROW_DIR/json/1.json.exit")" = 0 ] || { row_fail "status from a subdirectory exited $(cat "$ROW_DIR/json/1.json.exit")"; return; }
 	[ "$(cat "$ROW_DIR/json/2.json.exit")" = 0 ] || { row_fail "--tree wasn't honoured from /"; return; }
