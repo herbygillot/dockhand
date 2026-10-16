@@ -293,3 +293,19 @@ func TestRequiredEnvironmentsKeepWhatD17Accepted(t *testing.T) {
 	require.Equal(t, CellNotRun, judged.Targets[0].Outcomes[1].Kind, "so nothing says jq is excluded there, though a plan might")
 	require.True(t, judged.Targets[0].Missing())
 }
+
+// A result table shows the releases something was built on, or excluded
+// for a reason of the port's own; the releases a minmax profile chose not
+// to build on leave it (the person's word, 2026-10-16).
+func TestATableLeavesOutWhatAProfileChoseNotToBuild(t *testing.T) {
+	spanned := Cell{Kind: CellExcluded, Exclusion: model.Exclusion{Reason: "minmax builds it on its oldest and newest releases, macOS 12 and 27", Span: true}}
+	knownFail := Cell{Kind: CellExcluded, Exclusion: model.Exclusion{Reason: "known_fail on arm64 before macOS 14"}}
+	built := Cell{Kind: CellRecorded}
+	e := Evidence{Plan: model.Plan{Environments: make([]model.Environment, 4)}, Targets: []TargetEvidence{
+		{Outcomes: []Cell{built, spanned, knownFail, built}},
+		{Outcomes: []Cell{built, spanned, spanned, built}},
+	}}
+	require.Equal(t, []int{0, 2, 3}, e.Shown(), "the second release only minmax left out; the third a port's own reason kept")
+	none := Evidence{Plan: model.Plan{Environments: make([]model.Environment, 2)}, Targets: []TargetEvidence{{Outcomes: []Cell{spanned, spanned}}}}
+	require.Equal(t, []int{0, 1}, none.Shown(), "a table with nothing else shows what it has")
+}

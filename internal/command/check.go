@@ -627,14 +627,17 @@ func hintBaseline(ctx context.Context, e *engine.Engine, out io.Writer, run mode
 // in full.
 func writeResults(out io.Writer, indent string, evidence engine.Evidence, where bool) {
 	environments := evidence.Plan.Environments
-	if len(environments) <= 1 {
+	// The releases a profile chose not to build on are left out, as the
+	// pull request leaves them out.
+	shown := evidence.Shown()
+	if len(shown) <= 1 {
 		width := 0
 		for _, target := range evidence.Targets {
 			width = max(width, len(target.Target.ID))
 		}
 		for _, target := range evidence.Targets {
 			var cells []string
-			for i := range target.Outcomes {
+			for _, i := range shown {
 				cell := resultWords(evidence, target, i)
 				if where {
 					cell = engine.DescribeEnvironment(environments[i]) + " " + cell
@@ -647,13 +650,13 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 	}
 	grid := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
 	fmt.Fprintf(grid, "%sPORT", indent)
-	for _, environment := range environments {
-		fmt.Fprintf(grid, "\t%s", engine.EnvironmentHeading(environment, environments))
+	for _, i := range shown {
+		fmt.Fprintf(grid, "\t%s", engine.EnvironmentHeading(environments[i], environments))
 	}
 	fmt.Fprintln(grid)
 	for _, target := range evidence.Targets {
 		fmt.Fprintf(grid, "%s%s", indent, target.Target.ID)
-		for i := range target.Outcomes {
+		for _, i := range shown {
 			fmt.Fprintf(grid, "\t%s", resultWords(evidence, target, i))
 		}
 		fmt.Fprintln(grid)

@@ -59,6 +59,11 @@ type PlanTarget struct {
 type Exclusion struct {
 	Target Target
 	Reason string
+	// Span is a minmax profile's choice: the port builds on its oldest
+	// and newest releases, and not this one. Nothing about the port keeps
+	// it from building there, so a result table leaves it out rather than
+	// saying "not built" (the person's word, 2026-10-16).
+	Span bool `json:",omitempty"`
 }
 
 // Unresolved is a changed target whose evaluation failed. A plan with one

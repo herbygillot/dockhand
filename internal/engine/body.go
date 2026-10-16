@@ -90,12 +90,14 @@ func (facts bodyFacts) description() prdescription.Facts {
 				described.TestedOn.Reports = append(described.TestedOn.Reports, report(environment, observation.Observed, built, checks, reusedIn))
 			}
 		}
-		for _, environment := range evidence.Plan.Environments {
-			described.TestedOn.Columns = append(described.TestedOn.Columns, EnvironmentHeading(environment, evidence.Plan.Environments))
+		shown := evidence.Shown()
+		for _, i := range shown {
+			described.TestedOn.Columns = append(described.TestedOn.Columns, EnvironmentHeading(evidence.Plan.Environments[i], evidence.Plan.Environments))
 		}
 		for _, target := range evidence.Targets {
 			row := prdescription.Row{Port: string(target.Target.ID)}
-			for i, result := range target.Outcomes {
+			for _, i := range shown {
+				result := target.Outcomes[i]
 				row.Cells = append(row.Cells, prdescription.Cell{Words: EvidenceWords(*evidence, target, i, slices.Contains(facts.Accepted, target.Target.Target.Name)), Reason: result.Reason()})
 			}
 			described.TestedOn.Rows = append(described.TestedOn.Rows, row)

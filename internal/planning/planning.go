@@ -205,6 +205,10 @@ func Exclusions(input Input) []map[model.TargetID]string {
 	return reasons
 }
 
+// spanReason begins the reason span gives, which an exclusion is marked
+// by (Exclusion.Span) where it's made, so nothing reads the words after.
+const spanReason = "minmax builds it on its oldest and newest releases,"
+
 // span rules out, for a minmax plan, each port where it builds but isn't
 // on its oldest or newest release, unless a port built there on one of
 // its own needs it first.
@@ -270,7 +274,7 @@ func span(input Input, reasons []map[model.TargetID]string) {
 				continue
 			}
 			end := ends[c.ID]
-			reasons[e][c.ID] = fmt.Sprintf("minmax builds it on its oldest and newest releases, %s and %s", releaseName(input.Environments[end[0]]), strings.TrimPrefix(releaseName(input.Environments[end[1]]), "macOS "))
+			reasons[e][c.ID] = fmt.Sprintf(spanReason+" %s and %s", releaseName(input.Environments[end[0]]), strings.TrimPrefix(releaseName(input.Environments[end[1]]), "macOS "))
 		}
 	}
 }
@@ -420,7 +424,7 @@ func EnvironmentPlan(environment model.Environment, targets, candidates []model.
 	}
 	for _, c := range candidates {
 		if reason := reasons[c.ID]; reason != "" {
-			planned.Exclusions = append(planned.Exclusions, model.Exclusion{Target: c.Target, Reason: reason})
+			planned.Exclusions = append(planned.Exclusions, model.Exclusion{Target: c.Target, Reason: reason, Span: strings.HasPrefix(reason, spanReason)})
 		}
 	}
 	// What it needs there decides what it can't build.

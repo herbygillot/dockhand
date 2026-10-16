@@ -28,6 +28,10 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted bool) st
 	}
 	switch result.Kind {
 	case CellExcluded:
+		// A profile's own choice not to build it there is no result.
+		if result.Exclusion.Span {
+			return "—"
+		}
 		// Why the plan left it out is said, as wasmer's macOS 12 column
 		// read only "— excluded", where its Portfile marks it known_fail
 		// on arm64 before macOS 14 (the wasmer run, #35077).

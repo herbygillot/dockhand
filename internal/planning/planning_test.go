@@ -308,4 +308,12 @@ func TestSpanBuildsEachPortOnItsOldestAndNewest(t *testing.T) {
 	require.Empty(t, reasons[0]["harbor-cli"])
 	require.Empty(t, reasons[3]["harbor-cli"])
 	require.Equal(t, "minmax builds it on its oldest and newest releases, macOS 12 and 26", reasons[1]["libharbor"])
+
+	// Its exclusions are marked as its, a port's own reason not.
+	decision, err := Decide(input)
+	require.NoError(t, err)
+	for _, exclusion := range decision.Builds[1].Exclusions {
+		require.Equal(t, exclusion.Target.Name != "harbor-new", exclusion.Span, exclusion.Target.Name)
+	}
+	require.NotEmpty(t, decision.Builds[1].Exclusions)
 }

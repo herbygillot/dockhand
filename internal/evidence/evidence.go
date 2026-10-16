@@ -470,6 +470,28 @@ func (e Evidence) ExcludesAll(environment int) bool {
 	return len(e.Targets) > 0
 }
 
+// Shown are the environments a result table shows, by index: each but
+// those a minmax profile built none of the targets on, by its choice
+// (Exclusion.Span), which the table leaves out rather than filling with
+// "not built" (the person's word, 2026-10-16).
+func (e Evidence) Shown() []int {
+	var shown []int
+	for i := range e.Plan.Environments {
+		for _, target := range e.Targets {
+			if cell := target.Outcomes[i]; cell.Kind != CellExcluded || !cell.Exclusion.Span {
+				shown = append(shown, i)
+				break
+			}
+		}
+	}
+	if len(shown) == 0 {
+		for i := range e.Plan.Environments {
+			shown = append(shown, i)
+		}
+	}
+	return shown
+}
+
 // Checks name the checks the evidence's runs were in, check-11, by ID,
 // and the checks that built what they reused.
 func (e Evidence) Checks() map[model.RunID]string {
