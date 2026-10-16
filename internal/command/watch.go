@@ -19,8 +19,9 @@ import (
 var watchPoll = time.Second
 
 // watchRedraw is how often the live view is redrawn with nothing new, so
-// its ages stay true.
-var watchRedraw = 30 * time.Second
+// its ages stay true, and watchProgress how often at most for a check's
+// progress alone, which the list of checks shows.
+var watchRedraw, watchProgress = 30 * time.Second, 5 * time.Second
 
 // statusWatch is status --watch: status kept current as serve works, a
 // view redrawn on a terminal, else events as lines; it only observes.
@@ -172,7 +173,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams) error {
 	}
 	draw()
 	want <- struct{}{}
-	paused := false
+	paused, progressed := false, false
 	for {
 		select {
 		case <-ctx.Done():
@@ -216,8 +217,12 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams) error {
 			if err != nil {
 				return err
 			}
-			if slices.ContainsFunc(events, func(event model.Event) bool { return event.Kind.ChangesStatus() }) || time.Since(drawn) >= watchRedraw {
+			changed := slices.ContainsFunc(events, func(event model.Event) bool { return event.Kind.ChangesStatus() })
+			// Progress waits for its interval, and isn't lost meanwhile.
+			progressed = progressed || slices.ContainsFunc(events, func(event model.Event) bool { return event.Kind == model.EventProgress })
+			if changed || progressed && time.Since(drawn) >= watchProgress || time.Since(drawn) >= watchRedraw {
 				draw()
+				progressed = false
 			}
 		}
 	}

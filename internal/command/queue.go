@@ -40,6 +40,10 @@ func writeQueue(out io.Writer, queue []engine.QueuedCheck) {
 		if run.Origin == model.OriginServe && detail == "" {
 			detail = "started by serve"
 		}
+		// A running check says where it is, as the guest reports it.
+		if queued.Progress != "" {
+			detail = queued.Progress
+		}
 		if queued.Stopped {
 			state, detail = "stopped", "the process running it ended; dockhand wait "+run.Name()+" resumes it, cancel ends it"
 		}
@@ -53,7 +57,7 @@ func queueView(queue []engine.QueuedCheck) *[]queuedRunJSON {
 	rows := []queuedRunJSON{}
 	for _, queued := range queue {
 		row := queuedRunJSON{runJSON: runView(queued.Run), Branch: queued.Branch.ShortName(), Revision: engine.Describe(queued.Revision), Environments: []environmentJSON{}}
-		row.Stopped = queued.Stopped
+		row.Stopped, row.Progress = queued.Stopped, queued.Progress
 		for _, environment := range queued.Plan.Environments {
 			row.Environments = append(row.Environments, environmentView(environment))
 		}

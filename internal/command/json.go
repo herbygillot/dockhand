@@ -648,6 +648,9 @@ func nonNil[T any](values []T) []T {
 
 type queuedRunJSON struct {
 	runJSON
+	// Progress is a running check's newest progress line; absent for one
+	// queued.
+	Progress     string            `json:"progress,omitempty"`
 	Branch       string            `json:"branch"`
 	Revision     string            `json:"revision"`
 	Environments []environmentJSON `json:"environments"`

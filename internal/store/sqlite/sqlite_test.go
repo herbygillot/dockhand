@@ -1106,6 +1106,14 @@ func TestEventsAreAJournal(t *testing.T) {
 		last, err := r.LastEvent()
 		require.NoError(t, err)
 		require.Greater(t, last, sequences[2])
+		// A run's newest event of a kind, as live progress reads it.
+		newest, found, err := r.LatestRunEvent("run_1", model.EventTargetResult)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, later[0], newest)
+		_, found, err = r.LatestRunEvent("run_2", model.EventTargetResult)
+		require.NoError(t, err)
+		require.False(t, found)
 		return nil
 	}))
 }

@@ -187,6 +187,14 @@ func (t *tx) RunEvents(run model.RunID, after int64, limit int) ([]model.Event, 
 	return t.events("SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND run_id=? AND sequence>? ORDER BY sequence LIMIT ?", t.repo, run, after, limit)
 }
 
+func (t *tx) LatestRunEvent(run model.RunID, kind model.EventKind) (model.Event, bool, error) {
+	events, err := t.events("SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND run_id=? AND kind=? ORDER BY sequence DESC LIMIT 1", t.repo, run, kind)
+	if err != nil || len(events) == 0 {
+		return model.Event{}, false, err
+	}
+	return events[0], true, nil
+}
+
 func (t *tx) LastEvent() (int64, error) {
 	var last int64
 	err := t.conn.QueryRowContext(t.ctx, "SELECT COALESCE(MAX(sequence), 0) FROM events WHERE repository_id=?", t.repo).Scan(&last)

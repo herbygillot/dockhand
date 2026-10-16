@@ -469,8 +469,11 @@ type guestResults struct {
 	Detail      string            `json:"detail"`
 	Environment map[string]string `json:"environment"`
 	// Building is the target the program is building, until its result
-	// is written; empty between targets.
+	// is written; empty between targets. Phase is the step of its build
+	// under way, as lint, fetch, or install; empty where the guest program
+	// says none, as before it said them.
 	Building string        `json:"building"`
+	Phase    string        `json:"phase"`
 	Targets  []guestResult `json:"targets"`
 }
 
@@ -902,8 +905,10 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 	failures := 0
 	observed := false
 	// building is the target the guest said it was building when last
-	// read.
-	building := ""
+	// read, and said is the progress line last said of it, which is said
+	// again only once it changes: at most a line a read, and one a step
+	// (SQL-S4's coalescing).
+	building, said := "", ""
 	lost := func(err error) error { return interrupted(job, build, building, err) }
 	// take takes in what the guest has written: what it reported about
 	// itself, once, and each target's result not yet recorded. Every read
@@ -961,6 +966,12 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 			return err
 		}
 		building = results.Building
+		if line := buildingWords(job, results); line != said {
+			said = line
+			if line != "" {
+				build.Progress(line)
+			}
+		}
 		switch results.State {
 		case "finished":
 			return nil
@@ -979,6 +990,25 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 			return lost(fmt.Errorf("%w: the guest program stopped before it finished: %s", buildenv.ErrInfrastructure, strings.TrimSpace(tail(string(log), 400))))
 		}
 	}
+}
+
+// buildingWords is what the guest is building, and how far it is, as
+// "building jq (2 of 5): fetch"; empty between targets.
+func buildingWords(job buildenv.Job, results guestResults) string {
+	if results.Building == "" {
+		return ""
+	}
+	name := results.Building
+	if i := slices.IndexFunc(job.Targets, func(target buildenv.Target) bool { return string(target.ID) == results.Building }); i >= 0 {
+		name = job.Targets[i].Target.Name
+		if len(job.Targets) > 1 {
+			name += fmt.Sprintf(" (%d of %d)", i+1, len(job.Targets))
+		}
+	}
+	if results.Phase == "" {
+		return "building " + name
+	}
+	return "building " + name + ": " + results.Phase
 }
 
 // interrupted records the target a lost guest was building as

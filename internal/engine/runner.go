@@ -1295,6 +1295,9 @@ type QueuedCheck struct {
 	Revision model.Revision
 	Plan     model.Plan
 	Stopped  bool
+	// Progress is a running check's newest progress line, as "building
+	// jq (2 of 5): fetch", for live progress; empty for one queued.
+	Progress string
 }
 
 // Queue is every check queued or running, oldest first, each with what
@@ -1322,6 +1325,15 @@ func (e *Engine) Queue(ctx context.Context, session *coord.Session) ([]QueuedChe
 			}
 			if checked.Plan, err = r.Plan(run.Plan); err != nil {
 				return err
+			}
+			if run.State == model.RunRunning && !checked.Stopped {
+				event, found, err := r.LatestRunEvent(run.ID, model.EventProgress)
+				if err != nil {
+					return err
+				}
+				if found {
+					checked.Progress = event.Message
+				}
 			}
 			queue = append(queue, checked)
 		}

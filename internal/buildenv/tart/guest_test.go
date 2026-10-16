@@ -575,12 +575,17 @@ func TestTheGuestSaysWhatItIsBuilding(t *testing.T) {
 	require.Equal(t, "running", results.State)
 	require.Len(t, results.Targets, 1)
 	require.Equal(t, "libharbor", results.Targets[0].ID)
+	require.Eventually(t, func() bool {
+		results, _ = readResults(root)
+		return results.Phase == "install"
+	}, 30*time.Second, 10*time.Millisecond, "and the step of its build under way, for live progress")
 
 	require.NoError(t, command.Wait())
 	results, err := readResults(root)
 	require.NoError(t, err)
 	require.Equal(t, "finished", results.State)
 	require.Empty(t, results.Building, "nothing is building once harbor-cli's result is written")
+	require.Empty(t, results.Phase)
 	require.Len(t, results.Targets, 2)
 }
 

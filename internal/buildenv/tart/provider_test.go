@@ -906,3 +906,26 @@ func TestAStatusHasTheHostsImage(t *testing.T) {
 	require.False(t, Status{Base: []macos.Release{sequoia}, Host: tahoe}.HasHostImage())
 	require.False(t, Status{Host: tahoe}.HasHostImage())
 }
+
+// What the guest is building, and the step under way, is said as it
+// changes, once each, for live progress; between targets nothing is.
+func TestTheGuestsProgressIsSaidAsItChanges(t *testing.T) {
+	t.Parallel()
+	passed := guestResult{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
+	mac := newMac(
+		guestResults{State: "running", Building: "libharbor", Phase: "fetch"},
+		guestResults{State: "running", Building: "libharbor", Phase: "fetch"},
+		guestResults{State: "running", Building: "libharbor", Phase: "install"},
+		guestResults{State: "running", Targets: []guestResult{passed}},
+		guestResults{State: "finished", Targets: []guestResult{passed, {ID: "harbor-cli", Outcome: "passed", Log: "target-2.log"}}},
+	)
+	build := &fakeBuild{}
+	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
+	var building []string
+	for _, line := range build.progress {
+		if strings.HasPrefix(line, "building libharbor") {
+			building = append(building, line)
+		}
+	}
+	require.Equal(t, []string{"building libharbor (1 of 2): fetch", "building libharbor (1 of 2): install"}, building)
+}

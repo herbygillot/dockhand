@@ -21,6 +21,9 @@ set prefix [dict get $input prefix]
 set port $prefix/bin/port
 set results {}
 set building ""
+# phase is the step under way of the target building, which mark says as
+# it begins; empty between targets.
+set phase ""
 set environment [dict create]
 
 # save writes the results so far, replacing the file whole. A result's
@@ -28,7 +31,7 @@ set environment [dict create]
 # them, and for where each step of its build began in its log, a list of
 # each step's name and line.
 proc save {state {detail ""}} {
-    global root input results building environment
+    global root input results building phase environment
     set targets {}
     foreach result $results {
         set fields {}
@@ -58,6 +61,7 @@ proc save {state {detail ""}} {
     dict for {key value} $environment { lappend facts $key [json::write string $value] }
     set data [json::write object protocol [dict get $input protocol] state [json::write string $state] \
         detail [json::write string $detail] environment [json::write object {*}$facts] building [json::write string $building] \
+        phase [json::write string $phase] \
         targets [json::write array {*}$targets]]
     set fd [open $root/results.json.tmp w]
     puts $fd $data
@@ -238,7 +242,11 @@ set counted [dict create]
 # read is left out, and the build goes on.
 proc mark {resultVar log step} {
     upvar 1 $resultVar result
-    global counted
+    global counted phase
+    # The step under way is said at once, for live progress: what the
+    # guest is building, and how far it is (the roadmap's part 3).
+    set phase $step
+    save running
     lassign {0 0} offset lines
     if {[dict exists $counted $log]} { lassign [dict get $counted $log] offset lines }
     if {[catch {
@@ -582,6 +590,7 @@ foreach target [dict get $input targets] {
     }
     lappend results $result
     set building ""
+    set phase ""
     save running
 }
 save finished
