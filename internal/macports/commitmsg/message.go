@@ -15,8 +15,6 @@ import (
 
 const generatedByPrefix = "Generated-By: Dockhand "
 
-var legacyPrefixes = []string{"Assisted-By: Dockhand ", "Generated-by: "}
-
 // GeneratedBy is the trailer naming the build that generated a commit:
 // "Generated-By: Dockhand devel+1a2b3c4d5e6f (https://github.com/herbygillot/dockhand)".
 // It is plain text; a commit message is not Markdown.
@@ -24,19 +22,9 @@ func GeneratedBy() string {
 	return generatedByPrefix + buildinfo.Current().Tag() + " (" + buildinfo.ProjectURL + ")"
 }
 
-// IsAttribution reports whether a message line is dockhand's trailer, in
-// its current or a legacy form.
+// IsAttribution reports whether a message line is dockhand's trailer.
 func IsAttribution(line string) bool {
-	line = strings.TrimSpace(line)
-	if strings.HasPrefix(line, generatedByPrefix) {
-		return true
-	}
-	for _, prefix := range legacyPrefixes {
-		if strings.HasPrefix(line, prefix) {
-			return true
-		}
-	}
-	return false
+	return strings.HasPrefix(strings.TrimSpace(line), generatedByPrefix)
 }
 
 // Attributed reports whether a commit message carries dockhand's
@@ -47,8 +35,7 @@ func Attributed(message string) bool {
 
 // Build is the build a message's Generated-By names, by its tag:
 // "v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480", or
-// "devel+1a2b3c4d5e6f.modified". A message without the line, or with only
-// a legacy form of it, names none.
+// "devel+1a2b3c4d5e6f.modified". A message without the line names none.
 func Build(message string) (string, bool) {
 	for _, line := range strings.Split(message, "\n") {
 		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), generatedByPrefix); ok {
@@ -70,20 +57,17 @@ func ModifiedBuild(message string) bool {
 // this one, each once, in order: a pre-v3 branch's commit names
 // "v0.0.0-20260921…", which a rebase keeps and a commit tidy writes again
 // replaces (the flatbuffers, nuspell, zola, and alertmanager run's finding
-// 4). A legacy form is named by its whole line.
+// 4).
 func OtherBuilds(messages []string) []string {
 	current := buildinfo.Current().Tag()
 	var builds []string
 	for _, message := range messages {
 		for _, line := range strings.Split(message, "\n") {
-			line = strings.TrimSpace(line)
-			if !IsAttribution(line) {
+			rest, ok := strings.CutPrefix(strings.TrimSpace(line), generatedByPrefix)
+			if !ok {
 				continue
 			}
-			build := line
-			if rest, ok := strings.CutPrefix(line, generatedByPrefix); ok {
-				build, _, _ = strings.Cut(rest, " ")
-			}
+			build, _, _ := strings.Cut(rest, " ")
 			if build != current && !slices.Contains(builds, build) {
 				builds = append(builds, build)
 			}
