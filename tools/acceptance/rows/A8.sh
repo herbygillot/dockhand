@@ -47,7 +47,7 @@ act() {
 	"$DH_BIN" --version >"$ROW_DIR/reinstalled" 2>&1 || :
 }
 # serve's agent goes when the row does: one left running would take the
-# checks the rows after queue (the rc6 full stage).
+# checks the rows after status (the rc6 full stage).
 teardown() {
 	"$DH_BIN" serve --uninstall >/dev/null 2>&1 || :
 }

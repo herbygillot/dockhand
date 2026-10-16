@@ -1,7 +1,7 @@
 # stages: quick full
 # B10: after a real failed check, on a deliberately broken local edit of
 # the small Go port (its destroot fails): logs, retry, check --baseline,
-# queue, wait, and cancel each find the right run, and the baseline says
+# status's queue, wait, and cancel each find the right run, and the baseline says
 # whether master fails too.
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 
@@ -20,7 +20,7 @@ act() {
 	dh_json check -b $(run_name b10-broken) --baseline || :
 	dh_json check -b $(run_name b10-broken) -d || :
 	B10_QUEUED=$(jq -r '.result.run.name // empty' "$ROW_DIR/json/4.json")
-	dh queue || :
+	dh status --all || :
 	[ -n "$B10_QUEUED" ] && dh_json cancel "$B10_QUEUED" || :
 	dh_json wait "$B10_RUN" || :
 }
@@ -43,5 +43,5 @@ assert() {
 	fi
 	[ "$(cat "$ROW_DIR/json/5.json.exit" 2>/dev/null)" = 0 ] || { row_fail "cancel of the queued $B10_QUEUED exited $(cat "$ROW_DIR/json/5.json.exit" 2>/dev/null)"; return; }
 	[ "$(cat "$ROW_DIR/json/6.json.exit" 2>/dev/null)" = 2 ] || { row_fail "wait on the failed $B10_RUN exited $(cat "$ROW_DIR/json/6.json.exit" 2>/dev/null), not 2"; return; }
-	row_pass "logs, retry, the baseline ($(jq -r '.result.run.state // "?"' "$ROW_DIR/json/3.json")), queue, cancel, and wait each found the right run"
+	row_pass "logs, retry, the baseline ($(jq -r '.result.run.state // "?"' "$ROW_DIR/json/3.json")), status's queue, cancel, and wait each found the right run"
 }

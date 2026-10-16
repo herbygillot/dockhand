@@ -50,9 +50,9 @@ sample() {
 		"$(find "$logs" -type f -name '*.gz' 2>/dev/null | wc -l | tr -d ' ')"
 }
 
-# s1_pid is the pid of the serve that leads, as queue reports it.
+# s1_pid is the pid of the serve that leads, as status reports it.
 s1_pid() {
-	dh_quiet --json queue | jq -r '.result.serve_state.pid // empty' 2>/dev/null
+	dh_quiet --json status --all | jq -r '.result.serve_state.pid // empty' 2>/dev/null
 }
 
 act() {

@@ -30,7 +30,7 @@ act() {
 	before=$(wc -c <"$log" 2>/dev/null | tr -d ' ' || echo 0)
 	dh serve --install || return 0
 	sleep 20
-	dh_quiet --json queue | jq -r '.result.serve_state.pid // empty' >"$ROW_DIR/pid.before"
+	dh_quiet --json status --all | jq -r '.result.serve_state.pid // empty' >"$ROW_DIR/pid.before"
 	dh setup github --logout || :
 	gh pr close "$url" >>"$ROW_DIR/out.log" 2>&1 || :
 	[ -f "$hosts" ] && gh_kept=$(cat "$hosts") && rm -f "$hosts"
@@ -40,7 +40,7 @@ act() {
 	[ -z "$gh_kept" ] || { printf '%s\n' "$gh_kept" >"$hosts" && chmod 600 "$hosts"; }
 	login_restore || device_login "D-C2 logs dockhand back in while serve runs" || return 0
 	sleep 90
-	dh_quiet --json queue | jq -r '.result.serve_state.pid // empty' >"$ROW_DIR/pid.after"
+	dh_quiet --json status --all | jq -r '.result.serve_state.pid // empty' >"$ROW_DIR/pid.after"
 	tail -c +"$((${before:-0} + 1))" "$log" >"$ROW_DIR/serve.log" 2>/dev/null || :
 	dh serve --uninstall || :
 	allow_change "*"

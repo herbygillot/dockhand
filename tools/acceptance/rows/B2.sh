@@ -61,8 +61,8 @@ b2_reuse() {
 	# Straight to its own file: dh writes to the row's log (the M1's run
 	# at 11491d4e found reuse.log empty).
 	if [ -n "$check" ]; then
-		printf '$ dockhand logs %s --port %s >reuse.log\n' "$check" "$ACCEPT_RUST_PORT" >>"$ROW_DIR/out.log"
-		"$DH_BIN" logs "$check" --port "$ACCEPT_RUST_PORT" >"$ROW_DIR/reuse.log" 2>&1 || :
+		printf '$ dockhand logs %s %s >reuse.log\n' "$check" "$ACCEPT_RUST_PORT" >>"$ROW_DIR/out.log"
+		"$DH_BIN" logs "$check" "$ACCEPT_RUST_PORT" >"$ROW_DIR/reuse.log" 2>&1 || :
 	fi
 }
 

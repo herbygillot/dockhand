@@ -32,7 +32,7 @@ act() {
 A7_LOG=$HOME/.dockhand/logs/serve.log
 
 # a7_pid is the leading serve's process, or nothing.
-a7_pid() { dh_quiet --json queue | jq -r '.result.serve_state.pid // empty'; }
+a7_pid() { dh_quiet --json status --all | jq -r '.result.serve_state.pid // empty'; }
 # serve's agent goes when the row does, skipped or not: a skipped A7 left
 # it running through the rows after (the rc3 full stage).
 teardown() {
