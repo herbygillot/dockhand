@@ -20,7 +20,6 @@ func TestCacheRetentionSkipsBusyEnvironmentsAndPreservesSeedsRecentOrUnknownPath
 	t.Cleanup(func() { lock.Close() })
 	old := time.Now().Add(-30 * 24 * time.Hour)
 	cutoff := time.Now().Add(-7 * 24 * time.Hour)
-	seed := strings.Repeat("b", 40)
 	tree := strings.Repeat("c", 40)
 	latest := strings.Repeat("d", 40)
 	recent := strings.Repeat("e", 40)
@@ -42,18 +41,12 @@ func TestCacheRetentionSkipsBusyEnvironmentsAndPreservesSeedsRecentOrUnknownPath
 	require.NoError(t, err)
 	idle.Close()
 	require.NoError(t, os.WriteFile(filepath.Join(current, latestFileName), []byte(latest+"\n"), 0600))
-	removable := mkdir(current, generationsDirectory+"/"+tree, generationsDirectory+"/.index-stale")
+	removable := mkdir(current, generationsDirectory+"/"+tree, generationsDirectory+"/.index-stale", ".mirror-seed-stale")
 	kept := mkdir(current, generationsDirectory+"/"+latest)
 	require.NoError(t, os.MkdirAll(filepath.Join(current, generationsDirectory, recent), 0700))
 	unknown := filepath.Join(current, "unexpected")
 	require.NoError(t, os.MkdirAll(unknown, 0700))
 	require.NoError(t, os.Chtimes(unknown, old, old))
-
-	legacy := filepath.Join(root, strings.Repeat("0", 64))
-	legacyLock, err := filelock.Acquire(t.Context(), filepath.Join(legacy, "index.lock"), filelock.Exclusive)
-	require.NoError(t, err)
-	legacyLock.Close()
-	legacyEntries := mkdir(legacy, seed, "complete/"+tree, "standalone/"+tree, "candidates/"+seed+"/"+tree)
 
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "keep"), nil, 0600))
@@ -66,8 +59,8 @@ func TestCacheRetentionSkipsBusyEnvironmentsAndPreservesSeedsRecentOrUnknownPath
 		require.False(t, item.Completed)
 		previewed = append(previewed, item.Path)
 	}
-	require.ElementsMatch(t, append(append([]string{}, removable...), legacyEntries...), previewed)
-	for _, path := range append(append(removable, busyEntries...), legacyEntries...) {
+	require.ElementsMatch(t, removable, previewed)
+	for _, path := range append(removable, busyEntries...) {
 		require.DirExists(t, path)
 	}
 
@@ -79,7 +72,7 @@ func TestCacheRetentionSkipsBusyEnvironmentsAndPreservesSeedsRecentOrUnknownPath
 		completed = append(completed, item.Path)
 	}
 	require.ElementsMatch(t, previewed, completed)
-	for _, path := range append(removable, legacyEntries...) {
+	for _, path := range removable {
 		require.NoDirExists(t, path)
 	}
 	for _, path := range append(append(kept, busyEntries...), unknown, filepath.Join(current, generationsDirectory, recent)) {

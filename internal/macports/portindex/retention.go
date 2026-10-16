@@ -21,9 +21,7 @@ type CacheRemoval struct {
 // Collect removes old generations and leftover build directories under each
 // environment's exclusive lock, so nothing is taken from an active reader or
 // builder. Busy environments are skipped. The latest seed is retained
-// regardless of age. Legacy complete, standalone, and candidate entries from
-// the earlier layout are collected the same way. Neither previews nor absent
-// caches create paths.
+// regardless of age. Neither previews nor absent caches create paths.
 func Collect(ctx context.Context, directory string, before time.Time, dry bool) ([]CacheRemoval, error) {
 	var result []CacheRemoval
 	root, err := os.OpenRoot(directory)
@@ -62,13 +60,9 @@ func Collect(ctx context.Context, directory string, before time.Time, dry bool) 
 	return result, nil
 }
 
-// lockProfile takes the environment's exclusive lock, whichever layout wrote it.
+// lockProfile takes the environment's exclusive lock.
 func lockProfile(ctx context.Context, profile string) (*os.File, error) {
-	lock, err := filelock.TryExisting(ctx, filepath.Join(profile, cacheLockName), filelock.Exclusive)
-	if errors.Is(err, os.ErrNotExist) {
-		return filelock.TryExisting(ctx, filepath.Join(profile, "index.lock"), filelock.Exclusive)
-	}
-	return lock, err
+	return filelock.TryExisting(ctx, filepath.Join(profile, cacheLockName), filelock.Exclusive)
 }
 
 func collectProfile(ctx context.Context, root *os.Root, profile, directory string, before time.Time, dry bool) ([]CacheRemoval, error) {
@@ -133,26 +127,18 @@ func cacheHash(s string) bool {
 
 // cacheContainer names directories whose children may be collectable entries.
 func cacheContainer(parts []string) bool {
-	switch len(parts) {
-	case 1:
-		return parts[0] == generationsDirectory || parts[0] == "complete" || parts[0] == "standalone" || parts[0] == "candidates"
-	case 2:
-		return parts[0] == "candidates" && git.ValidObjectID(parts[1])
-	}
-	return false
+	return len(parts) == 1 && parts[0] == generationsDirectory
 }
 
-// cacheEntry names a disposable entry: a generation, a legacy entry, or a
-// leftover temporary build directory.
+// cacheEntry names a disposable entry: a generation, or a leftover
+// temporary build directory.
 func cacheEntry(parts []string) bool {
 	leftover := func(name string) bool { return strings.HasPrefix(name, ".") && name != "." && name != ".." }
 	switch len(parts) {
 	case 1:
-		return git.ValidObjectID(parts[0]) || leftover(parts[0])
+		return leftover(parts[0])
 	case 2:
-		return (parts[0] == generationsDirectory || parts[0] == "complete" || parts[0] == "standalone") && (git.ValidObjectID(parts[1]) || leftover(parts[1]))
-	case 3:
-		return parts[0] == "candidates" && git.ValidObjectID(parts[1]) && git.ValidObjectID(parts[2])
+		return parts[0] == generationsDirectory && (git.ValidObjectID(parts[1]) || leftover(parts[1]))
 	}
 	return false
 }
