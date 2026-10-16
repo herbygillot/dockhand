@@ -97,18 +97,18 @@ func TestDiffArchiveShowsWhatChangedInside(t *testing.T) {
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
-	out, _, err := dockhand(t, "diff", "--archive")
+	out, _, err := dockhand(t, "diff", "--source")
 	require.NoError(t, err)
 	require.Contains(t, out, "textproc/jq · jq-1.7.1.tar.gz → jq-1.8.1.tar.gz: 2 files differ: 1 changed, 1 added\n\n")
 	require.Contains(t, out, "--- a/NEWS\n+++ b/NEWS\n@@ -1 +1 @@\n-jq 1.7.1\n+jq 1.8.1\n")
 	require.Contains(t, out, "+++ b/src/new.c\n")
 	require.NotContains(t, out, "src/jq.c")
 
-	out, _, err = dockhand(t, "diff", "--archive", "--stat", "jq")
+	out, _, err = dockhand(t, "diff", "--source", "--stat", "jq")
 	require.NoError(t, err)
 	require.Equal(t, "textproc/jq · jq-1.7.1.tar.gz → jq-1.8.1.tar.gz: 2 files differ: 1 changed, 1 added\n", out)
 
-	out, _, err = dockhand(t, "diff", "--archive", "curl")
+	out, _, err = dockhand(t, "diff", "--source", "curl")
 	require.NoError(t, err)
 	require.Equal(t, "No changed port has archives to compare.\n", out)
 }
@@ -129,12 +129,12 @@ func TestDiffArchivePairsWhatCorresponds(t *testing.T) {
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
-	out, _, err := dockhand(t, "diff", "--archive", "--stat")
+	out, _, err := dockhand(t, "diff", "--source", "--stat")
 	require.NoError(t, err)
 	require.Equal(t, "textproc/jq · jq-1.7.1.tar.gz → jq-1.8.1.tar.gz: 2 files differ: 1 changed, 1 added\n\n"+
 		"textproc/jq · jq-manual.tar.gz is no longer fetched\n", out)
 
-	out, _, err = dockhand(t, "diff", "--archive", "--stat", "--json")
+	out, _, err = dockhand(t, "diff", "--source", "--stat", "--json")
 	require.NoError(t, err)
 	require.Contains(t, out, `"old": "jq-1.7.1.tar.gz",
         "new": "jq-1.8.1.tar.gz",

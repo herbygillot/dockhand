@@ -69,7 +69,7 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	var partial bytes.Buffer
 	err := writeOutdated(t.Context(), nil, &partial, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{{Port: "jq", Problem: "GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT"}, current("fd")}}, false)
 	require.Equal(t, 3, ExitCode(err))
-	require.Equal(t, "1 of 2 ports couldn't be checked: GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT\nOf the 1 port checked, none has a newer release, at master 1bb30d5 · --all lists those it couldn't check\n",
+	require.Equal(t, "1 of 2 ports couldn't be checked: GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT\nOf the 1 port checked, none has a newer release, at master 1bb30d5 · --current lists those it couldn't check\n",
 		partial.String(), "a port that couldn't be checked isn't said to have none")
 
 	// Where none could be checked, as offline, each says why, and the
@@ -140,8 +140,8 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	require.Equal(t, []string{"@ada", "example.org:ada"}, reader.asked[0].Maintainers)
 	require.Contains(t, out, "  PORT   NOW     NEWEST   DOCKHAND CAN\n  jq     1.7.1   1.8.1    update\n")
 	require.Contains(t, out, "1 of 2 ports couldn't be checked: no forge could be found for it\nOf the 1 port checked, 1 has a newer release, at master ")
-	require.Contains(t, out, " · --all lists those it couldn't check\n")
-	out, _, err = dockhand(t, "outdated", "--mine", "--all")
+	require.Contains(t, out, " · --current lists those it couldn't check\n")
+	out, _, err = dockhand(t, "outdated", "--mine", "--current")
 	require.Equal(t, 3, ExitCode(err))
 	require.Contains(t, out, "couldn't check: no forge could be found for it")
 
@@ -277,9 +277,9 @@ func TestABatchCountsWhatItLeaves(t *testing.T) {
 		{Port: "tokei", Current: "14.0.0", Newest: "14.0.0"},
 		{Port: "lost", Problem: "no forge could be found for it"},
 	}}
-	require.Equal(t, "Of the rest, 2 current, 1 that couldn't be checked (dockhand outdated --mine --all says each).", restWords(report, engine.OutdatedPlan{}))
+	require.Equal(t, "Of the rest, 2 current, 1 that couldn't be checked (dockhand outdated --mine --current says each).", restWords(report, engine.OutdatedPlan{}))
 	skipped := engine.OutdatedPlan{Skipped: []engine.SkippedUpdate{{Port: "lost", Reason: "no forge could be found for it"}}}
-	require.Equal(t, "Of the rest, 2 current (dockhand outdated --mine --all says each).", restWords(report, skipped), "what the plan skipped is said by name, and not counted again")
+	require.Equal(t, "Of the rest, 2 current (dockhand outdated --mine --current says each).", restWords(report, skipped), "what the plan skipped is said by name, and not counted again")
 	require.Empty(t, restWords(engine.OutdatedReport{}, engine.OutdatedPlan{}))
 }
 

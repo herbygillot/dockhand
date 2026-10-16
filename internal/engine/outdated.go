@@ -207,7 +207,7 @@ func (r OutdatedReport) UncheckedWords() string {
 		rest += count[reason]
 	}
 	if rest > 0 {
-		said = append(said, fmt.Sprintf("%d more (dockhand outdated --all says each)", rest))
+		said = append(said, fmt.Sprintf("%d more (dockhand outdated --current says each)", rest))
 	}
 	return head + strings.Join(said, ", ")
 }

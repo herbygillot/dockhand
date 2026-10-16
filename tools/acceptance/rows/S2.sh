@@ -3,7 +3,7 @@
 # ACCEPT_MAINTAINER's, then ship --to check across 30 or more of them: paced under GitHub's limits, the disk above
 # cleanup.min_free, one branch and one check each.
 #
-# outdated has no whole-tree mode: --all lists every port of those it
+# outdated has no whole-tree mode: --current lists every port of those it
 # looks at, and with no ports named and no --mine it names nothing to look
 # at, and was refused in rc6's run 4 and rc8's (the rc8 full stage). The
 # maintainer line goes into dockhand's config for the row, as A10's does,
@@ -20,7 +20,7 @@ act() {
 	host_only "a maintainer's ports against GitHub" || return 0
 	allow_change "*"
 	# It exits 3 where some couldn't be checked, which is no reason to stop.
-	dh_json outdated --mine --all || :
+	dh_json outdated --mine --current || :
 	jq -r '[.result.ports[]? | select(.outdated) | .port][:30] | .[]' "$DH_LAST_JSON" >"$ROW_DIR/ports"
 	# shellcheck disable=SC2046
 	dh_json ship $(cat "$ROW_DIR/ports") --to check -y || :

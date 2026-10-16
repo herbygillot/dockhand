@@ -166,7 +166,7 @@ func TestUncheckedPortsAreSaidAhead(t *testing.T) {
 	add(20, OutdatedPort{Problem: "GitHub's rate limit for your login resets in 18 minutes", RetryAt: lifts})
 	add(2, OutdatedPort{Problem: "no forge could be found for it"})
 	add(1, OutdatedPort{Problem: "its newest release could not be found"})
-	require.Equal(t, "27 of 28 ports couldn't be checked: 20 for GitHub's rate limit, 4 for requested version matches multiple releases, 3 more (dockhand outdated --all says each)", several.UncheckedWords())
+	require.Equal(t, "27 of 28 ports couldn't be checked: 20 for GitHub's rate limit, 4 for requested version matches multiple releases, 3 more (dockhand outdated --current says each)", several.UncheckedWords())
 	require.Equal(t, map[OutdatedClass]int{OutdatedUnchecked: 27, OutdatedCurrent: 1}, several.Summary())
 	require.Equal(t, OutdatedNewer, OutdatedPort{Outdated: true}.Class())
 	require.Equal(t, OutdatedUnchecked, OutdatedPort{Outdated: true, Problem: "x"}.Class(), "one that couldn't be checked is nothing else")

@@ -581,7 +581,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		} else if stealth.RevbumpProblem == "" {
 			fmt.Fprintln(out, "Inspect the source change before deciding whether it needs a revision bump.")
 		}
-		fmt.Fprintln(out, "dockhand diff --archive shows what changed inside the archive.")
+		fmt.Fprintln(out, "dockhand diff --source shows what changed inside the archive.")
 	}
 	if update.DistSubdirRemoved {
 		fmt.Fprintln(out, "Removed "+distSubdirRemoved)

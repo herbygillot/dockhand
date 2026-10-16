@@ -31,7 +31,7 @@ nothing for.
 Paths narrow the diff; they are taken from where you are, or from the top
 of the ports tree. --stat lists the changed files instead of the patch.
 
---archive [<port>...] compares what the ports' source archives hold
+--source [<port>...] compares what the ports' source archives hold
 instead: the archives the base declares with the ones the branch declares
 now, file by file, less each archive's versioned top directory. Each is
 checked against its Portfile's checksums; when upstream no longer serves an
@@ -76,7 +76,7 @@ MacPorts' distfiles mirror.`,
 	}
 	where.register(cmd, s, "show")
 	cmd.Flags().BoolVar(&stat, "stat", false, "list the changed files, not the patch")
-	cmd.Flags().BoolVar(&archives, "archive", false, "compare what the ports' source archives hold, not the Portfiles")
+	cmd.Flags().BoolVar(&archives, "source", false, "compare what the ports' source archives hold, not the Portfiles")
 	return cmd
 }
 

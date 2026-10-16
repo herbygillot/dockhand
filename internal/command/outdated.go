@@ -46,7 +46,7 @@ func outdatedCommand(s *settings, streams Streams) *cobra.Command {
 		Long: `Looks up the newest release of each port named, or with --mine each port
 whose maintainers line names you (the config's maintainer), at MacPorts'
 master as fetched now. It lists the ports with newer releases, and counts
-the rest; --all lists every port, with why any couldn't be checked.
+the rest; --current lists every port, with why any couldn't be checked.
 
 update --outdated --mine starts on them.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,7 +75,7 @@ update --outdated --mine starts on them.`,
 		},
 	}
 	cmd.Flags().BoolVar(&mine, "mine", false, "the ports whose maintainers line names you (config maintainer)")
-	cmd.Flags().BoolVar(&all, "all", false, "list current ports and those that couldn't be checked too")
+	cmd.Flags().BoolVar(&all, "current", false, "list current ports and those that couldn't be checked too")
 	return cmd
 }
 
@@ -222,7 +222,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		line += fmt.Sprintf(" · %d have no release to look for", own)
 	}
 	if unknown > 0 && !all {
-		line += " · --all lists those it couldn't check"
+		line += " · --current lists those it couldn't check"
 	}
 	fmt.Fprintln(out, line)
 	if uncertain > 0 {
@@ -345,7 +345,7 @@ func restWords(report engine.OutdatedReport, plan engine.OutdatedPlan) string {
 	if len(words) == 0 {
 		return ""
 	}
-	return "Of the rest, " + strings.Join(words, ", ") + " (dockhand outdated --mine --all says each)."
+	return "Of the rest, " + strings.Join(words, ", ") + " (dockhand outdated --mine --current says each)."
 }
 
 // lookups follows outdated's lookups: on a terminal it redraws their count

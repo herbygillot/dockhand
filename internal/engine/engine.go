@@ -112,7 +112,7 @@ type Engine struct {
 	// and upstream discovery when nil.
 	OutdatedReader OutdatedReader
 	// ArchiveFetcher fetches the archives a Portfile declares, for diff
-	// --archive; MacPorts' evaluator when nil.
+	// --source; MacPorts' evaluator when nil.
 	ArchiveFetcher ArchiveFetcher
 	// ProjectReader observes upstream projects for create; GitHub when nil.
 	ProjectReader ProjectReader

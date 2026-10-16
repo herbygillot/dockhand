@@ -4,7 +4,7 @@
 # ports it couldn't check, never saying none of them has a newer release;
 # and exits 3. A write is never retried.
 #
-# It names the run's two ports and two more, where outdated --all, which
+# It names the run's two ports and two more, where outdated --current, which
 # names none, was refused (the rc6 full stage); and it reads what's left
 # of the budget from a real response's X-RateLimit-Remaining, since gh api
 # rate_limit said 5000 where the headers said 0.
