@@ -31,9 +31,6 @@ func (n Machine) StartForeground(name string) (*Foreground, error) {
 	command := exec.Command(n.Client.Executable, "run", "--no-graphics", "--no-audio", "--no-clipboard", name)
 	command.Env = n.Client.Environment()
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if n.Guard != nil {
-		command.ExtraFiles = []*os.File{n.Guard}
-	}
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Start(); err != nil {

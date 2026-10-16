@@ -2,7 +2,6 @@ package host
 
 import (
 	"context"
-	"os"
 
 	"github.com/herbygillot/dockhand/internal/tart"
 )
@@ -27,6 +26,5 @@ func (n Machine) Exec(ctx context.Context, vm string, options tart.RunOptions, a
 	}
 	command = append(command, vm, "/bin/sh", "-c", ExecScript, "dockhand")
 	command = append(command, args...)
-	options.ExtraFiles = append(append([]*os.File{}, options.ExtraFiles...), n.Guard)
 	return n.Client.Run(ctx, options, command...)
 }
