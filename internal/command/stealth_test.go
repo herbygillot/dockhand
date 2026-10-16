@@ -139,58 +139,28 @@ func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
 	require.Regexp(t, `^dockhand/jq-[a-z0-9]{4}$`, dig(t, refused.Result, "branch", "git_branch"))
 }
 
-func TestUpdateSubmitTidiesChecksAndSubmits(t *testing.T) {
+// ship settles where to check before it edits anything, and passes on
+// what was tested.
+func TestShipSettlesWhereBeforeTheEdit(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	withScript(t, w, "passed")
 	g := withGitHub(t, w)
-
-	_, _, err := dockhand(t, "update", "jq", "--plan", "--submit")
-	require.ErrorContains(t, err, "--submit goes with one port's update")
-
-	out, errs, err := dockhand(t, "update", "jq", "--new", "--submit")
-	require.NoError(t, err, errs)
-	require.NotContains(t, out, "Next: review it")
-	require.Regexp(t, `jq: 1.7.1 → 1.8.1 .*\n(.*\n)*\njq-1\.8\.1 · tidying edits not yet committed\n\nProposed commit\n`, out)
-	require.Contains(t, out, "checking commit ")
-	require.Contains(t, out, "Opened #34901")
-	require.Len(t, g.PRs, 1)
-}
-
-// update --submit passes on what submit --check takes, and settles where
-// to check before it edits anything. On a terminal, --yes applies a tidy of
-// dockhand's own edit without asking.
-func TestUpdateSubmitPassesOnWhereAndWhatWasTested(t *testing.T) {
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withScript(t, w, "passed")
-	g := withGitHub(t, w)
+	g.Others = nil
 
 	_, _, err := dockhand(t, "update", "jq", "--new", "--on", "command")
-	require.EqualError(t, err, "--on, --tested-binaries, --tested-variants, --title, --note, and --skip-notification go with --submit")
-	_, _, err = dockhand(t, "update", "jq", "--new", "--yes")
-	require.EqualError(t, err, "--yes goes with --outdated or --submit")
-
-	_, _, err = dockhand(t, "update", "jq", "--new", "--submit", "--on", "nowhere")
+	require.ErrorContains(t, err, "unknown flag: --on", "update is the edit alone")
+	_, _, err = dockhand(t, "ship", "jq", "--yes", "--on", "nowhere")
 	require.EqualError(t, err, `--on nowhere: no provider "nowhere" is set up; nothing was changed`)
 	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 
-	terminal := func(args ...string) (string, string) {
-		var out, errs bytes.Buffer
-		err := Run(t.Context(), args, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
-		require.NoError(t, err, errs.String())
-		return out.String(), errs.String()
-	}
-	out, prompts := terminal("update", "jq", "--new", "--submit", "--on", "command")
-	require.Contains(t, prompts, "Apply [a]", "without --yes, a terminal reviews the tidy")
-	require.Contains(t, out, "Nothing was checked or submitted.")
-
-	out, prompts = terminal("update", "jq", "--new", "--submit", "--yes", "--on", "command", "--tested-binaries")
-	require.NotContains(t, prompts, "Apply [a]")
-	require.NotContains(t, prompts, "Did you test", "the flag answered the template's questions")
-	require.Contains(t, out, "Opened #34901")
+	var out, errs bytes.Buffer
+	err = Run(t.Context(), []string{"ship", "jq", "--yes", "--on", "command", "--tested-binaries"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
+	require.NoError(t, err, errs.String())
+	require.NotContains(t, errs.String(), "Apply [a]")
+	require.NotContains(t, errs.String(), "Did you test", "the flag answered the template's questions")
+	require.Contains(t, out.String(), "Opened #34901")
 	require.Len(t, g.PRs, 1)
 	require.Contains(t, g.PRs[34901].Body, "- [x] tested basic functionality of all binary files?")
 	require.Contains(t, g.PRs[34901].Body, "- [ ] checked that the Portfile's most important [variants]")

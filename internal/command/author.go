@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -61,10 +62,8 @@ func (c *branchChoice) flags(cmd *cobra.Command) {
 
 func updateCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchChoice
-	var plan bool
+	var plan, mine, yes bool
 	var version versionUpdate
-	linked := &version.linked
-	var batch outdatedOptions
 	cmd := &cobra.Command{
 		Use:   "update <port> [version]",
 		Short: "Update a port to a newer release",
@@ -86,66 +85,109 @@ The old and new versions' archives are compared, and a changed license
 file, a changed build file, or a new declared dependency is reported: what a
 reviewer would ask about, and what a passing build can't catch.
 
---outdated updates every named port, or with --mine every port you
-maintain, that has a newer release: one branch each, from fresh master,
-each update committed as one commit. It shows how it splits the work before
-starting anything; --check also queues a check of each.
-
---submit goes on to tidy the edit, check it, and submit exactly that
-commit once the check passes: tidy, then submit --check, each previewed.
-With --json, the result is the update's, with tidy's, check's, and submit's
-inside it, as far as it went. dockhand bump is the same, asking nothing.
-Without a terminal, the tidy applies only when it is made of dockhand's own
-edits alone; --yes applies such a tidy on a terminal too, without asking.
---on says where to check, and --tested-binaries and --tested-variants tick
-the pull request's checkboxes, as they do for submit. Where to check is
-settled before anything is edited.`,
-		// --outdated takes any number of ports; one port's update takes
-		// the port and, optionally, its version.
-		Args: func(cmd *cobra.Command, args []string) error {
-			if batch.outdated {
-				return nil
-			}
-			return cobra.RangeArgs(0, 2)(cmd, args)
-		},
+--mine updates every port you maintain that has a newer release, as
+outdated --mine finds them: one branch each, from fresh master, nothing
+committed. It shows the branches before starting any, and asks once; --yes
+starts them without asking. dockhand ship --mine carries them on, to their
+pull requests, and ship takes a port's update as far as --to says.`,
+		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if linked.submit && (batch.outdated || plan) {
-				return errors.New("--submit goes with one port's update, not --plan or --outdated")
+			if mine {
+				if len(args) > 0 || where.branch != "" || where.isNew() {
+					return errors.New("--mine starts a branch for each of your ports; it takes no port, --branch, or --new")
+				}
+				return updateMine(cmd.Context(), s, streams, version, plan, yes)
 			}
-			linked.noteSet = cmd.Flags().Changed("note")
-			if !linked.submit && (len(linked.on) > 0 || linked.testedBinaries || linked.testedVariants || linked.title != "" || linked.noteSet || linked.skipNotification) {
-				return errors.New("--on, --tested-binaries, --tested-variants, --title, --note, and --skip-notification go with --submit")
-			}
-			if batch.outdated {
-				batch.plan = plan
-				return updateOutdated(cmd.Context(), s, streams, args, batch)
-			}
-			if batch.mine || batch.check {
-				return errors.New("--mine and --check go with --outdated")
-			}
-			if batch.yes && !linked.submit {
-				return errors.New("--yes goes with --outdated or --submit")
+			if yes {
+				return errors.New("--yes goes with --mine")
 			}
 			if len(args) == 0 {
-				return errors.New("name the port to update, or update your outdated ports with --outdated --mine")
+				return errors.New("name the port to update, or update your outdated ports with --mine")
 			}
 			request, err := version.request(args, plan)
 			if err != nil {
 				return err
 			}
-			linked.yes = batch.yes
-			return version.run(cmd.Context(), s, streams, where, request)
+			_, _, err = author(cmd.Context(), s, streams, where, "update", request, version.linked)
+			return err
 		},
 	}
 	where.flags(cmd)
-	version.flags(cmd, "with --submit, ")
+	version.flags(cmd)
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
-	cmd.Flags().BoolVar(&linked.submit, "submit", false, "then tidy it, check it, and submit it once the check passes")
-	cmd.Flags().BoolVar(&batch.outdated, "outdated", false, "update every named port, or with --mine yours, that has a newer release")
-	cmd.Flags().BoolVar(&batch.mine, "mine", false, "with --outdated, the ports whose maintainers line names you (config maintainer)")
-	cmd.Flags().BoolVar(&batch.check, "check", false, "with --outdated, also queue a check of each")
-	cmd.Flags().BoolVarP(&batch.yes, "yes", "y", false, "with --outdated, start without asking; with --submit, apply a tidy of dockhand's own edits without asking")
+	cmd.Flags().BoolVar(&mine, "mine", false, "update each of your ports with a newer release, in a branch of its own (config maintainer)")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --mine, start the branches without asking")
 	return cmd
+}
+
+// updateMine is update --mine: ship's edit stage over your outdated ports,
+// each in a branch of its own, nothing committed (decision 7, 2026-10-13).
+func updateMine(ctx context.Context, s *settings, streams Streams, version versionUpdate, plan, yes bool) error {
+	whole := &batchJSON{}
+	streams.linkSteps(whole)
+	e, err := s.open(ctx)
+	if err != nil {
+		return err
+	}
+	outdated, err := outdatedBatch(ctx, s, e, streams)
+	e.Close()
+	if err != nil {
+		return err
+	}
+	out := streams.Out
+	if len(outdated.Updates) == 0 {
+		fmt.Fprintln(out, "Nothing to update: none of them has a newer release that isn't already in a branch.")
+		return nil
+	}
+	fmt.Fprintf(out, "Will start %s, one a port:\n", prose.Plural(len(outdated.Updates), "branch"))
+	rows := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	for _, update := range outdated.Updates {
+		row := fmt.Sprintf("  %s\t%s %s → %s", engine.BranchName(update.Name), update.Port.Port, update.Port.Current, update.Port.Newest)
+		if update.CrossesMajor() {
+			row += ", a new major version"
+		}
+		fmt.Fprintln(rows, row)
+	}
+	_ = rows.Flush()
+	if plan {
+		fmt.Fprintln(out, "Nothing was started (--plan).")
+		return nil
+	}
+	ok, _, err := streams.decide(yes, decision{question: "? Start them? [y/N] ", undone: "nothing was started", byYes: "--yes starts what is shown"})
+	if err != nil {
+		return err
+	}
+	if !ok {
+		fmt.Fprintln(out, "Nothing was started.")
+		return nil
+	}
+	var failed []string
+	for _, update := range outdated.Updates {
+		whole.next()
+		fmt.Fprintln(out)
+		request, err := version.request([]string{update.Port.Port}, false)
+		if err == nil {
+			request.Version, request.Release = update.Port.Newest, update.Port.Release
+			_, _, err = author(ctx, s, streams, branchChoice{new: update.Name}, "update", request, version.linked)
+		}
+		if err != nil {
+			fmt.Fprintf(streams.Err, "%s: %v\n", update.Port.Port, err)
+			failed = append(failed, update.Port.Port)
+		}
+	}
+	return batchExit(failed, len(outdated.Updates), "updated")
+}
+
+// batchExit is a batch's exit (the command-line UX review's §10): 1 where
+// none of total went through, 3 where some stopped and need a look.
+func batchExit(failed []string, total int, done string) error {
+	switch {
+	case len(failed) > 0 && len(failed) == total:
+		return &ExitError{Code: ExitFailure, Message: "nothing was " + done + ": " + strings.Join(failed, ", ") + " stopped"}
+	case len(failed) > 0:
+		return &ExitError{Code: ExitAttention, Message: strings.Join(failed, ", ") + " stopped; the rest went on"}
+	}
+	return nil
 }
 
 func checksumsCommand(s *settings, streams Streams) *cobra.Command {
@@ -195,22 +237,27 @@ type versionUpdate struct {
 	linked                                 linkedOptions
 }
 
-// flags adds the flags update and bump share. goesOn is what the
-// submission's flags go with, such as "with --submit, "; bump's always go
-// on.
-func (v *versionUpdate) flags(cmd *cobra.Command, goesOn string) {
-	cmd.Flags().StringArrayVar(&v.linked.on, "on", nil, goesOn+"where to check, explicit environments (default build.default's profile, build.unattended's for bump)")
-	cmd.Flags().BoolVar(&v.linked.testedBinaries, "tested-binaries", false, goesOn+"state that you tested the basic functionality of all binary files")
-	cmd.Flags().BoolVar(&v.linked.testedVariants, "tested-variants", false, goesOn+"state that you checked the most important variants")
-	cmd.Flags().StringVar(&v.linked.title, "title", "", goesOn+"the pull request's title (default: the commit subject)")
-	cmd.Flags().StringVar(&v.linked.note, "note", "", goesOn+"your own note in the pull request's description")
-	cmd.Flags().BoolVar(&v.linked.skipNotification, "skip-notification", false, goesOn+"add [skip notification], so maintainers are not mentioned")
+// flags adds the edit's flags, which update, ship, and bump share.
+func (v *versionUpdate) flags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&v.keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&v.shared, "shared-release", false, "move every subport that shares the port's release")
 	cmd.Flags().BoolVar(&v.followMoves, "follow-moves", false, "where GitHub answers the port's repository by another name, point github.setup at it")
 	cmd.Flags().BoolVar(&v.obsolete, "with-obsolete", false, "also move the Portfile's obsolete stub for the port, one replaced_by it, to the same version")
 	cmd.Flags().BoolVar(&v.linked.revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
 	cmd.Flags().StringSliceVar(&v.linked.except, "except", nil, "leave this dependent out of --revbump-dependents")
+}
+
+// stageFlags adds the flags of the stages after the edit, defined once,
+// which ship and bump share: where to check, and the pull request's.
+func (v *versionUpdate) stageFlags(cmd *cobra.Command) {
+	cmd.Flags().StringArrayVar(&v.linked.on, "on", nil, "where to check, explicit environments (default build.default's profile, or build.unattended's where nobody looks)")
+	cmd.Flags().StringVar(&v.linked.build, "build", "", "where to check, by build profile (default build.default's, or build.unattended's where nobody looks)")
+	cmd.Flags().BoolVar(&v.linked.testedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files")
+	cmd.Flags().BoolVar(&v.linked.testedVariants, "tested-variants", false, "state that you checked the most important variants")
+	cmd.Flags().StringVar(&v.linked.title, "title", "", "the pull request's title (default: the commit subject)")
+	cmd.Flags().StringVar(&v.linked.note, "note", "", "your own note in the pull request's description")
+	cmd.Flags().BoolVar(&v.linked.skipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")
+	cmd.MarkFlagsMutuallyExclusive("build", "on")
 }
 
 // request is the update of the port args name, to the version they name

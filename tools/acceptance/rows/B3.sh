@@ -1,6 +1,6 @@
 # stages: quick full
-# B3: the batch, on the quick stage's two ports: update --outdated with
-# --check, serve --drain to run the checks, and each branch's submit
+# B3: the batch, on the quick stage's two ports: ship --to check, serve
+# --drain to run any checks left queued, and each branch's submit
 # preview. Each port gets its own branch and check, and the batch's output
 # and exit code say what worked.
 act() {
@@ -12,20 +12,20 @@ act() {
 		row_result "not run" "a dry run builds no toolchain; ACCEPT_B3_BUILD=1 runs it"
 		return 0
 	fi
-	dh_json update --outdated "${ACCEPT_GO_PORT:?}" "${ACCEPT_RUST_PORT:?}" --check -y || :
+	dh_json ship "${ACCEPT_GO_PORT:?}" "${ACCEPT_RUST_PORT:?}" --to check -y || :
 	dh serve --drain || :
 	local branch
-	for branch in $(jq -r '.result.prepared[]? | select(.tidied) | .branch' "$ROW_DIR/json/1.json" 2>/dev/null); do
+	for branch in $(jq -r '.result.changes[]? | select(.tidy.applied) | .branch.name' "$ROW_DIR/json/1.json" 2>/dev/null); do
 		dh_json submit -b "$branch" --plan || :
 	done
 }
 
 assert() {
 	local batch=$ROW_DIR/json/1.json n
-	n=$(jq -r '[.result.prepared[]? | select(.tidied)] | length' "$batch" 2>/dev/null || echo 0)
+	n=$(jq -r '[.result.changes[]? | select(.tidy.applied)] | length' "$batch" 2>/dev/null || echo 0)
 	case "$(cat "$batch.exit")" in
 	0) ;;
-	3) row_known "the batch needs a look: $(jq -r '[.result.prepared[]? | select(.problem) | .problem] | join("; ")' "$batch")"; return ;;
+	3) row_known "the batch needs a look: $(jq -r '.error // empty' "$batch")"; return ;;
 	*) row_fail "the batch did nothing that worked, exit $(cat "$batch.exit"): $(jq -r '.error // empty' "$batch")"; return ;;
 	esac
 	if [ "$n" -lt 2 ]; then

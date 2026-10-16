@@ -14,16 +14,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 )
-
-// outdatedOptions are update's --outdated, --mine, --check, and --yes.
-type outdatedOptions struct {
-	outdated, mine, check, yes bool
-	// plan shows how the work splits and starts nothing.
-	plan bool
-}
 
 // outdatedRequest is what --mine and the ports named choose.
 func outdatedRequest(ctx context.Context, s *settings, e *engine.Engine, streams Streams, ports []string, mine bool) (engine.OutdatedRequest, *lookups, error) {
@@ -284,23 +276,14 @@ func noneChecked(report engine.OutdatedReport) error {
 	return fmt.Errorf("no port could be checked, at master %s: %s", report.Master.Short(), problem)
 }
 
-// updateOutdated is update --outdated: it shows how it splits the work,
-// one branch per port, then prepares each.
-func updateOutdated(ctx context.Context, s *settings, streams Streams, args []string, options outdatedOptions) error {
-	e, err := s.open(ctx)
+// outdatedBatch is your ports with newer releases, as outdated --mine
+// finds them, split one branch a port: the updates ship --mine and update
+// --mine make. What it leaves is said, each port the plan skipped with
+// why, and the rest counted by what the look found of them.
+func outdatedBatch(ctx context.Context, s *settings, e *engine.Engine, streams Streams) (engine.OutdatedPlan, error) {
+	request, looked, err := outdatedRequest(ctx, s, e, streams, nil, true)
 	if err != nil {
-		return err
-	}
-	defer e.Close()
-	request, looked, err := outdatedRequest(ctx, s, e, streams, args, options.mine)
-	if err != nil {
-		return err
-	}
-	var place engine.Where
-	if options.check {
-		if place, err = e.Where(ctx, engine.WhereRequest{}); err != nil {
-			return err
-		}
+		return engine.OutdatedPlan{}, err
 	}
 	report, err := e.Outdated(ctx, request)
 	looked.stop()
@@ -309,186 +292,60 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 			fmt.Fprintf(streams.Out, "Interrupted after looking up %d of %d ports, so nothing was started; what those found:\n", len(report.Ports), looked.total.Load())
 			_ = writeOutdated(context.WithoutCancel(ctx), e, streams.Out, report, false)
 		}
-		return err
+		return engine.OutdatedPlan{}, err
+	}
+	if err := noneChecked(report); err != nil {
+		return engine.OutdatedPlan{}, err
 	}
 	plan, err := e.PlanOutdated(ctx, report)
 	if err != nil {
-		return err
+		return engine.OutdatedPlan{}, err
 	}
-	out := streams.Out
-	if len(plan.Updates) == 0 {
-		streams.emit(preparedView(nil, plan, report))
-		if err := noneChecked(report); err != nil {
-			writeSkipped(out, plan, report)
-			return err
-		}
-		fmt.Fprintln(out, "Nothing to update: none of them has a newer release that isn't already in a branch.")
-		writeSkipped(out, plan, report)
-		return nil
+	skipped := []skippedJSON{}
+	for _, skip := range plan.Skipped {
+		fmt.Fprintf(streams.Out, "  %s: left as it is: %s\n", skip.Port, skip.Reason)
+		skipped = append(skipped, skippedJSON{Port: skip.Port, Reason: skip.Reason})
 	}
-	// A row a port, what the run does and what to know before it, with
-	// the names it uses: "Will start 9 branches" and the names alone
-	// showed no versions, and no major jump (field testing, the
-	// command-line UX review's §10).
-	fmt.Fprintf(out, "Will start %s, one per port (unrelated ports go in separate PRs):\n", prose.Plural(len(plan.Updates), "branch"))
-	rows := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	for _, update := range plan.Updates {
-		row := fmt.Sprintf("  %s\t%s %s → %s", engine.BranchName(update.Name), update.Port.Port, update.Port.Current, update.Port.Newest)
-		if update.CrossesMajor() {
-			row += ", a new major version"
-		}
-		fmt.Fprintln(rows, row)
+	streams.emit(skipped)
+	if line := restWords(report, plan); line != "" {
+		fmt.Fprintln(streams.Out, line)
 	}
-	_ = rows.Flush()
-	writeSkipped(out, plan, report)
-	if options.plan {
-		fmt.Fprintln(out, "Nothing was started (--plan).")
-		return nil
-	}
-	ok, _, err := streams.decide(options.yes, decision{question: "? go ahead? [y/N] ", undone: "nothing was started", byYes: "--yes starts what is shown"})
-	if err != nil {
-		return err
-	}
-	if !ok {
-		fmt.Fprintln(out, "Nothing was started.")
-		return nil
-	}
-	prepared := e.PrepareOutdated(ctx, plan, engine.PrepareOptions{Origin: model.OriginPerson, To: map[bool]engine.ShipStage{true: engine.ShipCheck}[options.check], Where: place, Tests: model.TestPolicy(s.file.Check.Tests)})
-	streams.emit(preparedView(prepared, plan, report))
-	return writePrepared(ctx, e, out, prepared, options.check)
+	return plan, nil
 }
 
-// writeSkipped says the ports update --outdated leaves alone, and why: the
-// plan's, and those whose newest release is uncertain, which a person
-// names after a look.
-func writeSkipped(out io.Writer, plan engine.OutdatedPlan, report engine.OutdatedReport) {
-	for _, skipped := range plan.Skipped {
-		fmt.Fprintf(out, "Skipped: %s (%s)\n", skipped.Port, skipped.Reason)
-	}
-	for _, port := range report.Ports {
-		if len(port.Uncertain) > 0 {
-			fmt.Fprintf(out, "Skipped: %s (%s; after a look, dockhand update %s %s)\n", port.Port, setAsideWords(port.Uncertain), port.Port, port.Uncertain[0].Source)
-		}
-	}
-	// Every port asked about has a line: one already at its newest
-	// release said nothing, so pomo and tokei, given by name, went unsaid
-	// (field testing's eighth report, 2026-10-02).
+// restWords counts the ports a look found no update to make of, and the
+// plan didn't skip by name, by what it found, naming outdated, which says
+// each.
+func restWords(report engine.OutdatedReport, plan engine.OutdatedPlan) string {
+	summary := report.Summary()
 	said := map[string]bool{}
-	for _, update := range plan.Updates {
-		said[update.Port.Port] = true
+	for _, skip := range plan.Skipped {
+		said[skip.Port] = true
 	}
-	for _, skipped := range plan.Skipped {
-		said[skipped.Port] = true
-	}
-	var current []string
 	for _, port := range report.Ports {
-		switch {
-		case said[port.Port] || len(port.Uncertain) > 0 || port.Outdated:
-		case port.Problem != "":
-			fmt.Fprintf(out, "Skipped: %s (couldn't check: %s)\n", port.Port, port.Problem)
-		case port.Moved != nil:
-			// update can't move a commit pin yet, so "name the version to
-			// set" was a dead end: update refused the version and the
-			// commit alike (field testing's batch 14, wezterm). The edit
-			// is said whole instead.
-			fmt.Fprintf(out, "Skipped: %s (its branch %s moved past the commit it pins, which update can't move yet: dockhand edit %s --no-open, set the commit and the version, then dockhand checksums %s)\n", port.Port, port.Moved.Branch, port.Port, port.Port)
-		case port.Current != "":
-			current = append(current, port.Port+" "+port.Current)
+		if said[port.Port] {
+			summary[port.Class()]--
 		}
 	}
-	if len(current) > 0 {
-		fmt.Fprintf(out, "Current: %s\n", strings.Join(current, ", "))
-	}
-}
-
-func writePrepared(ctx context.Context, e *engine.Engine, out io.Writer, prepared []engine.PreparedUpdate, check bool) error {
-	tidied, queued, failed := 0, 0, 0
-	for _, done := range prepared {
-		name := done.Planned.Name
-		switch {
-		case done.Problem != "":
-			failed++
-			fmt.Fprintf(out, "  ✗ %s: %s\n", name, done.Problem)
-		default:
-			tidied++
-			line := fmt.Sprintf("  ✓ %s: %s → %s, one commit", name, done.Update.Before, done.Update.After)
-			if done.Run != nil {
-				queued++
-				line += ", " + done.Run.Name() + " queued"
-			}
-			fmt.Fprintln(out, line)
-		}
-		for _, note := range batchNotes(done.Update) {
-			fmt.Fprintf(out, "      %s\n", note)
+	var words []string
+	for _, class := range []struct {
+		class engine.OutdatedClass
+		words string
+	}{
+		{engine.OutdatedCurrent, "%d current"},
+		{engine.OutdatedUnpublished, "%d with a newer release not published yet"},
+		{engine.OutdatedUncertain, "%d that may have one, for your look"},
+		{engine.OutdatedMoved, "%d pinned to a commit its branch has moved past, to edit by hand"},
+		{engine.OutdatedUnchecked, "%d that couldn't be checked"},
+	} {
+		if n := summary[class.class]; n > 0 {
+			words = append(words, fmt.Sprintf(class.words, n))
 		}
 	}
-	summary := fmt.Sprintf("%s updated and tidied into one commit each", prose.Plural(tidied, "branch"))
-	if check {
-		summary += fmt.Sprintf("; %s queued", prose.Plural(queued, "check"))
+	if len(words) == 0 {
+		return ""
 	}
-	if failed > 0 {
-		summary += fmt.Sprintf("; %d need a look", failed)
-	}
-	fmt.Fprintln(out, summary)
-	if check && queued > 0 {
-		// Whether serve runs is only a hint here, after the work is done.
-		if serve, err := readServe(ctx, e); err == nil && !serve.Running {
-			fmt.Fprintln(out, "serve isn't running: dockhand serve, or dockhand wait to run them here")
-		}
-	}
-	// A batch's exit says whether anything worked (the command-line UX
-	// review's §10): 3, a look, where some did; 1 where none could, as
-	// an update --outdated whose nine ports all failed read 3 as well.
-	switch {
-	case failed > 0 && tidied == 0:
-		return &ExitError{Code: ExitFailure}
-	case failed > 0:
-		return &ExitError{Code: ExitAttention}
-	}
-	return nil
-}
-
-// batchNotes are what a single update would say of one, beyond its
-// version, each under its port's line: a new major version, a pin
-// dropped, and what comparing upstream found or couldn't. A batch said
-// only the changes, so termusic's dropped soundtouch pin and its archive
-// not compared went unsaid (field testing's ninth report, 2026-10-02).
-func batchNotes(update engine.Update) []string {
-	var notes []string
-	if update.CrossesMajor {
-		notes = append(notes, fmt.Sprintf("A new major version: what depends on %s may need to follow.", update.Port))
-	}
-	for _, block := range update.Regenerated {
-		for _, pin := range block.Dropped {
-			notes = append(notes, fmt.Sprintf("The Portfile pinned %s %s over the lock's %s; the new lock has %s, so the pin is dropped.", pin.Name, pin.Pinned, pin.Was, pin.Locked))
-		}
-		if block.Unchecked != "" {
-			notes = append(notes, block.Unchecked)
-		}
-		for _, notice := range block.Notices {
-			notes = append(notes, "Notice: "+notice)
-		}
-	}
-	for _, dropped := range update.PatchesDropped {
-		notes = append(notes, "Dropped patch "+dropped+", which the new source already holds; its file goes too.")
-	}
-	// Every port says what its comparison did, as a single update does:
-	// dolt, tart, and helm's subports said nothing in a batch, neither
-	// compared nor not (field testing's batch 10, finding 3).
-	switch comparison := update.Upstream; {
-	case comparison == nil:
-	case comparison.Problem != "":
-		notes = append(notes, "! Upstream archives not compared: "+comparison.Problem)
-	case engine.NothingCompared(*comparison):
-		notes = append(notes, "Upstream not compared: "+engine.CoverageWords(*comparison)+".")
-	case len(comparison.Changes) == 0:
-		notes = append(notes, "Upstream source compared: no license, build file, or dependency changes.")
-	default:
-		for _, change := range comparison.Changes {
-			notes = append(notes, upstreamWords(change))
-		}
-	}
-	return notes
+	return "Of the rest, " + strings.Join(words, ", ") + " (dockhand outdated --mine --all says each)."
 }
 
 // lookups follows outdated's lookups: on a terminal it redraws their count

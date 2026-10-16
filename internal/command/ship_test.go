@@ -2,6 +2,8 @@ package command
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +11,19 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+// asMaintainer names the person as the fixture's maintainers lines do,
+// for --mine.
+func asMaintainer(t *testing.T, w world) {
+	t.Helper()
+	config := filepath.Join(w.home, ".dockhand", "config.toml")
+	data, err := os.ReadFile(config)
+	if !errors.Is(err, fs.ErrNotExist) {
+		require.NoError(t, err)
+	}
+	require.NoError(t, os.MkdirAll(filepath.Dir(config), 0o755))
+	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"@ada\"\n"), data...), 0o644))
+}
 
 // shipAnswering runs ship on a terminal that answers.
 func shipAnswering(t *testing.T, answers string, args ...string) (string, string, error) {
@@ -39,13 +54,16 @@ func TestShipCarriesAPortToItsPullRequest(t *testing.T) {
 	out, errs, err = shipAnswering(t, "y\nn\nn\n", "jq")
 	require.NoError(t, err, errs)
 	require.Contains(t, out, "jq: 1.7.1 → 1.8.1")
+	require.Regexp(t, `jq: 1.7.1 → 1.8.1 .*\n(.*\n)*\njq-1\.8\.1 · tidying edits not yet committed\n\nProposed commit\n`, out)
+	require.NotContains(t, out, "Next: review it")
 	require.Contains(t, out, "checking commit ")
 	require.Contains(t, out, "Opened #34901")
 	require.Len(t, g.PRs, 1)
 
 	out, _, err = dockhand(t, "ship", "jq", "--to", "check")
 	require.NoError(t, err)
-	require.Contains(t, out, "  jq-1.8.1  its branch, where it stands, to check\n", "resumed, not started again")
+	require.Contains(t, out, "  jq-1.8.1  its branch, updated again where it isn't at the newest release, to check\n", "resumed, not started again")
+	require.Contains(t, out, "jq is already at 1.8.1; nothing to change.\n")
 	require.Contains(t, out, "passed for this commit already; nothing to check")
 }
 
@@ -80,12 +98,9 @@ func TestShipMineAndPassing(t *testing.T) {
 	reader := withOutdated(t)
 	g := withGitHub(t, w)
 	g.Others = nil
-	config := filepath.Join(w.home, ".dockhand", "config.toml")
-	data, err := os.ReadFile(config)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"@ada\"\n"), data...), 0o644))
+	asMaintainer(t, w)
 
-	_, _, err = dockhand(t, "ship", "--mine", "jq")
+	_, _, err := dockhand(t, "ship", "--mine", "jq")
 	require.EqualError(t, err, "name ports, --mine, --passing, or a branch: one of them")
 	out, errs, err := dockhand(t, "ship", "--mine", "--to", "check")
 	require.NoError(t, err, errs)

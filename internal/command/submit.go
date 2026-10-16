@@ -22,8 +22,7 @@ func submitCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchFlags
 	var note string
 	var request engine.SubmitRequest
-	var yes, testedBinaries, testedVariants, check, passing, ready, preview bool
-	var on []string
+	var yes, testedBinaries, testedVariants, ready, preview bool
 	cmd := &cobra.Command{
 		Use:   "submit",
 		Short: "Open or update the pull request",
@@ -37,11 +36,10 @@ environment. A failed extra (--also) or revision-bump-only port can be
 acknowledged with --accept <port>. --draft allows unfinished or failing
 checks; --no-check submits without one, and the pull request says so.
 
---check checks the committed head first, and submits exactly that commit
-once its check passes; running it is the decision. --passing goes through
-every branch whose check passed for exactly what it would submit, asking
-about each. --ready takes a draft pull request out of draft, once its
-commit passes as submit requires.
+dockhand ship checks the committed head first, and submits exactly that
+commit once its check passes; ship --passing, every branch whose check
+passed. --ready takes a draft pull request out of draft, once its commit
+passes as submit requires.
 
 --note adds your own note to the pull request's description, under its
 Description, kept with the branch and given each time dockhand writes the
@@ -67,22 +65,11 @@ kept.
 			if cmd.Flags().Changed("note") {
 				request.Note = &note
 			}
-			if preview && (check || passing || yes) {
-				return errors.New("--plan previews one branch's submission; it goes without --check, --passing, and --yes (dockhand check --plan previews a check)")
-			}
-			// Each passing branch is the person's to look at before it's
-			// submitted (principle 7), so --passing asks about each (D11).
-			if passing && yes {
-				return errors.New("--passing asks about each branch, so it takes no --yes; dockhand submit --branch <name> --yes submits one without asking")
-			}
-			if passing {
-				return submitPassing(ctx, e, streams, request, s.file.Submit.RerequestReview)
+			if preview && yes {
+				return errors.New("--plan previews the submission; it goes without --yes")
 			}
 			if request.Branch, err = where.resolve(ctx, e, streams); err != nil {
 				return err
-			}
-			if check {
-				return submitChecked(ctx, s, e, streams, request, engine.WhereRequest{On: on})
 			}
 			plan, err := e.PlanSubmit(ctx, request)
 			if err != nil {
@@ -137,9 +124,6 @@ kept.
 	cmd.Flags().BoolVar(&request.Head, "head", false, "submit the committed head, leaving uncommitted edits out")
 	cmd.Flags().BoolVar(&request.Draft, "draft", false, "open the pull request as a draft, which unfinished or failing checks allow")
 	cmd.Flags().BoolVar(&request.NoCheck, "no-check", false, "submit without a check; the pull request says no local build ran")
-	cmd.Flags().BoolVar(&check, "check", false, "check the committed head, then submit exactly it once the check passes")
-	cmd.Flags().StringArrayVar(&on, "on", nil, "with --check, where to build, explicit environments (default build.default's profile)")
-	cmd.Flags().BoolVar(&passing, "passing", false, "go through every branch whose check passed, asking about each")
 	cmd.Flags().BoolVar(&ready, "ready", false, "take the pull request out of draft once it is submitted")
 	cmd.Flags().StringSliceVar(&request.Accept, "accept", nil, "acknowledge a failed extra or revision-bump-only port for this exact commit")
 	cmd.Flags().StringVar(&request.Title, "title", "", "the pull request's title (default: the commit subject)")
@@ -151,13 +135,8 @@ kept.
 	cmd.Flags().BoolVar(&testedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files")
 	cmd.Flags().BoolVar(&testedVariants, "tested-variants", false, "state that you checked the most important variants")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "submit without asking, when there is no terminal")
-	cmd.MarkFlagsMutuallyExclusive("draft", "no-check", "check", "passing")
+	cmd.MarkFlagsMutuallyExclusive("draft", "no-check")
 	cmd.MarkFlagsMutuallyExclusive("draft", "ready")
-	cmd.MarkFlagsMutuallyExclusive("passing", "branch")
-	cmd.MarkFlagsMutuallyExclusive("passing", "title")
-	cmd.MarkFlagsMutuallyExclusive("passing", "accept")
-	cmd.MarkFlagsMutuallyExclusive("passing", "note")
-	cmd.MarkFlagsMutuallyExclusive("passing", "rewrite-description")
 	return cmd
 }
 
@@ -300,7 +279,7 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 		return err
 	}
 	if plan.Commit != bound {
-		return fmt.Errorf("%s moved to %s while it was checked; nothing was submitted, since submit --check binds %s", plan.Branch.ShortName(), model.ObjectID(plan.Commit).Short(), model.ObjectID(bound).Short())
+		return fmt.Errorf("%s moved to %s while it was checked; nothing was submitted, since ship binds %s", plan.Branch.ShortName(), model.ObjectID(plan.Commit).Short(), model.ObjectID(bound).Short())
 	}
 	streams.emit(submitView(plan))
 	if len(plan.Blocking) > 0 {
@@ -322,93 +301,6 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 	}
 	fmt.Fprintln(streams.Out)
 	return applySubmit(ctx, e, streams, plan, s.file.Submit.RerequestReview)
-}
-
-// submitPassing goes through every open branch whose latest check passed
-// for exactly what it would submit, a committed tree with nothing left
-// out, and not yet on its pull request, asking about each (Design v3
-// §6.12).
-func submitPassing(ctx context.Context, e *engine.Engine, streams Streams, request engine.SubmitRequest, rerequest string) error {
-	passing, err := e.PassingBranches(ctx)
-	if err != nil {
-		return err
-	}
-	ready, others := passing.Ready, passing.Others
-	out := streams.Out
-	line := prose.Plural(len(ready), "branch") + " passed their checks"
-	if len(ready) == 1 {
-		line = "1 branch passed its check"
-	}
-	if others > 0 {
-		line += fmt.Sprintf("; %d didn't, or have changed since (dockhand status --attention)", others)
-	}
-	fmt.Fprintln(out, line)
-	if len(ready) == 0 {
-		return nil
-	}
-	if !streams.terminal() {
-		for _, status := range ready {
-			fmt.Fprintf(out, "  %s\n", status.Branch.ShortName())
-		}
-		return errors.New("nothing was submitted: --passing asks about each branch, so it needs a terminal; dockhand submit --branch <name> --yes submits one")
-	}
-	if !request.TestedBinaries && !request.TestedVariants {
-		fmt.Fprintln(out, "For every branch submitted now:")
-		if request.TestedBinaries, err = streams.askYes("? Did you test the basic functionality of all binary files? [y/N] ", false); err != nil {
-			return err
-		}
-		if request.TestedVariants, err = streams.askYes("? Did you check that the most important variants aren't broken? [y/N] ", false); err != nil {
-			return err
-		}
-	}
-	fmt.Fprintln(out, "  y submit · n not now · d diff")
-	submitted := 0
-	for _, status := range ready {
-		request.Branch = status.Branch
-		plan, err := e.PlanSubmit(ctx, request)
-		if err != nil {
-			fmt.Fprintf(out, "\n%s  ✗ %v\n", status.Branch.ShortName(), err)
-			continue
-		}
-		fmt.Fprintf(out, "\n%s  %s · %s · %s\n", status.Branch.ShortName(), plan.Title, checkWords(plan), pullRequestWords(plan))
-		// Under a label of their own, as the single preview's are, the
-		// lines need no "upstream:" each (the ov run's finding 5).
-		if lines := upstreamLines(plan); len(lines) > 0 {
-			fmt.Fprintf(out, "            Upstream %s\n", strings.Join(lines, "\n                     "))
-		}
-		if len(plan.Blocking) > 0 {
-			for _, blocking := range plan.Blocking {
-				fmt.Fprintf(out, "  ✗ %s\n", blocking)
-			}
-			continue
-		}
-		for {
-			answer, err := ask(streams, "? submit? ")
-			if err != nil {
-				return err
-			}
-			switch strings.ToLower(answer) {
-			case "d":
-				diff, err := e.Diff(ctx, status.Branch, nil)
-				if err != nil {
-					return err
-				}
-				fmt.Fprint(out, string(diff.Patch))
-				continue
-			case "y", "yes":
-				if err := applySubmit(ctx, e, streams, plan, rerequest); err != nil {
-					fmt.Fprintf(out, "  ✗ %v\n", err)
-				} else {
-					submitted++
-				}
-			default:
-				fmt.Fprintf(out, "  · kept for later: dockhand status %s\n", status.Branch.ShortName())
-			}
-			break
-		}
-	}
-	fmt.Fprintf(out, "\nSubmitted %d of %d.\n", submitted, len(ready))
-	return nil
 }
 
 func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
@@ -556,7 +448,7 @@ func checkWords(plan engine.SubmitPlan) string {
 	case plan.Request.NoCheck:
 		return "none (--no-check); the pull request says MacPorts CI is its only check"
 	case plan.CheckNeeded:
-		return "runs now; submit follows only if it passes (--check)"
+		return "runs first; it is submitted only if it passes"
 	case evidence == nil:
 		return "none has finished for this commit's files"
 	}

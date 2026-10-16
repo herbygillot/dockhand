@@ -1,6 +1,6 @@
 # stages: quick full
 # D-T4: interactive commands without a terminal: tidy on a hand edit,
-# clean, submit --passing, and authoring on master where two branches
+# clean, and authoring on master where two branches
 # change the port. Each refuses, naming the -y or -b it needs, and none
 # hangs.
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
@@ -13,7 +13,7 @@ act() {
 		printf '# a hand edit\n' >>"$(find "$dir" -path "*/$(port)/Portfile" | head -1)"
 	done
 	allow_change "*/Portfile"
-	for args in "tidy -b $(run_name dt4-a)" "clean" "submit --passing" "update $(port)"; do
+	for args in "tidy -b $(run_name dt4-a)" "clean" "update $(port)"; do
 		# shellcheck disable=SC2086
 		with_timeout 120 "$DH_BIN" $args </dev/null >"$ROW_DIR/dt4.$(echo $args | tr ' /' '__').log" 2>&1
 		echo "$args: $?" >>"$ROW_DIR/dt4.exits"

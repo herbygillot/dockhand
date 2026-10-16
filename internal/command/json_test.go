@@ -270,14 +270,15 @@ func TestAnUpdatesPlanSaysWhatUpstreamChanged(t *testing.T) {
 	require.Contains(t, out, "! Upstream archives not compared: the current version's archives could not be fetched: HTTP 404")
 }
 
-// submit --check reports the submission's result wherever it stops, with
-// its check inside when it ran one: a failed check leaves the pull request
-// out, and a refusal before checking reports what blocks it.
-func TestSubmitCheckReportsOneShape(t *testing.T) {
+// ship's submission reports its result wherever it stops, with its check
+// inside when it ran one: a failed check leaves the pull request out, and
+// a refusal before checking reports what blocks it.
+func TestShipReportsOneShape(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	g := withGitHub(t, w)
+	g.Others = nil
 	next := withOutcomeScript(t, w, "")
 	committed := func(name string) {
 		t.Helper()
@@ -290,27 +291,32 @@ func TestSubmitCheckReportsOneShape(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	change := func(result map[string]any) map[string]any {
+		t.Helper()
+		require.Len(t, result["changes"], 1)
+		return dig(t, result, "changes", 0).(map[string]any)
+	}
 	committed("jq-failing")
 	next("failed")
-	failed, err := jsonOf(t, "submit", "--check")
+	failed, err := jsonOf(t, "ship", "--yes")
 	require.Equal(t, 2, ExitCode(err))
-	require.Equal(t, "jq: update to 1.8.1", failed.Result["title"])
-	require.Equal(t, "failed", dig(t, failed.Result, "check", "run", "state"))
-	require.Nil(t, failed.Result["pull_request"])
-	refused, err := jsonOf(t, "submit", "--check")
+	require.Equal(t, "jq: update to 1.8.1", dig(t, change(failed.Result), "submit", "title"))
+	require.Equal(t, "failed", dig(t, change(failed.Result), "check", "run", "state"))
+	require.Nil(t, dig(t, change(failed.Result), "submit", "pull_request"))
+	refused, err := jsonOf(t, "ship", "--yes")
 	require.Error(t, err, "the failed check stands for the same commit")
-	require.Equal(t, "jq: update to 1.8.1", refused.Result["title"])
-	require.NotEmpty(t, refused.Result["blocking"])
-	require.NotContains(t, refused.Result, "check", "no check ran")
+	require.Equal(t, "jq: update to 1.8.1", dig(t, change(refused.Result), "submit", "title"))
+	require.NotEmpty(t, dig(t, change(refused.Result), "submit", "blocking"))
+	require.NotContains(t, change(refused.Result), "check", "no check ran")
 	require.Empty(t, g.PRs)
 
 	committed("jq-passing")
 	next("passed")
-	passed, err := jsonOf(t, "submit", "--check")
+	passed, err := jsonOf(t, "ship", "--yes")
 	require.NoError(t, err)
-	require.Equal(t, "jq: update to 1.8.1", passed.Result["title"])
-	require.Equal(t, "passed", dig(t, passed.Result, "check", "run", "state"))
-	require.Equal(t, true, dig(t, passed.Result, "pull_request", "created"))
+	require.Equal(t, "jq: update to 1.8.1", dig(t, change(passed.Result), "submit", "title"))
+	require.Equal(t, "passed", dig(t, change(passed.Result), "check", "run", "state"))
+	require.Equal(t, true, dig(t, change(passed.Result), "submit", "pull_request", "created"))
 }
 
 // Under the JSON's upstream key, as under the text's Upstream heading, a

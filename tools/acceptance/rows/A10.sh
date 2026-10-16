@@ -6,8 +6,8 @@
 # text assumes it. submit, which would push, and check, which would build,
 # run as their --plan. A line that can't run here, as one that makes a
 # Tart image, installs serve, or names a project that isn't one, is listed
-# as not run, with why. Neither outdated --mine nor update --outdated
-# --mine runs: each asks GitHub of every port the maintainer has, about
+# as not run, with why. ship runs as its --plan too. None of outdated
+# --mine, update --mine, and ship --mine runs: each asks GitHub of every port the maintainer has, about
 # 320 of Herby's, from the account's hourly quota, which field testing
 # shares (the M1's rerun, 2026-10-03); outdated runs on the stage's two
 # ports instead, and B3 runs a batch on them. jq, the docs' example, is current at the
@@ -71,11 +71,10 @@ act() {
 		"dockhand bump"*) why="goes on to a pull request, and has no --plan" ;;
 		"dockhand serve"*) why="runs or installs serve, which the stage doesn't" ;;
 		"dockhand setup tart"*) why="makes a Tart image" ;;
-		"dockhand submit --passing"*) why="submits, and has no --plan" ;;
 		*" jq "[0-9]*) why="names one of jq's versions, and jq is current at the stage's pin" ;;
 		"dockhand submit"*) [ "${ACCEPT_STAGE:-}" = quick ] && why="submits to a GitHub fork, which the quick stage hasn't" ;;
 		*"--on sequoia"* | *"--on tahoe"* | *"--on "[0-9]*) [ "${ACCEPT_STAGE:-}" = quick ] && why="builds on another release's Tart image, and the quick stage makes only this Mac's" ;;
-		*"--outdated --mine"*) why="prepares every outdated port of the maintainer's; B3 runs a batch on two" ;;
+		*"update --mine"* | *"ship --mine"*) why="prepares every outdated port of the maintainer's; B3 runs a batch on two" ;;
 		"dockhand outdated --mine"*) why="asks GitHub of each of the maintainer's ports, hundreds, from the account's hourly quota; outdated runs on the stage's two ports instead" ;;
 		esac
 		if [ -n "$why" ]; then
@@ -92,13 +91,8 @@ act() {
 			"$DH_BIN" path "$name" >/dev/null 2>&1 || dh start "$name" >/dev/null 2>&1 || :
 			;;
 		esac
-		case " submit check " in *" $verb "*)
+		case " submit check ship " in *" $verb "*)
 			case " $words " in *" --plan "*) ;; *) words="$words --plan" ;; esac ;;
-		esac
-		# A batch starts what it shows only with --yes, without a terminal,
-		# as the docs' reader would answer its question.
-		case " $words " in *" --outdated "*)
-			case " $words " in *" -y "* | *" --yes "*) ;; *) words="$words -y" ;; esac ;;
 		esac
 		# shellcheck disable=SC2086
 		eval "set -- $words"

@@ -1,34 +1,41 @@
 package command
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
 
-// bumpCommand is update --new --submit --yes, asking nothing: nobody looks
-// before it submits, so it holds what serve's submissions hold.
+	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/model"
+)
+
+// bumpCommand is ship's single-port front, ship <port> --yes with a
+// version to pin: nobody looks before it submits, so it holds what serve's
+// submissions hold (the person's word that bump stays, 2026-10-15).
 func bumpCommand(s *settings, streams Streams) *cobra.Command {
 	var version versionUpdate
 	cmd := &cobra.Command{
 		Use:   "bump <port> [version]",
 		Short: "Update a port and open its pull request, asking nothing",
 		Long: `Takes a port to the newest release upstream, or the version named, and on
-to its pull request, asking nothing: update --new --submit --yes, with the
+to its pull request, asking nothing: dockhand ship <port> --yes, with the
 guardrails serve keeps. It opens a pull request, so it isn't port bump, which
 refreshes checksums; dockhand checksums does that.
 
-It updates the port on fresh master, in a branch it starts for the edit,
-tidies the edit into one commit, checks it, and submits exactly that commit
-once the check passes. dockhand update is the same work a step at a time,
-looking and editing along the way. With --json, its result is update
---submit's: the update's, with tidy's, check's, and submit's inside it.
+It updates the port on fresh master, in a branch it starts for the edit, or
+resumes the open branch already changing it, brought to that release where
+it isn't there; tidies the edit into one commit; checks it; and submits
+exactly that commit once the check passes. dockhand ship is the same, and
+asks once on a terminal; dockhand update is the edit alone. With --json,
+its result is ship's.
 
 It stops wherever a person should look:
-  - A branch already changes the port, the check has nowhere to build, or
-    the port is already at that release: it says so, and changes nothing.
+  - The check has nowhere to build, or the port is already at that release:
+    it says so, and changes nothing.
   - A newer tag was made before the port's own, and nothing newer is beyond
     it, so which release is the newest can't be told: it changes nothing,
     exits 3, and names the bump that takes that tag, if it's a release.
   - Another pull request is open for the port, or couldn't be looked for:
     it stops before downloading or building anything, and exits 3. dockhand
-    update <port> --new --submit goes ahead after a look.
+    ship <port> goes ahead after a look.
   - The check fails: the branch stays, with its logs.
   - The check passes, but comparing the upstream archives found what a build
     can't catch, or couldn't compare them, a commit rule has a finding, or
@@ -38,18 +45,33 @@ It stops wherever a person should look:
 
 The pull request's tested checkboxes stay unticked unless --tested-binaries
 or --tested-variants says otherwise: they say what you tested, which
-dockhand can't. --on says where to check (default check.on).`,
+dockhand can't. The check builds where build.unattended's profile says;
+--build or --on names another.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			request, err := version.request(args, false)
+			ctx := cmd.Context()
+			whole := &batchJSON{}
+			streams.linkSteps(whole)
+			e, err := s.open(ctx)
 			if err != nil {
 				return err
 			}
-			version.linked.submit, version.linked.yes, version.linked.unattended = true, true, true
+			targets, err := shipTargets(ctx, e, streams, args[:1], branchFlags{})
+			if err == nil && len(args) == 2 {
+				targets[0].version = args[1]
+			}
+			if err == nil {
+				writeShipPlan(ctx, e, streams.Out, targets, engine.ShipSubmit)
+			}
+			e.Close()
+			if err != nil {
+				return err
+			}
 			version.linked.noteSet = cmd.Flags().Changed("note")
-			return version.run(cmd.Context(), s, streams.unattended(), branchChoice{new: newNamed}, request)
+			return shipAll(ctx, s, streams, whole, targets, engine.ShipSubmit, model.AnsweredYes, version)
 		},
 	}
-	version.flags(cmd, "")
+	version.flags(cmd)
+	version.stageFlags(cmd)
 	return cmd
 }

@@ -41,8 +41,13 @@ func TestBumpGoesFromUpdateToPullRequestAskingNothing(t *testing.T) {
 	require.Len(t, g.PRs, 1)
 	require.Contains(t, g.PRs[34901].Body, "- [ ] tested basic functionality of all binary files?", "only a person can say that")
 
-	_, _, err = bumpOn(t, "jq")
-	require.Regexp(t, `^jq is already changed in jq-1\.8\.1, so nothing was changed; dockhand status jq-1\.8\.1 says what it needs$`, err.Error())
+	// Run again, it resumes the branch, already at that release and
+	// submitted.
+	out, errs, err = bumpOn(t, "jq")
+	require.NoError(t, err, errs)
+	require.Contains(t, out, "  jq-1.8.1  its branch, updated again where it isn't at the newest release, to submit\n")
+	require.Contains(t, out, "jq is already at 1.8.1; nothing to change.\n")
+	require.Contains(t, out, "#34901 has nothing new")
 	require.Len(t, g.PRs, 1)
 }
 
@@ -64,7 +69,7 @@ func TestBumpPassesSubmitsWordsOn(t *testing.T) {
 	require.Contains(t, g.PRs[34901].Body, "[skip notification]")
 
 	_, _, err = dockhand(t, "update", "jq", "--title", "x")
-	require.ErrorContains(t, err, "go with --submit")
+	require.ErrorContains(t, err, "unknown flag: --title", "update is the edit alone")
 }
 
 // What would stop bump before the edit stops it with nothing changed.
@@ -78,25 +83,25 @@ func TestBumpChangesNothingWhenItHasNothingToDo(t *testing.T) {
 
 	out, _, err := bumpOn(t, "jq")
 	require.NoError(t, err)
-	require.Equal(t, "jq is already at 1.8.1; nothing to change, so no branch was started.\n", out)
+	require.Equal(t, "  jq  a version update from master, to submit\njq is already at 1.8.1; nothing to change, so no branch was started.\n", out)
 	out, _, err = bumpOn(t, "jq", "1.8.1")
 	require.NoError(t, err)
-	require.Equal(t, "jq is already at 1.8.1; nothing to change, so no branch was started.\n", out)
+	require.Equal(t, "  jq  a version update from master, to submit\njq is already at 1.8.1; nothing to change, so no branch was started.\n", out)
 
 	_, _, err = bumpOn(t, "jq", "1.9", "--on", "nowhere")
 	require.EqualError(t, err, `--on nowhere: no provider "nowhere" is set up; nothing was changed`)
 	_, _, err = bumpOn(t, "jq", "--except", "fd")
 	require.EqualError(t, err, "--except takes a port out of --revbump-dependents; add --revbump-dependents")
 	_, _, err = bumpOn(t, "jq", "--submit")
-	require.ErrorContains(t, err, "unknown flag: --submit", "bump is update --new --submit --yes already")
+	require.ErrorContains(t, err, "unknown flag: --submit", "bump is ship <port> --yes already")
 
 	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 }
 
-// update --submit and bump report one result: the update's, with each step
+// ship and bump report one result: each change's update, with each step
 // it went on to inside it, as far as it went. bump's can hold its
 // submission, and says why.
-func TestUpdateSubmitAndBumpReportTheSameJSON(t *testing.T) {
+func TestShipAndBumpReportTheSameJSON(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -104,11 +109,12 @@ func TestUpdateSubmitAndBumpReportTheSameJSON(t *testing.T) {
 	g := withGitHub(t, w)
 	g.Others = nil
 
-	for _, command := range [][]string{{"update", "jq", "--new", "--submit"}, {"bump", "jq"}} {
+	for _, command := range [][]string{{"ship", "jq", "--yes"}, {"bump", "jq"}} {
 		t.Setenv("MACPORTS_TREE", w.clone)
 		submitted, err := jsonOf(t, command...)
 		require.NoError(t, err, command)
-		result := submitted.Result
+		require.Len(t, submitted.Result["changes"], 1, command)
+		result := dig(t, submitted.Result, "changes", 0).(map[string]any)
 		require.Equal(t, "1.8.1", dig(t, result, "after", "version"), command)
 		require.Equal(t, true, result["started"], command)
 		require.Equal(t, true, result["applied"], command)
@@ -127,9 +133,10 @@ func TestUpdateSubmitAndBumpReportTheSameJSON(t *testing.T) {
 	g.Quiet = g.Searches + 1
 	held, err := jsonOf(t, "bump", "jq")
 	require.Equal(t, 3, ExitCode(err))
-	require.Equal(t, "1.8.1", dig(t, held.Result, "after", "version"))
-	require.Nil(t, dig(t, held.Result, "submit", "pull_request"))
-	require.Equal(t, []any{"#34777 is open for the same port: jq: update to 1.8.0"}, dig(t, held.Result, "submit", "held"))
+	change := dig(t, held.Result, "changes", 0).(map[string]any)
+	require.Equal(t, "1.8.1", dig(t, change, "after", "version"))
+	require.Nil(t, dig(t, change, "submit", "pull_request"))
+	require.Equal(t, []any{"#34777 is open for the same port: jq: update to 1.8.0"}, dig(t, change, "submit", "held"))
 }
 
 // Nobody looks before bump submits, so what holds serve's pull requests

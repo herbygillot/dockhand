@@ -38,7 +38,7 @@ type SubmitRequest struct {
 	// NoCheck submits without any check; the description says so.
 	NoCheck bool
 	// PendingCheck previews a submission whose check is still to run, for
-	// submit --check: having none yet does not stop it.
+	// ship, which checks first: having none yet does not stop it.
 	PendingCheck bool
 	// Accept acknowledges failed revision-only targets or extras by port.
 	Accept []string
@@ -460,7 +460,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 		plan.Blocking = append(plan.Blocking, "no check has finished for this commit's files; run dockhand check first, submit a draft with --draft, or submit without a check with --no-check, which the pull request states")
 		return nil
 	}
-	// submit --check runs the check these files still need, where an
+	// ship runs the check these files still need, where an
 	// earlier one built them only somewhere: running it is the decision,
 	// and the check reuses what stands. Refusing for the earlier check's
 	// gaps left --check doing nothing (field testing, grafana 13.2.4:

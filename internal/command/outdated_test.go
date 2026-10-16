@@ -11,7 +11,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -118,7 +117,7 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	require.Equal(t, notReady+"None of 2 ports has a newer release, at master 1bb30d5 · 1 has a release not ready yet\n", said(unready, current("jq")))
 }
 
-func TestOutdatedThenUpdateOutdated(t *testing.T) {
+func TestOutdatedThenUpdateMine(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -146,52 +145,53 @@ func TestOutdatedThenUpdateOutdated(t *testing.T) {
 	require.Equal(t, 3, ExitCode(err))
 	require.Contains(t, out, "couldn't check: no forge could be found for it")
 
-	// --outdated takes any number of ports, and --plan starts none.
-	out, _, err = dockhand(t, "update", "--outdated", "--plan", "jq", "lost", "gawk")
+	// --mine updates each in a branch of its own, nothing committed, and
+	// --plan starts none.
+	out, _, err = dockhand(t, "update", "--mine", "--plan")
 	require.NoError(t, err)
-	require.Equal(t, []string{"jq", "lost", "gawk"}, reader.asked[len(reader.asked)-1].Ports)
-	require.Contains(t, out, "Will start 1 branch, one per port (unrelated ports go in separate PRs):\n  dockhand/jq-1.8.1  jq 1.7.1 → 1.8.1\n", "a row a port, with the name the run uses")
+	require.Contains(t, out, "  lost: left as it is: no forge could be found for it\n")
+	require.Contains(t, out, "Will start 1 branch, one a port:\n  dockhand/jq-1.8.1  jq 1.7.1 → 1.8.1\n", "a row a port, with the name the run uses")
 	require.Contains(t, out, "Nothing was started (--plan).\n")
 
-	out, _, err = dockhand(t, "update", "--outdated", "--mine", "--check")
+	_, _, err = dockhand(t, "update", "--mine")
 	require.ErrorContains(t, err, "without a terminal, --yes starts what is shown")
-	require.Contains(t, out, "Will start 1 branch, one per port (unrelated ports go in separate PRs):\n  dockhand/jq-")
-	require.Contains(t, out, "Skipped: lost (no forge could be found for it)\n")
 
 	var stdout, errs bytes.Buffer
-	err = Run(t.Context(), []string{"update", "--outdated", "--mine", "--check"}, Streams{In: strings.NewReader("y\n"), Out: &stdout, Err: &errs, interactive: true})
-	require.NoError(t, err)
-	require.Contains(t, errs.String(), "? go ahead? [y/N] ")
-	require.Regexp(t, `  ✓ jq-1\.8\.1: 1\.7\.1 → 1\.8\.1, one commit, check-1 queued\n`, stdout.String())
-	require.Contains(t, stdout.String(), "1 branch updated and tidied into one commit each; 1 check queued\nserve isn't running: dockhand serve, or dockhand wait to run them here\n")
+	err = Run(t.Context(), []string{"update", "--mine"}, Streams{In: strings.NewReader("y\n"), Out: &stdout, Err: &errs, interactive: true})
+	require.NoError(t, err, errs.String())
+	require.Contains(t, errs.String(), "? Start them? [y/N] ")
+	require.Contains(t, stdout.String(), "jq: 1.7.1 → 1.8.1")
+	require.NotContains(t, stdout.String(), "Proposed commit", "nothing is committed")
 
 	out, _, err = dockhand(t, "outdated", "jq")
 	require.Equal(t, 3, ExitCode(err), "the fixture's lost couldn't be checked")
 	require.Regexp(t, `jq     1\.7\.1   1\.8\.1    already in jq-1\.8\.1\n`, out)
-	out, _, err = dockhand(t, "update", "--outdated", "jq", "--yes")
+	out, _, err = dockhand(t, "update", "--mine", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "Nothing to update: none of them has a newer release that isn't already in a branch.\nSkipped: jq (already in jq-")
+	require.Contains(t, out, "  jq: left as it is: already in jq-")
+	require.Contains(t, out, "Nothing to update: none of them has a newer release that isn't already in a branch.\n")
 
-	_, _, err = dockhand(t, "update", "--mine")
-	require.ErrorContains(t, err, "--mine and --check go with --outdated")
+	_, _, err = dockhand(t, "update", "--mine", "jq")
+	require.EqualError(t, err, "--mine starts a branch for each of your ports; it takes no port, --branch, or --new")
 	_, _, err = dockhand(t, "update")
-	require.ErrorContains(t, err, "name the port to update, or update your outdated ports with --outdated --mine")
+	require.ErrorContains(t, err, "name the port to update, or update your outdated ports with --mine")
 }
 
-// update --outdated starts nothing for a port whose newest release is
-// uncertain, and says why and what takes it; outdated's JSON lists what was
-// set aside (the update-workflow review's finding 6).
-func TestUpdateOutdatedLeavesAnUncertainPortForALook(t *testing.T) {
+// update --mine starts nothing for a port whose newest release is
+// uncertain, and counts it for a look; outdated's JSON lists what was set
+// aside (the update-workflow review's finding 6).
+func TestUpdateMineLeavesAnUncertainPortForALook(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	reader := withOutdated(t)
 	reader.uncertain = true
+	asMaintainer(t, w)
 
-	out, _, err := dockhand(t, "update", "--outdated", "--plan", "jq", "lost", "yq")
+	out, _, err := dockhand(t, "update", "--mine", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "Will start 1 branch, one per port (unrelated ports go in separate PRs):\n  dockhand/jq-")
-	require.Contains(t, out, "Skipped: yq (v5.0 compares newer, but its commit is older than v4.44.1's; after a look, dockhand update yq 5.0)\n")
+	require.Contains(t, out, "Will start 1 branch, one a port:\n  dockhand/jq-")
+	require.Contains(t, out, "1 that may have one, for your look")
 
 	result, err := jsonOf(t, "outdated", "jq", "lost", "yq")
 	require.Equal(t, 3, ExitCode(err), "lost couldn't be checked")
@@ -238,12 +238,14 @@ func (c cutShort) Outdated(_ context.Context, _ model.ObjectID, request engine.O
 }
 
 // A look interrupted part way prints what it found, which is still true,
-// and says how far it got; update --outdated then starts nothing.
+// and says how far it got; update --mine and ship --mine then start
+// nothing.
 func TestAnInterruptedLookPrintsWhatItFound(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
-	for _, args := range [][]string{{"outdated", "jq", "lost"}, {"update", "--outdated", "jq", "lost"}} {
+	asMaintainer(t, w)
+	for _, args := range [][]string{{"outdated", "jq", "lost"}, {"update", "--mine"}, {"ship", "--mine"}} {
 		ctx, cancel := context.WithCancel(t.Context())
 		testOutdatedReader = cutShort{cancel: cancel}
 		var out, errs bytes.Buffer
@@ -253,7 +255,7 @@ func TestAnInterruptedLookPrintsWhatItFound(t *testing.T) {
 		require.Contains(t, out.String(), "  jq     1.7.1   1.8.1    update\n", args)
 	}
 	testOutdatedReader = nil
-	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "update --outdated started nothing")
+	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "update --mine and ship --mine started nothing")
 }
 
 // A line printed while the count shows clears it, and draws it again after.
@@ -266,59 +268,27 @@ func TestAReportPrintsAroundTheCount(t *testing.T) {
 	require.Equal(t, "\r\033[KLooking up each port's newest release: 1 of 2\r\033[KBuilding the PortIndex\nLooking up each port's newest release: 1 of 2\r\033[K", err.String())
 }
 
-// Each port's line in a batch says what a single update says of it beyond
-// its version: termusic's dropped pin and its archive not compared went
-// unsaid (field testing's ninth report, 2026-10-02).
-func TestABatchSaysWhatASingleUpdateWould(t *testing.T) {
-	update := engine.Update{Port: "termusic", CrossesMajor: true, PatchesDropped: []string{"fix.diff"},
-		Regenerated: []editprep.Regenerated{{Option: "cargo.crates", Dropped: []editprep.Override{{Name: "soundtouch", Pinned: "0.4.1", Was: "0.4.0", Locked: "0.5.4"}}}},
-		Upstream:    &model.UpstreamComparison{Problem: "termusic-0.9.1.tar.gz couldn't be fetched from upstream or MacPorts' mirror"}}
-	require.Equal(t, []string{
-		"A new major version: what depends on termusic may need to follow.",
-		"The Portfile pinned soundtouch 0.4.1 over the lock's 0.4.0; the new lock has 0.5.4, so the pin is dropped.",
-		"Dropped patch fix.diff, which the new source already holds; its file goes too.",
-		"! Upstream archives not compared: termusic-0.9.1.tar.gz couldn't be fetched from upstream or MacPorts' mirror",
-	}, batchNotes(update))
-	require.Empty(t, batchNotes(engine.Update{Port: "jq"}))
-}
-
-// Every port update --outdated is given has a line: pomo and tokei, given
-// by name and already at their newest, said nothing (field testing's
-// eighth report, 2026-10-02).
-func TestUpdateOutdatedSaysEveryPortItWasGiven(t *testing.T) {
-	var out bytes.Buffer
-	plan := engine.OutdatedPlan{Skipped: []engine.SkippedUpdate{{Port: "pgdog", Reason: "already in pgdog-a1b2"}}}
+// What a batch leaves is counted by what the look found of each, naming
+// outdated, which says each.
+func TestABatchCountsWhatItLeaves(t *testing.T) {
 	report := engine.OutdatedReport{Ports: []engine.OutdatedPort{
 		{Port: "pgdog", Current: "0.1.53", Newest: "0.1.60", Outdated: true},
 		{Port: "pomo", Current: "0.8.1", Newest: "0.8.1"},
 		{Port: "tokei", Current: "14.0.0", Newest: "14.0.0"},
 		{Port: "lost", Problem: "no forge could be found for it"},
 	}}
-	writeSkipped(&out, plan, report)
-	require.Equal(t, "Skipped: pgdog (already in pgdog-a1b2)\nSkipped: lost (couldn't check: no forge could be found for it)\nCurrent: pomo 0.8.1, tokei 14.0.0\n", out.String())
+	require.Equal(t, "Of the rest, 2 current, 1 that couldn't be checked (dockhand outdated --mine --all says each).", restWords(report, engine.OutdatedPlan{}))
+	skipped := engine.OutdatedPlan{Skipped: []engine.SkippedUpdate{{Port: "lost", Reason: "no forge could be found for it"}}}
+	require.Equal(t, "Of the rest, 2 current (dockhand outdated --mine --all says each).", restWords(report, skipped), "what the plan skipped is said by name, and not counted again")
+	require.Empty(t, restWords(engine.OutdatedReport{}, engine.OutdatedPlan{}))
 }
 
 // A batch's exit says whether anything worked: 1 where none could be
 // done, 3 where some need a look, and 0 where all were.
 func TestABatchsExitSaysWhetherAnythingWorked(t *testing.T) {
-	failed := []engine.PreparedUpdate{{Planned: engine.PlannedUpdate{Name: "jq-1.8.1"}, Problem: "can't update jq by itself"}}
-	done := engine.PreparedUpdate{Planned: engine.PlannedUpdate{Name: "fd-10.3.0"}, Update: engine.Update{Before: engine.PortVersion{Version: "10.2.0"}, After: engine.PortVersion{Version: "10.3.0"}}}
-	var out bytes.Buffer
-	require.Equal(t, 1, ExitCode(writePrepared(t.Context(), nil, &out, failed, false)), "none could be done")
-	require.Equal(t, 3, ExitCode(writePrepared(t.Context(), nil, &out, append(failed, done), false)), "some need a look")
-	require.NoError(t, writePrepared(t.Context(), nil, &out, []engine.PreparedUpdate{done}, false), "all were done")
-}
-
-// Every port of a batch says what its comparison did, as a single update
-// does, including one that found nothing, and one that compared nothing
-// (field testing's batch 10, finding 3).
-func TestEveryBatchPortSaysItsComparison(t *testing.T) {
-	compared := engine.Update{Upstream: &model.UpstreamComparison{Changes: []model.UpstreamChange{}}}
-	require.Equal(t, []string{"Upstream source compared: no license, build file, or dependency changes."}, batchNotes(compared))
-	nothing := engine.Update{Upstream: &model.UpstreamComparison{Changes: []model.UpstreamChange{}, Coverage: []model.Coverage{{Path: "x", Relevance: "unknown", Treatment: "inspected", Policy: "not-compared", Reason: "op ships a binary package"}}}}
-	require.Len(t, batchNotes(nothing), 1)
-	require.Contains(t, batchNotes(nothing)[0], "Upstream not compared: ")
-	require.Empty(t, batchNotes(engine.Update{}), "nothing compared at all, as with --plan")
+	require.Equal(t, 1, ExitCode(batchExit([]string{"jq"}, 1, "shipped")), "none could be done")
+	require.Equal(t, 3, ExitCode(batchExit([]string{"jq"}, 2, "shipped")), "some need a look")
+	require.NoError(t, batchExit(nil, 2, "shipped"), "all were done")
 }
 
 // A look over hundreds of ports says once what it spends of GitHub's
@@ -347,14 +317,4 @@ func TestALookOffATerminalSaysItsCountAsItGoes(t *testing.T) {
 	l.progress(2, 3)
 	l.progress(3, 3)
 	require.Equal(t, []string{"Looked up 1 of 3 ports' newest releases"}, said)
-}
-
-// A port whose commit pin its branch moved past is skipped with the edit
-// that moves it said whole, where "name the version to set" sent the
-// person to an update that refused it (field testing's batch 14,
-// wezterm).
-func TestACommitPinMovedPastSaysTheEdit(t *testing.T) {
-	var out bytes.Buffer
-	writeSkipped(&out, engine.OutdatedPlan{}, engine.OutdatedReport{Ports: []engine.OutdatedPort{{Port: "wezterm", Moved: &engine.Head{Branch: "main"}}}})
-	require.Equal(t, "Skipped: wezterm (its branch main moved past the commit it pins, which update can't move yet: dockhand edit wezterm --no-open, set the commit and the version, then dockhand checksums wezterm)\n", out.String())
 }

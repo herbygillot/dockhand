@@ -42,7 +42,7 @@ dockhand tidy                     # one commit, "jq: update to 1.8.1"
 dockhand submit                   # push to your fork and open the pull request
 ```
 
-`update` changes only the branch's own files, which `dockhand diff` shows, and the steps after it, which build, commit, and push, each show what they will do before they do it; `--plan` on any of them shows the plan and changes nothing. `update jq --new --submit` runs the whole sequence, previewing each step, and `bump jq` runs it asking nothing, stopping wherever you should look. If the check fails, the branch stays as it is. `dockhand logs check-12 --port jq` prints the log, and you fix the Portfile in the worktree and run `check` again. Checks build the files as they are on disk, committed or not, so there is nothing to commit first; `--head` builds only the commits.
+`update` changes only the branch's own files, which `dockhand diff` shows, and the steps after it, which build, commit, and push, each show what they will do before they do it; `--plan` on any of them shows the plan and changes nothing. `ship jq` runs the whole sequence, showing its plan and asking once, `ship --to check` stops after the check, and `bump jq` runs it asking nothing, stopping wherever you should look. Run again, `ship` resumes the branch where it stands. If the check fails, the branch stays as it is. `dockhand logs check-12 --port jq` prints the log, and you fix the Portfile in the worktree and run `check` again. Checks build the files as they are on disk, committed or not, so there is nothing to commit first; `--head` builds only the commits.
 
 `status` shows every open branch: its ports, its edits, its latest check, and its pull request, under a list of what needs you, each with the command that moves it forward. Inside a branch's worktree, `status` shows that branch in detail.
 
@@ -64,9 +64,8 @@ The pull request's *Tested on* section says what each environment was, down to t
 
 ```sh
 dockhand outdated --mine                  # which of your ports have newer releases
-dockhand update --outdated --mine --check # one branch and one commit each, and a check of each queued
-dockhand serve --drain                    # run the queued checks, then exit
-dockhand submit --passing                 # go through the ones that passed
+dockhand ship --mine --to check           # one branch and one commit each, each checked
+dockhand ship --passing                   # submit the ones that passed
 ```
 
 `--mine` means the ports whose `maintainers` line names you, from `maintainer` in `~/.dockhand/config.toml`. Left running, `dockhand serve` runs the checks you queue, such as with `check -d`, looks for new releases of your ports each day and lists them, unless `serve.ship_to` says to carry them further, as `ship --to` does, and follows your pull requests' reviews and CI. It posts macOS notifications as checks finish and pull requests change, and `serve --install` makes it a launchd agent that starts at login; when dockhand is upgraded, the agent finishes its checks and starts again on the new build. It acts on GitHub only as the account it started as: logged out, it reads pull requests without a login and opens, pushes, and checks there nothing until you log in again. It opens no pull requests unless you ask it to, with `serve.ship_to = "submit"`, and then at most `serve.submit_limit` a day.
@@ -89,7 +88,7 @@ dockhand submit --passing                 # go through the ones that passed
 
 ## What it supports
 
-This release supports **updating ports whose source is on GitHub and that build with Go or Rust**, one port at a time and in batches: `update`, `check`, `tidy`, `submit`, `bump`, and `update --outdated`. Every other Portfile shape either works or refuses with a reason; dockhand never makes an edit it can't stand behind. Shapes outside that scope, which it plans with care or refuses:
+This release supports **updating ports whose source is on GitHub and that build with Go or Rust**, one port at a time and in batches: `update`, `check`, `tidy`, `submit`, `ship`, `bump`, and `ship --mine`. Every other Portfile shape either works or refuses with a reason; dockhand never makes an edit it can't stand behind. Shapes outside that scope, which it plans with care or refuses:
 
 - ports on another forge, such as GitLab or Codeberg, and ports MacPorts fetches with Git;
 - Python ports, and ports whose subports share a revision or a release;

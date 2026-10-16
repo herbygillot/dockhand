@@ -185,7 +185,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 	if found, ok := e.LastOutdatedLook(); ok && (len(found.Outdated) > 0 || len(found.Uncertain) > 0) {
 		fmt.Fprintln(out)
 		if len(found.Outdated) > 0 {
-			fmt.Fprintf(out, "Your ports: %s newer releases, as serve found %s (dockhand update --outdated --mine)\n", prose.Plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], engine.Ago(found.CheckedAt))
+			fmt.Fprintf(out, "Your ports: %s newer releases, as serve found %s (dockhand ship --mine)\n", prose.Plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], engine.Ago(found.CheckedAt))
 		}
 		if len(found.Uncertain) > 0 {
 			fmt.Fprintf(out, "Your ports: %s may have newer releases, for your look, as serve found %s (dockhand outdated %s)\n", prose.Plural(len(found.Uncertain), "port"), engine.Ago(found.CheckedAt), strings.Join(found.Uncertain, " "))

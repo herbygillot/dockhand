@@ -1,7 +1,6 @@
 # stages: full
 # S2: outdated --mine over a maintainer's ports, some 320 of
-# ACCEPT_MAINTAINER's, then update --outdated across 30 or more of them
-# with --check: paced under GitHub's limits, the disk above
+# ACCEPT_MAINTAINER's, then ship --to check across 30 or more of them: paced under GitHub's limits, the disk above
 # cleanup.min_free, one branch and one check each.
 #
 # outdated has no whole-tree mode: --all lists every port of those it
@@ -24,12 +23,12 @@ act() {
 	dh_json outdated --mine --all || :
 	jq -r '[.result.ports[]? | select(.outdated) | .port][:30] | .[]' "$DH_LAST_JSON" >"$ROW_DIR/ports"
 	# shellcheck disable=SC2046
-	dh_json update --outdated $(cat "$ROW_DIR/ports") --check -y || :
+	dh_json ship $(cat "$ROW_DIR/ports") --to check -y || :
 	dh serve --drain || :
 }
 assert() {
 	local n
-	n=$(jq -r '[.result.prepared[]?] | length' "$ROW_DIR/json/2.json" 2>/dev/null || echo 0)
+	n=$(jq -r '[.result.changes[]?] | length' "$ROW_DIR/json/2.json" 2>/dev/null || echo 0)
 	[ "$n" -ge 30 ] || { row_fail "only $n ports were prepared"; return; }
 	judged "it stayed under GitHub's limits, the disk stayed above cleanup.min_free, and each port had one branch and one check"
 }

@@ -91,8 +91,8 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.Equal(t, "ada", named.Result["account"])
 	require.Equal(t, "GH_TOKEN", named.Result["login_source"])
 	require.Equal(t, "ada", named.Result["fork_owner"])
-	_, _, err = dockhand(t, "submit", "--plan", "--check")
-	require.ErrorContains(t, err, "--plan previews one branch's submission")
+	_, _, err = dockhand(t, "submit", "--plan", "--yes")
+	require.EqualError(t, err, "--plan previews the submission; it goes without --yes")
 
 	var stdout, errs bytes.Buffer
 	err = Run(t.Context(), []string{"submit", "--draft"}, Streams{In: strings.NewReader("y\n\np\ns\n"), Out: &stdout, Err: &errs, interactive: true})
@@ -424,9 +424,6 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--note", "Fixed upstream.")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Note     Fixed upstream.\n           ! not in the description: its Description is yours, edited on GitHub or taken out, and stays as it is\n")
-
-	_, _, err = dockhand(t, "submit", "--passing", "--note", "Fixed upstream.")
-	require.ErrorContains(t, err, "none of the others can be")
 }
 
 // Submitting to a pull request with nothing to push says what it changed:
@@ -597,41 +594,36 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	_, _, err = dockhand(t, "tidy")
 	require.NoError(t, err)
 
-	out, _, err := dockhand(t, "submit", "--check")
+	// ship checks the committed head first, and submits only what passed.
+	out, _, err := dockhand(t, "ship", "--yes")
 	require.Equal(t, 2, ExitCode(err))
 	require.ErrorContains(t, err, "; nothing was submitted")
-	require.Contains(t, out, "  Checks   runs now; submit follows only if it passes (--check)\n")
+	require.Contains(t, out, "  jq-update  its branch, where it stands, to submit\n             jq: update to 1.8.1 · runs first; it is submitted only if it passes · opens a new one\n")
 	require.Contains(t, out, "jq-update · checking commit ")
 	require.Empty(t, g.PRs, "a failed check submits nothing")
 
 	withScript(t, w, "passed")
 	_, _, err = dockhand(t, "check")
 	require.NoError(t, err)
-	out, _, err = dockhand(t, "submit", "--passing")
-	require.ErrorContains(t, err, "--passing asks about each branch, so it needs a terminal")
-	require.Contains(t, out, "1 branch passed its check\n  jq-update\n")
-	// Nor does --yes stand in for the look at each, which it had been
-	// ignored for (D11, from the ov run's finding 7).
-	out, _, err = dockhand(t, "submit", "--passing", "--yes")
-	require.EqualError(t, err, "--passing asks about each branch, so it takes no --yes; dockhand submit --branch <name> --yes submits one without asking")
-	require.Empty(t, out, "refused before anything is looked at")
+	// Without a terminal nobody looks, so it holds where serve would.
+	out, _, err = dockhand(t, "ship", "--passing")
+	require.ErrorContains(t, err, "jq-update passed its check and waits for your look, so nothing was submitted: the upstream archives couldn't be compared")
+	require.Contains(t, out, "  jq-update  its branch, where it stands, to submit\n             jq: update to 1.8.1 · passed on command for this commit's files (check-2) · opens a new one\n")
+	require.Contains(t, out, "\n             Upstream ! archives not compared: the current version's archives could not be fetched: HTTP 404\n",
+		"what upstream showed, in the plan, which holds only a submission nobody looks over")
+	require.Empty(t, g.PRs)
 
-	var stdout, errs bytes.Buffer
-	err = Run(t.Context(), []string{"submit", "--passing"}, Streams{In: strings.NewReader("y\nn\nd\ny\n"), Out: &stdout, Err: &errs, interactive: true})
+	var stdout, stderr bytes.Buffer
+	err = Run(t.Context(), []string{"ship", "--passing"}, Streams{In: strings.NewReader("y\ny\nn\n"), Out: &stdout, Err: &stderr, interactive: true})
 	require.NoError(t, err)
-	require.Contains(t, stdout.String(), "For every branch submitted now:\n")
-	require.Contains(t, stdout.String(), "jq-update  jq: update to 1.8.1 · passed on command")
-	require.Contains(t, stdout.String(), "\n            Upstream ! archives not compared: the current version's archives could not be fetched: HTTP 404\n",
-		"what upstream showed, which holds only a submission nobody looks over")
-	require.Contains(t, stdout.String(), "+version 1.8.1", "d showed the diff")
+	require.Contains(t, stderr.String(), "? Ship it? [y/N] ")
 	require.Contains(t, stdout.String(), "Opened #34901")
-	require.Contains(t, stdout.String(), "Submitted 1 of 1.\n")
 	require.Contains(t, g.PRs[34901].Body, "- [x] tested basic functionality of all binary files?")
 	require.Contains(t, g.PRs[34901].Body, "- [ ] checked that the Portfile's most important [variants]")
 
-	out, _, err = dockhand(t, "submit", "--passing")
+	out, _, err = dockhand(t, "ship", "--passing")
 	require.NoError(t, err)
-	require.Equal(t, "0 branches passed their checks\n", out, "a pushed branch is done")
+	require.Equal(t, "Nothing to ship.\n", out, "a pushed branch is done")
 
 	// --ready is previewed, as the step that changes the pull request's
 	// state, and a draft's preview names it; the preview shows the
@@ -678,10 +670,13 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# reviewed\n"), 0o644))
 	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: note the review")
-	out, _, err = dockhand(t, "submit", "--check")
+	// Nobody looks at a submission --yes makes, and no other pull
+	// request for the port holds it here.
+	g.Others = nil
+	out, _, err = dockhand(t, "ship", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "Passed for commit ")
-	require.NotContains(t, out, "Next: ", "submit --check submits; it doesn't send you to submit")
+	require.NotContains(t, out, "Next: ", "ship submits; it doesn't send you to submit")
 	require.Contains(t, out, "Updated #34901: pushed up to ")
 	require.Equal(t, testsupport.Git(t, dir, "rev-parse", "HEAD"), testsupport.Git(t, g.Fork, "rev-parse", "dockhand/jq-update"))
 }
@@ -847,7 +842,7 @@ func TestSubmitCheckKeepsToOneCheckAndItsCommit(t *testing.T) {
 
 	_, _, err = dockhand(t, "check", "--head", "--enqueue")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "submit", "--check")
+	_, _, err = dockhand(t, "ship", "--yes")
 	require.EqualError(t, err, "check-1 is already queued for these files; dockhand wait check-1 follows it; once it passes, dockhand submit --branch jq-update submits this commit")
 	_, _, err = dockhand(t, "cancel", "check-1")
 	require.NoError(t, err)
@@ -861,9 +856,9 @@ cat > "$(dirname "$1")/result.json" <<JSON
 JSON
 `), 0o755))
 	t.Setenv("MOVE_IN", dir)
-	_, _, err = dockhand(t, "submit", "--check")
+	_, _, err = dockhand(t, "ship", "--yes")
 	require.Error(t, err)
-	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was checked; nothing was submitted, since submit --check binds [0-9a-f]{7}$`, err.Error())
+	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was checked; nothing was submitted, since ship binds [0-9a-f]{7}$`, err.Error())
 	require.Empty(t, g.PRs)
 }
 

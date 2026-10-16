@@ -4,6 +4,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
+	"reflect"
+	"slices"
 )
 
 // The --json results of the commands that change things. Each says what
@@ -341,7 +343,7 @@ type submitJSON struct {
 	// ahead. A Git-fetched port whose tag moved, release-moved or
 	// source-moved, was said only in text (batch 32).
 	Concerns []concernJSON `json:"concerns"`
-	// Check is the check submit --check ran, as far as it went.
+	// Check is the check ship ran before submitting, as far as it went.
 	Check *checkJSON `json:"check,omitempty"`
 }
 
@@ -672,17 +674,6 @@ func outdatedView(report engine.OutdatedReport) map[string]any {
 	return view
 }
 
-type preparedJSON struct {
-	Port     string                    `json:"port"`
-	Branch   string                    `json:"branch"`
-	Before   string                    `json:"before"`
-	After    string                    `json:"after"`
-	Tidied   bool                      `json:"tidied"`
-	Run      string                    `json:"run,omitempty"`
-	Problem  string                    `json:"problem,omitempty"`
-	Upstream *model.UpstreamComparison `json:"upstream,omitempty"`
-}
-
 // skippedJSON is a port a batch left alone, and why: an update already in
 // a branch, one it couldn't check, or one held for a look.
 type skippedJSON struct {
@@ -690,34 +681,37 @@ type skippedJSON struct {
 	Reason string `json:"reason"`
 }
 
-// preparedView is a batch's result: what it prepared, and every port it
-// left alone, with why, so an empty batch says why it is (the M1's quick
-// stage, B3: a batch offline said null).
-func preparedView(prepared []engine.PreparedUpdate, plan engine.OutdatedPlan, report engine.OutdatedReport) map[string]any {
-	skipped := []skippedJSON{}
-	said := map[string]bool{}
-	for _, update := range plan.Updates {
-		said[update.Port.Port] = true
+// batchJSON is ship's result, and update --mine's: each change as far as
+// it went, an update's shape with its later steps inside it, and every
+// port the batch left alone, with why, so an empty batch says why it is
+// (the M1's quick stage, B3: a batch offline said null).
+type batchJSON struct {
+	Changes []updateJSON  `json:"changes"`
+	Skipped []skippedJSON `json:"skipped"`
+	// at is the change being gathered, whose steps follow it.
+	at *updateJSON
+}
+
+// next starts the next change's gathering.
+func (b *batchJSON) next() {
+	b.Changes = append(b.Changes, updateJSON{})
+	b.at = &b.Changes[len(b.Changes)-1]
+}
+
+func (b *batchJSON) gather(step any) {
+	if skipped, ok := step.([]skippedJSON); ok {
+		b.Skipped = append(b.Skipped, skipped...)
+		return
 	}
-	for _, skip := range plan.Skipped {
-		said[skip.Port] = true
-		skipped = append(skipped, skippedJSON{Port: skip.Port, Reason: skip.Reason})
+	if b.at == nil {
+		b.next()
 	}
-	for _, port := range report.Ports {
-		if !said[port.Port] && port.Problem != "" {
-			skipped = append(skipped, skippedJSON{Port: port.Port, Reason: "couldn't check: " + port.Problem})
-		}
-	}
-	views := []preparedJSON{}
-	for _, done := range prepared {
-		view := preparedJSON{Port: done.Planned.Port.Port, Branch: engine.BranchName(done.Planned.Name), Before: done.Update.Before.String(), After: done.Update.After.String(),
-			Tidied: done.Tidied, Problem: done.Problem, Upstream: done.Update.Upstream}
-		if done.Run != nil {
-			view.Run = done.Run.Name()
-		}
-		views = append(views, view)
-	}
-	return map[string]any{"prepared": views, "skipped": skipped}
+	b.at.gather(step)
+}
+
+func (b *batchJSON) result() any {
+	changes := slices.DeleteFunc(slices.Clone(b.Changes), func(change updateJSON) bool { return reflect.ValueOf(change).IsZero() })
+	return batchJSON{Changes: append([]updateJSON{}, changes...), Skipped: append([]skippedJSON{}, b.Skipped...)}
 }
 
 // plainHTTPJSON is a URL a port names over plain HTTP, its https form, and

@@ -38,7 +38,7 @@ type Passing struct {
 }
 
 // PassingBranches is the one definition of a branch that passed and is
-// ready to submit, for submit --passing and for serve: it has commits and
+// ready to submit, for ship --passing and for serve: it has commits and
 // a finished check, its pull request doesn't already have its head, and
 // the checks of exactly its committed files built every changed target
 // and passed, whatever --only narrowed.
