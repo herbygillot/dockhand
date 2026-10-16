@@ -21,12 +21,11 @@ func TestSubjectSuppliesThePortNameOnce(t *testing.T) {
 	require.ErrorContains(t, err, "one nonempty line")
 }
 
-// Dockhand's attribution is known in its current form and in the forms
-// earlier builds wrote, so tidy and the pull-request body find it once.
-// Another tool's trailer is the person's own.
-func TestIsAttributionKnowsEveryFormDockhandWrote(t *testing.T) {
+// Dockhand's attribution is known, so tidy and the pull-request body find
+// it once. Another tool's trailer is the person's own.
+func TestIsAttributionKnowsDockhandsTrailer(t *testing.T) {
 	t.Parallel()
-	for _, line := range []string{commitmsg.GeneratedBy(), "  " + commitmsg.GeneratedBy(), "Assisted-By: Dockhand v0.1.0", "Generated-by: dockhand"} {
+	for _, line := range []string{commitmsg.GeneratedBy(), "  " + commitmsg.GeneratedBy()} {
 		require.True(t, commitmsg.IsAttribution(line), line)
 	}
 	for _, line := range []string{"Assisted-By: Claude Code", "Closes: https://trac.macports.org/ticket/74379", "fixture: update to 2"} {
@@ -34,12 +33,10 @@ func TestIsAttributionKnowsEveryFormDockhandWrote(t *testing.T) {
 	}
 }
 
-// A commit is dockhand's when its message carries the attribution line,
-// in any form dockhand wrote.
+// A commit is dockhand's when its message carries the attribution line.
 func TestACommitIsDockhandsByItsAttribution(t *testing.T) {
 	t.Parallel()
 	require.True(t, commitmsg.Attributed("jq: update to 1.8.1\n\n"+commitmsg.GeneratedBy()+"\n"))
-	require.True(t, commitmsg.Attributed("jq: update to 1.8.1\n\nAssisted-By: Dockhand v0.1.0"))
 	require.False(t, commitmsg.Attributed("jq: update to 1.8.1\n\nAssisted-By: Claude Code\n"))
 }
 
@@ -56,17 +53,14 @@ func TestAModifiedBuildIsKnownFromItsTrailer(t *testing.T) {
 }
 
 // The build a commit's Generated-By names is its tag, which submit asks
-// GitHub about; a legacy form names none, and nor does a message without
-// the line.
+// GitHub about; a message without the line names none.
 func TestTheBuildAGeneratedByNames(t *testing.T) {
 	t.Parallel()
 	build, ok := commitmsg.Build("hugo: update to 0.167.0\n\n  Generated-By: Dockhand devel+1a2b3c4d5e6f (https://github.com/herbygillot/dockhand)\n")
 	require.True(t, ok)
 	require.Equal(t, "devel+1a2b3c4d5e6f", build)
-	for _, message := range []string{"hugo: update to 0.167.0\n", "jq: update to 1.8.1\n\nAssisted-By: Dockhand v0.1.0", "jq: update to 1.8.1\n\nGenerated-by: dockhand"} {
-		_, ok := commitmsg.Build(message)
-		require.False(t, ok, message)
-	}
+	_, ok = commitmsg.Build("hugo: update to 0.167.0\n")
+	require.False(t, ok)
 }
 
 // A commit can stand for one tidy would write where they say the same,
@@ -92,13 +86,12 @@ func TestACommitThatSaysTheSameIsUnchanged(t *testing.T) {
 }
 
 // The builds messages' attribution lines name other than this one are
-// each named once: a pre-v3 build by its tag, a legacy form by its line;
-// this build, and a message without the line, name none.
+// each named once, by its tag; this build, and a message without the
+// line, name none.
 func TestTheOtherBuildsCommitsName(t *testing.T) {
 	old := "zola: update to 0.22.1\n\nGenerated-By: Dockhand v0.0.0-20260921.2.0.20260923041537-ec1997b8bc53 (https://github.com/herbygillot/dockhand)\n"
-	legacy := "jq: update to 1.8.1\n\nAssisted-By: Dockhand 0.1\n"
 	current := "yq: update to 4.54.1\n\n" + commitmsg.GeneratedBy() + "\n"
-	require.Equal(t, []string{"v0.0.0-20260921.2.0.20260923041537-ec1997b8bc53", "Assisted-By: Dockhand 0.1"},
-		commitmsg.OtherBuilds([]string{old, current, "a hand commit\n", legacy, old}))
+	require.Equal(t, []string{"v0.0.0-20260921.2.0.20260923041537-ec1997b8bc53"},
+		commitmsg.OtherBuilds([]string{old, current, "a hand commit\n", old}))
 	require.Empty(t, commitmsg.OtherBuilds([]string{current}))
 }
