@@ -189,7 +189,7 @@ func (e *Engine) profileEnvironments(ctx context.Context, profile Profile) ([]mo
 func (e *Engine) notSetUp(_ context.Context, profile Profile) error {
 	switch profile.Provider {
 	case buildenv.Tart:
-		return fmt.Errorf(`build profile %s builds on Tart, which isn't installed here: MacPorts' tart port installs it; or a profile of your own under [build.profiles] in %s builds with MacPorts' own workflow in your fork, as {provider = "github"}, or with your own script, set up as [providers.command]`, profile.Name, e.configFile())
+		return fmt.Errorf(`build profile %s builds on Tart, which isn't installed here: MacPorts' tart port installs it, on Apple silicon; or --on github builds with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command]; a profile of your own under [build.profiles] in %s makes either the default, as {provider = "github"}`, profile.Name, e.configFile())
 	case buildenv.Command:
 		return fmt.Errorf(`build profile %s builds with your own script, which isn't set up: [providers.command] run = "..." in %s`, profile.Name, e.configFile())
 	}
