@@ -59,3 +59,17 @@ func TestFailedXcodeExpansionPreservesDiagnosticsWithoutRecursiveCleanup(t *test
 	require.NoError(t, err)
 	require.Len(t, paths, 1)
 }
+
+// An archive's copy is read for its size and sha256 where it is, as stat
+// and shasum give them, to compare with the original before it's expanded
+// (field testing, monterey's xip, 2026-10-16).
+func TestAGuestCopysDigestIsRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "Xcode.xip")
+	require.NoError(t, os.WriteFile(path, []byte("fixture"), 0o600))
+	digest, err := GuestDigest(t.Context(), func(ctx context.Context, _ io.Reader, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, args[0], args[1:]...).CombinedOutput()
+	}, path)
+	require.NoError(t, err)
+	require.Equal(t, ArchiveDigest{Size: 7, SHA256: "f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d"}, digest)
+	require.Equal(t, "7 bytes, sha256 f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d", digest.String())
+}

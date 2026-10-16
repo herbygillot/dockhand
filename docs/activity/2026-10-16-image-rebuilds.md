@@ -27,3 +27,18 @@ Field testing rebuilt the six Tart images at 7ed949df with `setup tart <rel>
   12.5 or later, so the vanilla Monterey guest's version is the first
   thing to read; the failure line now says it. No fix is guessed before
   that's read.
+
+## The Xcode archive's copy is checked before it's expanded
+
+Field testing then ruled out the guest's version: a clone of the old
+dockhand-xcode-monterey, from the same vanilla digest, runs macOS 12.7.6
+with Xcode 14.0.1 installed, so the OS had expanded this xip before, and
+space was ample. That leaves the copy.
+
+- setup reads the host archive's size and sha256 while the copy goes
+  (`fileDigest`), and the guest copy's after it with stat and shasum
+  (`macos.GuestDigest`). Where they differ, it stops before expanding:
+  "the Xcode archive's copy in the guest is …, and <path> is …: the copy
+  was cut short or changed". Where they match and xip still fails, the
+  failure says the copy matched, with its size and sha256.
+- The setup protocol stays 3: an image made now holds what it did; the provisioning pin moves (protocol_test's setupPin).

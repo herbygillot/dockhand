@@ -191,6 +191,33 @@ func checkToolsGeneration(ctx context.Context, run Command, release Release) err
 	return nil
 }
 
+// ArchiveDigest is a file's size and sha256, for comparing an archive's
+// copy with its original.
+type ArchiveDigest struct {
+	Size   int64
+	SHA256 string
+}
+
+func (d ArchiveDigest) String() string { return fmt.Sprintf("%d bytes, sha256 %s", d.Size, d.SHA256) }
+
+// GuestDigest is the size and sha256 of a file on the command target, as
+// stat(1) and shasum(1) give them.
+func GuestDigest(ctx context.Context, run Command, path string) (ArchiveDigest, error) {
+	output, err := run(ctx, nil, "/bin/sh", "-c", `/usr/bin/stat -f %z "$1" && /usr/bin/shasum -a 256 "$1"`, "dockhand", path)
+	if err != nil {
+		return ArchiveDigest{}, fmt.Errorf("macos: reading %s's size and sha256: %w: %s", path, err, strings.TrimSpace(string(output)))
+	}
+	fields := strings.Fields(string(output))
+	if len(fields) < 2 {
+		return ArchiveDigest{}, fmt.Errorf("macos: reading %s's size and sha256: %q", path, strings.TrimSpace(string(output)))
+	}
+	size, err := strconv.ParseInt(fields[0], 10, 64)
+	if err != nil {
+		return ArchiveDigest{}, fmt.Errorf("macos: %s's size: %w", path, err)
+	}
+	return ArchiveDigest{Size: size, SHA256: fields[1]}, nil
+}
+
 // InstallXcode expands an archive already present on the command target and selects the installation.
 func InstallXcode(ctx context.Context, run Command, archive string) error {
 	if !filepath.IsAbs(archive) {

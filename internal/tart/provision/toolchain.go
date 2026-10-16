@@ -2,7 +2,10 @@ package provision
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -38,15 +41,62 @@ func (n *native) InstallXcode(ctx context.Context, name string, config Config) e
 	if err != nil {
 		return err
 	}
+	// The host's digest is read while the copy goes, and the guest's copy
+	// is compared with it before it's expanded: monterey's xip failed on
+	// both runs, "Block-compressed payload operation failed", with an
+	// archive the host expands, on an OS that had expanded it before
+	// (field testing, 2026-10-16).
+	digests := make(chan hostDigest, 1)
+	go func() {
+		digest, err := fileDigest(config.XcodeArchive)
+		digests <- hostDigest{digest, err}
+	}()
 	if err := n.during(ctx, "Copying Xcode archive", func() error { return guest.Upload(ctx, config.XcodeArchive, guestArchive, false) }); err != nil {
 		return fmt.Errorf("setup: copying Xcode archive: %w", err)
+	}
+	host := <-digests
+	if host.err != nil {
+		return fmt.Errorf("setup: reading the Xcode archive's sha256: %w", host.err)
+	}
+	copied, err := macos.GuestDigest(ctx, n.target(name), guestArchive)
+	if err != nil {
+		return fmt.Errorf("setup: checking the Xcode archive's copy: %w", err)
+	}
+	if copied != host.digest {
+		return fmt.Errorf("setup: the Xcode archive's copy in the guest is %s, and %s is %s: the copy was cut short or changed, so it wasn't expanded", copied, config.XcodeArchive, host.digest)
 	}
 	if n.progress != nil {
 		_, _ = fmt.Fprintf(n.progress, "Expanding and installing Xcode %s...\n", config.XcodeVersion)
 	}
-	return n.during(ctx, "Xcode installation", func() error {
+	err = n.during(ctx, "Xcode installation", func() error {
 		return macos.InstallXcode(ctx, n.streamTarget(name), guestArchive)
 	})
+	if err != nil {
+		return fmt.Errorf("%w (its copy in the guest matched the host's: %s)", err, host.digest)
+	}
+	return nil
+}
+
+// hostDigest is the Xcode archive's digest on the host, or why it wasn't
+// read.
+type hostDigest struct {
+	digest macos.ArchiveDigest
+	err    error
+}
+
+// fileDigest is a file's size and sha256.
+func fileDigest(path string) (macos.ArchiveDigest, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return macos.ArchiveDigest{}, err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	size, err := io.Copy(hash, file)
+	if err != nil {
+		return macos.ArchiveDigest{}, err
+	}
+	return macos.ArchiveDigest{Size: size, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
 }
 
 // InstallMacPorts installs MacPorts, keeping each port's archive: a check

@@ -21,7 +21,7 @@ import (
 // (channel to guestssh, text to textedit), and batch 48 regrouped their
 // imports, and v0.3.1 took a guest MacPorts newer than asked, which
 // MacPorts' installer's selfupdate makes, none of which changes an image.
-const setupPin = "640ae35ecea181c873b3c59eebe2fde49cf3aa0bc41ecb1d87564bd68e0b0b62"
+const setupPin = "4e6cdd762ef24c9f7ba09a68358b12dba7d08ac3cb7a9b77f9450dc313ffcdb7"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning
