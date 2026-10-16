@@ -148,3 +148,25 @@ JSON
 	require.Contains(t, out, "yq-1.8.1: yq-1.8.1 passed its check and waits for your look")
 	require.Len(t, g.PRs, 1)
 }
+
+// ship takes each stage's flags: --tests for the check, and --type and
+// --draft for the pull request, which bump lacked (the second look's §6).
+// A draft goes up whatever its check found.
+func TestShipTakesEachStagesFlags(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "failed")
+	g := withGitHub(t, w)
+	g.Others = nil
+
+	_, _, err := dockhand(t, "ship", "jq", "--tests", "sometimes")
+	require.EqualError(t, err, `--tests "sometimes" is not declared, required, or skip`)
+	out, _, err := dockhand(t, "ship", "jq", "--yes", "--draft", "--type", "bugfix", "--tests", "skip")
+	require.Equal(t, 2, ExitCode(err), out)
+	require.Contains(t, out, "then submitting it as a draft")
+	require.Contains(t, out, "tests skip")
+	require.Len(t, g.PRs, 1)
+	require.Equal(t, []bool{true}, g.Drafts)
+	require.Contains(t, g.PRs[34901].Body, "- [x] bugfix")
+}

@@ -56,6 +56,9 @@ says whether any went through: 1 where none did, 3 where some need a look.`,
 			default:
 				return fmt.Errorf("--to %s: commit, check, or submit", to)
 			}
+			if err := version.stageReady(); err != nil {
+				return err
+			}
 			if chosen := len(args) > 0 || mine || passing; chosen && where.explicit() || len(args) > 0 && (mine || passing) || mine && passing {
 				return errors.New("name ports, --mine, --passing, or a branch: one of them")
 			}
@@ -342,18 +345,18 @@ func shipOne(ctx context.Context, s *settings, streams Streams, target shipTarge
 	}
 	place := engine.WhereRequest{On: linked.on, Build: linked.build, Unattended: linked.unattended}
 	if stage == engine.ShipCheck {
-		run, err := checkHead(ctx, s, e, streams, branch, place)
+		run, err := checkHead(ctx, s, e, streams, branch, place, linked.tests)
 		if err != nil || run == nil {
 			return nil, err
 		}
 		return &carried{target: target, run: run}, nil
 	}
 	fmt.Fprintln(streams.Out)
-	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.testedBinaries, TestedVariants: linked.testedVariants, Title: linked.title, SkipNotification: linked.skipNotification}
+	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.testedBinaries, TestedVariants: linked.testedVariants, Title: linked.title, SkipNotification: linked.skipNotification, Types: linked.types, Draft: linked.draft}
 	if linked.noteSet {
 		request.Note = &linked.note
 	}
-	pending, run, err := prepareSubmit(ctx, s, e, streams, request, place)
+	pending, run, err := prepareSubmit(ctx, s, e, streams, request, place, linked.tests)
 	if err != nil {
 		return nil, err
 	}
@@ -368,18 +371,26 @@ func finishCarried(ctx context.Context, s *settings, streams Streams, done carri
 		return err
 	}
 	defer e.Close()
+	var checked error
 	if done.run != nil {
-		if err := runQueued(ctx, e, *done.run, streams, false); err != nil {
-			if exit := new(ExitError); done.submit != nil && errors.As(err, &exit) {
+		checked = runQueued(ctx, e, *done.run, streams, false)
+		// A draft goes up whatever its check found, as submit --draft
+		// allows, with the check's exit; anything else stops.
+		draft := done.submit != nil && done.submit.request.Draft
+		if exit := new(ExitError); checked != nil && (!draft || !errors.As(checked, &exit)) {
+			if done.submit != nil && errors.As(checked, &exit) {
 				exit.Message += "; nothing was submitted"
 			}
-			return err
+			return checked
 		}
 	}
 	if done.submit == nil {
-		return nil
+		return checked
 	}
-	return submitPassed(ctx, s, e, streams, *done.submit)
+	if err := submitPassed(ctx, s, e, streams, *done.submit); err != nil {
+		return err
+	}
+	return checked
 }
 
 // whereReady settles where a change's check builds before anything is
@@ -398,25 +409,25 @@ func whereReady(ctx context.Context, s *settings, linked linkedOptions) error {
 
 // checkHead queues a check of a branch's committed head where place says,
 // as check --head would; nil where a check already passed for it.
-func checkHead(ctx context.Context, s *settings, e *engine.Engine, streams Streams, branch model.Branch, place engine.WhereRequest) (*model.Run, error) {
+func checkHead(ctx context.Context, s *settings, e *engine.Engine, streams Streams, branch model.Branch, place engine.WhereRequest, tests string) (*model.Run, error) {
 	if status, err := e.BranchStatus(ctx, branch); err == nil && status.CheckStanding() == engine.CheckPassed && len(status.Edited) == 0 {
 		fmt.Fprintf(streams.Out, "%s: %s passed for this commit already; nothing to check.\n", branch.ShortName(), status.Latest.Name())
 		return nil, nil
 	}
-	return queueHead(ctx, s, e, streams, branch, place, "")
+	return queueHead(ctx, s, e, streams, branch, place, tests, "")
 }
 
 // queueHead is ship's check of a branch's committed head: proposed, shown
 // as check shows it, and queued; a check already queued or running for the
 // same files is the one followed, so a rerun resumes rather than refusing
 // (decision 4). then says what follows it, as ", then submitting it if it
-// passes".
-func queueHead(ctx context.Context, s *settings, e *engine.Engine, streams Streams, branch model.Branch, place engine.WhereRequest, then string) (*model.Run, error) {
+// passes". tests is --tests, check.tests where it's empty.
+func queueHead(ctx context.Context, s *settings, e *engine.Engine, streams Streams, branch model.Branch, place engine.WhereRequest, tests, then string) (*model.Run, error) {
 	where, err := e.Where(ctx, place)
 	if err != nil {
 		return nil, err
 	}
-	proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: engine.CaptureHead}, Where: where, Tests: model.TestPolicy(s.file.Check.Tests)})
+	proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: engine.CaptureHead}, Where: where, Tests: model.TestPolicy(cmp.Or(tests, s.file.Check.Tests))})
 	if err != nil {
 		return nil, err
 	}

@@ -252,12 +252,24 @@ func (v *versionUpdate) flags(cmd *cobra.Command) {
 func (v *versionUpdate) stageFlags(cmd *cobra.Command) {
 	cmd.Flags().StringArrayVar(&v.linked.on, "on", nil, "where to check, explicit environments (default build.default's profile, or build.unattended's where nobody looks)")
 	cmd.Flags().StringVar(&v.linked.build, "build", "", "where to check, by build profile (default build.default's, or build.unattended's where nobody looks)")
+	cmd.Flags().StringVar(&v.linked.tests, "tests", "", "the check's tests: declared (advisory), required, or skip (default check.tests)")
+	cmd.Flags().StringSliceVar(&v.linked.types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for an update dockhand made)")
+	cmd.Flags().BoolVar(&v.linked.draft, "draft", false, "open the pull request as a draft, even where its check fails")
 	cmd.Flags().BoolVar(&v.linked.testedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files")
 	cmd.Flags().BoolVar(&v.linked.testedVariants, "tested-variants", false, "state that you checked the most important variants")
 	cmd.Flags().StringVar(&v.linked.title, "title", "", "the pull request's title (default: the commit subject)")
 	cmd.Flags().StringVar(&v.linked.note, "note", "", "your own note in the pull request's description")
 	cmd.Flags().BoolVar(&v.linked.skipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")
 	cmd.MarkFlagsMutuallyExclusive("build", "on")
+}
+
+// stageReady refuses what the later stages' flags can't take before
+// anything is done: a misspelled --tests.
+func (v versionUpdate) stageReady() error {
+	if v.linked.tests != "" && !model.TestPolicy(v.linked.tests).Valid() {
+		return fmt.Errorf("--tests %q is not declared, required, or skip", v.linked.tests)
+	}
+	return nil
 }
 
 // request is the update of the port args name, to the version they name
@@ -314,8 +326,13 @@ type linkedOptions struct {
 	on                             []string
 	build                          string
 	testedBinaries, testedVariants bool
-	yes                            bool
-	unattended                     bool
+	// tests is the check's --tests; types and draft the submission's
+	// --type and --draft (the second look's §6: bump lacked them).
+	tests      string
+	types      []string
+	draft      bool
+	yes        bool
+	unattended bool
 	// title, note, and skipNotification are submit's, passed on; noteSet
 	// is whether --note was given, "" taking a note out. bump took none, so
 	// a test's pull request couldn't be marked one (the rc6 full stage, B2).

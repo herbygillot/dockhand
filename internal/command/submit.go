@@ -226,7 +226,7 @@ type pendingSubmit struct {
 // queues the check those files still need, returning it; none where one
 // passed already. Running ship is the decision: the commit is bound here,
 // and submitPassed submits exactly it once its check passes.
-func prepareSubmit(ctx context.Context, s *settings, e *engine.Engine, streams Streams, request engine.SubmitRequest, place engine.WhereRequest) (pendingSubmit, *model.Run, error) {
+func prepareSubmit(ctx context.Context, s *settings, e *engine.Engine, streams Streams, request engine.SubmitRequest, place engine.WhereRequest, tests string) (pendingSubmit, *model.Run, error) {
 	request.PendingCheck, request.Head = true, true
 	plan, err := e.PlanSubmit(ctx, request)
 	if err != nil {
@@ -249,7 +249,11 @@ func prepareSubmit(ctx context.Context, s *settings, e *engine.Engine, streams S
 		return pending, nil, nil
 	}
 	// A check nobody looks over builds on build.unattended's profile.
-	run, err := queueHead(ctx, s, e, streams, plan.Branch, place, ", then submitting it if it passes")
+	then := ", then submitting it if it passes"
+	if request.Draft {
+		then = ", then submitting it as a draft"
+	}
+	run, err := queueHead(ctx, s, e, streams, plan.Branch, place, tests, then)
 	return pending, run, err
 }
 

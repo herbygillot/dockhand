@@ -50,6 +50,9 @@ dockhand can't. The check builds where build.unattended's profile says;
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			if err := version.stageReady(); err != nil {
+				return err
+			}
 			whole := &batchJSON{}
 			streams.linkSteps(whole)
 			e, err := s.open(ctx)
