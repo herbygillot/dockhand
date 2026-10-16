@@ -102,6 +102,10 @@ dockhand bump <port> does all four asking nothing, and stops where you
 should look. docs/usage.md is the guide, and dockhand status shows where
 things are.`
 
+// inspectRoot, when set, is given the command tree before it runs, for a
+// test that reads every command's help.
+var inspectRoot func(*cobra.Command)
+
 // Run executes the command line in args.
 func Run(ctx context.Context, args []string, streams Streams) error {
 	var settings settings
@@ -259,6 +263,9 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 			"cancel", "logs", "undo", "archive", "clean", "explain", "outdated":
 			supportsJSON(command)
 		}
+	}
+	if inspectRoot != nil {
+		inspectRoot(root)
 	}
 	// Cobra reads os.Args for nil arguments; Run's are only those given,
 	// so a test binary's own flags never reach a command.
