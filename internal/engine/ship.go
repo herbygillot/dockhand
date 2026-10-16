@@ -111,21 +111,16 @@ func (e *Engine) Ship(ctx context.Context, target ShipTarget, options ShipOption
 	if options.To == ShipCommit {
 		return done
 	}
-	capture, err := e.Capture(ctx, CaptureRequest{Branch: branch, Mode: CaptureHead})
+	proposal, err := e.ProposeCheck(ctx, CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureHead}, Where: options.Where, Tests: options.Tests})
 	if err != nil {
 		done.Problem = err.Error()
 		return done
 	}
-	checkPlan, err := e.PlanCheck(ctx, PlanRequest{Revision: capture.Revision, Environments: options.Where.Environments, Span: options.Where.Span, Profile: options.Where.Profile, Tests: options.Tests})
-	if err != nil {
-		done.Problem = err.Error()
+	if !proposal.Plan.Runnable() {
+		done.Problem = "its check can't be planned: " + unresolvedWords(proposal.Plan)
 		return done
 	}
-	if !checkPlan.Runnable() {
-		done.Problem = "its check can't be planned: " + unresolvedWords(checkPlan)
-		return done
-	}
-	run, err := e.Enqueue(ctx, branch, checkPlan, options.Origin)
+	run, err := e.Enqueue(ctx, branch, proposal.Plan, options.Origin)
 	if err != nil {
 		done.Problem = err.Error()
 		return done

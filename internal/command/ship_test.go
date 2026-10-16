@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // asMaintainer names the person as the fixture's maintainers lines do,
@@ -113,4 +115,36 @@ func TestShipMineAndPassing(t *testing.T) {
 	out, errs, err = dockhand(t, "ship", "--passing", "--to", "commit")
 	require.NoError(t, err, errs)
 	require.Contains(t, out, "  jq-1.8.1  its branch, where it stands, to commit\n")
+}
+
+// A batch queues every change's check before it sees any through, and
+// submits each as its check passes (decision 4).
+func TestShipQueuesABatchsChecksFirst(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	require.NoError(t, os.MkdirAll(filepath.Join(w.upstream, "textproc/yq"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/yq/Portfile"), []byte("name yq\nversion 1.7.1\n"), 0o644))
+	testsupport.Git(t, w.upstream, "add", ".")
+	testsupport.Git(t, w.upstream, "commit", "-q", "-m", "yq: 1.7.1")
+	withBumper(t)
+	withScript(t, w, "passed")
+	require.NoError(t, os.WriteFile(filepath.Join(w.home, "bin", "build-ports"), []byte(`#!/bin/sh
+cat > "$(dirname "$1")/result.json" <<JSON
+{"version": 1, "targets": [{"id": "jq", "outcome": "passed"}, {"id": "yq", "outcome": "passed"}]}
+JSON
+`), 0o755))
+	g := withGitHub(t, w)
+	g.Others = nil
+
+	// The bumper stands in jq's release for any port, so yq's commit is
+	// held by the commit rules: one change held, and the rest goes on.
+	var both bytes.Buffer
+	err := Run(t.Context(), []string{"ship", "jq", "yq", "--yes"}, Streams{In: strings.NewReader(""), Out: &both, Err: &both})
+	out := both.String()
+	require.Equal(t, 3, ExitCode(err), out)
+	require.EqualError(t, err, "yq-1.8.1 stopped; the rest went on")
+	jq, yq, ran := strings.Index(out, "jq-1.8.1 · checking commit "), strings.Index(out, "yq-1.8.1 · checking commit "), strings.Index(out, "check-1 runs here")
+	require.True(t, jq >= 0 && yq > jq && ran > yq, "both queued before either ran:\n%s", out)
+	require.Contains(t, out, "yq-1.8.1: yq-1.8.1 passed its check and waits for your look")
+	require.Len(t, g.PRs, 1)
 }

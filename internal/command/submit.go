@@ -214,79 +214,62 @@ func finishSubmit(ctx context.Context, e *engine.Engine, streams Streams, plan e
 	return nil
 }
 
-// submitChecked checks the branch's committed head and submits exactly
-// that commit once the check passes (Design v3 §9): the command itself is
-// the decision, so it asks nothing after the check. Unattended, as for
-// bump, it holds the submission for a person's look for what would hold
-// serve's (engine.Held).
-func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams Streams, request engine.SubmitRequest, place engine.WhereRequest) error {
-	unattended := place.Unattended
-	streams.linkSteps(&submitJSON{})
+// pendingSubmit is a submission ship holds until its check ends: what it
+// asks, the commit it is bound to, and whether nobody looks before it goes.
+type pendingSubmit struct {
+	request    engine.SubmitRequest
+	bound      string
+	unattended bool
+}
+
+// prepareSubmit previews a branch's submission of its committed head, and
+// queues the check those files still need, returning it; none where one
+// passed already. Running ship is the decision: the commit is bound here,
+// and submitPassed submits exactly it once its check passes.
+func prepareSubmit(ctx context.Context, s *settings, e *engine.Engine, streams Streams, request engine.SubmitRequest, place engine.WhereRequest) (pendingSubmit, *model.Run, error) {
 	request.PendingCheck, request.Head = true, true
 	plan, err := e.PlanSubmit(ctx, request)
 	if err != nil {
-		return err
+		return pendingSubmit{}, nil, err
 	}
 	streams.emit(submitView(plan))
 	writeSubmitPlan(streams.Out, plan)
 	if len(plan.Blocking) > 0 {
-		return errors.New("nothing was checked or submitted")
+		return pendingSubmit{}, nil, errors.New("nothing was checked or submitted")
 	}
-	bound := plan.Commit
 	if streams.terminal() {
 		if err := askTested(streams, &plan); err != nil {
-			return err
+			return pendingSubmit{}, nil, err
 		}
 		request.TestedBinaries, request.TestedVariants = plan.Request.TestedBinaries, plan.Request.TestedVariants
 	}
-	if plan.CheckNeeded {
-		// A check nobody looks over builds on build.unattended's profile.
-		where, err := e.Where(ctx, place)
-		if err != nil {
-			return err
-		}
-		capture, err := e.Capture(ctx, engine.CaptureRequest{Branch: plan.Branch, Mode: engine.CaptureHead})
-		if err != nil {
-			return err
-		}
-		proposed, err := e.PlanCheck(ctx, engine.PlanRequest{Revision: capture.Revision, Environments: where.Environments, Span: where.Span, Profile: where.Profile, Tests: model.TestPolicy(s.file.Check.Tests)})
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(streams.Out, "\n%s · checking %s, then submitting it if it passes\n", plan.Branch.ShortName(), engine.Describe(capture.Revision))
-		writePlan(streams.Out, proposed, e.PlanNotes(ctx, proposed), e.Remedy)
-		writePushes(streams.Out, proposed)
-		if !proposed.Runnable() {
-			return errors.New("nothing was checked or submitted: " + unrunnable(proposed))
-		}
-		run, err := e.Enqueue(ctx, plan.Branch, proposed, model.OriginPerson)
-		if active := new(engine.ActiveRunError); errors.As(err, &active) && active.SameRevision {
-			return fmt.Errorf("%w; once it passes, dockhand submit --branch %s submits this commit", err, plan.Branch.ShortName())
-		}
-		if err != nil {
-			return err
-		}
-		if err := runQueued(ctx, e, run, streams, false); err != nil {
-			if exit := new(ExitError); errors.As(err, &exit) {
-				exit.Message += "; nothing was submitted"
-			}
-			return err
-		}
-	}
 	request.PendingCheck = false
-	plan, err = e.PlanSubmit(ctx, request)
+	pending := pendingSubmit{request: request, bound: plan.Commit, unattended: place.Unattended}
+	if !plan.CheckNeeded {
+		return pending, nil, nil
+	}
+	// A check nobody looks over builds on build.unattended's profile.
+	run, err := queueHead(ctx, s, e, streams, plan.Branch, place, ", then submitting it if it passes")
+	return pending, run, err
+}
+
+// submitPassed submits a pending submission once its check passed:
+// exactly the commit it was bound to, and, where nobody looks, only what
+// holds nothing.
+func submitPassed(ctx context.Context, s *settings, e *engine.Engine, streams Streams, pending pendingSubmit) error {
+	plan, err := e.PlanSubmit(ctx, pending.request)
 	if err != nil {
 		return err
 	}
-	if plan.Commit != bound {
-		return fmt.Errorf("%s moved to %s while it was checked; nothing was submitted, since ship binds %s", plan.Branch.ShortName(), model.ObjectID(plan.Commit).Short(), model.ObjectID(bound).Short())
+	if plan.Commit != pending.bound {
+		return fmt.Errorf("%s moved to %s while it was checked; nothing was submitted, since ship binds %s", plan.Branch.ShortName(), model.ObjectID(plan.Commit).Short(), model.ObjectID(pending.bound).Short())
 	}
 	streams.emit(submitView(plan))
 	if len(plan.Blocking) > 0 {
 		writeSubmitPlan(streams.Out, plan)
 		return errors.New("nothing was submitted")
 	}
-	if unattended {
+	if pending.unattended {
 		held, err := e.Held(ctx, plan)
 		if err != nil {
 			return err

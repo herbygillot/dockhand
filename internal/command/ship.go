@@ -30,7 +30,12 @@ default, from wherever it is now. A port names a version update from fresh
 master, in a branch of its own, or the open branch already changing it,
 which goes on from where it stands; -b, -p, and --pr name a branch; with
 neither, the branch checked out here. Run again, it resumes: a change
-already past --to is left as it is.
+already past --to is left as it is, and a check still queued or running
+for the same files is followed, not started again.
+
+Each change is carried to its check, queued, before any check is seen
+through, and each is submitted as its check passes: serve runs them side
+by side where it runs, and they run here one by one where it doesn't.
 
 It shows one plan, a row a change, and asks once on a terminal; --yes
 skips the question, and without a terminal running it is the decision.
@@ -244,123 +249,190 @@ func writeSubmitRow(ctx context.Context, e *engine.Engine, out io.Writer, indent
 
 // shipAll carries each change on, each through its own stages, and says
 // how the batch went by the batch exit rule (the command-line UX review's
-// §10): 1 where none went through, 3 where some need a look.
+// §10): 1 where none went through, 3 where some need a look. Each is
+// carried to its check, queued, before any check is seen through, and
+// each submitted as its check passes (decision 4): serve runs them side by
+// side where it leads, and a rerun follows a check still queued or
+// running for the same files rather than starting another.
 func shipAll(ctx context.Context, s *settings, streams Streams, whole *batchJSON, targets []shipTarget, stage engine.ShipStage, answered model.Answered, version versionUpdate) error {
 	unattended := answered != model.AnsweredAsked
 	if unattended {
 		streams = streams.unattended()
 	}
 	var failed []string
-	for _, target := range targets {
-		whole.next()
-		err := shipOne(ctx, s, streams, target, stage, unattended, version)
-		if err == nil {
-			continue
-		}
+	stopped := func(target shipTarget, err error) error {
 		if len(targets) == 1 {
 			return err
 		}
 		fmt.Fprintf(streams.Err, "%s: %v\n", target.name(), err)
 		failed = append(failed, target.name())
+		return nil
+	}
+	var carried []carried
+	for _, target := range targets {
+		whole.next()
+		done, err := shipOne(ctx, s, streams, target, stage, unattended, version)
+		if err != nil {
+			if err := stopped(target, err); err != nil {
+				return err
+			}
+			continue
+		}
+		if done != nil {
+			carried = append(carried, *done)
+		}
+	}
+	for _, done := range carried {
+		if err := finishCarried(ctx, s, streams, done); err != nil {
+			if err := stopped(done.target, err); err != nil {
+				return err
+			}
+		}
 	}
 	return batchExit(failed, len(targets), "shipped")
 }
 
-// shipOne carries one change on: a port's update, committed, then as far
-// as stage says; a branch's edits committed, then checked or submitted.
-func shipOne(ctx context.Context, s *settings, streams Streams, target shipTarget, stage engine.ShipStage, unattended bool, version versionUpdate) error {
-	linked := version.linked
-	linked.unattended, linked.yes = unattended, true
-	if target.branch == nil {
-		request, err := version.request([]string{target.port}, false)
-		if err != nil {
-			return err
-		}
-		if target.version != "" {
-			request.Version, request.Release = target.version, target.release
-		}
-		if stage != engine.ShipSubmit {
-			// Committed, and checked where --to says, but not submitted.
-			request.Unattended = unattended
-			branch, update, err := author(ctx, s, streams, branchChoice{new: newNamed}, "update", request, linked)
-			if err != nil || !update.Applied {
-				return err
-			}
-			return carryBranch(ctx, s, streams, branch, stage, linked)
-		}
-		linked.submit = true
-		version.linked = linked
-		return version.run(ctx, s, streams, branchChoice{new: newNamed}, request)
-	}
-	branch := *target.branch
-	if target.port != "" {
-		request, err := version.request([]string{target.port}, false)
-		if err != nil {
-			return err
-		}
-		request.Version, request.Release, request.Unattended = target.version, target.release, unattended
-		if branch, _, err = author(ctx, s, streams, branchChoice{branch: branch.ShortName()}, "update", request, linked); err != nil {
-			return err
-		}
-	}
-	return carryBranch(ctx, s, streams, branch, stage, linked)
+// carried is a change ship carried as far as its check: the check queued,
+// none where one passed already, and the submission that follows it.
+type carried struct {
+	target shipTarget
+	run    *model.Run
+	submit *pendingSubmit
 }
 
-// carryBranch carries a branch on from where it stands: its edits
-// committed, then checked, or submitted, which checks it first where its
-// files have no check yet.
-func carryBranch(ctx context.Context, s *settings, streams Streams, branch model.Branch, stage engine.ShipStage, linked linkedOptions) error {
+// shipOne carries one change to its check: a port's update, from master or
+// in the branch already changing it, then the branch's edits committed,
+// and its check queued where the stage goes on to one. Nil where there's
+// nothing more to do.
+func shipOne(ctx context.Context, s *settings, streams Streams, target shipTarget, stage engine.ShipStage, unattended bool, version versionUpdate) (*carried, error) {
+	linked := version.linked
+	linked.unattended, linked.yes, linked.goesOn = unattended, true, true
+	var branch model.Branch
+	if target.port != "" {
+		if stage != engine.ShipCommit {
+			// Where to check is settled before anything is edited.
+			if err := whereReady(ctx, s, linked); err != nil {
+				return nil, err
+			}
+		}
+		request, err := version.request([]string{target.port}, false)
+		if err != nil {
+			return nil, err
+		}
+		request.Version, request.Release, request.Unattended = target.version, target.release, unattended
+		where := branchChoice{new: newNamed}
+		if target.branch != nil {
+			where = branchChoice{branch: target.branch.ShortName()}
+		}
+		updated, update, err := author(ctx, s, streams, where, "update", request, linked)
+		if err != nil || target.branch == nil && !update.Applied {
+			return nil, err
+		}
+		target.branch = &updated
+	}
+	branch = *target.branch
 	e, err := s.open(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer e.Close()
 	branch, applied, err := tidyBranch(ctx, e, streams, branch, linked.yes, "nothing was checked or submitted")
 	if err != nil || !applied || stage == engine.ShipCommit {
-		return err
+		return nil, err
 	}
+	place := engine.WhereRequest{On: linked.on, Build: linked.build, Unattended: linked.unattended}
 	if stage == engine.ShipCheck {
-		return checkHead(ctx, s, e, streams, branch, engine.WhereRequest{On: linked.on, Build: linked.build, Unattended: linked.unattended})
+		run, err := checkHead(ctx, s, e, streams, branch, place)
+		if err != nil || run == nil {
+			return nil, err
+		}
+		return &carried{target: target, run: run}, nil
 	}
 	fmt.Fprintln(streams.Out)
 	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.testedBinaries, TestedVariants: linked.testedVariants, Title: linked.title, SkipNotification: linked.skipNotification}
 	if linked.noteSet {
 		request.Note = &linked.note
 	}
-	return submitChecked(ctx, s, e, streams, request, engine.WhereRequest{On: linked.on, Build: linked.build, Unattended: linked.unattended})
+	pending, run, err := prepareSubmit(ctx, s, e, streams, request, place)
+	if err != nil {
+		return nil, err
+	}
+	return &carried{target: target, run: run, submit: &pending}, nil
 }
 
-// checkHead checks a branch's committed head where place says, as check
-// --head would: a head a check already passed for is left as it is.
-func checkHead(ctx context.Context, s *settings, e *engine.Engine, streams Streams, branch model.Branch, place engine.WhereRequest) error {
-	where, err := e.Where(ctx, place)
+// finishCarried sees a change's check through, run here where no serve
+// leads, and submits it where it passed and ship goes on to submit.
+func finishCarried(ctx context.Context, s *settings, streams Streams, done carried) error {
+	e, err := s.open(ctx)
 	if err != nil {
 		return err
 	}
-	capture, err := e.Capture(ctx, engine.CaptureRequest{Branch: branch, Mode: engine.CaptureHead})
-	if err != nil {
-		return err
+	defer e.Close()
+	if done.run != nil {
+		if err := runQueued(ctx, e, *done.run, streams, false); err != nil {
+			if exit := new(ExitError); done.submit != nil && errors.As(err, &exit) {
+				exit.Message += "; nothing was submitted"
+			}
+			return err
+		}
 	}
-	if status, err := e.BranchStatus(ctx, branch); err == nil && status.CheckStanding() == engine.CheckPassed && len(status.Edited) == 0 {
-		fmt.Fprintf(streams.Out, "%s: %s passed for this commit already; nothing to check.\n", branch.ShortName(), status.Latest.Name())
+	if done.submit == nil {
 		return nil
 	}
-	proposed, err := e.PlanCheck(ctx, engine.PlanRequest{Revision: capture.Revision, Environments: where.Environments, Span: where.Span, Profile: where.Profile, Tests: model.TestPolicy(s.file.Check.Tests)})
+	return submitPassed(ctx, s, e, streams, *done.submit)
+}
+
+// whereReady settles where a change's check builds before anything is
+// edited, so stopping there changes nothing.
+func whereReady(ctx context.Context, s *settings, linked linkedOptions) error {
+	e, err := s.open(ctx)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(streams.Out, "\n%s · checking %s\n", branch.ShortName(), engine.Describe(capture.Revision))
-	writePlan(streams.Out, proposed, e.PlanNotes(ctx, proposed), e.Remedy)
-	writePushes(streams.Out, proposed)
-	if !proposed.Runnable() {
-		return errors.New("nothing was checked: " + unrunnable(proposed))
+	defer e.Close()
+	if _, err := e.Where(ctx, engine.WhereRequest{On: linked.on, Build: linked.build, Unattended: linked.unattended}); err != nil {
+		return fmt.Errorf("%w; nothing was changed", err)
 	}
-	if _, err := replaceActive(ctx, e, streams, branch, capture.Revision, false); err != nil {
-		return err
+	return nil
+}
+
+// checkHead queues a check of a branch's committed head where place says,
+// as check --head would; nil where a check already passed for it.
+func checkHead(ctx context.Context, s *settings, e *engine.Engine, streams Streams, branch model.Branch, place engine.WhereRequest) (*model.Run, error) {
+	if status, err := e.BranchStatus(ctx, branch); err == nil && status.CheckStanding() == engine.CheckPassed && len(status.Edited) == 0 {
+		fmt.Fprintf(streams.Out, "%s: %s passed for this commit already; nothing to check.\n", branch.ShortName(), status.Latest.Name())
+		return nil, nil
 	}
-	run, err := e.Enqueue(ctx, branch, proposed, model.OriginPerson)
+	return queueHead(ctx, s, e, streams, branch, place, "")
+}
+
+// queueHead is ship's check of a branch's committed head: proposed, shown
+// as check shows it, and queued; a check already queued or running for the
+// same files is the one followed, so a rerun resumes rather than refusing
+// (decision 4). then says what follows it, as ", then submitting it if it
+// passes".
+func queueHead(ctx context.Context, s *settings, e *engine.Engine, streams Streams, branch model.Branch, place engine.WhereRequest, then string) (*model.Run, error) {
+	where, err := e.Where(ctx, place)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return runQueued(ctx, e, run, streams, false)
+	proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: engine.CaptureHead}, Where: where, Tests: model.TestPolicy(s.file.Check.Tests)})
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(streams.Out, "\n%s · checking %s%s\n", branch.ShortName(), engine.Describe(proposal.Capture.Revision), then)
+	writePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.Remedy)
+	writePushes(streams.Out, proposal.Plan)
+	if !proposal.Plan.Runnable() {
+		return nil, errors.New("nothing was checked: " + unrunnable(proposal.Plan))
+	}
+	run, err := e.Enqueue(ctx, branch, proposal.Plan, model.OriginPerson)
+	if active := new(engine.ActiveRunError); errors.As(err, &active) && active.SameRevision {
+		fmt.Fprintf(streams.Out, "%s is already %s for these files; following it.\n", active.Run.Name(), active.Run.State)
+		return &active.Run, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &run, nil
 }

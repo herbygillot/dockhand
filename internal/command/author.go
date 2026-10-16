@@ -273,77 +273,6 @@ func (v versionUpdate) request(args []string, plan bool) (engine.UpdateRequest, 
 	return request, nil
 }
 
-// run makes the update and, when it goes on to the pull request, tidies,
-// checks, and submits it: update's path, and bump's. With --json, the
-// result is the update's, with each later step's inside it.
-func (v versionUpdate) run(ctx context.Context, s *settings, streams Streams, where branchChoice, request engine.UpdateRequest) error {
-	linked := v.linked
-	if linked.submit {
-		if err := submitReady(ctx, s, request.Port, linked); err != nil {
-			return err
-		}
-		streams.linkSteps(&updateJSON{})
-	}
-	// bump's other open pull requests are looked for before the edit, since
-	// one would hold its submission after the check.
-	request.Unattended = linked.unattended
-	branch, update, err := author(ctx, s, streams, where, "update", request, linked)
-	if err != nil || !linked.submit || !update.Applied {
-		return err
-	}
-	return tidyAndSubmit(ctx, s, streams, branch, linked)
-}
-
-// submitReady settles, before the edit, what would stop an update going on
-// to its pull request, so stopping there changes nothing: where to check,
-// and for bump, which starts no second branch for a port, an open branch
-// already changing it.
-func submitReady(ctx context.Context, s *settings, port string, linked linkedOptions) error {
-	e, err := s.open(ctx)
-	if err != nil {
-		return err
-	}
-	defer e.Close()
-	if linked.unattended {
-		changing, err := e.BranchesChanging(ctx, port)
-		if err != nil {
-			return err
-		}
-		if len(changing) > 0 {
-			var names []string
-			for _, branch := range changing {
-				names = append(names, branch.ShortName())
-			}
-			return fmt.Errorf("%s is already changed in %s, so nothing was changed; dockhand status %s says what it needs", port, strings.Join(names, ", "), names[0])
-		}
-	}
-	if _, err := e.Where(ctx, engine.WhereRequest{On: linked.on, Build: linked.build, Unattended: linked.unattended}); err != nil {
-		return fmt.Errorf("%w; nothing was changed", err)
-	}
-	return nil
-}
-
-// tidyAndSubmit is the rest of update --submit: tidy the branch, then
-// submit --check, each previewed as its own command previews it.
-func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch model.Branch, linked linkedOptions) error {
-	e, err := s.open(ctx)
-	if err != nil {
-		return err
-	}
-	defer e.Close()
-	out := streams.Out
-	branch, applied, err := tidyBranch(ctx, e, streams, branch, linked.yes, "nothing was checked or submitted")
-	if err != nil || !applied {
-		return err
-	}
-	fmt.Fprintln(out)
-	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.testedBinaries, TestedVariants: linked.testedVariants, Title: linked.title, SkipNotification: linked.skipNotification}
-	if linked.noteSet {
-		request.Note = &linked.note
-	}
-	return submitChecked(ctx, s, e, streams, request, engine.WhereRequest{On: linked.on, Build: linked.build, Unattended: linked.unattended})
-}
-
 // tidyBranch commits a branch's edits as tidy would plan them, previewed
 // as tidy previews them, where it has any, and returns the branch as it is
 // after; applied is false where the person declined, which undone says.
@@ -377,9 +306,11 @@ func tidyBranch(ctx context.Context, e *engine.Engine, streams Streams, branch m
 // applies an unambiguous tidy without asking. unattended is bump's: nobody
 // looks before the submission, so it holds what serve's would.
 type linkedOptions struct {
-	revbump                        bool
-	except                         []string
-	submit                         bool
+	revbump bool
+	except  []string
+	// goesOn is ship's: the edit goes on to its commit and on, so no
+	// next step is said after it.
+	goesOn                         bool
 	on                             []string
 	build                          string
 	testedBinaries, testedVariants bool
@@ -648,7 +579,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		}
 		streams.emit(result)
 	}
-	if !linked.submit {
+	if !linked.goesOn {
 		fmt.Fprintln(out, "Next: "+nextAfterEdit(ctx, e, branch))
 	}
 	return branch, update, nil

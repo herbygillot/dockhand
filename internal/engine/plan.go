@@ -30,6 +30,41 @@ type PortReader interface {
 	Directory(ctx context.Context, source model.Source, name string) (string, error)
 }
 
+// CheckRequest is a check asked of a branch: the files it captures, where
+// it builds, and what of it, as check's flags, ship, and serve ask it.
+type CheckRequest struct {
+	// Capture is the files of the branch; its Branch is the check's.
+	Capture CaptureRequest
+	Where   Where
+	Tests   model.TestPolicy
+	// Only, Also, Fresh, Variants, and EachVariant are PlanRequest's.
+	Only, Also  []string
+	Fresh       bool
+	Variants    map[string]bool
+	EachVariant bool
+}
+
+// Proposal is a check proposed and not yet queued: the files captured, and
+// the plan of what it builds.
+type Proposal struct {
+	Capture Capture
+	Plan    model.Plan
+}
+
+// ProposeCheck captures the branch's files and plans the check of them
+// where request.Where says: the one pipeline check, ship, and serve take
+// (the command package review), which Enqueue then queues.
+func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Proposal, error) {
+	capture, err := e.Capture(ctx, request.Capture)
+	if err != nil {
+		return Proposal{}, err
+	}
+	where := request.Where
+	plan, err := e.PlanCheck(ctx, PlanRequest{Revision: capture.Revision, Environments: where.Environments, Span: where.Span, Profile: where.Profile,
+		Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh, Variants: request.Variants, EachVariant: request.EachVariant})
+	return Proposal{Capture: capture, Plan: plan}, err
+}
+
 // PlanRequest asks what a check of a revision would build.
 type PlanRequest struct {
 	Revision     model.Revision

@@ -93,10 +93,6 @@ true, it runs that baseline by itself.`,
 			if err != nil {
 				return err
 			}
-			capture, err := e.Capture(ctx, engine.CaptureRequest{Branch: branch, Mode: mode, Named: where.explicit(), Include: include, Plan: plan})
-			if err != nil {
-				return err
-			}
 			if tests == "" {
 				tests = s.file.Check.Tests
 			}
@@ -104,11 +100,12 @@ true, it runs that baseline by itself.`,
 			if err != nil {
 				return err
 			}
-			proposed, err := e.PlanCheck(ctx, engine.PlanRequest{Revision: capture.Revision, Environments: place.Environments, Span: place.Span, Profile: place.Profile, Only: only, Also: also,
-				Tests: model.TestPolicy(tests), Fresh: fresh, Variants: chosen, EachVariant: each})
+			proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: mode, Named: where.explicit(), Include: include, Plan: plan}, Where: place,
+				Tests: model.TestPolicy(tests), Only: only, Also: also, Fresh: fresh, Variants: chosen, EachVariant: each})
 			if err != nil {
 				return err
 			}
+			capture, proposed := proposal.Capture, proposal.Plan
 			out := streams.Out
 			what := "checking " + engine.Describe(capture.Revision)
 			if capture.Revision.Kind == model.RevisionSnapshot && !capture.Reused {

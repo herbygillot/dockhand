@@ -821,11 +821,11 @@ func TestStatusFollowsARenamedBranch(t *testing.T) {
 	require.Contains(t, out, "jq-1.8")
 }
 
-// A branch has one check at a time: submit --check doesn't queue a second
-// beside one already queued for the same commit, and says how to finish.
-// And it submits exactly the commit it checked: a branch that moved while
-// its check ran is not submitted.
-func TestSubmitCheckKeepsToOneCheckAndItsCommit(t *testing.T) {
+// A branch has one check at a time: ship doesn't queue a second beside one
+// already queued for the same commit, and follows it instead, as a rerun
+// resumes (decision 4). And it submits exactly the commit it checked: a
+// branch that moved while its check ran is not submitted.
+func TestShipKeepsToOneCheckAndItsCommit(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -842,10 +842,16 @@ func TestSubmitCheckKeepsToOneCheckAndItsCommit(t *testing.T) {
 
 	_, _, err = dockhand(t, "check", "--head", "--enqueue")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "ship", "--yes")
-	require.EqualError(t, err, "check-1 is already queued for these files; dockhand wait check-1 follows it; once it passes, dockhand submit --branch jq-update submits this commit")
-	_, _, err = dockhand(t, "cancel", "check-1")
+	g.Others = nil
+	out, _, err := dockhand(t, "ship", "--yes")
 	require.NoError(t, err)
+	require.Contains(t, out, "check-1 is already queued for these files; following it.\n")
+	require.NotContains(t, out, "check-2", "no second check")
+	require.Contains(t, out, "Opened #34901")
+
+	// A new commit, which the next check builds.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# reviewed\n"), 0o644))
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: note the review")
 
 	// The build commits to the branch as it runs.
 	script := filepath.Join(w.home, "bin", "build-ports")
@@ -859,7 +865,8 @@ JSON
 	_, _, err = dockhand(t, "ship", "--yes")
 	require.Error(t, err)
 	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was checked; nothing was submitted, since ship binds [0-9a-f]{7}$`, err.Error())
-	require.Empty(t, g.PRs)
+	require.Equal(t, "jq: update to 1.8.1", g.PRs[34901].Title)
+	require.NotEqual(t, testsupport.Git(t, dir, "rev-parse", "HEAD"), testsupport.Git(t, g.Fork, "rev-parse", "dockhand/jq-update"), "the moved branch wasn't pushed")
 }
 
 // The description is edited in the process's run root, so a process that
