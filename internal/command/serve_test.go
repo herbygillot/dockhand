@@ -231,11 +231,11 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	require.Equal(t, "bootout", (*calls)[0][0])
 	require.Equal(t, "bootstrap", (*calls)[1][0])
 	// Flags given beside --install shape the agent's runs.
-	_, _, err = dockhand(t, "serve", "--install", "--no-notify", "--submit-passing")
+	_, _, err = dockhand(t, "serve", "--install", "--no-notify", "--ship-to", "submit")
 	require.NoError(t, err)
 	plist, err = os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
 	require.NoError(t, err)
-	require.Contains(t, string(plist), "<string>"+filepath.Join(w.home, ".dockhand", "dockhand.db")+"</string><string>--no-notify</string><string>--submit-passing</string></array>")
+	require.Contains(t, string(plist), "<string>"+filepath.Join(w.home, ".dockhand", "dockhand.db")+"</string><string>--ship-to=submit</string><string>--no-notify</string></array>")
 	*calls = nil
 
 	// Uninstall waits until launchd has let the agent go, which it does
@@ -377,8 +377,8 @@ JSON
 // turns them off for one run.
 func TestNotificationsCanBeTurnedOff(t *testing.T) {
 	e := &engine.Engine{Providers: map[string]buildenv.Provider{}}
-	require.NotNil(t, serveOptions(e, config.File{}, io.Discard, false, false, true).Notify)
-	require.Nil(t, serveOptions(e, config.File{}, io.Discard, false, false, false).Notify)
+	require.NotNil(t, serveOptions(e, config.File{}, io.Discard, false, "list", true).Notify)
+	require.Nil(t, serveOptions(e, config.File{}, io.Discard, false, "list", false).Notify)
 	off := false
 	file := config.File{Serve: config.Serve{Notify: &off}}
 	require.False(t, file.Serve.Notifies())

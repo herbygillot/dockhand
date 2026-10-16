@@ -81,13 +81,8 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			}
 			set("cleanup.min_free", minFree)
 			set("holds.majors", file.Holds.Majors)
-			set("serve.for_outdated", file.Serve.ForOutdated)
+			set("serve.ship_to", file.Serve.ShipTo)
 			set("serve.outdated_at", file.Serve.OutdatedAt)
-			submitPassing := ""
-			if file.Serve.SubmitPassing {
-				submitPassing = "true"
-			}
-			set("serve.submit_passing", submitPassing)
 			set("serve.submit_limit", positive(file.Serve.SubmitLimit))
 			notify := ""
 			if file.Serve.Notify != nil {

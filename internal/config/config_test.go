@@ -187,25 +187,28 @@ func TestMaintainersAreTheIdentitiesNamed(t *testing.T) {
 func TestServeSettings(t *testing.T) {
 	f, err := parse("config.toml", "")
 	require.NoError(t, err)
-	require.Equal(t, "list", f.Serve.Mode())
+	require.Equal(t, "list", f.Serve.Stage())
 	hour, minute := f.Serve.Time()
 	require.Equal(t, [2]int{7, 0}, [2]int{hour, minute})
 	require.Equal(t, 10, f.Serve.Limit())
 	require.True(t, f.Serve.Notifies())
 
-	f, err = parse("config.toml", "[serve]\nfor_outdated = \"check\"\noutdated_at = \"6:30\"\nsubmit_passing = true\nsubmit_limit = 3\nnotify = false\n")
+	f, err = parse("config.toml", "[serve]\nship_to = \"submit\"\noutdated_at = \"6:30\"\nsubmit_limit = 3\nnotify = false\n")
 	require.NoError(t, err)
-	require.Equal(t, "check", f.Serve.Mode())
+	require.Equal(t, "submit", f.Serve.Stage())
 	hour, minute = f.Serve.Time()
 	require.Equal(t, [2]int{6, 30}, [2]int{hour, minute})
-	require.True(t, f.Serve.SubmitPassing)
 	require.Equal(t, 3, f.Serve.Limit())
 	require.False(t, f.Serve.Notifies())
 
-	for setting, bad := range map[string]string{"for_outdated": `"often"`, "outdated_at": `"25:00"`, "submit_limit": "-1"} {
+	for setting, bad := range map[string]string{"ship_to": `"often"`, "outdated_at": `"25:00"`, "submit_limit": "-1"} {
 		_, err = parse("config.toml", "[serve]\n"+setting+" = "+bad+"\n")
 		require.ErrorContains(t, err, "serve."+setting)
 	}
+	// for_outdated and submit_passing went with ship, said with what
+	// takes their place.
+	_, err = parse("config.toml", "[serve]\nsubmit_passing = true\n")
+	require.EqualError(t, err, `config.toml: serve.submit_passing is gone: serve.ship_to says how far serve carries your outdated ports, list, commit, check, or submit; for_outdated = "draft" is ship_to = "commit", and submit_passing = true is ship_to = "submit"`)
 }
 
 // holds.majors holds an unattended major-version update unless it's allow.
@@ -241,7 +244,7 @@ func TestDefaultsAreWhatTheAccessorsFallBackOn(t *testing.T) {
 	defaults := Defaults()
 	hour, minute := f.Serve.Time()
 	require.Equal(t, defaults["serve.outdated_at"], fmt.Sprintf("%02d:%02d", hour, minute))
-	require.Equal(t, defaults["serve.for_outdated"], f.Serve.Mode())
+	require.Equal(t, defaults["serve.ship_to"], f.Serve.Stage())
 	require.Equal(t, defaults["serve.submit_limit"], strconv.Itoa(f.Serve.Limit()))
 	require.Equal(t, defaults["cleanup.after"], ageWords(f.Cleanup.Age()))
 	require.Equal(t, "15d", defaults["cleanup.after"])

@@ -27,7 +27,7 @@ setup() {
 	{
 		printf 'maintainer = "%s"\n' "$maintainer"
 		sed '/^maintainer *=/d' "$DOCKHAND_CONFIG"
-		printf '\n[serve]\nfor_outdated = "check"\n\n[cleanup]\nafter = "12h"\n'
+		printf '\n[serve]\nship_to = "check"\n\n[cleanup]\nafter = "12h"\n'
 	} >"$ROW_DIR/config.toml"
 	if grep -qE '^\[(serve|cleanup)\]' "$ROW_DIR/config.before"; then
 		echo "S1: $DOCKHAND_CONFIG already has a [serve] or [cleanup] table, which the row's would repeat" >&2

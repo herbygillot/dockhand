@@ -81,17 +81,15 @@ type Submit struct {
 
 // Serve is what serve does besides running checks (Design v3 §11).
 type Serve struct {
-	// ForOutdated is what serve does with your outdated ports each day:
-	// list (the default) counts them for status, draft prepares a branch
-	// for each, and check also checks each.
-	ForOutdated string `toml:"for_outdated"`
+	// ShipTo is how far serve carries your outdated ports each day, as
+	// ship --to does: list (the default) counts them for status, commit
+	// prepares a branch with one commit for each, check also checks each,
+	// and submit opens a pull request for each that passes, within §11's
+	// guardrails (the command-line UX second look's §6).
+	ShipTo string `toml:"ship_to"`
 	// OutdatedAt is when, each day, serve looks for new releases, as
 	// "07:00" in local time; 07:00 when unset.
 	OutdatedAt string `toml:"outdated_at"`
-	// SubmitPassing opens pull requests for the updates serve prepared
-	// that pass, within §11's guardrails; serve --submit-passing and
-	// --no-submit-passing override it for one run.
-	SubmitPassing bool `toml:"submit_passing"`
 	// SubmitLimit is the most pull requests serve opens a day; 10 when
 	// unset.
 	SubmitLimit int `toml:"submit_limit"`
@@ -100,12 +98,9 @@ type Serve struct {
 	Notify *bool `toml:"notify"`
 }
 
-// Mode is for_outdated, list when unset.
-func (s Serve) Mode() string {
-	if s.ForOutdated == "" {
-		return DefaultForOutdated
-	}
-	return s.ForOutdated
+// Stage is ship_to, list when unset.
+func (s Serve) Stage() string {
+	return cmp.Or(s.ShipTo, DefaultShipTo)
 }
 
 // Time is outdated_at as hours and minutes.
@@ -372,7 +367,7 @@ func (f File) Capacity(provider string) int {
 // The defaults config's accessors fall back on, where neither a flag, the
 // environment, nor the file sets a value.
 const (
-	DefaultForOutdated = "list"
+	DefaultShipTo      = "list"
 	DefaultOutdatedAt  = "07:00"
 	DefaultSubmitLimit = 10
 	// DefaultCapacity is a provider's, Tart's and a command's, apart from
@@ -401,9 +396,8 @@ func Defaults() map[string]string {
 		"cleanup.after":                  ageWords(DefaultCleanupAfter),
 		"cleanup.min_free":               prose.Bytes(DefaultMinFree),
 		"holds.majors":                   "hold",
-		"serve.for_outdated":             DefaultForOutdated,
+		"serve.ship_to":                  DefaultShipTo,
 		"serve.outdated_at":              DefaultOutdatedAt,
-		"serve.submit_passing":           "false",
 		"serve.submit_limit":             strconv.Itoa(DefaultSubmitLimit),
 		"serve.notify":                   "true",
 		"providers.tart.capacity":        strconv.Itoa(DefaultCapacity),
@@ -466,8 +460,12 @@ func parse(path, text string) (File, error) {
 		// check.on went with build profiles, with no alias (the person,
 		// 2026-10-13): said with what took its place.
 		for _, key := range unknown {
-			if key.String() == "check.on" {
+			switch key.String() {
+			case "check.on":
 				return File{}, fmt.Errorf("%s: check.on is gone: build.default names a build profile, as \"host\" or \"macports-ci\", or one of your own under [build.profiles]", path)
+			case "serve.for_outdated", "serve.submit_passing":
+				// As did these with ship (the second look's §6).
+				return File{}, fmt.Errorf("%s: %s is gone: serve.ship_to says how far serve carries your outdated ports, list, commit, check, or submit; for_outdated = \"draft\" is ship_to = \"commit\", and submit_passing = true is ship_to = \"submit\"", path, key)
 			}
 		}
 		// A table is reported beside the keys in it; name only the keys.
@@ -492,10 +490,10 @@ func parse(path, text string) (File, error) {
 	if err := checkBuild(f); err != nil {
 		return File{}, fmt.Errorf("%s: %w", path, err)
 	}
-	switch f.Serve.ForOutdated {
-	case "", "list", "draft", "check":
+	switch f.Serve.ShipTo {
+	case "", "list", "commit", "check", "submit":
 	default:
-		return File{}, fmt.Errorf("%s: serve.for_outdated: %q is not list, draft, or check", path, f.Serve.ForOutdated)
+		return File{}, fmt.Errorf("%s: serve.ship_to: %q is not list, commit, check, or submit", path, f.Serve.ShipTo)
 	}
 	if f.Serve.OutdatedAt != "" && !clockTime.MatchString(f.Serve.OutdatedAt) {
 		return File{}, fmt.Errorf("%s: serve.outdated_at: %q is not a time of day, such as \"07:00\"", path, f.Serve.OutdatedAt)

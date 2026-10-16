@@ -104,7 +104,7 @@ func tarball(directory, top string, files map[string]string) string {
 // does, on the same findings: the submission's held concerns, which both
 // read from the plan's, and an edit tidy can't commit unasked (the
 // architecture review's M3). Each case runs bump in one world and serve
-// --submit-passing in another, from the same update.
+// --ship-to submit in another, from the same update.
 func TestBumpAndServeStopOnTheSameConditions(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -187,13 +187,13 @@ func serveWith(t *testing.T, concerns concerned, search error) (bool, string) {
 	config := filepath.Join(os.Getenv("HOME"), ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada}\"\n"), append(data, []byte("\n[serve]\nfor_outdated = \"check\"\n")...)...), 0o644))
+	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada}\"\n"), append(data, []byte("\n[serve]\nship_to = \"check\"\n")...)...), 0o644))
 
 	ctx, stop := context.WithCancel(t.Context())
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- Run(ctx, []string{"serve", "--submit-passing"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- Run(ctx, []string{"serve", "--ship-to", "submit"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	// It opens the pull request, holds the branch for a look, or stops
 	// the update before its check.

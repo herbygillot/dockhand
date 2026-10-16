@@ -30,10 +30,12 @@ type ServeOptions struct {
 	// Capacity is how many checks each provider runs at once; one for a
 	// provider it doesn't name.
 	Capacity map[string]int
-	// SubmitPassing opens a pull request for each branch serve prepared
-	// whose check passed, at most SubmitLimit a day.
-	SubmitPassing bool
-	SubmitLimit   int
+	// ShipTo is serve.ship_to: how far serve carries your outdated ports
+	// each day, list, or one of ship's stages; at submit, a pull request
+	// for each branch serve prepared whose check passed, at most
+	// SubmitLimit a day.
+	ShipTo      string
+	SubmitLimit int
 	// Outdated is the daily look for new releases of your ports.
 	Outdated ServeOutdated
 	// Cleanup turns automatic cleanup on (decision 36), removing what has
@@ -71,19 +73,20 @@ type ServeOptions struct {
 	ExecutableGrace time.Duration
 }
 
-// ServeOutdated is serve.for_outdated, and whose ports it looks at.
+// ServeOutdated is the daily look serve.ship_to carries, and whose ports
+// it looks at.
 type ServeOutdated struct {
 	// Maintainers are your identities; with none, serve says it needs them.
 	Maintainers []string
 	// Hour and Minute are when it looks each day.
 	Hour, Minute int
-	// Mode is list, which counts them for status; draft, which prepares a
-	// branch for each; or check, which also checks each.
-	Mode string
-	// Tests is what check mode checks with, on build.unattended's
+	// Tests is what a check of each checks with, on build.unattended's
 	// profile.
 	Tests model.TestPolicy
 }
+
+// submits is whether serve opens pull requests: ship_to = "submit".
+func (o ServeOptions) submits() bool { return o.ShipTo == string(ShipSubmit) }
 
 // Serve leads the repository's queue for a session until ctx ends, or with
 // Drain until the queue is empty, and does the rest of serve's work
@@ -225,7 +228,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		described = []string{"none set up; checks will need attention"}
 	}
 	publishing := "opens no pull requests; it only checks"
-	if options.SubmitPassing {
+	if options.submits() {
 		publishing = fmt.Sprintf("opens PRs for passing updates it prepared, at most %d a day", options.SubmitLimit)
 	}
 	// The build serve started from: after port upgrade replaced it, a
@@ -357,7 +360,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				followed.maybe(running)
 				scanned.maybe(running)
 			}
-			if options.SubmitPassing && login.writes() {
+			if options.submits() && login.writes() {
 				submitter.maybe(running)
 			}
 		}
@@ -523,7 +526,7 @@ func (g *loginGate) set(state, other string) {
 
 // serving is what serve says of itself, with its login as it stands.
 func (g *loginGate) serving() Serving {
-	return Serving{SubmitPassing: g.s.options.SubmitPassing, Build: g.s.options.Build, NotActing: g.words(), LoginProblem: g.problem}
+	return Serving{SubmitPassing: g.s.options.submits(), Build: g.s.options.Build, NotActing: g.words(), LoginProblem: g.problem}
 }
 
 // unread says once why who the login is couldn't be read, where it went
@@ -708,7 +711,7 @@ func uncertainWords(last OutdatedLook, look OutdatedLook) string {
 // lookNotice is the day's look as a notification, where the ports it
 // found with newer releases aren't the last look's: serve notified of a
 // pull request, a branch it prepared, and a submission, and the look's
-// count went to serve.log and status alone, so serve.for_outdated =
+// count went to serve.log and status alone, so serve.ship_to =
 // "list", the default, said nothing a person saw (the rc10 full stage's
 // B7). Empty where nothing changed, or none has a newer release. It names
 // outdated --mine, which lists them.
@@ -720,7 +723,7 @@ func lookNotice(last, look OutdatedLook) string {
 }
 
 // outdatedScanner looks for new releases of your ports once a day, at the
-// configured time, and does what serve.for_outdated says.
+// configured time, and carries them as far as serve.ship_to says.
 type outdatedScanner struct {
 	s        *server
 	reported string
@@ -733,7 +736,7 @@ type outdatedScanner struct {
 
 // hint is serve's line for a person whose config names no maintainer.
 func (o *outdatedScanner) hint(ctx context.Context) string {
-	return "serve: serve.for_outdated needs to know your ports: " + o.s.e.MaintainerHint(ctx)
+	return "serve: serve.ship_to needs to know your ports: " + o.s.e.MaintainerHint(ctx)
 }
 
 // announce says at once what the day's look would say of a config that
@@ -851,7 +854,8 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	if line := uncertainWords(last, look); line != "" {
 		o.s.say("%s", line)
 	}
-	if len(names) == 0 || settings.Mode == "list" || settings.Mode == "" {
+	to := ShipStage(o.s.options.ShipTo)
+	if len(names) == 0 || to != ShipCommit && to != ShipCheck && to != ShipSubmit {
 		return
 	}
 	plan, err := e.PlanOutdated(ctx, found)
@@ -859,11 +863,15 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		report(fmt.Sprintf("serve: splitting the updates: %v", err))
 		return
 	}
-	prepare := PrepareOptions{Origin: model.OriginServe, Check: settings.Mode == "check", Tests: settings.Tests}
-	if prepare.Check {
+	prepare := PrepareOptions{Origin: model.OriginServe, To: to, Tests: settings.Tests}
+	if to == ShipSubmit {
+		// Checked here; serve's submitter submits what passes.
+		prepare.To = ShipCheck
+	}
+	if prepare.To == ShipCheck {
 		if prepare.Where, err = e.Where(ctx, WhereRequest{Unattended: true}); err != nil {
-			report(fmt.Sprintf("serve: serve.for_outdated = \"check\": %v", err))
-			prepare.Check = false
+			report(fmt.Sprintf("serve: serve.ship_to = %q: %v", to, err))
+			prepare.To = ShipCommit
 		}
 	}
 	for _, done := range e.PrepareOutdated(ctx, plan, prepare) {
@@ -926,7 +934,7 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 			if len(names) == 1 {
 				whose = "it's"
 			}
-			p.s.say("serve: %s you started passed (%s); serve submits only what it prepared, so %s yours: dockhand submit --passing", prose.Plural(len(names), "branch"), strings.Join(names, ", "), whose)
+			p.s.say("serve: %s you started passed (%s); serve submits only what it prepared, so %s yours: dockhand ship --passing", prose.Plural(len(names), "branch"), strings.Join(names, ", "), whose)
 		}
 	}
 	for _, candidate := range candidates {

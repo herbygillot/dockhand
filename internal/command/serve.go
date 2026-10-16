@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"time"
 
@@ -39,7 +39,8 @@ var serveCleanup = 24 * time.Hour
 var serveNow = time.Now
 
 func serveCommand(s *settings, streams Streams) *cobra.Command {
-	var drain, install, uninstall, submitPassing, noSubmitPassing, noNotify bool
+	var drain, install, uninstall, noNotify bool
+	var shipTo string
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Run queued checks, and keep running them",
@@ -53,15 +54,15 @@ open pull requests every few minutes, so status shows their reviews and CI,
 and a merged one marks its branch merged, and it cleans up once a day.
 
 Once a day, at serve.outdated_at, it looks for new releases of your ports
-(the config's maintainer), as serve.for_outdated says: list counts them for
-status; draft prepares a branch for each; check also checks each.
+(the config's maintainer), and carries them as far as serve.ship_to says, as
+ship --to does: list counts them for status; commit prepares a branch with
+one commit for each; check also checks each, on build.unattended's profile.
 
---submit-passing, or serve.submit_passing, also opens a pull request for
-each branch serve prepared whose check passed, at most serve.submit_limit a
-day, and never one with an upstream or commit-rule finding, or one needing
---accept: those wait on the attention list. The passing branches you
-started are yours: it names them, for dockhand submit --passing.
---no-submit-passing turns it off for one run.
+submit also opens a pull request for each branch serve prepared whose check
+passed, at most serve.submit_limit a day, and never one with an upstream or
+commit-rule finding, or one needing --accept: those wait on the attention
+list. The passing branches you started are yours: it names them, for you
+to ship. --ship-to sets serve.ship_to for one run.
 
 serve.notify posts macOS notifications as checks finish and pull requests
 change; --no-notify turns them off for one run. They are posted through
@@ -74,15 +75,20 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+			switch shipTo {
+			case "", "list", "commit", "check", "submit":
+			default:
+				return fmt.Errorf("--ship-to %s: list, commit, check, or submit", shipTo)
+			}
 			if install || uninstall {
 				// The agent runs serve as this command line would.
 				var flags []string
-				for flag, set := range map[string]bool{"--submit-passing": submitPassing, "--no-submit-passing": noSubmitPassing, "--no-notify": noNotify} {
-					if set {
-						flags = append(flags, flag)
-					}
+				if shipTo != "" {
+					flags = append(flags, "--ship-to="+shipTo)
 				}
-				slices.Sort(flags)
+				if noNotify {
+					flags = append(flags, "--no-notify")
+				}
 				return serveAgent(ctx, s, streams, install, flags)
 			}
 			e, err := s.open(ctx)
@@ -95,7 +101,7 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
-			err = e.Serve(ctx, session, serveOptions(e, s.file, streams.Out, drain, (s.file.Serve.SubmitPassing || submitPassing) && !noSubmitPassing, s.file.Serve.Notifies() && !noNotify))
+			err = e.Serve(ctx, session, serveOptions(e, s.file, streams.Out, drain, cmp.Or(shipTo, s.file.Serve.Stage()), s.file.Serve.Notifies() && !noNotify))
 			// Being stopped is how serve ends, not a failure.
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 				fmt.Fprintln(streams.Out, "serve: stopped")
@@ -107,11 +113,9 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 	cmd.Flags().BoolVar(&drain, "drain", false, "run what is queued now, then exit")
 	cmd.Flags().BoolVar(&install, "install", false, "install serve as a launchd agent that starts at login")
 	cmd.Flags().BoolVar(&uninstall, "uninstall", false, "remove the launchd agent")
-	cmd.Flags().BoolVar(&submitPassing, "submit-passing", false, "open pull requests for the updates serve prepared that pass (Design v3 §11's guardrails)")
-	cmd.Flags().BoolVar(&noSubmitPassing, "no-submit-passing", false, "for this run, open none, whatever serve.submit_passing says")
+	cmd.Flags().StringVar(&shipTo, "ship-to", "", "for this run, how far serve carries your outdated ports, whatever serve.ship_to says: list, commit, check, or submit")
 	cmd.Flags().BoolVar(&noNotify, "no-notify", false, "for this run, post no macOS notifications, whatever serve.notify says")
 	cmd.MarkFlagsMutuallyExclusive("install", "uninstall", "drain")
-	cmd.MarkFlagsMutuallyExclusive("submit-passing", "no-submit-passing")
 	return cmd
 }
 
@@ -144,19 +148,20 @@ var servedExecutable = func(drain bool) string {
 
 // serveOptions turns the configuration and flags into what serve does,
 // its lines going to out and its notices to macOS notifications when
-// notify, serve.notify less --no-notify, allows.
-func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain, submitPassing, notify bool) engine.ServeOptions {
+// notify, serve.notify less --no-notify, allows; shipTo is serve.ship_to,
+// or --ship-to.
+func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain bool, shipTo string, notify bool) engine.ServeOptions {
 	capacity := map[string]int{}
 	for name := range e.Providers {
 		capacity[name] = file.Capacity(name)
 	}
 	hour, minute := file.Serve.Time()
 	options := engine.ServeOptions{
-		Drain:         drain,
-		Capacity:      capacity,
-		SubmitPassing: submitPassing,
-		SubmitLimit:   file.Serve.Limit(),
-		Outdated: engine.ServeOutdated{Maintainers: file.Maintainers(), Hour: hour, Minute: minute, Mode: file.Serve.Mode(),
+		Drain:       drain,
+		Capacity:    capacity,
+		ShipTo:      shipTo,
+		SubmitLimit: file.Serve.Limit(),
+		Outdated: engine.ServeOutdated{Maintainers: file.Maintainers(), Hour: hour, Minute: minute,
 			Tests: model.TestPolicy(file.Check.Tests)},
 		Cleanup:         file.Cleanup.On(),
 		CleanupAge:      file.Cleanup.Age(),

@@ -353,7 +353,7 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 		fmt.Fprintln(out, "Nothing was started.")
 		return nil
 	}
-	prepared := e.PrepareOutdated(ctx, plan, engine.PrepareOptions{Origin: model.OriginPerson, Check: options.check, Where: place, Tests: model.TestPolicy(s.file.Check.Tests)})
+	prepared := e.PrepareOutdated(ctx, plan, engine.PrepareOptions{Origin: model.OriginPerson, To: map[bool]engine.ShipStage{true: engine.ShipCheck}[options.check], Where: place, Tests: model.TestPolicy(s.file.Check.Tests)})
 	streams.emit(preparedView(prepared, plan, report))
 	return writePrepared(ctx, e, out, prepared, options.check)
 }

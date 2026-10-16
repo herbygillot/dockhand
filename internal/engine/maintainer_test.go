@@ -79,7 +79,7 @@ func TestTheMaintainerSuggestedIsTheLineThePortsWrite(t *testing.T) {
 	require.Equal(t, placeholder, MaintainerWords(MaintainerSuggestion{}, "~/.dockhand/config.toml"))
 }
 
-// serve.for_outdated without a maintainer suggests the person's own line,
+// serve.ship_to without a maintainer suggests the person's own line,
 // from master as fetched, rather than a placeholder, and writes nothing.
 func TestServeSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	t.Parallel()
@@ -90,9 +90,9 @@ func TestServeSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	e.PortReader = maintainedPorts{asked: &asked, spellings: map[string][]portindex.MaintainerSpelling{"@ada": {{Maintainer: macports.Maintainer{"example.org:ada", "@ada"}, Portfiles: 2}}}}
 	var said []string
 	morning := time.Date(2026, 9, 30, 8, 0, 0, 0, time.Local)
-	s := newServer(e, ServeOptions{Outdated: ServeOutdated{Mode: "list"}, Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return morning }})
+	s := newServer(e, ServeOptions{ShipTo: "list", Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return morning }})
 	(&outdatedScanner{s: s}).maybe(t.Context())
-	require.Equal(t, []string{`serve: serve.for_outdated needs to know your ports: set maintainer = "{example.org:ada @ada}" in ~/.dockhand/config.toml, as the ports that name @ada write it`}, said)
+	require.Equal(t, []string{`serve: serve.ship_to needs to know your ports: set maintainer = "{example.org:ada @ada}" in ~/.dockhand/config.toml, as the ports that name @ada write it`}, said)
 	require.Len(t, asked, 1)
 	require.Equal(t, f.upstreamMaster(t), asked[0].Commit, "master as fetched")
 
@@ -103,7 +103,7 @@ func TestServeSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	e.ConfigFile = "/tmp/elsewhere.toml"
 	scanner := &outdatedScanner{s: s}
 	scanner.announce(t.Context())
-	require.Equal(t, []string{`serve: serve.for_outdated needs to know your ports: set maintainer = "{example.org:ada @ada}" in /tmp/elsewhere.toml, as the ports that name @ada write it`}, said)
+	require.Equal(t, []string{`serve: serve.ship_to needs to know your ports: set maintainer = "{example.org:ada @ada}" in /tmp/elsewhere.toml, as the ports that name @ada write it`}, said)
 	require.NoError(t, os.Remove(e.serveFile("outdated.stamp")))
 	scanner.maybe(t.Context())
 	require.Len(t, said, 1, "said once")
@@ -144,7 +144,7 @@ func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 		e.OutdatedReader = reader
 		now := morning
 		var said []string
-		s := newServer(e, ServeOptions{Outdated: ServeOutdated{Maintainers: []string{"@ada"}, Mode: "list"}, Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return now }})
+		s := newServer(e, ServeOptions{Outdated: ServeOutdated{Maintainers: []string{"@ada"}}, ShipTo: "list", Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return now }})
 		scanner := &outdatedScanner{s: s}
 		scanner.maybe(t.Context())
 		require.Contains(t, said, "serve: GitHub's rate limit kept 1 port from the day's look; it looks at them again at "+morning.Add(19*time.Minute).Format("15:04 MST"))
@@ -189,7 +189,7 @@ func TestTheDaysLookNotifiesWhenWhatItFoundChanged(t *testing.T) {
 	e.OutdatedReader = &limitedReader{lifted: morning.Add(-time.Hour)}
 	now := morning
 	var notified []string
-	s := newServer(e, ServeOptions{Outdated: ServeOutdated{Maintainers: []string{"@ada"}, Mode: "list"}, Say: func(string) {}, Now: func() time.Time { return now },
+	s := newServer(e, ServeOptions{Outdated: ServeOutdated{Maintainers: []string{"@ada"}}, ShipTo: "list", Say: func(string) {}, Now: func() time.Time { return now },
 		Notify: func(title, text string) { notified = append(notified, title+": "+text) }})
 	scanner := &outdatedScanner{s: s}
 	scanner.maybe(t.Context())

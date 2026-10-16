@@ -332,11 +332,11 @@ dockhand serve --drain       # run what is queued now, then exit, naming the ope
 Between checks it:
 
 - reads your open pull requests every few minutes, so `status` shows their reviews and CI, and marks a merged one's branch merged;
-- once a day, at `serve.outdated_at`, looks for new releases of your ports and does what `serve.for_outdated` says: `list` counts them for status, `draft` prepares a branch for each, and `check` also checks each. A port that may have one, as `outdated` says, is never prepared: serve and status list it for your look. Without a `maintainer` setting it can't know your ports, and says the line to set, as `create` does: the one master's ports write your GitHub login with;
+- once a day, at `serve.outdated_at`, looks for new releases of your ports and carries them as far as `serve.ship_to` says, as `ship --to` does: `list` counts them for status, `commit` prepares a branch with one commit for each, `check` also checks each, on `build.unattended`'s profile, and `submit` also submits each that passes. A port that may have one, as `outdated` says, is never prepared: serve and status list it for your look. Without a `maintainer` setting it can't know your ports, and says the line to set, as `create` does: the one master's ports write your GitHub login with;
 - once a day, unless `cleanup.automatic = false`, cleans up automatically, as below;
 - posts macOS notifications as checks finish and pull requests change, and when the day's look finds a different set of your ports with newer releases than the last look did: "2 ports have newer releases (dockhand outdated --mine)". They are posted through AppleScript, so macOS credits them to Script Editor, and clicking one opens it. `serve.notify = false` turns them off, and `--no-notify` turns them off for one run.
 
-Serve opens no pull requests by default. With `--submit-passing`, or `serve.submit_passing = true`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream or commit-rule finding, one whose archives couldn't be compared, one needing `--accept`, or one for a port another open pull request updates; those wait on the attention list, and the pull request says serve opened it without a person's review. `--no-submit-passing` turns it off for one run.
+Serve opens no pull requests by default. With `serve.ship_to = "submit"`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream or commit-rule finding, one whose archives couldn't be compared, one needing `--accept`, or one for a port another open pull request updates; those wait on the attention list, and the pull request says serve opened it without a person's review. `--ship-to` sets how far for one run, as `serve --ship-to check`.
 
 `--install` runs the agent with the flags given beside it, such as `--no-notify`, and with the settings serve was installed under: `--git`, `--db`, and the environment variables below that serve reads, each path made absolute. Run it again after changing them. `--uninstall` removes it. Both wait until launchd has let go of the agent, which it does a few seconds after it's told to, up to thirty seconds, and say so where it hasn't.
 
@@ -396,9 +396,8 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 | `cleanup.after` | `15d` | how long cleanup keeps what it would remove: a port index unused, events, an ended branch's checks and logs, an open branch's superseded logs |
 | `cleanup.min_free` | `30GB` | the free space below which cleanup runs at once; sizes are SI, as Finder and `df -H` count them, so `30GB` is 30,000,000,000 bytes; `GiB` and `TiB` name binary ones, and `1.5TB` and `500MB` read too |
 | `holds.majors` | `hold` | `hold` holds an update nobody looks over, bump's or serve's, where its major version moves, before anything is prepared; `allow` lets it go on |
-| `serve.for_outdated` | `list` | `list`, `draft`, or `check` |
+| `serve.ship_to` | `list` | how far serve carries your outdated ports each day: `list`, `commit`, `check`, or `submit` |
 | `serve.outdated_at` | `07:00` | when serve looks for new releases, in local time |
-| `serve.submit_passing` | `false` | open pull requests for serve's passing updates |
 | `serve.submit_limit` | `10` | the most pull requests serve opens a day |
 | `serve.notify` | `true` | macOS notifications |
 | `providers.tart.capacity` | `1` | Tart checks serve runs at once |

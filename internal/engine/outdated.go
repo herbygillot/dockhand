@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -364,8 +365,9 @@ func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (Outda
 type PrepareOptions struct {
 	// Origin is who asked: a person, or serve.
 	Origin model.Origin
-	// Check queues a check of each prepared commit, where Where says.
-	Check bool
+	// To is how far each goes: ShipCommit, where it's empty, or ShipCheck,
+	// which queues a check of each prepared commit where Where says.
+	To    ShipStage
 	Where Where
 	Tests model.TestPolicy
 }
@@ -400,10 +402,7 @@ func (e *Engine) PrepareOutdated(ctx context.Context, plan OutdatedPlan, options
 }
 
 func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options PrepareOptions) PreparedUpdate {
-	to, answered := ShipCommit, model.AnsweredAsked
-	if options.Check {
-		to = ShipCheck
-	}
+	to, answered := cmp.Or(options.To, ShipCommit), model.AnsweredAsked
 	// What serve prepares nobody looks over.
 	if options.Origin == model.OriginServe {
 		answered = model.AnsweredNobody

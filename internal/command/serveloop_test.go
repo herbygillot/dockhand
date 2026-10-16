@@ -48,7 +48,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada}\"\n"), append(data, []byte("\n[serve]\nfor_outdated = \"check\"\n")...)...), 0o644))
+	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada}\"\n"), append(data, []byte("\n[serve]\nship_to = \"check\"\n")...)...), 0o644))
 
 	serveUntil := func(args []string, until ...string) string {
 		ctx, stop := context.WithCancel(t.Context())
@@ -65,7 +65,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 		return served.String()
 	}
 
-	out := serveUntil([]string{"--submit-passing"}, "serve: opened #34901 for jq-")
+	out := serveUntil([]string{"--ship-to", "submit"}, "serve: opened #34901 for jq-")
 	require.Contains(t, out, "opens PRs for passing updates it prepared, at most 10 a day\n")
 	require.Contains(t, out, "serve: 1 port of yours has newer releases: jq\n")
 	require.Contains(t, out, "serve: 1 port of yours may have newer releases, for your look: yq (dockhand outdated yq says why)\n")
@@ -86,7 +86,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 
 	again := serveUntil(nil, "serve: leading")
 	require.NotContains(t, again, "newer releases", "once a day")
-	require.Contains(t, again, "opens no pull requests; it only checks", "--submit-passing was for one run")
+	require.Contains(t, again, "opens no pull requests; it only checks", "--ship-to was for one run")
 }
 
 func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
@@ -108,7 +108,7 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"@ada\"\n"), append(data, []byte("\n[serve]\nfor_outdated = \"check\"\nsubmit_passing = true\nsubmit_limit = 1\nnotify = false\n")...)...), 0o644))
+	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"@ada\"\n"), append(data, []byte("\n[serve]\nship_to = \"submit\"\nsubmit_limit = 1\nnotify = false\n")...)...), 0o644))
 	// One pull request was opened earlier today, by an earlier serve, and
 	// one yesterday, which today's limit doesn't count.
 	e, err := (&settings{}).open(t.Context())
@@ -135,7 +135,7 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	stop()
 	require.NoError(t, <-done)
 	require.Empty(t, g.PRs, "the limit holds across restarts")
-	require.Contains(t, served.String(), "at most 1 a day", "the config's submit_passing turns it on")
+	require.Contains(t, served.String(), "at most 1 a day", "the config's ship_to = submit turns it on")
 }
 
 // stopsServe stands in for a look serve is stopped in the middle of.
@@ -167,7 +167,7 @@ func TestServeLooksAgainAfterStoppingMidLook(t *testing.T) {
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada}\"\n"), append(data, []byte("\n[serve]\nfor_outdated = \"list\"\nnotify = false\n")...)...), 0o644))
+	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada}\"\n"), append(data, []byte("\n[serve]\nship_to = \"list\"\nnotify = false\n")...)...), 0o644))
 
 	ctx, stop := context.WithCancel(t.Context())
 	testOutdatedReader = stopsServe{stop: stop}
