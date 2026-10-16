@@ -89,3 +89,32 @@ func TestCheckOffersToTrackAnUntrackedCheckout(t *testing.T) {
 	require.Regexp(t, `Started jq-[a-z0-9]{4} at this commit, and tracking it\.\n`, errs.String(), "named for its port")
 	require.Regexp(t, `^dockhand/jq-[a-z0-9]{4}$`, testsupport.Git(t, w.clone, "branch", "--show-current"))
 }
+
+// A new branch that asks for an archived branch's name is offered it, on a
+// terminal: the archived one is renamed aside, <name>-archived, its Git
+// branch and record, which archive --undo then finds; a script is told so,
+// and an open branch's name says how to work in it (decided 2026-10-07;
+// the rc8 full stage's B10).
+func TestStartOffersAnArchivedBranchsName(t *testing.T) {
+	w := newWorld(t)
+	_, _, err := dockhand(t, "start", "notes")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "start", "notes")
+	require.EqualError(t, err, `dockhand/notes is already a tracked branch, open: cd "$(dockhand path notes)" works in it, or choose another name`)
+	_, _, err = dockhand(t, "archive", "notes")
+	require.NoError(t, err)
+
+	_, _, err = dockhand(t, "start", "notes")
+	require.EqualError(t, err, "dockhand/notes is an archived branch, whose record keeps the name; on a terminal start offers to rename it notes-archived, or choose another name")
+	var out, errs bytes.Buffer
+	err = Run(t.Context(), []string{"start", "notes"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
+	require.NoError(t, err, errs.String())
+	require.Contains(t, errs.String(), "? notes is archived; rename it aside so this branch can take its name? [y/N] ")
+	require.Contains(t, out.String(), "Renamed the archived notes to notes-archived; dockhand archive --undo notes-archived brings it back.\n")
+	require.Contains(t, out.String(), "Created dockhand/notes from master ")
+	require.Contains(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/notes-archived"), "dockhand/notes-archived")
+
+	undone, _, err := dockhand(t, "archive", "--undo", "notes-archived")
+	require.NoError(t, err)
+	require.Contains(t, undone, "notes-archived is back among your open branches.\n")
+}

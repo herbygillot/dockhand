@@ -44,6 +44,71 @@ type StartRequest struct {
 	Ports []string
 }
 
+// TakenError is a name a tracked branch holds, which start can't take,
+// with what fits the record: an open one is worked in, an archived one
+// without a pull request can be renamed aside (RenameArchived), and the
+// rest keep the name (the rc8 full stage's B10).
+type TakenError struct{ Branch model.Branch }
+
+func (t *TakenError) Error() string {
+	b := t.Branch
+	switch {
+	case b.State == model.BranchOpen:
+		return fmt.Sprintf("%s is already a tracked branch, open: cd \"$(dockhand path %s)\" works in it, or choose another name", b.Name, b.ShortName())
+	case b.State == model.BranchArchived && b.PullRequest == nil:
+		return fmt.Sprintf("%s is an archived branch, whose record keeps the name; on a terminal start offers to rename it %s, or choose another name", b.Name, archivedName(b.ShortName()))
+	case b.State == model.BranchArchived:
+		return fmt.Sprintf("%s is an archived branch whose name is #%d's head on your fork, so it keeps it; choose another name", b.Name, b.PullRequest.Number)
+	}
+	return fmt.Sprintf("%s is a %s branch, whose record keeps the name; choose another name", b.Name, b.State)
+}
+
+func takenWords(existing model.Branch) error { return &TakenError{Branch: existing} }
+
+// archivedName is the name an archived branch is renamed aside to.
+func archivedName(name string) string { return name + "-archived" }
+
+// RenameArchived renames an archived branch aside, as <name>-archived, so
+// a new branch can take its name (decided 2026-10-07): its Git branch and
+// its record, which archive --undo then finds under the new name. One with
+// a pull request is refused: its name is the pull request's head on the
+// fork, which a rename would leave behind. It returns the branch renamed.
+func (e *Engine) RenameArchived(ctx context.Context, branch model.Branch) (model.Branch, error) {
+	if branch.State != model.BranchArchived {
+		return branch, fmt.Errorf("%s isn't archived", branch.ShortName())
+	}
+	if branch.PullRequest != nil {
+		return branch, &TakenError{Branch: branch}
+	}
+	old := branch.ShortName()
+	name := archivedName(old)
+	for i := 2; ; i++ {
+		free, err := e.nameFree(ctx, name)
+		if err != nil {
+			return branch, err
+		}
+		if free {
+			break
+		}
+		name = fmt.Sprintf("%s-%d", archivedName(old), i)
+	}
+	if _, _, err := e.Repo.Branch(ctx, branch.Name); err == nil {
+		if err := e.Repo.RenameBranch(ctx, branch.Name, BranchName(name)); err != nil {
+			return branch, err
+		}
+	}
+	branch.Name = BranchName(name)
+	err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+		if err := tx.UpdateBranch(branch); err != nil {
+			return err
+		}
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchRename, Level: model.LevelInfo,
+			Message: fmt.Sprintf("renamed %s to %s, archived, so a new branch could take its name", old, name)})
+		return err
+	}, branchRecorded(branch.ID))
+	return branch, err
+}
+
 // Start creates a branch from freshly fetched master, in a sparse managed
 // worktree or, with Here, in the checkout the engine was opened in.
 func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch, error) {
@@ -54,7 +119,7 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		existing, err := r.BranchNamed(name)
 		if err == nil {
-			return fmt.Errorf("%s is already a tracked branch (in %s)", name, existing.Worktree)
+			return takenWords(existing)
 		}
 		if errors.Is(err, store.ErrNotFound) {
 			return nil

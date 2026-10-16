@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
@@ -200,6 +201,22 @@ tracked files.`,
 				return err
 			}
 			branch, err := e.Start(ctx, engine.StartRequest{Name: name, Here: here, Ports: ports})
+			// An archived branch's name is offered back: renamed aside, the
+			// archived one keeps its work under <name>-archived.
+			if taken := new(engine.TakenError); errors.As(err, &taken) && taken.Branch.State == model.BranchArchived && taken.Branch.PullRequest == nil && streams.terminal() {
+				ok, _, askErr := streams.decide(false, decision{question: fmt.Sprintf("? %s is archived; rename it aside so this branch can take its name? [y/N] ", taken.Branch.ShortName()), undone: "nothing was started"})
+				if askErr != nil {
+					return askErr
+				}
+				if ok {
+					renamed, renameErr := e.RenameArchived(ctx, taken.Branch)
+					if renameErr != nil {
+						return renameErr
+					}
+					fmt.Fprintf(streams.Out, "Renamed the archived %s to %s; dockhand archive --undo %s brings it back.\n", taken.Branch.ShortName(), renamed.ShortName(), renamed.ShortName())
+					branch, err = e.Start(ctx, engine.StartRequest{Name: name, Here: here, Ports: ports})
+				}
+			}
 			if err != nil {
 				return err
 			}
