@@ -198,6 +198,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	}
 	root.AddGroup(&cobra.Group{ID: "author", Title: "Author:"})
 	for _, command := range []*cobra.Command{
+		shipCommand(&settings, streams),
 		bumpCommand(&settings, streams),
 		updateCommand(&settings, streams),
 		checksumsCommand(&settings, streams),
@@ -264,7 +265,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	for _, command := range root.Commands() {
 		switch command.Name() {
 		case "status", "path", "diff", "impact", "check", "retry", "wait", "queue", "config", "setup",
-			"start", "adopt", "bump", "update", "checksums", "revbump", "create", "edit", "tidy", "submit", "rebase", "review",
+			"start", "adopt", "ship", "bump", "update", "checksums", "revbump", "create", "edit", "tidy", "submit", "rebase", "review",
 			"cancel", "logs", "undo", "archive", "clean", "explain", "outdated":
 			supportsJSON(command)
 		}

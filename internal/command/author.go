@@ -270,7 +270,7 @@ func submitReady(ctx context.Context, s *settings, port string, linked linkedOpt
 			return fmt.Errorf("%s is already changed in %s, so nothing was changed; dockhand status %s says what it needs", port, strings.Join(names, ", "), names[0])
 		}
 	}
-	if _, err := e.Where(ctx, engine.WhereRequest{On: linked.on, Unattended: linked.unattended}); err != nil {
+	if _, err := e.Where(ctx, engine.WhereRequest{On: linked.on, Build: linked.build, Unattended: linked.unattended}); err != nil {
 		return fmt.Errorf("%w; nothing was changed", err)
 	}
 	return nil
@@ -285,24 +285,8 @@ func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch mod
 	}
 	defer e.Close()
 	out := streams.Out
-	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
-	if err != nil {
-		return err
-	}
-	if !proposal.Keep {
-		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), describeWork(proposal))
-		streams.emit(tidyView(proposal))
-		writeTidyPlan(out, proposal, false)
-		applied, err := decideTidy(ctx, e, streams, proposal, false, linked.yes, "")
-		if err != nil {
-			return fmt.Errorf("%w; nothing was checked or submitted", err)
-		}
-		if !applied {
-			fmt.Fprintln(out, "Nothing was checked or submitted.")
-			return nil
-		}
-	}
-	if branch, err = e.Resolve(ctx, branch.ShortName()); err != nil {
+	branch, applied, err := tidyBranch(ctx, e, streams, branch, linked.yes, "nothing was checked or submitted")
+	if err != nil || !applied {
 		return err
 	}
 	fmt.Fprintln(out)
@@ -310,7 +294,34 @@ func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch mod
 	if linked.noteSet {
 		request.Note = &linked.note
 	}
-	return submitChecked(ctx, s, e, streams, request, linked.on, linked.unattended)
+	return submitChecked(ctx, s, e, streams, request, engine.WhereRequest{On: linked.on, Build: linked.build, Unattended: linked.unattended})
+}
+
+// tidyBranch commits a branch's edits as tidy would plan them, previewed
+// as tidy previews them, where it has any, and returns the branch as it is
+// after; applied is false where the person declined, which undone says.
+// yes applies an unambiguous plan without asking (decideTidy).
+func tidyBranch(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, yes bool, undone string) (model.Branch, bool, error) {
+	out := streams.Out
+	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
+	if err != nil {
+		return branch, false, err
+	}
+	if !proposal.Keep {
+		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), describeWork(proposal))
+		streams.emit(tidyView(proposal))
+		writeTidyPlan(out, proposal, false)
+		applied, err := decideTidy(ctx, e, streams, proposal, false, yes, "")
+		if err != nil {
+			return branch, false, fmt.Errorf("%w; %s", err, undone)
+		}
+		if !applied {
+			fmt.Fprintf(out, "%s.\n", prose.Sentence(undone))
+			return branch, false, nil
+		}
+	}
+	branch, err = e.Resolve(ctx, branch.ShortName())
+	return branch, err == nil, err
 }
 
 // linkedOptions are update's --revbump-dependents and --except, and
@@ -323,6 +334,7 @@ type linkedOptions struct {
 	except                         []string
 	submit                         bool
 	on                             []string
+	build                          string
 	testedBinaries, testedVariants bool
 	yes                            bool
 	unattended                     bool

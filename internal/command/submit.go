@@ -82,7 +82,7 @@ kept.
 				return err
 			}
 			if check {
-				return submitChecked(ctx, s, e, streams, request, on, false)
+				return submitChecked(ctx, s, e, streams, request, engine.WhereRequest{On: on})
 			}
 			plan, err := e.PlanSubmit(ctx, request)
 			if err != nil {
@@ -240,7 +240,8 @@ func finishSubmit(ctx context.Context, e *engine.Engine, streams Streams, plan e
 // the decision, so it asks nothing after the check. Unattended, as for
 // bump, it holds the submission for a person's look for what would hold
 // serve's (engine.Held).
-func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams Streams, request engine.SubmitRequest, on []string, unattended bool) error {
+func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams Streams, request engine.SubmitRequest, place engine.WhereRequest) error {
+	unattended := place.Unattended
 	streams.linkSteps(&submitJSON{})
 	request.PendingCheck, request.Head = true, true
 	plan, err := e.PlanSubmit(ctx, request)
@@ -261,7 +262,7 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 	}
 	if plan.CheckNeeded {
 		// A check nobody looks over builds on build.unattended's profile.
-		where, err := e.Where(ctx, engine.WhereRequest{On: on, Unattended: unattended})
+		where, err := e.Where(ctx, place)
 		if err != nil {
 			return err
 		}

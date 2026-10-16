@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Count writes a number with its thousands set apart, 2,200.
@@ -126,4 +128,13 @@ func LastLines(output string, n int) []string {
 		}
 	}
 	return lines[max(0, len(lines)-n):]
+}
+
+// Sentence is text begun as a sentence: its first letter upper case.
+func Sentence(text string) string {
+	if text == "" {
+		return text
+	}
+	r, size := utf8.DecodeRuneInString(text)
+	return string(unicode.ToUpper(r)) + text[size:]
 }
