@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -45,6 +46,14 @@ func (b branchFlags) explicit() bool {
 // so where the two differ.
 func (b branchFlags) resolve(ctx context.Context, e *engine.Engine, streams Streams) (model.Branch, error) {
 	selection, err := e.Select(ctx, engine.Selector{Branch: b.branch, PR: b.pr, Port: b.port, Policy: engine.SelectExisting}, "", "")
+	// A checkout dockhand doesn't track is offered what tracks it, on a
+	// terminal, where nothing else could be meant; a script is refused,
+	// naming it (the roadmap's part 3, by the command-line UX review's §2).
+	if !b.explicit() {
+		if branch, offered, offerErr := offerToTrack(ctx, e, streams, err); offered {
+			return branch, offerErr
+		}
+	}
 	if err != nil {
 		// On master, the engine's refusal already says how to name one.
 		if !b.explicit() && errors.Is(err, engine.ErrNoBranch) && !errors.Is(err, engine.ErrYourCheckout) {
@@ -103,4 +112,37 @@ func branchCompletion(s *settings) cobra.CompletionFunc {
 		}
 		return completions, cobra.ShellCompDirectiveNoFileComp
 	}
+}
+
+// offerToTrack asks, on a terminal, to track the checkout a command found
+// untracked: a Git branch someone made, adopted, and a detached HEAD, a
+// branch started there for its port. offered is false where err is
+// neither, or nothing was asked.
+func offerToTrack(ctx context.Context, e *engine.Engine, streams Streams, err error) (model.Branch, bool, error) {
+	untracked, detached := new(engine.UntrackedError), new(engine.DetachedError)
+	switch {
+	case errors.As(err, &untracked):
+		ok, _, askErr := streams.decide(false, decision{question: fmt.Sprintf("? %s isn't tracked; track it with adopt? [y/N] ", untracked.Name), undone: "nothing was done",
+			byYes: "dockhand adopt " + untracked.Name + " tracks it, then run this again"})
+		if askErr != nil || !ok {
+			return model.Branch{}, true, cmp.Or(askErr, fmt.Errorf("nothing was done: %s isn't tracked; dockhand adopt %s tracks it", untracked.Name, untracked.Name))
+		}
+		adopted, err := e.Adopt(ctx, engine.AdoptRequest{Branch: untracked.Name})
+		if err == nil {
+			fmt.Fprintf(streams.Err, "Tracking %s.\n", adopted.Branch.ShortName())
+		}
+		return adopted.Branch, true, err
+	case errors.As(err, &detached):
+		ok, _, askErr := streams.decide(false, decision{question: "? this checkout is at a commit, on no branch; start one here for the port it changes? [y/N] ", undone: "nothing was done",
+			byYes: "on a terminal it starts one here; or git switch -c dockhand/<name> and dockhand adopt"})
+		if askErr != nil || !ok {
+			return model.Branch{}, true, cmp.Or(askErr, errors.New("nothing was done: this checkout is on no branch; git switch -c dockhand/<name> and dockhand adopt track one"))
+		}
+		adopted, err := e.StartAtHead(ctx)
+		if err == nil {
+			fmt.Fprintf(streams.Err, "Started %s at this commit, and tracking it.\n", adopted.Branch.ShortName())
+		}
+		return adopted.Branch, true, err
+	}
+	return model.Branch{}, false, nil
 }

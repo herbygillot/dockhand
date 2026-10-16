@@ -552,7 +552,7 @@ var ErrYourCheckout = errors.New("this is your checkout's master, not one of doc
 func (e *Engine) Current(ctx context.Context) (model.Branch, error) {
 	name, err := e.Repo.CurrentBranch(ctx)
 	if err != nil {
-		return model.Branch{}, fmt.Errorf("%w: this checkout is not on a branch", ErrNoBranch)
+		return model.Branch{}, &DetachedError{}
 	}
 	branch, err := e.Resolve(ctx, name)
 	// Master is your checkout's, never a branch of dockhand's: a check run
@@ -562,9 +562,74 @@ func (e *Engine) Current(ctx context.Context) (model.Branch, error) {
 		return model.Branch{}, fmt.Errorf("%w: %w; name one with -b <branch> or -p <port>, as dockhand status lists them, or cd \"$(dockhand path <branch>)\"", ErrNoBranch, ErrYourCheckout)
 	}
 	if errors.Is(err, ErrNoBranch) {
-		return model.Branch{}, fmt.Errorf("%w: %s is not tracked; dockhand adopt tracks it", ErrNoBranch, name)
+		return model.Branch{}, &UntrackedError{Name: name}
 	}
 	return branch, err
+}
+
+// UntrackedError is a checkout on a Git branch dockhand doesn't track,
+// which adopt tracks.
+type UntrackedError struct{ Name string }
+
+func (u *UntrackedError) Error() string {
+	return fmt.Sprintf("%v: %s is not tracked; dockhand adopt tracks it", ErrNoBranch, u.Name)
+}
+
+func (u *UntrackedError) Unwrap() error { return ErrNoBranch }
+
+// DetachedError is a checkout on no branch, at a commit, which
+// StartAtHead starts one at.
+type DetachedError struct{}
+
+func (*DetachedError) Error() string {
+	return ErrNoBranch.Error() + ": this checkout is not on a branch"
+}
+
+func (*DetachedError) Unwrap() error { return ErrNoBranch }
+
+// StartAtHead starts a branch at a detached HEAD, where the checkout is,
+// named for the first port its commits change from master, and tracks
+// it, as adopt would (the command-line UX review's §2: a branch started
+// where nothing else could be meant). One whose commits change no port is
+// refused, since nothing names it.
+func (e *Engine) StartAtHead(ctx context.Context) (Adoption, error) {
+	if _, err := e.Repo.CurrentBranch(ctx); err == nil {
+		return Adoption{}, errors.New("this checkout is on a branch already")
+	}
+	head, err := e.Repo.Resolve(ctx, "HEAD")
+	if err != nil {
+		return Adoption{}, err
+	}
+	master, err := e.fetchMaster(ctx)
+	if err != nil {
+		return Adoption{}, err
+	}
+	base, err := e.Repo.MergeBase(ctx, string(master), head)
+	if err != nil {
+		return Adoption{}, err
+	}
+	paths, err := e.Repo.ChangedPaths(ctx, base, head)
+	if err != nil {
+		return Adoption{}, err
+	}
+	port := ""
+	for _, path := range paths {
+		if parts := strings.Split(path, "/"); len(parts) >= 3 && !strings.HasPrefix(parts[0], "_") {
+			port = parts[1]
+			break
+		}
+	}
+	if port == "" {
+		return Adoption{}, errors.New("this checkout's commits change no port, so nothing names a branch for them: dockhand start <name> --here, or git switch -c dockhand/<name> and dockhand adopt")
+	}
+	name, err := e.NameFor(ctx, port, "")
+	if err != nil {
+		return Adoption{}, err
+	}
+	if err := e.Repo.SwitchNew(ctx, BranchName(name)); err != nil {
+		return Adoption{}, err
+	}
+	return e.Adopt(ctx, AdoptRequest{Branch: BranchName(name)})
 }
 
 // Path is the directory a tracked branch is checked out in.

@@ -47,6 +47,16 @@ func withLock(ctx context.Context, directory, key string, fn func(context.Contex
 }
 
 // Checkouts lists the worktrees that have branch checked out.
+// SwitchNew starts a branch of a name at HEAD and checks it out, as git
+// switch -c does: a detached HEAD on a branch of its own.
+func (r *Repository) SwitchNew(ctx context.Context, name string) error {
+	if !ValidBranchName(name) {
+		return fmt.Errorf("git: %q is not a branch name", name)
+	}
+	_, err := r.output(ctx, "switch", "-c", name)
+	return err
+}
+
 func (r *Repository) Checkouts(ctx context.Context, branch string) ([]string, error) {
 	if !ValidBranchName(branch) {
 		return nil, fmt.Errorf("git: invalid branch")
