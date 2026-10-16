@@ -391,48 +391,43 @@ func workWords(s engine.BranchStatus) string {
 // checkState is the checks column: what is running, else what the latest
 // check says about the files as they are now.
 func checkState(s engine.BranchStatus) string {
-	if s.Stopped != nil {
-		return fmt.Sprintf("stopped (%s)", s.Stopped.Name())
-	}
-	if len(s.Active) > 0 {
-		run := s.Active[len(s.Active)-1]
-		return fmt.Sprintf("%s (%s)", run.State, run.Name())
-	}
-	if s.Latest == nil {
-		return "—"
-	}
 	suffix := ""
 	if !s.Current {
 		suffix = ", for older work"
 	}
-	switch s.Latest.State {
-	case model.RunPassed:
+	switch s.CheckStanding() {
+	case engine.CheckStopped:
+		return fmt.Sprintf("stopped (%s)", s.Stopped.Name())
+	case engine.Checking:
+		run := s.Active[len(s.Active)-1]
+		return fmt.Sprintf("%s (%s)", run.State, run.Name())
+	case engine.NotChecked:
+		return "—"
+	case engine.CheckIncomplete:
 		// A passed check whose results no longer all stand, as after its
 		// environment changed, isn't a pass for the branch now. An archived
 		// branch asks nothing of its checks, as its attention doesn't, so
 		// its check is said as it ended: archived duckdb-cxx14's read
 		// "needs another check" (the dogfood run with 3086fdb3).
-		if s.Evidence != nil && len(s.Evidence.Missing()) > 0 {
-			if s.Branch.State == model.BranchArchived {
-				return fmt.Sprintf("passed (%s)", s.Latest.Name())
-			}
-			return "passed, but needs another check"
+		if s.Branch.State == model.BranchArchived {
+			return fmt.Sprintf("passed (%s)", s.Latest.Name())
 		}
+		return "passed, but needs another check"
+	case engine.CheckedOlder:
+		return "passed for older work"
+	case engine.CheckPassed:
 		// Untracked files a check took in with --include are compared as
 		// it had them, and said: they're in no commit yet.
-		if s.Current && len(s.Included) > 0 {
+		if len(s.Included) > 0 {
 			return fmt.Sprintf("passed for %s, with %s included, untracked", engine.Describe(*s.LatestRevision), prose.And(s.Included))
 		}
 		// A check of the working files that tidy then committed unchanged
 		// checked the commit's files, as submit credits it.
-		if s.Current && (s.LatestRevision.Kind == model.RevisionCommit || s.Commits > 0 && len(s.Edited) == 0) {
+		if s.LatestRevision.Kind == model.RevisionCommit || s.Commits > 0 && len(s.Edited) == 0 {
 			return "passed for this commit"
 		}
-		if s.Current {
-			return "passed for " + engine.Describe(*s.LatestRevision)
-		}
-		return "passed for older work"
-	case model.RunFailed:
+		return "passed for " + engine.Describe(*s.LatestRevision)
+	case engine.CheckFailed:
 		if s.Evidence == nil {
 			return fmt.Sprintf("failed (%s)", s.Latest.Name())
 		}

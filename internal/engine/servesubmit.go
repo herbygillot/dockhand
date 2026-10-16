@@ -49,7 +49,7 @@ func (e *Engine) PassingBranches(ctx context.Context) (Passing, error) {
 	for _, status := range statuses {
 		switch {
 		case status.Missing || status.Commits == 0 || status.Latest == nil || status.Pushed():
-		case status.Latest.State == model.RunPassed && status.Current && len(status.Edited) == 0 && status.Evidence != nil && len(status.Evidence.Failed()) == 0:
+		case status.CheckStanding() == CheckPassed && len(status.Edited) == 0 && status.Evidence != nil:
 			passing.Ready = append(passing.Ready, status)
 		default:
 			passing.Others++

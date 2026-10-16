@@ -45,3 +45,17 @@ releases it builds on, a list or a rule, and checks build where one says.
 - **Left for the second half:** the check-standing verdict,
   `CheckStanding(profile)` on `BranchStatus` and `SubmitPlan`, which
   status, submit, and `PassingBranches` read alike.
+
+## Second half: the check standing
+
+`BranchStatus.CheckStanding()` is the one verdict of a branch's checks: not
+checked, checking, stopped, passed, passed but incomplete (a result it
+needs no longer stands, or was never built), passed for older files,
+failed, or needing attention. status's checks column words it, and
+`PassingBranches`, serve's, reads it, where each judged the same records
+its own way: status by the evidence's missing results, `PassingBranches` by
+its failed ones. Submit's blocking reasons, `publicationProblems`, stay the
+words for each target the verdict sums up. It's judged against
+build.default's environments, which the evidence requires; judging by a
+check's own profile, as ship's evidence is to be (decision 3), comes with
+ship, which re-signatures these functions anyway.
