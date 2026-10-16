@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -270,7 +271,7 @@ func attentionFor(s engine.BranchStatus) []attention {
 		for _, target := range s.Evidence.Failed() {
 			for i, result := range target.Outcomes {
 				if result.Outcome == model.OutcomeFailed {
-					return row("✗", fmt.Sprintf("%s failed at %s on %s (%s)", target.Target.Target.Name, result.Phase, environmentWords(s.Evidence.Plan.Environments[i]), run.Name()),
+					return row("✗", fmt.Sprintf("%s failed at %s on %s (%s)", target.Target.Target.Name, result.Phase, engine.DescribeEnvironment(s.Evidence.Plan.Environments[i]), run.Name()),
 						fmt.Sprintf("dockhand logs %s --port %s", run.Name(), target.Target.Target.Name))
 				}
 			}
@@ -542,7 +543,7 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 	}
 	head := branch.ShortName()
 	if branch.Worktree != "" && !status.Cleaned() {
-		head += " · " + tilde(branch.Worktree)
+		head += " · " + config.Tilde(branch.Worktree)
 	}
 	fmt.Fprintln(out, head)
 	if status.Cleaned() {

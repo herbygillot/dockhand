@@ -85,10 +85,6 @@ type ServeOutdated struct {
 	Tests model.TestPolicy
 }
 
-// ServeSubmitKind is the journal's kind for a pull request serve opened
-// by itself; serve's daily limit counts them.
-const ServeSubmitKind = "serve.submit"
-
 // Serve leads the repository's queue for a session until ctx ends, or with
 // Drain until the queue is empty, and does the rest of serve's work
 // between checks (Design v3 §11). With another serve leading it stands by,
@@ -630,34 +626,24 @@ func (c *cleaner) maybe(ctx context.Context) {
 	if !c.s.options.Cleanup {
 		return
 	}
-	due, why := c.s.e.CleanupDue(c.s.options.CleanupEvery, c.s.options.MinFree)
-	if !due {
+	report, ran, err := c.s.e.CleanupIfDue(ctx, c.session, c.s.options.CleanupEvery, c.s.options.MinFree, c.s.options.CleanupAge, func(why CleanupReason) {
+		if why.LowSpace {
+			c.s.say("cleaning up now: %s", why.Words)
+		}
+	})
+	if !ran {
 		return
 	}
-	// The stamp goes first, so a cleanup that fails is not retried every
-	// few seconds; it is tried again the next day, and its problem is
-	// reported once until it changes.
-	if err := c.s.e.StampCleanup(); err != nil {
-		return
-	}
-	if why.LowSpace {
-		c.s.say("cleaning up now: %s", why.Words)
-	}
-	report, err := c.s.e.Cleanup(ctx, c.session, c.s.options.CleanupAge)
+	// A cleanup that fails is tried again the next day, and its problem
+	// is reported once until it changes.
 	if err != nil {
 		if problem := fmt.Sprintf("serve: cleanup: %v", err); problem != c.failed {
 			c.s.say("%s", problem)
 			c.failed = problem
 		}
 	}
-	for _, name := range report.Caches {
-		c.s.say("removed %s from Tart's cache, unused for %s", name, CacheUnused)
-	}
-	if words := LogCleanupWords(report.Logs, c.s.options.CleanupAge); words != "" {
-		c.s.say("%s", words)
-	}
-	if words := HistoryWords(report.History, report.Assessments, c.s.options.CleanupAge); words != "" {
-		c.s.say("%s", words)
+	for _, line := range report.Words(c.s.options.CleanupAge) {
+		c.s.say("%s", line)
 	}
 	for _, branch := range report.Branches {
 		var removed []string
@@ -979,7 +965,7 @@ func (e *Engine) servedToday(ctx context.Context, now time.Time) (int, error) {
 	var count int
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
-		count, err = r.CountEvents(ServeSubmitKind, dayStart(now))
+		count, err = r.CountEvents(model.EventServeSubmit, dayStart(now))
 		return err
 	})
 	return count, err

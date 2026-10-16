@@ -33,6 +33,36 @@ func (s Status) HasHostImage() bool {
 	return slices.ContainsFunc(s.Base, func(release macos.Release) bool { return release.Darwin == s.Host.Darwin })
 }
 
+// Readiness is what dockhand's Tart images let a check do on this Mac.
+type Readiness int
+
+const (
+	// NoImage is no base image: a check has nowhere to build.
+	NoImage Readiness = iota
+	// XcodeOnly is an Xcode image made without the base image a check
+	// needs beside it (the rc1 full stage's A2).
+	XcodeOnly
+	// NotForHost is base images, none of them this Mac's macOS.
+	NotForHost
+	// Ready is a base image of this Mac's macOS, or of a release this Mac
+	// isn't known to run.
+	Ready
+)
+
+// Readiness says what the images let a check do; Tart that isn't installed,
+// or a Mac that can't run it, is before there's a Status to ask.
+func (s Status) Readiness() Readiness {
+	switch {
+	case len(s.Base) == 0 && len(s.Xcode) > 0:
+		return XcodeOnly
+	case len(s.Base) == 0:
+		return NoImage
+	case s.Host.Product != "" && !s.HasHostImage():
+		return NotForHost
+	}
+	return Ready
+}
+
 // Status lists dockhand's images by release.
 func (p *Provider) Status(ctx context.Context) (Status, error) {
 	m, err := p.vms()
@@ -106,6 +136,11 @@ type SetupResult struct {
 	Xcode string
 	// Reused is an image that was already there and passed its checks.
 	Reused bool
+	// HostMacPorts is the MacPorts this Mac reads ports with, where it
+	// isn't the image's, which builds them: the two can differ on what a
+	// Portfile means. Empty where they're the same, or this Mac's can't
+	// be told.
+	HostMacPorts string
 }
 
 // Setup makes a release's base image with dockhand's provisioner: from
@@ -162,8 +197,12 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 	if err != nil {
 		return SetupResult{}, err
 	}
-	return SetupResult{Image: result.Image, Release: release, MacPorts: result.MacPortsVersion,
-		CommandLineTools: result.CommandLineTools, Xcode: result.XcodeVersion, Reused: result.Reused}, nil
+	made := SetupResult{Image: result.Image, Release: release, MacPorts: result.MacPortsVersion,
+		CommandLineTools: result.CommandLineTools, Xcode: result.XcodeVersion, Reused: result.Reused}
+	if host := HostMacPorts(ctx, macports.FindTclsh()); host != result.MacPortsVersion {
+		made.HostMacPorts = host
+	}
+	return made, nil
 }
 
 // provisionConfig is what the provisioner makes for a release: its base

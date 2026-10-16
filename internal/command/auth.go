@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -82,7 +83,7 @@ func githubLogin(ctx context.Context, streams Streams, clientID string, noBrowse
 func githubLogout(ctx context.Context, streams Streams) error {
 	clientID := github.DefaultOAuthClientID
 	if login, err := github.SavedLogin(ctx, authStore); err == nil || login.ClientID != "" {
-		clientID = firstOf(login.ClientID, clientID)
+		clientID = cmp.Or(login.ClientID, clientID)
 	}
 	err := authStore.Delete(ctx, github.CredentialKey)
 	switch {

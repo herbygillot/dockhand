@@ -277,26 +277,16 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	root.SetIn(streams.In)
 	root.SetOut(streams.Out)
 	root.SetErr(streams.Err)
-	before := github.Requests()
+	spend := github.StartSpend()
 	err := root.ExecuteContext(ctx)
 	settings.cleanupAfter(streams, mode.command)
-	// What the command spent of GitHub's hourly allowance, said with -v
-	// and in the envelope, so a run that runs out can say which command
-	// spent it (the M1's run at 10aac0c3).
-	mode.githubRequests = github.Requests() - before
+	// What the command spent of GitHub's hourly allowance, said with -v,
+	// in the envelope, and in the spend log.
+	mode.githubRequests = spend.Requests()
 	if verbosity > 0 && mode.githubRequests > 0 {
 		streams.status.say(fmt.Sprintf("GitHub's API: %s", prose.Plural(int(mode.githubRequests), "request")))
 	}
-	// DOCKHAND_GITHUB_LOG, a file, gets a line a command: what it asked,
-	// how many requests it sent GitHub's API, and how much of the hour's
-	// allowance GitHub last said was spent, so a run can say which
-	// command spent it, --json or not.
-	if log := os.Getenv("DOCKHAND_GITHUB_LOG"); log != "" {
-		if file, err := os.OpenFile(log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
-			fmt.Fprintf(file, "%d\t%d\t%s\n", mode.githubRequests, github.Used(), strings.Join(args, " "))
-			file.Close()
-		}
-	}
+	spend.Log(args)
 	if !mode.json {
 		return err
 	}

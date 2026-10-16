@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildlog"
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -96,7 +97,7 @@ func queueRow(ctx context.Context, e *engine.Engine, session *coord.Session, run
 	}
 	var on []string
 	for _, environment := range plan.Environments {
-		on = append(on, environmentWords(environment))
+		on = append(on, engine.DescribeEnvironment(environment))
 	}
 	state, detail := string(run.State), run.Detail
 	if run.Origin == model.OriginServe && detail == "" {
@@ -298,9 +299,9 @@ the whole log.`,
 				if all || len(found.Steps) == 0 {
 					where = streams.Err
 				}
-				fmt.Fprintf(where, "%s's log on %s, run %s: %s\n", port, environmentWords(chosen.execution.Environment), chosen.execution.ID, portBuildWords(found))
+				fmt.Fprintf(where, "%s's log on %s, run %s: %s\n", port, engine.DescribeEnvironment(chosen.execution.Environment), chosen.execution.ID, portBuildWords(found))
 				for _, other := range others {
-					fmt.Fprintf(where, "  also on %s, run %s: %s; dockhand logs %s --port %s\n", environmentWords(other.execution.Environment), other.execution.ID, portBuildWords(other.result), other.execution.ID, port)
+					fmt.Fprintf(where, "  also on %s, run %s: %s; dockhand logs %s --port %s\n", engine.DescribeEnvironment(other.execution.Environment), other.execution.ID, portBuildWords(other.result), other.execution.ID, port)
 				}
 			}
 			return writePortLog(streams.Out, found, data, all)
@@ -384,7 +385,7 @@ func writePortLog(out io.Writer, result model.TargetResult, data []byte, all boo
 		_, err := out.Write(data)
 		return err
 	}
-	fmt.Fprintf(out, "Steps in %s:\n", tilde(buildlog.Where(result.Log)))
+	fmt.Fprintf(out, "Steps in %s:\n", config.Tilde(buildlog.Where(result.Log)))
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, step := range result.Steps {
 		fmt.Fprintf(tw, "  %s\tline %d\n", step.Name, step.Line)
@@ -481,7 +482,7 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 	}
 	for _, execution := range logs.Executions {
 		x := execution.Execution
-		fmt.Fprintf(out, "  %s, attempt %d, run %s: %s", environmentWords(x.Environment), x.Attempt, x.ID, x.State)
+		fmt.Fprintf(out, "  %s, attempt %d, run %s: %s", engine.DescribeEnvironment(x.Environment), x.Attempt, x.ID, x.State)
 		if x.Detail != "" {
 			fmt.Fprintf(out, " (%s)", x.Detail)
 		}
@@ -504,7 +505,7 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 				line += ", as built by run " + string(result.ReusedFrom)
 			}
 			if result.Log != "" {
-				line += "  " + tilde(buildlog.Where(result.Log))
+				line += "  " + config.Tilde(buildlog.Where(result.Log))
 			}
 			fmt.Fprintln(out, line)
 			// A Git-fetched target's build says what it fetched, or that
@@ -522,7 +523,7 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 					line += " at " + string(part.Phase)
 				}
 				if part.Log != "" {
-					line += "  " + tilde(buildlog.Where(part.Log))
+					line += "  " + config.Tilde(buildlog.Where(part.Log))
 				}
 				fmt.Fprintln(out, line)
 			}

@@ -271,7 +271,7 @@ func (e *Engine) Archive(ctx context.Context, branch model.Branch, undo bool) (m
 			return err
 		}
 		branch = current
-		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.state", Level: model.LevelInfo, Message: branch.Name + " " + verb})
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchState, Level: model.LevelInfo, Message: branch.Name + " " + verb})
 		return err
 	})
 	return branch, err

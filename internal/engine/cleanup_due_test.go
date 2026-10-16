@@ -169,8 +169,8 @@ func TestCleanupKeepsTheEventsTodaysSubmitLimitCounts(t *testing.T) {
 	morning := dayStart(now).Add(time.Minute)
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
 		for _, event := range []model.Event{
-			{At: dayStart(now).Add(-time.Minute), Kind: ServeSubmitKind, Level: model.LevelInfo, Message: "yesterday's"},
-			{At: morning, Kind: ServeSubmitKind, Level: model.LevelInfo, Message: "this morning's"},
+			{At: dayStart(now).Add(-time.Minute), Kind: model.EventServeSubmit, Level: model.LevelInfo, Message: "yesterday's"},
+			{At: morning, Kind: model.EventServeSubmit, Level: model.LevelInfo, Message: "this morning's"},
 		} {
 			if _, err := tx.AppendEvent(event); err != nil {
 				return err

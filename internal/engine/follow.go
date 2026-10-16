@@ -229,7 +229,7 @@ func recordPullRequest(tx store.Tx, branch model.Branch, next model.PullRequestO
 	}
 	refreshed.Branch = current
 	for _, change := range refreshed.Changes {
-		if _, err := tx.AppendEvent(model.Event{At: next.At, Branch: branch.ID, Kind: "pr.observed", Level: model.LevelInfo, Message: branch.ShortName() + ": " + change}); err != nil {
+		if _, err := tx.AppendEvent(model.Event{At: next.At, Branch: branch.ID, Kind: model.EventPullRequestObserved, Level: model.LevelInfo, Message: branch.ShortName() + ": " + change}); err != nil {
 			return err
 		}
 	}

@@ -590,7 +590,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 				return err
 			}
 		}
-		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: branch.ID, Kind: "branch.edit", Level: model.LevelInfo,
+		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: %s (%s)", update.Port, change, listPaths(update.Files))})
 		return err
 	}, editRecorded(branch.ID, edit.ID))
@@ -947,7 +947,7 @@ func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, por
 		if err := tx.UpdateBranch(*branch); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.rename", Level: model.LevelInfo,
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchRename, Level: model.LevelInfo,
 			Message: fmt.Sprintf("renamed %s to %s, for the version it now moves to", old, name)})
 		return err
 	}, branchRecorded(branch.ID))

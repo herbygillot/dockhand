@@ -159,3 +159,16 @@ echo "asked for $2" >&2
 	_, err = p.DownloadXcode(t.Context(), missing, strings.NewReader(""), &out, &errs)
 	require.ErrorContains(t, err, "is one archive, not a folder")
 }
+
+// What the images let a check do, read off which images there are.
+func TestReadiness(t *testing.T) {
+	tahoe, err := macos.ReleaseForDarwin(25)
+	require.NoError(t, err)
+	sequoia, err := macos.ReleaseForDarwin(24)
+	require.NoError(t, err)
+	require.Equal(t, NoImage, Status{Host: tahoe}.Readiness())
+	require.Equal(t, XcodeOnly, Status{Host: tahoe, Xcode: []macos.Release{tahoe}}.Readiness())
+	require.Equal(t, NotForHost, Status{Host: tahoe, Base: []macos.Release{sequoia}}.Readiness())
+	require.Equal(t, Ready, Status{Host: tahoe, Base: []macos.Release{sequoia, tahoe}}.Readiness())
+	require.Equal(t, Ready, Status{Base: []macos.Release{sequoia}}.Readiness(), "a host release not known")
+}

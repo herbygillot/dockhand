@@ -168,7 +168,7 @@ func askTested(streams Streams, plan *engine.SubmitPlan) error {
 	if plan.Request.TestedBinaries || plan.Request.TestedVariants || plan.Existing != nil && plan.BodyKept {
 		return nil
 	}
-	binaries, err := confirm(streams, "? Did you test the basic functionality of all binary files? [y/N] ")
+	binaries, err := streams.askYes("? Did you test the basic functionality of all binary files? [y/N] ", false)
 	if err != nil {
 		return err
 	}
@@ -178,7 +178,7 @@ func askTested(streams Streams, plan *engine.SubmitPlan) error {
 		_, _, variants = plan.Evidence.VariantsBuilt()
 	}
 	if !variants {
-		if variants, err = confirm(streams, "? Did you check that the most important variants aren't broken? [y/N] "); err != nil {
+		if variants, err = streams.askYes("? Did you check that the most important variants aren't broken? [y/N] ", false); err != nil {
 			return err
 		}
 	}
@@ -352,10 +352,10 @@ func submitPassing(ctx context.Context, e *engine.Engine, streams Streams, reque
 	}
 	if !request.TestedBinaries && !request.TestedVariants {
 		fmt.Fprintln(out, "For every branch submitted now:")
-		if request.TestedBinaries, err = confirm(streams, "? Did you test the basic functionality of all binary files? [y/N] "); err != nil {
+		if request.TestedBinaries, err = streams.askYes("? Did you test the basic functionality of all binary files? [y/N] ", false); err != nil {
 			return err
 		}
-		if request.TestedVariants, err = confirm(streams, "? Did you check that the most important variants aren't broken? [y/N] "); err != nil {
+		if request.TestedVariants, err = streams.askYes("? Did you check that the most important variants aren't broken? [y/N] ", false); err != nil {
 			return err
 		}
 	}
@@ -776,11 +776,6 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	}
 	fmt.Fprintf(streams.Out, "Asked %s to review again.\n", who)
 	return nil
-}
-
-func confirm(streams Streams, question string) (bool, error) {
-	answer, err := ask(streams, question)
-	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), err
 }
 
 // editText opens text in $VISUAL or $EDITOR and returns what was saved.

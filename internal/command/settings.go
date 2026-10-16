@@ -1,11 +1,11 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -42,15 +42,6 @@ func (s *settings) flags(root *cobra.Command) {
 // MacPorts' repository (engine.Options.PullRequests).
 const pullRequestsVariable = "DOCKHAND_PULL_REQUESTS"
 
-func firstOf(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 // options resolves the engine's options, reading the configuration file.
 func (s *settings) options(ctx context.Context) (engine.Options, config.File, string, error) {
 	configPath, err := config.Path()
@@ -61,7 +52,7 @@ func (s *settings) options(ctx context.Context) (engine.Options, config.File, st
 	if err != nil {
 		return engine.Options{}, config.File{}, "", err
 	}
-	database := firstOf(s.database, os.Getenv("DOCKHAND_DB"))
+	database := cmp.Or(s.database, os.Getenv("DOCKHAND_DB"))
 	if database == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -76,12 +67,12 @@ func (s *settings) options(ctx context.Context) (engine.Options, config.File, st
 	if tree == "" {
 		tree = "."
 		if named := os.Getenv("MACPORTS_TREE"); named != "" {
-			tree = engine.Here(ctx, named, ".", firstOf(s.git, os.Getenv("GIT_BIN")))
+			tree = engine.Here(ctx, named, ".", cmp.Or(s.git, os.Getenv("GIT_BIN")))
 		}
 	}
 	return engine.Options{
 		Tree:      tree,
-		Git:       firstOf(s.git, os.Getenv("GIT_BIN")),
+		Git:       cmp.Or(s.git, os.Getenv("GIT_BIN")),
 		Database:  database,
 		Worktrees: file.Worktrees,
 		// holds.majors = "allow" lets bump and serve move a major version.
@@ -93,7 +84,6 @@ func (s *settings) options(ctx context.Context) (engine.Options, config.File, st
 		// of MacPorts' repository, for the acceptance test's repeatable
 		// rows; submit's preview names it.
 		PullRequests: os.Getenv(pullRequestsVariable),
-		Tclsh:        portTclsh(),
 		// Readings are a saving: where the cache can't be placed, none
 		// are kept.
 		Readings: readingCache(),
@@ -180,31 +170,6 @@ var testDependentReader engine.DependentReader
 
 // testOutdatedReader, when set, stands in for upstream discovery.
 var testOutdatedReader engine.OutdatedReader
-
-// tilde abbreviates the home directory in a path shown to a person.
-func tilde(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return path
-	}
-	// Git reports resolved paths, so a home reached through a symbolic
-	// link is matched in its resolved form too.
-	homes := []string{home}
-	if resolved, err := filepath.EvalSymlinks(home); err == nil && resolved != home {
-		homes = append(homes, resolved)
-	}
-	for _, home := range homes {
-		if path == home {
-			return "~"
-		}
-		if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
-			return "~/" + rest
-		}
-	}
-	return path
-}
-
-func homeDir() (string, error) { return os.UserHomeDir() }
 
 // readingCache is where readings are kept, or none where it can't be
 // placed.

@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -56,7 +58,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 				fmt.Fprintln(streams.Out, portfile)
 				return nil
 			}
-			fmt.Fprintf(streams.Err, "%s · %s\n", branch.ShortName(), tilde(portfile))
+			fmt.Fprintf(streams.Err, "%s · %s\n", branch.ShortName(), config.Tilde(portfile))
 			if err := runEditor(ctx, editor, portfile); err != nil {
 				return err
 			}
@@ -383,7 +385,7 @@ func commitOrDiscard(ctx context.Context, e *engine.Engine, streams Streams, req
 // editorCommand is the person's editor, $VISUAL or else $EDITOR, as a
 // shell command; empty where neither is set.
 func editorCommand() string {
-	return firstOf(os.Getenv("VISUAL"), os.Getenv("EDITOR"))
+	return cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"))
 }
 
 // runEditor opens path in editor on the terminal dockhand runs on, and

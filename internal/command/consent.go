@@ -50,12 +50,21 @@ func (s Streams) decide(yes bool, d decision) (bool, Answered, error) {
 		}
 		return false, AnsweredNobody, &ExitError{Code: ExitFailure, Message: fmt.Sprintf("%s: without a terminal, %s", d.undone, d.byYes)}
 	}
-	answer, err := ask(s, d.question)
+	ok, err := s.askYes(d.question, d.yes)
+	return ok, AnsweredAsked, err
+}
+
+// askYes asks a yes-or-no question on the terminal, with the answer an
+// empty line gives: decide's asking half, for a question whose command
+// has made sure a person is there, as setup's offers and submit's tested
+// checkboxes do.
+func (s Streams) askYes(question string, empty bool) (bool, error) {
+	answer, err := ask(s, question)
 	if err != nil {
-		return false, AnsweredAsked, err
+		return false, err
 	}
 	if answer == "" {
-		return d.yes, AnsweredAsked, nil
+		return empty, nil
 	}
-	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), AnsweredAsked, nil
+	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
 }

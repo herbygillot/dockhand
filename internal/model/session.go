@@ -75,12 +75,54 @@ type Event struct {
 	Branch   BranchID
 	Run      RunID
 	Target   TargetID
-	// Kind is a stable name for the event's type, such as run.state or
-	// guest.clone; observers show kinds they do not know generically.
-	Kind    string
+	// Kind is a stable name for the event's type, such as run.state;
+	// observers show kinds they do not know generically.
+	Kind    EventKind
 	Level   EventLevel
 	Message string
 }
+
+// EventKind names an event's type in the journal: what the engine emits
+// and what command, watch, and serve match it by (C4b's typed half; the
+// command package review's 7a row 14), one constant each.
+type EventKind string
+
+const (
+	EventSessionStart   EventKind = "session.start"
+	EventSessionEnd     EventKind = "session.end"
+	EventLeaseAcquire   EventKind = "lease.acquire"
+	EventRunState       EventKind = "run.state"
+	EventRunCancel      EventKind = "run.cancel"
+	EventProgress       EventKind = "progress"
+	EventTargetResult   EventKind = "target.result"
+	EventExecutionState EventKind = "execution.state"
+	EventExecutionRetry EventKind = "execution.retry"
+	// EventArchiveGone says a dependency's kept archive is gone, and
+	// EventArchiveAltered one changed since it was kept.
+	EventArchiveGone    EventKind = "archive.gone"
+	EventArchiveAltered EventKind = "archive.altered"
+	EventCleanup        EventKind = "cleanup"
+	// EventServeSubmit is a pull request serve opened unattended, which
+	// its daily limit counts.
+	EventServeSubmit         EventKind = "serve.submit"
+	EventPullRequestObserved EventKind = "pr.observed"
+	EventReview              EventKind = "review"
+	EventBranchStart         EventKind = "branch.start"
+	EventBranchAdopt         EventKind = "branch.adopt"
+	EventBranchEdit          EventKind = "branch.edit"
+	EventBranchRename        EventKind = "branch.rename"
+	EventBranchWorktree      EventKind = "branch.worktree"
+	EventBranchState         EventKind = "branch.state"
+	EventBranchSubmit        EventKind = "branch.submit"
+	EventBranchRerequest     EventKind = "branch.rerequest"
+	EventBranchReady         EventKind = "branch.ready"
+	EventBranchRestore       EventKind = "branch.restore"
+	EventBranchClean         EventKind = "branch.clean"
+)
+
+// CheckpointEvent is the event a tidy's or a rebase's checkpoint is
+// recorded by: branch.tidy, branch.rebase.
+func CheckpointEvent(kind CheckpointKind) EventKind { return EventKind("branch." + string(kind)) }
 
 // EventLevel is the output level at which an event is shown, as v2 defined
 // them (docs/v2/output.md).

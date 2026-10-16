@@ -15,6 +15,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // tartImages is what setup and setup tart ask of dockhand's Tart images.
@@ -104,9 +106,7 @@ new one has passed.`,
 			} else {
 				fmt.Fprintf(streams.Out, "Made %s: %s.\n", result.Image, made)
 			}
-			// Ports are evaluated with this Mac's MacPorts and built with
-			// the image's, which can differ on what a Portfile means.
-			if host := tart.HostMacPorts(cmd.Context(), portTclsh()); host != "" && host != result.MacPorts {
+			if host := result.HostMacPorts; host != "" {
 				fmt.Fprintf(streams.Out, "This Mac has MacPorts %s. Checks read ports with it and build them with the image's %s; --rebuild --macports-version %s makes them the same.\n",
 					host, result.MacPorts, host)
 			}
@@ -160,37 +160,28 @@ func tartReadiness(ctx context.Context) string {
 	if status.Host.Product != "" {
 		host = fmt.Sprintf("macOS %s", status.Host.Product)
 	}
-	if len(status.Base) == 0 {
-		cost := "up to " + tart.SetupDisk
-		if host != "" {
-			cost = host + ", " + cost
+	cost := "up to " + tart.SetupDisk
+	if host != "" {
+		cost = host + ", " + cost
+	}
+	products := func(releases []macos.Release) string {
+		var names []string
+		for _, release := range releases {
+			names = append(names, release.Product)
 		}
-		// An Xcode image made without the plain one is said, not taken for
-		// nothing set up (the rc1 full stage's A2).
-		if len(status.Xcode) > 0 {
-			var xcode []string
-			for _, release := range status.Xcode {
-				xcode = append(xcode, release.Product)
-			}
-			return fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which a check needs beside it: dockhand setup tart   (%s)", strings.Join(xcode, ", "), cost)
-		}
+		return strings.Join(names, ", ")
+	}
+	switch status.Readiness() {
+	case tart.XcodeOnly:
+		return fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which a check needs beside it: dockhand setup tart   (%s)", products(status.Xcode), cost)
+	case tart.NoImage:
 		return fmt.Sprintf("· not set up: dockhand setup tart   (%s)", cost)
 	}
-	var releases []string
-	hasHost := false
-	for _, release := range status.Base {
-		releases = append(releases, release.Product)
-		hasHost = hasHost || release.Darwin == status.Host.Darwin
-	}
-	line := "✓ images for macOS " + strings.Join(releases, ", ")
+	line := "✓ images for macOS " + products(status.Base)
 	if len(status.Xcode) > 0 {
-		var xcode []string
-		for _, release := range status.Xcode {
-			xcode = append(xcode, release.Product)
-		}
-		line += ", with Xcode for " + strings.Join(xcode, ", ")
+		line += ", with Xcode for " + products(status.Xcode)
 	}
-	if host != "" && !hasHost {
+	if status.Readiness() == tart.NotForHost {
 		line += "; none for this Mac's " + host + ": dockhand setup tart"
 	}
 	return line
@@ -214,7 +205,7 @@ func missingSteps(ctx context.Context) []string {
 	var steps []string
 	if tartSupported() {
 		if images := images(); images != nil {
-			if status, err := images.Status(ctx); err == nil && len(status.Base) == 0 {
+			if status, err := images.Status(ctx); err == nil && (status.Readiness() == tart.NoImage || status.Readiness() == tart.XcodeOnly) {
 				steps = append(steps, "dockhand setup tart")
 			}
 		}
@@ -244,7 +235,7 @@ func offerXcode(ctx context.Context, images tartImages, streams Streams, missing
 	var path string
 	var err error
 	if streams.terminal() {
-		download, err := confirm(streams, fmt.Sprintf("Download Xcode %s with xcodes, signing in with your Apple ID? [y/N] ", missing.Version))
+		download, err := streams.askYes(fmt.Sprintf("Download Xcode %s with xcodes, signing in with your Apple ID? [y/N] ", missing.Version), false)
 		if err != nil {
 			return err
 		}
@@ -261,7 +252,7 @@ func offerXcode(ctx context.Context, images tartImages, streams Streams, missing
 		path, err = images.DownloadXcode(ctx, missing, nil, &said, &said)
 		if errors.Is(err, tart.ErrXcodes) {
 			return fmt.Errorf("%w; xcodes said:\n%s\nIf it needs you to sign in, run it once at a terminal: xcodes download %s --directory %s",
-				err, lastLines(said.String(), 10), missing.Version, missing.Folder)
+				err, "  "+strings.Join(prose.LastLines(said.String(), 10), "\n  "), missing.Version, missing.Folder)
 		}
 		if err != nil {
 			return err
@@ -269,16 +260,4 @@ func offerXcode(ctx context.Context, images tartImages, streams Streams, missing
 	}
 	fmt.Fprintf(streams.Out, "Downloaded %s.\n", filepath.Base(path))
 	return nil
-}
-
-// lastLines is the end of a program's output, its progress redrawn with
-// carriage returns counted as lines.
-func lastLines(output string, n int) string {
-	var lines []string
-	for line := range strings.SplitSeq(strings.ReplaceAll(output, "\r", "\n"), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			lines = append(lines, "  "+line)
-		}
-	}
-	return strings.Join(lines[max(0, len(lines)-n):], "\n")
 }

@@ -102,7 +102,7 @@ commits, and its files are as they were when it was saved.`,
 				writeFindings(out, proposal)
 				return nil
 			}
-			writeTidyPlan(out, proposal)
+			writeTidyPlan(out, proposal, false)
 			if plan {
 				if saveTo == "" {
 					return nil
@@ -180,12 +180,12 @@ func decideTidy(ctx context.Context, e *engine.Engine, streams Streams, proposal
 				continue
 			}
 			proposal = regrouped
-			writeTidyPlan(out, proposal)
+			writeTidyPlan(out, proposal, false)
 		case "e":
 			if err := editSubjects(streams, &proposal); err != nil {
 				return false, err
 			}
-			writeTidyPlan(out, proposal)
+			writeTidyPlan(out, proposal, false)
 		case "a":
 			if blocking := proposal.Blocking(); len(blocking) > 0 {
 				fmt.Fprintf(streams.Err, "Not yet: %s\n", strings.Join(blocking, "; "))
@@ -214,19 +214,26 @@ func describeWork(plan engine.TidyPlan) string {
 	return work
 }
 
-func writeTidyPlan(out io.Writer, plan engine.TidyPlan) {
-	title := "Proposed commit"
+// writeTidyPlan lists a tidy plan's commits: as proposed, with what each
+// combines, keeps, and notes; or, saved, what applying it writes, each
+// commit's whole message as it may have been edited, with its author.
+func writeTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
+	title := map[bool]string{false: "Proposed commit", true: "Commit to write"}[saved]
 	if len(plan.Groups) > 1 {
-		title = "Proposed series"
+		title = map[bool]string{false: "Proposed series", true: "Commits to write"}[saved]
 	}
 	fmt.Fprintf(out, "\n%s\n", title)
 	for i, group := range plan.Groups {
-		subject := group.Subject()
+		subject, body, _ := strings.Cut(strings.TrimSpace(group.Message), "\n")
+		if !saved {
+			// A proposal's first line is its subject, empty or not.
+			subject = group.Subject()
+		}
 		if subject == "" {
 			subject = "(needs a subject)"
 		}
 		fmt.Fprintf(out, "  %d  %s\n", i+1, subject)
-		if len(group.Combines) > 0 {
+		if len(group.Combines) > 0 && !saved {
 			var subjects []string
 			for _, commit := range group.Combines {
 				subjects = append(subjects, strconv.Quote(commit.Subject()))
@@ -236,56 +243,23 @@ func writeTidyPlan(out io.Writer, plan engine.TidyPlan) {
 		if group.Working {
 			fmt.Fprintln(out, "       includes edits not yet committed")
 		}
-		if group.Created {
+		if group.Created && !saved {
 			fmt.Fprintln(out, "       a new port create wrote, with your edits since")
 		}
 		fmt.Fprintf(out, "       files: %s\n", strings.Join(group.Paths, ", "))
-		if _, rest, ok := strings.Cut(strings.TrimSpace(group.Message), "\n\n"); ok {
-			for _, line := range strings.Split(rest, "\n") {
-				if strings.HasPrefix(line, "Closes:") || strings.HasPrefix(line, "See:") {
-					fmt.Fprintf(out, "       keeps: %s\n", line)
+		if !saved {
+			if _, rest, ok := strings.Cut(strings.TrimSpace(group.Message), "\n\n"); ok {
+				for _, line := range strings.Split(rest, "\n") {
+					if strings.HasPrefix(line, "Closes:") || strings.HasPrefix(line, "See:") {
+						fmt.Fprintf(out, "       keeps: %s\n", line)
+					}
 				}
 			}
 		}
-		if group.Author.Name != "" && len(group.Combines) > 0 {
+		if group.Author.Name != "" && (saved || len(group.Combines) > 0) {
 			fmt.Fprintf(out, "       author: %s <%s>\n", group.Author.Name, group.Author.Email)
 		}
-		for _, note := range group.Notes {
-			fmt.Fprintf(out, "       · %s\n", note)
-		}
-		for _, blocking := range group.Blocking {
-			fmt.Fprintf(out, "       ✗ %s\n", blocking)
-		}
-	}
-	if builds := plan.OlderBuilds(); len(builds) > 0 {
-		fmt.Fprintf(out, "  · the branch's commits name an older dockhand in Generated-By, %s: a commit tidy leaves as it is keeps it, and one it writes names this build\n", strings.Join(builds, ", "))
-	}
-	writeFindings(out, plan)
-	fmt.Fprintln(out)
-}
-
-// writeSavedPlan says what applying a saved plan writes: each commit's
-// whole message, as it may have been edited, with its files and author.
-func writeSavedPlan(out io.Writer, plan engine.TidyPlan) {
-	title := "Commit to write"
-	if len(plan.Groups) > 1 {
-		title = "Commits to write"
-	}
-	fmt.Fprintf(out, "\n%s\n", title)
-	for i, group := range plan.Groups {
-		subject, body, _ := strings.Cut(strings.TrimSpace(group.Message), "\n")
-		if subject == "" {
-			subject = "(needs a subject)"
-		}
-		fmt.Fprintf(out, "  %d  %s\n", i+1, subject)
-		if group.Working {
-			fmt.Fprintln(out, "       includes edits not yet committed")
-		}
-		fmt.Fprintf(out, "       files: %s\n", strings.Join(group.Paths, ", "))
-		if group.Author.Name != "" {
-			fmt.Fprintf(out, "       author: %s <%s>\n", group.Author.Name, group.Author.Email)
-		}
-		if body = strings.TrimSpace(body); body != "" {
+		if body = strings.TrimSpace(body); body != "" && saved {
 			fmt.Fprintln(out, "       body:")
 			for _, line := range strings.Split(body, "\n") {
 				if strings.TrimSpace(line) == "" {
@@ -295,9 +269,17 @@ func writeSavedPlan(out io.Writer, plan engine.TidyPlan) {
 				fmt.Fprintf(out, "         %s\n", line)
 			}
 		}
+		if !saved {
+			for _, note := range group.Notes {
+				fmt.Fprintf(out, "       · %s\n", note)
+			}
+		}
 		for _, blocking := range group.Blocking {
 			fmt.Fprintf(out, "       ✗ %s\n", blocking)
 		}
+	}
+	if builds := plan.OlderBuilds(); len(builds) > 0 && !saved {
+		fmt.Fprintf(out, "  · the branch's commits name an older dockhand in Generated-By, %s: a commit tidy leaves as it is keeps it, and one it writes names this build\n", strings.Join(builds, ", "))
 	}
 	writeFindings(out, plan)
 	fmt.Fprintln(out)
@@ -342,7 +324,7 @@ func applySaved(ctx context.Context, e *engine.Engine, streams Streams, file str
 	}
 	streams.emit(tidyView(proposal))
 	fmt.Fprintf(streams.Out, "%s · the plan saved in %s\n", proposal.Branch.ShortName(), file)
-	writeSavedPlan(streams.Out, proposal)
+	writeTidyPlan(streams.Out, proposal, true)
 	if blocking := proposal.Blocking(); len(blocking) > 0 {
 		return fmt.Errorf("the plan can't be applied yet: %s", strings.Join(blocking, "; "))
 	}

@@ -119,7 +119,7 @@ func TestADeadHoldersLeaseIsTakenAtOnceAndItsWritesAreFenced(t *testing.T) {
 		return err
 	}))
 	last := events[len(events)-1]
-	require.Equal(t, "lease.acquire", last.Kind)
+	require.Equal(t, model.EventLeaseAcquire, last.Kind)
 	require.Contains(t, last.Message, "process 100 has exited")
 }
 

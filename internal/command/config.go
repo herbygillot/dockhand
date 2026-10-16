@@ -44,7 +44,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				all = append(all, configSetting{Key: key, Value: value, Source: source})
 			}
 			set := func(key, value string) { add(key, value, defaults[key]) }
-			set("worktrees", tildeOrEmpty(file.Worktrees))
+			set("worktrees", config.Tilde(file.Worktrees))
 			set("maintainer", file.Maintainer)
 			set("check.on", strings.Join(file.Check.On, ", "))
 			set("check.tests", file.Check.Tests)
@@ -111,7 +111,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			set("providers.github.capacity", positive(file.Providers.GitHub.Capacity))
 			set("providers.github.build_timeout", file.Providers.GitHub.BuildTimeout)
 			streams.emit(map[string]any{"file": path, "database": options.Database, "settings": all})
-			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", tilde(path), tilde(options.Database))
+			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", config.Tilde(path), config.Tilde(options.Database))
 			width := 0
 			for _, setting := range all {
 				width = max(width, len(setting.Key))
@@ -134,11 +134,4 @@ func positive(n int) string {
 		return ""
 	}
 	return strconv.Itoa(n)
-}
-
-func tildeOrEmpty(path string) string {
-	if path == "" {
-		return ""
-	}
-	return tilde(path)
 }

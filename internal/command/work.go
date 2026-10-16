@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -85,19 +84,19 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	report.Upstream = setupUpstreamJSON{Repository: engine.UpstreamRepository, FetchedFrom: e.Upstream()}
 	if upstream != nil {
 		report.Upstream.Remote = upstream.Name
-		fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", tilde(e.Clone()), engine.UpstreamRepository, upstream.Name)
+		fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", config.Tilde(e.Clone()), engine.UpstreamRepository, upstream.Name)
 	} else {
-		fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", tilde(e.Clone()), engine.UpstreamRepository, e.Upstream())
+		fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", config.Tilde(e.Clone()), engine.UpstreamRepository, e.Upstream())
 	}
 
 	chosen := file.Worktrees
 	switch {
 	case worktrees != "":
-		if chosen, err = absolute(worktrees); err != nil {
+		if chosen, err = config.Absolute(worktrees); err != nil {
 			return err
 		}
 	case chosen == "" && streams.terminal() && !yes:
-		answer, err := ask(streams, fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", tilde(e.DefaultWorktrees())))
+		answer, err := ask(streams, fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", config.Tilde(e.DefaultWorktrees())))
 		if err != nil {
 			return err
 		}
@@ -109,7 +108,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 			if where == "" {
 				return fmt.Errorf("no directory given; rerun with --worktrees <directory>")
 			}
-			if chosen, err = absolute(where); err != nil {
+			if chosen, err = config.Absolute(where); err != nil {
 				return err
 			}
 		}
@@ -124,11 +123,11 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	}
 	report.Git = setupGitJSON{Version: gitVersion.String(), Path: gitVersion.Path}
 	report.Worktrees, report.Records = chosen, options.Database
-	fmt.Fprintf(out, "  Git          ✓ %s at %s\n", gitVersion, tilde(gitVersion.Path))
-	fmt.Fprintf(out, "  Branches     worktrees in %s\n", tilde(chosen))
-	if tclsh := portTclsh(); tclsh != "" {
+	fmt.Fprintf(out, "  Git          ✓ %s at %s\n", gitVersion, config.Tilde(gitVersion.Path))
+	fmt.Fprintf(out, "  Branches     worktrees in %s\n", config.Tilde(chosen))
+	if tclsh := e.Tclsh(); tclsh != "" {
 		report.MacPorts = filepath.Dir(filepath.Dir(tclsh))
-		fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", tilde(report.MacPorts))
+		fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", config.Tilde(report.MacPorts))
 	} else {
 		fmt.Fprintf(out, "  Authoring    ! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports\n")
 	}
@@ -143,7 +142,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	var publishLine string
 	publishLine, report.GitHub = publishing(cmd.Context())
 	fmt.Fprintf(out, "  Publishing   %s\n", publishLine)
-	fmt.Fprintf(out, "  Records      %s\n", tilde(options.Database))
+	fmt.Fprintf(out, "  Records      %s\n", config.Tilde(options.Database))
 	fmt.Fprintln(out)
 	if streams.terminal() && !yes {
 		written, err := offerSetup(cmd.Context(), s, e, streams, file, configPath)
@@ -215,7 +214,7 @@ tracked files.`,
 				return nil
 			}
 			fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now)\nDirectory: %s\nNext: cd \"$(dockhand path %s)\"\n",
-				branch.Name, engine.Short(branch.Base), tilde(branch.Worktree), branch.ShortName())
+				branch.Name, engine.Short(branch.Base), config.Tilde(branch.Worktree), branch.ShortName())
 			return nil
 		},
 	}
@@ -312,7 +311,7 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, nu
 		edits = "maintainers can't push to it; suggest changes with dockhand review " + fmt.Sprint(number)
 	}
 	fmt.Fprintf(streams.Out, "Adopted %s: %q by @%s, %s%s; %s.\nDirectory: %s\n", adoption.Branch.ShortName(), adoption.Title, adoption.Author,
-		prose.Plural(adoption.Commits, "commit"), describeScope(adoption.Scope, nil), edits, tilde(adoption.Branch.Worktree))
+		prose.Plural(adoption.Commits, "commit"), describeScope(adoption.Scope, nil), edits, config.Tilde(adoption.Branch.Worktree))
 	return nil
 }
 
@@ -371,27 +370,6 @@ func ask(streams Streams, question string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(line), nil
-}
-
-func absolute(path string) (string, error) {
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		home, err := homeDir()
-		if err != nil {
-			return "", err
-		}
-		path = filepath.Join(home, strings.TrimPrefix(path, "~"))
-	}
-	return filepath.Abs(path)
-}
-
-func portTclsh() string {
-	if path, err := exec.LookPath("port-tclsh"); err == nil {
-		return path
-	}
-	if path, err := exec.LookPath("/opt/local/bin/port-tclsh"); err == nil {
-		return path
-	}
-	return ""
 }
 
 // setupReport is what setup reports, as --json gives it: the checkout,

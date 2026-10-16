@@ -48,3 +48,11 @@ func TestCountSetsThousandsApart(t *testing.T) {
 		require.Equal(t, want, Count(n))
 	}
 }
+
+func TestTextHelpers(t *testing.T) {
+	require.Equal(t, "One rule.", FirstSentence("One rule. Then more."))
+	require.Equal(t, "no stop", FirstSentence("no stop"))
+	require.Equal(t, "first", FirstLine("first\nsecond"))
+	require.Equal(t, "a b\nc d", Wrap("a b c d", 3))
+	require.Equal(t, []string{"two", "three"}, LastLines("one\r\n two \n\nthree\n", 2))
+}

@@ -825,7 +825,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		if result.Created {
 			verb = "opened"
 		}
-		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.submit", Level: model.LevelInfo,
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchSubmit, Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, short(model.ObjectID(plan.Commit)))})
 		return err
 	})
@@ -919,7 +919,7 @@ func (e *Engine) Ready(ctx context.Context, branch model.Branch) (_ model.Branch
 		if byCLI {
 			message += " with the GitHub CLI"
 		}
-		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.ready", Level: model.LevelInfo, Message: message})
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchReady, Level: model.LevelInfo, Message: message})
 		return err
 	})
 	return branch, byCLI, err
@@ -937,7 +937,7 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 		return nil, fmt.Errorf("asking %s to review #%d again: %w", strings.Join(logins, ", "), pr.Number, err)
 	}
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.rerequest", Level: model.LevelInfo,
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchRerequest, Level: model.LevelInfo,
 			Message: fmt.Sprintf("asked %s to review #%d again", "@"+strings.Join(logins, ", @"), pr.Number)})
 		return err
 	})

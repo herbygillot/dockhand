@@ -1,10 +1,10 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -17,7 +17,7 @@ import (
 // setupGitHubCommand logs in to GitHub, or with --logout removes the
 // login.
 func setupGitHubCommand(streams Streams) *cobra.Command {
-	clientID := firstOf(os.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID)
+	clientID := cmp.Or(os.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID)
 	var noBrowser, logout bool
 	cmd := &cobra.Command{
 		Use:   "github",
@@ -53,9 +53,15 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 	written := ""
 	fmt.Fprintln(streams.Out)
 	if overridingToken() == "" {
-		if _, err := github.SavedLogin(ctx, authStore); err != nil && yesTo(streams, "? Log in to GitHub now, for submit and checks in your fork? [Y/n] ", true) {
-			if err := githubLogin(ctx, streams, firstOf(os.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
-				fmt.Fprintf(streams.Err, "Not logged in: %v\n", err)
+		if _, err := github.SavedLogin(ctx, authStore); err != nil {
+			login, err := streams.askYes("? Log in to GitHub now, for submit and checks in your fork? [Y/n] ", true)
+			if err != nil {
+				return written, err
+			}
+			if login {
+				if err := githubLogin(ctx, streams, cmp.Or(os.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
+					fmt.Fprintf(streams.Err, "Not logged in: %v\n", err)
+				}
 			}
 		}
 	}
@@ -63,7 +69,11 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 		suggestion := e.SuggestMaintainerAtMaster(ctx)
 		if len(suggestion.Spellings) > 0 {
 			line := suggestion.Spellings[0].Maintainer.String()
-			if yesTo(streams, fmt.Sprintf("? Write maintainer = %q to %s, as the ports naming @%s write it? [Y/n] ", line, tilde(configPath), suggestion.Login), true) {
+			write, err := streams.askYes(fmt.Sprintf("? Write maintainer = %q to %s, as the ports naming @%s write it? [Y/n] ", line, config.Tilde(configPath), suggestion.Login), true)
+			if err != nil {
+				return written, err
+			}
+			if write {
 				if err := config.SetMaintainer(configPath, line); err != nil {
 					return "", err
 				}
@@ -71,12 +81,17 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 				fmt.Fprintf(streams.Out, "Wrote maintainer = %q, for --mine, create, and serve's daily look.\n", line)
 			}
 		} else {
-			fmt.Fprintf(streams.Out, "· maintainer: %s, for --mine, create, and serve's daily look\n", engine.MaintainerWords(suggestion, tilde(configPath)))
+			fmt.Fprintf(streams.Out, "· maintainer: %s, for --mine, create, and serve's daily look\n", engine.MaintainerWords(suggestion, config.Tilde(configPath)))
 		}
 	}
 	if images := images(); images != nil {
-		status, err := images.Status(ctx)
-		if err == nil && !status.HasHostImage() && yesTo(streams, fmt.Sprintf("? Make the Tart image for this Mac's macOS now? It downloads macOS and takes up to %s of disk. [y/N] ", tart.SetupDisk), false) {
+		makeImage := false
+		if status, err := images.Status(ctx); err == nil && !status.HasHostImage() {
+			if makeImage, err = streams.askYes(fmt.Sprintf("? Make the Tart image for this Mac's macOS now? It downloads macOS and takes up to %s of disk. [y/N] ", tart.SetupDisk), false); err != nil {
+				return written, err
+			}
+		}
+		if makeImage {
 			setup := setupTartCommand(s, streams)
 			setup.SetContext(ctx)
 			if err := setup.RunE(setup, nil); err != nil {
@@ -85,19 +100,4 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 		}
 	}
 	return written, nil
-}
-
-// yesTo asks a yes-or-no question, with the answer an empty line gives.
-func yesTo(streams Streams, question string, empty bool) bool {
-	answer, err := ask(streams, question)
-	if err != nil {
-		return false
-	}
-	switch strings.ToLower(answer) {
-	case "":
-		return empty
-	case "y", "yes":
-		return true
-	}
-	return false
 }

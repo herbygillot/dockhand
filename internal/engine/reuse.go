@@ -97,7 +97,7 @@ func (d *driver) sayTagMoved(ctx context.Context, environment model.Environment,
 			}
 			return nil
 		})
-		d.emit(ctx, "execution.state", fmt.Sprintf("%s: %s: %s builds again: %s", d.run.Name(), describeEnvironment(environment), target.ID, TagMovedWords(*newest.Tagged, *target.Tag, built, target.Target.Name)))
+		d.emit(ctx, model.EventExecutionState, fmt.Sprintf("%s: %s: %s builds again: %s", d.run.Name(), DescribeEnvironment(environment), target.ID, TagMovedWords(*newest.Tagged, *target.Tag, built, target.Target.Name)))
 	}
 }
 
@@ -121,7 +121,7 @@ func (d *driver) sayNotReusable(ctx context.Context, environment model.Environme
 		if newest.Inputs.NotReusable == "" || !d.plan.Tests.Stands(newest.Result) {
 			continue
 		}
-		d.emit(ctx, "execution.state", fmt.Sprintf("%s: %s: %s builds again: its last build here passed, but can't be reused, since %s", d.run.Name(), describeEnvironment(environment), target.ID, newest.Inputs.NotReusable))
+		d.emit(ctx, model.EventExecutionState, fmt.Sprintf("%s: %s: %s builds again: its last build here passed, but can't be reused, since %s", d.run.Name(), DescribeEnvironment(environment), target.ID, newest.Inputs.NotReusable))
 	}
 }
 
@@ -219,8 +219,8 @@ func (d *driver) recordReuse(ctx context.Context, environment model.Environment,
 		if err != nil {
 			return err
 		}
-		_, err = d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: "execution.state", Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: %s: every target would build as it did in %s, and reuses that result, building nothing", d.run.Name(), describeEnvironment(environment), strings.Join(checks, ", "))})
+		_, err = d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventExecutionState, Level: model.LevelInfo,
+			Message: fmt.Sprintf("%s: %s: every target would build as it did in %s, and reuses that result, building nothing", d.run.Name(), DescribeEnvironment(environment), strings.Join(checks, ", "))})
 		return err
 	})
 }
@@ -239,8 +239,8 @@ func (b *build) reuses(remaining []buildenv.Target, chosen map[model.TargetID]re
 		if err != nil {
 			return err
 		}
-		_, err = b.d.session.Emit(tx, model.Event{Branch: b.d.run.Branch, Run: b.d.run.ID, Kind: "execution.state", Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: %s: %s would build as in %s, and reuse those results; the rest build", b.d.run.Name(), describeEnvironment(b.execution.Environment), strings.Join(names, ", "), strings.Join(checks, ", "))})
+		_, err = b.d.session.Emit(tx, model.Event{Branch: b.d.run.Branch, Run: b.d.run.ID, Kind: model.EventExecutionState, Level: model.LevelInfo,
+			Message: fmt.Sprintf("%s: %s: %s would build as in %s, and reuse those results; the rest build", b.d.run.Name(), DescribeEnvironment(b.execution.Environment), strings.Join(names, ", "), strings.Join(checks, ", "))})
 		return err
 	})
 	if err != nil {
@@ -382,18 +382,11 @@ func (d *driver) gone(ctx context.Context, archive model.DependencyArchive) erro
 		if err := tx.ForgetDependencyArchive(archive); err != nil {
 			return err
 		}
-		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: GoneKind, Level: model.LevelInfo,
+		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventArchiveGone, Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: the archive kept of %s, %s, is gone, so its record is dropped, and the guest gets it as MacPorts would, from its archives or a build", d.run.Name(), archive.Port, archive.Digest)})
 		return err
 	})
 }
-
-// GoneKind is the event a dependency's kept archive that's gone is said by.
-const GoneKind = "archive.gone"
-
-// AlteredKind is the event a kept archive changed since it was kept is
-// said by: check prints it, and its --json result carries it.
-const AlteredKind = "archive.altered"
 
 // altered says a kept archive that isn't the one it was kept as, by a
 // byte or more, as tampering or a disk's fault leaves one, and sets the
@@ -409,7 +402,7 @@ func (d *driver) altered(ctx context.Context, port, digest, instead string) erro
 		aside = "; it's set aside as " + path + ".altered"
 	}
 	return d.fenced(ctx, func(tx store.Tx) error {
-		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: AlteredKind, Level: model.LevelInfo,
+		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventArchiveAltered, Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: the archive kept of %s isn't the one it was kept as, %s, so %s%s", d.run.Name(), port, digest, instead, aside)})
 		return err
 	})

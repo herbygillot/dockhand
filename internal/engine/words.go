@@ -447,10 +447,6 @@ func ComparisonLines(comparisons []PortComparison) []ComparisonLine {
 	return lines
 }
 
-func describeEnvironment(environment model.Environment) string {
-	return DescribeEnvironment(environment)
-}
-
 // DescribeEnvironment words where a check builds for a person: the provider,
 // and the release it builds on by its macOS name, "tart macOS 26 (Tahoe)
 // arm64", or its raw platform where the release is unknown, with its

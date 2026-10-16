@@ -461,7 +461,7 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 		}
 		if len(removed) > 0 {
 			if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-				_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: plan.Branch.ID, Kind: "branch.clean", Level: model.LevelInfo,
+				_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: plan.Branch.ID, Kind: model.EventBranchClean, Level: model.LevelInfo,
 					Message: "removed " + strings.Join(removed, ", ")})
 				return err
 			}); err != nil {
@@ -605,7 +605,7 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 		}
 		leftover.Done = true
 		if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-			_, err := session.Emit(tx, model.Event{At: e.now(), Branch: leftover.Run.Branch, Run: leftover.Run.ID, Kind: "cleanup", Level: model.LevelInfo,
+			_, err := session.Emit(tx, model.Event{At: e.now(), Branch: leftover.Run.Branch, Run: leftover.Run.ID, Kind: model.EventCleanup, Level: model.LevelInfo,
 				Message: fmt.Sprintf("removed %s, left by %s", leftover.What, leftover.Run.Name())})
 			return err
 		}); err != nil {

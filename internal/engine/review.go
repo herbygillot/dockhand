@@ -360,7 +360,7 @@ func (e *Engine) RecordReview(ctx context.Context, report ReviewReport, posted s
 		if posted != "" {
 			message += ", posted as " + strings.ReplaceAll(posted, "-", " ")
 		}
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "review", Level: model.LevelInfo, Message: message})
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: model.EventReview, Level: model.LevelInfo, Message: message})
 		return err
 	})
 }

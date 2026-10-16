@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -93,6 +94,28 @@ type Checksum struct {
 	// MD5 and SHA1 are written only into a legacy group kept as written.
 	MD5, SHA1 string `json:",omitempty"`
 	Size      int64
+}
+
+// Words is the checksum as a person compares it: sha256, shortened, and
+// the size, else rmd160.
+func (c Checksum) Words() string {
+	short := func(hash string) string {
+		if len(hash) <= 10 {
+			return hash
+		}
+		return hash[:4] + "…" + hash[len(hash)-4:]
+	}
+	var words []string
+	switch {
+	case c.SHA256 != "":
+		words = append(words, "sha256 "+short(c.SHA256))
+	case c.RMD160 != "":
+		words = append(words, "rmd160 "+short(c.RMD160))
+	}
+	if c.Size != 0 {
+		words = append(words, "size "+prose.Count(int(c.Size)))
+	}
+	return strings.Join(words, "   ")
 }
 
 // Value is the checksum's value for one algorithm as a Portfile writes

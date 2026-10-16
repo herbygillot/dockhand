@@ -518,16 +518,58 @@ func (f File) Maintainers() []string {
 	return spellings
 }
 
-func expandHome(path string) (string, error) {
-	if path == "" {
-		return "", nil
+// Tilde abbreviates the home directory in a path shown to a person: ~ and
+// ~/rest. A home reached through a symbolic link is matched in its
+// resolved form too, as Git reports resolved paths.
+func Tilde(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
 	}
+	homes := []string{home}
+	if resolved, err := filepath.EvalSymlinks(home); err == nil && resolved != home {
+		homes = append(homes, resolved)
+	}
+	for _, home := range homes {
+		if path == home {
+			return "~"
+		}
+		if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+			return "~/" + rest
+		}
+	}
+	return path
+}
+
+// Absolute is a path a person gave, its leading ~ expanded, made absolute
+// against the working directory.
+func Absolute(path string) (string, error) {
+	path, err := withHome(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(path)
+}
+
+// withHome expands a path's leading ~.
+func withHome(path string) (string, error) {
 	if path == "~" || strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
 		}
 		path = filepath.Join(home, strings.TrimPrefix(path, "~"))
+	}
+	return path, nil
+}
+
+func expandHome(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	path, err := withHome(path)
+	if err != nil {
+		return "", err
 	}
 	if !filepath.IsAbs(path) {
 		return "", fmt.Errorf("%q is not an absolute path", path)

@@ -201,7 +201,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 	if agentOS != "darwin" {
 		return errors.New("serve --install makes a launchd agent, which is macOS's; elsewhere, run dockhand serve under your own service manager")
 	}
-	home, err := homeDir()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
@@ -253,7 +253,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 	if err := agent.Install(ctx, agentJob(append(arguments, flags...), environment, logs)); err != nil {
 		return err
 	}
-	fmt.Fprintf(streams.Out, "serve now starts at login and restarts if it stops.\n  Agent  %s\n  Log    %s\n", tilde(plist), tilde(logs))
+	fmt.Fprintf(streams.Out, "serve now starts at login and restarts if it stops.\n  Agent  %s\n  Log    %s\n", config.Tilde(plist), config.Tilde(logs))
 	var carried []string
 	for _, variable := range environment[1:] {
 		carried = append(carried, variable[0])

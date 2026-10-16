@@ -127,7 +127,7 @@ func (c *Coordinator) StartFor(ctx context.Context, p Process, kind model.Sessio
 		if err := tx.AddSession(record); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: now, Session: record.ID, Kind: "session.start", Level: model.LevelVerbose,
+		_, err := tx.AppendEvent(model.Event{At: now, Session: record.ID, Kind: model.EventSessionStart, Level: model.LevelVerbose,
 			Message: fmt.Sprintf("%s session started (pid %d, dockhand %s)", kind, p.PID, version)})
 		return err
 	})
@@ -218,7 +218,7 @@ func (s *Session) End(ctx context.Context) error {
 		if err := tx.UpdateSession(next); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: now, Session: next.ID, Kind: "session.end", Level: model.LevelVerbose, Message: fmt.Sprintf("%s session ended", next.Kind)})
+		_, err := tx.AppendEvent(model.Event{At: now, Session: next.ID, Kind: model.EventSessionEnd, Level: model.LevelVerbose, Message: fmt.Sprintf("%s session ended", next.Kind)})
 		return err
 	})
 	if err == nil {
@@ -303,7 +303,7 @@ func (s *Session) acquire(tx store.Tx, resource string) (model.Lease, error) {
 	if err != nil {
 		return model.Lease{}, err
 	}
-	_, err = tx.AppendEvent(model.Event{At: s.c.now(), Session: s.id, Kind: "lease.acquire", Level: model.LevelDebug,
+	_, err = tx.AppendEvent(model.Event{At: s.c.now(), Session: s.id, Kind: model.EventLeaseAcquire, Level: model.LevelDebug,
 		Message: fmt.Sprintf("%s acquired (generation %d)%s", resource, lease.Generation, reason)})
 	return lease, err
 }

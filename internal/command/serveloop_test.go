@@ -115,7 +115,7 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
 		for _, at := range []time.Time{morning.Add(-25 * time.Hour), morning.Add(-time.Hour)} {
-			if _, err := tx.AppendEvent(model.Event{At: at, Kind: engine.ServeSubmitKind, Message: "serve opened a pull request"}); err != nil {
+			if _, err := tx.AppendEvent(model.Event{At: at, Kind: model.EventServeSubmit, Message: "serve opened a pull request"}); err != nil {
 				return err
 			}
 		}

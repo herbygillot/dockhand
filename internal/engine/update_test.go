@@ -262,7 +262,7 @@ func TestUpdateEditsWorkingFilesAndCommitsNothing(t *testing.T) {
 		events, err := r.Events(0, 100)
 		require.NoError(t, err)
 		last := events[len(events)-1]
-		require.Equal(t, "branch.edit", last.Kind)
+		require.Equal(t, model.EventBranchEdit, last.Kind)
 		require.Equal(t, branch.ID, last.Branch)
 		require.Equal(t, "jq: 1.7.1 → 1.8.1 (textproc/jq/Portfile)", last.Message)
 		edits, err := r.Edits(branch.ID)

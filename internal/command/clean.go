@@ -157,32 +157,21 @@ cancel stops a check. None means another.`,
 }
 
 // cleanAutomatically is decision 36's automatic pass, as a command starts it
-// apart from itself once its own work is done: it runs when still due,
-// since another process may have run it meanwhile, stamping first so a
-// pass that fails isn't tried again at once, and says what it removed.
+// apart from itself once its own work is done, and says what it removed.
 func cleanAutomatically(ctx context.Context, e *engine.Engine, streams Streams, file config.File) error {
-	due, why := e.CleanupDue(engine.CleanupEvery, file.Cleanup.Free())
-	if !due {
-		return nil
-	}
-	if err := e.StampCleanup(); err != nil {
-		return err
-	}
 	session, err := startSession(ctx, e, model.SessionForeground)
 	if err != nil {
 		return err
 	}
 	defer session.End(context.WithoutCancel(ctx))
-	fmt.Fprintf(streams.Out, "%s cleaning up: %s\n", time.Now().Format(time.RFC3339), why.Words)
-	report, err := e.Cleanup(ctx, session, file.Cleanup.Age())
-	for _, name := range report.Caches {
-		fmt.Fprintf(streams.Out, "  removed %s from Tart's cache, unused for %s\n", name, engine.CacheUnused)
+	report, ran, err := e.CleanupIfDue(ctx, session, engine.CleanupEvery, file.Cleanup.Free(), file.Cleanup.Age(), func(why engine.CleanupReason) {
+		fmt.Fprintf(streams.Out, "%s cleaning up: %s\n", time.Now().Format(time.RFC3339), why.Words)
+	})
+	if !ran {
+		return err
 	}
-	if words := engine.LogCleanupWords(report.Logs, file.Cleanup.Age()); words != "" {
-		fmt.Fprintf(streams.Out, "  %s\n", words)
-	}
-	if words := engine.HistoryWords(report.History, report.Assessments, file.Cleanup.Age()); words != "" {
-		fmt.Fprintf(streams.Out, "  %s\n", words)
+	for _, line := range report.Words(file.Cleanup.Age()) {
+		fmt.Fprintf(streams.Out, "  %s\n", line)
 	}
 	fmt.Fprintf(streams.Out, "  removed %s\n", prose.Plural(report.Removed(), "item"))
 	return err
@@ -280,7 +269,7 @@ func writeLeftovers(out io.Writer, leftovers []engine.Leftover, done bool) int {
 // cleanWords abbreviates a worktree's path under your home.
 func cleanWords(what string) string {
 	if path, ok := strings.CutPrefix(what, "worktree "); ok {
-		return "worktree " + tilde(path)
+		return "worktree " + config.Tilde(path)
 	}
 	return what
 }

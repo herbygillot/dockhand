@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -200,4 +202,17 @@ func TestAWaitIsSaidInWords(t *testing.T) {
 		require.Equal(t, words, duration(d), d)
 	}
 	require.True(t, strings.HasPrefix(limitWords(secondaryLimit, "", time.Now(), time.Now()), "GitHub's secondary rate limit"))
+}
+
+// A command's spend counts its own requests, and its log line names them.
+func TestSpendCountsAndLogs(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "github.log")
+	t.Setenv(SpendLogVariable, log)
+	spend := StartSpend()
+	apiRequests.Add(3)
+	require.Equal(t, int64(3), spend.Requests())
+	spend.Log([]string{"status", "--refresh"})
+	data, err := os.ReadFile(log)
+	require.NoError(t, err)
+	require.Regexp(t, `^3\t\d+\tstatus --refresh\n$`, string(data))
 }

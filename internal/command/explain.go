@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 func explainCommand(streams Streams) *cobra.Command {
@@ -24,7 +25,7 @@ code, it lists them.`,
 				streams.emit(map[string]any{"codes": commitrules.Codes()})
 				for _, code := range commitrules.Codes() {
 					explanation, _ := commitrules.Explain(code)
-					fmt.Fprintf(out, "%-22s %s\n", code, firstSentence(explanation.Rule))
+					fmt.Fprintf(out, "%-22s %s\n", code, prose.FirstSentence(explanation.Rule))
 				}
 				return nil
 			}
@@ -37,43 +38,18 @@ code, it lists them.`,
 				sources = append(sources, map[string]string{"title": source.Title, "url": source.URL, "quote": source.Quote})
 			}
 			streams.emit(map[string]any{"code": explanation.Code, "rule": explanation.Rule, "sources": sources})
-			fmt.Fprintf(out, "%s\n\n%s\n", explanation.Code, wrap(explanation.Rule, 76))
+			fmt.Fprintf(out, "%s\n\n%s\n", explanation.Code, prose.Wrap(explanation.Rule, 76))
 			for _, source := range explanation.Sources {
 				fmt.Fprintf(out, "\n%s\n%s\n", source.Title, source.URL)
 				if source.Quote == "" {
 					fmt.Fprintln(out, "  (not quoted here; the link has its text)")
 					continue
 				}
-				for _, line := range strings.Split(wrap("“"+source.Quote+"”", 72), "\n") {
+				for _, line := range strings.Split(prose.Wrap("“"+source.Quote+"”", 72), "\n") {
 					fmt.Fprintf(out, "  %s\n", line)
 				}
 			}
 			return nil
 		},
 	}
-}
-
-// firstSentence is a rule's first sentence, for the list.
-func firstSentence(rule string) string {
-	if i := strings.Index(rule, ". "); i >= 0 {
-		return rule[:i+1]
-	}
-	return rule
-}
-
-// wrap breaks text into lines of at most width runes, between words.
-func wrap(text string, width int) string {
-	var lines []string
-	line := ""
-	for _, word := range strings.Fields(text) {
-		if line != "" && len([]rune(line))+1+len([]rune(word)) > width {
-			lines = append(lines, line)
-			line = ""
-		}
-		if line != "" {
-			line += " "
-		}
-		line += word
-	}
-	return strings.Join(append(lines, line), "\n")
 }

@@ -131,7 +131,7 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 		if err := tx.AddBranch(branch); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: branch.CreatedAt, Branch: branch.ID, Kind: "branch.start", Level: model.LevelVerbose,
+		_, err := tx.AppendEvent(model.Event{At: branch.CreatedAt, Branch: branch.ID, Kind: model.EventBranchStart, Level: model.LevelVerbose,
 			Message: fmt.Sprintf("started %s from master %s in %s", name, short(base), directory)})
 		return err
 	}, branchRecorded(branch.ID)); err != nil {
@@ -297,7 +297,7 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 		if err := tx.AddBranch(adoption.Branch); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: adoption.Branch.CreatedAt, Branch: adoption.Branch.ID, Kind: "branch.adopt", Level: model.LevelVerbose,
+		_, err := tx.AppendEvent(model.Event{At: adoption.Branch.CreatedAt, Branch: adoption.Branch.ID, Kind: model.EventBranchAdopt, Level: model.LevelVerbose,
 			Message: fmt.Sprintf("adopted %s: %d commits above master %s", name, adoption.Commits, short(model.ObjectID(base)))})
 		return err
 	})
@@ -394,7 +394,7 @@ func (e *Engine) placeWorktree(ctx context.Context, branch model.Branch) (model.
 			return err
 		}
 		branch = stored
-		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.worktree", Level: model.LevelInfo, Message: message})
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchWorktree, Level: model.LevelInfo, Message: message})
 		return err
 	})
 	return branch, err
@@ -413,7 +413,7 @@ func (e *Engine) carryRename(ctx context.Context, renamed model.Branch, name str
 		if err := tx.UpdateBranch(renamed); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: renamed.ID, Kind: "branch.rename", Level: model.LevelInfo,
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: renamed.ID, Kind: model.EventBranchRename, Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s was renamed %s with Git; its record carries over", old, name)})
 		return err
 	})
@@ -633,7 +633,7 @@ func (e *Engine) checkOutAgain(ctx context.Context, branch model.Branch) error {
 		return fmt.Errorf("checking %s out again in %s: %w", branch.Name, branch.Worktree, err)
 	}
 	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.worktree", Level: model.LevelInfo,
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchWorktree, Level: model.LevelInfo,
 			Message: "checked out again in " + branch.Worktree})
 		return err
 	})
@@ -754,7 +754,7 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 		if err := tx.AddBranch(adoption.Branch); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: adoption.Branch.CreatedAt, Branch: adoption.Branch.ID, Kind: "branch.adopt", Level: model.LevelInfo,
+		_, err := tx.AppendEvent(model.Event{At: adoption.Branch.CreatedAt, Branch: adoption.Branch.ID, Kind: model.EventBranchAdopt, Level: model.LevelInfo,
 			Message: fmt.Sprintf("adopted #%d by @%s as %s", number, pr.Author, name)})
 		return err
 	}, branchRecorded(adoption.Branch.ID))

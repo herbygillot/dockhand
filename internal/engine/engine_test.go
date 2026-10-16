@@ -174,7 +174,7 @@ func TestStartMakesASparseWorktreeFromFreshMaster(t *testing.T) {
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		events, err := r.Events(0, 0)
 		require.NoError(t, err)
-		require.Equal(t, "branch.start", events[len(events)-1].Kind)
+		require.Equal(t, model.EventBranchStart, events[len(events)-1].Kind)
 		return nil
 	}))
 }

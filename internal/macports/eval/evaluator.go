@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -79,10 +78,8 @@ var toolchainScript string
 func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session, macports.Runtime, error) {
 	executable := e.Executable
 	if executable == "" {
-		var err error
-		executable, err = exec.LookPath(macports.TclShell)
-		if err != nil {
-			return nil, macports.Runtime{}, fmt.Errorf("%w: %w", macports.ErrStartup, err)
+		if executable = macports.FindTclsh(); executable == "" {
+			return nil, macports.Runtime{}, fmt.Errorf("%w: %s isn't on PATH or in %s", macports.ErrStartup, macports.TclShell, filepath.Join(macports.DefaultPrefix, "bin"))
 		}
 	}
 	proc, err := shell.Start(ctx, executable, shell.WithDir(tree.Root()))

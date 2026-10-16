@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -122,9 +124,6 @@ var limitSleep = func(ctx context.Context, d time.Duration) error {
 // and nothing said which command spent them).
 var apiRequests atomic.Int64
 
-// Requests is how many requests this process has sent GitHub's API.
-func Requests() int64 { return apiRequests.Load() }
-
 // apiUsed is the last X-RateLimit-Used GitHub answered with: how much of
 // the login's hourly allowance is spent, by every process using it, which
 // GitHub's rate_limit endpoint didn't say for a fine-grained token (the
@@ -133,6 +132,37 @@ var apiUsed atomic.Int64
 
 // Used is the last X-RateLimit-Used GitHub answered this process with.
 func Used() int64 { return apiUsed.Load() }
+
+// Spend counts the requests a span of this process sends GitHub's API: a
+// command's, for its -v line and its envelope (the M1's run at 10aac0c3).
+type Spend struct{ start int64 }
+
+// StartSpend starts counting.
+func StartSpend() Spend { return Spend{start: apiRequests.Load()} }
+
+// Requests is how many requests were sent since StartSpend.
+func (s Spend) Requests() int64 { return apiRequests.Load() - s.start }
+
+// SpendLogVariable names a file each command appends a line to, --json or
+// not: how many requests it sent GitHub's API, how much of the hour's
+// allowance GitHub last said was spent, and what it was asked,
+// tab-separated, so a run can say which command spent it.
+const SpendLogVariable = "DOCKHAND_GITHUB_LOG"
+
+// Log appends a command's line where SpendLogVariable names a file;
+// one that can't be written is skipped, as a log is.
+func (s Spend) Log(args []string) {
+	path := os.Getenv(SpendLogVariable)
+	if path == "" {
+		return
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	fmt.Fprintf(file, "%d\t%d\t%s\n", s.Requests(), Used(), strings.Join(args, " "))
+}
 
 type rateLimited struct {
 	next   http.RoundTripper

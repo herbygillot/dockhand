@@ -96,7 +96,7 @@ func (h *Transitions) Settle(ctx context.Context, checkpoint model.Checkpoint, s
 		if message == "" {
 			return nil
 		}
-		_, err := tx.AppendEvent(model.Event{At: h.Now(), Branch: checkpoint.Branch, Kind: "branch." + string(checkpoint.Kind), Level: model.LevelInfo, Message: message})
+		_, err := tx.AppendEvent(model.Event{At: h.Now(), Branch: checkpoint.Branch, Kind: model.CheckpointEvent(checkpoint.Kind), Level: model.LevelInfo, Message: message})
 		return err
 	}, checkpointRecorded(&checkpoint.Number, func(recorded model.Checkpoint) bool { return recorded.State == state }))
 }
@@ -125,7 +125,7 @@ func (h *Transitions) RecordRestore(ctx context.Context, checkpoint model.Checkp
 			}
 		}
 		branch = current
-		_, err = tx.AppendEvent(model.Event{At: *checkpoint.RestoredAt, Branch: checkpoint.Branch, Kind: "branch.restore", Level: model.LevelInfo, Message: message})
+		_, err = tx.AppendEvent(model.Event{At: *checkpoint.RestoredAt, Branch: checkpoint.Branch, Kind: model.EventBranchRestore, Level: model.LevelInfo, Message: message})
 		return err
 	}, checkpointRecorded(&checkpoint.Number, func(recorded model.Checkpoint) bool { return recorded.RestoredAt != nil }))
 	return branch, err
@@ -168,7 +168,7 @@ func (h *Transitions) SetBase(tx store.Tx, id model.BranchID, base model.ObjectI
 	if checkpoint != "" {
 		message += " (checkpoint " + checkpoint + ")"
 	}
-	_, err = tx.AppendEvent(model.Event{At: h.Now(), Branch: id, Kind: "branch.rebase", Level: model.LevelInfo, Message: message})
+	_, err = tx.AppendEvent(model.Event{At: h.Now(), Branch: id, Kind: model.CheckpointEvent(model.CheckpointRebase), Level: model.LevelInfo, Message: message})
 	return err
 }
 

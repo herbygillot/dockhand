@@ -5,6 +5,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -51,8 +52,8 @@ type Options struct {
 	// sandbox, a fork of MacPorts' repository that takes pull requests
 	// within itself, so its repeatable rows open nothing at MacPorts.
 	PullRequests string
-	// Tclsh is MacPorts' port-tclsh, which evaluates Portfiles; found on
-	// PATH when empty.
+	// Tclsh is MacPorts' port-tclsh, which evaluates Portfiles;
+	// macports.FindTclsh's when empty.
 	Tclsh string
 	// Now defaults to time.Now.
 	Now func() time.Time
@@ -225,6 +226,10 @@ func (e *Engine) PullRequestRepository() string {
 func (e *Engine) Sandboxed() bool {
 	return !strings.EqualFold(e.PullRequestRepository(), UpstreamRepository)
 }
+
+// Tclsh is the port-tclsh the engine evaluates Portfiles with, and
+// empty where there's none: the one named, else this Mac's MacPorts'.
+func (e *Engine) Tclsh() string { return cmp.Or(e.options.Tclsh, macports.FindTclsh()) }
 
 // Clone is the main checkout's directory, whichever worktree the engine
 // was opened in.

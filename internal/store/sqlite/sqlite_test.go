@@ -1061,8 +1061,8 @@ func TestEventsAreAJournal(t *testing.T) {
 	f := open(t)
 	var sequences []int64
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
-		for i, kind := range []string{"run.state", "guest.clone", "target.result"} {
-			seq, err := tx.AppendEvent(model.Event{At: at.Add(time.Duration(i) * time.Second), Session: "ses_a", Run: "run_1", Kind: kind, Message: kind})
+		for i, kind := range []model.EventKind{model.EventRunState, "guest.clone", model.EventTargetResult} {
+			seq, err := tx.AppendEvent(model.Event{At: at.Add(time.Duration(i) * time.Second), Session: "ses_a", Run: "run_1", Kind: kind, Message: string(kind)})
 			if err != nil {
 				return err
 			}
@@ -1078,7 +1078,7 @@ func TestEventsAreAJournal(t *testing.T) {
 		tail, err := r.Events(sequences[0], 0)
 		require.NoError(t, err)
 		require.Len(t, tail, 2, "an observer reads what came after the last event it saw")
-		require.Equal(t, "guest.clone", tail[0].Kind)
+		require.Equal(t, model.EventKind("guest.clone"), tail[0].Kind)
 		require.Equal(t, model.LevelInfo, tail[0].Level)
 		counted, err := r.CountEvents("guest.clone", at)
 		require.NoError(t, err)
@@ -1102,7 +1102,7 @@ func TestEventsAreAJournal(t *testing.T) {
 		later, err := r.RunEvents("run_1", sequences[1], 0)
 		require.NoError(t, err)
 		require.Len(t, later, 1)
-		require.Equal(t, "target.result", later[0].Kind)
+		require.Equal(t, model.EventTargetResult, later[0].Kind)
 		last, err := r.LastEvent()
 		require.NoError(t, err)
 		require.Greater(t, last, sequences[2])

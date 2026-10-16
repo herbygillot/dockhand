@@ -337,7 +337,7 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 	}
 	var on []string
 	for _, environment := range plan.Environments {
-		on = append(on, environmentWords(environment))
+		on = append(on, engine.DescribeEnvironment(environment))
 	}
 	fmt.Fprintf(out, "Provider    %s · tests %s\n", strings.Join(on, "; "), plan.Tests)
 	writeVariants(out, plan)
@@ -382,7 +382,7 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 	// Each environment's remedy follows its last target it can't build.
 	for _, planned := range plan.Builds {
 		for i, unmet := range planned.Unmet {
-			fmt.Fprintf(out, "Not built   %s on %s: %s\n", unmet.Target, environmentWords(unmet.Environment), engine.UnmetWords(unmet))
+			fmt.Fprintf(out, "Not built   %s on %s: %s\n", unmet.Target, engine.DescribeEnvironment(unmet.Environment), engine.UnmetWords(unmet))
 			if i == len(planned.Unmet)-1 && remedy != nil {
 				if words := remedy(unmet); words != "" {
 					fmt.Fprintf(out, "            %s\n", words)
@@ -467,7 +467,7 @@ func writeOrder(out io.Writer, plan model.Plan) {
 		if i > 0 {
 			label = "           "
 		}
-		fmt.Fprintf(out, "%s on %s: %s\n", label, environmentWords(planned.Environment), names(planned.Order))
+		fmt.Fprintf(out, "%s on %s: %s\n", label, engine.DescribeEnvironment(planned.Environment), names(planned.Order))
 	}
 }
 
@@ -487,7 +487,7 @@ func writeExclusions(out io.Writer, plan model.Plan) {
 				all = append(all, excluded{name: string(exclusion.Target.ID()), reason: exclusion.Reason})
 				i = len(all) - 1
 			}
-			all[i].where = append(all[i].where, environmentWords(planned.Environment))
+			all[i].where = append(all[i].where, engine.DescribeEnvironment(planned.Environment))
 		}
 	}
 	for _, x := range all {
@@ -497,10 +497,6 @@ func writeExclusions(out io.Writer, plan model.Plan) {
 		}
 		fmt.Fprintf(out, "Excluded    %s on %s: %s\n", x.name, strings.Join(x.where, "; "), x.reason)
 	}
-}
-
-func environmentWords(environment model.Environment) string {
-	return engine.DescribeEnvironment(environment)
 }
 
 // startSession records this process's session and keeps its heartbeat.
@@ -570,9 +566,9 @@ func (j *journal) show(ctx context.Context) {
 	for _, event := range events {
 		j.last = event.Sequence
 		switch event.Kind {
-		case "progress", "target.result", "execution.retry", "execution.state":
+		case model.EventProgress, model.EventTargetResult, model.EventExecutionRetry, model.EventExecutionState:
 			fmt.Fprintf(j.out, "  %s\n", event.Message)
-		case engine.AlteredKind, engine.GoneKind:
+		case model.EventArchiveAltered, model.EventArchiveGone:
 			// A kept archive found altered, or gone, is marked, where it
 			// was in the journal alone (the rc8 full stage's D-T1).
 			fmt.Fprintf(j.out, "  ! %s\n", event.Message)
@@ -662,7 +658,7 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 				where = " at " + string(phase)
 			}
 			if len(evidence.Plan.Environments) > 1 {
-				where += " on " + environmentWords(evidence.Plan.Environments[i])
+				where += " on " + engine.DescribeEnvironment(evidence.Plan.Environments[i])
 			}
 			fmt.Fprintf(out, "%s failed%s; the last it printed:\n", target.Target.ID, where)
 			for _, line := range lines {
@@ -729,7 +725,7 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 			for i := range target.Outcomes {
 				cell := resultWords(evidence, target, i)
 				if where {
-					cell = environmentWords(environments[i]) + " " + cell
+					cell = engine.DescribeEnvironment(environments[i]) + " " + cell
 				}
 				cells = append(cells, cell)
 			}
@@ -787,7 +783,7 @@ func checkResult(ctx context.Context, e *engine.Engine, run model.Run) (checkJSO
 		return result, err
 	}
 	for _, event := range events {
-		if event.Kind == engine.AlteredKind || event.Kind == engine.GoneKind {
+		if event.Kind == model.EventArchiveAltered || event.Kind == model.EventArchiveGone {
 			result.Altered = append(result.Altered, event.Message)
 		}
 	}
@@ -891,7 +887,7 @@ func writeBaselineResults(out io.Writer, base, branch engine.Evidence, master st
 			if !planned.Builds(target.Target.ID) && theirs.Outcome != model.OutcomeFailed {
 				continue
 			}
-			fmt.Fprintf(out, "%s at master %s · %s\n", target.Target.ID, master, environmentWords(environment))
+			fmt.Fprintf(out, "%s at master %s · %s\n", target.Target.ID, master, engine.DescribeEnvironment(environment))
 			if exclusion, excluded := base.Plan.ExclusionIn(environment, target.Target.ID); excluded {
 				fmt.Fprintf(out, "  · not built at the base: %s\n", exclusion.Reason)
 				continue

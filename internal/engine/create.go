@@ -263,7 +263,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 		if err := tx.AddEdit(edit); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: request.Branch.ID, Kind: "branch.edit", Level: model.LevelInfo,
+		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: request.Branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: created %s from %s", name, portfile, request.URL)})
 		return err
 	}, editRecorded(request.Branch.ID, edit.ID)); err != nil {
@@ -393,7 +393,7 @@ func (e *Engine) moveCreated(ctx context.Context, worktree *git.Repository, bran
 		if err := tx.AddEdit(moved); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: moved.At, Branch: branch.ID, Kind: "branch.edit", Level: model.LevelInfo,
+		_, err := tx.AppendEvent(model.Event{At: moved.At, Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: moved from %s to %s", name, from, to)})
 		return err
 	}); err != nil {

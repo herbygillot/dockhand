@@ -187,7 +187,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	plan.Omitted = decision.Omitted
 	for _, cycle := range decision.Cycles {
 		plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: model.Target{Name: cycle.Ports[0]},
-			Reason: fmt.Sprintf("dependency cycle on %s: %s", describeEnvironment(cycle.Environment), strings.Join(cycle.Ports, " → "))})
+			Reason: fmt.Sprintf("dependency cycle on %s: %s", DescribeEnvironment(cycle.Environment), strings.Join(cycle.Ports, " → "))})
 	}
 	if err := e.resolveGitSources(ctx, decision.Builds); err != nil {
 		return plan, err

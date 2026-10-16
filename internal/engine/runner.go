@@ -80,7 +80,7 @@ func (e *Engine) queue(tx store.Tx, run model.Run, why string) (model.Run, error
 	if err := tx.AddRun(run); err != nil {
 		return run, err
 	}
-	_, err = tx.AppendEvent(model.Event{At: run.CreatedAt, Branch: run.Branch, Run: run.ID, Kind: "run.state", Level: model.LevelInfo,
+	_, err = tx.AppendEvent(model.Event{At: run.CreatedAt, Branch: run.Branch, Run: run.ID, Kind: model.EventRunState, Level: model.LevelInfo,
 		Message: run.Name() + " " + why})
 	return run, err
 }
@@ -125,7 +125,7 @@ func (e *Engine) RequestCancel(ctx context.Context, session *coord.Session, id m
 		if err := tx.UpdateRun(run); err != nil {
 			return err
 		}
-		_, err = tx.AppendEvent(model.Event{At: now, Session: session.ID(), Branch: run.Branch, Run: run.ID, Kind: "run.cancel", Level: model.LevelInfo, Message: run.Name() + ": cancel requested"})
+		_, err = tx.AppendEvent(model.Event{At: now, Session: session.ID(), Branch: run.Branch, Run: run.ID, Kind: model.EventRunCancel, Level: model.LevelInfo, Message: run.Name() + ": cancel requested"})
 		return err
 	})
 	if err != nil || run.State.Terminal() {
@@ -170,7 +170,7 @@ func (e *Engine) finishCanceled(ctx context.Context, session *coord.Session, lea
 		if err := tx.UpdateRun(run); err != nil {
 			return err
 		}
-		_, err = session.Emit(tx, model.Event{Branch: run.Branch, Run: run.ID, Kind: "run.state", Level: model.LevelInfo, Message: run.Name() + " canceled"})
+		_, err = session.Emit(tx, model.Event{Branch: run.Branch, Run: run.ID, Kind: model.EventRunState, Level: model.LevelInfo, Message: run.Name() + " canceled"})
 		return err
 	})
 	return run, err
@@ -243,7 +243,7 @@ func (d *driver) anotherCanReuse(ctx context.Context, environment model.Environm
 	return false
 }
 
-func (d *driver) emit(ctx context.Context, kind, message string) {
+func (d *driver) emit(ctx context.Context, kind model.EventKind, message string) {
 	_ = d.fenced(ctx, func(tx store.Tx) error {
 		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: kind, Level: model.LevelInfo, Message: message})
 		return err
@@ -278,7 +278,7 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 			if err := tx.UpdateRun(d.run); err != nil {
 				return err
 			}
-			_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: "run.state", Level: model.LevelInfo, Message: d.run.Name() + " running"})
+			_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventRunState, Level: model.LevelInfo, Message: d.run.Name() + " running"})
 			return err
 		}); err != nil {
 			return d.run, err
@@ -347,7 +347,7 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 	// that follows (the assessment design, D). It never fails the check:
 	// what it couldn't do, its assessment says.
 	if _, err := e.revisionAssessments(ctx, d.run.Branch, revision.Source.Base, revision.Source.Tree, true); err != nil {
-		d.emit(ctx, "progress", "upstream's change couldn't be assessed: "+err.Error())
+		d.emit(ctx, model.EventProgress, "upstream's change couldn't be assessed: "+err.Error())
 	}
 	return d.finish(context.WithoutCancel(ctx))
 }
@@ -394,9 +394,9 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 	// so it can't report to itself. Every report says which environment
 	// it's about, the verbose ones too, since two stage at once.
 	kept := ctx
-	ctx = progress.Keep(progress.Within(ctx, describeEnvironment(environment)), func(update progress.Update) {
+	ctx = progress.Keep(progress.Within(ctx, DescribeEnvironment(environment)), func(update progress.Update) {
 		if update.Level == progress.Info {
-			d.emit(kept, "progress", update.Message)
+			d.emit(kept, model.EventProgress, update.Message)
 		}
 	})
 	for {
@@ -459,7 +459,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			return nil
 		}
 		if attempt >= model.MaxAttempts {
-			d.problem(fmt.Sprintf("%s failed %d times for reasons of its own; see dockhand logs %s", describeEnvironment(environment), attempt, d.run.Name()))
+			d.problem(fmt.Sprintf("%s failed %d times for reasons of its own; see dockhand logs %s", DescribeEnvironment(environment), attempt, d.run.Name()))
 			return nil
 		}
 		// The environment's identity is read once for the attempt. Reuse
@@ -498,7 +498,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			// this one's building everything reads as a fault unless it's
 			// said: a GitHub run records neither what its runner is nor
 			// what the build read (the gh rebase's finding 1).
-			d.emit(ctx, "execution.state", fmt.Sprintf("%s: %s: builds every target, since its provider doesn't say what the environment is, so no earlier result can be reused there", d.run.Name(), describeEnvironment(environment)))
+			d.emit(ctx, model.EventExecutionState, fmt.Sprintf("%s: %s: builds every target, since its provider doesn't say what the environment is, so no earlier result can be reused there", d.run.Name(), DescribeEnvironment(environment)))
 		}
 		if attempt == 0 {
 			choice, err := d.reusable(ctx, identity, targets, paths, revision.Source.Tree)
@@ -522,8 +522,8 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			if err := tx.UpdateExecution(execution); err != nil {
 				return err
 			}
-			_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: "execution.state", Level: model.LevelInfo,
-				Message: fmt.Sprintf("%s: attempt %d of %d on %s, run %s", d.run.Name(), execution.Attempt, model.MaxAttempts, describeEnvironment(environment), execution.ID)})
+			_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventExecutionState, Level: model.LevelInfo,
+				Message: fmt.Sprintf("%s: attempt %d of %d on %s, run %s", d.run.Name(), execution.Attempt, model.MaxAttempts, DescribeEnvironment(environment), execution.ID)})
 			return err
 		}); err != nil {
 			return err
@@ -592,7 +592,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
 				return err
 			}
-			d.problem(fmt.Sprintf("%s: %v; another attempt won't fix it, so none was made", describeEnvironment(environment), err))
+			d.problem(fmt.Sprintf("%s: %v; another attempt won't fix it, so none was made", DescribeEnvironment(environment), err))
 			return nil
 		case errors.Is(err, buildenv.ErrDockhandFault):
 			// A fault in dockhand's own handling, as a guest program
@@ -603,12 +603,12 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 				return err
 			}
 			fault := strings.TrimPrefix(err.Error(), buildenv.ErrDockhandFault.Error()+": ")
-			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", describeEnvironment(environment), fault))
+			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", DescribeEnvironment(environment), fault))
 			return nil
 		case err != nil:
 			// Infrastructure trouble, and what no provider classified, is
 			// tried again.
-			d.emit(ctx, "execution.retry", fmt.Sprintf("%s: %v", describeEnvironment(environment), err))
+			d.emit(ctx, model.EventExecutionRetry, fmt.Sprintf("%s: %v", DescribeEnvironment(environment), err))
 			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
 				return err
 			}
@@ -626,7 +626,7 @@ func (d *driver) unreadIdentity(ctx context.Context, environment model.Environme
 		return err
 	}
 	detail := "couldn't read what the environment is: " + cause.Error()
-	d.emit(ctx, "execution.retry", fmt.Sprintf("%s: %s", describeEnvironment(environment), detail))
+	d.emit(ctx, model.EventExecutionRetry, fmt.Sprintf("%s: %s", DescribeEnvironment(environment), detail))
 	return d.endExecution(ctx, execution, model.ExecutionInfrastructure, detail)
 }
 
@@ -661,7 +661,7 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 					failed = append(failed, name)
 				}
 			case model.OutcomeUnmet:
-				problem := fmt.Sprintf("%s isn't built on %s: it %s", name, describeEnvironment(d.plan.Environments[i]), UnmetWords(result.Unmet))
+				problem := fmt.Sprintf("%s isn't built on %s: it %s", name, DescribeEnvironment(d.plan.Environments[i]), UnmetWords(result.Unmet))
 				if remedy := d.e.Remedy(result.Unmet); remedy != "" {
 					problem += "; " + remedy
 				}
@@ -690,14 +690,14 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 		if err := tx.UpdateRun(d.run); err != nil {
 			return err
 		}
-		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: "run.state", Level: model.LevelInfo, Message: fmt.Sprintf("%s %s: %s", d.run.Name(), state, detail)})
+		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventRunState, Level: model.LevelInfo, Message: fmt.Sprintf("%s %s: %s", d.run.Name(), state, detail)})
 		return err
 	})
 	if err == nil {
 		// Its logs are kept compressed from now on (D6); one that can't be
 		// is said, and cleanup tries again.
 		if _, compressErr := buildlog.CompressAll(filepath.Join(d.e.LogDirectory(), d.run.Name())); compressErr != nil {
-			d.emit(ctx, "progress", fmt.Sprintf("%s's logs couldn't be compressed, which cleanup tries again: %v", d.run.Name(), compressErr))
+			d.emit(ctx, model.EventProgress, fmt.Sprintf("%s's logs couldn't be compressed, which cleanup tries again: %v", d.run.Name(), compressErr))
 		}
 	}
 	return d.run, err
@@ -834,11 +834,11 @@ func (b *build) Record(result model.TargetResult) error {
 		if err := tx.RecordResult(result); err != nil {
 			return err
 		}
-		message := fmt.Sprintf("%s: %s %s", describeEnvironment(b.execution.Environment), result.Target, result.Outcome)
+		message := fmt.Sprintf("%s: %s %s", DescribeEnvironment(b.execution.Environment), result.Target, result.Outcome)
 		if result.Phase != "" {
 			message += " at " + string(result.Phase)
 		}
-		_, err := b.d.session.Emit(tx, model.Event{Branch: b.d.run.Branch, Run: b.d.run.ID, Target: result.Target, Kind: "target.result", Level: model.LevelInfo, Message: message})
+		_, err := b.d.session.Emit(tx, model.Event{Branch: b.d.run.Branch, Run: b.d.run.ID, Target: result.Target, Kind: model.EventTargetResult, Level: model.LevelInfo, Message: message})
 		return err
 	})
 	if err == nil {
@@ -889,7 +889,7 @@ func (b *build) Observe(observed model.Observed) error {
 }
 
 func (b *build) Progress(message string) {
-	b.d.emit(b.ctx, "progress", describeEnvironment(b.execution.Environment)+": "+message)
+	b.d.emit(b.ctx, model.EventProgress, DescribeEnvironment(b.execution.Environment)+": "+message)
 }
 
 // withCause adds to a failure's detail what its log most likely says made

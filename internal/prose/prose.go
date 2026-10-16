@@ -84,3 +84,46 @@ func And(words []string) string {
 	}
 	return strings.Join(words[:len(words)-1], ", ") + ", and " + words[len(words)-1]
 }
+
+// FirstSentence is text's first sentence, up to its first ". ".
+func FirstSentence(text string) string {
+	if i := strings.Index(text, ". "); i >= 0 {
+		return text[:i+1]
+	}
+	return text
+}
+
+// FirstLine is text's first line.
+func FirstLine(text string) string {
+	line, _, _ := strings.Cut(text, "\n")
+	return line
+}
+
+// Wrap breaks text into lines of at most width runes, between words.
+func Wrap(text string, width int) string {
+	var lines []string
+	line := ""
+	for _, word := range strings.Fields(text) {
+		if line != "" && len([]rune(line))+1+len([]rune(word)) > width {
+			lines = append(lines, line)
+			line = ""
+		}
+		if line != "" {
+			line += " "
+		}
+		line += word
+	}
+	return strings.Join(append(lines, line), "\n")
+}
+
+// LastLines are the last n lines of a program's output that say anything,
+// trimmed, its progress redrawn with carriage returns counted as lines.
+func LastLines(output string, n int) []string {
+	var lines []string
+	for line := range strings.SplitSeq(strings.ReplaceAll(output, "\r", "\n"), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines[max(0, len(lines)-n):]
+}

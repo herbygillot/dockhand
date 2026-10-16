@@ -162,7 +162,7 @@ type Reader interface {
 	RunEvents(run model.RunID, after int64, limit int) ([]model.Event, error)
 	LastEvent() (int64, error)
 	// CountEvents counts the events of a kind journaled at or after a time.
-	CountEvents(kind string, since time.Time) (int, error)
+	CountEvents(kind model.EventKind, since time.Time) (int, error)
 
 	// Edits lists a branch's authoring records, oldest first.
 	Edits(branch model.BranchID) ([]model.Edit, error)

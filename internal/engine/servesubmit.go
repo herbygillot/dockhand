@@ -401,7 +401,7 @@ func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (
 		return submitted, err
 	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: candidate.Branch.ID, Kind: ServeSubmitKind, Level: model.LevelInfo,
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: candidate.Branch.ID, Kind: model.EventServeSubmit, Level: model.LevelInfo,
 			Message: fmt.Sprintf("serve opened #%d for %s, which passed its check", submitted.PullRequest.Ref.Number, candidate.Branch.ShortName())})
 		return err
 	})

@@ -104,7 +104,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	}
 	if len(report.Indexes) > 0 {
 		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo,
+			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: model.EventCleanup, Level: model.LevelInfo,
 				Message: fmt.Sprintf("removed %s unused for %s", prose.Plural(len(report.Indexes), "port index generation"), after)})
 			return err
 		})
@@ -127,7 +127,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	}
 	if len(report.Caches) > 0 {
 		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo,
+			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: model.EventCleanup, Level: model.LevelInfo,
 				Message: fmt.Sprintf("removed %s unused for %s: %s", prose.Plural(len(report.Caches), "cached image"), CacheUnused, strings.Join(report.Caches, ", "))})
 			return err
 		})
@@ -142,7 +142,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	}
 	if logs := report.Logs; len(logs.Removed) > 0 || logs.Compressed.Logs > 0 {
 		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo, Message: LogCleanupWords(logs, after)})
+			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: model.EventCleanup, Level: model.LevelInfo, Message: LogCleanupWords(logs, after)})
 			return err
 		})
 		if err != nil {
@@ -182,7 +182,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 		if report.History == (store.Pruned{}) && report.Assessments == 0 {
 			return nil
 		}
-		_, err = tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo, Message: HistoryWords(report.History, report.Assessments, after)})
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Kind: model.EventCleanup, Level: model.LevelInfo, Message: HistoryWords(report.History, report.Assessments, after)})
 		return err
 	})
 	if err != nil {
@@ -200,7 +200,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	}
 	if len(removedArchives) > 0 {
 		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo,
+			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: model.EventCleanup, Level: model.LevelInfo,
 				Message: fmt.Sprintf("removed %s, %s, that neither reuse nor an open branch's newest results name; %s kept, %s", prose.Plural(len(removedArchives), "kept archive"), archiveBytes(removedArchives),
 					prose.Plural(len(keptArchives), "archive"), archiveBytes(keptArchives))})
 			return err
@@ -226,7 +226,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 		if err != nil || report.Events+report.Sessions == 0 {
 			return err
 		}
-		_, err = tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelVerbose,
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Kind: model.EventCleanup, Level: model.LevelVerbose,
 			Message: fmt.Sprintf("pruned %s and %s older than %s from the journal", prose.Plural(report.Events, "event"), prose.Plural(report.Sessions, "session"), after)})
 		return err
 	})
@@ -294,4 +294,39 @@ const LowSpacePause = time.Hour
 // runs, so one that fails isn't tried again at once.
 func (e *Engine) StampCleanup() error {
 	return e.stampServeFile("cleanup.stamp", e.now())
+}
+
+// CleanupIfDue is decision 36's automatic pass, which serve and a
+// command's background clean both run: it cleans up where cleanup is
+// still due, since another process may have run it meanwhile, stamping
+// first, so a pass that fails isn't tried again at once but the next day.
+// starting is told why before it begins. ran is false where it wasn't due,
+// or couldn't be stamped, which err says.
+func (e *Engine) CleanupIfDue(ctx context.Context, session *coord.Session, every time.Duration, minFree uint64, after time.Duration, starting func(CleanupReason)) (report CleanupReport, ran bool, err error) {
+	due, why := e.CleanupDue(every, minFree)
+	if !due {
+		return CleanupReport{}, false, nil
+	}
+	if err := e.StampCleanup(); err != nil {
+		return CleanupReport{}, false, err
+	}
+	starting(why)
+	report, err = e.Cleanup(ctx, session, after)
+	return report, true, err
+}
+
+// Words are what a cleanup removed of caches, logs, and history, a line
+// each, as serve and the background clean both say it.
+func (r CleanupReport) Words(after time.Duration) []string {
+	var lines []string
+	for _, name := range r.Caches {
+		lines = append(lines, fmt.Sprintf("removed %s from Tart's cache, unused for %s", name, CacheUnused))
+	}
+	if words := LogCleanupWords(r.Logs, after); words != "" {
+		lines = append(lines, words)
+	}
+	if words := HistoryWords(r.History, r.Assessments, after); words != "" {
+		lines = append(lines, words)
+	}
+	return lines
 }

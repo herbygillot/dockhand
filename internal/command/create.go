@@ -159,7 +159,7 @@ its go-get answer.`,
 			}
 			switch {
 			case created.ChecksumsProblem != "":
-				fmt.Fprintf(out, "  checksums: not filled in: %s\n    dockhand checksums %s fills them in once that is fixed\n", firstLine(created.ChecksumsProblem), created.Port)
+				fmt.Fprintf(out, "  checksums: not filled in: %s\n    dockhand checksums %s fills them in once that is fixed\n", prose.FirstLine(created.ChecksumsProblem), created.Port)
 			case created.Checksums != nil && created.Checksums.Distfiles > 0:
 				what := prose.Plural(created.Checksums.Distfiles, "distfile")
 				if created.Crates > 0 {
@@ -210,11 +210,6 @@ func buildWords(observed engine.Observed) string {
 		return observed.Build.Language()
 	}
 	return fmt.Sprintf("%s (%s)", observed.Build.Language(), observed.Build.Evidence)
-}
-
-func firstLine(text string) string {
-	line, _, _ := strings.Cut(text, "\n")
-	return line
 }
 
 type createdJSON struct {

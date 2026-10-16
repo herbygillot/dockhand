@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
@@ -290,7 +291,7 @@ func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch mod
 	if !proposal.Keep {
 		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), describeWork(proposal))
 		streams.emit(tidyView(proposal))
-		writeTidyPlan(out, proposal)
+		writeTidyPlan(out, proposal, false)
 		applied, err := decideTidy(ctx, e, streams, proposal, false, linked.yes, "")
 		if err != nil {
 			return fmt.Errorf("%w; nothing was checked or submitted", err)
@@ -623,7 +624,7 @@ func announce(out io.Writer, branch model.Branch, started bool) {
 	if started {
 		fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
 	}
-	fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), tilde(branch.Worktree))
+	fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), config.Tilde(branch.Worktree))
 }
 
 // byHand says that dockhand can't make the edit by itself, why, and how
@@ -700,30 +701,8 @@ func writeStealth(out io.Writer, stealth *engine.Stealth) {
 		if len(stealth.Distfiles) > 1 {
 			fmt.Fprintf(out, "  %s\n", distfile.Name)
 		}
-		fmt.Fprintf(out, "  was   %s\n  now   %s\n", checksumWords(distfile.Was), checksumWords(distfile.Now))
+		fmt.Fprintf(out, "  was   %s\n  now   %s\n", distfile.Was.Words(), distfile.Now.Words())
 	}
-}
-
-// checksumWords is a checksum as a person compares it: sha256, shortened,
-// and the size, else rmd160.
-func checksumWords(sum portfile.Checksum) string {
-	short := func(hash string) string {
-		if len(hash) <= 10 {
-			return hash
-		}
-		return hash[:4] + "…" + hash[len(hash)-4:]
-	}
-	var words []string
-	switch {
-	case sum.SHA256 != "":
-		words = append(words, "sha256 "+short(sum.SHA256))
-	case sum.RMD160 != "":
-		words = append(words, "rmd160 "+short(sum.RMD160))
-	}
-	if sum.Size != 0 {
-		words = append(words, "size "+prose.Count(int(sum.Size)))
-	}
-	return strings.Join(words, "   ")
 }
 
 // revbumpLinked has the engine bump the revision of the ports that link

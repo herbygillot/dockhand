@@ -162,7 +162,7 @@ func (t *tx) PruneJournal(before time.Time) (int, int, error) {
 // alone.
 const countEventsQuery = "SELECT count(*) FROM events WHERE repository_id=? AND kind=? AND at>=?"
 
-func (t *tx) CountEvents(kind string, since time.Time) (int, error) {
+func (t *tx) CountEvents(kind model.EventKind, since time.Time) (int, error) {
 	var count int
 	err := t.conn.QueryRowContext(t.ctx, countEventsQuery, t.repo, kind, millis(since)).Scan(&count)
 	return count, storageError(err)
