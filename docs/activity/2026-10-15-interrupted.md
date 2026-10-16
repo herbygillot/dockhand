@@ -25,8 +25,8 @@ asked for it to be wired up rather than deleted.
   It reads "· interrupted" where every attempt was lost.
 
 GitHub and the command provider can't say what was building when a run is
-lost, so they record nothing new. `OutcomeUnevaluated` stays unproduced, as
-the cleanup's pull request lists.
+lost, so they record nothing new. `OutcomeUnevaluated`, which nothing
+produced either, went the next day ([note](2026-10-16-bridges-and-unproduced.md)).
 
 Tests: `TestTheGuestSaysWhatItIsBuilding`,
 `TestTheTargetALostGuestWasBuildingIsInterrupted`, and
