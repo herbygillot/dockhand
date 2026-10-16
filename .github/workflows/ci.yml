@@ -10,7 +10,7 @@ permissions:
 jobs:
   check:
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
@@ -38,7 +38,17 @@ jobs:
         run: .github/scripts/macports.sh
 
       - name: Test
-        run: make test
+        run: make test COMMAND_SHARDS=2
+
+      # Timing experiment, not for main: the slow packages one at a time,
+      # with nothing beside them, and each one's slowest tests.
+      - name: Timing
+        run: |
+          for p in ./internal/editprep ./internal/macports/portedit ./internal/engine ./internal/macports/eval; do
+            GOFLAGS=-mod=vendor go test -count=1 -json -timeout 40m "$p" > timing.json || true
+            jq -r 'select(.Test==null and (.Action=="pass" or .Action=="fail")) | "PACKAGE \(.Action) \(.Elapsed)s \(.Package)"' timing.json
+            jq -r 'select(.Test!=null and (.Test|contains("/")|not) and (.Action=="pass" or .Action=="fail")) | "\(.Elapsed)\t\(.Test)"' timing.json | sort -rn | head -10
+          done
 
       - name: Acceptance harness self-test
         run: make acceptance-selftest
@@ -71,7 +81,7 @@ jobs:
     # The suite takes about 20 minutes here, and Prepare's update builds
     # a PortIndex of the whole tree, about 20 more: 40 cancelled one run
     # in its last minute (3316ae31), and another finished 45 seconds short.
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Check out repository
@@ -87,7 +97,17 @@ jobs:
         run: .github/scripts/macports.sh
 
       - name: Test
-        run: make test
+        run: make test COMMAND_SHARDS=2
+
+      # Timing experiment, not for main: the slow packages one at a time,
+      # with nothing beside them, and each one's slowest tests.
+      - name: Timing
+        run: |
+          for p in ./internal/editprep ./internal/macports/portedit ./internal/engine ./internal/macports/eval; do
+            GOFLAGS=-mod=vendor go test -count=1 -json -timeout 40m "$p" > timing.json || true
+            jq -r 'select(.Test==null and (.Action=="pass" or .Action=="fail")) | "PACKAGE \(.Action) \(.Elapsed)s \(.Package)"' timing.json
+            jq -r 'select(.Test!=null and (.Test|contains("/")|not) and (.Action=="pass" or .Action=="fail")) | "\(.Elapsed)\t\(.Test)"' timing.json | sort -rn | head -10
+          done
 
       - name: Build
         run: make build
