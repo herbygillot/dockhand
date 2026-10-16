@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -83,66 +84,58 @@ func onIntel(t *testing.T) {
 // rather than to install Tart (the Intel CI job, 2026-10-03).
 func TestAnIntelMacChecksOnGitHub(t *testing.T) {
 	onIntel(t)
-	out, _, err := dockhand(t, "providers")
-	require.NoError(t, err)
+	out := providers(t)
 	require.Contains(t, out, "tart     · needs Apple silicon; checks here build on GitHub, with --on github\n")
-	_, _, err = dockhand(t, "providers", "setup", "tart")
+	_, _, err := dockhand(t, "setup", "tart")
 	require.ErrorContains(t, err, "Tart's macOS images need Apple silicon, and this Mac isn't; checks here build on GitHub, with --on github")
 }
 
-func TestProvidersWithoutTart(t *testing.T) {
-	out, _, err := dockhand(t, "providers")
-	require.NoError(t, err)
+func TestProviderLinesWithoutTart(t *testing.T) {
+	out := providers(t)
 	require.Equal(t, "tart     · needs Tart: sudo port install tart, then dockhand setup tart\n"+
 		"github   · needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n", out)
 
-	_, _, err = dockhand(t, "providers", "setup", "tart")
+	_, _, err := dockhand(t, "setup", "tart")
 	require.ErrorContains(t, err, "Tart isn't installed: sudo port install tart")
 }
 
-func TestProvidersShowTheImages(t *testing.T) {
+func TestProviderLinesShowTheImages(t *testing.T) {
 	images := &fakeImages{}
 	useImages(t, images)
 	images.status = tart.Status{Host: release(t, "tahoe")}
-	out, _, err := dockhand(t, "providers")
-	require.NoError(t, err)
+	out := providers(t)
 	require.Contains(t, out, "tart     · not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n")
 
 	// An Xcode image made without the plain one is said (the rc1 full
 	// stage's A2).
 	images.status.Xcode = []macos.Release{release(t, "tahoe")}
-	out, _, err = dockhand(t, "providers")
-	require.NoError(t, err)
+	out = providers(t)
 	require.Contains(t, out, "tart     · Xcode image for macOS 26 ready; no plain image, which a check needs beside it: dockhand setup tart   (macOS 26, up to 60 GB)\n")
 	images.status.Xcode = nil
 
 	images.status.Base = []macos.Release{release(t, "sonoma"), release(t, "sequoia")}
-	out, _, err = dockhand(t, "providers")
-	require.NoError(t, err)
+	out = providers(t)
 	require.Contains(t, out, "tart     ✓ images for macOS 14, 15; none for this Mac's macOS 26: dockhand setup tart\n")
 
 	images.status.Base = append(images.status.Base, release(t, "tahoe"))
-	out, _, err = dockhand(t, "providers")
-	require.NoError(t, err)
+	out = providers(t)
 	require.Contains(t, out, "tart     ✓ images for macOS 14, 15, 26\n")
 
 	images.status.Xcode = []macos.Release{release(t, "tahoe")}
-	out, _, err = dockhand(t, "providers")
-	require.NoError(t, err)
+	out = providers(t)
 	require.Contains(t, out, "tart     ✓ images for macOS 14, 15, 26, with Xcode for 26\n")
 
+	// A provider that can't say is shown, not fatal.
 	images.err = errors.New("listing dockhand's Tart images: tart list failed")
-	out, _, err = dockhand(t, "providers")
-	require.NoError(t, err, "a provider that can't say is shown, not fatal")
+	out = providers(t)
 	require.Contains(t, out, "tart     ! listing dockhand's Tart images: tart list failed\n")
 }
 
-func TestProvidersShowACommandProvider(t *testing.T) {
+func TestProviderLinesShowACommandProvider(t *testing.T) {
 	w := newWorld(t)
 	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[providers.command]\nrun = \"~/bin/build-ports\"\nname = \"my build box\"\n"), 0o644))
-	out, _, err := dockhand(t, "providers")
-	require.NoError(t, err)
+	out := providers(t)
 	require.Contains(t, out, "command  ✓ my build box: ~/bin/build-ports\n")
 }
 
@@ -150,7 +143,7 @@ func TestSetupTart(t *testing.T) {
 	images := &fakeImages{result: tart.SetupResult{Image: "dockhand-base-sonoma", Release: release(t, "sonoma"),
 		MacPorts: tart.DefaultMacPorts, CommandLineTools: "16.2.0.0.1.1733547573"}}
 	useImages(t, images)
-	out, _, err := dockhand(t, "providers", "setup", "tart", "sonoma", "--macports-version", "2.12.5")
+	out, _, err := dockhand(t, "setup", "tart", "sonoma", "--macports-version", "2.12.5")
 	require.NoError(t, err)
 	require.Equal(t, []tart.SetupOptions{{Release: "sonoma", MacPortsVersion: "2.12.5"}}, images.asked)
 	require.Contains(t, out, "Checking Tart images for Sonoma...\n", "the provisioner's progress is shown")
@@ -158,28 +151,28 @@ func TestSetupTart(t *testing.T) {
 	require.Contains(t, out, "Checks build on it with --on tart:sonoma.\n")
 
 	images.result.Reused = true
-	out, _, err = dockhand(t, "providers", "setup", "tart", "--check")
+	out, _, err = dockhand(t, "setup", "tart", "--check")
 	require.NoError(t, err)
 	require.Equal(t, tart.SetupOptions{Check: true}, images.asked[1], "no release is this Mac's")
 	require.Contains(t, out, "Ready: dockhand-base-sonoma, macOS 14 (Sonoma) with Command Line Tools 16.2.0.0.1.1733547573 and MacPorts "+tart.DefaultMacPorts+", checked in a disposable clone.\n")
 
 	images.result = tart.SetupResult{Image: "dockhand-xcode-tahoe", Release: release(t, "tahoe"), MacPorts: tart.DefaultMacPorts, CommandLineTools: "26.6", Xcode: "26.1"}
-	out, _, err = dockhand(t, "providers", "setup", "tart", "tahoe", "--xcode", "/Volumes/Xcodes")
+	out, _, err = dockhand(t, "setup", "tart", "tahoe", "--xcode", "/Volumes/Xcodes")
 	require.NoError(t, err)
 	require.Equal(t, tart.SetupOptions{Release: "tahoe", Xcode: "/Volumes/Xcodes"}, images.asked[2])
 	require.Contains(t, out, "Made dockhand-xcode-tahoe: macOS 26 (Tahoe) with Xcode 26.1, Command Line Tools 26.6, and MacPorts "+tart.DefaultMacPorts+".\n")
 
 	images.err = errors.New("setup: image dockhand-base-sonoma failed validation")
-	_, _, err = dockhand(t, "providers", "setup", "tart", "--rebuild")
+	_, _, err = dockhand(t, "setup", "tart", "--rebuild")
 	require.ErrorContains(t, err, "failed validation")
 	require.Equal(t, tart.SetupOptions{Rebuild: true}, images.asked[3])
 }
 
-func TestInitShowsTheProviders(t *testing.T) {
+func TestSetupShowsTheProviders(t *testing.T) {
 	newWorld(t)
 	images := &fakeImages{status: tart.Status{Host: release(t, "tahoe")}}
 	useImages(t, images)
-	out, _, err := dockhand(t, "init")
+	out, _, err := dockhand(t, "setup", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Providers    tart     · not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n"+
 		"               github   · needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n"+
@@ -222,7 +215,7 @@ func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
 		MacPorts: tart.DefaultMacPorts, CommandLineTools: "16.2", Xcode: "15.4"}}
 	useImages(t, images)
 	var out, errs bytes.Buffer
-	err := Run(t.Context(), []string{"providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
+	err := Run(t.Context(), []string{"setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err, errs.String())
 	require.Equal(t, []string{"15.4"}, images.downloaded)
 	require.Len(t, images.asked, 2, "setup runs again once it's downloaded")
@@ -233,14 +226,14 @@ func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
 
 	images.errs, images.downloaded = []error{missing}, nil
 	out.Reset()
-	err = Run(t.Context(), []string{"providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes"}, Streams{In: strings.NewReader("n\n"), Out: &out, Err: &errs, interactive: true})
+	err = Run(t.Context(), []string{"setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes"}, Streams{In: strings.NewReader("n\n"), Out: &out, Err: &errs, interactive: true})
 	require.ErrorContains(t, err, "Sonoma's Xcode is 15.4", "declined")
 	require.Empty(t, images.downloaded)
 
 	// Without a terminal, setup downloads with the sign-in xcodes keeps,
 	// and shows what xcodes said when it can't.
 	images.errs = []error{missing}
-	out2, _, err := dockhand(t, "providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
+	out2, _, err := dockhand(t, "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
 	require.NoError(t, err)
 	require.Equal(t, []string{"15.4"}, images.downloaded)
 	require.Contains(t, out2, "Downloading Xcode 15.4 with xcodes...\n")
@@ -248,13 +241,24 @@ func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
 
 	images.errs, images.downloaded = []error{missing}, nil
 	images.failure = "Apple ID: Missing username or a password. Please try again.\n"
-	_, _, err = dockhand(t, "providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
+	_, _, err = dockhand(t, "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
 	require.ErrorIs(t, err, tart.ErrXcodes)
 	require.ErrorContains(t, err, "xcodes said:\n  Apple ID: Missing username or a password. Please try again.\n")
 	require.ErrorContains(t, err, "If it needs you to sign in, run it once at a terminal: xcodes download 15.4 --directory /Volumes/Xcodes")
 
 	images.errs, images.xcodes, images.failure = []error{missing}, false, ""
-	_, _, err = dockhand(t, "providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
+	_, _, err = dockhand(t, "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
 	require.ErrorContains(t, err, "download Xcode 15.4 from https://developer.apple.com/download/all/; or install xcodes (sudo port install xcodes), and setup downloads it with your Apple ID")
 	require.Len(t, images.downloaded, 1, "only what xcodes was asked for")
+}
+
+// providers is setup's Providers rows, as the configuration file has them,
+// one a line.
+func providers(t *testing.T) string {
+	t.Helper()
+	path, err := config.Path()
+	require.NoError(t, err)
+	file, err := config.Load(path)
+	require.NoError(t, err)
+	return strings.Join(providerLines(t.Context(), file), "\n") + "\n"
 }

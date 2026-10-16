@@ -143,7 +143,7 @@ func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 	_, _, err = dockhand(t, "tidy", "--apply", file)
 	require.ErrorContains(t, err, "it has new commits")
 
-	_, _, err = dockhand(t, "restore", "tidy-1")
+	_, _, err = dockhand(t, "undo", "tidy-1")
 	require.NoError(t, err)
 	var buffer, errs bytes.Buffer
 	err = Run(t.Context(), []string{"tidy"}, Streams{In: strings.NewReader("g\n1+3\ng\n1+2\na\n"), Out: &buffer, Err: &errs, interactive: true})

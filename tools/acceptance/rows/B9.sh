@@ -1,6 +1,6 @@
 # stages: full
 # B9: the Intel user's path, on Apple silicon with no Tart set up: with
-# check.on = ["github"], update, check, tidy and submit. providers and
+# check.on = ["github"], update, check, tidy and submit. setup and
 # check say there's no on-host provider and point to --on github; the
 # check runs MacPorts' workflow in the fork and reads back; the
 # dockhand-check/ branch is removed.
@@ -25,7 +25,7 @@ act() {
 	host_only "a fork with Actions, before Tart's setup" || return 0
 	allow_change "*"
 	allow_push "*dockhand-check/*"
-	dh providers || :
+	dh setup --yes || :
 	printf '\n[check]\non = ["github"]\n' >>"$DOCKHAND_CONFIG"
 	dh_setup update "$(port)" --new || return 0
 	B9_BRANCH=$(own_branch)

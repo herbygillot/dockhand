@@ -95,11 +95,11 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	require.Equal(t, "secret-token", saved.Access)
 
 	// The rest keeps the GitHub CLI out of reach, so a login it has on
-	// this machine can't stand in; init needs git, though.
+	// this machine can't stand in; setup needs git, though.
 	emptyPath := os.Getenv("PATH")
 	t.Setenv("PATH", path)
 	newWorld(t)
-	out, _, err = dockhand(t, "init")
+	out, _, err = dockhand(t, "setup", "--yes")
 	require.NoError(t, err)
 	until := time.Now().AddDate(0, 6, 0).Format("2 January 2006")
 	require.Contains(t, out, "  Publishing   ✓ ada, from dockhand's login in the Keychain, renewing itself until "+until+"\n")

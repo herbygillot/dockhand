@@ -65,9 +65,9 @@ func dockhand(t *testing.T, args ...string) (string, string, error) {
 	return out.String(), errs.String(), err
 }
 
-func TestInitStartPathAndAdopt(t *testing.T) {
+func TestSetupStartPathAndAdopt(t *testing.T) {
 	w := newWorld(t)
-	out, _, err := dockhand(t, "init")
+	out, _, err := dockhand(t, "setup", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "Using ~/src/macports-ports; it has no remote for macports/macports-ports")
 	require.Regexp(t, `\n  Git          ✓ \d+\.\d+\.\d+ at \S+/git\n`, out)
@@ -109,10 +109,10 @@ func TestInitStartPathAndAdopt(t *testing.T) {
 	require.Regexp(t, `^Adopted edits-only: 0 commits above master [0-9a-f]{7}, with edits not yet committed to jq and _resources\.\n`, out)
 }
 
-func TestInitRemembersAChosenWorktreesDirectory(t *testing.T) {
+func TestSetupRemembersAChosenWorktreesDirectory(t *testing.T) {
 	w := newWorld(t)
 	testsupport.Git(t, w.clone, "remote", "add", "upstream", "https://github.com/macports/macports-ports.git")
-	out, _, err := dockhand(t, "init", "--worktrees", "~/work/branches")
+	out, _, err := dockhand(t, "setup", "--yes", "--worktrees", "~/work/branches")
 	require.NoError(t, err)
 	require.Contains(t, out, "upstream is macports/macports-ports (remote upstream)")
 	require.Contains(t, out, "worktrees in ~/work/branches")
@@ -147,13 +147,13 @@ func TestAnEndedInputTakesTheDefault(t *testing.T) {
 
 // init refuses a Git older than dockhand works with, before recording
 // anything, and says how to get a newer one.
-func TestInitRefusesAnOldGit(t *testing.T) {
+func TestSetupRefusesAnOldGit(t *testing.T) {
 	w := newWorld(t)
 	old := filepath.Join(w.home, "bin", "git")
 	require.NoError(t, os.MkdirAll(filepath.Dir(old), 0o755))
 	require.NoError(t, os.WriteFile(old, []byte("#!/bin/sh\necho 'git version 2.39.5 (Apple Git-154)'\n"), 0o755))
 	t.Setenv("GIT_BIN", old)
-	_, _, err := dockhand(t, "init")
+	_, _, err := dockhand(t, "setup", "--yes")
 	require.EqualError(t, err, "dockhand needs Git 2.40 or newer, and "+old+" is 2.39.5; install a newer one, such as with: sudo port install git, or name one with GIT_BIN")
 	require.NoFileExists(t, filepath.Join(w.home, ".dockhand", "dockhand.db"), "nothing was recorded")
 }
@@ -201,8 +201,8 @@ func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
 // setup registers the checkout and reports, and on a terminal offers
 // what's missing, each declined by answering no (the command-line UX
 // review's §6); rerun with -y, or in a script, it offers nothing. Its
-// github part logs out, and init, auth, and providers still answer,
-// hidden from help.
+// github part logs out, and v0.3.0's init, auth, and providers point
+// here.
 func TestSetupOffersWhatsMissing(t *testing.T) {
 	newWorld(t)
 	git, err := exec.LookPath("git")
@@ -236,6 +236,10 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	for _, hidden := range []string{"\n  init ", "\n  auth ", "\n  providers "} {
 		require.NotContains(t, help, hidden)
 	}
-	_, _, err = dockhand(t, "init", "-y")
-	require.NoError(t, err, "init still answers, for scripts")
+	// v0.3.0's spellings are pointed at what replaced them, not run.
+	for old, now := range map[string]string{"init": "setup", "auth": "setup", "providers": "setup", "restore": "undo"} {
+		_, _, err = dockhand(t, old)
+		require.ErrorContains(t, err, "unknown command \""+old+"\"")
+		require.ErrorContains(t, err, "Did you mean this?\n\t"+now+"\n", old)
+	}
 }

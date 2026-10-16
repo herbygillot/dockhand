@@ -16,8 +16,8 @@ import (
 // archive takes a branch's worktree where it holds nothing the branch's
 // commits don't, in one step (the command-line UX review, §5), keeping
 // the Git branch, and path checks it out again. One with edits of its own
-// stays, saying why, unless --discard; and clean --archived still takes
-// one archived before.
+// stays, saying why, unless --discard; and clean, naming it, takes the
+// worktree path checked out again.
 func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
@@ -68,26 +68,25 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 1.8.1\n", string(data), "checked out again, sparse over the ports it changes")
 
-	// One archived before archive took worktrees is clean --archived's.
-	out, _, err = dockhand(t, "clean", "--archived", "jq-update")
+	// Its worktree, checked out again, is clean's when named.
+	out, _, err = dockhand(t, "clean", "jq-update")
 	require.Equal(t, ExitFailure, ExitCode(err))
 	require.Equal(t, "jq-update (archived)\n  remove   worktree ~/Source/macports-branches/jq-update\n"+
 		"  keep     branch dockhand/jq-update: dockhand path jq-update checks it out again\n", out)
-	out, _, err = dockhand(t, "clean", "--archived", "--yes")
+	out, _, err = dockhand(t, "clean", "jq-update", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update: removed worktree ~/Source/macports-branches/jq-update\n", "one line a branch, once done")
 	require.NoDirExists(t, dir)
 }
 
-// --closed and --archived add to what clean takes; merged branches stay in
-// it unless --merged=false leaves them (the dogfood run with be3f3e06,
-// whose clean --archived left three merged branches, unsaid).
+// --closed adds to what clean takes; merged branches stay in it unless
+// --merged=false leaves them (the dogfood run with be3f3e06, whose clean
+// --archived left three merged branches, unsaid).
 func TestCleanAddsWhatItsFlagsName(t *testing.T) {
-	require.Equal(t, []model.BranchState{model.BranchMerged}, cleanStates(true, false, false))
-	require.Equal(t, []model.BranchState{model.BranchMerged, model.BranchArchived}, cleanStates(true, false, true))
-	require.Equal(t, []model.BranchState{model.BranchMerged, model.BranchClosed, model.BranchArchived}, cleanStates(true, true, true))
-	require.Equal(t, []model.BranchState{model.BranchArchived}, cleanStates(false, false, true))
-	require.Empty(t, cleanStates(false, false, false))
+	require.Equal(t, []model.BranchState{model.BranchMerged}, cleanStates(true, false))
+	require.Equal(t, []model.BranchState{model.BranchMerged, model.BranchClosed}, cleanStates(true, true))
+	require.Equal(t, []model.BranchState{model.BranchClosed}, cleanStates(false, true))
+	require.Empty(t, cleanStates(false, false))
 }
 
 // On a terminal, archive asks what to do with a worktree's edits: commit

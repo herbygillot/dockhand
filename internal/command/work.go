@@ -19,25 +19,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
-// initCommand is setup's former name, kept for scripts: it registers the
-// checkout and reports, offering nothing.
-func initCommand(s *settings, streams Streams) *cobra.Command {
-	var worktrees string
-	var yes bool
-	cmd := &cobra.Command{
-		Use:    "init",
-		Short:  "Set up dockhand for this ports checkout (now dockhand setup)",
-		Hidden: true,
-		Args:   cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSetup(cmd, s, streams, worktrees, yes, false)
-		},
-	}
-	cmd.Flags().StringVar(&worktrees, "worktrees", "", "keep branch worktrees in this directory, and remember it")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept the defaults without asking")
-	return cmd
-}
-
 // setupCommand registers the checkout, reports dockhand's health, and on
 // a terminal offers what's missing (the command-line UX review's §6): one
 // first-run command, rerun for the health check, in place of init,
@@ -46,8 +27,11 @@ func setupCommand(s *settings, streams Streams) *cobra.Command {
 	var worktrees string
 	var yes bool
 	cmd := &cobra.Command{
-		Use:   "setup",
-		Short: "Set up dockhand for this ports checkout, and report its health; safe to rerun",
+		Use: "setup",
+		// v0.3.0's spellings point here, not run as aliases (the UX
+		// thread's answer on the hidden aliases, 2026-10-15).
+		SuggestFor: []string{"init", "auth", "providers"},
+		Short:      "Set up dockhand for this ports checkout, and report its health; safe to rerun",
 		Long: `Registers this ports checkout, finds its remote for macports/macports-ports,
 and chooses where branch worktrees go: ~/Source/macports-branches unless
 --worktrees or the configuration file says otherwise. Then it reports what
@@ -64,7 +48,7 @@ It first checks the Git dockhand runs, git on PATH or $GIT_BIN, and refuses
 one older than 2.40, which rebase needs.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSetup(cmd, s, streams, worktrees, yes, true)
+			return runSetup(cmd, s, streams, worktrees, yes)
 		},
 	}
 	cmd.Flags().StringVar(&worktrees, "worktrees", "", "keep branch worktrees in this directory, and remember it")
@@ -73,9 +57,9 @@ one older than 2.40, which rebase needs.`,
 	return cmd
 }
 
-// runSetup registers the checkout and reports, and where offer is set,
-// on a terminal, offers what's missing.
-func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string, yes, offer bool) error {
+// runSetup registers the checkout and reports, and on a terminal, unless
+// yes, offers what's missing.
+func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string, yes bool) error {
 	options, file, configPath, err := s.options(cmd.Context())
 	if err != nil {
 		return err
@@ -161,7 +145,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	fmt.Fprintf(out, "  Publishing   %s\n", publishLine)
 	fmt.Fprintf(out, "  Records      %s\n", tilde(options.Database))
 	fmt.Fprintln(out)
-	if offer && streams.terminal() && !yes {
+	if streams.terminal() && !yes {
 		written, err := offerSetup(cmd.Context(), s, e, streams, file, configPath)
 		if err != nil {
 			return err

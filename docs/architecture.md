@@ -23,7 +23,7 @@ internal/model         the records' vocabulary; imports nothing from dockhand
 | --- | --- |
 | `Branch` | the unit of work: a Git branch of the ports tree, its base on master, its title, its state (open, merged, closed, archived), and at most one pull request |
 | `Edit` | what an authoring command did to a port, and the commit subject it leaves for `tidy` |
-| `Checkpoint` | the history a `tidy` or `rebase` replaced, which `restore` puts back |
+| `Checkpoint` | the history a `tidy` or `rebase` replaced, which `undo` puts back |
 | `Revision` | an immutable candidate: a commit, or a numbered snapshot of the working files, with its tree and base |
 | `Plan` | what a check of one revision covers: the changed targets, extras, and prerequisites, and each environment's own plan (`EnvironmentPlan`): its build order, dependencies, what needs Xcode, what it can't meet, its exclusions with their reasons, and each Git-fetched target's expected commit |
 | `Run` | one accepted check request, `check-42`, of one plan on one or more environments |
@@ -68,7 +68,7 @@ The providers implement `buildenv.Provider`, the contract in `internal/buildenv`
 ## Shaping, submitting, and following
 
 - **`engine/tidy.go`, `engine/tidyplan.go`** propose the commits a reviewer should see, one per port directory by default, and apply them without changing a file. Tidy composes the messages, keeping the trailers the commits carried and adding `macports/commitmsg`'s attribution line, and `macports/commitrules` checks them against what MacPorts asks.
-- **`history`** makes `tidy`, `rebase` (`engine/verbs.go`), and `restore` complete transitions, which the engine's verbs decide and `history.Transitions` carries out. Each holds the branch's lock (`git.WithBranchLock`); a tidy or rebase records its checkpoint as prepared, makes its Git change, and settles the checkpoint, and the next of them on the branch finishes what a stopped one left. A rebase replays its commits with `git.Replay` before anything moves.
+- **`history`** makes `tidy`, `rebase` (`engine/verbs.go`), and `undo` complete transitions, which the engine's verbs decide and `history.Transitions` carries out. Each holds the branch's lock (`git.WithBranchLock`); a tidy or rebase records its checkpoint as prepared, makes its Git change, and settles the checkpoint, and the next of them on the branch finishes what a stopped one left. A rebase replays its commits with `git.Replay` before anything moves.
 - **`engine/submit.go`, `engine/body.go`, `engine/forge.go`** push to your fork conditionally, never over someone else's push, and open or update the pull request with MacPorts' template filled in. GitHub access is `forge/github` over the shared client in `github`, with the login from `credential/keychain`, `GH_TOKEN`, or the GitHub CLI. Where an organization refuses dockhand's app a draft's ready, `github.CLI` runs `gh pr ready`, when the CLI is signed in as dockhand is.
 - **`engine/follow.go`** reads your pull requests' state, reviews, and CI. **`engine/review.go`** applies the commit rules to anyone's pull request. **`engine/clean.go`** removes what merged branches leave, and what checks whose process died left in providers (`LeftoverProvider`), under the check's lease.
 - **`engine/status.go`** gathers each branch's status: its commits, edits, scope, latest check, and pull request.

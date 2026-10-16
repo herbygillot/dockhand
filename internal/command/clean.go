@@ -17,11 +17,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
-// cleanStates are the kinds of branch clean takes: --closed and --archived
-// add to merged branches, which stay unless --merged=false leaves them, as
-// the help's default says (clean --archived left three merged branches,
-// unsaid, in the dogfood run with be3f3e06).
-func cleanStates(merged, closed, archived bool) []model.BranchState {
+// cleanStates are the kinds of branch clean takes: --closed adds to merged
+// branches, which stay unless --merged=false leaves them, as the help's
+// default says (clean --archived left three merged branches, unsaid, in
+// the dogfood run with be3f3e06). An archived branch is cleaned by name:
+// archive takes its worktree itself.
+func cleanStates(merged, closed bool) []model.BranchState {
 	var states []model.BranchState
 	if merged {
 		states = append(states, model.BranchMerged)
@@ -29,16 +30,13 @@ func cleanStates(merged, closed, archived bool) []model.BranchState {
 	if closed {
 		states = append(states, model.BranchClosed)
 	}
-	if archived {
-		states = append(states, model.BranchArchived)
-	}
 	return states
 }
 
 func cleanCommand(s *settings, streams Streams) *cobra.Command {
-	var merged, closed, archived, yes, automatic bool
+	var merged, closed, yes, automatic bool
 	cmd := &cobra.Command{
-		Use:   "clean [branch...] [--merged] [--closed] [--archived]",
+		Use:   "clean [branch...] [--merged] [--closed]",
 		Short: "Remove what merged branches leave behind",
 		Long: `Removes a merged branch's worktree, local branch, and your fork's branch,
 each only while it still holds the merged commit. A worktree with edits or
@@ -46,12 +44,12 @@ untracked files, and work that went on past the merge, are kept. The
 branch's record stays: status --all lists it as cleaned, and status
 <branch> still finds it.
 
---closed and --archived also take the worktrees of branches whose pull
-request was closed without merging, or that were archived, and only their
-worktrees: their work isn't merged, so the Git branch, your fork's branch,
-and the checkpoints stay, and dockhand path or any command that needs the
-worktree checks it out again. A worktree with edits or untracked files is
-kept. Merged branches are cleaned with them; --merged=false leaves those.
+--closed also takes the worktrees of branches whose pull request was
+closed without merging, and only their worktrees: their work isn't merged,
+so the Git branch, your fork's branch, and the checkpoints stay, and
+dockhand path or any command that needs the worktree checks it out again.
+A worktree with edits or untracked files is kept. Merged branches are
+cleaned with them; --merged=false leaves those.
 
 Whichever branches it cleans, it also removes what checks left in their
 providers when the process running them died: a Tart clone, which a check
@@ -103,7 +101,7 @@ cancel stops a check. None means another.`,
 					return err
 				}
 			} else {
-				states := cleanStates(merged, closed, archived)
+				states := cleanStates(merged, closed)
 				if len(states) == 0 {
 					return errors.New("nothing to clean: --merged or --closed names what")
 				}
@@ -152,10 +150,6 @@ cancel stops a check. None means another.`,
 	}
 	cmd.Flags().BoolVar(&merged, "merged", true, "merged branches: their worktree, local branch, and fork branch")
 	cmd.Flags().BoolVar(&closed, "closed", false, "also branches whose pull request closed unmerged: their worktree only")
-	cmd.Flags().BoolVar(&archived, "archived", false, "also archived branches: their worktree only")
-	// archive takes the worktree itself now (the command-line UX review,
-	// §5); --archived stays for one archived before, hidden.
-	_ = cmd.Flags().MarkHidden("archived")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
 	_ = cmd.Flags().MarkHidden("automatic")

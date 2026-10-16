@@ -68,7 +68,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	oldMaster := testsupport.Git(t, w.upstream, "rev-parse", "--short=7", "HEAD~1")
 
 	// Restoring a rebase puts back its history, files, and master.
-	out, _, err = dockhand(t, "restore", "rebase-2")
+	out, _, err = dockhand(t, "undo", "rebase-2")
 	require.NoError(t, err)
 	require.Regexp(t, `^Restored dockhand/notes to its history and files before rebase-2 \([0-9a-f]{7}\), on master `+oldMaster+` again\.\n$`, out)
 	require.NoFileExists(t, filepath.Join(dir, "README"), "master's newer file isn't left as the branch's edit")

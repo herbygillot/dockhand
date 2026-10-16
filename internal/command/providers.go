@@ -17,7 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 )
 
-// tartImages is what the providers commands ask of dockhand's Tart images.
+// tartImages is what setup and setup tart ask of dockhand's Tart images.
 type tartImages interface {
 	Status(ctx context.Context) (tart.Status, error)
 	Setup(ctx context.Context, options tart.SetupOptions, progress io.Writer) (tart.SetupResult, error)
@@ -41,36 +41,6 @@ func images() tartImages {
 
 // installTart installs Tart from MacPorts.
 const installTart = "sudo port install tart"
-
-func providersCommand(s *settings, streams Streams) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:    "providers",
-		Hidden: true,
-		Short:  "Show where checks can build, and set up a place to build",
-		Long: `Shows each provider a check can build with, and whether it's ready: tart,
-in dockhand's own macOS VMs; github, in your fork's GitHub Actions; and
-command, your own script, when the configuration file names one.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, file, _, err := s.options(cmd.Context())
-			if err != nil {
-				return err
-			}
-			for _, line := range providerLines(cmd.Context(), file) {
-				fmt.Fprintln(streams.Out, line)
-			}
-			return nil
-		},
-	}
-	setup := &cobra.Command{
-		Use:   "setup",
-		Short: "Set up a provider",
-		Args:  cobra.NoArgs,
-	}
-	setup.AddCommand(setupTartCommand(s, streams))
-	cmd.AddCommand(setup)
-	return cmd
-}
 
 func setupTartCommand(s *settings, streams Streams) *cobra.Command {
 	var options tart.SetupOptions

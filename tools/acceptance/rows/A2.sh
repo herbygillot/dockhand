@@ -13,7 +13,6 @@ act() {
 	# The code is issued once the person says they're there (device_login).
 	device_login "A2 logs dockhand in as the test account" || :
 	dh setup || :
-	dh providers || :
 }
 assert() {
 	grep -q '^\$ dockhand setup' "$ROW_DIR/out.log" || { row_fail "setup never ran"; return; }

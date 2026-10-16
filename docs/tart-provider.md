@@ -47,9 +47,9 @@ generation (from the [facts table](../tools/facts/README.md)), and
 MacPorts. A check naming a release without an image stops before it starts,
 naming the image it needs.
 
-`dockhand providers setup tart` makes this Mac's release's image, and
-`dockhand providers setup tart sonoma` makes Sonoma's. It starts from Cirrus
-Labs' vanilla macOS image, downloaded the first time, and takes up to 60 GB
+`dockhand setup tart` makes this Mac's release's image, and `dockhand
+setup tart sonoma` makes Sonoma's. It starts from Cirrus Labs' vanilla
+macOS image, downloaded the first time, and takes up to 60 GB
 of disk. A golden copy is kept beside each image, sharing its blocks, and a
 lost image is restored from it. An image that exists is checked in a
 disposable clone instead and left as it is. `--check` only checks, and
@@ -67,8 +67,8 @@ the recovery partition stays and macOS 27 keeps more of the disk: a 125 GB
 Golden Gate guest has about 79 GB free. ASIF is sparse, so the extra size
 takes no host disk until it is written.
 
-`dockhand providers` shows which releases have images, with Xcode or not,
-and whether the other providers are ready. `init` shows the same.
+`dockhand setup`'s Providers rows show which releases have images, with
+Xcode or not, and whether the other providers are ready.
 
 ### What an image is made from
 
@@ -103,7 +103,7 @@ one made before dockhand recorded origins, keeps its results as before.
 
 Xcode is an add-on. A release's checks need only its base image, with the
 Command Line Tools.
-`dockhand providers setup tart tahoe --xcode <Xcode .xip, or a folder of them>`
+`dockhand setup tart tahoe --xcode <Xcode .xip, or a folder of them>`
 makes Tahoe's Xcode image, `dockhand-xcode-tahoe`, in up to 65 GB of disk.
 Xcode comes from Apple, as a `.xip` from developer.apple.com.
 

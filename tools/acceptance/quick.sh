@@ -169,7 +169,7 @@ fi
 export DH_BIN DH_FAILPOINT_BIN
 fresh
 if [ "${1:-}" = --image ]; then
-	exec "$DH_BIN" providers setup tart
+	exec "$DH_BIN" setup tart
 fi
 if ! ls -d "$DOCKHAND_TART_HOME"/vms/dockhand-base-* >/dev/null 2>&1; then
 	echo "quick.sh: the stage's Tart home, $DOCKHAND_TART_HOME, has no image, and the check rows build in one;" >&2

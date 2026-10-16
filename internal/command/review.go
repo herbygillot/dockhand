@@ -407,33 +407,16 @@ func modifiedBuildWarning(plan engine.TidyPlan, checkpoint string) string {
 	return fmt.Sprintf("! Generated-By names this dockhand, built from uncommitted source, which nobody else can find. Before submitting, tidy again with a build of a pushed commit: dockhand undo %s, then dockhand tidy.", checkpoint)
 }
 
-// restoreCommand is undo's former name, kept for scripts: it takes the
-// checkpoint by its name.
-func restoreCommand(s *settings, streams Streams) *cobra.Command {
-	return &cobra.Command{
-		Use:    "restore <checkpoint>",
-		Short:  "Put back the history a tidy or rebase replaced (now dockhand undo)",
-		Hidden: true,
-		Args:   cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := s.open(cmd.Context())
-			if err != nil {
-				return err
-			}
-			defer e.Close()
-			return restoreCheckpoint(cmd.Context(), e, streams, args[0])
-		},
-	}
-}
-
 // undoCommand puts back what a tidy or rebase replaced: the branch's
 // latest, or the checkpoint named (the command-line UX review's smaller
 // items: git restore restores files, and dockhand's restores history).
 func undoCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchFlags
 	cmd := &cobra.Command{
-		Use:   "undo [<checkpoint>]",
-		Short: "Put back the history the latest tidy or rebase replaced",
+		Use: "undo [<checkpoint>]",
+		// v0.3.0's restore points here, not run as an alias.
+		SuggestFor: []string{"restore"},
+		Short:      "Put back the history the latest tidy or rebase replaced",
 		Long: `Puts a branch's commits back as they were before its latest tidy or
 rebase, or the checkpoint named, such as tidy-3 or rebase-4, when nothing
 has been committed since. After a tidy, the files are not touched: edits

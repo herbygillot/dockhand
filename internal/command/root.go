@@ -3,6 +3,7 @@ package command
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -123,7 +124,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		Version:       buildinfo.Current().String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Args:          cobra.NoArgs,
+		Args:          unknownCommand,
 		// With no command, a ports checkout shows its status (Design v3
 		// §10); anywhere else, the help.
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -179,7 +180,6 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	root.AddGroup(&cobra.Group{ID: "work", Title: "Start or enter work:"})
 	for _, command := range []*cobra.Command{
 		setupCommand(&settings, streams),
-		initCommand(&settings, streams),
 		startCommand(&settings, streams),
 		adoptCommand(&settings, streams),
 		pathCommand(&settings, streams),
@@ -242,9 +242,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	}
 	root.AddGroup(&cobra.Group{ID: "occasional", Title: "Occasional:"})
 	for _, command := range []*cobra.Command{
-		providersCommand(&settings, streams),
 		undoCommand(&settings, streams),
-		restoreCommand(&settings, streams),
 		archiveCommand(&settings, streams),
 		cleanCommand(&settings, streams),
 		explainCommand(streams),
@@ -258,7 +256,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		switch command.Name() {
 		case "status", "path", "diff", "impact", "check", "retry", "wait", "queue", "config", "setup",
 			"start", "adopt", "bump", "update", "checksums", "revbump", "create", "edit", "tidy", "submit", "rebase", "review",
-			"cancel", "logs", "undo", "restore", "archive", "clean", "explain", "outdated":
+			"cancel", "logs", "undo", "archive", "clean", "explain", "outdated":
 			supportsJSON(command)
 		}
 	}
@@ -303,4 +301,21 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		return &ExitError{Code: ExitCode(err)}
 	}
 	return nil
+}
+
+// unknownCommand refuses a word that names no command, as cobra.NoArgs
+// does, with cobra's own suggestions, which NoArgs leaves out: v0.3.0's
+// init, auth, providers, and restore point at what replaced them.
+func unknownCommand(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	message := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {
+		message += "\n\nDid you mean this?\n"
+		for _, suggestion := range suggestions {
+			message += "\t" + suggestion + "\n"
+		}
+	}
+	return errors.New(message)
 }

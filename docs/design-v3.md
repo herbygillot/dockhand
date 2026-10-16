@@ -192,21 +192,21 @@ These are mock sessions. Port names are real. Versions, PR numbers, and duration
 
 ```console
 $ cd ~/src/macports-ports
-$ dockhand init
+$ dockhand setup
 Using this ports repository; upstream is macports/macports-ports.
 
   Authoring    ✓ ready (MacPorts 2.12.6 at /opt/local)
   Your ports   ✓ 212 ports list @ada as a maintainer
   Branches     ? keep branch worktrees in ~/Source/macports-branches? [Y/n] y
-  Providers    tart    · not set up: dockhand providers setup tart   (macOS 26, ≈ 30 min, 45 GB)
+  Providers    tart    · not set up: dockhand setup tart   (macOS 26, ≈ 30 min, 45 GB)
                github  · needs a GitHub login and your fork's Actions enabled
-               prefix  · optional: dockhand providers setup prefix
+               prefix  · optional: dockhand setup prefix
   Publishing   · not set up: dockhand setup github, when you're ready to submit
 
 Next: dockhand start <name>, or dockhand outdated --mine
 ```
 
-`init` doesn't require a GitHub login, a fork, or a provider before local work can start. It reports each capability separately: authoring, checking, and publishing. It asks for more only when something needs it, and names each cost before incurring it: an image download, an index build, a login.
+`setup` doesn't require a GitHub login, a fork, or a provider before local work can start. It reports each capability separately: authoring, checking, and publishing. It asks for more only when something needs it, and names each cost before incurring it: an image download, an index build, a login.
 
 ### 6.2 The ordinary update
 
@@ -412,7 +412,7 @@ Also noticed, for you to fix (tidy never changes files):
 
 Review patches [d] · Change groups [g] · Edit messages [e] · Apply [a] · Keep history [k] · Cancel [q]
 > a
-Created 1 commit. Checkpoint tidy-3 keeps the old history (dockhand restore tidy-3).
+Created 1 commit. Checkpoint tidy-3 keeps the old history (dockhand undo tidy-3).
 The PR still shows 6 commits until you submit; submit will replace its history (with lease).
 ```
 
@@ -558,7 +558,7 @@ A narrowed check never quietly shrinks what `submit` requires.
 | `github` | MacPorts' CI workflow in your fork | yes | only what CI does: default variants, `port lint` without `--nitpick`, the built-in test phase, the runners' releases |
 | `command` | whatever your script does | as it reports | labelled "reported by <name>"; dockhand can't vouch for it |
 
-The default `prefix` is a separate MacPorts installation that you own, set up by `dockhand providers setup prefix` without root. It needs no `sudo` and leaves your everyday ports alone. MacPorts' binary archives only serve `/opt/local`, so its first build compiles every dependency from source.
+The default `prefix` is a separate MacPorts installation that you own, set up by `dockhand setup prefix` without root. It needs no `sudo` and leaves your everyday ports alone. MacPorts' binary archives only serve `/opt/local`, so its first build compiles every dependency from source.
 
 Your everyday `/opt/local` can also be a provider, but only as an explicit opt-in. It installs the branch's versions over your own and needs root. Dockhand restores the previously active versions after the build, and says so when it can't.
 
@@ -598,7 +598,7 @@ Tidy guarantees:
 
 - The final tree is exactly preserved, so content evidence still applies.
 - Human authorship and existing trailers are kept. Combining commits by several authors asks you to choose the attribution.
-- Before applying, it saves a named checkpoint of the old refs and any captured index or working state. `dockhand restore <checkpoint>` restores it, after checking for newer work.
+- Before applying, it saves a named checkpoint of the old refs and any captured index or working state. `dockhand undo <checkpoint>` restores it, after checking for newer work.
 - Merges are never flattened without a specific, reviewed choice.
 
 ### History changes as complete transitions
