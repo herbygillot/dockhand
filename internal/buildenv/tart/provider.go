@@ -472,9 +472,12 @@ type guestResults struct {
 	// is written; empty between targets. Phase is the step of its build
 	// under way, as lint, fetch, or install; empty where the guest program
 	// says none, as before it said them.
-	Building string        `json:"building"`
-	Phase    string        `json:"phase"`
-	Targets  []guestResult `json:"targets"`
+	Building string `json:"building"`
+	Phase    string `json:"phase"`
+	// FromSource are the dependencies of the target building that have no
+	// binary archive for the guest, which install builds from source.
+	FromSource []string      `json:"from_source"`
+	Targets    []guestResult `json:"targets"`
 }
 
 type guestResult struct {
@@ -966,7 +969,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 			return err
 		}
 		building = results.Building
-		if line := buildingWords(job, results); line != said {
+		if line := buildingWords(job, release, results); line != said {
 			said = line
 			if line != "" {
 				build.Progress(line)
@@ -994,7 +997,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 
 // buildingWords is what the guest is building, and how far it is, as
 // "building jq (2 of 5): fetch"; empty between targets.
-func buildingWords(job buildenv.Job, results guestResults) string {
+func buildingWords(job buildenv.Job, release macos.Release, results guestResults) string {
 	if results.Building == "" {
 		return ""
 	}
@@ -1005,10 +1008,16 @@ func buildingWords(job buildenv.Job, results guestResults) string {
 			name += fmt.Sprintf(" (%d of %d)", i+1, len(job.Targets))
 		}
 	}
-	if results.Phase == "" {
-		return "building " + name
+	line := "building " + name
+	if results.Phase != "" {
+		line += ": " + results.Phase
 	}
-	return "building " + name + ": " + results.Phase
+	// What builds from source takes the time, and is said before it does,
+	// as "rust, cargo: no archive for macOS 27 arm64; building from source".
+	if len(results.FromSource) > 0 {
+		line += fmt.Sprintf("; %s: no archive for macOS %s %s; building from source", strings.Join(results.FromSource, ", "), release.Product, job.Environment.Platform.Architecture)
+	}
+	return line
 }
 
 // interrupted records the target a lost guest was building as

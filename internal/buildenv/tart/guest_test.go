@@ -33,7 +33,8 @@ import (
 // <arguments>", installing dependencies writes DEPLINES lines more, and
 // lint writes LINTSAYS, an Error line lint says and goes on past. A
 // phase HANG names ("phase:port ...") sleeps, as a compiler that never
-// finishes would, in a process of its own.
+// finishes would, in a process of its own. A port NOARCHIVE names has no
+// binary archive, which -b archivefetch fails for.
 const fakePort = `#!/bin/sh
 echo "$*" >> "$PORT_LOG"
 case "$*" in
@@ -53,6 +54,11 @@ case "$*" in
   *"echo depof:"*)
     for entry in $DEPS; do
       case "$*" in *"depof:${entry%%=*}") echo "${entry#*=}" | tr ',' ' ' ;; esac
+    done
+    exit 0 ;;
+  "-N -b archivefetch "*)
+    for name in $NOARCHIVE; do
+      case "$*" in *" archivefetch $name") echo "Error: no archive for $name" >&2; exit 1 ;; esac
     done
     exit 0 ;;
   *"-q rdeps --no-build "*)
@@ -175,7 +181,7 @@ set foreignManagers {}
 	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	return command
 }
 
@@ -608,4 +614,20 @@ func TestATargetBuildsWithOnlyItsClosureActive(t *testing.T) {
 	require.False(t, slices.ContainsFunc(commands, func(c string) bool {
 		return strings.HasPrefix(c, "-N -f deactivate ") && c != "-N -f deactivate active"
 	}), "all of it is the closure's: %v", commands)
+}
+
+// Before a target's dependencies install, those with no binary archive for
+// the guest are found, with port -b archivefetch, and said in the log: what
+// install builds from source, which takes the time (the roadmap's part 3).
+func TestTheGuestSaysWhichDependenciesBuildFromSource(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	results, commands := guestRunIn(t, root, twoTargets("declared"), "DEPS=libharbor=zlib,rust harbor-cli=libharbor", "NOARCHIVE=rust")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Contains(t, commands, "-N -b archivefetch zlib")
+	require.Contains(t, commands, "-N -b archivefetch rust")
+	log, err := os.ReadFile(filepath.Join(root, "target-1.log"))
+	require.NoError(t, err)
+	require.Contains(t, string(log), "dockhand: no binary archive for rust on this release; install builds it from source\n")
+	require.Empty(t, results.FromSource, "cleared once the target's result is written")
 }

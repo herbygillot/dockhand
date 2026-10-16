@@ -24,6 +24,10 @@ set building ""
 # phase is the step under way of the target building, which mark says as
 # it begins; empty between targets.
 set phase ""
+# fromsource are the dependencies of the target building that have no
+# binary archive for the guest, so install builds them from source; said
+# with the target, for live progress, and cleared between targets.
+set fromsource {}
 set environment [dict create]
 
 # save writes the results so far, replacing the file whole. A result's
@@ -31,7 +35,7 @@ set environment [dict create]
 # them, and for where each step of its build began in its log, a list of
 # each step's name and line.
 proc save {state {detail ""}} {
-    global root input results building phase environment
+    global root input results building phase fromsource environment
     set targets {}
     foreach result $results {
         set fields {}
@@ -62,6 +66,7 @@ proc save {state {detail ""}} {
     set data [json::write object protocol [dict get $input protocol] state [json::write string $state] \
         detail [json::write string $detail] environment [json::write object {*}$facts] building [json::write string $building] \
         phase [json::write string $phase] \
+        from_source [json::write array {*}[lmap name $fromsource { json::write string $name }]] \
         targets [json::write array {*}$targets]]
     set fd [open $root/results.json.tmp w]
     puts $fd $data
@@ -264,6 +269,28 @@ proc mark {resultVar log step} {
     dict lappend result steps [list $step [expr {$lines + 1}]]
 }
 
+# archiveless are the ports among dependencies, and what they need, not
+# yet installed, that have no binary archive for the guest: port -b
+# archivefetch, binary-only, fails for one, and fetches the archive install
+# would fetch for the rest. What can't be read is left out.
+proc archiveless {log dependencies} {
+    global port
+    set closure {}
+    foreach dependency $dependencies {
+        if {$dependency ni $closure} { lappend closure $dependency }
+        if {[catch {fact $port -q rdeps $dependency} needed]} { continue }
+        foreach line [split $needed \n] {
+            if {[set other [string trim $line]] ne "" && $other ni $closure} { lappend closure $other }
+        }
+    }
+    set missing {}
+    foreach name $closure {
+        if {[catch {fact $port -q installed $name} installed] || [string trim $installed] ne ""} { continue }
+        if {[run $log [list $port -N -b archivefetch $name]] ne ""} { lappend missing $name }
+    }
+    return $missing
+}
+
 # digests remembers each archive's digest: the same archive is active for
 # many targets.
 set digests [dict create]
@@ -406,6 +433,17 @@ proc build {index target} {
     set dependencies [fact $port -q echo depof:$name]
     if {$dependencies ne ""} {
         mark result $log dependencies
+        # Which of them will build from source is said before they do: each
+        # not yet installed, with what it needs, is asked for its binary
+        # archive alone, as port(1)'s -b documents, where none is no error
+        # but what install will build (the roadmap's part 3).
+        set fromsource [archiveless $log $dependencies]
+        if {[llength $fromsource]} {
+            set fd [open $log a]
+            puts $fd "dockhand: no binary archive for [join $fromsource {, }] on this release; install builds [expr {[llength $fromsource] == 1 ? {it} : {them}}] from source"
+            close $fd
+            save running
+        }
         if {[set message [timed $log [concat [list $port -N -d install --unrequested] $dependencies] [{*}$left]]] eq "timed out"} {
             return [{*}$fail $result install "installing its dependencies, $over"]
         } elseif {$message ne ""} {
@@ -591,6 +629,7 @@ foreach target [dict get $input targets] {
     lappend results $result
     set building ""
     set phase ""
+    set fromsource {}
     save running
 }
 save finished

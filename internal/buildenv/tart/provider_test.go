@@ -929,3 +929,12 @@ func TestTheGuestsProgressIsSaidAsItChanges(t *testing.T) {
 	}
 	require.Equal(t, []string{"building libharbor (1 of 2): fetch", "building libharbor (1 of 2): install"}, building)
 }
+
+// What builds from source is said with what the guest is building.
+func TestTheProgressSaysWhatBuildsFromSource(t *testing.T) {
+	job := tartJob(t, 1)
+	tahoe, err := macos.ReleaseForDarwin(25)
+	require.NoError(t, err)
+	line := buildingWords(job, tahoe, guestResults{Building: "libharbor", Phase: "dependencies", FromSource: []string{"rust", "cargo"}})
+	require.Equal(t, "building libharbor (1 of 2): dependencies; rust, cargo: no archive for macOS 26 arm64; building from source", line)
+}
