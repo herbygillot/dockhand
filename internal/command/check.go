@@ -25,7 +25,7 @@ import (
 
 func checkCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchFlags
-	var tests, variants string
+	var tests, variants, build string
 	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, yes bool
 	var include, only, also, on []string
 	cmd := &cobra.Command{
@@ -36,7 +36,13 @@ func checkCommand(s *settings, streams Streams) *cobra.Command {
 port the branch changes by MacPorts CI's rule: lint, fetch and checksum,
 install, and declared tests (advisory unless --tests required).
 
---on names where it builds; every one named must pass. --only narrows the
+It builds where a build profile says: --build names one, and build.default
+is the profile otherwise, host, this Mac's macOS, unless set. dockhand's
+own are host, minmax (each port on its oldest and newest release dockhand
+runs, macOS 12 at the earliest), macports-ci (the releases MacPorts' CI
+builds on), and all; yours go under [build.profiles]. --on names explicit
+environments instead, tart:15,26, github, or command. Every environment
+must pass. --only narrows the
 check to some changed ports and adds back the changed ones they need;
 --also builds unchanged ports against the branch. --plan shows what would
 be built and changes nothing.
@@ -88,7 +94,7 @@ true, it runs that baseline by itself.`,
 			if err != nil {
 				return err
 			}
-			environments, err := e.Environments(ctx, firstNonEmpty(on, s.file.Check.On))
+			place, err := e.Where(ctx, engine.WhereRequest{On: on, Build: build})
 			if err != nil {
 				return err
 			}
@@ -103,8 +109,8 @@ true, it runs that baseline by itself.`,
 			if err != nil {
 				return err
 			}
-			proposed, err := e.PlanCheck(ctx, engine.PlanRequest{Revision: capture.Revision, Environments: environments, Only: only, Also: also, Tests: model.TestPolicy(tests), Fresh: fresh,
-				Variants: chosen, EachVariant: each})
+			proposed, err := e.PlanCheck(ctx, engine.PlanRequest{Revision: capture.Revision, Environments: place.Environments, Span: place.Span, Profile: place.Profile, Only: only, Also: also,
+				Tests: model.TestPolicy(tests), Fresh: fresh, Variants: chosen, EachVariant: each})
 			if err != nil {
 				return err
 			}
@@ -195,7 +201,8 @@ true, it runs that baseline by itself.`,
 	cmd.Flags().StringSliceVar(&include, "include", nil, "add an untracked file to the capture without staging it")
 	cmd.Flags().StringSliceVar(&only, "only", nil, "check only these changed ports, and the changed ports they need")
 	cmd.Flags().StringSliceVar(&also, "also", nil, "also build these unchanged ports against the branch")
-	cmd.Flags().StringArrayVar(&on, "on", nil, "where to build; repeat for several, all of which must pass (default check.on)")
+	cmd.Flags().StringVar(&build, "build", "", "where to build, by build profile: host, minmax, macports-ci, all, or yours (default build.default)")
+	cmd.Flags().StringArrayVar(&on, "on", nil, "where to build, explicit environments, as tart:15,26, github, or command; repeat for several, all of which must pass")
 	cmd.Flags().StringVar(&tests, "tests", "", "declared (advisory), required, or skip")
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return")
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
@@ -204,6 +211,7 @@ true, it runs that baseline by itself.`,
 	cmd.Flags().StringVar(&variants, "variants", "", "build the one port checked with these variants, +name -name, or each: its defaults, then each variant it declares")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --variants each, make its builds without asking")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
+	cmd.MarkFlagsMutuallyExclusive("build", "on")
 	cmd.MarkFlagsMutuallyExclusive("head", "staged", "working-tree")
 	return cmd
 }
@@ -241,15 +249,6 @@ func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams Str
 	}
 	fmt.Fprintf(streams.Err, "%s runs here, since no dockhand serve is running. Ctrl-C stops it and keeps what finished.\n", run.Name())
 	return follow(ctx, e, session, run, streams, true)
-}
-
-func firstNonEmpty(values ...[]string) []string {
-	for _, value := range values {
-		if len(value) > 0 {
-			return value
-		}
-	}
-	return nil
 }
 
 // captureMode is what a check captures: what was asked for; else the
@@ -339,7 +338,12 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 	for _, environment := range plan.Environments {
 		on = append(on, engine.DescribeEnvironment(environment))
 	}
-	fmt.Fprintf(out, "Provider    %s · tests %s\n", strings.Join(on, "; "), plan.Tests)
+	profile := ""
+	// The command profile is its provider, said already.
+	if plan.Profile != "" && plan.Profile != "command" {
+		profile = " · build profile " + plan.Profile
+	}
+	fmt.Fprintf(out, "Provider    %s%s · tests %s\n", strings.Join(on, "; "), profile, plan.Tests)
 	writeVariants(out, plan)
 	// Tests required ask nothing of a port that declares none, which
 	// passes under any policy: said, so its ✓ isn't read as tests passed.

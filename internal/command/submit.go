@@ -138,7 +138,7 @@ kept.
 	cmd.Flags().BoolVar(&request.Draft, "draft", false, "open the pull request as a draft, which unfinished or failing checks allow")
 	cmd.Flags().BoolVar(&request.NoCheck, "no-check", false, "submit without a check; the pull request says no local build ran")
 	cmd.Flags().BoolVar(&check, "check", false, "check the committed head, then submit exactly it once the check passes")
-	cmd.Flags().StringArrayVar(&on, "on", nil, "with --check, where to build (default check.on)")
+	cmd.Flags().StringArrayVar(&on, "on", nil, "with --check, where to build, explicit environments (default build.default's profile)")
 	cmd.Flags().BoolVar(&passing, "passing", false, "go through every branch whose check passed, asking about each")
 	cmd.Flags().BoolVar(&ready, "ready", false, "take the pull request out of draft once it is submitted")
 	cmd.Flags().StringSliceVar(&request.Accept, "accept", nil, "acknowledge a failed extra or revision-bump-only port for this exact commit")
@@ -260,7 +260,8 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 		request.TestedBinaries, request.TestedVariants = plan.Request.TestedBinaries, plan.Request.TestedVariants
 	}
 	if plan.CheckNeeded {
-		environments, err := e.Environments(ctx, firstNonEmpty(on, s.file.Check.On))
+		// A check nobody looks over builds on build.unattended's profile.
+		where, err := e.Where(ctx, engine.WhereRequest{On: on, Unattended: unattended})
 		if err != nil {
 			return err
 		}
@@ -268,7 +269,7 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 		if err != nil {
 			return err
 		}
-		proposed, err := e.PlanCheck(ctx, engine.PlanRequest{Revision: capture.Revision, Environments: environments, Tests: model.TestPolicy(s.file.Check.Tests)})
+		proposed, err := e.PlanCheck(ctx, engine.PlanRequest{Revision: capture.Revision, Environments: where.Environments, Span: where.Span, Profile: where.Profile, Tests: model.TestPolicy(s.file.Check.Tests)})
 		if err != nil {
 			return err
 		}
@@ -578,7 +579,7 @@ func checkWords(plan engine.SubmitPlan) string {
 		// What MacPorts' CI builds on that this check didn't: tart 2.40.1
 		// passed on 26 alone and failed CI on 15 (field testing, #35157).
 		if len(plan.UncoveredCI) > 0 {
-			passed += fmt.Sprintf("; MacPorts CI also builds on macOS %s, which no check here built on (check.on = [\"ci\"] checks those)", prose.And(plan.UncoveredCI))
+			passed += fmt.Sprintf("; MacPorts CI also builds on macOS %s, which no check here built on (--build macports-ci checks those)", prose.And(plan.UncoveredCI))
 		}
 		return passed
 	}

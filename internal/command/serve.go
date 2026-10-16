@@ -157,7 +157,7 @@ func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain, subm
 		SubmitPassing: submitPassing,
 		SubmitLimit:   file.Serve.Limit(),
 		Outdated: engine.ServeOutdated{Maintainers: file.Maintainers(), Hour: hour, Minute: minute, Mode: file.Serve.Mode(),
-			On: file.Check.On, Tests: model.TestPolicy(file.Check.Tests)},
+			Tests: model.TestPolicy(file.Check.Tests)},
 		Cleanup:         file.Cleanup.On(),
 		CleanupAge:      file.Cleanup.Age(),
 		Say:             func(line string) { fmt.Fprintln(out, line) },

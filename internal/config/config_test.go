@@ -81,9 +81,8 @@ func TestPathFollowsTheEnvironment(t *testing.T) {
 }
 
 func TestCheckAndProviderSettings(t *testing.T) {
-	f, err := parse("config.toml", "[check]\non = [\"command\"]\ntests = \"required\"\n\n[providers.command]\nrun = \"~/bin/build-ports\"\n")
+	f, err := parse("config.toml", "[check]\ntests = \"required\"\n\n[providers.command]\nrun = \"~/bin/build-ports\"\n")
 	require.NoError(t, err)
-	require.Equal(t, []string{"command"}, f.Check.On)
 	require.Equal(t, "required", f.Check.Tests)
 	require.Equal(t, "~/bin/build-ports", f.Providers.Command.Run)
 	require.Equal(t, "command", f.Providers.Command.Name)
@@ -255,4 +254,32 @@ func TestDefaultsAreWhatTheAccessorsFallBackOn(t *testing.T) {
 	require.Equal(t, defaults["serve.notify"], strconv.FormatBool(f.Serve.Notifies()))
 	require.Equal(t, defaults["cleanup.automatic"], strconv.FormatBool(f.Cleanup.On()))
 	require.Equal(t, defaults["holds.majors"] == "hold", f.Holds.HoldMajors())
+}
+
+// Build profiles: dockhand's own and the person's, each a provider and
+// its releases, a list or a rule; and check.on, gone, said with what took
+// its place (the person's design, 2026-10-13).
+func TestBuildProfiles(t *testing.T) {
+	f, err := parse("config.toml", "[build]\ndefault = \"mine\"\nunattended = \"ci-exact\"\n[build.profiles]\nmine = { releases = [\"15\", \"26\"] }\nci-exact = { provider = \"github\", releases = \"macports-ci\" }\n")
+	require.NoError(t, err)
+	require.Equal(t, "mine", f.Build.Default)
+	require.Equal(t, "ci-exact", f.Build.Unattended)
+	releases, rule := f.Build.Profiles["mine"].List()
+	require.Equal(t, []string{"15", "26"}, releases)
+	require.Empty(t, rule)
+	_, rule = f.Build.Profiles["ci-exact"].List()
+	require.Equal(t, "macports-ci", rule)
+
+	for text, refusal := range map[string]string{
+		"[check]\non = [\"tart\"]\n":                                               "check.on is gone: build.default names a build profile",
+		"[build]\ndefault = \"elsewhere\"\n":                                       `build.default: "elsewhere" names no profile`,
+		"[build.profiles]\nhost = { releases = [\"15\"] }\n":                       "host is dockhand's own profile",
+		"[build.profiles]\nbox = { provider = \"vm\" }\n":                          `"vm" is not tart, github, or command`,
+		"[build.profiles]\nbox = { releases = \"newest\" }\n":                      `"newest" is not a list of releases`,
+		"[build.profiles]\nbox = { releases = [15] }\n":                            "15 is not a release",
+		"[build.profiles]\nbox = { provider = \"github\", releases = [\"15\"] }\n": "the github provider builds where it does",
+	} {
+		_, err := parse("config.toml", text)
+		require.ErrorContains(t, err, refusal, text)
+	}
 }

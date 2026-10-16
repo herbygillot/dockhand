@@ -12,8 +12,8 @@ run = "~/bin/build-ports"   # run by sh, with the request file's path as $1
 name = "my build box"       # labels its results; "command" when unset
 capacity = 1                # how many checks serve runs on it at once; 1 when unset
 
-[check]
-on = ["command"]            # the default for check; --on command also selects it
+[build]
+default = "command"         # the default for check, as it is where nothing else is set; --on command also selects it
 ```
 
 `check` runs the command once for each attempt. Trouble with the environment is tried again, up to three attempts in all, and a verdict is never repeated. Examples of such trouble: the command exits without writing a result file, or writes one that can't be read.

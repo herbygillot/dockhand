@@ -221,7 +221,7 @@ type Evidence struct {
 	// inputs, what its results' builds recorded reading, by key.
 	sources map[[2]string]readSource
 	inputs  map[string]model.TargetInputs
-	// Problem is why the environments check.on names, which the evidence
+	// Problem is why the environments build.default's profile names, which the evidence
 	// always requires, couldn't be resolved, so it requires only those its
 	// checks planned; empty where they were.
 	Problem string
@@ -352,7 +352,7 @@ func Judge(primary Check, plan model.Plan, earlier []Check, now Identities) Evid
 // Plan is the plan a tree's evidence is judged against: the primary
 // check's, with each environment another check of the same files planned,
 // by the newest that did (others, newest first), and the required ones,
-// check.on's, which no check may have planned (D17). A check narrowed to
+// build.default's profile's, which no check may have planned (D17). A check narrowed to
 // one release replaced the others' results: sand-runner's check on macOS
 // 15 alone left its pass on 26 out of status and submit (the sand-runner
 // port). An environment no check planned has no plan of its own, and what

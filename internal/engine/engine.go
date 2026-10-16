@@ -88,9 +88,10 @@ type Engine struct {
 	GitHubCLI GitHubCLI
 	// PortReader reads ports for plans; MacPorts' own evaluator when nil.
 	PortReader PortReader
-	// CheckOn is where a check builds by default, check.on's values, which
-	// a branch's evidence always requires (D17).
-	CheckOn []string
+	// Builds are where checks build: build.default's profile, which a
+	// branch's evidence always requires (D17), build.unattended's, and the
+	// person's own profiles.
+	Builds Builds
 	// ArchivePlanner says what a port fetches, for its assessment;
 	// MacPorts' own evaluator when nil.
 	ArchivePlanner ArchivePlanner
@@ -136,16 +137,17 @@ type Engine struct {
 	lazy sync.Mutex
 	// forgeMade is whether forge assembled Forge, rather than being given it.
 	forgeMade bool
-	// required is check.on's environments as last resolved, kept for
+	// required is build.default's environments as last resolved, kept for
 	// requiredWait (requiredEnvironments).
 	required requiredRead
 }
 
-// requiredRead is one resolution of check.on's environments, and when.
+// requiredRead is one resolution of build.default's environments, and
+// when.
 type requiredRead struct {
 	mu           sync.Mutex
 	at           time.Time
-	on           []string
+	profile      string
 	environments []model.Environment
 	problem      string
 }

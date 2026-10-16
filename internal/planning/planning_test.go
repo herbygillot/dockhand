@@ -278,3 +278,34 @@ func TestADependencyFindsThePortsBuild(t *testing.T) {
 	require.Equal(t, []model.TargetID{"libharbor", "libharbor +tests"}, ids(decision.Targets))
 	require.Equal(t, []model.TargetID{"harbor-cli"}, ids(decision.Omitted))
 }
+
+// minmax builds each port on its oldest and newest release of those it
+// builds on, with what it needs first there; a run of several ports covers
+// their union (the person's design, 2026-10-13).
+func TestSpanBuildsEachPortOnItsOldestAndNewest(t *testing.T) {
+	at := func(darwin string) model.Environment {
+		return model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: darwin, Architecture: "arm64"}}
+	}
+	monterey, ventura, sonoma, tahoe := at("21"), at("22"), at("23"), at("25")
+	newOnly := Evaluated{Eligibility: macports.Eligibility{Excluded: macports.ExcludedPlatforms, Detail: "darwin >= 23"}}
+	input := Input{
+		Environments: []model.Environment{monterey, ventura, sonoma, tahoe},
+		Candidates:   []model.PlanTarget{candidate("harbor-cli", model.Changed), candidate("libharbor", model.Changed), candidate("harbor-new", model.Changed)},
+		Evaluations: []Evaluation{
+			{"harbor-cli": needing("libharbor"), "libharbor": {}, "harbor-new": newOnly},
+			{"harbor-cli": needing("libharbor"), "libharbor": {}, "harbor-new": newOnly},
+			{"harbor-cli": needing("libharbor"), "libharbor": {}, "harbor-new": needing("libharbor")},
+			{"harbor-cli": needing("libharbor"), "libharbor": {}, "harbor-new": needing("libharbor")},
+		},
+		Span: true,
+	}
+	reasons := Exclusions(input)
+	require.Equal(t, "minmax builds it on its oldest and newest releases, macOS 12 and 26", reasons[1]["harbor-cli"])
+	require.NotContains(t, reasons[1]["harbor-new"], "minmax", "harbor-new keeps its own reason where it isn't supported")
+	require.Empty(t, reasons[2]["libharbor"], "harbor-new, on its oldest, needs it first there")
+	require.Empty(t, reasons[2]["harbor-new"])
+	require.NotEmpty(t, reasons[2]["harbor-cli"], "macOS 14 is neither of harbor-cli's ends")
+	require.Empty(t, reasons[0]["harbor-cli"])
+	require.Empty(t, reasons[3]["harbor-cli"])
+	require.Equal(t, "minmax builds it on its oldest and newest releases, macOS 12 and 26", reasons[1]["libharbor"])
+}

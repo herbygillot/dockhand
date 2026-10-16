@@ -236,6 +236,9 @@ type Plan struct {
 	Revision RevisionID
 	// Environments are all required: several mean every one must pass.
 	Environments []Environment
+	// Profile is the build profile that named them, as minmax; empty
+	// where --on did.
+	Profile string `json:",omitempty"`
 	// Targets are what the check builds in some environment, in the
 	// environments' orders merged: the first environment's, and what each
 	// other one adds, after what comes before it there.

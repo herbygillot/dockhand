@@ -199,7 +199,7 @@ type versionUpdate struct {
 // submission's flags go with, such as "with --submit, "; bump's always go
 // on.
 func (v *versionUpdate) flags(cmd *cobra.Command, goesOn string) {
-	cmd.Flags().StringArrayVar(&v.linked.on, "on", nil, goesOn+"where to check (default check.on)")
+	cmd.Flags().StringArrayVar(&v.linked.on, "on", nil, goesOn+"where to check, explicit environments (default build.default's profile, build.unattended's for bump)")
 	cmd.Flags().BoolVar(&v.linked.testedBinaries, "tested-binaries", false, goesOn+"state that you tested the basic functionality of all binary files")
 	cmd.Flags().BoolVar(&v.linked.testedVariants, "tested-variants", false, goesOn+"state that you checked the most important variants")
 	cmd.Flags().StringVar(&v.linked.title, "title", "", goesOn+"the pull request's title (default: the commit subject)")
@@ -269,7 +269,7 @@ func submitReady(ctx context.Context, s *settings, port string, linked linkedOpt
 			return fmt.Errorf("%s is already changed in %s, so nothing was changed; dockhand status %s says what it needs", port, strings.Join(names, ", "), names[0])
 		}
 	}
-	if _, err := e.Environments(ctx, firstNonEmpty(linked.on, s.file.Check.On)); err != nil {
+	if _, err := e.Where(ctx, engine.WhereRequest{On: linked.on, Unattended: linked.unattended}); err != nil {
 		return fmt.Errorf("%w; nothing was changed", err)
 	}
 	return nil

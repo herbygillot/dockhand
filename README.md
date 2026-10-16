@@ -51,7 +51,7 @@ dockhand submit                   # push to your fork and open the pull request
 ```sh
 dockhand setup                    # what is set up, and what is missing
 dockhand check --on sequoia --on tahoe      # both releases, and both must pass
-dockhand check --on ci                      # MacPorts CI's releases: sonoma, sequoia, tahoe
+dockhand check --build macports-ci          # MacPorts CI's releases: sonoma, sequoia, tahoe
 ```
 
 - **tart**, the default unless you've set up a command provider: a fresh clone of dockhand's own image for each macOS release, deleted afterwards. It needs an Apple silicon Mac with [Tart](https://tart.run) (`sudo port install tart`). The first image is this Mac's release; `setup tart sequoia` adds another. Ports that need the full Xcode build only in an Xcode image, which `setup tart --xcode ~/Downloads/Xcode_26.xip` adds beside the release's base image, made first. Without one, those ports are reported as not built, and never as failed.
@@ -103,7 +103,7 @@ Building in Tart needs an Apple silicon Mac. An Intel Mac, like any other, prepa
 
 v0.3.0's acceptance test found these, and v0.3.1 keeps them; each is rough, harms nothing, and has a workaround. They're planned for v0.4.0.
 
-- A check builds on this Mac's release unless told otherwise, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--on ci` checks on all three.
+- A check builds on this Mac's release unless told otherwise, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--build macports-ci` checks on all three.
 - A Go port whose module moved hosts, as pomo moved from GitHub to Codeberg, is planned without naming the move. Compare the new release's `go.mod` module path with the Portfile's before `tidy`.
 - Subports that share a Portfile but differ beyond what dockhand reads, such as py-lmdb's, can get a planned edit that needs a person's look. Read `dockhand diff` before `tidy`.
 - A revision that changes only a patch's contents, keeping its name, reads as fetching the base's source, so the upstream assessment compares nothing for it, that patch included. A check still applies it, and fails where it doesn't apply, so check after editing a patch.

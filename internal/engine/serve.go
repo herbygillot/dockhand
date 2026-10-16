@@ -80,8 +80,8 @@ type ServeOutdated struct {
 	// Mode is list, which counts them for status; draft, which prepares a
 	// branch for each; or check, which also checks each.
 	Mode string
-	// On and Tests are what check mode checks with.
-	On    []string
+	// Tests is what check mode checks with, on build.unattended's
+	// profile.
 	Tests model.TestPolicy
 }
 
@@ -861,7 +861,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	}
 	prepare := PrepareOptions{Origin: model.OriginServe, Check: settings.Mode == "check", Tests: settings.Tests}
 	if prepare.Check {
-		if prepare.Environments, err = e.Environments(ctx, settings.On); err != nil {
+		if prepare.Where, err = e.Where(ctx, WhereRequest{Unattended: true}); err != nil {
 			report(fmt.Sprintf("serve: serve.for_outdated = \"check\": %v", err))
 			prepare.Check = false
 		}

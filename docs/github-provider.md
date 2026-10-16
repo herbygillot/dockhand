@@ -15,8 +15,9 @@ If more than one remote pushes to a fork you own, name one in `~/.dockhand/confi
 remote = "fork"
 capacity = 2      # how many checks serve runs on it at once; 2 when unset
 
-[check]
-on = ["github"]   # makes it check's default
+[build]
+default = "fork"  # makes it check's default
+profiles.fork = { provider = "github" }
 ```
 
 ## What it does

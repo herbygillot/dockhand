@@ -364,10 +364,10 @@ func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (Outda
 type PrepareOptions struct {
 	// Origin is who asked: a person, or serve.
 	Origin model.Origin
-	// Check queues a check of each prepared commit, in Environments.
-	Check        bool
-	Environments []model.Environment
-	Tests        model.TestPolicy
+	// Check queues a check of each prepared commit, where Where says.
+	Check bool
+	Where Where
+	Tests model.TestPolicy
 }
 
 // PreparedUpdate is what preparing one planned update did.
@@ -447,7 +447,7 @@ func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options 
 		done.Problem = err.Error()
 		return done
 	}
-	checkPlan, err := e.PlanCheck(ctx, PlanRequest{Revision: capture.Revision, Environments: options.Environments, Tests: options.Tests})
+	checkPlan, err := e.PlanCheck(ctx, PlanRequest{Revision: capture.Revision, Environments: options.Where.Environments, Span: options.Where.Span, Profile: options.Where.Profile, Tests: options.Tests})
 	if err != nil {
 		done.Problem = err.Error()
 		return done

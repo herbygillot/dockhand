@@ -42,6 +42,11 @@ type PlanRequest struct {
 	Tests model.TestPolicy
 	// Fresh builds every target, reusing no earlier build's result.
 	Fresh bool
+	// Span builds each port only on its oldest and newest release of the
+	// environments, a minmax profile's (Where.Span), and Profile is the
+	// profile that named them, which the plan keeps.
+	Span    bool
+	Profile string
 	// Variants builds the one port the check selects with these variants
 	// instead of its defaults; EachVariant builds it with its defaults,
 	// and then with each variant it declares (VariantBuilds).
@@ -71,7 +76,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	if request.Tests != "" && !request.Tests.Valid() {
 		return model.Plan{}, fmt.Errorf("--tests %q is not declared, required, or skip", request.Tests)
 	}
-	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh,
+	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Profile: request.Profile, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh,
 		Variants: model.Target{Variants: request.Variants}.VariantSpec(), EachVariant: request.EachVariant, CreatedAt: e.now()}
 	if len(request.Variants) > 0 && request.EachVariant {
 		return plan, errors.New("--variants each builds every variant; it takes no others")
@@ -180,7 +185,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	}
 
 	throughUnchanged(ctx, reader, revision.Source, candidates, evaluations)
-	decision, err := planning.Decide(planning.Input{Environments: plan.Environments, Candidates: candidates, Evaluations: evaluations, Only: request.Only, Where: request.where})
+	decision, err := planning.Decide(planning.Input{Environments: plan.Environments, Candidates: candidates, Evaluations: evaluations, Only: request.Only, Where: request.where, Span: request.Span})
 	if err != nil {
 		return plan, err
 	}

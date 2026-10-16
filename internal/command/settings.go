@@ -116,7 +116,12 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 		return nil, err
 	}
 	s.file, s.opened, s.openedWith = file, e, options
-	e.ConfigFile, e.CheckOn = configPath, file.Check.On
+	e.ConfigFile = configPath
+	e.Builds = engine.Builds{Default: file.Build.Default, Unattended: file.Build.Unattended, Profiles: map[string]engine.Profile{}}
+	for name, profile := range file.Build.Profiles {
+		releases, rule := profile.List()
+		e.Builds.Profiles[name] = engine.Profile{Provider: profile.Provider, Releases: releases, Rule: rule}
+	}
 	e.Providers = map[string]buildenv.Provider{}
 	if command := file.Providers.Command; command != nil {
 		e.Providers[buildenv.Command] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}

@@ -1,6 +1,6 @@
 # stages: full
 # B9: the Intel user's path, on Apple silicon with no Tart set up: with
-# check.on = ["github"], update, check, tidy and submit. setup and
+# build.default a github profile, update, check, tidy and submit. setup and
 # check say there's no on-host provider and point to --on github; the
 # check runs MacPorts' workflow in the fork and reads back; the
 # dockhand-check/ branch is removed.
@@ -8,7 +8,7 @@
 #
 # In run order Tart is set up already, A4 and A12 having made images, so
 # the row gives dockhand an empty Tart home of its own (DOCKHAND_TART_HOME)
-# for "no Tart set up"; and the check.on it sets is the row's alone: its
+# for "no Tart set up"; and the profile it sets is the row's alone: its
 # setup keeps the config, and its teardown puts it back, which every later
 # row's check would otherwise have run on GitHub by (the rc6 full stage).
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
@@ -26,7 +26,7 @@ act() {
 	allow_change "*"
 	allow_push "*dockhand-check/*"
 	dh setup --yes || :
-	printf '\n[check]\non = ["github"]\n' >>"$DOCKHAND_CONFIG"
+	printf '\n[build]\ndefault = "fork"\nprofiles.fork = { provider = "github" }\n' >>"$DOCKHAND_CONFIG"
 	dh_setup update "$(port)" --new || return 0
 	B9_BRANCH=$(own_branch)
 	dh_json check -b "$B9_BRANCH" || :

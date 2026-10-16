@@ -217,7 +217,9 @@ type resultJSON struct {
 type planJSON struct {
 	ID           string            `json:"id"`
 	Environments []environmentJSON `json:"environments"`
-	Tests        string            `json:"tests"`
+	// Profile is the build profile that named them, empty where --on did.
+	Profile string `json:"profile,omitempty"`
+	Tests   string `json:"tests"`
 	// Only, Also, and Fresh are what the person asked: --only's changed
 	// ports, --also's unchanged ones, and --fresh.
 	Only  []string `json:"only"`
@@ -295,7 +297,7 @@ type exclusionJSON struct {
 }
 
 func planView(plan model.Plan) planJSON {
-	view := planJSON{ID: string(plan.ID), Tests: string(plan.Tests), Environments: []environmentJSON{}, Only: append([]string{}, plan.Only...), Also: append([]string{}, plan.Also...), Fresh: plan.Fresh,
+	view := planJSON{ID: string(plan.ID), Profile: plan.Profile, Tests: string(plan.Tests), Environments: []environmentJSON{}, Only: append([]string{}, plan.Only...), Also: append([]string{}, plan.Also...), Fresh: plan.Fresh,
 		Variants: plan.Variants, EachVariant: plan.EachVariant, Targets: []targetJSON{}, Omitted: []targetJSON{}, Exclusions: []exclusionJSON{}, Unmet: []unmetJSON{}, Unresolved: []exclusionJSON{}}
 	for _, environment := range plan.Environments {
 		view.Environments = append(view.Environments, environmentView(environment))

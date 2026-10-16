@@ -123,7 +123,7 @@ func TestEachEnvironmentTakesItsNewestCheck(t *testing.T) {
 
 	// A default environment no check of these files planned is required.
 	e.Providers["github"] = &scriptedProvider{}
-	e.CheckOn = []string{"command", "github"}
+	e.Builds = Builds{Default: "fork", Profiles: map[string]Profile{"fork": {Provider: "github"}}}
 	submission, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
 	require.NoError(t, err)
 	require.Len(t, submission.Blocking, 2)
@@ -138,11 +138,11 @@ func TestEachEnvironmentTakesItsNewestCheck(t *testing.T) {
 
 	// One that can't be resolved requires nothing more, and the evidence
 	// says why, where it said nothing (the architecture review's L5).
-	e.CheckOn = []string{"nowhere"}
+	e.Builds = Builds{Default: "nowhere", Profiles: map[string]Profile{"nowhere": {Provider: "prefix"}}}
 	submission, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
 	require.NoError(t, err)
 	require.Empty(t, submission.Blocking)
-	require.Contains(t, submission.Evidence.Problem, "check.on couldn't be resolved, so only the environments its checks planned are required: ")
+	require.Contains(t, submission.Evidence.Problem, "build.default's profile, nowhere, couldn't be resolved, so only the environments its checks planned are required: ")
 }
 
 // identified is a scripted provider that says what its environments are

@@ -71,6 +71,16 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.Equal(t, "jq-update · would capture the working files as a new snapshot\nChanged     jq\nProvider    command · tests declared\n", out)
 	_, _, err = dockhand(t, "check", "--on", "tart:tahoe")
 	require.ErrorContains(t, err, "Tart isn't installed here")
+	// Build profiles name where, --on explicit environments, never both;
+	// --on ci went with check.on (the person's design, 2026-10-13).
+	_, _, err = dockhand(t, "check", "--plan", "--build", "minmax")
+	require.ErrorContains(t, err, "build profile minmax builds on Tart, which isn't installed here")
+	_, _, err = dockhand(t, "check", "--plan", "--build", "nosuch")
+	require.ErrorContains(t, err, "--build nosuch: no profile of that name")
+	_, _, err = dockhand(t, "check", "--plan", "--build", "host", "--on", "command")
+	require.ErrorContains(t, err, "[build on]")
+	_, _, err = dockhand(t, "check", "--plan", "--on", "ci")
+	require.EqualError(t, err, "--on ci is gone: --build macports-ci builds on the releases MacPorts' CI does")
 
 	out, errs, err := dockhand(t, "check")
 	require.NoError(t, err)

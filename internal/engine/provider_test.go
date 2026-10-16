@@ -36,7 +36,9 @@ func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 		require.ErrorContains(t, err, refusal, on)
 	}
 	_, err = (&Engine{}).Environments(t.Context(), nil)
-	require.ErrorContains(t, err, "a check needs somewhere to build")
+	require.ErrorContains(t, err, "build profile host builds on Tart, which isn't installed here")
+	_, err = e.Environments(t.Context(), []string{"ci"})
+	require.EqualError(t, err, "--on ci is gone: --build macports-ci builds on the releases MacPorts' CI does")
 	// Tart's own refusal is said, not the general one that suggests the
 	// same Tart (the rc3 full run, 2026-10-06).
 	_, err = (&Engine{Providers: map[string]buildenv.Provider{"tart": &imageless{}}}).Environments(t.Context(), nil)
@@ -56,8 +58,11 @@ func (*imageless) Environments(context.Context, string) ([]model.Environment, er
 type releasing struct{ scriptedProvider }
 
 func (*releasing) Environments(ctx context.Context, releases string) ([]model.Environment, error) {
-	if releases == "" {
+	switch releases {
+	case "":
 		releases = "25"
+	case "all":
+		releases = "sonoma,tahoe"
 	}
 	var environments []model.Environment
 	for _, release := range strings.Split(releases, ",") {
@@ -104,4 +109,41 @@ func TestEnvironmentsAreNamedAsOnNamesThem(t *testing.T) {
 	require.Equal(t, []string{"command", "tart:12,26", "github"}, values)
 	_, ok = OnValues([]model.Environment{tart("99", "")})
 	require.False(t, ok)
+}
+
+// A check builds where a build profile says: build.default's, host unless
+// set, build.unattended's for a check nobody looks over, minmax unless
+// set, which spans each port's oldest and newest; a profile of the
+// person's own; and --on's explicit environments over any of them (the
+// person's design, 2026-10-13).
+func TestWhereABuildProfileBuilds(t *testing.T) {
+	t.Parallel()
+	e := &Engine{Providers: map[string]buildenv.Provider{"tart": &releasing{}, "github": &scriptedProvider{}}}
+	sonoma := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+
+	where, err := e.Where(t.Context(), WhereRequest{})
+	require.NoError(t, err)
+	require.Equal(t, Where{Profile: "host", Environments: []model.Environment{tahoe}}, where)
+	where, err = e.Where(t.Context(), WhereRequest{Unattended: true})
+	require.NoError(t, err)
+	require.Equal(t, Where{Profile: "minmax", Environments: []model.Environment{sonoma, tahoe}, Span: true}, where)
+	where, err = e.Where(t.Context(), WhereRequest{Build: "all"})
+	require.NoError(t, err)
+	require.Equal(t, Where{Profile: "all", Environments: []model.Environment{sonoma, tahoe}}, where)
+
+	e.Builds = Builds{Default: "mine", Unattended: "fork", Profiles: map[string]Profile{"mine": {Releases: []string{"sonoma"}}, "fork": {Provider: "github"}}}
+	where, err = e.Where(t.Context(), WhereRequest{})
+	require.NoError(t, err)
+	require.Equal(t, Where{Profile: "mine", Environments: []model.Environment{sonoma}}, where)
+	where, err = e.Where(t.Context(), WhereRequest{Unattended: true})
+	require.NoError(t, err)
+	require.Equal(t, Where{Profile: "fork", Environments: []model.Environment{{Provider: "github"}}}, where)
+	where, err = e.Where(t.Context(), WhereRequest{On: []string{"tahoe"}, Build: "mine"})
+	require.NoError(t, err)
+	require.Equal(t, Where{Environments: []model.Environment{tahoe}}, where, "--on's explicit environments")
+	_, err = e.Where(t.Context(), WhereRequest{Build: "nosuch"})
+	require.ErrorContains(t, err, "--build nosuch: no profile of that name")
+	_, err = e.Where(t.Context(), WhereRequest{Build: "command"})
+	require.ErrorContains(t, err, "build profile command builds with your own script, which isn't set up")
 }

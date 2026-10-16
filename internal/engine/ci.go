@@ -49,16 +49,12 @@ func uncoveredCI(ci []string, environments []model.Environment) []string {
 	return uncovered
 }
 
-// ciEnvironments is the name check.on and --on give MacPorts' CI's
-// releases, on Tart.
-const ciEnvironments = "ci"
-
 // ciSlugs are MacPorts' CI's releases as Tart names them, sonoma, sequoia,
 // tahoe, read from the workflow at master as last fetched.
 func (e *Engine) ciSlugs(ctx context.Context) ([]string, error) {
 	master, ok := e.lastMaster(ctx)
 	if !ok {
-		return nil, fmt.Errorf("--on ci: master hasn't been fetched, so MacPorts' CI releases can't be read; dockhand outdated or update fetches it")
+		return nil, fmt.Errorf("macports-ci: master hasn't been fetched, so MacPorts' CI releases can't be read; dockhand outdated or update fetches it")
 	}
 	trees, err := e.Repo.CommitTrees(ctx, []string{string(master)})
 	if err != nil {
@@ -66,13 +62,13 @@ func (e *Engine) ciSlugs(ctx context.Context) ([]string, error) {
 	}
 	releases := e.ciReleases(ctx, trees[string(master)])
 	if len(releases) == 0 {
-		return nil, fmt.Errorf("--on ci: %s at master names no releases MacPorts' CI builds on", macports.CIWorkflow)
+		return nil, fmt.Errorf("macports-ci: %s at master names no releases MacPorts' CI builds on", macports.CIWorkflow)
 	}
 	var slugs []string
 	for _, product := range releases {
 		release, err := macos.ParseRelease(product)
 		if err != nil {
-			return nil, fmt.Errorf("--on ci: MacPorts' CI builds on macOS %s, which dockhand doesn't know: %w", product, err)
+			return nil, fmt.Errorf("macports-ci: MacPorts' CI builds on macOS %s, which dockhand doesn't know: %w", product, err)
 		}
 		slugs = append(slugs, release.Slug)
 	}

@@ -33,10 +33,11 @@ next attempt builds only the rest.
 | `tart:all` | every release dockhand has an image for |
 | `tahoe` | a bare release name means Tart |
 
-Several releases must all pass. `[check] on = ["tart"]` in
-`~/.dockhand/config.toml` makes Tart the default. Without it, a check uses
-your own script if `[providers.command]` is set up, and Tart on this Mac's
-release otherwise.
+Several releases must all pass. Without `--on`, a check builds where a
+build profile says: `--build`'s, else `build.default`'s, `host`, this Mac's
+release, unless set. dockhand's own profiles all run on Tart: `host`,
+`minmax`, each port's oldest and newest release you have an image of,
+macOS 12 at the earliest, `macports-ci`, and `all`.
 
 ## Images
 

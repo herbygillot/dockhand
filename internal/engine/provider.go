@@ -21,30 +21,14 @@ func (e *Engine) Remedy(unmet model.Unmet) string {
 	return ""
 }
 
-// Environments turns --on values, or check.on's, into the environments a
-// check builds in: each a provider that is set up, with the releases it
-// can take, and a bare release name meaning Tart. With none, the command
-// provider when it is set up, and otherwise Tart on this Mac's release.
+// Environments turns --on values into the environments a check builds
+// in: each a provider that is set up, with the releases it can take, and
+// a bare release name meaning Tart. Where nothing names them, a build
+// profile does (Where).
 func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environment, error) {
 	if len(on) == 0 {
-		if _, ok := e.Providers[buildenv.Command]; ok {
-			return []model.Environment{{Provider: buildenv.Command}}, nil
-		}
-		// Tart's own refusal names what to set up, as "dockhand setup tart
-		// golden-gate makes …"; the general one suggested --on tart, which
-		// fails the same way (the rc3 full run, 2026-10-06).
-		var why string
-		if tart, ok := e.Providers[buildenv.Tart].(buildenv.ReleaseProvider); ok {
-			environments, err := tart.Environments(ctx, "")
-			if err == nil {
-				return environments[:1], nil
-			}
-			why = err.Error()
-		}
-		if why != "" {
-			return nil, fmt.Errorf(`a check needs somewhere to build: %s; or --on github builds with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in %s`, why, e.configFile())
-		}
-		return nil, fmt.Errorf(`a check needs somewhere to build: --on tart builds in a Tart image of this Mac's macOS, --on github with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in %s; [check] on = ["tart"] makes one the default`, e.configFile())
+		where, err := e.Where(ctx, WhereRequest{})
+		return where.Environments, err
 	}
 	var environments []model.Environment
 	add := func(environment model.Environment) {
@@ -53,14 +37,10 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 		}
 	}
 	for _, value := range on {
-		// ci is the releases MacPorts' CI builds on, as its workflow at
-		// master names them, on Tart.
-		if value == ciEnvironments {
-			slugs, err := e.ciSlugs(ctx)
-			if err != nil {
-				return nil, err
-			}
-			value = buildenv.Tart + ":" + strings.Join(slugs, ",")
+		if value == "ci" {
+			// ci went with build profiles, with no alias (the person,
+			// 2026-10-13).
+			return nil, fmt.Errorf("--on ci is gone: --build macports-ci builds on the releases MacPorts' CI does")
 		}
 		name, releases, _ := strings.Cut(value, ":")
 		if _, ok := e.Providers[name]; !ok {

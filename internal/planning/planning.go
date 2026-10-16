@@ -8,7 +8,10 @@ package planning
 import (
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -116,6 +119,11 @@ type Input struct {
 	Only []string
 	// Where limits extras to some environments.
 	Where map[model.TargetID]Limited
+	// Span builds each port only on its oldest and newest release among
+	// the environments it builds in, with what those need first there: a
+	// minmax profile's rule (the person's design, 2026-10-13). A run of
+	// several ports covers the union of theirs.
+	Span bool
 }
 
 // Cycle is a dependency loop among the targets one environment builds,
@@ -191,7 +199,90 @@ func Exclusions(input Input) []map[model.TargetID]string {
 			}
 		}
 	}
+	if input.Span {
+		span(input, reasons)
+	}
 	return reasons
+}
+
+// span rules out, for a minmax plan, each port where it builds but isn't
+// on its oldest or newest release, unless a port built there on one of
+// its own needs it first.
+func span(input Input, reasons []map[model.TargetID]string) {
+	darwin := make([]int, len(input.Environments))
+	for e, environment := range input.Environments {
+		darwin[e], _ = strconv.Atoi(environment.Platform.Version)
+	}
+	keep := make([]map[model.TargetID]bool, len(input.Environments))
+	for e := range keep {
+		keep[e] = map[model.TargetID]bool{}
+	}
+	ends := map[model.TargetID][2]int{}
+	for _, c := range input.Candidates {
+		oldest, newest := -1, -1
+		for e := range input.Environments {
+			if reasons[e][c.ID] != "" {
+				continue
+			}
+			if oldest < 0 || darwin[e] < darwin[oldest] {
+				oldest = e
+			}
+			if newest < 0 || darwin[e] > darwin[newest] {
+				newest = e
+			}
+		}
+		if oldest < 0 {
+			continue
+		}
+		ends[c.ID] = [2]int{oldest, newest}
+		for e := range input.Environments {
+			if darwin[e] == darwin[oldest] || darwin[e] == darwin[newest] {
+				keep[e][c.ID] = reasons[e][c.ID] == ""
+			}
+		}
+	}
+	// What a kept port needs first there is built there too.
+	candidates := map[model.TargetID]bool{}
+	for _, c := range input.Candidates {
+		candidates[c.ID] = true
+	}
+	for e := range input.Environments {
+		var queue []model.TargetID
+		for id, kept := range keep[e] {
+			if kept {
+				queue = append(queue, id)
+			}
+		}
+		for len(queue) > 0 {
+			id := queue[0]
+			queue = queue[1:]
+			for _, dependency := range input.Evaluations[e][id].Dependencies {
+				if candidates[dependency.Port] && reasons[e][dependency.Port] == "" && !keep[e][dependency.Port] {
+					keep[e][dependency.Port] = true
+					queue = append(queue, dependency.Port)
+				}
+			}
+		}
+	}
+	for e := range input.Environments {
+		for _, c := range input.Candidates {
+			if reasons[e][c.ID] != "" || keep[e][c.ID] {
+				continue
+			}
+			end := ends[c.ID]
+			reasons[e][c.ID] = fmt.Sprintf("minmax builds it on its oldest and newest releases, %s and %s", releaseName(input.Environments[end[0]]), strings.TrimPrefix(releaseName(input.Environments[end[1]]), "macOS "))
+		}
+	}
+}
+
+// releaseName is an environment's release as a person names it: macOS 12.
+func releaseName(environment model.Environment) string {
+	if darwin, err := strconv.Atoi(environment.Platform.Version); err == nil {
+		if product, err := macos.ProductForDarwin(darwin); err == nil {
+			return "macOS " + product
+		}
+	}
+	return "Darwin " + environment.Platform.Version
 }
 
 // Built are the candidates some environment doesn't rule out: one ruled

@@ -1,7 +1,9 @@
 package command
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -46,7 +48,18 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			set := func(key, value string) { add(key, value, defaults[key]) }
 			set("worktrees", config.Tilde(file.Worktrees))
 			set("maintainer", file.Maintainer)
-			set("check.on", strings.Join(file.Check.On, ", "))
+			set("build.default", file.Build.Default)
+			set("build.unattended", file.Build.Unattended)
+			var profiles []string
+			for name := range file.Build.Profiles {
+				profiles = append(profiles, name)
+			}
+			slices.Sort(profiles)
+			for _, name := range profiles {
+				profile := file.Build.Profiles[name]
+				releases, rule := profile.List()
+				add("build.profiles."+name, fmt.Sprintf("%s, %s", cmp.Or(profile.Provider, "tart"), cmp.Or(rule, strings.Join(releases, ", "), "host")), "")
+			}
 			set("check.tests", file.Check.Tests)
 			baselineValue := ""
 			if file.Check.Baseline {

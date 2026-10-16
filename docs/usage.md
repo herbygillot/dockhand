@@ -42,8 +42,9 @@ Settings live in `~/.dockhand/config.toml`, or the file `$DOCKHAND_CONFIG` names
 ```toml
 maintainer = "{example.org:you @you} openmaintainer"   # your maintainers line, for --mine and create
 
-[check]
-on = ["tart:sequoia,tahoe"]   # where checks build unless --on says otherwise
+[build]
+default = "both"                                # where checks build unless --build or --on says otherwise
+profiles.both = { releases = ["sequoia", "tahoe"] }
 ```
 
 ## Branches
@@ -156,7 +157,7 @@ The description is the manifest's one line where it has one, else GitHub's. A pl
 ## Checking
 
 ```sh
-dockhand check                   # the working files, where check.on says
+dockhand check                   # the working files, where build.default's profile says
 dockhand check --on tahoe        # on this release's Tart image
 dockhand check --plan            # what would be built, building nothing
 ```
@@ -188,18 +189,28 @@ Each build is evaluated with its variants, so it's planned as MacPorts would bui
 
 `each` makes one whole build per variant per environment. Above 12 builds, `check` asks first; without a terminal, `--yes` builds them. GitHub's workflow builds default variants only, so `--variants` there is refused.
 
-**Where it builds.** `--on` names where, and every one named must pass; repeat it for several. Without it, `check.on` decides, and without that, your command provider if you have one, else Tart on this Mac's release. The forms are:
+**Where it builds.** A build profile says where: `--build` names one, and `build.default` is the profile otherwise, `host` unless set, or `command` where your own script is set up. A check nobody looks over before it's submitted, as serve's and bump's, takes `build.unattended`'s, `minmax` unless set (`build.default`'s where Tart isn't installed). dockhand's own profiles all run on Tart:
+
+| `--build` | Builds on |
+| --- | --- |
+| `host`, `local` | this Mac's release |
+| `minmax` | each port's oldest and newest release you have an image of, macOS 12 at the earliest; a check of several ports covers the union of theirs, and each port builds on its own two alone |
+| `macports-ci` | the releases MacPorts' CI builds every pull request on, as its workflow at master names them (macOS 14, 15, and 26 today) |
+| `all` | every release you have an image of |
+
+A profile of your own is a provider and its releases, a list or one of the rules above: `[build.profiles]` `ci-exact = { provider = "github", releases = "macports-ci" }`, or `mine = { releases = ["15", "26"] }`. A port its Portfile's platforms exclude on a release is left out there, as always.
+
+`--on` names explicit environments instead, and every one named must pass; repeat it for several. The forms are:
 
 | `--on` | Builds on |
 | --- | --- |
 | `tart` | this Mac's release |
 | `tart:tahoe`, `tart:sequoia,tahoe`, `tart:all` | those releases' images, or every image you have |
 | `tahoe`, `15` | shorthand for `tart:` that release |
-| `ci` | the releases MacPorts' CI builds every pull request on, as its workflow at master names them (macOS 14, 15, and 26 today), on Tart |
 | `github` | MacPorts' workflow in your fork |
 | `command` | your own script |
 
-A check that built on fewer releases than MacPorts' CI does is said in `submit`'s preview and under the pull request's Tested on table: "MacPorts CI also builds on macOS 14 and 15, which no check here built on." A check on `github` runs that workflow itself, so it covers them all. `check.on = ["ci"]` checks on each; it isn't the default, since it builds three times over.
+A check that built on fewer releases than MacPorts' CI does is said in `submit`'s preview and under the pull request's Tested on table: "MacPorts CI also builds on macOS 14 and 15, which no check here built on." A check on `github` runs that workflow itself, so it covers them all. `--build macports-ci` checks on each; it isn't the default, since it builds three times over.
 
 With several releases, `check` builds two at a time, as many as macOS runs VMs, and shows the results as a grid, one column per release. A check on several providers, such as `--on tahoe --on github`, builds on each at once.
 
@@ -288,7 +299,7 @@ dockhand submit
 
 `submit` pushes the branch's committed head to your fork and opens its pull request against `macports/macports-ports`, or updates the one it has. The preview also lists any other open pull requests for the same ports, and what upstream's change means for each port the commit changes, against the branch's base: its net change, whoever made it, an update or a hand edit, so a license changed and changed back holds nothing, and a version changed by hand is assessed as dockhand's own update is. An update on a fresh branch records its own comparison as that assessment; otherwise a check records it once its builds finish, or submit collects it, fetching only archives it hasn't read before, which it keeps in `$DOCKHAND_READING_CACHE`, else `dockhand/readings` in your user cache directory. A Git-fetched port is compared through its forge's archive of the commit each version's `git.branch` names now, on GitHub or GitLab, where its forge PortGroup or its `git.url` says which repository: the commit's files, submodules left out. One whose `git.branch` can't be resolved, or whose repository is on no forge dockhand reads, isn't compared, which holds as what couldn't be checked does. And where a Git-fetched port's tag names another commit now than when the check planned it, the preview says the check built another source than the pull request would ship; where it named another when the update chose the release than when the check planned it, that the check built another source than the update chose; and where its assessment read another commit than the check planned, as a hand edit's may, that what upstream's change was judged of isn't the source the check built. With `--json`, its `concerns` list each, with where it came from and the rule that raised it, and the archive it's in where the port fetches more than one, for your own submission too. Either holds a submission nobody reviews. A `!` line is what a reviewer would ask about, and holds a submission nobody reviews, bump's or serve's, as a legend beside it says; a `·` line holds nothing. `status` says, for a branch serve prepared, whether its assessment is recorded yet, and never collects one. `submit --passing` lists them under the same label. They're yours to weigh; a submission of yours isn't held for them, as `serve`'s and `bump`'s are. With `--json`, `upstream` holds them, by port. A commit whose `Generated-By` names a dockhand built from uncommitted source is flagged too, since nobody else can find that build; `modified_builds` lists them. So is one naming a build dockhand's repository on GitHub doesn't have: submit asks GitHub, once for each build its commits name, for the commit the build was built from, by the twelve characters its version gives an older build, and in full for the build you're running, or for a release's tag. A build of a commit you haven't pushed is said until it's pushed there, and a `devel` build, which recorded no commit, is said as one nobody can find. Tidy keeps a commit whose only change would be its `Generated-By`, so tidying again with another build doesn't replace that line. Asking needs your GitHub login, as submit does; where GitHub can't be asked, the preview says so once. With `--json`, `unfound_builds` lists them, each with its commits and what GitHub was asked for (`commit` or `release`), and `builds_problem` says why GitHub couldn't be asked. None of these lines holds a submission, yours or `serve`'s or `bump`'s. The preview names the account it pushes and writes the pull request as, and where its login comes from, as "As       ada, from GH_TOKEN"; under a sandbox or `--remote`, a fork another account owns is said beneath it. With `--json` they're `account`, `login_source`, and `fork_owner`.
 
-The committed files must have passed a check, for every changed port in every environment. The environments are the default ones, `check.on`'s, and every one any check of these files built in; each takes its newest result from whichever check built there, so `check --on sequoia` after a check on Tahoe adds Sequoia's results to Tahoe's rather than replacing them, and a check on one release alone can't stand for a default it didn't build on. Because a check builds the files rather than the commits, a check before `tidy` covers the commits `tidy` makes.
+The committed files must have passed a check, for every changed port in every environment. The environments are the default ones, `build.default`'s profile's, and every one any check of these files built in; each takes its newest result from whichever check built there, so `check --on sequoia` after a check on Tahoe adds Sequoia's results to Tahoe's rather than replacing them, and a check on one release alone can't stand for a default it didn't build on. Because a check builds the files rather than the commits, a check before `tidy` covers the commits `tidy` makes.
 
 - `--accept <port>` acknowledges a failed extra from `--also` or a failed revision-only port. The pull request says the cause wasn't established. An extra no check built asks nothing of submit, status, or serve, and there is nothing of it to accept: it's built for what it shows.
 - `--draft` opens a draft, which unfinished or failing checks allow, and `--ready` takes it out of draft once its commit passes; `--ready --plan` says what it would do, and a draft's preview names it. GitHub can refuse dockhand that, as an organization restricting which apps may act for its members does; the macports organization does. dockhand then runs `gh pr ready` itself, when the GitHub CLI is installed and signed in as the account dockhand is, since that CLI signs in as its own app, and says it did. Otherwise the error names the pull request's page and `gh pr ready`, and why the CLI wasn't used. Only the organization's owners can let dockhand's own app through: on GitHub, Settings → Applications → Authorized OAuth Apps → dockhand, then Request access beside the organization, which asks them.
@@ -375,7 +386,9 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 | --- | --- | --- |
 | `worktrees` | `~/Source/macports-branches` | where branch worktrees go |
 | `maintainer` | none | your maintainers line, for `--mine`, serve's daily look, and `create` |
-| `check.on` | command if set up, else Tart on this Mac's release | where checks build |
+| `build.default` | `host`, or `command` if set up | the build profile a check takes |
+| `build.unattended` | `minmax`, or `build.default`'s without Tart | the build profile of a check nobody looks over: serve's, and bump's |
+| `build.profiles.<name>` | none | your own profiles: `{ provider = "tart", releases = ["15", "26"] }`, the releases a list or a rule |
 | `check.tests` | `declared` | `declared` (advisory), `required`, or `skip` |
 | `check.baseline` | `false` | run a baseline after a failed check |
 | `submit.rerequest_review` | `ask` | after pushing to a pull request with changes requested: `ask`, `always`, or `never` |

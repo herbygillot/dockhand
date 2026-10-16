@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -24,7 +25,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	// buildenv for its constants alone: the providers' names, which
-	// check.on and capacity name, and their timeout defaults.
+	// a profile and capacity name, and their timeout defaults.
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	// macports for the maintainers line's rules, which maintainer is
 	// checked against as it's read.
@@ -44,6 +45,7 @@ type File struct {
 	// as "{@ada example.org:ada} openmaintainer".
 	Maintainer string `toml:"maintainer"`
 	Check      Check  `toml:"check"`
+	Build      Build  `toml:"build"`
 	Submit     Submit `toml:"submit"`
 	Serve      Serve  `toml:"serve"`
 	Providers  struct {
@@ -220,14 +222,66 @@ func parseAge(value string) (time.Duration, error) {
 
 // Check holds check's defaults.
 type Check struct {
-	// On are the providers every check must pass on, such as
-	// "tart:tahoe" or "command"; all of them, never one of them.
-	On []string `toml:"on"`
 	// Tests is declared, required, or skip.
 	Tests string `toml:"tests"`
 	// Baseline runs a baseline of what failed after a check fails.
 	Baseline bool `toml:"baseline"`
 }
+
+// Build is where checks build: the profile a person's check takes, the one
+// a check nobody looks over takes, and the person's own profiles (the
+// person's design, 2026-10-13).
+type Build struct {
+	// Default is the profile a check takes where neither --build nor --on
+	// names where; host when unset, or command where [providers.command]
+	// is set up.
+	Default string `toml:"default"`
+	// Unattended is the profile of a check nobody looks over before it's
+	// submitted, as serve's and bump's; minmax when unset, where Tart is
+	// set up, and else Default's.
+	Unattended string `toml:"unattended"`
+	// Profiles are the person's own, by name.
+	Profiles map[string]Profile `toml:"profiles"`
+}
+
+// Profile is a provider and the releases it builds on: a list, as ["15",
+// "26"], or a rule's name, host, minmax, macports-ci, or all.
+type Profile struct {
+	// Provider is tart, github, or command; tart when unset.
+	Provider string `toml:"provider"`
+	// Releases are a list or a rule, as Load checked.
+	Releases any `toml:"releases"`
+}
+
+// ReleaseRules are the rules a profile's releases may name: this Mac's
+// release; each port's oldest and newest that dockhand runs; the releases
+// MacPorts' CI builds on, at master; and every release Tart runs here.
+var ReleaseRules = []string{"host", "minmax", "macports-ci", "all"}
+
+// BuiltinProfiles are dockhand's own profiles, all on Tart, each named for
+// its rule, local being host's other name.
+var BuiltinProfiles = []string{"host", "local", "minmax", "macports-ci", "all"}
+
+// List is a profile's releases as a list, and its rule where it names one.
+func (p Profile) List() (releases []string, rule string) {
+	switch value := p.Releases.(type) {
+	case string:
+		return nil, value
+	case []any:
+		for _, release := range value {
+			if name, ok := release.(string); ok {
+				releases = append(releases, name)
+			}
+		}
+	}
+	return releases, ""
+}
+
+// The profiles build.default and build.unattended take when unset.
+const (
+	DefaultBuildProfile      = "host"
+	DefaultUnattendedProfile = "minmax"
+)
 
 // CommandProvider is a person's own build script (Design v3 §7): it is
 // given a request file and writes a result file.
@@ -338,7 +392,8 @@ func Defaults() map[string]string {
 	return map[string]string{
 		"worktrees":                      "~/Source/macports-branches",
 		"maintainer":                     "(none; create writes nomaintainer)",
-		"check.on":                       "command when [providers.command] is set up, else Tart on this Mac's release",
+		"build.default":                  DefaultBuildProfile + " (command where [providers.command] is set up)",
+		"build.unattended":               DefaultUnattendedProfile + " (build.default's where Tart isn't installed)",
 		"check.tests":                    "declared",
 		"check.baseline":                 "false",
 		"submit.rerequest_review":        "ask",
@@ -408,6 +463,13 @@ func parse(path, text string) (File, error) {
 		return File{}, fmt.Errorf("%s: %w", path, err)
 	}
 	if unknown := meta.Undecoded(); len(unknown) > 0 {
+		// check.on went with build profiles, with no alias (the person,
+		// 2026-10-13): said with what took its place.
+		for _, key := range unknown {
+			if key.String() == "check.on" {
+				return File{}, fmt.Errorf("%s: check.on is gone: build.default names a build profile, as \"host\" or \"macports-ci\", or one of your own under [build.profiles]", path)
+			}
+		}
 		// A table is reported beside the keys in it; name only the keys.
 		var keys []string
 		for i, key := range unknown {
@@ -426,6 +488,9 @@ func parse(path, text string) (File, error) {
 	case "", "declared", "required", "skip":
 	default:
 		return File{}, fmt.Errorf("%s: check.tests: %q is not declared, required, or skip", path, f.Check.Tests)
+	}
+	if err := checkBuild(f); err != nil {
+		return File{}, fmt.Errorf("%s: %w", path, err)
 	}
 	switch f.Serve.ForOutdated {
 	case "", "list", "draft", "check":
@@ -624,4 +689,44 @@ func setTopLevel(path, key, value string) error {
 		return err
 	}
 	return atomicfile.Write(path, []byte(text), 0o600)
+}
+
+// checkBuild refuses a profile that names no provider dockhand has, a
+// release list that isn't one, a rule it doesn't know, a name a built-in
+// profile has, and a default naming no profile.
+func checkBuild(f File) error {
+	for name, profile := range f.Build.Profiles {
+		if slices.Contains(BuiltinProfiles, name) || name == "command" {
+			return fmt.Errorf("build.profiles.%s: %s is dockhand's own profile; name yours another way", name, name)
+		}
+		switch profile.Provider {
+		case "", buildenv.Tart, buildenv.GitHub, buildenv.Command:
+		default:
+			return fmt.Errorf("build.profiles.%s.provider: %q is not tart, github, or command", name, profile.Provider)
+		}
+		switch value := profile.Releases.(type) {
+		case nil:
+		case string:
+			if !slices.Contains(ReleaseRules, value) {
+				return fmt.Errorf("build.profiles.%s.releases: %q is not a list of releases, or host, minmax, macports-ci, or all", name, value)
+			}
+		case []any:
+			for _, release := range value {
+				if _, ok := release.(string); !ok {
+					return fmt.Errorf("build.profiles.%s.releases: %v is not a release, such as \"15\" or \"tahoe\"", name, release)
+				}
+			}
+		default:
+			return fmt.Errorf("build.profiles.%s.releases: a list of releases, as [\"15\", \"26\"], or a rule, as \"minmax\"", name)
+		}
+		if releases, rule := profile.List(); profile.Provider != "" && profile.Provider != buildenv.Tart && (len(releases) > 0 || rule != "" && rule != "macports-ci") {
+			return fmt.Errorf("build.profiles.%s: the %s provider builds where it does, so its releases can only be macports-ci, for github", name, profile.Provider)
+		}
+	}
+	for key, name := range map[string]string{"build.default": f.Build.Default, "build.unattended": f.Build.Unattended} {
+		if _, defined := f.Build.Profiles[name]; name != "" && !defined && !slices.Contains(BuiltinProfiles, name) && name != "command" {
+			return fmt.Errorf("%s: %q names no profile: host, minmax, macports-ci, all, or one under [build.profiles]", key, name)
+		}
+	}
+	return nil
 }

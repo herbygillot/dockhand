@@ -266,29 +266,30 @@ func runsOfTree(r store.Reader, branch model.BranchID, tree model.ObjectID, stat
 	return slices.DeleteFunc(runs, func(run model.Run) bool { return !matching[run.Revision] || run.BaselineOf != "" }), nil
 }
 
-// requiredEnvironments are the environments a check builds in by default,
-// check.on's, which a branch's evidence always requires (D17); none where
-// they can't be resolved, as where a provider isn't set up, with why, for
-// the evidence to say, where it was dropped and the evidence required
-// less without a word (the architecture review's L5).
+// requiredEnvironments are the environments build.default's profile builds
+// in, which a branch's evidence always requires (D17); none where they
+// can't be resolved, as where a provider isn't set up, with why, for the
+// evidence to say, where it was dropped and the evidence required less
+// without a word (the architecture review's L5).
 //
-// One resolution stands for requiredWait: resolving check.on lists Tart's
+// One resolution stands for requiredWait: resolving a profile lists Tart's
 // images, half a minute on the M1 and two at most (tart.ErrListingTimedOut),
 // and status judged each branch's evidence with a listing of its own.
 func (e *Engine) requiredEnvironments(ctx context.Context) ([]model.Environment, string) {
 	r := &e.required
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if !r.at.IsZero() && time.Since(r.at) < requiredWait && slices.Equal(r.on, e.CheckOn) {
+	profile := e.defaultProfile()
+	if !r.at.IsZero() && time.Since(r.at) < requiredWait && r.profile == profile {
 		return r.environments, r.problem
 	}
-	environments, err := e.Environments(ctx, e.CheckOn)
-	r.environments, r.problem = environments, ""
+	where, err := e.Where(ctx, WhereRequest{Build: profile})
+	r.environments, r.problem = where.Environments, ""
 	if err != nil {
-		r.environments, r.problem = nil, fmt.Sprintf("check.on couldn't be resolved, so only the environments its checks planned are required: %v", err)
+		r.environments, r.problem = nil, fmt.Sprintf("build.default's profile, %s, couldn't be resolved, so only the environments its checks planned are required: %v", profile, err)
 	}
 	if ctx.Err() == nil {
-		r.at, r.on = time.Now(), slices.Clone(e.CheckOn)
+		r.at, r.profile = time.Now(), profile
 	}
 	return r.environments, r.problem
 }
