@@ -287,6 +287,10 @@ type ArchiveRequest struct {
 	// KeepWorktree leaves the worktree where it is; Discard removes it
 	// though it holds uncommitted edits or untracked files, which go.
 	KeepWorktree, Discard bool
+	// Commit commits the worktree's edits first, as tidy would, where its
+	// plan needs no words from the person, then removes it (the command
+	// package split's 7b row 5); NeedsWords says where it does.
+	Commit bool
 }
 
 // Archived is a branch set aside: its worktree removed, or why it stayed.
@@ -302,6 +306,9 @@ type Archived struct {
 	// GitHub says now, where it can be read, else as last recorded: one
 	// closed with gh was said to be still open (the rc6 full stage).
 	PullRequestOpen bool
+	// NeedsWords is whether Commit's tidy plan needs the person's words,
+	// so nothing was committed and the worktree stays.
+	NeedsWords bool
 }
 
 // ArchiveBranch sets a branch aside in one step (the command-line UX
@@ -313,6 +320,18 @@ type Archived struct {
 // files stays, and says so, unless Discard says they go. Only a worktree
 // dockhand made is removed.
 func (e *Engine) ArchiveBranch(ctx context.Context, request ArchiveRequest) (Archived, error) {
+	if request.Commit && !request.Undo {
+		plan, err := e.PlanTidy(ctx, TidyRequest{Branch: request.Branch})
+		if err != nil {
+			return Archived{Branch: request.Branch}, err
+		}
+		if !plan.Unambiguous() {
+			return Archived{Branch: request.Branch, NeedsWords: true}, nil
+		}
+		if _, err := e.ApplyTidy(ctx, plan); err != nil {
+			return Archived{Branch: request.Branch}, err
+		}
+	}
 	branch, err := e.Archive(ctx, request.Branch, request.Undo)
 	result := Archived{Branch: branch}
 	if pr := branch.PullRequest; err == nil && pr != nil && !request.Undo {

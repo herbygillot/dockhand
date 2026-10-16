@@ -676,29 +676,13 @@ func resultWords(evidence engine.Evidence, target engine.TargetEvidence, environ
 // checkResult is a run's --json result, without its targets' results.
 func checkResult(ctx context.Context, e *engine.Engine, run model.Run) (checkJSON, error) {
 	result := checkJSON{Targets: []targetJSON{}}
-	branch, err := e.Branch(ctx, run.Branch)
+	summary, err := e.CheckSummary(ctx, run)
 	if err != nil {
 		return result, err
 	}
-	revision, err := e.Revision(ctx, run.Revision)
-	if err != nil {
-		return result, err
-	}
-	plan, err := e.Plan(ctx, run.Plan)
-	if err != nil {
-		return result, err
-	}
-	revisionResult, planResult, runResult := revisionView(revision), planView(plan), runView(run)
-	result.Branch, result.Revision, result.Plan, result.Run = branch.ShortName(), &revisionResult, &planResult, &runResult
-	events, err := e.RunEvents(ctx, run.ID, 0)
-	if err != nil {
-		return result, err
-	}
-	for _, event := range events {
-		if event.Kind == model.EventArchiveAltered || event.Kind == model.EventArchiveGone {
-			result.Altered = append(result.Altered, event.Message)
-		}
-	}
+	revisionResult, planResult, runResult := revisionView(summary.Revision), planView(summary.Plan), runView(run)
+	result.Branch, result.Revision, result.Plan, result.Run = summary.Branch.ShortName(), &revisionResult, &planResult, &runResult
+	result.Altered = summary.Altered
 	return result, nil
 }
 

@@ -1245,6 +1245,47 @@ func runResources(runs []model.Run) []string {
 	return resources
 }
 
+// CheckSummary is a check with what it checks: its branch, revision,
+// and plan, and what its dependencies' kept archives said, gone or altered.
+type CheckSummary struct {
+	Run      model.Run
+	Branch   model.Branch
+	Revision model.Revision
+	Plan     model.Plan
+	Altered  []string
+}
+
+// CheckSummary reads a check's summary in one transaction, where its four
+// reads were each a View and could see four states (SQL-O3).
+func (e *Engine) CheckSummary(ctx context.Context, run model.Run) (CheckSummary, error) {
+	summary := CheckSummary{Run: run}
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		if summary.Branch, err = r.Branch(run.Branch); err != nil {
+			return err
+		}
+		if summary.Revision, err = r.Revision(run.Revision); err != nil {
+			return err
+		}
+		if summary.Plan, err = r.Plan(run.Plan); err != nil {
+			return err
+		}
+		for after := int64(0); ; {
+			events, err := r.RunEvents(run.ID, after, 500)
+			if err != nil || len(events) == 0 {
+				return err
+			}
+			for _, event := range events {
+				if event.Kind == model.EventArchiveAltered || event.Kind == model.EventArchiveGone {
+					summary.Altered = append(summary.Altered, event.Message)
+				}
+			}
+			after = events[len(events)-1].Sequence
+		}
+	})
+	return summary, err
+}
+
 // QueuedCheck is a check queued or running, with its branch, what it
 // checks, and its plan, and whether it stopped: running, and held by no
 // live process (Stopped).

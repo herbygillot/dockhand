@@ -371,18 +371,13 @@ func commitOrDiscard(ctx context.Context, e *engine.Engine, streams Streams, req
 	request.Branch = archived.Branch
 	switch strings.ToLower(answer) {
 	case "c", "commit":
-		plan, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: archived.Branch})
-		if err != nil {
-			return archived, err
-		}
-		if !plan.Unambiguous() {
+		request.Commit = true
+		again, err := e.ArchiveBranch(ctx, request)
+		if err == nil && again.NeedsWords {
 			fmt.Fprintf(streams.Err, "Its commits need your words; dockhand tidy -b %s shapes them, and archive takes the worktree after.\n", archived.Branch.ShortName())
 			return archived, nil
 		}
-		if _, err := e.ApplyTidy(ctx, plan); err != nil {
-			return archived, err
-		}
-		return e.ArchiveBranch(ctx, request)
+		return again, err
 	case "d", "discard":
 		request.Discard = true
 		return e.ArchiveBranch(ctx, request)
