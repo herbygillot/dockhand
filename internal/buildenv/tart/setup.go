@@ -25,6 +25,11 @@ type Status struct {
 	Base  []macos.Release
 	Xcode []macos.Release
 	Host  macos.Release
+	// Restorable are the releases whose base image is gone and whose
+	// golden copy is kept, which setup tart restores in about a minute
+	// (Codex's review, checked against a268b6e5: setup said "not set up"
+	// and offered a 60 GB download).
+	Restorable []macos.Release
 	// Behind are the images whose MacPorts is older than this Mac's, which
 	// reads the ports they build.
 	Behind []BehindImage
@@ -42,6 +47,12 @@ type BehindImage struct {
 // macOS, which setup offers to make where there isn't.
 func (s Status) HasHostImage() bool {
 	return slices.ContainsFunc(s.Base, func(release macos.Release) bool { return release.Darwin == s.Host.Darwin })
+}
+
+// HostRestorable reports whether this Mac's macOS has no base image but a
+// golden copy, which setup restores rather than makes.
+func (s Status) HostRestorable() bool {
+	return slices.ContainsFunc(s.Restorable, func(release macos.Release) bool { return release.Darwin == s.Host.Darwin })
 }
 
 // Readiness is what dockhand's Tart images let a check do on this Mac.
@@ -100,6 +111,8 @@ func (p *Provider) Status(ctx context.Context) (Status, error) {
 		if slices.Contains(images, baseImage(release)) {
 			status.Base = append(status.Base, release)
 			behind(release, baseImage(release), false)
+		} else if slices.Contains(images, tartvm.GoldenName(baseImage(release))) {
+			status.Restorable = append(status.Restorable, release)
 		}
 		if slices.Contains(images, xcodeImage(release)) {
 			status.Xcode = append(status.Xcode, release)

@@ -87,7 +87,13 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 	if images := images(); images != nil {
 		makeImage := false
 		if status, err := images.Status(ctx); err == nil && !status.HasHostImage() {
-			if makeImage, err = streams.askYes(fmt.Sprintf("? Make the Tart image for this Mac's macOS now? It downloads macOS and takes up to %s of disk. [y/N] ", tart.SetupDisk), false); err != nil {
+			question := fmt.Sprintf("? Make the Tart image for this Mac's macOS now? It downloads macOS and takes up to %s of disk. [y/N] ", tart.SetupDisk)
+			if status.HostRestorable() {
+				// Its golden copy is kept: setup tart restores it, in
+				// about a minute, with no download.
+				question = "? Restore the Tart image for this Mac's macOS from its golden copy now? It takes about a minute, with no download. [y/N] "
+			}
+			if makeImage, err = streams.askYes(question, false); err != nil {
 				return written, err
 			}
 		}

@@ -106,6 +106,16 @@ func TestProviderLinesShowTheImages(t *testing.T) {
 	out := providers(t)
 	require.Contains(t, out, "tart     · not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n")
 
+	// A base image deleted with its golden copy kept is a restore, not a
+	// download (Codex's review, checked against a268b6e5).
+	images.status.Restorable = []macos.Release{release(t, "tahoe")}
+	out = providers(t)
+	require.Contains(t, out, "tart     · no image: macOS 26's image was deleted and its golden copy kept: dockhand setup tart tahoe restores it, in about a minute\n")
+	images.status.Base = []macos.Release{release(t, "sequoia")}
+	out = providers(t)
+	require.Contains(t, out, "tart     ✓ images for macOS 15; macOS 26's image was deleted and its golden copy kept: dockhand setup tart tahoe restores it, in about a minute\n", "and none for this Mac's isn't said again")
+	images.status.Base, images.status.Restorable = nil, nil
+
 	// An Xcode image made without the plain one is said (the rc1 full
 	// stage's A2).
 	images.status.Xcode = []macos.Release{release(t, "tahoe")}
@@ -177,6 +187,16 @@ func TestSetupShowsTheProviders(t *testing.T) {
 	require.Contains(t, out, "  Providers    tart     · not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n"+
 		"               github   · needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n"+
 		"  Publishing   ")
+
+	// With this Mac's image deleted and its golden copy kept, setup offers
+	// the restore, not a 60 GB download (Codex's review, checked against
+	// a268b6e5).
+	images.status.Restorable = []macos.Release{release(t, "tahoe")}
+	var told, asked bytes.Buffer
+	err = Run(t.Context(), []string{"setup"}, Streams{In: strings.NewReader("n\nn\nn\nn\n"), Out: &told, Err: &asked, interactive: true})
+	require.NoError(t, err)
+	require.Contains(t, told.String()+asked.String(), "? Restore the Tart image for this Mac's macOS from its golden copy now? It takes about a minute, with no download. [y/N] ")
+	require.NotContains(t, told.String()+asked.String(), "It downloads macOS")
 }
 
 // The plan says before a check what an environment can't build, what it

@@ -31,6 +31,13 @@ func TestStatusListsReleasesWithImages(t *testing.T) {
 	require.Equal(t, []string{"sonoma", "tahoe"}, slugs(status.Base))
 	require.Equal(t, []string{"sequoia"}, slugs(status.Xcode))
 	require.Equal(t, "tahoe", status.Host.Slug)
+	require.Equal(t, []string{"ventura"}, slugs(status.Restorable), "a golden copy with no base image beside it is restored, not made")
+	require.False(t, status.HostRestorable())
+	mac.images = []string{"dockhand-golden-tahoe"}
+	status, err = testProvider(mac).Status(t.Context())
+	require.NoError(t, err)
+	require.True(t, status.HostRestorable())
+	require.False(t, status.HasHostImage())
 }
 
 // Setup refuses contradictory options and unknown releases before it

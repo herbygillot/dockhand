@@ -184,18 +184,40 @@ func tartReadiness(ctx context.Context) string {
 		}
 		return strings.Join(names, ", ")
 	}
+	// A base image deleted with its golden copy kept is restored, in
+	// about a minute, never made again from a download (D-R3's, at setup).
+	restore := ""
+	if len(status.Restorable) > 0 {
+		var commands []string
+		for _, release := range status.Restorable {
+			commands = append(commands, "dockhand setup tart "+release.Slug)
+		}
+		restore = fmt.Sprintf("macOS %s's image was deleted and its golden copy kept: %s restores it, in about a minute", products(status.Restorable), commands[0])
+		if len(commands) > 1 {
+			restore = fmt.Sprintf("macOS %s's images were deleted and their golden copies kept: %s restore them, in about a minute each", products(status.Restorable), prose.And(commands))
+		}
+	}
 	switch status.Readiness() {
 	case tart.XcodeOnly:
+		if restore != "" {
+			return fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which a check needs beside it: %s", products(status.Xcode), restore)
+		}
 		return fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which a check needs beside it: dockhand setup tart   (%s)", products(status.Xcode), cost)
 	case tart.NoImage:
+		if restore != "" {
+			return "· no image: " + restore
+		}
 		return fmt.Sprintf("· not set up: dockhand setup tart   (%s)", cost)
 	}
 	line := "✓ images for macOS " + products(status.Base)
 	if len(status.Xcode) > 0 {
 		line += ", with Xcode for " + products(status.Xcode)
 	}
-	if status.Readiness() == tart.NotForHost {
+	if status.Readiness() == tart.NotForHost && !status.HostRestorable() {
 		line += "; none for this Mac's " + host + ": dockhand setup tart"
+	}
+	if restore != "" {
+		line += "; " + restore
 	}
 	// An image keeps the MacPorts it was made with, which falls behind
 	// this Mac's, which reads its ports (the person's "yes", 2026-10-16).
