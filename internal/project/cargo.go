@@ -29,10 +29,27 @@ type CargoManifest struct {
 	Workspace *CargoWorkspace
 	// Bins are its [[bin]] targets' names.
 	Bins []string
+	// mainBin is whether a [[bin]] builds src/main.rs itself, by its path,
+	// or by the package's name with none; noAutobins is autobins = false.
+	mainBin, noAutobins bool
 	// Dependencies are in the order a name declared in several places is
 	// read: the package's own, then for building, then for tests, then
 	// each target's in that order, then the workspace's.
 	Dependencies []CargoDependency
+}
+
+// Programs are the binaries a package's manifest builds, given whether its
+// directory has a program by Cargo's conventions (Reading.CargoProgram):
+// its [[bin]]s, and the one Cargo infers from src/main.rs, named for the
+// package, beside them, unless autobins = false or a [[bin]] builds
+// src/main.rs itself. ratty 0.6.0 added a [[bin]] ratty-mcp and kept
+// src/main.rs, and its ratty read as removed (field testing at beb6e7bc).
+func (m CargoManifest) Programs(conventional bool) []string {
+	programs := slices.Clone(m.Bins)
+	if m.Package != nil && m.Package.Name != "" && conventional && !m.noAutobins && !m.mainBin && !slices.Contains(programs, m.Package.Name) {
+		programs = append(programs, m.Package.Name)
+	}
+	return programs
 }
 
 // CargoPackageInfo is a Cargo.toml's [package], or a workspace's
@@ -203,10 +220,18 @@ func ReadCargoManifest(data []byte) (CargoManifest, error) {
 	}
 	if bins, ok := manifest["bin"].([]map[string]any); ok {
 		for _, bin := range bins {
-			if name, ok := bin["name"].(string); ok && name != "" {
+			name, _ := bin["name"].(string)
+			if name != "" {
 				found.Bins = append(found.Bins, name)
 			}
+			binPath, _ := bin["path"].(string)
+			if path.Clean(binPath) == "src/main.rs" || binPath == "" && found.Package != nil && name == found.Package.Name {
+				found.mainBin = true
+			}
 		}
+	}
+	if pkg, ok := manifest["package"].(map[string]any); ok && pkg["autobins"] == false {
+		found.noAutobins = true
 	}
 	read := func(prefix string, tables map[string]any, names []string) error {
 		for _, table := range names {

@@ -57,3 +57,21 @@ func TestACargoProjectsChangedBinariesAreSaid(t *testing.T) {
 	require.Equal(t, []Change{{Kind: "build", How: "new binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: jgenesis-dotenv added"}},
 		cargoBinaries(after, project.Reading{Files: library, Programs: []string{"jgenesis", "jgenesis-dotenv"}}), "one with a main.rs is a program, only added")
 }
+
+// A [[bin]] added beside src/main.rs adds a program; the one Cargo infers
+// from src/main.rs, named for the package, stays: ratty 0.6.0's ratty-mcp
+// read as replacing ratty, and held (field testing at beb6e7bc). Only
+// autobins = false, or a [[bin]] building src/main.rs, replaces it.
+func TestABinBesideMainAddsAProgram(t *testing.T) {
+	t.Parallel()
+	reading := func(manifest string) project.Reading {
+		return project.Reading{Files: map[string]project.File{"Cargo.toml": {Data: []byte(manifest)}}, Programs: []string{"."}}
+	}
+	old := reading("[package]\nname = \"ratty\"\nedition = \"2024\"\n")
+	now := reading("[package]\nname = \"ratty\"\nedition = \"2024\"\n\n[[bin]]\nname = \"ratty-mcp\"\npath = \"src/bin/ratty-mcp.rs\"\n")
+	require.Equal(t, []Change{{Kind: "build", How: "new binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: ratty-mcp added"}}, cargoBinaries(old, now))
+	off := reading("[package]\nname = \"ratty\"\nautobins = false\n\n[[bin]]\nname = \"ratty-mcp\"\npath = \"src/bin/ratty-mcp.rs\"\n")
+	require.Equal(t, "upstream's Cargo packages and binaries change: ratty-mcp added; ratty removed", cargoBinaries(old, off)[0].Message, "autobins = false builds only the [[bin]]s")
+	renamed := reading("[package]\nname = \"ratty\"\n\n[[bin]]\nname = \"rt\"\npath = \"src/main.rs\"\n")
+	require.Equal(t, "upstream's Cargo packages and binaries change: rt added; ratty removed", cargoBinaries(old, renamed)[0].Message, "a [[bin]] building src/main.rs is its program")
+}

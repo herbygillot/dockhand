@@ -640,14 +640,11 @@ func cargoBinaries(old, now project.Reading) []Change {
 			if err != nil {
 				continue
 			}
-			found := manifest.Bins
-			// A package with no [[bin]] builds a program of its name only
-			// where it has src/main.rs or src/bin; otherwise it's a
-			// library, which installs nothing a destroot names (mise's
-			// mise-dotenv, field testing's batch 13).
-			if len(found) == 0 && manifest.Package != nil && manifest.Package.Name != "" && reading.CargoProgram(path.Dir(name)) {
-				found = []string{manifest.Package.Name}
-			}
+			// A package builds a program of its name only where it has
+			// src/main.rs or src/bin; otherwise it's a library, which
+			// installs nothing a destroot names (mise's mise-dotenv, field
+			// testing's batch 13).
+			found := manifest.Programs(reading.CargoProgram(path.Dir(name)))
 			for _, binary := range found {
 				if !slices.Contains(names, binary) {
 					names = append(names, binary)

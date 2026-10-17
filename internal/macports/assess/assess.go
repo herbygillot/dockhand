@@ -73,8 +73,10 @@ import (
 // programs only added are a notice, not a hold, and a source with no
 // conventional program reads its packages as libraries (v0.5.0 part 1).
 // 20: a port's source compared with how and from where it fetches, so a
-// change of git.url alone, or of fetch.type, is assessed (CX-2).
-const Policy = 20
+// change of git.url alone, or of fetch.type, is assessed (CX-2). 21: the
+// program Cargo infers from src/main.rs counted beside [[bin]]s, where
+// ratty's read as removed (field testing at beb6e7bc).
+const Policy = 21
 
 // Input is what one port's assessment reads.
 type Input struct {
