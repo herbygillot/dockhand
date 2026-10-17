@@ -98,29 +98,24 @@ Read what `--plan` shows for these before you go on. Two commands are **experime
 
 Building in Tart needs an Apple silicon Mac. An Intel Mac, like any other, prepares changes here and checks them on GitHub Actions, `--on github`, which runs MacPorts' own workflow in your fork.
 
-## Known issues in v0.3.1
+## Known issues in v0.4.0
 
-v0.3.0's acceptance test found these, and v0.3.1 keeps them; each is rough, harms nothing, and has a workaround. They're planned for v0.4.0.
+Each is rough, harms nothing a look wouldn't catch, and has a workaround. v0.4.0 fixed eight of v0.3.1's: a GitHub tag moved after its check, the account a `GH_TOKEN` submits as, who requested changes in `submit --json`, `dockhand path` for a merged branch clean kept, terraform's stub wording, an old Tart in `check` and `serve`, a deleted base image's restore, and a guest's error tried again three times where it isn't the VM's. Most of the rest are planned for v0.5.0.
 
-- A check builds on this Mac's release unless told otherwise, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--build macports-ci` checks on all three.
+- `check` builds on this Mac's release unless told otherwise, `build.default`'s `host`, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--build macports-ci` checks on all three, and `build.default = "macports-ci"` makes it the default.
 - A Go port whose module moved hosts, as pomo moved from GitHub to Codeberg, is planned without naming the move. Compare the new release's `go.mod` module path with the Portfile's before `tidy`.
 - Subports that share a Portfile but differ beyond what dockhand reads, such as py-lmdb's, can get a planned edit that needs a person's look. Read `dockhand diff` before `tidy`.
 - A revision that changes only a patch's contents, keeping its name, reads as fetching the base's source, so the upstream assessment compares nothing for it, that patch included. A check still applies it, and fails where it doesn't apply, so check after editing a patch.
+- A port fetched with Git whose `git.url` changes while its tag or branch stays reads as the same source, so the upstream assessment compares nothing for it. Read `dockhand diff` before `tidy`.
+- When `update` drops a patch upstream merged, it checks only that the port's patches, version, and revision changed as meant, not its other declarations or its subports'. Read `dockhand diff` before `tidy` where it drops one.
 - A Rust or Go port whose version you edit by hand keeps its old `cargo.crates` or `go.vendors`: `checksums` refreshes only its own archives' checksums. `dockhand update <port> <version>` regenerates them; undo the hand edit first.
 - A batch of submits, with serve watching their pull requests, can spend GitHub's hourly limit of requests; dockhand says when it lifts.
-- A Tart check installs a port's dependencies from MacPorts' binary archives where they're there, and builds them from source where they aren't, without saying which first. On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first check of a Rust or Go port there builds rust and cargo, or go, from source: hours on a VM's two cores (dust on macOS 27, 2026-10-04). Dockhand keeps the archives its guest installed them from, and a later check of any port that depends on them installs them from those, until cleanup forgets them. Check such a port first on the previous release, `--on tahoe`, or let the first check run.
+- On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first Tart check of a Rust or Go port there builds rust and cargo, or go, from source: hours on a VM's two cores (dust on macOS 27, 2026-10-04). The check says so before it builds, as "rust, cargo: no archive for macOS 27 arm64; building from source", and a later check installs them from the archives dockhand kept, until cleanup forgets them. Check such a port first on the previous release, `--on tahoe`, or let the first check run.
 - `update` doesn't say when the new version no longer fetches an archive the old one did, such as a vendored crate it dropped; the Portfile keeps the old checksum lines. Read `dockhand diff` before `tidy`.
 - A fetch during `update` that a server refuses, as a 404 does, holds the branch until a file in it is edited, even once the archive is served again; a rate limit or an outage is fetched again at the next look. Editing a file in the port's directory releases it.
-- A fault in dockhand's own handling of a Tart guest is said at once where dockhand knows it for its own, as results it can't read; any other error the guest meets is tried again, up to three times, cloning a VM each time, before the check reports it.
+- `logs` of a running check says it recorded no log until the target ends. `status` and `wait` show the port it's building and MacPorts' phase meanwhile.
 - `serve` has printed a check's "passed" line twice (check-130, field testing, 2026-10-02). It hasn't recurred, and it changes nothing but the output.
-- A GitHub tag that upstream moves after a check isn't noticed: a later check can reuse the earlier build, and `submit` says it passed, though the archive at that tag has changed. If upstream has retagged a release, run `dockhand checksums <port>`, then `dockhand check --fresh`.
-- With `GH_TOKEN` or `GITHUB_TOKEN` set, `submit`'s preview doesn't name the account that will open the pull request. `submit` still refuses to push to a fork that account doesn't own. `dockhand auth status`, the old login command, hidden from `--help` but kept for this, names the account and where its login comes from.
-- `submit --json` doesn't say who requested changes on the pull request, or whether they were asked to review again. The text output says both.
-- `dockhand path` says there's no tracked branch for a merged branch whose worktree `clean` kept, because its fork branch moved after the merge. `status --all` lists it, and `git worktree list` shows where its worktree is.
-- `update <port> --new --plan` for a port whose obsolete stub's version moves with its release, as terraform-1.16's does, says the stub "stays at" its old version, while the plan's diff moves it with the release. The diff is right, and the update makes it; read the diff rather than that line.
-- `check` and `serve` don't refuse a Tart older than 2.39.0, as `setup` does. `dockhand setup tart` says when Tart is too old; update Tart before checking.
-- `create` for a Go module older than go 1.17, whose go.sum names modules its go.mod doesn't, writes a draft with zero checksums and an empty `go.vendors`, and exits 0. Its `checksums_problem` names the modules to add. Add their rows before checking.
-- With a base image deleted and its golden copy kept, `check` says `dockhand setup tart <release>` makes it, which reads as a full build of an hour or more. `setup` restores it from the golden copy in about a minute.
+- `create` for a Go module older than go 1.17, whose go.sum names modules its go.mod doesn't, writes a draft with zero checksums and exits 0. Its `checksums_problem` names each row to add to `go.vendors`, with its lock; add them, with the checksums `port -v checksum` reports, before checking.
 
 ## Requirements
 
