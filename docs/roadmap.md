@@ -184,7 +184,7 @@ Decided 2026-10-07, from the rc6 full stage's run 4 (the prioritization thread's
   - They stay optional and off by default: `--baseline`, or `check.baseline = true`.
   - A failed build, install, or test of a port the base has names the command.
   - A baseline is always dockhand's own build. MacPorts' buildbot history is never used as one, nor shown beside one, which withdraws decision 20's labeled hint.
-  - Baseline results stay in the check's output. Carrying them into the pull request can come back if it's wanted.
+  - Baseline results stay in the check's output. Carrying them into the pull request can come back if it's wanted. A failure the baseline reproduces, accepted with `submit --accept`, names its baseline in the pull request (the person's "Go as you recommend", 2026-10-17; [note](activity/2026-10-17-accept-at-base.md)).
 - **Xcode images follow MacPorts' buildbots** (2026-09-27, [note](activity/2026-09-27-xcode-follows-the-buildbots.md)). A release's Xcode image has the Xcode its arm64 buildbot runs, from the facts table, as its Command Line Tools already follow the builder (decision 13). `providers.tart.xcode` in the configuration names another for a release. It replaces "the newest Xcode the release runs", which gave every release but Golden Gate a newer Xcode than MacPorts builds with.
 - **A command's JSON has one shape wherever it stops** (2026-09-27, [note](activity/2026-09-27-one-json-shape.md)).
   - A command's result is a superset of what its steps and exits can say: what it didn't reach is left out or empty, and the steps it goes on to are inside it. A script then reads one shape whatever stopped the command, and the exit code says where.

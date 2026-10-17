@@ -119,6 +119,10 @@ type SubmitPlan struct {
 	// pull request's description that dockhand writes; zero for a new one.
 	Sections DescriptionSections
 	Evidence *Evidence
+	// AtBase are the changed ports that failed whose baseline fails them
+	// the same way, each with the baselines that did: --accept takes
+	// them, and the pull request says so (the person's word, 2026-10-17).
+	AtBase map[string][]string
 	// UncoveredCI are the releases MacPorts' CI builds on that the check
 	// built on none of, which the preview and the pull request say.
 	UncoveredCI []string
@@ -397,7 +401,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
-		Note: plan.Note, UncoveredCI: plan.UncoveredCI}
+		Note: plan.Note, UncoveredCI: plan.UncoveredCI, AtBase: plan.AtBase}
 	plan.facts = facts
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
 	return plan, nil
@@ -472,11 +476,14 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 	}
 	plan.Evidence = &evidence
 	plan.UncoveredCI = uncoveredCI(e.ciReleases(ctx, plan.Tree), evidence.Plan.Environments)
-	if err := acceptanceProblem(evidence, request.Accept); err != nil {
+	if plan.AtBase, err = e.failsAtBase(ctx, plan.Branch.ID, evidence); err != nil {
+		return err
+	}
+	if err := acceptanceProblem(evidence, request.Accept, plan.AtBase); err != nil {
 		return err
 	}
 	if !request.Draft {
-		plan.Blocking = append(plan.Blocking, publicationProblems(evidence, slices.Concat(accepted, request.Accept))...)
+		plan.Blocking = append(plan.Blocking, publicationProblems(evidence, slices.Concat(accepted, request.Accept), plan.AtBase)...)
 	}
 	return nil
 }

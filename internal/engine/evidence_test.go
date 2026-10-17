@@ -306,15 +306,15 @@ func TestWhatEvidenceSaysReadsInWords(t *testing.T) {
 	needsXcode := TargetEvidence{Target: model.PlanTarget{ID: "harbor-tools", Target: model.Target{Name: "harbor-tools"}, Role: model.Changed}, Unchecked: true,
 		Outcomes: []Cell{{TargetResult: model.TargetResult{Target: "harbor-tools", Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: tools, Unmet: unmet}}}
 	evidence := Evidence{Run: model.Run{ID: "run_2", Number: 2}, Plan: model.Plan{Environments: []model.Environment{tools}}, Targets: []TargetEvidence{needsXcode}}
-	require.Equal(t, "· not built: needs Xcode", EvidenceWords(evidence, needsXcode, 0, false))
+	require.Equal(t, "· not built: needs Xcode", EvidenceWords(evidence, needsXcode, 0, ""))
 	require.Equal(t, []string{"harbor-tools needs Xcode, which " + DescribeEnvironment(tools) + " hasn't; a check with Xcode there builds it, or share the branch as a draft (--draft)"},
-		publicationProblems(evidence, nil))
+		publicationProblems(evidence, nil, nil))
 
 	failed := TargetEvidence{Target: model.PlanTarget{ID: "oniguruma", Target: model.Target{Name: "oniguruma"}, Kind: model.Unchanged, Role: model.Also},
 		Outcomes: []Cell{recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall})}}
 	evidence = Evidence{Run: model.Run{ID: "run_1", Number: 1}, Plan: model.Plan{Environments: []model.Environment{tahoeArm}}, Targets: []TargetEvidence{failed}}
-	require.Equal(t, []string{"oniguruma (an extra from --also) did not pass in check-1; acknowledge it with --accept oniguruma if its failure is not this branch's doing"}, publicationProblems(evidence, nil))
-	require.Empty(t, publicationProblems(evidence, []string{"oniguruma"}))
+	require.Equal(t, []string{"oniguruma (an extra from --also) did not pass in check-1; acknowledge it with --accept oniguruma if its failure is not this branch's doing"}, publicationProblems(evidence, nil, nil))
+	require.Empty(t, publicationProblems(evidence, []string{"oniguruma"}, nil))
 }
 
 // cells are hand-built results as the evidence's cells: recorded, but for

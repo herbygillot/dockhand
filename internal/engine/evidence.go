@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
@@ -54,7 +55,7 @@ func RemadeWords(target TargetEvidence) string {
 // earlier one whose policy differs from this evidence's own, it is named,
 // "tests failed (advisory, check-3)", so a later check with --tests
 // required never makes an earlier advisory result read as required.
-func EvidenceWords(evidence Evidence, target TargetEvidence, environment int, accepted bool) string {
+func EvidenceWords(evidence Evidence, target TargetEvidence, environment int, accepted string) string {
 	result := target.Outcomes[environment]
 	return targetWords(evidence.Plan, result, evidence.TestsReading(result.TargetResult), accepted)
 }
@@ -286,7 +287,7 @@ const requiredWait = time.Minute
 // it, or it's a changed port, whose failure is shared as a draft. A port
 // may have several builds, its variant builds beside its default one: the
 // one to accept is one that failed.
-func acceptanceProblem(evidence Evidence, accept []string) error {
+func acceptanceProblem(evidence Evidence, accept []string, atBase map[string][]string) error {
 	for _, port := range accept {
 		i := slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == port && t.Failing() })
 		if i < 0 {
@@ -299,8 +300,8 @@ func acceptanceProblem(evidence Evidence, accept []string) error {
 			return fmt.Errorf("--accept %s: it passed in %s; there is nothing to accept", port, evidence.Run.Name())
 		case evidence.Targets[i].Missing() || !evidence.Targets[i].Failing():
 			return fmt.Errorf("--accept %s: no check of these files built it, so there is no failure to accept; dockhand check builds it", port)
-		case !evidence.Targets[i].Acceptable():
-			return fmt.Errorf("--accept %s: %s is a changed port, and a changed port that fails is shared as a draft (--draft), never accepted", port, port)
+		case !evidence.Targets[i].Acceptable() && len(atBase[port]) == 0:
+			return fmt.Errorf("--accept %s: %s is a changed port, and a changed port that fails is accepted only where its baseline fails it the same way, which dockhand check --baseline sees; otherwise it's shared as a draft (--draft)", port, port)
 		}
 	}
 	return nil
@@ -309,7 +310,7 @@ func acceptanceProblem(evidence Evidence, accept []string) error {
 // publicationProblems applies the publication rule to evidence: every
 // changed target checked and every substantive one passed, and every
 // other failure accepted.
-func publicationProblems(evidence Evidence, accepted []string) []string {
+func publicationProblems(evidence Evidence, accepted []string, atBase map[string][]string) []string {
 	var problems []string
 	for _, target := range evidence.Failed() {
 		name := target.Target.Target.Name
@@ -323,13 +324,104 @@ func publicationProblems(evidence Evidence, accepted []string) []string {
 			problems = append(problems, fmt.Sprintf("%s's check no longer stands: since it, %s; dockhand check builds it there again, or share the branch as a draft (--draft)", name, RemadeWords(target)))
 		case target.Missing():
 			problems = append(problems, fmt.Sprintf("%s is changed, and no check of these files built it everywhere it's required; dockhand check builds it, or share the branch as a draft (--draft)", name))
-		case !target.Acceptable():
-			problems = append(problems, fmt.Sprintf("%s did not pass in %s; fix it, or share it as a draft (--draft)", name, evidence.Run.Name()))
+		case !target.Acceptable() && len(atBase[name]) > 0 && !slices.Contains(accepted, name):
+			// A failure master has too is no regression, the usual case for
+			// a MacPorts pull request: a person accepts it, never bump or
+			// serve, and the pull request says so (pgdog 0.1.62 on macOS 12,
+			// field testing; the person's word, 2026-10-17).
+			problems = append(problems, fmt.Sprintf("%s did not pass in %s, and fails the same way at the base (%s), so not by this branch; --accept %s submits it, saying so, or fix it, or share it as a draft (--draft)", name, evidence.Run.Name(), strings.Join(atBase[name], ", "), name))
+		case !target.Acceptable() && len(atBase[name]) == 0:
+			problems = append(problems, fmt.Sprintf("%s did not pass in %s; fix it, or share it as a draft (--draft); dockhand check --baseline sees whether master fails it the same way", name, evidence.Run.Name()))
 		case !slices.Contains(accepted, name):
 			problems = append(problems, fmt.Sprintf("%s (%s) did not pass in %s; acknowledge it with --accept %s if its failure is not this branch's doing", name, kindWords(target.Target), evidence.Run.Name(), name))
 		}
 	}
 	return problems
+}
+
+// failsAtBase are the changed ports that failed and couldn't be accepted
+// otherwise, whose every failure a finished baseline of the check that
+// made it reproduces, in the same environment and at the same phase, each
+// with those baselines' names.
+func (e *Engine) failsAtBase(ctx context.Context, branch model.BranchID, judged Evidence) (map[string][]string, error) {
+	var failing []TargetEvidence
+	for _, target := range judged.Failed() {
+		if !target.Acceptable() && !target.Missing() && target.Failing() {
+			failing = append(failing, target)
+		}
+	}
+	if len(failing) == 0 {
+		return nil, nil
+	}
+	var runs []model.Run
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		runs, err = r.Runs(store.RunFilter{Branch: branch, States: []model.RunState{model.RunPassed, model.RunFailed}})
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	baselines := map[model.RunID][]Evidence{}
+	read := func(of model.RunID) ([]Evidence, error) {
+		if found, ok := baselines[of]; ok {
+			return found, nil
+		}
+		var found []Evidence
+		for _, run := range runs {
+			if run.BaselineOf != of {
+				continue
+			}
+			base, err := e.RunEvidence(ctx, run.ID)
+			if err != nil {
+				return nil, err
+			}
+			found = append(found, base)
+		}
+		baselines[of] = found
+		return found, nil
+	}
+	atBase := map[string][]string{}
+	for _, target := range failing {
+		var names []string
+		reproduced := true
+		for n, cell := range target.Outcomes {
+			if cell.Outcome != model.OutcomeFailed {
+				continue
+			}
+			found, err := read(judged.Executions[cell.Execution].Run)
+			if err != nil {
+				return nil, err
+			}
+			name := baseFailure(found, target.Target.ID, judged.Plan.Environments[n], cell.Phase)
+			if name == "" {
+				reproduced = false
+				break
+			}
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+		if reproduced && len(names) > 0 {
+			atBase[target.Target.Target.Name] = names
+		}
+	}
+	return atBase, nil
+}
+
+// baseFailure is the baseline that failed a target in an environment at a
+// phase, of those given; empty where none did.
+func baseFailure(baselines []Evidence, id model.TargetID, environment model.Environment, phase model.Phase) string {
+	for _, base := range baselines {
+		n := slices.Index(base.Plan.Environments, environment)
+		i := slices.IndexFunc(base.Targets, func(t TargetEvidence) bool { return t.Target.ID == id })
+		if n < 0 || i < 0 {
+			continue
+		}
+		if cell := base.Targets[i].Outcomes[n]; cell.Outcome == model.OutcomeFailed && cell.Phase == phase {
+			return base.Run.Name()
+		}
+	}
+	return ""
 }
 
 func kindWords(target model.PlanTarget) string {

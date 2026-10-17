@@ -434,9 +434,9 @@ func TestAPlanRecordsWhatDeclaresNoTests(t *testing.T) {
 	planned, _ := plan.In(tahoeArm)
 	require.Equal(t, []model.TargetID{"harbor-cli"}, planned.Untested, "libharbor declares tests, and harbor-viewer's test.run wasn't read")
 
-	require.Equal(t, "✓ declares no tests", targetWords(plan, recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}), "", false))
+	require.Equal(t, "✓ declares no tests", targetWords(plan, recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}), "", ""))
 	plan.Tests = model.TestsDeclared
-	require.Equal(t, "✓", targetWords(plan, recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}), "", false), "only a policy requiring tests needs saying so")
+	require.Equal(t, "✓", targetWords(plan, recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}), "", ""), "only a policy requiring tests needs saying so")
 }
 
 // A port whose eligibility couldn't be read is unresolved, neither built

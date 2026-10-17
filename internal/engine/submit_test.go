@@ -365,16 +365,109 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	branch2 := committedUpdate(t, e2)
 	checked(t, e2, branch2, model.OutcomeFailed, model.OutcomePassed)
 	_, err = e2.PlanSubmit(t.Context(), SubmitRequest{Branch: branch2, Accept: []string{"jq"}})
-	require.ErrorContains(t, err, "never accepted")
+	require.ErrorContains(t, err, "accepted only where its baseline fails it the same way")
 	plan, err = e2.PlanSubmit(t.Context(), SubmitRequest{Branch: branch2})
 	require.NoError(t, err)
-	require.Contains(t, strings.Join(plan.Blocking, "\n"), "jq did not pass in check-1; fix it, or share it as a draft (--draft)")
+	require.Contains(t, strings.Join(plan.Blocking, "\n"), "jq did not pass in check-1; fix it, or share it as a draft (--draft); dockhand check --baseline sees whether master fails it the same way")
 	plan, err = e2.PlanSubmit(t.Context(), SubmitRequest{Branch: branch2, Draft: true})
 	require.NoError(t, err)
 	require.Empty(t, plan.Blocking)
 	_, err = e2.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	require.True(t, fake2.Created[0].Draft)
+}
+
+// A changed port whose baseline fails it the same way is no regression,
+// the usual case for a MacPorts pull request: submit names it, a person
+// accepts it with --accept, and the pull request says the base fails it
+// too (pgdog 0.1.62 on macOS 12, field testing; the person's word,
+// 2026-10-17). A baseline that fails it otherwise, or passes, isn't one.
+func TestAFailureTheBaseHasTooIsAccepted(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		outcome model.Outcome
+		phase   model.Phase
+		alike   bool
+	}{
+		{"alike", model.OutcomeFailed, model.PhaseInstall, true},
+		{"at another phase", model.OutcomeFailed, model.PhaseTest, false},
+		{"passing at the base", model.OutcomePassed, "", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := setup(t)
+			e, _ := g.withPreparer(t)
+			g.withFork(t, e)
+			branch := committedUpdate(t, e)
+			checked(t, e, branch, model.OutcomeFailed, model.OutcomePassed)
+			baselined(t, e, branch, test.outcome, test.phase)
+			plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+			require.NoError(t, err)
+			blocking := strings.Join(plan.Blocking, "\n")
+			_, acceptErr := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
+			if !test.alike {
+				require.Contains(t, blocking, "jq did not pass in check-1; fix it")
+				require.ErrorContains(t, acceptErr, "accepted only where its baseline fails it the same way")
+				return
+			}
+			require.Contains(t, blocking, "jq did not pass in check-1, and fails the same way at the base (check-2), so not by this branch; --accept jq submits it, saying so")
+			require.NoError(t, acceptErr)
+			plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
+			require.NoError(t, err)
+			require.Empty(t, plan.Blocking)
+			require.Contains(t, plan.Body, "| jq | ✗ failed at install, accepted: fails at the base too (check-2) |")
+		})
+	}
+}
+
+// baselined records a finished baseline of the branch's newest check, its
+// jq built at the base with outcome, at phase where it failed.
+func baselined(t *testing.T, e *Engine, branch model.Branch, outcome model.Outcome, phase model.Phase) {
+	t.Helper()
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		runs, err := tx.Runs(store.RunFilter{Branch: branch.ID, Limit: 1})
+		if err != nil {
+			return err
+		}
+		of := runs[0]
+		plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: of.Revision, Environments: []model.Environment{tahoe}, Tests: model.TestsDeclared, CreatedAt: at,
+			Targets: []model.PlanTarget{{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed}},
+			Builds:  []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"jq"}}}}
+		number, err := tx.NextRunNumber()
+		if err != nil {
+			return err
+		}
+		run := model.Run{ID: model.RunID(store.NewID("run")), Branch: branch.ID, Revision: of.Revision, Plan: plan.ID, Number: number, Origin: model.OriginPerson, State: model.RunQueued, CreatedAt: at, BaselineOf: of.ID}
+		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID("tart")), Run: run.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}
+		result := model.TargetResult{Execution: execution.ID, Target: "jq", Outcome: outcome, Phase: phase, Tests: model.TestsNone, RecordedAt: at}
+		for _, step := range []func() error{
+			func() error { return tx.AddPlan(plan) },
+			func() error { return tx.AddRun(run) },
+			func() error { return tx.AddExecution(execution) },
+			func() error { return tx.RecordResult(result) },
+		} {
+			if err := step(); err != nil {
+				return err
+			}
+		}
+		state := model.RunFailed
+		if outcome == model.OutcomePassed {
+			state = model.RunPassed
+		}
+		for _, next := range []model.RunState{model.RunRunning, state} {
+			run.State = next
+			if next == state {
+				run.FinishedAt = &at
+			}
+			if err := tx.UpdateRun(run); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
 }
 
 // Someone's repository is pushed to by a remote that already pushes there,

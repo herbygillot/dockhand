@@ -20,9 +20,9 @@ import (
 // with its tests failing or timing out where they didn't count, failed at
 // a phase, blocked by a failed changed dependency, not run, or interrupted.
 // Reading says how the tests counted, "advisory" when empty
-// (Evidence.testsReading). Accepted marks a failure submit --accept
-// acknowledged.
-func targetWords(plan model.Plan, result Cell, reading string, accepted bool) string {
+// (Evidence.testsReading). Accepted is why submit --accept acknowledged a
+// failure, where it did.
+func targetWords(plan model.Plan, result Cell, reading string, accepted string) string {
 	if reading == "" {
 		reading = "advisory"
 	}
@@ -78,11 +78,15 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted bool) st
 	default:
 		return "· " + string(result.Outcome)
 	}
-	if accepted {
-		words += ", accepted: cause not established"
+	if accepted != "" {
+		words += ", accepted: " + accepted
 	}
 	return words
 }
+
+// acceptedUnestablished is why an extra's or a revision bump's failure was
+// accepted where nothing showed whose it was.
+const acceptedUnestablished = "cause not established"
 
 // refWords names a Git source's ref as a Portfile gives it: "git.branch
 // v1.2", or its repository's default branch where it names none.

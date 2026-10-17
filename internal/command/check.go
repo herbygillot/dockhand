@@ -669,7 +669,7 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 // passed one, where its rebuild was silent (the architecture review's
 // L3a).
 func resultWords(evidence engine.Evidence, target engine.TargetEvidence, environment int) string {
-	words := engine.EvidenceWords(evidence, target, environment, false)
+	words := engine.EvidenceWords(evidence, target, environment, "")
 	if reason := target.Outcomes[environment].NotReusable; reason != "" {
 		words += "; not reusable: " + reason
 	}

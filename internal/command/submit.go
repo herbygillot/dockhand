@@ -33,8 +33,11 @@ other open pull requests for the same ports.
 
 The committed files must have passed a check: every changed port in every
 environment. A failed extra (--also) or revision-bump-only port can be
-acknowledged with --accept <port>. --draft allows unfinished or failing
-checks; --no-check submits without one, and the pull request says so.
+acknowledged with --accept <port>, and so can a changed port whose
+baseline (check --baseline) fails it the same way, at the same phase on
+the same release: the pull request says the base fails it too. --draft
+allows unfinished or failing checks; --no-check submits without one, and
+the pull request says so.
 
 dockhand ship checks the committed head first, and submits exactly that
 commit once its check passes; ship --passing, every branch whose check
@@ -125,7 +128,7 @@ kept.
 	cmd.Flags().BoolVar(&request.Draft, "draft", false, "open the pull request as a draft, which unfinished or failing checks allow")
 	cmd.Flags().BoolVar(&request.NoCheck, "no-check", false, "submit without a check; the pull request says no local build ran")
 	cmd.Flags().BoolVar(&ready, "ready", false, "take the pull request out of draft once it is submitted")
-	cmd.Flags().StringSliceVar(&request.Accept, "accept", nil, "acknowledge a failed extra or revision-bump-only port for this exact commit")
+	cmd.Flags().StringSliceVar(&request.Accept, "accept", nil, "acknowledge a failed extra, revision-bump-only port, or changed port its baseline fails alike, for this exact commit")
 	cmd.Flags().StringVar(&request.Title, "title", "", "the pull request's title (default: the commit subject)")
 	cmd.Flags().BoolVar(&request.Rewrite, "rewrite-description", false, "replace the pull request's description with dockhand's, a description you wrote included; your --note is kept")
 	cmd.Flags().StringVar(&note, "note", "", "your own note in the pull request's description, kept as dockhand rewrites it; \"\" takes it out")
