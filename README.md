@@ -1,5 +1,5 @@
 > [!NOTE]
-> **This is dockhand v0.3.1, the first point release of its third design.** Commands, output, and configuration still change in 0.x releases, and v0.4.0, which `main` is moving toward, changes some: `-b` names only an existing branch, with `--new=<name>` to start one, the hidden `auth` command goes, with `setup` naming your GitHub login, `ship` takes a change from release to pull request in one command, replacing `update --submit`, `update --outdated`, `submit --check`, and `submit --passing`, with `serve.ship_to` replacing `serve.for_outdated` and `serve.submit_passing`; `queue` and `watch` fold into `status`; `status`, `path`, `archive`, and the run commands take `-b`, `-p`, and `--pr`; and `logs --all`, `outdated --all`, and `diff --archive` become `--full`, `--current`, and `--source`. From v0.3.0, upgrade: since MacPorts 2.12.7, v0.3.0's `setup` can't make a Tart image, and v0.3.1's can. Its database, `~/.dockhand/dockhand.db`, is migrated forward by each newer dockhand and never discarded. v2 is kept at the tag `v2-final`; the two never share a database.
+> **This is dockhand v0.3.1, the first point release of its third design.** Commands, output, and configuration still change in 0.x releases, and v0.4.0, which `main` is moving toward, changes some: `-b` names only an existing branch, with `--new=<name>` to start one, the hidden `auth` command goes, with `setup` naming your GitHub login, `ship` takes a change from release to pull request in one command, replacing `update --submit`, `update --outdated`, `submit --check`, and `submit --passing`, with `serve.ship_to` replacing `serve.for_outdated` and `serve.submit_passing`; `queue` and `watch` fold into `status`; `status`, `path`, `archive`, and the run commands take `-b`, `-p`, and `--pr`; and `logs --all`, `outdated --all`, and `diff --archive` become `--full`, `--current`, and `--source`. From v0.3.0, upgrade: since MacPorts 2.12.7, v0.3.0's `setup` can't make a Tart image, and v0.3.1's can. Its database, `~/.dockhand/dockhand.db`, is migrated forward by each newer dockhand and never discarded.
 
 <p align="center">
   <picture>
@@ -13,7 +13,12 @@
 
 **From upstream release to submitted port change.**
 
-Dockhand is for people who keep [MacPorts](https://www.macports.org) ports up to date and contribute their changes as pull requests. It works on branches of your ports checkout. A branch can hold one port's update, a new port, a patch fix, or a library update together with the rebuilds of the ports that link it. Dockhand moves ports to new releases and fills in their checksums, and builds what the branch changes in a clean macOS virtual machine. It then shapes the commits the way MacPorts asks for them and opens the pull request from your fork. You edit in the branch's own worktree with your own tools, and nothing leaves your Mac until you run `submit`.
+```sh
+dockhand bump jq                  # jq to its newest release, built in a clean macOS VM,
+                                  # one commit, and its pull request opened from your fork
+```
+
+Dockhand is for people who keep [MacPorts](https://www.macports.org) ports up to date and contribute their changes as pull requests. It works on branches of your ports checkout. A branch can hold one port's update, a new port, a patch fix, or a library update together with the rebuilds of the ports that link it. Dockhand moves ports to new releases and fills in their checksums, and builds what the branch changes in a clean macOS virtual machine. It then shapes the commits the way MacPorts asks for them and opens the pull request from your fork. You edit in the branch's own worktree with your own tools, and nothing leaves your Mac until a command that submits, `bump`, `ship`, or `submit`, opens the pull request.
 
 Two things a MacPorts contributor will want to know first:
 
@@ -32,7 +37,16 @@ dockhand setup                    # register this checkout, then offer the GitHu
 
 The maintainers line is offered as the ports maintained by your GitHub login write it; with none, setup says how to write it yourself. `setup tart` and `setup github` do the image and the login by themselves. `setup` finds the remote for `macports/macports-ports` and puts branch worktrees in `~/Source/macports-branches`, unless you say otherwise. Your own checkout is left alone: each branch gets a sparse worktree of its own, holding only `_resources` and the ports it changes.
 
-## An update, start to finish
+## An update in one command
+
+```sh
+dockhand bump jq                  # the newest release
+dockhand bump jq 1.8.1            # or the version named
+```
+
+`bump` takes a port from its upstream release to an open pull request and asks nothing: it starts a branch from fresh master, updates the port and its checksums, builds it in a clean VM, tidies the edit into one commit, and submits that commit once the check passes. It stops wherever a person should look, and keeps what it has done: a new major version, another pull request open for the port, a failed check, or an upstream archive that changed in a way a build can't catch. Each stop says why, and what goes on from there. `ship jq` is the same, showing its plan and asking once on a terminal; `ship --to check` stops after the check.
+
+## Step by step
 
 ```sh
 dockhand update jq --new          # a branch from fresh master, jq moved to its newest release
@@ -42,7 +56,7 @@ dockhand tidy                     # one commit, "jq: update to 1.8.1"
 dockhand submit                   # push to your fork and open the pull request
 ```
 
-`update` changes only the branch's own files, which `dockhand diff` shows, and the steps after it, which build, commit, and push, each show what they will do before they do it; `--plan` on any of them shows the plan and changes nothing. `ship jq` runs the whole sequence, showing its plan and asking once, `ship --to check` stops after the check, and `bump jq` runs it asking nothing, stopping wherever you should look. Run again, `ship` resumes the branch where it stands. If the check fails, the branch stays as it is. `dockhand logs check-12 jq` prints the log, `dockhand logs -p jq` the same from anywhere, and you fix the Portfile in the worktree and run `check` again. Checks build the files as they are on disk, committed or not, so there is nothing to commit first; `--head` builds only the commits.
+`update` changes only the branch's own files, which `dockhand diff` shows, and the steps after it, which build, commit, and push, each show what they will do before they do it; `--plan` on any of them shows the plan and changes nothing. Run again, `bump` and `ship` resume the branch where it stands. If the check fails, the branch stays as it is. `dockhand logs check-12 jq` prints the log, `dockhand logs -p jq` the same from anywhere, and you fix the Portfile in the worktree and run `check` again. Checks build the files as they are on disk, committed or not, so there is nothing to commit first; `--head` builds only the commits.
 
 `status` shows every open branch: its ports, its edits, its latest check, and its pull request, under a list of what needs you, each with the command that moves it forward. Inside a branch's worktree, `status` shows that branch in detail.
 
@@ -142,12 +156,7 @@ make build
 mkdir -p "$HOME/.local/bin" && install -m 755 dockhand "$HOME/.local/bin/dockhand"
 ```
 
-`dockhand --version` shows which build you have. For v2, build its tag beside this checkout:
-
-```sh
-git worktree add ../dockhand-v2 v2-final
-make -C ../dockhand-v2 build BINARY="$HOME/.local/bin/dockhand-v2"
-```
+`dockhand --version` shows which build you have.
 
 ## More
 

@@ -44,3 +44,14 @@ for main before v0.4.0 final. The held update's hint naming `update
 
 A10's go-reflex collision was addressed in 24fae0ec (`-b` and `--new=`
 names take a run_name suffix).
+
+## The README opens with bump (2026-10-17)
+
+At the person's word ("I expected that one of the first things the README
+would start with is ... `bump`"): the README shows `dockhand bump jq`
+under its tagline, and its first walkthrough is now "An update in one
+command", bump and what it stops for, with the five-command sequence
+after it as "Step by step". The v2 note and the build of `v2-final` are
+gone: both came in with 86813c9c (2026-09-25), when v2 was frozen for the
+v3 rebuild, for anyone still on v2, and they don't belong in v0.4.0's
+README.
