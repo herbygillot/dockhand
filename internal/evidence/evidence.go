@@ -470,6 +470,19 @@ func (e Evidence) ExcludesAll(environment int) bool {
 	return len(e.Targets) > 0
 }
 
+// ProfileSkips says the build profile chose not to build any target in an
+// environment, as minmax does past a port's oldest and newest releases
+// (Exclusion.Span), where nothing about the ports excludes it.
+func (e Evidence) ProfileSkips(environment int) bool {
+	for _, target := range e.Targets {
+		exclusion, excluded := e.Plan.ExclusionIn(e.Plan.Environments[environment], target.Target.ID)
+		if !excluded || !exclusion.Span {
+			return false
+		}
+	}
+	return len(e.Targets) > 0
+}
+
 // Shown are the environments a result table shows, by index: each some
 // target was built on, or meant to be. One every target was excluded from,
 // whether a minmax profile chose not to build there or the port's own

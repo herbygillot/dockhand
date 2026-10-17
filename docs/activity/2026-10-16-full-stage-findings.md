@@ -76,3 +76,13 @@ An open pull request's description is refreshed by `dockhand submit --pr
 writes the title and description where they differ, and says "has
 nothing new" only where both are current. A description edited on GitHub
 is kept unless `--rewrite-description` is given.
+
+## submit's Checks line leaves out what the profile skipped (2026-10-17)
+
+Field testing at 9c5919dd: tart's preview said "nothing built on … macOS
+26 (Tahoe) …, where every port is excluded", where minmax had skipped 26,
+not tart's platforms. `Evidence.ProfileSkips` says an environment the
+profile chose not to build any target in; submit's Checks line leaves it
+out, as the table does, and names only where the ports' own Portfiles
+exclude every one, now said so: "where every port's Portfile excludes
+it". TestSubmitsCheckLineNamesOnlyWhereItBuilt.

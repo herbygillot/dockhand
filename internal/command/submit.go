@@ -449,6 +449,11 @@ func checkWords(plan engine.SubmitPlan) string {
 		switch {
 		case evidence.Tested(i):
 			tested = append(tested, words)
+		case evidence.ProfileSkips(i):
+			// The profile's choice, as minmax's past a port's oldest and
+			// newest releases, isn't the ports' exclusion, and the table
+			// leaves it out too (field testing at 9c5919dd: tart's line
+			// said macOS 26, which minmax skipped, was excluded).
 		case evidence.ExcludesAll(i):
 			excluded = append(excluded, words)
 		}
@@ -457,7 +462,7 @@ func checkWords(plan engine.SubmitPlan) string {
 	if len(failed) == 0 {
 		passed := fmt.Sprintf("passed on %s for this commit's files (%s)", strings.Join(tested, ", "), evidence.Run.Name())
 		if len(excluded) > 0 {
-			passed += fmt.Sprintf("; nothing built on %s, where every port is excluded", strings.Join(excluded, ", "))
+			passed += fmt.Sprintf("; nothing built on %s, where every port's Portfile excludes it", strings.Join(excluded, ", "))
 		}
 		// What MacPorts' CI builds on that this check didn't: tart 2.40.1
 		// passed on 26 alone and failed CI on 15 (field testing, #35157).

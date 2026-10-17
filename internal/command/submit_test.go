@@ -887,7 +887,8 @@ func TestTheDescriptionIsEditedInTheRunRoot(t *testing.T) {
 
 // submit's plan says the check passed only where it built something, and
 // names where every port was excluded, rather than calling it tested there
-// (the beekeeper-studio run's finding 4).
+// (the beekeeper-studio run's finding 4); where the profile chose not to
+// build, as minmax does, it says nothing (field testing at 9c5919dd).
 func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
@@ -901,8 +902,13 @@ func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 		Targets:    []engine.TargetEvidence{{Target: target, Passed: true, Outcomes: cells([]model.TargetResult{{Outcome: model.OutcomeNotRun}, {Execution: "tart_b", Outcome: model.OutcomePassed}})}},
 		Executions: map[model.ExecutionID]model.GuestExecution{"tart_b": {ID: "tart_b", Run: "run_21"}},
 	}
-	require.Equal(t, "passed on "+engine.DescribeEnvironment(tahoe)+" for this commit's files (check-21); nothing built on "+engine.DescribeEnvironment(monterey)+", where every port is excluded",
+	require.Equal(t, "passed on "+engine.DescribeEnvironment(tahoe)+" for this commit's files (check-21); nothing built on "+engine.DescribeEnvironment(monterey)+", where every port's Portfile excludes it",
 		checkWords(engine.SubmitPlan{Evidence: evidence}))
+	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	evidence.Plan.Environments = append(evidence.Plan.Environments, sequoia)
+	evidence.Plan.Builds = append(evidence.Plan.Builds, model.EnvironmentPlan{Environment: sequoia, Exclusions: []model.Exclusion{{Target: target.Target, Reason: "minmax builds it on its oldest and newest releases", Span: true}}})
+	evidence.Targets[0].Outcomes = append(evidence.Targets[0].Outcomes, evidence.Targets[0].Outcomes[0])
+	require.NotContains(t, checkWords(engine.SubmitPlan{Evidence: evidence}), engine.DescribeEnvironment(sequoia), "minmax's choice isn't the ports' exclusion")
 }
 
 // restricted is GitHub's refusal of an app an organization hasn't
