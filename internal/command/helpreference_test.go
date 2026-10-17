@@ -91,9 +91,7 @@ var designRecords = map[string]bool{
 
 // pastReferences are a doc's references to a command of an earlier
 // release, on purpose.
-var pastReferences = map[string]string{
-	"../../README.md: dockhand auth names no command": "v0.3.1's known issues name its auth status",
-}
+var pastReferences = map[string]string{}
 
 // markdownCode is a Markdown file's code: its fenced blocks and inline
 // spans, where commands are named, one a line.
@@ -118,9 +116,13 @@ func markdownCode(text string) string {
 
 var inlineCode = regexp.MustCompile("`([^`]+)`")
 
-// sourceLiterals are the string literals of dockhand's own source, apart
-// from tests, keyed by where each is: the Next: lines and refusals that
-// name a command.
+// sourceLiterals are the strings of dockhand's own source, apart from
+// tests, keyed by where each is: the Next: lines and refusals that name a
+// command. A string is a literal, or one built by + or a format call (as
+// fmt.Errorf("... %s --submit", next)), where a function's variable that
+// holds a command stands for it and anything else for one word; built
+// strings escaped the literals alone (the rc1 full stage: update --submit
+// was offered after v0.4.0 removed it).
 func sourceLiterals(t *testing.T) map[string]string {
 	literals := map[string]string{}
 	err := filepath.WalkDir("../../internal", func(path string, entry fs.DirEntry, err error) error {
@@ -132,19 +134,153 @@ func sourceLiterals(t *testing.T) map[string]string {
 		if err != nil {
 			return err
 		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			if literal, ok := node.(*ast.BasicLit); ok && literal.Kind == token.STRING {
-				if text, err := strconv.Unquote(literal.Value); err == nil && strings.Contains(text, "dockhand ") {
-					literals[files.Position(literal.Pos()).String()] = text
-				}
-			}
-			return true
-		})
+		for where, text := range fileStrings(files, file) {
+			literals[where] = text
+		}
 		return nil
 	})
 	require.NoError(t, err)
 	return literals
 }
+
+// fileStrings are a parsed file's strings that name dockhand, keyed by
+// where each is.
+func fileStrings(files *token.FileSet, file *ast.File) map[string]string {
+	strs := map[string]string{}
+	for _, decl := range file.Decls {
+		built := builtStrings{commands: map[string]string{}}
+		ast.Inspect(decl, func(node ast.Node) bool {
+			text, ok := built.collect(node)
+			if ok && strings.Contains(text, "dockhand ") {
+				strs[files.Position(node.Pos()).String()] = text
+			}
+			return true
+		})
+	}
+	return strs
+}
+
+// builtStrings renders one function's strings, keeping each variable
+// assigned a command, in source order.
+type builtStrings struct {
+	commands map[string]string
+}
+
+// placeholder stands for a value the source doesn't spell: one word that's
+// neither a command nor a flag.
+const placeholder = "…"
+
+// collect is the string node is, where it's one to check: a literal, a
+// concatenation, or a format call. Assigning a command to a variable
+// keeps it for later strings.
+func (b builtStrings) collect(node ast.Node) (string, bool) {
+	switch node := node.(type) {
+	case *ast.BasicLit:
+		return b.render(node)
+	case *ast.BinaryExpr:
+		if node.Op == token.ADD {
+			return b.render(node)
+		}
+	case *ast.CallExpr:
+		return b.format(node)
+	case *ast.AssignStmt:
+		if len(node.Lhs) == 1 && len(node.Rhs) == 1 {
+			if name, ok := node.Lhs[0].(*ast.Ident); ok {
+				text, ok := b.render(node.Rhs[0])
+				held, holds := b.commands[name.Name]
+				switch {
+				case node.Tok == token.ADD_ASSIGN && holds:
+					b.commands[name.Name] = held + b.word(text, ok)
+				case ok && strings.Contains(text, "dockhand "):
+					b.commands[name.Name] = text
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+// render is a string expression's text, where it has a literal in it.
+func (b builtStrings) render(expr ast.Expr) (string, bool) {
+	switch expr := expr.(type) {
+	case *ast.BasicLit:
+		if expr.Kind == token.STRING {
+			text, err := strconv.Unquote(expr.Value)
+			return text, err == nil
+		}
+	case *ast.ParenExpr:
+		return b.render(expr.X)
+	case *ast.BinaryExpr:
+		if expr.Op != token.ADD {
+			return "", false
+		}
+		x, xok := b.render(expr.X)
+		y, yok := b.render(expr.Y)
+		if !xok && !yok {
+			return "", false
+		}
+		return b.word(x, xok) + b.word(y, yok), true
+	case *ast.Ident:
+		text, ok := b.commands[expr.Name]
+		return text, ok
+	case *ast.CallExpr:
+		return b.format(expr)
+	}
+	return "", false
+}
+
+func (b builtStrings) word(text string, ok bool) string {
+	if ok {
+		return text
+	}
+	return placeholder
+}
+
+// format is a format call's text, a function named …f whose first
+// literal argument is the format and those after it its arguments.
+func (b builtStrings) format(call *ast.CallExpr) (string, bool) {
+	var name string
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		name = fun.Name
+	case *ast.SelectorExpr:
+		name = fun.Sel.Name
+	}
+	if !strings.HasSuffix(name, "f") {
+		return "", false
+	}
+	for i, arg := range call.Args {
+		literal, ok := arg.(*ast.BasicLit)
+		if !ok || literal.Kind != token.STRING {
+			continue
+		}
+		format, err := strconv.Unquote(literal.Value)
+		if err != nil || !strings.Contains(format, "%") {
+			return "", false
+		}
+		args := call.Args[i+1:]
+		return verb.ReplaceAllStringFunc(format, func(v string) string {
+			if v == "%%" {
+				return "%"
+			}
+			if len(args) == 0 {
+				return placeholder
+			}
+			arg := args[0]
+			args = args[1:]
+			if v == "%s" || v == "%v" || v == "%w" {
+				if text, ok := b.render(arg); ok {
+					return text
+				}
+			}
+			return placeholder
+		}), true
+	}
+	return "", false
+}
+
+// verb is a format's verb, as %s, %-8s, or %%.
+var verb = regexp.MustCompile(`%[-+# 0-9.*]*[a-zA-Z%]`)
 
 // referenceProblems names each "dockhand <command> [--flag]" in text whose
 // command or flag doesn't exist. In code every one is a command; in prose,
@@ -231,4 +367,26 @@ func TestReferenceProblems(t *testing.T) {
 	require.Equal(t, []string{"dockhand auth names no command", "dockhand status has no --everything"},
 		referenceProblems(root, "run dockhand auth login, then dockhand status --everything", false))
 	require.Empty(t, referenceProblems(root, "what dockhand runs with; dockhand can't. --on says where (dockhand built jq with +doc); Next: dockhand check -b jq --on tart:26", false))
+}
+
+// A command built in a variable and offered by a format call is read
+// whole: v0.4.0's held update offered update --submit so, after --submit
+// had gone (the rc1 full stage).
+func TestBuiltStringsAreRead(t *testing.T) {
+	root := rootForReference(t)
+	files := token.NewFileSet()
+	file, err := parser.ParseFile(files, "held.go", `package command
+func held(port, version string) error {
+	next := "dockhand update " + port
+	if version != "" {
+		next += " " + version
+	}
+	return exitf(3, "%s waits for your look\nOnce it's fine: %s --new --submit", port, next)
+}`, 0)
+	require.NoError(t, err)
+	var problems []string
+	for _, text := range fileStrings(files, file) {
+		problems = append(problems, referenceProblems(root, text, false)...)
+	}
+	require.Equal(t, []string{"dockhand update has no --submit"}, problems)
 }
