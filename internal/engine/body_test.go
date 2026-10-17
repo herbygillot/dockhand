@@ -144,9 +144,11 @@ func TestBuildersReportsAreOneWhereEachSaidTheSame(t *testing.T) {
 }
 
 // An environment where every port is excluded wasn't tested: Tested on
-// doesn't name it, and the table still says excluded (the beekeeper-studio
-// run's finding 4, where platforms {darwin >= 23} left macOS 12 out, and
-// the pull request said it was built there).
+// doesn't name it (the beekeeper-studio run's finding 4, where platforms
+// {darwin >= 23} left macOS 12 out, and the pull request said it was built
+// there), and the table leaves its column out, keeping only the releases
+// something was built on (the person's word, 2026-10-16; field testing's
+// tart #35590).
 func TestAnExcludedEnvironmentIsNotCalledTested(t *testing.T) {
 	t.Parallel()
 	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
@@ -169,10 +171,10 @@ func TestAnExcludedEnvironmentIsNotCalledTested(t *testing.T) {
 	testedOn, table, found := strings.Cut(ownedSections(bodyFacts{Evidence: &evidence}), "| Port |")
 	require.True(t, found)
 	require.Equal(t, "###### Tested on\n\nmacOS 26.6 arm64\nXcode 26.6 · tart: built in a clean VM (Run ID: tart_b - checked in check-21)\n\n", testedOn)
-	require.Contains(t, table, "| beekeeper-studio | — excluded | ✓ |")
+	require.Contains(t, table, " macOS 26 |\n| --- | --- |\n| beekeeper-studio | ✓ |", "macOS 12's column is left out")
+	require.NotContains(t, table, "excluded")
 	evidence.Targets[0].Outcomes[0].Exclusion = model.Exclusion{Target: target.Target, Reason: "the Portfile marks it known_fail here"}
-	_, table, _ = strings.Cut(ownedSections(bodyFacts{Evidence: &evidence}), "| Port |")
-	require.Contains(t, table, "| beekeeper-studio | — not built: the Portfile marks it known_fail here | ✓ |", "the plan's reason, where the cell has it")
+	require.Equal(t, "— not built: the Portfile marks it known_fail here", EvidenceWords(evidence, evidence.Targets[0], 0, false), "a cell shown still says the plan's reason, where it has it")
 }
 
 // A --variants each check that passed ticks the template's variants item

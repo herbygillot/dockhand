@@ -470,15 +470,18 @@ func (e Evidence) ExcludesAll(environment int) bool {
 	return len(e.Targets) > 0
 }
 
-// Shown are the environments a result table shows, by index: each but
-// those a minmax profile built none of the targets on, by its choice
-// (Exclusion.Span), which the table leaves out rather than filling with
-// "not built" (the person's word, 2026-10-16).
+// Shown are the environments a result table shows, by index: each some
+// target was built on, or meant to be. One every target was excluded from,
+// whether a minmax profile chose not to build there or the port's own
+// platforms leave it out, the table leaves out rather than filling with
+// "not built" (the person's word, 2026-10-16: "Just keep the cells of the
+// macOS versions that builds actually happened on"; field testing's tart
+// #35590, at >= 24, still showed macOS 12 to 14).
 func (e Evidence) Shown() []int {
 	var shown []int
 	for i := range e.Plan.Environments {
 		for _, target := range e.Targets {
-			if cell := target.Outcomes[i]; cell.Kind != CellExcluded || !cell.Exclusion.Span {
+			if target.Outcomes[i].Kind != CellExcluded {
 				shown = append(shown, i)
 				break
 			}

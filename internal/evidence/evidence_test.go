@@ -294,18 +294,18 @@ func TestRequiredEnvironmentsKeepWhatD17Accepted(t *testing.T) {
 	require.True(t, judged.Targets[0].Missing())
 }
 
-// A result table shows the releases something was built on, or excluded
-// for a reason of the port's own; the releases a minmax profile chose not
-// to build on leave it (the person's word, 2026-10-16).
-func TestATableLeavesOutWhatAProfileChoseNotToBuild(t *testing.T) {
+// A result table shows the releases something was built on; a release
+// every port was excluded from, by a minmax profile's choice or by the
+// port's own platforms, leaves it (the person's word, 2026-10-16).
+func TestATableLeavesOutWhatNothingWasBuiltOn(t *testing.T) {
 	spanned := Cell{Kind: CellExcluded, Exclusion: model.Exclusion{Reason: "minmax builds it on its oldest and newest releases, macOS 12 and 27", Span: true}}
-	knownFail := Cell{Kind: CellExcluded, Exclusion: model.Exclusion{Reason: "known_fail on arm64 before macOS 14"}}
+	platforms := Cell{Kind: CellExcluded, Exclusion: model.Exclusion{Reason: "its platforms, {macosx >= 24}, exclude this release"}}
 	built := Cell{Kind: CellRecorded}
-	e := Evidence{Plan: model.Plan{Environments: make([]model.Environment, 4)}, Targets: []TargetEvidence{
-		{Outcomes: []Cell{built, spanned, knownFail, built}},
-		{Outcomes: []Cell{built, spanned, spanned, built}},
+	e := Evidence{Plan: model.Plan{Environments: make([]model.Environment, 5)}, Targets: []TargetEvidence{
+		{Outcomes: []Cell{built, spanned, platforms, platforms, built}},
+		{Outcomes: []Cell{built, spanned, spanned, built, built}},
 	}}
-	require.Equal(t, []int{0, 2, 3}, e.Shown(), "the second release only minmax left out; the third a port's own reason kept")
+	require.Equal(t, []int{0, 3, 4}, e.Shown(), "the second release minmax left out and the third the platforms; the fourth one port built on")
 	none := Evidence{Plan: model.Plan{Environments: make([]model.Environment, 2)}, Targets: []TargetEvidence{{Outcomes: []Cell{spanned, spanned}}}}
 	require.Equal(t, []int{0, 1}, none.Shown(), "a table with nothing else shows what it has")
 }

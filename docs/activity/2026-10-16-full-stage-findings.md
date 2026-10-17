@@ -55,3 +55,24 @@ after it as "Step by step". The v2 note and the build of `v2-final` are
 gone: both came in with 86813c9c (2026-09-25), when v2 was frozen for the
 v3 rebuild, for anyone still on v2, and they don't belong in v0.4.0's
 README.
+
+## The matrix keeps only releases something was built on (2026-10-17)
+
+Field testing on 4c32119c: 0cf27aaa left out the releases a minmax
+profile chose not to build on, but a release the port's own platforms
+exclude still had a column of "— not built: its platforms, {macosx >= 24},
+exclude this release" cells, in the pull request and in check's and
+ship's table: tart #35590 showed macOS 12 to 14, tart-softnet #35591 12 to
+15. The person's word was to keep only the releases builds happened on,
+so `Evidence.Shown` now leaves out every release all of the table's ports
+were excluded from, whatever the reason; a release one port built on
+keeps its column, and another port's excluded cell there still says why.
+TestATableLeavesOutWhatNothingWasBuiltOn, and
+TestAnExcludedEnvironmentIsNotCalledTested now expects macOS 12's column
+gone.
+
+An open pull request's description is refreshed by `dockhand submit --pr
+<number>` on a build with this: with nothing new to push, submit still
+writes the title and description where they differ, and says "has
+nothing new" only where both are current. A description edited on GitHub
+is kept unless `--rewrite-description` is given.
