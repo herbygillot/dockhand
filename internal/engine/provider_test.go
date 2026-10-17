@@ -27,7 +27,7 @@ func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 
 	for on, refusal := range map[string]string{
 		"tart:sonoma": "Tart isn't installed here",
-		"prefix":      "the prefix provider is not in v3 yet",
+		"prefix":      "the prefix provider is not available in v3",
 		"nosuch":      `no provider "nosuch" is set up`,
 		"github:15":   "the github provider builds on the runners MacPorts' workflow names",
 		"command:15":  "the command provider builds wherever its script does",
@@ -36,7 +36,7 @@ func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 		require.ErrorContains(t, err, refusal, on)
 	}
 	_, err = (&Engine{}).Environments(t.Context(), nil)
-	require.ErrorContains(t, err, "build profile host builds on Tart, which isn't installed here")
+	require.ErrorContains(t, err, "build profile host requires Tart, which is not installed")
 	_, err = e.Environments(t.Context(), []string{"ci"})
 	require.EqualError(t, err, "--on ci is gone: --build macports-ci builds on the releases MacPorts' CI does")
 	// Tart's own refusal is said, not the general one that suggests the
@@ -143,7 +143,7 @@ func TestWhereABuildProfileBuilds(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, Where{Environments: []model.Environment{tahoe}}, where, "--on's explicit environments")
 	_, err = e.Where(t.Context(), WhereRequest{Build: "nosuch"})
-	require.ErrorContains(t, err, "--build nosuch: no profile of that name")
+	require.ErrorContains(t, err, "--build nosuch: unknown build profile")
 	_, err = e.Where(t.Context(), WhereRequest{Build: "command"})
 	require.ErrorContains(t, err, "build profile command builds with your own script, which isn't set up")
 }

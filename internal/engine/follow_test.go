@@ -111,7 +111,7 @@ func TestServeSaysAnEndedLoginOnce(t *testing.T) {
 		follow.last = time.Time{}
 		follow.maybe(t.Context())
 	}
-	require.Equal(t, []string{"serve: dockhand's GitHub login can't renew itself, so pull requests can't be read; run dockhand setup github, which serve uses without a restart"}, said)
+	require.Equal(t, []string{"serve: GitHub credentials could not be renewed, so pull request refresh is paused. Run dockhand setup github to sign in again; serve will use the new credentials automatically"}, said)
 	require.Equal(t, []string{"GitHub login: dockhand's GitHub login can't renew itself; run dockhand setup github"}, notified)
 }
 

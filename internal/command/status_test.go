@@ -87,7 +87,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 
 	t.Setenv("MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "tidy")
-	require.ErrorContains(t, err, "needs review", "the hand edit is not dockhand's")
+	require.ErrorContains(t, err, "review this plan in an interactive terminal", "the hand edit is not dockhand's")
 	_, _, err = dockhand(t, "tidy", "--squash", "--message", "jq: update to 1.8.1")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "check")
@@ -142,7 +142,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	out, errs, err := dockhand(t, "wait")
 	require.NoError(t, err)
-	require.Contains(t, errs, "check-3 runs here, since no dockhand serve is running.")
+	require.Contains(t, errs, "No dockhand serve is running, so check-3 will run here.")
 	require.Contains(t, out, "Passed for snapshot 1.")
 	out, _, err = dockhand(t, "wait", "check-3")
 	require.NoError(t, err, "a finished run is reported as it ended")
@@ -174,7 +174,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, out, whole)
 	_, _, err = dockhand(t, "logs", "check-3", "--full")
-	require.EqualError(t, err, "--full goes with a port")
+	require.EqualError(t, err, "--full requires a port name, for example: dockhand logs check-42 jq --full")
 	// A port named alone is the branch's latest check's (field testing,
 	// 2026-10-02).
 	alone, _, err := dockhand(t, "logs", "jq")
@@ -217,7 +217,7 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 		"  install       line 46006\n"
 	var out strings.Builder
 	require.NoError(t, writePortLog(&out, result, data, false))
-	require.Equal(t, steps+"From line 46004, where hugo's own build begins; --full prints the 46003 lines before it too, its dependencies' installs among them.\n\n"+own, out.String())
+	require.Equal(t, steps+"Showing from line 46004, where the build for hugo begins. Use --full to include the previous 46003 lines, including dependency installation.\n\n"+own, out.String())
 
 	out.Reset()
 	require.NoError(t, writePortLog(&out, result, data, true))
@@ -320,7 +320,7 @@ func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
 // network, which status never reads.
 func TestStatusSaysAReleaseMovedBeforeItsCheck(t *testing.T) {
 	latest := model.Run{Number: 7, State: model.RunPassed}
-	detail := "libharbor's git.branch v4 named aaaaaaa when its update chose it, and bbbbbbb when check-7 planned it: the check built another source than the update chose"
+	detail := "libharbor's git.branch v4 named aaaaaaa when the update was prepared, then to bbbbbbb when check-7 was planned. The check used a different source from the update"
 	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/libharbor-4", State: model.BranchOpen}, Head: "c0ffee", Commits: 1, Latest: &latest, Current: true,
 		LatestRevision: &model.Revision{Kind: model.RevisionCommit},
 		Evidence:       &engine.Evidence{Targets: []engine.TargetEvidence{{Target: model.PlanTarget{Target: model.Target{Name: "libharbor"}, Role: model.Changed}, Passed: true}}},
@@ -409,7 +409,7 @@ func TestStatusSaysABranchsWorkIsOnMasterAlready(t *testing.T) {
 // submission too, where only its text and an unattended submission's held
 // said them (batch 22's leftover, batch 32).
 func TestSubmitJSONListsItsConcerns(t *testing.T) {
-	detail := "libharbor's git.branch v4 named aaaaaaa when its update chose it, and bbbbbbb when check-7 planned it: the check built another source than the update chose"
+	detail := "libharbor's git.branch v4 named aaaaaaa when the update was prepared, then to bbbbbbb when check-7 was planned. The check used a different source from the update"
 	plan := engine.SubmitPlan{Branch: model.Branch{Name: "dockhand/libharbor-4"},
 		Moved: []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Class: model.Introduced, Detail: detail}}}
 	view := submitView(plan)

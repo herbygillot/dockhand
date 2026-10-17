@@ -133,7 +133,7 @@ func (p TidyPlan) Unambiguous() bool {
 // unasked; where nobody looks, answered is AnsweredNobody.
 func (p TidyPlan) HeldForLook(answered model.Answered) error {
 	if p.AppliesUnasked(answered, false) != nil {
-		return fmt.Errorf("the edit needs a look before it is committed: dockhand tidy --branch %s", p.Branch.ShortName())
+		return fmt.Errorf("review the commit plan before committing: run dockhand tidy --branch %s", p.Branch.ShortName())
 	}
 	return nil
 }
@@ -146,7 +146,7 @@ func (p TidyPlan) HeldForLook(answered model.Answered) error {
 // tidy's alike (the command package split's 7b row 6).
 func (p TidyPlan) AppliesUnasked(answered model.Answered, explicit bool) error {
 	if !explicit && answered != model.AnsweredYes && !p.Unambiguous() {
-		return errors.New("this plan needs review before it is applied: review it on a terminal, apply it as shown with --yes, or make one commit with --squash --message \"port: what changed\"")
+		return errors.New("review this plan in an interactive terminal before applying it, or approve the displayed plan with --yes. To combine the changes into one commit, use --squash --message \"port: what changed\"")
 	}
 	if blocking := p.Blocking(); len(blocking) > 0 {
 		return fmt.Errorf("nothing was applied: %s", strings.Join(blocking, "; "))
@@ -185,7 +185,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if above, err := worktree.IsAncestor(ctx, base, head); err != nil {
 		return TidyPlan{}, err
 	} else if !above {
-		return TidyPlan{}, fmt.Errorf("%s is not above its base %s; rebase it onto master first", branch.Name, branch.Base.Short())
+		return TidyPlan{}, fmt.Errorf("%s does not descend from its recorded base %s; rebase it onto master first", branch.Name, branch.Base.Short())
 	}
 	history, err := worktree.History(ctx, base, head)
 	if err != nil {
@@ -935,7 +935,7 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 		return result, err
 	}
 	if err := worktree.ResetIndex(ctx); err != nil {
-		return result, fmt.Errorf("the commits are made, but resetting the index failed: %w; git reset brings it in line", err)
+		return result, fmt.Errorf("commits were created, but the staging area could not be reset: %w; run git reset to align it with the new commits", err)
 	}
 	// A narrowing that fails leaves the worktree as wide as it was.
 	if narrowed, err := e.narrow(ctx, worktree, plan.Branch, plan.Base, plan.Final); err == nil {

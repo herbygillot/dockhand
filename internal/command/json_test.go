@@ -147,7 +147,7 @@ func TestJSONEnvelopes(t *testing.T) {
 	refused, err := jsonOf(t, "status", "--watch")
 	require.Error(t, err)
 	require.Equal(t, 1, refused.ExitCode)
-	require.Equal(t, "--watch keeps the whole status current; it takes no branch, --attention, --all, or --json", *refused.Error)
+	require.Equal(t, "--watch shows all current status and cannot be combined with a branch selector, --attention, --all, or --json", *refused.Error)
 	require.Nil(t, refused.Result)
 
 	unknown, err := jsonOf(t, "status", "--no-such-flag")

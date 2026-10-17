@@ -227,6 +227,6 @@ func TestALocalPatchMayBeInASubdirectoryOfFiles(t *testing.T) {
 	}
 	require.NoError(t, LocalPatches(port("5.16/clean-up-paths.patch"), portdir))
 	for _, patches := range []string{"../escape.patch", "5.16/../../escape.patch", "remote.patch:patches", "/etc/passwd"} {
-		require.ErrorContains(t, LocalPatches(port(patches), portdir), "isn't a file under the port's files directory", patches)
+		require.ErrorContains(t, LocalPatches(port(patches), portdir), "is not in the port's files directory", patches)
 	}
 }

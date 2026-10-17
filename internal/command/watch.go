@@ -76,7 +76,7 @@ func watchPlain(ctx context.Context, e *engine.Engine, streams Streams) error {
 	if err := showStatus(ctx, e, streams, nil, false, false, branchFlags{}); err != nil {
 		return err
 	}
-	fmt.Fprintln(streams.Out, "\nWatching; events follow as they happen. Ctrl-C stops.")
+	fmt.Fprintln(streams.Out, "\nWatching for changes. Press Ctrl-C to stop watching.")
 	names := &eventNames{e: e, branches: map[model.BranchID]string{}, runs: map[model.RunID]string{}}
 	for {
 		select {
@@ -205,7 +205,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams) error {
 				if err := Run(ctx, args, streams); err != nil {
 					fmt.Fprintf(streams.Err, "dockhand: %v\n", err)
 				}
-				fmt.Fprint(streams.Out, "\nEnter returns to the view. ")
+				fmt.Fprint(streams.Out, "\nPress Enter to return to status. ")
 				paused = true
 			}
 			want <- struct{}{}
@@ -283,7 +283,7 @@ func watchVerb(ctx context.Context, e *engine.Engine, line string) (args []strin
 			return nil, false, err
 		}
 		if !ok {
-			return nil, false, errors.New("no checks to show the logs of")
+			return nil, false, errors.New("No checks have been recorded yet.")
 		}
 		return []string{"logs", latest.Name()}, false, nil
 	}

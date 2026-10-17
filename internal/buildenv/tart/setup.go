@@ -203,7 +203,7 @@ type SetupResult struct {
 // progress as it goes.
 func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.Writer) (SetupResult, error) {
 	if options.Check && options.Rebuild {
-		return SetupResult{}, errors.New("--check and --rebuild ask for opposite things; choose one")
+		return SetupResult{}, errors.New("--check and --rebuild cannot be used together; choose one")
 	}
 	release, err := p.release(options.Release)
 	if err != nil {
@@ -228,7 +228,7 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 		// (Environments): made alone, it spent 65 GB on an image no check
 		// could use (the rc3 full run, 2026-10-06).
 		if options.Xcode != "" && !has(baseImage(release)) {
-			return SetupResult{}, fmt.Errorf("an Xcode image is an add-on to macOS %s (%s)'s base image, which isn't made yet: dockhand setup tart %s makes it, then --xcode adds Xcode beside it",
+			return SetupResult{}, fmt.Errorf("the base image for macOS %s (%s) is missing; run dockhand setup tart %s first, then rerun with --xcode",
 				release.Product, release.Name, release.Slug)
 		}
 		image, disk := baseImage(release), SetupDisk
@@ -245,7 +245,7 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 			options.MacPortsVersion = p.newMacPorts(ctx)
 		}
 		if progress != nil && making {
-			fmt.Fprintf(progress, "Making %s for macOS %s (%s), which takes up to %s of disk.\n", image, release.Product, release.Name, disk)
+			fmt.Fprintf(progress, "Creating %s for macOS %s (%s); requires up to %s of disk space.\n", image, release.Product, release.Name, disk)
 		}
 	}
 	config, err := p.provisionConfig(release, options)
@@ -300,7 +300,7 @@ func (p *Provider) Xcodes() (string, bool) {
 
 // ErrXcodes is xcodes failing to download an Xcode, which says why in its
 // own output: most often, that it needs the person to sign in.
-var ErrXcodes = errors.New("xcodes couldn't download it")
+var ErrXcodes = errors.New("xcodes could not download Xcode")
 
 // DownloadXcode downloads the Xcode setup is missing with xcodes, into the
 // folder setup looked in, where setup finds it and checks it is Apple's
@@ -313,7 +313,7 @@ func (p *Provider) DownloadXcode(ctx context.Context, missing *MissingXcode, in 
 	case !ok:
 		return "", errors.New("xcodes isn't installed: sudo port install xcodes")
 	case missing.Folder == "":
-		return "", fmt.Errorf("%s is one archive, not a folder to download Xcode %s into", missing.Path, missing.Version)
+		return "", fmt.Errorf("%s is a file; choose a download directory for Xcode %s", missing.Path, missing.Version)
 	}
 	command := exec.CommandContext(ctx, xcodes, "download", missing.Version, "--directory", missing.Folder)
 	command.Stdin, command.Stdout, command.Stderr = in, out, errs
@@ -322,7 +322,7 @@ func (p *Provider) DownloadXcode(ctx context.Context, missing *MissingXcode, in 
 	}
 	path, _, err := macos.SelectXcode(missing.Folder, missing.Release, missing.Version)
 	if err != nil {
-		return "", fmt.Errorf("xcodes finished, and still: %w", err)
+		return "", fmt.Errorf("xcodes finished, but no suitable Xcode archive was found: %w", err)
 	}
 	return path, nil
 }

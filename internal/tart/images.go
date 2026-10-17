@@ -70,7 +70,7 @@ func HandlesASIF(version string) bool {
 // of eleven images probed two at a time on 2026-09-27, on Tart 2.39.0, and
 // the code is the same in 2.37.0. Listing again, once the delete is done,
 // answers.
-var ErrListingRaced = errors.New("tart: a VM went while Tart listed its VMs")
+var ErrListingRaced = errors.New("tart: a VM was deleted while Tart was listing VMs")
 
 // listingAttempts bounds how often Images lists again after a raced
 // listing, and listingPause how long it waits between: a delete takes well
@@ -87,7 +87,7 @@ var (
 
 // ErrListingTimedOut is a listing Tart didn't answer in listingWait: what
 // VMs there are, and which run, is unknown.
-var ErrListingTimedOut = errors.New("tart: Tart didn't answer tart list")
+var ErrListingTimedOut = errors.New("tart: tart list timed out")
 
 // ErrVMMissing reports a VM Tart does not have.
 var ErrVMMissing = errors.New("tart: VM does not exist")
@@ -119,7 +119,7 @@ func (c Client) list(ctx context.Context, options RunOptions) ([]byte, error) {
 	defer cancel()
 	output, err := c.Run(listing, options, "list", "--format", "json")
 	if err != nil && ctx.Err() == nil && errors.Is(listing.Err(), context.DeadlineExceeded) {
-		return nil, fmt.Errorf("%w in %s, so what VMs there are is unknown; a disk image Tart's listing waits on may be stuck attached (hdiutil info)", ErrListingTimedOut, listingWait)
+		return nil, fmt.Errorf("%w after %s; VM status is unknown. A stuck disk image attachment may be blocking Tart; run hdiutil info to inspect attached images", ErrListingTimedOut, listingWait)
 	}
 	return output, err
 }
@@ -156,7 +156,7 @@ func (c Client) Images(ctx context.Context, options RunOptions) ([]Image, error)
 	result := make([]Image, 0, len(rows))
 	for _, row := range rows {
 		if row.Name == nil || row.Source == nil || row.Running == nil && row.State == nil {
-			return nil, fmt.Errorf("tart: invalid image listing: an entry lacks Name, Source, or Running and State, which dockhand reads")
+			return nil, fmt.Errorf("tart: invalid image listing: each entry must include Name, Source, and either Running or State")
 		}
 		running := row.Running != nil && *row.Running || row.State != nil && *row.State == "running"
 		accessed, _ := time.Parse(time.RFC3339, row.Accessed)
@@ -180,7 +180,7 @@ func (c Client) Get(ctx context.Context, options RunOptions, name string) (VM, e
 		return VM{}, fmt.Errorf("tart: invalid description of %s: %w", name, err)
 	}
 	if row.DiskFormat == nil || row.Running == nil && row.State == nil {
-		return VM{}, fmt.Errorf("tart: invalid description of %s: it lacks DiskFormat, or Running and State, which dockhand reads", name)
+		return VM{}, fmt.Errorf("tart: invalid description of %s: expected DiskFormat and either Running or State", name)
 	}
 	running := row.Running != nil && *row.Running || row.State != nil && *row.State == "running"
 	return VM{Running: running, DiskFormat: *row.DiskFormat}, nil

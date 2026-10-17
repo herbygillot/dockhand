@@ -19,7 +19,7 @@ func reviewCommand(s *settings, streams Streams) *cobra.Command {
 	var comment, requestChanges, markdown bool
 	cmd := &cobra.Command{
 		Use:   "review <pr>",
-		Short: "Say what a reviewer would about a pull request",
+		Short: "Review a pull request against MacPorts' rules",
 		Long: `Fetches a macports-ports pull request, such as 34905, and applies MacPorts'
 commit rules to its commits and Portfiles, as tidy and submit do. Reviewing
 it again after it changes says which findings are resolved. port lint and
@@ -60,7 +60,7 @@ access. --markdown prints the text, for pasting.`,
 				if err := e.RecordReview(ctx, report, ""); err != nil {
 					return err
 				}
-				return &ExitError{Code: ExitFailure, Message: "nothing was posted: without a terminal, --comment or --request-changes posts it"}
+				return &ExitError{Code: ExitFailure, Message: "No review was posted. In a script, use --comment or --request-changes to post it."}
 			}
 			for {
 				choices := "c comment · r request changes · e edit first · n don't post"
@@ -76,7 +76,7 @@ access. --markdown prints the text, for pasting.`,
 					return postReview(ctx, e, streams, report, body, false)
 				case "r":
 					if !report.CanRequestChanges() {
-						fmt.Fprintf(streams.Err, "Requesting changes is left to people with write or triage access; you have %s.\n", engine.Access(report.Permission))
+						fmt.Fprintf(streams.Err, "Requesting changes requires write or triage access; your access is %s.\n", engine.Access(report.Permission))
 						continue
 					}
 					return postReview(ctx, e, streams, report, body, true)
@@ -147,7 +147,7 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 		// 5.18.0 by then).
 		heading := "  Upstream:"
 		if report.Head != "" && report.Base != "" {
-			heading = fmt.Sprintf("  Upstream, against MacPorts' ports at the pull request's %s, off master at %s:", model.ObjectID(report.Head).Short(), model.ObjectID(report.Base).Short())
+			heading = fmt.Sprintf("  Upstream comparison using ports at pull request commit %s (based on master %s):", model.ObjectID(report.Head).Short(), model.ObjectID(report.Base).Short())
 		}
 		fmt.Fprintln(out, heading)
 		for _, line := range lines {
@@ -170,5 +170,5 @@ func experimentalWords(number int, author string) string {
 	if author != "" {
 		whose = "@" + author + "'s"
 	}
-	return fmt.Sprintf("Experimental: dockhand evaluates #%d's Portfiles, %s, with MacPorts on this Mac, as it does your own, so read them first where you don't trust their code; running another person's Portfile apart from you is still to come.", number, whose)
+	return fmt.Sprintf("Experimental: this command evaluates pull request #%d using %s Portfiles with MacPorts on this Mac. Read any Portfiles you do not trust before running it; isolated evaluation is not yet available.", number, whose)
 }

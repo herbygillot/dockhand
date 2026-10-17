@@ -68,7 +68,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	out := serveUntil([]string{"--ship-to", "submit"}, "serve: opened #34901 for jq-")
 	require.Contains(t, out, "opens PRs for passing updates it prepared, at most 10 a day\n")
 	require.Contains(t, out, "serve: 1 port of yours has newer releases: jq\n")
-	require.Contains(t, out, "serve: 1 port of yours may have newer releases, for your look: yq (dockhand outdated yq says why)\n")
+	require.Contains(t, out, "serve: 1 port may have newer releases that need review: yq. Run dockhand outdated yq for details\n")
 	require.NotContains(t, out, "prepared yq")
 	require.Regexp(t, `serve: prepared jq-1\.8\.1: 1\.7\.1 → 1\.8\.1, check-1 queued\n`, out)
 	require.Regexp(t, `check-1 jq-1\.8\.1: passed\n`, out)
@@ -82,7 +82,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	require.NoError(t, err)
 	require.Regexp(t, `· jq-1\.8\.1\s+#34901 opened by serve, without a person's review`, status)
 	require.Contains(t, status, "Your ports: 1 port has newer releases, as serve found ")
-	require.Regexp(t, `Your ports: 1 port may have newer releases, for your look, as serve found .* \(dockhand outdated yq\)\n`, status)
+	require.Regexp(t, `Your ports: 1 port may have newer releases; review needed. Last checked .* by serve\. Run dockhand outdated yq for details\.\n`, status)
 
 	again := serveUntil(nil, "serve: leading")
 	require.NotContains(t, again, "newer releases", "once a day")

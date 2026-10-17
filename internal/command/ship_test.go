@@ -66,7 +66,7 @@ func TestShipCarriesAPortToItsPullRequest(t *testing.T) {
 
 	out, _, err = dockhand(t, "ship", "jq", "--to", "check")
 	require.NoError(t, err)
-	require.Contains(t, out, "  jq-1.8.1  its branch, updated again where it isn't at the newest release, to check\n", "resumed, not started again")
+	require.Contains(t, out, "  jq-1.8.1  existing branch; update if needed to the newest release, to check\n", "resumed, not started again")
 	require.Contains(t, out, "jq is already at 1.8.1; nothing to change.\n")
 	require.Contains(t, out, "passed for this commit already; nothing to check")
 }
@@ -88,7 +88,7 @@ func TestShipStopsWhereToSays(t *testing.T) {
 	require.NotContains(t, out, "checking commit ")
 	require.Empty(t, g.PRs)
 	_, _, err = dockhand(t, "ship", "jq", "-b", "jq-1.8.1")
-	require.EqualError(t, err, "name ports, --mine, --passing, or a branch: one of them")
+	require.EqualError(t, err, "choose one target source: port names, --mine, --passing, or a branch")
 }
 
 // --mine ships the person's ports outdated --mine finds newer releases of,
@@ -105,7 +105,7 @@ func TestShipMineAndPassing(t *testing.T) {
 	asMaintainer(t, w)
 
 	_, _, err := dockhand(t, "ship", "--mine", "jq")
-	require.EqualError(t, err, "name ports, --mine, --passing, or a branch: one of them")
+	require.EqualError(t, err, "choose one target source: port names, --mine, --passing, or a branch")
 	out, errs, err := dockhand(t, "ship", "--mine", "--to", "check")
 	require.NoError(t, err, errs)
 	require.Equal(t, []string{"@ada"}, reader.asked[0].Maintainers)
@@ -203,7 +203,7 @@ func TestShipWithYesHoldsWhatServeWould(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n# by hand\n"), 0o644))
 	_, _, err = dockhand(t, "ship", "-b", "notes", "--yes", "--to", "commit")
-	require.ErrorContains(t, err, "the edit needs a look before it is committed: dockhand tidy --branch notes; nothing was checked or submitted")
+	require.ErrorContains(t, err, "review the commit plan before committing: run dockhand tidy --branch notes; nothing was checked or submitted")
 	require.NotContains(t, err.Error(), "--yes")
 	require.Contains(t, testsupport.Git(t, dir, "status", "--porcelain"), "textproc/jq/Portfile", "nothing was committed")
 }
@@ -262,6 +262,6 @@ func TestShipStartsNoBranchForAnEditItCantMakeUnattended(t *testing.T) {
 	testPreparer = func(*engine.Engine) engine.Preparer { return refuser{} }
 	t.Cleanup(func() { testPreparer = nil })
 	_, _, err := dockhand(t, "ship", "jq", "--yes", "--to", "commit")
-	require.ErrorContains(t, err, "can't update jq by itself: its pre-fetch hook runs exec\nNo branch was started.")
+	require.ErrorContains(t, err, "Could not update jq automatically: its pre-fetch hook runs exec\nNo branch was started.")
 	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 }

@@ -98,7 +98,7 @@ its go-get answer.`,
 					return errors.New(engine.TakenWords(name, taken))
 				}
 				if unchecked != "" {
-					fmt.Fprintf(streams.Err, "whether a subport is named %s wasn't checked: %s\n", name, unchecked)
+					fmt.Fprintf(streams.Err, "Couldn't check whether a subport named %s already exists: %s\n", name, unchecked)
 				}
 				if free = where.newName(); free == "" {
 					if free, err = e.NameFor(ctx, name, "new"); err != nil {
@@ -111,7 +111,7 @@ its go-get answer.`,
 			default:
 				branch, err = e.Current(ctx)
 				if errors.Is(err, engine.ErrNoBranch) {
-					return errors.New("create writes in a branch: --new starts one, or --branch names one")
+					return errors.New("create needs a branch. Use --new to start one or --branch to choose an existing one.")
 				}
 			}
 			if err != nil {
@@ -138,7 +138,7 @@ its go-get answer.`,
 			}
 			streams.emit(createdView(branch, created))
 			if created.MovedFrom != "" {
-				fmt.Fprintf(out, "Moved %s from %s to %s, its files as they were, your edits included\n", created.Port, created.MovedFrom, created.Directory)
+				fmt.Fprintf(out, "Moved %s from %s to %s, preserving all files and your edits.\n", created.Port, created.MovedFrom, created.Directory)
 				fmt.Fprintln(out, "Next: "+nextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))
 				return nil
 			}
@@ -159,7 +159,7 @@ its go-get answer.`,
 			}
 			switch {
 			case created.ChecksumsProblem != "":
-				fmt.Fprintf(out, "  checksums: not filled in: %s\n    dockhand checksums %s fills them in once that is fixed\n", prose.FirstLine(created.ChecksumsProblem), created.Port)
+				fmt.Fprintf(out, "  checksums: not generated: %s\n    Resolve this issue, then run dockhand checksums %s.\n", prose.FirstLine(created.ChecksumsProblem), created.Port)
 			case created.Checksums != nil && created.Checksums.Distfiles > 0:
 				what := prose.Plural(created.Checksums.Distfiles, "distfile")
 				if created.Crates > 0 {
@@ -168,7 +168,7 @@ its go-get answer.`,
 				fmt.Fprintf(out, "  checksums: %s\n", what)
 			}
 			if created.HomepageFrom != "" {
-				fmt.Fprintf(out, "  homepage: over HTTPS, as MacPorts prefers; GitHub gives %s\n", created.HomepageFrom)
+				fmt.Fprintf(out, "  homepage: using HTTPS, as MacPorts recommends (GitHub supplied %s)\n", created.HomepageFrom)
 			}
 			if len(created.Unconfirmed) > 0 {
 				var marked []string
@@ -185,13 +185,13 @@ its go-get answer.`,
 					}
 					marked = append(marked, what)
 				}
-				fmt.Fprintf(out, "  Unconfirmed, marked in the file: %s\n", strings.Join(marked, ", "))
+				fmt.Fprintf(out, "  Review these fields and remove their unconfirmed markers: %s\n", strings.Join(marked, ", "))
 			}
 			if s.file.Maintainer == "" {
 				// The person's own line, as the ports at the branch's base
 				// write their GitHub login, where it can be found (the
 				// flyctl run).
-				fmt.Fprintf(out, "  maintainers: nomaintainer, as your config names none; %s\n", engine.MaintainerWords(e.SuggestMaintainer(ctx, branch.Base), e.ConfigFile))
+				fmt.Fprintf(out, "  maintainers: nomaintainer (no maintainer configured). %s\n", engine.MaintainerWords(e.SuggestMaintainer(ctx, branch.Base), e.ConfigFile))
 			}
 			writePlainHTTP(out, created.PlainHTTP)
 			fmt.Fprintln(out, "Next: "+nextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))
@@ -200,7 +200,7 @@ its go-get answer.`,
 	}
 	where.flags(cmd)
 	cmd.Flags().StringVar(&name, "name", "", "the port's name (default: the project's, in lower case)")
-	cmd.Flags().StringVar(&category, "category", "", "the port's category (default: asked on a terminal, else guessed and marked)")
+	cmd.Flags().StringVar(&category, "category", "", "port category (prompts in a terminal; otherwise uses a marked guess)")
 	return cmd
 }
 

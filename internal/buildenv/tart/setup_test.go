@@ -52,7 +52,7 @@ func TestSetupNamesItsCost(t *testing.T) {
 	p.Tart = tartvm.Client{Executable: "/nonexistent/tart", Home: t.TempDir()}
 
 	_, err := p.Setup(t.Context(), SetupOptions{Check: true, Rebuild: true}, nil)
-	require.ErrorContains(t, err, "--check and --rebuild ask for opposite things")
+	require.ErrorContains(t, err, "--check and --rebuild cannot be used together")
 	_, err = p.Setup(t.Context(), SetupOptions{Release: "leopard"}, nil)
 	require.ErrorContains(t, err, "unknown release")
 
@@ -77,10 +77,10 @@ func TestSetupNamesItsCost(t *testing.T) {
 			image, disk = "dockhand-xcode-", "65 GB"
 		}
 		if costly {
-			require.Contains(t, progress.String(), "Making "+image+options.Release+" for macOS ", "%+v", options)
-			require.Contains(t, progress.String(), "takes up to "+disk+" of disk", "%+v", options)
+			require.Contains(t, progress.String(), "Creating "+image+options.Release+" for macOS ", "%+v", options)
+			require.Contains(t, progress.String(), "requires up to "+disk+" of disk space", "%+v", options)
 		} else {
-			require.NotContains(t, progress.String(), "Making", "%+v", options)
+			require.NotContains(t, progress.String(), "Creating", "%+v", options)
 		}
 	}
 
@@ -88,7 +88,7 @@ func TestSetupNamesItsCost(t *testing.T) {
 	// anything, since no check could build on it (the rc3 full run).
 	var progress bytes.Buffer
 	_, err = p.Setup(t.Context(), SetupOptions{Release: "sequoia", Xcode: "/x"}, &progress)
-	require.ErrorContains(t, err, "isn't made yet: dockhand setup tart sequoia makes it, then --xcode adds Xcode beside it")
+	require.ErrorContains(t, err, "is missing; run dockhand setup tart sequoia first, then rerun with --xcode")
 	require.Empty(t, progress.String())
 }
 
@@ -164,7 +164,7 @@ echo "asked for $2" >&2
 
 	missing.Folder = ""
 	_, err = p.DownloadXcode(t.Context(), missing, strings.NewReader(""), &out, &errs)
-	require.ErrorContains(t, err, "is one archive, not a folder")
+	require.ErrorContains(t, err, "is a file; choose a download directory")
 }
 
 // What the images let a check do, read off which images there are.

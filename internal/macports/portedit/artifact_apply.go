@@ -214,7 +214,7 @@ func wheelsOnly(ctx context.Context, index pypi.Client, name string, urls []stri
 		if lookErr != nil || len(files) == 0 || slices.ContainsFunc(files, func(f pypi.File) bool { return f.PackageType == "sdist" }) {
 			return err
 		}
-		return fmt.Errorf("archives: downloading %s: %w; PyPI publishes only wheels for %s %s, and a release without a source archive never gets one, so the port needs its source from elsewhere, such as the project's own release on its forge", name, status, project, version)
+		return fmt.Errorf("archives: downloading %s: %w; PyPI has only wheels for %s %s. Update the Portfile to use another source archive, such as one from the project's release page", name, status, project, version)
 	}
 	return err
 }

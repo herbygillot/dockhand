@@ -105,10 +105,10 @@ the check runs here, as a foreground check would.`,
 				return err
 			}
 			if leader != nil || holder != nil {
-				fmt.Fprintf(streams.Err, "following %s; Ctrl-C stops following, not the check.\n", run.Name())
+				fmt.Fprintf(streams.Err, "Following %s. Press Ctrl-C to stop watching; the check will continue.\n", run.Name())
 				return follow(ctx, e, session, run, streams, false)
 			}
-			fmt.Fprintf(streams.Err, "%s runs here, since no dockhand serve is running. Ctrl-C stops it and keeps what finished.\n", run.Name())
+			fmt.Fprintf(streams.Err, "No dockhand serve is running, so %s will run here. Press Ctrl-C to stop it; completed results will be saved.\n", run.Name())
 			return follow(ctx, e, session, run, streams, true)
 		},
 	}
@@ -159,7 +159,7 @@ branch, for its latest check from anywhere.`,
 				fmt.Fprintln(streams.Out, stopWords(run, wasQueued))
 				return nil
 			}
-			fmt.Fprintf(streams.Out, "%s: cancel requested; the process running it stops it at its next step.\n", run.Name())
+			fmt.Fprintf(streams.Out, "%s: cancellation requested; the check will stop at the next step.\n", run.Name())
 			return nil
 		},
 	}
@@ -211,7 +211,7 @@ log.`,
 				port, args = args[1], args[:1]
 			}
 			if full && port == "" {
-				return errors.New("--full goes with a port")
+				return errors.New("--full requires a port name, for example: dockhand logs check-42 jq --full")
 			}
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -256,7 +256,7 @@ log.`,
 			found := chosen.result
 			data, err := buildlog.ReadFile(found.Log)
 			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("%s's log for %s, %s, is gone; cleanup removes a check's logs %s after they stop counting, or its branch ends", run.Name(), port, found.Log, engine.AgeWords(s.file.Cleanup.Age()))
+				return fmt.Errorf("%s: the log for %s is missing: %s. Cleanup removes logs %s after their results stop counting or their branch ends", run.Name(), port, found.Log, engine.AgeWords(s.file.Cleanup.Age()))
 			}
 			if err != nil {
 				return err
@@ -356,7 +356,7 @@ func writePortLog(out io.Writer, result model.TargetResult, data []byte, all boo
 	// provider that records no steps, as the command provider, says nothing.
 	if len(result.Steps) == 0 {
 		if len(result.Builders) > 0 {
-			fmt.Fprintf(out, "No steps of %s's build were found in its log, so it's printed whole.\n\n", result.Target)
+			fmt.Fprintf(out, "No build-step markers were found for %s. Showing the full log.\n\n", result.Target)
 		}
 		_, err := out.Write(data)
 		return err
@@ -371,7 +371,7 @@ func writePortLog(out io.Writer, result model.TargetResult, data []byte, all boo
 	}
 	if own, ok := result.OwnBuild(); ok && own.Line > 1 {
 		if rest, ok := buildlog.From(data, own.Line); ok {
-			fmt.Fprintf(out, "From line %d, where %s's own build begins; --full prints the %d lines before it too, its dependencies' installs among them.\n\n", own.Line, result.Target, own.Line-1)
+			fmt.Fprintf(out, "Showing from line %d, where the build for %s begins. Use --full to include the previous %d lines, including dependency installation.\n\n", own.Line, result.Target, own.Line-1)
 			_, err := out.Write(rest)
 			return err
 		}
@@ -499,7 +499,7 @@ func writeLogs(out io.Writer, logs engine.RunLogs, stopped bool) error {
 		fmt.Fprintln(out)
 	}
 	if len(logs.Executions) == 0 && logs.Run.State.Terminal() {
-		fmt.Fprintln(out, "  nothing is recorded of its provider runs: it reached none, or its branch ended and cleanup kept the check alone (cleanup.after)")
+		fmt.Fprintln(out, "  No provider runs are recorded. The check either never reached a provider, or cleanup removed the provider records after the branch ended (cleanup.after).")
 	}
 	for _, execution := range logs.Executions {
 		x := execution.Execution

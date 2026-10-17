@@ -91,7 +91,7 @@ func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 		"  now   sha256 9b0c…77e1   size 7,114,508\n"+
 		"Updated checksums (1 distfile), revision 0 → 1, and dist_subdir jq/1.7.1_1, so mirrors keep both archives.\n"+
 		"Changed: textproc/jq/Portfile\n"+
-		"The source changed, so the revision is bumped; --no-revbump leaves it, for a change that needs no rebuild.\n")
+		"Bumped the revision because the source changed. Use --no-revbump only if the change needs no rebuild.\n")
 	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
 	home, _ := os.UserHomeDir()
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
@@ -126,15 +126,15 @@ func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
 
 	_, _, err := dockhand(t, "update", "jq", "--new")
 	require.Error(t, err)
-	require.Regexp(t, `^can't update jq by itself: its pre-fetch hook runs exec\nKept: dockhand/jq-[a-z0-9]{4}, with nothing changed\.\n`+
-		`Edit the version and its checksums yourself; port checksum jq, after the version's edit, says what its archives have:\n  dockhand edit jq$`, err.Error())
+	require.Regexp(t, `^Could not update jq automatically: its pre-fetch hook runs exec\nKept: dockhand/jq-[a-z0-9]{4}, with nothing changed\.\n`+
+		`Edit the version, run port checksum jq, then copy the reported checksums into the Portfile\.\nEdit with: dockhand edit jq$`, err.Error())
 
 	_, _, err = dockhand(t, "checksums", "jq", "--new")
-	require.ErrorContains(t, err, "can't refresh jq's checksums by itself: its pre-fetch hook runs exec\n")
+	require.ErrorContains(t, err, "Could not update the checksums for jq automatically: its pre-fetch hook runs exec\n")
 
 	refused, err := jsonOf(t, "update", "jq", "--new")
 	require.Error(t, err)
-	require.Contains(t, *refused.Error, "can't update jq by itself")
+	require.Contains(t, *refused.Error, "Could not update jq automatically")
 	require.Equal(t, true, refused.Result["started"], "the result names the branch kept for the edit by hand")
 	require.Regexp(t, `^dockhand/jq-[a-z0-9]{4}$`, dig(t, refused.Result, "branch", "git_branch"))
 }

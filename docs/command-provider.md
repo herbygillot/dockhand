@@ -16,7 +16,7 @@ capacity = 1                # how many checks serve runs on it at once; 1 when u
 default = "command"         # the default for check, as it is where nothing else is set; --on command also selects it
 ```
 
-`check` runs the command once for each attempt. Trouble with the environment is tried again, up to three attempts in all, and a verdict is never repeated. Examples of such trouble: the command exits without writing a result file, or writes one that can't be read.
+`check` runs the command once per attempt. It retries environment failures up to a total of three attempts. It does not automatically retry a port build failure. Examples of such trouble: the command exits without writing a result file, or writes one that can't be read.
 
 ## How it runs
 
@@ -26,7 +26,7 @@ The command runs in a session of its own, with no terminal. A check that stops e
 - serve stops;
 - you press Ctrl-C.
 
-So a `port` it started isn't left holding MacPorts' lock. It can't prompt: a `sudo` in it must not ask for a password, as under serve, where there is no terminal either. One that asks fails at once, and says so in `command.log`.
+This prevents child processes such as `port` from keeping the MacPorts lock after the check stops. The script has no terminal, so it must run without prompts, including `sudo` password prompts. A command that requires a terminal fails immediately and records the error in `command.log`.
 
 ## The request file
 

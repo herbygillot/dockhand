@@ -54,7 +54,7 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 			case buildenv.Tart:
 				return nil, fmt.Errorf("--on %s: Tart isn't installed here; MacPorts' tart port installs it", value)
 			case buildenv.Prefix:
-				return nil, fmt.Errorf("--on %s: the prefix provider is not in v3 yet; use Tart or your own script (--on command) meanwhile", value)
+				return nil, fmt.Errorf("--on %s: the prefix provider is not available in v3; use Tart or a custom build script with --on command", value)
 			}
 			return nil, fmt.Errorf("--on %s: no provider %q is set up", value, name)
 		}

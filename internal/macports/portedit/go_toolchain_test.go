@@ -104,11 +104,11 @@ func TestAnUpdateSaysAGoPinItsGoModOutgrows(t *testing.T) {
 			require.Contains(t, after, "go.bin ${prefix}/bin/go-"+test.series+"\n")
 			said := strings.Join(messages, "\n")
 			require.Contains(t, said, "Raising go.toolchain_min from 1.26.3 to 1.27.0")
-			warning := "Warning: fixture requires Go 1.27.0 per go.mod, but pins go-" + test.series + " (go.bin, depends_build); the pin may be obsolete"
+			warning := "Warning: fixture requires Go 1.27.0 in go.mod, but is pinned to go-" + test.series + " (go.bin, depends_build); update or remove the pin before building"
 			if test.says {
 				require.Contains(t, said, warning)
 			} else {
-				require.NotContains(t, said, "pin may be obsolete")
+				require.NotContains(t, said, "update or remove the pin")
 			}
 		})
 	}
@@ -130,8 +130,8 @@ func TestToolchainMinIsLeftAloneWhenNotRaisable(t *testing.T) {
 		{"a patch release of the series", "1.24.8", "go.offline_build no\ngo.toolchain_min 1.24\n", "go.toolchain_min 1.24\n", "", &GoToolchain{Required: "1.24.8", Declared: "1.24", Outcome: GoToolchainCovered}},
 		{"a later series", "1.24.8", "go.offline_build no\ngo.toolchain_min 1.25.0\n", "go.toolchain_min 1.25.0\n", "", &GoToolchain{Required: "1.24.8", Declared: "1.25.0", Outcome: GoToolchainCovered}},
 		{"gopath mode", "1.24", "go.offline_build yes\ngo.toolchain_min 1.22\n", "go.toolchain_min 1.22", "GOPATH mode", nil},
-		{"undeclared", "1.24", "go.offline_build no\n", "", "declares no go.toolchain_min", &GoToolchain{Required: "1.24", Outcome: GoToolchainUndeclared}},
-		{"not literal", "1.24", "go.offline_build no\nset floor 1.22\ngo.toolchain_min ${floor}\n", "go.toolchain_min ${floor}", "raise it by hand", &GoToolchain{Required: "1.24", Declared: "1.22", Outcome: GoToolchainByHand}},
+		{"undeclared", "1.24", "go.offline_build no\n", "", "has no go.toolchain_min", &GoToolchain{Required: "1.24", Outcome: GoToolchainUndeclared}},
+		{"not literal", "1.24", "go.offline_build no\nset floor 1.22\ngo.toolchain_min ${floor}\n", "go.toolchain_min ${floor}", "cannot be updated automatically. Raise it manually", &GoToolchain{Required: "1.24", Declared: "1.22", Outcome: GoToolchainByHand}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -166,7 +166,7 @@ func TestAGoModItCantReadLeavesTheMinimumUnchecked(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(result.Files[0].After), "version 1.2.4")
 	require.Contains(t, string(result.Files[0].After), "go.toolchain_min 1.22\n")
-	require.Contains(t, strings.Join(messages, "\n"), "Warning: fixture's go.mod couldn't be read, so go.toolchain_min wasn't checked against it")
+	require.Contains(t, strings.Join(messages, "\n"), "Warning: could not read go.mod for fixture; go.toolchain_min was not checked")
 	require.NotNil(t, result.GoToolchain)
 	require.Equal(t, GoToolchainUnchecked, result.GoToolchain.Outcome)
 	require.Equal(t, "1.22", result.GoToolchain.Declared)

@@ -519,14 +519,14 @@ func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
 	moved := e.movedSources(t.Context(), evidence)
 	require.Len(t, moved, 1)
 	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "tool", Rule: "source-moved", Subject: now, Class: model.Introduced,
-		Detail: "tool's git.branch v2 named " + built[:7] + " when check-7 planned it, and names " + now[:7] + " now: the check built another source than this would submit"}, moved[0])
+		Detail: "tool: git.branch v2 pointed to " + built[:7] + " when check-7 was planned, but now points to " + now[:7] + ". The checked source differs from the source this submission would use"}, moved[0])
 	require.Contains(t, HoldLines(SubmitPlan{Moved: moved}.held()), moved[0].Detail, "it holds a submission nobody looks over")
 	// A target --only left out of the check is read the same way.
 	omitted := &Evidence{Run: model.Run{Number: 8}, Plan: model.Plan{Omitted: []model.PlanTarget{target},
 		Builds: []model.EnvironmentPlan{{Git: map[model.TargetID]model.GitSource{"tool": {URL: project, Ref: "v2", Commit: model.ObjectID(built)}}}}}}
 	moved = e.movedSources(t.Context(), omitted)
 	require.Len(t, moved, 1)
-	require.Equal(t, "tool's git.branch v2 named "+built[:7]+" when check-8 planned it, and names "+now[:7]+" now: the check built another source than this would submit", moved[0].Detail)
+	require.Equal(t, "tool: git.branch v2 pointed to "+built[:7]+" when check-8 was planned, but now points to "+now[:7]+". The checked source differs from the source this submission would use", moved[0].Detail)
 
 	evidence.Plan.Builds[0].Git["tool"] = model.GitSource{URL: t.TempDir() + "/gone", Ref: "v2", Commit: model.ObjectID(built)}
 	require.Empty(t, e.movedSources(t.Context(), evidence), "a ref that can't be read now isn't said to have moved")

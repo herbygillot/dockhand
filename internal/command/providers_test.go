@@ -195,7 +195,7 @@ func TestSetupShowsTheProviders(t *testing.T) {
 	var told, asked bytes.Buffer
 	err = Run(t.Context(), []string{"setup"}, Streams{In: strings.NewReader("n\nn\nn\nn\n"), Out: &told, Err: &asked, interactive: true})
 	require.NoError(t, err)
-	require.Contains(t, told.String()+asked.String(), "? Restore the Tart image for this Mac's macOS from its golden copy now? It takes about a minute, with no download. [y/N] ")
+	require.Contains(t, told.String()+asked.String(), "? Restore the Tart image for this Mac’s macOS version from its saved original? This takes about a minute and requires no download. [y/N] ")
 	require.NotContains(t, told.String()+asked.String(), "It downloads macOS")
 }
 
@@ -222,7 +222,7 @@ func TestThePlanSaysWhatWontBeBuilt(t *testing.T) {
 		"Not built   harbor-cli on tart macOS 26 (Tahoe) arm64 with the Command Line Tools: needs Xcode, through libharbor\n"+
 		"            make an Xcode image\n")
 	require.False(t, plan.Runnable())
-	require.Equal(t, "nothing in it can be built where it asks; see Not built", unrunnable(plan))
+	require.Equal(t, "none of the planned ports can build in the selected environments; see Not built", unrunnable(plan))
 }
 
 // A missing Xcode is downloaded with xcodes when the person at the

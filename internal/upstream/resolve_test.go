@@ -228,8 +228,8 @@ func TestAPortWhoseVersionIsMacPortsOwnHasNoReleaseToChoose(t *testing.T) {
 	result, err := service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)
 	require.Equal(t, upstream.OwnVersion, result.Assessment)
-	require.Equal(t, "it fetches nothing here, and no livecheck reads its version", result.Detail)
+	require.Equal(t, "no source is fetched on this platform, and livecheck does not use the port version", result.Detail)
 	_, err = service.Resolve(t.Context(), port, "")
 	require.ErrorIs(t, err, upstream.ErrOwnVersion)
-	require.EqualError(t, err, "upstream: no release to look for: kubectl_select fetches nothing here, and no livecheck reads its version; name the version to set: dockhand update kubectl_select <version>")
+	require.EqualError(t, err, "upstream: no release to look for: kubectl_select fetches no source on this platform, and livecheck does not use its version; specify a version with dockhand update kubectl_select <version>")
 }

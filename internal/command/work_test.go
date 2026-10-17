@@ -216,7 +216,7 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	err = Run(t.Context(), []string{"setup"}, Streams{In: strings.NewReader("\nn\n"), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "Keep branch worktrees in ")
-	require.Contains(t, errs.String(), "? Log in to GitHub now, for submit and checks in your fork? [Y/n] ")
+	require.Contains(t, errs.String(), "? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ")
 	require.Contains(t, out.String(), "  Publishing   · not set up: dockhand setup github, when you're ready to submit\n")
 	require.Contains(t, out.String(), "· maintainer: set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in ~/.dockhand/config.toml, for --mine, create, and serve's daily look\n")
 	require.Contains(t, out.String(), "Next: dockhand setup github, then dockhand update <port>, or set maintainer in the configuration file for dockhand outdated --mine\n", "no maintainer, so outdated --mine isn't named alone")
@@ -228,7 +228,7 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 
 	loggedOut, _, err := dockhand(t, "setup", "github", "--logout")
 	require.NoError(t, err)
-	require.Contains(t, loggedOut, "dockhand keeps no GitHub login in the Keychain.")
+	require.Contains(t, loggedOut, "No dockhand GitHub credentials are saved in the Keychain.")
 
 	help, _, err := dockhand(t, "--help")
 	require.NoError(t, err)

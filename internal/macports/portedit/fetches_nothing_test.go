@@ -78,7 +78,7 @@ subport fixture-select {
 func TestAPortThatFetchesNothingIsCovered(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ name, livecheck, fetch, outcome string }{
-		{"a _select port", "livecheck.type none", "Fetches nothing, and no livecheck reads its version: its version is MacPorts' own, which update leaves", OwnVersion},
+		{"a _select port", "livecheck.type none", "No source is downloaded, and livecheck does not use the version; MacPorts maintains it, so update leaves it unchanged", OwnVersion},
 		{"a metaport following its release", "homepage @SITE@/\nlivecheck.type regex\nlivecheck.url @SITE@/releases\nlivecheck.regex {fixture-(\\d+(?:\\.\\d+)*)}", "Fetches nothing in any observed context; an update edits its version alone", InputFound},
 	} {
 		t.Run(test.name, func(t *testing.T) {

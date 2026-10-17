@@ -163,7 +163,7 @@ func TestPlanFollowsCIsScopeOrderAndEligibility(t *testing.T) {
 		"harbor-viewer:substantive:changed",
 	}, names(narrowed.Targets), "changed prerequisites come back, visibly")
 	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Only: []string{"harbor-tools"}})
-	require.ErrorContains(t, err, "--only harbor-tools: the branch does not change it")
+	require.ErrorContains(t, err, "--only harbor-tools: this port is unchanged on the branch")
 }
 
 func TestAPlanThatCannotEvaluateIsUnresolved(t *testing.T) {

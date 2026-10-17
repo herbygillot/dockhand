@@ -44,7 +44,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 		// refuses the bump (CX-9's narrow part): it's a notice that the
 		// minimum wasn't checked, which holds an unattended update for a
 		// look.
-		progress.Report(ctx, "Warning: %s's go.mod couldn't be read, so go.toolchain_min wasn't checked against it: %v", input.target.Name, err)
+		progress.Report(ctx, "Warning: could not read go.mod for %s; go.toolchain_min was not checked: %v", input.target.Name, err)
 		result.GoToolchain = &GoToolchain{Declared: selected.Options["go.toolchain_min"], Outcome: GoToolchainUnchecked, Problem: err.Error()}
 		return nil
 	}
@@ -56,7 +56,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 	// the raise was said (the trivy run, #35083). The pin is the
 	// maintainer's to remove, and is left as it is.
 	if pin, ok := selected.GoPinned(); ok && !pin.Meets(required) {
-		progress.Report(ctx, "Warning: %s requires Go %s per go.mod, but pins %s; the pin may be obsolete", input.target.Name, required, pin)
+		progress.Report(ctx, "Warning: %s requires Go %s in go.mod, but is pinned to %s; update or remove the pin before building", input.target.Name, required, pin)
 	}
 	current := selected.Options["go.toolchain_min"]
 	outcome := func(outcome GoToolchainOutcome) {
@@ -64,7 +64,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 	}
 	switch {
 	case current == "":
-		progress.Report(ctx, "%s requires Go %s per go.mod and declares no go.toolchain_min; declaring it would gate the port on systems whose Go is older", input.target.Name, required)
+		progress.Report(ctx, "%s requires Go %s in go.mod but has no go.toolchain_min; add it to prevent builds with older Go versions", input.target.Name, required)
 		outcome(GoToolchainUndeclared)
 		return nil
 	case macports.GoToolchainCovers(current, required):
@@ -74,7 +74,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 	}
 	contents, err := portfile.RewriteLiteralDeclaration(result.Files[0].After, "go.toolchain_min", current, required)
 	if errors.Is(err, ErrUnsupported) {
-		progress.Report(ctx, "Warning: %s requires Go %s per go.mod but go.toolchain_min %s is not a single literal declaration; raise it by hand", input.target.Name, required, current)
+		progress.Report(ctx, "Warning: %s requires Go %s in go.mod; go.toolchain_min is %s and cannot be updated automatically. Raise it manually", input.target.Name, required, current)
 		outcome(GoToolchainByHand)
 		return nil
 	}

@@ -60,7 +60,7 @@ says whether any went through: 1 where none did, 3 where some need a look.`,
 				return err
 			}
 			if chosen := len(args) > 0 || mine || passing; chosen && where.explicit() || len(args) > 0 && (mine || passing) || mine && passing {
-				return errors.New("name ports, --mine, --passing, or a branch: one of them")
+				return errors.New("choose one target source: port names, --mine, --passing, or a branch")
 			}
 			whole := &batchJSON{}
 			streams.linkSteps(whole)
@@ -168,7 +168,7 @@ func shipTargets(ctx context.Context, e *engine.Engine, streams Streams, ports [
 			for _, branch := range changing {
 				names = append(names, branch.ShortName())
 			}
-			return nil, fmt.Errorf("%s is changed in %s; ship -b <branch> names which to carry on", port, strings.Join(names, ", "))
+			return nil, fmt.Errorf("%s has changes in multiple branches: %s. Use dockhand ship -b <branch> to choose one", port, strings.Join(names, ", "))
 		}
 	}
 	return targets, nil
@@ -219,7 +219,7 @@ func writeShipPlan(ctx context.Context, e *engine.Engine, out io.Writer, targets
 			// A resumed branch is brought to the release asked for, the
 			// pin or the newest, where it isn't there: neither submitting
 			// an older version nor refusing (the roadmap's rule for ship).
-			from = "its branch, updated again where it isn't at " + cmp.Or(target.version, "the newest release")
+			from = "existing branch; update if needed to " + cmp.Or(target.version, "the newest release")
 		case target.branch != nil:
 			from = "its branch, where it stands"
 		}
@@ -464,7 +464,7 @@ func queueHead(ctx context.Context, s *settings, e *engine.Engine, streams Strea
 			return nil, planErr
 		}
 		if !engine.PlanCovers(running, proposal.Plan) {
-			return nil, fmt.Errorf("%s is %s for these files, but not everywhere or with tests as strict as this check asks; dockhand cancel %s, then ship again, or wait for it and ship again", active.Run.Name(), active.Run.State, active.Run.Name())
+			return nil, fmt.Errorf("%s is %s for these files, but does not cover the required environments or test policy. Run dockhand cancel %s, then ship again, or wait for it to finish and ship again", active.Run.Name(), active.Run.State, active.Run.Name())
 		}
 		fmt.Fprintf(streams.Out, "%s is already %s for these files; following it.\n", active.Run.Name(), active.Run.State)
 		return &active.Run, nil

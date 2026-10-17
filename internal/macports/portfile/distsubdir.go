@@ -43,7 +43,7 @@ func StealthDistSubdir(src []byte, revbumped bool) ([]byte, error) {
 		value := string(src[cmd.Words[1].Span.Start:cmd.Words[1].Span.End])
 		if value == stealthRevision {
 			if !revbumped {
-				return nil, fmt.Errorf("%w: dist_subdir follows the revision, so without a revision bump the new archive would land where the old one is", ErrUnsupported)
+				return nil, fmt.Errorf("%w: dist_subdir depends on revision; without a revision bump, the new archive would use the same mirror path as the old archive", ErrUnsupported)
 			}
 			return src, nil
 		}

@@ -46,7 +46,7 @@ commits, and its files are as they were when it was saved.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if message != "" && !squash {
-				return errors.New("--message names the one commit --squash makes; add --squash")
+				return errors.New("--message requires --squash. Add --squash to create a single commit with this message.")
 			}
 			if saveTo != "" && !plan {
 				return errors.New("--out saves the plan --plan shows; add --plan")
@@ -78,7 +78,7 @@ commits, and its files are as they were when it was saved.`,
 			if proposal.Keep && len(proposal.Warnings) > 0 {
 				// What the rules warn of is said, as submit says it, with
 				// the plan to rewrite a message in (the rust and cargo run).
-				fmt.Fprintln(out, "The commits follow MacPorts' rules, and nothing is uncommitted, but for what the rules warn of:")
+				fmt.Fprintln(out, "All changes are committed. The commits pass the required MacPorts checks, with these warnings:")
 				for _, warning := range proposal.Warnings {
 					fmt.Fprintf(out, "  %s\n", warning)
 				}
@@ -171,7 +171,7 @@ func decideTidy(ctx context.Context, e *engine.Engine, streams Streams, proposal
 			}
 			fmt.Fprint(out, string(diff))
 		case "g":
-			spec, err := ask(streams, "Commits in order, joining any to combine with + (such as 2 1+3): ")
+			spec, err := ask(streams, "Enter commit numbers in order; use + to combine them (for example, 2 1+3): ")
 			if err != nil {
 				return false, err
 			}
@@ -189,7 +189,7 @@ func decideTidy(ctx context.Context, e *engine.Engine, streams Streams, proposal
 			writeTidyPlan(out, proposal, false)
 		case "a":
 			if blocking := proposal.Blocking(); len(blocking) > 0 {
-				fmt.Fprintf(streams.Err, "Not yet: %s\n", strings.Join(blocking, "; "))
+				fmt.Fprintf(streams.Err, "Can't apply this plan: %s\n", strings.Join(blocking, "; "))
 				continue
 			}
 			return true, applyTidy(ctx, e, streams, proposal)
@@ -245,7 +245,7 @@ func writeTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 			fmt.Fprintln(out, "       includes edits not yet committed")
 		}
 		if group.Created && !saved {
-			fmt.Fprintln(out, "       a new port create wrote, with your edits since")
+			fmt.Fprintln(out, "       new port from dockhand create, including your later edits")
 		}
 		fmt.Fprintf(out, "       files: %s\n", strings.Join(group.Paths, ", "))
 		if !saved {
@@ -290,7 +290,7 @@ func writeFindings(out io.Writer, plan engine.TidyPlan) {
 	if len(plan.Findings) == 0 {
 		return
 	}
-	fmt.Fprintln(out, "Also noticed, for you to fix (tidy never changes files):")
+	fmt.Fprintln(out, "File issues to resolve separately (tidy only changes commits):")
 	for _, finding := range plan.Findings {
 		fmt.Fprintf(out, "  %s\n", finding)
 	}
@@ -351,7 +351,7 @@ func applyTidy(ctx context.Context, e *engine.Engine, streams Streams, plan engi
 	}
 	fmt.Fprintf(streams.Out, "%s. The files are unchanged.\nCheckpoint %s keeps the old history (dockhand undo %s).\n", made, name, name)
 	if len(result.Narrowed) > 0 {
-		fmt.Fprintf(streams.Out, "Left %s out of the worktree again, as nothing of the branch's is there.\n", strings.Join(result.Narrowed, ", "))
+		fmt.Fprintf(streams.Out, "Removed %s from the sparse checkout; the branch has no changes there.\n", strings.Join(result.Narrowed, ", "))
 	}
 	if warning := modifiedBuildWarning(plan, name); warning != "" {
 		fmt.Fprintln(streams.Err, warning)

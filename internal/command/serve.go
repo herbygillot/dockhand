@@ -78,7 +78,7 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 			switch shipTo {
 			case "", "list", "commit", "check", "submit":
 			default:
-				return fmt.Errorf("--ship-to %s: list, commit, check, or submit", shipTo)
+				return fmt.Errorf("invalid --ship-to value %s; choose list, commit, check, or submit", shipTo)
 			}
 			if install || uninstall {
 				// The agent runs serve as this command line would.
@@ -113,8 +113,8 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 	cmd.Flags().BoolVar(&drain, "drain", false, "run what is queued now, then exit")
 	cmd.Flags().BoolVar(&install, "install", false, "install serve as a launchd agent that starts at login")
 	cmd.Flags().BoolVar(&uninstall, "uninstall", false, "remove the launchd agent")
-	cmd.Flags().StringVar(&shipTo, "ship-to", "", "for this run, how far serve carries your outdated ports, whatever serve.ship_to says: list, commit, check, or submit")
-	cmd.Flags().BoolVar(&noNotify, "no-notify", false, "for this run, post no macOS notifications, whatever serve.notify says")
+	cmd.Flags().StringVar(&shipTo, "ship-to", "", "override serve.ship_to for this run: list, commit, check, or submit")
+	cmd.Flags().BoolVar(&noNotify, "no-notify", false, "disable macOS notifications for this run, overriding serve.notify")
 	cmd.MarkFlagsMutuallyExclusive("install", "uninstall", "drain")
 	return cmd
 }
@@ -204,7 +204,7 @@ var agentOS = runtime.GOOS
 
 func serveAgent(ctx context.Context, s *settings, streams Streams, install bool, flags []string) error {
 	if agentOS != "darwin" {
-		return errors.New("serve --install makes a launchd agent, which is macOS's; elsewhere, run dockhand serve under your own service manager")
+		return errors.New("serve --install requires macOS; on other platforms, run dockhand serve with your service manager")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -268,10 +268,10 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 	}
 	for _, token := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
 		if os.Getenv(token) != "" {
-			fmt.Fprintf(streams.Out, "%s isn't written into the agent, which anyone on this Mac can read; serve signs in to GitHub with the keychain's login (dockhand setup github).\n", token)
+			fmt.Fprintf(streams.Out, "%s is omitted from the agent file because that file is readable by other users on this Mac. serve uses the GitHub credentials saved in the Keychain; run dockhand setup github to save them.\n", token)
 		}
 	}
-	fmt.Fprintln(streams.Out, "After changing these settings, run serve --install again; after an upgrade, serve restarts on the new build by itself.")
+	fmt.Fprintln(streams.Out, "Run dockhand serve --install again after changing these settings. After an upgrade, serve restarts automatically with the new version.")
 	return nil
 }
 

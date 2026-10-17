@@ -136,10 +136,10 @@ func updateMine(ctx context.Context, s *settings, streams Streams, version versi
 	}
 	out := streams.Out
 	if len(outdated.Updates) == 0 {
-		fmt.Fprintln(out, "Nothing to update: none of them has a newer release that isn't already in a branch.")
+		fmt.Fprintln(out, "Nothing to update: no newer releases remain outside your existing branches.")
 		return nil
 	}
-	fmt.Fprintf(out, "Will start %s, one a port:\n", prose.Plural(len(outdated.Updates), "branch"))
+	fmt.Fprintf(out, "Will start %s, one per port:\n", prose.Plural(len(outdated.Updates), "branch"))
 	rows := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, update := range outdated.Updates {
 		row := fmt.Sprintf("  %s\t%s %s → %s", engine.BranchName(update.Name), update.Port.Port, update.Port.Current, update.Port.Newest)
@@ -407,7 +407,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	}
 	if update.RenamedFrom != "" {
 		branch = update.Branch
-		fmt.Fprintf(out, "Renamed %s to %s, for the version it now moves to.\n", update.RenamedFrom, branch.ShortName())
+		fmt.Fprintf(out, "Renamed %s to %s to match the update's target version.\n", update.RenamedFrom, branch.ShortName())
 	}
 	if err != nil && started {
 		// The branch it started stays, for the edit by hand.
@@ -440,7 +440,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 			// said of a worktree holding terraform-1.16's (field testing
 			// at a3c43ef7).
 			if len(update.Files) > 0 {
-				return branch, update, fmt.Errorf("%w\nKept: %s, with the edit to %s made and not committed", err, branch.Name, strings.Join(update.Files, ", "))
+				return branch, update, fmt.Errorf("%w\nKept branch %s with uncommitted changes to %s.", err, branch.Name, strings.Join(update.Files, ", "))
 			}
 			return branch, update, fmt.Errorf("%w\nKept: %s, with nothing changed", err, branch.Name)
 		}
@@ -470,20 +470,20 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		// A plain bump read the same for semgrep's 0.14.0 to 1.179.0
 		// (field testing, 2026-10-02).
 		if update.CrossesMajor {
-			fmt.Fprintf(out, "A new major version: what depends on %s may need to follow.\n", update.Port)
+			fmt.Fprintf(out, "New major version: ports that depend on %s may also need updates.\n", update.Port)
 		}
 		switch stub := update.Obsolete; {
 		case stub == nil:
 		case stub.Moved:
-			fmt.Fprintf(out, "Its obsolete %s moves to %s too, in the same commit.\n", stub.Port, update.After.Version)
+			fmt.Fprintf(out, "Also updating obsolete port %s to %s; tidy will include both updates in one commit.\n", stub.Port, update.After.Version)
 		case stub.Version != update.After.Version:
 			fmt.Fprintf(out, "%s (obsolete, replaced_by %s) stays at %s; --with-obsolete moves it to %s.\n", stub.Port, update.Port, stub.Version, update.After.Version)
 		}
 		// Where upstream was compared, the move is one of its findings.
 		if update.Followed != "" {
-			fmt.Fprintf(out, "Followed the move: github.setup now names %s, which GitHub answers %s as.\n", update.Followed, update.Release.Repository)
+			fmt.Fprintf(out, "Updated github.setup to %s, the current GitHub location of %s.\n", update.Followed, update.Release.Repository)
 		} else if update.Renamed != "" && update.Upstream == nil {
-			fmt.Fprintf(out, "Upstream moved: GitHub answers %s as %s, by a redirect; update --follow-moves points github.setup at it.\n", update.Release.Repository, update.Renamed)
+			fmt.Fprintf(out, "Upstream moved: GitHub redirects %s to %s. Use update --follow-moves to update github.setup.\n", update.Release.Repository, update.Renamed)
 		}
 	} else if update.Stealth != nil {
 		fmt.Fprintf(out, "%s %s · the distfile changed upstream without a new name (stealth update)\n", update.Port, update.Before)
@@ -570,7 +570,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	// moves past it, and says so (termusic's, field testing, 2026-10-02).
 	for _, block := range update.Regenerated {
 		for _, pin := range block.Dropped {
-			fmt.Fprintf(out, "The Portfile pinned %s %s over the lock's %s; the new lock has %s, so the pin is dropped.\n", pin.Name, pin.Pinned, pin.Was, pin.Locked)
+			fmt.Fprintf(out, "Removed the Portfile pin for %s %s (lockfile version: %s); the new lockfile now specifies %s.\n", pin.Name, pin.Pinned, pin.Was, pin.Locked)
 		}
 		if block.Unchecked != "" {
 			fmt.Fprintln(out, block.Unchecked)
@@ -587,7 +587,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 			fmt.Fprintf(out, "! dist_subdir was not set: %s. Set it yourself, so mirrors keep both archives: dist_subdir ${name}/${version}_${revision} with a revision bump, else ${name}/${version}_1\n", stealth.Problem)
 		}
 		if stealth.Revbumped {
-			fmt.Fprintln(out, "The source changed, so the revision is bumped; --no-revbump leaves it, for a change that needs no rebuild.")
+			fmt.Fprintln(out, "Bumped the revision because the source changed. Use --no-revbump only if the change needs no rebuild.")
 		} else if stealth.RevbumpProblem == "" {
 			fmt.Fprintln(out, "Inspect the source change before deciding whether it needs a revision bump.")
 		}
@@ -672,18 +672,18 @@ func byHand(err error, request engine.UpdateRequest, branch model.Branch, starte
 	switch {
 	case request.Action == model.EditChecksums && errors.As(err, &toWrite):
 		block := strings.ReplaceAll(portfile.ChecksumsBlock(toWrite.Checksums), "\n", "\n    ")
-		return fmt.Errorf("can't refresh %s's checksums by itself: %s%s\nWrite them yourself; its archives have these now:\n    %s\n  dockhand edit %s", port, reason, kept, block, port)
+		return fmt.Errorf("Could not update the checksums for %s automatically: %s%s\nUse these checksums in the Portfile:\n    %s\nEdit with: dockhand edit %s", port, reason, kept, block, port)
 	case request.Action == model.EditChecksums:
-		return fmt.Errorf("can't refresh %s's checksums by itself: %s%s\nWrite them yourself, as port checksum %s reports them:\n  dockhand edit %s", port, reason, kept, port, port)
+		return fmt.Errorf("Could not update the checksums for %s automatically: %s%s\nRun port checksum %s, then copy the reported checksums into the Portfile.\nEdit with: dockhand edit %s", port, reason, kept, port, port)
 	case unlocated != nil:
-		return fmt.Errorf("can't update %s by itself: %s%s\nEdit the version yourself; dockhand checksums %s then prints the checksums to write:\n  dockhand edit %s", port, reason, kept, port, port)
+		return fmt.Errorf("Could not update %s automatically: %s%s\nEdit the version, then run dockhand checksums %s to print the checksums to copy into the Portfile.\nEdit with: dockhand edit %s", port, reason, kept, port, port)
 	}
 	// checksums meets what stopped the update, evaluating the same
 	// Portfile, so it isn't named: git's and qemu's refusals each sent
 	// the person to a checksums that refused them again (the hugo
 	// exercise, field testing). A Next: names only what would be
 	// accepted (the release bar's rule).
-	return fmt.Errorf("can't update %s by itself: %s%s\nEdit the version and its checksums yourself; port checksum %s, after the version's edit, says what its archives have:\n  dockhand edit %s", port, reason, kept, port, port)
+	return fmt.Errorf("Could not update %s automatically: %s%s\nEdit the version, run port checksum %s, then copy the reported checksums into the Portfile.\nEdit with: dockhand edit %s", port, reason, kept, port, port)
 }
 
 // uncertainUpdate is an update to the newest release that found none to
@@ -928,7 +928,7 @@ func writePatches(out io.Writer, update engine.Update) {
 		fmt.Fprintf(out, "! patch %s\n", problem)
 	}
 	for _, dropped := range update.PatchesDropped {
-		fmt.Fprintf(out, "Dropped patch %s, which the new source already holds; its file goes too.\n", dropped)
+		fmt.Fprintf(out, "Removed patch %s and its file; the new source already includes the fix.\n", dropped)
 	}
 	for _, unchecked := range update.PatchesUnchecked {
 		fmt.Fprintf(out, "· patch %s\n", unchecked)

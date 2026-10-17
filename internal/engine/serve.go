@@ -189,7 +189,7 @@ func (s *server) lead(ctx context.Context, session *coord.Session) (*model.Lease
 			return nil, nil
 		}
 		if !announced {
-			s.say("serve: standing by; serve (pid %d) leads", held.Holder.PID)
+			s.say("serve: standing by; another instance (pid %d) is running the queue", held.Holder.PID)
 			announced = true
 		}
 		select {
@@ -307,7 +307,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			return
 		}
 		if !f.run.State.Terminal() {
-			s.say("%s: left running for the next serve", f.run.Name())
+			s.say("%s: unfinished; the next serve instance will resume it", f.run.Name())
 			return
 		}
 		if ended[f.run.ID] {
@@ -330,7 +330,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			switch gone, swapped := replaced(options.Executable, started); {
 			case swapped:
 				upgraded, stopped = true, "serve: stopped for the upgrade"
-				s.say("serve: dockhand was upgraded; stopping once its checks end, so launchd starts the new build")
+				s.say("serve: upgrade detected; waiting for active checks to finish before exiting so launchd can start the new version")
 			case !gone:
 				missing = time.Time{}
 			case missing.IsZero():
@@ -420,7 +420,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				// person reading "the queue is empty" took it to (SQL-O8's
 				// item, the person's decision 6).
 				if open := e.followedPullRequests(running); len(open) > 0 {
-					s.say("serve: %s open, which this drain leaves unwatched: %s; dockhand serve follows them", prose.Plural(len(open), "pull request"), prose.And(open))
+					s.say("serve: %s remain open: %s. Monitoring stops when --drain exits; run dockhand serve to keep monitoring them", prose.Plural(len(open), "pull request"), prose.And(open))
 				}
 				return nil
 			}
@@ -513,11 +513,11 @@ func (g *loginGate) set(state, other string) {
 	g.s.written("serving.json", g.s.e.announceServing(g.serving()))
 	switch state {
 	case "none":
-		g.s.say("serve: no GitHub login now; it reads pull requests without one, and opens, pushes, and checks on GitHub nothing until dockhand setup github logs in")
+		g.s.say("serve: no GitHub credentials are available. Pull requests will be read anonymously; submissions, pushes, and GitHub checks are paused. Run dockhand setup github to sign in")
 	case "other":
-		g.s.say("serve: the GitHub login is now %s's, where serve started as %s's; it acts on GitHub as no one until %s logs in again, or serve is restarted", other, g.pinned, g.pinned)
+		g.s.say("serve: GitHub is now signed in as %s; serve started as %s. GitHub writes are paused. Sign in as %s again, or restart serve to use the current account", other, g.pinned, g.pinned)
 	case "rejected":
-		g.s.say("serve: GitHub rejected its login, as once it's revoked; it acts on GitHub as no one until dockhand setup github logs in again")
+		g.s.say("serve: GitHub rejected the credentials. GitHub writes are paused; run dockhand setup github to sign in again")
 	default:
 		if was != "" {
 			g.s.say("serve: logged in again as %s; acting on GitHub again", g.pinned)
@@ -545,7 +545,7 @@ func (g *loginGate) unread(err error) {
 	g.problem = problem
 	g.s.written("serving.json", g.s.e.announceServing(g.serving()))
 	if problem != "" {
-		g.s.say("serve: couldn't read who its GitHub login is (%s); it goes on as it was, and reads it again each minute", problem)
+		g.s.say("serve: could not verify the GitHub account (%s). Continuing with the current authentication state; retrying each minute", problem)
 	}
 }
 
@@ -598,7 +598,7 @@ func (f *follower) maybe(ctx context.Context) {
 	// reported it as any other refusal, unnotified, since the read stopped
 	// at the first refusal (SQL-O8's refresh).
 	case errors.Is(err, github.ErrLoginEnded):
-		report("serve: dockhand's GitHub login can't renew itself, so pull requests can't be read; run dockhand setup github, which serve uses without a restart")
+		report("serve: GitHub credentials could not be renewed, so pull request refresh is paused. Run dockhand setup github to sign in again; serve will use the new credentials automatically")
 		if f.s.loginEnded.CompareAndSwap(false, true) {
 			f.s.notify("GitHub login", "dockhand's GitHub login can't renew itself; run dockhand setup github")
 		}
@@ -702,7 +702,7 @@ func uncertainWords(last OutdatedLook, look OutdatedLook) string {
 	case len(fresh) == 0:
 		return fmt.Sprintf("serve: %s of yours may still have newer releases, as before (dockhand status lists them)", prose.Plural(already, "port"))
 	}
-	line := fmt.Sprintf("serve: %s of yours may have newer releases, for your look: %s (dockhand outdated %s says why)", prose.Plural(len(fresh), "port"), strings.Join(fresh, ", "), strings.Join(fresh, " "))
+	line := fmt.Sprintf("serve: %s may have newer releases that need review: %s. Run dockhand outdated %s for details", prose.Plural(len(fresh), "port"), strings.Join(fresh, ", "), strings.Join(fresh, " "))
 	if already > 0 {
 		line += fmt.Sprintf("; %d more as before", already)
 	}
@@ -801,9 +801,9 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	if limited, lifts := found.RateLimited(); len(limited) > 0 {
 		if !retrying {
 			o.retry, o.retryAt, stamp = limited, lifts.Add(time.Minute), false
-			o.s.say("serve: GitHub's rate limit kept %s from the day's look; it looks at them again at %s", prose.Plural(len(limited), "port"), o.retryAt.Local().Format("15:04 MST"))
+			o.s.say("serve: GitHub’s rate limit prevented checking %s for new releases. Retrying at %s", prose.Plural(len(limited), "port"), o.retryAt.Local().Format("15:04 MST"))
 		} else {
-			o.s.say("serve: GitHub's rate limit kept %s from the day's look again; it's done for today without them", prose.Plural(len(limited), "port"))
+			o.s.say("serve: GitHub’s rate limit still prevents checking %s for new releases. No further retries today", prose.Plural(len(limited), "port"))
 		}
 	}
 	var names, uncertain []string
@@ -943,7 +943,7 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 		if len(candidate.Held) > 0 {
 			// Said once a branch, while its first concern stays the same.
 			if first := candidate.Held[0]; p.held[candidate.Branch.ID] != first.Key() {
-				p.s.say("serve: %s is held for a look: %s", name, first.Detail)
+				p.s.say("serve: %s needs review before submission: %s", name, first.Detail)
 				p.held[candidate.Branch.ID] = first.Key()
 			}
 			continue

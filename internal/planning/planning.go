@@ -555,7 +555,7 @@ func Narrow(targets []model.PlanTarget, needs map[model.TargetID][]model.TargetI
 	for _, name := range only {
 		builds := named(name)
 		if len(builds) == 0 {
-			return nil, nil, fmt.Errorf("--only %s: the branch does not change it; --also builds an unchanged port", name)
+			return nil, nil, fmt.Errorf("--only %s: this port is unchanged on the branch; use --also to include an unchanged port", name)
 		}
 		for _, target := range builds {
 			keep[target.ID] = model.Changed

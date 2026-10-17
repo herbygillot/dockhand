@@ -325,7 +325,7 @@ func TestATagMovedBetweenAnUpdateAndItsCheckIsAConcern(t *testing.T) {
 	require.Empty(t, preparedSources(evidence, []model.Edit{update("libharbor", release("v4", planned))}), "the check built what the update chose")
 	moved := preparedSources(evidence, []model.Edit{update("libharbor", release("v4", chosen))})
 	require.Equal(t, []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: planned, Class: model.Introduced,
-		Detail: "libharbor's git.branch v4 named aaaaaaa when its update chose it, and bbbbbbb when check-7 planned it: the check built another source than the update chose"}}, moved)
+		Detail: "libharbor: git.branch v4 pointed to aaaaaaa when the update was prepared, then to bbbbbbb when check-7 was planned. The check used a different source from the update"}}, moved)
 	require.Contains(t, HoldLines(SubmitPlan{Moved: moved}.held()), moved[0].Detail, "it holds a submission nobody looks over")
 
 	require.Empty(t, preparedSources(evidence, []model.Edit{update("libharbor", release("v4", chosen)), update("libharbor", release("v4", planned))}),
@@ -398,7 +398,7 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
-	require.Equal(t, []string{"jq's git.branch jq-1.8.1 named " + chosen[:7] + " when its update chose it, and " + moved[:7] + " when " + checked.Name() + " planned it: the check built another source than the update chose"}, HoldLines(candidates[0].Held))
+	require.Equal(t, []string{"jq: git.branch jq-1.8.1 pointed to " + chosen[:7] + " when the update was prepared, then to " + moved[:7] + " when " + checked.Name() + " was planned. The check used a different source from the update"}, HoldLines(candidates[0].Held))
 
 	// Status says it too, from the store and the plan alone. With the
 	// repository gone, it reads nothing of it, and says nothing of where
@@ -437,7 +437,7 @@ func TestAnAssessmentOfAnotherCommitIsAConcern(t *testing.T) {
 	moved := assessedSources(evidence, assessed(read))
 	require.Len(t, moved, 1)
 	require.Equal(t, "assessment-moved", moved[0].Rule)
-	require.Equal(t, "libharbor's assessment read aaaaaaa, and check-7 planned bbbbbbb: what upstream's change was judged of isn't the source the check built", moved[0].Detail)
+	require.Equal(t, "libharbor: the upstream assessment examined aaaaaaa, but check-7 planned to build bbbbbbb. The assessment and check refer to different source commits", moved[0].Detail)
 	require.Empty(t, assessedSources(evidence, assessed(planned)), "it read what the check built")
 	require.Empty(t, assessedSources(evidence, assessed("")), "it kept no commit")
 	require.Empty(t, assessedSources(evidence, nil), "no assessment")
@@ -485,13 +485,13 @@ func TestAMajorVersionHoldsAnUnattendedUpdate(t *testing.T) {
 	_, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-bump"}, Action: model.EditUpdate, Port: "jq", Version: "2.0.0", Release: &major, Unattended: true})
 	var held *HeldBeforeEdit
 	require.ErrorAs(t, err, &held)
-	require.Equal(t, []string{"jq moves from 1.7.1 to 2.0.0, a new major version, which holds.majors holds for a look"}, HoldLines(held.Held))
+	require.Equal(t, []string{"jq moves from 1.7.1 to 2.0.0, a major version update. holds.majors requires review before an unattended update"}, HoldLines(held.Held))
 	require.Equal(t, model.FromHolds, held.Held[0].Origin)
 	require.Empty(t, p.requests, "nothing was prepared")
 	require.True(t, e.HoldsMajor("1.7.1", "2.0.0"))
 	require.False(t, e.HoldsMajor("1.7.1", "1.8.1"))
 
-	require.Equal(t, []string{"jq moves from 1.7.1 to 2.0.0, a new major version, which holds.majors holds for a look"},
+	require.Equal(t, []string{"jq moves from 1.7.1 to 2.0.0, a major version update. holds.majors requires review before an unattended update"},
 		HoldLines(e.majorHolds([]model.Edit{{Kind: model.EditUpdate, Port: "jq", Release: &major}})))
 
 	e.options.AllowMajors = true

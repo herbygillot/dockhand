@@ -215,7 +215,7 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 
 	out, _, err := dockhand(t, "check", "--on", "github", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "Provider    github · tests declared\nPushes      the revision to a dockhand-check/ branch of your fork, where MacPorts' workflow builds it, and removes the branch once the run is read\n")
+	require.Contains(t, out, "Provider    github · tests declared\nPushes      this revision to a dockhand-check/ branch in your fork for the MacPorts workflow; removes that branch after reading the run's results\n")
 	_, _, err = dockhand(t, "check", "--on", "github:sonoma")
 	require.ErrorContains(t, err, "takes no releases")
 
@@ -315,7 +315,7 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 	require.Contains(t, logged, "##[group]Installing jq")
 	// From the port's own install, by the workflow's headings (D20).
 	require.Contains(t, logged, "  dependencies  line 4\n  install       line 6\n  test          line 8\n")
-	require.Contains(t, logged, "From line 6, where jq's own build begins")
+	require.Contains(t, logged, "Showing from line 6, where the build for jq begins")
 	require.NotContains(t, logged, "Installing dependencies for jq", "before it")
 	// The port named after the check is the one -p names (field testing,
 	// 2026-10-02).
@@ -439,7 +439,7 @@ func TestAGitHubRunPastItsBoundIsCancelled(t *testing.T) {
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
 	logs, _, err := dockhand(t, "logs", "check-1")
 	require.NoError(t, err)
-	require.Contains(t, logs, "on build (macos-14): the run built past its 1m0s bound (providers.github.build_timeout), so dockhand cancelled it", errs)
+	require.Contains(t, logs, "on build (macos-14): the run exceeded the 1m0s build timeout (providers.github.build_timeout) and was cancelled", errs)
 }
 
 // A branch the check couldn't remove from your fork is said once, doesn't
@@ -499,5 +499,5 @@ func TestAGitHubLogWithoutHeadingsIsPrintedWholeAndSaid(t *testing.T) {
 	var out bytes.Buffer
 	result := model.TargetResult{Target: "jq", Log: "build-macos-15.log", Builders: []model.BuilderResult{{Builder: "build (macos-15)"}}}
 	require.NoError(t, writePortLog(&out, result, []byte("a log\n"), false))
-	require.Equal(t, "No steps of jq's build were found in its log, so it's printed whole.\n\na log\n", out.String())
+	require.Equal(t, "No build-step markers were found for jq. Showing the full log.\n\na log\n", out.String())
 }

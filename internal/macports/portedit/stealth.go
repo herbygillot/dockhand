@@ -148,7 +148,7 @@ func (s *Service) dropStealthDistSubdir(ctx context.Context, input *sourceInput,
 		return err
 	}
 	if !applied {
-		progress.Report(ctx, "Warning: removing %s's stealth dist_subdir would also change %s; it is left for you", input.target.Name, strings.Join(report.UnexpectedChanges, "; "))
+		progress.Report(ctx, "Warning: removing dist_subdir for %s would also change %s; left unchanged for manual review", input.target.Name, strings.Join(report.UnexpectedChanges, "; "))
 		return nil
 	}
 	result.DistSubdirRemoved = true

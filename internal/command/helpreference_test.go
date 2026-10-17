@@ -352,10 +352,10 @@ func flagName(word string) (long, short string) {
 var offering = regexp.MustCompile(`(?:[:(]\s*|\b(?:[Rr]un|then|[Tt]ry|[Uu]se|[Ss]ee|[Nn]ext:?)\s+)$`)
 
 // sentenceWords begin a sentence about dockhand after a colon or a
-// parenthesis in prose, as "(dockhand built jq with +doc)", never a
-// command.
+// parenthesis in prose, as "(dockhand built jq with +doc)", or after
+// "use", as "if you use dockhand at least once", never a command.
 var sentenceWords = map[string]bool{
-	"builds": true, "built": true, "could": true, "evaluates": true,
+	"at": true, "builds": true, "built": true, "could": true, "evaluates": true,
 	"has": true, "stopped": true, "was": true,
 }
 

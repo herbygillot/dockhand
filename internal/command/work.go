@@ -187,7 +187,7 @@ tracked files.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			if len(args) == 0 && len(ports) == 0 {
-				return errors.New("start needs a name, or a --port to name the branch for")
+				return errors.New("start needs a branch name or --port <port> to generate one.")
 			}
 			e, err := s.open(ctx)
 			if err != nil {
@@ -204,7 +204,7 @@ tracked files.`,
 			// An archived branch's name is offered back: renamed aside, the
 			// archived one keeps its work under <name>-archived.
 			if taken := new(engine.TakenError); errors.As(err, &taken) && taken.Branch.State == model.BranchArchived && taken.Branch.PullRequest == nil && streams.terminal() {
-				ok, _, askErr := streams.decide(false, decision{question: fmt.Sprintf("? %s is archived; rename it aside so this branch can take its name? [y/N] ", taken.Branch.ShortName()), undone: "nothing was started"})
+				ok, _, askErr := streams.decide(false, decision{question: fmt.Sprintf("? %s is archived. Rename the archived branch to free this name? [y/N] ", taken.Branch.ShortName()), undone: "nothing was started"})
 				if askErr != nil {
 					return askErr
 				}
@@ -283,9 +283,9 @@ edit and you have write access, and never rewrites their description.`,
 				return nil
 			}
 			if adoption.Renamed != "" {
-				fmt.Fprintf(streams.Out, "Recognized %s as %s, renamed with Git: its record, checks, and history carry over.\n", adoption.Branch.Name, adoption.Renamed)
+				fmt.Fprintf(streams.Out, "Recognized %s as a Git rename of %s; retained its record, checks, and history.\n", adoption.Branch.Name, adoption.Renamed)
 				if pr := adoption.Branch.PullRequest; pr != nil {
-					fmt.Fprintf(streams.Out, "#%d's head can't move, so submit keeps pushing to %s.\n", pr.Number, pr.Head)
+					fmt.Fprintf(streams.Out, "Pull request #%d keeps its original source branch; submit will continue pushing to %s.\n", pr.Number, pr.Head)
 				}
 				return nil
 			}
@@ -303,9 +303,9 @@ edit and you have write access, and never rewrites their description.`,
 func writePlaced(out io.Writer, adoption engine.Adoption) {
 	switch {
 	case adoption.Placed != "" && adoption.Branch.Managed:
-		fmt.Fprintf(out, "It wasn't checked out anywhere; it is now, in %s, as dockhand start checks a branch out.\n", adoption.Placed)
+		fmt.Fprintf(out, "Created a worktree for this branch at %s.\n", adoption.Placed)
 	case adoption.Placed != "":
-		fmt.Fprintf(out, "It's checked out in %s, which is recorded as its worktree.\n", adoption.Placed)
+		fmt.Fprintf(out, "Recorded the existing worktree at %s.\n", adoption.Placed)
 	case adoption.Unplaced != "":
 		fmt.Fprintf(out, "It is not checked out anywhere: %s.\n", adoption.Unplaced)
 	}
@@ -351,7 +351,7 @@ any, the branch checked out here.`,
 			var path string
 			switch {
 			case len(args) == 1 && where.explicit():
-				return errors.New("name the branch once: as the argument, or with -b, -p, or --pr")
+				return errors.New("Choose the branch with either an argument or one of -b, -p, or --pr.")
 			case where.explicit():
 				branch, err := where.resolve(cmd.Context(), e, streams)
 				if err != nil {

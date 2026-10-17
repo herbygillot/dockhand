@@ -132,7 +132,7 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 	discovery, discoveryErr := portsource.Interpret(p.input.info, portsource.Discovery)
 	switch {
 	case own:
-		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: NotTested, Code: OwnVersion, Detail: "No release upstream to look for: it fetches nothing, and no livecheck reads its version"})
+		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: NotTested, Code: OwnVersion, Detail: "No upstream release to check: the port fetches no source, and livecheck does not use its version"})
 	case discoveryErr == nil:
 		detail := "Supported " + string(discovery.Catalog) + " discovery; remote availability is untested"
 		if discovery.Livecheck.Overridden {
@@ -145,10 +145,10 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 	switch {
 	case err == nil && own:
 		// As update, which leaves such a port's version (ownVersion).
-		a.Findings = append(a.Findings, Finding{Check: "version-input", Status: NotTested, Code: OwnVersion, Detail: "Its version is MacPorts' own, which update leaves; no version input is needed"})
+		a.Findings = append(a.Findings, Finding{Check: "version-input", Status: NotTested, Code: OwnVersion, Detail: "MacPorts maintains this version, so update leaves it unchanged; no editable version declaration is needed"})
 	case err == nil:
 		err = p.prepare(ctx)
-		add("version-input", "Literal input candidates found; a specific release still needs edit-fidelity checks", err)
+		add("version-input", "Found declarations that may control the version; a specific release must still be checked for unintended changes", err)
 		if err == nil {
 			for _, carrier := range p.carriers {
 				line, col := textedit.Position(p.input.data, carrier.candidate.Span.Start)
@@ -156,7 +156,7 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 			}
 		}
 	default:
-		a.Findings = append(a.Findings, Finding{Check: "version-input", Status: NotTested, Code: "source-required", Detail: "Version probing requires an evaluable version convention"})
+		a.Findings = append(a.Findings, Finding{Check: "version-input", Status: NotTested, Code: "source-required", Detail: "Cannot check version edits until the Portfile version can be evaluated"})
 	}
 	base := p.input
 	plan, depErr := inspectDependencies(p.input)
@@ -172,7 +172,7 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 		if depErr != nil {
 			add("dependency-source", "", depErr)
 		}
-		a.Findings = append(a.Findings, Finding{Check: "regeneration", Status: NotTested, Code: "archives-required", Detail: "Manifest regeneration and preservation of maintained overrides require source archives"})
+		a.Findings = append(a.Findings, Finding{Check: "regeneration", Status: NotTested, Code: "archives-required", Detail: "Source archives are needed to regenerate dependencies and preserve manual overrides"})
 	}
 	if depErr == nil {
 
@@ -188,7 +188,7 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 		case p.input.info.GitFetched():
 			fetchDetail, checksumDetail = "Git source; the build clones git.url at git.branch", "No checksums: the source is cloned, not downloaded"
 		case fetchesNothing(coverage) && own:
-			fetchDetail, checksumDetail = "Fetches nothing, and no livecheck reads its version: its version is MacPorts' own, which update leaves", "No checksums: nothing is downloaded"
+			fetchDetail, checksumDetail = "No source is downloaded, and livecheck does not use the version; MacPorts maintains it, so update leaves it unchanged", "No checksums: nothing is downloaded"
 		case fetchesNothing(coverage):
 			fetchDetail, checksumDetail = "Fetches nothing in any observed context; an update edits its version alone", "No checksums: nothing is downloaded"
 		}
@@ -211,7 +211,7 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 		request.Version, request.Release = release.Requested, release
 		plan, candidateErr := p.editor.planArchiveVersion(ctx, request, base)
 		a.Scope = plan.result.Scope
-		add("candidate", "Resolved release passes pre-download version, source, checksum, and edit-fidelity checks", candidateErr)
+		add("candidate", "The selected release passes version, source, checksum-structure, and unintended-change checks; archives have not been downloaded", candidateErr)
 	} else {
 		a.Findings = append(a.Findings, Finding{Check: "candidate", Status: NotTested, Code: "candidate-unchecked", Detail: "A resolved release and supported dependency source are required to check a specific update"})
 	}

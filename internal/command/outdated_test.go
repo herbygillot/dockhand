@@ -111,8 +111,8 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	// A newer release whose files aren't published yet is said as not
 	// ready, as update would refuse it, and isn't counted as newer (field
 	// testing at 43949b89, browsh 1.8.3).
-	unready := engine.OutdatedPort{Port: "browsh", Current: "1.8.2", Newest: "1.8.3", Outdated: true, Unpublished: "the release of v1.8.3 has no files yet, which update fetches; it's not ready"}
-	notReady := "  PORT     NOW     NEWEST   DOCKHAND CAN\n  browsh   1.8.2   1.8.3    nothing yet: the release of v1.8.3 has no files yet, which update fetches; it's not ready\n"
+	unready := engine.OutdatedPort{Port: "browsh", Current: "1.8.2", Newest: "1.8.3", Outdated: true, Unpublished: "release v1.8.3 has no downloadable assets yet; the update is not ready"}
+	notReady := "  PORT     NOW     NEWEST   DOCKHAND CAN\n  browsh   1.8.2   1.8.3    nothing yet: release v1.8.3 has no downloadable assets yet; the update is not ready\n"
 	require.Equal(t, notReady+"browsh has a newer release, not ready yet, at master 1bb30d5\n", said(unready))
 	require.Equal(t, notReady+"None of 2 ports has a newer release, at master 1bb30d5 · 1 has a release not ready yet\n", said(unready, current("jq")))
 }
@@ -150,7 +150,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	out, _, err = dockhand(t, "update", "--mine", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "  lost: left as it is: no forge could be found for it\n")
-	require.Contains(t, out, "Will start 1 branch, one a port:\n  dockhand/jq-1.8.1  jq 1.7.1 → 1.8.1\n", "a row a port, with the name the run uses")
+	require.Contains(t, out, "Will start 1 branch, one per port:\n  dockhand/jq-1.8.1  jq 1.7.1 → 1.8.1\n", "a row a port, with the name the run uses")
 	require.Contains(t, out, "Nothing was started (--plan).\n")
 
 	_, _, err = dockhand(t, "update", "--mine")
@@ -169,7 +169,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	out, _, err = dockhand(t, "update", "--mine", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "  jq: left as it is: already in jq-")
-	require.Contains(t, out, "Nothing to update: none of them has a newer release that isn't already in a branch.\n")
+	require.Contains(t, out, "Nothing to update: no newer releases remain outside your existing branches.\n")
 
 	_, _, err = dockhand(t, "update", "--mine", "jq")
 	require.EqualError(t, err, "--mine starts a branch for each of your ports; it takes no port, --branch, or --new")
@@ -190,7 +190,7 @@ func TestUpdateMineLeavesAnUncertainPortForALook(t *testing.T) {
 
 	out, _, err := dockhand(t, "update", "--mine", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "Will start 1 branch, one a port:\n  dockhand/jq-")
+	require.Contains(t, out, "Will start 1 branch, one per port:\n  dockhand/jq-")
 	require.Contains(t, out, "1 that may have one, for your look")
 
 	result, err := jsonOf(t, "outdated", "jq", "lost", "yq")

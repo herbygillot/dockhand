@@ -203,7 +203,7 @@ func TestSubmitShowsACommitNamingAModifiedBuild(t *testing.T) {
 	testsupport.Git(t, dir, "commit", "-q", "--amend", "-m", "jq: update to 1.8.1"+fmt.Sprintf(trailer, "+dirty"))
 	out, _, err = dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
-	require.Contains(t, out, "  ! commit "+model.ObjectID(testsupport.Git(t, dir, "rev-parse", "HEAD")).Short()+"'s Generated-By names a dockhand built from uncommitted source, which nobody else can find; tidy it again with a build of a pushed commit\n")
+	require.Contains(t, out, "  ! commit "+model.ObjectID(testsupport.Git(t, dir, "rev-parse", "HEAD")).Short()+" names a Dockhand build from uncommitted source in Generated-By. Run tidy again using a build from a pushed commit so others can identify the source.\n")
 	preview, err := jsonOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Equal(t, []any{testsupport.Git(t, dir, "rev-parse", "HEAD")}, preview.Result["modified_builds"])
@@ -242,7 +242,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	g.Dockhand.Err = errors.New("github: API rate limit exceeded")
 	out, _, err = dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
-	require.Contains(t, out, "  ! couldn't ask GitHub whether it has the dockhand builds the commits name in Generated-By: github: API rate limit exceeded\n")
+	require.Contains(t, out, "  ! Could not verify the Dockhand builds listed in Generated-By on GitHub: github: API rate limit exceeded\n")
 	require.NotContains(t, out, "pushed there")
 	preview, err = jsonOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
@@ -417,13 +417,13 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	require.NotContains(t, g.PRs[34901].Body, "Author's note")
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "  Note     none, and the commit has no body, so the Description says nothing of the change: --note \"…\" adds one\n",
+	require.Contains(t, out, "  Note     missing; the commit has no body, so the description does not explain the change. Add --note \"…\".\n",
 		"with the note taken out, nothing says what changed (the Vx port's field testing)")
 
 	g.PRs[34901].Body = strings.Replace(g.PRs[34901].Body, "#### Description\n\n", "#### Description\n\nWhat I tested by hand.\n\n", 1)
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--note", "Fixed upstream.")
 	require.NoError(t, err)
-	require.Contains(t, out, "  Note     Fixed upstream.\n           ! not in the description: its Description is yours, edited on GitHub or taken out, and stays as it is\n")
+	require.Contains(t, out, "  Note     Fixed upstream.\n           ! note omitted: the description was edited or removed on GitHub, so Dockhand preserves it\n")
 }
 
 // Submitting to a pull request with nothing to push says what it changed:
@@ -478,7 +478,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	out, errs, err := dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  PR       #34901 · CI not read yet (dockhand status --refresh)\n", "until something reads it, status says how")
-	require.Contains(t, errs, "#34901 not read now, so as last read: dial tcp: connection refused\n")
+	require.Contains(t, errs, "Could not refresh #34901; showing previously recorded status: dial tcp: connection refused\n")
 	g.ObserveErr = nil
 	out, errs, err = dockhand(t, "status")
 	require.NoError(t, err)
@@ -632,7 +632,7 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	previewed, _, err := dockhand(t, "submit", "--plan", "--ready")
 	require.NoError(t, err)
 	require.Contains(t, previewed, "#34901 isn't a draft, so --ready has nothing to do.\n")
-	require.Contains(t, previewed, "\nDescription, as the pull request would have it:\n    Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**\n\n    #### Description\n")
+	require.Contains(t, previewed, "\nProposed pull request description:\n    Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**\n\n    #### Description\n")
 	require.Contains(t, previewed, "Nothing was submitted (--plan).\n")
 	require.Empty(t, g.Readied, "a preview marks nothing")
 
@@ -796,7 +796,7 @@ func TestAdoptRecognizesARenamedBranch(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", dir)
 	out, _, err := dockhand(t, "adopt")
 	require.NoError(t, err)
-	require.Equal(t, "Recognized jq-1.8 as dockhand/jq-update, renamed with Git: its record, checks, and history carry over.\n#34901's head can't move, so submit keeps pushing to ada/macports-ports:dockhand/jq-update.\n", out)
+	require.Equal(t, "Recognized jq-1.8 as a Git rename of dockhand/jq-update; retained its record, checks, and history.\nPull request #34901 keeps its original source branch; submit will continue pushing to ada/macports-ports:dockhand/jq-update.\n", out)
 	out, _, err = dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "#34901")
@@ -1035,7 +1035,7 @@ func TestASubmissionToAnotherAccountsForkIsSaid(t *testing.T) {
 	var out bytes.Buffer
 	writeSubmitPlan(&out, plan)
 	require.Contains(t, out.String(), "  As       herbygillot, from dockhand's login in the Keychain\n"+
-		"           ! herbyg-test/macports-ports is herbyg-test's, and this pushes and writes the pull request as herbygillot\n")
+		"           ! herbyg-test/macports-ports belongs to herbyg-test; you will push and create or update the pull request as herbygillot\n")
 	plan.Theirs = true
 	out.Reset()
 	writeSubmitPlan(&out, plan)

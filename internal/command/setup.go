@@ -54,7 +54,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 	fmt.Fprintln(streams.Out)
 	if overridingToken() == "" {
 		if _, err := github.SavedLogin(ctx, authStore); err != nil {
-			login, err := streams.askYes("? Log in to GitHub now, for submit and checks in your fork? [Y/n] ", true)
+			login, err := streams.askYes("? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ", true)
 			if err != nil {
 				return written, err
 			}
@@ -69,7 +69,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 		suggestion := e.SuggestMaintainerAtMaster(ctx)
 		if len(suggestion.Spellings) > 0 {
 			line := suggestion.Spellings[0].Maintainer.String()
-			write, err := streams.askYes(fmt.Sprintf("? Write maintainer = %q to %s, as the ports naming @%s write it? [Y/n] ", line, config.Tilde(configPath), suggestion.Login), true)
+			write, err := streams.askYes(fmt.Sprintf("? Save maintainer = %q in %s? This matches the maintainer entry in ports listing @%s. [Y/n] ", line, config.Tilde(configPath), suggestion.Login), true)
 			if err != nil {
 				return written, err
 			}
@@ -78,7 +78,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 					return "", err
 				}
 				written = line
-				fmt.Fprintf(streams.Out, "Wrote maintainer = %q, for --mine, create, and serve's daily look.\n", line)
+				fmt.Fprintf(streams.Out, "Saved maintainer = %q for --mine, create, and the daily release check in serve.\n", line)
 			}
 		} else {
 			fmt.Fprintf(streams.Out, "· maintainer: %s, for --mine, create, and serve's daily look\n", engine.MaintainerWords(suggestion, config.Tilde(configPath)))
@@ -87,11 +87,11 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 	if images := images(); images != nil {
 		makeImage := false
 		if status, err := images.Status(ctx); err == nil && !status.HasHostImage() {
-			question := fmt.Sprintf("? Make the Tart image for this Mac's macOS now? It downloads macOS and takes up to %s of disk. [y/N] ", tart.SetupDisk)
+			question := fmt.Sprintf("? Create a Tart image for this Mac’s macOS version? This downloads macOS and uses up to %s of disk space. [y/N] ", tart.SetupDisk)
 			if status.HostRestorable() {
 				// Its golden copy is kept: setup tart restores it, in
 				// about a minute, with no download.
-				question = "? Restore the Tart image for this Mac's macOS from its golden copy now? It takes about a minute, with no download. [y/N] "
+				question = "? Restore the Tart image for this Mac’s macOS version from its saved original? This takes about a minute and requires no download. [y/N] "
 			}
 			if makeImage, err = streams.askYes(question, false); err != nil {
 				return written, err
@@ -101,7 +101,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 			setup := setupTartCommand(s, streams)
 			setup.SetContext(ctx)
 			if err := setup.RunE(setup, nil); err != nil {
-				fmt.Fprintf(streams.Err, "No image made: %v\n", err)
+				fmt.Fprintf(streams.Err, "Could not prepare the Tart image: %v\n", err)
 			}
 		}
 	}

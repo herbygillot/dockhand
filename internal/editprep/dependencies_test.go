@@ -416,7 +416,7 @@ extract.rename no
 			case "partial":
 				require.ErrorContains(t, err, "registry checksums exactly")
 			case "cargo-update-unlocked":
-				require.ErrorContains(t, err, "cargo.update is on and 1.0's source ships no Cargo.lock")
+				require.ErrorContains(t, err, "cargo.update is enabled, but the source for 1.0 contains no Cargo.lock")
 			default:
 				require.NoError(t, err)
 				require.NotEmpty(t, result.PreparedTree)
@@ -525,7 +525,7 @@ source = "git+https://github.com/owner/pinned?rev=%s#%s"
 	service.DependencyTools.Cargo2Port = dependencyHelper(t, "exit 0")
 	_, err := service.Prepare(t.Context(), request)
 	require.ErrorContains(t, err, "pinned is pinned to Git rev "+oldCommit)
-	require.ErrorContains(t, err, "checking the existing cargo.crates against 1.0's source, the version now", "says whose lock it read (field testing, batch 11: halloy)")
+	require.ErrorContains(t, err, "checking existing cargo.crates against the source for current version 1.0", "says whose lock it read (field testing, batch 11: halloy)")
 	require.ErrorContains(t, err, "declares branches only")
 
 	service, request = versionFixture(t, "setup", extra+"# Disable offline mode to work around Git dependencies\ncargo.offline_cmd\n", handler)
@@ -579,7 +579,7 @@ cargo.crates old 1.2.3 ` + sha + "\n"
 			request.Action, request.Version, request.Release = model.EditChecksums, "", nil
 			result, err := service.Prepare(t.Context(), request)
 			if order == "before" {
-				require.ErrorContains(t, err, "reads its cargo.crates's checksums before its own archives'")
+				require.ErrorContains(t, err, "lists cargo.crates checksums before its source-archive checksums")
 				return
 			}
 			require.NoError(t, err)
@@ -613,7 +613,7 @@ func TestCargoOverridesAreNamedAndDroppedOnceTheLockPassesThem(t *testing.T) {
 	}{
 		{"moved past", "soundtouch 0.4.1 " + sha, "0.5.4", ""},
 		{"caught up", "soundtouch 0.4.1 " + sha, "0.4.1", ""},
-		{"still below", "soundtouch 0.4.1 " + sha, "0.4.0", "existing cargo.crates pins soundtouch 0.4.1 over the lock's 0.4.0, and 2.0's lock doesn't move past it"},
+		{"still below", "soundtouch 0.4.1 " + sha, "0.4.0", "existing cargo.crates overrides soundtouch to 0.4.1 instead of the locked 0.4.0, and the lockfile for 2.0 does not select a newer version than the override"},
 		{"another difference", "soundtouch 0.4.0 " + sha + " stray 1.0.0 " + sha, "0.5.4", "existing cargo.crates differs from the original manifest/helper output for stray"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

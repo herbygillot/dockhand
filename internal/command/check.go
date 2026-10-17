@@ -118,7 +118,7 @@ true, it runs that baseline by itself.`,
 			// A file the check leaves out in a port it builds is said with
 			// a mark, and how to take it in (Codex's gcc15 group update).
 			for _, path := range engine.UntrackedInChanged(capture, proposed) {
-				fmt.Fprintf(out, "! %s isn't tracked, so this check builds without it: --include %s takes it into this check, and git add %s keeps it\n", path, path, path)
+				fmt.Fprintf(out, "! %s is untracked and excluded from this check. Use --include %s for this check only, or git add %s to track it.\n", path, path, path)
 			}
 			if len(capture.Untracked) > 0 {
 				fmt.Fprintf(out, "Left out, not tracked: %s (--include adds one)\n", strings.Join(capture.Untracked, ", "))
@@ -127,7 +127,7 @@ true, it runs that baseline by itself.`,
 				// checkout keeps git add from taking it: the commands are
 				// said whole (the Vx port's field testing, 2026-10-03).
 				for _, directory := range capture.NewPorts {
-					fmt.Fprintf(out, "  %s is a new port's: dockhand check --include %s/Portfile builds it, and git sparse-checkout add %s lets git add take it\n", directory, directory, directory)
+					fmt.Fprintf(out, "  New port directory %s: run dockhand check --include %s/Portfile to build it. Run git sparse-checkout add %s before staging its files.\n", directory, directory, directory)
 				}
 			}
 			writePlan(out, proposed, e.PlanNotes(ctx, proposed), e.Remedy)
@@ -144,7 +144,7 @@ true, it runs that baseline by itself.`,
 				// full build where its check reused one (the rc6 full stage,
 				// B5).
 				if passed, err := e.Runs(ctx, store.RunFilter{Branch: branch.ID, States: []model.RunState{model.RunPassed}, Limit: 1}); err == nil && len(passed) > 0 && !proposed.Fresh {
-					fmt.Fprintln(out, "Reuse       a port whose earlier passed build read the same files is reused when the check runs, not built; --fresh builds every port")
+					fmt.Fprintln(out, "Reuse       when this check runs, it may reuse passing builds with identical inputs; --fresh rebuilds every port")
 				}
 				return nil
 			}
@@ -178,7 +178,7 @@ true, it runs that baseline by itself.`,
 			if s.file.Check.Baseline && !enqueue {
 				finished, _ := e.RunNamed(ctx, run.Name())
 				if ports, _, _ := e.BaselineCandidates(ctx, finished); len(ports) > 0 {
-					fmt.Fprintln(streams.Out, "check.baseline runs it now:")
+					fmt.Fprintln(streams.Out, "Running a baseline comparison because check.baseline is enabled:")
 					if baselineErr := runBaseline(ctx, e, streams, branch, nil, false); baselineErr != nil {
 						fmt.Fprintf(streams.Err, "baseline: %v\n", baselineErr)
 					}
@@ -263,7 +263,7 @@ func captureMode(head, staged, workingTree bool) engine.CaptureMode {
 // write to your fork (Design v3 §9).
 func writePushes(out io.Writer, plan model.Plan) {
 	if slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == buildenv.GitHub }) {
-		fmt.Fprintf(out, "Pushes      the revision to a %s branch of your fork, where MacPorts' workflow builds it, and removes the branch once the run is read\n", ghactions.BranchPrefix)
+		fmt.Fprintf(out, "Pushes      this revision to a %s branch in your fork for the MacPorts workflow; removes that branch after reading the run's results\n", ghactions.BranchPrefix)
 	}
 }
 
@@ -272,7 +272,7 @@ func unrunnable(plan model.Plan) string {
 	if len(plan.Unresolved) > 0 {
 		return "the plan is unresolved"
 	}
-	return "nothing in it can be built where it asks; see Not built"
+	return "none of the planned ports can build in the selected environments; see Not built"
 }
 
 // writePlan shows a plan, with remedy saying how to give an environment
@@ -330,9 +330,9 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 		switch len(untested) {
 		case 0:
 		case 1:
-			fmt.Fprintf(out, "No tests    %s declares none, so requiring them asks nothing of it\n", untested[0])
+			fmt.Fprintf(out, "No tests    %s declares no tests; --tests required adds no test requirement for this port\n", untested[0])
 		default:
-			fmt.Fprintf(out, "No tests    %s declare none, so requiring them asks nothing of them\n", strings.Join(untested, ", "))
+			fmt.Fprintf(out, "No tests    %s declare no tests; --tests required adds no test requirement for these ports\n", strings.Join(untested, ", "))
 		}
 	}
 	for _, note := range notes {
@@ -729,7 +729,7 @@ func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Bas
 		fmt.Fprintf(out, "  · left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
 	}
 	if len(baseline.Skipped) > 0 {
-		fmt.Fprintf(out, "  · left out: %s, which failed before building, at lint, fetch, or checksum; --only builds them anyway\n", strings.Join(baseline.Skipped, ", "))
+		fmt.Fprintf(out, "  · skipped in this baseline: %s failed at lint, fetch, or checksum. Use --only to include them.\n", strings.Join(baseline.Skipped, ", "))
 	}
 }
 
@@ -797,7 +797,7 @@ func baselineTestWords(base, branch model.TestOutcome, check string) string {
 	}
 	switch {
 	case base.Failed() && branch.Failed():
-		return fmt.Sprintf("its tests %s at the base too, as in %s, so they did before this branch.", verb(base), check)
+		return fmt.Sprintf("tests %s at the base and in %s; the failure also occurs without this branch's changes.", verb(base), check)
 	case branch.Failed() && base == model.TestsPassed:
 		return fmt.Sprintf("its tests pass at the base, and %s in %s; the cause isn't established.", verb(branch), check)
 	case branch.Failed():
@@ -896,7 +896,7 @@ func writeVariants(out io.Writer, plan model.Plan) {
 	}
 	switch {
 	case plan.EachVariant && len(builds) > 0:
-		fmt.Fprintf(out, "Variants    %s with its defaults, then with each of %s over them (universal left out)\n", port, strings.Join(builds, ", "))
+		fmt.Fprintf(out, "Variants    %s with default variants, then each of %s added to the defaults (excluding universal)\n", port, strings.Join(builds, ", "))
 	case plan.Variants != "" && len(builds) > 0:
 		fmt.Fprintf(out, "Variants    %s %s, in place of its defaults\n", port, plan.Variants)
 	}
@@ -913,7 +913,7 @@ func confirmVariantBuilds(streams Streams, plan model.Plan, yes bool) error {
 	if !plan.EachVariant || builds <= variantBuildsToAsk || yes {
 		return nil
 	}
-	ok, _, err := streams.decide(false, decision{question: fmt.Sprintf("? --variants each makes %d builds, each a whole build; go ahead? [y/N] ", builds),
+	ok, _, err := streams.decide(false, decision{question: fmt.Sprintf("? --variants each will run %d full builds. Continue? [y/N] ", builds),
 		undone: fmt.Sprintf("nothing was checked (--variants each makes %d builds here)", builds), byYes: "--yes builds them"})
 	if err != nil {
 		return err

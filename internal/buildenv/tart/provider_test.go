@@ -585,7 +585,7 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	start := time.Now()
 	err = testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
 	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
-	require.ErrorContains(t, err, "tart run ended before dockhand-check-run-7-tahoe-1 took an address: it crashed")
+	require.ErrorContains(t, err, "tart run exited before dockhand-check-run-7-tahoe-1 received an IP address: it crashed")
 	require.Less(t, time.Since(start), 30*time.Second)
 }
 
@@ -698,7 +698,7 @@ func TestLeftoversAreOnlyCheckClones(t *testing.T) {
 	require.NoError(t, p.RemoveLeftover(t.Context(), "dockhand-check-run-7-tahoe-1"))
 	require.Equal(t, []string{"stop dockhand-check-run-7-tahoe-1", "delete dockhand-check-run-7-tahoe-1"}, mac.events)
 	for _, image := range []string{"dockhand-base-tahoe", "dockhand-golden-tahoe", "dockhand-xcode-tahoe", "dockhand-base-tahoe-check"} {
-		require.ErrorContains(t, p.RemoveLeftover(t.Context(), image), "is not a check's clone", image)
+		require.ErrorContains(t, p.RemoveLeftover(t.Context(), image), "is not a temporary build VM", image)
 	}
 	require.Len(t, mac.events, 2, "nothing else was stopped or deleted")
 	require.Contains(t, mac.images, "dockhand-base-tahoe")
@@ -784,20 +784,20 @@ func TestEnvironmentsAreReleasesWithImages(t *testing.T) {
 		require.Equal(t, want, got, releases)
 	}
 	_, err := p.Environments(t.Context(), "sequoia")
-	require.ErrorContains(t, err, "no Tart image for macOS 15 (Sequoia): dockhand setup tart sequoia makes dockhand-base-sequoia", "an Xcode image is an add-on to the base image")
+	require.ErrorContains(t, err, "no Tart image for macOS 15 (Sequoia); run dockhand setup tart sequoia to create dockhand-base-sequoia", "an Xcode image is an add-on to the base image")
 	_, err = p.Environments(t.Context(), "leopard")
 	require.ErrorContains(t, err, "unknown release")
 	// A deleted image whose golden copy is kept is a restore, said as one;
 	// check doesn't make it itself (the person's decision on D-R3).
 	mac.images = append(mac.images, "dockhand-golden-sequoia")
 	_, err = p.Environments(t.Context(), "sequoia")
-	require.EqualError(t, err, "no Tart image for macOS 15 (Sequoia): dockhand setup tart sequoia restores dockhand-base-sequoia from dockhand-golden-sequoia, in about a minute")
+	require.EqualError(t, err, "no Tart image for macOS 15 (Sequoia); run dockhand setup tart sequoia to restore dockhand-base-sequoia from dockhand-golden-sequoia (about a minute)")
 
 	// A Tart older than setup takes is refused before any VM starts, as
 	// setup refuses it (the rc9 full stage's F8).
 	mac.version = "2.38.0"
 	_, err = p.Environments(t.Context(), "")
-	require.EqualError(t, err, "Tart 2.38.0 is older than 2.39.0, which dockhand needs: it can't list its VMs while one with an ASIF disk runs (openai/tart#1344); sudo port upgrade tart")
+	require.EqualError(t, err, "Tart 2.38.0 is installed; Dockhand requires 2.39.0 or later to list running VMs with ASIF disks (openai/tart#1344). Upgrade with sudo port upgrade tart")
 }
 
 // A guest that finishes between a read and the look at whether it's still

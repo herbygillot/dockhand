@@ -61,7 +61,7 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 	submission, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
 	require.NoError(t, err)
 	require.Len(t, submission.Blocking, 1)
-	require.Contains(t, submission.Blocking[0], "libharbor is changed, and no check of these files built it")
+	require.Contains(t, submission.Blocking[0], "libharbor has changed, but these files have not been checked")
 	require.Contains(t, submission.Body, "| libharbor | · not run |", "the pull request shows what wasn't built")
 	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update", Accept: []string{"libharbor"}})
 	require.ErrorContains(t, err, "--accept libharbor: no check of these files built it")
@@ -127,7 +127,7 @@ func TestEachEnvironmentTakesItsNewestCheck(t *testing.T) {
 	submission, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
 	require.NoError(t, err)
 	require.Len(t, submission.Blocking, 2)
-	require.Contains(t, submission.Blocking[0], "is changed, and no check of these files built it everywhere it's required")
+	require.Contains(t, submission.Blocking[0], "has changed, but these files have not been checked in every required environment")
 	require.Empty(t, submission.Evidence.Problem)
 	// submit --check runs the check that's still needed, rather than
 	// refusing for the earlier check's gap (field testing, grafana 13.2.4).
@@ -231,8 +231,8 @@ func TestAResultStandsOnlyWhileItsEnvironmentDoes(t *testing.T) {
 
 	provider.identity = "source sha256:b; setup 1"
 	remade := blocking()
-	require.Contains(t, remade, "jq's check no longer stands: since it, "+DescribeEnvironment(tahoeArm)+" was made again")
-	require.Contains(t, remade, "libharbor's check no longer stands")
+	require.Contains(t, remade, "jq: the previous check is no longer valid because "+DescribeEnvironment(tahoeArm)+" was made again")
+	require.Contains(t, remade, "libharbor: the previous check is no longer valid")
 	passing, err := e.PassingBranches(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, passing.Ready, "submit --passing and serve don't count it as passing")
@@ -243,7 +243,7 @@ func TestAResultStandsOnlyWhileItsEnvironmentDoes(t *testing.T) {
 	checkHead(t, e, branch, "jq")
 	remade = blocking()
 	require.NotContains(t, remade, "jq")
-	require.Contains(t, remade, "libharbor's check no longer stands: since it, "+DescribeEnvironment(tahoeArm)+" was made again")
+	require.Contains(t, remade, "libharbor: the previous check is no longer valid because "+DescribeEnvironment(tahoeArm)+" was made again")
 	checkHead(t, e, branch, "libharbor")
 	require.Empty(t, blocking(), "the two narrowed checks together stand for the environment as it is now")
 }
@@ -273,7 +273,7 @@ func TestTheProviderSaysWhatChangedInAnEnvironment(t *testing.T) {
 	submission, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(submission.Blocking, "\n"),
-		"jq's check no longer stands: since it, on "+DescribeEnvironment(tahoeArm)+", dockhand has begun to build otherwise, from verifier 1 to verifier 2; dockhand check builds it there again")
+		"jq: the previous check is no longer valid because on "+DescribeEnvironment(tahoeArm)+", dockhand has begun to build otherwise, from verifier 1 to verifier 2. Run dockhand check to rebuild in the affected environments")
 	evidence, _, err := e.EvidenceFor(t.Context(), branch.ID, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD^{tree}")))
 	require.NoError(t, err)
 	cell := evidence.Targets[0].Outcomes[0]

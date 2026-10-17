@@ -220,7 +220,7 @@ func (d *driver) recordReuse(ctx context.Context, environment model.Environment,
 			return err
 		}
 		_, err = d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventExecutionState, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: %s: every target would build as it did in %s, and reuses that result, building nothing", d.run.Name(), DescribeEnvironment(environment), strings.Join(checks, ", "))})
+			Message: fmt.Sprintf("%s: %s: reusing results from %s for all targets because their build inputs are unchanged; no builds are needed", d.run.Name(), DescribeEnvironment(environment), strings.Join(checks, ", "))})
 		return err
 	})
 }
@@ -240,7 +240,7 @@ func (b *build) reuses(remaining []buildenv.Target, chosen map[model.TargetID]re
 			return err
 		}
 		_, err = b.d.session.Emit(tx, model.Event{Branch: b.d.run.Branch, Run: b.d.run.ID, Kind: model.EventExecutionState, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: %s: %s would build as in %s, and reuse those results; the rest build", b.d.run.Name(), DescribeEnvironment(b.execution.Environment), strings.Join(names, ", "), strings.Join(checks, ", "))})
+			Message: fmt.Sprintf("%s: %s: reusing results for %s from %s because their build inputs are unchanged; building the remaining targets", b.d.run.Name(), DescribeEnvironment(b.execution.Environment), strings.Join(names, ", "), strings.Join(checks, ", "))})
 		return err
 	})
 	if err != nil {
@@ -383,7 +383,7 @@ func (d *driver) gone(ctx context.Context, archive model.DependencyArchive) erro
 			return err
 		}
 		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventArchiveGone, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: the archive kept of %s, %s, is gone, so its record is dropped, and the guest gets it as MacPorts would, from its archives or a build", d.run.Name(), archive.Port, archive.Digest)})
+			Message: fmt.Sprintf("%s: the saved archive for %s (%s) is missing. Removing its record; the build environment will use a MacPorts archive or build it from source", d.run.Name(), archive.Port, archive.Digest)})
 		return err
 	})
 }

@@ -128,7 +128,7 @@ func TestOnlyAndACycle(t *testing.T) {
 
 	input.Only = []string{"harbor-extra"}
 	_, err = Decide(input)
-	require.ErrorContains(t, err, "--only harbor-extra: the branch does not change it")
+	require.ErrorContains(t, err, "--only harbor-extra: this port is unchanged on the branch")
 
 	_, err = Decide(Input{Environments: []model.Environment{arm, intel}, Evaluations: input.Evaluations})
 	require.ErrorContains(t, err, "1 evaluations for 2 environments")

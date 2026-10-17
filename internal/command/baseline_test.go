@@ -80,7 +80,7 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	next("failed")
 	out, _, err = dockhand(t, "check")
 	require.Equal(t, 2, ExitCode(err))
-	require.Contains(t, out, "dockhand check --baseline --branch jq-update\ncheck.baseline runs it now:\njq-update · baseline of check-4: jq at master ")
+	require.Contains(t, out, "dockhand check --baseline --branch jq-update\nRunning a baseline comparison because check.baseline is enabled:\njq-update · baseline of check-4: jq at master ")
 	require.Contains(t, out, "  ✗ fails at the base too, at install. Both results are kept; the cause isn't established.\n")
 
 	// A port that failed before building is the branch's own doing: no

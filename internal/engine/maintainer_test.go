@@ -147,7 +147,7 @@ func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 		s := newServer(e, ServeOptions{Outdated: ServeOutdated{Maintainers: []string{"@ada"}}, ShipTo: "list", Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return now }})
 		scanner := &outdatedScanner{s: s}
 		scanner.maybe(t.Context())
-		require.Contains(t, said, "serve: GitHub's rate limit kept 1 port from the day's look; it looks at them again at "+morning.Add(19*time.Minute).Format("15:04 MST"))
+		require.Contains(t, said, "serve: GitHub’s rate limit prevented checking 1 port for new releases. Retrying at "+morning.Add(19*time.Minute).Format("15:04 MST"))
 		_, err := os.Stat(e.serveFile("outdated.stamp"))
 		require.ErrorIs(t, err, os.ErrNotExist, "the day isn't done")
 
@@ -163,7 +163,7 @@ func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 		_, err = os.Stat(e.serveFile("outdated.stamp"))
 		require.NoError(t, err, "the day is done once the retry ran")
 		if holdsOn {
-			require.Contains(t, said, "serve: GitHub's rate limit kept 1 port from the day's look again; it's done for today without them")
+			require.Contains(t, said, "serve: GitHub’s rate limit still prevents checking 1 port for new releases. No further retries today")
 			continue
 		}
 		look, ok := e.LastOutdatedLook()

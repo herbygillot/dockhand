@@ -128,7 +128,7 @@ func (p *pendingLogin) renewedFrom() string {
 // ErrLoginEnded is a saved login that can't renew itself any more, which
 // only dockhand setup github answers: serve says it once, rather than a
 // failure for each pull request.
-var ErrLoginEnded = errors.New("github: the saved login can't renew itself")
+var ErrLoginEnded = errors.New("github: the saved login can no longer be renewed")
 
 // loginEnded is an error that is ErrLoginEnded, in its own words.
 type loginEnded struct{ error }
@@ -137,8 +137,8 @@ func (e loginEnded) Unwrap() error        { return e.error }
 func (e loginEnded) Is(target error) bool { return target == ErrLoginEnded }
 
 var (
-	errOldLogin     = loginEnded{fmt.Errorf("%w: the saved GitHub login is from an earlier dockhand; run dockhand setup github", ErrAuthentication)}
-	errExpiredLogin = loginEnded{fmt.Errorf("%w: the GitHub login expired after six months unused; run dockhand setup github", ErrAuthentication)}
+	errOldLogin     = loginEnded{fmt.Errorf("%w: the saved GitHub login uses an older format; run dockhand setup github to sign in again", ErrAuthentication)}
+	errExpiredLogin = loginEnded{fmt.Errorf("%w: the GitHub login expired after six months of inactivity; run dockhand setup github to sign in again", ErrAuthentication)}
 )
 
 // login is the token of the login the store keeps, renewed where its
@@ -171,7 +171,7 @@ func (s SystemCredentials) login(ctx context.Context, rejected Token) (Token, bo
 	}
 	lock, err := filelock.Acquire(waiting, path, filelock.Exclusive)
 	if err != nil {
-		return Token{}, true, fmt.Errorf("github: waiting to renew the GitHub login, which another dockhand is renewing: %w", err)
+		return Token{}, true, fmt.Errorf("github: could not acquire the lock to renew the GitHub login: %w", err)
 	}
 	defer lock.Close()
 	if saved, err = s.saved(ctx); err != nil {
@@ -218,7 +218,7 @@ func (s SystemCredentials) saved(ctx context.Context) (credential.Login, error) 
 	// Locked, it keeps the login still: no other source is tried, as for
 	// any login that's there (the rc10 full stage's F5).
 	if errors.Is(err, credential.ErrLocked) {
-		return credential.Login{}, fmt.Errorf("github: the saved GitHub login can't be read: %w, or GH_TOKEN set for the command stands in for it", err)
+		return credential.Login{}, fmt.Errorf("github: cannot read the saved GitHub login: %w; unlock the Keychain or set GH_TOKEN for this command", err)
 	}
 	if err != nil {
 		return credential.Login{}, fmt.Errorf("github: reading saved credential: %w", err)
@@ -241,7 +241,7 @@ func (s SystemCredentials) keep(ctx context.Context, renewed credential.Login, f
 	}
 	if err != nil {
 		s.renewal().set(&renewed, from)
-		progress.Report(ctx, "Couldn't save the renewed GitHub login to the Keychain (%v); this dockhand uses it, and tries again. If it ends first, run dockhand setup github.", err)
+		progress.Report(ctx, "Could not save the renewed GitHub login to the Keychain (%v). Dockhand will use it for this session and retry saving it. If Dockhand exits before saving it, run dockhand setup github to sign in again.", err)
 	}
 }
 
@@ -260,7 +260,7 @@ func (s SystemCredentials) refresh(ctx context.Context, saved credential.Login) 
 	case errors.As(err, &refused) && (refused.ErrorCode == "bad_refresh_token" || refused.ErrorCode == "invalid_grant" || refused.ErrorCode == "unauthorized_client"):
 		return credential.Login{}, loginEnded{fmt.Errorf("%w: GitHub refused to renew the login (%s); run dockhand setup github", ErrAuthentication, refused.ErrorCode)}
 	case err != nil:
-		return credential.Login{}, fmt.Errorf("github: renewing the GitHub login, which stays as it was: %w", RateLimitError(err))
+		return credential.Login{}, fmt.Errorf("github: could not renew the GitHub login; the saved credentials are unchanged: %w", RateLimitError(err))
 	}
 	secret, err := validToken(token.AccessToken)
 	if err != nil {
@@ -272,7 +272,7 @@ func (s SystemCredentials) refresh(ctx context.Context, saved credential.Login) 
 	}
 	renewed := credential.Login{Access: secret, AccessExpiry: token.Expiry, Refresh: token.RefreshToken, RefreshExpiry: renewal, Account: saved.Account, ClientID: saved.ClientID}
 	if !renewed.Complete() {
-		return credential.Login{}, fmt.Errorf("github: GitHub renewed the login without an expiry; it stays as it was")
+		return credential.Login{}, fmt.Errorf("github: GitHub returned incomplete login details; the saved credentials are unchanged")
 	}
 	return renewed, nil
 }

@@ -74,9 +74,9 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	// Build profiles name where, --on explicit environments, never both;
 	// --on ci went with check.on (the person's design, 2026-10-13).
 	_, _, err = dockhand(t, "check", "--plan", "--build", "minmax")
-	require.ErrorContains(t, err, "build profile minmax builds on Tart, which isn't installed here")
+	require.ErrorContains(t, err, "build profile minmax requires Tart, which is not installed")
 	_, _, err = dockhand(t, "check", "--plan", "--build", "nosuch")
-	require.ErrorContains(t, err, "--build nosuch: no profile of that name")
+	require.ErrorContains(t, err, "--build nosuch: unknown build profile")
 	_, _, err = dockhand(t, "check", "--plan", "--build", "host", "--on", "command")
 	require.ErrorContains(t, err, "[build on]")
 	_, _, err = dockhand(t, "check", "--plan", "--on", "ci")
@@ -91,7 +91,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	out, _, err = dockhand(t, "check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · checking snapshot 1\n", "a plan finds a snapshot already recorded of the same files")
-	require.Contains(t, out, "Reuse       a port whose earlier passed build read the same files is reused when the check runs", "with a passed check before it, a plan says reuse may apply (the rc6 full stage, B5)")
+	require.Contains(t, out, "Reuse       when this check runs, it may reuse passing builds with identical inputs", "with a passed check before it, a plan says reuse may apply (the rc6 full stage, B5)")
 
 	out, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
@@ -263,7 +263,7 @@ func TestABaselineSaysWhatTheTestsDidAtTheBase(t *testing.T) {
 		base, branch model.TestOutcome
 		words        string
 	}{
-		{model.TestsFailed, model.TestsFailed, "✓ builds at the base, as it does on the branch; its tests fail at the base too, as in check-38, so they did before this branch."},
+		{model.TestsFailed, model.TestsFailed, "✓ builds at the base, as it does on the branch; tests fail at the base and in check-38; the failure also occurs without this branch's changes."},
 		{model.TestsPassed, model.TestsTimedOut, "✓ builds at the base, as it does on the branch; its tests pass at the base, and time out in check-38; the cause isn't established."},
 		{model.TestsSkipped, model.TestsFailed, "✓ builds at the base, as it does on the branch; its tests fail in check-38, and weren't run at the base (skipped), so there's nothing to set beside them."},
 		{model.TestsFailed, model.TestsPassed, "✓ builds at the base, as it does on the branch; its tests fail at the base, and pass in check-38."},
@@ -342,11 +342,11 @@ func TestAPlanRequiringTestsNamesWhatDeclaresNone(t *testing.T) {
 		Builds:  []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"ov", "jq"}, Untested: []model.TargetID{"ov"}}}}
 	var out bytes.Buffer
 	writePlan(&out, plan, nil, nil)
-	require.Contains(t, out.String(), "Tests       jq, which must pass\nNo tests    ov declares none, so requiring them asks nothing of it\n", "which do is said beside which don't")
+	require.Contains(t, out.String(), "Tests       jq, which must pass\nNo tests    ov declares no tests; --tests required adds no test requirement for this port\n", "which do is said beside which don't")
 	plan.Builds[0].Untested = []model.TargetID{"ov", "jq"}
 	out.Reset()
 	writePlan(&out, plan, nil, nil)
-	require.Contains(t, out.String(), "No tests    ov, jq declare none, so requiring them asks nothing of them\n")
+	require.Contains(t, out.String(), "No tests    ov, jq declare no tests; --tests required adds no test requirement for these ports\n")
 	require.NotContains(t, out.String(), "Tests       ")
 	plan.Tests = model.TestsDeclared
 	out.Reset()
@@ -386,7 +386,7 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 	plan.Builds = []model.EnvironmentPlan{{Environment: arm, Order: order}}
 	var out strings.Builder
 	writeVariants(&out, plan)
-	require.Equal(t, "Variants    jq with its defaults, then with each of +tests, +docs, +oniguruma, +static over them (universal left out)\n", out.String())
+	require.Equal(t, "Variants    jq with default variants, then each of +tests, +docs, +oniguruma, +static added to the defaults (excluding universal)\n", out.String())
 
 	require.NoError(t, confirmVariantBuilds(Streams{}, plan, false), "five builds, asked nothing")
 	for range 3 {
@@ -398,7 +398,7 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 	var asked strings.Builder
 	require.NoError(t, confirmVariantBuilds(Streams{In: strings.NewReader("y\n"), Out: &asked, Err: &asked, interactive: true}, plan, false))
 	require.EqualError(t, confirmVariantBuilds(Streams{In: strings.NewReader("n\n"), Out: &asked, Err: &asked, interactive: true}, plan, false), "nothing was checked")
-	require.Contains(t, asked.String(), "? --variants each makes 20 builds, each a whole build; go ahead? [y/N] ")
+	require.Contains(t, asked.String(), "? --variants each will run 20 full builds. Continue? [y/N] ")
 
 	single := model.Plan{Variants: "+tests", Targets: []model.PlanTarget{plan.Targets[1]}}
 	out.Reset()

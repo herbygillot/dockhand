@@ -295,8 +295,8 @@ func TestARaisedFloorHolds(t *testing.T) {
 		if held.Port == "zdemo" {
 			rules = append(rules, held.Rule)
 			require.Contains(t, []string{
-				`zdemo now builds on Darwin 21 and later, where its platforms said "{darwin >= 19}": older Macs lose it, which holds for a look`,
-				"zdemo raises macosx_deployment_target from 10.15 to 12.0: older Macs may not run what it builds, which holds for a look",
+				`zdemo now requires Darwin 21 or later; platforms was "{darwin >= 19}". This drops support for older Macs and requires review before automatic submission`,
+				"zdemo raises macosx_deployment_target from 10.15 to 12.0. Built binaries may no longer run on older Macs; review is required before automatic submission",
 			}, held.Detail)
 		}
 	}

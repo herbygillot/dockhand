@@ -14,7 +14,7 @@ func bumpCommand(s *settings, streams Streams) *cobra.Command {
 	var version versionUpdate
 	cmd := &cobra.Command{
 		Use:   "bump <port> [version]",
-		Short: "Update a port and open its pull request, asking nothing",
+		Short: "Update a port, check it, and open a pull request without prompts",
 		Long: `Takes a port to the newest release upstream, or the version named, and on
 to its pull request, asking nothing: dockhand ship <port> --yes, with the
 guardrails serve keeps. It opens a pull request, so it isn't port bump, which

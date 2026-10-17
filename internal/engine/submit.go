@@ -419,7 +419,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 	}
 	if request.NoCheck {
 		if len(request.Accept) > 0 {
-			return errors.New("--accept acknowledges a check's failure, and --no-check has none")
+			return errors.New("--accept requires a failed check and cannot be combined with --no-check")
 		}
 		return nil
 	}
@@ -450,7 +450,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 		}
 		if len(pending) > 0 {
 			run := pending[0]
-			plan.Blocking = append(plan.Blocking, fmt.Sprintf("%s, of this commit's files, is %s; dockhand wait %s, then submit, or submit a draft with --draft", run.Name(), run.State, run.Name()))
+			plan.Blocking = append(plan.Blocking, fmt.Sprintf("%s checks this commit’s files and is %s. Run dockhand wait %s, then submit; or use --draft to submit now", run.Name(), run.State, run.Name()))
 			return nil
 		}
 		// A check passed of other files, as before a rebase, is reused
@@ -458,7 +458,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 		// is said so, since a rebase's refusal read as a whole build again
 		// (the rc6 full stage, B5).
 		if len(passed) > 0 {
-			plan.Blocking = append(plan.Blocking, fmt.Sprintf("no check has finished for this commit's files; dockhand check reuses %s's builds where a port reads the same files, building only what changed. Or submit a draft with --draft, or without a check with --no-check, which the pull request states", passed[0].Name()))
+			plan.Blocking = append(plan.Blocking, fmt.Sprintf("no completed check covers this commit’s files. Run dockhand check; it reuses eligible builds from %s and builds only what changed. Alternatively, use --draft or --no-check; --no-check is disclosed in the pull request", passed[0].Name()))
 			return nil
 		}
 		plan.Blocking = append(plan.Blocking, "no check has finished for this commit's files; run dockhand check first, submit a draft with --draft, or submit without a check with --no-check, which the pull request states")
@@ -741,7 +741,7 @@ type SubmitEdits struct {
 
 // ErrStaleSubmit reports a plan whose branch or fork moved since it was
 // made.
-var ErrStaleSubmit = errors.New("the branch changed since submit looked")
+var ErrStaleSubmit = errors.New("the branch changed after the submission was prepared")
 
 // ApplySubmit pushes the planned commit to your fork, only while the fork's
 // branch is as the plan saw it, and opens or updates the pull request.
@@ -792,7 +792,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		}
 	}
 	if err != nil {
-		return result, fmt.Errorf("pushed %s to %s, but the pull request was not written: %w; dockhand submit again finishes it", model.ObjectID(plan.Commit).Short(), plan.Head(), err)
+		return result, fmt.Errorf("pushed %s to %s, but could not create or update the pull request: %w; run dockhand submit again to finish", model.ObjectID(plan.Commit).Short(), plan.Head(), err)
 	}
 	// The window a kill is worst in: GitHub has the pull request, and the
 	// record hasn't it yet (the rc6 full stage, D-I4).
@@ -845,7 +845,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		return err
 	})
 	if err != nil {
-		return result, fmt.Errorf("#%d is open with %s, but recording it failed: %w; dockhand submit again finds it and records it", observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short(), err)
+		return result, fmt.Errorf("pull request #%d is open with commit %s, but dockhand could not save its record: %w; run dockhand submit again to find and record it", observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short(), err)
 	}
 	return result, nil
 }

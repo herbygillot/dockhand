@@ -47,8 +47,8 @@ func TestASourceArchiveIsTheForgesOfTheCommit(t *testing.T) {
 		{githubPort().Options, "https://github.com", "owner/project", ""},
 		{map[string]string{"fetch.type": "git", "git.url": "https://github.com/harbor/harbor.git"}, "https://github.com", "harbor/harbor", ""},
 		{map[string]string{"fetch.type": "git", "git.url": "https://gitlab.com/group/tool"}, "https://gitlab.com", "group/tool", ""},
-		{map[string]string{"fetch.type": "git", "git.url": "https://git.example.org/tool.git"}, "", "", "no forge dockhand reads archives from"},
-		{map[string]string{"fetch.type": "git", "git.url": "git://github.com/harbor/harbor.git"}, "", "", "no forge's https address"},
+		{map[string]string{"fetch.type": "git", "git.url": "https://git.example.org/tool.git"}, "", "", "downloading source archives from git.example.org is not supported"},
+		{map[string]string{"fetch.type": "git", "git.url": "git://github.com/harbor/harbor.git"}, "", "", "must be an HTTPS repository URL on a supported forge"},
 	} {
 		catalog := &archiving{}
 		service := &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: catalog, portsource.GitLab: catalog}}

@@ -131,7 +131,7 @@ func TestANewerReleaseWithoutItsFilesIsntReady(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
 	require.True(t, result.Unpublished)
-	require.Equal(t, "the release of v1.1 has no files yet, which update fetches; it's not ready", result.Detail)
+	require.Equal(t, "release v1.1 has no downloadable assets yet; the update is not ready", result.Detail)
 	c.assets["v1.1"] = []string{"project-1.1.tar.gz"}
 	result, err = service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)
@@ -629,7 +629,7 @@ func TestAnOldTagThatComparesNewerIsSetAside(t *testing.T) {
 	aside := []upstream.SetAside{{Tag: "v20200408", Version: "20200408", Source: "20200408", Predates: "v2024.08.24"}}
 	require.Equal(t, aside, result.SetAside)
 	require.Equal(t, "20200408", result.CandidateVersion)
-	require.Contains(t, result.Detail, "set aside v20200408, older than v2024.08.24 though it compares newer")
+	require.Contains(t, result.Detail, "excluded v20200408 because it predates v2024.08.24 despite having a higher version")
 	_, err = service.Resolve(t.Context(), port, "")
 	var uncertain *upstream.UncertainError
 	require.ErrorAs(t, err, &uncertain)
@@ -642,7 +642,7 @@ func TestAnOldTagThatComparesNewerIsSetAside(t *testing.T) {
 	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
 	require.Equal(t, "v2024.09.01", result.Release.Tag)
 	require.Equal(t, aside, result.SetAside)
-	require.Contains(t, result.Detail, "set aside v20200408")
+	require.Contains(t, result.Detail, "excluded v20200408")
 }
 
 // A newer release whose tag's commit predates the port's own, as one made
@@ -663,7 +663,7 @@ func TestANewerReleaseMadeEarlierIsUncertainNotCurrent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, upstream.Uncertain, result.Assessment)
 	require.Equal(t, []upstream.SetAside{{Tag: "v2.0", Version: "2.0", Source: "2.0", Predates: "v1.0"}}, result.SetAside)
-	require.Equal(t, "Can't tell whether current at 1.0: set aside v2.0, older than v1.0 though it compares newer", result.Detail)
+	require.Equal(t, "Cannot determine whether 1.0 is current: excluded v2.0 because it predates v1.0 despite having a higher version", result.Detail)
 
 	// So is a catalog whose every release is set aside, as one that no
 	// longer lists the port's own is here.

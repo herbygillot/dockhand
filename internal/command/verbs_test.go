@@ -106,7 +106,7 @@ func TestStartBringsItsPortsIn(t *testing.T) {
 	require.NoError(t, err)
 	require.Regexp(t, `^Created dockhand/jq-[a-z0-9]{4} from master `, out)
 	_, _, err = dockhand(t, "start")
-	require.ErrorContains(t, err, "start needs a name, or a --port to name the branch for")
+	require.ErrorContains(t, err, "start needs a branch name or --port <port> to generate one.")
 }
 
 // undo takes back the branch's latest tidy, its checkpoint found for it;

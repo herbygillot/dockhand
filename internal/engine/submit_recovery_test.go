@@ -58,8 +58,8 @@ func TestARequestThatNeverReachedGitHubIsMadeAgain(t *testing.T) {
 	require.NoError(t, err)
 	fake.CreateFails = true
 	_, err = e.ApplySubmit(t.Context(), plan)
-	require.ErrorContains(t, err, "but the pull request was not written")
-	require.ErrorContains(t, err, "dockhand submit again finishes it")
+	require.ErrorContains(t, err, "but could not create or update the pull request")
+	require.ErrorContains(t, err, "run dockhand submit again to finish")
 	require.Empty(t, fake.PRs)
 	require.Nil(t, recordedPullRequest(t, e, branch))
 
@@ -95,8 +95,8 @@ func TestAPullRequestOpenedButNotRecordedIsFoundByTheNextSubmit(t *testing.T) {
 	kept := e.Store
 	e.Store = refusingStore{kept}
 	_, err = e.ApplySubmit(t.Context(), plan)
-	require.ErrorContains(t, err, "#34901 is open with ")
-	require.ErrorContains(t, err, "but recording it failed")
+	require.ErrorContains(t, err, "#34901 is open with commit ")
+	require.ErrorContains(t, err, "but dockhand could not save its record")
 	e.Store = kept
 	require.Nil(t, recordedPullRequest(t, e, branch))
 

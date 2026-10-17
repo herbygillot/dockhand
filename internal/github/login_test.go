@@ -144,7 +144,7 @@ func TestALoginThatCantRenewSaysWhy(t *testing.T) {
 
 	server, asked := tokenEndpoint(t, "")
 	_, err := renewer(server, expiring(t, time.Now().Add(-time.Hour)), lock).Token(t.Context())
-	require.EqualError(t, err, "forge: authentication is required: the GitHub login expired after six months unused; run dockhand setup github")
+	require.EqualError(t, err, "forge: authentication is required: the GitHub login expired after six months of inactivity; run dockhand setup github to sign in again")
 	require.Zero(t, asked.Load())
 
 	server, _ = tokenEndpoint(t, "bad_refresh_token")
@@ -156,7 +156,7 @@ func TestALoginThatCantRenewSaysWhy(t *testing.T) {
 	store := expiring(t, time.Now().AddDate(0, 6, 0))
 	before := store.value
 	_, err = renewer(server, store, lock).Token(t.Context())
-	require.ErrorContains(t, err, "renewing the GitHub login, which stays as it was")
+	require.ErrorContains(t, err, "could not renew the GitHub login; the saved credentials are unchanged")
 	require.NotErrorIs(t, err, github.ErrAuthentication)
 	require.Equal(t, before, store.value)
 	for _, secret := range []string{"A1", "R1"} {
@@ -186,7 +186,7 @@ func TestALockedKeychainIsSaidAndNothingElseTried(t *testing.T) {
 	t.Setenv("PATH", bin)
 	_, err := github.SystemClient(&lockedStore{}).Credentials.Token(t.Context())
 	require.ErrorIs(t, err, credential.ErrLocked)
-	require.EqualError(t, err, "github: the saved GitHub login can't be read: the login Keychain is locked, or GH_TOKEN set for the command stands in for it")
+	require.EqualError(t, err, "github: cannot read the saved GitHub login: the login Keychain is locked; unlock the Keychain or set GH_TOKEN for this command")
 }
 
 // A renewed login the store didn't take is used, said, and saved the next
@@ -203,7 +203,7 @@ func TestARenewedLoginTheStoreRefusedIsUsedAndSavedLater(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "A2", token.Secret)
 	require.Len(t, said, 1)
-	require.Contains(t, said[0], "Couldn't save the renewed GitHub login to the Keychain")
+	require.Contains(t, said[0], "Could not save the renewed GitHub login to the Keychain")
 	require.NotContains(t, said[0], "A2")
 	require.NotContains(t, said[0], "R2")
 

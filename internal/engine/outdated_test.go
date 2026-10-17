@@ -132,9 +132,9 @@ func TestDiscoveryBecomesOutdatedsPort(t *testing.T) {
 	head := &upstream.Head{Branch: "main", Commit: strings.Repeat("a", 40)}
 	require.Equal(t, head, of(upstream.Result{Assessment: upstream.Moved, Head: head}).Moved)
 	require.True(t, of(upstream.Result{Assessment: upstream.OwnVersion}).OwnVersion)
-	unready := of(upstream.Result{Assessment: upstream.UpdateAvailable, Unpublished: true, Detail: "the release of v1.8.3 has no files yet"})
+	unready := of(upstream.Result{Assessment: upstream.UpdateAvailable, Unpublished: true, Detail: "release v1.8.3 has no files yet"})
 	require.True(t, unready.Outdated)
-	require.Equal(t, "the release of v1.8.3 has no files yet", unready.Unpublished)
+	require.Equal(t, "release v1.8.3 has no files yet", unready.Unpublished)
 	require.Equal(t, OutdatedUnpublished, unready.Class(), "newer, but not ready")
 	require.Equal(t, "no forge could be found for it", of(upstream.Result{Assessment: upstream.Unknown, Detail: "no forge could be found for it"}).Problem)
 	require.Equal(t, "its newest release could not be found", of(upstream.Result{Assessment: upstream.Unknown}).Problem)
@@ -174,10 +174,10 @@ func TestUncheckedPortsAreSaidAhead(t *testing.T) {
 	// A release not ready isn't planned, and says why (browsh).
 	f := setup(t)
 	e := f.open(t)
-	plan, err := e.PlanOutdated(t.Context(), OutdatedReport{Ports: []OutdatedPort{{Port: "browsh", Current: "1.8.2", Newest: "1.8.3", Outdated: true, Unpublished: "the release of v1.8.3 has no files yet"}}})
+	plan, err := e.PlanOutdated(t.Context(), OutdatedReport{Ports: []OutdatedPort{{Port: "browsh", Current: "1.8.2", Newest: "1.8.3", Outdated: true, Unpublished: "release v1.8.3 has no files yet"}}})
 	require.NoError(t, err)
 	require.Empty(t, plan.Updates)
-	require.Equal(t, []SkippedUpdate{{Port: "browsh", Reason: "the release of v1.8.3 has no files yet"}}, plan.Skipped)
+	require.Equal(t, []SkippedUpdate{{Port: "browsh", Reason: "release v1.8.3 has no files yet"}}, plan.Skipped)
 }
 
 // ship's one "may this go on?" question holds a new major version for an
@@ -189,7 +189,7 @@ func TestShipAsksOnceWhetherItMayGoOn(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	target := ShipTarget{Port: "jq", Current: "1.7.1", Version: "2.0.0", Name: "jq-2.0.0"}
 	done := e.Ship(t.Context(), target, ShipOptions{Origin: model.OriginServe, To: ShipCommit, Answered: model.AnsweredNobody})
-	require.Equal(t, "jq moves from 1.7.1 to 2.0.0, a new major version, which holds.majors holds for a look; nothing was prepared", done.Problem)
+	require.Equal(t, "jq moves from 1.7.1 to 2.0.0, a major version update. holds.majors requires review before an unattended update; nothing was prepared", done.Problem)
 	require.False(t, done.Update.Started, "nothing was started")
 	require.NoError(t, e.goOn(shipEdit, target, ShipOptions{Answered: model.AnsweredAsked}, nil), "a person asked goes on")
 
@@ -201,6 +201,6 @@ func TestShipAsksOnceWhetherItMayGoOn(t *testing.T) {
 	require.Error(t, e.goOn(shipEdit, target, yes, nil), "a new major version holds --yes too")
 	handEdit := TidyPlan{Groups: []TidyGroup{{Directory: "textproc/jq", Message: "jq: by hand"}}}
 	require.False(t, handEdit.Unambiguous())
-	require.ErrorContains(t, e.goOn(ShipCommit, target, yes, &handEdit), "the edit needs a look before it is committed")
-	require.ErrorContains(t, e.goOn(ShipCommit, target, ShipOptions{Answered: model.AnsweredNobody}, &handEdit), "the edit needs a look before it is committed")
+	require.ErrorContains(t, e.goOn(ShipCommit, target, yes, &handEdit), "review the commit plan before committing: run dockhand tidy --branch")
+	require.ErrorContains(t, e.goOn(ShipCommit, target, ShipOptions{Answered: model.AnsweredNobody}, &handEdit), "review the commit plan before committing: run dockhand tidy --branch")
 }

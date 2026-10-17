@@ -226,7 +226,7 @@ func TestRestorePutsTheStagedVersionBack(t *testing.T) {
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# staged after tidy\n"})
 	testsupport.Git(t, branch.Worktree, "add", "textproc/jq/Portfile")
 	_, _, err = e.Restore(t.Context(), tidied.Checkpoint.Name())
-	require.ErrorContains(t, err, "something was staged in dockhand/jq-update since "+tidied.Checkpoint.Name())
+	require.ErrorContains(t, err, "dockhand/jq-update has changes staged after "+tidied.Checkpoint.Name())
 	testsupport.Git(t, branch.Worktree, "reset", "-q")
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# working version\n"})
 

@@ -36,7 +36,7 @@ func TestAPyPIReleaseWithOnlyWheelsSaysSo(t *testing.T) {
 	err := wheelsOnly(t.Context(), index, "flatbuffers-25.12.19.tar.gz", urls, "25.12.19", missing)
 	var status *fetch.StatusError
 	require.ErrorAs(t, err, &status, "the refusal stays reachable")
-	require.EqualError(t, err, "archives: downloading flatbuffers-25.12.19.tar.gz: fetch: HTTP 404 for https://files.pythonhosted.org/packages/source/f/flatbuffers/flatbuffers-25.12.19.tar.gz; PyPI publishes only wheels for flatbuffers 25.12.19, and a release without a source archive never gets one, so the port needs its source from elsewhere, such as the project's own release on its forge")
+	require.EqualError(t, err, "archives: downloading flatbuffers-25.12.19.tar.gz: fetch: HTTP 404 for https://files.pythonhosted.org/packages/source/f/flatbuffers/flatbuffers-25.12.19.tar.gz; PyPI has only wheels for flatbuffers 25.12.19. Update the Portfile to use another source archive, such as one from the project's release page")
 
 	require.Equal(t, missing, wheelsOnly(t.Context(), index, "flatbuffers-25.12.19.tar.gz", []string{"https://files.pythonhosted.org/packages/source/d/demo/demo-1.0.tar.gz"}, "1.0", missing), "a release with a source archive leaves the error as it is")
 	require.Equal(t, missing, wheelsOnly(t.Context(), index, "flatbuffers-25.12.19.tar.gz", urls, "0.0", missing), "PyPI knowing nothing leaves it too")

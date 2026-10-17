@@ -90,7 +90,7 @@ func LocalPatches(info macports.PortInfo, portdir string) error {
 		// 2026-10-02); each segment is a plain name, so the path stays
 		// inside files. One with a site tag, name:tag, is fetched.
 		if !localPatchName(name) {
-			return fmt.Errorf("%w: patchfile %s isn't a file under the port's files directory, and patches fetched from a site aren't checked", portfile.ErrUnsupported, name)
+			return fmt.Errorf("%w: patchfile %s is not in the port's files directory; checking downloaded patches is not supported", portfile.ErrUnsupported, name)
 		}
 		stat, err := os.Lstat(filepath.Join(resolved, name))
 		if err != nil || !stat.Mode().IsRegular() {

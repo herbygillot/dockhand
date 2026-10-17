@@ -57,10 +57,10 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if plain && !watch {
-				return errors.New("--plain goes with --watch")
+				return errors.New("--plain requires --watch")
 			}
 			if watch && (len(args) > 0 || attentionOnly || all || where.explicit() || streams.json()) {
-				return errors.New("--watch keeps the whole status current; it takes no branch, --attention, --all, or --json")
+				return errors.New("--watch shows all current status and cannot be combined with a branch selector, --attention, --all, or --json")
 			}
 			if len(args) > 0 && where.explicit() {
 				return errors.New("name the branch once: as the argument, or with -b, -p, or --pr")
@@ -247,7 +247,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 			fmt.Fprintf(out, "Your ports: %s newer releases, as serve found %s (dockhand ship --mine)\n", prose.Plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], engine.Ago(found.CheckedAt))
 		}
 		if len(found.Uncertain) > 0 {
-			fmt.Fprintf(out, "Your ports: %s may have newer releases, for your look, as serve found %s (dockhand outdated %s)\n", prose.Plural(len(found.Uncertain), "port"), engine.Ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
+			fmt.Fprintf(out, "Your ports: %s may have newer releases; review needed. Last checked %s by serve. Run dockhand outdated %s for details.\n", prose.Plural(len(found.Uncertain), "port"), engine.Ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
 		}
 	}
 	writeQueue(out, queue)
@@ -400,7 +400,7 @@ func attentionFor(s engine.BranchStatus) []attention {
 		case s.Branch.PullRequest == nil:
 			return row(attentionReady, "passed; waiting for you to submit", submitNext(s, name))
 		case !s.Pushed():
-			return row(attentionReady, fmt.Sprintf("passed; #%d does not have it yet", s.Branch.PullRequest.Number), submitNext(s, name))
+			return row(attentionReady, fmt.Sprintf("passed; #%d has not been updated with these changes", s.Branch.PullRequest.Number), submitNext(s, name))
 		}
 	}
 	return nil
@@ -567,7 +567,7 @@ func serveWords(s engine.ServeState) string {
 		line = fmt.Sprintf("serve: running (pid %d)", s.PID)
 		// A serve on another build than this command's is said.
 		if build, upgraded := s.Upgraded(); upgraded {
-			line += fmt.Sprintf(" · on dockhand %s, where this is %s", build, buildinfo.Current())
+			line += fmt.Sprintf(" · running dockhand %s; this command is %s", build, buildinfo.Current())
 		}
 		// A serve not acting on GitHub, as its login stands, says why.
 		if s.NotActing != "" {
@@ -739,11 +739,11 @@ func readStalePullRequests(ctx context.Context, e *engine.Engine, out io.Writer)
 	}
 	switch {
 	case refreshed.Refused != nil:
-		fmt.Fprintf(out, "Pull requests not read now, so as last read: %v\n", err)
+		fmt.Fprintf(out, "Could not refresh pull requests; showing previously recorded status: %v\n", err)
 	case len(failed) > 0:
-		fmt.Fprintf(out, "%s not read now, so as last read: %v\n", strings.Join(failed, ", "), err)
+		fmt.Fprintf(out, "Could not refresh %s; showing previously recorded status: %v\n", strings.Join(failed, ", "), err)
 	case err != nil:
-		fmt.Fprintf(out, "Pull requests not read now, so as last read: %v\n", err)
+		fmt.Fprintf(out, "Could not refresh pull requests; showing previously recorded status: %v\n", err)
 	}
 }
 

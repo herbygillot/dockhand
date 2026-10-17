@@ -193,7 +193,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			break
 		}
 		if waited >= appear {
-			return fmt.Errorf("%w: GitHub started no run of %s on %s after %s; are Actions enabled for your fork? (https://github.com/%s/actions)",
+			return fmt.Errorf("%w: GitHub did not start %s on branch %s within %s; check that Actions are enabled for your fork: https://github.com/%s/actions",
 				buildenv.ErrInfrastructure, Workflow, branch, appear, fork.Repository)
 		}
 		if err := p.sleep(ctx, poll); err != nil {
@@ -256,14 +256,14 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			status = run.Status
 		}
 		if building >= bound && ended == "" {
-			ended = fmt.Sprintf("the run built past its %s bound (providers.github.build_timeout), so dockhand cancelled it", bound)
+			ended = fmt.Sprintf("the run exceeded the %s build timeout (providers.github.build_timeout) and was cancelled", bound)
 			build.Progress(fmt.Sprintf("%s built past its %s bound; cancelling it", run.URL, bound))
 			if err := p.API.Cancel(ctx, fork.Repository, run.ID); err != nil {
 				return fmt.Errorf("%w: cancelling %s, which built past its %s bound: %w", buildenv.ErrInfrastructure, run.URL, bound, err)
 			}
 		}
 		if ended != "" && cancelling >= cancelWait {
-			return fmt.Errorf("%w: GitHub didn't end %s within %s of its cancelling", buildenv.ErrInfrastructure, run.URL, cancelWait)
+			return fmt.Errorf("%w: GitHub did not stop %s within %s of the cancellation request", buildenv.ErrInfrastructure, run.URL, cancelWait)
 		}
 		if err := p.sleep(ctx, poll); err != nil {
 			return err

@@ -261,7 +261,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		// Said as the current version's: halloy's refusal named the Git
 		// pin of 2025's lock, and the update after it listed the new
 		// version's, another commit (field testing, batch 11).
-		return Result{}, fmt.Errorf("checking the existing %s against %s's source, the version now: %w", plan.Kind, base.info.Version, err)
+		return Result{}, fmt.Errorf("checking existing %s against the source for current version %s: %w", plan.Kind, base.info.Version, err)
 	}
 	old = old.KeepingDeclared(plan.Values[depblock.CargoGit])
 	// Preserve maintained overrides by refusing to overwrite declarations that differ
@@ -345,11 +345,11 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if len(keptModules) > 0 {
 		gosum, _, err := depblock.Manifest(ctx, nextInput.Archive, nextInput.Worksrcdir, "go.sum")
 		if err != nil {
-			return Result{}, fmt.Errorf("%w: existing %s keeps modules go2port leaves out, and %s's go.sum couldn't be read to see whether it still pins them: %w", ErrUnsupported, depblock.Go, request.Release.Version, err)
+			return Result{}, fmt.Errorf("%w: existing %s includes modules omitted by go2port; could not read go.sum for %s to verify their pinned versions: %w", ErrUnsupported, depblock.Go, request.Release.Version, err)
 		}
 		for _, kept := range keptModules {
 			if !depblock.GoSumPins(gosum, kept.Name, kept.Declared) {
-				return Result{}, fmt.Errorf("%w: existing %s keeps %s %s, which go2port leaves out, and %s's go.sum no longer pins it there; preserve this override with manual preparation", ErrUnsupported, depblock.Go, kept.Name, kept.Declared, request.Release.Version)
+				return Result{}, fmt.Errorf("%w: existing %s includes %s %s, which go2port omits, but go.sum for %s no longer pins that version; prepare the update manually to preserve the override", ErrUnsupported, depblock.Go, kept.Name, kept.Declared, request.Release.Version)
 			}
 			keptNames = append(keptNames, kept.Name)
 		}
@@ -361,7 +361,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	for _, override := range overrides {
 		locked, past := override.MovedPast(values[depblock.Cargo])
 		if !past {
-			return Result{}, fmt.Errorf("%w: existing %s pins %s %s over the lock's %s, and %s's lock doesn't move past it; preserve this override with manual preparation", ErrUnsupported, depblock.Cargo, override.Name, override.Declared, override.Generated, request.Release.Version)
+			return Result{}, fmt.Errorf("%w: existing %s overrides %s to %s instead of the locked %s, and the lockfile for %s does not select a newer version than the override; prepare the update manually to preserve it", ErrUnsupported, depblock.Cargo, override.Name, override.Declared, override.Generated, request.Release.Version)
 		}
 		dropped = append(dropped, Override{Name: override.Name, Pinned: override.Declared, Was: override.Generated, Locked: locked})
 	}
@@ -564,7 +564,7 @@ func inertWords(crates []depblock.GitCrate) string {
 // cargo.update requires (D19).
 func unlocked(err error, cargoUpdate bool, version string) error {
 	if cargoUpdate && errors.Is(err, macports.ErrManifestMissing) {
-		return fmt.Errorf("%w: cargo.update is on and %s's source ships no Cargo.lock, so its crates can't be regenerated: %w", ErrUnsupported, version, err)
+		return fmt.Errorf("%w: cargo.update is enabled, but the source for %s contains no Cargo.lock; cannot regenerate crate dependencies: %w", ErrUnsupported, version, err)
 	}
 	return err
 }

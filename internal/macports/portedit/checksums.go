@@ -105,7 +105,7 @@ func (s *Service) refreshVendoredChecksums(ctx context.Context, request Request,
 	before, _ := syntax.ListValues(input.info.Options["checksums"])
 	own, _ := syntax.ListValues(base.info.Options["checksums"])
 	if len(before) < len(own) || !slices.Equal(before[:len(own)], own) {
-		return result, fmt.Errorf("%w: %s reads its %s's checksums before its own archives', so the two can't be told apart", ErrUnsupported, name, plan.Kind)
+		return result, fmt.Errorf("%w: %s lists %s checksums before its source-archive checksums; cannot distinguish the two groups", ErrUnsupported, name, plan.Kind)
 	}
 	now, _ := syntax.ListValues(result.Prepared.Ports[name].Options["checksums"])
 	final, err := s.evaluateEdit(ctx, input, contents)

@@ -115,7 +115,7 @@ func diffArchives(ctx context.Context, e *engine.Engine, streams Streams, branch
 			if diff.New == "" {
 				side = "the branch's"
 			}
-			fmt.Fprintf(out, "%s · %s corresponds to none of %s archives by name, so it wasn't compared\n", diff.Directory, diff.Match.Name(), side)
+			fmt.Fprintf(out, "%s · %s was not compared: no matching archive name in %s archives\n", diff.Directory, diff.Match.Name(), side)
 			continue
 		case diff.Old == "":
 			fmt.Fprintf(out, "%s · %s is a new archive\n", diff.Directory, diff.New)
@@ -147,7 +147,7 @@ func diffArchives(ctx context.Context, e *engine.Engine, streams Streams, branch
 		}
 		fmt.Fprintf(out, "%s · %s: %s\n", diff.Directory, names, summary)
 		if diff.OldFromMirror {
-			fmt.Fprintf(out, "  the old %s is MacPorts' mirror's copy: upstream now serves other contents under its name\n", diff.Old)
+			fmt.Fprintf(out, "  Using the MacPorts mirror copy of %s; upstream now serves different contents under the same name.\n", diff.Old)
 		}
 		if !stat && len(diff.Patch) > 0 {
 			fmt.Fprintln(out)

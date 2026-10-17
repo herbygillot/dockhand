@@ -68,7 +68,7 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("maintainer = \"{@ada example.org:ada} openmaintainer\"\n"), 0o644))
 
 	_, _, err := dockhand(t, "create", "https://github.com/rift-dev/rift")
-	require.ErrorContains(t, err, "create writes in a branch: --new starts one")
+	require.ErrorContains(t, err, "create needs a branch. Use --new to start one")
 
 	out, _, err := dockhand(t, "create", "https://github.com/rift-dev/rift", "--new", "--category", "textproc")
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 		`Created textproc/rift/Portfile from the github and cargo PortGroups\n`+
 		`  cargo.crates: 1 crate, from Cargo.lock\n`+
 		`  checksums: 1 distfile \+ 1 crate\n`+
-		`  Unconfirmed, marked in the file: license \(from GitHub's detection\), long_description, destroot\n`+
+		`  Review these fields and remove their unconfirmed markers: license \(from GitHub's detection\), long_description, destroot\n`+
 		`Next: cd "\$\(dockhand path rift-new\)", then dockhand edit rift, then dockhand check\n$`, out)
 
 	branch := regexp.MustCompile(`dockhand/(rift-new)`).FindStringSubmatch(out)[1]
@@ -142,10 +142,10 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	testHTTPS = testsupport.HTTPSAnswers{"https://txt.hellman.io/": true}
 	out, _, err := dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new")
 	require.NoError(t, err)
-	require.Contains(t, out, "  homepage: over HTTPS, as MacPorts prefers; GitHub gives http://txt.hellman.io/\n", "the finding 6 of the txt run")
+	require.Contains(t, out, "  homepage: using HTTPS, as MacPorts recommends (GitHub supplied http://txt.hellman.io/)\n", "the finding 6 of the txt run")
 	require.Contains(t, out, "txt 0.8.1 · Rust (Cargo.toml) · Cargo.toml says MIT OR Apache-2.0 · \"A fast, intuitive terminal text editor\"\n")
-	require.Contains(t, out, "Unconfirmed, marked in the file: category devel (guessed from the build system; create --category moves it), license (from Cargo.toml), long_description, maintainers")
-	require.Contains(t, out, "  maintainers: nomaintainer, as your config names none; set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in "+filepath.Join(w.home, ".dockhand", "config.toml")+"\n",
+	require.Contains(t, out, "Review these fields and remove their unconfirmed markers: category devel (guessed from the build system; create --category moves it), license (from Cargo.toml), long_description, maintainers")
+	require.Contains(t, out, "  maintainers: nomaintainer (no maintainer configured). set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in "+filepath.Join(w.home, ".dockhand", "config.toml")+"\n",
 		"no port at the base names @ada")
 	branch := regexp.MustCompile(`dockhand/(txt-new)`).FindStringSubmatch(out)[1]
 	data, err := os.ReadFile(filepath.Join(w.home, "Source", "macports-branches", branch, "devel/txt/Portfile"))
@@ -162,7 +162,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", dir)
 	out, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "editors")
 	require.NoError(t, err)
-	require.Contains(t, out, "Moved txt from devel/txt to editors/txt, its files as they were, your edits included\n")
+	require.Contains(t, out, "Moved txt from devel/txt to editors/txt, preserving all files and your edits.\n")
 	moved, err := os.ReadFile(filepath.Join(dir, "editors/txt/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(moved), "# settled by hand\n")
@@ -176,7 +176,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	// finding 3). Committed, it's no longer create's to move.
 	out, _, err = dockhand(t, "tidy")
 	require.NoError(t, err)
-	require.Contains(t, out, "a new port create wrote, with your edits since")
+	require.Contains(t, out, "new port from dockhand create, including your later edits")
 	require.Equal(t, "txt: new port, version 0.8.1", strings.TrimSpace(testsupport.Git(t, dir, "log", "-1", "--format=%s")))
 	require.NotContains(t, testsupport.Git(t, dir, "log", "-1", "--format=%B"), "Generated-By")
 	_, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "games")
@@ -218,7 +218,7 @@ func TestCreateSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 
 	out, _, err := dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new", "--category", "editors")
 	require.NoError(t, err)
-	require.Contains(t, out, "  maintainers: nomaintainer, as your config names none; set maintainer = \"{@ada example.org:ada}\" in "+filepath.Join(w.home, ".dockhand", "config.toml")+", as 12 of the ports that name @ada write it, or as others do: \"@ada\" (2)\n")
+	require.Contains(t, out, "  maintainers: nomaintainer (no maintainer configured). set maintainer = \"{@ada example.org:ada}\" in "+filepath.Join(w.home, ".dockhand", "config.toml")+", as 12 of the ports that name @ada write it, or as others do: \"@ada\" (2)\n")
 	require.NoFileExists(t, config, "it only suggests")
 }
 

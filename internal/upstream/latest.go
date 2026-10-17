@@ -61,7 +61,7 @@ func (s *Service) askAssets(ctx context.Context, port macports.PortInfo, result 
 	names, err := assets.Assets(ctx, result.Release.Tag)
 	if err == nil && len(names) == 0 || errors.Is(err, forge.ErrNotFound) {
 		result.Unpublished = true
-		result.Detail = fmt.Sprintf("the release of %s has no files yet, which update fetches; it's not ready", result.Release.Tag)
+		result.Detail = fmt.Sprintf("release %s has no downloadable assets yet; the update is not ready", result.Release.Tag)
 	}
 }
 
@@ -92,7 +92,7 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		}
 	}()
 	if port.OwnVersion() {
-		result.Assessment, result.Detail = OwnVersion, "it fetches nothing here, and no livecheck reads its version"
+		result.Assessment, result.Detail = OwnVersion, "no source is fetched on this platform, and livecheck does not use the port version"
 		return result, nil
 	}
 	if s == nil || s.Versions == nil || s.EvaluateVersion == nil {
@@ -238,7 +238,7 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	if comparison <= 0 && len(setAside) > 0 {
 		result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
 		result.Assessment, result.SetAside, result.CandidateVersion = Uncertain, setAside, setAside[0].Version
-		result.Detail = fmt.Sprintf("Can't tell whether current at %s: set aside %s, older than %s though it compares newer", port.Version, strings.Join(asideTags, ", "), current)
+		result.Detail = fmt.Sprintf("Cannot determine whether %s is current: excluded %s because it predates %s despite having a higher version", port.Version, strings.Join(asideTags, ", "), current)
 		return result, nil
 	}
 	tag, err := repository.Tag(ctx, tags[index])
@@ -257,7 +257,7 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	result.finish(release, port.Version, "Selected "+tag.Name+" from "+catalog, " among "+catalog)
 	if len(setAside) > 0 {
 		result.SetAside = setAside
-		result.Detail += fmt.Sprintf("; set aside %s, older than %s though it compares newer", strings.Join(asideTags, ", "), current)
+		result.Detail += fmt.Sprintf("; excluded %s because it predates %s despite having a higher version", strings.Join(asideTags, ", "), current)
 	}
 	return result, nil
 }

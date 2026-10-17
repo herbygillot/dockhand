@@ -19,12 +19,12 @@ import (
 func TestAnUncertainPortIsSaidOnceForWhatWasSetAside(t *testing.T) {
 	t.Parallel()
 	first := OutdatedLook{Uncertain: []string{"dolt"}, SetAside: map[string][]string{"dolt": {"v040.15"}}}
-	require.Equal(t, "serve: 1 port of yours may have newer releases, for your look: dolt (dockhand outdated dolt says why)", uncertainWords(OutdatedLook{}, first))
+	require.Equal(t, "serve: 1 port may have newer releases that need review: dolt. Run dockhand outdated dolt for details", uncertainWords(OutdatedLook{}, first))
 	require.Equal(t, "serve: 1 port of yours may still have newer releases, as before (dockhand status lists them)", uncertainWords(first, first))
 	next := OutdatedLook{Uncertain: []string{"dolt", "yq"}, SetAside: map[string][]string{"dolt": {"v040.15"}, "yq": {"v5.0"}}}
-	require.Equal(t, "serve: 1 port of yours may have newer releases, for your look: yq (dockhand outdated yq says why); 1 more as before", uncertainWords(first, next))
+	require.Equal(t, "serve: 1 port may have newer releases that need review: yq. Run dockhand outdated yq for details; 1 more as before", uncertainWords(first, next))
 	moved := OutdatedLook{Uncertain: []string{"dolt"}, SetAside: map[string][]string{"dolt": {"v040.16"}}}
-	require.Contains(t, uncertainWords(first, moved), "for your look: dolt")
+	require.Contains(t, uncertainWords(first, moved), "need review: dolt")
 	require.Empty(t, uncertainWords(first, OutdatedLook{}))
 }
 
@@ -80,7 +80,7 @@ func TestServeWritesItsLoginStateBeforeSayingIt(t *testing.T) {
 		g.look(t.Context())
 	}
 	require.Equal(t, "GitHub rejected the login; dockhand setup github",
-		read["serve: GitHub rejected its login, as once it's revoked; it acts on GitHub as no one until dockhand setup github logs in again"])
+		read["serve: GitHub rejected the credentials. GitHub writes are paused; run dockhand setup github to sign in again"])
 	got, ok := read["serve: logged in again as ada; acting on GitHub again"]
 	require.True(t, ok)
 	require.Empty(t, got, "acting again, written before it's said")

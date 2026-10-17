@@ -56,21 +56,21 @@ func TestTidyAsksAboutAPersonsCommits(t *testing.T) {
 	require.NoError(t, err)
 
 	_, _, err = dockhand(t, "tidy")
-	require.ErrorContains(t, err, "needs review before it is applied")
+	require.ErrorContains(t, err, "review this plan in an interactive terminal before applying it")
 
 	var out, errs bytes.Buffer
 	input := "a\ne\njq: describe the b option\nd\na\n"
 	err = Run(t.Context(), []string{"tidy"}, Streams{In: strings.NewReader(input), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "  1  (needs a subject)\n       combines \"wip\", \"oops\"\n")
-	require.Contains(t, errs.String(), "Not yet: the commit for textproc/jq needs a subject")
+	require.Contains(t, errs.String(), "Can't apply this plan: the commit for textproc/jq needs a subject")
 	require.Contains(t, out.String(), "  1  jq: describe the b option\n")
 	require.Contains(t, out.String(), "+# b", "the diff was shown")
 	require.Contains(t, out.String(), "Created 1 commit.")
 	require.Equal(t, "jq: describe the b option", testsupport.Git(t, w.clone, "log", "-1", "--format=%s"))
 
 	_, _, err = dockhand(t, "tidy", "--message", "x")
-	require.ErrorContains(t, err, "add --squash")
+	require.ErrorContains(t, err, "Add --squash")
 }
 
 // A plan tidy proposes of a person's own edits, which needs a review on a
@@ -89,7 +89,7 @@ func TestTidyYesAppliesAPersonsPlanAsShown(t *testing.T) {
 	_, _, err = dockhand(t, "tidy", "--yes")
 	require.ErrorContains(t, err, "nothing was applied: the commit for textproc/jq needs a subject")
 	_, _, err = dockhand(t, "tidy")
-	require.ErrorContains(t, err, "apply it as shown with --yes")
+	require.ErrorContains(t, err, "approve the displayed plan with --yes")
 
 	testsupport.Git(t, w.clone, "commit", "-q", "--amend", "-m", "jq: note a")
 	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\n# a, and b\n"), 0o644))
@@ -172,7 +172,7 @@ func TestTidySaysWhatTheRulesWarnOfAndSavesTheCommitsToRewrite(t *testing.T) {
 
 	out, _, err := dockhand(t, "tidy", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "The commits follow MacPorts' rules, and nothing is uncommitted, but for what the rules warn of:\n  ! commit "+commit+": body has lines over 72 characters [body-wrap]\n")
+	require.Contains(t, out, "All changes are committed. The commits pass the required MacPorts checks, with these warnings:\n  ! commit "+commit+": body has lines over 72 characters [body-wrap]\n")
 	require.Contains(t, out, "To rewrite a message: dockhand tidy --plan --out tidy.toml")
 
 	file := filepath.Join(t.TempDir(), "tidy.toml")

@@ -89,9 +89,9 @@ func (e *Engine) restore(ctx context.Context, checkpoint model.Checkpoint, branc
 	name := checkpoint.Name()
 	switch {
 	case checkpoint.State == model.CheckpointAbandoned:
-		return checkpoint, branch, fmt.Errorf("%s was never made: dockhand stopped before its change, so there is nothing to restore", name)
+		return checkpoint, branch, fmt.Errorf("%s was not applied because dockhand stopped before making changes; there is nothing to restore", name)
 	case checkpoint.State != model.CheckpointApplied:
-		return checkpoint, branch, fmt.Errorf("%s isn't finished: %s isn't checked out as a branch, so dockhand can't tell whether its change was made", name, branch.Name)
+		return checkpoint, branch, fmt.Errorf("%s has an unresolved state: %s is not checked out, so dockhand cannot determine whether the operation was applied", name, branch.Name)
 	case checkpoint.RestoredAt != nil:
 		return checkpoint, branch, fmt.Errorf("%s was already restored", name)
 	}
@@ -122,7 +122,7 @@ func (e *Engine) restore(ctx context.Context, checkpoint model.Checkpoint, branc
 			return checkpoint, branch, err
 		}
 		if index != trees[string(checkpoint.After)] {
-			return checkpoint, branch, fmt.Errorf("something was staged in %s since %s; restoring the index would replace it, so nothing was changed. Commit it, or set it aside (git stash), first", branch.Name, name)
+			return checkpoint, branch, fmt.Errorf("%s has changes staged after %s. Restoring would overwrite them, so nothing was changed. Commit or stash those changes before restoring", branch.Name, name)
 		}
 	}
 	if checkpoint.Kind == model.CheckpointRebase {

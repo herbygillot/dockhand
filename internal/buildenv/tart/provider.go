@@ -150,7 +150,7 @@ func (p *Provider) Environments(ctx context.Context, releases string) ([]model.E
 		return nil, fmt.Errorf("reading Tart's version: %w", err)
 	}
 	if !tartvm.HandlesASIF(version) {
-		return nil, fmt.Errorf("Tart %s is older than %s, which dockhand needs: it can't list its VMs while one with an ASIF disk runs (openai/tart#1344); sudo port upgrade tart", strings.TrimSpace(version), tartvm.MinimumVersion())
+		return nil, fmt.Errorf("Tart %s is installed; Dockhand requires %s or later to list running VMs with ASIF disks (openai/tart#1344). Upgrade with sudo port upgrade tart", strings.TrimSpace(version), tartvm.MinimumVersion())
 	}
 	images, err := m.Images(ctx)
 	if err != nil {
@@ -175,7 +175,7 @@ func (p *Provider) Environments(ctx context.Context, releases string) ([]model.E
 			}
 		}
 		if len(chosen) == 0 {
-			return nil, errors.New("--on tart:all: dockhand has no Tart images yet; dockhand setup tart makes one for this Mac's macOS")
+			return nil, errors.New("--on tart:all: no Tart base images are available; run dockhand setup tart to create one for this Mac's macOS")
 		}
 	default:
 		for _, name := range strings.Split(releases, ",") {
@@ -194,9 +194,9 @@ func (p *Provider) Environments(ctx context.Context, releases string) ([]model.E
 			// restore it itself: that writes tens of gigabytes unasked (the
 			// person's decision on D-R3, 2026-10-16).
 			if golden := tartvm.GoldenName(baseImage(release)); slices.Contains(images, golden) {
-				return nil, fmt.Errorf("no Tart image for macOS %s (%s): dockhand setup tart %s restores %s from %s, in about a minute", release.Product, release.Name, release.Slug, baseImage(release), golden)
+				return nil, fmt.Errorf("no Tart image for macOS %s (%s); run dockhand setup tart %s to restore %s from %s (about a minute)", release.Product, release.Name, release.Slug, baseImage(release), golden)
 			}
-			return nil, fmt.Errorf("no Tart image for macOS %s (%s): dockhand setup tart %s makes %s", release.Product, release.Name, release.Slug, baseImage(release))
+			return nil, fmt.Errorf("no Tart image for macOS %s (%s); run dockhand setup tart %s to create %s", release.Product, release.Name, release.Slug, baseImage(release))
 		}
 		environment := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
 			DeveloperTools: model.DeveloperToolsCommandLine}
@@ -396,7 +396,7 @@ func (p *Provider) Leftovers(ctx context.Context) ([]buildenv.Leftover, error) {
 // refused, so no image a check clones from is ever touched.
 func (p *Provider) RemoveLeftover(ctx context.Context, ref string) error {
 	if !strings.HasPrefix(ref, clonePrefixAll) {
-		return fmt.Errorf("%s is not a check's clone; only those are removed", ref)
+		return fmt.Errorf("%s is not a temporary build VM; only temporary build VMs can be removed", ref)
 	}
 	m, err := p.vms()
 	if err != nil {
@@ -618,7 +618,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if err != nil {
 		select {
 		case <-started.Done():
-			err = fmt.Errorf("tart run ended before %s took an address: %w", vm, cmp.Or(started.Err(), err))
+			err = fmt.Errorf("tart run exited before %s received an IP address: %w", vm, cmp.Or(started.Err(), err))
 		default:
 		}
 		return p.trouble(ctx, "reaching "+vm, err)
@@ -833,7 +833,7 @@ func (p *Provider) install(ctx context.Context, g guest, job buildenv.Job, build
 		// with; its digest is checked each time (D18).
 		entry, err := binaryarchive.Sign(ctx, keys, binaryarchive.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: archive.Path})
 		if err != nil {
-			return fmt.Errorf("the archive kept of %s: %w", archive.Target, err)
+			return fmt.Errorf("preparing the saved archive for %s: %w", archive.Target, err)
 		}
 		for _, name := range slices.Sorted(maps.Keys(entry.Files)) {
 			if err := g.Upload(ctx, entry.Files[name], binaryarchive.EntryPath(archiveSite, entry.Port, name), true); err != nil {

@@ -301,7 +301,7 @@ func acceptanceProblem(evidence Evidence, accept []string, atBase map[string][]s
 		case evidence.Targets[i].Missing() || !evidence.Targets[i].Failing():
 			return fmt.Errorf("--accept %s: no check of these files built it, so there is no failure to accept; dockhand check builds it", port)
 		case !evidence.Targets[i].Acceptable() && len(atBase[port]) == 0:
-			return fmt.Errorf("--accept %s: %s is a changed port, and a changed port that fails is accepted only where its baseline fails it the same way, which dockhand check --baseline sees; otherwise it's shared as a draft (--draft)", port, port)
+			return fmt.Errorf("--accept %s: %s has changed. Its failure can be accepted only if the baseline fails the same way. Run dockhand check --baseline to compare, or use --draft to share the failing change", port, port)
 		}
 	}
 	return nil
@@ -321,15 +321,15 @@ func publicationProblems(evidence Evidence, accepted []string, atBase map[string
 			problems = append(problems, fmt.Sprintf("%s %s, which %s hasn't; a check with %s there builds it, or share the branch as a draft (--draft)",
 				name, UnmetWords(unmet), DescribeEnvironment(unmet.Environment), unmet.Needs))
 		case len(remade) > 0 && target.Missing():
-			problems = append(problems, fmt.Sprintf("%s's check no longer stands: since it, %s; dockhand check builds it there again, or share the branch as a draft (--draft)", name, RemadeWords(target)))
+			problems = append(problems, fmt.Sprintf("%s: the previous check is no longer valid because %s. Run dockhand check to rebuild in the affected environments, or share the branch with --draft", name, RemadeWords(target)))
 		case target.Missing():
-			problems = append(problems, fmt.Sprintf("%s is changed, and no check of these files built it everywhere it's required; dockhand check builds it, or share the branch as a draft (--draft)", name))
+			problems = append(problems, fmt.Sprintf("%s has changed, but these files have not been checked in every required environment. Run dockhand check, or share the branch with --draft", name))
 		case !target.Acceptable() && len(atBase[name]) > 0 && !slices.Contains(accepted, name):
 			// A failure master has too is no regression, the usual case for
 			// a MacPorts pull request: a person accepts it, never bump or
 			// serve, and the pull request says so (pgdog 0.1.62 on macOS 12,
 			// field testing; the person's word, 2026-10-17).
-			problems = append(problems, fmt.Sprintf("%s did not pass in %s, and fails the same way at the base (%s), so not by this branch; --accept %s submits it, saying so, or fix it, or share it as a draft (--draft)", name, evidence.Run.Name(), strings.Join(atBase[name], ", "), name))
+			problems = append(problems, fmt.Sprintf("%s failed in %s and has the same failure at the base (%s). Use --accept %s to submit with this existing failure disclosed, fix the failure, or share the branch with --draft", name, evidence.Run.Name(), strings.Join(atBase[name], ", "), name))
 		case !target.Acceptable() && len(atBase[name]) == 0:
 			problems = append(problems, fmt.Sprintf("%s did not pass in %s; fix it, or share it as a draft (--draft); dockhand check --baseline sees whether master fails it the same way", name, evidence.Run.Name()))
 		case !slices.Contains(accepted, name):

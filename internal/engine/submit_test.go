@@ -365,7 +365,7 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	branch2 := committedUpdate(t, e2)
 	checked(t, e2, branch2, model.OutcomeFailed, model.OutcomePassed)
 	_, err = e2.PlanSubmit(t.Context(), SubmitRequest{Branch: branch2, Accept: []string{"jq"}})
-	require.ErrorContains(t, err, "accepted only where its baseline fails it the same way")
+	require.ErrorContains(t, err, "can be accepted only if the baseline fails the same way")
 	plan, err = e2.PlanSubmit(t.Context(), SubmitRequest{Branch: branch2})
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(plan.Blocking, "\n"), "jq did not pass in check-1; fix it, or share it as a draft (--draft); dockhand check --baseline sees whether master fails it the same way")
@@ -408,10 +408,10 @@ func TestAFailureTheBaseHasTooIsAccepted(t *testing.T) {
 			_, acceptErr := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
 			if !test.alike {
 				require.Contains(t, blocking, "jq did not pass in check-1; fix it")
-				require.ErrorContains(t, acceptErr, "accepted only where its baseline fails it the same way")
+				require.ErrorContains(t, acceptErr, "can be accepted only if the baseline fails the same way")
 				return
 			}
-			require.Contains(t, blocking, "jq did not pass in check-1, and fails the same way at the base (check-2), so not by this branch; --accept jq submits it, saying so")
+			require.Contains(t, blocking, "jq failed in check-1 and has the same failure at the base (check-2). Use --accept jq to submit with this existing failure disclosed")
 			require.NoError(t, acceptErr)
 			plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
 			require.NoError(t, err)
@@ -563,7 +563,7 @@ func TestASubmissionNamesTheCheckItWaitsOn(t *testing.T) {
 
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
 	require.NoError(t, err)
-	require.Equal(t, []string{queued.Name() + ", of this commit's files, is queued; dockhand wait " + queued.Name() + ", then submit, or submit a draft with --draft"}, plan.Blocking)
+	require.Equal(t, []string{queued.Name() + " checks this commit’s files and is queued. Run dockhand wait " + queued.Name() + ", then submit; or use --draft to submit now"}, plan.Blocking)
 }
 
 // The search for a port's other open pull requests leaves out the branch's
@@ -730,7 +730,7 @@ func TestSubmitSaysACheckWouldReuseTheEarlierOne(t *testing.T) {
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
 	require.NoError(t, err)
 	require.NotEmpty(t, plan.Blocking)
-	require.Contains(t, plan.Blocking[0], "no check has finished for this commit's files; dockhand check reuses check-1's builds where a port reads the same files")
+	require.Contains(t, plan.Blocking[0], "no completed check covers this commit’s files. Run dockhand check; it reuses eligible builds from check-1 and builds only what changed")
 }
 
 // What create marked unconfirmed holds a submission until a person

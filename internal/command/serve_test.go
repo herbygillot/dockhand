@@ -99,7 +99,7 @@ func TestACheckIsHandedToServe(t *testing.T) {
 	go func() {
 		secondDone <- Run(second, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &standby, Err: &standby})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(standby.String(), "serve: standing by; serve (pid ") }, settle, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(standby.String(), "serve: standing by; another instance (pid ") }, settle, 10*time.Millisecond)
 	drained, _, err := dockhand(t, "serve", "--drain")
 	require.NoError(t, err)
 	require.Contains(t, drained, "leads and runs the queue; nothing to drain here")
@@ -138,7 +138,7 @@ func TestServeStopsForAnUpgrade(t *testing.T) {
 	case <-time.After(settle):
 		t.Fatalf("serve didn't stop for the upgrade: %s", served.String())
 	}
-	require.Contains(t, served.String(), "serve: dockhand was upgraded; stopping once its checks end, so launchd starts the new build\nserve: stopped for the upgrade\n")
+	require.Contains(t, served.String(), "serve: upgrade detected; waiting for active checks to finish before exiting so launchd can start the new version\nserve: stopped for the upgrade\n")
 }
 
 // A serve whose executable is gone past an upgrade's moment takes dockhand
@@ -172,7 +172,7 @@ func TestServeStopsWhenUninstalled(t *testing.T) {
 func TestStatusSaysServesOtherBuild(t *testing.T) {
 	t.Parallel()
 	line := serveWords(engine.ServeState{Running: true, PID: 7, Build: "v0.3.0-rc3"})
-	require.Contains(t, line, "serve: running (pid 7) · on dockhand v0.3.0-rc3, where this is ")
+	require.Contains(t, line, "serve: running (pid 7) · running dockhand v0.3.0-rc3; this command is ")
 	require.Equal(t, "serve: running (pid 7) · queue: empty", serveWords(engine.ServeState{Running: true, PID: 7}), "a serve that didn't say runs as this does")
 }
 
@@ -214,7 +214,7 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	calls := withLaunchd(t, 2)
 	agentOS = "linux"
 	_, _, err := dockhand(t, "serve", "--install")
-	require.ErrorContains(t, err, "launchd agent, which is macOS's")
+	require.ErrorContains(t, err, "serve --install requires macOS")
 
 	agentOS = "darwin"
 	out, _, err := dockhand(t, "serve", "--install")
@@ -404,7 +404,7 @@ func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
 	out, _, err := dockhand(t, "serve", "--install", "--db", ".dockhand/dockhand.db")
 	require.NoError(t, err)
 	require.Contains(t, out, "  With   DOCKHAND_UPSTREAM, TART_HOME, as set now\n")
-	require.Contains(t, out, "GH_TOKEN isn't written into the agent, which anyone on this Mac can read")
+	require.Contains(t, out, "GH_TOKEN is omitted from the agent file because that file is readable by other users on this Mac")
 	plist, err := os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
 	require.NoError(t, err)
 	agent := string(plist)
@@ -452,9 +452,9 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 	stop()
 	require.NoError(t, <-done)
 	out := served.String()
-	require.Equal(t, 1, strings.Count(out, "serve: no GitHub login now; it reads pull requests without one, and opens, pushes, and checks on GitHub nothing until dockhand setup github logs in\n"), out)
-	require.Contains(t, out, "serve: the GitHub login is now bob's, where serve started as ada's; it acts on GitHub as no one until ada logs in again, or serve is restarted\n")
-	require.Equal(t, 1, strings.Count(out, "serve: GitHub rejected its login, as once it's revoked; it acts on GitHub as no one until dockhand setup github logs in again\n"), out)
+	require.Equal(t, 1, strings.Count(out, "serve: no GitHub credentials are available. Pull requests will be read anonymously; submissions, pushes, and GitHub checks are paused. Run dockhand setup github to sign in\n"), out)
+	require.Contains(t, out, "serve: GitHub is now signed in as bob; serve started as ada. GitHub writes are paused. Sign in as ada again, or restart serve to use the current account\n")
+	require.Equal(t, 1, strings.Count(out, "serve: GitHub rejected the credentials. GitHub writes are paused; run dockhand setup github to sign in again\n"), out)
 	require.Contains(t, out, "serve: logged in again as ada; acting on GitHub again\n")
 
 	require.Equal(t, "serve: running (pid 7) · not acting on GitHub: no GitHub login · queue: empty", serveWords(engine.ServeState{Running: true, PID: 7, NotActing: "no GitHub login"}))
@@ -498,7 +498,7 @@ func TestServeSaysALoginItCantRead(t *testing.T) {
 	stop()
 	require.NoError(t, <-done)
 	out := served.String()
-	require.Equal(t, 1, strings.Count(out, "serve: couldn't read who its GitHub login is (github: reading saved credential: the keychain won't answer); it goes on as it was, and reads it again each minute\n"), out)
+	require.Equal(t, 1, strings.Count(out, "serve: could not verify the GitHub account (github: reading saved credential: the keychain won't answer). Continuing with the current authentication state; retrying each minute\n"), out)
 	require.Contains(t, out, "serve: logged in again as ada; acting on GitHub again\n")
 
 	require.Equal(t, "serve: running (pid 7) · not acting on GitHub: GitHub rejected the login; dockhand setup github · couldn't read its GitHub login: the keychain won't answer · queue: empty",

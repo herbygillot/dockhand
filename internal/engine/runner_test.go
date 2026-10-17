@@ -1168,7 +1168,7 @@ func TestAGuestIsGivenTheDependencyArchivesAnEarlierGuestInstalled(t *testing.T)
 		return err
 	}))
 	require.Len(t, gone, 1)
-	require.Contains(t, gone[0], "the archive kept of rust, "+rustDigest+", is gone, so its record is dropped")
+	require.Contains(t, gone[0], "the saved archive for rust ("+rustDigest+") is missing. Removing its record")
 }
 
 func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {

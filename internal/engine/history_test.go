@@ -75,7 +75,7 @@ func TestAHistoryChangeStoppedBeforeItsGitChangeIsAbandoned(t *testing.T) {
 	require.Equal(t, "tidy-2", result.Checkpoint.Name(), "numbers aren't reused")
 	require.Equal(t, model.CheckpointAbandoned, checkpointNumbered(t, restarted, 1).State)
 	_, _, err = restarted.Restore(t.Context(), "tidy-1")
-	require.ErrorContains(t, err, "tidy-1 was never made: dockhand stopped before its change, so there is nothing to restore")
+	require.ErrorContains(t, err, "tidy-1 was not applied because dockhand stopped before making changes; there is nothing to restore")
 
 	write(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\n"})
 	testsupport.Git(t, f.upstream, "add", "devel/other/Portfile")

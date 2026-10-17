@@ -26,7 +26,7 @@ func TestWatchPrintsEventsAsLinesWithoutATerminal(t *testing.T) {
 	go func() {
 		done <- Run(ctx, []string{"status", "--watch"}, Streams{In: strings.NewReader(""), Out: &watched, Err: &watched})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(watched.String(), "Watching; events follow") }, settle, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(watched.String(), "Watching for changes") }, settle, 10*time.Millisecond)
 	require.Contains(t, watched.String(), "jq-update", "status comes first")
 
 	_, _, err := dockhand(t, "check")
@@ -67,7 +67,7 @@ func TestWatchRedrawsAndRunsWhatIsTyped(t *testing.T) {
 	require.Eventually(t, func() bool { return draws() > before }, settle, 10*time.Millisecond, "a journaled change redraws the view")
 
 	send("l")
-	require.Eventually(t, func() bool { return strings.Contains(view.String(), "Enter returns to the view.") }, settle, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(view.String(), "Press Enter to return to status.") }, settle, 10*time.Millisecond)
 	require.Contains(t, view.String(), "$ dockhand logs check-1\n")
 	before = draws()
 	send("")

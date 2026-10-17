@@ -223,7 +223,7 @@ func TestAPlanAppliesUnasked(t *testing.T) {
 	own := TidyPlan{Groups: []TidyGroup{{Directory: "textproc/jq", FromEdits: true, Message: "jq: update to 1.8.1\n"}}}
 	require.NoError(t, own.AppliesUnasked(model.AnsweredNobody, false))
 	hand := TidyPlan{Groups: []TidyGroup{{Directory: "textproc/jq", Message: "jq: fix\n"}}}
-	require.ErrorContains(t, hand.AppliesUnasked(model.AnsweredNobody, false), "needs review")
+	require.ErrorContains(t, hand.AppliesUnasked(model.AnsweredNobody, false), "review this plan in an interactive terminal")
 	require.NoError(t, hand.AppliesUnasked(model.AnsweredYes, false))
 	require.NoError(t, hand.AppliesUnasked(model.AnsweredNobody, true), "a plan the person gave")
 	hand.Groups[0].needsSubject("commit 1 needs a subject")

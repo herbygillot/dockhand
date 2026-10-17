@@ -60,13 +60,13 @@ esac
 	require.NoError(t, err)
 	require.Equal(t, VM{Running: true, DiskFormat: "raw"}, vm)
 	_, err = client.Get(t.Context(), RunOptions{}, "changed")
-	require.ErrorContains(t, err, "lacks DiskFormat")
+	require.ErrorContains(t, err, "expected DiskFormat")
 
 	testsupport.WriteExecutable(t, executable, `#!/bin/sh
 printf '%s' '[{"VM":"renamed","Source":"local","State":"stopped"}]'
 `)
 	_, err = client.Images(t.Context(), RunOptions{})
-	require.ErrorContains(t, err, "lacks Name, Source, or Running and State")
+	require.ErrorContains(t, err, "each entry must include Name, Source, and either Running or State")
 }
 
 // The failures dockhand acts on are named from Tart 2.37.0's own words: the
@@ -172,6 +172,6 @@ func TestAListingTartDoesntAnswerIsBounded(t *testing.T) {
 	start := time.Now()
 	_, err := Client{Executable: executable}.Images(t.Context(), RunOptions{})
 	require.ErrorIs(t, err, ErrListingTimedOut)
-	require.ErrorContains(t, err, "in 200ms, so what VMs there are is unknown")
+	require.ErrorContains(t, err, "timed out after 200ms; VM status is unknown")
 	require.Less(t, time.Since(start), 20*time.Second, "not the sleep's thirty")
 }

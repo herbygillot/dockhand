@@ -28,8 +28,8 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 	_, _, err := dockhand(t, "review", "x")
 	require.ErrorContains(t, err, `"x" is not a pull request number`)
 	out, said, err := dockhand(t, "review", "34905")
-	require.Contains(t, said, "Experimental: dockhand evaluates #34905's Portfiles, its author's,", "the release bar's notice")
-	require.EqualError(t, err, "nothing was posted: without a terminal, --comment or --request-changes posts it")
+	require.Contains(t, said, "Experimental: this command evaluates pull request #34905 using its author's Portfiles", "the release bar's notice")
+	require.EqualError(t, err, "No review was posted. In a script, use --comment or --request-changes to post it.")
 	require.Contains(t, out, "review of #34905 \"Update jq docs\", as @ada (read access to macports/macports-ports)\n  1 commit changing jq\n")
 	require.Contains(t, out, `should start with the port it changes: "jq: …" [subject-port]`)
 	require.Empty(t, g.Reviews)
@@ -42,7 +42,7 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 	err = Run(t.Context(), []string{"review", "#34905"}, Streams{In: strings.NewReader("r\nc\n"), Out: &stdout, Err: &errs, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "? post as: c comment · e edit first · n don't post", "read access can't request changes")
-	require.Contains(t, errs.String(), "Requesting changes is left to people with write or triage access; you have read access.")
+	require.Contains(t, errs.String(), "Requesting changes requires write or triage access; your access is read access.")
 	require.Contains(t, stdout.String(), "✓ review posted on #34905: a comment, 0 inline comments\n  https://github.com/macports/macports-ports/pull/34905#pullrequestreview-1\n")
 	require.Len(t, g.Reviews, 1)
 	require.False(t, g.Reviews[0].RequestChanges)
@@ -66,7 +66,7 @@ func TestAdoptSomeonesPullRequest(t *testing.T) {
 	require.ErrorContains(t, err, "adopt takes a branch or --pr, not both")
 	out, said, err := dockhand(t, "adopt", "--pr", "34905")
 	require.NoError(t, err)
-	require.Contains(t, said, "Experimental: dockhand evaluates #34905's Portfiles, @newcontrib's, with MacPorts on this Mac", "the release bar's notice")
+	require.Contains(t, said, "Experimental: this command evaluates pull request #34905 using @newcontrib's Portfiles with MacPorts on this Mac", "the release bar's notice")
 	require.Equal(t, "Adopted pr-34905: \"jq: document the options\" by @newcontrib, 1 commit, changing jq; maintainers can edit.\nDirectory: ~/Source/macports-branches/pr-34905\n", out)
 	require.FileExists(t, filepath.Join(w.home, "Source", "macports-branches", "pr-34905", "textproc/jq/Portfile"))
 	out, _, err = dockhand(t, "adopt", "--pr", "34905")
@@ -85,7 +85,7 @@ func TestAReviewSaysTheAssessmentAndTheDependents(t *testing.T) {
 		Dependents: []engine.Dependent{{Name: "ttyd", Phases: []string{"library"}}, {Name: "luv", Phases: []string{"library"}}}}
 	var out bytes.Buffer
 	writeReview(&out, report)
-	require.Contains(t, out.String(), "  Upstream, against MacPorts' ports at the pull request's bbbbbbb, off master at aaaaaaa:\n    · patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED\n")
+	require.Contains(t, out.String(), "  Upstream comparison using ports at pull request commit bbbbbbb (based on master aaaaaaa):\n    · patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED\n")
 	require.Contains(t, out.String(), "  2 dependents, from the index at aaaaaaa: ttyd (library), luv (library); candidates to look at.\n")
 
 	report.Upstream, report.UpstreamUnread, report.Dependents, report.DependentsUnread = nil, "assessing a revision needs MacPorts' evaluator", nil, "reading the port index: no index"

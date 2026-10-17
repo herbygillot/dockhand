@@ -188,7 +188,7 @@ func writeReadyPreview(out io.Writer, plan engine.SubmitPlan, ready bool) {
 // writeDescription shows the pull request's description as the submission
 // would leave it, which a preview otherwise shows only in its JSON.
 func writeDescription(out io.Writer, plan engine.SubmitPlan) {
-	fmt.Fprintln(out, "\nDescription, as the pull request would have it:")
+	fmt.Fprintln(out, "\nProposed pull request description:")
 	for _, line := range strings.Split(strings.TrimRight(plan.Body, "\n"), "\n") {
 		fmt.Fprintln(out, strings.TrimRight("    "+line, " "))
 	}
@@ -310,7 +310,7 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	fmt.Fprintf(out, "  From     %s\n", plan.Head())
 	fmt.Fprintf(out, "  As       %s\n", loginWords(plan))
 	if owner, another := plan.ForkOwner(); another {
-		fmt.Fprintf(out, "           ! %s is %s's, and this pushes and writes the pull request as %s\n", plan.HeadRepository, owner, plan.Login.Account)
+		fmt.Fprintf(out, "           ! %s belongs to %s; you will push and create or update the pull request as %s\n", plan.HeadRepository, owner, plan.Login.Account)
 	}
 	fmt.Fprintf(out, "  To       %s:%s\n", plan.Repository, engine.UpstreamBranch)
 	if !strings.EqualFold(plan.Repository, engine.UpstreamRepository) {
@@ -338,7 +338,7 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	if plan.Note != "" {
 		fmt.Fprintf(out, "  Note     %s\n", noteLine(plan))
 	} else if plan.DescriptionSaysNothing() {
-		fmt.Fprintln(out, "  Note     none, and the commit has no body, so the Description says nothing of the change: --note \"…\" adds one")
+		fmt.Fprintln(out, "  Note     missing; the commit has no body, so the description does not explain the change. Add --note \"…\".")
 	}
 	if len(plan.LeftOut) > 0 {
 		fmt.Fprintf(out, "  Left out %s (not committed)\n", strings.Join(plan.LeftOut, ", "))
@@ -347,13 +347,13 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 		fmt.Fprintf(out, "  %s\n", finding)
 	}
 	for _, commit := range plan.ModifiedBuilds {
-		fmt.Fprintf(out, "  ! commit %s's Generated-By names a dockhand built from uncommitted source, which nobody else can find; tidy it again with a build of a pushed commit\n", model.ObjectID(commit).Short())
+		fmt.Fprintf(out, "  ! commit %s names a Dockhand build from uncommitted source in Generated-By. Run tidy again using a build from a pushed commit so others can identify the source.\n", model.ObjectID(commit).Short())
 	}
 	for _, build := range plan.UnfoundBuilds {
 		fmt.Fprintf(out, "  ! %s\n", unfoundBuildWords(build))
 	}
 	if plan.BuildsProblem != "" {
-		fmt.Fprintf(out, "  ! couldn't ask GitHub whether it has the dockhand builds the commits name in Generated-By: %s\n", plan.BuildsProblem)
+		fmt.Fprintf(out, "  ! Could not verify the Dockhand builds listed in Generated-By on GitHub: %s\n", plan.BuildsProblem)
 	}
 	for _, blocking := range plan.Blocking {
 		fmt.Fprintf(out, "✗ %s\n", blocking)
@@ -377,7 +377,7 @@ func noteLine(plan engine.SubmitPlan) string {
 		words += "\n           ! it mostly repeats the commit message's body, which the Description gives above it; --note \"\" clears it"
 	}
 	if plan.NoteLeftOut {
-		words += "\n           ! not in the description: its Description is yours, edited on GitHub or taken out, and stays as it is"
+		words += "\n           ! note omitted: the description was edited or removed on GitHub, so Dockhand preserves it"
 	}
 	return words
 }
@@ -633,7 +633,7 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	case submitted.Created:
 		fmt.Fprintf(streams.Out, "Opened #%d  %s\n", pr.Ref.Number, pr.Ref.URL)
 	case submitted.Pushed && plan.Replaces:
-		fmt.Fprintf(streams.Out, "Updated #%d: replaced its history with %s (the fork's branch was where submit saw it)\n", pr.Ref.Number, prose.Plural(len(plan.Commits), "commit"))
+		fmt.Fprintf(streams.Out, "Updated #%d: replaced its history with %s (confirmed the remote branch had not changed).\n", pr.Ref.Number, prose.Plural(len(plan.Commits), "commit"))
 	case submitted.Pushed:
 		fmt.Fprintf(streams.Out, "Updated #%d: pushed up to %s\n", pr.Ref.Number, model.ObjectID(plan.Commit).Short())
 	default:
@@ -674,7 +674,7 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 func editText(ctx context.Context, text string) (string, error) {
 	editor := editorCommand()
 	if editor == "" {
-		return "", errors.New("set $EDITOR to edit the description here, or edit it on GitHub after submitting; dockhand keeps your edits")
+		return "", errors.New("Set $VISUAL or $EDITOR to edit the description here, or edit it on GitHub after submitting. Dockhand preserves your edits.")
 	}
 	directory, err := scratch.Dir("description-")
 	if err != nil {

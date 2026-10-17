@@ -68,7 +68,7 @@ func TestAKilledCheckReadsAsStopped(t *testing.T) {
 
 	_, errs, err := dockhand(t, "wait", "check-1")
 	require.NoError(t, err)
-	require.Contains(t, errs, "check-1 runs here, since no dockhand serve is running.")
+	require.Contains(t, errs, "No dockhand serve is running, so check-1 will run here.")
 	out, _, err = dockhand(t, "status", "--all")
 	require.NoError(t, err)
 	require.NotContains(t, out, "stopped")

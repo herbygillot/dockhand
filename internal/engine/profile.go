@@ -65,7 +65,7 @@ func (e *Engine) Profile(name string) (Profile, error) {
 	if profile, ok := builtinProfile(name); ok {
 		return profile, nil
 	}
-	return Profile{}, fmt.Errorf("--build %s: no profile of that name; dockhand's are host, minmax, macports-ci, and all, and yours go under [build.profiles] in %s", name, e.configFile())
+	return Profile{}, fmt.Errorf("--build %s: unknown build profile. Built-in profiles are host, minmax, macports-ci, and all. Define custom profiles under [build.profiles] in %s", name, e.configFile())
 }
 
 // Where is where a check builds: the environments, the profile that
@@ -193,7 +193,7 @@ func (e *Engine) profileEnvironments(ctx context.Context, profile Profile) ([]mo
 func (e *Engine) notSetUp(_ context.Context, profile Profile) error {
 	switch profile.Provider {
 	case buildenv.Tart:
-		return fmt.Errorf(`build profile %s builds on Tart, which isn't installed here: MacPorts' tart port installs it, on Apple silicon; or --on github builds with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command]; a profile of your own under [build.profiles] in %s makes either the default, as {provider = "github"}`, profile.Name, e.configFile())
+		return fmt.Errorf(`build profile %s requires Tart, which is not installed. On Apple silicon, install it with sudo port install tart. Alternatively, use --on github to run the MacPorts workflow in your fork, or --on command with a script configured under [providers.command]. To make either provider the default, define a profile under [build.profiles] in %s, for example {provider = "github"}`, profile.Name, e.configFile())
 	case buildenv.Command:
 		return fmt.Errorf(`build profile %s builds with your own script, which isn't set up: [providers.command] run = "..." in %s`, profile.Name, e.configFile())
 	}

@@ -198,7 +198,7 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "source-moved", Subject: string(current.Commit), Class: model.Introduced,
-			Detail: fmt.Sprintf("%s's git.branch %s named %s when %s planned it, and names %s now: the check built another source than this would submit", target.Target.Name, planned.Ref, planned.Commit.Short(), evidence.Run.Name(), current.Commit.Short())})
+			Detail: fmt.Sprintf("%s: git.branch %s pointed to %s when %s was planned, but now points to %s. The checked source differs from the source this submission would use", target.Target.Name, planned.Ref, planned.Commit.Short(), evidence.Run.Name(), current.Commit.Short())})
 	}
 	tags := map[[2]string]model.GitSource{}
 	for _, p := range plannedTags(evidence.Plan) {
@@ -242,7 +242,7 @@ func preparedSources(evidence *Evidence, edits []model.Edit) []model.Concern {
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "release-moved", Subject: string(planned.Commit), Class: model.Introduced,
-			Detail: fmt.Sprintf("%s's git.branch %s named %s when its update chose it, and %s when %s planned it: the check built another source than the update chose", target.Target.Name, planned.Ref, model.ObjectID(chosen.Commit).Short(), planned.Commit.Short(), evidence.Run.Name())})
+			Detail: fmt.Sprintf("%s: git.branch %s pointed to %s when the update was prepared, then to %s when %s was planned. The check used a different source from the update", target.Target.Name, planned.Ref, model.ObjectID(chosen.Commit).Short(), planned.Commit.Short(), evidence.Run.Name())})
 	}
 	return concerns
 }
@@ -269,7 +269,7 @@ func assessedSources(evidence *Evidence, upstream []PortComparison) []model.Conc
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "assessment-moved", Subject: string(planned.Commit), Class: model.Introduced,
-			Detail: fmt.Sprintf("%s's assessment read %s, and %s planned %s: what upstream's change was judged of isn't the source the check built", target.Target.Name, model.ObjectID(read).Short(), evidence.Run.Name(), planned.Commit.Short())})
+			Detail: fmt.Sprintf("%s: the upstream assessment examined %s, but %s planned to build %s. The assessment and check refer to different source commits", target.Target.Name, model.ObjectID(read).Short(), evidence.Run.Name(), planned.Commit.Short())})
 	}
 	return concerns
 }
@@ -442,7 +442,7 @@ func (e *Engine) floorHolds(ctx context.Context, branch model.BranchID, base, tr
 					from, to := macports.DarwinFloor(field.From), macports.DarwinFloor(field.To)
 					if to > from {
 						held = append(held, model.Concern{Origin: model.FromHolds, Port: port.Port, Rule: darwinFloorRule, Subject: strconv.Itoa(to),
-							Detail: fmt.Sprintf("%s now builds on Darwin %d and later, where its platforms said %q: older Macs lose it, which holds for a look", port.Port, to, field.From)})
+							Detail: fmt.Sprintf("%s now requires Darwin %d or later; platforms was %q. This drops support for older Macs and requires review before automatic submission", port.Port, to, field.From)})
 					}
 				case "macosx_deployment_target":
 					// Both sides evaluated on this Mac, where Base sets it to
@@ -450,7 +450,7 @@ func (e *Engine) floorHolds(ctx context.Context, branch model.BranchID, base, tr
 					// Portfile's.
 					if field.From != "" && field.To != "" && !macports.BaseAtLeast(field.From, field.To) {
 						held = append(held, model.Concern{Origin: model.FromHolds, Port: port.Port, Rule: deploymentTargetRule, Subject: field.To,
-							Detail: fmt.Sprintf("%s raises macosx_deployment_target from %s to %s: older Macs may not run what it builds, which holds for a look", port.Port, field.From, field.To)})
+							Detail: fmt.Sprintf("%s raises macosx_deployment_target from %s to %s. Built binaries may no longer run on older Macs; review is required before automatic submission", port.Port, field.From, field.To)})
 					}
 				}
 			}
@@ -469,7 +469,7 @@ func (e *Engine) majorHold(port, from, to string) *model.Concern {
 		return nil
 	}
 	return &model.Concern{Origin: model.FromHolds, Port: port, Rule: majorRule, Subject: to,
-		Detail: fmt.Sprintf("%s moves from %s to %s, a new major version, which holds.majors holds for a look", port, from, to)}
+		Detail: fmt.Sprintf("%s moves from %s to %s, a major version update. holds.majors requires review before an unattended update", port, from, to)}
 }
 
 // HoldsMajor reports whether an update nobody looks over from one version

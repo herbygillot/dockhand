@@ -197,7 +197,7 @@ func serveWith(t *testing.T, concerns concerned, search error) (bool, string) {
 	}()
 	// It opens the pull request, holds the branch for a look, or stops
 	// the update before its check.
-	ends := []string{"serve: opened #", " is held for a look: ", "serve: jq-1.8.1: "}
+	ends := []string{"serve: opened #", " needs review before submission: ", "serve: jq-1.8.1: "}
 	ended := func() bool {
 		said := served.String()
 		for _, end := range ends {

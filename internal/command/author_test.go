@@ -446,29 +446,29 @@ func TestAnEditDockhandCantMakeSaysWhyAndWhatWorks(t *testing.T) {
 	branch := model.Branch{Name: "dockhand/git-ab12"}
 
 	err := byHand(unlocated, engine.UpdateRequest{Action: model.EditUpdate, Port: "git"}, branch, false)
-	require.EqualError(t, err, `can't update git by itself: the checksums for git-htmldocs-2.56.0.tar.xz can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't
+	require.EqualError(t, err, `Could not update git automatically: the checksums for git-htmldocs-2.56.0.tar.xz can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't
 Kept: the branch, unchanged.
-Edit the version yourself; dockhand checksums git then prints the checksums to write:
-  dockhand edit git`)
+Edit the version, then run dockhand checksums git to print the checksums to copy into the Portfile.
+Edit with: dockhand edit git`)
 
 	err = byHand(&engine.ChecksumsToWrite{Err: unlocated, Checksums: []portfile.Checksum{{Name: "git-2.56.0.tar.xz", RMD160: "aaaa", SHA256: "bbbb", Size: 8}}}, engine.UpdateRequest{Action: model.EditChecksums, Port: "git"}, branch, false)
-	require.EqualError(t, err, `can't refresh git's checksums by itself: the checksums for git-htmldocs-2.56.0.tar.xz can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't
+	require.EqualError(t, err, `Could not update the checksums for git automatically: the checksums for git-htmldocs-2.56.0.tar.xz can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't
 Kept: the branch, unchanged.
-Write them yourself; its archives have these now:
+Use these checksums in the Portfile:
     checksums           git-2.56.0.tar.xz \
                         rmd160  aaaa \
                         sha256  bbbb \
                         size    8
-  dockhand edit git`)
+Edit with: dockhand edit git`)
 
 	err = byHand(fmt.Errorf("%w: a version it can't find", engine.ErrUnsupported), engine.UpdateRequest{Action: model.EditUpdate, Port: "git", Plan: true, FromMaster: true}, model.Branch{}, false)
-	require.EqualError(t, err, "can't update git by itself: a version it can't find\nEdit the version and its checksums yourself; port checksum git, after the version's edit, says what its archives have:\n  dockhand edit git", "a plan keeps nothing, having changed nothing")
+	require.EqualError(t, err, "Could not update git automatically: a version it can't find\nEdit the version, run port checksum git, then copy the reported checksums into the Portfile.\nEdit with: dockhand edit git", "a plan keeps nothing, having changed nothing")
 
 	// An edit whose evaluation isn't the change intended is refused as one
 	// dockhand can't make, with the way on, where rust's came bare (the
 	// rust and cargo run).
 	err = byHand(fmt.Errorf("%w: rust-src, another port of the same Portfile, fetches its own source (its distfiles differ from rust's), which updating rust doesn't move", engine.ErrFidelity), engine.UpdateRequest{Action: model.EditUpdate, Port: "rust", Plan: true}, model.Branch{}, false)
-	require.EqualError(t, err, "can't update rust by itself: rust-src, another port of the same Portfile, fetches its own source (its distfiles differ from rust's), which updating rust doesn't move\nEdit the version and its checksums yourself; port checksum rust, after the version's edit, says what its archives have:\n  dockhand edit rust")
+	require.EqualError(t, err, "Could not update rust automatically: rust-src, another port of the same Portfile, fetches its own source (its distfiles differ from rust's), which updating rust doesn't move\nEdit the version, run port checksum rust, then copy the reported checksums into the Portfile.\nEdit with: dockhand edit rust")
 }
 
 // An update names the port's other open pull requests, planned or made,
@@ -566,7 +566,7 @@ func TestAnUpdateCountsTheCratesItWrote(t *testing.T) {
 	out, _, err := dockhand(t, "update", "jq", "--new")
 	require.NoError(t, err)
 	require.Contains(t, out, " and 352 crates (160 changed).\n", "an empty block says nothing: no \"and 0 Git crates (0 changed)\" (the txt run's finding 6)")
-	require.Contains(t, out, "The Portfile pinned soundtouch 0.4.1 over the lock's 0.4.0; the new lock has 0.5.4, so the pin is dropped.\n")
+	require.Contains(t, out, "Removed the Portfile pin for soundtouch 0.4.1 (lockfile version: 0.4.0); the new lockfile now specifies 0.5.4.\n")
 }
 
 // limitedBumper is a bumper GitHub's rate limit stops before it finds the

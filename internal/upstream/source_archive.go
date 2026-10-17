@@ -60,7 +60,7 @@ func (s *Service) gitRepository(port macports.PortInfo) (forge.Repository, error
 	}
 	address, err := url.Parse(port.Options["git.url"])
 	if err != nil || address.Scheme != "https" {
-		return nil, errors.New("upstream: the port's git.url is no forge's https address")
+		return nil, errors.New("upstream: the port's git.url must be an HTTPS repository URL on a supported forge")
 	}
 	name := strings.TrimSuffix(strings.Trim(address.Path, "/"), ".git")
 	var kind portsource.Forge
@@ -70,7 +70,7 @@ func (s *Service) gitRepository(port macports.PortInfo) (forge.Repository, error
 	case "gitlab.com":
 		kind = portsource.GitLab
 	default:
-		return nil, fmt.Errorf("upstream: %s is no forge dockhand reads archives from", address.Host)
+		return nil, fmt.Errorf("upstream: downloading source archives from %s is not supported", address.Host)
 	}
 	if s == nil || s.Catalogs[kind] == nil {
 		return nil, fmt.Errorf("upstream: no catalog supports %s", kind)
