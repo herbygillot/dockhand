@@ -39,6 +39,19 @@ a10_examples() {
 	done
 }
 
+# a10_branch is the newest Git branch dockhand/<name>*, preferring one
+# that wasn't open before the row (branches.before), whose names are
+# dockhand's, with or without the dockhand/ prefix.
+a10_branch() {
+	local refs mine
+	refs=$(git -C "$MACPORTS_TREE" branch --list "dockhand/$1*" --sort=-creatordate --format='%(refname:short)')
+	mine=$(printf '%s\n' "$refs" | while IFS= read -r ref; do
+		[ -n "$ref" ] || continue
+		grep -qxF -e "$ref" -e "${ref#dockhand/}" "$ROW_DIR/branches.before" 2>/dev/null || printf '%s\n' "$ref"
+	done | head -1)
+	printf '%s\n' "${mine:-$(printf '%s\n' "$refs" | head -1)}"
+}
+
 act() {
 	local line words verb why dir branch name port=${ACCEPT_GO_PORT:?}
 	dir=$MACPORTS_TREE
@@ -53,7 +66,10 @@ act() {
 			name=${name%…}
 			# The row's own name for a branch the docs name (run_name).
 			case "$name" in "$port-"*) ;; *) name=$(run_name "$name") ;; esac
-			branch=$(git -C "$MACPORTS_TREE" branch --list "dockhand/$name*" --format='%(refname:short)' | head -1)
+			# The newest such branch the row made, not one an earlier row
+			# left open: D-I7's go-reflex branch sorted first, and the
+			# examples ran in it (the rc3 rerun, 2026-10-17).
+			branch=$(a10_branch "$name")
 			if [ -n "$branch" ] && dir=$("$DH_BIN" path "$branch"); then
 				printf '$ cd %s\n' "$dir" >>"$ROW_DIR/out.log"
 			else

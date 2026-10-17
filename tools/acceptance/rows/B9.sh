@@ -42,9 +42,11 @@ assert() {
 	fi
 	# On Apple silicon an empty Tart home is Tart not set up yet, and
 	# providers points to its setup; only an Intel Mac, where Tart can't
-	# run, has no on-host provider to point to (the rc8 full stage).
+	# run, has no on-host provider to point to (the rc8 full stage). setup
+	# heads the line with "Providers", which a grep anchored at the line's
+	# start missed (the rc3 rerun, run 39030172979).
 	if [ "$(uname -m)" = arm64 ]; then
-		grep -qE '^ *tart +· not set up: dockhand setup tart' "$ROW_DIR/out.log" ||
+		grep -qE '(^|  )tart +· not set up: dockhand setup tart' "$ROW_DIR/out.log" ||
 			{ row_fail "providers didn't point to dockhand setup tart with no Tart set up: $(grep -i tart "$ROW_DIR/out.log" | head -2 | tr '\n' ' ')"; return; }
 		judged "providers pointed to setup tart, and the check ran on GitHub"
 	else
