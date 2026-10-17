@@ -45,7 +45,7 @@ act() {
 	dh_setup check -b "$(run_name dt1-tamper)" || return 0
 	local digest path dir
 	# The library's newest kept archive, by its record.
-	digest=$(sqlite3 "file:${DOCKHAND_DB}?mode=ro" "SELECT digest FROM archives WHERE name LIKE '$ACCEPT_LIB_PORT-%' ORDER BY kept_at DESC LIMIT 1" 2>>"$ROW_DIR/out.log")
+	digest=$(stage_db "SELECT digest FROM archives WHERE name LIKE '$ACCEPT_LIB_PORT-%' ORDER BY kept_at DESC LIMIT 1" 2>>"$ROW_DIR/out.log")
 	path=$(find "$(dt1_archives)" -type f -name "${digest#sha256:}" 2>/dev/null | head -1)
 	DT1_ALTERED=0
 	# None kept, as where cleanup has forgotten it, is said plainly: the
@@ -62,9 +62,9 @@ act() {
 	dir=$("$DH_BIN" path "$(run_name dt1-tamper)") || return 0
 	printf '\n# rebuilt with its dependency reused, to test a tampered archive\n' >>"$dir/$(dh_quiet --json status "$(run_name dt1-tamper)" | jq -r --arg p "$ACCEPT_LIB_DEPENDENT" '.result.branches[0].directories[] | select(endswith("/" + $p))')/Portfile"
 	dh_json check -b "$(run_name dt1-tamper)" || :
-	# The check's events, as its record keeps them, read from the stage's
-	# own database, opened read-only.
-	sqlite3 "file:${DOCKHAND_DB}?mode=ro" "SELECT message FROM events WHERE kind = 'archive.altered'" >>"$ROW_DIR/out.log" 2>&1 || :
+	# The check's events, as its record keeps them, read from a copy of the
+	# stage's own database.
+	stage_db "SELECT message FROM events WHERE kind = 'archive.altered'" >>"$ROW_DIR/out.log" 2>&1 || :
 	dt1_restore
 }
 teardown() {

@@ -953,14 +953,16 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 			continue
 		}
 		failures = 0
-		// The acceptance harness's X2 row makes a read fail once, as a
-		// fault of dockhand's own, which isn't tried again, or as an error
-		// nothing classifies, which is.
+		// The acceptance harness's X2 row, D-I7, makes a read fail once,
+		// as a fault of dockhand's own or an error nothing classifies,
+		// neither tried again, or as infrastructure, which is.
 		switch failpoint.Fails("tart.results") {
 		case "fault":
 			return fmt.Errorf("%w: the guest's results were read wrong, as a failpoint asked", buildenv.ErrDockhandFault)
 		case "error":
 			return errors.New("the guest's results were lost, as a failpoint asked")
+		case "infrastructure":
+			return lost(fmt.Errorf("%w: the guest stopped answering, as a failpoint asked", buildenv.ErrInfrastructure))
 		}
 		if results.Protocol != Protocol {
 			return fmt.Errorf("%w: the guest program wrote protocol %d results; this dockhand reads %d", buildenv.ErrDockhandFault, results.Protocol, Protocol)

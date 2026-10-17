@@ -110,6 +110,19 @@ own_branch() {
 		grep -vxF -f "$ROW_DIR/branches.before" 2>/dev/null | tail -1
 }
 
+# stage_db queries a copy of the stage's database: it's in WAL mode, which
+# a read-only open can't read without its -shm, nor make one, so it's
+# copied with its -wal and -shm, as A5 copies the person's (the rc1 full
+# stage's D-T1: "unable to open database file").
+stage_db() {
+	local copy="$ROW_DIR/db-copy" part
+	rm -rf "$copy" && mkdir -p "$copy" || return 1
+	for part in "" -wal -shm; do
+		[ ! -f "${DOCKHAND_DB:?}$part" ] || cp "$DOCKHAND_DB$part" "$copy/dockhand.db$part" || return 1
+	done
+	sqlite3 "$copy/dockhand.db" "$1"
+}
+
 # dh_json runs dockhand with --json once, keeping the envelope and the
 # process's exit status for H8, and returns that status; DH_LAST_JSON
 # names the envelope's file. Its output is also in out.log, for H4.

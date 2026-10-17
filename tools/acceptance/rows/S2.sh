@@ -26,9 +26,17 @@ act() {
 	dh_json ship $(cat "$ROW_DIR/ports") --to check -y || :
 	dh serve --drain || :
 }
+# Each port asked for is graded as prepared, in changes, or stopped with a
+# reason, in skipped: a maintainer's ports include ones another pull request
+# is open for, or a newer major holds, which stop rightly, and a count of
+# 30 prepared failed the rc1 full stage on those (S2).
 assert() {
-	local n
-	n=$(jq -r '[.result.changes[]?] | length' "$ROW_DIR/json/2.json" 2>/dev/null || echo 0)
-	[ "$n" -ge 30 ] || { row_fail "only $n ports were prepared"; return; }
-	judged "it stayed under GitHub's limits, the disk stayed above cleanup.min_free, and each port had one branch and one check"
+	local asked prepared stopped unexplained
+	asked=$(grep -c . "$ROW_DIR/ports" 2>/dev/null || echo 0)
+	[ "$asked" -gt 0 ] || { row_fail "outdated --mine --current found no outdated port to ship"; return; }
+	prepared=$(jq -r '[.result.changes[]?] | length' "$ROW_DIR/json/2.json" 2>/dev/null || echo 0)
+	stopped=$(jq -r '[.result.skipped[]? | select((.reason // "") != "")] | length' "$ROW_DIR/json/2.json" 2>/dev/null || echo 0)
+	unexplained=$(jq -r --rawfile asked "$ROW_DIR/ports" '($asked | split("\n") | map(select(. != ""))) - [.result.changes[]?.port, (.result.skipped[]? | select((.reason // "") != "") | .port)] | join(" ")' "$ROW_DIR/json/2.json" 2>/dev/null)
+	[ -z "$unexplained" ] || { row_fail "of $asked ports, these were neither prepared nor stopped with a reason: $unexplained"; return; }
+	judged "of $asked ports, $prepared were prepared and $stopped stopped with a reason; it stayed under GitHub's limits, the disk stayed above cleanup.min_free, and each prepared port had one branch and one check"
 }

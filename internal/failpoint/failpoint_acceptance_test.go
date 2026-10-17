@@ -44,6 +44,8 @@ func TestAFailpointFailsItsStepOnce(t *testing.T) {
 	require.Empty(t, failpoint.Fails("tidy.prepared"))
 	require.Equal(t, "fault", failpoint.Fails("tart.results"))
 	require.Empty(t, failpoint.Fails("tart.results"), "once")
+	t.Setenv("DOCKHAND_FAILPOINT", "tidy.prepared:infrastructure")
+	require.Equal(t, "infrastructure", failpoint.Fails("tidy.prepared"))
 	t.Setenv("DOCKHAND_FAILPOINT", "check.running:kill")
 	require.Empty(t, failpoint.Fails("check.running"), "a kill isn't a failure")
 }

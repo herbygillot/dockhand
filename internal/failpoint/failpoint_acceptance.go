@@ -27,11 +27,12 @@ func Hit(step string) {
 var failed sync.Map
 
 // Fails says the failure DOCKHAND_FAILPOINT asks of this step, once in the
-// process: "fault", a fault in dockhand's own handling, or "error", one
-// nothing classifies; "" where it asks none, or the step has failed once.
+// process: "fault", a fault in dockhand's own handling; "error", one
+// nothing classifies; or "infrastructure", trouble another attempt could
+// clear; "" where it asks none, or the step has failed once.
 func Fails(step string) string {
 	name, action, ok := strings.Cut(os.Getenv("DOCKHAND_FAILPOINT"), ":")
-	if !ok || name != step || (action != "fault" && action != "error") {
+	if !ok || name != step || (action != "fault" && action != "error" && action != "infrastructure") {
 		return ""
 	}
 	if _, done := failed.LoadOrStore(step, true); done {
