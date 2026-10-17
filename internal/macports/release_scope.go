@@ -47,4 +47,15 @@ type ReleaseState struct {
 	Version                   string
 	Revision                  int
 	Tag, Distfiles, Checksums string
+	// FetchType and GitURL are how and from where it fetches: a change of
+	// repository alone, or from an archive to Git at the same version,
+	// read as the same source without them (CX-2). Unknown is where the
+	// evaluation couldn't settle one, which no state equals.
+	FetchType, GitURL string
+	Unknown           bool `json:",omitempty"`
+}
+
+// Same reports whether two states are one source, where both are known.
+func (s ReleaseState) Same(other ReleaseState) bool {
+	return !s.Unknown && !other.Unknown && s == other
 }

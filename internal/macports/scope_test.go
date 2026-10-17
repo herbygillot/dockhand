@@ -49,3 +49,32 @@ func members(scope *ReleaseScope) [2][]string {
 	}
 	return names
 }
+
+// A source is how and from where a port fetches too: a change of git.url
+// alone, or from an archive to Git at the same version, read as the same
+// source, so nothing upstream was compared, and a protected sibling's move
+// went unseen; an option the evaluation couldn't settle is never the same
+// (Codex's review of 832f059e, high 2).
+func TestASourceIsHowAndWhereItFetches(t *testing.T) {
+	port := func(options map[string]string) PortInfo {
+		base := map[string]string{"fetch.type": "git", "git.url": "https://github.com/a/tool.git", "git.branch": "v1.0", "patchfiles": ""}
+		for key, value := range options {
+			base[key] = value
+		}
+		return PortInfo{Name: "tool", Version: "1.0", Options: base}
+	}
+	before := port(nil)
+	require.True(t, SameSource(before, port(nil)))
+	require.False(t, SameSource(before, port(map[string]string{"git.url": "https://github.com/b/tool.git"})), "another repository at the same tag")
+	require.False(t, SameSource(before, port(map[string]string{"fetch.type": "standard"})), "an archive where it cloned")
+	unsettled := port(nil)
+	unsettled.OptionErrors = map[string]string{"git.url": "can't read \"github.author\""}
+	require.False(t, SameSource(unsettled, unsettled), "unknown is never the same")
+
+	pinned := model.Target{Name: "tool", Portfile: "devel/tool/Portfile"}
+	scope := &ReleaseScope{Protected: []ReleaseMember{{Target: pinned, After: ReleaseStateOf(before)}}}
+	_, err := RebindReleaseScope(scope, Snapshot{Ports: map[string]PortInfo{"tool": port(nil)}})
+	require.NoError(t, err)
+	_, err = RebindReleaseScope(scope, Snapshot{Ports: map[string]PortInfo{"tool": port(map[string]string{"git.url": "https://github.com/b/tool.git"})}})
+	require.ErrorContains(t, err, "protected sibling tool changed source identity")
+}

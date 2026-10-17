@@ -72,7 +72,9 @@ import (
 // pomo's on codeberg.org was, is made again (batch 52). 19: Cargo
 // programs only added are a notice, not a hold, and a source with no
 // conventional program reads its packages as libraries (v0.5.0 part 1).
-const Policy = 19
+// 20: a port's source compared with how and from where it fetches, so a
+// change of git.url alone, or of fetch.type, is assessed (CX-2).
+const Policy = 20
 
 // Input is what one port's assessment reads.
 type Input struct {

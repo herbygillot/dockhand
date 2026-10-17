@@ -37,7 +37,7 @@ func RebindReleaseScope(scope *ReleaseScope, snapshot Snapshot) (*ReleaseScope, 
 	}
 	for _, member := range updated.Protected {
 		info, ok := snapshot.Ports[member.Target.Name]
-		if !ok || ReleaseStateOf(info) != member.After {
+		if !ok || !ReleaseStateOf(info).Same(member.After) {
 			return nil, fmt.Errorf("macports: protected sibling %s changed source identity", member.Target.Name)
 		}
 	}
@@ -45,19 +45,26 @@ func RebindReleaseScope(scope *ReleaseScope, snapshot Snapshot) (*ReleaseScope, 
 }
 
 // ReleaseStateOf records the evaluated version and archive identity for a
-// scope member.
+// scope member: how and from where it fetches among them, an option the
+// evaluation couldn't settle making it Unknown.
 func ReleaseStateOf(p PortInfo) ReleaseState {
-	return ReleaseState{MasterSites: p.Options["master_sites"], Worksrcdir: p.Options["worksrcdir"], Epoch: p.Epoch, Version: p.Version, Revision: p.Revision, Tag: p.Options["git.branch"], Distfiles: p.Options["distfiles"], Checksums: p.Options["checksums"]}
+	state := ReleaseState{MasterSites: p.Options["master_sites"], Worksrcdir: p.Options["worksrcdir"], Epoch: p.Epoch, Version: p.Version, Revision: p.Revision, Tag: p.Options["git.branch"], Distfiles: p.Options["distfiles"], Checksums: p.Options["checksums"]}
+	var errs [2]error
+	state.FetchType, _, errs[0] = p.option("fetch.type")
+	state.GitURL, _, errs[1] = p.option("git.url")
+	state.Unknown = errs[0] != nil || errs[1] != nil
+	return state
 }
 
 // SameSource reports whether a port fetches and patches the same source
 // before and after a change: its version, epoch, sites, distfiles,
-// checksums, Git tag, source directory, and patch files, whatever its
-// revision. Upstream changed nothing of such a port, as nothing changed
+// checksums, how it fetches, its Git repository and tag, source
+// directory, and patch files, whatever its revision; never where either
+// is unknown. Upstream changed nothing of such a port, as nothing changed
 // of terraform-1.15 where terraform-1.16 was updated beside it (field
 // testing, 2026-10-02).
 func SameSource(before, after PortInfo) bool {
 	a, b := ReleaseStateOf(before), ReleaseStateOf(after)
 	a.Revision, b.Revision = 0, 0
-	return a == b && before.Options["patchfiles"] == after.Options["patchfiles"]
+	return a.Same(b) && before.Options["patchfiles"] == after.Options["patchfiles"]
 }
