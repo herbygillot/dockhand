@@ -279,7 +279,7 @@ func shipAll(ctx context.Context, s *settings, streams Streams, whole *batchJSON
 	var carried []carried
 	for _, target := range targets {
 		whole.next()
-		done, err := shipOne(ctx, s, streams, target, stage, unattended, version)
+		done, err := shipOne(ctx, s, streams, target, stage, unattended, len(targets) > 1, version)
 		if err != nil {
 			if err := stopped(target, err); err != nil {
 				return err
@@ -312,7 +312,7 @@ type carried struct {
 // in the branch already changing it, then the branch's edits committed,
 // and its check queued where the stage goes on to one. Nil where there's
 // nothing more to do.
-func shipOne(ctx context.Context, s *settings, streams Streams, target shipTarget, stage engine.ShipStage, unattended bool, version versionUpdate) (*carried, error) {
+func shipOne(ctx context.Context, s *settings, streams Streams, target shipTarget, stage engine.ShipStage, unattended, batch bool, version versionUpdate) (*carried, error) {
 	linked := version.linked
 	linked.unattended, linked.goesOn = unattended, true
 	var branch model.Branch
@@ -328,6 +328,11 @@ func shipOne(ctx context.Context, s *settings, streams Streams, target shipTarge
 			return nil, err
 		}
 		request.Version, request.Release, request.Unattended = target.version, target.release, unattended
+		// A batch, or a ship nobody looks over, starts no branch for an
+		// edit dockhand can't make, as serve's doesn't; a person's own
+		// ship <port> on a terminal keeps one for the edit by hand
+		// (c360b35f moved the batch onto author, which didn't say so).
+		request.NoHandBranch = unattended || batch
 		where := branchChoice{new: newNamed}
 		if target.branch != nil {
 			where = branchChoice{branch: target.branch.ShortName()}

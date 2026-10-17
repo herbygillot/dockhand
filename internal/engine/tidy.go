@@ -127,6 +127,17 @@ func (p TidyPlan) Unambiguous() bool {
 	return true
 }
 
+// HeldForLook is a plan's hold before ship commits it, as serve's ship and
+// the command's say it: the way on is tidy, on a terminal, never --yes,
+// which approves no plan it hasn't shown. nil where the plan applies
+// unasked; where nobody looks, answered is AnsweredNobody.
+func (p TidyPlan) HeldForLook(answered model.Answered) error {
+	if p.AppliesUnasked(answered, false) != nil {
+		return fmt.Errorf("the edit needs a look before it is committed: dockhand tidy --branch %s", p.Branch.ShortName())
+	}
+	return nil
+}
+
 // AppliesUnasked says whether the plan may be applied with nobody
 // reviewing it on a terminal, and why not: one made only of dockhand's own
 // edits (Unambiguous) where nobody was there to ask, any the person

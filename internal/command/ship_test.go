@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -192,7 +193,9 @@ func TestShipWithYesHoldsWhatServeWould(t *testing.T) {
 	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 	g.Others = nil
 
-	// A hand edit: --yes skips ship's question, and approves no plan.
+	// A hand edit: --yes skips ship's question, and approves no plan; the
+	// hold names tidy, as serve's does, not tidy's own --yes, which isn't
+	// ship's (Codex's review, checked against a268b6e5).
 	_, _, err = dockhand(t, "start", "notes")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "notes")
@@ -200,7 +203,8 @@ func TestShipWithYesHoldsWhatServeWould(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n# by hand\n"), 0o644))
 	_, _, err = dockhand(t, "ship", "-b", "notes", "--yes", "--to", "commit")
-	require.ErrorContains(t, err, "this plan needs review before it is applied")
+	require.ErrorContains(t, err, "the edit needs a look before it is committed: dockhand tidy --branch notes; nothing was checked or submitted")
+	require.NotContains(t, err.Error(), "--yes")
 	require.Contains(t, testsupport.Git(t, dir, "status", "--porcelain"), "textproc/jq/Portfile", "nothing was committed")
 }
 
@@ -245,4 +249,19 @@ func TestShipsJSONSaysWhatStopped(t *testing.T) {
 	require.Equal(t, "jq", dig(t, result.Result, "skipped", 0, "port"))
 	require.Contains(t, dig(t, result.Result, "skipped", 0, "reason"), "#34777 is open for the same port")
 	require.Len(t, result.Result["changes"], 1, "yq's change is said as before")
+}
+
+// A ship nobody looks over, a batch's or one with --yes, starts no branch
+// for an edit dockhand can't make, as serve's doesn't: c360b35f moved the
+// batch onto author, which kept one for the edit by hand, and ship --mine
+// left an empty branch for each such port (Codex's review, checked
+// against a268b6e5).
+func TestShipStartsNoBranchForAnEditItCantMakeUnattended(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	testPreparer = func(*engine.Engine) engine.Preparer { return refuser{} }
+	t.Cleanup(func() { testPreparer = nil })
+	_, _, err := dockhand(t, "ship", "jq", "--yes", "--to", "commit")
+	require.ErrorContains(t, err, "can't update jq by itself: its pre-fetch hook runs exec\nNo branch was started.")
+	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 }

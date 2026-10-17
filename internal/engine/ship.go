@@ -68,9 +68,7 @@ func (e *Engine) goOn(stage ShipStage, target ShipTarget, options ShipOptions, t
 		if options.Unattended() {
 			answered = model.AnsweredNobody
 		}
-		if tidy.AppliesUnasked(answered, false) != nil {
-			return fmt.Errorf("the edit needs a look before it is committed: dockhand tidy --branch %s", tidy.Branch.ShortName())
-		}
+		return tidy.HeldForLook(answered)
 	}
 	return nil
 }

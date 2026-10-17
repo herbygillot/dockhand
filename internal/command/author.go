@@ -302,7 +302,14 @@ func tidyBranch(ctx context.Context, e *engine.Engine, streams Streams, branch m
 		// A plan of dockhand's own edits is applied unasked; one with the
 		// person's is reviewed on a terminal, and held where nobody looks,
 		// --yes or no terminal: --yes skips ship's question, and approves no
-		// plan it hasn't shown (Codex's review of 832f059e, high 1).
+		// plan it hasn't shown (Codex's review of 832f059e, high 1). The
+		// hold names tidy, as serve's does, where tidy's own refusal
+		// offered --yes, which ship's --yes isn't.
+		if !streams.terminal() {
+			if err := proposal.HeldForLook(model.AnsweredNobody); err != nil {
+				return branch, false, fmt.Errorf("%w; %s", err, undone)
+			}
+		}
 		applied, err := decideTidy(ctx, e, streams, proposal, false, proposal.Unambiguous(), "")
 		if err != nil {
 			return branch, false, fmt.Errorf("%w; %s", err, undone)
@@ -655,6 +662,8 @@ func byHand(err error, request engine.UpdateRequest, branch model.Branch, starte
 	case request.Plan:
 	case started:
 		kept = "\nKept: " + branch.Name + ", with nothing changed."
+	case request.Start != nil && request.NoHandBranch:
+		kept = "\nNo branch was started."
 	default:
 		kept = "\nKept: the branch, unchanged."
 	}
