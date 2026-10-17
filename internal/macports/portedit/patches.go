@@ -2,7 +2,6 @@ package portedit
 
 import (
 	"context"
-	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -101,26 +100,37 @@ func (s *Service) dropMergedPatches(ctx context.Context, input *sourceInput, res
 	if len(dropped) == 0 {
 		return nil
 	}
-	evaluated, err := s.evaluateEdit(ctx, input, contents)
-	if err != nil {
-		return nil
-	}
-	// Nothing but the patches changes: the port as prepared, less them.
-	expected := info
-	expected.Options = maps.Clone(info.Options)
+	// Nothing but the patch list changes, held to the whole family as the
+	// other corrections are: a setting that reads the list, as
+	// use_autoreconf inside if {[llength ${patchfiles}] > 0}, or a sibling
+	// sharing it, moving is said, and the patches stay (Codex's review of
+	// 832f059e, high 3).
 	before, _ := syntax.ListValues(info.Options["patchfiles"])
-	expected.Options["patchfiles"] = strings.Join(slices.DeleteFunc(slices.Clone(before), func(p string) bool { return slices.Contains(dropped, p) }), " ")
-	after := evaluated.after.Ports[name]
-	actual, _ := syntax.ListValues(after.Options["patchfiles"])
-	wanted, _ := syntax.ListValues(expected.Options["patchfiles"])
-	if !slices.Equal(actual, wanted) || after.Version != info.Version || after.Revision != info.Revision {
+	wanted := slices.DeleteFunc(slices.Clone(before), func(p string) bool { return slices.Contains(dropped, p) })
+	report, applied, err := s.correct(ctx, input, result, correction{contents: contents, deletes: files, expected: []string{name + ".patchfiles -" + strings.Join(dropped, " -")},
+		allowed: func(port string, prepared, corrected macports.PortInfo) macports.PortInfo {
+			if port != name {
+				return prepared
+			}
+			// The list as evaluated, where it's the list less those
+			// dropped, however Tcl spaces it.
+			prepared.Options["patchfiles"] = strings.Join(wanted, " ")
+			value, set := corrected.Options["patchfiles"]
+			if actual, err := syntax.ListValues(value); err == nil && slices.Equal(actual, wanted) {
+				prepared.Options["patchfiles"] = value
+				if !set {
+					// None left, and the option with them.
+					delete(prepared.Options, "patchfiles")
+				}
+			}
+			return prepared
+		}})
+	if err != nil || !applied {
+		if !applied && err == nil {
+			progress.Report(ctx, "Kept %s, which the new source already holds: dropping %s also changes %s", strings.Join(dropped, ", "), map[bool]string{true: "it", false: "them"}[len(dropped) == 1], strings.Join(report.UnexpectedChanges, "; "))
+		}
 		return nil
 	}
-	result.Files[0] = evaluated.edit
-	for _, file := range files {
-		result.Files = append(result.Files, portfile.Edit{Path: file, Delete: true})
-	}
-	result.Prepared = evaluated.after
 	result.Dropped = dropped
 	progress.Report(ctx, "Dropped %s, which the new source already holds", strings.Join(dropped, ", "))
 	return nil

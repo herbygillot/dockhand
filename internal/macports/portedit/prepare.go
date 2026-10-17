@@ -172,6 +172,8 @@ type GoToolchain struct {
 	// when it declares none.
 	Declared string
 	Outcome  GoToolchainOutcome
+	// Problem is why go.mod couldn't be read, where Outcome is unchecked.
+	Problem string `json:",omitempty"`
 }
 
 // GoToolchainOutcome is what an update did about go.mod's requirement.
@@ -191,6 +193,9 @@ const (
 	// GoToolchainByHand is a minimum below the requirement declared in a
 	// way dockhand can't rewrite.
 	GoToolchainByHand GoToolchainOutcome = "by hand"
+	// GoToolchainUnchecked is a go.mod that couldn't be read, so the
+	// minimum wasn't checked against it.
+	GoToolchainUnchecked GoToolchainOutcome = "unchecked"
 )
 
 // PortBefore is a port as the edit found it: the first evaluation's, or,

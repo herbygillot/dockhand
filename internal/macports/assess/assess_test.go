@@ -229,6 +229,8 @@ func TestTheGoMinimumIsJudgedAsItStands(t *testing.T) {
 		{"below, no edit having looked", Input{Port: goPort("1.21"), Base: goPort("1.21"), Toolchain: &Toolchain{Required: "1.24"}},
 			"upstream: go.mod requires Go 1.24, above go.toolchain_min 1.21, which doesn't gate on it", model.UnknownBaseline, true, true},
 		{"GOPATH mode", Input{Port: macports.PortInfo{Options: map[string]string{"go.package": "example.org/demo"}}, Toolchain: &Toolchain{Required: "1.24"}}, "", "", false, false},
+		{"unchecked, go.mod unread", Input{Port: goPort("1.22"), Base: goPort("1.22"), Toolchain: &Toolchain{Declared: "1.22", Outcome: ToolchainUnchecked, Problem: "reading go.mod: repeated go statement"}},
+			"upstream: go.mod couldn't be read (reading go.mod: repeated go statement), so go.toolchain_min wasn't checked against it", model.Introduced, true, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			changes := Assess(test.input).Changes

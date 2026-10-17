@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
@@ -470,4 +471,25 @@ func TestAnUpdateDropsAPatchTheReleaseAlreadyHolds(t *testing.T) {
 	gone, _, err := service.Repo.File(t.Context(), string(result.PreparedTree), "devel/fixture/files/fix.diff")
 	require.NoError(t, err)
 	require.False(t, gone.Exists, "the patch's file goes with it")
+}
+
+// A patch whose removal changes more than the patch list stays, said: a
+// setting that reads the list moves with it, which the patch list, the
+// version, and the revision alone didn't see (Codex's review of 832f059e,
+// high 3).
+func TestAPatchWhoseRemovalChangesMoreStays(t *testing.T) {
+	t.Parallel()
+	release := manifestArchive(t, "README", "fixed\n", "2.0")
+	service, request := versionFixture(t, "setup", "patchfiles fix.diff\nif {[info exists patchfiles] && [llength $patchfiles] > 0} { use_configure no }\n", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(release) })
+	tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/files/fix.diff", After: []byte("--- README\n+++ README\n@@ -1 +1 @@\n-broken\n+fixed\n"), Mode: 0o100644}})
+	require.NoError(t, err)
+	request.Source = model.Source{Tree: model.ObjectID(tree)}
+	var said []string
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { said = append(said, update.Message) })
+	result, err := service.Prepare(ctx, request)
+	require.NoError(t, err)
+	require.Empty(t, result.Dropped)
+	require.Contains(t, string(result.Files[0].After), "patchfiles fix.diff")
+	require.Len(t, result.Files, 1, "its file stays")
+	require.Contains(t, strings.Join(said, "\n"), "Kept fix.diff, which the new source already holds: dropping it also changes fixture.use_configure changed")
 }

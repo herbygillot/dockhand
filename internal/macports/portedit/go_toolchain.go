@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
-	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/project"
@@ -21,7 +19,8 @@ import (
 // release it names, as go.mod writes it. It never lowers one, never adds
 // one, and never refuses the bump: a port that declares no minimum, or
 // carries it in a way that cannot be edited, is told about the requirement
-// and left as it is. What it found and did is the result's GoToolchain.
+// and left as it is, and a go.mod it can't read is said as unchecked. What
+// it found and did is the result's GoToolchain.
 func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *sourceInput, result *Result) error {
 	if len(result.Files) == 0 || result.Prepared.Ports == nil {
 		return nil
@@ -37,7 +36,17 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 	}
 	required, found, err := s.goRequirement(ctx, request, selected, result.Downloads)
 	if err != nil {
-		return err
+		if ctx.Err() != nil {
+			return err
+		}
+		// A go.mod it can't read, as a duplicate member or a forge's error,
+		// failed the update in depblock's words, where the raise never
+		// refuses the bump (CX-9's narrow part): it's a notice that the
+		// minimum wasn't checked, which holds an unattended update for a
+		// look.
+		progress.Report(ctx, "Warning: %s's go.mod couldn't be read, so go.toolchain_min wasn't checked against it: %v", input.target.Name, err)
+		result.GoToolchain = &GoToolchain{Declared: selected.Options["go.toolchain_min"], Outcome: GoToolchainUnchecked, Problem: err.Error()}
+		return nil
 	}
 	if !found || required == "" {
 		return nil
@@ -72,30 +81,17 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 	if err != nil {
 		return err
 	}
-	evaluated, err := s.evaluateEdit(ctx, input, contents)
+	report, applied, err := s.correct(ctx, input, result, correction{contents: contents, expected: []string{input.target.Name + ".go.toolchain_min -> " + required},
+		allowed: func(name string, prepared, _ macports.PortInfo) macports.PortInfo {
+			if name == input.target.Name {
+				prepared.Options["go.toolchain_min"] = required
+			}
+			return prepared
+		}})
 	if err != nil {
 		return err
 	}
-	after := evaluated.after
-	if after.Ports[input.target.Name].Options["go.toolchain_min"] != required {
-		return fmt.Errorf("%w: evaluated go.toolchain_min differs from the required %s", ErrFidelity, required)
-	}
-	report := Fidelity{Before: previous, After: after, ExpectedChanges: []string{input.target.Name + ".go.toolchain_min -> " + required}}
-	for name, old := range previous.Ports {
-		next, ok := after.Ports[name]
-		if !ok {
-			return fmt.Errorf("%w: raising go.toolchain_min changed the port set", ErrFidelity)
-		}
-		expected := old
-		if name == input.target.Name {
-			expected.Options = maps.Clone(old.Options)
-			expected.Options["go.toolchain_min"] = required
-		}
-		report.UnexpectedChanges = append(report.UnexpectedChanges, fidelity.Compare(name, fidelity.ComparablePort(expected, previous.Root), fidelity.ComparablePort(next, after.Root))...)
-	}
-	result.Files = []portfile.Edit{evaluated.edit}
-	result.report(report)
-	if len(report.UnexpectedChanges) > 0 {
+	if !applied {
 		return report.Err()
 	}
 	progress.Report(ctx, "Raising go.toolchain_min from %s to %s, which %s's go.mod requires", current, required, input.target.Name)

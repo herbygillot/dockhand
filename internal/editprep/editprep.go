@@ -47,6 +47,7 @@ const (
 	GoToolchainRaised     = portedit.GoToolchainRaised
 	GoToolchainUndeclared = portedit.GoToolchainUndeclared
 	GoToolchainByHand     = portedit.GoToolchainByHand
+	GoToolchainUnchecked  = portedit.GoToolchainUnchecked
 )
 
 var ErrUnsupported = portedit.ErrUnsupported

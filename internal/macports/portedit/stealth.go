@@ -3,14 +3,11 @@ package portedit
 import (
 	"bytes"
 	"context"
-	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
-	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
@@ -112,21 +109,18 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 	if bytes.Equal(contents, result.Files[0].After) {
 		return nil
 	}
-	evaluated, err := s.evaluateEdit(ctx, input, contents)
+	report, applied, err := s.correct(ctx, input, result, distSubdirCorrection(contents, name, found.Revbumped))
 	if err != nil {
 		return err
 	}
-	report := distSubdirReport(previous, evaluated.after, name, found.Revbumped)
-	if len(report.UnexpectedChanges) > 0 {
+	if !applied {
 		found.Revbumped = false
 		found.Problem = "the revision and dist_subdir it would set also change " + strings.Join(report.UnexpectedChanges, "; ") + ", so they are left for you"
 		return nil
 	}
 	if found.Problem == "" {
-		found.DistSubdir = evaluated.after.Ports[name].Options["dist_subdir"]
+		found.DistSubdir = result.Prepared.Ports[name].Options["dist_subdir"]
 	}
-	result.Files = []portfile.Edit{evaluated.edit}
-	result.report(report)
 	return nil
 }
 
@@ -149,18 +143,14 @@ func (s *Service) dropStealthDistSubdir(ctx context.Context, input *sourceInput,
 	if shared, err := sharedDistfile(ctx, input, result.Downloads); err != nil || shared != "" {
 		return nil
 	}
-	previous := result.Prepared
-	evaluated, err := s.evaluateEdit(ctx, input, contents)
+	report, applied, err := s.correct(ctx, input, result, distSubdirCorrection(contents, input.target.Name, false))
 	if err != nil {
 		return err
 	}
-	report := distSubdirReport(previous, evaluated.after, input.target.Name, false)
-	if len(report.UnexpectedChanges) > 0 {
+	if !applied {
 		progress.Report(ctx, "Warning: removing %s's stealth dist_subdir would also change %s; it is left for you", input.target.Name, strings.Join(report.UnexpectedChanges, "; "))
 		return nil
 	}
-	result.Files = []portfile.Edit{evaluated.edit}
-	result.report(report)
 	result.DistSubdirRemoved = true
 	return nil
 }
@@ -181,43 +171,25 @@ func sharedDistfile(ctx context.Context, input *sourceInput, downloads []distfet
 	return "", nil
 }
 
-// distSubdirReport expects only the selected port's dist_subdir to change,
-// and its revision to advance by one when revbumped: every other port, and
-// every other option, as they were.
-func distSubdirReport(before, after macports.Snapshot, selected string, revbumped bool) Fidelity {
-	report := Fidelity{Before: before, After: after, ExpectedChanges: []string{selected + ".dist_subdir"}, UnexpectedChanges: []string{}}
+// distSubdirCorrection is a correction allowed to change the selected
+// port's dist_subdir alone, and its revision by one when revbumped: every
+// other port, and every other option, as they were.
+func distSubdirCorrection(contents []byte, selected string, revbumped bool) correction {
+	c := correction{contents: contents, expected: []string{selected + ".dist_subdir"}}
 	if revbumped {
-		report.ExpectedChanges = append(report.ExpectedChanges, selected+".revision +1")
+		c.expected = append(c.expected, selected+".revision +1")
 	}
-	for name := range after.Ports {
-		if _, ok := before.Ports[name]; !ok {
-			report.UnexpectedChanges = append(report.UnexpectedChanges, name+": port set changed")
+	c.allowed = func(name string, prepared, corrected macports.PortInfo) macports.PortInfo {
+		if name != selected {
+			return prepared
 		}
+		prepared.Options["dist_subdir"] = corrected.Options["dist_subdir"]
+		if revbumped {
+			prepared.Revision++
+		}
+		return prepared
 	}
-	for name, old := range before.Ports {
-		next, ok := after.Ports[name]
-		if !ok {
-			report.UnexpectedChanges = append(report.UnexpectedChanges, name+": port set changed")
-			continue
-		}
-		wanted, expected := old.Revision, old
-		if name == selected {
-			if revbumped {
-				wanted++
-			}
-			expected.Options = maps.Clone(old.Options)
-			if expected.Options == nil {
-				expected.Options = map[string]string{}
-			}
-			expected.Options["dist_subdir"] = next.Options["dist_subdir"]
-		}
-		if next.Revision != wanted {
-			report.UnexpectedChanges = append(report.UnexpectedChanges, fmt.Sprintf("%s.revision: expected %d, got %d", name, wanted, next.Revision))
-		}
-		report.UnexpectedChanges = append(report.UnexpectedChanges, fidelity.Compare(name, fidelity.ComparablePort(expected, before.Root), fidelity.ComparablePort(next, after.Root))...)
-	}
-	slices.Sort(report.UnexpectedChanges)
-	return report
+	return c
 }
 
 // unsupportedReason is an unsupported edit's reason, without the sentinel's

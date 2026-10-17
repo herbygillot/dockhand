@@ -154,6 +154,25 @@ func TestToolchainMinIsLeftAloneWhenNotRaisable(t *testing.T) {
 	}
 }
 
+// A go.mod the update can't read leaves the minimum unchecked, said, and
+// the update goes on: the raise never refuses the bump, and an unreadable
+// go.mod failed it in depblock's words (CX-9's narrow part).
+func TestAGoModItCantReadLeavesTheMinimumUnchecked(t *testing.T) {
+	t.Parallel()
+	s, r := goModFixture(t, "module example.com/fixture\ngo 1.24\ngo 1.25\n", "go.offline_build no\ngo.toolchain_min 1.22\n")
+	var messages []string
+	ctx := progress.WithReporter(t.Context(), func(u progress.Update) { messages = append(messages, u.Message) })
+	result, err := s.Prepare(ctx, r)
+	require.NoError(t, err)
+	require.Contains(t, string(result.Files[0].After), "version 1.2.4")
+	require.Contains(t, string(result.Files[0].After), "go.toolchain_min 1.22\n")
+	require.Contains(t, strings.Join(messages, "\n"), "Warning: fixture's go.mod couldn't be read, so go.toolchain_min wasn't checked against it")
+	require.NotNil(t, result.GoToolchain)
+	require.Equal(t, GoToolchainUnchecked, result.GoToolchain.Outcome)
+	require.Equal(t, "1.22", result.GoToolchain.Declared)
+	require.NotEmpty(t, result.GoToolchain.Problem)
+}
+
 type fakeManifests struct {
 	manifest string
 	missing  bool

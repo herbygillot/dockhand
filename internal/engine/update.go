@@ -1135,7 +1135,7 @@ func (e *Engine) assessUpstream(ctx context.Context, result editprep.Result, ver
 	input.Base, _ = result.PortBefore(result.Target.Name)
 	input.Port, _ = result.PortAfter(result.Target.Name)
 	if t := result.GoToolchain; t != nil {
-		input.Toolchain = &assess.Toolchain{Required: t.Required, Declared: t.Declared, Outcome: toolchainOutcomes[t.Outcome]}
+		input.Toolchain = &assess.Toolchain{Required: t.Required, Declared: t.Declared, Outcome: toolchainOutcomes[t.Outcome], Problem: t.Problem}
 	}
 	problem := ""
 	// read is how the source was read where it wasn't from the update's
@@ -1219,6 +1219,7 @@ func (e *Engine) readings() project.Cache {
 var toolchainOutcomes = map[editprep.GoToolchainOutcome]string{
 	editprep.GoToolchainCovered: assess.ToolchainCovered, editprep.GoToolchainRaised: assess.ToolchainRaised,
 	editprep.GoToolchainUndeclared: assess.ToolchainUndeclared, editprep.GoToolchainByHand: assess.ToolchainByHand,
+	editprep.GoToolchainUnchecked: assess.ToolchainUnchecked,
 }
 
 // readPairs reads each pair of archives, each version where its port

@@ -16,9 +16,11 @@ type Toolchain struct {
 	// Required is the go directive, as go.mod writes it.
 	Required string
 	// Declared is go.toolchain_min as the edit found it, and Outcome what
-	// the edit did: covered, raised, undeclared, or by-hand; empty where
+	// the edit did: covered, raised, undeclared, by-hand, or unchecked; empty where
 	// no edit looked.
 	Declared, Outcome string
+	// Problem is why go.mod couldn't be read, where Outcome is unchecked.
+	Problem string
 }
 
 // The outcomes an edit reports, and toolchainBelow, a minimum below the
@@ -29,6 +31,7 @@ const (
 	ToolchainRaised     = "raised"
 	ToolchainUndeclared = "undeclared"
 	ToolchainByHand     = "by-hand"
+	ToolchainUnchecked  = "unchecked"
 )
 
 // toolchain judges the candidate's go.toolchain_min, and the Go it pins
@@ -50,6 +53,12 @@ func (a *assessment) toolchain() (model.UpstreamChange, bool) {
 		if required, ok := goRequired(a.input.Pairs, after); ok {
 			t = &Toolchain{Required: required}
 		}
+	}
+	// A go.mod the edit couldn't read leaves the minimum unchecked, which
+	// is said and holds, as one nothing looked at would.
+	if t != nil && t.Outcome == ToolchainUnchecked && a.input.Port.GoModuleMode() {
+		return model.UpstreamChange{Kind: "toolchain", Path: "go.mod", Rule: GoToolchainRule, Class: model.Introduced, Hold: true,
+			Message: "upstream: go.mod couldn't be read (" + t.Problem + "), so go.toolchain_min wasn't checked against it"}, true
 	}
 	if t == nil || t.Required == "" || !a.input.Port.GoModuleMode() {
 		return model.UpstreamChange{}, false
