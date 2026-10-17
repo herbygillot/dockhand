@@ -225,3 +225,24 @@ func TestShipChecksAgainWhereAPassAskedLess(t *testing.T) {
 	require.Contains(t, out, "jq-1.8.1 · checking commit ", "required tests weren't what passed")
 	require.NotContains(t, out, "nothing to check")
 }
+
+// ship's JSON says each change that stopped, with why, beside those it
+// carried on, where only the error said it (the rc1 full stage, S2).
+func TestShipsJSONSaysWhatStopped(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "passed")
+	g := withGitHub(t, w)
+	require.NoError(t, os.MkdirAll(filepath.Join(w.upstream, "textproc/yq"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/yq/Portfile"), []byte("name yq\nversion 1.7.1\n"), 0o644))
+	testsupport.Git(t, w.upstream, "add", ".")
+	testsupport.Git(t, w.upstream, "commit", "-q", "-m", "yq: 1.7.1")
+	g.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	result, err := jsonOf(t, "ship", "jq", "yq", "--yes", "--to", "commit")
+	require.Equal(t, 3, ExitCode(err), "jq stopped, and yq went on")
+	require.Len(t, result.Result["skipped"], 1)
+	require.Equal(t, "jq", dig(t, result.Result, "skipped", 0, "port"))
+	require.Contains(t, dig(t, result.Result, "skipped", 0, "reason"), "#34777 is open for the same port")
+	require.Len(t, result.Result["changes"], 1, "yq's change is said as before")
+}

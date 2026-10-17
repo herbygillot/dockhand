@@ -265,8 +265,13 @@ func shipAll(ctx context.Context, s *settings, streams Streams, whole *batchJSON
 	var failed []string
 	stopped := func(target shipTarget, err error) error {
 		if len(targets) == 1 {
+			// One change refused is the command's error alone, as a
+			// command refusing before it does anything reports.
 			return err
 		}
+		// In a batch, each change that stopped is in the result with why,
+		// where only the error said it (the rc1 full stage, S2).
+		streams.emit([]skippedJSON{{Port: target.name(), Reason: err.Error()}})
 		fmt.Fprintf(streams.Err, "%s: %v\n", target.name(), err)
 		failed = append(failed, target.name())
 		return nil
