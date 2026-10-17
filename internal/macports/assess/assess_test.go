@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/project"
+	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -509,4 +510,17 @@ func TestAPortFetchingGitHubsTarballIsSaid(t *testing.T) {
 	for _, change := range Assess(Input{Port: archive, Base: archive}).Changes {
 		require.NotEqual(t, GitHubTarball, change.Rule)
 	}
+}
+
+// A Cargo program only added is said and holds nothing, since the
+// Portfile installs what it names; one removed or renamed holds, as the
+// destroot may name it (epic-lore's lore-stamp, field testing's batch 15).
+func TestACargoProgramOnlyAddedHoldsNothing(t *testing.T) {
+	t.Parallel()
+	a := &assessment{}
+	added := a.build(sourcecompare.Change{Kind: "build", How: "new binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: lore-stamp added"}, Pair{})
+	require.False(t, added.Hold)
+	require.Equal(t, "upstream's Cargo packages and binaries change: lore-stamp added; the Portfile installs what it names, so it holds nothing", added.Message)
+	removed := a.build(sourcecompare.Change{Kind: "build", How: "binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: lore-stamp removed"}, Pair{})
+	require.True(t, removed.Hold)
 }

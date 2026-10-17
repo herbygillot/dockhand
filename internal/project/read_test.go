@@ -305,6 +305,17 @@ func TestAReadingKnowsWhichCargoPackagesArePrograms(t *testing.T) {
 	require.True(t, found.CargoProgram("."))
 	require.False(t, found.CargoProgram("crates/mise-dotenv"))
 	require.True(t, found.CargoProgram("crates/tool"), "its src/bin")
+
+	// A source with no src/main.rs or src/bin anywhere has no program by
+	// convention: its library is a library.
+	found, err = Read(t.Context(), testsupport.Tarball(t, "paths-1.0", map[string]string{
+		"Cargo.toml":     "[package]\nname = \"paths\"\n\n[[bin]]\nname = \"p\"\npath = \"cli/p.rs\"\n",
+		"lib/Cargo.toml": "[package]\nname = \"paths-lib\"\n",
+		"lib/src/lib.rs": "\n",
+	}), Spec{})
+	require.NoError(t, err)
+	require.Empty(t, found.Programs)
+	require.False(t, found.CargoProgram("lib"))
 }
 
 // A file that isn't an archive is read as the one file it is: kept where

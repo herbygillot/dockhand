@@ -69,8 +69,10 @@ import (
 // package's DESCRIPTION read by its dependency fields (batch 42). 18: the
 // Go PortGroup's toolchain check recognized for every host go.setup
 // fetches from, so one left incomplete by its github.com-only rule, as
-// pomo's on codeberg.org was, is made again (batch 52).
-const Policy = 18
+// pomo's on codeberg.org was, is made again (batch 52). 19: Cargo
+// programs only added are a notice, not a hold, and a source with no
+// conventional program reads its packages as libraries (v0.5.0 part 1).
+const Policy = 19
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -728,6 +730,15 @@ func (a *assessment) build(change sourcecompare.Change, pair Pair) model.Upstrea
 	if change.How == "binaries" {
 		found := finding(change, true)
 		found.Message += ": the Portfile's destroot may name the old ones"
+		return found
+	}
+	// Programs only added are said, holding nothing: a destroot that names
+	// its programs installs the ones it names still, as epic-lore's built
+	// lore-client and lore-server after "lore-stamp added" (field testing's
+	// batch 15).
+	if change.How == "new binaries" {
+		found := finding(change, false)
+		found.Message += "; the Portfile installs what it names, so it holds nothing"
 		return found
 	}
 	if change.How == "library" {

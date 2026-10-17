@@ -54,5 +54,6 @@ func TestACargoProjectsChangedBinariesAreSaid(t *testing.T) {
 		library[name] = file
 	}
 	require.Empty(t, cargoBinaries(after, project.Reading{Files: library, Programs: []string{"jgenesis"}}))
-	require.NotEmpty(t, cargoBinaries(after, project.Reading{Files: library, Programs: []string{"jgenesis", "jgenesis-dotenv"}}), "one with a main.rs is a program")
+	require.Equal(t, []Change{{Kind: "build", How: "new binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: jgenesis-dotenv added"}},
+		cargoBinaries(after, project.Reading{Files: library, Programs: []string{"jgenesis", "jgenesis-dotenv"}}), "one with a main.rs is a program, only added")
 }

@@ -42,7 +42,7 @@ type SystemCredentials struct {
 	// Flow renews the login; GitHub's device flow where nil.
 	Flow *DeviceFlow
 	// renewed is a login renewed that the store didn't take, used until
-	// it does; nil for credentials that keep none.
+	// it does: the process's for the store and key where nil (renewal).
 	renewed *pendingLogin
 }
 
@@ -50,7 +50,7 @@ type SystemCredentials struct {
 // GITHUB_TOKEN where set, else the login dockhand keeps in the store. It
 // is the one way dockhand makes that client.
 func SystemClient(store credential.Store) *Client {
-	return &Client{HTTP: fetch.Client, Credentials: SystemCredentials{Store: store, Key: CredentialKey, renewed: &pendingLogin{}}}
+	return &Client{HTTP: fetch.Client, Credentials: SystemCredentials{Store: store, Key: CredentialKey}}
 }
 
 func (s SystemCredentials) Token(ctx context.Context) (Token, error) {

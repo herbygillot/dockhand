@@ -217,6 +217,25 @@ func TestARenewedLoginTheStoreRefusedIsUsedAndSavedLater(t *testing.T) {
 	require.EqualValues(t, 1, asked.Load(), "renewed once")
 }
 
+// Credentials made apart for one store and key share the renewal it
+// didn't take: serve's identity watcher made its own and read the spent
+// login, and serve stopped acting on GitHub (CX-11's first half).
+func TestARenewalTheStoreRefusedIsTheProcesss(t *testing.T) {
+	noEnvironment(t)
+	server, asked := tokenEndpoint(t, "")
+	store := expiring(t, time.Now().AddDate(0, 6, 0))
+	store.refuse = true
+	source := renewer(server, store, filepath.Join(t.TempDir(), "github-login.lock"))
+	token, err := source.Token(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "A2", token.Secret)
+	watcher := github.SystemCredentials{Store: store, Key: github.CredentialKey}
+	token, err = watcher.Token(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "A2", token.Secret, "the renewed login, not the spent one")
+	require.EqualValues(t, 1, asked.Load(), "renewed once")
+}
+
 // A login saved since a renewal the store didn't take, as dockhand setup
 // github saves one, is the one used, and the renewal, of the login it
 // replaced, never writes over it: serve, given a new login after its own

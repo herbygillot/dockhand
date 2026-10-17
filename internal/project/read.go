@@ -97,12 +97,13 @@ func (r Reading) HasDirectory(dir string) (has, known bool) {
 }
 
 // CargoProgram reports whether the Cargo package in a directory below
-// Top builds a program by Cargo's conventions (Programs). One read before
-// Programs were kept counts as one.
+// Top builds a program by Cargo's conventions (Programs). None found is
+// none: a reading made before Programs were kept counted every package a
+// program, but ReaderVersion 7 serves none of those, and a source whose
+// programs are all [[bin]]s with paths of their own has no src/main.rs,
+// where that read its libraries as programs (Codex's review, checked
+// against a268b6e5).
 func (r Reading) CargoProgram(dir string) bool {
-	if r.Programs == nil {
-		return true
-	}
 	if dir == "" {
 		dir = "."
 	}

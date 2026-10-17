@@ -32,7 +32,9 @@ type Change struct {
 	//     where license text moved between files and none is new, and
 	//     "version" where a build file changed only the project's version
 	//     it declares, or "library" where a Makefile.am's -version-info
-	//     moved, a new library version;
+	//     moved, a new library version, or "binaries" where a Cargo
+	//     project's programs change, one removed or renamed, and "new
+	//     binaries" where it only adds programs;
 	//   - a dependency "adds", "drops", or "moves", or "native" for a crate
 	//     new to a Cargo.lock that links a native library, and "unlinked"
 	//     for one gone from it;
@@ -677,7 +679,11 @@ func cargoBinaries(old, now project.Reading) []Change {
 	if len(removed) > 0 {
 		said = append(said, strings.Join(removed, ", ")+" removed")
 	}
-	return []Change{{Kind: "build", How: "binaries", Path: "Cargo.toml",
+	how := "binaries"
+	if len(removed) == 0 {
+		how = "new binaries"
+	}
+	return []Change{{Kind: "build", How: how, Path: "Cargo.toml",
 		Message: "upstream's Cargo packages and binaries change: " + strings.Join(said, "; ")}}
 }
 

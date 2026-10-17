@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"time"
 
@@ -35,10 +36,52 @@ var lockWait = 30 * time.Second
 // GitHub's where it's empty.
 func (s SystemCredentials) WithRenewal(flow *DeviceFlow, path string) SystemCredentials {
 	s.Flow, s.Lock = flow, path
-	if s.renewed == nil {
-		s.renewed = &pendingLogin{}
-	}
+	s.renewed = s.renewal()
 	return s
+}
+
+// pending are the process's pending logins, one for each store and key:
+// every client of one login shares the renewal the store didn't take,
+// where each kept its own and the others read the spent login, as serve's
+// identity watcher would, stopping serve's work on GitHub until setup
+// github (CX-11's first half).
+var pendingLogins = struct {
+	sync.Mutex
+	logins map[pendingKey]*pendingLogin
+}{logins: map[pendingKey]*pendingLogin{}}
+
+type pendingKey struct {
+	store credential.Store
+	key   credential.Key
+}
+
+// pendingFor is the process's pending login for a store's key; a store
+// that can't be a map key, as a struct holding a map, keeps its own.
+func pendingFor(store credential.Store, key credential.Key) *pendingLogin {
+	if store == nil || !reflect.TypeOf(store).Comparable() {
+		return &pendingLogin{}
+	}
+	pendingLogins.Lock()
+	defer pendingLogins.Unlock()
+	found := pendingLogins.logins[pendingKey{store, key}]
+	if found == nil {
+		found = &pendingLogin{}
+		pendingLogins.logins[pendingKey{store, key}] = found
+	}
+	return found
+}
+
+// renewal is the credentials' pending login: the process's for their
+// store and key, so credentials made apart, as serve's identity watcher's,
+// share one; none for credentials with no store.
+func (s SystemCredentials) renewal() *pendingLogin {
+	if s.renewed != nil {
+		return s.renewed
+	}
+	if s.Store == nil {
+		return nil
+	}
+	return pendingFor(s.Store, s.Key)
 }
 
 // pendingLogin is a renewed login the store didn't take: the refresh
@@ -155,16 +198,16 @@ func (s SystemCredentials) login(ctx context.Context, rejected Token) (Token, bo
 // a new login after its own was revoked, never read it (the rc8 full
 // stage's D-C3).
 func (s SystemCredentials) saved(ctx context.Context) (credential.Login, error) {
-	if pending := s.renewed.get(); pending != nil {
+	if pending := s.renewal().get(); pending != nil {
 		if value, err := s.Store.Get(ctx, s.Key); err == nil {
-			if stored, err := credential.DecodeLogin(value); err == nil && stored.Refresh != s.renewed.renewedFrom() && stored.Refresh != pending.Refresh {
-				s.renewed.set(nil, "")
+			if stored, err := credential.DecodeLogin(value); err == nil && stored.Refresh != s.renewal().renewedFrom() && stored.Refresh != pending.Refresh {
+				s.renewal().set(nil, "")
 				return stored, nil
 			}
 		}
 		// A save that failed is tried again, the next time it's asked.
 		if encoded, err := pending.Encode(); err == nil && s.Store.Put(ctx, s.Key, encoded) == nil {
-			s.renewed.set(nil, "")
+			s.renewal().set(nil, "")
 		}
 		return *pending, nil
 	}
@@ -197,7 +240,7 @@ func (s SystemCredentials) keep(ctx context.Context, renewed credential.Login, f
 		err = s.Store.Put(ctx, s.Key, encoded)
 	}
 	if err != nil {
-		s.renewed.set(&renewed, from)
+		s.renewal().set(&renewed, from)
 		progress.Report(ctx, "Couldn't save the renewed GitHub login to the Keychain (%v); this dockhand uses it, and tries again. If it ends first, run dockhand setup github.", err)
 	}
 }

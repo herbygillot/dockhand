@@ -171,6 +171,13 @@ proc fact {args} {
     return [string trim $value]
 }
 
+# known is a command's output, trimmed, where the answer must be known: a
+# command that fails is an error, never an empty answer.
+proc known {args} {
+    if {[catch {exec {*}$args 2>/dev/null} value]} { error "[lrange $args 1 end] failed: $value" }
+    return [string trim $value]
+}
+
 # why is what MacPorts said about a failure, from the last Error lines of
 # the failing step's own part of the log, or the command's own message.
 # Each step is marked before it runs (mark), so the latest mark is where
@@ -320,7 +327,10 @@ proc consumed {name} {
     set ports {}
     set specs {}
     set own ""
-    foreach line [split [fact $port -q installed active] \n] {
+    # A list that couldn't be read leaves what the build read unknown, and
+    # its result isn't reused; read as none, it said the build read no
+    # other port (Codex's review, checked against a268b6e5).
+    foreach line [split [known $port -q installed active] \n] {
         if {![regexp {^\s*(\S+) (@\S+) \(active\)$} $line -> other spec]} { continue }
         if {[string equal -nocase $other $name]} {
             set own [list $other $spec]

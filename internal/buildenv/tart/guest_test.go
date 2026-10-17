@@ -34,11 +34,12 @@ import (
 // lint writes LINTSAYS, an Error line lint says and goes on past. A
 // phase HANG names ("phase:port ...") sleeps, as a compiler that never
 // finishes would, in a process of its own. A port NOARCHIVE names has no
-// binary archive, which -b archivefetch fails for.
+// binary archive, which -b archivefetch fails for. With ACTIVEFAILS set,
+// listing the active ports fails.
 const fakePort = `#!/bin/sh
 echo "$*" >> "$PORT_LOG"
 case "$*" in
-  *"-q installed active"*) printf '%b' "$ACTIVE"; exit 0 ;;
+  *"-q installed active"*) if [ -n "$ACTIVEFAILS" ]; then echo "Error: registry locked" >&2; exit 1; fi; printf '%b' "$ACTIVE"; exit 0 ;;
   *"-q installed"*) exit 0 ;;
   "-q location "*)
     shift 2
@@ -294,6 +295,14 @@ func TestAVerdictRecordsThePortsActiveAsItBuilt(t *testing.T) {
 	require.Equal(t, filepath.Join(archives, "libharbor"), results.Targets[0].ArchiveFile, "where it is, for the host to keep it")
 	require.Contains(t, commands, "-q location zlib @1.3.2_0 xz @5.8.1_0+universal gone @1.0_0", "asked once for all of them")
 	require.Contains(t, commands, "-q dir gone", "asked alone once the list failed")
+
+	// A list of the active ports that fails leaves what the build read
+	// unknown, never none, which reuse took as complete (Codex's review,
+	// checked against a268b6e5).
+	results, _ = guestRun(t, input, "ACTIVE="+active, "ARCHIVES="+archives, "ACTIVEFAILS=1")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, "passed", results.Targets[0].Outcome, "the verdict stands")
+	require.Nil(t, results.Targets[0].Active, "absent, its inputs unknown")
 }
 
 // A target that fails stops at its phase, and a target that needs it is
