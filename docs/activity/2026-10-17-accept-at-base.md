@@ -43,3 +43,13 @@ port that failed only as blocked, in each environment by failed
 dependencies all of which are accepted, or blocked so in turn; the gate
 passes it over, unnamed. A dependency not accepted still blocks it.
 TestAPortBlockedOnlyByAcceptedFailuresIsAccepted.
+
+3cf14522 didn't clear py-textual-fastdatatable: on minmax's skipped
+releases a cell is excluded, but its outcome reads not run, which
+`blockedByAccepted` took as unbuilt, and `dependencyFailed` as a failed
+dependency. Both now read the cell's kind, passing over an excluded one.
+The test now has check-416's shape, a built oldest and newest release and
+one left out between; against a copy of the database, `submit --branch
+py-textual-fastdatatable-0.19.3 --accept py310…py314-textual-fastdatatable
+--plan` reads "ready to submit", the stub's cell "blocked by a failed
+changed dependency" beside the five accepted.

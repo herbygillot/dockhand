@@ -365,11 +365,14 @@ func blockedByAccepted(evidence Evidence, accepted []string) []string {
 			}
 			blocked, clear := false, true
 			for n, cell := range target.Outcomes {
-				switch cell.Outcome {
-				case model.OutcomePassed, "":
+				// A release the profile or the Portfile left out is no
+				// result, though its cell reads not run: check-416's stub
+				// was refused for minmax's skipped releases (field testing
+				// at 3cf14522).
+				if cell.Kind == CellExcluded || cell.Outcome == model.OutcomePassed {
 					continue
-				case model.OutcomeBlocked:
-				default:
+				}
+				if cell.Outcome != model.OutcomeBlocked {
 					clear = false
 				}
 				if !clear {
@@ -393,12 +396,13 @@ func blockedByAccepted(evidence Evidence, accepted []string) []string {
 	return found
 }
 
-// dependencyFailed reports whether a target didn't pass in an environment.
+// dependencyFailed reports whether a target didn't pass in an environment
+// it wasn't left out of.
 func dependencyFailed(evidence Evidence, id model.TargetID, environment int) bool {
 	for _, target := range evidence.Targets {
 		if target.Target.ID == id {
-			outcome := target.Outcomes[environment].Outcome
-			return outcome != model.OutcomePassed && outcome != ""
+			cell := target.Outcomes[environment]
+			return cell.Kind != CellExcluded && cell.Outcome != model.OutcomePassed
 		}
 	}
 	return false

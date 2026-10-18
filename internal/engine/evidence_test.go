@@ -341,18 +341,29 @@ func cells(results []model.TargetResult) []Cell {
 // 56e328ea). A dependency not accepted still blocks it.
 func TestAPortBlockedOnlyByAcceptedFailuresIsAccepted(t *testing.T) {
 	t.Parallel()
+	// As check-416 was: minmax built macOS 12, where each py3NN subport
+	// failed at install and the stub was blocked, and its newest release,
+	// where all passed; the releases between it left out, whose cells read
+	// not run (field testing at 3cf14522).
+	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
+	environments := []model.Environment{monterey, sequoia, tahoeArm}
 	changed := func(name string, outcome model.Outcome) TargetEvidence {
 		result := model.TargetResult{Outcome: outcome}
 		if outcome == model.OutcomeFailed {
 			result.Phase = model.PhaseInstall
 		}
+		skipped := noResult(CellExcluded, sequoia, model.TargetID(name))
+		skipped.Exclusion = model.Exclusion{Reason: "minmax builds it on its oldest and newest releases", Span: true}
 		return TargetEvidence{Target: model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Kind: model.Substantive, Role: model.Changed},
-			Outcomes: []Cell{recorded(tahoeArm, result)}}
+			Outcomes: []Cell{recorded(monterey, result), skipped, recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomePassed})}}
 	}
-	plan := model.Plan{Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{Environment: tahoeArm,
-		Order:        []model.TargetID{"py313-tool", "py314-tool", "py-tool"},
-		Dependencies: map[model.TargetID][]model.TargetID{"py-tool": {"py313-tool", "py314-tool"}}}}}
-	evidence := Evidence{Run: model.Run{ID: "run_1", Number: 1}, Plan: plan,
+	builds := []model.EnvironmentPlan{}
+	for _, environment := range environments {
+		builds = append(builds, model.EnvironmentPlan{Environment: environment, Order: []model.TargetID{"py313-tool", "py314-tool", "py-tool"},
+			Dependencies: map[model.TargetID][]model.TargetID{"py-tool": {"py314-tool"}}})
+	}
+	evidence := Evidence{Run: model.Run{ID: "run_1", Number: 1}, Plan: model.Plan{Environments: environments, Builds: builds},
 		Targets: []TargetEvidence{changed("py313-tool", model.OutcomeFailed), changed("py314-tool", model.OutcomeFailed), changed("py-tool", model.OutcomeBlocked)}}
 	atBase := map[string][]string{"py313-tool": {"check-2"}, "py314-tool": {"check-2"}}
 	require.Empty(t, publicationProblems(evidence, []string{"py313-tool", "py314-tool"}, atBase))
