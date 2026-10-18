@@ -37,11 +37,10 @@ type bodyFacts struct {
 	Commits  []git.HistoryCommit
 	Evidence *Evidence
 	NoCheck  bool
-	Accepted []string
-	// AtBase are the failed ports whose baseline fails them alike, with
-	// the baselines (SubmitPlan.AtBase).
-	AtBase map[string][]string
-	Types  []string
+	// Accepted are the failed ports accepted, each with why
+	// (SubmitPlan.Accepted).
+	Accepted map[string]string
+	Types    []string
 	// Updated is true when dockhand wrote every commit and one is an
 	// update it made: a new release, which the template calls an
 	// enhancement unless Types says otherwise.
@@ -164,9 +163,9 @@ func dockhandUpdate(commits []git.HistoryCommit, edits []model.Edit) bool {
 }
 
 // allBuilt reports whether every target passed or was accepted.
-func allBuilt(evidence Evidence, accepted []string) bool {
+func allBuilt(evidence Evidence, accepted map[string]string) bool {
 	for _, target := range evidence.Failed() {
-		if !slices.Contains(accepted, target.Target.Target.Name) {
+		if _, ok := accepted[target.Target.Target.Name]; !ok {
 			return false
 		}
 	}
@@ -199,15 +198,8 @@ func testsPassed(evidence Evidence) bool {
 	return true
 }
 
-// acceptedWords is why a port's failure was accepted, as its cells say it:
-// its baseline failing alike, or, for an extra or a revision bump only,
-// the cause not established; empty where it wasn't accepted.
+// acceptedWords is why a port's failure was accepted, as its cells say it
+// (SubmitPlan.Accepted); empty where it wasn't accepted.
 func acceptedWords(facts bodyFacts, port string) string {
-	if !slices.Contains(facts.Accepted, port) {
-		return ""
-	}
-	if checks := facts.AtBase[port]; len(checks) > 0 {
-		return "fails at the base too (" + strings.Join(checks, ", ") + ")"
-	}
-	return acceptedUnestablished
+	return facts.Accepted[port]
 }

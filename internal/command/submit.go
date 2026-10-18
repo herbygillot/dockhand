@@ -490,8 +490,15 @@ func checkWords(plan engine.SubmitPlan) string {
 			}
 		}
 		name := target.Target.Target.Name
+		// An accepted failure says so, and why: the line listed
+		// py-textual-fastdatatable's five accepted subports as "did not
+		// pass" with no word of it (field testing, #35662).
+		accepted := ""
+		if why, ok := plan.Accepted[name]; ok {
+			accepted = ", accepted: " + why
+		}
 		if len(failedOn) > 0 {
-			said = append(said, fmt.Sprintf("%s did not pass on %s", name, strings.Join(failedOn, ", ")))
+			said = append(said, fmt.Sprintf("%s did not pass on %s%s", name, strings.Join(failedOn, ", "), accepted))
 		}
 		if len(unbuiltOn) > 0 {
 			said = append(said, fmt.Sprintf("%s isn't built for these files on %s", name, strings.Join(unbuiltOn, ", ")))

@@ -343,6 +343,27 @@ func publicationProblems(evidence Evidence, accepted []string, atBase map[string
 	return problems
 }
 
+// acceptedReasons are the failed ports accepted, each with why: its
+// baseline failing alike, the cause not established for an extra or a
+// revision bump, or blocked only by accepted failures.
+func acceptedReasons(evidence Evidence, accepted []string, atBase map[string][]string) map[string]string {
+	reasons := map[string]string{}
+	for _, target := range evidence.Failed() {
+		name := target.Target.Target.Name
+		switch {
+		case !slices.Contains(accepted, name):
+		case len(atBase[name]) > 0:
+			reasons[name] = "fails at the base too (" + strings.Join(atBase[name], ", ") + ")"
+		default:
+			reasons[name] = acceptedUnestablished
+		}
+	}
+	for _, name := range blockedByAccepted(evidence, accepted) {
+		reasons[name] = acceptedBlocked
+	}
+	return reasons
+}
+
 // blockedByAccepted are the ports that failed only as blocked, in each
 // environment by failed dependencies all of which are accepted, or blocked
 // so in turn: accepted with them, unnamed. py-textual-fastdatatable's stub,

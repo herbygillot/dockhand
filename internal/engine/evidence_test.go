@@ -367,6 +367,12 @@ func TestAPortBlockedOnlyByAcceptedFailuresIsAccepted(t *testing.T) {
 		Targets: []TargetEvidence{changed("py313-tool", model.OutcomeFailed), changed("py314-tool", model.OutcomeFailed), changed("py-tool", model.OutcomeBlocked)}}
 	atBase := map[string][]string{"py313-tool": {"check-2"}, "py314-tool": {"check-2"}}
 	require.Empty(t, publicationProblems(evidence, []string{"py313-tool", "py314-tool"}, atBase))
+	// Each says why, the stub too, as its cell reads (field testing,
+	// #35662: it read as an unexplained failure).
+	reasons := acceptedReasons(evidence, []string{"py313-tool", "py314-tool"}, atBase)
+	require.Equal(t, map[string]string{"py313-tool": "fails at the base too (check-2)", "py314-tool": "fails at the base too (check-2)", "py-tool": "blocked only by accepted failures"}, reasons)
+	require.Equal(t, "✗ blocked only by accepted failures", EvidenceWords(evidence, evidence.Targets[2], 0, reasons["py-tool"]))
+	require.Equal(t, "✗ failed at install, accepted: fails at the base too (check-2)", EvidenceWords(evidence, evidence.Targets[0], 0, reasons["py313-tool"]))
 	problems := publicationProblems(evidence, []string{"py313-tool"}, atBase)
 	require.Len(t, problems, 2, "py314-tool isn't accepted, so neither is the stub it blocks")
 	require.Contains(t, problems[1], "py-tool did not pass in check-1")

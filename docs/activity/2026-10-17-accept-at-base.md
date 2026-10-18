@@ -53,3 +53,16 @@ one left out between; against a copy of the database, `submit --branch
 py-textual-fastdatatable-0.19.3 --accept py310…py314-textual-fastdatatable
 --plan` reads "ready to submit", the stub's cell "blocked by a failed
 changed dependency" beside the five accepted.
+
+## Accepted failures said so (2026-10-18)
+
+Field testing (#35662, from 51937e88): the stub's cell read "✗ blocked
+by a failed changed dependency", unexplained beside its five accepted
+subports, and the preview's Checks line listed all six as "did not pass"
+with no word of acceptance. `SubmitPlan.Accepted` keeps why each failed
+port is accepted (`acceptedReasons`: its baseline failing alike, the cause
+not established, or blocked only by accepted failures), which the
+description's cells and the Checks line both read: the stub's cell reads
+"✗ blocked only by accepted failures", and the Checks line ", accepted:
+fails at the base too (check-426)". Field testing refreshes #35662 with
+`submit --pr 35662`.

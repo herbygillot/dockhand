@@ -909,6 +909,13 @@ func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 	evidence.Plan.Builds = append(evidence.Plan.Builds, model.EnvironmentPlan{Environment: sequoia, Exclusions: []model.Exclusion{{Target: target.Target, Reason: "minmax builds it on its oldest and newest releases", Span: true}}})
 	evidence.Targets[0].Outcomes = append(evidence.Targets[0].Outcomes, evidence.Targets[0].Outcomes[0])
 	require.NotContains(t, checkWords(engine.SubmitPlan{Evidence: evidence}), engine.DescribeEnvironment(sequoia), "minmax's choice isn't the ports' exclusion")
+
+	// An accepted failure says so, and why (field testing, #35662).
+	failed := &engine.Evidence{Run: model.Run{ID: "run_21", Number: 21}, Plan: model.Plan{Environments: []model.Environment{tahoe}},
+		Targets: []engine.TargetEvidence{{Target: target, Outcomes: cells([]model.TargetResult{{Execution: "tart_b", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}})}}}
+	failed.Targets[0].Outcomes[0].Environment = tahoe
+	require.Equal(t, "check-21: beekeeper-studio did not pass on "+engine.DescribeEnvironment(tahoe)+", accepted: fails at the base too (check-22)",
+		checkWords(engine.SubmitPlan{Evidence: failed, Accepted: map[string]string{"beekeeper-studio": "fails at the base too (check-22)"}}))
 }
 
 // restricted is GitHub's refusal of an app an organization hasn't

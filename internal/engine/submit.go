@@ -123,6 +123,11 @@ type SubmitPlan struct {
 	// the same way, each with the baselines that did: --accept takes
 	// them, and the pull request says so (the person's word, 2026-10-17).
 	AtBase map[string][]string
+	// Accepted are the failed ports the submission accepts, each with why,
+	// as the pull request's table and the preview's Checks line say it:
+	// its baseline failing alike, the cause not established, or blocked
+	// only by accepted failures.
+	Accepted map[string]string
 	// UncoveredCI are the releases MacPorts' CI builds on that the check
 	// built on none of, which the preview and the pull request say.
 	UncoveredCI []string
@@ -397,11 +402,11 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	plan.Moved = append(append(preparedSources(plan.Evidence, edits), plan.Moved...), assessedSources(plan.Evidence, plan.Upstream)...)
 	plan.Majors = e.majorHolds(edits)
 	plan.Floors = e.floorHolds(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree))
-	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: slices.Concat(accepted, request.Accept), Types: request.Types,
+	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: plan.Accepted, Types: request.Types,
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
-		Note: plan.Note, UncoveredCI: plan.UncoveredCI, AtBase: plan.AtBase}
+		Note: plan.Note, UncoveredCI: plan.UncoveredCI}
 	plan.facts = facts
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
 	return plan, nil
@@ -482,6 +487,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 	if err := acceptanceProblem(evidence, request.Accept, plan.AtBase); err != nil {
 		return err
 	}
+	plan.Accepted = acceptedReasons(evidence, slices.Concat(accepted, request.Accept), plan.AtBase)
 	if !request.Draft {
 		plan.Blocking = append(plan.Blocking, publicationProblems(evidence, slices.Concat(accepted, request.Accept), plan.AtBase)...)
 	}

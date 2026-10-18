@@ -72,6 +72,12 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted string) 
 			words += ": tests timed out"
 		}
 	case model.OutcomeBlocked:
+		// Blocked only by accepted failures is said so: py-textual-
+		// fastdatatable's stub read as an unexplained failure beside its
+		// five accepted subports (field testing, #35662).
+		if accepted == acceptedBlocked {
+			return "✗ blocked only by accepted failures"
+		}
 		words = "✗ blocked by a failed changed dependency"
 	case model.OutcomeNotRun:
 		return "· not run"
@@ -87,6 +93,10 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted string) 
 // acceptedUnestablished is why an extra's or a revision bump's failure was
 // accepted where nothing showed whose it was.
 const acceptedUnestablished = "cause not established"
+
+// acceptedBlocked is why a port blocked only by accepted failures is
+// accepted with them.
+const acceptedBlocked = "blocked only by accepted failures"
 
 // refWords names a Git source's ref as a Portfile gives it: "git.branch
 // v1.2", or its repository's default branch where it names none.
