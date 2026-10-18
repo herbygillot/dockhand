@@ -184,3 +184,25 @@ func (p PortInfo) PythonPinned() (pinned, standard string, ok bool) {
 func PythonPort(python string) string {
 	return "python" + strings.ReplaceAll(python, ".", "")
 }
+
+// PythonBackend is the python PortGroup's python.pep517_backend for a PEP
+// 517 backend, as pyproject.toml names it: the backend whose build
+// dependency the PortGroup declares. False for one it has no name for.
+func PythonBackend(module string) (string, bool) {
+	module, _, _ = strings.Cut(module, ":")
+	switch module {
+	case "setuptools.build_meta":
+		return "setuptools", true
+	case "flit_core.buildapi", "flit.buildapi":
+		return "flit", true
+	case "hatchling.build":
+		return "hatch", true
+	case "poetry.core.masonry.api", "poetry.masonry.api":
+		return "poetry", true
+	case "maturin":
+		return "maturin", true
+	case "mesonpy":
+		return "meson", true
+	}
+	return "", false
+}

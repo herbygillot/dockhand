@@ -587,6 +587,17 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
 	require.ErrorContains(t, err, "tart run exited before dockhand-check-run-7-tahoe-1 received an IP address: it crashed")
 	require.Less(t, time.Since(start), 30*time.Second)
+
+	// A build the network failed upstream is tried again, its failure
+	// recorded: dolt's go build met proxy.golang.org's stream reset (field
+	// testing at 23c5e2aa).
+	reset := `read "https://proxy.golang.org/x.zip": stream error: stream ID 575; INTERNAL_ERROR; received from peer`
+	failed := guestResult{ID: "libharbor", Outcome: "failed", Phase: "install", Log: "target-1.log", Transient: reset}
+	build := &fakeBuild{}
+	err = testProvider(newMac(guestResults{State: "finished", Targets: []guestResult{failed}})).Execute(t.Context(), tartJob(t, 1), build)
+	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+	require.ErrorContains(t, err, "libharbor's build met a network fault upstream: "+reset)
+	require.Len(t, build.results, 1, "the failure stays recorded")
 }
 
 // The target a lost guest was building is recorded as interrupted, with

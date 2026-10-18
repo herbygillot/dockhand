@@ -60,4 +60,13 @@ func TestAGoModuleWithoutItsMajorSuffixIsTheSameRow(t *testing.T) {
 	differences, err = Differences(Go, declared, moved)
 	require.NoError(t, err)
 	require.NotEmpty(t, differences)
+
+	// A major version of two digits too: tfvar's go-textseg for
+	// go-textseg/v13 read as an override (field testing at 23c5e2aa).
+	declared = []string{"github.com/apparentlymart/go-textseg", "lock", "v13.0.0", "sha256", sha, "size", "10"}
+	generated = []string{"github.com/apparentlymart/go-textseg/v13", "lock", "v13.0.0", "sha256", sha, "size", "10"}
+	differences, err = Differences(Go, declared, generated)
+	require.NoError(t, err)
+	require.Empty(t, differences)
+	require.Equal(t, "example.com/m/v1", goMajor.ReplaceAllString("example.com/m/v1", ""), "/v1 is no major suffix")
 }

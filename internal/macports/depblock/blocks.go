@@ -486,8 +486,11 @@ func Differences(kind string, declared, generated []string) ([]Difference, error
 	return differences, nil
 }
 
-// goMajor is a Go module path's major version suffix, as /v2.
-var goMajor = regexp.MustCompile(`/v[2-9][0-9]*$`)
+// goMajor is a Go module path's major version suffix, as /v2 or /v13:
+// /v2 to /v9, or two digits or more. [2-9][0-9]* missed /v13, and tfvar's
+// go-textseg, an older go2port's spelling without it, read as an override
+// (field testing at 23c5e2aa).
+var goMajor = regexp.MustCompile(`/v([2-9]|[1-9][0-9]+)$`)
 
 // sameMajor drops, from Go rows by module, a module declared without the
 // major version suffix the generator writes, as an older go2port wrote

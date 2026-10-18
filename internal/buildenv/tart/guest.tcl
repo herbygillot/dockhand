@@ -239,6 +239,29 @@ proc why {log message} {
     return $detail
 }
 
+# transient is the line of a failed step's own part of its log that says
+# the network failed it upstream, as a module proxy resetting its stream
+# or answering 5xx, or a TLS handshake timing out; empty where none does.
+# dolt's go build failed on proxy.golang.org's "stream error: stream ID
+# 575; INTERNAL_ERROR; received from peer" and counted as the port's
+# failure, with no second attempt (field testing at 23c5e2aa).
+proc transient {log} {
+    global counted
+    set from 0
+    if {[dict exists $counted $log]} { set from [lindex [dict get $counted $log] 0] }
+    if {[catch {open $log r} fd]} { return "" }
+    seek $fd $from
+    set text [read $fd]
+    close $fd
+    foreach line [split $text \n] {
+        if {![regexp {https?://|tcp } $line]} { continue }
+        if {[regexp {stream error: stream ID [0-9]+; [A-Z_]+; received from peer|connection reset by peer|502 Bad Gateway|503 Service Unavailable|504 Gateway Time-?out|TLS handshake timeout} $line]} {
+            return [string range [string trim $line] 0 299]
+        }
+    }
+    return ""
+}
+
 # counted is how far each target's log has been counted: the bytes read,
 # and the lines they held.
 set counted [dict create]
@@ -624,6 +647,12 @@ foreach target [dict get $input targets] {
     if {[catch {build $index $target} result]} {
         save errored "building [dict get $target id]: $result"
         exit 1
+    }
+    # A step the network failed upstream is said, for the host to try the
+    # build again; a test's failure is the port's own.
+    if {[dict get $result outcome] eq "failed" && [dict get $result phase] ni {lint test checksum}} {
+        set fault [transient $root/[dict get $result log]]
+        if {$fault ne ""} { dict set result transient $fault }
     }
     # What a verdict's build read is recorded with it; a verdict stands
     # without it, its inputs unknown.

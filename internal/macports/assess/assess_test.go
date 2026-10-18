@@ -526,3 +526,22 @@ func TestACargoProgramOnlyAddedHoldsNothing(t *testing.T) {
 	removed := a.build(sourcecompare.Change{Kind: "build", How: "binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: lore-stamp removed"}, Pair{})
 	require.True(t, removed.Hold)
 }
+
+// A PEP 517 backend moving holds unless the Portfile's
+// python.pep517_backend names the new one, and says what to set it to
+// where the PortGroup has a name for it (justpath, field testing at
+// 23c5e2aa).
+func TestAPythonBackendMovingHoldsUnlessThePortfileNamesIt(t *testing.T) {
+	t.Parallel()
+	change := sourcecompare.Change{Kind: "build", How: "backend", Path: "pyproject.toml", Name: "setuptools.build_meta",
+		Message: "upstream's pyproject.toml moves its build backend from poetry.core.masonry.api to setuptools.build_meta"}
+	held := (&assessment{input: Input{Port: macports.PortInfo{Options: map[string]string{"python.pep517_backend": "poetry"}}}}).build(change, Pair{})
+	require.True(t, held.Hold)
+	require.Equal(t, change.Message+"; the Portfile's python.pep517_backend is poetry, so set it to setuptools", held.Message)
+	followed := (&assessment{input: Input{Port: macports.PortInfo{Options: map[string]string{"python.pep517_backend": "setuptools"}}}}).build(change, Pair{})
+	require.False(t, followed.Hold)
+	change.Name = "pdm.backend"
+	unknown := (&assessment{input: Input{Port: macports.PortInfo{Options: map[string]string{"python.pep517_backend": "setuptools"}}}}).build(change, Pair{})
+	require.True(t, unknown.Hold)
+	require.Contains(t, unknown.Message, "which the python PortGroup has no python.pep517_backend for")
+}

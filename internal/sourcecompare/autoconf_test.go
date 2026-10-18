@@ -75,3 +75,17 @@ func TestABinBesideMainAddsAProgram(t *testing.T) {
 	renamed := reading("[package]\nname = \"ratty\"\n\n[[bin]]\nname = \"rt\"\npath = \"src/main.rs\"\n")
 	require.Equal(t, "upstream's Cargo packages and binaries change: rt added; ratty removed", cargoBinaries(old, renamed)[0].Message, "a [[bin]] building src/main.rs is its program")
 }
+
+// A Python project's PEP 517 backend moving is said, with the new one:
+// justpath 0.1.4 moved from poetry-core to setuptools (field testing at
+// 23c5e2aa).
+func TestAPythonBackendMovingIsSaid(t *testing.T) {
+	t.Parallel()
+	reading := func(backend string) project.Reading {
+		return project.Reading{Files: map[string]project.File{"pyproject.toml": {Data: []byte("[build-system]\nbuild-backend = \"" + backend + "\"\n")}}}
+	}
+	require.Equal(t, []Change{{Kind: "build", How: "backend", Path: "pyproject.toml", Name: "setuptools.build_meta",
+		Message: "upstream's pyproject.toml moves its build backend from poetry.core.masonry.api to setuptools.build_meta"}},
+		pythonBackend(reading("poetry.core.masonry.api"), reading("setuptools.build_meta")))
+	require.Empty(t, pythonBackend(reading("hatchling.build"), reading("hatchling.build")))
+}

@@ -96,7 +96,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // begins it, for the host to record the one a lost guest was building as
 // interrupted. That reports more, and builds and judges nothing
 // otherwise, so the protocol stays 3.
-const guestPin = "09da5d498ac4183415aabad70e9e98b9ec12e9ed99e283774923d533f4be0976"
+const guestPin = "df83e066a9991462f9ddd656deaccc8eb76762fd9bb129c118427d84ae08f7da"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

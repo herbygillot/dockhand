@@ -34,7 +34,8 @@ type Change struct {
 	//     it declares, or "library" where a Makefile.am's -version-info
 	//     moved, a new library version, or "binaries" where a Cargo
 	//     project's programs change, one removed or renamed, and "new
-	//     binaries" where it only adds programs;
+	//     binaries" where it only adds programs, or "backend" where a
+	//     Python project's PEP 517 backend moves, Name being the new one;
 	//   - a dependency "adds", "drops", or "moves", or "native" for a crate
 	//     new to a Cargo.lock that links a native library, and "unlinked"
 	//     for one gone from it;
@@ -234,6 +235,7 @@ func Compare(older, newer project.Reading, versions Versions, named func(option 
 	}
 	changes = append(changes, libraryVersions(older.LibraryVersions, newer.LibraryVersions)...)
 	changes = append(changes, cargoBinaries(older, newer)...)
+	changes = append(changes, pythonBackend(older, newer)...)
 	changes = licenseMove(changes, before, after)
 	for i := range changes {
 		changes[i].System = project.SystemOf(changes[i].Path)
@@ -682,6 +684,21 @@ func cargoBinaries(old, now project.Reading) []Change {
 	}
 	return []Change{{Kind: "build", How: how, Path: "Cargo.toml",
 		Message: "upstream's Cargo packages and binaries change: " + strings.Join(said, "; ")}}
+}
+
+// pythonBackend is a Python project's PEP 517 backend moving, which the
+// Portfile names for its build dependencies (python.pep517_backend):
+// justpath 0.1.4 moved from poetry-core to setuptools, and its check
+// failed, "Backend 'setuptools.build_meta' is not available" (field
+// testing at 23c5e2aa). None where either version names none.
+func pythonBackend(old, now project.Reading) []Change {
+	before, ok := old.PythonBackend()
+	after, alsoOK := now.PythonBackend()
+	if !ok || !alsoOK || before == after {
+		return nil
+	}
+	return []Change{{Kind: "build", How: "backend", Path: "pyproject.toml", Name: after,
+		Message: fmt.Sprintf("upstream's pyproject.toml moves its build backend from %s to %s", before, after)}}
 }
 
 // autoconfWords say what a configure.ac's change asks of the build, as

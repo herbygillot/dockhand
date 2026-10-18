@@ -34,7 +34,9 @@ import (
 // lint writes LINTSAYS, an Error line lint says and goes on past. A
 // phase HANG names ("phase:port ...") sleeps, as a compiler that never
 // finishes would, in a process of its own. A port NOARCHIVE names has no
-// binary archive, which -b archivefetch fails for. With ACTIVEFAILS set,
+// binary archive, which -b archivefetch fails for. With COMMAND set, a
+// failure says FAILSAYS as the tool's line, where it's set. With
+// ACTIVEFAILS set,
 // listing the active ports fails.
 const fakePort = `#!/bin/sh
 echo "$*" >> "$PORT_LOG"
@@ -89,7 +91,7 @@ for entry in $FAIL; do
       if [ -n "$QUIET" ]; then exit 1; fi
       if [ -n "$COMMAND" ]; then
         echo "DEBUG: Executing org.macports.build ($port)"
-        echo "go: github.com/spf13/pflag: cannot find package"
+        echo "${FAILSAYS:-go: github.com/spf13/pflag: cannot find package}"
         echo "Command failed:  cd /work/$port && go build ./..."
         echo "Exit code: 1"
         echo "Error: Failed to build $port: command execution failed"
@@ -367,6 +369,15 @@ func TestAFailuresReasonIsTheFailingSteps(t *testing.T) {
 	results, _ = guestRun(t, twoTargets("declared"), "FAIL=install:libharbor", "COMMAND=1", lint)
 	require.Equal(t, "install", results.Targets[0].Phase)
 	require.Equal(t, "Failed to build libharbor: go: github.com/spf13/pflag: cannot find package; the command was: cd /work/libharbor && go build ./...", results.Targets[0].Detail)
+	require.Empty(t, results.Targets[0].Transient, "the port's own failure")
+
+	// A step the network failed upstream is said, for the host to try the
+	// build again: dolt's go build met proxy.golang.org's stream reset
+	// (field testing at 23c5e2aa).
+	reset := `go: github.com/apache/thrift@v0.24.0: read "https://proxy.golang.org/github.com/apache/thrift/@v/v0.24.0.zip": stream error: stream ID 575; INTERNAL_ERROR; received from peer`
+	results, _ = guestRun(t, twoTargets("declared"), "FAIL=install:libharbor", "COMMAND=1", "FAILSAYS="+reset)
+	require.Equal(t, "failed", results.Targets[0].Outcome)
+	require.Equal(t, reset, results.Targets[0].Transient)
 }
 
 // A target an earlier attempt already found blocked is reported blocked

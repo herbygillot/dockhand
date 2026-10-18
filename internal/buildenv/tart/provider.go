@@ -500,6 +500,10 @@ type guestResult struct {
 	// Steps are where each step of the build began in its log, in the
 	// order they ran; absent for a target not built.
 	Steps []guestStep `json:"steps,omitempty"`
+	// Transient is the line of a failed step's log that says the network
+	// failed it upstream, as a module proxy's stream reset; the build is
+	// tried again, as infrastructure.
+	Transient string `json:"transient,omitempty"`
 }
 
 // guestStep is where a step of a target's build began in its log: the
@@ -979,6 +983,14 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 		}
 		switch results.State {
 		case "finished":
+			// A failure the network made upstream is the environment's, not
+			// the port's: the build is tried again (dolt's go build on
+			// proxy.golang.org's stream reset, field testing at 23c5e2aa).
+			for _, target := range results.Targets {
+				if target.Outcome == string(model.OutcomeFailed) && target.Transient != "" {
+					return fmt.Errorf("%w: %s's build met a network fault upstream: %s", buildenv.ErrInfrastructure, target.ID, target.Transient)
+				}
+			}
 			return nil
 		case "errored":
 			return lost(fmt.Errorf("%w: the guest: %s", buildenv.ErrInfrastructure, results.Detail))

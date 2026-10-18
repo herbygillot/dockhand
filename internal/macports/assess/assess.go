@@ -11,6 +11,7 @@
 package assess
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -75,8 +76,9 @@ import (
 // 20: a port's source compared with how and from where it fetches, so a
 // change of git.url alone, or of fetch.type, is assessed (CX-2). 21: the
 // program Cargo infers from src/main.rs counted beside [[bin]]s, where
-// ratty's read as removed (field testing at beb6e7bc).
-const Policy = 21
+// ratty's read as removed (field testing at beb6e7bc). 22: a Python
+// project's PEP 517 backend moving holds, unless the Portfile names it.
+const Policy = 22
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -740,6 +742,25 @@ func (a *assessment) build(change sourcecompare.Change, pair Pair) model.Upstrea
 	// its programs installs the ones it names still, as epic-lore's built
 	// lore-client and lore-server after "lore-stamp added" (field testing's
 	// batch 15).
+	// A PEP 517 backend moving holds, unless the Portfile's
+	// python.pep517_backend names the new one already: it's what the
+	// PortGroup declares the build's dependency for (justpath, field
+	// testing at 23c5e2aa).
+	if change.How == "backend" {
+		declared := a.input.Port.Options["python.pep517_backend"]
+		if named, ok := macports.PythonBackend(change.Name); ok && named == declared {
+			found := finding(change, false)
+			found.Message += "; the Portfile's python.pep517_backend is " + declared + " already, so it holds nothing"
+			return found
+		}
+		found := finding(change, true)
+		if named, ok := macports.PythonBackend(change.Name); ok {
+			found.Message += "; the Portfile's python.pep517_backend is " + cmp.Or(declared, "unset") + ", so set it to " + named
+		} else {
+			found.Message += ", which the python PortGroup has no python.pep517_backend for; the Portfile needs its build dependency"
+		}
+		return found
+	}
 	if change.How == "new binaries" {
 		found := finding(change, false)
 		found.Message += "; the Portfile installs what it names, so it holds nothing"
