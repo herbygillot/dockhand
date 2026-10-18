@@ -113,6 +113,17 @@ act() {
 				;;
 			esac
 		done
+		# ship <port> with no branch named takes the row's newest branch for
+		# the port: the earlier update --new example started a second
+		# go-reflex branch, and ship found two (the rc4 batch).
+		case " $words " in " ship $port "*)
+			case " $words " in *" -b "* | *" -p "* | *" --pr "* | *" --branch "*) ;;
+			*)
+				branch=$(a10_branch "$port")
+				[ -z "$branch" ] || words=$(printf '%s' " $words " | sed "s| ship $port | ship -b ${branch#dockhand/} |; s/^ //; s/ \$//")
+				;;
+			esac ;;
+		esac
 		case "$words" in *"--new="*)
 			name=${words#*--new=}
 			name=${name%% *}
