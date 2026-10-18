@@ -311,9 +311,13 @@ func acceptanceProblem(evidence Evidence, accept []string, atBase map[string][]s
 // changed target checked and every substantive one passed, and every
 // other failure accepted.
 func publicationProblems(evidence Evidence, accepted []string, atBase map[string][]string) []string {
+	blocked := blockedByAccepted(evidence, accepted)
 	var problems []string
 	for _, target := range evidence.Failed() {
 		name := target.Target.Target.Name
+		if slices.Contains(blocked, name) {
+			continue
+		}
 		unmet, needs := target.Unmet()
 		remade := target.Remade()
 		switch {
@@ -337,6 +341,67 @@ func publicationProblems(evidence Evidence, accepted []string, atBase map[string
 		}
 	}
 	return problems
+}
+
+// blockedByAccepted are the ports that failed only as blocked, in each
+// environment by failed dependencies all of which are accepted, or blocked
+// so in turn: accepted with them, unnamed. py-textual-fastdatatable's stub,
+// blocked by its five py3NN subports whose failures the base has too, was
+// refused under --accept of the five, and as a changed port of its own
+// (field testing at 56e328ea).
+func blockedByAccepted(evidence Evidence, accepted []string) []string {
+	ok := map[model.TargetID]bool{}
+	for _, target := range evidence.Targets {
+		if slices.Contains(accepted, target.Target.Target.Name) {
+			ok[target.Target.ID] = true
+		}
+	}
+	var found []string
+	for changed := true; changed; {
+		changed = false
+		for _, target := range evidence.Failed() {
+			if ok[target.Target.ID] || target.Missing() {
+				continue
+			}
+			blocked, clear := false, true
+			for n, cell := range target.Outcomes {
+				switch cell.Outcome {
+				case model.OutcomePassed, "":
+					continue
+				case model.OutcomeBlocked:
+				default:
+					clear = false
+				}
+				if !clear {
+					break
+				}
+				build, _ := evidence.Plan.In(evidence.Plan.Environments[n])
+				for _, dependency := range build.Dependencies[target.Target.ID] {
+					if !ok[dependency] && dependencyFailed(evidence, dependency, n) {
+						clear = false
+					}
+				}
+				blocked = true
+			}
+			if blocked && clear {
+				ok[target.Target.ID] = true
+				found = append(found, target.Target.Target.Name)
+				changed = true
+			}
+		}
+	}
+	return found
+}
+
+// dependencyFailed reports whether a target didn't pass in an environment.
+func dependencyFailed(evidence Evidence, id model.TargetID, environment int) bool {
+	for _, target := range evidence.Targets {
+		if target.Target.ID == id {
+			outcome := target.Outcomes[environment].Outcome
+			return outcome != model.OutcomePassed && outcome != ""
+		}
+	}
+	return false
 }
 
 // failsAtBase are the changed ports that failed and couldn't be accepted

@@ -29,3 +29,17 @@ regression, the usual case for a MacPorts pull request. The person chose
 TestAFailureTheBaseHasTooIsAccepted (alike, at another phase, passing at
 the base); TestSubmitFollowsThePublicationRule's changed-port wording;
 TestTargetWordsAreDesignV3s.
+
+## A port blocked only by accepted failures (2026-10-18)
+
+Field testing at 56e328ea: py-textual-fastdatatable 0.19.3's py310 to
+py314 subports each failed at install on macOS 12 (Xcode 14.0.1's
+libgcc15), and the base failed each the same way; the stub,
+py-textual-fastdatatable, was "blocked by a failed changed dependency".
+`--accept` of the five was refused for the stub, and `--accept` of the
+stub as a changed port with no baseline failure of its own.
+`blockedByAccepted` (engine/evidence.go) takes, with the accepted, each
+port that failed only as blocked, in each environment by failed
+dependencies all of which are accepted, or blocked so in turn; the gate
+passes it over, unnamed. A dependency not accepted still blocks it.
+TestAPortBlockedOnlyByAcceptedFailuresIsAccepted.

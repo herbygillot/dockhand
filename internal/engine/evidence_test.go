@@ -333,3 +333,30 @@ func cells(results []model.TargetResult) []Cell {
 	}
 	return cells
 }
+
+// A port blocked only by failed dependencies that are accepted is accepted
+// with them, unnamed: py-textual-fastdatatable's stub, blocked by its
+// py3NN subports, each failing at the base too, was refused under --accept
+// of the subports, and as a changed port of its own (field testing at
+// 56e328ea). A dependency not accepted still blocks it.
+func TestAPortBlockedOnlyByAcceptedFailuresIsAccepted(t *testing.T) {
+	t.Parallel()
+	changed := func(name string, outcome model.Outcome) TargetEvidence {
+		result := model.TargetResult{Outcome: outcome}
+		if outcome == model.OutcomeFailed {
+			result.Phase = model.PhaseInstall
+		}
+		return TargetEvidence{Target: model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Kind: model.Substantive, Role: model.Changed},
+			Outcomes: []Cell{recorded(tahoeArm, result)}}
+	}
+	plan := model.Plan{Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{Environment: tahoeArm,
+		Order:        []model.TargetID{"py313-tool", "py314-tool", "py-tool"},
+		Dependencies: map[model.TargetID][]model.TargetID{"py-tool": {"py313-tool", "py314-tool"}}}}}
+	evidence := Evidence{Run: model.Run{ID: "run_1", Number: 1}, Plan: plan,
+		Targets: []TargetEvidence{changed("py313-tool", model.OutcomeFailed), changed("py314-tool", model.OutcomeFailed), changed("py-tool", model.OutcomeBlocked)}}
+	atBase := map[string][]string{"py313-tool": {"check-2"}, "py314-tool": {"check-2"}}
+	require.Empty(t, publicationProblems(evidence, []string{"py313-tool", "py314-tool"}, atBase))
+	problems := publicationProblems(evidence, []string{"py313-tool"}, atBase)
+	require.Len(t, problems, 2, "py314-tool isn't accepted, so neither is the stub it blocks")
+	require.Contains(t, problems[1], "py-tool did not pass in check-1")
+}
