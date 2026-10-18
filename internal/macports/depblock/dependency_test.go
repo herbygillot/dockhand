@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -41,6 +42,35 @@ func helper(t *testing.T, body string) string {
 func outputHelper(t *testing.T, body string) string {
 	return helper(t, "cat <<'BLOCK'\n"+body+"\nBLOCK")
 }
+// A workspace member's Cargo.lock is the workspace root's, above the
+// directory the port builds in, as Cargo resolves it: purl builds in
+// ${worksrcdir}/cli, and 0.2.12's lock is at the root (field testing at
+// 23c5e2aa). A member's own lock comes first.
+func TestAWorkspaceMembersLockIsTheRoots(t *testing.T) {
+	t.Parallel()
+	files := map[string]string{
+		"purl-0.2.12/Cargo.toml":     "[workspace]\nmembers = [\"lib\", \"cli\"]\n",
+		"purl-0.2.12/Cargo.lock":     "workspace",
+		"purl-0.2.12/cli/Cargo.toml": "[package]\nname = \"purl\"\n",
+	}
+	archive := sourceArchive(t, files)
+	data, member, dir, err := CargoLock(t.Context(), archive, "purl-0.2.12/cli")
+	require.NoError(t, err)
+	require.Equal(t, "workspace", string(data))
+	require.Equal(t, "purl-0.2.12/Cargo.lock", member)
+	require.Equal(t, "purl-0.2.12", dir)
+	require.NoError(t, ConfirmSource(t.Context(), Cargo, Input{Archive: archive, Worksrcdir: "purl-0.2.12/cli"}, false))
+
+	files["purl-0.2.12/cli/Cargo.lock"] = "member"
+	data, member, _, err = CargoLock(t.Context(), sourceArchive(t, files), "purl-0.2.12/cli")
+	require.NoError(t, err)
+	require.Equal(t, "member", string(data), "its own lock first")
+	require.Equal(t, "purl-0.2.12/cli/Cargo.lock", member)
+
+	_, _, _, err = CargoLock(t.Context(), sourceArchive(t, map[string]string{"purl-0.2.12/cli/Cargo.toml": "[package]\n"}), "purl-0.2.12/cli")
+	require.ErrorIs(t, err, macports.ErrManifestMissing)
+}
+
 func TestManifestSelectionAndUnsafeMembers(t *testing.T) {
 	t.Parallel()
 	archive := sourceArchive(t, map[string]string{"root/go.mod": "root", "root/sub/go.mod": "nested"})

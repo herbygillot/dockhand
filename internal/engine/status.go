@@ -638,6 +638,23 @@ func (s BranchStatus) Touches(port string) bool {
 	return slices.Contains(s.Scope.PortNames(), port) || slices.Contains(changed, port) || slices.Contains(s.Branch.Ports, port)
 }
 
+// OnlyPort is the one port a branch is about, for a command run in it that
+// names none: what its files change, but _resources, and the ports it was
+// started for (model.Branch.Ports); false where that's none or several.
+func (s BranchStatus) OnlyPort() (string, bool) {
+	changed, _ := s.ChangedPorts()
+	var ports []string
+	for _, port := range append(changed, s.Branch.Ports...) {
+		if port != macports.ResourcesDirectory && !slices.Contains(ports, port) {
+			ports = append(ports, port)
+		}
+	}
+	if len(ports) != 1 {
+		return "", false
+	}
+	return ports[0], true
+}
+
 // ChangedPorts are what the branch's files change as they are now, as a
 // person reads it: the ports its change records say (recordedPorts), then
 // _resources, where it changed.

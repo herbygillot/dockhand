@@ -15,7 +15,7 @@ import (
 )
 
 func generateCargo(ctx context.Context, executable string, in Input) (GeneratedBlocks, error) {
-	data, _, err := Manifest(ctx, in.Archive, in.Worksrcdir, "Cargo.lock")
+	data, _, _, err := CargoLock(ctx, in.Archive, in.Worksrcdir)
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}

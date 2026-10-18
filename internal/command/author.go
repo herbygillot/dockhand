@@ -195,7 +195,7 @@ func checksumsCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchChoice
 	var plan, keepOld, keepRevision bool
 	cmd := &cobra.Command{
-		Use:   "checksums <port>",
+		Use:   "checksums [port]",
 		Short: "Refresh a port's checksums for the version it names",
 		Long: `Fetches the port's distfiles for the version its Portfile names and writes
 their checksums, in the branch's working files: what to run after editing
@@ -214,12 +214,25 @@ version to find and none of update's holds: a context it can't read, or a
 declaration none it reads fetches, is left as it was and said.
 
 The branch is --branch, else the one checked out here; --new starts one.
---plan shows the edit and changes nothing, and is the check: it says
+With no port named, it's the branch's one port, what it changes or was
+started for. --plan shows the edit and changes nothing, and is the check: it says
 whether every distfile matches its checksums, starting no branch where
 none is open, and exits 3 where any doesn't.`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			request := engine.UpdateRequest{Action: model.EditChecksums, Port: args[0], EditIntent: model.EditIntent{KeepOldChecksums: keepOld}, KeepRevision: keepRevision, Plan: plan}
+			port := ""
+			if len(args) == 1 {
+				port = args[0]
+			} else {
+				// As every other branch command does, it takes the
+				// branch's port where none is named (field testing at
+				// 23c5e2aa: "accepts 1 arg(s), received 0").
+				var err error
+				if port, err = branchPort(cmd.Context(), s, where); err != nil {
+					return err
+				}
+			}
+			request := engine.UpdateRequest{Action: model.EditChecksums, Port: port, EditIntent: model.EditIntent{KeepOldChecksums: keepOld}, KeepRevision: keepRevision, Plan: plan}
 			_, _, err := author(cmd.Context(), s, streams, where, "checksums", request, linkedOptions{})
 			return err
 		},
@@ -229,6 +242,33 @@ none is open, and exits 3 where any doesn't.`,
 	cmd.Flags().BoolVar(&keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&keepRevision, "no-revbump", false, "for a stealth update, leave the revision as it is")
 	return cmd
+}
+
+// branchPort is the port of the branch --branch names, or of the one
+// checked out here, where a command names none: its one port, what it
+// changes or was started for.
+func branchPort(ctx context.Context, s *settings, where branchChoice) (string, error) {
+	if where.isNew() {
+		return "", errors.New("name the port: --new starts a branch for it")
+	}
+	e, err := s.open(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer e.Close()
+	selection, err := e.Select(ctx, engine.Selector{Branch: where.branch, Policy: engine.SelectExisting}, "", "")
+	if err != nil {
+		return "", err
+	}
+	status, err := e.BranchStatus(ctx, selection.Branch)
+	if err != nil {
+		return "", err
+	}
+	port, ok := status.OnlyPort()
+	if !ok {
+		return "", fmt.Errorf("name the port: %s changes no port yet, or more than one", selection.Branch.ShortName())
+	}
+	return port, nil
 }
 
 // versionUpdate is what update and bump share: how the edit is made, and

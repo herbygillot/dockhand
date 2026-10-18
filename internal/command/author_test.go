@@ -624,3 +624,22 @@ func TestAnUpdateNamesThePortAsAsked(t *testing.T) {
 	require.Contains(t, out, "jq: 1.7.1 → 1.8.1")
 	require.NotContains(t, out, "py314-jq: ")
 }
+
+// checksums with no port takes the branch's one port, as every other
+// branch command does (field testing at 23c5e2aa: "accepts 1 arg(s),
+// received 0"), and asks for one where the branch is about several.
+func TestChecksumsTakesTheBranchsPort(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	_, _, err := dockhand(t, "start", "jq-sums", "--port", "jq")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-sums"))
+	out, _, err := dockhand(t, "checksums", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq")
+	require.Contains(t, out, "+checksums sha256 0000")
+
+	_, _, err = dockhand(t, "checksums", "--new", "--plan")
+	require.Error(t, err)
+}

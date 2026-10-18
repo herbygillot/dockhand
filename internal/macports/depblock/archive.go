@@ -2,6 +2,7 @@ package depblock
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -67,4 +68,25 @@ func Manifest(ctx context.Context, filename, worksrcdir, name string) ([]byte, s
 		return nil, "", fmt.Errorf("%w: source archive has no %s for %s", macports.ErrManifestMissing, name, worksrcdir)
 	}
 	return found[selected], selected, nil
+}
+
+// CargoLock is the Cargo.lock that builds the package at worksrcdir: its
+// own, or else the nearest above it, as Cargo resolves a workspace
+// member's lock from the workspace's root. purl builds in
+// ${worksrcdir}/cli, and 0.2.12's lock is at the workspace root, one level
+// up (field testing at 23c5e2aa). It returns the lock, its member, and the
+// directory it was found for.
+func CargoLock(ctx context.Context, filename, worksrcdir string) ([]byte, string, string, error) {
+	dir := worksrcdir
+	for {
+		data, member, err := Manifest(ctx, filename, dir, "Cargo.lock")
+		if !errors.Is(err, macports.ErrManifestMissing) {
+			return data, member, dir, err
+		}
+		parent := path.Dir(dir)
+		if parent == dir || parent == "." || parent == "/" {
+			return nil, "", "", err
+		}
+		dir = parent
+	}
 }
