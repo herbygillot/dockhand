@@ -42,6 +42,7 @@ func helper(t *testing.T, body string) string {
 func outputHelper(t *testing.T, body string) string {
 	return helper(t, "cat <<'BLOCK'\n"+body+"\nBLOCK")
 }
+
 // A workspace member's Cargo.lock is the workspace root's, above the
 // directory the port builds in, as Cargo resolves it: purl builds in
 // ${worksrcdir}/cli, and 0.2.12's lock is at the root (field testing at
