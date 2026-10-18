@@ -123,13 +123,22 @@ namespace eval ::dockhand {
             check_worker $worker
             set failures [dict create]
             # The options read are the one list Go holds, macports.ReadOptions,
-            # set before this script is sourced.
+            # set before this script is sourced. The port's build directory,
+            # named for where it was evaluated, is written <build>, as the
+            # code checksum writes it: a PEP 517 port's build.pre_args is its
+            # build target, "--wheel --outdir <workpath>", and two evaluations
+            # of one port read as build.pre_args changed (pyinfra, field
+            # testing at 30eaf4cc). cargo.dir and patch.dir keep their paths,
+            # which are read against worksrcpath below.
+            set build [file dirname [$worker eval {option workpath}]]
             foreach field $::dockhand::read_options {
                 if {[$worker eval [list exists $field]]} {
                     if {[catch {$worker eval [list option $field]} value]} {
                         dict set failures $field $value
-                    } else {
+                    } elseif {$field in {cargo.dir patch.dir}} {
                         dict set out $field $value
+                    } else {
+                        dict set out $field [string map [list $build <build>] $value]
                     }
                 }
             }

@@ -450,6 +450,24 @@ func TestAReleaseFoundAlreadyIsCheckedNotFoundAgain(t *testing.T) {
 	require.ErrorIs(t, err, editprep.ErrFidelity, "a release the Portfile can't name is refused, found now or before")
 }
 
+// An option that reads the port's build directory, as a PEP 517 port's
+// build.pre_args, "--wheel --outdir ${workpath}", does, is the same in the
+// two evaluations of an update, each made in a directory of its own:
+// pyinfra's update was refused, "pyinfra.build.pre_args changed", which its
+// Portfile never sets (field testing at 30eaf4cc).
+func TestAnOptionReadingTheBuildDirectoryIsTheSameInEachEvaluation(t *testing.T) {
+	t.Parallel()
+	release := manifestArchive(t, "README", "fixed\n", "2.0")
+	service, request := versionFixture(t, "setup", "build.pre_args --wheel --outdir ${workpath}\n", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(release) })
+	result, err := service.Prepare(t.Context(), request)
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Files)
+	require.Contains(t, string(result.Files[0].After), "github.setup owner fixture 2.0 v")
+	after, ok := result.PortAfter("fixture")
+	require.True(t, ok)
+	require.Equal(t, "--wheel --outdir <build>/work", after.Options["build.pre_args"])
+}
+
 // A patch the new release already holds is dropped, with its file: the
 // Portfile's patchfiles loses it, files/ loses the patch, and the result
 // says so rather than calling it a patch that no longer applies (the
