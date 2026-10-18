@@ -11,7 +11,9 @@ act() {
 	checkpoint "leave serve running overnight, past the token's 8-hour expiry and serve.outdated_at; note whether notifications arrived in $ROW_DIR/notes" || return 0
 	dh setup || :
 	dh status || :
-	dh_json serve --uninstall || :
+	# serve has no --json; dh_json made rc4 refuse the uninstall (the rc4
+	# batch).
+	dh serve --uninstall || :
 	# launchd unloads the agent after bootout returns, a few seconds on:
 	# read at once, rc6's and rc10's runs found it still there. --uninstall
 	# waits until launchd has let it go, so it's read once, at once.
