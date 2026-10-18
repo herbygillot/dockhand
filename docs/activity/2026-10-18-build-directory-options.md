@@ -25,3 +25,12 @@ The refusal's fallback named a variable the person never wrote; with the
 cause gone, a version-only python update prepares itself again. A
 refusal that names a derived option is left as it is: the option did
 move, and saying which one is what lets a person find it.
+
+## update's header names the port as asked
+
+Field testing confirmed 23c5e2aa (py-textual-fastdatatable 0.19.0 to
+0.19.3 prepared on its own), and found its header read
+"py314-textual-fastdatatable: 0.19.0 → 0.19.3", the subport the edit
+evaluated. The header names the port as the person named it
+(`request.Port`), the evaluated target's name where none was given; the
+update's record keeps the target's. TestAnUpdateNamesThePortAsAsked.

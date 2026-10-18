@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -466,7 +467,11 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		if update.Release != nil && engine.ReleaseSource(*update.Release) != "" {
 			source = "   (" + engine.ReleaseSource(*update.Release) + ")"
 		}
-		fmt.Fprintf(out, "%s: %s → %s%s\n", update.Port, update.Before, update.After, source)
+		// The port as the person named it: py-textual-fastdatatable's
+		// update read "py314-textual-fastdatatable: 0.19.0 → 0.19.3", the
+		// subport the edit evaluated (field testing at 23c5e2aa).
+		named := cmp.Or(request.Port, update.Port)
+		fmt.Fprintf(out, "%s: %s → %s%s\n", named, update.Before, update.After, source)
 		// A plain bump read the same for semgrep's 0.14.0 to 1.179.0
 		// (field testing, 2026-10-02).
 		if update.CrossesMajor {

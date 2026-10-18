@@ -589,3 +589,38 @@ func TestARateLimitedUpdateSaysSo(t *testing.T) {
 	_, _, err := dockhand(t, "update", "jq", "--new", "--plan")
 	require.EqualError(t, err, "GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT; nothing was changed")
 }
+
+// subportBumper is bumper where the edit evaluates a subport, as a python
+// port's evaluates py314-<name>.
+type subportBumper struct{ bumper }
+
+func (b subportBumper) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
+	result, err := b.bumper.Prepare(ctx, r)
+	result.Target.Name = "py314-" + result.Target.Name
+	for i, report := range result.Fidelity {
+		for _, snapshot := range []*macports.Snapshot{&report.Before, &report.After} {
+			ports := map[string]macports.PortInfo{}
+			for name, info := range snapshot.Ports {
+				ports["py314-"+name] = info
+			}
+			snapshot.Ports = ports
+		}
+		result.Fidelity[i] = report
+	}
+	return result, err
+}
+
+// update's header names the port as the person named it, not the subport
+// the edit evaluated: py-textual-fastdatatable's read
+// "py314-textual-fastdatatable: 0.19.0 → 0.19.3" (field testing at
+// 23c5e2aa).
+func TestAnUpdateNamesThePortAsAsked(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	testPreparer = func(e *engine.Engine) engine.Preparer { return subportBumper{bumper{repo: e.Repo}} }
+	t.Cleanup(func() { testPreparer = nil })
+	out, _, err := dockhand(t, "update", "jq", "--new", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq: 1.7.1 → 1.8.1")
+	require.NotContains(t, out, "py314-jq: ")
+}
