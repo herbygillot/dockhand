@@ -232,7 +232,7 @@ func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams Str
 	}
 	switch {
 	case enqueue && leader == nil:
-		fmt.Fprintf(streams.Out, "%s queued; nothing is running it: dockhand serve\n", run.Name())
+		fmt.Fprintf(streams.Out, "%s queued. Start dockhand serve to run it.\n", run.Name())
 		return nil
 	case enqueue:
 		fmt.Fprintf(streams.Out, "%s queued; serve (pid %d) runs it. dockhand wait %s follows it.\n", run.Name(), leader.PID, run.Name())

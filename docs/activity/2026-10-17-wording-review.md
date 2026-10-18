@@ -25,3 +25,12 @@ SV-010/011 (serve's "login can't renew itself").
   hadn't changed and was reverted. The help-reference test reads "use
   dockhand at" as a sentence ("at" joins sentenceWords), for WF-003's
   "if you use dockhand at least once every six months".
+
+## The three with two suggestions (2026-10-18)
+
+The person picked "A, B, B": check's queued line takes CLI-020's "%s
+queued. Start dockhand serve to run it."; status's passed-and-held line
+takes WF-036's "passed; submission paused for review: ", in both its Held
+and Moved branches; serve's login notification takes SV-011's "GitHub
+login expired or cannot be renewed. Sign in again: dockhand setup github".
+Their three tests follow.

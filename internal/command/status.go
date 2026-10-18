@@ -385,13 +385,13 @@ func attentionFor(s engine.BranchStatus) []attention {
 		case len(s.Edited) > 0:
 			return row(attentionReady, engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
 		case s.Branch.PullRequest == nil && len(s.Held) > 0:
-			return row(attentionNeedsYou, "passed; held for a look: "+engine.HoldLines(s.Held)[0], submitNext(s, name))
+			return row(attentionNeedsYou, "passed; submission paused for review: "+engine.HoldLines(s.Held)[0], submitNext(s, name))
 		case s.Branch.PullRequest == nil && len(s.Moved) > 0:
 			// The check built another source than the update chose: serve
 			// waits for a look, and a person's submission shows it.
 			what := "passed; " + s.Moved[0].Detail
 			if s.Branch.Origin == model.OriginServe {
-				what = "passed; held for a look: " + s.Moved[0].Detail
+				what = "passed; submission paused for review: " + s.Moved[0].Detail
 			}
 			return row(attentionNeedsYou, what, submitNext(s, name))
 		case s.Branch.PullRequest == nil && s.Assessment == engine.AssessmentPending:

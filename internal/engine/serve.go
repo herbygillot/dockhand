@@ -600,7 +600,7 @@ func (f *follower) maybe(ctx context.Context) {
 	case errors.Is(err, github.ErrLoginEnded):
 		report("serve: GitHub credentials could not be renewed, so pull request refresh is paused. Run dockhand setup github to sign in again; serve will use the new credentials automatically")
 		if f.s.loginEnded.CompareAndSwap(false, true) {
-			f.s.notify("GitHub login", "dockhand's GitHub login can't renew itself; run dockhand setup github")
+			f.s.notify("GitHub login", "GitHub login expired or cannot be renewed. Sign in again: dockhand setup github")
 		}
 	case err != nil:
 		report(fmt.Sprintf("serve: could not read pull requests: %v", err))

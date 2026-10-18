@@ -112,7 +112,7 @@ func TestServeSaysAnEndedLoginOnce(t *testing.T) {
 		follow.maybe(t.Context())
 	}
 	require.Equal(t, []string{"serve: GitHub credentials could not be renewed, so pull request refresh is paused. Run dockhand setup github to sign in again; serve will use the new credentials automatically"}, said)
-	require.Equal(t, []string{"GitHub login: dockhand's GitHub login can't renew itself; run dockhand setup github"}, notified)
+	require.Equal(t, []string{"GitHub login: GitHub login expired or cannot be renewed. Sign in again: dockhand setup github"}, notified)
 }
 
 // A credential GitHub rejects fails the read once, as its error, not each

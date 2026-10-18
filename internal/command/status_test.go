@@ -330,7 +330,7 @@ func TestStatusSaysAReleaseMovedBeforeItsCheck(t *testing.T) {
 	require.Equal(t, attention{kind: attentionNeedsYou, branch: "libharbor-4", what: "passed; " + detail, next: "dockhand submit --branch libharbor-4"}, rows[0])
 
 	status.Branch.Origin = model.OriginServe
-	require.Equal(t, "passed; held for a look: "+detail, attentionFor(status)[0].what)
+	require.Equal(t, "passed; submission paused for review: "+detail, attentionFor(status)[0].what)
 
 	view := branchView(status)
 	require.Equal(t, []concernJSON{{Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Detail: detail}}, view.Moved)

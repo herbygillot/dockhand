@@ -95,7 +95,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 
 	out, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	require.Contains(t, out, "check-2 queued; nothing is running it: dockhand serve\n")
+	require.Contains(t, out, "check-2 queued. Start dockhand serve to run it.\n")
 
 	withScript(t, w, "failed")
 	_, _, err = dockhand(t, "check")
