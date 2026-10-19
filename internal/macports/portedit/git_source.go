@@ -62,7 +62,13 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 		return archivePlan{}, err
 	}
 	branch := release.Tag
-	if old := input.info.Options["git.branch"]; commitPattern.MatchString(old) {
+	old := input.info.Options["git.branch"]
+	switch {
+	case commitPattern.MatchString(old) && release.Commit != "" && next.Options["git.branch"] == release.Commit:
+		// The version edit moved it already, as a commit pin's github.setup
+		// carries git.branch (the roadmap's v0.5.0 part 3, step 2).
+		branch = release.Commit
+	case commitPattern.MatchString(old):
 		if release.Commit == "" {
 			return archivePlan{}, fmt.Errorf("%w: git.branch pins a commit and the resolved release names none", ErrUnsupported)
 		}

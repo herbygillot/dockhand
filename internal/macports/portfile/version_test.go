@@ -76,3 +76,17 @@ func TestCandidatesDescendIntoSwitchArms(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, strings.Replace(src, "version 8.4.25\n", "version 8.4.26\n", 1), string(edited), "the span is the literal's own")
 }
+
+// A commit pin's version is its own literal, written where one version
+// command writes it (the roadmap's v0.5.0 part 3, step 2).
+func TestSetVersionLiteralWritesTheOneVersion(t *testing.T) {
+	t.Parallel()
+	src := []byte("github.setup wez wezterm 372548295b0b25c9a5400f0ea56f0e89f47e0524\nversion             20261005-372548-295b0b25\n")
+	out, err := portfile.SetVersionLiteral(src, "20261005-372548-295b0b25", "20261010-e2a98e-1b8af156")
+	require.NoError(t, err)
+	require.Contains(t, string(out), "version             20261010-e2a98e-1b8af156\n")
+	_, err = portfile.SetVersionLiteral([]byte("version 1\nif {$a} {version 1}\n"), "1", "2")
+	require.ErrorIs(t, err, portfile.ErrUnsupported, "two version commands write it")
+	_, err = portfile.SetVersionLiteral([]byte("version ${v}\n"), "1", "2")
+	require.ErrorIs(t, err, portfile.ErrUnsupported, "none writes it as a literal")
+}

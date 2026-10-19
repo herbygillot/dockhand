@@ -55,12 +55,16 @@ type Release struct {
 	// the two agree. It is what the version input is edited to; Version
 	// is always the evaluated result.
 	SourceVersion string `json:",omitempty"`
-	Forge         string
-	Instance      string
-	Repository    string
-	Tag           string
-	Commit        string
-	ObservedAt    time.Time
+	// Pinned is a release that moves a commit pin, as wezterm's
+	// github.setup names a commit: its Tag and Commit are the commit, which
+	// is its SourceVersion too, and its Version the port's own literal.
+	Pinned     bool `json:",omitempty"`
+	Forge      string
+	Instance   string
+	Repository string
+	Tag        string
+	Commit     string
+	ObservedAt time.Time
 }
 
 // ReleaseListing retains compact discovery evidence; source archives are

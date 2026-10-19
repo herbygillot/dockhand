@@ -298,6 +298,14 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 	var rejected error
 	for _, edit := range inputs.edits(input.data, sourceVersion) {
 		contents := edit.contents
+		// A commit pin's version is a literal of its own, which moves
+		// with the commit to the version its release gives.
+		if request.Release != nil && request.Release.Pinned {
+			if contents, err = portfile.SetVersionLiteral(contents, input.info.Version, request.Release.Version); err != nil {
+				rejected = err
+				continue
+			}
+		}
 		if checkFidelity {
 			contents, err = s.resetRevision(ctx, request, input, contents)
 			if err != nil {

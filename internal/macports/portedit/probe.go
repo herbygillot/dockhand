@@ -143,7 +143,10 @@ func (p *VersionProbe) CheckRelease(ctx context.Context, release model.Release) 
 	if !ok {
 		return fmt.Errorf("%w: selected tag no longer matches source convention", ErrFidelity)
 	}
-	_, snapshot, err := p.editor.probeVersion(ctx, p.request, p.input, p.carriers, raw)
+	// The release goes with the request, as a commit pin's version does.
+	request := p.request
+	request.Release = &release
+	_, snapshot, err := p.editor.probeVersion(ctx, request, p.input, p.carriers, raw)
 	if err != nil {
 		return err
 	}

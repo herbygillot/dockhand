@@ -26,6 +26,9 @@ func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested
 }
 
 func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested string) (model.Release, error) {
+	if spec, ok := pinned(port); ok {
+		return s.resolvePin(ctx, port, spec, requested)
+	}
 	if requested == "" {
 		result, err := s.DiscoverPort(ctx, port)
 		if err != nil {
@@ -38,6 +41,10 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 		}
 		if result.Assessment == OwnVersion {
 			return model.Release{}, fmt.Errorf("%w: %s fetches no source on this platform, and livecheck does not use its version; specify a version with dockhand update %s <version>", ErrOwnVersion, port.Name, port.Name)
+		}
+		// A branch's head, as one a port tracks names, is no release.
+		if result.Release == nil {
+			return model.Release{}, fmt.Errorf("upstream: %s has no release to move to; specify a version with dockhand update %s <version>", port.Name, port.Name)
 		}
 		return *result.Release, nil
 	}
@@ -123,6 +130,9 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 }
 
 func (s *Service) Check(ctx context.Context, port macports.PortInfo, release model.Release) error {
+	if release.Pinned {
+		return s.checkPin(ctx, port, release)
+	}
 	if release.Archive {
 		spec, err := portsource.Interpret(port, portsource.Edit)
 		if err != nil {

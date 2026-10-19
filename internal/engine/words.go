@@ -302,8 +302,9 @@ func PatchesApply(applied, rejected int) string {
 	return fmt.Sprintf("%d patches apply", applied)
 }
 
-// ReleaseSource says where a release was found: "GitHub tag jq-1.8.1", or
-// "from its distfiles"; nothing where neither says.
+// ReleaseSource says where a release was found: "GitHub tag jq-1.8.1",
+// "GitHub commit e2a98e1" for a commit pin's, or "from its
+// distfiles"; nothing where none says.
 func ReleaseSource(release model.Release) string {
 	switch {
 	case release.Tag != "":
@@ -313,6 +314,10 @@ func ReleaseSource(release model.Release) string {
 			forge = "GitHub"
 		case "gitlab":
 			forge = "GitLab"
+		}
+		// A commit pin's release is a commit, not a tag.
+		if release.Pinned {
+			return strings.TrimSpace(forge + " commit " + model.ObjectID(release.Commit).Short())
 		}
 		return strings.TrimSpace(forge + " tag " + release.Tag)
 	case release.Archive:

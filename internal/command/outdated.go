@@ -125,8 +125,10 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			}
 		case class == engine.OutdatedMoved:
 			// A port pinned to a commit of a branch that has moved on is
-			// behind, and the version to give the commit is a person's.
-			fmt.Fprintf(table, "  %s\t%s\t%s?\tedit %s by hand: its %s names a newer commit than the one it pins\n", port.Port, port.Current, port.Newest, port.Port, port.Moved.Branch)
+			// behind; update moves the pin to the head, with the version
+			// the port's scheme gives it, or the one named (the roadmap's
+			// v0.5.0 part 3, step 2).
+			fmt.Fprintf(table, "  %s\t%s\t%s?\tdockhand update %s: its %s names a newer commit than the one it pins\n", port.Port, port.Current, port.Newest, port.Port, port.Moved.Branch)
 		case class == engine.OutdatedUnchecked:
 			if all || none {
 				fmt.Fprintf(table, "  %s\t%s\t?\tcouldn't check: %s\n", port.Port, orDash(port.Current), strings.ReplaceAll(port.Problem, "\n", "; "))
@@ -337,7 +339,7 @@ func restWords(report engine.OutdatedReport, plan engine.OutdatedPlan) string {
 		{engine.OutdatedCurrent, "%d current"},
 		{engine.OutdatedUnpublished, "%d with a newer release not published yet"},
 		{engine.OutdatedUncertain, "%d that may have one, for your look"},
-		{engine.OutdatedMoved, "%d pinned to a commit its branch has moved past, to edit by hand"},
+		{engine.OutdatedMoved, "%d pinned to a commit its branch has moved past, for update"},
 		{engine.OutdatedUnchecked, "%d that couldn't be checked"},
 	} {
 		if n := summary[class.class]; n > 0 {

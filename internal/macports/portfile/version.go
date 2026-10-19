@@ -247,3 +247,32 @@ func setupVersionIndex(name string, words int) int {
 	}
 	return index
 }
+
+// SetVersionLiteral writes to as the version a Portfile declares as the
+// one literal from, wherever its `version` command is: a port whose source
+// is pinned to a commit keeps its version a literal of its own, as
+// wezterm's 20261005-372548-295b0b25 beside the commit github.setup names
+// (the roadmap's v0.5.0 part 3, step 2). One `version` of that literal,
+// and only one, is edited.
+func SetVersionLiteral(src []byte, from, to string) ([]byte, error) {
+	if !Literal(to) {
+		return nil, fmt.Errorf("%w: %q is not a safe version literal", ErrUnsupported, to)
+	}
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("%w: invalid Tcl syntax", ErrUnsupported)
+	}
+	var spans []textedit.Span
+	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
+		if name, _ := cmd.Name(src); name != "version" || len(cmd.Words) != 2 {
+			continue
+		}
+		if value, literal := cmd.Words[1].Literal(src); literal && value == from && !cmd.Words[1].Expand {
+			spans = append(spans, cmd.Words[1].Span)
+		}
+	}
+	if len(spans) != 1 {
+		return nil, fmt.Errorf("%w: %d version commands write %s; the version is edited where one does", ErrUnsupported, len(spans), from)
+	}
+	return textedit.Apply(src, []textedit.Edit{{Span: spans[0], New: []byte(to)}})
+}
