@@ -60,11 +60,20 @@ func (p PortInfo) Bool(option string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "0", "false", "no", "off":
-		return false, nil
-	case "1", "true", "yes", "on":
-		return true, nil
+	if truth, ok := ParseBool(value); ok {
+		return truth, nil
 	}
 	return false, fmt.Errorf("macports: invalid %s value %q", option, p.Options[option])
+}
+
+// ParseBool reads a value as MacPorts' tbool does, an empty one false;
+// false where it's no boolean.
+func ParseBool(value string) (truth, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "0", "false", "no", "off":
+		return false, true
+	case "1", "true", "yes", "on":
+		return true, true
+	}
+	return false, false
 }

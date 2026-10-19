@@ -7,8 +7,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/planning"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -30,6 +32,9 @@ type Baseline struct {
 	// the branch's own Portfile and distfiles, which a build at the base
 	// can't speak to.
 	Skipped []string
+	// NewTests are failed ports left out without --only because only their
+	// tests failed, and master declares none (testsNewHere).
+	NewTests []string
 }
 
 // PlanBaseline plans a baseline of the branch's newest finished check: of
@@ -78,6 +83,12 @@ func (e *Engine) planBaseline(ctx context.Context, branch model.Branch, ports []
 	}
 	if len(ports) == 0 {
 		ports, baseline.Skipped = BaselineWorthy(evidence)
+		if ports, baseline.NewTests, err = e.testsNewHere(ctx, checked, evidence, ports); err != nil {
+			return baseline, err
+		}
+		if len(ports) == 0 && len(baseline.NewTests) > 0 {
+			return baseline, errors.New(NewTestsWords(baseline.NewTests))
+		}
 		if len(ports) == 0 {
 			if len(baseline.Skipped) > 0 {
 				return baseline, fmt.Errorf("%s failed only before building, at lint, fetch, or checksum, which master can't speak to; --only builds them there anyway", strings.Join(baseline.Skipped, ", "))
@@ -123,14 +134,23 @@ func (e *Engine) planBaseline(ctx context.Context, branch model.Branch, ports []
 	return baseline, nil
 }
 
-// BaselineCandidates are what check --baseline would build after a failed
-// check, for the check to point to it: the ports that failed at install or
-// test (BaselineWorthy) that master has, and the base the check started
-// from, where it would build them. There are none unless the check failed
-// and is its branch's newest finished one, the one --baseline looks into.
-func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) ([]string, model.ObjectID, error) {
+// BaselineOffer is what check --baseline would build after a failed check,
+// for the check to point to it: Ports, the ports that failed at install or
+// test (BaselineWorthy) that master has, at Base, the base the check
+// started from; and NewTests, those left out since only their tests
+// failed and master declares none, which the check says instead.
+type BaselineOffer struct {
+	Ports    []string
+	Base     model.ObjectID
+	NewTests []string
+}
+
+// BaselineCandidates are the baseline a failed check offers. There is none
+// unless the check failed and is its branch's newest finished one, the one
+// --baseline looks into.
+func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) (BaselineOffer, error) {
 	if run.State != model.RunFailed || run.BaselineOf != "" {
-		return nil, "", nil
+		return BaselineOffer{}, nil
 	}
 	var latest model.Run
 	var checked model.Revision
@@ -143,25 +163,99 @@ func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) ([]strin
 		return err
 	})
 	if err != nil || latest.ID != run.ID {
-		return nil, "", err
+		return BaselineOffer{}, err
 	}
 	evidence, err := e.RunEvidence(ctx, run.ID)
 	if err != nil {
-		return nil, "", err
+		return BaselineOffer{}, err
 	}
 	worthy, _ := BaselineWorthy(evidence)
-	if len(worthy) == 0 {
-		return nil, "", nil
+	var offer BaselineOffer
+	if worthy, offer.NewTests, err = e.testsNewHere(ctx, checked, evidence, worthy); err != nil || len(worthy) == 0 {
+		return offer, err
 	}
 	targets, _, _, err := e.atBase(ctx, checked.Source.Base, evidence, worthy)
 	if err != nil || len(targets) == 0 {
-		return nil, "", err
+		return offer, err
 	}
-	var ports []string
 	for _, target := range targets {
-		ports = append(ports, string(target.ID))
+		offer.Ports = append(offer.Ports, string(target.ID))
 	}
-	return ports, checked.Source.Base, nil
+	offer.Base = checked.Source.Base
+	return offer, nil
+}
+
+// testsNewHere sets apart, of the ports a baseline would rebuild, those
+// whose only failures are their tests' where the branch declares tests
+// master doesn't, by the change record's dockhand.test_run: a baseline
+// can't say whether master fails tests it doesn't run, and exiv2's check
+// offered one (the exiv2 field notes, 2026-10-19). A port with no record
+// to say is kept.
+func (e *Engine) testsNewHere(ctx context.Context, checked model.Revision, evidence Evidence, ports []string) (kept, newTests []string, err error) {
+	records, err := e.revisionChanges(ctx, checked.Branch, checked.Source.Base, checked.Source.Tree, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, port := range ports {
+		i := slices.IndexFunc(evidence.Targets, func(target TargetEvidence) bool { return string(target.Target.ID) == port })
+		if i >= 0 && onlyTestsFailed(evidence.Targets[i]) && testsDeclaredHere(records, evidence.Targets[i].Target) {
+			newTests = append(newTests, port)
+			continue
+		}
+		kept = append(kept, port)
+	}
+	return kept, newTests, nil
+}
+
+// onlyTestsFailed reports a target whose every failure while it built
+// (failedAt) is its tests': the install itself passed wherever it ran.
+func onlyTestsFailed(target TargetEvidence) bool {
+	failed := false
+	for _, outcome := range target.Outcomes {
+		result := outcome.TargetResult
+		building, _ := failedAt(result)
+		if !building {
+			continue
+		}
+		if result.Outcome == model.OutcomeFailed && result.Phase != model.PhaseTest {
+			return false
+		}
+		failed = true
+	}
+	return failed
+}
+
+// testsDeclaredHere reports a target whose change record says its tests
+// are new: dockhand.test_run moved from false to true against the base.
+func testsDeclaredHere(records map[string]model.ChangeRecord, target model.PlanTarget) bool {
+	record, ok := records[target.Directory]
+	if !ok {
+		return false
+	}
+	for _, port := range record.Ports {
+		if port.Port != target.Target.Name {
+			continue
+		}
+		for _, field := range port.Fields {
+			if field.Field != "dockhand.test_run" {
+				continue
+			}
+			was, _ := macports.ParseBool(field.From)
+			is, _ := macports.ParseBool(field.To)
+			return !was && is
+		}
+	}
+	return false
+}
+
+// NewTestsWords say why a baseline isn't offered for ports whose tests are
+// new on the branch.
+func NewTestsWords(ports []string) string {
+	tests := "tests are"
+	if len(ports) > 1 {
+		tests = "tests are each"
+	}
+	return fmt.Sprintf("%s's %s new on this branch, and master declares none, so a baseline has nothing to compare", prose.And(ports), tests)
 }
 
 // rebuildWhere is where a baseline rebuilds a port: the environments where

@@ -174,7 +174,7 @@ true, it runs that baseline by itself.`,
 			// finished run, where this read the check's exit code.
 			if s.file.Check.Baseline && !enqueue {
 				finished, _ := e.RunNamed(ctx, run.Name())
-				if ports, _, _ := e.BaselineCandidates(ctx, finished); len(ports) > 0 {
+				if offer, _ := e.BaselineCandidates(ctx, finished); len(offer.Ports) > 0 {
 					fmt.Fprintln(streams.Out, "Running a baseline comparison because check.baseline is enabled:")
 					if baselineErr := runBaseline(ctx, e, streams, branch, nil, false); baselineErr != nil {
 						fmt.Fprintf(streams.Err, "baseline: %v\n", baselineErr)
@@ -602,9 +602,18 @@ func stopWords(run model.Run, wasQueued bool) string {
 // (Design v3 §6.8). That is a port master has that failed at install or
 // test; a lint, fetch, or checksum failure is the branch's own.
 func hintBaseline(ctx context.Context, e *engine.Engine, out io.Writer, run model.Run) error {
-	ports, base, err := e.BaselineCandidates(ctx, run)
-	if err != nil || len(ports) == 0 {
+	offer, err := e.BaselineCandidates(ctx, run)
+	if err != nil {
 		return err
+	}
+	// A port whose tests are new here is said, where a baseline would
+	// compare tests master doesn't run (the exiv2 field notes, 2026-10-19).
+	if len(offer.NewTests) > 0 {
+		fmt.Fprintln(out, engine.NewTestsWords(offer.NewTests)+".")
+	}
+	ports, base := offer.Ports, offer.Base
+	if len(ports) == 0 {
+		return nil
 	}
 	branch, err := e.Branch(ctx, run.Branch)
 	if err != nil {

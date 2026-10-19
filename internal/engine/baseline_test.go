@@ -155,18 +155,18 @@ func TestOnlyTheNewestFailedCheckPointsToABaseline(t *testing.T) {
 		return completed
 	}
 	first := check()
-	ports, base, err := e.BaselineCandidates(t.Context(), first)
+	offer, err := e.BaselineCandidates(t.Context(), first)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"jq", "libharbor"}, ports)
-	require.Equal(t, branch.Base, base)
+	require.ElementsMatch(t, []string{"jq", "libharbor"}, offer.Ports)
+	require.Equal(t, branch.Base, offer.Base)
 
 	latest := check("libharbor")
-	ports, _, err = e.BaselineCandidates(t.Context(), first)
+	offer, err = e.BaselineCandidates(t.Context(), first)
 	require.NoError(t, err)
-	require.Empty(t, ports, "check-1 is no longer the newest")
-	ports, _, err = e.BaselineCandidates(t.Context(), latest)
+	require.Empty(t, offer.Ports, "check-1 is no longer the newest")
+	offer, err = e.BaselineCandidates(t.Context(), latest)
 	require.NoError(t, err)
-	require.Equal(t, []string{"libharbor"}, ports)
+	require.Equal(t, []string{"libharbor"}, offer.Ports)
 
 	baseline, err := e.PlanBaseline(t.Context(), branch, nil)
 	require.NoError(t, err)
@@ -232,4 +232,27 @@ func TestABaselineRebuildsAPortOnlyWhereItFailed(t *testing.T) {
 		planned, _ := named.Plan.In(environment)
 		require.Equal(t, []model.TargetID{"libharbor"}, planned.Order, "it failed nowhere, so everywhere the check built it")
 	}
+}
+
+// A port whose only failures are its tests', where its change record says
+// the branch declares tests master doesn't, is no baseline's to compare:
+// exiv2's check offered one (the exiv2 field notes, 2026-10-19). A failed
+// install still is, and so are tests master runs too.
+func TestTestsNewOnTheBranchAreNoBaselines(t *testing.T) {
+	t.Parallel()
+	target := model.PlanTarget{Target: model.Target{Name: "exiv2", Portfile: "graphics/exiv2/Portfile"}, Directory: "graphics/exiv2"}
+	newTests := map[string]model.ChangeRecord{"graphics/exiv2": {Ports: []model.SubportChange{{Port: "exiv2", Kind: model.SubportChanged,
+		Fields: []model.FieldChange{{Field: "version", From: "0.27.7", To: "0.28.9"}, {Field: "dockhand.test_run", From: "no", To: "yes"}}}}}}
+	require.True(t, testsDeclaredHere(newTests, target))
+	alike := map[string]model.ChangeRecord{"graphics/exiv2": {Ports: []model.SubportChange{{Port: "exiv2", Kind: model.SubportChanged,
+		Fields: []model.FieldChange{{Field: "version", From: "0.27.7", To: "0.28.9"}}}}}}
+	require.False(t, testsDeclaredHere(alike, target), "master runs them too")
+	require.False(t, testsDeclaredHere(nil, target), "no record says")
+
+	cell := func(result model.TargetResult) Cell { return Cell{TargetResult: result} }
+	testsFailed := TargetEvidence{Outcomes: []Cell{cell(model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed}), cell(model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseTest})}}
+	require.True(t, onlyTestsFailed(testsFailed))
+	installFailed := TargetEvidence{Outcomes: []Cell{cell(model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed}), cell(model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall})}}
+	require.False(t, onlyTestsFailed(installFailed))
+	require.Equal(t, "exiv2's tests are new on this branch, and master declares none, so a baseline has nothing to compare", NewTestsWords([]string{"exiv2"}))
 }
