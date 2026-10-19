@@ -209,6 +209,22 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.Len(t, plan.Blocking, 1)
 	require.Contains(t, plan.Blocking[0], "someone else pushed to #34901")
 	require.NotEmpty(t, plan.OthersPushed, "the preview's Push line says it won't push (the rc6 full stage, D-S1)")
+
+	// Built on what they pushed, the branch goes, their commit kept beneath
+	// it (py-coremltools, #35220, field testing at 7a38bfff).
+	theirs := strings.TrimSpace(testsupport.Git(t, other, "rev-parse", "HEAD"))
+	testsupport.Git(t, branch.Worktree, "fetch", "-q", fake.Fork, "dockhand/jq-update")
+	testsupport.Git(t, branch.Worktree, "reset", "-q", "--hard", theirs)
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# on theirs\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: on their change")
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocking)
+	require.Empty(t, plan.OthersPushed)
+	require.False(t, plan.Replaces)
+	_, err = e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	require.Equal(t, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")), fake.ForkHead("dockhand/jq-update"))
 }
 
 func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {

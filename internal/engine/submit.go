@@ -562,10 +562,15 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 			return err
 		}
 	}
-	if last := plan.Branch.PullRequest; last != nil && last.Pushed != "" && pr.RemoteHead != last.Pushed && string(pr.RemoteHead) != plan.Commit {
+	// A commit built on what someone else pushed, as theirs amended on
+	// GitHub and yours on top of it, keeps their work: the push adds to the
+	// branch, leased to their commit, and goes (py-coremltools, #35220,
+	// field testing at 7a38bfff). One that would replace it holds.
+	builtOn := plan.RemoteHead.Exists && model.ObjectID(plan.RemoteHead.Object) == pr.RemoteHead && !plan.Replaces
+	if last := plan.Branch.PullRequest; last != nil && last.Pushed != "" && pr.RemoteHead != last.Pushed && string(pr.RemoteHead) != plan.Commit && !builtOn {
 		plan.OthersPushed = pr.RemoteHead
-		plan.Blocking = append(plan.Blocking, fmt.Sprintf("someone else pushed to #%d: it is at %s, and dockhand last pushed %s. Fetch it (git fetch %s %s) and compare before submitting again; nothing will be pushed over it",
-			pr.Ref.Number, pr.RemoteHead.Short(), last.Pushed.Short(), remoteName, plan.RemoteBranch()))
+		plan.Blocking = append(plan.Blocking, fmt.Sprintf("someone else pushed to #%d: it is at %s, and dockhand last pushed %s. Fetch it (git fetch %s %s) and compare; a commit built on it, as one made after git reset --hard %s, submits, and nothing will be pushed over it",
+			pr.Ref.Number, pr.RemoteHead.Short(), last.Pushed.Short(), remoteName, plan.RemoteBranch(), pr.RemoteHead.Short()))
 	}
 	return nil
 }
