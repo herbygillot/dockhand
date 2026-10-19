@@ -94,7 +94,7 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 	previous := result.Prepared
 	contents := result.Files[0].After
 	if !keep {
-		bumped, err := portfile.BumpRevision(contents, input.target.Subport, previous.Ports[name].Revision)
+		bumped, err := s.bumpRevision(ctx, input, contents, previous.Ports[name].Revision)
 		if err != nil {
 			found.RevbumpProblem = unsupportedReason(err)
 		} else {

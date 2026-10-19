@@ -1,6 +1,7 @@
 package distfiles
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -95,6 +96,18 @@ type Binding struct {
 }
 
 func Bind(src []byte, path string, info macports.PortInfo, observed macports.PortObservation) (Binding, error) {
+	return BindResolving(src, path, info, observed, nil)
+}
+
+// Resolver chooses, of the commands an ambiguous declaration's text
+// matches (portfile.AmbiguousDeclaration), the one that made it, or says
+// why it can't.
+type Resolver func(matches []syntax.Command) (syntax.Command, error)
+
+// BindResolving is Bind, with a declaration whose text several commands
+// share settled by resolve, where it's given: the probe's, which evaluates
+// each (the roadmap's v0.5.0 part 3, step 2).
+func BindResolving(src []byte, path string, info macports.PortInfo, observed macports.PortObservation, resolve Resolver) (Binding, error) {
 	var result Binding
 	if len(observed.Problems) > 0 {
 		return result, fmt.Errorf("%w: %v", portfile.ErrUnsupported, observed.Problems)
@@ -105,6 +118,9 @@ func Bind(src []byte, path string, info macports.PortInfo, observed macports.Por
 			continue
 		}
 		cmd, err := portfile.LocateDeclaration(src, path, declaration)
+		if ambiguous := new(portfile.AmbiguousDeclaration); resolve != nil && errors.As(err, &ambiguous) {
+			cmd, err = resolve(ambiguous.Matches)
+		}
 		ordinal := -1
 		if err == nil {
 			script, _ := syntax.Parse(src)

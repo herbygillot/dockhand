@@ -40,3 +40,18 @@ func TestRevisionEditPreservesSurroundingSourceAndScope(t *testing.T) {
 	_, err = BumpRevision([]byte("version 1"), "", int(^uint(0)>>1))
 	require.ErrorIs(t, err, ErrUnsupported)
 }
+
+// The literals that could set a revision are found in any body, for the
+// probe to try where BumpRevision's one scope has none: LyX sets its
+// revision in each branch of an if (the roadmap's v0.5.0 part 3, step 2).
+func TestRevisionCandidatesAreFoundInEveryBody(t *testing.T) {
+	t.Parallel()
+	src := []byte("if {$a} {\n    revision 2\n} else {\n    revision 1\n    set rev 1\n}\nset other 3\n")
+	var found []string
+	for _, span := range RevisionCandidates(src, 1) {
+		found = append(found, span.Text(src))
+	}
+	require.Equal(t, []string{"1", "1"}, found, "the else branch's revision and set, of the value 1")
+	_, err := BumpRevision(src, "", 1)
+	require.ErrorIs(t, err, ErrUnsupported, "the text alone has no one place to bump")
+}

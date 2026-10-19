@@ -93,3 +93,34 @@ func lastCommand(src []byte, script *syntax.Script, name string) (syntax.Command
 	}
 	return found, ok
 }
+
+// RevisionCandidates are the literal words that could set a port's
+// revision of current, wherever the Portfile writes them: each `revision
+// N` and `set name N` of that value, in any body, for the probe to try
+// where BumpRevision's one scope has none to bump, as LyX's revision is
+// set in each branch of an if (the roadmap's v0.5.0 part 3, step 2).
+func RevisionCandidates(src []byte, current int) []textedit.Span {
+	script, errs := syntax.Parse(src)
+	if len(errs) != 0 {
+		return nil
+	}
+	want := strconv.Itoa(current)
+	var spans []textedit.Span
+	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
+		name, _ := cmd.Name(src)
+		index := -1
+		switch {
+		case name == "revision" && len(cmd.Words) == 2:
+			index = 1
+		case name == "set" && len(cmd.Words) == 3:
+			index = 2
+		}
+		if index < 0 {
+			continue
+		}
+		if value, literal := cmd.Words[index].Literal(src); literal && value == want && !cmd.Words[index].Expand {
+			spans = append(spans, cmd.Words[index].Span)
+		}
+	}
+	return spans
+}

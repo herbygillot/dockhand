@@ -84,3 +84,27 @@ func TestAChecksumsBlockIsWrittenAsTheGuideLaysItOut(t *testing.T) {
 		{Name: "git-htmldocs-2.56.0.tar.xz", RMD160: "cccc", SHA256: "dddd", Size: 1713768},
 	}))
 }
+
+// Of two commands of the same text, the one a frame of the Portfile places
+// on its line is the one that ran: LyX's two checksums blocks of the same
+// words, in two branches of an if, read as ambiguous (the roadmap's v0.5.0
+// part 3, step 2). Where no frame places one, it's still ambiguous, for a
+// probe to settle.
+func TestOfTwoCommandsOfOneTextTheFramesLineChooses(t *testing.T) {
+	t.Parallel()
+	src := []byte("PortSystem 1.0\nif {$a} {\n    checksums sha256 aaaa\n} elseif {$b} {\n    checksums sha256 aaaa\n} else {\n    checksums sha256 bbbb\n}\n")
+	path := "/tree/aqua/LyX/Portfile"
+	declaration := macports.Declaration{Command: "checksums", Values: []string{"sha256", "aaaa"}, Frames: []macports.SourceFrame{{File: path, Line: 5, Command: "checksums sha256 aaaa"}}}
+	cmd, err := portfile.LocateDeclaration(src, path, declaration)
+	require.NoError(t, err)
+	line, _ := textedit.Position(src, cmd.Span.Start)
+	require.Equal(t, 5, line)
+
+	declaration.Frames[0].Line = 9
+	_, err = portfile.LocateDeclaration(src, path, declaration)
+	ambiguous := new(portfile.AmbiguousDeclaration)
+	require.ErrorAs(t, err, &ambiguous)
+	require.Len(t, ambiguous.Matches, 2)
+	require.ErrorIs(t, err, portfile.ErrUnsupported)
+	require.ErrorContains(t, err, "declaration source is ambiguous (2 matches)")
+}

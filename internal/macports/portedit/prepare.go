@@ -286,7 +286,7 @@ func (s *Service) prepare(ctx context.Context, request Request, input *sourceInp
 	if request.Action == model.EditChecksums {
 		return s.prepareChecksums(ctx, request, input)
 	}
-	revised, err := portfile.BumpRevision(input.data, input.target.Subport, input.info.Revision)
+	revised, err := s.bumpRevision(ctx, input, input.data, input.info.Revision)
 	if err != nil {
 		return Result{}, err
 	}

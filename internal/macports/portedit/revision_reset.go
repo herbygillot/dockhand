@@ -2,6 +2,7 @@ package portedit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -86,4 +87,40 @@ func revisionReset(contents []byte, path string, info macports.PortInfo, events 
 		return textedit.Edit{}, fmt.Errorf("%w: revision is calculated or overridden", ErrUnsupported)
 	}
 	return textedit.Edit{}, fmt.Errorf("%w: nonzero revision has no editable declaration", ErrUnsupported)
+}
+
+// bumpRevision raises the target's revision from current in contents:
+// where the Portfile's text has one place to bump (portfile.BumpRevision),
+// there; else where the probe finds it, the one literal of the revision's
+// value that, raised, raises the target's evaluated revision and so sets
+// it, as LyX's is set in each branch of an if, refused as "nonzero
+// revision is set outside the supported scope" (the roadmap's v0.5.0 part
+// 3, step 2). The evaluated edit is held to the raise, as any revbump is.
+func (s *Service) bumpRevision(ctx context.Context, input *sourceInput, contents []byte, current int) ([]byte, error) {
+	bumped, err := portfile.BumpRevision(contents, input.target.Subport, current)
+	if err == nil || !errors.Is(err, portfile.ErrUnsupported) {
+		return bumped, err
+	}
+	next := strconv.Itoa(current + 1)
+	var found [][]byte
+	for _, span := range portfile.RevisionCandidates(contents, current) {
+		probe, applyErr := textedit.Apply(contents, []textedit.Edit{{Span: span, New: []byte(next)}})
+		if applyErr != nil {
+			continue
+		}
+		evaluated, evalErr := s.evaluateCandidate(ctx, input, probe)
+		if evalErr != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		if after, ok := evaluated.after.Ports[input.target.Name]; ok && after.Revision == current+1 {
+			found = append(found, probe)
+		}
+	}
+	if len(found) != 1 {
+		return nil, err
+	}
+	return found[0], nil
 }

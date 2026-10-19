@@ -15,6 +15,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 type archiveContext struct {
@@ -72,7 +74,13 @@ func (s *Service) bindArchivesOn(ctx context.Context, input *sourceInput, conten
 	if err := distfetch.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
 		return distfiles.Binding{}, err
 	}
-	binding, err := distfiles.Bind(contents, input.portfileIn(observed.Snapshot.Root), info, port)
+	var resolve distfiles.Resolver
+	if here {
+		resolve = func(matches []syntax.Command) (syntax.Command, error) {
+			return s.locateChecksums(ctx, input, contents, info, matches)
+		}
+	}
+	binding, err := distfiles.BindResolving(contents, input.portfileIn(observed.Snapshot.Root), info, port, resolve)
 	if err == nil && len(binding.Artifacts) == 0 {
 		err = fmt.Errorf("%w; select a release subport when this is a metaport", errFetchesNothing)
 	}
@@ -254,4 +262,56 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		return nil, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
 	}
 	return plan, nil
+}
+
+// locateChecksums is the probe's answer to a checksums declaration whose
+// text several commands share, as LyX's two blocks of the same words in
+// two branches: each match's first digest is changed, and the one whose
+// change moves the target's evaluated checksums is the one that ran. One
+// that none, or more than one, moves stays ambiguous, as the text said
+// (the roadmap's v0.5.0 part 3, step 2). It evaluates this Mac's context.
+func (s *Service) locateChecksums(ctx context.Context, input *sourceInput, contents []byte, info macports.PortInfo, matches []syntax.Command) (syntax.Command, error) {
+	var moved []syntax.Command
+	for _, cmd := range matches {
+		span, ok := firstDigest(contents, cmd)
+		if !ok {
+			continue
+		}
+		digest := span.Text(contents)
+		changed := digest[:len(digest)-1] + map[bool]string{true: "1", false: "0"}[digest[len(digest)-1] == '0']
+		probe, err := textedit.Apply(contents, []textedit.Edit{{Span: span, New: []byte(changed)}})
+		if err != nil {
+			continue
+		}
+		evaluated, err := s.evaluateCandidate(ctx, input, probe)
+		if err != nil {
+			if ctx.Err() != nil {
+				return syntax.Command{}, ctx.Err()
+			}
+			continue
+		}
+		if after, ok := evaluated.after.Ports[input.target.Name]; ok && after.Options["checksums"] != info.Options["checksums"] {
+			moved = append(moved, cmd)
+		}
+	}
+	if len(moved) != 1 {
+		return syntax.Command{}, &portfile.AmbiguousDeclaration{Matches: matches}
+	}
+	return moved[0], nil
+}
+
+// firstDigest is the first checksum value a checksums command writes
+// literally, after its algorithm.
+func firstDigest(src []byte, cmd syntax.Command) (textedit.Span, bool) {
+	for i := 1; i+1 < len(cmd.Words); i++ {
+		kind, ok := cmd.Words[i].Literal(src)
+		if !ok || !portfile.IsChecksumKind(kind) {
+			continue
+		}
+		value, ok := cmd.Words[i+1].Literal(src)
+		if ok && len(value) >= 8 && !cmd.Words[i+1].Expand {
+			return cmd.Words[i+1].Span, true
+		}
+	}
+	return textedit.Span{}, false
 }

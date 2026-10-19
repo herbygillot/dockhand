@@ -81,14 +81,47 @@ func LocateDeclaration(src []byte, path string, declaration macports.Declaration
 			}
 		}
 	}
+	// Of commands of the same text, the one a frame of this file places
+	// is the one that ran: LyX's two blocks of the same checksums, in two
+	// branches of an if, each on its own line (the roadmap's v0.5.0 part
+	// 3, step 2).
+	if len(matches) > 1 {
+		var placed []syntax.Command
+		for _, cmd := range matches {
+			line, _ := textedit.Position(src, cmd.Span.Start)
+			for _, frame := range declaration.Frames {
+				if filepath.Clean(frame.File) == filepath.Clean(path) && frame.Line == line && sourceCommand(frame.Command) == sourceCommand(cmd.Span.Text(src)) {
+					placed = append(placed, cmd)
+					break
+				}
+			}
+		}
+		if len(placed) == 1 {
+			return placed[0], nil
+		}
+	}
 	switch len(matches) {
 	case 0:
 		return syntax.Command{}, fmt.Errorf("%w: no command written in the Portfile makes it, as an eval'd one isn't", ErrUnsupported)
 	case 1:
 		return matches[0], nil
 	}
-	return syntax.Command{}, fmt.Errorf("%w: declaration source is ambiguous (%d matches)", ErrUnsupported, len(matches))
+	return syntax.Command{}, &AmbiguousDeclaration{Matches: matches}
 }
+
+// AmbiguousDeclaration is a declaration more than one command in the
+// Portfile could have made, by their text, as LyX's two checksums blocks
+// of the same words in two branches: which one ran is for an evaluation
+// to say (portedit's probe), not the text.
+type AmbiguousDeclaration struct {
+	Matches []syntax.Command
+}
+
+func (a *AmbiguousDeclaration) Error() string {
+	return fmt.Sprintf("%v: declaration source is ambiguous (%d matches)", ErrUnsupported, len(a.Matches))
+}
+
+func (a *AmbiguousDeclaration) Unwrap() error { return ErrUnsupported }
 
 // locateInVariant finds a declaration a variant's body makes. MacPorts
 // runs the body as a procedure it builds from the body's text, so Tcl

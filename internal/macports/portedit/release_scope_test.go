@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/stretchr/testify/require"
 )
 
@@ -72,8 +71,12 @@ if {${subport} eq "fixture-b"} {
 `)
 	r.Selection = macports.Selection{Selector: "devel/fixture/Portfile", Subport: "fixture-a"}
 	r.SharedRelease = true
+	// Each subport's checksums are located, by the frame's line, and
+	// fixture-b's are its own, which a shared release can't prove it moves
+	// alike: refused, before anything is fetched.
 	_, err := s.Prepare(t.Context(), r)
-	require.ErrorIs(t, err, portfile.ErrUnsupported)
+	require.ErrorIs(t, err, ErrFidelity)
+	require.ErrorContains(t, err, "fixture-b has independently owned source/checksum declarations")
 	require.Empty(t, *requests)
 }
 
