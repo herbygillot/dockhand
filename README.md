@@ -234,6 +234,27 @@ dockhand serve --install
 
 New Portfiles include `# dockhand: unconfirmed` markers for inferred values. Review and correct those fields, then remove the markers before submitting. For Go and Rust version updates, prefer `update` over editing the version and running `checksums`: `checksums` alone does not regenerate dependency lists.
 
+## Known issues in v0.4.0
+
+Each is rough, harms nothing a look wouldn't catch, and has a workaround. Most are planned for v0.5.0, and the last four are fixed on `main` already.
+
+- `check` builds on this Mac's release unless told otherwise, `build.default`'s `host`, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--build macports-ci` checks on all three, and `build.default = "macports-ci"` makes it the default.
+- A Go port whose module moved hosts, as pomo moved from GitHub to Codeberg, is planned without naming the move. Compare the new release's `go.mod` module path with the Portfile's before `tidy`.
+- Subports that share a Portfile but differ beyond what dockhand reads, such as py-lmdb's, can get a planned edit that needs a person's look. Read `dockhand diff` before `tidy`.
+- A revision that changes only a patch's contents, keeping its name, reads as fetching the base's source, so the upstream assessment compares nothing for it, that patch included. A check still applies it, and fails where it doesn't apply, so check after editing a patch.
+- A Rust or Go port whose version you edit by hand keeps its old `cargo.crates` or `go.vendors`: `checksums` refreshes only its own archives' checksums. `dockhand update <port> <version>` regenerates them; undo the hand edit first.
+- A batch of submits, with serve watching their pull requests, can spend GitHub's hourly limit of requests; dockhand says when it lifts.
+- On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first Tart check of a Rust or Go port there builds rust and cargo, or go, from source: hours on a VM's two cores. The check says so before it builds, and a later check installs them from the archives dockhand kept, until cleanup forgets them. Check such a port first on the previous release, `--on tahoe`, or let the first check run.
+- `update` doesn't say when the new version no longer fetches an archive the old one did, such as a vendored crate it dropped; the Portfile keeps the old checksum lines. Read `dockhand diff` before `tidy`.
+- A fetch during `update` that a server refuses, as a 404 does, holds the branch until a file in it is edited, even once the archive is served again; a rate limit, an outage, or mirrors not yet carrying a release are fetched again at the next look. Editing a file in the port's directory releases it.
+- `logs` of a running check says it recorded no log until the target ends. `status` and `wait` show the port it's building and MacPorts' phase meanwhile.
+- `serve` has printed a check's "passed" line twice once (check-130). It hasn't recurred, and it changes nothing but the output.
+- `create` for a Go module older than go 1.17, whose go.sum names modules its go.mod doesn't, writes a draft with zero checksums and exits 0. Its `checksums_problem` names each row to add to `go.vendors`, with its lock; add them, with the checksums `port -v checksum` reports, before checking.
+- An update whose license file keeps its licenses but gains labels, copyright lines, or terms of its own, as libxkbcommon 1.13.2's did, holds, saying the file "now reads as no license that's known". Read the license file's change with `dockhand diff --source`, then `dockhand submit --branch <name>` after a look. Fixed on `main` for v0.5.0: the hold names the licenses found and quotes the added terms, and labels and copyright lines no longer count.
+- While a baseline of a passed check runs, `status` says the branch is checking, and `serve` and `ship --passing` wait to submit it. Let the baseline finish, or submit with `dockhand submit --branch <name>`. Fixed on `main` for v0.5.0.
+- An update whose configure.ac names a library through a shell variable, as GraphicsMagick 1.3.49's `AC_CHECK_LIB([$zstd], ...)` does, says that library was removed. Read configure.ac's change with `dockhand diff --source` before submitting after a look. Fixed on `main` for v0.5.0.
+- A failed check offers `check --baseline` for tests the branch adds and master doesn't run, where a baseline has nothing to compare. Skip the hint where the branch adds the port's tests. Fixed on `main` for v0.5.0.
+
 ## Scope
 
 Dockhand currently supports updating GitHub-hosted Go and Rust ports, individually and in batches. Other port types, shared subport releases, library rebuilds, and variant-by-variant checks are outside the supported scope. They may work, but require closer review of plans and diffs. If Dockhand cannot prepare an edit automatically, it explains the limitation and any manual steps available.
