@@ -102,6 +102,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 	cmd.Flags().Lookup("port").Usage = "show the branches touching this port: the one in detail, or several listed"
 	cmd.Flags().BoolVar(&watch, "watch", false, "keep status current as serve works, until q or Ctrl-C")
 	cmd.Flags().BoolVar(&plain, "plain", false, "with --watch, print events as lines, not a view that redraws")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -478,7 +479,7 @@ func checkState(s engine.BranchStatus) string {
 	case engine.CheckStopped:
 		return fmt.Sprintf("stopped (%s)", s.Stopped.Name())
 	case engine.Checking:
-		run := s.Active[len(s.Active)-1]
+		run := *s.Checking()
 		return fmt.Sprintf("%s (%s)", run.State, run.Name())
 	case engine.NotChecked:
 		return "—"

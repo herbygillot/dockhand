@@ -151,7 +151,7 @@ func fileStrings(files *token.FileSet, file *ast.File) map[string]string {
 		built := builtStrings{commands: map[string]string{}}
 		ast.Inspect(decl, func(node ast.Node) bool {
 			text, ok := built.collect(node)
-			if ok && strings.Contains(text, "dockhand ") {
+			if ok && (strings.Contains(text, "dockhand ") || bareCommand.MatchString(text)) {
 				strs[files.Position(node.Pos()).String()] = text
 			}
 			return true
@@ -290,6 +290,14 @@ var verb = regexp.MustCompile(`%[-+# 0-9.*]*[a-zA-Z%]`)
 // with"), whose flags are still checked where it does name one.
 func referenceProblems(root *cobra.Command, text string, code bool) []string {
 	var problems []string
+	if !code {
+		text = bareCommand.ReplaceAllStringFunc(text, func(line string) string {
+			if child, _, err := root.Find(strings.Fields(line)[:1]); err == nil && child != root {
+				return "dockhand " + line
+			}
+			return line
+		})
+	}
 	for _, at := range named.FindAllStringSubmatchIndex(text, -1) {
 		match := []string{text[at[0]:at[1]], text[at[2]:at[3]]}
 		offered := code || offering.MatchString(text[:at[0]])
@@ -330,6 +338,13 @@ var named = regexp.MustCompile(`\bdockhand((?: +[^ \n,;|()"` + "`" + `]+)*)`)
 
 var commandWord = regexp.MustCompile(`^[a-z][a-z-]*$`)
 
+// bareCommand is a line of prose that starts with a command and a flag,
+// without "dockhand", as outdated's help offered "update --outdated
+// --mine" after --outdated had gone (the architecture review of 5897a82,
+// R3-27); where its first word names one of dockhand's commands, it's
+// read as one.
+var bareCommand = regexp.MustCompile(`(?m)^[a-z][a-z-]* +-`)
+
 // flagName is a word's long or short flag, as --name, --name=value, or -x.
 func flagName(word string) (long, short string) {
 	switch {
@@ -366,6 +381,8 @@ func TestReferenceProblems(t *testing.T) {
 		referenceProblems(root, "dockhand providers setup tart\ndockhand check -b jq --frobnicate\ndockhand setup tart -q", true))
 	require.Equal(t, []string{"dockhand auth names no command", "dockhand status has no --everything"},
 		referenceProblems(root, "run dockhand auth login, then dockhand status --everything", false))
+	require.Equal(t, []string{"dockhand update has no --outdated"},
+		referenceProblems(root, "Lists the ports.\n\nupdate --outdated --mine starts on them.\nport -v installs", false))
 	require.Empty(t, referenceProblems(root, "what dockhand runs with; dockhand can't. --on says where (dockhand built jq with +doc); Next: dockhand check -b jq --on tart:26", false))
 }
 

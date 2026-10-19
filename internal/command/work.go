@@ -54,6 +54,7 @@ one older than 2.40, which rebase needs.`,
 	cmd.Flags().StringVar(&worktrees, "worktrees", "", "keep branch worktrees in this directory, and remember it")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept the defaults, and offer nothing")
 	cmd.AddCommand(setupTartCommand(s, streams), setupGitHubCommand(streams))
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -237,6 +238,7 @@ tracked files.`,
 	}
 	cmd.Flags().BoolVar(&here, "here", false, "create the branch in this checkout instead of its own worktree")
 	cmd.Flags().StringArrayVar(&ports, "port", nil, "bring this port's directory into the worktree; more than one may be given")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -295,6 +297,7 @@ edit and you have write access, and never rewrites their description.`,
 		},
 	}
 	cmd.Flags().IntVar(&pr, "pr", 0, "bring someone's pull request, by number, into a branch of its own")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -376,6 +379,7 @@ any, the branch checked out here.`,
 		},
 	}
 	where.register(cmd, s, "print the directory of")
+	supportsJSON(cmd)
 	return cmd
 }
 

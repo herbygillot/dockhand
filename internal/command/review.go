@@ -136,6 +136,7 @@ commits, and its files are as they were when it was saved.`,
 	cmd.MarkFlagsMutuallyExclusive("apply", "group")
 	cmd.MarkFlagsMutuallyExclusive("apply", "branch")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "apply the plan as shown, without asking; a plan made only of dockhand's own edits applies without it")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -422,6 +423,7 @@ checked out here.`,
 		},
 	}
 	where.register(cmd, s, "undo in")
+	supportsJSON(cmd)
 	return cmd
 }
 

@@ -78,6 +78,7 @@ MacPorts' distfiles mirror.`,
 	where.register(cmd, s, "show")
 	cmd.Flags().BoolVar(&stat, "stat", false, "list the changed files, not the patch")
 	cmd.Flags().BoolVar(&archives, "source", false, "compare what the ports' source archives hold, not the Portfiles")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -241,6 +242,7 @@ some against the branch.`,
 		},
 	}
 	where.register(cmd, s, "show")
+	supportsJSON(cmd)
 	return cmd
 }
 

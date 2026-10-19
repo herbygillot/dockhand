@@ -45,7 +45,8 @@ type BranchStatus struct {
 	Tree string
 	// Latest is the check status judges by: the newest finished check of
 	// the files as they are now, as submit credits one, else the newest
-	// finished check. Active is any check queued or running.
+	// finished check. Active is every run queued or running, baselines
+	// and runs asked to stop among them; Checking is the branch's check.
 	Latest   *model.Run
 	Active   []model.Run
 	Evidence *Evidence
@@ -174,12 +175,25 @@ const (
 	CheckAttention
 )
 
+// Checking is the branch's one check queued or running (Run.BranchCheck),
+// nil while there's none, whatever baseline or stopping run is active: a
+// baseline of a passed check left the branch Checking, and serve waiting
+// on it, where ActiveCheck said there was none.
+func (s BranchStatus) Checking() *model.Run {
+	for i := len(s.Active) - 1; i >= 0; i-- {
+		if s.Active[i].BranchCheck() {
+			return &s.Active[i]
+		}
+	}
+	return nil
+}
+
 // CheckStanding judges the branch's checks.
 func (s BranchStatus) CheckStanding() CheckStanding {
 	switch {
 	case s.Stopped != nil:
 		return CheckStopped
-	case len(s.Active) > 0:
+	case s.Checking() != nil:
 		return Checking
 	case s.Latest == nil:
 		return NotChecked

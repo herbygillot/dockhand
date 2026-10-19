@@ -118,6 +118,7 @@ pull requests, and ship takes a port's update as far as --to says.`,
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&mine, "mine", false, "update each of your ports with a newer release, in a branch of its own (config maintainer)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --mine, start the branches without asking")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -241,6 +242,7 @@ none is open, and exits 3 where any doesn't.`,
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&keepRevision, "no-revbump", false, "for a stealth update, leave the revision as it is")
+	supportsJSON(cmd)
 	return cmd
 }
 

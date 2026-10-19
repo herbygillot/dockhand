@@ -207,6 +207,7 @@ true, it runs that baseline by itself.`,
 	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
 	cmd.MarkFlagsMutuallyExclusive("build", "on")
 	cmd.MarkFlagsMutuallyExclusive("head", "staged", "working-tree")
+	supportsJSON(cmd)
 	return cmd
 }
 

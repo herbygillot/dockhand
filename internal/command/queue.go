@@ -113,6 +113,7 @@ the check runs here, as a foreground check would.`,
 		},
 	}
 	where.register(cmd, s, "follow the latest check of")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -164,6 +165,7 @@ branch, for its latest check from anywhere.`,
 		},
 	}
 	where.register(cmd, s, "stop the latest check of")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -285,6 +287,7 @@ log.`,
 	}
 	where.register(cmd, s, "show the latest check of")
 	cmd.Flags().BoolVar(&full, "full", false, "with a port, print the whole log")
+	supportsJSON(cmd)
 	return cmd
 }
 

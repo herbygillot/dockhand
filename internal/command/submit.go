@@ -140,6 +140,7 @@ kept.
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "submit without asking, when there is no terminal")
 	cmd.MarkFlagsMutuallyExclusive("draft", "no-check")
 	cmd.MarkFlagsMutuallyExclusive("draft", "ready")
+	supportsJSON(cmd)
 	return cmd
 }
 

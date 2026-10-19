@@ -71,6 +71,12 @@ type Run struct {
 	BaselineOf RunID
 }
 
+// BranchCheck reports whether r, queued or running, is the branch's one
+// check (decision 29): a baseline looks beside the check it explains, and
+// a run asked to stop is on its way out, so neither is. The queue, the
+// check a new one would replace, and the branch's standing all read it.
+func (r Run) BranchCheck() bool { return r.BaselineOf == "" && r.CancelRequested == nil }
+
 // Name is how people refer to a run.
 func (r Run) Name() string { return fmt.Sprintf("check-%d", r.Number) }
 

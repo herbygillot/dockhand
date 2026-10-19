@@ -48,7 +48,7 @@ func (e *Engine) ActiveCheck(ctx context.Context, session *coord.Session, branch
 	if err != nil {
 		return nil, nil, err
 	}
-	runs = slices.DeleteFunc(runs, func(run model.Run) bool { return run.BaselineOf != "" || run.CancelRequested != nil })
+	runs = slices.DeleteFunc(runs, func(run model.Run) bool { return !run.BranchCheck() })
 	if len(runs) == 0 {
 		return nil, nil, nil
 	}
@@ -96,13 +96,13 @@ func (e *Engine) enqueue(ctx context.Context, branch model.Branch, plan model.Pl
 // a baseline, which looks beside the check it explains, is refused while
 // another of the branch's is queued or running and not asked to stop.
 func (e *Engine) queue(tx store.Tx, run model.Run, why string) (model.Run, error) {
-	if run.BaselineOf == "" {
+	if run.BranchCheck() {
 		active, err := tx.Runs(store.RunFilter{Branch: run.Branch, States: []model.RunState{model.RunQueued, model.RunRunning}})
 		if err != nil {
 			return run, err
 		}
 		for _, other := range active {
-			if other.BaselineOf != "" || other.CancelRequested != nil {
+			if !other.BranchCheck() {
 				continue
 			}
 			checking, err := tx.Revision(other.Revision)

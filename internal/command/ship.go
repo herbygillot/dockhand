@@ -120,6 +120,7 @@ says whether any went through: 1 where none did, 3 where some need a look.`,
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "ship without asking, holding where serve would")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the plan and change nothing")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
+	supportsJSON(cmd)
 	return cmd
 }
 

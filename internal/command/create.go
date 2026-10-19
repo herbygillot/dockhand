@@ -201,6 +201,7 @@ its go-get answer.`,
 	where.flags(cmd)
 	cmd.Flags().StringVar(&name, "name", "", "the port's name (default: the project's, in lower case)")
 	cmd.Flags().StringVar(&category, "category", "", "port category (prompts in a terminal; otherwise uses a marked guess)")
+	supportsJSON(cmd)
 	return cmd
 }
 

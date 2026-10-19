@@ -76,5 +76,6 @@ dockhand can't. The check builds where build.unattended's profile says;
 	}
 	version.flags(cmd)
 	version.stageFlags(cmd)
+	supportsJSON(cmd)
 	return cmd
 }

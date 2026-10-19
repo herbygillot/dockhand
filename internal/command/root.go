@@ -259,15 +259,6 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		command.GroupID = "occasional"
 		root.AddCommand(command)
 	}
-	// The commands whose results --json reports; any other refuses it.
-	for _, command := range root.Commands() {
-		switch command.Name() {
-		case "status", "path", "diff", "impact", "check", "retry", "wait", "queue", "config", "setup",
-			"start", "adopt", "ship", "bump", "update", "checksums", "revbump", "create", "edit", "tidy", "submit", "rebase", "review",
-			"cancel", "logs", "undo", "archive", "clean", "explain", "outdated":
-			supportsJSON(command)
-		}
-	}
 	if inspectRoot != nil {
 		inspectRoot(root)
 	}

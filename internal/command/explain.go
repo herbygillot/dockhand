@@ -11,7 +11,7 @@ import (
 )
 
 func explainCommand(streams Streams) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "explain [code]",
 		Short: "Say what a commit rule asks, and where MacPorts asks it",
 		Long: `Explains a finding's code, the word in brackets at the end of a tidy or
@@ -52,4 +52,6 @@ code, it lists them.`,
 			return nil
 		},
 	}
+	supportsJSON(cmd)
+	return cmd
 }

@@ -23,7 +23,7 @@ type configSetting struct {
 }
 
 func configCommand(s *settings, streams Streams) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show the settings in effect, and where each comes from",
 		Long: `Shows every setting dockhand reads from its configuration file, with the
@@ -134,6 +134,8 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			return nil
 		},
 	}
+	supportsJSON(cmd)
+	return cmd
 }
 
 // positive is a count the file sets, or empty for its default.

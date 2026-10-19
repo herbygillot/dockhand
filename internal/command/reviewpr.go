@@ -98,6 +98,7 @@ access. --markdown prints the text, for pasting.`,
 	cmd.Flags().BoolVar(&requestChanges, "request-changes", false, "post the review as a request for changes")
 	cmd.Flags().BoolVar(&markdown, "markdown", false, "print the review's text, for pasting, and post nothing")
 	cmd.MarkFlagsMutuallyExclusive("comment", "request-changes", "markdown")
+	supportsJSON(cmd)
 	return cmd
 }
 

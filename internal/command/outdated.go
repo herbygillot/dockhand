@@ -48,7 +48,8 @@ whose maintainers line names you (the config's maintainer), at MacPorts'
 master as fetched now. It lists the ports with newer releases, and counts
 the rest; --current lists every port, with why any couldn't be checked.
 
-update --outdated --mine starts on them.`,
+update --mine starts on them, a branch for each; ship --mine --to check
+checks them too.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -76,6 +77,7 @@ update --outdated --mine starts on them.`,
 	}
 	cmd.Flags().BoolVar(&mine, "mine", false, "the ports whose maintainers line names you (config maintainer)")
 	cmd.Flags().BoolVar(&all, "current", false, "list current ports and those that couldn't be checked too")
+	supportsJSON(cmd)
 	return cmd
 }
 

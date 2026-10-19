@@ -153,6 +153,7 @@ cancel stops a check. None means another.`,
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
 	_ = cmd.Flags().MarkHidden("automatic")
+	supportsJSON(cmd)
 	return cmd
 }
 

@@ -68,6 +68,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 	}
 	where.flags(cmd)
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "bring the port's files into the worktree and print the Portfile's path, opening no editor")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -145,6 +146,7 @@ since a rebuild has its own reason.`,
 	cmd.MarkFlagsMutuallyExclusive("branch", "new")
 	cmd.Flags().StringVar(&subject, "subject", "", "the reason, which becomes each commit's subject after the port's name")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edits and change nothing")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -208,6 +210,7 @@ anywhere.`,
 	}
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue it and return")
 	where.register(cmd, s, "repeat the latest check of")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -275,6 +278,7 @@ rebase that conflicts is abandoned with the branch as it was.`,
 		},
 	}
 	where.register(cmd, s, "rebase")
+	supportsJSON(cmd)
 	return cmd
 }
 
@@ -356,6 +360,7 @@ closes it.`,
 	cmd.Flags().BoolVar(&discard, "discard", false, "remove the worktree though it has uncommitted edits or untracked files, which go")
 	cmd.MarkFlagsMutuallyExclusive("keep-worktree", "discard")
 	where.register(cmd, s, "archive")
+	supportsJSON(cmd)
 	return cmd
 }
 
