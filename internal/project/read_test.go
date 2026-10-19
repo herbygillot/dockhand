@@ -354,6 +354,8 @@ func TestLabelsAndCopyrightLinesAreNoLicensesWords(t *testing.T) {
 	require.True(t, old.Known())
 	require.Greater(t, now.Percent, 70.0, "64.0% with the labels and copyright lines counted")
 	require.False(t, now.Known(), "its test data's own terms are no license known")
+	require.Contains(t, now.Terms, "This software may be used, modified, copied, distributed, and sold,", "the terms, to quote")
+	require.NotContains(t, now.Terms, "appear in the xkbcommon source tree, along with the SPDX short license", "the prose it opens with isn't terms")
 
 	mit := "Copyright (c) 2020 Ada\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n"
 	labeled := "SPDX full name: MIT License\nSPDX short identifier: MIT\nLicense text:\n\n" + strings.Repeat("Copyright (c) 2020 Someone Else\n", 12) + mit

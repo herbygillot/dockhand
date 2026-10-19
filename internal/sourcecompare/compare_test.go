@@ -1,6 +1,7 @@
 package sourcecompare
 
 import (
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -246,7 +247,8 @@ func TestALicenseChangeSaysWhatItsTextIs(t *testing.T) {
 	}
 	relicensed := compare(map[string]string{"LICENSE": mit}, map[string]string{"LICENSE": "Copyright (c) 2020 Ann Author\n\n" + testsupport.ISCText})
 	require.Equal(t, []string{"upstream's LICENSE was MIT, now ISC, by its text"}, messages(relicensed))
-	require.Equal(t, [2]project.LicenseText{{IDs: []string{"MIT"}, Percent: relicensed[0].Licenses[0].Percent}, {IDs: []string{"ISC"}, Percent: relicensed[0].Licenses[1].Percent}}, relicensed[0].Licenses)
+	require.Equal(t, []string{"MIT"}, relicensed[0].Licenses[0].IDs)
+	require.Equal(t, []string{"ISC"}, relicensed[0].Licenses[1].IDs)
 
 	require.Equal(t, []string{"upstream's LICENSE is still MIT by its text, and changed beside it"},
 		messages(compare(map[string]string{"LICENSE": mit}, map[string]string{"LICENSE": strings.Replace(mit, "Ann Author", "Bea Builder", 1)})))
@@ -257,6 +259,25 @@ func TestALicenseChangeSaysWhatItsTextIs(t *testing.T) {
 		messages(compare(map[string]string{"LICENSE": mit}, map[string]string{"LICENSE": mit, "LICENSE-ISC": testsupport.ISCText})))
 	require.Equal(t, []string{"upstream's LICENSE changed, and now reads as MIT"},
 		messages(compare(map[string]string{"LICENSE": "All rights reserved.\n"}, map[string]string{"LICENSE": mit})))
+}
+
+// A license file whose licenses are the ones it had, but cover less of it,
+// names them and quotes the terms it adds: libxkbcommon 1.13.2's hold said
+// its LICENSE "now reads as no license that's known", where it's still
+// MIT, HPND, and HPND-sell-variant and adds Anton Zinoviev's terms for its
+// test data (prioritization's ruling, 2026-10-19).
+func TestALicenseThatAddsTermsQuotesThem(t *testing.T) {
+	read := func(version string) string {
+		data, err := os.ReadFile("../project/testdata/xkbcommon-" + version + "-LICENSE")
+		require.NoError(t, err)
+		return string(data)
+	}
+	changes, err := compareArchives(t, testsupport.Tarball(t, "libxkbcommon-1.7.0", map[string]string{"LICENSE": read("1.7.0")}),
+		testsupport.Tarball(t, "libxkbcommon-1.13.2", map[string]string{"LICENSE": read("1.13.2")}), Versions{})
+	require.NoError(t, err)
+	require.Len(t, changes, 1)
+	require.Equal(t, `upstream's LICENSE is still MIT, HPND and HPND-sell-variant by what its text matches, and adds terms no license that's known has: "This software may be used, modified, copied, distributed, and sold"`,
+		changes[0].Message)
 }
 
 // A CMakeLists.txt change that holds says where else it changed, by the

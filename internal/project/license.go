@@ -19,6 +19,11 @@ type LicenseText struct {
 	// Percent is how much of the text, by its words, the licenses found
 	// cover.
 	Percent float64
+	// Terms are the first line, trimmed, of each paragraph no license
+	// found covers that comes after a copyright line or a label: the terms
+	// of its own a file grants beside its licenses, to quote, apart from
+	// the prose about them a file of several opens with.
+	Terms []string
 }
 
 // wholeText is how much of a license file's text the licenses found must
@@ -39,7 +44,8 @@ func (f File) License() LicenseText {
 		return LicenseText{}
 	}
 	coverage := licensecheck.Scan(f.Data)
-	text := LicenseText{Percent: coveredWords(f.Data, coverage)}
+	percent, terms := coveredWords(f.Data, coverage)
+	text := LicenseText{Percent: percent, Terms: terms}
 	for _, match := range coverage.Match {
 		if !match.IsURL && !slices.Contains(text.IDs, match.ID) {
 			text.IDs = append(text.IDs, match.ID)
@@ -51,8 +57,9 @@ func (f File) License() LicenseText {
 // coveredWords is how much of a license file's words the licenses found
 // cover, leaving out the copyright lines and license labels no license's
 // match takes in: a template takes in a copyright line above its text, and
-// the ones beside it, and the labels, are no license's words.
-func coveredWords(data []byte, coverage licensecheck.Coverage) float64 {
+// the ones beside it, and the labels, are no license's words. The terms
+// beside them are said too (LicenseText.Terms).
+func coveredWords(data []byte, coverage licensecheck.Coverage) (float64, []string) {
 	inMatch := func(start, end int) bool {
 		for _, match := range coverage.Match {
 			if start < match.End && end > match.Start {
@@ -66,19 +73,41 @@ func coveredWords(data []byte, coverage licensecheck.Coverage) float64 {
 		matched += len(strings.Fields(string(data[match.Start:match.End])))
 	}
 	total, offset := 0, 0
+	var terms []string
+	// after is whether the last line that wasn't blank was a copyright
+	// line or a label; opening is a paragraph's first line, while none of
+	// its lines is a match's.
+	after, opening, uncovered := false, "", false
 	for _, line := range strings.SplitAfter(string(data), "\n") {
 		start, end := offset, offset+len(line)
 		offset = end
-		words := len(strings.Fields(line))
-		if labelLine(line) && !inMatch(start, end) {
+		covered := inMatch(start, end)
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "":
+			if uncovered && opening != "" {
+				terms = append(terms, opening)
+			}
+			opening, uncovered = "", false
 			continue
+		case labelLine(line) && !covered:
+			after, opening, uncovered = true, "", false
+			continue
+		case opening == "" && !uncovered && after:
+			opening, uncovered = trimmed, !covered
+		case covered:
+			uncovered = false
 		}
-		total += words
+		after = false
+		total += len(strings.Fields(line))
+	}
+	if uncovered && opening != "" {
+		terms = append(terms, opening)
 	}
 	if total == 0 {
-		return 0
+		return 0, terms
 	}
-	return min(100, 100*float64(matched)/float64(total))
+	return min(100, 100*float64(matched)/float64(total)), terms
 }
 
 // labelLine reports a copyright line, or a label heading a license in a
@@ -104,9 +133,13 @@ func (t LicenseText) Same(other LicenseText) bool {
 	return slices.Equal(slices.Sorted(slices.Values(t.IDs)), slices.Sorted(slices.Values(other.IDs)))
 }
 
-// String names the licenses: "MIT", "MIT and ISC".
+// String names the licenses: "MIT", "MIT and ISC", "MIT, HPND and
+// HPND-sell-variant".
 func (t LicenseText) String() string {
-	return strings.Join(t.IDs, " and ")
+	if len(t.IDs) < 3 {
+		return strings.Join(t.IDs, " and ")
+	}
+	return strings.Join(t.IDs[:len(t.IDs)-1], ", ") + " and " + t.IDs[len(t.IDs)-1]
 }
 
 // LicenseExpression is an SPDX license expression as its specification

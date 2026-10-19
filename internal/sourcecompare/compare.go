@@ -270,6 +270,15 @@ func licenseWords(change Change, old, now []byte) string {
 		return fmt.Sprintf("is still %s by its text, and only drops text beside it, %s", is, dropped)
 	case was.Known() && is.Known():
 		return fmt.Sprintf("is still %s by its text, and changed beside it", is)
+	case was.Known() && was.Same(is):
+		// The licenses are the ones it had, and less of the text is theirs:
+		// libxkbcommon 1.13.2 added Anton Zinoviev's terms for its test
+		// data, and its hold said no license was known (prioritization's
+		// ruling, 2026-10-19).
+		if added := addedTerms(old, is); added != "" {
+			return fmt.Sprintf("is still %s by what its text matches, and adds terms no license that's known has: %q", is, added)
+		}
+		return fmt.Sprintf("is still %s by what its text matches, and they cover less of it, %.0f%% of its words", is, is.Percent)
 	case was.Known():
 		return fmt.Sprintf("was %s by its text, and now reads as no license that's known", was)
 	case is.Known():
@@ -278,6 +287,22 @@ func licenseWords(change Change, old, now []byte) string {
 		return "only drops text, " + dropped
 	}
 	return "changed"
+}
+
+// addedTerms is the first line of the terms a license file's new text has
+// beside its licenses (project.LicenseText.Terms) that the old text
+// didn't, as a quote. Empty where there's none.
+func addedTerms(old []byte, now project.LicenseText) string {
+	had := map[string]bool{}
+	for _, line := range strings.Split(string(old), "\n") {
+		had[strings.TrimSpace(line)] = true
+	}
+	for _, line := range now.Terms {
+		if !had[line] {
+			return strings.TrimRight(line, ",.;:")
+		}
+	}
+	return ""
 }
 
 // movedAside is the most lines of license text that may go, beside what
