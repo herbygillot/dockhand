@@ -106,6 +106,11 @@ func redirecting(client *http.Client) *http.Client {
 		if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
 			return fmt.Errorf("fetch: redirect downgraded HTTPS")
 		}
+		// No Referer, as curl and MacPorts' fetch send none on a
+		// redirect: Go adds the address redirected from, and SourceForge
+		// answers a request with one with its HTML download page, not the
+		// mirror's file (libpng and five more, field testing at 6dd7745c).
+		req.Header.Del("Referer")
 		if client.CheckRedirect != nil {
 			return client.CheckRedirect(req, via)
 		}

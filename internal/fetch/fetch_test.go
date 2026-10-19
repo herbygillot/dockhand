@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -178,4 +179,28 @@ func TestAFailureWorthTryingAgain(t *testing.T) {
 	} {
 		require.Equal(t, again, Transient(err), err.Error())
 	}
+}
+
+// A redirect is followed with no Referer, as curl and MacPorts' fetch
+// follow one: SourceForge answers a request carrying the address it was
+// redirected from with its HTML download page, not the file (libpng and
+// five more, field testing at 6dd7745c).
+func TestARedirectSendsNoReferer(t *testing.T) {
+	t.Parallel()
+	var referer atomic.Value
+	file := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		referer.Store(r.Header.Get("Referer"))
+		_, _ = w.Write([]byte("archive"))
+	}))
+	defer file.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, file.URL+"/libpng-1.6.59.tar.xz", http.StatusFound)
+	}))
+	defer redirect.Close()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, redirect.URL+"/project/libpng/libpng-1.6.59.tar.xz", nil)
+	require.NoError(t, err)
+	response, err := Open(redirect.Client(), req, 1<<20)
+	require.NoError(t, err)
+	response.Body.Close()
+	require.Equal(t, "", referer.Load())
 }
