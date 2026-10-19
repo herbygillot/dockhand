@@ -225,6 +225,26 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	require.Equal(t, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")), fake.ForkHead("dockhand/jq-update"))
+
+	// Made from what they pushed, as theirs amended in turn, which
+	// MacPorts' one commit a change asks for, it goes too: the branch was
+	// at their commit (#35220, the Vx language port session at a0470412).
+	testsupport.Git(t, other, "pull", "-q", "--rebase=false", "origin", "dockhand/jq-update")
+	write(t, other, map[string]string{"README": "theirs, again\n"})
+	testsupport.Git(t, other, "commit", "-q", "-am", "their second change")
+	testsupport.Git(t, other, "push", "-q", "origin", "dockhand/jq-update")
+	again := strings.TrimSpace(testsupport.Git(t, other, "rev-parse", "HEAD"))
+	testsupport.Git(t, branch.Worktree, "fetch", "-q", fake.Fork, "dockhand/jq-update")
+	testsupport.Git(t, branch.Worktree, "reset", "-q", "--hard", again)
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# amended over theirs\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-a", "--amend", "-m", "jq: amended from theirs")
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.True(t, plan.Replaces, "the amend replaces their commit")
+	require.Empty(t, plan.Blocking, "made from it, as the branch's reflog shows")
+	_, err = e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	require.Equal(t, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")), fake.ForkHead("dockhand/jq-update"))
 }
 
 func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {

@@ -562,11 +562,18 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 			return err
 		}
 	}
-	// A commit built on what someone else pushed, as theirs amended on
-	// GitHub and yours on top of it, keeps their work: the push adds to the
-	// branch, leased to their commit, and goes (py-coremltools, #35220,
-	// field testing at 7a38bfff). One that would replace it holds.
+	// A commit built from what someone else pushed goes, leased to their
+	// commit: one on top of it, which keeps it beneath, or one made from it,
+	// as theirs amended in turn, which MacPorts' one commit a change asks
+	// for, where the branch's reflog shows it at their commit
+	// (py-coremltools, #35220, the Vx language port session at 7a38bfff
+	// and a0470412). One over a commit the branch was never at holds.
 	builtOn := plan.RemoteHead.Exists && model.ObjectID(plan.RemoteHead.Object) == pr.RemoteHead && !plan.Replaces
+	if !builtOn && plan.RemoteHead.Exists && model.ObjectID(plan.RemoteHead.Object) == pr.RemoteHead {
+		if builtOn, err = worktree.BranchWasAt(ctx, plan.Branch.Name, string(pr.RemoteHead)); err != nil {
+			return err
+		}
+	}
 	if last := plan.Branch.PullRequest; last != nil && last.Pushed != "" && pr.RemoteHead != last.Pushed && string(pr.RemoteHead) != plan.Commit && !builtOn {
 		plan.OthersPushed = pr.RemoteHead
 		plan.Blocking = append(plan.Blocking, fmt.Sprintf("someone else pushed to #%d: it is at %s, and dockhand last pushed %s. Fetch it (git fetch %s %s) and compare; a commit built on it, as one made after git reset --hard %s, submits, and nothing will be pushed over it",

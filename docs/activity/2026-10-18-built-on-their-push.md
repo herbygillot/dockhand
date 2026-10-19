@@ -16,3 +16,15 @@ as after `git reset --hard <theirs>`. No `--over <sha>` flag: building on
 theirs is the case that keeps their work, and the one a flag would add,
 pushing over it, is what the hold is for.
 TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription's last step.
+
+## Made from their push, amended (2026-10-18)
+
+The Vx session's commit didn't descend from theirs: it reset to 9d02a34
+and amended it, the one commit a change MacPorts asks for, so a0470412
+still read the push as replacing their commit, and a commit on top would
+be replaced again by tidy's squash. A push that replaces their commit now
+goes too where the branch's reflog shows it at their commit
+(`git.Repository.BranchWasAt`, git reflog's record of each move): the
+person had it checked out and made theirs from it. One over a commit the
+branch was never at still holds. TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription
+now amends from their second push, as #35220 did.

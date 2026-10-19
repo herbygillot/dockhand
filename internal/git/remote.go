@@ -112,6 +112,25 @@ func (r *Repository) Push(ctx context.Context, request Push) error {
 	return err
 }
 
+// BranchWasAt reports whether a local branch's reflog shows it at an object
+// at some time: the commit reset, fetched, or checked out onto it, as git
+// reflog records each move. False where the branch has no reflog.
+func (r *Repository) BranchWasAt(ctx context.Context, branch, object string) (bool, error) {
+	if !ValidBranchName(branch) || !ValidObjectID(object) {
+		return false, fmt.Errorf("git: invalid reflog query")
+	}
+	out, err := r.output(ctx, "reflog", "show", "--format=%H", "refs/heads/"+branch, "--")
+	if err != nil {
+		return false, nil
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == object {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // DeleteRemoteBranch removes a remote branch only while it still holds the
 // expected commit, using the same lease the push path relies on. A branch that
 // is already gone is not an error; a moved branch is a RefConflict.
