@@ -3,6 +3,7 @@ package distfetch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -41,9 +42,14 @@ func (s *Store) Fetch(ctx context.Context, info macports.PortInfo, source Source
 }
 
 // FetchFirst tries each location in order and keeps the first archive that
-// downloads; a canceled context stops the sequence.
+// downloads; a canceled context stops the sequence. Where every one sent an
+// HTML page, as a mirror does for a file it doesn't carry yet, that's said:
+// libpng's and four other SourceForge updates failed naming the last of
+// twenty mirrors, zenlayer, as if it alone were wrong, and minutes later the
+// mirrors had the release (field testing at 6dd7745c).
 func (s *Store) FetchFirst(ctx context.Context, info macports.PortInfo, name string, locations []string) (Download, error) {
 	var err error
+	pages := 0
 	for _, address := range locations {
 		var download Download
 		download, err = s.Fetch(ctx, info, Source{Name: name, URL: address})
@@ -53,6 +59,29 @@ func (s *Store) FetchFirst(ctx context.Context, info macports.PortInfo, name str
 		if ctx.Err() != nil {
 			return Download{}, ctx.Err()
 		}
+		if errors.Is(err, ErrHTMLPage) {
+			pages++
+		}
+	}
+	if pages > 1 && pages == len(locations) {
+		return Download{}, &MirrorsBehind{Sites: pages, Err: err}
 	}
 	return Download{}, err
 }
+
+// MirrorsBehind is an archive every one of its sites answered with an HTML
+// page, as mirrors do for a file they don't carry yet: a new release takes
+// a while to reach them, so another try later may find it.
+type MirrorsBehind struct {
+	Sites int
+	Err   error
+}
+
+func (m *MirrorsBehind) Error() string {
+	return fmt.Sprintf("%v; every one of its %d sites sent an HTML page, as a mirror does for a file it doesn't carry yet, so a new release may not have reached them; try again later", m.Err, m.Sites)
+}
+
+func (m *MirrorsBehind) Unwrap() error { return m.Err }
+
+// Transient says another try later may find the archive (fetch.Transient).
+func (m *MirrorsBehind) Transient() bool { return true }

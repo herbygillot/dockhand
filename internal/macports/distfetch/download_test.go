@@ -62,7 +62,7 @@ func TestDownloadRejectsErrorBodiesAndSizeOverflow(t *testing.T) {
 	}{
 		{"HTML", "<!doctype html><title>error</title>", 200, false, nil, []string{"downloading source-2.tar.gz from ", "the server sent an HTML page instead of the file"}},
 		{"empty", "", 200, false, nil, []string{"the server sent an empty file"}},
-		{"not found", "missing", 404, false, nil, []string{"downloading source-2.tar.gz: fetch: HTTP 404 for ", ": missing; no archive is published at that location yet"}},
+		{"not found", "missing", 404, false, nil, []string{"downloading source-2.tar.gz: fetch: HTTP 404 for ", ": missing; the master site has no file at that address"}},
 		{"size header", strings.Repeat("x", 1025), 200, false, nil, []string{"larger than the 1 KB limit"}},
 		{"size stream", strings.Repeat("x", 1025), 200, true, nil, []string{"larger than the 1 KB limit"}},
 		{"encoded", "x", 200, false, http.Header{"Content-Encoding": {"gzip"}}, []string{"the server sent gzip-encoded content instead of the file"}},
@@ -229,4 +229,17 @@ func TestALocalPatchMayBeInASubdirectoryOfFiles(t *testing.T) {
 	for _, patches := range []string{"../escape.patch", "5.16/../../escape.patch", "remote.patch:patches", "/etc/passwd"} {
 		require.ErrorContains(t, LocalPatches(port(patches), portdir), "is not in the port's files directory", patches)
 	}
+}
+
+// A 404 says what it means where it was asked: a GitHub release's asset a
+// tag alone doesn't publish; on a port of the github PortGroup, GitHub's
+// archive of the tag instead (libxkbcommon's dead ${homepage}/download/,
+// field testing at 6dd7745c); and elsewhere, a site without the file.
+func TestA404SaysWhatItMeansWhereItWasAsked(t *testing.T) {
+	t.Parallel()
+	plain := macports.PortInfo{Options: map[string]string{}}
+	github := macports.PortInfo{Options: map[string]string{"github.author": "xkbcommon"}}
+	require.Contains(t, notFoundWords(plain, "https://github.com/a/b/releases/download/v1/b-1.tar.gz"), "a release tag alone does not publish its assets")
+	require.Contains(t, notFoundWords(github, "https://xkbcommon.org/download/libxkbcommon-1.9.0.tar.xz"), "github.tarball_from archive fetches GitHub's archive of the tag instead")
+	require.Contains(t, notFoundWords(plain, "https://example.org/download/x-1.tar.gz"), "the release may not be there yet, or the site has moved")
 }

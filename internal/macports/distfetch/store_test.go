@@ -1,11 +1,13 @@
 package distfetch
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/stretchr/testify/require"
 )
@@ -46,4 +48,28 @@ func TestArchiveStoreKeepsBytesOnlyWithADirectory(t *testing.T) {
 	require.Equal(t, server.URL+"/c.tar.gz", first.URL, "the first working location wins")
 	_, err = client.Store("").FetchFirst(t.Context(), info, "d.tar.gz", []string{server.URL + "/missing"})
 	require.ErrorContains(t, err, "404")
+}
+
+// Where every site sends an HTML page, as SourceForge's mirrors do for a
+// release that hasn't reached them, that's said, and another try later may
+// find it: five updates failed naming the last of twenty mirrors (field
+// testing at 6dd7745c).
+func TestEveryMirrorsHTMLPageIsAReleaseNotThereYet(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html>Problems downloading</html>"))
+	}))
+	defer server.Close()
+	client := Client{HTTP: server.Client()}
+	info := macports.PortInfo{Options: map[string]string{}}
+	_, err := client.Store("").FetchFirst(t.Context(), info, "libpng-1.6.50.tar.xz", []string{server.URL + "/a/libpng-1.6.50.tar.xz", server.URL + "/b/libpng-1.6.50.tar.xz"})
+	var behind *MirrorsBehind
+	require.ErrorAs(t, err, &behind)
+	require.ErrorIs(t, err, ErrHTMLPage)
+	require.ErrorContains(t, err, "every one of its 2 sites sent an HTML page")
+	require.True(t, fetch.Transient(err), "another try later may find it")
+
+	_, err = client.Store("").FetchFirst(t.Context(), info, "libpng-1.6.50.tar.xz", []string{server.URL + "/a/libpng-1.6.50.tar.xz"})
+	require.False(t, errors.As(err, &behind), "one site's page is that site's")
 }

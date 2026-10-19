@@ -172,7 +172,7 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 		if errors.Is(context.Cause(ctx), fetch.ErrStalled) {
 			err = fmt.Errorf("%w for %s, so dockhand gave up on it: %w", fetch.ErrStalled, bound, err)
 		}
-		return downloadError(parent, name, address, limit, err)
+		return downloadError(parent, info, name, address, limit, err)
 	}
 	var reader io.ReadCloser
 	if strings.HasPrefix(address, "ftp://") {
@@ -208,7 +208,7 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 		}
 		if strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/html") {
 			response.Body.Close()
-			return Download{}, fail(errHTMLPage)
+			return Download{}, fail(ErrHTMLPage)
 		}
 		reader = response.Body
 	}
@@ -221,7 +221,7 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 	}
 	prefix = prefix[:n]
 	if strings.Contains(http.DetectContentType(prefix), "text/html") {
-		return Download{}, fail(errHTMLPage)
+		return Download{}, fail(ErrHTMLPage)
 	}
 	sha, rmd, md, sha1sum := sha256.New(), ripemd160.New(), md5.New(), sha1.New()
 	writers := []io.Writer{sha, rmd, md, sha1sum}
@@ -243,7 +243,9 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 	return Download{URL: address, Checksum: portfile.Checksum{Name: name, SHA256: fmt.Sprintf("%x", sha.Sum(nil)), RMD160: fmt.Sprintf("%x", rmd.Sum(nil)), MD5: fmt.Sprintf("%x", md.Sum(nil)), SHA1: fmt.Sprintf("%x", sha1sum.Sum(nil)), Size: size}}, nil
 }
 
-var errHTMLPage = errors.New("the server sent an HTML page instead of the file")
+// ErrHTMLPage is a download the server answered with an HTML page instead
+// of the file, as a mirror does for one it doesn't carry.
+var ErrHTMLPage = errors.New("the server sent an HTML page instead of the file")
 
 // downloadError words one archive's failure: the file, the URL it was asked
 // from, and the cause. A refusal keeps its status, the redirect that led to
@@ -252,7 +254,7 @@ var errHTMLPage = errors.New("the server sent an HTML page instead of the file")
 // says itself; a transport error drops the URL it repeats. The parent
 // context's own cancellation passes through unworded, and every cause stays
 // reachable with errors.Is and errors.As.
-func downloadError(parent context.Context, name, address string, limit int64, err error) error {
+func downloadError(parent context.Context, info macports.PortInfo, name, address string, limit int64, err error) error {
 	if parent.Err() != nil {
 		return fmt.Errorf("archives: downloading %s from %s: %w", name, address, parent.Err())
 	}
@@ -262,7 +264,7 @@ func downloadError(parent context.Context, name, address string, limit int64, er
 	case errors.As(err, &status):
 		note := ""
 		if status.Status == http.StatusNotFound {
-			note = "; no archive is published at that location yet, and a release tag alone does not publish its assets"
+			note = notFoundWords(info, address)
 		}
 		return fmt.Errorf("archives: downloading %s: %w%s", name, err, note)
 	case errors.Is(err, fetch.ErrTooLarge):
@@ -273,6 +275,23 @@ func downloadError(parent context.Context, name, address string, limit int64, er
 		return fmt.Errorf("archives: downloading %s from %s: %w", name, address, transport.Err)
 	}
 	return fmt.Errorf("archives: downloading %s from %s: %w", name, address, err)
+}
+
+// notFoundWords say what a 404 for an archive means where it was asked: a
+// GitHub release's asset isn't published by its tag alone; another site has
+// no file there, and a port on the github PortGroup can fetch GitHub's
+// archive of the tag instead. libxkbcommon's ${homepage}/download/ was gone
+// whole, and "no archive is published at that location yet" read as wait
+// for upstream, where github.tarball_from archive was the fix (field
+// testing at 6dd7745c).
+func notFoundWords(info macports.PortInfo, address string) string {
+	if site, err := url.Parse(address); err == nil && site.Host == "github.com" && strings.Contains(site.Path, "/releases/download/") {
+		return "; no archive is published at that location yet, and a release tag alone does not publish its assets"
+	}
+	if info.Options["github.author"] != "" && info.Options["github.tarball_from"] != "archive" {
+		return "; the master site has no file at that address, and the port is on the github PortGroup: github.tarball_from archive fetches GitHub's archive of the tag instead"
+	}
+	return "; the master site has no file at that address: the release may not be there yet, or the site has moved"
 }
 
 // CheckFetchCredentials refuses a port whose downloads need MacPorts

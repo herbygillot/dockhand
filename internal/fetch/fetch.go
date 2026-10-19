@@ -187,6 +187,13 @@ func Transient(err error) bool {
 	switch failure := err.(type) {
 	case nil:
 		return false
+	case interface{ Transient() bool }:
+		// A failure that says it is one, as every mirror behind a new
+		// release is (distfetch.MirrorsBehind).
+		if failure.Transient() {
+			return true
+		}
+		return Transient(errors.Unwrap(err))
 	case *StatusError:
 		return failure.Status == http.StatusTooManyRequests || failure.Status >= http.StatusInternalServerError
 	case net.Error:
