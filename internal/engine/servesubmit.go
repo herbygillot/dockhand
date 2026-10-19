@@ -66,7 +66,7 @@ const ServeNote = "Opened by `dockhand serve` for an update it prepared and chec
 
 // serveCandidates are the passing branches (PassingBranches) serve itself
 // started, with no pull request yet, each planned as submit would plan it
-// and held when anything asks for a person (SubmitPlan.held); and the
+// and held when anything asks for a person (SubmitPlan.Held); and the
 // passing branches a person started, which serve leaves to them: update
 // --outdated --check's seven passing branches waited, unsaid (field
 // testing's seventh report).
@@ -93,21 +93,18 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 			candidates = append(candidates, candidate)
 			continue
 		}
-		candidate.Held = plan.held()
+		candidate.Held = plan.Held()
 		candidates = append(candidates, candidate)
 	}
 	return candidates, yours, nil
 }
 
-// Held are the reasons a submission no person looked over waits for one,
-// as dockhand bump's does (SubmitPlan.held), for a branch of any origin.
-func (e *Engine) Held(_ context.Context, plan SubmitPlan) ([]model.Concern, error) {
-	return plan.held(), nil
-}
-
-// held are the concerns a submission no person looked over waits for one
-// over (Design v3 §11's guardrails): what blocks it, and its concerns.
-func (p SubmitPlan) held() []model.Concern {
+// Held are the concerns a submission no person looked over waits for one
+// over (Design v3 §11's guardrails): what blocks it, and its concerns, as
+// dockhand bump's and serve's alike, for a branch of any origin. It was
+// Engine.Held, with a context it ignored and an error always nil (the
+// architecture review of 5897a82, R3-10's signature).
+func (p SubmitPlan) Held() []model.Concern {
 	var held []model.Concern
 	for _, blocking := range p.Blocking {
 		held = append(held, model.Concern{Origin: model.FromSubmission, Rule: "blocking", Detail: blocking})
@@ -212,7 +209,7 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "tag-moved", Subject: string(current.Commit), Class: model.Introduced,
-			Detail: TagMovedWords(planned, current, evidence.Run.Name(), target.Target.Name)})
+			Detail: tagMovedWords(planned, current, evidence.Run.Name(), target.Target.Name)})
 	}
 	return concerns
 }

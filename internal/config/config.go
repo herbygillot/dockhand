@@ -248,20 +248,36 @@ type Profile struct {
 	Releases any `toml:"releases"`
 }
 
-// ReleaseRules are the rules a profile's releases may name: this Mac's
-// release; each port's oldest and newest that dockhand runs; the releases
-// MacPorts' CI builds on, at master; and every release Tart runs here.
-var ReleaseRules = []string{"host", "minmax", "macports-ci", "all"}
+// The rules a profile's releases may name: this Mac's release; each port's
+// oldest and newest that dockhand runs; the releases MacPorts' CI builds
+// on, at master; and every release Tart runs here. The one vocabulary,
+// which config checks a file against and the engine applies (the
+// architecture review of 5897a82, R3-16). Each of dockhand's own profiles
+// is named for its rule.
+type ReleaseRule string
 
-// BuiltinProfiles are dockhand's own profiles, all on Tart, each named for
+const (
+	RuleHost       ReleaseRule = "host"
+	RuleMinMax     ReleaseRule = "minmax"
+	RuleMacPortsCI ReleaseRule = "macports-ci"
+	RuleAll        ReleaseRule = "all"
+)
+
+// ProfileLocal is host's profile by its other name.
+const ProfileLocal = "local"
+
+// releaseRules are the rules a profile's releases may name.
+var releaseRules = []ReleaseRule{RuleHost, RuleMinMax, RuleMacPortsCI, RuleAll}
+
+// builtinProfiles are dockhand's own profiles, all on Tart, each named for
 // its rule, local being host's other name.
-var BuiltinProfiles = []string{"host", "local", "minmax", "macports-ci", "all"}
+var builtinProfiles = []string{string(RuleHost), ProfileLocal, string(RuleMinMax), string(RuleMacPortsCI), string(RuleAll)}
 
 // List is a profile's releases as a list, and its rule where it names one.
-func (p Profile) List() (releases []string, rule string) {
+func (p Profile) List() (releases []string, rule ReleaseRule) {
 	switch value := p.Releases.(type) {
 	case string:
-		return nil, value
+		return nil, ReleaseRule(value)
 	case []any:
 		for _, release := range value {
 			if name, ok := release.(string); ok {
@@ -694,7 +710,7 @@ func setTopLevel(path, key, value string) error {
 // profile has, and a default naming no profile.
 func checkBuild(f File) error {
 	for name, profile := range f.Build.Profiles {
-		if slices.Contains(BuiltinProfiles, name) || name == "command" {
+		if slices.Contains(builtinProfiles, name) || name == "command" {
 			return fmt.Errorf("build.profiles.%s: %s is dockhand's own profile; name yours another way", name, name)
 		}
 		switch profile.Provider {
@@ -705,7 +721,7 @@ func checkBuild(f File) error {
 		switch value := profile.Releases.(type) {
 		case nil:
 		case string:
-			if !slices.Contains(ReleaseRules, value) {
+			if !slices.Contains(releaseRules, ReleaseRule(value)) {
 				return fmt.Errorf("build.profiles.%s.releases: %q is not a list of releases, or host, minmax, macports-ci, or all", name, value)
 			}
 		case []any:
@@ -722,7 +738,7 @@ func checkBuild(f File) error {
 		}
 	}
 	for key, name := range map[string]string{"build.default": f.Build.Default, "build.unattended": f.Build.Unattended} {
-		if _, defined := f.Build.Profiles[name]; name != "" && !defined && !slices.Contains(BuiltinProfiles, name) && name != "command" {
+		if _, defined := f.Build.Profiles[name]; name != "" && !defined && !slices.Contains(builtinProfiles, name) && name != "command" {
 			return fmt.Errorf("%s: %q names no profile: host, minmax, macports-ci, all, or one under [build.profiles]", key, name)
 		}
 	}

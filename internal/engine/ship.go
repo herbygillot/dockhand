@@ -16,10 +16,10 @@ const (
 	ShipSubmit ShipStage = "submit"
 )
 
-// ShipTarget is what ship moves on: a port, to its newest release or to
+// shipTarget is what ship moves on: a port, to its newest release or to
 // a pinned version, bump's [version], with the release where it was found
 // already, and the branch it starts, named for it.
-type ShipTarget struct {
+type shipTarget struct {
 	Port string
 	// Version is the release to move to: the newest, or the one pinned.
 	Version string
@@ -27,10 +27,10 @@ type ShipTarget struct {
 	Name    string
 }
 
-// ShipOptions are how ship moves a target: who asked, how far, where its
+// shipOptions are how ship moves a target: who asked, how far, where its
 // check builds, with what tests, and how the person answered for what a
 // person would decide, which every "may this go on?" question reads.
-type ShipOptions struct {
+type shipOptions struct {
 	Origin   model.Origin
 	To       ShipStage
 	Where    Where
@@ -43,7 +43,7 @@ type ShipOptions struct {
 // answered --yes, which skips the question and approves nothing shown
 // after it; the command's ship reads model.Answered the same way (Codex's
 // review of 832f059e, high 1).
-func (o ShipOptions) Unattended() bool { return o.Answered != model.AnsweredAsked }
+func (o shipOptions) Unattended() bool { return o.Answered != model.AnsweredAsked }
 
 // commitUnasked is whether ship may commit tidy's plan, and why not: a
 // plan that isn't dockhand's own edits needs a look (HeldForLook), and
@@ -52,7 +52,7 @@ func (o ShipOptions) Unattended() bool { return o.Answered != model.AnsweredAske
 // update's own hold judges a major version (Update, HeldBeforeEdit), the
 // one judgment of it on serve's path (the architecture review of 5897a82,
 // R3-1). Layer 1's readiness replaces it.
-func commitUnasked(options ShipOptions, tidy TidyPlan) error {
+func commitUnasked(options shipOptions, tidy TidyPlan) error {
 	answered := options.Answered
 	if options.Unattended() {
 		answered = model.AnsweredNobody
@@ -60,13 +60,13 @@ func commitUnasked(options ShipOptions, tidy TidyPlan) error {
 	return tidy.HeldForLook(answered)
 }
 
-// Ship moves one target through ship's stages on serve's preparation path:
+// ship moves one target through ship's stages on serve's preparation path:
 // it updates the port from fresh master, with the upstream archives
 // compared, in a branch started once there is an edit to make; commits
 // the edit where it may go on (commitUnasked); and to ShipCheck queues a check of
 // that commit where options.Where says. What stopped it is its Problem,
 // after whatever it had done. Submitting is item 4's, with ship itself.
-func (e *Engine) Ship(ctx context.Context, target ShipTarget, options ShipOptions) PreparedUpdate {
+func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOptions) PreparedUpdate {
 	done := PreparedUpdate{}
 	var err error
 	// Unattended, the update holds what nobody looks over before it edits,

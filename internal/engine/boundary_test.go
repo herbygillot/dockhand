@@ -33,6 +33,7 @@ var engineImports = map[string]string{
 	"golang.org/x/sync/errgroup":      "a check's environments building together, and a port's URLs asked over HTTPS together",
 	"github.com/BurntSushi/toml":      "a saved tidy plan, a file a person edits",
 	"internal/macos":                  "macOS releases, for environments and their words",
+	"internal/config":                 "names only: the build profiles' rules, which config checks a file against and the engine applies (R3-16); never its File or Load",
 	"internal/scratch":                "temporary directories for archives and preparation",
 	"internal/atomicfile":             "kept archives, whole or not at all",
 	"internal/buildinfo":              "its own version, in the pull request",

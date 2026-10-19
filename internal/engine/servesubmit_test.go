@@ -223,7 +223,7 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	require.ErrorContains(t, err, "is held for a look: #34777 is open")
 	require.Empty(t, fake.Created)
 
-	held := SubmitPlan{SearchProblem: "rate limited"}.held()
+	held := SubmitPlan{SearchProblem: "rate limited"}.Held()
 	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, HoldLines(held))
 }
 
@@ -330,7 +330,7 @@ func TestATagMovedBetweenAnUpdateAndItsCheckIsAConcern(t *testing.T) {
 	moved := preparedSources(evidence, []model.Edit{update("libharbor", release("v4", chosen))})
 	require.Equal(t, []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: planned, Class: model.Introduced,
 		Detail: "libharbor: git.branch v4 pointed to aaaaaaa when the update was prepared, then to bbbbbbb when check-7 was planned. The check used a different source from the update"}}, moved)
-	require.Contains(t, HoldLines(SubmitPlan{Moved: moved}.held()), moved[0].Detail, "it holds a submission nobody looks over")
+	require.Contains(t, HoldLines(SubmitPlan{Moved: moved}.Held()), moved[0].Detail, "it holds a submission nobody looks over")
 
 	require.Empty(t, preparedSources(evidence, []model.Edit{update("libharbor", release("v4", chosen)), update("libharbor", release("v4", planned))}),
 		"the newest update chose what the check built")
@@ -470,7 +470,7 @@ func TestServeLeavesAPersonsPassingBranchToThem(t *testing.T) {
 func TestAHoldSharedByPortsIsSaidOnce(t *testing.T) {
 	changed := model.UpstreamComparison{Changes: []model.UpstreamChange{{Kind: "build", Rule: "build-file", Path: "setup.py", Hold: true, Message: "upstream's setup.py changed; the build may need the Portfile to follow"}}}
 	plan := SubmitPlan{Upstream: []PortComparison{{Port: "py312-kubernetes", Comparison: changed}, {Port: "py313-kubernetes", Comparison: changed}}}
-	held := plan.held()
+	held := plan.Held()
 	require.Len(t, held, 2, "a concern a port")
 	require.Equal(t, []string{"upstream's setup.py changed; the build may need the Portfile to follow"}, HoldLines(held))
 }

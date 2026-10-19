@@ -58,7 +58,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			for _, name := range profiles {
 				profile := file.Build.Profiles[name]
 				releases, rule := profile.List()
-				add("build.profiles."+name, fmt.Sprintf("%s, %s", cmp.Or(profile.Provider, "tart"), cmp.Or(rule, strings.Join(releases, ", "), "host")), "")
+				add("build.profiles."+name, fmt.Sprintf("%s, %s", cmp.Or(profile.Provider, "tart"), cmp.Or(string(rule), strings.Join(releases, ", "), string(config.RuleHost))), "")
 			}
 			set("check.tests", file.Check.Tests)
 			baselineValue := ""

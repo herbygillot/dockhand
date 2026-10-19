@@ -66,7 +66,7 @@ func TestEveryMirrorsHTMLPageIsAReleaseNotThereYet(t *testing.T) {
 	_, err := client.Store("").FetchFirst(t.Context(), info, "libpng-1.6.50.tar.xz", []string{server.URL + "/a/libpng-1.6.50.tar.xz", server.URL + "/b/libpng-1.6.50.tar.xz"})
 	var behind *MirrorsBehind
 	require.ErrorAs(t, err, &behind)
-	require.ErrorIs(t, err, ErrHTMLPage)
+	require.ErrorIs(t, err, errHTMLPage)
 	require.ErrorContains(t, err, "every one of its 2 sites sent an HTML page")
 	require.True(t, fetch.Transient(err), "another try later may find it")
 

@@ -67,7 +67,7 @@ func TestALaunchAgentWaitsForLaunchd(t *testing.T) {
 	l.going = -1
 	agent.Wait = 20 * time.Millisecond
 	err := agent.Remove(t.Context())
-	require.ErrorIs(t, err, ErrStillLoaded)
+	require.ErrorIs(t, err, errStillLoaded)
 	require.NoFileExists(t, path, "its property list goes all the same")
 	_, statErr := os.Stat(path)
 	require.ErrorIs(t, statErr, os.ErrNotExist)

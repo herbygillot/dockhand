@@ -26,13 +26,13 @@ type LaunchAgent struct {
 	Wait, Poll time.Duration
 }
 
-// ErrStillLoaded is an agent launchd still has loaded when the wait for it
+// errStillLoaded is an agent launchd still has loaded when the wait for it
 // to let go ran out.
-var ErrStillLoaded = errors.New("launchd still has the agent loaded")
+var errStillLoaded = errors.New("launchd still has the agent loaded")
 
-// AgentWait is how long an install or a removal waits on launchd by
+// agentWait is how long an install or a removal waits on launchd by
 // default.
-const AgentWait = 30 * time.Second
+const agentWait = 30 * time.Second
 
 func (a LaunchAgent) domain() string { return fmt.Sprintf("gui/%d", os.Getuid()) }
 func (a LaunchAgent) target() string { return a.domain() + "/" + a.Label }
@@ -59,11 +59,11 @@ func (a LaunchAgent) Loaded(ctx context.Context) (bool, error) {
 }
 
 // await asks launchd until the agent is loaded or not, as wanted, up to
-// the wait; ErrStillLoaded, or its opposite, where it ran out.
+// the wait; errStillLoaded, or its opposite, where it ran out.
 func (a LaunchAgent) await(ctx context.Context, loaded bool) error {
 	wait, poll := a.Wait, a.Poll
 	if wait <= 0 {
-		wait = AgentWait
+		wait = agentWait
 	}
 	if poll <= 0 {
 		poll = 250 * time.Millisecond
@@ -78,7 +78,7 @@ func (a LaunchAgent) await(ctx context.Context, loaded bool) error {
 			if loaded {
 				return fmt.Errorf("launchd didn't load the agent within %s; launchctl print %s says why", wait, a.target())
 			}
-			return fmt.Errorf("%w %s after it was booted out; launchctl print %s shows it", ErrStillLoaded, wait, a.target())
+			return fmt.Errorf("%w %s after it was booted out; launchctl print %s shows it", errStillLoaded, wait, a.target())
 		}
 		select {
 		case <-ctx.Done():
@@ -92,7 +92,7 @@ func (a LaunchAgent) await(ctx context.Context, loaded bool) error {
 // removes its property list. launchctl bootout returns before launchd has
 // unloaded the agent, so a status read at once found serve's still there
 // (the rc10 full stage's B7, and rc6's). One not loaded is removed as it
-// is; one launchd still holds when the wait runs out is ErrStillLoaded's,
+// is; one launchd still holds when the wait runs out is errStillLoaded's,
 // its property list removed all the same.
 func (a LaunchAgent) Remove(ctx context.Context) error {
 	// Booting out an agent that isn't loaded is no error here.

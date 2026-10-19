@@ -208,7 +208,7 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 		}
 		if strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/html") {
 			response.Body.Close()
-			return Download{}, fail(ErrHTMLPage)
+			return Download{}, fail(errHTMLPage)
 		}
 		reader = response.Body
 	}
@@ -221,7 +221,7 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 	}
 	prefix = prefix[:n]
 	if strings.Contains(http.DetectContentType(prefix), "text/html") {
-		return Download{}, fail(ErrHTMLPage)
+		return Download{}, fail(errHTMLPage)
 	}
 	sha, rmd, md, sha1sum := sha256.New(), ripemd160.New(), md5.New(), sha1.New()
 	writers := []io.Writer{sha, rmd, md, sha1sum}
@@ -243,9 +243,9 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 	return Download{URL: address, Checksum: portfile.Checksum{Name: name, SHA256: fmt.Sprintf("%x", sha.Sum(nil)), RMD160: fmt.Sprintf("%x", rmd.Sum(nil)), MD5: fmt.Sprintf("%x", md.Sum(nil)), SHA1: fmt.Sprintf("%x", sha1sum.Sum(nil)), Size: size}}, nil
 }
 
-// ErrHTMLPage is a download the server answered with an HTML page instead
+// errHTMLPage is a download the server answered with an HTML page instead
 // of the file, as a mirror does for one it doesn't carry.
-var ErrHTMLPage = errors.New("the server sent an HTML page instead of the file")
+var errHTMLPage = errors.New("the server sent an HTML page instead of the file")
 
 // downloadError words one archive's failure: the file, the URL it was asked
 // from, and the cause. A refusal keeps its status, the redirect that led to

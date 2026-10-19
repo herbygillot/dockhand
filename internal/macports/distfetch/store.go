@@ -59,7 +59,7 @@ func (s *Store) FetchFirst(ctx context.Context, info macports.PortInfo, name str
 		if ctx.Err() != nil {
 			return Download{}, ctx.Err()
 		}
-		if errors.Is(err, ErrHTMLPage) {
+		if errors.Is(err, errHTMLPage) {
 			pages++
 		}
 	}

@@ -105,10 +105,10 @@ func (p OutdatedPort) Class() OutdatedClass {
 	return OutdatedCurrent
 }
 
-// UncheckedReason is why a port couldn't be checked, as ports are grouped
+// uncheckedReason is why a port couldn't be checked, as ports are grouped
 // by: GitHub's rate limit for every port it kept, whenever each lifts, and
 // otherwise the problem's first line.
-func (p OutdatedPort) UncheckedReason() string {
+func (p OutdatedPort) uncheckedReason() string {
 	if !p.RetryAt.IsZero() {
 		return "GitHub's rate limit"
 	}
@@ -184,7 +184,7 @@ func (r OutdatedReport) UncheckedWords() string {
 	count := map[string]int{}
 	var reasons []string
 	for _, port := range unchecked {
-		reason := port.UncheckedReason()
+		reason := port.uncheckedReason()
 		if count[reason] == 0 {
 			reasons = append(reasons, reason)
 		}
@@ -407,8 +407,8 @@ func (e *Engine) PrepareOutdated(ctx context.Context, plan OutdatedPlan, options
 
 func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options PrepareOptions) PreparedUpdate {
 	to := cmp.Or(options.To, ShipCommit)
-	done := e.Ship(ctx, ShipTarget{Port: planned.Port.Port, Version: planned.Port.Newest, Release: planned.Port.Release, Name: planned.Name},
-		ShipOptions{Origin: options.Origin, To: to, Where: options.Where, Tests: options.Tests, Answered: options.Answered})
+	done := e.ship(ctx, shipTarget{Port: planned.Port.Port, Version: planned.Port.Newest, Release: planned.Port.Release, Name: planned.Name},
+		shipOptions{Origin: options.Origin, To: to, Where: options.Where, Tests: options.Tests, Answered: options.Answered})
 	done.Planned = planned
 	return done
 }

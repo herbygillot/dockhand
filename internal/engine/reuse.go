@@ -97,15 +97,15 @@ func (d *driver) sayTagMoved(ctx context.Context, environment model.Environment,
 			}
 			return nil
 		})
-		d.emit(ctx, model.EventExecutionState, fmt.Sprintf("%s: %s: %s builds again: %s", d.run.Name(), DescribeEnvironment(environment), target.ID, TagMovedWords(*newest.Tagged, *target.Tag, built, target.Target.Name)))
+		d.emit(ctx, model.EventExecutionState, fmt.Sprintf("%s: %s: %s builds again: %s", d.run.Name(), DescribeEnvironment(environment), target.ID, tagMovedWords(*newest.Tagged, *target.Tag, built, target.Target.Name)))
 	}
 }
 
-// TagMovedWords say that a GitHub tag names another commit now than when a
+// tagMovedWords say that a GitHub tag names another commit now than when a
 // check built a port, and what handles a stealth update: "v1.0.0 now names
 // d4c0fdb, not 1d15bc8, as when check-41 built it; dockhand checksums foo
 // handles a stealth update".
-func TagMovedWords(then, now model.GitSource, built, port string) string {
+func tagMovedWords(then, now model.GitSource, built, port string) string {
 	return fmt.Sprintf("%s now names %s, not %s, as when %s built it; dockhand checksums %s handles a stealth update", now.Ref, now.Commit.Short(), then.Commit.Short(), built, port)
 }
 

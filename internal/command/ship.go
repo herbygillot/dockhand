@@ -467,11 +467,7 @@ func submitPassed(ctx context.Context, s *settings, e *engine.Engine, streams St
 		return errors.New("nothing was submitted")
 	}
 	if pending.unattended {
-		held, err := e.Held(ctx, plan)
-		if err != nil {
-			return err
-		}
-		if len(held) > 0 {
+		if held := plan.Held(); len(held) > 0 {
 			view := submitView(plan)
 			view.Held = engine.HoldLines(held)
 			streams.emit(view)

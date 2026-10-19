@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -124,6 +123,10 @@ type Input struct {
 	// minmax profile's rule (the person's design, 2026-10-13). A run of
 	// several ports covers the union of theirs.
 	Span bool
+	// Releases are each environment's release as a person names it, macOS
+	// 12, in Environments' order, which a minmax exclusion says: planning
+	// reads nothing of macOS itself.
+	Releases []string
 }
 
 // Cycle is a dependency loop among the targets one environment builds,
@@ -182,20 +185,20 @@ func Decide(input Input) (Decision, error) {
 // Exclusions are what each environment rules out, and why: a port its
 // evaluation didn't define, whichever other environment defined it, a port
 // MacPorts CI would exclude there, and an extra limited to elsewhere.
-func Exclusions(input Input) []map[model.TargetID]string {
-	reasons := make([]map[model.TargetID]string, len(input.Environments))
+func Exclusions(input Input) []map[model.TargetID]Excluded {
+	reasons := make([]map[model.TargetID]Excluded, len(input.Environments))
 	for e, environment := range input.Environments {
-		reasons[e] = map[model.TargetID]string{}
+		reasons[e] = map[model.TargetID]Excluded{}
 		for _, c := range input.Candidates {
 			evaluated, defined := input.Evaluations[e][c.ID]
 			limit, limited := input.Where[c.ID]
 			switch {
 			case !defined:
-				reasons[e][c.ID] = "not defined there"
+				reasons[e][c.ID] = Excluded{Reason: "not defined there"}
 			case !evaluated.Eligibility.Eligible():
-				reasons[e][c.ID] = evaluated.Eligibility.Reason()
+				reasons[e][c.ID] = Excluded{Reason: evaluated.Eligibility.Reason()}
 			case limited && !slices.Contains(limit.Environments, environment):
-				reasons[e][c.ID] = limit.Elsewhere
+				reasons[e][c.ID] = Excluded{Reason: limit.Elsewhere}
 			}
 		}
 	}
@@ -205,14 +208,28 @@ func Exclusions(input Input) []map[model.TargetID]string {
 	return reasons
 }
 
-// spanReason begins the reason span gives, which an exclusion is marked
-// by (Exclusion.Span) where it's made, so nothing reads the words after.
-const spanReason = "minmax builds it on its oldest and newest releases,"
+// Excluded is why an environment rules a target out, and whether a
+// minmax profile did (model.Exclusion.Span): marked where it's made, where
+// the plan read the words back by their prefix (the architecture review of
+// 5897a82, R3-15).
+type Excluded struct {
+	Reason string
+	Span   bool
+}
+
+// releaseName is environment e's release as a person names it, as Releases
+// gives it, else its Darwin version.
+func (i Input) releaseName(e int) string {
+	if e < len(i.Releases) && i.Releases[e] != "" {
+		return i.Releases[e]
+	}
+	return "Darwin " + i.Environments[e].Platform.Version
+}
 
 // span rules out, for a minmax plan, each port where it builds but isn't
 // on its oldest or newest release, unless a port built there on one of
 // its own needs it first.
-func span(input Input, reasons []map[model.TargetID]string) {
+func span(input Input, reasons []map[model.TargetID]Excluded) {
 	darwin := make([]int, len(input.Environments))
 	for e, environment := range input.Environments {
 		darwin[e], _ = strconv.Atoi(environment.Platform.Version)
@@ -225,7 +242,7 @@ func span(input Input, reasons []map[model.TargetID]string) {
 	for _, c := range input.Candidates {
 		oldest, newest := -1, -1
 		for e := range input.Environments {
-			if reasons[e][c.ID] != "" {
+			if reasons[e][c.ID].Reason != "" {
 				continue
 			}
 			if oldest < 0 || darwin[e] < darwin[oldest] {
@@ -241,7 +258,7 @@ func span(input Input, reasons []map[model.TargetID]string) {
 		ends[c.ID] = [2]int{oldest, newest}
 		for e := range input.Environments {
 			if darwin[e] == darwin[oldest] || darwin[e] == darwin[newest] {
-				keep[e][c.ID] = reasons[e][c.ID] == ""
+				keep[e][c.ID] = reasons[e][c.ID].Reason == ""
 			}
 		}
 	}
@@ -261,7 +278,7 @@ func span(input Input, reasons []map[model.TargetID]string) {
 			id := queue[0]
 			queue = queue[1:]
 			for _, dependency := range input.Evaluations[e][id].Dependencies {
-				if candidates[dependency.Port] && reasons[e][dependency.Port] == "" && !keep[e][dependency.Port] {
+				if candidates[dependency.Port] && reasons[e][dependency.Port].Reason == "" && !keep[e][dependency.Port] {
 					keep[e][dependency.Port] = true
 					queue = append(queue, dependency.Port)
 				}
@@ -270,27 +287,27 @@ func span(input Input, reasons []map[model.TargetID]string) {
 	}
 	for e := range input.Environments {
 		for _, c := range input.Candidates {
-			if reasons[e][c.ID] != "" || keep[e][c.ID] {
+			if reasons[e][c.ID].Reason != "" || keep[e][c.ID] {
 				continue
 			}
 			end := ends[c.ID]
-			reasons[e][c.ID] = fmt.Sprintf(spanReason+" %s and %s", macos.ReleaseName(input.Environments[end[0]].Platform), strings.TrimPrefix(macos.ReleaseName(input.Environments[end[1]].Platform), "macOS "))
+			reasons[e][c.ID] = Excluded{Reason: fmt.Sprintf("minmax builds it on its oldest and newest releases, %s and %s", input.releaseName(end[0]), strings.TrimPrefix(input.releaseName(end[1]), "macOS ")), Span: true}
 		}
 	}
 }
 
 // Built are the candidates some environment doesn't rule out: one ruled
 // out everywhere is not built at all.
-func Built(candidates []model.PlanTarget, reasons []map[model.TargetID]string) []model.PlanTarget {
+func Built(candidates []model.PlanTarget, reasons []map[model.TargetID]Excluded) []model.PlanTarget {
 	return slices.DeleteFunc(slices.Clone(candidates), func(c model.PlanTarget) bool {
-		return !slices.ContainsFunc(reasons, func(ruled map[model.TargetID]string) bool { return ruled[c.ID] == "" })
+		return !slices.ContainsFunc(reasons, func(ruled map[model.TargetID]Excluded) bool { return ruled[c.ID].Reason == "" })
 	})
 }
 
 // Needs are what each target needs built first in each environment: the
 // targets built there that it depends on there. Their union, over every
 // environment, is what --only adds back.
-func Needs(built []model.PlanTarget, reasons []map[model.TargetID]string, evaluations []Evaluation) (needs []map[model.TargetID][]Dependency, union map[model.TargetID][]model.TargetID) {
+func Needs(built []model.PlanTarget, reasons []map[model.TargetID]Excluded, evaluations []Evaluation) (needs []map[model.TargetID][]Dependency, union map[model.TargetID][]model.TargetID) {
 	builtAnywhere := func(id model.TargetID) bool {
 		return slices.ContainsFunc(built, func(c model.PlanTarget) bool { return c.ID == id })
 	}
@@ -317,12 +334,12 @@ func Needs(built []model.PlanTarget, reasons []map[model.TargetID]string, evalua
 	for e := range evaluations {
 		needs[e] = map[model.TargetID][]Dependency{}
 		for _, c := range built {
-			if reasons[e][c.ID] != "" {
+			if reasons[e][c.ID].Reason != "" {
 				continue
 			}
 			for _, dep := range evaluations[e][c.ID].Dependencies {
 				dep.Port = resolve(dep.Port)
-				if dep.Port == c.ID || !builtAnywhere(dep.Port) || reasons[e][dep.Port] != "" {
+				if dep.Port == c.ID || !builtAnywhere(dep.Port) || reasons[e][dep.Port].Reason != "" {
 					continue
 				}
 				needs[e][c.ID] = append(needs[e][c.ID], dep)
@@ -343,11 +360,11 @@ func Needs(built []model.PlanTarget, reasons []map[model.TargetID]string, evalua
 // unless a dependency met by a file closes it: Base drops that dependency
 // where the file is there, and would loop itself where it isn't, so the
 // plan drops it and keeps the order the rest make.
-func EnvironmentPlan(environment model.Environment, targets, candidates []model.PlanTarget, reasons map[model.TargetID]string, needs map[model.TargetID][]Dependency, evaluation Evaluation) (model.EnvironmentPlan, []string) {
+func EnvironmentPlan(environment model.Environment, targets, candidates []model.PlanTarget, reasons map[model.TargetID]Excluded, needs map[model.TargetID][]Dependency, evaluation Evaluation) (model.EnvironmentPlan, []string) {
 	planned := model.EnvironmentPlan{Environment: environment}
 	var members []model.TargetID
 	for _, target := range targets {
-		if reasons[target.ID] == "" {
+		if reasons[target.ID].Reason == "" {
 			members = append(members, target.ID)
 		}
 	}
@@ -413,8 +430,8 @@ func EnvironmentPlan(environment model.Environment, targets, candidates []model.
 		}
 	}
 	for _, c := range candidates {
-		if reason := reasons[c.ID]; reason != "" {
-			planned.Exclusions = append(planned.Exclusions, model.Exclusion{Target: c.Target, Reason: reason, Span: strings.HasPrefix(reason, spanReason)})
+		if excluded := reasons[c.ID]; excluded.Reason != "" {
+			planned.Exclusions = append(planned.Exclusions, model.Exclusion{Target: c.Target, Reason: excluded.Reason, Span: excluded.Span})
 		}
 	}
 	// What it needs there decides what it can't build.
@@ -432,9 +449,9 @@ func EnvironmentPlan(environment model.Environment, targets, candidates []model.
 // submission compares that commit with what its tag names then, as it does
 // for what the check built. A GitHub tag a left-out target's archive is
 // fetched by is given the same way (EnvironmentPlan.Tags).
-func OmittedSources(planned *model.EnvironmentPlan, omitted []model.PlanTarget, reasons map[model.TargetID]string, evaluation Evaluation) {
+func OmittedSources(planned *model.EnvironmentPlan, omitted []model.PlanTarget, reasons map[model.TargetID]Excluded, evaluation Evaluation) {
 	for _, target := range omitted {
-		if reasons[target.ID] != "" {
+		if reasons[target.ID].Reason != "" {
 			continue
 		}
 		if source := evaluation[target.ID].Git; source != nil {

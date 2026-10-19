@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -223,7 +224,11 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	}
 
 	throughUnchanged(ctx, reader, revision.Source, candidates, evaluations)
-	decision, err := planning.Decide(planning.Input{Environments: plan.Environments, Candidates: candidates, Evaluations: evaluations, Only: request.Only, Where: request.where, Span: request.Span})
+	releases := make([]string, len(plan.Environments))
+	for i, environment := range plan.Environments {
+		releases[i] = macos.ReleaseName(environment.Platform)
+	}
+	decision, err := planning.Decide(planning.Input{Environments: plan.Environments, Candidates: candidates, Evaluations: evaluations, Only: request.Only, Where: request.where, Span: request.Span, Releases: releases})
 	if err != nil {
 		return plan, err
 	}

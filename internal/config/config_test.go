@@ -271,7 +271,7 @@ func TestBuildProfiles(t *testing.T) {
 	require.Equal(t, []string{"15", "26"}, releases)
 	require.Empty(t, rule)
 	_, rule = f.Build.Profiles["ci-exact"].List()
-	require.Equal(t, "macports-ci", rule)
+	require.Equal(t, RuleMacPortsCI, rule)
 
 	for text, refusal := range map[string]string{
 		"[check]\non = [\"tart\"]\n":                                               "check.on is gone: build.default names a build profile",

@@ -81,7 +81,7 @@ func Inspect(src []byte, options map[string]string) (*Plan, error) {
 	// update (field testing's batch 13, bumped by hand twice). One that
 	// builds offline needs its crates declared, which an update adds.
 	_, cargo := options[Cargo]
-	online := ResolvesOnline(options)
+	online := resolvesOnline(options)
 	if cargo && !online || options[Cargo] != "" || len(commands[Cargo]) > 0 || options[CargoGit] != "" || len(commands[CargoGit]) > 0 {
 		if kind != "" {
 			return nil, fmt.Errorf("dependency: mixed Go and Cargo declarations require manual preparation")

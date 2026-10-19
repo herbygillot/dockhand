@@ -59,9 +59,9 @@ func TestAPlanIsDecidedPhaseByPhase(t *testing.T) {
 	}
 
 	reasons := Exclusions(input)
-	require.Equal(t, []map[model.TargetID]string{
-		{"harbor-legacy": "the Portfile marks it known_fail here", "harbor-extra": "check-1 didn't fail it there"},
-		{"harbor-viewer": "not defined there", "harbor-legacy": "supported_archs arm64 only"},
+	require.Equal(t, []map[model.TargetID]Excluded{
+		{"harbor-legacy": {Reason: "the Portfile marks it known_fail here"}, "harbor-extra": {Reason: "check-1 didn't fail it there"}},
+		{"harbor-viewer": {Reason: "not defined there"}, "harbor-legacy": {Reason: "supported_archs arm64 only"}},
 	}, reasons)
 	built := Built(input.Candidates, reasons)
 	require.Equal(t, []model.TargetID{"harbor-cli", "libharbor", "harbor-tools", "harbor-viewer", "harbor-extra"}, ids(built), "harbor-legacy is ruled out everywhere")
@@ -297,17 +297,20 @@ func TestSpanBuildsEachPortOnItsOldestAndNewest(t *testing.T) {
 			{"harbor-cli": needing("libharbor"), "libharbor": {}, "harbor-new": needing("libharbor")},
 			{"harbor-cli": needing("libharbor"), "libharbor": {}, "harbor-new": needing("libharbor")},
 		},
-		Span: true,
+		Span:     true,
+		Releases: []string{"macOS 12", "macOS 13", "macOS 14", "macOS 26"},
 	}
 	reasons := Exclusions(input)
-	require.Equal(t, "minmax builds it on its oldest and newest releases, macOS 12 and 26", reasons[1]["harbor-cli"])
-	require.NotContains(t, reasons[1]["harbor-new"], "minmax", "harbor-new keeps its own reason where it isn't supported")
-	require.Empty(t, reasons[2]["libharbor"], "harbor-new, on its oldest, needs it first there")
-	require.Empty(t, reasons[2]["harbor-new"])
-	require.NotEmpty(t, reasons[2]["harbor-cli"], "macOS 14 is neither of harbor-cli's ends")
-	require.Empty(t, reasons[0]["harbor-cli"])
-	require.Empty(t, reasons[3]["harbor-cli"])
-	require.Equal(t, "minmax builds it on its oldest and newest releases, macOS 12 and 26", reasons[1]["libharbor"])
+	require.Equal(t, "minmax builds it on its oldest and newest releases, macOS 12 and 26", reasons[1]["harbor-cli"].Reason)
+	require.True(t, reasons[1]["harbor-cli"].Span, "marked where it's made (the architecture review of 5897a82, R3-15)")
+	require.False(t, reasons[1]["harbor-new"].Span, "a port's own reason isn't minmax's")
+	require.NotContains(t, reasons[1]["harbor-new"].Reason, "minmax", "harbor-new keeps its own reason where it isn't supported")
+	require.Empty(t, reasons[2]["libharbor"].Reason, "harbor-new, on its oldest, needs it first there")
+	require.Empty(t, reasons[2]["harbor-new"].Reason)
+	require.NotEmpty(t, reasons[2]["harbor-cli"].Reason, "macOS 14 is neither of harbor-cli's ends")
+	require.Empty(t, reasons[0]["harbor-cli"].Reason)
+	require.Empty(t, reasons[3]["harbor-cli"].Reason)
+	require.Equal(t, "minmax builds it on its oldest and newest releases, macOS 12 and 26", reasons[1]["libharbor"].Reason)
 
 	// Its exclusions are marked as its, a port's own reason not.
 	decision, err := Decide(input)

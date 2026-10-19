@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -19,16 +20,8 @@ type Profile struct {
 	// Releases are an explicit list, as "15" or "tahoe"; Rule a rule's
 	// name, host, minmax, macports-ci, or all, where there's no list.
 	Releases []string
-	Rule     string
+	Rule     config.ReleaseRule
 }
-
-// The release rules a profile can name.
-const (
-	RuleHost       = "host"
-	RuleMinMax     = "minmax"
-	RuleMacPortsCI = "macports-ci"
-	RuleAll        = "all"
-)
 
 // Builds are where checks build, as the configuration sets it: the
 // profile a person's check takes, the one a check nobody looks over
@@ -43,10 +36,10 @@ type Builds struct {
 // person's own script, where it's set up.
 func builtinProfile(name string) (Profile, bool) {
 	switch name {
-	case RuleHost, "local":
-		return Profile{Name: name, Provider: buildenv.Tart, Rule: RuleHost}, true
-	case RuleMinMax, RuleMacPortsCI, RuleAll:
-		return Profile{Name: name, Provider: buildenv.Tart, Rule: name}, true
+	case string(config.RuleHost), config.ProfileLocal:
+		return Profile{Name: name, Provider: buildenv.Tart, Rule: config.RuleHost}, true
+	case string(config.RuleMinMax), string(config.RuleMacPortsCI), string(config.RuleAll):
+		return Profile{Name: name, Provider: buildenv.Tart, Rule: config.ReleaseRule(name)}, true
 	case buildenv.Command:
 		return Profile{Name: name, Provider: buildenv.Command}, true
 	}
@@ -108,7 +101,7 @@ func (e *Engine) Where(ctx context.Context, request WhereRequest) (Where, error)
 	if err != nil {
 		return Where{}, err
 	}
-	where := Where{Profile: profile.Name, Span: profile.Rule == RuleMinMax}
+	where := Where{Profile: profile.Name, Span: profile.Rule == config.RuleMinMax}
 	where.Environments, err = e.profileEnvironments(ctx, profile)
 	return where, err
 }
@@ -121,7 +114,7 @@ func (e *Engine) defaultProfile() string {
 	if _, ok := e.Providers[buildenv.Command]; ok {
 		return buildenv.Command
 	}
-	return RuleHost
+	return string(config.RuleHost)
 }
 
 // unattendedProfile is build.unattended: minmax where Tart is set up, its
@@ -132,7 +125,7 @@ func (e *Engine) unattendedProfile() string {
 		return e.Builds.Unattended
 	}
 	if _, ok := e.Providers[buildenv.Tart]; ok {
-		return RuleMinMax
+		return string(config.RuleMinMax)
 	}
 	return e.defaultProfile()
 }
@@ -158,10 +151,10 @@ func (e *Engine) profileEnvironments(ctx context.Context, profile Profile) ([]mo
 	switch profile.Rule {
 	case "":
 		releases = strings.Join(profile.Releases, ",")
-	case RuleHost:
-	case RuleAll, RuleMinMax:
+	case config.RuleHost:
+	case config.RuleAll, config.RuleMinMax:
 		releases = "all"
-	case RuleMacPortsCI:
+	case config.RuleMacPortsCI:
 		slugs, err := e.ciSlugs(ctx)
 		if err != nil {
 			return nil, err
@@ -173,9 +166,9 @@ func (e *Engine) profileEnvironments(ctx context.Context, profile Profile) ([]mo
 		return nil, fmt.Errorf("build profile %s: %w", profile.Name, err)
 	}
 	switch profile.Rule {
-	case RuleHost:
+	case config.RuleHost:
 		environments = environments[:min(1, len(environments))]
-	case RuleMinMax:
+	case config.RuleMinMax:
 		environments = slices.DeleteFunc(environments, func(environment model.Environment) bool {
 			darwin, err := strconv.Atoi(environment.Platform.Version)
 			return err == nil && darwin < minMaxFloor

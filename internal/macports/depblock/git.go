@@ -51,7 +51,7 @@ const (
 	GitOnline GitPolicy = "online"
 )
 
-// ResolvesOnline reports whether a cargo port's build lets Cargo fetch what
+// resolvesOnline reports whether a cargo port's build lets Cargo fetch what
 // it needs as it builds: the arguments cargo build runs with hold neither
 // --offline nor --frozen (which implies it). The cargo PortGroup gives it
 // cargo.offline_cmd, --frozen unless a Portfile says otherwise, in
@@ -62,7 +62,7 @@ const (
 // build isn't cargo's own, or its arguments weren't read, cargo.offline_cmd
 // says it; one not read is offline. depblock's one rule for both its
 // readers.
-func ResolvesOnline(options map[string]string) bool {
+func resolvesOnline(options map[string]string) bool {
 	offline := func(args string) bool {
 		for _, arg := range strings.Fields(args) {
 			if arg == "--offline" || arg == "--frozen" {
@@ -79,10 +79,10 @@ func ResolvesOnline(options map[string]string) bool {
 }
 
 // gitPolicy derives the port's policy from whether its build resolves
-// Git sources online (ResolvesOnline) and whether it declares
+// Git sources online (resolvesOnline) and whether it declares
 // cargo.crates_github.
 func gitPolicy(options map[string]string, declared bool) GitPolicy {
-	if !ResolvesOnline(options) {
+	if !resolvesOnline(options) {
 		return GitDeclared
 	}
 	if declared {
