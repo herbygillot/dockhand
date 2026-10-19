@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 type carrier struct {
@@ -59,8 +60,11 @@ func (s *Service) versionCarriers(ctx context.Context, request Request, input *s
 			failures++
 			continue
 		}
+		// A literal that moves the source alone carries a part of it, as
+		// openjdk's build number does its tag's, which an edit composed of
+		// several moves with the version's (composed).
 		info, ok := evaluated.after.Ports[input.target.Name]
-		if !ok || info.Version == input.info.Version {
+		if !ok {
 			continue
 		}
 		observed, err := portsource.Interpret(info, portsource.Edit)
@@ -108,11 +112,13 @@ func (s *Service) probeVersion(ctx context.Context, request Request, input *sour
 type versionInputs []carrier
 
 // versionEdit is one literal edit that may select the source version, with
-// the relation that produced it.
+// the relation that produced it; also are the other literals an edit of
+// several moves with it (composed).
 type versionEdit struct {
 	carrier  carrier
 	value    string
 	contents []byte
+	also     []macports.ReleaseInput
 }
 
 // edits proposes the distinct Portfile edits that could select sourceVersion.
@@ -147,7 +153,134 @@ func (inputs versionInputs) edits(data []byte, sourceVersion string) []versionEd
 		attempted[string(contents)] = true
 		result = append(result, versionEdit{carrier: carrier, value: value, contents: contents})
 	}
+	if len(result) == 0 {
+		result = inputs.composed(data, sourceVersion)
+	}
 	return result
+}
+
+// composed are the edits that select sourceVersion by moving several
+// literals together, where no one literal does: openjdk21's tag is
+// jdk-${openjdk_version}+${build}, so jdk-21.0.13+5 moves both the version's
+// literal and the build number's, and each alone was no edit (the composed
+// versions note, 2026-10-02). Each is a plain substitution into its own
+// place in the source version as it is; the text between them stays, and
+// is what the new version is split at, where it splits one way only. Two
+// or three move together; an edit is evaluated as any, and one alone must
+// select the source.
+func (inputs versionInputs) composed(data []byte, sourceVersion string) []versionEdit {
+	type placed struct {
+		carrier    carrier
+		start, end int
+	}
+	var plain []placed
+	old := ""
+	for _, c := range inputs {
+		if c.numeric != nil || c.sourceSeparator != "" {
+			continue
+		}
+		whole := c.prefix + c.candidate.Value + c.suffix
+		if old == "" {
+			old = whole
+		} else if whole != old {
+			continue
+		}
+		plain = append(plain, placed{carrier: c, start: len(c.prefix), end: len(c.prefix) + len(c.candidate.Value)})
+	}
+	if len(plain) < 2 || len(plain) > 8 {
+		return nil
+	}
+	var result []versionEdit
+	attempted := map[string]bool{}
+	try := func(set []placed) {
+		slices.SortFunc(set, func(a, b placed) int { return a.start - b.start })
+		var fixed []string
+		at := 0
+		for i, p := range set {
+			if p.start < at || i > 0 && p.carrier.candidate.Span == set[i-1].carrier.candidate.Span {
+				return
+			}
+			fixed = append(fixed, old[at:p.start])
+			at = p.end
+		}
+		fixed = append(fixed, old[at:])
+		for _, between := range fixed[1 : len(fixed)-1] {
+			if between == "" {
+				return
+			}
+		}
+		values, ok := splitOnce(sourceVersion, fixed)
+		if !ok {
+			return
+		}
+		var changes []textedit.Edit
+		var also []macports.ReleaseInput
+		for i, p := range set {
+			if !portfile.Literal(values[i]) {
+				return
+			}
+			if values[i] == p.carrier.candidate.Value {
+				continue
+			}
+			changes = append(changes, textedit.Edit{Span: p.carrier.candidate.Span, New: []byte(values[i])})
+			also = append(also, macports.ReleaseInput{Offset: p.carrier.candidate.Span.Start, Before: p.carrier.candidate.Value, After: values[i]})
+		}
+		if len(changes) < 2 {
+			return
+		}
+		contents, err := textedit.Apply(data, changes)
+		if err != nil || attempted[string(contents)] {
+			return
+		}
+		attempted[string(contents)] = true
+		first := set[slices.IndexFunc(set, func(p placed) bool { return p.carrier.candidate.Span.Start == also[0].Offset })]
+		result = append(result, versionEdit{carrier: first.carrier, value: also[0].After, contents: contents, also: also[1:]})
+	}
+	for i := range plain {
+		for j := i + 1; j < len(plain); j++ {
+			try([]placed{plain[i], plain[j]})
+			for k := j + 1; k < len(plain); k++ {
+				try([]placed{plain[i], plain[j], plain[k]})
+			}
+		}
+	}
+	return result
+}
+
+// splitOnce splits value at the fixed text between its parts, fixed[0]
+// leading it and fixed[len-1] ending it, into len(fixed)-1 parts, where it
+// splits one way only.
+func splitOnce(value string, fixed []string) ([]string, bool) {
+	rest, ok := strings.CutPrefix(value, fixed[0])
+	if !ok {
+		return nil, false
+	}
+	if rest, ok = strings.CutSuffix(rest, fixed[len(fixed)-1]); !ok {
+		return nil, false
+	}
+	var found [][]string
+	var walk func(rest string, between []string, parts []string)
+	walk = func(rest string, between []string, parts []string) {
+		if len(found) > 1 {
+			return
+		}
+		if len(between) == 0 {
+			if rest != "" {
+				found = append(found, append(slices.Clone(parts), rest))
+			}
+			return
+		}
+		for at := 1; at+len(between[0]) <= len(rest); at++ {
+			if strings.HasPrefix(rest[at:], between[0]) {
+				walk(rest[at+len(between[0]):], between[1:], append(slices.Clone(parts), rest[:at]))
+			}
+		}
+	}
+	walk(rest, fixed[1:len(fixed)-1], nil)
+	if len(found) != 1 {
+		return nil, false
+	}
+	return found[0], true
 }
 
 // evaluateVersion evaluates every distinct edit that could select sourceVersion
@@ -215,6 +348,10 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		}
 		selected, snapshot = contents, after
 		input.versionInput = macports.ReleaseInput{Portfile: input.target.Portfile, Offset: edit.carrier.candidate.Span.Start, Before: edit.carrier.candidate.Value, After: edit.value}
+		for _, also := range edit.also {
+			also.Portfile = input.target.Portfile
+			input.versionInput.Also = append(input.versionInput.Also, also)
+		}
 		matches++
 	}
 	if matches == 0 {

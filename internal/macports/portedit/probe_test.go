@@ -67,6 +67,9 @@ version [clock format [clock scan ${github.version} -format %Y-%m-%d -gmt 1] -fo
 		// A setup the table doesn't know, as go_toolchain.setup: its words
 		// are offered, and the probe keeps the one the version follows.
 		{"unknown setup", "proc fixture.setup {release} {github.setup owner fixture $release v}\nfixture.setup 1.26.8", "1.26.9", "1.26.9", "fixture.setup 1.26.9"},
+		// openjdk21's: the tag is the version and the build number, each a
+		// literal of its own, and a new release moves both.
+		{"two literals together", "set feature 21\nset openjdk_version ${feature}.0.12.1\nset build 1\ngithub.setup owner fixture ${openjdk_version}+${build} v\nversion ${openjdk_version}", "21.0.13+5", "21.0.13", "set build 5"},
 		{"inactive assignments", "set unused 1.2.3\nif {0} {set release 1.2.3}\nset release {1.2.3}\ngithub.setup owner fixture $release v", "1.2.4", "1.2.4", "set unused 1.2.3"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -16,6 +16,9 @@ type ReleaseInput struct {
 	Portfile      string
 	Offset        int
 	Before, After string
+	// Also are the other literals that moved with it, where the release
+	// is selected by several together, as openjdk's version and build.
+	Also []ReleaseInput `json:",omitempty"`
 }
 
 // ReleaseMember retains source identity as well as the evaluated package
