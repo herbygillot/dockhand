@@ -80,33 +80,24 @@ func (e *Engine) RenameArchived(ctx context.Context, branch model.Branch) (model
 	if branch.PullRequest != nil {
 		return branch, &TakenError{Branch: branch}
 	}
-	old := branch.ShortName()
-	name := archivedName(old)
-	for i := 2; ; i++ {
-		free, err := e.nameFree(ctx, name)
-		if err != nil {
-			return branch, err
-		}
-		if free {
-			break
-		}
-		name = fmt.Sprintf("%s-%d", archivedName(old), i)
-	}
-	if _, _, err := e.Repo.Branch(ctx, branch.Name); err == nil {
-		if err := e.Repo.RenameBranch(ctx, branch.Name, BranchName(name)); err != nil {
-			return branch, err
-		}
-	}
-	branch.Name = BranchName(name)
+	renamed := branch
 	err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
-		if err := tx.UpdateBranch(branch); err != nil {
+		name, err := e.asideName(ctx, tx, branch.ShortName())
+		if err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchRename, Level: model.LevelInfo,
-			Message: fmt.Sprintf("renamed %s to %s, archived, so a new branch could take its name", old, name)})
-		return err
+		if _, _, err := e.Repo.Branch(ctx, branch.Name); err == nil {
+			if err := e.Repo.RenameBranch(ctx, branch.Name, BranchName(name)); err != nil {
+				return err
+			}
+		}
+		renamed.Name = BranchName(name)
+		return e.recordAside(tx, branch, renamed, "archived, so a new branch could take its name")
 	}, branchRecorded(branch.ID))
-	return branch, err
+	if err != nil {
+		return branch, err
+	}
+	return renamed, nil
 }
 
 // Start creates a branch from freshly fetched master, in a sparse managed
@@ -512,29 +503,47 @@ func (r *RenameHeldError) Error() string {
 	return fmt.Sprintf("%s was renamed with Git onto a name %s's record holds, %s, which keeps it", r.Name, r.Holder.ShortName(), r.Holder.State)
 }
 
-// renameAside renames an archived or closed record aside, as
-// <name>-archived (-2, -3 where that's taken), within tx: its Git branch is
-// gone, a Git rename having taken the name.
+// renameAside renames an archived or closed record aside (asideName)
+// within tx: its Git branch is gone, a Git rename having taken the name.
 func (e *Engine) renameAside(ctx context.Context, tx store.Tx, holder model.Branch) error {
-	old := holder.ShortName()
+	name, err := e.asideName(ctx, tx, holder.ShortName())
+	if err != nil {
+		return err
+	}
+	renamed := holder
+	renamed.Name = BranchName(name)
+	return e.recordAside(tx, holder, renamed, string(holder.State)+", as a branch renamed with Git took its name")
+}
+
+// asideName is the one name a record set aside takes, within tx:
+// <name>-archived, or -2, -3 where a record, a Git branch, or a worktree
+// directory has that, which archive's rename and a Git rename's each chose
+// their own way (the architecture review of 5897a82, R3-13).
+func (e *Engine) asideName(ctx context.Context, tx store.Tx, old string) (string, error) {
 	name := archivedName(old)
 	for i := 2; ; i++ {
 		_, err := tx.BranchNamed(BranchName(name))
-		_, _, gitErr := e.Repo.Branch(ctx, BranchName(name))
-		if errors.Is(err, store.ErrNotFound) && errors.Is(gitErr, git.ErrBranchMissing) {
-			break
-		}
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
-			return err
+			return "", err
+		}
+		_, _, gitErr := e.Repo.Branch(ctx, BranchName(name))
+		if gitErr != nil && !errors.Is(gitErr, git.ErrBranchMissing) {
+			return "", gitErr
+		}
+		if err != nil && gitErr != nil && !exists(e.worktreeDirectory(BranchName(name))) {
+			return name, nil
 		}
 		name = fmt.Sprintf("%s-%d", archivedName(old), i)
 	}
-	holder.Name = BranchName(name)
-	if err := tx.UpdateBranch(holder); err != nil {
+}
+
+// recordAside records a branch renamed aside, and why, in tx.
+func (e *Engine) recordAside(tx store.Tx, before, after model.Branch, why string) error {
+	if err := tx.UpdateBranch(after); err != nil {
 		return err
 	}
-	_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: holder.ID, Kind: model.EventBranchRename, Level: model.LevelInfo,
-		Message: fmt.Sprintf("renamed %s to %s, %s, as a branch renamed with Git took its name", old, name, holder.State)})
+	_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: after.ID, Kind: model.EventBranchRename, Level: model.LevelInfo,
+		Message: fmt.Sprintf("renamed %s to %s, %s", before.ShortName(), after.ShortName(), why)})
 	return err
 }
 

@@ -370,6 +370,10 @@ type PrepareOptions struct {
 	To    ShipStage
 	Where Where
 	Tests model.TestPolicy
+	// Answered is how the person answered for what a person would decide,
+	// which serve sets to nobody: the caller says it, where prepareOne
+	// read it from Origin (the architecture review of 5897a82, R3-36).
+	Answered model.Answered
 }
 
 // PreparedUpdate is what preparing one planned update did.
@@ -402,13 +406,9 @@ func (e *Engine) PrepareOutdated(ctx context.Context, plan OutdatedPlan, options
 }
 
 func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options PrepareOptions) PreparedUpdate {
-	to, answered := cmp.Or(options.To, ShipCommit), model.AnsweredAsked
-	// What serve prepares nobody looks over.
-	if options.Origin == model.OriginServe {
-		answered = model.AnsweredNobody
-	}
+	to := cmp.Or(options.To, ShipCommit)
 	done := e.Ship(ctx, ShipTarget{Port: planned.Port.Port, Version: planned.Port.Newest, Release: planned.Port.Release, Name: planned.Name},
-		ShipOptions{Origin: options.Origin, To: to, Where: options.Where, Tests: options.Tests, Answered: answered})
+		ShipOptions{Origin: options.Origin, To: to, Where: options.Where, Tests: options.Tests, Answered: options.Answered})
 	done.Planned = planned
 	return done
 }

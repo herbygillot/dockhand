@@ -45,3 +45,25 @@ func TestAGoneBranchSaysHowToSetItAside(t *testing.T) {
 	require.ErrorContains(t, err, "its record is archived, and keeps the name: start the work under another name (reusing an archived branch's name comes after the release)")
 	require.NotContains(t, err.Error(), "dockhand archive")
 }
+
+// A record set aside takes one name, however it's set aside: <name>-archived,
+// or -2 where a Git branch has that, which archive's rename and a Git
+// rename's each chose their own way (the architecture review of 5897a82,
+// R3-13).
+func TestARecordSetAsideTakesTheFirstFreeName(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "notes"})
+	require.NoError(t, err)
+	archived, err := e.Archive(t.Context(), branch, false)
+	require.NoError(t, err)
+	testsupport.Git(t, f.clone, "branch", "dockhand/notes-archived", "master")
+	renamed, err := e.RenameArchived(t.Context(), archived)
+	require.NoError(t, err)
+	require.Equal(t, "notes-archived-2", renamed.ShortName())
+	require.Contains(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/notes-archived-2"), "dockhand/notes-archived-2")
+	found, err := e.Resolve(t.Context(), "notes-archived-2")
+	require.NoError(t, err)
+	require.Equal(t, archived.ID, found.ID)
+}

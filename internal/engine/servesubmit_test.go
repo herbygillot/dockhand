@@ -37,7 +37,11 @@ func preparedBy(t *testing.T, e *Engine, origin model.Origin) model.Branch {
 	require.NoError(t, err)
 	plan, err := e.PlanOutdated(t.Context(), report)
 	require.NoError(t, err)
-	prepared := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: origin, To: ShipCheck, Where: Where{Environments: []model.Environment{{Provider: "command"}}}, Tests: model.TestsDeclared})
+	answered := model.AnsweredAsked
+	if origin == model.OriginServe {
+		answered = model.AnsweredNobody
+	}
+	prepared := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: origin, Answered: answered, To: ShipCheck, Where: Where{Environments: []model.Environment{{Provider: "command"}}}, Tests: model.TestsDeclared})
 	require.Len(t, prepared, 1)
 	require.Empty(t, prepared[0].Problem)
 	run, err := e.Drive(t.Context(), session(t, e), prepared[0].Run.ID)
@@ -204,7 +208,7 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	require.NoError(t, err)
 	plan, err := e.PlanOutdated(t.Context(), report)
 	require.NoError(t, err)
-	early := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: model.OriginServe, To: ShipCheck, Where: Where{Environments: []model.Environment{{Provider: "command"}}}, Tests: model.TestsDeclared})
+	early := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: model.OriginServe, Answered: model.AnsweredNobody, To: ShipCheck, Where: Where{Environments: []model.Environment{{Provider: "command"}}}, Tests: model.TestsDeclared})
 	require.Len(t, early, 1)
 	require.Equal(t, "jq is held for a look before its edit: #34777 is open for the same port: jq: update to 1.8.1; no branch was started", early[0].Problem)
 	require.Nil(t, early[0].Run, "nothing is checked")
@@ -388,7 +392,7 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 	require.NoError(t, err)
 	plan, err := e.PlanOutdated(t.Context(), report)
 	require.NoError(t, err)
-	prepared := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: model.OriginServe, To: ShipCheck, Where: Where{Environments: []model.Environment{{Provider: "command"}}}, Tests: model.TestsDeclared})
+	prepared := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: model.OriginServe, Answered: model.AnsweredNobody, To: ShipCheck, Where: Where{Environments: []model.Environment{{Provider: "command"}}}, Tests: model.TestsDeclared})
 	require.Len(t, prepared, 1)
 	require.Empty(t, prepared[0].Problem)
 	checked, err := e.Drive(t.Context(), session(t, e), prepared[0].Run.ID)
@@ -493,6 +497,13 @@ func TestAMajorVersionHoldsAnUnattendedUpdate(t *testing.T) {
 
 	require.Equal(t, []string{"jq moves from 1.7.1 to 2.0.0, a major version update. holds.majors requires review before an unattended update"},
 		HoldLines(e.majorHolds([]model.Edit{{Kind: model.EditUpdate, Port: "jq", Release: &major}})))
+
+	// Who answered is the caller's to say, not read from the origin: a
+	// preparation nobody looks over holds, whoever started it (the
+	// architecture review of 5897a82, R3-36).
+	planned := PlannedUpdate{Port: OutdatedPort{Port: "jq", Current: "1.7.1", Newest: "2.0.0", Release: &major}, Name: "jq-2.0.0"}
+	done := e.prepareOne(t.Context(), planned, PrepareOptions{Origin: model.OriginPerson, Answered: model.AnsweredNobody})
+	require.Contains(t, done.Problem, "jq is held for a look before its edit")
 
 	e.options.AllowMajors = true
 	require.Nil(t, e.majorHold("jq", "1.7.1", "2.0.0"), "holds.majors = \"allow\"")

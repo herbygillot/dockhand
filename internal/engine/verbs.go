@@ -325,7 +325,10 @@ func (e *Engine) ArchiveBranch(ctx context.Context, request ArchiveRequest) (Arc
 		if err != nil {
 			return Archived{Branch: request.Branch}, err
 		}
-		if !plan.Unambiguous() {
+		// Nobody is asked here: only what may apply unasked is committed
+		// (AppliesUnasked, the one spelling of it; the architecture review
+		// of 5897a82, R3-9).
+		if plan.AppliesUnasked(model.AnsweredNobody, false) != nil {
 			return Archived{Branch: request.Branch, NeedsWords: true}, nil
 		}
 		if _, err := e.ApplyTidy(ctx, plan); err != nil {

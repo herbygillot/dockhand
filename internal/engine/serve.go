@@ -862,7 +862,8 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		report(fmt.Sprintf("serve: splitting the updates: %v", err))
 		return
 	}
-	prepare := PrepareOptions{Origin: model.OriginServe, To: to}
+	// What serve prepares nobody looks over.
+	prepare := PrepareOptions{Origin: model.OriginServe, To: to, Answered: model.AnsweredNobody}
 	if to == ShipSubmit {
 		// Checked here; serve's submitter submits what passes.
 		prepare.To = ShipCheck
