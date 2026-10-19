@@ -78,7 +78,9 @@ import (
 // program Cargo infers from src/main.rs counted beside [[bin]]s, where
 // ratty's read as removed (field testing at beb6e7bc). 22: a Python
 // project's PEP 517 backend moving holds, unless the Portfile names it.
-const Policy = 22
+// 23: a license file's copyright lines and license labels no license
+// matches aren't counted against the licenses found (libxkbcommon).
+const Policy = 23
 
 // Input is what one port's assessment reads.
 type Input struct {

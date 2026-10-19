@@ -333,3 +333,31 @@ func TestAFileThatIsntAnArchiveIsReadAsItself(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, Reading{Layout: Flat, Files: map[string]File{"LICENSE": {Data: []byte("MIT License\n")}}}, reading)
 }
+
+// Copyright lines and the labels a file of several licenses heads each
+// with ("SPDX full name:", "SPDX short identifier:", "License text:") are
+// no license's words, and aren't counted against the licenses found:
+// libxkbcommon's 1.13.2 LICENSE labels each license and has more copyright
+// lines than 1.7.0's (the person's coalesced roadmap, 2026-10-19). 1.13.2
+// also adds terms of its own for its test data, which no license known
+// has, so it still isn't wholly known: those are a person's to read.
+func TestLabelsAndCopyrightLinesAreNoLicensesWords(t *testing.T) {
+	t.Parallel()
+	read := func(version string) LicenseText {
+		data, err := os.ReadFile("testdata/xkbcommon-" + version + "-LICENSE")
+		require.NoError(t, err)
+		return File{Data: data}.License()
+	}
+	old, now := read("1.7.0"), read("1.13.2")
+	require.Equal(t, []string{"MIT", "HPND", "HPND-sell-variant"}, old.IDs)
+	require.True(t, old.Same(now))
+	require.True(t, old.Known())
+	require.Greater(t, now.Percent, 70.0, "64.0% with the labels and copyright lines counted")
+	require.False(t, now.Known(), "its test data's own terms are no license known")
+
+	mit := "Copyright (c) 2020 Ada\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n"
+	labeled := "SPDX full name: MIT License\nSPDX short identifier: MIT\nLicense text:\n\n" + strings.Repeat("Copyright (c) 2020 Someone Else\n", 12) + mit
+	require.True(t, File{Data: []byte(labeled)}.License().Known(), "labels and copyright lines aren't counted")
+	added := mit + "\nIn addition, the authors ask that any product using this Software display a notice crediting them in its documentation, its about screen, its website, and any advertising, for as long as the product is offered, and that they be told of each use. A product sold for profit must also pay the authors a fee agreed with them in writing before its first sale, and must not be used in any system that decides on a person's credit, housing, or employment without a review by a person.\n"
+	require.False(t, File{Data: []byte(added)}.License().Known(), "a paragraph of terms beside a license still holds")
+}

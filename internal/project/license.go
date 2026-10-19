@@ -27,19 +27,70 @@ type LicenseText struct {
 // of its own beside it, says more than the licenses found.
 const wholeText = 75
 
-// License classifies a license file's text: what licenses it is.
+// License classifies a license file's text: what licenses it is, of its
+// text but for its copyright lines and the labels a file of several
+// licenses heads each with ("SPDX full name:", "SPDX short identifier:",
+// "License text:"), which are no license's words: libxkbcommon 1.13.2's
+// LICENSE, MIT, HPND, and HPND-sell-variant as 1.7.0's was, with more
+// copyright lines, fell from 79.5% covered to 64.0% and held its update
+// (the person's coalesced roadmap, 2026-10-19).
 func (f File) License() LicenseText {
 	if f.Truncated {
 		return LicenseText{}
 	}
 	coverage := licensecheck.Scan(f.Data)
-	text := LicenseText{Percent: coverage.Percent}
+	text := LicenseText{Percent: coveredWords(f.Data, coverage)}
 	for _, match := range coverage.Match {
 		if !match.IsURL && !slices.Contains(text.IDs, match.ID) {
 			text.IDs = append(text.IDs, match.ID)
 		}
 	}
 	return text
+}
+
+// coveredWords is how much of a license file's words the licenses found
+// cover, leaving out the copyright lines and license labels no license's
+// match takes in: a template takes in a copyright line above its text, and
+// the ones beside it, and the labels, are no license's words.
+func coveredWords(data []byte, coverage licensecheck.Coverage) float64 {
+	inMatch := func(start, end int) bool {
+		for _, match := range coverage.Match {
+			if start < match.End && end > match.Start {
+				return true
+			}
+		}
+		return false
+	}
+	matched := 0
+	for _, match := range coverage.Match {
+		matched += len(strings.Fields(string(data[match.Start:match.End])))
+	}
+	total, offset := 0, 0
+	for _, line := range strings.SplitAfter(string(data), "\n") {
+		start, end := offset, offset+len(line)
+		offset = end
+		words := len(strings.Fields(line))
+		if labelLine(line) && !inMatch(start, end) {
+			continue
+		}
+		total += words
+	}
+	if total == 0 {
+		return 0
+	}
+	return min(100, 100*float64(matched)/float64(total))
+}
+
+// labelLine reports a copyright line, or a label heading a license in a
+// file of several.
+func labelLine(line string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(line))
+	for _, prefix := range []string{"copyright", "©", "(c)", "spdx full name:", "spdx short identifier:", "spdx-license-identifier:", "license text:"} {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // Known reports text the licenses found are, nearly all of it.
