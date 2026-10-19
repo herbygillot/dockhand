@@ -37,7 +37,8 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 				return err
 			}
 			defer e.Close()
-			branch, started, err := chooseBranch(ctx, e, streams, where, args[0], "edit")
+			chosen, err := chooseBranch(ctx, e, streams, where, args[0], engine.WorkEdit)
+			branch, started := chosen.branch, chosen.started
 			if err != nil {
 				return err
 			}
@@ -156,20 +157,20 @@ func revbumpBranch(ctx context.Context, e *engine.Engine, selector, port string,
 	if selector != "" {
 		// -b names an existing branch, planned in or not; --new=<name>
 		// starts one.
-		selection, err := e.Select(ctx, engine.Selector{Branch: selector, Policy: engine.SelectOrStart}, "rebuild", "revbump")
+		selection, err := e.Select(ctx, engine.Selector{Branch: selector, Policy: engine.SelectOrStart}, engine.WorkRevbump)
 		return selection.Branch, false, err
 	}
 	branch, err := e.Current(ctx)
 	if err == nil || !errors.Is(err, engine.ErrNoBranch) {
 		return branch, false, err
 	}
-	if current, currentErr := e.Repo.CurrentBranch(ctx); currentErr == nil && current != "master" && current != "main" {
+	if e.Untracked(ctx) != "" {
 		return model.Branch{}, false, err
 	}
 	if plan {
 		return model.Branch{}, false, errors.New("--plan changes nothing, so it starts no branch; plan in an existing one with --branch")
 	}
-	return startFor(ctx, e, port, whatFor("revbump"))
+	return startFor(ctx, e, port, engine.WorkRevbump)
 }
 
 func retryCommand(s *settings, streams Streams) *cobra.Command {

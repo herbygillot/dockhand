@@ -45,7 +45,7 @@ func (b branchFlags) explicit() bool {
 // with their exact names. A flag beats where the command runs, and says
 // so where the two differ.
 func (b branchFlags) resolve(ctx context.Context, e *engine.Engine, streams Streams) (model.Branch, error) {
-	selection, err := e.Select(ctx, engine.Selector{Branch: b.branch, PR: b.pr, Port: b.port, Policy: engine.SelectExisting}, "", "")
+	selection, err := e.Select(ctx, engine.Selector{Branch: b.branch, PR: b.pr, Port: b.port, Policy: engine.SelectExisting}, engine.WorkNone)
 	// A checkout dockhand doesn't track is offered what tracks it, on a
 	// terminal, where nothing else could be meant; a script is refused,
 	// naming it (the roadmap's part 3, by the command-line UX review's §2).
@@ -61,7 +61,8 @@ func (b branchFlags) resolve(ctx context.Context, e *engine.Engine, streams Stre
 		}
 		return model.Branch{}, err
 	}
-	branch, _, err := settleSelection(ctx, e, streams, selection, b.port, "", false)
+	chosen, err := settleSelection(ctx, e, streams, selection, b.port, engine.WorkNone, false)
+	branch := chosen.branch
 	if err != nil || !b.explicit() {
 		return branch, err
 	}

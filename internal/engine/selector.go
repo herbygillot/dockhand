@@ -96,24 +96,79 @@ const (
 	SelectOrStart
 )
 
+// Work is what a command does in the branch it selects, which names a
+// branch started for the port (NameFor) and says the work where a refusal
+// does; WorkNone starts none (the architecture review of 5897a82, R3-25:
+// a name suffix, a "version" sentinel, and a purpose string were passed
+// beside each other).
+type Work string
+
+const (
+	// WorkNone reads or acts on a branch, and starts none.
+	WorkNone Work = ""
+	// WorkUpdate is a version update, whose branch is named for the
+	// version it finds, once it does (Selection.ForVersion).
+	WorkUpdate    Work = "update"
+	WorkEdit      Work = "edit"
+	WorkChecksums Work = "checksums"
+	WorkRevbump   Work = "revbump"
+	WorkCreate    Work = "create"
+)
+
+// nameSuffix is what a branch started for the work is named for, after
+// its port: an edit's, nothing more.
+func (w Work) nameSuffix() string {
+	switch w {
+	case WorkChecksums:
+		return "checksums"
+	case WorkRevbump:
+		return "rebuild"
+	case WorkCreate:
+		return "new"
+	}
+	return ""
+}
+
+// startRequest is the branch to start for the work on port, named NewName
+// where one was given, else for the work, or for the version an update
+// finds.
+func (e *Engine) startRequest(ctx context.Context, port, name string, work Work) (Selection, error) {
+	start := &StartRequest{Name: name}
+	if port != "" {
+		start.Ports = []string{port}
+	}
+	if start.Name != "" {
+		return Selection{Start: start}, nil
+	}
+	if work == WorkUpdate {
+		return Selection{Start: start, ForVersion: true}, nil
+	}
+	var err error
+	start.Name, err = e.NameFor(ctx, port, work.nameSuffix())
+	return Selection{Start: start}, err
+}
+
 // Selection is what a Selector found: Branch, an existing branch, with
 // Said, how it was chosen where the first line says it; Start, a branch to
-// start, its Name empty where an update names it for the version it
-// finds; or Choices, the open branches that change the port, where more
+// start; or Choices, the open branches that change the port, where more
 // than one does, for a person to choose among, or a script to be told.
 type Selection struct {
-	Branch  model.Branch
-	Said    string
-	Start   *StartRequest
-	Choices []PortBranch
+	Branch model.Branch
+	Said   string
+	Start  *StartRequest
+	// ForVersion is Start's branch named for the version an update finds,
+	// started once there's an edit to make (UpdateRequest.Start); its Name
+	// is empty.
+	ForVersion bool
+	Choices    []PortBranch
 }
 
 // Select finds the branch a Selector names, or says the branch to start
 // or the choices a person has. A name -b gives is an existing branch's,
 // never one started: a typo made one (the command-line UX second look's
-// §1). what is what a branch started for the port is named for
-// (NameFor), and purpose what the work is, as a refusal says it.
-func (e *Engine) Select(ctx context.Context, selector Selector, what, purpose string) (Selection, error) {
+// §1). work is what's done in it, which names a branch started for the
+// port, and a refusal says.
+func (e *Engine) Select(ctx context.Context, selector Selector, work Work) (Selection, error) {
 	switch {
 	case selector.Branch != "":
 		branch, err := e.Resolve(ctx, selector.Branch)
@@ -140,20 +195,9 @@ func (e *Engine) Select(ctx context.Context, selector Selector, what, purpose st
 		branch, err := e.PullRequestBranch(ctx, selector.PR)
 		return Selection{Branch: branch}, err
 	case selector.New:
-		start := &StartRequest{Name: selector.NewName}
-		if selector.Port != "" {
-			start.Ports = []string{selector.Port}
-		}
-		if start.Name == "" && what != "version" {
-			name, err := e.NameFor(ctx, selector.Port, what)
-			if err != nil {
-				return Selection{}, err
-			}
-			start.Name = name
-		}
-		return Selection{Start: start}, nil
+		return e.startRequest(ctx, selector.Port, selector.NewName, work)
 	case selector.Policy == SelectExisting && selector.Port != "":
-		return e.portSelection(ctx, selector.Port, false, what)
+		return e.portSelection(ctx, selector.Port, false, work)
 	}
 	branch, err := e.Current(ctx)
 	if err == nil || !errors.Is(err, ErrNoBranch) || selector.Policy == SelectExisting || selector.Port == "" {
@@ -162,22 +206,45 @@ func (e *Engine) Select(ctx context.Context, selector Selector, what, purpose st
 	// A branch someone made and dockhand does not track is theirs to
 	// adopt where it changes the port; otherwise it's no context, as
 	// master isn't, or no branch at all (D7).
-	if beside, cerr := e.Repo.CurrentBranch(ctx); cerr == nil && beside != "master" && beside != "main" {
-		changes, err := e.ChangesHere(ctx, selector.Port)
-		if err != nil {
-			return Selection{}, err
+	if beside, err := e.UntrackedChanging(ctx, selector.Port); err != nil || beside != "" {
+		if err == nil {
+			err = fmt.Errorf("%w: %s changes %s and isn't tracked; dockhand adopt tracks it, so the %s is made there, or --new starts a branch from master without its changes", ErrNoBranch, beside, selector.Port, work)
 		}
-		if changes {
-			return Selection{}, fmt.Errorf("%w: %s changes %s and isn't tracked; dockhand adopt tracks it, so the %s is made there, or --new starts a branch from master without its changes", ErrNoBranch, beside, selector.Port, purpose)
-		}
+		return Selection{}, err
 	}
-	return e.portSelection(ctx, selector.Port, true, what)
+	return e.portSelection(ctx, selector.Port, true, work)
+}
+
+// Untracked is the branch checked out here where it's one a person made
+// and dockhand doesn't track: empty on master, or with no branch at all,
+// which are no context (D7). Where no tracked branch is checked out, its
+// changes are a person's own.
+func (e *Engine) Untracked(ctx context.Context) string {
+	if current, err := e.Repo.CurrentBranch(ctx); err == nil && current != "master" && current != "main" {
+		return current
+	}
+	return ""
+}
+
+// UntrackedChanging is the untracked branch checked out here (Untracked)
+// where it changes port, which a branch from master would leave out:
+// adopting it makes the work there. Empty where none does.
+func (e *Engine) UntrackedChanging(ctx context.Context, port string) (string, error) {
+	beside := e.Untracked(ctx)
+	if beside == "" {
+		return "", nil
+	}
+	changes, err := e.ChangesHere(ctx, port)
+	if err != nil || !changes {
+		return "", err
+	}
+	return beside, nil
 }
 
 // portSelection is the open branch that changes a port, where exactly one
 // does; the choices, where several do; and where none does, a branch to
 // start for it, where start says one may be, or else no branch.
-func (e *Engine) portSelection(ctx context.Context, port string, start bool, what string) (Selection, error) {
+func (e *Engine) portSelection(ctx context.Context, port string, start bool, work Work) (Selection, error) {
 	found, err := e.PortBranches(ctx, port)
 	switch {
 	case err != nil:
@@ -189,11 +256,5 @@ func (e *Engine) portSelection(ctx context.Context, port string, start bool, wha
 	case !start:
 		return Selection{}, fmt.Errorf("%w changes %s; dockhand status -p %s lists every branch touching it", ErrNoBranch, port, port)
 	}
-	request := &StartRequest{Ports: []string{port}}
-	if what != "version" {
-		if request.Name, err = e.NameFor(ctx, port, what); err != nil {
-			return Selection{}, err
-		}
-	}
-	return Selection{Start: request}, nil
+	return e.startRequest(ctx, port, "", work)
 }

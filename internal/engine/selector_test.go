@@ -86,6 +86,31 @@ func TestABranchIsNamedForWhatItDoes(t *testing.T) {
 	require.Regexp(t, `^jq-[a-z0-9]{4}$`, plain, "nothing more to say: the port and an ID")
 }
 
+// The work a command selects a branch for names one started for the port:
+// a checksum refresh's and a rebuild's for what they do, an edit's for its
+// port alone, and an update's for the version it finds, which Select says
+// rather than a name (the architecture review of 5897a82, R3-25).
+func TestTheWorkNamesTheBranchStartedForIt(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	for work, name := range map[Work]string{WorkChecksums: `^jq-checksums$`, WorkRevbump: `^jq-rebuild$`, WorkEdit: `^jq-[a-z0-9]{4}$`} {
+		selection, err := e.Select(t.Context(), Selector{Port: "jq", New: true}, work)
+		require.NoError(t, err)
+		require.False(t, selection.ForVersion, work)
+		require.Regexp(t, name, selection.Start.Name, work)
+		require.Equal(t, []string{"jq"}, selection.Start.Ports, work)
+	}
+	update, err := e.Select(t.Context(), Selector{Port: "jq", Policy: SelectOrStart}, WorkUpdate)
+	require.NoError(t, err)
+	require.True(t, update.ForVersion, "named once the update finds its version")
+	require.Empty(t, update.Start.Name)
+	named, err := e.Select(t.Context(), Selector{Port: "jq", New: true, NewName: "mine"}, WorkUpdate)
+	require.NoError(t, err)
+	require.False(t, named.ForVersion, "--new=<name> names it")
+	require.Equal(t, "mine", named.Start.Name)
+}
+
 // A branch named for the version an update moved it to is renamed for
 // the next version, while no pull request has it; its worktree stays
 // where it is, and its record follows. One with a pull request keeps its

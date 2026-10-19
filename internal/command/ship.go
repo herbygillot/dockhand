@@ -155,21 +155,26 @@ func shipTargets(ctx context.Context, e *engine.Engine, streams Streams, ports [
 	}
 	var targets []shipTarget
 	for _, port := range ports {
-		changing, err := e.BranchesChanging(ctx, port)
+		// The port's own open branch, as Select finds it, one asked about
+		// where several change it; none is a branch the update starts (the
+		// architecture review of 5897a82, R3-3: the 0, 1, or many rule was
+		// written here again the day after Select took it).
+		selection, err := e.Select(ctx, engine.Selector{Port: port, Policy: engine.SelectExisting}, engine.WorkUpdate)
+		if errors.Is(err, engine.ErrNoBranch) {
+			targets = append(targets, shipTarget{port: port})
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
-		switch len(changing) {
-		case 0:
+		chosen, err := settleSelection(ctx, e, streams, selection, port, engine.WorkUpdate, false)
+		switch {
+		case err != nil:
+			return nil, err
+		case chosen.forVersion:
 			targets = append(targets, shipTarget{port: port})
-		case 1:
-			targets = append(targets, shipTarget{port: port, branch: &changing[0]})
 		default:
-			var names []string
-			for _, branch := range changing {
-				names = append(names, branch.ShortName())
-			}
-			return nil, fmt.Errorf("%s has changes in multiple branches: %s. Use dockhand ship -b <branch> to choose one", port, strings.Join(names, ", "))
+			targets = append(targets, shipTarget{port: port, branch: &chosen.branch})
 		}
 	}
 	return targets, nil

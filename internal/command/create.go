@@ -83,7 +83,7 @@ its go-get answer.`,
 			case where.branch != "":
 				// -b names an existing branch; --new=<name> starts one.
 				var selection engine.Selection
-				if selection, err = e.Select(ctx, engine.Selector{Branch: where.branch, Policy: engine.SelectOrStart}, "new", "create"); err == nil {
+				if selection, err = e.Select(ctx, engine.Selector{Branch: where.branch, Policy: engine.SelectOrStart}, engine.WorkCreate); err == nil {
 					branch = selection.Branch
 				}
 			case where.isNew():

@@ -91,6 +91,29 @@ func TestShipStopsWhereToSays(t *testing.T) {
 	require.EqualError(t, err, "choose one target source: port names, --mine, --passing, or a branch")
 }
 
+// ship <port> finds the port's branch as every authoring command does,
+// through engine.Select: a script is told the branches where several change
+// it, and a terminal asks which (the architecture review of 5897a82, R3-3:
+// ship had its own refusal, "Use dockhand ship -b <branch>").
+func TestShipChoosesAPortsBranchAsSelectDoes(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "passed")
+	g := withGitHub(t, w)
+	g.Others = nil
+
+	_, errs, err := dockhand(t, "ship", "jq", "--to", "commit")
+	require.NoError(t, err, errs)
+	_, errs, err = dockhand(t, "revbump", "jq", "--subject", "rebuild", "--new=jq-rebuild")
+	require.NoError(t, err, errs)
+	_, _, err = dockhand(t, "ship", "jq", "--to", "commit")
+	require.EqualError(t, err, "jq is changed in more than one open branch: jq-1.8.1, jq-rebuild (revision only); name one with -b")
+	_, errs, err = shipAnswering(t, "1\nn\n", "jq", "--to", "commit")
+	require.NoError(t, err, errs)
+	require.Contains(t, errs, "? which one, or n for a new branch? [1-2/n] ")
+}
+
 // --mine ships the person's ports outdated --mine finds newer releases of,
 // at the release it found, and says what it leaves; --passing, the
 // branches whose checks passed and aren't submitted.
