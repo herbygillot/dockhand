@@ -16,8 +16,8 @@ main after the last of them, finds none left.
 | 0d4cca4d | R3-9's engine half, R3-36, R3-13 | [who answered, one aside name](2026-10-19-who-answered-and-aside.md) |
 | d8616f1e | R3-12, R3-22, R3-37, R3-39's second half | [command owners](2026-10-19-command-owners.md) |
 | f3e736c6 | R3-7, R3-18, R3-19, R3-29 with finding 14, R3-26 | [five duplicates](2026-10-19-five-duplicates.md) |
-| the next | R3-15, R3-16, R3-28, R3-10's signature, R3-21's second half | [planning, profiles, exports](2026-10-19-planning-profiles-exports.md) |
-| this one | R3-33 | docs/architecture.md, below |
+| ca9765d1 | R3-15, R3-16, R3-28, R3-10's signature, R3-21's second half | [planning, profiles, exports](2026-10-19-planning-profiles-exports.md) |
+| 633cb3eb | R3-33 | docs/architecture.md, below |
 
 ## The greps
 
