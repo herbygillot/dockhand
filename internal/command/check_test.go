@@ -106,6 +106,14 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass. Logs: dockhand logs check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
 	require.Contains(t, out, "jq failed at install; the last it printed:\n    building from ", "what no reading of its log explained (the Vx port's field testing)")
+	// Where each failure's log is, by environment and attempt, where it
+	// said only dockhand logs check-N (the exiv2 field notes, 2026-10-19).
+	require.Regexp(t, `\nLogs:\n  jq on command, attempt 1: ~/\.dockhand/logs/check-3/command-1/command\.log(\.gz)?\n`, out)
+	// A port's log says which build it is: the environment, the attempt
+	// of how many, the run, how it went, and where.
+	_, logged, err := dockhand(t, "logs", "check-3", "jq")
+	require.NoError(t, err)
+	require.Regexp(t, `jq's log on command, attempt 1 of 3, run command_[a-z0-9]{16}: failed at install; ~/\.dockhand/logs/check-3/command-1/command\.log\.gz\n`, logged)
 }
 
 // A narrowed plan says what --only left out, and that submit still needs

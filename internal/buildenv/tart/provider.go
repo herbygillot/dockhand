@@ -916,7 +916,12 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 	// again only once it changes: at most a line a read, and one a step
 	// (SQL-S4's coalescing).
 	building, said := "", ""
-	lost := func(err error) error { return interrupted(job, build, building, err) }
+	// A lost guest's partial log of what it was building is fetched where
+	// it still answers, as when its program stopped or errored; a stopped
+	// VM's isn't asked for.
+	lost := func(err error) error {
+		return interrupted(job, build, building, err, func(name string) string { return p.partialLog(ctx, g, job, name) })
+	}
 	// take takes in what the guest has written: what it reported about
 	// itself, once, and each target's result not yet recorded. Every read
 	// goes through it, the last one too, since the guest writes its
@@ -943,7 +948,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-started.Done():
-			return lost(fmt.Errorf("%w: the VM stopped: %v", buildenv.ErrInfrastructure, started.Err()))
+			return interrupted(job, build, building, fmt.Errorf("%w: the VM stopped: %v", buildenv.ErrInfrastructure, started.Err()), nil)
 		case <-time.After(p.poll()):
 		}
 		results, err := p.read(ctx, g)
@@ -1037,14 +1042,22 @@ func buildingWords(job buildenv.Job, release macos.Release, results guestResults
 // interrupted records the target a lost guest was building as
 // interrupted, with why it was lost, and returns why. The runner tries it
 // again, as it does a target the guest never reached; the result says the
-// guest got as far as building it.
-func interrupted(job buildenv.Job, build buildenv.Build, building string, cause error) error {
+// guest got as far as building it, with the log it had written, where
+// fetch brings it: exiv2's check-448 kept an empty directory for its
+// interrupted first attempt, and nothing said why (the exiv2 field notes,
+// 2026-10-19).
+func interrupted(job buildenv.Job, build buildenv.Build, building string, cause error, fetch func(name string) string) error {
 	i := slices.IndexFunc(job.Targets, func(target buildenv.Target) bool { return string(target.ID) == building })
 	if i < 0 {
 		return cause
 	}
 	detail := strings.TrimPrefix(cause.Error(), buildenv.ErrInfrastructure.Error()+": ")
-	if err := build.Record(model.TargetResult{Target: job.Targets[i].ID, Outcome: model.OutcomeInterrupted, Detail: detail}); err != nil {
+	result := model.TargetResult{Target: job.Targets[i].ID, Outcome: model.OutcomeInterrupted, Detail: detail}
+	if fetch != nil {
+		// The guest names each target's log for its place in the job.
+		result.Log = fetch(fmt.Sprintf("target-%d.log", i+1))
+	}
+	if err := build.Record(result); err != nil {
 		return fmt.Errorf("%w; %s wasn't recorded as interrupted: %v", cause, building, err)
 	}
 	return cause
@@ -1069,6 +1082,19 @@ func stopped(ctx context.Context, g guest) (bool, error) {
 }
 
 // record copies a target's log out of the guest and records its result.
+// partialLog fetches a log the guest was still writing into the job's
+// directory, within half a minute, and says where it is; empty where the
+// guest didn't give it.
+func (p *Provider) partialLog(ctx context.Context, g guest, job buildenv.Job, name string) string {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	local := filepath.Join(job.Directory, name)
+	if err := g.Download(ctx, guestRoot+"/"+name, local, true); err != nil {
+		return ""
+	}
+	return local
+}
+
 func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build buildenv.Build, got guestResult) error {
 	var target buildenv.Target
 	found := false

@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -269,19 +270,16 @@ log.`,
 				view.Elsewhere = append(view.Elsewhere, portLogElsewhereJSON{Execution: string(other.execution.ID), Environment: environmentView(other.execution.Environment), Outcome: string(other.result.Outcome), Tests: string(other.result.Tests)})
 			}
 			streams.emit(view)
-			// Which build's log this is, where the check built the port in
-			// more than one place, goes with the steps, or beside a log
-			// printed alone, so the log stays as it is.
-			if len(others) > 0 {
-				where := streams.Out
-				if full || len(found.Steps) == 0 {
-					where = streams.Err
-				}
-				fmt.Fprintf(where, "%s's log on %s, run %s: %s\n", port, engine.DescribeEnvironment(chosen.execution.Environment), chosen.execution.ID, portBuildWords(found))
-				for _, other := range others {
-					fmt.Fprintf(where, "  also on %s, run %s: %s; dockhand logs %s %s\n", engine.DescribeEnvironment(other.execution.Environment), other.execution.ID, portBuildWords(other.result), other.execution.ID, port)
-				}
+			// Which build's log this is goes with the steps, or beside a log
+			// printed alone, so the log stays as it is: its environment,
+			// attempt, run, and path, and what ended an earlier attempt
+			// there, where exiv2's said none of it (the exiv2 field notes,
+			// 2026-10-19).
+			where := streams.Out
+			if full || len(found.Steps) == 0 {
+				where = streams.Err
 			}
+			writePortLogHeading(where, logs, port, chosen, others)
 			return writePortLog(streams.Out, found, data, full)
 		},
 	}
@@ -289,6 +287,26 @@ log.`,
 	cmd.Flags().BoolVar(&full, "full", false, "with a port, print the whole log")
 	supportsJSON(cmd)
 	return cmd
+}
+
+// writePortLogHeading says which build's log of a port this is: the
+// environment, the attempt of how many, the provider run, how it went,
+// and where its log is, .gz once compressed; what ended each earlier
+// attempt in that environment, which a retry's log doesn't say; and the
+// port's other builds, each with how to see its log.
+func writePortLogHeading(out io.Writer, logs engine.RunLogs, port string, chosen portLog, others []portLog) {
+	execution := chosen.execution
+	fmt.Fprintf(out, "%s's log on %s, attempt %d of %d, run %s: %s; %s\n", port, engine.DescribeEnvironment(execution.Environment), execution.Attempt, model.MaxAttempts, execution.ID,
+		portBuildWords(chosen.result), config.Tilde(buildlog.Where(chosen.result.Log)))
+	for _, earlier := range logs.Executions {
+		if earlier.Execution.Environment == execution.Environment && earlier.Execution.Attempt < execution.Attempt {
+			ended := cmp.Or(earlier.Execution.Detail, string(earlier.Execution.State))
+			fmt.Fprintf(out, "  attempt %d ended: %s\n", earlier.Execution.Attempt, ended)
+		}
+	}
+	for _, other := range others {
+		fmt.Fprintf(out, "  also on %s, attempt %d, run %s: %s; dockhand logs %s %s\n", engine.DescribeEnvironment(other.execution.Environment), other.execution.Attempt, other.execution.ID, portBuildWords(other.result), other.execution.ID, port)
+	}
 }
 
 // portLog is one build's log of a port: the provider run it was in, and

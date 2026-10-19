@@ -612,13 +612,13 @@ func TestTheTargetALostGuestWasBuildingIsInterrupted(t *testing.T) {
 	}{
 		"errored": {
 			newMac(guestResults{State: "running", Targets: []guestResult{passed}}, guestResults{State: "errored", Building: "harbor-cli", Targets: []guestResult{passed}, Detail: "building harbor-cli: no such variable"}),
-			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest: building harbor-cli: no such variable"}},
+			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest: building harbor-cli: no such variable", Log: "target-2.log"}},
 		},
 		// What the guest wrote last, read after it stopped, is taken first:
 		// libharbor finished, and harbor-cli was building.
 		"exited": {
 			newMac(guestResults{State: "running", Building: "libharbor"}, guestResults{State: "running", Building: "harbor-cli", Targets: []guestResult{passed}}),
-			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest program stopped before it finished: the runner's last words"}},
+			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest program stopped before it finished: the runner's last words", Log: "target-2.log"}},
 		},
 		"between targets": {newMac(guestResults{State: "running", Targets: []guestResult{passed}}), []model.TargetResult{}},
 	} {
@@ -630,6 +630,14 @@ func TestTheTargetALostGuestWasBuildingIsInterrupted(t *testing.T) {
 			err := testProvider(test.mac).Execute(t.Context(), tartJob(t, 1), build)
 			require.ErrorIs(t, err, buildenv.ErrInfrastructure)
 			require.Equal(t, model.OutcomePassed, build.results[0].Outcome, "what the guest finished stays recorded")
+			// The partial log of what it was building is fetched where the
+			// guest still answers (the exiv2 field notes, 2026-10-19).
+			for i := range build.results[1:] {
+				if log := build.results[1+i].Log; log != "" {
+					require.FileExists(t, log)
+					build.results[1+i].Log = filepath.Base(log)
+				}
+			}
 			require.Equal(t, test.want, build.results[1:])
 		})
 	}

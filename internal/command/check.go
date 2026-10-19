@@ -14,6 +14,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
+	"github.com/herbygillot/dockhand/internal/buildlog"
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -540,6 +542,9 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 		return nil
 	case model.RunFailed:
 		writeFailureLines(out, evidence)
+		if logs, err := e.Logs(ctx, run.ID); err == nil {
+			writeFailureLogs(out, logs)
+		}
 		if err := hintBaseline(ctx, e, out, run); err != nil {
 			fmt.Fprintf(streams.Err, "baseline: %v\n", err)
 		}
@@ -595,6 +600,34 @@ func stopWords(run model.Run, wasQueued bool) string {
 		return fmt.Sprintf("Canceled %s before it started.", run.Name())
 	}
 	return fmt.Sprintf("Stopped %s; what it finished is kept.", run.Name())
+}
+
+// writeFailureLogs lists where each failure's log is, by environment and
+// attempt, .gz once compressed, and why an attempt was tried again, where
+// a failed check said only "dockhand logs check-N" (the exiv2 field notes,
+// 2026-10-19).
+func writeFailureLogs(out io.Writer, logs engine.RunLogs) {
+	var lines []string
+	for _, execution := range logs.Executions {
+		x := execution.Execution
+		where := fmt.Sprintf("%s, attempt %d", engine.DescribeEnvironment(x.Environment), x.Attempt)
+		if x.State == model.ExecutionInfrastructure && x.Detail != "" {
+			lines = append(lines, fmt.Sprintf("  %s was tried again: %s", where, x.Detail))
+		}
+		for _, result := range execution.Results {
+			if result.Log != "" && (result.Outcome == model.OutcomeFailed || result.Outcome == model.OutcomeInterrupted || result.Tests.Failed()) {
+				lines = append(lines, fmt.Sprintf("  %s on %s: %s", result.Target, where, config.Tilde(buildlog.Where(result.Log))))
+			}
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "Logs:")
+	for _, line := range lines {
+		fmt.Fprintln(out, line)
+	}
+	fmt.Fprintln(out)
 }
 
 // hintBaseline points a failed check to check --baseline when a baseline

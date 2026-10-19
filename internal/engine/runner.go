@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -620,6 +621,11 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			Directory: filepath.Join(e.LogDirectory(), d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
 		err = provider.Execute(ctx, job, build)
 		build.blockRemaining(building)
+		// An attempt that left no log keeps no directory for it: exiv2's
+		// check-448 had an empty tart-macos27-arm64-1/ beside -2/, and
+		// nothing said why (the exiv2 field notes, 2026-10-19). Remove
+		// takes a directory only where it's empty.
+		_ = os.Remove(job.Directory)
 		// The build's copy holds what the provider reported.
 		execution = build.execution
 		switch {
