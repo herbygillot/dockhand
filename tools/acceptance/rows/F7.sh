@@ -14,7 +14,9 @@ act() {
 	checkpoint "point sources.conf at $MACPORTS_TREE, then resume" || return 0
 	# setup's Providers rows say how each MacPorts setup reads.
 	dh setup --yes || :
-	dh_bg check -b "$F7_BRANCH"
+	# --fresh: a check that reuses an earlier build starts no guest, and
+	# selfupdate overlaps no build; rc4's reused check-361 (the rc4 sitting).
+	dh_bg check -b "$F7_BRANCH" --fresh
 	checkpoint "run sudo port selfupdate while the check runs" || return 0
 	dh_bg_wait || :
 }
