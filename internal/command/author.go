@@ -262,11 +262,10 @@ func branchPort(ctx context.Context, s *settings, where branchChoice) (string, e
 	if err != nil {
 		return "", err
 	}
-	status, err := e.BranchStatus(ctx, selection.Branch)
+	port, ok, err := e.BranchPort(ctx, selection.Branch)
 	if err != nil {
 		return "", err
 	}
-	port, ok := status.OnlyPort()
 	if !ok {
 		return "", fmt.Errorf("name the port: %s changes no port yet, or more than one", selection.Branch.ShortName())
 	}

@@ -682,7 +682,7 @@ func writeNextFor(ctx context.Context, e *engine.Engine, out io.Writer, id model
 // and said, as its caller goes on by what was last read; the store's is
 // returned as it is.
 func refreshPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) error {
-	refreshed, err := e.RefreshPullRequests(ctx)
+	refreshed, err := readPullRequests(ctx, e, out)
 	if err != nil {
 		return err
 	}
@@ -690,14 +690,27 @@ func refreshPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) e
 		if r.Err != nil {
 			fmt.Fprintf(out, "%s: could not read #%d: %v\n", r.Branch.ShortName(), r.Branch.PullRequest.Number, r.Err)
 		}
-		for _, change := range r.Changes {
-			fmt.Fprintf(out, "%s: %s\n", r.Branch.ShortName(), change)
-		}
 	}
 	if refreshed.Refused != nil {
 		return refusedRead{refreshed.Refused}
 	}
 	return nil
+}
+
+// readPullRequests is the one read of the pull requests status and clean
+// make, saying what changed of each; its callers say what couldn't be read
+// as they go on (the architecture review of 5897a82, R3-39).
+func readPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) (engine.RefreshResult, error) {
+	refreshed, err := e.RefreshPullRequests(ctx)
+	if err != nil {
+		return refreshed, err
+	}
+	for _, r := range refreshed.Branches {
+		for _, change := range r.Changes {
+			fmt.Fprintf(out, "%s: %s\n", r.Branch.ShortName(), change)
+		}
+	}
+	return refreshed, nil
 }
 
 // refusedRead is GitHub refusing to let the pull requests be read at
@@ -722,7 +735,7 @@ func readStalePullRequests(ctx context.Context, e *engine.Engine, out io.Writer)
 	}
 	ctx, cancel := context.WithTimeout(ctx, staleReadTimeout)
 	defer cancel()
-	refreshed, err := e.RefreshPullRequests(ctx)
+	refreshed, err := readPullRequests(ctx, e, out)
 	if err == nil {
 		err = refreshed.Refused
 	}
@@ -733,9 +746,6 @@ func readStalePullRequests(ctx context.Context, e *engine.Engine, out io.Writer)
 			if err == nil {
 				err = r.Err
 			}
-		}
-		for _, change := range r.Changes {
-			fmt.Fprintf(out, "%s: %s\n", r.Branch.ShortName(), change)
 		}
 	}
 	switch {

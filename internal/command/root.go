@@ -106,24 +106,66 @@ dockhand bump <port> does all four asking nothing, and stops where you
 should look. docs/usage.md is the guide, and dockhand status shows where
 things are.`
 
-// inspectRoot, when set, is given the command tree before it runs, for a
-// test that reads every command's help.
-var inspectRoot func(*cobra.Command)
-
 // Run executes the command line in args.
 func Run(ctx context.Context, args []string, streams Streams) error {
 	var settings settings
+	stdout := streams.Out
+	streams = runStreams(streams, args)
+	settings.streams = streams
+	out, mode := streams.Out.(*switchWriter), streams.mode
+	root := newRoot(&settings, streams)
+	// Cobra reads os.Args for nil arguments; Run's are only those given,
+	// so a test binary's own flags never reach a command.
+	root.SetArgs(append([]string{}, args...))
+	root.SetIn(streams.In)
+	root.SetOut(streams.Out)
+	root.SetErr(streams.Err)
+	spend := github.StartSpend()
+	err := root.ExecuteContext(ctx)
+	settings.cleanupAfter(streams, mode.command)
+	// What the command spent of GitHub's hourly allowance, said with -v,
+	// in the envelope, and in the spend log.
+	mode.githubRequests = spend.Requests()
+	if verbosity, _ := root.PersistentFlags().GetCount("verbose"); verbosity > 0 && mode.githubRequests > 0 {
+		streams.status.say(fmt.Sprintf("GitHub's API: %s", prose.Plural(int(mode.githubRequests), "request")))
+	}
+	spend.Log(args)
+	if !mode.json {
+		return err
+	}
+	out.silent = false
+	if mode.command == "" {
+		mode.command = strings.Join(args, " ")
+	}
+	if writeErr := writeEnvelope(stdout, mode, err); writeErr != nil {
+		return writeErr
+	}
+	// The envelope carries the error; the exit code is still the outcome's.
+	if err != nil {
+		return &ExitError{Code: ExitCode(err)}
+	}
+	return nil
+}
+
+// runStreams are the streams a command line runs with: its input read by
+// line, its output switched off while --json gathers the envelope, its
+// output mode, and its status line.
+func runStreams(streams Streams, args []string) Streams {
 	if streams.lines == nil && streams.In != nil {
 		streams.lines = bufio.NewReader(streams.In)
 	}
-	stdout := streams.Out
-	out := &switchWriter{w: stdout}
-	mode := &outputMode{json: asksForJSON(args)}
-	streams.Out, streams.mode = out, mode
+	streams.Out, streams.mode = &switchWriter{w: streams.Out}, &outputMode{json: asksForJSON(args)}
 	if streams.status == nil {
 		streams.status = &statusLine{w: streams.Err}
 	}
-	settings.streams = streams
+	return streams
+}
+
+// newRoot is dockhand's command tree, which Run executes and the
+// help-reference test reads (the architecture review of 5897a82, R3-22:
+// a package-level seam in Run stood for it). streams are runStreams'.
+func newRoot(settings *settings, streams Streams) *cobra.Command {
+	out, mode := streams.Out.(*switchWriter), streams.mode
 	var asJSON bool
 	var verbosity int
 	root := &cobra.Command{
@@ -188,111 +230,78 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	supportsJSON(root)
 	root.AddGroup(&cobra.Group{ID: "work", Title: "Start or enter work:"})
 	for _, command := range []*cobra.Command{
-		setupCommand(&settings, streams),
-		startCommand(&settings, streams),
-		adoptCommand(&settings, streams),
-		pathCommand(&settings, streams),
+		setupCommand(settings, streams),
+		startCommand(settings, streams),
+		adoptCommand(settings, streams),
+		pathCommand(settings, streams),
 	} {
 		command.GroupID = "work"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "author", Title: "Author:"})
 	for _, command := range []*cobra.Command{
-		shipCommand(&settings, streams),
-		bumpCommand(&settings, streams),
-		updateCommand(&settings, streams),
-		checksumsCommand(&settings, streams),
-		revbumpCommand(&settings, streams),
-		createCommand(&settings, streams),
-		editCommand(&settings, streams),
+		shipCommand(settings, streams),
+		bumpCommand(settings, streams),
+		updateCommand(settings, streams),
+		checksumsCommand(settings, streams),
+		revbumpCommand(settings, streams),
+		createCommand(settings, streams),
+		editCommand(settings, streams),
 	} {
 		command.GroupID = "author"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "understand", Title: "Understand:"})
 	for _, command := range []*cobra.Command{
-		statusCommand(&settings, streams),
-		diffCommand(&settings, streams),
-		openCommand(&settings, streams),
-		impactCommand(&settings, streams),
-		outdatedCommand(&settings, streams),
+		statusCommand(settings, streams),
+		diffCommand(settings, streams),
+		openCommand(settings, streams),
+		impactCommand(settings, streams),
+		outdatedCommand(settings, streams),
 	} {
 		command.GroupID = "understand"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "check", Title: "Check:"})
 	for _, command := range []*cobra.Command{
-		checkCommand(&settings, streams),
-		logsCommand(&settings, streams),
-		retryCommand(&settings, streams),
+		checkCommand(settings, streams),
+		logsCommand(settings, streams),
+		retryCommand(settings, streams),
 	} {
 		command.GroupID = "check"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "review", Title: "Prepare for review:"})
 	for _, command := range []*cobra.Command{
-		tidyCommand(&settings, streams),
-		submitCommand(&settings, streams),
-		rebaseCommand(&settings, streams),
-		reviewCommand(&settings, streams),
+		tidyCommand(settings, streams),
+		submitCommand(settings, streams),
+		rebaseCommand(settings, streams),
+		reviewCommand(settings, streams),
 	} {
 		command.GroupID = "review"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "queue", Title: "Keep work moving:"})
 	for _, command := range []*cobra.Command{
-		waitCommand(&settings, streams),
-		cancelCommand(&settings, streams),
-		serveCommand(&settings, streams),
+		waitCommand(settings, streams),
+		cancelCommand(settings, streams),
+		serveCommand(settings, streams),
 	} {
 		command.GroupID = "queue"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "occasional", Title: "Occasional:"})
 	for _, command := range []*cobra.Command{
-		undoCommand(&settings, streams),
-		archiveCommand(&settings, streams),
-		cleanCommand(&settings, streams),
+		undoCommand(settings, streams),
+		archiveCommand(settings, streams),
+		cleanCommand(settings, streams),
 		explainCommand(streams),
-		configCommand(&settings, streams),
+		configCommand(settings, streams),
 	} {
 		command.GroupID = "occasional"
 		root.AddCommand(command)
 	}
-	if inspectRoot != nil {
-		inspectRoot(root)
-	}
-	// Cobra reads os.Args for nil arguments; Run's are only those given,
-	// so a test binary's own flags never reach a command.
-	root.SetArgs(append([]string{}, args...))
-	root.SetIn(streams.In)
-	root.SetOut(streams.Out)
-	root.SetErr(streams.Err)
-	spend := github.StartSpend()
-	err := root.ExecuteContext(ctx)
-	settings.cleanupAfter(streams, mode.command)
-	// What the command spent of GitHub's hourly allowance, said with -v,
-	// in the envelope, and in the spend log.
-	mode.githubRequests = spend.Requests()
-	if verbosity > 0 && mode.githubRequests > 0 {
-		streams.status.say(fmt.Sprintf("GitHub's API: %s", prose.Plural(int(mode.githubRequests), "request")))
-	}
-	spend.Log(args)
-	if !mode.json {
-		return err
-	}
-	out.silent = false
-	if mode.command == "" {
-		mode.command = strings.Join(args, " ")
-	}
-	if writeErr := writeEnvelope(stdout, mode, err); writeErr != nil {
-		return writeErr
-	}
-	// The envelope carries the error; the exit code is still the outcome's.
-	if err != nil {
-		return &ExitError{Code: ExitCode(err)}
-	}
-	return nil
+	return root
 }
 
 // unknownCommand refuses a word that names no command, as cobra.NoArgs

@@ -141,3 +141,23 @@ func TestABranchNamedForAVersionFollowsIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, renamed, "named for another version than it moves from")
 }
+
+// A branch's one port is read from its files and what it was started for,
+// without a whole status (the architecture review of 5897a82, R3-37); one
+// about no port, or several, has none.
+func TestABranchsOnePortIsReadFromItsFiles(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	jq, err := e.Start(t.Context(), StartRequest{Name: "jq-work", Ports: []string{"jq"}})
+	require.NoError(t, err)
+	port, ok, err := e.BranchPort(t.Context(), jq)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "jq", port)
+	none, err := e.Start(t.Context(), StartRequest{Name: "notes"})
+	require.NoError(t, err)
+	_, ok, err = e.BranchPort(t.Context(), none)
+	require.NoError(t, err)
+	require.False(t, ok, "about no port yet")
+}

@@ -137,6 +137,67 @@ func (e *Engine) JudgeStopped(ctx context.Context, session *coord.Session, statu
 	return nil
 }
 
+// readFiles reads what status says of a branch's files: its head and
+// commits, the files as they are now, the edits not yet committed, what
+// they change, and their change records; Missing where its Git branch is
+// gone. It returns the paths changed, and the worktree where there is one.
+func (e *Engine) readFiles(ctx context.Context, status *BranchStatus) ([]string, *git.Repository, error) {
+	branch := status.Branch
+	head, _, err := e.Repo.Branch(ctx, branch.Name)
+	if errors.Is(err, git.ErrBranchMissing) {
+		status.Missing = true
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	status.Head = head
+	if status.Commits, err = e.Repo.CountCommits(ctx, string(branch.Base), head); err != nil {
+		return nil, nil, err
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{head, string(branch.Base)})
+	if err != nil {
+		return nil, nil, err
+	}
+	status.Tree = trees[head]
+	// Status only reads: a worktree clean removed isn't checked out again
+	// for it, so its files are the branch's committed ones.
+	worktree, err := e.openWorktree(ctx, branch)
+	if err != nil {
+		worktree = nil
+	}
+	if worktree != nil {
+		if status.Edited, err = worktree.TrackedChanges(ctx); err != nil {
+			return nil, nil, err
+		}
+		if len(status.Edited) > 0 {
+			if _, status.Tree, err = worktree.WorkingTree(ctx); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	changed, err := e.Repo.ChangedPaths(ctx, trees[string(branch.Base)], status.Tree)
+	if err != nil {
+		return nil, nil, err
+	}
+	status.Scope = macports.ScopeOf(changed)
+	status.Changes, err = e.revisionChanges(ctx, branch.ID, branch.Base, model.ObjectID(status.Tree), false)
+	return changed, worktree, err
+}
+
+// BranchPort is the one port a branch is about (OnlyPort), for a command
+// run in it that names none, read from its files and change records alone:
+// branchPort ran a whole status, its checks and evidence among it, to read
+// one port's name (the architecture review of 5897a82, R3-37).
+func (e *Engine) BranchPort(ctx context.Context, branch model.Branch) (string, bool, error) {
+	status := BranchStatus{Branch: branch}
+	if _, _, err := e.readFiles(ctx, &status); err != nil {
+		return "", false, err
+	}
+	port, ok := status.OnlyPort()
+	return port, ok, nil
+}
+
 // Cleaned reports whether a branch's Git branch is gone as clean removes
 // it: a merged branch's, once its work is in master, or an archived or
 // closed one's that held nothing master lacks: nothing about it needs
@@ -250,45 +311,8 @@ func (e *Engine) Status(ctx context.Context, states ...model.BranchState) ([]Bra
 // BranchStatus gathers one branch's status.
 func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchStatus, error) {
 	status := BranchStatus{Branch: branch, NoFork: !e.hasForkRemote(ctx)}
-	head, _, err := e.Repo.Branch(ctx, branch.Name)
-	if errors.Is(err, git.ErrBranchMissing) {
-		status.Missing = true
-		return status, nil
-	}
-	if err != nil {
-		return status, err
-	}
-	status.Head = head
-	if status.Commits, err = e.Repo.CountCommits(ctx, string(branch.Base), head); err != nil {
-		return status, err
-	}
-	trees, err := e.Repo.CommitTrees(ctx, []string{head, string(branch.Base)})
-	if err != nil {
-		return status, err
-	}
-	status.Tree = trees[head]
-	// Status only reads: a worktree clean removed isn't checked out again
-	// for it, so its files are the branch's committed ones.
-	worktree, err := e.openWorktree(ctx, branch)
-	if err != nil {
-		worktree = nil
-	}
-	if worktree != nil {
-		if status.Edited, err = worktree.TrackedChanges(ctx); err != nil {
-			return status, err
-		}
-		if len(status.Edited) > 0 {
-			if _, status.Tree, err = worktree.WorkingTree(ctx); err != nil {
-				return status, err
-			}
-		}
-	}
-	changed, err := e.Repo.ChangedPaths(ctx, trees[string(branch.Base)], status.Tree)
-	if err != nil {
-		return status, err
-	}
-	status.Scope = macports.ScopeOf(changed)
-	if status.Changes, err = e.revisionChanges(ctx, branch.ID, branch.Base, model.ObjectID(status.Tree), false); err != nil {
+	changed, worktree, err := e.readFiles(ctx, &status)
+	if err != nil || status.Missing {
 		return status, err
 	}
 	if branch.State == model.BranchOpen {

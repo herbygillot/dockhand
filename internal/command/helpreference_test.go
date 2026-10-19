@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -50,14 +51,16 @@ func TestEveryNamedCommandExists(t *testing.T) {
 	require.Empty(t, problems)
 }
 
-// rootForReference is the command tree Run builds.
+// rootForReference is the command tree Run builds (newRoot).
 func rootForReference(t *testing.T) *cobra.Command {
-	var root *cobra.Command
-	inspectRoot = func(cmd *cobra.Command) { root = cmd }
-	t.Cleanup(func() { inspectRoot = nil })
-	_, _, err := dockhand(t, "--help")
-	require.NoError(t, err)
-	require.NotNil(t, root)
+	t.Helper()
+	var s settings
+	streams := runStreams(Streams{Out: io.Discard, Err: io.Discard}, nil)
+	s.streams = streams
+	root := newRoot(&s, streams)
+	// Cobra adds --help and --version as it executes.
+	root.InitDefaultHelpFlag()
+	root.InitDefaultVersionFlag()
 	return root
 }
 
