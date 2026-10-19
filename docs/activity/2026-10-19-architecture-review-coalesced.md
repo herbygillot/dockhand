@@ -23,7 +23,7 @@ Nothing else was re-checked.
 | | Finding | Review placed | Placed |
 | --- | --- | --- | --- |
 | R3-1 | The major hold twice on serve's path | Now | Part 1, item 4 |
-| R3-2 | `BranchStatus.Active` counts baselines and runs asked to stop | Now | Item 4, in the first commit, so rc5 can carry it at the person's word |
+| R3-2 | `BranchStatus.Active` counts baselines and runs asked to stop | Now | Item 4, in the first commit, so an rc6 can carry it if the person wants one |
 | R3-3 | ship's own port-to-branch rule | Now | Item 4, with R3-25 |
 | R3-4 | The check pipeline a third time | Part 4.1, or now | Item 7's head (below) |
 | R3-5 | The command's ship, a second driver | Part 4.1, with the review's shape | Part 4, item 1: `shipOne` calls `Engine.Ship` for edit, tidy, and check; done when command/ship.go judges nothing |
@@ -52,7 +52,7 @@ The review's process rule became a standing rule under Maintenance ("Relocations
 
 ## What moved, and why
 
-- **The check pipeline written once, at the head of item 7** (R3-4, R3-14). The review disagrees with itself here: section 4 pulls the pipeline forward into the batch, and section 5 leaves it in part 4.1. Item 7 is the next item to add to the pipeline. `check --keep` needs a plan field through `CheckRequest`, and the drain is `runQueued`'s case where nobody leads, today "Start dockhand serve to run it." (command/check.go). That case is the `Leader == nil` decision R3-14 moves into `SeeThrough`. Written once first, each lands in the engine once, not in command's copies. It isn't in item 4: item 4 is a few lines per finding, and it should land fast enough for R3-2 to reach rc5. v0.4.0's part 2, item 4 said the pipeline "written three times becomes one", and is marked done. Three copies are left, and item 7 says so.
+- **The check pipeline written once, at the head of item 7** (R3-4, R3-14). The review disagrees with itself here: section 4 pulls the pipeline forward into the batch, and section 5 leaves it in part 4.1. Item 7 is the next item to add to the pipeline. `check --keep` needs a plan field through `CheckRequest`, and the drain is `runQueued`'s case where nobody leads, today "Start dockhand serve to run it." (command/check.go). That case is the `Leader == nil` decision R3-14 moves into `SeeThrough`. Written once first, each lands in the engine once, not in command's copies. It isn't in item 4: item 4 is a few lines per finding, and it should land fast enough for R3-2 to reach a candidate quickly. v0.4.0's part 2, item 4 said the pipeline "written three times becomes one", and is marked done. Three copies are left, and item 7 says so.
 - **R3-25 beside R3-3.** Section 2 places R3-25 "Now"; section 5's list leaves it out. Once R3-3 makes ship call `Select` and `settleSelection`, an untyped `what`, `purpose`, and `errStartForVersion` would reach a new caller and be rewritten later.
 - **Finding 14 into item 4.** Its remedy names "one macOS release-to-words helper", which is R3-29. Its provider-name half was done earlier. The entry is in [the roadmap's history](2026-10-16-roadmap-history.md#from-taken-when-touched-on-2026-10-19-now-in-v050).
 - **`path` outside the tree, from the log item to X1.** The tree is chosen in command's `settings.options` (`--tree`, `MACPORTS_TREE`, or here), the environment catalogue `compose` takes over. The fallback written there before X1 would be moved by X1. The log item (item 5) is then only about failed checks, about 1 batch.
@@ -62,7 +62,7 @@ The review's process rule became a standing rule under Maintenance ("Relocations
 Placed and not moved:
 - **xapian's family of archives** (c3c12d28) stays in step 3, beside R3-20, both being predictions.
 - **The license group entry** (a3ff473f) stays in Later. The person still decides first whether dockhand reads infrastructure's list of licenses.
-- **libxkbcommon's hold** is a field-testing fix for main before rc5's tag, as its others are. Dockhand's own classifier, run on the two tags' LICENSE files, finds MIT, HPND, and HPND-sell-variant at both ends. Their coverage falls from 79.5% to 64.0% of the words, below `wholeText`'s 75. 1.13.2 adds an "SPDX full name / SPDX short identifier / License text" heading to each block, a longer preamble, and more copyright lines. MacPorts had 1.7.0, so the comparison spanned six releases.
+- **libxkbcommon's hold** is a field-testing fix for main. rc5 was tagged on 5897a828 at 19:03Z, while this run was written, so whether an rc6 carries it, with R3-2, is the person's call. Dockhand's own classifier, run on the two tags' LICENSE files, finds MIT, HPND, and HPND-sell-variant at both ends. Their coverage falls from 79.5% to 64.0% of the words, below `wholeText`'s 75. 1.13.2 adds an "SPDX full name / SPDX short identifier / License text" heading to each block, a longer preamble, and more copyright lines. MacPorts had 1.7.0, so the comparison spanned six releases.
 
 Also brought up to date:
 - Next's first paragraph, which still had rc4 in acceptance, now says rc5 (the person's card, 17:57Z).
