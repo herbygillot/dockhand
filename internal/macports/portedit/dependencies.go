@@ -80,6 +80,18 @@ func checkCargoUpdate(info macports.PortInfo) error {
 	return nil
 }
 
+// manifestHookRefusal is an update a manifest-editing hook holds, the block
+// not being what the current version's lock gives: the way on names the
+// block's own regeneration, not only the archive's checksums, as fresh's
+// 700 crates needed (a user's report, editors/fresh).
+func manifestHookRefusal(hook, kind, block string) error {
+	tool := "cargo2port"
+	if kind == depblock.Go {
+		tool = "go2port"
+	}
+	return fmt.Errorf("%w: %s edits a dependency manifest, and the Portfile's %s isn't exactly what the current version's lock gives, so the edit may have shaped it by hand; update it by hand, regenerating %s with %s from the new version's source", ErrUnsupported, hook, block, block, tool)
+}
+
 func dependencyPatches(input *sourceInput, kind string) error {
 	if kind == depblock.Cargo {
 		if err := checkCargoUpdate(input.info); err != nil {
@@ -110,8 +122,14 @@ func dependencyPatches(input *sourceInput, kind string) error {
 				continue
 			}
 			name, _ := cmd.Name(input.data)
-			if (name == "pre-patch" || name == "post-patch" || name == "patch" || name == "post-extract" || name == "pre-configure") && changed(cmd.Span.Text(input.data)) {
-				return fmt.Errorf("%w: %s edits a dependency manifest; regenerate manually", ErrUnsupported, name)
+			// A hook that edits a manifest, as fresh's post-patch drops a
+			// default feature from Cargo.toml, may have shaped the block
+			// by hand: the update goes on where the block is exactly what
+			// the current version's lock gives, as the maintainer's own
+			// regeneration made it (a user's report, editors/fresh, at
+			// 6dd7745c), and refuses otherwise.
+			if (name == "pre-patch" || name == "post-patch" || name == "patch" || name == "post-extract" || name == "pre-configure") && changed(cmd.Span.Text(input.data)) && input.manifestHook == "" {
+				input.manifestHook = name
 			}
 			for _, word := range cmd.Words[1:] {
 				if body, ok := word.BracedScript(input.data); ok {
@@ -274,6 +292,9 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 			return Result{}, err
 		}
 	}
+	if input.manifestHook != "" && (unchecked != "" || plan.Empty()) {
+		return Result{}, manifestHookRefusal(input.manifestHook, plan.Kind, plan.Kind)
+	}
 	// A registry crate the Portfile pins at another version than the lock
 	// is an override, kept until the new lock moves past it; any other
 	// difference is refused, named (termusic's, field testing, 2026-10-02).
@@ -282,6 +303,9 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		differences, err := depblock.Differences(name, plan.Values[name], oldValues[name])
 		if err != nil {
 			return Result{}, fmt.Errorf("%w: existing %s differs from the original manifest/helper output; preserve these overrides with manual preparation", ErrUnsupported, name)
+		}
+		if input.manifestHook != "" && len(differences) > 0 {
+			return Result{}, manifestHookRefusal(input.manifestHook, plan.Kind, name)
 		}
 		var named []string
 		for _, difference := range differences {

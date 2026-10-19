@@ -71,7 +71,7 @@ func dependencyHelper(t *testing.T, body string) string {
 func TestGoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)
-	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "local-patch", "unsupported-context", "moved"} {
+	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "patched-curated", "local-patch", "unsupported-context", "moved"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
@@ -104,10 +104,14 @@ func TestGoDependencyPreparation(t *testing.T) {
  }
  port::register_callback fixture_vendors
  ` + "go.vendors example.com/old lock v1.0.0 sha256 " + sha + "\n# preserve these instructions\nconfigure.args --keep\n"
-			if scenario == "override" {
+			if scenario == "override" || scenario == "patched-curated" {
 				extra = strings.ReplaceAll(extra, "lock v1.0.0", "lock v9.0.0")
 			}
-			if scenario == "patched" {
+			// A hook that edits the manifest goes on where the block is
+			// exactly what the current version's lock gives, and holds
+			// where it isn't, as one the hook may have shaped (a user's
+			// report, editors/fresh's post-patch Cargo.toml edit).
+			if scenario == "patched" || scenario == "patched-curated" {
 				extra += "post-patch { reinplace s/foo/bar/ ${worksrcpath}/go.mod }\n"
 			}
 			if scenario == "local-patch" {
@@ -174,9 +178,9 @@ func TestGoDependencyPreparation(t *testing.T) {
 				require.ErrorContains(t, err, "requirements exactly")
 			case "override":
 				require.ErrorContains(t, err, "preserve these overrides")
-			case "patched":
-				require.ErrorContains(t, err, "edits a dependency manifest")
-				require.Zero(t, requests.Load())
+			case "patched-curated":
+				require.ErrorContains(t, err, "post-patch edits a dependency manifest, and the Portfile's go.vendors isn't exactly what the current version's lock gives")
+				require.ErrorContains(t, err, "regenerating go.vendors with go2port")
 			default:
 				require.NoError(t, err)
 				require.NotEmpty(t, result.PreparedTree)

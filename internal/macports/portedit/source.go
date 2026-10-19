@@ -71,6 +71,10 @@ type sourceInput struct {
 	// observe runs the baseline's modeled observations; its projections
 	// are the session's overlays.
 	observe *observe.Session
+	// manifestHook is the hook that edits a dependency manifest, where one
+	// does: the update goes on only where the declared block is exactly
+	// what the current version's lock gives (dependencyPatches).
+	manifestHook string
 }
 
 // derive is the baseline of the same session with other contents: the
