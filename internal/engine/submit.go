@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -38,8 +39,14 @@ type SubmitRequest struct {
 	// NoCheck submits without any check; the description says so.
 	NoCheck bool
 	// PendingCheck previews a submission whose check is still to run, for
-	// ship, which checks first: having none yet does not stop it.
+	// ship, which checks first: having none yet does not stop it. Where and
+	// Tests are where and with what tests that check was asked to build,
+	// none where it wasn't: a finished check stands for the ask only where
+	// it covers them (Covered), else CheckNeeded (the architecture review
+	// of 5897a82, R3-8).
 	PendingCheck bool
+	Where        WhereRequest
+	Tests        model.TestPolicy
 	// Accept acknowledges failed revision-only targets or extras by port.
 	Accept []string
 	// Title replaces the branch's title, and the pull request's.
@@ -478,6 +485,18 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 	if request.PendingCheck && evidence.Unfinished() {
 		plan.CheckNeeded = true
 		return nil
+	}
+	// What stands may still not be the check asked, --build or --tests
+	// another's (Codex's review, medium 4).
+	if request.PendingCheck && (request.Where.explicit() || request.Tests != "") {
+		covered, err := e.coversAsked(ctx, plan.Branch, evidence, request.Where, request.Tests)
+		if err != nil {
+			return err
+		}
+		if !covered {
+			plan.CheckNeeded = true
+			return nil
+		}
 	}
 	plan.Evidence = &evidence
 	plan.UncoveredCI = uncoveredCI(e.ciReleases(ctx, plan.Tree), evidence.Plan.Environments)
@@ -1109,4 +1128,24 @@ func (e *Engine) newPorts(ctx context.Context, worktree *git.Repository, source 
 			Homepage: port.Options["homepage"], License: macports.LicenseWords(port.Options["license"])})
 	}
 	return ports
+}
+
+// coversAsked reports whether the finished check evidence judges stands for
+// a check asked where and with tests: its plan, made of the same revision,
+// is what Covered compares with.
+func (e *Engine) coversAsked(ctx context.Context, branch model.Branch, evidence Evidence, place WhereRequest, tests model.TestPolicy) (bool, error) {
+	where, err := e.Where(ctx, place)
+	if err != nil {
+		return false, err
+	}
+	revision, err := e.Revision(ctx, evidence.Run.Revision)
+	if err != nil {
+		return false, err
+	}
+	want, err := e.PlanCheck(ctx, PlanRequest{Revision: revision, Environments: where.Environments, Span: where.Span, Profile: where.Profile, Tests: cmp.Or(tests, e.options.Tests)})
+	if err != nil {
+		return false, err
+	}
+	_, covered, err := e.Covered(ctx, branch.ID, model.ObjectID(revision.Source.Tree), want)
+	return covered, err
 }

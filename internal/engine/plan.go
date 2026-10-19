@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -36,7 +37,8 @@ type CheckRequest struct {
 	// Capture is the files of the branch; its Branch is the check's.
 	Capture CaptureRequest
 	Where   Where
-	Tests   model.TestPolicy
+	// Tests are the tests asked; check.tests where empty (Options.Tests).
+	Tests model.TestPolicy
 	// Only, Also, Fresh, Variants, and EachVariant are PlanRequest's.
 	Only, Also  []string
 	Fresh       bool
@@ -52,8 +54,9 @@ type Proposal struct {
 }
 
 // ProposeCheck captures the branch's files and plans the check of them
-// where request.Where says: the one pipeline check, ship, and serve take
-// (the command package review), which Enqueue then queues.
+// where request.Where says, with request.Tests, check.tests where it's
+// empty: the one pipeline check, ship, and serve take (the command package
+// review), which Enqueue then queues.
 func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Proposal, error) {
 	capture, err := e.Capture(ctx, request.Capture)
 	if err != nil {
@@ -61,7 +64,7 @@ func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Propos
 	}
 	where := request.Where
 	plan, err := e.PlanCheck(ctx, PlanRequest{Revision: capture.Revision, Environments: where.Environments, Span: where.Span, Profile: where.Profile,
-		Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh, Variants: request.Variants, EachVariant: request.EachVariant})
+		Only: request.Only, Also: request.Also, Tests: cmp.Or(request.Tests, e.options.Tests), Fresh: request.Fresh, Variants: request.Variants, EachVariant: request.EachVariant})
 	return Proposal{Capture: capture, Plan: plan}, err
 }
 

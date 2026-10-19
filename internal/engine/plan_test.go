@@ -557,3 +557,19 @@ func TestAnUnknownNameIsNoPort(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoPort)
 	require.EqualError(t, err, "no port named mods")
 }
+
+// A check that asks no tests runs check.tests, resolved here for check,
+// ship, and serve alike, where each merged it itself (the architecture
+// review of 5897a82, R3-35); one that asks keeps its own.
+func TestACheckAskingNoTestsRunsTheConfigs(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := twoPortBranch(t, e)
+	e.options.Tests = model.TestsRequired
+	for asked, want := range map[model.TestPolicy]model.TestPolicy{"": model.TestsRequired, model.TestsSkip: model.TestsSkip} {
+		proposal, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureHead}, Where: Where{Environments: []model.Environment{tahoeArm}}, Tests: asked})
+		require.NoError(t, err)
+		require.Equal(t, want, proposal.Plan.Tests, "asked %q", asked)
+	}
+}

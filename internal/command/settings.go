@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // settings are the global selections. Each comes from its flag, then its
@@ -81,6 +82,7 @@ func (s *settings) options(ctx context.Context) (engine.Options, config.File, st
 		Worktrees: file.Worktrees,
 		// holds.majors = "allow" lets bump and serve move a major version.
 		AllowMajors: !file.Holds.HoldMajors(),
+		Tests:       model.TestPolicy(file.Check.Tests),
 		// DOCKHAND_UPSTREAM fetches master from a mirror or, in tests, a
 		// local repository.
 		Upstream: os.Getenv("DOCKHAND_UPSTREAM"),

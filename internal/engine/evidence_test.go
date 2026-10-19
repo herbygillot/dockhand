@@ -120,6 +120,14 @@ func TestEachEnvironmentTakesItsNewestCheck(t *testing.T) {
 	require.Equal(t, []model.Environment{sequoiaArm, tahoeArm}, submission.Evidence.Plan.Environments, "the check on 26 stands beside the newer one on 15")
 	require.Equal(t, sequoia.ID, submission.Evidence.Run.ID)
 	require.Equal(t, []model.RunID{tahoe.ID}, []model.RunID{submission.Evidence.Earlier[0].ID})
+	// ship's plan says whether what stands is the check asked: what passed
+	// stands where nothing more is asked, and not for --tests required,
+	// which it ran with declared (the architecture review of 5897a82, R3-8).
+	for tests, needed := range map[model.TestPolicy]bool{"": false, model.TestsRequired: true} {
+		submission, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update", PendingCheck: true, Head: true, Tests: tests})
+		require.NoError(t, err)
+		require.Equal(t, needed, submission.CheckNeeded, "tests %q", tests)
+	}
 
 	// A default environment no check of these files planned is required.
 	e.Providers["github"] = &scriptedProvider{}

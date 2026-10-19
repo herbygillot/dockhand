@@ -93,9 +93,6 @@ true, it runs that baseline by itself.`,
 			if err != nil {
 				return err
 			}
-			if tests == "" {
-				tests = s.file.Check.Tests
-			}
 			chosen, each, err := engine.VariantsFlag(variants)
 			if err != nil {
 				return err

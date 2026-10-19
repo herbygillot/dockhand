@@ -157,12 +157,11 @@ func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain bool,
 	}
 	hour, minute := file.Serve.Time()
 	options := engine.ServeOptions{
-		Drain:       drain,
-		Capacity:    capacity,
-		ShipTo:      shipTo,
-		SubmitLimit: file.Serve.Limit(),
-		Outdated: engine.ServeOutdated{Maintainers: file.Maintainers(), Hour: hour, Minute: minute,
-			Tests: model.TestPolicy(file.Check.Tests)},
+		Drain:           drain,
+		Capacity:        capacity,
+		ShipTo:          shipTo,
+		SubmitLimit:     file.Serve.Limit(),
+		Outdated:        engine.ServeOutdated{Maintainers: file.Maintainers(), Hour: hour, Minute: minute},
 		Cleanup:         file.Cleanup.On(),
 		CleanupAge:      file.Cleanup.Age(),
 		Say:             func(line string) { fmt.Fprintln(out, line) },

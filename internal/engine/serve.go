@@ -79,11 +79,9 @@ type ServeOptions struct {
 type ServeOutdated struct {
 	// Maintainers are your identities; with none, serve says it needs them.
 	Maintainers []string
-	// Hour and Minute are when it looks each day.
+	// Hour and Minute are when it looks each day. A check of each checks
+	// with check.tests (Options.Tests), on build.unattended's profile.
 	Hour, Minute int
-	// Tests is what a check of each checks with, on build.unattended's
-	// profile.
-	Tests model.TestPolicy
 }
 
 // submits is whether serve opens pull requests: ship_to = "submit".
@@ -864,7 +862,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		report(fmt.Sprintf("serve: splitting the updates: %v", err))
 		return
 	}
-	prepare := PrepareOptions{Origin: model.OriginServe, To: to, Tests: settings.Tests}
+	prepare := PrepareOptions{Origin: model.OriginServe, To: to}
 	if to == ShipSubmit {
 		// Checked here; serve's submitter submits what passes.
 		prepare.To = ShipCheck

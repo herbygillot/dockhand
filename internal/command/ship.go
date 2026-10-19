@@ -437,7 +437,7 @@ func queueHead(ctx context.Context, s *settings, e *engine.Engine, streams Strea
 	if err != nil {
 		return nil, err
 	}
-	proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: engine.CaptureHead}, Where: where, Tests: model.TestPolicy(cmp.Or(tests, s.file.Check.Tests))})
+	proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: engine.CaptureHead}, Where: where, Tests: model.TestPolicy(tests)})
 	if err != nil {
 		return nil, err
 	}

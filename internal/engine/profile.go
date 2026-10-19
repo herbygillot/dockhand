@@ -87,9 +87,9 @@ type WhereRequest struct {
 	Unattended bool
 }
 
-// Explicit reports whether the request names where, --on or --build,
+// explicit reports whether the request names where, --on or --build,
 // rather than taking a default.
-func (r WhereRequest) Explicit() bool { return len(r.On) > 0 || r.Build != "" }
+func (r WhereRequest) explicit() bool { return len(r.On) > 0 || r.Build != "" }
 
 // Where resolves where a check builds.
 func (e *Engine) Where(ctx context.Context, request WhereRequest) (Where, error) {
