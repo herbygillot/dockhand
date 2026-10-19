@@ -118,11 +118,29 @@ func RunsOn(darwin int, architecture string) bool {
 	return false
 }
 
+// ReleaseName names a platform's release for a person: macOS 26 for
+// darwin 25, or Darwin 30 where the release is unknown, whose Darwin
+// version isn't macOS's; another OS by its name and version. The one
+// namer of a release, where planning, the engine, and Describe each had
+// their own (the architecture review of 5897a82, R3-29).
+func ReleaseName(platform model.Platform) string {
+	if platform.OS == "darwin" || platform.OS == "" {
+		if darwin, err := strconv.Atoi(platform.Version); err == nil {
+			if release, err := ReleaseForDarwin(darwin); err == nil {
+				return "macOS " + release.Product
+			}
+		}
+		return "Darwin " + platform.Version
+	}
+	return strings.TrimSpace(platform.OS + " " + platform.Version)
+}
+
 // Describe words a platform for a person unambiguously, "macOS 26 (Tahoe)
-// arm64" for darwin 25, and keeps the raw fields when the release is unknown.
+// arm64" for darwin 25, and its release as ReleaseName says it where the
+// release is unknown, "Darwin 99 arm64".
 func Describe(platform model.Platform) string {
-	parts := []string{platform.OS, platform.Version}
-	if platform.OS == "darwin" {
+	parts := []string{ReleaseName(platform)}
+	if platform.OS == "darwin" || platform.OS == "" {
 		if major, err := strconv.Atoi(platform.Version); err == nil {
 			if release, err := ReleaseForDarwin(major); err == nil {
 				parts = []string{"macOS", release.Product, "(" + release.Name + ")"}

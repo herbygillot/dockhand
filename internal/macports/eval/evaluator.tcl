@@ -75,13 +75,13 @@ namespace eval ::dockhand {
         # to move without an edit is its own, unstable: source_date_epoch
         # is the Portfile's modification time, which is when the
         # evaluation's files were written.
-        set build [file dirname [$worker eval {option workpath}]]
+        set placeless [placeholders $worker 1]
         set values {}
         foreach name [lsort [$worker eval {interp aliases {}}]] {
             if {[lindex [$worker eval [list interp alias {} $name]] 0] ne "handle_option"} { continue }
             if {$name in $::dockhand::read_options || $name in {name version revision epoch}} { continue }
             if {[catch {$worker eval [list set ::$name]} value]} { set value "<unset>" }
-            set value [string map [list $build <build> $source_root <source> $base_root <source>] $value]
+            set value [string map $placeless $value]
             if {$name eq "source_date_epoch"} {
                 dict set code unstable:$name [checksum $value]
                 continue
@@ -98,6 +98,20 @@ namespace eval ::dockhand {
             }
         }
         return $code
+    }
+
+    # placeholders is the string map that writes where a port was
+    # evaluated as words: its build directory, named for that place, as
+    # <build>, and with sources, the trees' roots as <source>, so two
+    # evaluations of one port in two places read alike. The one map, where
+    # the code checksum and the read options each wrote theirs (the
+    # architecture review of 5897a82, R3-26).
+    proc placeholders {worker {sources 0}} {
+        variable source_root
+        variable base_root
+        set map [list [file dirname [$worker eval {option workpath}]] <build>]
+        if {$sources} { lappend map $source_root <source> $base_root <source> }
+        return $map
     }
 
     # checksum tells two texts apart: their CRC-32 and Adler-32, which Tcl
@@ -130,7 +144,7 @@ namespace eval ::dockhand {
             # of one port read as build.pre_args changed (pyinfra, field
             # testing at 30eaf4cc). cargo.dir and patch.dir keep their paths,
             # which are read against worksrcpath below.
-            set build [file dirname [$worker eval {option workpath}]]
+            set placeless [::dockhand::placeholders $worker]
             foreach field $::dockhand::read_options {
                 if {[$worker eval [list exists $field]]} {
                     if {[catch {$worker eval [list option $field]} value]} {
@@ -138,7 +152,7 @@ namespace eval ::dockhand {
                     } elseif {$field in {cargo.dir patch.dir}} {
                         dict set out $field $value
                     } else {
-                        dict set out $field [string map [list $build <build>] $value]
+                        dict set out $field [string map $placeless $value]
                     }
                 }
             }

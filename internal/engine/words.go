@@ -11,7 +11,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
-	"strconv"
 )
 
 // targetWords is how one target's result in one environment reads, on the
@@ -501,42 +500,21 @@ func EnvironmentHeading(environment model.Environment, all []model.Environment) 
 	if len(providers) > 1 {
 		parts = append(parts, environment.Provider)
 	}
-	parts = append(parts, releaseWords(platform))
+	parts = append(parts, macos.ReleaseName(platform))
 	if shared > 1 && platform.Architecture != "" {
 		parts = append(parts, platform.Architecture)
 	}
 	return strings.Join(parts, " ")
 }
 
-// releaseWords name a platform's release: macOS 26, or Darwin 30 where the
-// release is unknown, whose Darwin version isn't macOS's.
-func releaseWords(platform model.Platform) string {
-	if platform.OS == "darwin" || platform.OS == "" {
-		if darwin, err := strconv.Atoi(platform.Version); err == nil {
-			if release, err := macos.ReleaseForDarwin(darwin); err == nil {
-				return "macOS " + release.Product
-			}
-		}
-		return "Darwin " + platform.Version
-	}
-	return strings.TrimSpace(platform.OS + " " + platform.Version)
-}
-
+// describePlace is an environment's provider and its platform's words
+// (macos.Describe), or its provider alone where it has no platform.
 func describePlace(environment model.Environment) string {
 	platform := environment.Platform
 	if platform.Version == "" && platform.Architecture == "" {
 		return environment.Provider
 	}
-	if platform.OS == "" {
-		platform.OS = "darwin"
-	}
-	// A release macos doesn't know keeps its Darwin version, which isn't
-	// macOS's: Darwin 25 is macOS 26.
-	described := macos.Describe(platform)
-	if rest, ok := strings.CutPrefix(described, "darwin "); ok {
-		described = "Darwin " + rest
-	}
-	return environment.Provider + " " + described
+	return environment.Provider + " " + macos.Describe(platform)
 }
 
 // providerWords says how a provider built, as a pull request's Tested on
@@ -551,4 +529,61 @@ func providerWords(provider string) string {
 		return provider + ": MacPorts' CI workflow in the author's fork"
 	}
 	return provider + ": built by the author's own command"
+}
+
+// MacPortsBehind is something set up with an older MacPorts than this
+// Mac's, which reads its ports: its name as a person reads it, the
+// MacPorts it keeps and this Mac's, and the setup that makes it again.
+type MacPortsBehind struct {
+	Name, Image, Host, Remedy string
+}
+
+// OlderMacPorts are the one sentence of what keeps an older MacPorts than
+// this Mac's, a line for each pair of versions, in the order they come:
+// "macOS 15's image and macOS 26's Xcode image have MacPorts 2.12.6, older
+// than this Mac's 2.12.7: <each one's setup>". A check's plan, setup's
+// status, and an Xcode image's setup each composed it, with their own
+// grouping (the architecture review of 5897a82, R3-7). reads adds why it
+// matters to a check, that this Mac's MacPorts reads their ports.
+func OlderMacPorts(behind []MacPortsBehind, reads bool) []string {
+	type versions struct{ image, host string }
+	var order []versions
+	grouped := map[versions][]MacPortsBehind{}
+	for _, one := range behind {
+		key := versions{one.Image, one.Host}
+		if _, seen := grouped[key]; !seen {
+			order = append(order, key)
+		}
+		grouped[key] = append(grouped[key], one)
+	}
+	var lines []string
+	for _, key := range order {
+		var names, remedies []string
+		for _, one := range grouped[key] {
+			names = append(names, one.Name)
+			if one.Remedy != "" {
+				remedies = append(remedies, one.Remedy)
+			}
+		}
+		one := len(names) == 1
+		line := fmt.Sprintf("%s %s MacPorts %s, older than this Mac's %s", prose.And(names), map[bool]string{true: "has", false: "have"}[one], key.image, key.host)
+		if reads {
+			line += ", which reads " + map[bool]string{true: "its", false: "their"}[one] + " ports"
+		}
+		if len(remedies) > 0 {
+			line += ": " + strings.Join(remedies, "; ")
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// RemakeWords is the setup that makes a release's Tart image again, its
+// Xcode image with --xcode and the Xcode it takes.
+func RemakeWords(release macos.Release, xcode bool) string {
+	remedy := "dockhand setup tart " + release.Slug + " --rebuild"
+	if xcode {
+		remedy += " --xcode <folder> (Xcode " + release.Xcode + "'s .xip, or a folder xcodes downloads it into)"
+	}
+	return remedy
 }

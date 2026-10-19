@@ -83,6 +83,6 @@ func TestPlanNotesSayAnEnvironmentBehindThisMacsMacPorts(t *testing.T) {
 	require.NoError(t, err)
 	plan := model.Plan{Environments: []model.Environment{monterey, sonoma, xcode}, Tests: model.TestsDeclared,
 		Builds: []model.EnvironmentPlan{{Environment: monterey, Order: []model.TargetID{"jq"}}, {Environment: sonoma}, {Environment: xcode, Order: []model.TargetID{"jq"}}}}
-	require.Equal(t, []string{"tart macOS 12 (Monterey) arm64 and tart macOS 26 (Tahoe) arm64 with Xcode build with MacPorts 2.12.6, older than this Mac's 2.12.7, which reads their ports; to make them again: " +
+	require.Equal(t, []string{"tart macOS 12 (Monterey) arm64 and tart macOS 26 (Tahoe) arm64 with Xcode have MacPorts 2.12.6, older than this Mac's 2.12.7, which reads their ports: " +
 		"dockhand setup tart monterey --rebuild; dockhand setup tart tahoe --rebuild --xcode <folder> (Xcode " + tahoe.Xcode + "'s .xip, or a folder xcodes downloads it into)"}, e.PlanNotes(t.Context(), plan))
 }

@@ -408,3 +408,13 @@ func TestHereIsTheWorktreeACommandRunsIn(t *testing.T) {
 	}
 	require.Equal(t, "/nowhere", Here(t.Context(), "/nowhere", branch.Worktree, ""), "a tree that isn't a checkout is left to fail as it would")
 }
+
+// The store says what holds a migration, and the engine the way on (the
+// architecture review of 5897a82, R3-19).
+func TestAMigrationRefusedSaysTheWayOn(t *testing.T) {
+	t.Parallel()
+	err := error(&LiveUnderMigrationError{&store.LiveUnderMigrationError{Processes: 1, Builds: []string{"v0.4.0"}, From: 31, To: 32}})
+	require.EqualError(t, err, "1 dockhand process is working on schema 31 (v0.4.0): migrating the database to schema 32 would leave them unable to record what they do; wait for them to finish, or stop them, and run this again")
+	refused := new(store.LiveUnderMigrationError)
+	require.ErrorAs(t, err, &refused, "the store's, under it")
+}

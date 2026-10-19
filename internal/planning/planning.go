@@ -274,19 +274,9 @@ func span(input Input, reasons []map[model.TargetID]string) {
 				continue
 			}
 			end := ends[c.ID]
-			reasons[e][c.ID] = fmt.Sprintf(spanReason+" %s and %s", releaseName(input.Environments[end[0]]), strings.TrimPrefix(releaseName(input.Environments[end[1]]), "macOS "))
+			reasons[e][c.ID] = fmt.Sprintf(spanReason+" %s and %s", macos.ReleaseName(input.Environments[end[0]].Platform), strings.TrimPrefix(macos.ReleaseName(input.Environments[end[1]].Platform), "macOS "))
 		}
 	}
-}
-
-// releaseName is an environment's release as a person names it: macOS 12.
-func releaseName(environment model.Environment) string {
-	if darwin, err := strconv.Atoi(environment.Platform.Version); err == nil {
-		if product, err := macos.ProductForDarwin(darwin); err == nil {
-			return "macOS " + product
-		}
-	}
-	return "Darwin " + environment.Platform.Version
 }
 
 // Built are the candidates some environment doesn't rule out: one ruled

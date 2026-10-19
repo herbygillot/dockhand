@@ -1461,7 +1461,12 @@ INSERT INTO sessions VALUES('repo_1','ses_ended','foreground',104,'p','v0.3.0',%
 INSERT INTO sessions VALUES('repo_1','ses_stale','foreground',105,'p','v0.3.0',%[2]d,%[2]d,NULL);
 `, now, now-int64(time.Hour/time.Millisecond))
 	path := schemaAt(t, schemaVersion-1, schema23Records+sessions)
+	// The engine gives coord's window; with none, the stale one counts too.
 	_, err := Open(t.Context(), path, Options{})
+	all := new(store.LiveUnderMigrationError)
+	require.ErrorAs(t, err, &all)
+	require.Equal(t, 3, all.Processes)
+	_, err = Open(t.Context(), path, Options{LiveWithin: 2 * time.Minute})
 	refused := new(store.LiveUnderMigrationError)
 	require.ErrorAs(t, err, &refused)
 	require.Equal(t, &store.LiveUnderMigrationError{Processes: 2, Builds: []string{"v0.3.1"}, From: schemaVersion - 1, To: schemaVersion}, refused)

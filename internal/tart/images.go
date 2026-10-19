@@ -62,6 +62,17 @@ func HandlesASIF(version string) bool {
 	return true
 }
 
+// TooOld is the refusal of a Tart older than ASIFVersion, as `tart
+// --version` prints it, at setup and before a check starts a VM alike;
+// nil for one new enough. Setup and the provider each worded it (the
+// architecture review of 5897a82, R3-18).
+func TooOld(version string) error {
+	if HandlesASIF(version) {
+		return nil
+	}
+	return fmt.Errorf("Tart %s is installed; Dockhand requires %s or later to list running VMs with ASIF disks (openai/tart#1344). Upgrade with sudo port upgrade tart", strings.TrimSpace(version), MinimumVersion())
+}
+
 // ErrListingRaced reports a listing that failed because a VM went while
 // Tart listed (openai/tart#1353): it checks each VM's directory is whole,
 // then reads its config.json again to size it, so a VM another process

@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -118,7 +119,8 @@ new one has passed.`,
 				if status, err := images.Status(cmd.Context()); err == nil {
 					for _, behind := range status.Behind {
 						if !behind.Xcode && behind.Release.Slug == result.Release.Slug {
-							fmt.Fprintf(streams.Out, "Its base image keeps MacPorts %s, older than this Mac's %s: dockhand setup tart %s --rebuild, without --xcode, makes the base image again.\n", behind.MacPorts, behind.Host, behind.Release.Slug)
+							base := engine.MacPortsBehind{Name: "Its base image", Image: behind.MacPorts, Host: behind.Host, Remedy: engine.RemakeWords(behind.Release, false) + ", without --xcode, makes it again"}
+							fmt.Fprintln(streams.Out, engine.OlderMacPorts([]engine.MacPortsBehind{base}, false)[0]+".")
 						}
 					}
 				}
@@ -224,24 +226,16 @@ func tartReadiness(ctx context.Context) string {
 	// The images behind are said in one clause for each pair of versions,
 	// each with its rebuild, an Xcode image's Xcode named where it said
 	// <Xcode> (field testing, 2026-10-16).
-	type versions struct{ image, host string }
-	var order []versions
-	behind := map[versions][]string{}
-	rebuilds := map[versions][]string{}
+	var behind []engine.MacPortsBehind
 	for _, image := range status.Behind {
-		key := versions{image.MacPorts, image.Host}
-		if _, seen := behind[key]; !seen {
-			order = append(order, key)
-		}
-		which, rebuild := "macOS "+image.Release.Product+"'s image", "dockhand setup tart "+image.Release.Slug+" --rebuild"
+		which := "macOS " + image.Release.Product + "'s image"
 		if image.Xcode {
-			which, rebuild = "macOS "+image.Release.Product+"'s Xcode image", rebuild+" --xcode <folder> (Xcode "+image.Release.Xcode+"'s .xip, or a folder xcodes downloads it into)"
+			which = "macOS " + image.Release.Product + "'s Xcode image"
 		}
-		behind[key], rebuilds[key] = append(behind[key], which), append(rebuilds[key], rebuild)
+		behind = append(behind, engine.MacPortsBehind{Name: which, Image: image.MacPorts, Host: image.Host, Remedy: engine.RemakeWords(image.Release, image.Xcode)})
 	}
-	for _, key := range order {
-		has := map[bool]string{true: "has", false: "have"}[len(behind[key]) == 1]
-		line += fmt.Sprintf("; %s %s MacPorts %s, older than this Mac's %s: %s", prose.And(behind[key]), has, key.image, key.host, strings.Join(rebuilds[key], "; "))
+	for _, clause := range engine.OlderMacPorts(behind, false) {
+		line += "; " + clause
 	}
 	return line
 }

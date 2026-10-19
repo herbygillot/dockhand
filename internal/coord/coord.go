@@ -83,11 +83,17 @@ func (c *Coordinator) heartbeat() time.Duration {
 	return 5 * time.Second
 }
 
+// DefaultHungAfter is how long a live process may go without a heartbeat
+// before another dockhand may take over its work, and so how recent a
+// heartbeat says a process is working: the one window, which the store's
+// migration guard takes (the architecture review of 5897a82, R3-19).
+const DefaultHungAfter = 2 * time.Minute
+
 func (c *Coordinator) hungAfter() time.Duration {
 	if c.HungAfter > 0 {
 		return c.HungAfter
 	}
-	return 2 * time.Minute
+	return DefaultHungAfter
 }
 
 // Session is this process's session.

@@ -20,8 +20,10 @@ import (
 // wait guestssh.AwaitSSH, and batch 39 renamed the packages it imports
 // (channel to guestssh, text to textedit), and batch 48 regrouped their
 // imports, and v0.3.1 took a guest MacPorts newer than asked, which
-// MacPorts' installer's selfupdate makes, none of which changes an image.
-const setupPin = "4e6cdd762ef24c9f7ba09a68358b12dba7d08ac3cb7a9b77f9450dc313ffcdb7"
+// MacPorts' installer's selfupdate makes, and the architecture review of
+// 5897a82's R3-18 refused an old Tart with tart.TooOld's words, none of
+// which changes an image.
+const setupPin = "c757fe055c491062f5cbcc8a5c245c6a0eb386cd41e14181a7af3b08ec71099e"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning

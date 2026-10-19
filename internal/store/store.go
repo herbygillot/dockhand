@@ -346,7 +346,7 @@ func (e *LiveUnderMigrationError) Error() string {
 	if e.Processes != 1 {
 		processes = fmt.Sprintf("%d dockhand processes are", e.Processes)
 	}
-	return fmt.Sprintf("%s working on schema %d%s: migrating the database to schema %d would leave them unable to record what they do; wait for them to finish, or stop them, and run this again", processes, e.From, builds, e.To)
+	return fmt.Sprintf("%s working on schema %d%s: migrating the database to schema %d would leave them unable to record what they do", processes, e.From, builds, e.To)
 }
 
 func (e *LiveUnderMigrationError) Unwrap() error { return ErrLiveUnderMigration }

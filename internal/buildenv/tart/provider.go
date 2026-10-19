@@ -149,8 +149,8 @@ func (p *Provider) Environments(ctx context.Context, releases string) ([]model.E
 	if err != nil {
 		return nil, fmt.Errorf("reading Tart's version: %w", err)
 	}
-	if !tartvm.HandlesASIF(version) {
-		return nil, fmt.Errorf("Tart %s is installed; Dockhand requires %s or later to list running VMs with ASIF disks (openai/tart#1344). Upgrade with sudo port upgrade tart", strings.TrimSpace(version), tartvm.MinimumVersion())
+	if err := tartvm.TooOld(version); err != nil {
+		return nil, err
 	}
 	images, err := m.Images(ctx)
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -187,7 +188,10 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := sqlite.Open(ctx, options.Database, sqlite.Options{MigrateUnderLive: options.MigrateUnderLive})
+	s, err := sqlite.Open(ctx, options.Database, sqlite.Options{MigrateUnderLive: options.MigrateUnderLive, LiveWithin: coord.DefaultHungAfter})
+	if refused := new(store.LiveUnderMigrationError); errors.As(err, &refused) {
+		return nil, &LiveUnderMigrationError{refused}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -238,9 +242,19 @@ func (e *Engine) Sandboxed() bool {
 }
 
 // LiveUnderMigrationError is a migration Open refused, since dockhand
-// processes that read the older schema are working; Options.
-// MigrateUnderLive is a person's answer to it.
-type LiveUnderMigrationError = store.LiveUnderMigrationError
+// processes that read the older schema are working, said with the way on;
+// Options.MigrateUnderLive is a person's answer to it. The store says what
+// it found, and the engine the way on (the architecture review of
+// 5897a82, R3-19).
+type LiveUnderMigrationError struct {
+	*store.LiveUnderMigrationError
+}
+
+func (e *LiveUnderMigrationError) Error() string {
+	return e.LiveUnderMigrationError.Error() + "; wait for them to finish, or stop them, and run this again"
+}
+
+func (e *LiveUnderMigrationError) Unwrap() error { return e.LiveUnderMigrationError }
 
 // Tclsh is the port-tclsh the engine evaluates Portfiles with, and
 // empty where there's none: the one named, else this Mac's MacPorts'.

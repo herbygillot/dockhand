@@ -104,7 +104,11 @@ func TestHandlesASIFFromTheVersionTartPrints(t *testing.T) {
 		"2.38.0": false, "2.37.0": false, "1.99.9": false, "2.39": false, "": false, "unknown": false,
 	} {
 		require.Equal(t, handles, HandlesASIF(version), version)
+		require.Equal(t, handles, TooOld(version) == nil, version)
 	}
+	// One refusal, setup's and a check's alike (the architecture review of
+	// 5897a82, R3-18).
+	require.EqualError(t, TooOld("2.38.0\n"), "Tart 2.38.0 is installed; Dockhand requires 2.39.0 or later to list running VMs with ASIF disks (openai/tart#1344). Upgrade with sudo port upgrade tart")
 }
 
 // Tart 2.39.0 lists a running ASIF VM, Golden Gate's, with its disk

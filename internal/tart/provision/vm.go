@@ -71,10 +71,7 @@ func (n *native) ASIFReady(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if !tart.HandlesASIF(version) {
-		return fmt.Errorf("Tart %s can't list its VMs while one with an ASIF disk runs (openai/tart#1344); 2.39.0 and newer can: sudo port upgrade tart", version)
-	}
-	return nil
+	return tart.TooOld(version)
 }
 
 // Disk sizes, in GB, that setup gives a guest.

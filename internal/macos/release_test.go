@@ -44,7 +44,9 @@ func TestProductForDarwinDoesNotExtendProvisioning(t *testing.T) {
 func TestDescribeWordsDarwinAsMacOS(t *testing.T) {
 	require.Equal(t, "macOS 26 (Tahoe) arm64", Describe(model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}))
 	require.Equal(t, "macOS 15 (Sequoia)", Describe(model.Platform{OS: "darwin", Version: "24"}))
-	require.Equal(t, "darwin 99 arm64", Describe(model.Platform{OS: "darwin", Version: "99", Architecture: "arm64"}), "an unknown release keeps the raw fields")
+	require.Equal(t, "Darwin 99 arm64", Describe(model.Platform{OS: "darwin", Version: "99", Architecture: "arm64"}), "an unknown release keeps its Darwin version")
+	require.Equal(t, "macOS 26", ReleaseName(model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}))
+	require.Equal(t, "Darwin 99", ReleaseName(model.Platform{Version: "99"}), "darwin where the OS isn't said")
 	require.Equal(t, "linux 6", Describe(model.Platform{OS: "linux", Version: "6"}))
 }
 
@@ -85,7 +87,7 @@ func TestGoldenGateIsMacOS27OnDarwin27(t *testing.T) {
 	require.Error(t, err)
 	_, err = ProductForDarwin(26)
 	require.Error(t, err)
-	require.Equal(t, "darwin 26 arm64", Describe(model.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}))
+	require.Equal(t, "Darwin 26 arm64", Describe(model.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}))
 }
 
 // Which architectures a release runs on agrees with MacPorts' builders in

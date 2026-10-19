@@ -309,5 +309,5 @@ func TestAnXcodeRebuildSaysItsBaseKeepsAnOlderMacPorts(t *testing.T) {
 		Behind: []tart.BehindImage{{Release: tahoe, MacPorts: "2.12.6", Host: "2.12.7"}}}
 	out, _, err := dockhand(t, "setup", "tart", "tahoe", "--rebuild", "--xcode", t.TempDir())
 	require.NoError(t, err)
-	require.Contains(t, out, "Its base image keeps MacPorts 2.12.6, older than this Mac's 2.12.7: dockhand setup tart tahoe --rebuild, without --xcode, makes the base image again.\n")
+	require.Contains(t, out, "Its base image has MacPorts 2.12.6, older than this Mac's 2.12.7: dockhand setup tart tahoe --rebuild, without --xcode, makes it again.\n", "the one sentence (the architecture review of 5897a82, R3-7)")
 }

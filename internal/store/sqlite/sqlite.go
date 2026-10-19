@@ -69,9 +69,9 @@ type Options struct {
 	// read the older one are working, a person's answer; otherwise such a
 	// migration is refused (store.LiveUnderMigrationError).
 	MigrateUnderLive bool
-	// LiveWithin is how recent a heartbeat says a process is working:
-	// coord's two minutes, after which another dockhand may take over its
-	// work, when zero.
+	// LiveWithin is how recent a heartbeat says a process is working,
+	// coord.DefaultHungAfter, which the engine gives; where it's zero,
+	// every session not ended is working.
 	LiveWithin time.Duration
 }
 
@@ -350,10 +350,11 @@ func (s *Store) prepareSchema(ctx context.Context) error {
 // heartbeat within live: each reads this schema, and couldn't record its
 // work after the migration. Observers only read, and stop.
 func (t *tx) refuseUnderLive(ctx context.Context, version int, live time.Duration) error {
-	if live <= 0 {
-		live = 2 * time.Minute
+	since := int64(0)
+	if live > 0 {
+		since = millis(time.Now().Add(-live))
 	}
-	rows, err := t.conn.QueryContext(ctx, "SELECT version FROM sessions WHERE ended_at IS NULL AND kind<>'observer' AND heartbeat_at>=?", millis(time.Now().Add(-live)))
+	rows, err := t.conn.QueryContext(ctx, "SELECT version FROM sessions WHERE ended_at IS NULL AND kind<>'observer' AND heartbeat_at>=?", since)
 	if err != nil {
 		return storageError(err)
 	}
