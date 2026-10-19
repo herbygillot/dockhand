@@ -407,7 +407,7 @@ func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options 
 	if options.Origin == model.OriginServe {
 		answered = model.AnsweredNobody
 	}
-	done := e.Ship(ctx, ShipTarget{Port: planned.Port.Port, Current: planned.Port.Current, Version: planned.Port.Newest, Release: planned.Port.Release, Name: planned.Name},
+	done := e.Ship(ctx, ShipTarget{Port: planned.Port.Port, Version: planned.Port.Newest, Release: planned.Port.Release, Name: planned.Name},
 		ShipOptions{Origin: options.Origin, To: to, Where: options.Where, Tests: options.Tests, Answered: answered})
 	done.Planned = planned
 	return done

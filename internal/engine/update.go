@@ -32,15 +32,23 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
+// HandBranch reports whether a Start request starts its branch for an edit
+// dockhand can't make, for the person to make it by hand: a person's own
+// update does, and one nobody looks over, or one of a batch, leaves
+// nothing (field testing's cleanup, af03bbab: pgdog, reposurgeon, and
+// termusic each left an empty branch status listed for hours). The one
+// decision of it, for serve's ship and the command's (the architecture
+// review of 5897a82, R3-11).
+func (r UpdateRequest) HandBranch() bool {
+	return r.Start != nil && !r.Unattended && !r.Batch
+}
+
 // UpdateRequest asks to edit one port's files in a branch's worktree.
 type UpdateRequest struct {
 	Branch model.Branch
-	// NoHandBranch starts no branch, for a Start request, where the edit
-	// is one dockhand can't make: a person's update keeps one for the
-	// edit by hand, and a batch, which no person is at, leaves nothing
-	// (field testing's cleanup, af03bbab: pgdog, reposurgeon, and
-	// termusic each left an empty branch status listed for hours).
-	NoHandBranch bool
+	// Batch is one port's update among several, which no person is at
+	// for this one: it keeps no branch for an edit by hand (HandBranch).
+	Batch bool
 	// Action is model.EditUpdate, a new version; model.EditChecksums, the
 	// checksums of the version the Portfile names; or model.EditRevbump, a
 	// new revision. The edit it records is of the same kind.
@@ -348,7 +356,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	// byHand keeps, for an edit dockhand can't make, the branch the
 	// person will make it in.
 	byHand := func(err error) (Update, error) {
-		if request.Start != nil && !request.NoHandBranch && errors.Is(err, ErrUnsupported) {
+		if request.HandBranch() && errors.Is(err, ErrUnsupported) {
 			if startErr := start(); startErr != nil {
 				return Update{}, errors.Join(err, startErr)
 			}

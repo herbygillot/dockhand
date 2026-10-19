@@ -180,27 +180,29 @@ func TestUncheckedPortsAreSaidAhead(t *testing.T) {
 	require.Equal(t, []SkippedUpdate{{Port: "browsh", Reason: "release v1.8.3 has no files yet"}}, plan.Skipped)
 }
 
-// ship's one "may this go on?" question holds a new major version for an
-// update nobody looks over before anything is prepared, and lets a person
-// asked take it on; a pinned version, bump's [version], is the target's.
+// ship holds a new major version for an update nobody looks over before
+// anything is prepared, through the update's own hold, the one judgment of
+// it on serve's path (the architecture review of 5897a82, R3-1); a pinned
+// version, bump's [version], is the target's.
 func TestShipAsksOnceWhetherItMayGoOn(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
-	target := ShipTarget{Port: "jq", Current: "1.7.1", Version: "2.0.0", Name: "jq-2.0.0"}
+	// As outdated finds one, the release says what it was compared with.
+	major := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "2.0.0", CurrentVersion: "1.7.1"}, Version: "2.0.0", Forge: "github", Tag: "jq-2.0.0"}
+	target := ShipTarget{Port: "jq", Version: "2.0.0", Release: &major, Name: "jq-2.0.0"}
 	done := e.Ship(t.Context(), target, ShipOptions{Origin: model.OriginServe, To: ShipCommit, Answered: model.AnsweredNobody})
-	require.Equal(t, "jq moves from 1.7.1 to 2.0.0, a major version update. holds.majors requires review before an unattended update; nothing was prepared", done.Problem)
+	require.Equal(t, "jq is held for a look before its edit: jq moves from 1.7.1 to 2.0.0, a major version update. holds.majors requires review before an unattended update; no branch was started", done.Problem)
 	require.False(t, done.Update.Started, "nothing was started")
-	require.NoError(t, e.goOn(shipEdit, target, ShipOptions{Answered: model.AnsweredAsked}, nil), "a person asked goes on")
 
 	// --yes skips the question, and nobody looks after it: it holds as
 	// nobody's does, before the edit and at the commit, as the command's
 	// ship does (Codex's review of 832f059e, high 1).
 	yes := ShipOptions{Answered: model.AnsweredYes}
 	require.True(t, yes.Unattended())
-	require.Error(t, e.goOn(shipEdit, target, yes, nil), "a new major version holds --yes too")
+	require.Equal(t, done.Problem, e.Ship(t.Context(), target, ShipOptions{Origin: model.OriginServe, To: ShipCommit, Answered: model.AnsweredYes}).Problem, "a new major version holds --yes too")
 	handEdit := TidyPlan{Groups: []TidyGroup{{Directory: "textproc/jq", Message: "jq: by hand"}}}
 	require.False(t, handEdit.Unambiguous())
-	require.ErrorContains(t, e.goOn(ShipCommit, target, yes, &handEdit), "review the commit plan before committing: run dockhand tidy --branch")
-	require.ErrorContains(t, e.goOn(ShipCommit, target, ShipOptions{Answered: model.AnsweredNobody}, &handEdit), "review the commit plan before committing: run dockhand tidy --branch")
+	require.ErrorContains(t, commitUnasked(yes, handEdit), "review the commit plan before committing: run dockhand tidy --branch")
+	require.ErrorContains(t, commitUnasked(ShipOptions{Answered: model.AnsweredNobody}, handEdit), "review the commit plan before committing: run dockhand tidy --branch")
 }

@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -15,8 +14,6 @@ const (
 	ShipCommit ShipStage = "commit"
 	ShipCheck  ShipStage = "check"
 	ShipSubmit ShipStage = "submit"
-	// shipEdit is the stage before any: the edit itself.
-	shipEdit ShipStage = "edit"
 )
 
 // ShipTarget is what ship moves on: a port, to its newest release or to
@@ -24,8 +21,6 @@ const (
 // already, and the branch it starts, named for it.
 type ShipTarget struct {
 	Port string
-	// Current is the version the port is at, for the holds that compare.
-	Current string
 	// Version is the release to move to: the newest, or the one pinned.
 	Version string
 	Release *model.Release
@@ -50,48 +45,36 @@ type ShipOptions struct {
 // review of 832f059e, high 1).
 func (o ShipOptions) Unattended() bool { return o.Answered != model.AnsweredAsked }
 
-// goOn is the one place ship asks "may this go on unattended?" at a
-// stage, from what the stage found, and why not: before the edit, a major
-// version holds an update nobody looks over (holds.majors); before the
-// commit, a tidy plan that isn't dockhand's own edits needs a look
-// (AppliesUnasked). Layer 1's readiness replaces it.
-func (e *Engine) goOn(stage ShipStage, target ShipTarget, options ShipOptions, tidy *TidyPlan) error {
-	switch {
-	case stage == shipEdit && options.Unattended():
-		if major := e.majorHold(target.Port, target.Current, target.Version); major != nil {
-			return fmt.Errorf("%s; nothing was prepared", major.Detail)
-		}
-	case stage == ShipCommit && tidy != nil:
-		// --yes approves no plan it hasn't shown: where nobody looks, only
-		// dockhand's own edits are committed unasked.
-		answered := options.Answered
-		if options.Unattended() {
-			answered = model.AnsweredNobody
-		}
-		return tidy.HeldForLook(answered)
+// commitUnasked is whether ship may commit tidy's plan, and why not: a
+// plan that isn't dockhand's own edits needs a look (HeldForLook), and
+// --yes approves no plan it hasn't shown, so where nobody looks only
+// dockhand's own edits are committed unasked. Before the edit, the
+// update's own hold judges a major version (Update, HeldBeforeEdit), the
+// one judgment of it on serve's path (the architecture review of 5897a82,
+// R3-1). Layer 1's readiness replaces it.
+func commitUnasked(options ShipOptions, tidy TidyPlan) error {
+	answered := options.Answered
+	if options.Unattended() {
+		answered = model.AnsweredNobody
 	}
-	return nil
+	return tidy.HeldForLook(answered)
 }
 
 // Ship moves one target through ship's stages on serve's preparation path:
 // it updates the port from fresh master, with the upstream archives
 // compared, in a branch started once there is an edit to make; commits
-// the edit where it may go on (goOn); and to ShipCheck queues a check of
+// the edit where it may go on (commitUnasked); and to ShipCheck queues a check of
 // that commit where options.Where says. What stopped it is its Problem,
 // after whatever it had done. Submitting is item 4's, with ship itself.
 func (e *Engine) Ship(ctx context.Context, target ShipTarget, options ShipOptions) PreparedUpdate {
 	done := PreparedUpdate{}
-	if err := e.goOn(shipEdit, target, options, nil); err != nil {
-		done.Problem = err.Error()
-		return done
-	}
 	var err error
 	// Unattended, the update holds what nobody looks over before it edits,
-	// another open pull request for the port among them, as the command's
-	// ship does: serve's prepared and checked one before the hold came at
-	// submission (Codex's review, high 1).
+	// a major version and another open pull request for the port among
+	// them, as the command's ship does: serve's prepared and checked one
+	// before the hold came at submission (Codex's review, high 1).
 	done.Update, err = e.Update(ctx, UpdateRequest{Start: &StartRequest{Name: target.Name, Origin: options.Origin}, Action: model.EditUpdate, Port: target.Port, Version: target.Version,
-		Release: target.Release, CompareUpstream: true, NoHandBranch: true, Unattended: options.Unattended()})
+		Release: target.Release, CompareUpstream: true, Batch: true, Unattended: options.Unattended()})
 	done.Branch = done.Update.Branch
 	if err != nil {
 		done.Problem = err.Error()
@@ -110,7 +93,7 @@ func (e *Engine) Ship(ctx context.Context, target ShipTarget, options ShipOption
 		done.Problem = err.Error()
 		return done
 	}
-	if err := e.goOn(ShipCommit, target, options, &tidy); err != nil {
+	if err := commitUnasked(options, tidy); err != nil {
 		done.Problem = err.Error()
 		return done
 	}

@@ -328,12 +328,9 @@ func shipOne(ctx context.Context, s *settings, streams Streams, target shipTarge
 		if err != nil {
 			return nil, err
 		}
-		request.Version, request.Release, request.Unattended = target.version, target.release, unattended
 		// A batch, or a ship nobody looks over, starts no branch for an
-		// edit dockhand can't make, as serve's doesn't; a person's own
-		// ship <port> on a terminal keeps one for the edit by hand
-		// (c360b35f moved the batch onto author, which didn't say so).
-		request.NoHandBranch = unattended || batch
+		// edit dockhand can't make (UpdateRequest.HandBranch).
+		request.Version, request.Release, request.Unattended, request.Batch = target.version, target.release, unattended, batch
 		where := branchChoice{new: newNamed}
 		if target.branch != nil {
 			where = branchChoice{branch: target.branch.ShortName()}

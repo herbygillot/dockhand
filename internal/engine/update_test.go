@@ -506,7 +506,12 @@ func TestAnUpdateStartsItsBranchOnlyForAnEdit(t *testing.T) {
 	require.DirExists(t, update.Branch.Worktree)
 
 	batch := start("jq-unattended")
-	batch.NoHandBranch = true
+	batch.Batch = true
+	unattended := start("jq-unattended")
+	unattended.Unattended = true
+	require.True(t, start("jq").HandBranch(), "a person's own update keeps one")
+	require.False(t, unattended.HandBranch(), "one nobody looks over keeps none, the command's ship and serve's alike")
+	require.False(t, UpdateRequest{Port: "jq"}.HandBranch(), "an update of a branch starts none")
 	update, err = e.Update(t.Context(), batch)
 	require.ErrorIs(t, err, ErrUnsupported)
 	require.False(t, update.Started, "a batch, which no person is at, leaves no empty branch")

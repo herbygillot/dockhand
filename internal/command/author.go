@@ -709,7 +709,7 @@ func byHand(err error, request engine.UpdateRequest, branch model.Branch, starte
 	case request.Plan:
 	case started:
 		kept = "\nKept: " + branch.Name + ", with nothing changed."
-	case request.Start != nil && request.NoHandBranch:
+	case request.Start != nil && !request.HandBranch():
 		kept = "\nNo branch was started."
 	default:
 		kept = "\nKept: the branch, unchanged."
