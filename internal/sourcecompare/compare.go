@@ -732,22 +732,24 @@ func pythonBackend(old, now project.Reading) []Change {
 // dateutils's "configure.ac changed" held with nothing to act on).
 func autoconfWords(old, now project.AutoconfFacts) string {
 	var said []string
-	moved := func(before, after []string, what string) {
+	// A list that leaves a name out, one it couldn't read, says nothing of
+	// a name missing from it: 1.3.49's $pnglibbase.
+	moved := func(before, after []string, what string, beforeIncomplete, afterIncomplete bool) {
 		for _, name := range after {
-			if !slices.Contains(before, name) {
+			if !slices.Contains(before, name) && !beforeIncomplete {
 				said = append(said, what+name+" added")
 			}
 		}
 		for _, name := range before {
-			if !slices.Contains(after, name) {
+			if !slices.Contains(after, name) && !afterIncomplete {
 				said = append(said, what+name+" removed")
 			}
 		}
 	}
-	moved(old.Enables, now.Enables, "--enable-")
-	moved(old.Withs, now.Withs, "--with-")
-	moved(old.Modules, now.Modules, "pkg-config module ")
-	moved(old.Libraries, now.Libraries, "library ")
+	moved(old.Enables, now.Enables, "--enable-", false, false)
+	moved(old.Withs, now.Withs, "--with-", false, false)
+	moved(old.Modules, now.Modules, "pkg-config module ", false, false)
+	moved(old.Libraries, now.Libraries, "library ", old.LibrariesIncomplete, now.LibrariesIncomplete)
 	if len(said) == 0 {
 		return ", in nothing it names as an option, a pkg-config module, or a library"
 	}

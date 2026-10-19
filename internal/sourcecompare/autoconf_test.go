@@ -1,6 +1,9 @@
 package sourcecompare
 
 import (
+	"compress/gzip"
+	"io"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,6 +20,40 @@ func TestAConfigureAcChangeSaysWhatItAsks(t *testing.T) {
 	now := project.ReadAutoconf([]byte("AC_ARG_ENABLE([fast-arith])\nAC_ARG_ENABLE([contrib])\nPKG_CHECK_MODULES([TZ], [libtzdb])\n"))
 	require.Equal(t, ": --enable-contrib added; pkg-config module libtzdb added; library m removed", autoconfWords(old, now))
 	require.Equal(t, ", in nothing it names as an option, a pkg-config module, or a library", autoconfWords(old, old))
+}
+
+// A library a configure.ac names through a variable is the word the file
+// sets it to, and a list that leaves one out says nothing removed:
+// GraphicsMagick 1.3.45 to 1.3.49 held on about twenty libraries
+// "removed", freetype and zstd among them, which 1.3.49 checks as
+// AC_CHECK_LIB([$zstd], ...) with zstd=zstd set above (the field notes,
+// 2026-10-19). The module it moved off, libturbojpeg, is still said.
+func TestALibraryNamedByAVariableIsNotRemoved(t *testing.T) {
+	t.Parallel()
+	read := func(version string) project.AutoconfFacts {
+		file, err := os.Open("../project/testdata/graphicsmagick-" + version + "-configure.ac.gz")
+		require.NoError(t, err)
+		defer file.Close()
+		unzipped, err := gzip.NewReader(file)
+		require.NoError(t, err)
+		data, err := io.ReadAll(unzipped)
+		require.NoError(t, err)
+		return project.ReadAutoconf(data)
+	}
+	old, now := read("1.3.45"), read("1.3.49")
+	require.Contains(t, now.Libraries, "zstd")
+	require.Contains(t, now.Libraries, "freetype")
+	require.True(t, now.LibrariesIncomplete, "$pnglibbase is set from sed's output")
+	words := autoconfWords(old, now)
+	require.NotContains(t, words, "library freetype removed")
+	require.NotContains(t, words, "library zstd removed")
+	require.Contains(t, words, "pkg-config module libturbojpeg removed")
+
+	literal := project.ReadAutoconf([]byte("zstd=zstd\nAC_CHECK_LIB([$zstd], [ZSTD_createDStream])\nAC_CHECK_LIB([${png}], [png_read])\n"))
+	require.Equal(t, []string{"zstd"}, literal.Libraries)
+	require.True(t, literal.LibrariesIncomplete)
+	require.Equal(t, ": library zstd added", autoconfWords(project.ReadAutoconf(nil), literal), "an incomplete list's own names are said")
+	require.Equal(t, ": library zstd added", autoconfWords(project.ReadAutoconf([]byte("AC_CHECK_LIB([m], [sqrt])\n")), literal), "m isn't said removed")
 }
 
 // A Makefile.am's -version-info moving anywhere in the source is a new

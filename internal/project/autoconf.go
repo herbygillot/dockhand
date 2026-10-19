@@ -11,17 +11,26 @@ import (
 // modules it checks for, and the libraries it links. A person reading
 // "configure.ac changed" was left to diff it (field testing, batch 11:
 // dateutils). Macros it reads literally; one whose name a macro computes
-// isn't listed.
+// isn't listed. A library named by a shell variable, AC_CHECK_LIB([$zstd],
+// ...), is the literal word the file sets it to, zstd=zstd, and where
+// none is set, as `$pnglibbase` from sed's output, LibrariesIncomplete
+// says the list leaves one out: GraphicsMagick 1.3.49 read as twenty
+// libraries removed (the field notes, 2026-10-19).
 type AutoconfFacts struct {
 	Enables, Withs, Modules, Libraries []string
+	LibrariesIncomplete                bool
 }
 
 var (
 	autoconfEnable  = regexp.MustCompile(`AC_ARG_ENABLE\(\s*\[?([A-Za-z0-9_-]+)`)
 	autoconfWith    = regexp.MustCompile(`AC_ARG_WITH\(\s*\[?([A-Za-z0-9_-]+)`)
 	autoconfModules = regexp.MustCompile(`PKG_CHECK_MODULES(?:_STATIC)?\(\s*\[?[A-Za-z0-9_]+\]?\s*,\s*\[?([^\],)]+)`)
-	autoconfLib     = regexp.MustCompile(`AC_CHECK_LIB\(\s*\[?([A-Za-z0-9_+.-]+)`)
-	autoconfSearch  = regexp.MustCompile(`AC_SEARCH_LIBS\(\s*\[?[A-Za-z0-9_]+\]?\s*,\s*\[?([^\],)]+)`)
+	autoconfLib     = regexp.MustCompile(`AC_CHECK_LIB\(\s*\[?(\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|[A-Za-z0-9_+.-]+)`)
+	// A shell variable set to one literal word, as zstd=zstd, and a
+	// reference to one, $zstd or ${zstd}.
+	autoconfAssign   = regexp.MustCompile(`(?m)^[ \t]*([A-Za-z_][A-Za-z0-9_]*)=([A-Za-z0-9_+.-]+)[ \t]*$`)
+	autoconfVariable = regexp.MustCompile(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$`)
+	autoconfSearch   = regexp.MustCompile(`AC_SEARCH_LIBS\(\s*\[?[A-Za-z0-9_]+\]?\s*,\s*\[?([^\],)]+)`)
 	// A module's version constraint, ">= 2.0", isn't a module.
 	autoconfConstraint = regexp.MustCompile(`^[<>=!]+$|^[0-9][0-9.]*$`)
 )
@@ -46,7 +55,25 @@ func ReadAutoconf(data []byte) AutoconfFacts {
 		slices.Sort(found)
 		return found
 	}
-	libraries := append(names(autoconfLib, false), names(autoconfSearch, true)...)
-	slices.Sort(libraries)
-	return AutoconfFacts{Enables: names(autoconfEnable, false), Withs: names(autoconfWith, false), Modules: names(autoconfModules, true), Libraries: slices.Compact(libraries)}
+	facts := AutoconfFacts{Enables: names(autoconfEnable, false), Withs: names(autoconfWith, false), Modules: names(autoconfModules, true)}
+	set := map[string][]string{}
+	for _, match := range autoconfAssign.FindAllStringSubmatch(text, -1) {
+		if !slices.Contains(set[match[1]], match[2]) {
+			set[match[1]] = append(set[match[1]], match[2])
+		}
+	}
+	for _, name := range append(names(autoconfLib, false), names(autoconfSearch, true)...) {
+		variable := autoconfVariable.FindStringSubmatch(name)
+		switch {
+		case variable == nil:
+			facts.Libraries = append(facts.Libraries, name)
+		case len(set[variable[1]]) == 0:
+			facts.LibrariesIncomplete = true
+		default:
+			facts.Libraries = append(facts.Libraries, set[variable[1]]...)
+		}
+	}
+	slices.Sort(facts.Libraries)
+	facts.Libraries = slices.Compact(facts.Libraries)
+	return facts
 }
