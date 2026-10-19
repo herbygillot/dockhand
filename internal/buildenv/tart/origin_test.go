@@ -96,7 +96,14 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // begins it, for the host to record the one a lost guest was building as
 // interrupted. That reports more, and builds and judges nothing
 // otherwise, so the protocol stays 3.
-const guestPin = "df83e066a9991462f9ddd656deaccc8eb76762fd9bb129c118427d84ae08f7da"
+//
+// Since item 5 of v0.5.0's part 1 the program installs a target's
+// dependencies without -d where none builds from source, and appends the
+// tests' own logs to a target's log after a failed test phase (the exiv2
+// field notes, 2026-10-19). The log says less of archives' installs and
+// more of a test's failure; nothing is built or judged otherwise, so the
+// protocol stays 3.
+const guestPin = "ad82ff8a83db0774dc15427fe9f767c006ed17d658bbb3b56ee6bc5495ccac83"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

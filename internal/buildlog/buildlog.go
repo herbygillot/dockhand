@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -146,4 +147,64 @@ func Last(log io.Reader, from, to, n int) []string {
 		}
 	}
 	return last
+}
+
+// ctestFailed opens CTest's list of the tests that failed, and
+// ctestFailure is one of them, "  3 - bugfixes-test (Failed)", as ctest
+// prints it at the end of a run; automakeFailure is a failed test in
+// automake's parallel harness's output and its test-suite.log, "FAIL:
+// tests/basic.sh" (or ERROR:), as its manual describes the summary.
+var (
+	ctestFailed     = regexp.MustCompile(`^The following tests FAILED:\s*$`)
+	ctestFailure    = regexp.MustCompile(`^\s*\d+\s+-\s+(\S.*?)\s+\([^()]+\)\s*$`)
+	automakeFailure = regexp.MustCompile(`^(?:FAIL|ERROR): (\S+)`)
+)
+
+// FailedTests are the tests a log, from a line on, says failed, each once,
+// in the order it names them, as ctest and automake's harness list them:
+// a test phase that failed said only "make: *** [test] Error 8" and where
+// CTest's log was, so exiv2's Portfile was changed to run ctest
+// --output-on-failure just to see which (the exiv2 field notes,
+// 2026-10-19). None where the log names none, or can't be read.
+func FailedTests(log io.Reader, from int) []string {
+	lines := bufio.NewReaderSize(log, maxLine)
+	var failed []string
+	add := func(name string) {
+		if !slices.Contains(failed, name) {
+			failed = append(failed, name)
+		}
+	}
+	listing := false
+	for number := 1; ; number++ {
+		line, err := lines.ReadSlice('\n')
+		long := false
+		for errors.Is(err, bufio.ErrBufferFull) {
+			long = true
+			_, err = lines.ReadSlice('\n')
+		}
+		if err != nil && !errors.Is(err, io.EOF) || len(line) == 0 && !long {
+			break
+		}
+		if number < from || long {
+			continue
+		}
+		text := strings.TrimRight(string(line), "\r\n")
+		switch {
+		case ctestFailed.MatchString(text):
+			listing = true
+		case listing:
+			if match := ctestFailure.FindStringSubmatch(text); match != nil {
+				add(match[1])
+			} else {
+				listing = false
+			}
+		}
+		if match := automakeFailure.FindStringSubmatch(text); match != nil {
+			add(match[1])
+		}
+		if errors.Is(err, io.EOF) {
+			break
+		}
+	}
+	return failed
 }

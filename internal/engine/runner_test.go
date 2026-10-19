@@ -1472,3 +1472,15 @@ func TestACancelLeftUnappliedIsAppliedByTheNextDriver(t *testing.T) {
 	defer provider.mu.Unlock()
 	require.Empty(t, provider.jobs, "nothing was built")
 }
+
+// A result whose tests failed names them from its log, from its test step
+// on, whether the target failed or passed under declared tests (the exiv2
+// field notes, 2026-10-19).
+func TestAResultWhoseTestsFailedNamesThem(t *testing.T) {
+	t.Parallel()
+	log := filepath.Join(t.TempDir(), "target-1.log")
+	require.NoError(t, os.WriteFile(log, []byte("FAIL: a dependency's own\n:info:test The following tests FAILED:\nThe following tests FAILED:\n\t  3 - bugfixes-test (Failed)\nmake: *** [test] Error 8\n"), 0o644))
+	steps := []model.LogStep{{Name: model.StepInstall, Line: 1}, {Name: model.StepTest, Line: 2}}
+	require.Equal(t, "tests: make test failed · failed tests, from its log: bugfixes-test", withFailedTests("tests: make test failed", model.TargetResult{Log: log, Steps: steps}))
+	require.Equal(t, "said", withFailedTests("said", model.TargetResult{Log: filepath.Join(t.TempDir(), "gone.log")}))
+}

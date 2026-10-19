@@ -854,6 +854,9 @@ func (b *build) Fetched(target model.TargetID, commit string) {
 
 func (b *build) Record(result model.TargetResult) error {
 	result = b.d.plan.Tests.Judge(result)
+	if result.Tests == model.TestsFailed {
+		result.Detail = withFailedTests(result.Detail, result)
+	}
 	if result.Outcome == model.OutcomeFailed {
 		result.Detail = withCause(result.Detail, result)
 	}
@@ -975,6 +978,37 @@ func withCause(detail string, result model.TargetResult) string {
 
 // fromItsLog marks what withCause read from a failure's log.
 const fromItsLog = "from its log: "
+
+// withFailedTests adds to a result whose tests failed the tests its log
+// names as failed (buildlog.FailedTests), read from where its test step
+// began, under declared tests too, where the target passed and nothing
+// read its log: exiv2's said "make: *** [test] Error 8" alone (the exiv2
+// field notes, 2026-10-19).
+func withFailedTests(detail string, result model.TargetResult) string {
+	if result.Log == "" {
+		return detail
+	}
+	file, err := buildlog.Open(result.Log)
+	if err != nil {
+		return detail
+	}
+	defer file.Close()
+	from := 1
+	for _, step := range result.Steps {
+		if step.Name == model.StepTest {
+			from = step.Line
+		}
+	}
+	failed := buildlog.FailedTests(file, from)
+	if len(failed) == 0 {
+		return detail
+	}
+	words := "failed tests, " + fromItsLog + strings.Join(failed, ", ")
+	if detail == "" {
+		return words
+	}
+	return detail + " · " + words
+}
 
 // FailureLines are the last lines, at most n, of the step a target failed
 // at in an environment, read from its log where no reading of it found the

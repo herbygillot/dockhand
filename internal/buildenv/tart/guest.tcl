@@ -157,6 +157,42 @@ if {[llength [info procs checkout]] == 0} {
         return $path
     }
 }
+# work_dir is a port's work directory, its workpath, where its build
+# systems leave their test logs. It is read as declares_tests reads
+# test.run.
+if {[llength [info procs work_dir]] == 0} {
+    proc work_dir {portdir name variants} {
+        set handle [mportopen "file://$portdir" [list subport $name] $variants]
+        set worker [ditem_key $handle workername]
+        set path [$worker eval {option workpath}]
+        mportclose $handle
+        return $path
+    }
+}
+# test_logs appends to a target's log the last lines of the test logs its
+# build systems left in its work directory, where a failed test phase
+# said why: CTest's Testing/Temporary/LastTest.log, automake's
+# test-suite.log, and meson's meson-logs/testlog.txt, each under a
+# dockhand: line naming it. The work directory goes with the VM, and
+# exiv2's log said only where LastTest.log was (the exiv2 field notes,
+# 2026-10-19). At most three are taken, each its last 200 lines.
+proc test_logs {log work} {
+    if {![file isdirectory $work]} { return }
+    catch {exec /usr/bin/find $work -maxdepth 6 -type f ( -path */Testing/Temporary/LastTest.log -o -name test-suite.log -o -path */meson-logs/testlog.txt )} found
+    set paths {}
+    foreach path [split $found \n] {
+        if {[string match $work/* $path]} { lappend paths $path }
+    }
+    if {![llength $paths]} { return }
+    set paths [lsort $paths]
+    set fd [open $log a]
+    foreach path [lrange $paths 0 2] {
+        if {[catch {exec /usr/bin/tail -n 200 $path} tail]} { continue }
+        puts $fd "dockhand: the last lines of [string range $path [string length $work/] end], the tests' own log:"
+        puts $fd $tail
+    }
+    close $fd
+}
 # fetched is the commit a checkout is at, as Git's own rev-parse reads it.
 # The checkout is MacPorts' unprivileged user's, and this program runs as
 # root, so Git is told it is safe for this one command, as Base tells it
@@ -477,7 +513,13 @@ proc build {index target} {
             close $fd
             save running
         }
-        if {[set message [timed $log [concat [list $port -N -d install --unrequested] $dependencies] [{*}$left]]] eq "timed out"} {
+        # Debug output only where something builds from source, which D10's
+        # reading of a compiler's error and MacPorts' "Command failed:"
+        # line need: installing archives with -d wrote tar's listing and
+        # each "activating file:", most of exiv2's 74,000 lines (the exiv2
+        # field notes, 2026-10-19).
+        set debug [expr {[llength $fromsource] ? {-d} : {}}]
+        if {[set message [timed $log [concat [list $port -N] $debug [list install --unrequested] $dependencies] [{*}$left]]] eq "timed out"} {
             return [{*}$fail $result install "installing its dependencies, $over"]
         } elseif {$message ne ""} {
             return [{*}$fail $result install "a dependency failed to install: [why $log $message]"]
@@ -574,6 +616,8 @@ proc build {index target} {
         if {$message ne ""} {
             dict set result detail "tests: [why $log $message]"
             if {$tests eq "required"} { dict set result outcome failed; dict set result phase test }
+            # What the tests said comes back, from the logs they left.
+            catch { test_logs $log [work_dir $portdir $name $variants] }
         }
     }
     return $result

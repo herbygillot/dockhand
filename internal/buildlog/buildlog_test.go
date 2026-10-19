@@ -156,3 +156,23 @@ func TestARustErrorIsReadWithWhereItIs(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "error[E0425]: cannot find value `x` in this scope (at src/main.rs:3:13)", cause.Line)
 }
+
+// The failed tests are named from what ctest and automake's harness list,
+// each once, from where the test step began: exiv2's said only "make: ***
+// [test] Error 8" (the exiv2 field notes, 2026-10-19).
+func TestTheFailedTestsAreNamedFromTheLog(t *testing.T) {
+	log := strings.Join([]string{
+		"FAIL: dependency/check.sh",
+		":info:test 75% tests passed, 2 tests failed out of 8",
+		"The following tests FAILED:",
+		"\t  3 - bugfixes-test (Failed)",
+		"\t  7 - version test (SEGFAULT)",
+		"Errors while running CTest",
+		"FAIL: tests/basic.sh",
+		"ERROR: tests/hang.sh",
+		"FAIL: tests/basic.sh",
+		"make: *** [test] Error 8",
+	}, "\n") + "\n"
+	require.Equal(t, []string{"bugfixes-test", "version test", "tests/basic.sh", "tests/hang.sh"}, FailedTests(strings.NewReader(log), 2), "from the test step, the dependency's left out")
+	require.Empty(t, FailedTests(strings.NewReader("100% tests passed, 0 tests failed out of 8\n"), 1))
+}

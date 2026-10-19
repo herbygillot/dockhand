@@ -74,7 +74,7 @@ case "$*" in
   *" deactivate "*|*" clean "*|*" lint "*|*" install "*|*" fetch "*|*" checksum "*|*" test "*)
     echo "port $*"
     case "$*" in
-      "-N -d install --unrequested "*) if [ "${DEPLINES:-0}" -gt 0 ]; then yes "a dependency's line" | head -n "$DEPLINES"; fi ;;
+      "-N -d install --unrequested "*|"-N install --unrequested "*) if [ "${DEPLINES:-0}" -gt 0 ]; then yes "a dependency's line" | head -n "$DEPLINES"; fi ;;
       *" lint "*) if [ -n "$LINTSAYS" ]; then echo "$LINTSAYS"; fi ;;
     esac ;;
 esac
@@ -178,6 +178,7 @@ namespace eval macports {variable os_platform darwin; variable os_major 25; vari
 proc mportinit {} {}
 proc declares_tests {portdir name variants} { return [expr {$name in $::env(TESTED)}] }
 proc checkout {portdir name variants} { return [file join $::env(CHECKOUTS) $name] }
+proc work_dir {portdir name variants} { return [file join $::env(CHECKOUTS) $name-work] }
 set foreignManagers {}
 `
 	script := filepath.Join(root, "guest.tcl")
@@ -228,8 +229,8 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 		"-N -D devel/libharbor -dkns install --unrequested subport=libharbor",
 		"-N -D devel/libharbor -d test subport=libharbor",
 	}, keep(libharbor, func(c string) bool { return !strings.Contains(c, "installed") }))
-	require.Contains(t, commands, "-N -d install --unrequested zlib", "a target's dependencies are installed first")
-	require.Contains(t, commands, "-N -d install --unrequested libharbor", "the dependent's changed dependency is among them")
+	require.Contains(t, commands, "-N install --unrequested zlib", "a target's dependencies are installed first, quietly, from archives")
+	require.Contains(t, commands, "-N install --unrequested libharbor", "the dependent's changed dependency is among them")
 }
 
 // Each target's result says where each step of its build begins in its
@@ -248,7 +249,7 @@ func TestTheGuestRecordsWhereEachStepBeginsInItsLog(t *testing.T) {
 	require.Equal(t, append(slices.Clone(steps), guestStep{"test", 46008}), results.Targets[0].Steps)
 	require.Equal(t, steps, results.Targets[1].Steps, "its own log, counted from its start")
 	commands := map[string]string{
-		"deactivate": "-N -f deactivate active", "clean": " clean --work ", "lint": " lint ", "dependencies": "-N -d install --unrequested ",
+		"deactivate": "-N -f deactivate active", "clean": " clean --work ", "lint": " lint ", "dependencies": "-N install --unrequested ",
 		"fetch": " -d fetch ", "checksum": " -d checksum ", "install": " -dkns install ", "test": " -d test ",
 	}
 	for _, target := range results.Targets {
@@ -320,6 +321,33 @@ func TestAFailedTargetBlocksWhatNeedsIt(t *testing.T) {
 	for _, command := range commands {
 		require.NotContains(t, command, "subport=harbor-cli", "the blocked target isn't built")
 	}
+}
+
+// A failed test phase brings back the last lines of the test logs the
+// port's build systems left in its work directory, which goes with the VM,
+// each under a dockhand: line: exiv2's said only where CTest's log was
+// (the exiv2 field notes, 2026-10-19). A passing one brings none.
+func TestAFailedTestPhaseBringsBackTheTestsOwnLogs(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	work := filepath.Join(root, "checkouts", "libharbor-work")
+	ctest := filepath.Join(work, "build", "Testing", "Temporary", "LastTest.log")
+	require.NoError(t, os.MkdirAll(filepath.Dir(ctest), 0o755))
+	require.NoError(t, os.WriteFile(ctest, []byte("3/8 Testing: bugfixes-test\nbugfixes-test: expected 4, got 5\n"), 0o644))
+	results, _ := guestRunIn(t, root, twoTargets("declared"), "TESTED=libharbor", "FAIL=test:libharbor")
+	require.Equal(t, "failed", results.Targets[0].Tests)
+	log, err := os.ReadFile(filepath.Join(root, "target-1.log"))
+	require.NoError(t, err)
+	require.Contains(t, string(log), "dockhand: the last lines of build/Testing/Temporary/LastTest.log, the tests' own log:\n3/8 Testing: bugfixes-test\nbugfixes-test: expected 4, got 5\n")
+
+	passing := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(passing, "checkouts", "libharbor-work"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(passing, "checkouts", "libharbor-work", "test-suite.log"), []byte("PASS: all\n"), 0o644))
+	results, _ = guestRunIn(t, passing, twoTargets("declared"), "TESTED=libharbor")
+	require.Equal(t, "passed", results.Targets[0].Tests)
+	log, err = os.ReadFile(filepath.Join(passing, "target-1.log"))
+	require.NoError(t, err)
+	require.NotContains(t, string(log), "the tests' own log")
 }
 
 // Declared tests are advisory: a failure is reported, and the target still
@@ -650,4 +678,8 @@ func TestTheGuestSaysWhichDependenciesBuildFromSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(log), "dockhand: no binary archive for rust on this release; install builds it from source\n")
 	require.Empty(t, results.FromSource, "cleared once the target's result is written")
+	// Where something builds from source, the install says what it does,
+	// for a compiler's error and MacPorts' "Command failed:" line; where
+	// nothing does, it's quiet (the exiv2 field notes, 2026-10-19).
+	require.Contains(t, commands, "-N -d install --unrequested zlib rust")
 }
