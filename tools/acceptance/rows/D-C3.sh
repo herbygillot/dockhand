@@ -40,7 +40,8 @@ assert() {
 	local status queue
 	status=$(grep -l '^status --refresh$' "$ROW_DIR"/json/*.json.args 2>/dev/null | head -1)
 	queue=$(grep -l '^status --all$' "$ROW_DIR"/json/*.json.args 2>/dev/null | head -1)
-	jq -r '.error // empty' "${status%.args}" | grep -qi 'rejected' && ! grep -q '401' "$ROW_DIR/out.log" ||
+	# 401 as a word: a commit's SHA in status's JSON held it (the rc4 sitting).
+	jq -r '.error // empty' "${status%.args}" | grep -qi 'rejected' && ! grep -qw '401' "$ROW_DIR/out.log" ||
 		{ row_fail "not said as rejected: $(jq -r '.error // empty' "${status%.args}")"; return; }
 	[ "$(grep -c 'rejected the credential' "$ROW_DIR/out.log")" -le 2 ] ||
 		{ row_fail "the rejection was said more than once"; return; }
