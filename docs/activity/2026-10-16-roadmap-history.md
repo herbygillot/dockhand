@@ -850,3 +850,7 @@ Each entry was checked against the code at a268b6e5 the same day. They're here a
 - To part 5, with §3's chaining, from the code-organization review: the history transition as one `Make`, keeping submit's merge check (finding 26);
 - To part 2, item 1 (`Update`) and part 4, item 1 (`PlanTidy`), from the code-organization review: `Update`'s and `PlanTidy`'s seams (finding 44).
 - To part 2, item 2: **A counted dependency the Portfile names, named.** A count names its packages only up to three, so beekeeper-studio 6.1.4 read "apps/studio/package.json: 2 added (devicon, simple-icons), 9 moved", electron among the nine unnamed. Harmless there, since the Portfile doesn't pin electron and yarn fetches it; where a Portfile does name a package a count moves, it could be named whatever the count (the dogfood run with 4a7ce225). `assess` would need the Portfile's text, or the options that name it, which it doesn't read yet; taken when the assessment next reads the Portfile.
+
+## From Later on 2026-10-19: now in v0.5.0
+
+- To part 1, item 6, a failed check you can work on (the exiv2 field notes, [note](2026-10-19-exiv2-field-notes.md)), from the Vx port's field testing: `check --keep`, leaving a failed check's Tart VM running for a shell into it, `dockhand shell check-N`, and removed by the next check or `clean`;
