@@ -490,7 +490,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	out, errs, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 	require.Contains(t, errs, "jq-update: #34901: changes requested\n")
-	require.Contains(t, out, "Needs you\n  ! jq-update  #34901 changes requested (just now)  dockhand edit jq\n")
+	require.Contains(t, out, "Needs you\n  ! jq-update  #34901 changes requested (just now)\n               dockhand edit jq\n")
 	require.Contains(t, out, "#34901 changes requested, CI ✓")
 	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	out, _, err = dockhand(t, "status")
@@ -979,7 +979,7 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	testsupport.Git(t, w.clone, "branch", "-D", "dockhand/jq-update")
 	out, _, err := dockhand(t, "status")
 	require.NoError(t, err)
-	require.Contains(t, out, "its Git branch is gone, and its pull request, #34901, may have merged")
+	require.Contains(t, out, "its Git branch is gone, and its pull request, #34901, may have\n               merged\n")
 	require.Contains(t, out, "dockhand status --refresh reads it")
 
 	g.PRs[34901].State = forge.PullRequestMerged

@@ -84,6 +84,20 @@ func (s Streams) onTerminal(stream any) bool {
 	return ok && isTerminal(file.Fd())
 }
 
+// width is the output terminal's columns, for text to wrap at, else 80.
+func (s Streams) width() int {
+	stream := s.Out
+	if w, ok := stream.(*switchWriter); ok {
+		stream = w.w
+	}
+	if file, ok := stream.(*os.File); ok {
+		if columns := terminalWidth(file.Fd()); columns > 0 {
+			return columns
+		}
+	}
+	return 80
+}
+
 // unattended are the streams of a command that asks nothing, whatever its
 // input, as bump does: everything that would ask goes the way it goes
 // without a terminal.

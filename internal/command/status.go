@@ -200,7 +200,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		streams.emit(result)
 	}
 	if attentionOnly {
-		writeAttention(out, rows)
+		writeAttention(out, rows, streams.width())
 		if len(rows) > 0 {
 			return &ExitError{Code: ExitAttention}
 		}
@@ -214,7 +214,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 	}
 	if len(rows) > 0 {
 		fmt.Fprintln(out, "Needs you")
-		writeAttention(out, rows)
+		writeAttention(out, rows, streams.width())
 		fmt.Fprintln(out)
 	}
 	if len(statuses) == 0 {
@@ -444,12 +444,28 @@ func submitNext(s engine.BranchStatus, name string) string {
 	return "dockhand submit --branch " + name
 }
 
-func writeAttention(out io.Writer, rows []attention) {
-	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+// writeAttention writes the rows, each one's message wrapped at width
+// beside its branch and its command on the line below: one long message
+// set every row's command column, which ended near column 400 (the
+// gnome-voice session's notes, 2026-10-20).
+func writeAttention(out io.Writer, rows []attention, width int) {
+	column := 0
 	for _, row := range rows {
-		fmt.Fprintf(table, "  %s %s\t%s\t%s\n", row.kind.mark(), row.branch, row.what, row.next)
+		column = max(column, len([]rune(row.branch)))
 	}
-	table.Flush()
+	// "  ! " and the branch, then two spaces.
+	column += 6
+	indent := strings.Repeat(" ", column)
+	for _, row := range rows {
+		lines := strings.Split(prose.Wrap(row.what, max(width-column, 20)), "\n")
+		fmt.Fprintf(out, "  %s %-*s  %s\n", row.kind.mark(), column-6, row.branch, lines[0])
+		for _, line := range lines[1:] {
+			fmt.Fprintf(out, "%s%s\n", indent, line)
+		}
+		if row.next != "" {
+			fmt.Fprintf(out, "%s%s\n", indent, row.next)
+		}
+	}
 }
 
 func workWords(s engine.BranchStatus) string {

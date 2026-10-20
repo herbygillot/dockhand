@@ -77,13 +77,13 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", w.clone)
 	out, _, err = dockhand(t)
 	require.NoError(t, err, "bare dockhand in a ports checkout is status")
-	require.Contains(t, out, "Needs you\n  · jq-update  snapshot 1 passed; commit it for review  dockhand tidy --branch jq-update\n")
+	require.Contains(t, out, "Needs you\n  · jq-update  snapshot 1 passed; commit it for review\n               dockhand tidy --branch jq-update\n")
 	require.Contains(t, out, "jq-update  1      edits, uncommitted  passed for snapshot 1  —\n")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# more\n"), 0o644))
 	out, _, err = dockhand(t, "status", "--attention")
 	require.Equal(t, 3, ExitCode(err), "attention needed exits 3")
-	require.Equal(t, "  ! jq-update  snapshot 1 passed; the files have changed since  dockhand check --branch jq-update\n", out)
+	require.Equal(t, "  ! jq-update  snapshot 1 passed; the files have changed since\n               dockhand check --branch jq-update\n", out)
 
 	t.Setenv("MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "tidy")
@@ -422,4 +422,22 @@ func TestSubmitJSONListsItsConcerns(t *testing.T) {
 	require.Equal(t, []concernJSON{{Origin: "upstream", Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Class: string(model.Introduced), Detail: detail}}, view.Concerns)
 	require.Empty(t, view.Held, "held is an unattended submission's")
 	require.Equal(t, []concernJSON{}, submitView(engine.SubmitPlan{}).Concerns, "an empty list, never null")
+}
+
+// One long message sets no other row's width: each wraps at the terminal's
+// width beside its branch, its command on the line below (the gnome-voice
+// session's notes: commands ended near column 400).
+func TestAttentionRowsWrapWithTheirCommandBelow(t *testing.T) {
+	var out strings.Builder
+	writeAttention(&out, []attention{
+		{kind: attentionFailed, branch: "gnome-voice", what: "check-482 failed: gnome-voice failed to build on macOS 26 at configure, and the log names the missing dependency", next: "dockhand logs check-482 gnome-voice"},
+		{kind: attentionNeedsYou, branch: "jq", what: "snapshot 1 passed", next: "dockhand tidy --branch jq"},
+	}, 60)
+	require.Equal(t, ""+
+		"  "+attentionFailed.mark()+" gnome-voice  check-482 failed: gnome-voice failed to\n"+
+		"                 build on macOS 26 at configure, and the log\n"+
+		"                 names the missing dependency\n"+
+		"                 dockhand logs check-482 gnome-voice\n"+
+		"  "+attentionNeedsYou.mark()+" jq           snapshot 1 passed\n"+
+		"                 dockhand tidy --branch jq\n", out.String())
 }
