@@ -513,13 +513,18 @@ func (e Evidence) Shown() []int {
 // and no check planned (Plan), whose cells are all not run: status showed
 // "macOS 26 · not run" for a branch only ever checked on 12 and 27, from
 // a Mac on 26 (field testing's exiv2, 2026-10-20). They're what's left to
-// check, which submit says, not a result.
+// check, which submit says, not a result: a check's report and status
+// show Checked, and the pull request Shown. Where no check planned any, it
+// is Shown.
 func (e Evidence) Checked() []int {
 	var checked []int
 	for _, i := range e.Shown() {
 		if slices.ContainsFunc(e.Plan.Builds, func(build model.EnvironmentPlan) bool { return build.Environment == e.Plan.Environments[i] }) {
 			checked = append(checked, i)
 		}
+	}
+	if len(checked) == 0 {
+		return e.Shown()
 	}
 	return checked
 }

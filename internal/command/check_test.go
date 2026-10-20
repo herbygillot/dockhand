@@ -209,7 +209,7 @@ func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
 		{Target: targets[1], Outcomes: cells([]model.TargetResult{passed, failed})},
 	}}
 	var out bytes.Buffer
-	writeResults(&out, "  ", evidence, evidence.Shown(), false)
+	writeResults(&out, "  ", evidence, false)
 	require.Equal(t, "  PORT          macOS 26   macOS 15\n"+
 		"  flatbuffers   ✓          ✓\n"+
 		"  libsigmf      ✓          ✗ failed at install\n", out.String())
@@ -218,11 +218,28 @@ func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
 	evidence.Targets = evidence.Targets[:1]
 	evidence.Targets[0].Outcomes = cells([]model.TargetResult{passed})
 	out.Reset()
-	writeResults(&out, "  ", evidence, evidence.Shown(), false)
+	writeResults(&out, "  ", evidence, false)
 	require.Equal(t, "  flatbuffers  ✓\n", out.String())
 	out.Reset()
-	writeResults(&out, "  ", evidence, evidence.Shown(), true)
+	writeResults(&out, "  ", evidence, true)
 	require.Equal(t, "  flatbuffers  tart macOS 26 (Tahoe) arm64 ✓\n", out.String())
+}
+
+// A check's report is of the releases checks planned: one on 12 and 27,
+// from a Mac whose build.default requires its own 26, reports 12 and 27,
+// and which releases nothing covered is submit's to say (field testing's
+// exiv2, 2026-10-20).
+func TestACheckReportsTheReleasesItPlanned(t *testing.T) {
+	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	next := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}}
+	targets := []model.PlanTarget{{ID: "exiv2", Target: model.Target{Name: "exiv2"}}}
+	// 26 is the evidence's, as evidence.Plan adds it, for submit to say.
+	plan := model.Plan{Environments: []model.Environment{monterey, next, tahoe}, Builds: []model.EnvironmentPlan{{Environment: monterey}, {Environment: next}}, Targets: targets}
+	e := engine.Evidence{Plan: plan, Targets: []engine.TargetEvidence{{Target: targets[0], Outcomes: cells([]model.TargetResult{{Outcome: model.OutcomePassed}, {Outcome: model.OutcomePassed}, {Outcome: model.OutcomeNotRun}})}}}
+	var out bytes.Buffer
+	writeResults(&out, "  ", e, false)
+	require.Equal(t, "  PORT    macOS 12   Darwin 26\n  exiv2   ✓          ✓\n", out.String())
 }
 
 // Where environments build in different orders, the plan shows each one's;

@@ -641,13 +641,8 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 		}
 		fmt.Fprintf(out, "  Checks   %s\n", checkState(status))
 		if status.Evidence != nil {
-			// status has no plan above it, so one environment is named. A
-			// release no check planned isn't a result, and isn't shown.
-			shown := status.Evidence.Checked()
-			if len(shown) == 0 {
-				shown = status.Evidence.Shown()
-			}
-			writeResults(out, "           ", *status.Evidence, shown, true)
+			// status has no plan above it, so one environment is named.
+			writeResults(out, "           ", *status.Evidence, true)
 			if status.Evidence.Problem != "" {
 				fmt.Fprintf(out, "           ! %s\n", status.Evidence.Problem)
 			}

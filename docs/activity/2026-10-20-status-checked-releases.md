@@ -17,3 +17,10 @@ columns ran 27, then 26, because the required release is added after the
 planned ones. macOS 12 was missing because the table is the evidence of
 the files' finished checks, and the check running on 12 and 27 hadn't
 finished. Its environments show once it does.
+
+At prioritization's word, check's own report shows `Checked` as well. A
+check run with `--on 12,27` is about 12 and 27, and which releases
+nothing covered is submit's to say. `writeResults` reads `Checked` for
+both, and `Checked` is `Shown` where no check planned any. The pull
+request, and so `submit --plan`, keeps `Shown` and still names the
+release build.default requires that nothing built.
