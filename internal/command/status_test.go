@@ -114,6 +114,12 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "logs")
 	require.ErrorContains(t, err, "jq-update has no check yet: dockhand check")
+	// A port's log, in a worktree whose branch has no check, says so,
+	// rather than to name a check outside the worktree (the rc5 rerun's
+	// A10).
+	_, _, err = dockhand(t, "logs", "jq")
+	require.ErrorContains(t, err, "jq-update has no check yet, so no log of jq: dockhand check runs one")
+	require.NotContains(t, err.Error(), "outside its branch's worktree")
 
 	_, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)

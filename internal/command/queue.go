@@ -231,8 +231,10 @@ log.`,
 				if err != nil && port == "" && !engine.IsCheckName(args[0]) {
 					// Not a check or a provider run: a port, in the
 					// branch's latest check, where there's one here.
-					if latest, ok := latestLogging(ctx, e, args[0]); ok {
+					if latest, ok, unchecked := latestLogging(ctx, e, args[0]); ok {
 						run, only, port, err = latest, "", args[0], nil
+					} else if unchecked != "" {
+						err = fmt.Errorf("%s has no check yet, so no log of %s: dockhand check runs one", unchecked, args[0])
 					} else {
 						err = fmt.Errorf("%w; for a port's log outside its branch's worktree, name its check too: logs check-42 %s", err, args[0])
 					}
@@ -404,18 +406,27 @@ func writePortLog(out io.Writer, result model.TargetResult, data []byte, all boo
 }
 
 // latestLogging is the latest check of the branch checked out here, where
-// it recorded a log for port.
-func latestLogging(ctx context.Context, e *engine.Engine, port string) (model.Run, bool) {
-	run, err := latestCheckHere(ctx, e, "")
+// it recorded a log for port. unchecked is that branch where it has no
+// check yet, for logs to say so rather than to name a check "outside its
+// branch's worktree" (the rc5 rerun's A10).
+func latestLogging(ctx context.Context, e *engine.Engine, port string) (run model.Run, ok bool, unchecked string) {
+	branch, err := e.Current(ctx)
 	if err != nil {
-		return model.Run{}, false
+		return model.Run{}, false, ""
+	}
+	run, found, err := e.LatestCheck(ctx, branch.ID)
+	if err != nil {
+		return model.Run{}, false, ""
+	}
+	if !found {
+		return model.Run{}, false, branch.ShortName()
 	}
 	logs, err := e.Logs(ctx, run.ID)
 	if err != nil {
-		return model.Run{}, false
+		return model.Run{}, false, ""
 	}
-	_, _, ok := portLogs(logs, port)
-	return run, ok
+	_, _, ok = portLogs(logs, port)
+	return run, ok, ""
 }
 
 // latestCheckHere is the newest check of the branch checked out here, for
