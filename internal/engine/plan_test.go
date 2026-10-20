@@ -594,6 +594,19 @@ func TestACheckRefusesAPatchGitDoesntTrack(t *testing.T) {
 		require.ErrorAs(t, err, &untracked, "mode %v", mode)
 		require.EqualError(t, err, "jq's patchfiles names files/fix.diff, which isn't tracked: git add it, or check --include it")
 	}
+	// One Git ignores is held too, said with the rule's command, since
+	// --include refuses it.
+	common := testsupport.Git(t, branch.Worktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	write(t, common, map[string]string{"info/exclude": "ignored.diff\n"})
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\npatchfiles ignored.diff\n", "textproc/jq/files/ignored.diff": "ignored\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: patch it again")
+	for _, mode := range []CaptureMode{CaptureHead, CaptureWorking} {
+		_, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: mode}, Where: where})
+		require.EqualError(t, err, "jq's patchfiles names files/ignored.diff, which Git ignores, so neither a commit nor a check carries it; git check-ignore -v files/ignored.diff names the rule", "mode %v", mode)
+	}
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\npatchfiles fix.diff\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: fix the build")
+
 	// A named branch with nothing uncommitted is checked at its head, but
 	// one with files to include at its working files, which can take them.
 	_, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureAuto, Named: true, Include: []string{"textproc/jq/files/fix.diff"}}, Where: where})

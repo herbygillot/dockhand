@@ -73,12 +73,12 @@ func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Propos
 	// hold is refused before any VM starts, for check, ship, and serve
 	// alike: ship's check of net-snmp 404'd fetching one on both VMs
 	// (field testing, check-469).
-	return Proposal{Capture: capture, Plan: plan}, e.patchesHeld(ctx, capture, plan)
+	return Proposal{Capture: capture, Plan: plan}, e.patchesHeld(ctx, request.Capture.Branch, capture, plan)
 }
 
 // patchesHeld refuses a capture that leaves out an untracked file a
 // changed port's patchfiles names (UntrackedPatches).
-func (e *Engine) patchesHeld(ctx context.Context, capture Capture, plan model.Plan) error {
+func (e *Engine) patchesHeld(ctx context.Context, branch model.Branch, capture Capture, plan model.Plan) error {
 	var directories []string
 	ports := map[string]string{}
 	for _, target := range plan.Targets {
@@ -94,6 +94,21 @@ func (e *Engine) patchesHeld(ctx context.Context, capture Capture, plan model.Pl
 	for _, directory := range directories {
 		if paths := missing[directory]; len(paths) > 0 {
 			return &UntrackedPatchError{Port: ports[directory], Path: strings.TrimPrefix(paths[0], directory+"/")}
+		}
+	}
+	// One Git ignores is held too, said with the rule's command, since
+	// --include refuses it.
+	worktree, err := e.worktree(ctx, branch)
+	if err != nil {
+		return err
+	}
+	ignored, err := ignoredPatches(ctx, worktree, string(capture.Revision.Source.Tree), directories, capture.Untracked)
+	if err != nil {
+		return err
+	}
+	for _, directory := range directories {
+		if paths := ignored[directory]; len(paths) > 0 {
+			return &UntrackedPatchError{Port: ports[directory], Path: strings.TrimPrefix(paths[0], directory+"/"), Ignored: true}
 		}
 	}
 	return nil

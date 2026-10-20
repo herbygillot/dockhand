@@ -25,6 +25,13 @@ releases.
   files/patch-swinst_darwin-declaration.diff, which isn't tracked: git add
   it, or check --include it". `ProposeCheck` is check's, ship's, and
   serve's, so each meets it; serve and an unattended ship hold on it.
+- A named file Git ignores is a file the capture doesn't hold too, and is
+  refused the same way, with other advice, since `--include` refuses an
+  ignored file: "jq's patchfiles names files/ignored.diff, which Git
+  ignores, so neither a commit nor a check carries it; git check-ignore -v
+  files/ignored.diff names the rule" (`ignoredPatches`, engine/capture.go,
+  which tidy's report shares). Prioritization's call, 2026-10-20: it
+  finishes this item rather than making a new one.
 - `check -b <branch> --include <file>` on a branch with nothing
   uncommitted captured the head, which refused the include; files to
   include now make the automatic capture the working files.

@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -342,13 +345,60 @@ func untrackedPatches(ctx context.Context, repo *git.Repository, tree string, di
 	return found, nil
 }
 
+// ignoredPatches are the files a changed port's Portfile names in its
+// patchfiles, read from tree, that Git ignores, by port directory: on
+// disk in the worktree, neither in tree nor untracked. git add leaves
+// them out, and so do a commit and a check.
+func ignoredPatches(ctx context.Context, worktree *git.Repository, tree string, directories, untracked []string) (map[string][]string, error) {
+	var named []string
+	for _, directory := range directories {
+		file, data, err := worktree.File(ctx, tree, directory+"/Portfile")
+		if err != nil {
+			return nil, err
+		}
+		if !file.Exists {
+			continue
+		}
+		for _, name := range portfile.PatchfileNames(data) {
+			path := directory + "/files/" + name
+			if slices.Contains(untracked, path) || slices.Contains(named, path) || !fs.ValidPath(path) {
+				continue
+			}
+			if inTree, _, err := worktree.File(ctx, tree, path); err != nil {
+				return nil, err
+			} else if inTree.Exists {
+				continue
+			}
+			if info, err := os.Lstat(filepath.Join(worktree.Root, filepath.FromSlash(path))); err == nil && info.Mode().IsRegular() {
+				named = append(named, path)
+			}
+		}
+	}
+	ignored, err := worktree.Ignored(ctx, named...)
+	if err != nil {
+		return nil, err
+	}
+	found := map[string][]string{}
+	for _, path := range ignored {
+		directory, _ := macports.PortDirectoryOf(path)
+		found[directory] = append(found[directory], path)
+	}
+	return found, nil
+}
+
 // UntrackedPatchError is a check refused before any VM starts, since a
-// changed port's patchfiles names a file the capture doesn't hold.
+// changed port's patchfiles names a file the capture doesn't hold: one
+// Git doesn't track, or one it ignores, which --include can't take.
 type UntrackedPatchError struct {
 	Port string
 	Path string
+	// Ignored is true where Git ignores it.
+	Ignored bool
 }
 
 func (u *UntrackedPatchError) Error() string {
+	if u.Ignored {
+		return fmt.Sprintf("%s's patchfiles names %s, which Git ignores, so neither a commit nor a check carries it; git check-ignore -v %s names the rule", u.Port, u.Path, u.Path)
+	}
 	return fmt.Sprintf("%s's patchfiles names %s, which isn't tracked: git add it, or check --include it", u.Port, u.Path)
 }

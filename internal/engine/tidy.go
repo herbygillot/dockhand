@@ -4,10 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -519,43 +516,20 @@ func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, f
 	if err != nil {
 		return tidyFiles{}, err
 	}
-	var named []string
 	for _, directory := range directories {
 		files.taken = append(files.taken, patches[directory]...)
-		file, data, err := worktree.File(ctx, final, directory+"/Portfile")
-		if err != nil {
-			return tidyFiles{}, err
-		}
-		if !file.Exists {
-			continue
-		}
-		for _, name := range portfile.PatchfileNames(data) {
-			path := directory + "/files/" + name
-			if slices.Contains(untracked, path) || slices.Contains(named, path) || !fs.ValidPath(path) {
-				continue
-			}
-			if inTree, _, err := worktree.File(ctx, final, path); err != nil {
-				return tidyFiles{}, err
-			} else if !inTree.Exists {
-				named = append(named, path)
-			}
-		}
 	}
 	for _, path := range untracked {
 		if !slices.Contains(files.taken, path) && slices.ContainsFunc(directories, func(d string) bool { return strings.HasPrefix(path, d+"/") }) {
 			files.leftOut = append(files.leftOut, path)
 		}
 	}
-	// A named file that's neither tracked nor untracked, and is on disk,
-	// is one Git ignores.
-	var present []string
-	for _, path := range named {
-		if info, err := os.Lstat(filepath.Join(worktree.Root, filepath.FromSlash(path))); err == nil && info.Mode().IsRegular() {
-			present = append(present, path)
-		}
-	}
-	if files.ignored, err = worktree.Ignored(ctx, present...); err != nil {
+	ignored, err := ignoredPatches(ctx, worktree, final, directories, untracked)
+	if err != nil {
 		return tidyFiles{}, err
+	}
+	for _, directory := range directories {
+		files.ignored = append(files.ignored, ignored[directory]...)
 	}
 	if len(files.taken) > 0 {
 		if files.final, err = worktree.WithFiles(ctx, final, files.taken); err != nil {
