@@ -86,26 +86,36 @@ func (r *Repository) MaterializeInto(ctx context.Context, tree, directory string
 	if typ != "tree" {
 		return nil, fmt.Errorf("git: %s is not a tree", tree)
 	}
-	args := []string{"ls-tree", "-rz", tree, "--"}
 	for _, name := range include {
 		if !snapshotPath(name) {
 			return nil, fmt.Errorf("git: invalid pathspec %q", name)
 		}
-		args = append(args, name)
 	}
 	if len(include) == 0 {
-		args = append(args, ".")
+		include = []string{"."}
 	}
-	out, err := r.output(ctx, args...)
-	if err != nil {
-		return nil, err
+	// The paths go in batches, each one ls-tree: a whole tree's port
+	// directories, as a whole-tree survey includes, passed the argument
+	// list's limit ("argument list too long", 2026-10-19).
+	var out []byte
+	for start := 0; start < len(include); start += materializeBatch {
+		batch := include[start:min(start+materializeBatch, len(include))]
+		part, err := r.output(ctx, append([]string{"ls-tree", "-rz", tree, "--"}, batch...)...)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, part...)
 	}
 	var entries []TreeEntry
 	var input strings.Builder
+	// One ls-tree takes a file once whatever paths include it; batches can
+	// each take it, where their paths overlap.
+	listed := map[string]bool{}
 	for _, line := range bytes.Split(bytes.TrimSuffix(out, []byte{0}), []byte{0}) {
-		if len(line) == 0 {
+		if len(line) == 0 || listed[string(line)] {
 			continue
 		}
+		listed[string(line)] = true
 		meta, name, ok := bytes.Cut(line, []byte{'\t'})
 		fields := strings.Fields(string(meta))
 		if !ok || len(fields) != 3 || fields[1] != "blob" || !ValidObjectID(fields[2]) || !snapshotPath(string(name)) {
@@ -248,3 +258,7 @@ func (r *Repository) CurrentBranch(ctx context.Context) (string, error) {
 	}
 	return branch, nil
 }
+
+// materializeBatch is how many paths one ls-tree of MaterializeInto is
+// given, well within the argument list's limit.
+const materializeBatch = 2000
