@@ -10,9 +10,11 @@
 # --mine, update --mine, and ship --mine runs: each asks GitHub of every port the maintainer has, about
 # 320 of Herby's, from the account's hourly quota, which field testing
 # shares (the M1's rerun, 2026-10-03); outdated runs on the stage's two
-# ports instead, and B3 runs a batch on them. jq, the docs' example, is current at the
-# stage's pin, so the stage's small Go port, which is due, stands in for
-# it; a line naming one of jq's versions isn't run.
+# ports instead, and B3 runs a batch on them. jq and ripgrep, the docs'
+# examples, are current at the stage's pin, so the stage's small Go port,
+# which is due, stands in for each; a line naming one of jq's versions
+# isn't run. setup github isn't run: its device login opened a browser on
+# the M1 and waited 15 minutes for the code (the rc5 rerun, 2026-10-19).
 
 setup() {
 	local maintainer=${ACCEPT_MAINTAINER:-@herbygillot}
@@ -61,6 +63,7 @@ act() {
 		case "$line" in
 		'cd "$(dockhand path '*)
 			line=${line//jq-/$port-}
+			line=${line//ripgrep-/$port-}
 			name=${line#cd \"\$(dockhand path }
 			name=${name%%)*}
 			name=${name%…}
@@ -79,7 +82,7 @@ act() {
 			;;
 		esac
 		words=${line#dockhand }
-		words=$(printf '%s' " $words " | sed "s/ jq / $port /g; s/^ //; s/ \$//")
+		words=$(printf '%s' " $words " | sed "s/ jq / $port /g; s/ ripgrep / $port /g; s/ --new=ripgrep-/ --new=$port-/g; s/^ //; s/ \$//")
 		verb=${words%% *}
 		why=""
 		case "$line" in
@@ -87,6 +90,7 @@ act() {
 		"dockhand bump"*) why="goes on to a pull request, and has no --plan" ;;
 		"dockhand serve"*) why="runs or installs serve, which the stage doesn't" ;;
 		"dockhand setup tart"*) why="makes a Tart image" ;;
+		"dockhand setup github"*) why="starts GitHub's device login, which opens a browser and waits for its code; the stage signs in on its own" ;;
 		*" jq "[0-9]*) why="names one of jq's versions, and jq is current at the stage's pin" ;;
 		"dockhand submit"*) [ "${ACCEPT_STAGE:-}" = quick ] && why="submits to a GitHub fork, which the quick stage hasn't" ;;
 		*"--on sequoia"* | *"--on tahoe"* | *"--on "[0-9]*) [ "${ACCEPT_STAGE:-}" = quick ] && why="builds on another release's Tart image, and the quick stage makes only this Mac's" ;;
