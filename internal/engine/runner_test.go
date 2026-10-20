@@ -1046,9 +1046,9 @@ func TestTheTargetsThatChangedBuildAndTheRestAreReused(t *testing.T) {
 // another by MacPorts.
 // A dependency a guest installed, from an archive it built where MacPorts
 // had none, is kept, and a later check's guest is given it, for a target
-// that depends on it, by its port's evaluation or as an earlier build of
-// it had it active (the M1's run at d302e744: dust's second check built
-// rust and cargo again, batch 90). A port the plan builds isn't kept so.
+// that depends on it, by its port's evaluation (the M1's run at d302e744:
+// dust's second check built rust and cargo again, batch 90). A port the
+// plan builds isn't kept so.
 func TestAGuestIsGivenTheDependencyArchivesAnEarlierGuestInstalled(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
@@ -1169,6 +1169,83 @@ func TestAGuestIsGivenTheDependencyArchivesAnEarlierGuestInstalled(t *testing.T)
 	}))
 	require.Len(t, gone, 1)
 	require.Contains(t, gone[0], "the saved archive for rust ("+rustDigest+") is missing. Removing its record")
+}
+
+// A guest is offered the kept archives of the dependency closure of what
+// it builds, at the check's revision, a dependency's dependencies on from
+// the port index, and never an earlier result's active ports: gnome-voice
+// was offered about 230, libadwaita among them, which its version no
+// longer needs. The offer is said as a count, and each target's build
+// names what it took (the gnome-voice session's notes, 2026-10-20).
+func TestAGuestIsOfferedTheKeptArchivesOfWhatTheRevisionNeeds(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	var active []model.ActivePort
+	for _, name := range []string{"cargo", "rust", "libadwaita"} {
+		_, _, digest := scriptedArchive(model.TargetID(name))
+		active = append(active, model.ActivePort{Name: name, Spec: "@1_0", Directory: "lang/" + name, Archive: digest})
+	}
+	provider := &identified{scriptedProvider: scriptedProvider{keep: true, keepDependencies: true, active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-viewer": active}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	revision := harborBranch(t, e)
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}))
+	branch.Base = revision.Source.Base
+	// harbor-viewer needs cargo, and cargo rust, by the index; libadwaita,
+	// active as it built before, it needs no longer.
+	e.PortReader = graphPorts{fakePorts: fakePorts{directories: map[string][]macports.PortInfo{
+		"devel/libharbor":        {port("libharbor")},
+		"devel/harbor-cli":       {port("harbor-cli", "libharbor")},
+		"graphics/harbor-viewer": {port("harbor-viewer", "cargo")},
+	}}, graph: map[string][]string{"cargo": {"rust"}, "harbor-viewer": {"cargo"}}}
+	check := func() model.Run {
+		t.Helper()
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+		return run
+	}
+	check()
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		kept, err := r.DependencyArchives(tahoeArm, []string{"CARGO", "rust", "libadwaita"})
+		require.Len(t, kept, 3, "each kept, and found by a name in any case")
+		return err
+	}))
+
+	write(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 2\n"})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	revision = capture.Revision
+	run := check()
+	job := provider.jobs[len(provider.jobs)-1]
+	var given []string
+	for _, archive := range job.Installs {
+		if archive.Target == "" {
+			given = append(given, archive.Port)
+		}
+	}
+	require.ElementsMatch(t, []string{"cargo", "rust"}, given, "rust, cargo's dependency, too, and not libadwaita")
+	var said []string
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		events, err := r.RunEvents(run.ID, 0, 1000)
+		for _, event := range events {
+			if event.Kind == model.EventProgress {
+				said = append(said, event.Message)
+			}
+		}
+		return err
+	}))
+	require.Contains(t, strings.Join(said, "\n"), "the guest may install up to 2 dependencies from archives earlier checks kept")
+	require.Contains(t, strings.Join(said, "\n"), "harbor-viewer: installed 2 dependencies from archives earlier checks kept: cargo, rust")
 }
 
 func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {

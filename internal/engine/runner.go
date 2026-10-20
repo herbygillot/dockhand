@@ -614,7 +614,9 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 					names = append(names, archive.Port)
 				}
 			}
-			build.Progress(fmt.Sprintf("the guest may install %s from archives earlier checks' guests here installed them from, rather than build them", strings.Join(names, ", ")))
+			// A count, where the names ran to about 230 (the gnome-voice
+			// session's notes); each target's build says which it took.
+			build.Progress(fmt.Sprintf("the guest may install up to %s from archives earlier checks kept", dependencyCount(len(names))))
 			build.installs = append(build.installs, dependencies...)
 		}
 		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit, Installs: build.installs,
@@ -820,6 +822,20 @@ func (b *build) Consumed(target model.TargetID, active []model.ActivePort) {
 				b.Progress(fmt.Sprintf("%s built with %s from another archive than the one kept of its build: MacPorts chose %s", target, port.Name, port.Archive))
 			}
 		}
+	}
+	// What it installed from a dependency's kept archive is said, by the
+	// digest it was active from, once for the target it was first
+	// installed for.
+	var took []string
+	for _, port := range active {
+		for _, archive := range b.installs {
+			if archive.Target == "" && port.Archive != "" && port.Archive == archive.Digest && strings.EqualFold(port.Name, archive.Port) && !b.consumed(port) && !slices.Contains(took, port.Name) {
+				took = append(took, port.Name)
+			}
+		}
+	}
+	if len(took) > 0 {
+		b.Progress(fmt.Sprintf("%s: installed %s from archives earlier checks kept: %s", target, dependencyCount(len(took)), strings.Join(took, ", ")))
 	}
 	b.active = append(b.active, active...)
 	if inputs, ok := b.read(planned, active); ok {
@@ -1398,4 +1414,12 @@ func (e *Engine) RunProviders(ctx context.Context, run model.Run) ([]string, err
 		return nil
 	})
 	return providers, err
+}
+
+// dependencyCount is n dependencies, as "1 dependency" or "12 dependencies".
+func dependencyCount(n int) string {
+	if n == 1 {
+		return "1 dependency"
+	}
+	return fmt.Sprintf("%d dependencies", n)
 }

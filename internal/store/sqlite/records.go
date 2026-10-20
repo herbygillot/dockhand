@@ -806,6 +806,8 @@ func (t *tx) ForgetDependencyArchive(archive model.DependencyArchive) error {
 // a branch whose base is behind.
 const dependencyArchivesPerPort = 2
 
+// DependencyArchives are the kept archives of the ports, named in any
+// case: the port index's dependency graph names them in lower case.
 func (t *tx) DependencyArchives(environment model.Environment, ports []string) ([]model.DependencyArchive, error) {
 	if len(ports) == 0 {
 		return nil, nil
@@ -818,7 +820,7 @@ func (t *tx) DependencyArchives(environment model.Environment, ports []string) (
 	args = append(args, dependencyArchivesPerPort)
 	rows, err := t.conn.QueryContext(t.ctx, "SELECT digest, name, size, archive_kept, port, kept_at FROM (SELECT d.digest, a.name, a.size, a.kept_at AS archive_kept, d.port, d.kept_at, "+
 		"ROW_NUMBER() OVER (PARTITION BY d.port ORDER BY d.kept_at DESC, d.digest) AS newest FROM dependency_archives d JOIN archives a ON a.repository_id=d.repository_id AND a.digest=d.digest "+
-		"WHERE d.repository_id=? AND d.provider=? AND d.platform_os=? AND d.platform_version=? AND d.platform_architecture=? AND d.developer_tools=? AND d.port IN ("+placeholders(len(ports))+")) "+
+		"WHERE d.repository_id=? AND d.provider=? AND d.platform_os=? AND d.platform_version=? AND d.platform_architecture=? AND d.developer_tools=? AND d.port COLLATE NOCASE IN ("+placeholders(len(ports))+")) "+
 		"WHERE newest<=? ORDER BY port, kept_at DESC, digest", args...)
 	if err != nil {
 		return nil, storageError(err)

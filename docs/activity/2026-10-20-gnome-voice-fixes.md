@@ -16,3 +16,20 @@ Next's fixes from the gnome-voice session's field notes (placed in
   in check-482 (configure); its log comes back when it ends, and dockhand
   wait check-482 follows it". A target not reached yet is said as such.
   The README's known issue is marked fixed on main.
+- A guest was offered the kept archives of a target's direct dependencies
+  and of every port an earlier result had active. gnome-voice's line named
+  about 230, libadwaita, geoclue2, and gst-plugins-bad among them, which
+  its version no longer needs, and a first check missed its dependencies'
+  dependencies. `dependencyInstalls` (engine/reuse.go) now offers the
+  dependency closure of what the guest builds, at the check's revision.
+  That's each target's direct dependencies as MacPorts evaluates them, and
+  theirs on from the port index (`DependencyGraph`), never an earlier
+  result's active ports. Where the index can't be read, the direct
+  dependencies alone are offered. The index names ports in lower case, so
+  `DependencyArchives` matches a port's name in any case. The line before
+  the build is a count, "the guest may install up to N dependencies from
+  archives earlier checks kept", and each target's build says what it
+  installed from them, by the digests the guest reported active,
+  "harbor-viewer: installed 2 dependencies from archives earlier checks
+  kept: cargo, rust". That's a progress line beside the result, which the
+  check's output and journal carry, not a field of the stored result.

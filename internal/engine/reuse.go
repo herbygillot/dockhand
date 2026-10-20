@@ -289,20 +289,30 @@ func reusedInOrder(remaining []buildenv.Target, chosen map[model.TargetID]reuse.
 
 // dependencyInstalls are the kept archives of the ports the targets an
 // environment builds depend on, which earlier guests there installed them
-// from (batch 90): a target's direct dependencies, as MacPorts evaluates
-// it in the revision, and the ports active as its earlier builds there
-// built, which reach further. The guest's MacPorts takes one whose name is
-// the archive it wants, and builds the rest as before, so rust and cargo,
-// built from source once on a release MacPorts has no archives of them
-// for, aren't built again by a later check of any port needing them. A
-// port the plan builds is the branch's, and none of its are given. One
-// changed since it was kept isn't given.
+// from (batch 90): the dependency closure of what the guest builds, at the
+// check's revision, a target's direct dependencies as MacPorts evaluates
+// it in the revision and theirs on from the port index (DependencyGraph),
+// so a dependency's dependency is offered on a target's first check too.
+// An earlier result's active ports aren't: gnome-voice's check was offered
+// about 230, libadwaita, geoclue2, and gst-plugins-bad among them, which
+// its version no longer needs (the gnome-voice session's notes,
+// 2026-10-20). The guest's MacPorts takes one whose name is the archive it
+// wants, and builds the rest as before, so rust and cargo, built from
+// source once on a release MacPorts has no archives of them for, aren't
+// built again by a later check of any port needing them. A port the plan
+// builds is the branch's, and none of its are given. One changed since it
+// was kept isn't given.
 func (d *driver) dependencyInstalls(ctx context.Context, environment model.Environment, source model.Source, building []reuse.Target) []buildenv.Archive {
 	var ports []string
+	var queue []string
+	seen := map[string]bool{}
 	add := func(port string) {
-		if port == "" || slices.Contains(ports, port) {
+		key := strings.ToLower(port)
+		if port == "" || seen[key] {
 			return
 		}
+		seen[key] = true
+		queue = append(queue, key)
 		for _, target := range d.plan.Targets {
 			if strings.EqualFold(target.Target.Name, port) || strings.EqualFold(target.Target.Subport, port) {
 				return
@@ -311,25 +321,34 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 		ports = append(ports, port)
 	}
 	reader, err := d.e.portReader()
+	if err != nil {
+		return nil
+	}
 	for _, target := range building {
-		if err == nil {
-			name := target.Target.Name
-			if target.Target.Subport != "" {
-				name = target.Target.Subport
+		name := target.Target.Name
+		if target.Target.Subport != "" {
+			name = target.Target.Subport
+		}
+		evaluated, evalErr := reader.Ports(ctx, source, target.Directory, environment, nil)
+		for _, port := range evaluated {
+			if evalErr != nil || port.Name != name {
+				continue
 			}
-			evaluated, evalErr := reader.Ports(ctx, source, target.Directory, environment, nil)
-			for _, port := range evaluated {
-				if evalErr != nil || port.Name != name {
-					continue
-				}
-				for _, dependency := range port.Dependencies {
-					add(dependency.Port)
-				}
+			for _, dependency := range port.Dependencies {
+				add(dependency.Port)
 			}
 		}
-		for _, earlier := range target.Earlier {
-			for _, active := range earlier.Inputs.Active {
-				add(active.Name)
+	}
+	// Their dependencies on, from the revision's port index; where it
+	// can't be read, the direct dependencies alone are offered.
+	if graphs, ok := reader.(dependencyGraphReader); ok && len(queue) > 0 {
+		if graph, err := graphs.DependencyGraph(ctx, source); err == nil {
+			for len(queue) > 0 {
+				next := queue[0]
+				queue = queue[1:]
+				for _, dependency := range graph[next] {
+					add(dependency)
+				}
 			}
 		}
 	}
