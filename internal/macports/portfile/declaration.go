@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -26,6 +27,9 @@ func LocateDeclaration(src []byte, path string, declaration macports.Declaration
 		commands = append(commands, cmd)
 	}
 
+	if group, ok := portGroupFrame(path, declaration); ok {
+		return syntax.Command{}, group
+	}
 	foundFile := false
 	for _, frame := range declaration.Frames {
 		if filepath.Clean(frame.File) == filepath.Clean(path) {
@@ -203,4 +207,77 @@ func RewriteLiteralDeclaration(contents []byte, command, old, next string) ([]by
 		return nil, fmt.Errorf("%w: %s is %s but no single literal declaration carries it", ErrUnsupported, command, old)
 	}
 	return textedit.Apply(contents, edits)
+}
+
+// InPortGroup is a declaration a PortGroup's own code made, as
+// crossbinutils 1.0 writes each port's checksums from its table,
+// crossbinutils.versions_info: the PortGroup's, at its file and line, and
+// the tables its command reads. It's no Portfile's to edit, and a change
+// there moves every port of the group (the roadmap's v0.5.0 part 3, step
+// 2: 73 ports were told the checksums couldn't be found in the Portfile,
+// and to paste a block into it).
+type InPortGroup struct {
+	// Group is the PortGroup as a Portfile names it, "crossbinutils 1.0";
+	// File its file below the tree, as _resources/port1.0/group/...
+	Group, File string
+	Line        int
+	Tables      []string
+}
+
+func (g *InPortGroup) Error() string {
+	from := ""
+	if len(g.Tables) > 0 {
+		from = ", from " + strings.Join(g.Tables, " and ")
+	}
+	return fmt.Sprintf("%v: set by the %s PortGroup, at %s:%d%s, which no Portfile edit changes; a change there moves every port of the group", ErrUnsupported, g.Group, g.File, g.Line, from)
+}
+
+func (g *InPortGroup) Unwrap() error { return ErrUnsupported }
+
+// portGroupFile is a PortGroup's file, <name>-<version>.tcl in a
+// port1.0/group directory.
+var portGroupFile = regexp.MustCompile(`(?:^|/)(_resources/port1\.0/group/([A-Za-z0-9_+-]+)-([0-9][0-9.]*)\.tcl)$`)
+
+// portTable is a Tcl array a command reads an element of, as [set
+// crossbinutils.versions_info($version)] or ${name(key)}.
+var portTable = regexp.MustCompile(`(?:\[set\s+|\$\{?)([A-Za-z_][A-Za-z0-9_.:]*)\(`)
+
+// portGroupFrame reports the declaration as a PortGroup's, where the
+// innermost frame of its command is a PortGroup's file, not the Portfile.
+func portGroupFrame(path string, declaration macports.Declaration) (*InPortGroup, bool) {
+	name := strings.TrimPrefix(declaration.Command, "::")
+	command := -1
+	for i := len(declaration.Frames) - 1; i >= 0; i-- {
+		if firstWord(declaration.Frames[i].Command) == name {
+			command = i
+			break
+		}
+	}
+	if command < 0 {
+		return nil, false
+	}
+	// The command's own frame, else the nearest outside it that names a
+	// file: a command in a body Tcl compiled apart, as crossgcc 1.0's
+	// checksums inside an if of its procedure, has none of its own.
+	for i := command; i >= 0; i-- {
+		frame := declaration.Frames[i]
+		if frame.File == "" {
+			continue
+		}
+		if filepath.Clean(frame.File) == filepath.Clean(path) {
+			return nil, false
+		}
+		match := portGroupFile.FindStringSubmatch(filepath.ToSlash(frame.File))
+		if match == nil {
+			return nil, false
+		}
+		group := &InPortGroup{Group: match[2] + " " + match[3], File: match[1], Line: frame.Line}
+		for _, table := range portTable.FindAllStringSubmatch(declaration.Frames[command].Command, -1) {
+			if !slices.Contains(group.Tables, table[1]) {
+				group.Tables = append(group.Tables, table[1])
+			}
+		}
+		return group, true
+	}
+	return nil, false
 }

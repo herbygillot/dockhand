@@ -45,6 +45,10 @@ func (u *Unlocated) Error() string {
 		what += " for " + u.Name
 	}
 	reason := strings.TrimPrefix(u.Reason.Error(), portfile.ErrUnsupported.Error()+": ")
+	// A PortGroup's checksums are said as its, never the Portfile's.
+	if group := new(portfile.InPortGroup); errors.As(u.Reason, &group) {
+		return fmt.Sprintf("%s are %s", what, reason)
+	}
 	return fmt.Sprintf("%s can't be found in the Portfile to edit: %s", what, reason)
 }
 

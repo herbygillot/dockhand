@@ -16,8 +16,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
+	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -34,6 +36,9 @@ func (s *Service) prepareVersion(ctx context.Context, request Request, input *so
 func (s *Service) prepareNewVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {
 	if request.Release != nil && request.Release.NoUpdate {
 		return s.prepareArchiveVersion(ctx, request, input)
+	}
+	if err := s.portGroupChecksums(ctx, input); err != nil {
+		return Result{}, err
 	}
 	plan, err := inspectDependencies(input)
 	if err != nil {
@@ -591,4 +596,30 @@ func unlocked(err error, cargoUpdate bool, version string) error {
 		return fmt.Errorf("%w: cargo.update is enabled, but the source for %s contains no Cargo.lock; cannot regenerate crate dependencies: %w", ErrUnsupported, version, err)
 	}
 	return err
+}
+
+// portGroupChecksums refuses an update of a port whose checksums its
+// PortGroup's own code sets (portfile.InPortGroup), as crossbinutils 1.0
+// sets them from its table: a new version is a row the PortGroup lacks,
+// which no Portfile edit adds, so it's said as checksums says it, before
+// the version is moved (the roadmap's v0.5.0 part 3, step 2). It reads
+// this Mac's context.
+func (s *Service) portGroupChecksums(ctx context.Context, input *sourceInput) error {
+	observations, err := input.observe.Observe(ctx, input.data, []model.Platform{input.before.Platform}, true, false)
+	if err != nil {
+		return nil
+	}
+	for _, observed := range observations {
+		port := observed.Ports[input.target.Name]
+		for _, declaration := range port.Declarations {
+			if name := strings.TrimPrefix(declaration.Command, "::"); name != "checksums" && name != "checksums-append" && name != "checksums-prepend" {
+				continue
+			}
+			_, err := portfile.LocateDeclaration(input.data, input.portfileIn(observed.Snapshot.Root), declaration)
+			if group := new(portfile.InPortGroup); errors.As(err, &group) {
+				return &distfiles.Unlocated{Reason: group}
+			}
+		}
+	}
+	return nil
 }

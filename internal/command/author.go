@@ -719,7 +719,23 @@ func byHand(err error, request engine.UpdateRequest, branch model.Branch, starte
 	}
 	port := request.Port
 	var toWrite *engine.ChecksumsToWrite
+	group := new(portfile.InPortGroup)
 	switch {
+	case errors.As(err, &group):
+		// A PortGroup's own code sets them: it's never the Portfile's
+		// edit, and what's said is whether they agree with the archives.
+		words := ""
+		switch {
+		case errors.As(err, &toWrite) && toWrite.Agree:
+			words = "\nThe checksums there match the archives as they are now."
+		case errors.As(err, &toWrite):
+			words = "\nThe archives as they are now have these, which differ from those there:\n    " + strings.ReplaceAll(portfile.ChecksumsBlock(toWrite.Checksums), "\n", "\n    ")
+		}
+		what := port
+		if request.Action == model.EditChecksums {
+			what = "the checksums for " + port
+		}
+		return fmt.Errorf("Could not update %s automatically: %s%s%s", what, reason, kept, words)
 	case request.Action == model.EditChecksums && errors.As(err, &toWrite):
 		block := strings.ReplaceAll(portfile.ChecksumsBlock(toWrite.Checksums), "\n", "\n    ")
 		return fmt.Errorf("Could not update the checksums for %s automatically: %s%s\nUse these checksums in the Portfile:\n    %s\nEdit with: dockhand edit %s", port, reason, kept, block, port)

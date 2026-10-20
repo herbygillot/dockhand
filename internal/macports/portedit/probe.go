@@ -132,6 +132,11 @@ func (p *VersionProbe) CheckRelease(ctx context.Context, release model.Release) 
 	if err := p.prepare(ctx); err != nil {
 		return err
 	}
+	// A PortGroup's table of checksums has no row for a new version that
+	// a Portfile edit could add; it's said before anything else.
+	if err := p.editor.portGroupChecksums(ctx, p.input); err != nil {
+		return err
+	}
 	spec, err := portsource.Interpret(p.input.info, portsource.Edit)
 	if err != nil {
 		return err

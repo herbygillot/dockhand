@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -299,6 +300,10 @@ func inertChecksumGroups(info macports.PortInfo, groups []distfiles.Group) map[s
 type ChecksumsToWrite struct {
 	Checksums []portfile.Checksum
 	Err       error
+	// Agree is whether the checksums the port evaluates to already are
+	// the archives', each archive's sha256, rmd160, and size among them,
+	// for a refusal to say whether there's anything to change.
+	Agree bool
 }
 
 func (c *ChecksumsToWrite) Error() string { return c.Err.Error() }
@@ -324,8 +329,10 @@ func (s *Service) checksumsToWrite(ctx context.Context, input *sourceInput, refu
 		observations = append(observations, observed...)
 	}
 	var sums []portfile.Checksum
+	agree := true
 	for _, observed := range observations {
 		info := observed.Snapshot.Ports[input.target.Name]
+		declared, _ := syntax.ListValues(info.Options["checksums"])
 		plan, err := observed.Ports[input.target.Name].FetchPlan()
 		if err != nil {
 			return refusal
@@ -339,9 +346,14 @@ func (s *Service) checksumsToWrite(ctx context.Context, input *sourceInput, refu
 				return refusal
 			}
 			sums = append(sums, download.Checksum)
+			for _, value := range []string{download.SHA256, download.RMD160, strconv.FormatInt(download.Size, 10)} {
+				if value != "" && value != "0" && !slices.Contains(declared, value) {
+					agree = false
+				}
+			}
 		}
 	}
-	return &ChecksumsToWrite{Checksums: sums, Err: refusal}
+	return &ChecksumsToWrite{Checksums: sums, Err: refusal, Agree: agree && len(sums) > 0}
 }
 
 // fillEmptyBlock writes a dependency block the Portfile declares empty

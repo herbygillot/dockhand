@@ -108,3 +108,37 @@ func TestOfTwoCommandsOfOneTextTheFramesLineChooses(t *testing.T) {
 	require.ErrorIs(t, err, portfile.ErrUnsupported)
 	require.ErrorContains(t, err, "declaration source is ambiguous (2 matches)")
 }
+
+// A declaration a PortGroup's own code makes is the PortGroup's, at its
+// file and line, with the tables its command reads, never the Portfile's
+// to edit: crossbinutils 1.0 writes each port's checksums from
+// crossbinutils.versions_info (the roadmap's v0.5.0 part 3, step 2).
+func TestADeclarationAPortGroupMakesIsThePortGroups(t *testing.T) {
+	t.Parallel()
+	src := []byte("PortSystem 1.0\nPortGroup crossbinutils 1.0\ncrossbinutils.setup aarch64-elf 2.47\n")
+	path := "/tree/cross/aarch64-elf-binutils/Portfile"
+	group := "/tree/_resources/port1.0/group/crossbinutils-1.0.tcl"
+	declaration := macports.Declaration{Command: "checksums", Values: []string{"binutils-2.47.tar.xz", "sha256", "aaaa"}, Frames: []macports.SourceFrame{
+		{File: path, Line: 3, Command: "crossbinutils.setup aarch64-elf 2.47"},
+		{File: group, Line: 166, Command: "checksums   binutils-${version}${extract.suffix} {*}[lindex [set crossbinutils.versions_info($version)] 1]"},
+	}}
+	_, err := portfile.LocateDeclaration(src, path, declaration)
+	inGroup := new(portfile.InPortGroup)
+	require.ErrorAs(t, err, &inGroup)
+	require.Equal(t, &portfile.InPortGroup{Group: "crossbinutils 1.0", File: "_resources/port1.0/group/crossbinutils-1.0.tcl", Line: 166, Tables: []string{"crossbinutils.versions_info"}}, inGroup)
+	require.ErrorIs(t, err, portfile.ErrUnsupported)
+	require.NotContains(t, err.Error(), "Portfile to edit")
+	require.Contains(t, err.Error(), "a change there moves every port of the group")
+
+	// crossgcc 1.0's checksums are in an if of its procedure, whose body
+	// Tcl compiled apart, with no file: the nearest frame outside it that
+	// has one is the PortGroup's.
+	declaration.Frames = []macports.SourceFrame{
+		{File: path, Line: 9, Command: "crossgcc.setup arm-none-eabi 8.3.0"},
+		{File: "/tree/_resources/port1.0/group/crossgcc-1.0.tcl", Line: 200, Command: "if {...} {...}"},
+		{Command: "checksums   gcc-${version}${extract.suffix} {*}[lindex [set crossgcc.versions_info($version)] 1]"},
+	}
+	_, err = portfile.LocateDeclaration(src, path, declaration)
+	require.ErrorAs(t, err, &inGroup)
+	require.Equal(t, &portfile.InPortGroup{Group: "crossgcc 1.0", File: "_resources/port1.0/group/crossgcc-1.0.tcl", Line: 200, Tables: []string{"crossgcc.versions_info"}}, inGroup)
+}
