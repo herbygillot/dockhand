@@ -16,6 +16,9 @@ func TestTagAndStringForms(t *testing.T) {
 	require.Equal(t, "devel+1a2b3c4d5e6f.modified", Info{Version: "devel", Revision: "1a2b3c4d5e6f", Modified: true}.Tag())
 	require.Equal(t, "devel (1a2b3c4d5e6f, modified)", Info{Version: "devel", Revision: "1a2b3c4d5e6f", Modified: true}.String())
 	require.Equal(t, "devel", Info{Version: "devel"}.Tag())
+	legacy := Info{Version: "v0.3.0", Revision: "1a2b3c4d5e6f", Variant: "legacy"}
+	require.Equal(t, "v0.3.0 (1a2b3c4d5e6f) legacy", legacy.String())
+	require.Equal(t, "v0.3.0", legacy.Tag(), "a Generated-By names the release, whatever the build")
 	require.NotEmpty(t, Current().Tag())
 }
 
