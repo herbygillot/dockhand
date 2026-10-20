@@ -171,6 +171,9 @@ func Compose(facts Facts) string {
 		}
 		b.WriteString("\n\n")
 	}
+	// Where nothing else would be said, the note is the Description
+	// itself, unquoted (field testing, 2026-10-20).
+	alone := facts.Note != "" && len(facts.NewPorts) == 0 && len(facts.Commits) == 1 && commitBody(facts.Commits[0].Message) == ""
 	if len(facts.Commits) == 1 {
 		if text := commitBody(facts.Commits[0].Message); text != "" {
 			fmt.Fprintf(&b, "%s\n\n", text)
@@ -187,7 +190,10 @@ func Compose(facts Facts) string {
 		}
 		fmt.Fprintln(&b)
 	}
-	if facts.Note != "" {
+	switch {
+	case alone:
+		b.WriteString(plainNote(facts.Note))
+	case facts.Note != "":
 		b.WriteString(noteWords(facts.Note))
 	}
 	ticked := slices.Clone(facts.Types)
@@ -216,6 +222,25 @@ func noteWords(note string) string {
 			line = "**Author's note:** " + line
 		}
 		fmt.Fprintln(&b, strings.TrimRight("> "+line, " \t"))
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+// plainNote is a person's note as the whole Description, where nothing
+// else is said. A line that would begin a heading has its leading #s
+// written as &#35;, which reads the same, so it ends no part
+// (sectionSpan) and names none (ownedSpan), and submitting again reads the
+// note as dockhand's own.
+func plainNote(note string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(strings.TrimRight(note, "\n"), "\n") {
+		rest := strings.TrimLeft(line, " ")
+		if indent := len(line) - len(rest); indent < 4 && strings.HasPrefix(rest, "#") {
+			hashes := len(rest) - len(strings.TrimLeft(rest, "#"))
+			line = line[:indent] + strings.Repeat("&#35;", hashes) + rest[hashes:]
+		}
+		fmt.Fprintln(&b, strings.TrimRight(line, " \t"))
 	}
 	b.WriteString("\n")
 	return b.String()
@@ -506,13 +531,15 @@ func codeSpan(text string) string {
 	return fence + text + fence
 }
 
-// commitBody is a commit message's text after the subject, without
-// dockhand's attribution.
+// commitBody is a commit message's text after the subject, without its
+// attribution trailers (commitmsg.IsAttributionTrailer): a Description
+// held a commit's Assisted-by alone, above the note (field testing,
+// 2026-10-20). A reference trailer, as Closes:, stays.
 func commitBody(message string) string {
 	_, rest, _ := strings.Cut(strings.TrimSpace(message), "\n")
 	var kept []string
 	for _, line := range strings.Split(strings.TrimSpace(rest), "\n") {
-		if !commitmsg.IsAttribution(line) {
+		if !commitmsg.IsAttributionTrailer(line) {
 			kept = append(kept, line)
 		}
 	}

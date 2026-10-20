@@ -27,6 +27,26 @@ func IsAttribution(line string) bool {
 	return strings.HasPrefix(strings.TrimSpace(line), generatedByPrefix)
 }
 
+// IsAttributionTrailer reports whether a message line attributes the
+// commit, rather than saying anything of the change: dockhand's
+// Generated-By, or an Assisted-by, Co-authored-by, or Signed-off-by
+// trailer, in any case. A reference trailer, as Closes: with a ticket's
+// URL, isn't one.
+func IsAttributionTrailer(line string) bool {
+	if IsAttribution(line) {
+		return true
+	}
+	key, value, ok := strings.Cut(strings.TrimSpace(line), ":")
+	if !ok || strings.TrimSpace(value) == "" {
+		return false
+	}
+	switch strings.ToLower(key) {
+	case "assisted-by", "co-authored-by", "signed-off-by":
+		return true
+	}
+	return false
+}
+
 // Attributed reports whether a commit message carries dockhand's
 // attribution line, as tidy writes it on a commit of dockhand's own edits.
 func Attributed(message string) bool {

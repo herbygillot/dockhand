@@ -390,10 +390,10 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	out, _, err := dockhand(t, "submit", "--no-check", "--plan", "--note", note)
 	require.NoError(t, err)
 	require.Contains(t, out, "  Note     The tests failed on a permission error, …\n")
-	require.Contains(t, out, "    > **Author's note:** The tests failed on a permission error,\n    > before any test ran.\n")
+	require.Contains(t, out, "    The tests failed on a permission error,\n    before any test ran.\n")
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes", "--note", note)
 	require.NoError(t, err)
-	require.Contains(t, g.PRs[34901].Body, "#### Description\n\n> **Author's note:** The tests failed on a permission error,\n> before any test ran.\n\n###### Type(s)")
+	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nThe tests failed on a permission error,\nbefore any test ran.\n\n###### Type(s)")
 
 	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
@@ -401,12 +401,12 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	// and says so, since it outlives the commits it was written beside
 	// (field testing, grafana 13.2.4).
 	require.Contains(t, out, "  Note     The tests failed on a permission error, …\n           kept from an earlier submit, across rewritten commits; --note \"\" clears it\n")
-	require.Contains(t, g.PRs[34901].Body, "> **Author's note:** The tests failed")
+	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nThe tests failed")
 
 	out, _, err = dockhand(t, "submit", "--no-check", "--yes", "--note", "Fixed upstream.")
 	require.NoError(t, err)
 	require.Contains(t, out, "Updated #34901's description\n")
-	require.Contains(t, g.PRs[34901].Body, "#### Description\n\n> **Author's note:** Fixed upstream.\n\n###### Type(s)")
+	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nFixed upstream.\n\n###### Type(s)")
 	require.NotContains(t, g.PRs[34901].Body, "permission error")
 
 	updated, err := jsonOf(t, "submit", "--no-check", "--yes", "--note", "")

@@ -663,7 +663,9 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	note := "  rust's tests didn't run: bootstrap panicked on a permission error.\r\n\r\nThe environment's, not the tests'.\n"
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: new(note)})
 	require.NoError(t, err)
-	quoted := "> **Author's note:** rust's tests didn't run: bootstrap panicked on a permission error.\n>\n> The environment's, not the tests'.\n\n"
+	// The commit's body is its attribution alone, so the note is the
+	// Description itself, unquoted (field testing, 2026-10-20).
+	quoted := "rust's tests didn't run: bootstrap panicked on a permission error.\n\nThe environment's, not the tests'.\n\n"
 	require.Contains(t, plan.Body, "#### Description\n\n"+quoted+"###### Type(s)\n")
 	require.Empty(t, recordedNote(), "a plan records nothing")
 	submitted, err := e.ApplySubmit(t.Context(), plan)
@@ -681,12 +683,12 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	require.Empty(t, fake.Updated, "nothing new")
 
 	// A new note replaces it, and the pull request is updated for it alone.
-	// One with a line that would begin a heading is quoted, and so stays
-	// within the Description when replaced again.
+	// One with a line that would begin a heading has its # written as
+	// &#35;, and so stays within the Description when replaced again.
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: new("Fixed upstream in\n#35090.")})
 	require.NoError(t, err)
 	require.Equal(t, SectionRefreshed, plan.Sections.Description)
-	require.Contains(t, plan.Body, "#### Description\n\n> **Author's note:** Fixed upstream in\n> #35090.\n\n###### Type(s)\n")
+	require.Contains(t, plan.Body, "#### Description\n\nFixed upstream in\n&#35;35090.\n\n###### Type(s)\n")
 	require.NotContains(t, plan.Body, "permission error")
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
@@ -694,7 +696,7 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	require.Equal(t, plan.Body, fake.PRs[number].Body)
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: new("Fixed upstream.")})
 	require.NoError(t, err)
-	require.Contains(t, plan.Body, "#### Description\n\n> **Author's note:** Fixed upstream.\n\n###### Type(s)\n")
+	require.Contains(t, plan.Body, "#### Description\n\nFixed upstream.\n\n###### Type(s)\n")
 	require.NotContains(t, plan.Body, "#35090")
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)

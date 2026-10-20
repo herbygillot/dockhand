@@ -253,3 +253,31 @@ func TestANoteRepeatingTheCommitBodyIsFound(t *testing.T) {
 	require.False(t, NoteRepeatsCommits(own))
 	require.False(t, NoteRepeatsCommits(Facts{Commits: []Commit{commit}, Note: "Assisted-By: Claude Code"}), "a trailer is no body")
 }
+
+// A commit's attribution trailers aren't its Description, a reference
+// trailer is, and a note where nothing else is said is the Description
+// itself, unquoted, its lines that would begin a heading escaped so that
+// submitting again reads it as dockhand's own; beside other text it's
+// quoted (field testing, 2026-10-20).
+func TestANoteAloneIsTheDescription(t *testing.T) {
+	require.Empty(t, commitBody("jq: update to 1.8.1\n\nAssisted-by: Claude Code\nCo-authored-by: Ada <ada@example.org>\nSigned-off-by: Ada <ada@example.org>\nGenerated-By: Dockhand devel"))
+	require.Equal(t, "Closes: https://trac.macports.org/ticket/71234", commitBody("jq: update to 1.8.1\n\nCloses: https://trac.macports.org/ticket/71234\nAssisted-by: Claude Code"))
+
+	alone := Facts{Commits: []Commit{{ID: "1234567890abcdef", Message: "jq: update to 1.8.1\n\nAssisted-by: Claude Code\n"}}, Note: "Upstream's tests need network access.\n## Not a heading\n###### Tested on, nor this"}
+	body := Compose(alone)
+	require.Contains(t, body, "#### Description\n\nUpstream's tests need network access.\n&#35;&#35; Not a heading\n&#35;&#35;&#35;&#35;&#35;&#35; Tested on, nor this\n\n###### Type(s)\n")
+	require.NotContains(t, body, "Assisted-by")
+	from, to, ok := sectionSpan(body, descriptionHeading)
+	require.True(t, ok)
+	require.Contains(t, body[from:to], "nor this", "the note stays within the Description")
+	at, ok := ownedSpan(body)
+	require.True(t, ok)
+	require.Equal(t, strings.Index(body, testedOnHeading+"\n"), at, "Tested on is dockhand's heading, not the note's line")
+	merged, sections := Merge(body, body, body, false)
+	require.Equal(t, body, merged)
+	require.Equal(t, Current, sections.Description, "submitting again reads the note as dockhand's own")
+
+	beside := alone
+	beside.Commits = []Commit{{ID: "1234567890abcdef", Message: "jq: update to 1.8.1\n\nThe tests are new.\n\nAssisted-by: Claude Code\n"}}
+	require.Contains(t, Compose(beside), "The tests are new.\n\n> **Author's note:** Upstream's tests need network access.\n")
+}
