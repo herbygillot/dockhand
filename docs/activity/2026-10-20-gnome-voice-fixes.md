@@ -51,3 +51,10 @@ Next's fixes from the gnome-voice session's field notes (placed in
   changed port keeps its offer. Where the graph or the changed directories'
   ports can't be read, every target is kept. With none left, the hint
   isn't shown, and check.baseline doesn't run one.
+- `check --baseline` without `--only` now follows the same rule, at
+  prioritization's word, so the offer, the auto-run, and `--baseline`
+  decide it in one place (`PlanBaseline`, through `readsChanged`). Each
+  port left out is said, "gnome-voice left out: master's build reads what
+  check-484's did. Use --only to include them." Where that's every port,
+  it refuses with the same words (`UnchangedWords`), and `--only` still
+  builds a port whatever the rule says.

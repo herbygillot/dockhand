@@ -35,6 +35,17 @@ type Baseline struct {
 	// NewTests are failed ports left out without --only because only their
 	// tests failed, and master declares none (testsNewHere).
 	NewTests []string
+	// Unchanged are failed ports left out without --only because their
+	// builds read only what master has (readsChanged), which BaselineCandidates
+	// leaves out of the offer alike.
+	Unchanged []string
+}
+
+// UnchangedWords say a port a baseline leaves out since master's build
+// reads what the check's did: "gnome-voice left out: master's build reads
+// what check-484's did".
+func UnchangedWords(ports []string, of model.Run) string {
+	return fmt.Sprintf("%s left out: master's build reads what %s's did", prose.And(ports), of.Name())
 }
 
 // PlanBaseline plans a baseline of the branch's newest finished check: of
@@ -85,6 +96,20 @@ func (e *Engine) planBaseline(ctx context.Context, branch model.Branch, ports []
 		ports, baseline.Skipped = BaselineWorthy(evidence)
 		if ports, baseline.NewTests, err = e.testsNewHere(ctx, checked, evidence, ports); err != nil {
 			return baseline, err
+		}
+		// What the offer leaves out, a baseline without --only leaves out
+		// too, in one place (check-484's gnome-voice).
+		read := ports
+		if ports, err = e.readsChanged(ctx, checked, evidence, ports); err != nil {
+			return baseline, err
+		}
+		for _, port := range read {
+			if !slices.Contains(ports, port) {
+				baseline.Unchanged = append(baseline.Unchanged, port)
+			}
+		}
+		if len(ports) == 0 && len(baseline.Unchanged) > 0 {
+			return baseline, errors.New(UnchangedWords(baseline.Unchanged, baseline.Of))
 		}
 		if len(ports) == 0 && len(baseline.NewTests) > 0 {
 			return baseline, errors.New(NewTestsWords(baseline.NewTests))

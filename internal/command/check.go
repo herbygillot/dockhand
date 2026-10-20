@@ -768,6 +768,9 @@ func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Bas
 	if len(baseline.New) > 0 {
 		fmt.Fprintf(out, "  · left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
 	}
+	if len(baseline.Unchanged) > 0 {
+		fmt.Fprintf(out, "  · %s. Use --only to include them.\n", engine.UnchangedWords(baseline.Unchanged, baseline.Of))
+	}
 	if len(baseline.Skipped) > 0 {
 		fmt.Fprintf(out, "  · skipped in this baseline: %s failed at lint, fetch, or checksum. Use --only to include them.\n", strings.Join(baseline.Skipped, ", "))
 	}

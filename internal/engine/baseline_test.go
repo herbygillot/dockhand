@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -314,4 +315,45 @@ func TestABaselineIsOfferedOnlyWhereTheBuildReadsTheBranch(t *testing.T) {
 	kept, err = e.readsChanged(t.Context(), capture.Revision, evidence, []string{"gnome-voice"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"gnome-voice"}, kept)
+}
+
+// check --baseline without --only leaves out what the offer does, a port
+// whose build reads only what master has, and refuses where that's all,
+// with the same words; --only still builds it (check-484's gnome-voice,
+// built --also unchanged).
+func TestABaselineLeavesOutWhatMastersBuildReadsTheSame(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-only", Here: true})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.Git(t, branch.Worktree, "add", "devel/libharbor/Portfile")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "libharbor: update to 3")
+	e.PortReader = namedGraph{
+		graphPorts: graphPorts{
+			fakePorts: fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}, "devel/libharbor": {port("libharbor")}}},
+			graph:     map[string][]string{"jq": {"oniguruma"}},
+		},
+		defined: map[string][]string{"devel/libharbor": {"libharbor"}},
+	}
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"jq": model.OutcomeFailed}}}
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+	require.NoError(t, err)
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}, Also: []string{"jq"}})
+	require.NoError(t, err)
+	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+	require.NoError(t, err)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunFailed, run.State)
+
+	offer, err := e.BaselineCandidates(t.Context(), run)
+	require.NoError(t, err)
+	require.Empty(t, offer.Ports, "jq reads nothing the branch changes")
+	_, err = e.PlanBaseline(t.Context(), branch, nil)
+	require.EqualError(t, err, "jq left out: master's build reads what "+run.Name()+"'s did")
+	baseline, err := e.PlanBaseline(t.Context(), branch, []string{"jq"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"jq:unchanged:also"}, names(baseline.Plan.Targets), "--only builds it whatever the rule says")
 }
