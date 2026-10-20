@@ -1561,3 +1561,12 @@ func TestAResultWhoseTestsFailedNamesThem(t *testing.T) {
 	require.Equal(t, "tests: make test failed · failed tests, from its log: bugfixes-test", withFailedTests("tests: make test failed", model.TargetResult{Log: log, Steps: steps}))
 	require.Equal(t, "said", withFailedTests("said", model.TargetResult{Log: filepath.Join(t.TempDir(), "gone.log")}))
 }
+
+// A port can have two kept archives offered, its newest and the one
+// before: the count says both where they differ, as gnome-voice's "up to
+// 221 dependencies" were 223 archives given (check-484).
+func TestTheOfferSaysItsArchivesWhereAPortHasTwo(t *testing.T) {
+	require.Equal(t, "the guest may install up to 2 dependencies from archives earlier checks kept", offeredWords(2, 2))
+	require.Equal(t, "the guest may install up to 221 dependencies from archives earlier checks kept (223 archives, the newest two of some)", offeredWords(221, 223))
+	require.Equal(t, "the guest may install up to 1 dependency from archives earlier checks kept", offeredWords(1, 1))
+}

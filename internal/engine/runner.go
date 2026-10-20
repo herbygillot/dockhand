@@ -616,7 +616,11 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			}
 			// A count, where the names ran to about 230 (the gnome-voice
 			// session's notes); each target's build says which it took.
-			build.Progress(fmt.Sprintf("the guest may install up to %s from archives earlier checks kept", dependencyCount(len(names))))
+			// A port can have two kept archives, its newest and the one
+			// before (dependencyArchivesPerPort), each given: gnome-voice's
+			// "up to 221 dependencies" were 223 archives, freetype's and
+			// p5.34-uri's two each (check-484).
+			build.Progress(offeredWords(len(names), len(dependencies)))
 			build.installs = append(build.installs, dependencies...)
 		}
 		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit, Installs: build.installs,
@@ -1422,4 +1426,14 @@ func dependencyCount(n int) string {
 		return "1 dependency"
 	}
 	return fmt.Sprintf("%d dependencies", n)
+}
+
+// offeredWords say how many dependencies a guest is offered kept archives
+// of, and how many archives where a port has two.
+func offeredWords(ports, archives int) string {
+	words := "the guest may install up to " + dependencyCount(ports) + " from archives earlier checks kept"
+	if archives != ports {
+		words += fmt.Sprintf(" (%d archives, the newest two of some)", archives)
+	}
+	return words
 }

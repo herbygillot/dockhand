@@ -33,3 +33,11 @@ Next's fixes from the gnome-voice session's field notes (placed in
   "harbor-viewer: installed 2 dependencies from archives earlier checks
   kept: cargo, rust". That's a progress line beside the result, which the
   check's output and journal carry, not a field of the stored result.
+- Field testing's check-484 of gnome-voice, on 78da24cf, read all three.
+  Its widest status line was 121 columns, `logs` said the target was
+  building, and none of the three ports was offered. The count said "up
+  to 221 dependencies" where 223 archives were given: freetype and
+  p5.34-uri each had their two newest kept archives offered
+  (`dependencyArchivesPerPort`). The line now says the archives too where
+  they differ: "up to 221 dependencies from archives earlier checks kept
+  (223 archives, the newest two of some)" (`offeredWords`).
