@@ -573,3 +573,29 @@ func TestACheckAskingNoTestsRunsTheConfigs(t *testing.T) {
 		require.Equal(t, want, proposal.Plan.Tests, "asked %q", asked)
 	}
 }
+
+// A check of a port whose patchfiles names a file the capture leaves out
+// is refused before any VM starts, for check, ship, and serve alike: the
+// net-snmp check built without its patch and 404'd fetching it (field
+// testing, check-469). --include takes it in.
+func TestACheckRefusesAPatchGitDoesntTrack(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := twoPortBranch(t, e)
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\npatchfiles fix.diff\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: fix the build")
+	write(t, branch.Worktree, map[string]string{"textproc/jq/files/fix.diff": "fix\n"})
+	where := Where{Environments: []model.Environment{tahoeArm}}
+
+	for _, mode := range []CaptureMode{CaptureHead, CaptureWorking} {
+		_, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: mode}, Where: where})
+		var untracked *UntrackedPatchError
+		require.ErrorAs(t, err, &untracked, "mode %v", mode)
+		require.EqualError(t, err, "jq's patchfiles names files/fix.diff, which isn't tracked: git add it, or check --include it")
+	}
+	// A named branch with nothing uncommitted is checked at its head, but
+	// one with files to include at its working files, which can take them.
+	_, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureAuto, Named: true, Include: []string{"textproc/jq/files/fix.diff"}}, Where: where})
+	require.NoError(t, err)
+}

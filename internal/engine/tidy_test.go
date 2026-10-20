@@ -412,3 +412,49 @@ func TestTidyNarrowsAWorktreeBackToTheBranchsPorts(t *testing.T) {
 	require.ElementsMatch(t, []string{"_resources", "textproc/jq"}, cone)
 	require.NoDirExists(t, filepath.Join(branch.Worktree, "devel/libharbor"))
 }
+
+// A patch the Portfile names, and Git doesn't track, is the port's: tidy
+// commits it with the Portfile, where it committed the patchfiles line
+// alone and the check 404'd fetching the patch (field testing, net-snmp,
+// check-469). Any other untracked file there is left out and said, and a
+// named one Git ignores is left out as git add leaves it.
+func TestTidyTakesInThePatchesThePortfileNames(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-patch", Here: true})
+	require.NoError(t, err)
+	dir := branch.Worktree
+	common := testsupport.Git(t, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	write(t, common, map[string]string{"info/exclude": "ignored.diff\n"})
+	write(t, dir, map[string]string{
+		"textproc/jq/Portfile":           "name jq\nversion 1.7.1\npatchfiles fix.diff ignored.diff\n",
+		"textproc/jq/files/fix.diff":     "fix\n",
+		"textproc/jq/files/ignored.diff": "ignored\n",
+		"textproc/jq/files/notes.txt":    "notes\n",
+	})
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, []string{"textproc/jq/files/fix.diff"}, plan.Taken)
+	require.Equal(t, []string{"textproc/jq/files/notes.txt"}, plan.LeftOut)
+	require.Equal(t, []string{"textproc/jq/files/ignored.diff"}, plan.Ignored)
+	require.Len(t, plan.Groups, 1)
+	require.ElementsMatch(t, []string{"textproc/jq/Portfile", "textproc/jq/files/fix.diff"}, plan.Groups[0].Paths)
+	plan.Groups[0].SetSubject("jq: fix the build")
+
+	write(t, dir, map[string]string{"textproc/jq/files/fix.diff": "fix, again\n"})
+	_, err = e.ApplyTidy(t.Context(), plan)
+	require.ErrorIs(t, err, ErrStalePlan, "the patch changed after the plan")
+	write(t, dir, map[string]string{"textproc/jq/files/fix.diff": "fix\n"})
+
+	_, err = e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	require.Equal(t, "textproc/jq/Portfile\ntextproc/jq/files/fix.diff", testsupport.Git(t, dir, "show", "--format=", "--name-only", "HEAD"))
+	require.Equal(t, "?? textproc/jq/files/notes.txt", testsupport.Git(t, dir, "status", "--porcelain"))
+
+	again, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.True(t, again.Keep)
+	require.Equal(t, []string{"textproc/jq/files/notes.txt"}, again.LeftOut, "still uncommitted, and said")
+}

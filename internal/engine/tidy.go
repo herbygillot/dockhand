@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -110,6 +113,12 @@ type TidyPlan struct {
 	// they are, as submit says them: a plan that would keep the commits
 	// can still be saved, for their messages to be rewritten.
 	Warnings []commitrules.Finding
+	// Taken are the untracked files a changed port's patchfiles names,
+	// which the plan commits with the port; LeftOut the other untracked
+	// files in a changed port's directory, which it doesn't; Ignored the
+	// files patchfiles names that Git ignores, left out as git add leaves
+	// them (tidyWorkingFiles).
+	Taken, LeftOut, Ignored []string
 }
 
 // Unambiguous reports whether the plan may be applied without review:
@@ -200,7 +209,13 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if err != nil {
 		return TidyPlan{}, err
 	}
-	plan := TidyPlan{Branch: branch, Base: base, Head: head, Final: final, BaseTree: trees[base], History: history, Index: index}
+	files, err := tidyWorkingFiles(ctx, worktree, trees[base], final)
+	if err != nil {
+		return TidyPlan{}, err
+	}
+	final = files.final
+	plan := TidyPlan{Branch: branch, Base: base, Head: head, Final: final, BaseTree: trees[base], History: history, Index: index,
+		Taken: files.taken, LeftOut: files.leftOut, Ignored: files.ignored}
 	changed, err := worktree.ChangedPaths(ctx, trees[base], final)
 	if err != nil {
 		return TidyPlan{}, err
@@ -465,6 +480,91 @@ func derivedSubject(ctx context.Context, repo *git.Repository, before, after str
 
 // groupOf is the port directory a path belongs to, or "" for a file
 // outside any port.
+// tidyFiles are a tidy's working files: final, the working tree with the
+// untracked files it takes, and what it takes and leaves out.
+type tidyFiles struct {
+	final                   string
+	taken, leftOut, ignored []string
+}
+
+// tidyWorkingFiles takes into final the untracked files a changed port's
+// patchfiles names, as git add would, and only those: tidy committed
+// net-snmp's patchfiles line without the patch it named, which wasn't
+// git added, and the check 404'd fetching it (field testing, check-469).
+// Any other untracked file in a changed port's directory is left out, and
+// said; a named file Git ignores is left out as git add leaves it. The
+// plan and its application each make it, so a file added or removed
+// between them makes the plan stale.
+func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, final string) (tidyFiles, error) {
+	files := tidyFiles{final: final}
+	changed, err := worktree.ChangedPaths(ctx, baseTree, final)
+	if err != nil {
+		return tidyFiles{}, err
+	}
+	var directories []string
+	for _, path := range changed {
+		if directory := groupOf(path); directory != "" && !slices.Contains(directories, directory) {
+			directories = append(directories, directory)
+		}
+	}
+	if len(directories) == 0 {
+		return files, nil
+	}
+	untracked, err := worktree.Untracked(ctx)
+	if err != nil {
+		return tidyFiles{}, err
+	}
+	untracked = slices.DeleteFunc(untracked, editorFile)
+	patches, err := untrackedPatches(ctx, worktree, final, directories, untracked)
+	if err != nil {
+		return tidyFiles{}, err
+	}
+	var named []string
+	for _, directory := range directories {
+		files.taken = append(files.taken, patches[directory]...)
+		file, data, err := worktree.File(ctx, final, directory+"/Portfile")
+		if err != nil {
+			return tidyFiles{}, err
+		}
+		if !file.Exists {
+			continue
+		}
+		for _, name := range portfile.PatchfileNames(data) {
+			path := directory + "/files/" + name
+			if slices.Contains(untracked, path) || slices.Contains(named, path) || !fs.ValidPath(path) {
+				continue
+			}
+			if inTree, _, err := worktree.File(ctx, final, path); err != nil {
+				return tidyFiles{}, err
+			} else if !inTree.Exists {
+				named = append(named, path)
+			}
+		}
+	}
+	for _, path := range untracked {
+		if !slices.Contains(files.taken, path) && slices.ContainsFunc(directories, func(d string) bool { return strings.HasPrefix(path, d+"/") }) {
+			files.leftOut = append(files.leftOut, path)
+		}
+	}
+	// A named file that's neither tracked nor untracked, and is on disk,
+	// is one Git ignores.
+	var present []string
+	for _, path := range named {
+		if info, err := os.Lstat(filepath.Join(worktree.Root, filepath.FromSlash(path))); err == nil && info.Mode().IsRegular() {
+			present = append(present, path)
+		}
+	}
+	if files.ignored, err = worktree.Ignored(ctx, present...); err != nil {
+		return tidyFiles{}, err
+	}
+	if len(files.taken) > 0 {
+		if files.final, err = worktree.WithFiles(ctx, final, files.taken); err != nil {
+			return tidyFiles{}, err
+		}
+	}
+	return files, nil
+}
+
 func groupOf(path string) string {
 	directory, _ := macports.PortDirectoryOf(path)
 	return directory
@@ -853,6 +953,15 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if err != nil {
 		return TidyResult{}, err
 	}
+	trees, err := worktree.CommitTrees(ctx, []string{plan.Base})
+	if err != nil {
+		return TidyResult{}, err
+	}
+	files, err := tidyWorkingFiles(ctx, worktree, trees[plan.Base], final)
+	if err != nil {
+		return TidyResult{}, err
+	}
+	final = files.final
 	current, err := e.Branch(ctx, plan.Branch.ID)
 	if err != nil {
 		return TidyResult{}, err
@@ -875,10 +984,6 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	// The index is kept, reachable, before anything moves: it can hold
 	// staged content neither the old head nor the working files have.
 	keptIndex, err := worktree.WriteCommit(ctx, git.Commit{Tree: index, Parents: []string{plan.Head}, Message: "dockhand: the index before tidy\n", Author: committer, Committer: committer})
-	if err != nil {
-		return TidyResult{}, err
-	}
-	trees, err := worktree.CommitTrees(ctx, []string{plan.Base})
 	if err != nil {
 		return TidyResult{}, err
 	}

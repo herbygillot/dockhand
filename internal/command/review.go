@@ -78,7 +78,11 @@ commits, and its files are as they were when it was saved.`,
 			if proposal.Keep && len(proposal.Warnings) > 0 {
 				// What the rules warn of is said, as submit says it, with
 				// the plan to rewrite a message in (the rust and cargo run).
-				fmt.Fprintln(out, "All changes are committed. The commits pass the required MacPorts checks, with these warnings:")
+				if len(proposal.LeftOut) > 0 {
+					fmt.Fprintln(out, "All tracked changes are committed. The commits pass the required MacPorts checks, with these warnings:")
+				} else {
+					fmt.Fprintln(out, "All changes are committed. The commits pass the required MacPorts checks, with these warnings:")
+				}
 				for _, warning := range proposal.Warnings {
 					fmt.Fprintf(out, "  %s\n", warning)
 				}
@@ -98,7 +102,14 @@ commits, and its files are as they were when it was saved.`,
 				return nil
 			}
 			if proposal.Keep {
-				fmt.Fprintln(out, "The commits already follow MacPorts' rules, and nothing is uncommitted; nothing to tidy.")
+				// An untracked file in a changed port's directory is
+				// uncommitted, whatever Git's index says (net-snmp's
+				// patch, check-469).
+				if len(proposal.LeftOut) > 0 || len(proposal.Ignored) > 0 {
+					fmt.Fprintln(out, "The commits already follow MacPorts' rules, and every tracked change is committed; nothing to tidy.")
+				} else {
+					fmt.Fprintln(out, "The commits already follow MacPorts' rules, and nothing is uncommitted; nothing to tidy.")
+				}
 				writeFindings(out, proposal)
 				return nil
 			}
@@ -288,12 +299,26 @@ func writeTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 }
 
 func writeFindings(out io.Writer, plan engine.TidyPlan) {
+	writeUntracked(out, plan)
 	if len(plan.Findings) == 0 {
 		return
 	}
 	fmt.Fprintln(out, "File issues to resolve separately (tidy only changes commits):")
 	for _, finding := range plan.Findings {
 		fmt.Fprintf(out, "  %s\n", finding)
+	}
+}
+
+// writeUntracked says the untracked files a plan takes in and leaves out.
+func writeUntracked(out io.Writer, plan engine.TidyPlan) {
+	if len(plan.Taken) > 0 {
+		fmt.Fprintf(out, "Taken in, untracked, since patchfiles names them: %s\n", strings.Join(plan.Taken, ", "))
+	}
+	if len(plan.LeftOut) > 0 {
+		fmt.Fprintf(out, "Left out, since Git doesn't track them (git add one to commit it): %s\n", strings.Join(plan.LeftOut, ", "))
+	}
+	for _, path := range plan.Ignored {
+		fmt.Fprintf(out, "Left out, though patchfiles names it, since Git ignores it as git add would: %s; git check-ignore -v %s names the rule\n", path, path)
 	}
 }
 

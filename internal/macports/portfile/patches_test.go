@@ -31,3 +31,20 @@ func TestDropPatchTakesAMergedPatchOut(t *testing.T) {
 		require.Equal(t, src, string(got))
 	}
 }
+
+// Every literal patchfiles name counts, in a variant's or a platform's body
+// too, each once; a computed one isn't a name the text gives.
+func TestPatchfileNamesReadsEveryLiteralName(t *testing.T) {
+	src := []byte(`name net-snmp
+patchfiles patch-a.diff \
+           patch-b.diff
+patchfiles-append ${name}-c.diff
+platform darwin {
+    patchfiles-append patch-swinst_darwin-declaration.diff
+}
+variant extra {
+    patchfiles-prepend patch-a.diff patch-d.diff
+}
+`)
+	require.Equal(t, []string{"patch-a.diff", "patch-b.diff", "patch-swinst_darwin-declaration.diff", "patch-d.diff"}, PatchfileNames(src))
+}

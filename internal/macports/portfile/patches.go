@@ -2,6 +2,7 @@ package portfile
 
 import (
 	"bytes"
+	"slices"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
@@ -53,4 +54,29 @@ func DropPatch(src []byte, name string) ([]byte, bool) {
 		return src, false
 	}
 	return out, true
+}
+
+// PatchfileNames are the patch files a Portfile names literally in its
+// patchfiles, patchfiles-append, and patchfiles-prepend, in any body, as
+// a variant's or a platform's: each once, in the order written. A computed
+// word is no name the text can give.
+func PatchfileNames(src []byte) []string {
+	script, errs := syntax.Parse(src)
+	if len(errs) != 0 {
+		return nil
+	}
+	var names []string
+	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
+		switch command, _ := cmd.Name(src); command {
+		case "patchfiles", "patchfiles-append", "patchfiles-prepend":
+		default:
+			continue
+		}
+		for _, word := range cmd.Words[1:] {
+			if value, literal := word.Literal(src); literal && !word.Expand && value != "" && !slices.Contains(names, value) {
+				names = append(names, value)
+			}
+		}
+	}
+	return names
 }

@@ -8,7 +8,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -49,8 +51,11 @@ type CaptureRequest struct {
 // checked out here, or of one a flag named that has no commits of its own,
 // whose working files are all there is of it (the txt run's finding 2);
 // the committed tip of a named branch whose worktree has no edits; and a
-// refusal where it has both, since neither is plainly meant.
-func (e *Engine) autoMode(ctx context.Context, branch model.Branch, named bool) (CaptureMode, error) {
+// refusal where it has both, since neither is plainly meant. Files to
+// include are working files, which a committed tip can't take: check -b
+// net-snmp --include, as the untracked patch's refusal says, was refused
+// for the head (field testing, check-469).
+func (e *Engine) autoMode(ctx context.Context, branch model.Branch, named, including bool) (CaptureMode, error) {
 	if !named {
 		return CaptureWorking, nil
 	}
@@ -61,8 +66,11 @@ func (e *Engine) autoMode(ctx context.Context, branch model.Branch, named bool) 
 	if err != nil {
 		return "", err
 	}
-	if len(edits) == 0 {
+	if len(edits) == 0 && !including {
 		return CaptureHead, nil
+	}
+	if len(edits) == 0 {
+		return CaptureWorking, nil
 	}
 	commits, err := e.CommitsAhead(ctx, branch)
 	if err != nil {
@@ -106,7 +114,7 @@ func Describe(revision model.Revision) string {
 func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, error) {
 	branch := request.Branch
 	if request.Mode == CaptureAuto {
-		mode, err := e.autoMode(ctx, branch, request.Named)
+		mode, err := e.autoMode(ctx, branch, request.Named, len(request.Include) > 0)
 		if err != nil {
 			return Capture{}, err
 		}
@@ -301,4 +309,46 @@ func UntrackedInChanged(capture Capture, plan model.Plan) []string {
 		}
 	}
 	return found
+}
+
+// UntrackedPatches are the untracked files a changed port's Portfile names
+// in its patchfiles, read from tree, by port directory: the patch a
+// person wrote and didn't git add, which the Portfile's commit needs, as
+// net-snmp's patch-swinst_darwin-declaration.diff did, where tidy
+// committed the patchfiles line without it and the check 404'd fetching it
+// (field testing, check-469). untracked is the worktree's list; a name is
+// read in the port's files/, where MacPorts looks for it.
+func (e *Engine) UntrackedPatches(ctx context.Context, tree string, directories, untracked []string) (map[string][]string, error) {
+	return untrackedPatches(ctx, e.Repo, tree, directories, untracked)
+}
+
+func untrackedPatches(ctx context.Context, repo *git.Repository, tree string, directories, untracked []string) (map[string][]string, error) {
+	found := map[string][]string{}
+	for _, directory := range directories {
+		file, data, err := repo.File(ctx, tree, directory+"/Portfile")
+		if err != nil {
+			return nil, err
+		}
+		if !file.Exists {
+			continue
+		}
+		for _, name := range portfile.PatchfileNames(data) {
+			path := directory + "/files/" + name
+			if slices.Contains(untracked, path) && !slices.Contains(found[directory], path) {
+				found[directory] = append(found[directory], path)
+			}
+		}
+	}
+	return found, nil
+}
+
+// UntrackedPatchError is a check refused before any VM starts, since a
+// changed port's patchfiles names a file the capture doesn't hold.
+type UntrackedPatchError struct {
+	Port string
+	Path string
+}
+
+func (u *UntrackedPatchError) Error() string {
+	return fmt.Sprintf("%s's patchfiles names %s, which isn't tracked: git add it, or check --include it", u.Port, u.Path)
 }

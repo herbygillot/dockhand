@@ -273,6 +273,12 @@ type tidyJSON struct {
 	Findings    []findingJSON    `json:"findings"`
 	// Warnings are what MacPorts' commit rules warn of in commits it keeps.
 	Warnings []findingJSON `json:"warnings"`
+	// Taken are the untracked files patchfiles names, committed with
+	// their port; LeftOut the other untracked files in a changed port's
+	// directory; Ignored the named files Git ignores, left out.
+	Taken   []string `json:"taken"`
+	LeftOut []string `json:"left_out"`
+	Ignored []string `json:"ignored"`
 	// Applied is what applying made, when it did.
 	Applied *tidyAppliedJSON `json:"applied"`
 }
@@ -286,7 +292,8 @@ type tidyAppliedJSON struct {
 }
 
 func tidyView(plan engine.TidyPlan) tidyJSON {
-	view := tidyJSON{Branch: plan.Branch.ShortName(), Keep: plan.Keep, Unambiguous: plan.Unambiguous(), Commits: []tidyCommitJSON{}, Findings: findingsView(plan.Findings), Warnings: findingsView(plan.Warnings)}
+	view := tidyJSON{Branch: plan.Branch.ShortName(), Keep: plan.Keep, Unambiguous: plan.Unambiguous(), Commits: []tidyCommitJSON{}, Findings: findingsView(plan.Findings), Warnings: findingsView(plan.Warnings),
+		Taken: nonNil(plan.Taken), LeftOut: nonNil(plan.LeftOut), Ignored: nonNil(plan.Ignored)}
 	for _, group := range plan.Groups {
 		commit := tidyCommitJSON{Subject: group.Subject(), Message: group.Message, Paths: nonNil(group.Paths), Ports: nonNil(group.Ports), Combines: []string{},
 			Working: group.Working, FromEdits: group.FromEdits, Created: group.Created, Notes: nonNil(group.Notes), Blocking: nonNil(group.Blocking)}
