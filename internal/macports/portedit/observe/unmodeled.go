@@ -23,6 +23,9 @@ import (
 // TeXShop), changes only how the port compiles.
 var benignSinks = map[string]bool{
 	"macosx_deployment_target": true,
+	// Whether the build takes Xcode's tools, not which archive is fetched:
+	// qmake5 1.0 sets it where the Command Line Tools ship no SDK.
+	"use_xcode": true,
 	// Patch selection changes what is applied after extraction, never which
 	// archive is fetched or how it is checked; the patch check reads the
 	// native selection.

@@ -236,7 +236,7 @@ New Portfiles include `# dockhand: unconfirmed` markers for inferred values. Rev
 
 ## Known issues in v0.4.0
 
-Each is rough, harms nothing a look wouldn't catch, and has a workaround. Most are planned for v0.5.0, and the last five are fixed on `main` already.
+Each is rough, harms nothing a look wouldn't catch, and has a workaround. Most are planned for v0.5.0, and the last six are fixed on `main` already.
 
 - `check` builds on this Mac's release unless told otherwise, `build.default`'s `host`, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--build macports-ci` checks on all three, and `build.default = "macports-ci"` makes it the default.
 - A Go port whose module moved hosts, as pomo moved from GitHub to Codeberg, is planned without naming the move. Compare the new release's `go.mod` module path with the Portfile's before `tidy`.
@@ -254,6 +254,7 @@ Each is rough, harms nothing a look wouldn't catch, and has a workaround. Most a
 - While a baseline of a passed check runs, `status` says the branch is checking, and `serve` and `ship --passing` wait to submit it. Let the baseline finish, or submit with `dockhand submit --branch <name>`. Fixed on `main` for v0.5.0.
 - An update whose configure.ac names a library through a shell variable, as GraphicsMagick 1.3.49's `AC_CHECK_LIB([$zstd], ...)` does, says that library was removed. Read configure.ac's change with `dockhand diff --source` before submitting after a look. Fixed on `main` for v0.5.0.
 - A failed check offers `check --baseline` for tests the branch adds and master doesn't run, where a baseline has nothing to compare. Skip the hint where the branch adds the port's tests. Fixed on `main` for v0.5.0.
+- `update` refuses a port whose PortGroup reads the host while it loads, as qmake5's asks whether Xcode and an SDK are there, with "version probe is inconclusive: modeled context depends on host state", though its version line and archives read nothing of the host: LibreCAD, cpi, the PyQt5 and Qt 5 ports, and about 100 in all. Edit the version line by hand, then run `dockhand checksums <port>`. Fixed on `main` for v0.5.0.
 - `dockhand update <port>` for a port that pins its source to a commit and tracks a branch, `livecheck.type git`, as wezterm does, stops with a Go panic before it changes anything, and `update <port> <version>` refuses. `outdated` says such a port's branch has moved past its pin; edit the commit and the version by hand, as it says, then `dockhand checksums <port>`. Fixed on `main` for v0.5.0: `update` moves the pin to the branch's head, or a commit named, with the version the port's scheme gives it.
 
 ## Scope
