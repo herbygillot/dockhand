@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -45,4 +46,23 @@ func TestABranchWhoseChangesLandedIsOnMaster(t *testing.T) {
 	status, err = e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
 	require.Empty(t, status.OnMaster, "master has another change")
+}
+
+// A running run's progress says what it's building, and the step, as the
+// Tart provider words it; logs says so for a target with no log yet (the
+// gnome-voice session's notes, 2026-10-20).
+func TestARunningRunSaysWhatItsBuilding(t *testing.T) {
+	logs := RunLogs{Run: model.Run{State: model.RunRunning}, Progress: "macOS 26 (Tahoe) arm64: building gnome-voice (2 of 3): configure; rust: no archive for macOS 26 arm64; building from source"}
+	phase, ok := logs.Building("gnome-voice")
+	require.True(t, ok)
+	require.Equal(t, "configure", phase)
+	_, ok = logs.Building("gnome")
+	require.False(t, ok, "a name the building one starts with isn't it")
+	logs.Progress = "macOS 26 (Tahoe) arm64: building gnome-voice"
+	phase, ok = logs.Building("gnome-voice")
+	require.True(t, ok)
+	require.Empty(t, phase)
+	logs.Run.State = model.RunPassed
+	_, ok = logs.Building("gnome-voice")
+	require.False(t, ok, "a run that ended builds nothing")
 }

@@ -256,6 +256,17 @@ log.`,
 			}
 			chosen, others, ok := portLogs(logs, port)
 			if !ok {
+				// A running target's log comes back when it ends; that it
+				// has none yet isn't a failure.
+				if run.State == model.RunRunning && !stoppedRun(ctx, e, run) {
+					if phase, building := logs.Building(port); building {
+						if phase != "" {
+							phase = " (" + phase + ")"
+						}
+						return fmt.Errorf("%s is building in %s%s; its log comes back when it ends, and dockhand wait %s follows it", port, run.Name(), phase, run.Name())
+					}
+					return fmt.Errorf("%s is running and hasn't recorded a log for %s yet; dockhand wait %s follows it", run.Name(), port, run.Name())
+				}
 				return fmt.Errorf("%s recorded no log for %s", run.Name(), port)
 			}
 			found := chosen.result

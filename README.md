@@ -236,7 +236,7 @@ New Portfiles include `# dockhand: unconfirmed` markers for inferred values. Rev
 
 ## Known issues in v0.4.0
 
-Each is rough, harms nothing a look wouldn't catch, and has a workaround. Most are planned for v0.5.0, and the last seven are fixed on `main` already.
+Each is rough, harms nothing a look wouldn't catch, and has a workaround. Most are planned for v0.5.0, and the last eight are fixed on `main` already.
 
 - `check` builds on this Mac's release unless told otherwise, `build.default`'s `host`, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--build macports-ci` checks on all three, and `build.default = "macports-ci"` makes it the default.
 - A Go port whose module moved hosts, as pomo moved from GitHub to Codeberg, is planned without naming the move. Compare the new release's `go.mod` module path with the Portfile's before `tidy`.
@@ -247,7 +247,6 @@ Each is rough, harms nothing a look wouldn't catch, and has a workaround. Most a
 - On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first Tart check of a Rust or Go port there builds rust and cargo, or go, from source: hours on a VM's two cores. The check says so before it builds, and a later check installs them from the archives dockhand kept, until cleanup forgets them. Check such a port first on the previous release, `--on tahoe`, or let the first check run.
 - `update` doesn't say when the new version no longer fetches an archive the old one did, such as a vendored crate it dropped; the Portfile keeps the old checksum lines. Read `dockhand diff` before `tidy`.
 - A fetch during `update` that a server refuses, as a 404 does, holds the branch until a file in it is edited, even once the archive is served again; a rate limit, an outage, or mirrors not yet carrying a release are fetched again at the next look. Editing a file in the port's directory releases it.
-- `logs` of a running check says it recorded no log until the target ends. `status` and `wait` show the port it's building and MacPorts' phase meanwhile.
 - `serve` has printed a check's "passed" line twice once (check-130). It hasn't recurred, and it changes nothing but the output.
 - `create` for a Go module older than go 1.17, whose go.sum names modules its go.mod doesn't, writes a draft with zero checksums and exits 0. Its `checksums_problem` names each row to add to `go.vendors`, with its lock; add them, with the checksums `port -v checksum` reports, before checking.
 - An update whose license file keeps its licenses but gains labels, copyright lines, or terms of its own, as libxkbcommon 1.13.2's did, holds, saying the file "now reads as no license that's known". Read the license file's change with `dockhand diff --source`, then `dockhand submit --branch <name>` after a look. Fixed on `main` for v0.5.0: the hold names the licenses found and quotes the added terms, and labels and copyright lines no longer count.
@@ -257,6 +256,7 @@ Each is rough, harms nothing a look wouldn't catch, and has a workaround. Most a
 - `update` refuses a port whose PortGroup reads the host while it loads, as qmake5's asks whether Xcode and an SDK are there, with "version probe is inconclusive: modeled context depends on host state", though its version line and archives read nothing of the host: LibreCAD, cpi, the PyQt5 and Qt 5 ports, and about 100 in all. Edit the version line by hand, then run `dockhand checksums <port>`. Fixed on `main` for v0.5.0.
 - `dockhand update <port>` for a port that pins its source to a commit and tracks a branch, `livecheck.type git`, as wezterm does, stops with a Go panic before it changes anything, and `update <port> <version>` refuses. `outdated` says such a port's branch has moved past its pin; edit the commit and the version by hand, as it says, then `dockhand checksums <port>`. Fixed on `main` for v0.5.0: `update` moves the pin to the branch's head, or a commit named, with the version the port's scheme gives it.
 - `tidy` commits a Portfile whose `patchfiles` names a new patch that Git doesn't track yet without the patch, and the check then fails fetching it. `git add` a new patch before `tidy`. `check` warns of an untracked file in a port it builds, but `ship` doesn't. Fixed on `main` for v0.5.0: `tidy` commits the patches `patchfiles` names with their Portfile and lists any other untracked file it leaves out, and `check`, `ship`, and `serve` refuse before a VM starts while a named patch is untracked.
+- `logs` of a running check says it recorded no log until the target ends. `status` and `wait` show the port it's building and MacPorts' phase meanwhile. Fixed on `main` for v0.5.0: `logs` says the target is building, and the step, and that `dockhand wait` follows it.
 
 ## Scope
 

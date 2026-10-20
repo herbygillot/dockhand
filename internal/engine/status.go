@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -582,6 +583,33 @@ func parseNumber(text, prefix string) (int, bool) {
 type RunLogs struct {
 	Run        model.Run
 	Executions []ExecutionLogs
+	// Progress is what a running run last said of its work, as "macOS 26
+	// (Tahoe) arm64: building gnome-voice: configure".
+	Progress string
+}
+
+// Building reports whether the run's progress says it's building port,
+// with the step under way, as the Tart provider says it ("building jq (2
+// of 5): fetch"; tart.buildingWords): logs of a running target said it
+// "recorded no log", which read as a failure (the gnome-voice session's
+// notes, 2026-10-20).
+func (l RunLogs) Building(port string) (phase string, ok bool) {
+	if l.Run.State != model.RunRunning {
+		return "", false
+	}
+	_, rest, found := strings.Cut(l.Progress, "building "+port)
+	if !found || rest != "" && rest[0] != ' ' && rest[0] != ':' && rest[0] != ';' {
+		return "", false
+	}
+	if strings.HasPrefix(rest, " (") {
+		if _, after, closed := strings.Cut(rest, ")"); closed {
+			rest = after
+		}
+	}
+	if after, stepped := strings.CutPrefix(rest, ": "); stepped {
+		phase, _, _ = strings.Cut(after, ";")
+	}
+	return strings.TrimSpace(phase), true
 }
 
 // ExecutionLogs are one execution's results and where its logs are.
@@ -609,6 +637,15 @@ func (e *Engine) Logs(ctx context.Context, id model.RunID) (RunLogs, error) {
 		var err error
 		if logs.Run, err = r.Run(id); err != nil {
 			return err
+		}
+		if logs.Run.State == model.RunRunning {
+			event, found, err := r.LatestRunEvent(id, model.EventProgress)
+			if err != nil {
+				return err
+			}
+			if found {
+				logs.Progress = event.Message
+			}
 		}
 		plan, err := r.Plan(logs.Run.Plan)
 		if err != nil {
