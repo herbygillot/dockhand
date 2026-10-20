@@ -174,6 +174,9 @@ func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) (Baselin
 	if worthy, offer.NewTests, err = e.testsNewHere(ctx, checked, evidence, worthy); err != nil || len(worthy) == 0 {
 		return offer, err
 	}
+	if worthy, err = e.readsChanged(ctx, checked, evidence, worthy); err != nil || len(worthy) == 0 {
+		return offer, err
+	}
 	targets, _, _, err := e.atBase(ctx, checked.Source.Base, evidence, worthy)
 	if err != nil || len(targets) == 0 {
 		return offer, err
@@ -183,6 +186,92 @@ func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) (Baselin
 	}
 	offer.Base = checked.Source.Base
 	return offer, nil
+}
+
+// readsChanged are the ports, of those a baseline would rebuild, whose
+// build reads something the branch changes: its own directory,
+// _resources, or a port of its dependency closure, by the revision's port
+// index. One that reads only what master has is master's build already,
+// so a baseline can tell nothing: gnome-voice's check-484, of a branch
+// that builds it --also unchanged, offered one (field testing,
+// 2026-10-20). An --also dependent of a port the branch changes builds
+// against the change, and keeps its offer. Where the closure can't be
+// read, a port is kept.
+func (e *Engine) readsChanged(ctx context.Context, checked model.Revision, evidence Evidence, ports []string) ([]string, error) {
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(checked.Source.Base)})
+	if err != nil {
+		return nil, err
+	}
+	changed, err := e.Repo.ChangedPaths(ctx, trees[string(checked.Source.Base)], string(checked.Source.Tree))
+	if err != nil {
+		return nil, err
+	}
+	var directories []string
+	for _, path := range changed {
+		if path == macports.ResourcesDirectory || strings.HasPrefix(path, macports.ResourcesDirectory+"/") {
+			return ports, nil
+		}
+		if directory, ok := macports.PortDirectoryOf(path); ok && !slices.Contains(directories, directory) {
+			directories = append(directories, directory)
+		}
+	}
+	// The ports the changed directories define, in lower case, as the
+	// index's graph names them.
+	names := map[string]bool{}
+	var graph map[string][]string
+	if len(directories) > 0 {
+		defined := e.portsDefined(ctx, checked.Source, directories)
+		reader, err := e.portReader()
+		graphs, ok := reader.(dependencyGraphReader)
+		if defined == nil || err != nil || !ok {
+			return ports, nil
+		}
+		if graph, err = graphs.DependencyGraph(ctx, checked.Source); err != nil {
+			return ports, nil
+		}
+		for _, all := range defined {
+			for _, name := range all {
+				names[strings.ToLower(name)] = true
+			}
+		}
+	}
+	var kept []string
+	for _, port := range ports {
+		i := slices.IndexFunc(evidence.Targets, func(target TargetEvidence) bool { return string(target.Target.ID) == port })
+		if i < 0 {
+			kept = append(kept, port)
+			continue
+		}
+		target := evidence.Targets[i].Target
+		if slices.Contains(directories, target.Directory) || closureReaches(graph, target.Target.Name, target.Target.Subport, names) {
+			kept = append(kept, port)
+		}
+	}
+	return kept, nil
+}
+
+// closureReaches reports whether a port's dependency closure in graph
+// holds one of names, all in lower case.
+func closureReaches(graph map[string][]string, name, subport string, names map[string]bool) bool {
+	if subport != "" {
+		name = subport
+	}
+	seen := map[string]bool{}
+	queue := []string{strings.ToLower(name)}
+	for len(queue) > 0 {
+		next := queue[0]
+		queue = queue[1:]
+		for _, dependency := range graph[next] {
+			if names[dependency] {
+				return true
+			}
+			if !seen[dependency] {
+				seen[dependency] = true
+				queue = append(queue, dependency)
+			}
+		}
+	}
+	return false
 }
 
 // testsNewHere sets apart, of the ports a baseline would rebuild, those

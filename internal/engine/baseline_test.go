@@ -256,3 +256,62 @@ func TestTestsNewOnTheBranchAreNoBaselines(t *testing.T) {
 	require.False(t, onlyTestsFailed(installFailed))
 	require.Equal(t, "exiv2's tests are new on this branch, and master declares none, so a baseline has nothing to compare", NewTestsWords([]string{"exiv2"}))
 }
+
+// namedGraph reads the port index's graph and the ports each directory
+// defines.
+type namedGraph struct {
+	graphPorts
+	defined map[string][]string
+}
+
+func (n namedGraph) PortsDefined(_ context.Context, _ model.Source, directories []string) (map[string][]string, error) {
+	found := map[string][]string{}
+	for _, directory := range directories {
+		found[directory] = n.defined[directory]
+	}
+	return found, nil
+}
+
+// A port whose build reads only what master has, its own directory,
+// _resources, and its dependency closure, is master's build already, and
+// a baseline can tell nothing of it: gnome-voice's check-484, built --also
+// unchanged, offered one (field testing, 2026-10-20). An --also dependent
+// of a port the branch changes builds against the change, and keeps its
+// offer; so does the changed port itself, and every port where
+// _resources changes.
+func TestABaselineIsOfferedOnlyWhereTheBuildReadsTheBranch(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := twoPortBranch(t, e)
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+	require.NoError(t, err)
+	e.PortReader = namedGraph{
+		graphPorts: graphPorts{graph: map[string][]string{"harbor-cli": {"zlib"}, "zlib": {"libharbor"}, "gnome-voice": {"gtk3"}, "gtk3": {"glib2"}}},
+		defined:    map[string][]string{"textproc/jq": {"jq"}, "devel/libharbor": {"libharbor"}},
+	}
+	target := func(id, directory string) TargetEvidence {
+		return TargetEvidence{Target: model.PlanTarget{ID: model.TargetID(id), Directory: directory, Target: model.Target{Name: id}}}
+	}
+	evidence := Evidence{Targets: []TargetEvidence{target("jq", "textproc/jq"), target("harbor-cli", "devel/harbor-cli"), target("gnome-voice", "audio/gnome-voice")}}
+	kept, err := e.readsChanged(t.Context(), capture.Revision, evidence, []string{"jq", "harbor-cli", "gnome-voice"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"jq", "harbor-cli"}, kept, "gnome-voice reads nothing the branch changes; harbor-cli reads libharbor through zlib")
+
+	// With no graph to read, every port is kept.
+	e.PortReader = namedGraph{defined: map[string][]string{"textproc/jq": {"jq"}, "devel/libharbor": {"libharbor"}}}
+	kept, err = e.readsChanged(t.Context(), capture.Revision, evidence, []string{"jq", "harbor-cli", "gnome-voice"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"jq", "harbor-cli", "gnome-voice"}, kept)
+
+	// Where _resources changes, every port's build reads it.
+	write(t, branch.Worktree, map[string]string{"_resources/port1.0/group/harbor-1.0.tcl": "# harbor\n"})
+	testsupport.Git(t, branch.Worktree, "add", "_resources/port1.0/group/harbor-1.0.tcl")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "harbor 1.0: new PortGroup")
+	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+	require.NoError(t, err)
+	e.PortReader = namedGraph{graphPorts: graphPorts{graph: map[string][]string{}}, defined: map[string][]string{}}
+	kept, err = e.readsChanged(t.Context(), capture.Revision, evidence, []string{"gnome-voice"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"gnome-voice"}, kept)
+}

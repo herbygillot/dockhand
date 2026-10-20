@@ -41,3 +41,13 @@ Next's fixes from the gnome-voice session's field notes (placed in
   (`dependencyArchivesPerPort`). The line now says the archives too where
   they differ: "up to 221 dependencies from archives earlier checks kept
   (223 archives, the newest two of some)" (`offeredWords`).
+- check-484's report offered `check --baseline` for gnome-voice, which the
+  branch builds `--also` unchanged, so master's build of it was the one
+  that failed already (59ac0b17). `BaselineCandidates` (engine/baseline.go)
+  now leaves out a target whose build reads only what master has
+  (`readsChanged`). That means its own directory, `_resources`, and every
+  port of its dependency closure by the revision's port index are the same
+  at the base as at the checked revision. An `--also` dependent of a
+  changed port keeps its offer. Where the graph or the changed directories'
+  ports can't be read, every target is kept. With none left, the hint
+  isn't shown, and check.baseline doesn't run one.
