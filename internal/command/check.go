@@ -523,7 +523,9 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 		streams.emit(result)
 	}
 	fmt.Fprintln(out)
-	writeResults(out, "  ", evidence, false)
+	// The releases a profile chose not to build on are left out, as the
+	// pull request leaves them out.
+	writeResults(out, "  ", evidence, evidence.Shown(), false)
 	revision, err := e.Revision(ctx, run.Revision)
 	if err != nil {
 		return err
@@ -665,11 +667,8 @@ func hintBaseline(ctx context.Context, e *engine.Engine, out io.Writer, run mode
 // On several it is a grid, a row per target and a column per environment
 // headed by its release, macOS 26, since the plan named the environments
 // in full.
-func writeResults(out io.Writer, indent string, evidence engine.Evidence, where bool) {
+func writeResults(out io.Writer, indent string, evidence engine.Evidence, shown []int, where bool) {
 	environments := evidence.Plan.Environments
-	// The releases a profile chose not to build on are left out, as the
-	// pull request leaves them out.
-	shown := evidence.Shown()
 	if len(shown) <= 1 {
 		width := 0
 		for _, target := range evidence.Targets {

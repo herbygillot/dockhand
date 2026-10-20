@@ -209,7 +209,7 @@ func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
 		{Target: targets[1], Outcomes: cells([]model.TargetResult{passed, failed})},
 	}}
 	var out bytes.Buffer
-	writeResults(&out, "  ", evidence, false)
+	writeResults(&out, "  ", evidence, evidence.Shown(), false)
 	require.Equal(t, "  PORT          macOS 26   macOS 15\n"+
 		"  flatbuffers   ✓          ✓\n"+
 		"  libsigmf      ✓          ✗ failed at install\n", out.String())
@@ -218,10 +218,10 @@ func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
 	evidence.Targets = evidence.Targets[:1]
 	evidence.Targets[0].Outcomes = cells([]model.TargetResult{passed})
 	out.Reset()
-	writeResults(&out, "  ", evidence, false)
+	writeResults(&out, "  ", evidence, evidence.Shown(), false)
 	require.Equal(t, "  flatbuffers  ✓\n", out.String())
 	out.Reset()
-	writeResults(&out, "  ", evidence, true)
+	writeResults(&out, "  ", evidence, evidence.Shown(), true)
 	require.Equal(t, "  flatbuffers  tart macOS 26 (Tahoe) arm64 ✓\n", out.String())
 }
 

@@ -508,6 +508,22 @@ func (e Evidence) Shown() []int {
 	return shown
 }
 
+// Checked are the environments of Shown that a check of the files
+// planned, by index, leaving out those build.default's profile requires
+// and no check planned (Plan), whose cells are all not run: status showed
+// "macOS 26 · not run" for a branch only ever checked on 12 and 27, from
+// a Mac on 26 (field testing's exiv2, 2026-10-20). They're what's left to
+// check, which submit says, not a result.
+func (e Evidence) Checked() []int {
+	var checked []int
+	for _, i := range e.Shown() {
+		if slices.ContainsFunc(e.Plan.Builds, func(build model.EnvironmentPlan) bool { return build.Environment == e.Plan.Environments[i] }) {
+			checked = append(checked, i)
+		}
+	}
+	return checked
+}
+
 // Checks name the checks the evidence's runs were in, check-11, by ID,
 // and the checks that built what they reused.
 func (e Evidence) Checks() map[model.RunID]string {

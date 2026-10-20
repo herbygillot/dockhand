@@ -309,3 +309,20 @@ func TestATableLeavesOutWhatNothingWasBuiltOn(t *testing.T) {
 	none := Evidence{Plan: model.Plan{Environments: make([]model.Environment, 2)}, Targets: []TargetEvidence{{Outcomes: []Cell{spanned, spanned}}}}
 	require.Equal(t, []int{0, 1}, none.Shown(), "a table with nothing else shows what it has")
 }
+
+// A release build.default's profile requires and no check of the files
+// planned is left out of what status shows: a branch only ever checked on
+// 12 and 27, from a Mac on 26, showed "macOS 26 · not run" (field
+// testing's exiv2, 2026-10-20). The release a check planned and didn't
+// reach stays, not run.
+func TestWhatStatusShowsIsWhatChecksPlanned(t *testing.T) {
+	twelve := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
+	twentySix := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	twentySeven := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}}
+	plan := Plan(model.Plan{Environments: []model.Environment{twelve, twentySeven}, Builds: []model.EnvironmentPlan{{Environment: twelve}, {Environment: twentySeven}}}, nil, []model.Environment{twentySix})
+	require.Equal(t, []model.Environment{twelve, twentySeven, twentySix}, plan.Environments, "the required release is the evidence's, for submit to say")
+	notRun := Cell{Kind: CellNotRun}
+	e := Evidence{Plan: plan, Targets: []TargetEvidence{{Outcomes: []Cell{notRun, {Kind: CellRecorded}, notRun}}}}
+	require.Equal(t, []int{0, 1, 2}, e.Shown())
+	require.Equal(t, []int{0, 1}, e.Checked(), "macOS 12, planned and not reached, stays; 26, never planned, goes")
+}
