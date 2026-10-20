@@ -616,7 +616,7 @@ func (s *Service) portGroupChecksums(ctx context.Context, input *sourceInput) er
 				continue
 			}
 			_, err := portfile.LocateDeclaration(input.data, input.portfileIn(observed.Snapshot.Root), declaration)
-			if group := new(portfile.InPortGroup); errors.As(err, &group) {
+			if group := new(portfile.InPortGroup); errors.As(err, &group) && !portfile.WritesChecksums(input.data, declaration.Values) {
 				return &distfiles.Unlocated{Reason: group}
 			}
 		}

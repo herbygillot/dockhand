@@ -234,6 +234,54 @@ func (g *InPortGroup) Error() string {
 
 func (g *InPortGroup) Unwrap() error { return ErrUnsupported }
 
+// WritesChecksums reports whether the Portfile writes every checksum a
+// declaration carries, its values as checksums takes them ("file sha256
+// <hex> size <n>"), as words of its own: rust 1.0's checksums-append
+// carries each cargo.crates row's sha256, which the Portfile writes and an
+// update regenerates, where crossbinutils 1.0's carries a row of its own
+// table. A PortGroup's command that carries the Portfile's checksums is the
+// Portfile's to change, though the PortGroup makes it: refused as the
+// PortGroup's, every cargo port's update stopped (field testing on
+// 5a727e00, purl, fakecloud, and wasmtime). A size alone is no checksum
+// the Portfile need write.
+func WritesChecksums(src []byte, values []string) bool {
+	var fields []string
+	for _, value := range values {
+		fields = append(fields, strings.Fields(value)...)
+	}
+	var sums []string
+	for i := 0; i+1 < len(fields); i++ {
+		switch fields[i] {
+		case "sha256", "rmd160", "sha1", "md5":
+			sums = append(sums, fields[i+1])
+			i++
+		}
+	}
+	if len(sums) == 0 {
+		return false
+	}
+	script, errs := syntax.Parse(src)
+	if len(errs) != 0 {
+		return false
+	}
+	written := map[string]bool{}
+	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
+		for _, word := range cmd.Words {
+			if value, literal := word.Literal(src); literal {
+				for _, field := range strings.Fields(value) {
+					written[field] = true
+				}
+			}
+		}
+	}
+	for _, sum := range sums {
+		if !written[sum] {
+			return false
+		}
+	}
+	return true
+}
+
 // portGroupFile is a PortGroup's file, <name>-<version>.tcl in a
 // port1.0/group directory.
 var portGroupFile = regexp.MustCompile(`(?:^|/)(_resources/port1\.0/group/([A-Za-z0-9_+-]+)-([0-9][0-9.]*)\.tcl)$`)

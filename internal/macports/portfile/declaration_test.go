@@ -142,3 +142,27 @@ func TestADeclarationAPortGroupMakesIsThePortGroups(t *testing.T) {
 	require.ErrorAs(t, err, &inGroup)
 	require.Equal(t, &portfile.InPortGroup{Group: "crossgcc 1.0", File: "_resources/port1.0/group/crossgcc-1.0.tcl", Line: 200, Tables: []string{"crossgcc.versions_info"}}, inGroup)
 }
+
+// rust 1.0's checksums-append carries each cargo.crates row's sha256, which
+// the Portfile writes: it's the Portfile's to change, where crossbinutils
+// 1.0's table row isn't (field testing on 5a727e00: every cargo port's
+// update was refused as the PortGroup's).
+func TestChecksumsThePortfileWritesAreItsOwn(t *testing.T) {
+	t.Parallel()
+	src := []byte(`PortSystem 1.0
+PortGroup rust 1.0
+github.setup ggml-org purl 0.2.12 v
+checksums ${distname}${extract.suffix} \
+          rmd160 1111111111111111111111111111111111111111 \
+          sha256 2222222222222222222222222222222222222222222222222222222222222222 \
+          size 1000
+cargo.crates \
+    adler2 2.0.0 512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627 \
+    anyhow 1.0.86 b3d1d046238990b9cf5bcde22a3fb3584ee5cf65fb2765f454ed428c7a0063da
+`)
+	crate := []string{"adler2-2.0.0.crate", "sha256", "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"}
+	require.True(t, portfile.WritesChecksums(src, crate))
+	require.True(t, portfile.WritesChecksums(src, []string{"adler2-2.0.0.crate sha256 512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"}), "one value or many")
+	require.False(t, portfile.WritesChecksums(src, []string{"binutils-2.47.tar.xz", "sha256", "aaaa", "size", "1000"}), "a table's row")
+	require.False(t, portfile.WritesChecksums(src, []string{"x.tar.gz", "size", "1000"}), "a size alone")
+}
