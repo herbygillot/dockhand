@@ -59,6 +59,7 @@ act() {
 	dir=$MACPORTS_TREE
 	: >"$ROW_DIR/a10.notrun"
 	: >"$ROW_DIR/a10.failed"
+	: >"$ROW_DIR/a10.refused"
 	while IFS= read -r line; do
 		case "$line" in
 		'cd "$(dockhand path '*)
@@ -154,8 +155,18 @@ act() {
 				# should, and A10 runs check only as --plan; rc5 passed only by
 				# finding A4's checked branch (the rc6 full stage).
 				printf '%s: needs a finished check, and A10 runs check only as its plan\n' "$line" >>"$ROW_DIR/a10.notrun"
-			elif tail -c +"$((before + 1))" "$ROW_DIR/out.log" | grep -q 'no Tart image for macOS .*: dockhand setup tart'; then
-				printf '%s: needs a Tart image the stage hasn'"'"'t made: %s\n' "$line" "$(tail -c +"$((before + 1))" "$ROW_DIR/out.log" | grep -o 'no Tart image for macOS [^:]*' | head -1)" >>"$ROW_DIR/a10.notrun"
+			elif [ "$verb" = logs ] && tail -c +"$((before + 1))" "$ROW_DIR/out.log" | grep -q 'has no check yet'; then
+				# logs in a worktree whose branch has no check says so, as it
+				# should, and A10 runs check only as --plan (the rc5 rerun).
+				printf '%s: needs a check, and A10 runs check only as its plan\n' "$line" >>"$ROW_DIR/a10.notrun"
+			elif tail -c +"$((before + 1))" "$ROW_DIR/out.log" | grep -q 'dockhand setup tart'; then
+				# A refusal naming the setup that makes the image ran as
+				# written: the line is right, and this Mac lacks the image.
+				# The grep wanted "…: dockhand setup tart" where the provider
+				# says "…; run dockhand setup tart sequoia", and failed the
+				# M1's --on sequoia and --on tahoe, refused rightly with only
+				# macOS 27's images (the rc5 A10 rerun, 2026-10-20).
+				printf '%s: refused, naming %s\n' "$line" "$(tail -c +"$((before + 1))" "$ROW_DIR/out.log" | grep -o 'dockhand setup tart[^ ;,]*\( [a-z][a-z-]*\)\{0,1\}' | head -1)" >>"$ROW_DIR/a10.refused"
 			else
 				printf '%s (run as dockhand %s, in %s)\n' "$line" "$words" "$dir" >>"$ROW_DIR/a10.failed"
 			fi
@@ -177,6 +188,6 @@ assert() {
 	if [ -s "$ROW_DIR/a10.failed" ]; then
 		row_fail "examples that didn't run as written: $(tr '\n' ';' <"$ROW_DIR/a10.failed")"
 	else
-		row_pass "every example ran; not run here: $(wc -l <"$ROW_DIR/a10.notrun" | tr -d ' ')"
+		row_pass "every example ran; refused for a Tart image this Mac lacks, as written: $(wc -l <"$ROW_DIR/a10.refused" | tr -d ' '); not run here: $(wc -l <"$ROW_DIR/a10.notrun" | tr -d ' ')"
 	fi
 }
