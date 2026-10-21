@@ -79,8 +79,12 @@ import (
 // ratty's read as removed (field testing at beb6e7bc). 22: a Python
 // project's PEP 517 backend moving holds, unless the Portfile names it.
 // 23: a license file's copyright lines and license labels no license
-// matches aren't counted against the licenses found (libxkbcommon).
-const Policy = 23
+// matches aren't counted against the licenses found (libxkbcommon). 24:
+// the build files of the directories below worksrcpath a port's build
+// reads them from, as i2pd's cmake.source_dir, build/, are compared too,
+// so a stale "no build file changes" is made again (field testing at
+// c643559a).
+const Policy = 24
 
 // Input is what one port's assessment reads.
 type Input struct {

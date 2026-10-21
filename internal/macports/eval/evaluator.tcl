@@ -142,14 +142,16 @@ namespace eval ::dockhand {
             # code checksum writes it: a PEP 517 port's build.pre_args is its
             # build target, "--wheel --outdir <workpath>", and two evaluations
             # of one port read as build.pre_args changed (pyinfra, field
-            # testing at 30eaf4cc). cargo.dir and patch.dir keep their paths,
-            # which are read against worksrcpath below.
+            # testing at 30eaf4cc). The directory options keep their paths,
+            # which are read against worksrcpath below: cargo.dir, patch.dir,
+            # and the build systems' build.dir, cmake.source_dir, and
+            # configure.dir (macports.BuildDirectories).
             set placeless [::dockhand::placeholders $worker]
             foreach field $::dockhand::read_options {
                 if {[$worker eval [list exists $field]]} {
                     if {[catch {$worker eval [list option $field]} value]} {
                         dict set failures $field $value
-                    } elseif {$field in {cargo.dir patch.dir}} {
+                    } elseif {$field in {cargo.dir patch.dir build.dir cmake.source_dir configure.dir}} {
                         dict set out $field $value
                     } else {
                         dict set out $field [string map $placeless $value]
@@ -242,7 +244,7 @@ namespace eval ::dockhand {
             } else {
                 dict set failures dockhand.metadata_only "cannot tell whether the port builds anything: $value"
             }
-            foreach field {cargo.dir patch.dir} {
+            foreach field {cargo.dir patch.dir build.dir cmake.source_dir configure.dir} {
                 if {![dict exists $out $field]} { continue }
                 set source [$worker eval {file normalize [option worksrcpath]}]
                 set directory [file normalize [dict get $out $field]]
@@ -250,6 +252,11 @@ namespace eval ::dockhand {
                     dict set out $field @worksrc@
                 } elseif {[string first "${source}/" $directory] == 0} {
                     dict set out $field "@worksrc@/[string range $directory [expr {[string length $source] + 1}] end]"
+                } else {
+                    # Outside it, as CMake's build.dir, ${workpath}/build, is,
+                    # the build directory is written <build>, so two
+                    # evaluations of one port read alike.
+                    dict set out $field [string map $placeless [dict get $out $field]]
                 }
             }
             if {[catch {fetch_details $worker} fetch]} {

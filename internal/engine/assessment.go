@@ -507,7 +507,7 @@ func (e *Engine) readCommits(ctx context.Context, infos [2]macports.PortInfo, ha
 			return nil, nil, fmt.Sprintf("%s git.branch is an abbreviated commit, %s, which only a clone expands", which, resolved.Abbreviation), false
 		}
 		commits[side] = string(resolved.Commit)
-		spec := project.Spec{Subdirectory: macports.SourceSubdirectory(info.Options["worksrcdir"])}
+		spec := info.ReadingSpec()
 		key := commitKey(commits[side])
 		if reading, ok := e.readings().Kept(key, spec); ok {
 			readings[side] = reading
@@ -623,7 +623,7 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 			continue
 		}
 		sides[i] = side{info: infos[i], plan: plans[i], declared: distfetch.Declared(infos[i].Options["checksums"]),
-			spec: project.Spec{Subdirectory: macports.SourceSubdirectory(infos[i].Options["worksrcdir"])}, readings: map[string]project.Reading{}}
+			spec: infos[i].ReadingSpec(), readings: map[string]project.Reading{}}
 	}
 	digest := func(s side, name string) string {
 		if sum, ok := s.declared[name]; ok {

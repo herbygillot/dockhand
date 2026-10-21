@@ -363,3 +363,12 @@ func TestLabelsAndCopyrightLinesAreNoLicensesWords(t *testing.T) {
 	added := mit + "\nIn addition, the authors ask that any product using this Software display a notice crediting them in its documentation, its about screen, its website, and any advertising, for as long as the product is offered, and that they be told of each use. A product sold for profit must also pay the authors a fee agreed with them in writing before its first sale, and must not be used in any system that decides on a person's credit, housing, or employment without a review by a person.\n"
 	require.False(t, File{Data: []byte(added)}.License().Known(), "a paragraph of terms beside a license still holds")
 }
+
+// The directories a port's build reads build files from are read too, for
+// their build files alone: i2pd's build/CMakeLists.txt (field testing at
+// c643559a).
+func TestTheBuildsDirectoriesAreRead(t *testing.T) {
+	files := map[string]string{"i2pd-3.0.0/LICENSE": "", "i2pd-3.0.0/configure.ac": "", "i2pd-3.0.0/build/CMakeLists.txt": "", "i2pd-3.0.0/build/sub/CMakeLists.txt": "", "i2pd-3.0.0/docs/CMakeLists.txt": ""}
+	require.Equal(t, []string{"LICENSE", "configure.ac"}, names(read(t, files, Spec{})))
+	require.Equal(t, []string{"LICENSE", "build/CMakeLists.txt", "configure.ac"}, names(read(t, files, Spec{Directories: []string{"build", "/build/", "../.."}})))
+}

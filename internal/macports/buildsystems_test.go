@@ -49,3 +49,23 @@ func TestTheSubdirectoryAPortBuildsIn(t *testing.T) {
 	require.False(t, GOPATHLayout("uni-2.10.0"))
 	require.True(t, GOPATHLayout("gopath/src/github.com/cli/cli/v2"))
 }
+
+// A port's build reads its build files where its build systems name, below
+// worksrcpath: i2pd's cmake.source_dir, build/. One at worksrcpath, or
+// outside it, names none, and an option of a build system the port
+// doesn't use is no build's (field testing at c643559a).
+func TestTheDirectoriesAPortsBuildReads(t *testing.T) {
+	t.Parallel()
+	port := func(groups string, options map[string]string) PortInfo {
+		options["dockhand.portgroups"] = groups
+		options["use_configure"] = "no"
+		options["worksrcdir"] = "i2pd-2.61.0"
+		return PortInfo{Options: options}
+	}
+	i2pd := port("github cmake", map[string]string{"cmake.source_dir": "@worksrc@/build", "build.dir": "<build>/work/build", "configure.dir": "@worksrc@"})
+	require.Equal(t, []string{"build"}, i2pd.BuildDirectories(), "build.dir, outside, and configure.dir, at the top, name none")
+	require.Equal(t, project.Spec{Subdirectory: "", Directories: []string{"build"}}, i2pd.ReadingSpec())
+	mixed := port("python cargo", map[string]string{"build.dir": "@worksrc@/bindings/python", "cargo.dir": "@worksrc@/rust/", "cmake.source_dir": "@worksrc@/unused"})
+	require.Equal(t, []string{"bindings/python", "rust"}, mixed.BuildDirectories())
+	require.Empty(t, port("github", map[string]string{"cmake.source_dir": "@worksrc@/build"}).BuildDirectories())
+}

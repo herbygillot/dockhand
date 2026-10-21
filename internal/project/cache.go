@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 )
@@ -19,8 +20,9 @@ import (
 // members' Cargo.toml files. 4: the files a CMakeLists.txt include()s.
 // 5: the archive's directories, to DirectoryDepth deep. 6: every
 // Makefile.am's libtool version (LibraryVersions). 7: Cargo's
-// src/main.rs files (Programs).
-const ReaderVersion = 7
+// src/main.rs files (Programs). 8: the build files of the directories
+// below the root a port's build reads them from (Spec.Directories).
+const ReaderVersion = 8
 
 // Cache keeps readings on disk by what they read: an archive's content, by
 // its sha256, and where in it the project is, with the reader's version
@@ -43,7 +45,7 @@ func (c Cache) file(digest string, spec Spec) (string, bool) {
 	if c.Directory == "" || !sha256Hex.MatchString(digest) {
 		return "", false
 	}
-	key := sha256.Sum256(fmt.Appendf(nil, "%d\x00%s\x00%s", ReaderVersion, digest, spec.subdirectory()))
+	key := sha256.Sum256(fmt.Appendf(nil, "%d\x00%s\x00%s\x00%s", ReaderVersion, digest, spec.subdirectory(), strings.Join(spec.directories(""), "\x00")))
 	return filepath.Join(c.Directory, hex.EncodeToString(key[:])+".json"), true
 }
 

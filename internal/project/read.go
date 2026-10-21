@@ -19,12 +19,52 @@ import (
 // itself. It's the caller's to know, from how the port is built.
 type Spec struct {
 	Subdirectory string
+	// Directories are those below the project's root that its build reads
+	// build files from too, as a port's cmake.source_dir names one
+	// (macports.PortInfo.BuildDirectories): i2pd builds from build/, and
+	// its build/CMakeLists.txt wasn't read (field testing at c643559a).
+	Directories []string
 }
 
 // subdirectory is the spec's subdirectory as a path below the top, however
 // it was written: "/bindings/python/" is bindings/python.
 func (s Spec) subdirectory() string {
 	return strings.Trim(path.Clean("/"+s.Subdirectory), "/")
+}
+
+// directories are the spec's Directories as paths below root, cleaned,
+// each once, leaving out root itself and any that would leave it.
+func (s Spec) directories(root string) []string {
+	var found []string
+	for _, directory := range s.Directories {
+		directory = strings.Trim(path.Clean("/"+directory), "/")
+		if directory == "" {
+			continue
+		}
+		if joined := path.Join(root, directory); !slices.Contains(found, joined) {
+			found = append(found, joined)
+		}
+	}
+	slices.Sort(found)
+	return found
+}
+
+// wantedIn reports whether a reading keeps a path: at the top or the
+// root (wanted), or a build file of one of the build's directories below
+// it (buildFileIn).
+func wantedIn(rest, root string, directories []string) bool {
+	return wanted(rest, "") || root != "" && wanted(rest, root) || buildFileIn(rest, directories)
+}
+
+// buildFileIn reports a build file or manifest at the top of one of the
+// directories: what the build reads there, not its licenses or the rest.
+func buildFileIn(rest string, directories []string) bool {
+	for _, directory := range directories {
+		if below, ok := strings.CutPrefix(rest, directory+"/"); ok && !strings.Contains(below, "/") && (BuildFile(below) || Manifest(below) || below == CargoLock) {
+			return true
+		}
+	}
+	return false
 }
 
 // Layout is how an archive holds its files.
@@ -198,6 +238,7 @@ func ReadFile(filename, name string) (Reading, error) {
 // Ambiguous, which the caller says.
 func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 	subdirectory := spec.subdirectory()
+	buildDirectories := spec.directories(subdirectory)
 	// Each file any layout could keep, by its whole path, and what's
 	// learned of the layout on the way.
 	candidates := map[string]File{}
@@ -248,12 +289,12 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 			}
 			// What a reading keeps of the root's own is read from these
 			// bytes, the member's body being read once.
-			if wanted(name, subdirectory) || wanted(name, "") || nested && (wanted(rest, subdirectory) || wanted(rest, "")) {
+			if wantedIn(name, subdirectory, buildDirectories) || nested && wantedIn(rest, subdirectory, buildDirectories) {
 				keep[name] = File{Data: data, Truncated: len(data) >= FileLimit}
 			}
 			return nil
 		}
-		if !wanted(name, subdirectory) && !wanted(name, "") && (!nested || !wanted(rest, subdirectory) && !wanted(rest, "")) {
+		if !wantedIn(name, subdirectory, buildDirectories) && (!nested || !wantedIn(rest, subdirectory, buildDirectories)) {
 			switch {
 			case path.Base(name) == "Cargo.toml":
 				keep = manifests
@@ -337,7 +378,7 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 				continue
 			}
 		}
-		if wanted(rest, found.Root) {
+		if wanted(rest, found.Root) || buildFileIn(rest, spec.directories(found.Root)) {
 			found.Files[rest] = file
 		}
 	}

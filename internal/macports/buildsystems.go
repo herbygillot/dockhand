@@ -49,6 +49,50 @@ func (p PortInfo) BuildSystems() ([]project.System, bool) {
 	return systems, len(systems) > 0
 }
 
+// WorksrcPlaceholder is how the evaluator writes ${worksrcpath} at the
+// start of a directory option it reads against it, as cargo.dir and
+// patch.dir: "@worksrc@/sub".
+const WorksrcPlaceholder = "@worksrc@"
+
+// buildDirectoryOptions are the options naming the directory each build
+// system reads its build files from: CMake's source directory, the
+// configure script's for Autotools and Meson, whose source directory it
+// is, and the build's for Cargo, Go, Python, and Perl.
+var buildDirectoryOptions = map[project.System]string{
+	project.CMake: "cmake.source_dir", project.Autotools: "configure.dir", project.Meson: "configure.dir",
+	project.Cargo: "cargo.dir", project.Go: "build.dir", project.Python: "build.dir", project.Perl: "build.dir",
+}
+
+// BuildDirectories are the directories below worksrcpath that the port's
+// build systems (BuildSystems) read their build files from, as the
+// evaluator writes them, "@worksrc@/build" for i2pd's cmake.source_dir:
+// "build", each once. None for a build at worksrcpath, or one outside it.
+// i2pd's build/CMakeLists.txt went unread, and its update said no build
+// file had changed (field testing at c643559a).
+func (p PortInfo) BuildDirectories() []string {
+	systems, _ := p.BuildSystems()
+	var directories []string
+	for _, system := range systems {
+		option, ok := buildDirectoryOptions[system]
+		if !ok {
+			continue
+		}
+		below, ok := strings.CutPrefix(p.Options[option], WorksrcPlaceholder+"/")
+		if below = strings.Trim(path.Clean("/"+below), "/"); ok && below != "" && !slices.Contains(directories, below) {
+			directories = append(directories, below)
+		}
+	}
+	slices.Sort(directories)
+	return directories
+}
+
+// ReadingSpec is where a reading of the port's source looks: below its
+// worksrcdir's subdirectory (SourceSubdirectory), and in the directories
+// its build reads build files from (BuildDirectories).
+func (p PortInfo) ReadingSpec() project.Spec {
+	return project.Spec{Subdirectory: SourceSubdirectory(p.Options["worksrcdir"]), Directories: p.BuildDirectories()}
+}
+
 // GOPATHLayout reports whether worksrcdir is the Go PortGroup's default,
 // gopath/src/<go.package>, a post-extract location rather than an archive
 // path.
