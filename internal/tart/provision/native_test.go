@@ -17,7 +17,7 @@ import (
 func TestAgentReadinessReportsCancellationAndLastProbe(t *testing.T) {
 	script := filepath.Join(t.TempDir(), "tart")
 	testsupport.WriteExecutable(t, script, "#!/bin/sh\necho 'fixture agent unavailable' >&2\nexit 1\n")
-	n := newNative(Config{Executable: script}, nil)
+	n := newNative(Config{Env: os.Environ(), Executable: script}, nil)
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	err := n.ReadyAgent(ctx, "candidate")
@@ -28,7 +28,7 @@ func TestAgentReadinessReportsCancellationAndLastProbe(t *testing.T) {
 func TestAgentReadinessDetectsVMExit(t *testing.T) {
 	script := filepath.Join(t.TempDir(), "tart")
 	testsupport.WriteExecutable(t, script, "#!/bin/sh\n[ \"$1\" != run ] || echo 'fixture VM exited' >&2\nexit 1\n")
-	n := newNative(Config{Executable: script}, nil)
+	n := newNative(Config{Env: os.Environ(), Executable: script}, nil)
 	run, err := n.vm().StartForeground("candidate")
 	require.NoError(t, err)
 	<-run.Done()
@@ -49,7 +49,7 @@ exec /bin/sh -c "$1"
 `)
 	var progress bytes.Buffer
 	n := newNative(Config{}, &progress)
-	n.guests["candidate"] = &guestssh.Guest{Address: "guest", Image: "fixture", Keys: guestssh.Keys{Directory: t.TempDir()}, Executable: ssh}
+	n.guests["candidate"] = &guestssh.Guest{Env: os.Environ(), Address: "guest", Image: "fixture", Keys: guestssh.Keys{Directory: t.TempDir()}, Executable: ssh}
 	output, err := n.guestStream(t.Context(), "candidate", strings.NewReader("payload\n"), "/bin/sh", "-c", `
 cat
 printf 'diagnostic\n' >&2
@@ -74,7 +74,7 @@ func TestConfigureSizesAnASIFDiskAndEditsNothing(t *testing.T) {
 	format := filepath.Join(dir, "format")
 	testsupport.WriteExecutable(t, script, "#!/bin/sh\necho \"$*\" >> "+calls+"\nif [ \"$1\" = get ]; then printf '{\"Running\":false,\"State\":\"stopped\",\"DiskFormat\":\"%s\"}' \"$(cat "+format+")\"; fi\n")
 	require.NoError(t, os.WriteFile(format, []byte("asif"), 0o644))
-	n := newNative(Config{Executable: script, Home: dir}, nil)
+	n := newNative(Config{Env: os.Environ(), Executable: script, Home: dir}, nil)
 	require.NoError(t, n.Configure(t.Context(), "dockhand-base-golden-gate-next"))
 	recorded, err := os.ReadFile(calls)
 	require.NoError(t, err)

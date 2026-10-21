@@ -2,6 +2,7 @@ package host
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,7 +24,7 @@ shift 2
 exec 9>/dev/null
 exec "$@"
 `)
-	n := Machine{Client: tart.Client{Home: root, Executable: executable}}
+	n := Machine{Client: tart.Client{Env: os.Environ(), Home: root, Executable: executable}}
 	var output bytes.Buffer
 	argument := "spaces; $(do-not-execute) 'literal'"
 	_, err := n.Exec(t.Context(), "vm", tart.RunOptions{Input: strings.NewReader("payload\n"), Output: &output}, "/bin/sh", "-c", `

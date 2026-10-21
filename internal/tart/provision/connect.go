@@ -36,7 +36,7 @@ func (n *native) Connect(ctx context.Context, name, alias string, bootstrap bool
 		if err := keys.Forget(alias); err != nil {
 			return err
 		}
-		first := &guestssh.Guest{Address: address, Image: alias, Keys: keys, Bootstrap: true}
+		first := &guestssh.Guest{Address: address, Image: alias, Keys: keys, Bootstrap: true, Env: n.config.Env}
 		if err := n.await(ctx, name, first); err != nil {
 			return err
 		}
@@ -44,7 +44,7 @@ func (n *native) Connect(ctx context.Context, name, alias string, bootstrap bool
 			return err
 		}
 	}
-	guest := &guestssh.Guest{Address: address, Image: alias, Keys: keys}
+	guest := &guestssh.Guest{Address: address, Image: alias, Keys: keys, Env: n.config.Env}
 	if err := n.await(ctx, name, guest); err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func (n *native) PersonalImages(ctx context.Context) (map[string]image, error) {
 	if _, err := os.Stat(filepath.Join(home, "vms")); err != nil {
 		return map[string]image{}, nil
 	}
-	values, err := host.Machine{Client: tart.Client{Executable: n.config.Executable, Home: home}}.Images(ctx)
+	values, err := host.Machine{Client: tart.Client{Executable: n.config.Executable, Home: home, Env: n.config.Env}}.Images(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("setup: listing your Tart home %s: %w", home, err)
 	}
@@ -173,7 +173,7 @@ func (n *native) Import(ctx context.Context, source, destination string) error {
 	}
 	defer os.RemoveAll(scratch)
 	archive := filepath.Join(scratch, source+".tvm")
-	theirs := tart.Client{Executable: n.config.Executable, Home: home}
+	theirs := tart.Client{Executable: n.config.Executable, Home: home, Env: n.config.Env}
 	if err := n.during(ctx, "Exporting "+source, func() error {
 		_, err := theirs.Run(ctx, tart.RunOptions{Combined: true}, "export", source, archive)
 		return err

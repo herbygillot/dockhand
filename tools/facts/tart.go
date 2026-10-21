@@ -44,7 +44,7 @@ type probed struct {
 // images themselves are only ever read.
 func harvestTart(ctx context.Context, executable, out string, parallel int, images []string) error {
 	places := compose.Options{Env: os.Environ()}.TartPlaces()
-	client, err := tart.Client{Executable: executable, Home: places.Home}.Resolve()
+	client, err := tart.Client{Executable: executable, Home: places.Home, Env: os.Environ()}.Resolve()
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func probeImage(ctx context.Context, machine host.Machine, keys guestssh.Keys, s
 		return err
 	}
 	// Every clone presents its image's host keys, recorded at setup.
-	guest := &guestssh.Guest{Address: address, Image: image, Keys: keys}
+	guest := &guestssh.Guest{Address: address, Image: image, Keys: keys, Env: os.Environ()}
 	defer guest.Close(cleanup)
 	if err := guestssh.AwaitSSH(ctx, guest, run, 4*time.Minute, 5*time.Second); err != nil {
 		return err

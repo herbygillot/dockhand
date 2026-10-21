@@ -61,8 +61,9 @@ type Options struct {
 	// sandbox, a fork of MacPorts' repository that takes pull requests
 	// within itself, so its repeatable rows open nothing at MacPorts.
 	PullRequests string
-	// Tclsh is MacPorts' port-tclsh, which evaluates Portfiles;
-	// macports.FindTclsh's when empty.
+	// Tclsh is MacPorts' port-tclsh, which evaluates Portfiles: this
+	// Mac's, which compose finds (macports.FindTclsh), and none where it's
+	// empty.
 	Tclsh string
 	// MigrateUnderLive migrates the database's schema though dockhand
 	// processes that read the older one are working: a person's answer to
@@ -314,7 +315,7 @@ func (e *LiveUnderMigrationError) Unwrap() error { return e.LiveUnderMigrationEr
 
 // Tclsh is the port-tclsh the engine evaluates Portfiles with, and
 // empty where there's none: the one named, else this Mac's MacPorts'.
-func (e *Engine) Tclsh() string { return cmp.Or(e.options.Tclsh, macports.FindTclsh()) }
+func (e *Engine) Tclsh() string { return e.options.Tclsh }
 
 // Clone is the main checkout's directory, whichever worktree the engine
 // was opened in.

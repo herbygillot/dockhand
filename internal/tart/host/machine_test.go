@@ -17,7 +17,7 @@ func fixtureMachine(t *testing.T, script string) Machine {
 	root := t.TempDir()
 	executable := filepath.Join(root, "tart")
 	testsupport.WriteExecutable(t, executable, "#!/bin/sh\nset -eu\n"+script)
-	return Machine{Client: tart.Client{Executable: executable, Home: root}}
+	return Machine{Client: tart.Client{Env: os.Environ(), Executable: executable, Home: root}}
 }
 
 // Clone hands tart the image lock it holds, so the image is read-locked

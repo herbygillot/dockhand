@@ -105,7 +105,7 @@ func (n *native) Running(ctx context.Context) (int, error) {
 	if _, err := os.Stat(filepath.Join(personal, "vms")); err != nil {
 		return count, nil
 	}
-	theirs := host.Machine{Client: tartvm.Client{Executable: n.Client.Executable, Home: personal}}
+	theirs := host.Machine{Client: tartvm.Client{Executable: n.Client.Executable, Home: personal, Env: n.Client.Env}}
 	names, err := theirs.Running(ctx)
 	switch {
 	case errors.Is(err, tartvm.ErrListingBlocked):
@@ -138,7 +138,7 @@ func (n *native) Reach(ctx context.Context, vm, image string) (guest, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &guestssh.Guest{Address: address, Image: image, Keys: n.keys}, nil
+	return &guestssh.Guest{Address: address, Image: image, Keys: n.keys, Env: n.Client.Env}, nil
 }
 
 // vmName is the clone an attempt builds in: the run's, the release's, and

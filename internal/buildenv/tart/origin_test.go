@@ -20,7 +20,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	home := filepath.Join(t.TempDir(), "tart")
 	require.NoError(t, os.MkdirAll(home, 0o700))
-	provider := &Provider{Tart: tartvm.Client{Home: home}}
+	provider := &Provider{Tart: tartvm.Client{Env: os.Environ(), Home: home}}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
 	identity, err := provider.Identity(t.Context(), tahoe)
 	require.NoError(t, err)

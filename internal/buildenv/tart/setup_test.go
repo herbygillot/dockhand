@@ -2,6 +2,7 @@ package tart
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,7 +50,7 @@ func TestSetupNamesItsCost(t *testing.T) {
 	mac.images = []string{"dockhand-base-tahoe", "dockhand-golden-sonoma", "dockhand-golden-xcode-ventura"}
 	p := testProvider(mac)
 	// The provisioner finds no Tart, so it stops after the listing.
-	p.Tart = tartvm.Client{Executable: "/nonexistent/tart", Home: t.TempDir()}
+	p.Tart = tartvm.Client{Env: os.Environ(), Executable: "/nonexistent/tart", Home: t.TempDir()}
 
 	_, err := p.Setup(t.Context(), SetupOptions{Check: true, Rebuild: true}, nil)
 	require.ErrorContains(t, err, "--check and --rebuild cannot be used together")

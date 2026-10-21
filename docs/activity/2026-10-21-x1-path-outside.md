@@ -333,3 +333,33 @@ the GitHub forge's tag fallback run in it (`Options.git()`;
 `os.Environ()` where they gave no executable. git's row in the boundary
 test is down to its one `exec.CommandContext`, the batch readers' pipes,
 now started from an absolute path.
+
+## Tart, ssh, port-tclsh, the index, and the person's script, in the Env
+
+The programs the engine runs take the invocation's environment, compose
+handing it down:
+
+- `tart.Client.Env`, which `Resolve` refuses none of and `Environment`
+  builds Tart's from in place of `os.Environ()`; `provision.Config.Env`;
+  `guestssh.Guest.Env` for ssh; the Tart provider's client carries it to
+  its guests, setup's, and the person's Tart home's listing.
+- `script.Provider.Env`, the person's command's, with DOCKHAND_REQUEST
+  beside it, its `sh` found on that PATH.
+- `portindex.Config.Env`, which portindex and the launcher's runtime
+  probe run in, PORTSRC and LC_ALL set over it as before.
+- `eval.Evaluator.Env` and `shell.WithEnv`, which port-tclsh runs in.
+- `macports.FindTclsh` takes the lookup to search with, so macports
+  stays facts-only; compose finds port-tclsh on the invocation's PATH
+  into `engine.Options.Tclsh`, and the Tart provider finds it on its own
+  Env for `HostMacPorts`, which runs `port version` in that Env too.
+
+Test fixtures give `os.Environ()`; the guest's damage stand-in takes
+`FAKE_DAMAGE` through the guest's Env, not the process's. `setupPin`
+again follows the provisioning code, `SetupProtocol` 3. The boundary
+test's rows left: archive's decompressor, buildenv/script's and
+tcl/shell's process starts, buildenv/tart's and tart/host's `exec`
+starts (each from an explicit Env now), and git's batch readers; plus
+subprocess, forgetest, and the failpoints, which stay. Programs started
+outside the engine's reach (the Keychain's `security`, macOS
+notifications and launchctl, the editor) still inherit the process's
+environment, which is the invocation's in production.

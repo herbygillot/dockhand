@@ -71,7 +71,7 @@ func TestLiveAgentRegistration(t *testing.T) {
 	}
 	runtime, err := (tart.Client{}).Resolve()
 	require.NoError(t, err)
-	n := newNative(Config{Executable: runtime.Executable, Home: runtime.Home}, os.Stdout)
+	n := newNative(Config{Env: os.Environ(), Executable: runtime.Executable, Home: runtime.Home}, os.Stdout)
 	require.NoError(t, n.BootstrapAgent(t.Context(), name))
 	require.NoError(t, n.ReadyAgent(t.Context(), name))
 	require.NoError(t, n.BootstrapAgent(t.Context(), name))

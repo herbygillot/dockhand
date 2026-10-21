@@ -57,6 +57,8 @@ type Guest struct {
 	Executable string
 	// Output, when set, receives a command's output as it arrives.
 	Output io.Writer
+	// Env is the environment ssh runs in, which compose gives.
+	Env []string
 }
 
 // Command runs one command, its arguments quoted for the guest's shell,
@@ -123,7 +125,7 @@ func (g *Guest) invocation() (args, environment []string, cleanup func(), err er
 		"-o", "ServerAliveCountMax=4",
 		"-o", "LogLevel=ERROR",
 	}
-	environment = os.Environ()
+	environment = append([]string{}, g.Env...)
 	if g.Bootstrap {
 		askpass, err := scratch.Dir("askpass-")
 		if err != nil {

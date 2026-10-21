@@ -54,7 +54,7 @@ func TestLiveChannel(t *testing.T) {
 	require.NoError(t, err)
 
 	keys := guestssh.Keys{Directory: filepath.Join(t.TempDir(), "ssh")}
-	bootstrap := &guestssh.Guest{Address: address, Image: name, Keys: keys, Bootstrap: true}
+	bootstrap := &guestssh.Guest{Env: os.Environ(), Address: address, Image: name, Keys: keys, Bootstrap: true}
 	var output []byte
 	for attempt := 0; ; attempt++ {
 		output, err = bootstrap.Command(ctx, nil, "/usr/bin/true")
@@ -69,7 +69,7 @@ func TestLiveChannel(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(string(recorded), name+" "), "the host keys are recorded under the image: %s", recorded)
 
-	guest := &guestssh.Guest{Address: address, Image: name, Keys: keys}
+	guest := &guestssh.Guest{Env: os.Environ(), Address: address, Image: name, Keys: keys}
 	defer guest.Close(context.Background())
 	version, err := guest.Command(ctx, nil, "/usr/bin/sw_vers", "-productVersion")
 	require.NoError(t, err)
@@ -91,7 +91,7 @@ func TestLiveChannel(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(payload, received), "64 MiB came back intact")
 
-	stranger := &guestssh.Guest{Address: address, Image: "another-image", Keys: keys}
+	stranger := &guestssh.Guest{Env: os.Environ(), Address: address, Image: "another-image", Keys: keys}
 	_, err = stranger.Command(ctx, nil, "/usr/bin/true")
 	require.ErrorIs(t, err, guestssh.ErrTransport, "a guest is held to the host keys of the image it is named for")
 }

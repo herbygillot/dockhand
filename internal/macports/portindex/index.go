@@ -55,6 +55,9 @@ type Config struct {
 	Mirror *Mirror
 	// Bound is how long a portindex run may take; RunBound where zero.
 	Bound time.Duration `json:"-"`
+	// Env is the environment portindex and its Tcl run in, which compose
+	// gives.
+	Env []string `json:"-"`
 }
 
 // DefaultMirrorBase is the tarballs directory of the mirror the index is
@@ -139,7 +142,7 @@ func ResolveTool(ctx context.Context, c Config) (Config, error) {
 	if c.Digest != "" && c.Digest != identity {
 		return c, fmt.Errorf("portindex: executable changed after the build was accepted")
 	}
-	runtime, err := runtimeIdentity(ctx, abs)
+	runtime, err := runtimeIdentity(ctx, abs, c.Env)
 	if err != nil {
 		return c, err
 	}
@@ -149,7 +152,7 @@ func ResolveTool(ctx context.Context, c Config) (Config, error) {
 
 // runtimeIdentity names the MacPorts Base loaded by a Tcl launcher. Other
 // executables, such as test stand-ins, carry no runtime beyond their digest.
-func runtimeIdentity(ctx context.Context, executable string) (string, error) {
+func runtimeIdentity(ctx context.Context, executable string, env []string) (string, error) {
 	file, err := os.Open(executable)
 	if err != nil {
 		return "", err
@@ -168,7 +171,7 @@ func runtimeIdentity(ctx context.Context, executable string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, runtimeProbeTimeout)
 	defer cancel()
-	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "tclsh", Path: fields[0], Args: fields[1:], Stdin: strings.NewReader("package require macports\nputs [macports::version]\n"), Env: indexerEnvironment("")})
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "tclsh", Path: fields[0], Args: fields[1:], Stdin: strings.NewReader("package require macports\nputs [macports::version]\n"), Env: indexerEnvironment(env, "")})
 	if err != nil {
 		return "", fmt.Errorf("portindex: probing the MacPorts runtime of %s: %w", executable, err)
 	}
@@ -179,9 +182,9 @@ func runtimeIdentity(ctx context.Context, executable string) (string, error) {
 	return "macports-" + version, nil
 }
 
-func indexerEnvironment(configuration string) []string {
+func indexerEnvironment(base []string, configuration string) []string {
 	var env []string
-	for _, entry := range os.Environ() {
+	for _, entry := range base {
 		if !strings.HasPrefix(entry, "PORTSRC=") && !strings.HasPrefix(entry, "LC_ALL=") {
 			env = append(env, entry)
 		}
@@ -446,7 +449,7 @@ func buildPortIndex(ctx context.Context, c Config, platform model.Platform, sour
 		bound := cmp.Or(c.Bound, RunBound)
 		bounded, cancel := context.WithTimeout(ctx, bound)
 		defer cancel()
-		_, runErr := subprocess.Run(bounded, subprocess.Spec{Tool: "portindex", Path: c.Executable, Args: args, Dir: sourceRoot, Env: indexerEnvironment(configuration), Combined: true, ExtraFiles: []*os.File{guard}})
+		_, runErr := subprocess.Run(bounded, subprocess.Spec{Tool: "portindex", Path: c.Executable, Args: args, Dir: sourceRoot, Env: indexerEnvironment(c.Env, configuration), Combined: true, ExtraFiles: []*os.File{guard}})
 		if runErr != nil && ctx.Err() == nil && errors.Is(bounded.Err(), context.DeadlineExceeded) {
 			return fmt.Errorf("portindex ran past %v, so dockhand ended it: %w", bound, runErr)
 		}

@@ -34,7 +34,7 @@ func newIndexFixture(t *testing.T) *indexFixture {
 	executable := testsupport.MacPortsTool(t, "portindex")
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	f := &indexFixture{t: t, root: t.TempDir(), config: Config{Executable: executable, CacheDirectory: t.TempDir()}}
+	f := &indexFixture{t: t, root: t.TempDir(), config: Config{Env: os.Environ(), Executable: executable, CacheDirectory: t.TempDir()}}
 	f.run("init", "-q", "-b", "main")
 	var err error
 	f.repo, err = git.Open(t.Context(), f.root, git.Program{Env: os.Environ()})
@@ -557,7 +557,7 @@ func TestABaselineAndAResourcesChangeIndexPastTheBasesBrokenPorts(t *testing.T) 
 // is said once it has gone on a while (field testing at c9ad2112, where a
 // look waited unsaid).
 func TestAWaitForTheCacheIsSaid(t *testing.T) {
-	config := Config{Executable: "/bin/true", Digest: "sha256:" + strings.Repeat("0", 64), CacheDirectory: t.TempDir()}
+	config := Config{Env: os.Environ(), Executable: "/bin/true", Digest: "sha256:" + strings.Repeat("0", 64), CacheDirectory: t.TempDir()}
 	platform := model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	opened, err := openCache(t.Context(), config, platform)
 	require.NoError(t, err)

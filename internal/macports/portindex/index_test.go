@@ -34,15 +34,15 @@ func TestResolveToolProbesRuntimeOnlyForTclLaunchers(t *testing.T) {
 	t.Parallel()
 	stub := filepath.Join(t.TempDir(), "portindex")
 	testsupport.WriteExecutable(t, stub, "#!/bin/sh\nexit 0\n")
-	config, err := ResolveTool(t.Context(), Config{Executable: stub})
+	config, err := ResolveTool(t.Context(), Config{Env: os.Environ(), Executable: stub})
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(config.Digest, "sha256:"))
 	require.Empty(t, config.Runtime)
-	_, err = ResolveTool(t.Context(), Config{Executable: stub, Digest: "sha256:other"})
+	_, err = ResolveTool(t.Context(), Config{Env: os.Environ(), Executable: stub, Digest: "sha256:other"})
 	require.ErrorContains(t, err, "executable changed")
 
 	executable := testsupport.MacPortsTool(t, "portindex")
-	config, err = ResolveTool(t.Context(), Config{Executable: executable})
+	config, err = ResolveTool(t.Context(), Config{Env: os.Environ(), Executable: executable})
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(config.Runtime, "macports-"), config.Runtime)
 }
@@ -56,7 +56,7 @@ func TestAPortIndexRunPastItsBoundIsEnded(t *testing.T) {
 	testsupport.WriteExecutable(t, stub, "#!/bin/sh\nexec sleep 60\n")
 	root := t.TempDir()
 	started := time.Now()
-	err := buildPortIndex(t.Context(), Config{Executable: stub, Bound: 200 * time.Millisecond}, testPlatform, root, nil, filepath.Join(t.TempDir(), "index"), "", nil, true, nil, testGeneration())
+	err := buildPortIndex(t.Context(), Config{Env: os.Environ(), Executable: stub, Bound: 200 * time.Millisecond}, testPlatform, root, nil, filepath.Join(t.TempDir(), "index"), "", nil, true, nil, testGeneration())
 	require.ErrorContains(t, err, "portindex ran past 200ms, so dockhand ended it")
 	require.Less(t, time.Since(started), 30*time.Second)
 }
@@ -72,7 +72,7 @@ func TestPortIndexUsesPortGroupsFromFrozenSource(t *testing.T) {
 	}
 	put("_resources/port1.0/group/dockhand-index-1.0.tcl", "version 7.3\n")
 	put("devel/index-fixture/Portfile", "PortSystem 1.0\nPortGroup dockhand-index 1.0\nname index-fixture\ncategories devel\n")
-	config, err := ResolveTool(t.Context(), Config{Executable: executable})
+	config, err := ResolveTool(t.Context(), Config{Env: os.Environ(), Executable: executable})
 	require.NoError(t, err)
 	destination := filepath.Join(t.TempDir(), "index")
 	require.NoError(t, buildPortIndex(t.Context(), config, testPlatform, root, nil, destination, "", nil, true, nil, testGeneration()))
@@ -116,7 +116,7 @@ func TestIncrementalIndexAllowsOnlyExistingUnrelatedOmissions(t *testing.T) {
 	put("devel/working/Portfile", good)
 	put("devel/spare/Portfile", "PortSystem 1.0\nname spare\nversion 1\ncategories devel\n")
 	put("devel/broken/Portfile", "PortSystem 1.0\nerror {unrelated existing failure}\n")
-	config, err := ResolveTool(t.Context(), Config{Executable: executable})
+	config, err := ResolveTool(t.Context(), Config{Env: os.Environ(), Executable: executable})
 	require.NoError(t, err)
 	build := func(destination, seed string, changed []string, strict bool) error {
 		return buildPortIndex(t.Context(), config, testPlatform, root, nil, destination, seed, changed, strict, nil, testGeneration())

@@ -266,7 +266,7 @@ func (p *Provider) MacPortsBehind(ctx context.Context, environment model.Environ
 func (p *Provider) behind(ctx context.Context, version string) (imageVersion, hostVersion string) {
 	p.hostMacPorts.Do(func() {
 		if p.macPorts == "" {
-			p.macPorts = HostMacPorts(ctx, macports.FindTclsh())
+			p.macPorts = HostMacPorts(ctx, p.tclsh(), p.Tart.Env)
 		}
 	})
 	if version == "" || p.macPorts == "" || macports.BaseAtLeast(version, p.macPorts) {

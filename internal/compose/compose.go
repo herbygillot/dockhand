@@ -26,6 +26,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	gitprogram "github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
@@ -136,7 +137,7 @@ func (o Options) TartPlaces() TartPlaces {
 // TartProvider is the Tart provider, in the command line's places.
 func (o Options) TartProvider() *tart.Provider {
 	places := o.TartPlaces()
-	return &tart.Provider{Tart: tartvm.Client{Home: places.Home}, Personal: places.Personal, Keys: places.Keys}
+	return &tart.Provider{Tart: tartvm.Client{Home: places.Home, Env: o.Env}, Personal: places.Personal, Keys: places.Keys}
 }
 
 // Places are the command line's home, $HOME, and working directory.
@@ -217,9 +218,12 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 	readings, _ := options.cacheDirectory("DOCKHAND_READING_CACHE", "readings")
 	indexes, _ := options.cacheDirectory("DOCKHAND_INDEX_CACHE", "indexes")
 	return engine.Options{
-		Tree:      tree,
-		Git:       git,
-		Env:       options.Env,
+		Tree: tree,
+		Git:  git,
+		Env:  options.Env,
+		// port-tclsh on the command line's PATH, else under MacPorts'
+		// default prefix.
+		Tclsh:     macports.FindTclsh(func(name string) (string, error) { return subprocess.LookPath(name, options.Env) }),
 		Database:  database,
 		Worktrees: file.Worktrees,
 		// holds.majors = "allow" lets bump and serve move a major version.
@@ -269,7 +273,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	}
 	e.Providers = map[string]buildenv.Provider{}
 	if command := file.Providers.Command; command != nil {
-		e.Providers[buildenv.Command] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}
+		e.Providers[buildenv.Command] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo, Env: options.Env}
 	}
 	// One GitHub runtime, which the engine's forge, discovery, and project
 	// inspection share with Actions (CX-11).

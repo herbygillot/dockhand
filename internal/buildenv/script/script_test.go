@@ -88,7 +88,7 @@ func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports)
 	capture, err := e.Capture(t.Context(), engine.CaptureRequest{Branch: branch})
 	require.NoError(t, err)
 	e.PortReader = reader
-	e.Providers = map[string]buildenv.Provider{"command": &script.Provider{Run: run, Label: "my build box", Repo: e.Repo, Grace: grace}}
+	e.Providers = map[string]buildenv.Provider{"command": &script.Provider{Run: run, Label: "my build box", Repo: e.Repo, Grace: grace, Env: os.Environ()}}
 	plan, err := e.PlanCheck(t.Context(), engine.PlanRequest{Revision: capture.Revision, Environments: []model.Environment{{Provider: "command"}}})
 	require.NoError(t, err)
 	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)

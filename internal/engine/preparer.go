@@ -74,7 +74,7 @@ func (e *Engine) selectionReader() (*selection.Reader, error) {
 		if err != nil {
 			return nil, err
 		}
-		native := &eval.Evaluator{Executable: e.options.Tclsh}
+		native := &eval.Evaluator{Executable: e.Tclsh(), Env: e.options.Env}
 		return &selection.Reader{Evaluator: native, Index: &portindex.Stager{Repo: e.Repo, Config: index, NativePlatform: native.NativePlatform, WithoutBase: true}}, nil
 	})
 }
@@ -86,7 +86,7 @@ func (e *Engine) indexConfig() (portindex.Config, error) {
 	if err != nil {
 		return portindex.Config{}, err
 	}
-	return portindex.Config{CacheDirectory: cache, Mirror: &portindex.Mirror{HTTP: fetch.Client, Base: e.options.IndexMirror}}, nil
+	return portindex.Config{CacheDirectory: cache, Env: e.options.Env, Mirror: &portindex.Mirror{HTTP: fetch.Client, Base: e.options.IndexMirror}}, nil
 }
 
 // PortIndex is how the engine stages a tree's port index for a platform,
@@ -103,7 +103,7 @@ func (e *Engine) PortIndex() (portindex.Source, error) {
 		if err != nil {
 			return nil, err
 		}
-		native := &eval.Evaluator{Executable: e.options.Tclsh}
+		native := &eval.Evaluator{Executable: e.Tclsh(), Env: e.options.Env}
 		return &portindex.Stager{Repo: e.Repo, Config: index, NativePlatform: native.NativePlatform}, nil
 	})
 	if err != nil {

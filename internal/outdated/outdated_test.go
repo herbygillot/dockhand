@@ -149,7 +149,7 @@ if {${subport} eq ${name}} {
 	require.NoError(t, err)
 	t.Setenv("TMPDIR", t.TempDir())
 	ports := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
-	index := &portindex.Stager{Repo: repo, Config: portindex.Config{Executable: testsupport.MacPortsTool(t, "portindex"), CacheDirectory: t.TempDir()}, NativePlatform: ports.NativePlatform}
+	index := &portindex.Stager{Repo: repo, Config: portindex.Config{Env: os.Environ(), Executable: testsupport.MacPortsTool(t, "portindex"), CacheDirectory: t.TempDir()}, NativePlatform: ports.NativePlatform}
 	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Ports: ports, Versions: ports}, Index: index}
 	result, err := service.Observe(t.Context(), outdated.Selection{Maintainers: []string{"ada@example.org"}})
 	require.NoError(t, err)

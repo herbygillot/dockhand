@@ -13,6 +13,9 @@ import (
 type Client struct {
 	Executable string
 	Home       string
+	// Env is the environment Tart runs in, which compose gives; Resolve
+	// refuses none.
+	Env []string
 }
 
 // RunOptions controls input, output streaming, and inherited lock descriptors.
@@ -35,7 +38,7 @@ func (c Client) Run(ctx context.Context, options RunOptions, args ...string) ([]
 	return result.Output, classify(err)
 }
 
-// Environment supplies the host process environment used for this Tart home.
+// Environment is the environment Tart runs in for this Tart home.
 func (c Client) Environment() []string {
-	return append(os.Environ(), "TART_HOME="+c.Home, "TART_NO_AUTO_PRUNE=1", "LC_ALL=C")
+	return append(append([]string{}, c.Env...), "TART_HOME="+c.Home, "TART_NO_AUTO_PRUNE=1", "LC_ALL=C")
 }

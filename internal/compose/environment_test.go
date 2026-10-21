@@ -28,15 +28,12 @@ var environmentReads = map[string][]string{
 // what's read down as fields, and what's handed on as one Env, so this
 // shrinks to nothing as each package takes them; a count may only fall.
 var readersBelow = map[string]int{
-	"archive":            1,
-	"buildenv/script":    2,
-	"buildenv/tart":      1,
-	"git":                1,
-	"macports/portindex": 1,
-	"tart":               1,
-	"tart/guestssh":      1,
-	"tart/host":          1,
-	"tcl/shell":          1,
+	"archive":         1,
+	"buildenv/script": 1,
+	"buildenv/tart":   1,
+	"git":             1,
+	"tart/host":       1,
+	"tcl/shell":       1,
 	// These stay: subprocess is where every program starts, with the Env
 	// it's given; forgetest is a test's GitHub; and the acceptance build's
 	// failpoints are read where they fire.

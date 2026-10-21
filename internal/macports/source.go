@@ -1,7 +1,6 @@
 package macports
 
 import (
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,13 +16,14 @@ const (
 	TclShell = "port-tclsh"
 )
 
-// FindTclsh is this Mac's MacPorts Tcl interpreter: port-tclsh on PATH,
+// FindTclsh is this Mac's MacPorts Tcl interpreter: port-tclsh where look
+// finds it on a PATH,
 // else under the default prefix; empty where there's neither. The
 // evaluator, setup's report, and the comparison of an image's MacPorts
 // with this Mac's all read Portfiles with it.
-func FindTclsh() string {
+func FindTclsh(look func(name string) (string, error)) string {
 	for _, name := range []string{TclShell, filepath.Join(DefaultPrefix, "bin", TclShell)} {
-		if path, err := exec.LookPath(name); err == nil {
+		if path, err := look(name); err == nil {
 			return path
 		}
 	}

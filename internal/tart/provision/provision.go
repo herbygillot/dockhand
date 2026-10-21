@@ -23,11 +23,13 @@ type Config struct {
 	// reads only, and Keys the folder of the SSH keys guests are reached
 	// with, as compose places them.
 	Home, Personal, Keys string
-	Image                string
-	Source               string
-	MacPortsVersion      string
-	GuestPrefix          string
-	Platform             model.Platform
+	// Env is the environment Tart and ssh run in, which compose gives.
+	Env             []string
+	Image           string
+	Source          string
+	MacPortsVersion string
+	GuestPrefix     string
+	Platform        model.Platform
 	// Xcode is an Xcode archive, or a folder of them, for an Xcode image.
 	Xcode        string
 	XcodeArchive string
@@ -259,7 +261,7 @@ func normalize(config Config) (Config, macos.Release, error) {
 	if err != nil {
 		return config, release, err
 	}
-	runtime, err := (tart.Client{Executable: config.Executable, Home: config.Home}).Resolve()
+	runtime, err := (tart.Client{Executable: config.Executable, Home: config.Home, Env: config.Env}).Resolve()
 	if err != nil {
 		return config, release, err
 	}

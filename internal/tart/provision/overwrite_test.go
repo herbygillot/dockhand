@@ -25,7 +25,7 @@ case "$1" in
  clone|import) echo "$*" >> `+calls+` ;;
 esac
 `)
-	return Config{Executable: script, Home: dir}, calls
+	return Config{Env: os.Environ(), Executable: script, Home: dir}, calls
 }
 
 // Cloning or importing onto a VM Tart lists is refused, since Tart would

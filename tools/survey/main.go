@@ -144,7 +144,7 @@ func survey() (err error) {
 			return err
 		}
 	}
-	native := &eval.Evaluator{Executable: tclsh}
+	native := &eval.Evaluator{Executable: tclsh, Env: os.Environ()}
 	if *ledgerPath != "" {
 		file, err := os.Create(*ledgerPath)
 		if err != nil {
@@ -159,7 +159,7 @@ func survey() (err error) {
 			_ = encoder.Encode(report)
 		}
 	}
-	index := portindex.Config{CacheDirectory: cache, Executable: portindexBin}
+	index := portindex.Config{CacheDirectory: cache, Executable: portindexBin, Env: os.Environ()}
 	service := Service{
 		Repo:            repo,
 		Ports:           &selection.Reader{Evaluator: native, Index: &portindex.Stager{Repo: repo, Config: index, NativePlatform: native.NativePlatform, WithoutBase: true}},

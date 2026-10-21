@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/fetchguard"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -23,6 +24,9 @@ import (
 
 type Evaluator struct {
 	Executable string
+	// Env is the environment the interpreter runs in, which compose gives;
+	// its PATH finds port-tclsh where Executable is empty.
+	Env []string
 	// Model is the macOS an interpreter describes as its own when MacPorts
 	// runs on a host that is not a Mac; zero selects DefaultModel. A Mac
 	// always describes itself.
@@ -79,11 +83,11 @@ var toolchainScript string
 func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session, macports.Runtime, error) {
 	executable := e.Executable
 	if executable == "" {
-		if executable = macports.FindTclsh(); executable == "" {
+		if executable = macports.FindTclsh(func(name string) (string, error) { return subprocess.LookPath(name, e.Env) }); executable == "" {
 			return nil, macports.Runtime{}, fmt.Errorf("%w: %s isn't on PATH or in %s", macports.ErrStartup, macports.TclShell, filepath.Join(macports.DefaultPrefix, "bin"))
 		}
 	}
-	proc, err := shell.Start(ctx, executable, shell.WithDir(tree.Root()))
+	proc, err := shell.Start(ctx, executable, shell.WithDir(tree.Root()), shell.WithEnv(e.Env))
 	if err != nil {
 		return nil, macports.Runtime{}, fmt.Errorf("%w: %w", macports.ErrStartup, err)
 	}

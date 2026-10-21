@@ -23,7 +23,7 @@ import (
 // MacPorts' installer's selfupdate makes, and the architecture review of
 // 5897a82's R3-18 refused an old Tart with tart.TooOld's words, none of
 // which changes an image.
-const setupPin = "b6654110f54af65dd5d58b56389f204075c23b9dd827ab5e4416be145aa97ab0"
+const setupPin = "9725723806b1aefa791aad28ee1703b437f7ee465e7185ab29d139824be23c51"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning

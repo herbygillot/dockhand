@@ -56,7 +56,7 @@ case "$command" in
 esac
 exec /bin/sh -c "$command"
 `)
-	return &Guest{Address: "guest", Image: "dockhand-base-fixture", Keys: Keys{Directory: filepath.Join(directory, "keys")}, Executable: ssh}
+	return &Guest{Env: os.Environ(), Address: "guest", Image: "dockhand-base-fixture", Keys: Keys{Directory: filepath.Join(directory, "keys")}, Executable: ssh}
 }
 
 func TestCommandsQuoteTheirArgumentsForTheGuestShell(t *testing.T) {
@@ -104,7 +104,7 @@ func TestDamagedReadsAreRetriedThenRefused(t *testing.T) {
 	remote := filepath.Join(root, "guest.txt")
 	require.NoError(t, os.WriteFile(remote, []byte("result"), 0600))
 	damage := filepath.Join(root, "damage")
-	t.Setenv("FAKE_DAMAGE", damage)
+	g.Env = append(g.Env, "FAKE_DAMAGE="+damage)
 
 	require.NoError(t, os.WriteFile(damage, []byte("1"), 0600))
 	data, err := g.Read(t.Context(), remote, false)
@@ -141,7 +141,7 @@ func TestMissingFilesAndLostConnectionsAreNamed(t *testing.T) {
 // connection, except at bootstrap, where the image's password is given
 // through SSH_ASKPASS and the presented host keys are recorded.
 func TestInvocationUsesTheImagesHostKeysAndTheRightCredential(t *testing.T) {
-	g := &Guest{Address: "192.168.64.9", Image: "dockhand-base-tahoe", Keys: Keys{Directory: t.TempDir()}}
+	g := &Guest{Env: os.Environ(), Address: "192.168.64.9", Image: "dockhand-base-tahoe", Keys: Keys{Directory: t.TempDir()}}
 	args, _, cleanup, err := g.invocation()
 	require.NoError(t, err)
 	cleanup()

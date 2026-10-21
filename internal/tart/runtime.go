@@ -18,6 +18,9 @@ func (c Client) Resolve() (Client, error) {
 	if c.Home == "" {
 		return c, errors.New("tart: no Tart home was given for dockhand's images")
 	}
+	if c.Env == nil {
+		return c, errors.New("tart: no environment was given to run Tart in")
+	}
 	var err error
 	c.Home, err = CanonicalDirectory(c.Home)
 	return c, err

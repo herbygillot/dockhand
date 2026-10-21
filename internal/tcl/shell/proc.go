@@ -47,6 +47,9 @@ func WithArgs(args ...string) Option { return func(c *config) { c.args = args } 
 
 func WithDir(dir string) Option { return func(c *config) { c.dir = dir } }
 
+// WithEnv runs the interpreter in env, where the process's is otherwise.
+func WithEnv(env []string) Option { return func(c *config) { c.env = env } }
+
 func WithCloseTimeout(d time.Duration) Option { return func(c *config) { c.closeTimeout = d } }
 
 func WithOutputLimit(n int) Option { return func(c *config) { c.outputLimit = n } }
@@ -62,8 +65,8 @@ func Start(ctx context.Context, path string, opts ...Option) (*Proc, error) {
 
 	cmd := exec.CommandContext(ctx, path, cfg.args...)
 	cmd.Dir = cfg.dir
-	if len(cfg.env) > 0 {
-		cmd.Env = append(cmd.Environ(), cfg.env...)
+	if cfg.env != nil {
+		cmd.Env = cfg.env
 	}
 
 	p := &Proc{

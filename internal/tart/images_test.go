@@ -18,11 +18,11 @@ func TestImagesNormalizesBothRunningRepresentations(t *testing.T) {
 [ "$*" = "list --format json" ] || exit 2
 printf '%s' '[{"Name":"one","Source":"local","Running":true},{"Name":"two","Source":"local","State":"running"},{"Name":"base","Source":"oci","State":"stopped"}]'
 `)
-	images, err := (Client{Executable: executable}).Images(t.Context(), RunOptions{})
+	images, err := (Client{Env: os.Environ(), Executable: executable}).Images(t.Context(), RunOptions{})
 	require.NoError(t, err)
 	require.Equal(t, []Image{{Name: "one", Source: "local", Running: true}, {Name: "two", Source: "local", Running: true}, {Name: "base", Source: "oci"}}, images)
 	testsupport.WriteExecutable(t, executable, "#!/bin/sh\necho invalid\n")
-	_, err = (Client{Executable: executable}).Images(t.Context(), RunOptions{})
+	_, err = (Client{Env: os.Environ(), Executable: executable}).Images(t.Context(), RunOptions{})
 	require.ErrorContains(t, err, "invalid image listing")
 }
 
@@ -30,7 +30,7 @@ printf '%s' '[{"Name":"one","Source":"local","Running":true},{"Name":"two","Sour
 // run Tart, which would make the home (the M1 shakedown, 2026-10-03).
 func TestAMissingHomeHasNoImagesAndIsNotMade(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "tart")
-	images, err := (Client{Executable: filepath.Join(t.TempDir(), "absent"), Home: home}).Images(t.Context(), RunOptions{})
+	images, err := (Client{Env: os.Environ(), Executable: filepath.Join(t.TempDir(), "absent"), Home: home}).Images(t.Context(), RunOptions{})
 	require.NoError(t, err)
 	require.Empty(t, images)
 	require.NoDirExists(t, home)
@@ -49,7 +49,7 @@ case "$*" in
  *) exit 9 ;;
 esac
 `)
-	client := Client{Executable: executable}
+	client := Client{Env: os.Environ(), Executable: executable}
 	images, err := client.Images(t.Context(), RunOptions{})
 	require.NoError(t, err)
 	require.Equal(t, []Image{
@@ -82,7 +82,7 @@ case "$1" in
  stop) echo "VM \"$2\" is not running" >&2; exit 2 ;;
 esac
 `)
-	client := Client{Executable: executable}
+	client := Client{Env: os.Environ(), Executable: executable}
 	_, err := client.Images(t.Context(), RunOptions{})
 	require.ErrorIs(t, err, ErrListingBlocked)
 	require.ErrorContains(t, err, "openai/tart#1344")
@@ -122,7 +122,7 @@ case "$*" in
  *) exit 9 ;;
 esac
 `)
-	client := Client{Executable: executable}
+	client := Client{Env: os.Environ(), Executable: executable}
 	images, err := client.Images(t.Context(), RunOptions{})
 	require.NoError(t, err)
 	require.Equal(t, []Image{{Name: "gg", Source: "local", Running: true, Accessed: time.Date(2026, 9, 27, 5, 54, 21, 0, time.UTC)}}, images, "with when Tart last opened it")
@@ -147,7 +147,7 @@ fi
 printf '%s' '[{"Name":"dockhand-base-tahoe","Source":"local","Running":false}]'
 `)
 	require.NoError(t, os.WriteFile(races, []byte("2"), 0o644))
-	client := Client{Executable: executable}
+	client := Client{Env: os.Environ(), Executable: executable}
 	images, err := client.Images(t.Context(), RunOptions{})
 	require.NoError(t, err)
 	require.Equal(t, []Image{{Name: "dockhand-base-tahoe", Source: "local"}}, images)
@@ -174,7 +174,7 @@ func TestAListingTartDoesntAnswerIsBounded(t *testing.T) {
 	executable := filepath.Join(t.TempDir(), "tart")
 	testsupport.WriteExecutable(t, executable, "#!/bin/sh\nexec sleep 30\n")
 	start := time.Now()
-	_, err := Client{Executable: executable}.Images(t.Context(), RunOptions{})
+	_, err := Client{Env: os.Environ(), Executable: executable}.Images(t.Context(), RunOptions{})
 	require.ErrorIs(t, err, ErrListingTimedOut)
 	require.ErrorContains(t, err, "timed out after 200ms; VM status is unknown")
 	require.Less(t, time.Since(start), 20*time.Second, "not the sleep's thirty")

@@ -45,12 +45,12 @@ func (n *native) commandWithGuard(ctx context.Context, input io.Reader, stream b
 	if stream && n.progress != nil {
 		output = n.progress
 	}
-	client := tart.Client{Executable: n.config.Executable, Home: n.config.Home}
+	client := tart.Client{Executable: n.config.Executable, Home: n.config.Home, Env: n.config.Env}
 	return client.Run(ctx, tart.RunOptions{Input: input, Output: output, Combined: true, ExtraFiles: []*os.File{guard}}, args...)
 }
 
 func (n *native) vm() host.Machine {
-	return host.Machine{Client: tart.Client{Executable: n.config.Executable, Home: n.config.Home}, Blocked: n.waitListing}
+	return host.Machine{Client: tart.Client{Executable: n.config.Executable, Home: n.config.Home, Env: n.config.Env}, Blocked: n.waitListing}
 }
 
 // waitListing waits out a listing blocked by a running ASIF VM, the

@@ -205,7 +205,7 @@ func testProvisioner(t *testing.T, machine *fakeMachine) *Provisioner {
 	t.Setenv("HOME", t.TempDir())
 	home := filepath.Join(t.TempDir(), "tart")
 	require.NoError(t, os.MkdirAll(home, 0o700))
-	return &Provisioner{Config: Config{Platform: testPlatform, Home: home}, backend: machine,
+	return &Provisioner{Config: Config{Env: os.Environ(), Platform: testPlatform, Home: home}, backend: machine,
 		Digest:    func(context.Context, string) (string, error) { return testDigest, nil },
 		Signature: func(context.Context, string) error { return nil }}
 }
@@ -306,9 +306,9 @@ func TestConventionalImageNamesRequireTheirMatchingProfile(t *testing.T) {
 	directory := t.TempDir()
 	archive := directory + "/Xcode_26.6.xip"
 	require.NoError(t, os.WriteFile(archive, nil, 0o600))
-	_, _, err := normalize(Config{Platform: testPlatform, Image: "dockhand-base-tahoe", Xcode: archive, Home: t.TempDir()})
+	_, _, err := normalize(Config{Env: os.Environ(), Platform: testPlatform, Image: "dockhand-base-tahoe", Xcode: archive, Home: t.TempDir()})
 	require.ErrorContains(t, err, "cannot replace the conventional base image")
-	_, _, err = normalize(Config{Platform: testPlatform, Image: "dockhand-xcode-tahoe", Home: t.TempDir()})
+	_, _, err = normalize(Config{Env: os.Environ(), Platform: testPlatform, Image: "dockhand-xcode-tahoe", Home: t.TempDir()})
 	require.ErrorContains(t, err, "requires --xcode")
 }
 

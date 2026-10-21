@@ -214,7 +214,7 @@ const DefaultMacPorts = macports.DefaultBaseVersion
 func (p *Provider) newMacPorts(ctx context.Context) string {
 	host := p.macPorts
 	if host == "" {
-		host = HostMacPorts(ctx, macports.FindTclsh())
+		host = HostMacPorts(ctx, p.tclsh(), p.Tart.Env)
 	}
 	if host != "" && !macports.BaseAtLeast(DefaultMacPorts, host) {
 		return host
@@ -304,7 +304,7 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 	}
 	made := SetupResult{Image: result.Image, Release: release, MacPorts: result.MacPortsVersion,
 		CommandLineTools: result.CommandLineTools, Xcode: result.XcodeVersion, Reused: result.Reused}
-	if host := HostMacPorts(ctx, macports.FindTclsh()); host != result.MacPortsVersion {
+	if host := HostMacPorts(ctx, p.tclsh(), p.Tart.Env); host != result.MacPortsVersion {
 		made.HostMacPorts = host
 	}
 	return made, nil
@@ -315,7 +315,7 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 // chooses. A base image has no Xcode.
 func (p *Provider) provisionConfig(release macos.Release, options SetupOptions) (provision.Config, error) {
 	config := provision.Config{
-		Executable: p.Tart.Executable, Home: p.Tart.Home, Personal: p.Personal, Keys: p.Keys, MacPortsVersion: options.MacPortsVersion, Xcode: options.Xcode,
+		Executable: p.Tart.Executable, Home: p.Tart.Home, Personal: p.Personal, Keys: p.Keys, Env: p.Tart.Env, MacPortsVersion: options.MacPortsVersion, Xcode: options.Xcode,
 		Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
 	}
 	if options.Xcode == "" {
@@ -434,13 +434,18 @@ func (p *Provider) release(name string) (macos.Release, error) {
 	return release, nil
 }
 
+// tclsh is this Mac's port-tclsh, on the PATH Tart runs with.
+func (p *Provider) tclsh() string {
+	return macports.FindTclsh(func(name string) (string, error) { return subprocess.LookPath(name, p.Tart.Env) })
+}
+
 // HostMacPorts is the version of the MacPorts whose port-tclsh evaluates
 // ports on this Mac, or empty when it can't be read.
-func HostMacPorts(ctx context.Context, tclsh string) string {
+func HostMacPorts(ctx context.Context, tclsh string, env []string) string {
 	if tclsh == "" {
 		return ""
 	}
-	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "port", Path: filepath.Join(filepath.Dir(tclsh), "port"), Args: []string{"version"}, Limit: 1 << 16})
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "port", Path: filepath.Join(filepath.Dir(tclsh), "port"), Args: []string{"version"}, Env: env, Limit: 1 << 16})
 	if err != nil {
 		return ""
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 // Version is the request and result files' format.
@@ -106,6 +107,9 @@ type Provider struct {
 	// Grace is how long a canceled command has to stop, after an
 	// interrupt, before what still runs is killed; 30 seconds when zero.
 	Grace time.Duration
+	// Env is the environment the command runs in, the command line's,
+	// with DOCKHAND_REQUEST beside it.
+	Env []string
 }
 
 func (p *Provider) Name() string { return buildenv.Command }
@@ -162,14 +166,18 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	}
 	defer log.Close()
 	build.Progress("running " + p.Label)
-	command := exec.CommandContext(ctx, "sh", "-c", p.Run+` "$1"`, "sh", requestPath)
+	shell, err := subprocess.LookPath("sh", p.Env)
+	if err != nil {
+		shell = "/bin/sh"
+	}
+	command := exec.CommandContext(ctx, shell, "-c", p.Run+` "$1"`, "sh", requestPath)
 	grace := p.Grace
 	if grace <= 0 {
 		grace = 30 * time.Second
 	}
 	ownSession(command, grace)
 	command.Dir = job.Directory
-	command.Env = append(os.Environ(), "DOCKHAND_REQUEST="+requestPath)
+	command.Env = append(append([]string{}, p.Env...), "DOCKHAND_REQUEST="+requestPath)
 	command.Stdout, command.Stderr = log, log
 	runErr := command.Run()
 	if ctx.Err() != nil {

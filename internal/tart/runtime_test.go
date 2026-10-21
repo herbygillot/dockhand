@@ -15,10 +15,10 @@ func TestRuntimeResolvesAliasesWithoutCreatingDirectories(t *testing.T) {
 	alias := filepath.Join(root, "alias")
 	require.NoError(t, os.Symlink(real, alias))
 	t.Parallel()
-	given := Client{Home: filepath.Join(alias, "new", "home")}
+	given := Client{Env: os.Environ(), Home: filepath.Join(alias, "new", "home")}
 	fromEnv, err := given.Resolve()
 	require.NoError(t, err)
-	explicit, err := (Client{Executable: "custom-tart", Home: filepath.Join(real, "new", "home")}).Resolve()
+	explicit, err := (Client{Env: os.Environ(), Executable: "custom-tart", Home: filepath.Join(real, "new", "home")}).Resolve()
 	require.NoError(t, err)
 	require.Equal(t, fromEnv.Home, explicit.Home)
 	require.Equal(t, "tart", fromEnv.Executable)
