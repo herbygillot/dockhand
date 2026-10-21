@@ -186,3 +186,29 @@ offerSetup is left as questions: its rules are now github's
 The boundary test's rows for buildenv/tart, github, credential, and
 keychain say "setup's, until part 4.2", and buildenv's and ghactions'
 say the vocabulary check's words use (architecture, at 970b86e9).
+
+## The environment's catalogue
+
+`config.Environment` lists every variable dockhand reads, each marked
+where serve's agent keeps it (`config.AgentVariables`), in place of
+serve.go's hand-kept `agentVariables` (the split's 7d row 10). Two tests
+keep it true: usage.md's Environment table and its sentence on the agent
+name exactly the catalogue, and every `os.Getenv` or `os.LookupEnv` of a
+literal name in internal/ is in it (PATH, DOCKHAND_FAILPOINT, and
+DOCKHAND_TEST_* aside). The first found usage.md four rows short,
+DOCKHAND_GITHUB_LOG, DOCKHAND_READING_CACHE, VISUAL, and EDITOR, and its
+agent sentence missing DOCKHAND_READING_CACHE, which the agent already
+kept; both are fixed.
+
+Next, the Invocation: one environment and working directory for a
+command line, which compose resolves into explicit fields once, so that
+nothing below it reads the process's environment and command's tests can
+run in parallel (proposed to architecture, 2026-10-21, and agreed with
+its rules: resolved fields for what's read, one explicit `Env []string`
+for what's handed on to git, port, tart, and guest SSH through
+`subprocess.Spec.Env`; a boundary test below compose for `os.Getenv`,
+`os.LookupEnv`, `os.UserHomeDir`, `os.Environ`, and bare `exec.Command`,
+first with today's readers allowed, then shrinking; config keeping only
+the catalogue, with meaning and default, its `Path()` resolved in
+compose; token precedence compose's, github taking a `Token` and a
+`LoginLockPath`; and `Invocation.Dir` in place of `t.Chdir`).

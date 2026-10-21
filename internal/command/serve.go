@@ -212,23 +212,12 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 	return nil
 }
 
-// agentVariables are the settings dockhand reads from its environment that
-// serve's agent needs as they were when it was installed:
-//   - the configuration file;
-//   - where master is fetched from;
-//   - the port index's mirror and cache;
-//   - Tart's home and dockhand's own;
-//   - the SSH keys guests are reached with.
-//
-// A token is never written, since the agent's file is readable by anyone
-// on the Mac.
-var agentVariables = []string{config.PathVariable, "DOCKHAND_UPSTREAM", pullRequestsVariable, "DOCKHAND_INDEX_MIRROR", "DOCKHAND_INDEX_CACHE", "DOCKHAND_READING_CACHE", "DOCKHAND_TART_HOME", "TART_HOME", "DOCKHAND_SSH_DIR"}
-
-// agentEnvironment is PATH and whichever of agentVariables are set, each a
-// local path made absolute, since launchd starts the agent in /.
+// agentEnvironment is PATH and whichever of the agent's variables
+// (config.AgentVariables) are set, each a local path made absolute, since
+// launchd starts the agent in /.
 func agentEnvironment() ([][2]string, error) {
 	environment := [][2]string{{"PATH", os.Getenv("PATH")}}
-	for _, name := range agentVariables {
+	for _, name := range config.AgentVariables() {
 		value := os.Getenv(name)
 		if value == "" {
 			continue
