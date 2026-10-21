@@ -65,3 +65,15 @@ func TestASubjectMayNameTheSubportItChanges(t *testing.T) {
 	require.Empty(t, CheckCommits(commit("terraform: update terraform-1.16 to 1.16.5\n")))
 	require.Equal(t, []string{"subject-port"}, codes(CheckCommits(commit("terraform-2.0: update to 2.0.1\n"))))
 }
+
+// A line that is only a URL, or a trailer whose value is one, may run past
+// 72 characters; a sentence holding a URL may not (the exiv2 session's
+// notes, 2026-10-21).
+func TestALongLineBesideAURLIsFlagged(t *testing.T) {
+	long := "Backport the fix for https://bugs.gnunet.org/view.php?id=9223 from upstream now"
+	findings := CheckCommits([]Commit{{ID: "a", Message: "libextractor: fix the build\n\n" + long + "\n"}})
+	require.Equal(t, []string{"body-wrap"}, codes(findings))
+	spared := "libextractor: fix the build\n\nhttps://github.com/macports/macports-ports/blob/master/graphics/exiv2/files/patch-x.diff\n" +
+		"Closes: https://trac.macports.org/ticket/71234#comment:12-and-a-long-anchor-here\n"
+	require.Empty(t, CheckCommits([]Commit{{ID: "b", Message: spared}}))
+}

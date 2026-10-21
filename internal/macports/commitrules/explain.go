@@ -43,7 +43,7 @@ var explanations = []Explanation{
 		Sources: []Source{guidelines, quoted(template, "followed our Commit Message Guidelines?")}},
 	{Code: "subject-length", Rule: "A subject is kept to 60 characters; the guidelines ask for about 50 to 55.",
 		Sources: []Source{guidelines}},
-	{Code: "body-wrap", Rule: "A message's body wraps at 72 characters. A line that is only a URL may run longer.",
+	{Code: "body-wrap", Rule: "A message's body wraps at 72 characters. A line that is only a URL, or a trailer whose value is a URL, such as Closes: with a ticket's, may run longer; a sentence holding a URL wraps.",
 		Sources: []Source{guidelines}},
 	{Code: "ticket-url", Rule: "A Trac ticket is cited by its full URL, such as Closes: https://trac.macports.org/ticket/71234, not as #71234, which GitHub would take for a pull request.",
 		Sources: []Source{quoted(template, "referenced existing tickets on Trac with full URL in commit message?"), guidelines}},

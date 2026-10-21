@@ -98,6 +98,9 @@ var (
 	followUp   = regexp.MustCompile(`(?i)^(fixup!|squash!|amend!)|\b(oops|typo|address(ed)? (review|comments|feedback)|review (comments|feedback)|fix (checksums?|the build|lint|previous|last commit|revision))\b`)
 	bareTicket = regexp.MustCompile(`(^|[\s(])#(\d{4,})\b`)
 	longURL    = regexp.MustCompile(`^\S*https?://\S+$`)
+	// urlTrailer is a trailer whose value is a URL, as Closes:
+	// https://trac.macports.org/ticket/71234, which may run long too.
+	urlTrailer = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*:\s+\S*https?://\S+$`)
 )
 
 // CheckCommits applies the message rules to a branch's commits, oldest
@@ -125,7 +128,12 @@ func CheckCommits(commits []Commit) []Finding {
 			add("subject-length", Warning, "subject is %d characters; keep it to %d (the wiki asks for 50–55)", n, MaxSubject)
 		}
 		for _, line := range strings.Split(strings.TrimPrefix(body, "\n"), "\n") {
-			if utf8.RuneCountInString(line) > MaxBody && !longURL.MatchString(strings.TrimSpace(line)) && !strings.Contains(line, "://") {
+			// A line that is only a URL, or a trailer whose value is one, may
+			// run long; a sentence holding a URL may not, where any line
+			// holding "://" was spared (the exiv2 session's notes, 2026-10-21:
+			// a 79-character line beside a URL wasn't flagged).
+			trimmed := strings.TrimSpace(line)
+			if utf8.RuneCountInString(line) > MaxBody && !longURL.MatchString(trimmed) && !urlTrailer.MatchString(trimmed) {
 				add("body-wrap", Warning, "body has lines over %d characters", MaxBody)
 				break
 			}
