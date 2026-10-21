@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/project"
@@ -245,11 +246,11 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 		}
 		info, plan, err := planner.ArchivePlan(ctx, source, directory, names[side])
 		switch {
-		case errors.Is(err, ErrNoArchives):
+		case errors.Is(err, treequery.ErrNoArchives):
 			if side == 1 {
 				fetches = false
 			}
-		case errors.Is(err, ErrNoPort) && side == 0:
+		case errors.Is(err, treequery.ErrNoPort) && side == 0:
 			// A subport new to the directory has no base to evaluate.
 			hadBase = false
 			continue
@@ -420,7 +421,7 @@ func (e *Engine) patchesFor(ctx context.Context, request patchRequest) []assess.
 		if err != nil {
 			return unchecked(err.Error())
 		}
-		archives, err := fetchPlanned(ctx, distfetch.Client{Mirror: e.mirror()}.Store(into), infos[1], missed)
+		archives, err := treequery.FetchPlanned(ctx, distfetch.Client{Mirror: e.mirror()}.Store(into), infos[1], missed)
 		if err != nil {
 			return unchecked(fmt.Sprintf("%s couldn't be fetched to check them against: %v", strings.Join(missing, ", "), err))
 		}
@@ -657,7 +658,7 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 		if err != nil {
 			return nil, nil, nil, err.Error(), false
 		}
-		fetched, err := fetchPlanned(ctx, distfetch.Client{Mirror: e.mirror()}.Store(into), s.info, missing)
+		fetched, err := treequery.FetchPlanned(ctx, distfetch.Client{Mirror: e.mirror()}.Store(into), s.info, missing)
 		if err != nil {
 			which := "the revision's"
 			if i == 0 {

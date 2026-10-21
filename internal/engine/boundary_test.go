@@ -67,6 +67,7 @@ var engineImports = map[string]string{
 	"internal/macports/portcreate":  "new Portfiles, for create, and the guesses submit holds for",
 	"internal/macports/commitmsg":   "commit messages, for tidy",
 	"internal/macports/commitrules": "the commit rules, for tidy, submit, and review",
+	"internal/macports/treequery":   "the default port reader, until compose fills it, and the types its answers are: dependents, fetched archives, ErrNoPort",
 }
 
 // The engine imports what it decides with, and nothing that drives it or

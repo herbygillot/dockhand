@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -66,7 +67,7 @@ type ReviewReport struct {
 	// Dependents are the other ports that depend on those it changes, from
 	// the index at its base: candidates to look at, not proof of anything;
 	// DependentsUnread why they couldn't be read.
-	Dependents       []Dependent
+	Dependents       []treequery.Dependent
 	DependentsUnread string
 }
 

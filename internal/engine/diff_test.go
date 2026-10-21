@@ -10,13 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // Dependents reads the fake's dependencies backwards, as the port index
 // would.
-func (f fakePorts) Dependents(_ context.Context, _ model.Source, directories []string) ([]Dependent, error) {
+func (f fakePorts) Dependents(_ context.Context, _ model.Source, directories []string) ([]treequery.Dependent, error) {
 	phases := map[string]string{"lib": "library", "build": "build", "run": "runtime"}
 	var changed []string
 	for _, directory := range directories {
@@ -24,13 +25,13 @@ func (f fakePorts) Dependents(_ context.Context, _ model.Source, directories []s
 			changed = append(changed, port.Name)
 		}
 	}
-	var all []Dependent
+	var all []treequery.Dependent
 	for directory, ports := range f.directories {
 		if slices.Contains(directories, directory) {
 			continue
 		}
 		for _, port := range ports {
-			dependent := Dependent{Name: port.Name, Directory: directory}
+			dependent := treequery.Dependent{Name: port.Name, Directory: directory}
 			for _, dependency := range port.Dependencies {
 				if slices.Contains(changed, dependency.Port) {
 					dependent.On = append(dependent.On, dependency.Port)
@@ -42,7 +43,7 @@ func (f fakePorts) Dependents(_ context.Context, _ model.Source, directories []s
 			}
 		}
 	}
-	slices.SortFunc(all, func(a, b Dependent) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(all, func(a, b treequery.Dependent) int { return strings.Compare(a.Name, b.Name) })
 	return all, nil
 }
 
@@ -110,7 +111,7 @@ func TestImpactNamesDependentsAndSharedFiles(t *testing.T) {
 	impact, err := e.Impact(t.Context(), branch, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"devel/libharbor"}, impact.Of, "a revision bump's dependents are not in question")
-	require.Equal(t, []Dependent{
+	require.Equal(t, []treequery.Dependent{
 		{Name: "harbor-viewer", Directory: "graphics/harbor-viewer", On: []string{"libharbor"}, Phases: []string{"library"}},
 		{Name: "harbor-viewer-legacy", Directory: "graphics/harbor-viewer", On: []string{"libharbor"}, Phases: []string{"library"}},
 	}, impact.Dependents, "harbor-cli is changed, so it is not another dependent")
@@ -122,7 +123,7 @@ func TestImpactNamesDependentsAndSharedFiles(t *testing.T) {
 	require.Equal(t, []string{"harbor-tools"}, dependentNames(named.Dependents))
 }
 
-func dependentNames(dependents []Dependent) []string {
+func dependentNames(dependents []treequery.Dependent) []string {
 	var names []string
 	for _, dependent := range dependents {
 		names = append(names, dependent.Name)
@@ -192,7 +193,7 @@ func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
 // libuv's to build (the libuv run's finding 3).
 func TestImpactSuggestsOneDependentOfEachKind(t *testing.T) {
 	t.Parallel()
-	impact := Impact{Dependents: []Dependent{
+	impact := Impact{Dependents: []treequery.Dependent{
 		{Name: "aria2", Phases: []string{"build"}},
 		{Name: "bind9", Phases: []string{"build"}},
 		{Name: "luv", Phases: []string{"library", "runtime"}},
@@ -238,12 +239,12 @@ func TestADependentUnderAVariantIsFound(t *testing.T) {
 	}
 	dependents, err := e.dependents(t.Context(), model.Source{Tree: tree}, []string{"textproc/nuspell"})
 	require.NoError(t, err)
-	require.Equal(t, []Dependent{
+	require.Equal(t, []treequery.Dependent{
 		{Name: "hunspell", Directory: "textproc/hunspell", On: []string{"nuspell"}, Phases: []string{"library"}},
 		{Name: "enchant2", Directory: "textproc/enchant2", On: []string{"nuspell"}, Phases: []string{"library"}, Variants: []string{"nuspell"}},
 	}, dependents)
 	require.Equal(t, "enchant2 (library, under +nuspell)", dependents[1].Words())
-	require.Equal(t, []Dependent{dependents[0]}, Impact{Dependents: dependents}.OneOfEachKind())
+	require.Equal(t, []treequery.Dependent{dependents[0]}, Impact{Dependents: dependents}.OneOfEachKind())
 }
 
 // A port that links a changed one only under a variant is a linked port

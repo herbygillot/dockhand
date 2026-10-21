@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -96,35 +97,10 @@ func within(path string, paths []string) bool {
 	})
 }
 
-// Dependent is a port that depends directly on a port a branch changes.
-type Dependent struct {
-	Name      string
-	Directory string
-	// On names the changed ports it depends on.
-	On []string
-	// Phases are how: "build", "library", or "runtime".
-	Phases []string
-	// Variants are those under which alone it depends on them, as
-	// enchant2 links nuspell under +nuspell; none where its default
-	// variants do.
-	Variants []string
-}
-
-// Words say a dependent for a person: its name, how it depends, and the
-// variants it depends under, where only they make it: "enchant2 (library,
-// under +nuspell)".
-func (d Dependent) Words() string {
-	how := strings.Join(d.Phases, ", ")
-	if len(d.Variants) > 0 {
-		how += ", under +" + strings.Join(d.Variants, " or +")
-	}
-	return fmt.Sprintf("%s (%s)", d.Name, how)
-}
-
 // DependentReader finds the direct dependents of the ports some
 // directories define. MacPorts' port index is the real one.
 type DependentReader interface {
-	Dependents(ctx context.Context, source model.Source, directories []string) ([]Dependent, error)
+	Dependents(ctx context.Context, source model.Source, directories []string) ([]treequery.Dependent, error)
 }
 
 // portNamer names the ports each of some directories defines, as a
@@ -193,7 +169,7 @@ type Impact struct {
 	Defined map[string][]string
 	// Of are the directories whose dependents were looked for.
 	Of         []string
-	Dependents []Dependent
+	Dependents []treequery.Dependent
 	// Unread says why dependents could not be read, when they couldn't.
 	Unread string
 	Shared []SharedFile
@@ -211,13 +187,13 @@ var dependentKinds = []string{"library", "build", "runtime"}
 // order, aria2, bind9, and bind9.18, among the heaviest of libuv's to
 // build (the libuv run's finding 3). One that depends only under a variant
 // isn't taken, since check --also builds a port's default variants.
-func (i Impact) OneOfEachKind() []Dependent {
-	var chosen []Dependent
+func (i Impact) OneOfEachKind() []treequery.Dependent {
+	var chosen []treequery.Dependent
 	for _, kind := range dependentKinds {
-		if slices.ContainsFunc(chosen, func(d Dependent) bool { return slices.Contains(d.Phases, kind) }) {
+		if slices.ContainsFunc(chosen, func(d treequery.Dependent) bool { return slices.Contains(d.Phases, kind) }) {
 			continue
 		}
-		if j := slices.IndexFunc(i.Dependents, func(d Dependent) bool { return len(d.Variants) == 0 && slices.Contains(d.Phases, kind) }); j >= 0 {
+		if j := slices.IndexFunc(i.Dependents, func(d treequery.Dependent) bool { return len(d.Variants) == 0 && slices.Contains(d.Phases, kind) }); j >= 0 {
 			chosen = append(chosen, i.Dependents[j])
 		}
 	}
@@ -297,7 +273,7 @@ func (e *Engine) Impact(ctx context.Context, branch model.Branch, ports []string
 // it can answer, what depends on the directories' ports by their default
 // variants, and adds those that depend on them only under a variant
 // (variantDependents).
-func (e *Engine) dependents(ctx context.Context, source model.Source, directories []string) ([]Dependent, error) {
+func (e *Engine) dependents(ctx context.Context, source model.Source, directories []string) ([]treequery.Dependent, error) {
 	reader := e.DependentReader
 	if reader == nil {
 		ports, err := e.portReader()
@@ -363,7 +339,7 @@ var evaluatedPhases = map[string]string{"lib": "library", "build": "build", "run
 // variants, and of nuspell's one, enchant2's. A directory a known
 // dependent is in, or one of the directories', isn't looked at again; a
 // variant MacPorts can't evaluate says nothing.
-func (e *Engine) variantDependents(ctx context.Context, source model.Source, directories []string, known []Dependent) ([]Dependent, error) {
+func (e *Engine) variantDependents(ctx context.Context, source model.Source, directories []string, known []treequery.Dependent) ([]treequery.Dependent, error) {
 	reader, err := e.portReader()
 	if err != nil {
 		return nil, err
@@ -390,7 +366,7 @@ func (e *Engine) variantDependents(ctx context.Context, source model.Source, dir
 			// all. Of openssl's 56 Portfiles naming it in a variant, most
 			// are.
 			directory := path.Dir(portfile)
-			if !slices.Contains(directories, directory) && !slices.ContainsFunc(known, func(d Dependent) bool { return d.Directory == directory }) && !slices.Contains(candidates, portfile) {
+			if !slices.Contains(directories, directory) && !slices.ContainsFunc(known, func(d treequery.Dependent) bool { return d.Directory == directory }) && !slices.Contains(candidates, portfile) {
 				candidates = append(candidates, portfile)
 			}
 		}
@@ -400,8 +376,8 @@ func (e *Engine) variantDependents(ctx context.Context, source model.Source, dir
 	if err != nil {
 		return nil, err
 	}
-	var found []*Dependent
-	byName := map[string]*Dependent{}
+	var found []*treequery.Dependent
+	byName := map[string]*treequery.Dependent{}
 	for _, candidate := range candidates {
 		directory := path.Dir(candidate)
 		for _, name := range names {
@@ -411,7 +387,7 @@ func (e *Engine) variantDependents(ctx context.Context, source model.Source, dir
 					continue
 				}
 				for _, port := range ports {
-					if slices.ContainsFunc(known, func(d Dependent) bool { return d.Name == port.Name }) {
+					if slices.ContainsFunc(known, func(d treequery.Dependent) bool { return d.Name == port.Name }) {
 						continue
 					}
 					for _, dependency := range port.Dependencies {
@@ -421,7 +397,7 @@ func (e *Engine) variantDependents(ctx context.Context, source model.Source, dir
 						}
 						dependent := byName[port.Name]
 						if dependent == nil {
-							dependent = &Dependent{Name: port.Name, Directory: directory}
+							dependent = &treequery.Dependent{Name: port.Name, Directory: directory}
 							byName[port.Name] = dependent
 							found = append(found, dependent)
 						}
@@ -433,7 +409,7 @@ func (e *Engine) variantDependents(ctx context.Context, source model.Source, dir
 			}
 		}
 	}
-	under := make([]Dependent, 0, len(found))
+	under := make([]treequery.Dependent, 0, len(found))
 	for _, dependent := range found {
 		under = append(under, *dependent)
 	}
@@ -447,9 +423,9 @@ func (e *Engine) variantDependents(ctx context.Context, source model.Source, dir
 type LinkedPorts struct {
 	Base model.ObjectID
 	// Bump are the dependents to revision-bump, in name order.
-	Bump []Dependent
+	Bump []treequery.Dependent
 	// Changed are dependents the branch already changes, left alone.
-	Changed []Dependent
+	Changed []treequery.Dependent
 	// Excepted are the dependents --except took out.
 	Excepted []string
 }
@@ -479,7 +455,7 @@ func (e *Engine) LinkedPorts(ctx context.Context, branch model.Branch, port stri
 		return linked, fmt.Errorf("reading %s's dependents: %w", port, err)
 	}
 	for _, name := range except {
-		if !slices.ContainsFunc(dependents, func(d Dependent) bool { return d.Name == name && slices.Contains(d.Phases, "library") }) {
+		if !slices.ContainsFunc(dependents, func(d treequery.Dependent) bool { return d.Name == name && slices.Contains(d.Phases, "library") }) {
 			return linked, fmt.Errorf("--except %s: it is not a library dependent of %s", name, port)
 		}
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -58,7 +59,7 @@ func (f fakePorts) Directory(_ context.Context, _ model.Source, name string) (st
 			}
 		}
 	}
-	return "", notInTree(name)
+	return "", treequery.NotInTree(name)
 }
 
 func port(name string, deps ...string) macports.PortInfo {
@@ -546,16 +547,6 @@ func TestVariantsBuildOnePortTheirWay(t *testing.T) {
 	require.ErrorContains(t, err, "GitHub's workflow builds default variants only")
 	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, EachVariant: true, Variants: map[string]bool{"tests": true}})
 	require.ErrorContains(t, err, "--variants each builds every variant")
-}
-
-// A name the tree's index doesn't hold is no port, as a name check reads
-// it, said as the index says it: create said "whether a subport is named
-// mods wasn't checked: no port named mods" (field testing, batch 58).
-func TestAnUnknownNameIsNoPort(t *testing.T) {
-	t.Parallel()
-	err := error(unknownPort{errors.New("no port named mods")})
-	require.ErrorIs(t, err, ErrNoPort)
-	require.EqualError(t, err, "no port named mods")
 }
 
 // A check that asks no tests runs check.tests, resolved here for check,

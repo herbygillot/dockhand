@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -17,12 +17,12 @@ import (
 // jo links it under its +jq variant too, as variantDependents finds.
 type jqDependents struct{ under bool }
 
-func (d jqDependents) Dependents(context.Context, model.Source, []string) ([]engine.Dependent, error) {
-	jo := engine.Dependent{Name: "jo", Directory: "textproc/jo", On: []string{"jq"}, Phases: []string{"build"}}
+func (d jqDependents) Dependents(context.Context, model.Source, []string) ([]treequery.Dependent, error) {
+	jo := treequery.Dependent{Name: "jo", Directory: "textproc/jo", On: []string{"jq"}, Phases: []string{"build"}}
 	if d.under {
 		jo.Phases, jo.Variants = []string{"library"}, []string{"jq"}
 	}
-	return []engine.Dependent{jo, {Name: "yq", Directory: "textproc/yq", On: []string{"jq"}, Phases: []string{"library", "runtime"}}}, nil
+	return []treequery.Dependent{jo, {Name: "yq", Directory: "textproc/yq", On: []string{"jq"}, Phases: []string{"library", "runtime"}}}, nil
 }
 
 // jqAndDevel reads jq's dependents as jqDependents does, and names the

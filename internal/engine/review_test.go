@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -207,7 +208,7 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 	require.Empty(t, report.UpstreamUnread)
 	require.Len(t, report.Upstream, 1)
 	require.Equal(t, []string{"upstream's COPYING changed; the Portfile's license line may need to follow", "Compared COPYING"}, report.UpstreamWords(), "what was read is said too (batch 23)")
-	require.Equal(t, []Dependent{{Name: "jaq", Directory: "textproc/jaq", On: []string{"jq"}, Phases: []string{"library"}}}, report.Dependents)
+	require.Equal(t, []treequery.Dependent{{Name: "jaq", Directory: "textproc/jaq", On: []string{"jq"}, Phases: []string{"library"}}}, report.Dependents)
 	markdown := report.Markdown()
 	require.Contains(t, markdown, "What upstream's change means, comparing the source archives with the base's:\n- upstream's COPYING changed; the Portfile's license line may need to follow\n")
 	require.Contains(t, markdown, "1 dependent, from the index at "+model.ObjectID(report.Base).Short()+": jaq (library); candidates to look at.")
@@ -221,7 +222,7 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 // readDirectories records the directories the index is asked about.
 type readDirectories struct{ asked [][]string }
 
-func (r *readDirectories) Dependents(_ context.Context, _ model.Source, directories []string) ([]Dependent, error) {
+func (r *readDirectories) Dependents(_ context.Context, _ model.Source, directories []string) ([]treequery.Dependent, error) {
 	r.asked = append(r.asked, directories)
 	return nil, nil
 }
@@ -235,7 +236,7 @@ func (r *readDirectories) PortsDefined(_ context.Context, _ model.Source, direct
 // subport there would, and reads no dependents.
 type definedPorts struct{}
 
-func (definedPorts) Dependents(context.Context, model.Source, []string) ([]Dependent, error) {
+func (definedPorts) Dependents(context.Context, model.Source, []string) ([]treequery.Dependent, error) {
 	return nil, nil
 }
 

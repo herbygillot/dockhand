@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -82,7 +83,7 @@ func TestAReviewSaysTheAssessmentAndTheDependents(t *testing.T) {
 		Upstream: []engine.PortComparison{{Port: "libuv", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{
 			{Kind: "patch", Message: "patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED"},
 		}}}},
-		Dependents: []engine.Dependent{{Name: "ttyd", Phases: []string{"library"}}, {Name: "luv", Phases: []string{"library"}}}}
+		Dependents: []treequery.Dependent{{Name: "ttyd", Phases: []string{"library"}}, {Name: "luv", Phases: []string{"library"}}}}
 	var out bytes.Buffer
 	writeReview(&out, report)
 	require.Contains(t, out.String(), "  Upstream comparison using ports at pull request commit bbbbbbb (based on master aaaaaaa):\n    · patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED\n")

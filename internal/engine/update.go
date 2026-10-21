@@ -23,6 +23,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -1335,7 +1336,7 @@ func (e *Engine) observeProviders(ctx context.Context, input assess.Input, trees
 			}
 			port, directory, err := providerPort(ctx, reader, tree, provider.Port)
 			switch {
-			case errors.Is(err, ErrNoPort) || errors.Is(err, portindex.ErrNotIndexed):
+			case errors.Is(err, treequery.ErrNoPort) || errors.Is(err, portindex.ErrNotIndexed):
 				observed[provider] = assess.Observation{Absent: true}
 			case err != nil:
 				observed[provider] = assess.Observation{Problem: err.Error()}
@@ -1363,7 +1364,7 @@ func providerPort(ctx context.Context, reader PortReader, source model.Source, n
 			return port, directory, nil
 		}
 	}
-	return macports.PortInfo{}, "", fmt.Errorf("%w: %s defines no port %s", ErrNoPort, directory, name)
+	return macports.PortInfo{}, "", fmt.Errorf("%w: %s defines no port %s", treequery.ErrNoPort, directory, name)
 }
 
 // editRecorded witnesses an edit's record (store.Recorded).

@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -27,7 +28,7 @@ type sourceArchives struct {
 	manual bool
 }
 
-func (s sourceArchives) FetchArchives(ctx context.Context, source model.Source, directory, into string) ([]engine.FetchedArchive, error) {
+func (s sourceArchives) FetchArchives(ctx context.Context, source model.Source, directory, into string) ([]treequery.FetchedArchive, error) {
 	_, data, err := s.repo.File(ctx, string(source.Tree), directory+"/Portfile")
 	if err != nil {
 		return nil, err
@@ -41,48 +42,48 @@ func (s sourceArchives) FetchArchives(ctx context.Context, source model.Source, 
 	if err != nil {
 		return nil, err
 	}
-	fetched := []engine.FetchedArchive{archive}
+	fetched := []treequery.FetchedArchive{archive}
 	if s.manual && version == "1.7.1" {
 		manual, err := writeSourceArchive(into, "jq-manual", map[string]string{"NEWS": "the manual\n"})
 		if err != nil {
 			return nil, err
 		}
-		fetched = append([]engine.FetchedArchive{manual}, fetched...)
+		fetched = append([]treequery.FetchedArchive{manual}, fetched...)
 	}
 	return fetched, nil
 }
 
 // writeSourceArchive writes files as an archive enclosed in top.
-func writeSourceArchive(into, top string, files map[string]string) (engine.FetchedArchive, error) {
+func writeSourceArchive(into, top string, files map[string]string) (treequery.FetchedArchive, error) {
 	name := top + ".tar.gz"
 	path := filepath.Join(into, name)
 	out, err := os.Create(path)
 	if err != nil {
-		return engine.FetchedArchive{}, err
+		return treequery.FetchedArchive{}, err
 	}
 	gz := gzip.NewWriter(out)
 	tw := tar.NewWriter(gz)
 	for _, member := range []string{"NEWS", "src/jq.c", "src/new.c"} {
 		if body, ok := files[member]; ok {
 			if err := tw.WriteHeader(&tar.Header{Name: top + "/" + member, Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
-				return engine.FetchedArchive{}, err
+				return treequery.FetchedArchive{}, err
 			}
 			if _, err := tw.Write([]byte(body)); err != nil {
-				return engine.FetchedArchive{}, err
+				return treequery.FetchedArchive{}, err
 			}
 		}
 	}
 	if err := tw.Close(); err != nil {
-		return engine.FetchedArchive{}, err
+		return treequery.FetchedArchive{}, err
 	}
 	if err := gz.Close(); err != nil {
-		return engine.FetchedArchive{}, err
+		return treequery.FetchedArchive{}, err
 	}
 	if err := out.Close(); err != nil {
-		return engine.FetchedArchive{}, err
+		return treequery.FetchedArchive{}, err
 	}
 	sum := sha256.Sum256([]byte(top))
-	return engine.FetchedArchive{Name: name, Path: path, Sum: portfile.Checksum{Name: name, SHA256: hex.EncodeToString(sum[:])}}, nil
+	return treequery.FetchedArchive{Name: name, Path: path, Sum: portfile.Checksum{Name: name, SHA256: hex.EncodeToString(sum[:])}}, nil
 }
 
 func TestDiffArchiveShowsWhatChangedInside(t *testing.T) {

@@ -1,6 +1,7 @@
-package engine
+package treequery
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,4 +46,14 @@ func TestDependentsAreFoundInTheIndex(t *testing.T) {
 	none, err := dependentsIn(index, []string{"sysutils/fd"})
 	require.NoError(t, err)
 	require.Empty(t, none)
+}
+
+// A name the tree's index doesn't hold is no port, as a name check reads
+// it, said as the index says it: create said "whether a subport is named
+// mods wasn't checked: no port named mods" (field testing, batch 58).
+func TestAnUnknownNameIsNoPort(t *testing.T) {
+	t.Parallel()
+	err := error(unknownPort{errors.New("no port named mods")})
+	require.ErrorIs(t, err, ErrNoPort)
+	require.EqualError(t, err, "no port named mods")
 }

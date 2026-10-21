@@ -18,3 +18,25 @@ opened before the database (the exiv2 field notes).
   isn't a ports tree or isn't in a Git checkout at all (`notCheckout` is
   `ErrNotPortsTree` too). With several registered, it refuses, naming
   them. `path` alone still means here.
+
+## The port reader leaves engine (CX-5's package half)
+
+At the architecture thread's word: `internal/macports/treequery`, not
+`sourcequery`, since "source" at the top level means upstream's.
+
+- `treequery.Reader` is engine's `evaluatedPorts`: a directory's ports,
+  its family, a port's directory, the index's spellings, dependents, the
+  ports each directory defines, and the dependency graph. With it come
+  archive planning and fetching (`FetchArchives`, `ArchivePlan`,
+  `FetchPlanned`), and the types its answers are, `Dependent`,
+  `FetchedArchive`, `ErrNoArchives`, and `ErrNoPort`, which engine names
+  as treequery's and doesn't alias. `NotInTree` says a port a tree
+  hasn't, for a reader standing in for this one.
+- distfetch's `OwnArchives` went with its one caller, as treequery's
+  `ownArchives`, and distfetch no longer imports depblock.
+- treequery imports nothing of engine, whose interfaces it satisfies by
+  its methods. engine still builds it as its default reader, in
+  `portReader`, until compose fills it. engine's boundary test names it.
+- Its tests moved with it: dependents in the index, fetching from the
+  mirror after a stealth update, the fetch plan's refusals, and an
+  unknown name being no port.

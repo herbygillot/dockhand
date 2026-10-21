@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
@@ -115,10 +116,10 @@ func (p *fakePlanner) same(tree, as model.ObjectID) {
 func (p *fakePlanner) ArchivePlan(_ context.Context, source model.Source, directory, name string) (macports.PortInfo, []macports.Distfile, error) {
 	port, ok := p.ports[source.Tree][name]
 	if !ok {
-		return macports.PortInfo{}, nil, fmt.Errorf("%w: %s defines no port %s", ErrNoPort, directory, name)
+		return macports.PortInfo{}, nil, fmt.Errorf("%w: %s defines no port %s", treequery.ErrNoPort, directory, name)
 	}
 	if port.noSource || port.info.GitFetched() {
-		return port.info, nil, ErrNoArchives
+		return port.info, nil, treequery.ErrNoArchives
 	}
 	var plan []macports.Distfile
 	for _, name := range slices.Sorted(maps.Keys(port.archives)) {
@@ -631,7 +632,7 @@ port::register_callback demo_crates
 	require.Equal(t, "zpatched-1.0.tar.gz", plan[0].Name)
 
 	_, _, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zgit", "")
-	require.ErrorIs(t, err, ErrNoArchives)
+	require.ErrorIs(t, err, treequery.ErrNoArchives)
 }
 
 // What an assessment wants of the ports is observed in the tree: a port
@@ -759,7 +760,7 @@ func TestASubportsArchivesArePlannedForIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1.0", info.Version)
 	_, _, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zdemo", "zdemo-nightly")
-	require.ErrorIs(t, err, ErrNoPort)
+	require.ErrorIs(t, err, treequery.ErrNoPort)
 }
 
 // A revision's archives are paired by the port's source set: one the base

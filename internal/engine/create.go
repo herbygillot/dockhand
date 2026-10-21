@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portcreate"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/registry"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -428,7 +429,7 @@ func (e *Engine) NameTaken(ctx context.Context, name string) (directory string, 
 		directory, err = reader.Directory(ctx, model.Source{Tree: model.ObjectID(tree)}, name)
 	}
 	switch {
-	case errors.Is(err, ErrNoPort):
+	case errors.Is(err, treequery.ErrNoPort):
 		return "", base, "", nil
 	case err != nil:
 		return "", base, err.Error(), nil
