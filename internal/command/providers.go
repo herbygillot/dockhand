@@ -30,14 +30,14 @@ type tartImages interface {
 }
 
 // images is dockhand's Tart images, or nil when Tart isn't installed.
-func (h *host) images() tartImages {
-	if h.tartImages != nil {
-		return h.tartImages
+func (s *settings) images() tartImages {
+	if s.host.tartImages != nil {
+		return s.host.tartImages
 	}
-	if _, err := h.lookTart("tart"); err != nil {
+	if _, err := s.host.lookTart("tart"); err != nil {
 		return nil
 	}
-	return &tart.Provider{}
+	return s.composeOptions().TartProvider()
 }
 
 // installTart installs Tart from MacPorts.
@@ -82,7 +82,7 @@ new one has passed.`,
 				return err
 			}
 			options.Xcodes = file.Providers.Tart.Xcode
-			images := s.host.images()
+			images := s.images()
 			if images == nil {
 				return fmt.Errorf("checks build in Tart VMs, and Tart isn't installed: %s", installTart)
 			}
@@ -164,7 +164,7 @@ func (s *settings) tartReadiness(ctx context.Context) []string {
 	if !s.host.tartSupported() {
 		return []string{noTart}
 	}
-	images := s.host.images()
+	images := s.images()
 	if images == nil {
 		return []string{"· needs Tart: " + installTart + ", then dockhand setup tart"}
 	}
@@ -292,7 +292,7 @@ func (s *settings) githubReadiness(ctx context.Context) string {
 func (s *settings) missingSteps(ctx context.Context) []string {
 	var steps []string
 	if s.host.tartSupported() {
-		if images := s.host.images(); images != nil {
+		if images := s.images(); images != nil {
 			if status, err := images.Status(ctx); err == nil && (status.Readiness() == tart.NoImage || status.Readiness() == tart.XcodeOnly) {
 				steps = append(steps, "dockhand setup tart")
 			}

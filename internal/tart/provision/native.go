@@ -20,7 +20,8 @@ type native struct {
 	runs     map[string]*host.Foreground
 	// guests are the guests reached over SSH, by VM name.
 	guests map[string]*guestssh.Guest
-	// sshKeys is dockhand's SSH material; empty selects ~/.dockhand/ssh.
+	// sshKeys is dockhand's SSH material, where a test gives its own;
+	// Config.Keys otherwise.
 	sshKeys guestssh.Keys
 	// saidBlocked records that setup has said it is waiting for the listing,
 	// and blocked how long it has waited on it.

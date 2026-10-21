@@ -33,8 +33,8 @@ var readersBelow = map[string]int{
 	"buildenv/tart":      1,
 	"git":                2,
 	"macports/portindex": 1,
-	"tart":               7,
-	"tart/guestssh":      3,
+	"tart":               1,
+	"tart/guestssh":      1,
 	"tart/host":          1,
 	"tcl/shell":          1,
 	// These stay: subprocess is where every program starts, with the Env

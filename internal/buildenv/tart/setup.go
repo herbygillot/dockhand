@@ -315,7 +315,7 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 // chooses. A base image has no Xcode.
 func (p *Provider) provisionConfig(release macos.Release, options SetupOptions) (provision.Config, error) {
 	config := provision.Config{
-		Executable: p.Tart.Executable, Home: p.Tart.Home, MacPortsVersion: options.MacPortsVersion, Xcode: options.Xcode,
+		Executable: p.Tart.Executable, Home: p.Tart.Home, Personal: p.Personal, Keys: p.Keys, MacPortsVersion: options.MacPortsVersion, Xcode: options.Xcode,
 		Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
 	}
 	if options.Xcode == "" {

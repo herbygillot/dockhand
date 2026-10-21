@@ -31,10 +31,9 @@ func TestAnImagesOriginIsItsSourceAndWhatSetupPutInIt(t *testing.T) {
 // Setup's record of an image is kept in dockhand's own directory, beside
 // its locks, keyed by the Tart home, and read back as written.
 func TestAnImagesRecordIsKeptBesideTheTartHome(t *testing.T) {
+	t.Parallel()
 	user := t.TempDir()
-	t.Setenv("HOME", user)
-	t.Setenv("DOCKHAND_TART_HOME", "")
-	home := filepath.Join(user, "tart")
+	home := filepath.Join(user, ".dockhand", "tart")
 	require.NoError(t, os.MkdirAll(home, 0o700))
 	_, found, err := ReadImageRecord(home, "dockhand-base-tahoe")
 	require.NoError(t, err)

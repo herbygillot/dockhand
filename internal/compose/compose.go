@@ -27,6 +27,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
 )
 
 // Options are the command line's selections, each its flag's value, empty
@@ -105,6 +106,44 @@ func (o Options) LookPath(name string) string {
 		}
 	}
 	return ""
+}
+
+// TartPlaces are where dockhand's Tart work lives on this Mac: Home, its
+// own Tart home; Personal, the person's, which it only reads; and Keys,
+// the folder of the SSH keys its guests are reached with.
+type TartPlaces struct {
+	Home, Personal, Keys string
+}
+
+// TartPlaces are dockhand's Tart home, $DOCKHAND_TART_HOME or
+// ~/.dockhand/tart; the person's, $TART_HOME or ~/.tart; and the SSH
+// keys' folder, $DOCKHAND_SSH_DIR or ~/.dockhand/ssh: each variable's
+// value made absolute against the command line's directory, each default
+// under its home, or empty without one.
+func (o Options) TartPlaces() TartPlaces {
+	places := o.Places()
+	place := func(variable string, under ...string) string {
+		if named := o.Getenv(variable); named != "" {
+			if path, err := places.Absolute(named); err == nil {
+				return path
+			}
+		}
+		if places.Home == "" {
+			return ""
+		}
+		return filepath.Join(append([]string{places.Home}, under...)...)
+	}
+	return TartPlaces{
+		Home:     place("DOCKHAND_TART_HOME", ".dockhand", "tart"),
+		Personal: place("TART_HOME", ".tart"),
+		Keys:     place("DOCKHAND_SSH_DIR", ".dockhand", "ssh"),
+	}
+}
+
+// TartProvider is the Tart provider, in the command line's places.
+func (o Options) TartProvider() *tart.Provider {
+	places := o.TartPlaces()
+	return &tart.Provider{Tart: tartvm.Client{Home: places.Home}, Personal: places.Personal, Keys: places.Keys}
 }
 
 // Places are the command line's home, $HOME, and working directory.
@@ -262,7 +301,10 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		look = exec.LookPath
 	}
 	if _, err := look("tart"); err == nil {
-		e.Providers[buildenv.Tart] = &tart.Provider{Repo: e.Repo, Index: e.PortIndex, TestTimeout: file.Providers.Tart.Timeout(), BuildTimeout: file.Providers.Tart.BuildBound()}
+		provider := options.TartProvider()
+		provider.Repo, provider.Index = e.Repo, e.PortIndex
+		provider.TestTimeout, provider.BuildTimeout = file.Providers.Tart.Timeout(), file.Providers.Tart.BuildBound()
+		e.Providers[buildenv.Tart] = provider
 	}
 	if dependencies.Leftovers != nil {
 		e.Providers[dependencies.Leftovers.Name()] = dependencies.Leftovers

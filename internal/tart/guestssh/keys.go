@@ -15,19 +15,9 @@ import (
 // setup installs in every image, and the host keys recorded for each
 // image, which verification holds its guests to.
 type Keys struct {
+	// Directory is ~/.dockhand/ssh, or DOCKHAND_SSH_DIR, as compose
+	// places it.
 	Directory string
-}
-
-// DefaultKeys is ~/.dockhand/ssh, or DOCKHAND_SSH_DIR.
-func DefaultKeys() (Keys, error) {
-	if directory := os.Getenv("DOCKHAND_SSH_DIR"); directory != "" {
-		return Keys{Directory: directory}, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return Keys{}, err
-	}
-	return Keys{Directory: filepath.Join(home, ".dockhand", "ssh")}, nil
 }
 
 // Private is the private key's path.

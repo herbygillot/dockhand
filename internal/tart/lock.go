@@ -50,7 +50,7 @@ func homeDirectory(home, kind string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	state, err := StateDirectory()
+	state, err := StateDirectory(home)
 	if err != nil {
 		return "", err
 	}
@@ -58,21 +58,15 @@ func homeDirectory(home, kind string) (string, error) {
 }
 
 // StateDirectory is the directory dockhand's Tart home is in, which holds
-// its locks and image records beside it: ~/.dockhand, unless
-// DOCKHAND_TART_HOME places that home elsewhere, as the acceptance test's
-// scratch environment does, so nothing of its lands in the person's
-// ~/.dockhand (the M1's quick stage, 2026-10-03).
-func StateDirectory() (string, error) {
-	if home := os.Getenv("DOCKHAND_TART_HOME"); home != "" {
-		canonical, err := CanonicalDirectory(home)
-		if err != nil {
-			return "", err
-		}
-		return filepath.Dir(canonical), nil
-	}
-	user, err := os.UserHomeDir()
+// its locks and image records beside it: ~/.dockhand for its own home,
+// ~/.dockhand/tart, and the one DOCKHAND_TART_HOME is in where that places
+// the home elsewhere, as the acceptance test's scratch environment does,
+// so nothing of its lands in the person's ~/.dockhand (the M1's quick
+// stage, 2026-10-03).
+func StateDirectory(home string) (string, error) {
+	canonical, err := CanonicalDirectory(home)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(user, ".dockhand"), nil
+	return filepath.Dir(canonical), nil
 }

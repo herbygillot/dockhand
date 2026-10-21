@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 	"github.com/herbygillot/dockhand/internal/tart/host"
@@ -42,15 +43,13 @@ type probed struct {
 // release when none are named, each through a clone it deletes after. The
 // images themselves are only ever read.
 func harvestTart(ctx context.Context, executable, out string, parallel int, images []string) error {
-	client, err := tart.Client{Executable: executable}.Resolve()
+	places := compose.Options{Env: os.Environ()}.TartPlaces()
+	client, err := tart.Client{Executable: executable, Home: places.Home}.Resolve()
 	if err != nil {
 		return err
 	}
 	machine := host.Machine{Client: client}
-	keys, err := guestssh.DefaultKeys()
-	if err != nil {
-		return err
-	}
+	keys := guestssh.Keys{Directory: places.Keys}
 	if len(images) == 0 {
 		listed, err := machine.Images(ctx)
 		if err != nil {

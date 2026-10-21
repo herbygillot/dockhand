@@ -2,6 +2,7 @@ package provision
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -81,7 +82,10 @@ func (n *native) keys() (guestssh.Keys, error) {
 	if n.sshKeys.Directory != "" {
 		return n.sshKeys, nil
 	}
-	return guestssh.DefaultKeys()
+	if n.config.Keys == "" {
+		return guestssh.Keys{}, errors.New("setup: no folder for the SSH keys guests are reached with was given")
+	}
+	return guestssh.Keys{Directory: n.config.Keys}, nil
 }
 
 func (n *native) HostKeysRecorded(image string) bool {
@@ -126,11 +130,8 @@ func (n *native) BootstrapAgent(ctx context.Context, name string) error {
 // PersonalImages lists the person's own Tart home, reading nothing else
 // there; a home that does not exist has none.
 func (n *native) PersonalImages(ctx context.Context) (map[string]image, error) {
-	home, err := tart.PersonalHome()
-	if err != nil {
-		return nil, err
-	}
-	if home == n.config.Home {
+	home := n.config.Personal
+	if home == "" || home == n.config.Home {
 		return map[string]image{}, nil
 	}
 	if _, err := os.Stat(filepath.Join(home, "vms")); err != nil {
@@ -154,11 +155,11 @@ func (n *native) PersonalImages(ctx context.Context) (map[string]image, error) {
 // (tart.StateDirectory), ~/.dockhand, removed afterwards; the person's
 // image is only read.
 func (n *native) Import(ctx context.Context, source, destination string) error {
-	home, err := tart.PersonalHome()
-	if err != nil {
-		return err
+	home := n.config.Personal
+	if home == "" {
+		return errors.New("setup: your Tart home wasn't given, to import from")
 	}
-	state, err := tart.StateDirectory()
+	state, err := tart.StateDirectory(n.config.Home)
 	if err != nil {
 		return err
 	}

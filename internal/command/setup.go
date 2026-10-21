@@ -81,7 +81,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 			fmt.Fprintf(streams.Out, "· maintainer: %s, for --mine, create, and serve's daily look\n", engine.MaintainerWords(suggestion, s.places().Tilde(configPath)))
 		}
 	}
-	if images := s.host.images(); images != nil {
+	if images := s.images(); images != nil {
 		makeImage := false
 		if status, err := images.Status(ctx); err == nil && !status.HasHostImage() {
 			question := fmt.Sprintf("? Create a Tart image for this Mac’s macOS version? This downloads macOS and uses up to %s of disk space. [y/N] ", tart.SetupDisk)

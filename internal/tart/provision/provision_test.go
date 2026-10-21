@@ -306,9 +306,9 @@ func TestConventionalImageNamesRequireTheirMatchingProfile(t *testing.T) {
 	directory := t.TempDir()
 	archive := directory + "/Xcode_26.6.xip"
 	require.NoError(t, os.WriteFile(archive, nil, 0o600))
-	_, _, err := normalize(Config{Platform: testPlatform, Image: "dockhand-base-tahoe", Xcode: archive})
+	_, _, err := normalize(Config{Platform: testPlatform, Image: "dockhand-base-tahoe", Xcode: archive, Home: t.TempDir()})
 	require.ErrorContains(t, err, "cannot replace the conventional base image")
-	_, _, err = normalize(Config{Platform: testPlatform, Image: "dockhand-xcode-tahoe"})
+	_, _, err = normalize(Config{Platform: testPlatform, Image: "dockhand-xcode-tahoe", Home: t.TempDir()})
 	require.ErrorContains(t, err, "requires --xcode")
 }
 

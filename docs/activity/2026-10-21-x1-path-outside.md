@@ -292,3 +292,26 @@ invocation's Signin over the host's keeping; `host.authAPI` and
 give the token, store, and gh as fields, and its precedence tests run in
 parallel; compose's signin_test holds the precedence. The boundary test's
 github row is gone.
+
+## Tart's homes and keys, compose's
+
+tart, tart/provision, tart/guestssh, and buildenv/tart read no home or
+variable. `compose.Options.TartPlaces` resolves dockhand's Tart home
+($DOCKHAND_TART_HOME or ~/.dockhand/tart), the person's ($TART_HOME or
+~/.tart), and the SSH keys' folder ($DOCKHAND_SSH_DIR or
+~/.dockhand/ssh) from the invocation, and `Options.TartProvider` makes
+the provider in them, for the engine and for setup's report alike.
+`buildenv/tart.Provider` gains `Personal` and `Keys`; `provision.Config`
+`Personal` and `Keys`; `tart.Client.Resolve` refuses an empty home;
+`tart.PersonalHome` and `guestssh.DefaultKeys` are gone; and
+`tart.StateDirectory(home)` is the directory the home is in, which is
+~/.dockhand for ~/.dockhand/tart and the scratch directory for the
+acceptance test's DOCKHAND_TART_HOME, as before. Every caller of the
+state directory passes dockhand's own home, so the locks and records
+stay where they were. tools/facts places its Tart through compose.
+
+The provisioning code's pin (`setupPin`) is updated, with
+`SetupProtocol` kept at 3: what's given changed, not what an image
+holds. tart's and provision's tests give their homes and run in
+parallel where they set nothing. The boundary test's tart and guestssh
+rows are down to each one `os.Environ`, which the Env slice takes next.

@@ -18,13 +18,16 @@ import (
 )
 
 type Config struct {
-	Executable      string
-	Home            string
-	Image           string
-	Source          string
-	MacPortsVersion string
-	GuestPrefix     string
-	Platform        model.Platform
+	Executable string
+	// Home is dockhand's Tart home, Personal the person's, which setup
+	// reads only, and Keys the folder of the SSH keys guests are reached
+	// with, as compose places them.
+	Home, Personal, Keys string
+	Image                string
+	Source               string
+	MacPortsVersion      string
+	GuestPrefix          string
+	Platform             model.Platform
 	// Xcode is an Xcode archive, or a folder of them, for an Xcode image.
 	Xcode        string
 	XcodeArchive string

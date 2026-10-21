@@ -61,10 +61,12 @@ type guest interface {
 type native struct {
 	host.Machine
 	keys guestssh.Keys
+	// personal is the person's own Tart home, read only.
+	personal string
 }
 
-func newNative(client tartvm.Client, keys guestssh.Keys) *native {
-	return &native{Machine: host.Machine{Client: client}, keys: keys}
+func newNative(client tartvm.Client, keys guestssh.Keys, personal string) *native {
+	return &native{Machine: host.Machine{Client: client}, keys: keys, personal: personal}
 }
 
 func (n *native) Images(ctx context.Context) ([]string, error) {
@@ -96,8 +98,8 @@ func (n *native) Running(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	count := len(own)
-	personal, err := tartvm.PersonalHome()
-	if err != nil || personal == n.Client.Home {
+	personal := n.personal
+	if personal == "" || personal == n.Client.Home {
 		return count, nil
 	}
 	if _, err := os.Stat(filepath.Join(personal, "vms")); err != nil {

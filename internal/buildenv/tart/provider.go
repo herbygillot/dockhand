@@ -61,9 +61,14 @@ var guestProgram []byte
 
 // Provider builds on dockhand's Tart images.
 type Provider struct {
-	// Tart is dockhand's Tart installation and home.
-	Tart tartvm.Client
-	Repo *git.Repository
+	// Tart is dockhand's Tart installation and home, Personal the
+	// person's own Tart home, which dockhand only reads, and Keys the
+	// folder of the SSH keys guests are reached with, as compose places
+	// them.
+	Tart     tartvm.Client
+	Personal string
+	Keys     string
+	Repo     *git.Repository
 	// Index stages a tree's port index for a platform: the engine's.
 	Index func() (portindex.Source, error)
 	// Prefix is where the images' MacPorts is, /opt/local when empty.
@@ -110,11 +115,11 @@ func (p *Provider) vms() (machine, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys, err := guestssh.DefaultKeys()
+	keys, err := p.sshKeys()
 	if err != nil {
 		return nil, err
 	}
-	p.machine = newNative(client, keys)
+	p.machine = newNative(client, keys, p.Personal)
 	return p.machine, nil
 }
 
@@ -880,11 +885,19 @@ func (p *Provider) signingKeys() (binaryarchive.Keys, error) {
 	if p.archiveKeys != nil {
 		return p.archiveKeys()
 	}
-	keys, err := guestssh.DefaultKeys()
+	keys, err := p.sshKeys()
 	if err != nil {
 		return binaryarchive.Keys{}, err
 	}
 	return binaryarchive.LoadKeys(keys.Directory)
+}
+
+// sshKeys are dockhand's SSH keys (Keys).
+func (p *Provider) sshKeys() (guestssh.Keys, error) {
+	if p.Keys == "" {
+		return guestssh.Keys{}, errors.New("tart: no folder for the SSH keys guests are reached with was given")
+	}
+	return guestssh.Keys{Directory: p.Keys}, nil
 }
 
 // launch copies the archive into the guest, checked by size and sha256,

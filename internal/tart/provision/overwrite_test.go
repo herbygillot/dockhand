@@ -43,7 +43,7 @@ func TestSetupRefusesToOverwriteAListedVM(t *testing.T) {
 	require.ErrorContains(t, err, "tart: refusing to overwrite existing VM dockhand-base-tahoe-next")
 	require.NoFileExists(t, calls, "nothing cloned")
 
-	t.Setenv("TART_HOME", t.TempDir())
+	n.config.Personal = t.TempDir()
 	err = n.Import(t.Context(), "my-tahoe", "dockhand-base-tahoe-next")
 	require.ErrorContains(t, err, "tart: refusing to overwrite existing VM dockhand-base-tahoe-next")
 	recorded, readErr := os.ReadFile(calls)
