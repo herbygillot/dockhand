@@ -75,8 +75,31 @@ act() {
 		# token comes from, and until when it renews, or why there's none.
 		"$DH_BIN" --json setup 2>&1 | jq -c '.result.github // .error' >>"$ROW_DIR/auth" 2>&1 || printf '[failed]\n' >>"$ROW_DIR/auth"
 	done
-	fault_tart list 2>/dev/null >"$ROW_DIR/vms" || :
+	# serve stops only between checks: uninstalling it mid-check left
+	# check-448 (mysql8) stopped, with its Tart clone, cleared by cancel
+	# and clean (Prime-time, 2026-10-21). It's given a while to finish
+	# what it's running, then uninstalled, and serve --drain finishes
+	# what that stopped, so the VMs listed are what serve left behind.
+	s1_idle || printf '%s serve still busy after %s minutes; uninstalling, and draining what it leaves\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(drain_minutes)" >>"$ROW_DIR/samples"
 	dh serve --uninstall || :
+	dh serve --drain || :
+	fault_tart list 2>/dev/null >"$ROW_DIR/vms" || :
+}
+
+# drain_minutes is how long the row waits for serve's checks to finish
+# before uninstalling it.
+drain_minutes() { printf '%s' "${ACCEPT_S1_DRAIN_MINUTES:-120}"; }
+
+# s1_idle waits, a minute at a time, until no check is queued or running
+# but stopped ones, and fails once drain_minutes pass.
+s1_idle() {
+	local waited busy
+	for ((waited = 0; waited < $(drain_minutes); waited++)); do
+		busy=$(dh_quiet --json status --all | jq '[.result.queue[]? | select(.stopped != true)] | length' 2>/dev/null)
+		[ "${busy:-1}" = 0 ] && return 0
+		sleep 60
+	done
+	return 1
 }
 
 teardown() {
