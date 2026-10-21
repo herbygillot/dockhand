@@ -923,6 +923,23 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 		Message: "upstream renamed: GitHub answers jqlang/jq as jqlang/jq2, by a redirect; update --follow-moves points github.setup at it"}, movedChange("jqlang/jq", "jqlang/jq2", false))
 	followed := movedChange("jqlang/jq", "jqlang/jq2", true)
 	require.False(t, followed.Hold, "followed, the person's choice, nothing holds")
+
+	// A branch already at the release still follows the move with
+	// --follow-moves, where it changed nothing: duckdb's at 2.0.0 kept
+	// github.setup cwida duckdb (field testing, 2026-10-21).
+	portfilePath := filepath.Join(update.Branch.Worktree, "textproc/jq/Portfile")
+	data, err := os.ReadFile(portfilePath)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(portfilePath, append(data, []byte("github.setup returntocorp semgrep 1.8.1 v\n")...), 0o644))
+	again, err := e.Update(t.Context(), UpdateRequest{Branch: update.Branch, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", CompareUpstream: true, FollowMoves: true,
+		Release: &model.Release{Forge: forge.GitHub, Repository: "returntocorp/semgrep", Version: "1.8.1"}})
+	require.NoError(t, err)
+	require.Equal(t, "semgrep/semgrep", again.Followed)
+	require.Equal(t, "jq: follow the move to semgrep/semgrep", again.Subject, "the version had nothing to change")
+	require.True(t, again.Applied)
+	data, err = os.ReadFile(portfilePath)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "github.setup semgrep semgrep 1.8.1 v")
 }
 
 // The obsolete stub a Portfile keeps for a port, replaced_by it and

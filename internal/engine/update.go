@@ -453,6 +453,36 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			}
 		}
 	}
+	// A port already at its release, on a branch an update moved before
+	// --follow-moves was asked, still follows the move: duckdb's branch at
+	// 2.0.0 kept github.setup cwida duckdb, and the command changed nothing
+	// (field testing, 2026-10-21).
+	// It compares no archives: the version's are those compared already.
+	followOnly := false
+	if request.Action == model.EditUpdate && request.FollowMoves && len(result.Files) == 0 && update.Release != nil && result.Target.Portfile != "" {
+		if renamed := e.renamed(ctx, *update.Release); renamed != "" {
+			file, text, err := worktree.File(ctx, captured, result.Target.Portfile)
+			if err != nil {
+				return Update{}, err
+			}
+			moved, n, err := portfile.MoveGitHub(text, update.Release.Repository, renamed)
+			if err != nil {
+				return Update{}, fmt.Errorf("%s: --follow-moves: %w", request.Port, err)
+			}
+			if file.Exists && n > 0 {
+				result.Files = []git.FileEdit{{Path: result.Target.Portfile, Before: file, After: moved, Mode: file.Mode}}
+				prepared, err := worktree.EditTree(ctx, captured, result.Files)
+				if err != nil {
+					return Update{}, err
+				}
+				result.PreparedTree = model.ObjectID(prepared)
+				update.Renamed, update.Followed = renamed, renamed
+				update.Files = []string{result.Target.Portfile}
+				update.Subject = update.Port + ": follow the move to " + renamed
+				followOnly = true
+			}
+		}
+	}
 	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && len(result.Files) > 0 {
 		if info, ok := result.PortAfter(update.Port); ok {
 			update.PlainHTTP = e.plainHTTP(ctx, info, request.answered)
@@ -462,7 +492,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	if result.Stealth != nil {
 		update.Subject = update.Port + ": update checksums after a stealth update"
 	}
-	if len(result.Files) > 0 && (compare || result.GoToolchain != nil) {
+	if len(result.Files) > 0 && !followOnly && (compare || result.GoToolchain != nil) {
 		trees := [2]model.Source{{Tree: model.ObjectID(captured), Base: model.ObjectID(base)}, {Tree: result.PreparedTree, Base: model.ObjectID(base)}}
 		update.Upstream = e.assessUpstream(ctx, result, sourcecompare.Versions{Old: update.Before.Version, New: update.After.Version}, trees, compare)
 		// A repository GitHub answers by another name is a finding of the

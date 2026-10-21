@@ -615,7 +615,13 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 			what += ", " + also[0] + ", and " + also[1]
 		}
 	}
-	fmt.Fprintf(out, "%s.\nChanged: %s\n", what, strings.Join(update.Files, ", "))
+	// A move followed on a branch already at the version updated nothing
+	// else, which "Updated version." said it had (duckdb, 2026-10-21).
+	if update.Followed != "" && update.Before == update.After {
+		fmt.Fprintf(out, "Changed: %s\n", strings.Join(update.Files, ", "))
+	} else {
+		fmt.Fprintf(out, "%s.\nChanged: %s\n", what, strings.Join(update.Files, ", "))
+	}
 	// A crate the Portfile pinned over its lock goes once the new lock
 	// moves past it, and says so (termusic's, field testing, 2026-10-02).
 	for _, block := range update.Regenerated {
