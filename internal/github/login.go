@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sync"
 	"time"
 
@@ -36,53 +35,18 @@ var lockWait = 30 * time.Second
 // GitHub's where it's empty.
 func (s SystemCredentials) WithRenewal(flow *DeviceFlow, path string) SystemCredentials {
 	s.Flow, s.Lock = flow, path
-	s.renewed = s.renewal()
+	if s.renewed == nil {
+		s.renewed = &pendingLogin{}
+	}
 	return s
 }
 
-// pending are the process's pending logins, one for each store and key:
-// every client of one login shares the renewal the store didn't take,
-// where each kept its own and the others read the spent login, as serve's
-// identity watcher would, stopping serve's work on GitHub until setup
-// github (CX-11's first half).
-var pendingLogins = struct {
-	sync.Mutex
-	logins map[pendingKey]*pendingLogin
-}{logins: map[pendingKey]*pendingLogin{}}
-
-type pendingKey struct {
-	store credential.Store
-	key   credential.Key
-}
-
-// pendingFor is the process's pending login for a store's key; a store
-// that can't be a map key, as a struct holding a map, keeps its own.
-func pendingFor(store credential.Store, key credential.Key) *pendingLogin {
-	if store == nil || !reflect.TypeOf(store).Comparable() {
-		return &pendingLogin{}
-	}
-	pendingLogins.Lock()
-	defer pendingLogins.Unlock()
-	found := pendingLogins.logins[pendingKey{store, key}]
-	if found == nil {
-		found = &pendingLogin{}
-		pendingLogins.logins[pendingKey{store, key}] = found
-	}
-	return found
-}
-
-// renewal is the credentials' pending login: the process's for their
-// store and key, so credentials made apart, as serve's identity watcher's,
-// share one; none for credentials with no store.
-func (s SystemCredentials) renewal() *pendingLogin {
-	if s.renewed != nil {
-		return s.renewed
-	}
-	if s.Store == nil {
-		return nil
-	}
-	return pendingFor(s.Store, s.Key)
-}
+// renewal is the credentials' pending login: the one their runtime's
+// client holds, which its identity watcher shares (Runtime.Identity), so
+// one renewal the store didn't take is everyone's, where serve's watcher
+// read the spent login (CX-11's first half). It's held by the runtime, not
+// the process (R3-32); none for credentials made apart.
+func (s SystemCredentials) renewal() *pendingLogin { return s.renewed }
 
 // pendingLogin is a renewed login the store didn't take: the refresh
 // token it replaced is spent, so it's used until a save takes.

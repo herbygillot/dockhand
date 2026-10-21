@@ -425,7 +425,7 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 	realIdentity, realEvery := serveIdentity, serveIdentityEvery
 	t.Cleanup(func() { serveIdentity, serveIdentityEvery = realIdentity, realEvery })
 	serveIdentityEvery = 50 * time.Millisecond
-	serveIdentity = func() func(context.Context) (string, error) {
+	serveIdentity = func(*github.Runtime) func(context.Context) (string, error) {
 		return func(context.Context) (string, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -471,7 +471,7 @@ func TestServeSaysALoginItCantRead(t *testing.T) {
 	realIdentity, realEvery := serveIdentity, serveIdentityEvery
 	t.Cleanup(func() { serveIdentity, serveIdentityEvery = realIdentity, realEvery })
 	serveIdentityEvery = 50 * time.Millisecond
-	serveIdentity = func() func(context.Context) (string, error) {
+	serveIdentity = func(*github.Runtime) func(context.Context) (string, error) {
 		return func(context.Context) (string, error) {
 			mu.Lock()
 			defer mu.Unlock()

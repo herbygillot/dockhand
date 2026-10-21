@@ -123,10 +123,10 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 var serveIdentityEvery = time.Minute
 
 // serveIdentity is who serve's GitHub login acts as now, read afresh each
-// time it's asked, from the same chain the engine's client reads. Tests
-// stand another in.
-var serveIdentity = func() func(context.Context) (string, error) {
-	watcher := github.SystemIdentity(github.SystemCredentials{Store: authStore, Key: github.CredentialKey})
+// time it's asked, from the engine's own runtime, so a renewal its store
+// didn't take is the watcher's too. Tests stand another in.
+var serveIdentity = func(runtime *github.Runtime) func(context.Context) (string, error) {
+	watcher := runtime.Identity()
 	return func(ctx context.Context) (string, error) {
 		identity, err := watcher.Current(ctx)
 		return identity.Account, err
@@ -172,7 +172,7 @@ func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain bool,
 		Build:           buildinfo.Current().String(),
 		Executable:      servedExecutable(drain),
 		ExecutableGrace: serveGrace,
-		Identity:        serveIdentity(),
+		Identity:        serveIdentity(e.GitHub),
 		IdentityEvery:   serveIdentityEvery,
 		Now:             serveNow,
 	}

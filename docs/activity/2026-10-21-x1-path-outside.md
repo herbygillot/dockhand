@@ -54,7 +54,17 @@ is now `Runtime.AccountChanged`: the client forgets its authenticated
 API client, the credentials it held, and what it remembered of finding
 none, in one place for everything sharing it.
 
-Still to come in this step: the forge's archive bodies over the
-runtime's HTTP, the process-global pending login (R3-32), the spend log's
-environment half moving to compose, the look's estimate checked against
-the hour's allowance, and subports sharing one source looked up once.
+Then:
+
+- The forge's archive bodies are fetched over the runtime's HTTP, as
+  Actions' logs are.
+- The pending login, a renewal the store didn't take, is the runtime's,
+  not the process's (R3-32). `SystemClient` gives its credentials one,
+  and `Runtime.Identity` watches the login from the client's own
+  credentials. So serve's identity watcher, which now reads the engine's
+  runtime, shares it. The process-global map and `SystemIdentity` are
+  gone.
+
+Still to come in this step: the spend log's environment half moving to
+compose, the look's estimate checked against the hour's allowance, and
+subports sharing one source looked up once.

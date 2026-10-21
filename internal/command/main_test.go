@@ -54,7 +54,7 @@ func TestMain(m *testing.M) {
 	gitHubCLI = signedIn{}
 	// Nor this Mac's GitHub login, read afresh by serve's identity check:
 	// a serve test's login is no one's, unless the test gives it one.
-	serveIdentity = func() func(context.Context) (string, error) { return nil }
+	serveIdentity = func(*github.Runtime) func(context.Context) (string, error) { return nil }
 	// Nor this Mac's GitHub login, in its Keychain, GH_TOKEN, or the
 	// GitHub CLI, which setup asks GitHub about: a test's login is no
 	// one's, unless the test gives it one (withAuth).

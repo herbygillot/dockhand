@@ -38,11 +38,6 @@ type IdentityWatcher struct {
 	checked time.Time
 }
 
-// SystemIdentity watches the login SystemClient uses.
-func SystemIdentity(credentials SystemCredentials) *IdentityWatcher {
-	return &IdentityWatcher{Credentials: credentials}
-}
-
 func (w *IdentityWatcher) Current(ctx context.Context) (Identity, error) {
 	if w == nil || w.Credentials == nil {
 		return Identity{}, fmt.Errorf("github: a credential source is required")

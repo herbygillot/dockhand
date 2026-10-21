@@ -28,3 +28,12 @@ func (r *Runtime) AccountChanged() {
 	}
 	r.Client.forgetLogin()
 }
+
+// Identity watches who the runtime's login acts as, from the client's own
+// credentials, so a renewal the store didn't take is the watcher's too.
+func (r *Runtime) Identity() *IdentityWatcher {
+	if r == nil || r.Client == nil {
+		return &IdentityWatcher{}
+	}
+	return &IdentityWatcher{Credentials: r.Client.Credentials}
+}

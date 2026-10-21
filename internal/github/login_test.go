@@ -217,10 +217,11 @@ func TestARenewedLoginTheStoreRefusedIsUsedAndSavedLater(t *testing.T) {
 	require.EqualValues(t, 1, asked.Load(), "renewed once")
 }
 
-// Credentials made apart for one store and key share the renewal it
-// didn't take: serve's identity watcher made its own and read the spent
-// login, and serve stopped acting on GitHub (CX-11's first half).
-func TestARenewalTheStoreRefusedIsTheProcesss(t *testing.T) {
+// The runtime's identity watcher shares the renewal its client's store
+// didn't take: serve's watcher made its own and read the spent login, and
+// serve stopped acting on GitHub (CX-11's first half). The renewal is the
+// runtime's, not the process's (R3-32).
+func TestARenewalTheStoreRefusedIsTheRuntimes(t *testing.T) {
 	noEnvironment(t)
 	server, asked := tokenEndpoint(t, "")
 	store := expiring(t, time.Now().AddDate(0, 6, 0))
@@ -229,8 +230,8 @@ func TestARenewalTheStoreRefusedIsTheProcesss(t *testing.T) {
 	token, err := source.Token(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "A2", token.Secret)
-	watcher := github.SystemCredentials{Store: store, Key: github.CredentialKey}
-	token, err = watcher.Token(t.Context())
+	runtime := &github.Runtime{Client: &github.Client{Credentials: source}}
+	token, err = runtime.Identity().Credentials.Token(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "A2", token.Secret, "the renewed login, not the spent one")
 	require.EqualValues(t, 1, asked.Load(), "renewed once")
