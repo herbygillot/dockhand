@@ -212,3 +212,14 @@ first with today's readers allowed, then shrinking; config keeping only
 the catalogue, with meaning and default, its `Path()` resolved in
 compose; token precedence compose's, github taking a `Token` and a
 `LoginLockPath`; and `Invocation.Dir` in place of `t.Chdir`).
+
+The boundary test landed first (internal/compose/environment_test.go):
+below compose, apart from command and testsupport, each package's calls
+to `os.Getenv`, `os.LookupEnv`, `os.UserHomeDir`, `os.Environ`,
+`os.Getwd`, `exec.Command`, and `exec.CommandContext` are counted against
+`readersBelow`, which holds today's: tart 7, config 4, engine 4, github 4,
+tart/guestssh 3, buildenv/script 2, git 2, and one each in archive,
+buildenv/tart, macports/portindex, tart/host, and tcl/shell. A count may
+only fall, and must be lowered as it does. subprocess (where every
+program starts, with the Env it's given), forgetest, and the acceptance
+build's failpoints stay.
