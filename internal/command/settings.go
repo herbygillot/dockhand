@@ -1,26 +1,18 @@
 package command
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
-	"github.com/herbygillot/dockhand/internal/buildenv/script"
-	"github.com/herbygillot/dockhand/internal/buildenv/tart"
+	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
-	githubapi "github.com/herbygillot/dockhand/internal/github"
-	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // settings are the global selections. Each comes from its flag, then its
@@ -59,68 +51,25 @@ func (s *settings) flags(root *cobra.Command) {
 
 // pullRequestsVariable names the sandbox pull requests go to instead of
 // MacPorts' repository (engine.Options.PullRequests).
-const pullRequestsVariable = "DOCKHAND_PULL_REQUESTS"
+const pullRequestsVariable = compose.PullRequestsVariable
 
-// options resolves the engine's options, reading the configuration file.
-func (s *settings) options(ctx context.Context) (engine.Options, config.File, string, error) {
-	configPath, err := config.Path()
-	if err != nil {
-		return engine.Options{}, config.File{}, "", err
-	}
-	file, err := config.Load(configPath)
-	if err != nil {
-		return engine.Options{}, config.File{}, "", err
-	}
-	database := cmp.Or(s.database, os.Getenv("DOCKHAND_DB"))
-	if database == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return engine.Options{}, config.File{}, "", err
-		}
-		database = filepath.Join(home, ".dockhand", "dockhand.db")
-	}
-	// With no --tree, MACPORTS_TREE names the checkout, and a directory in
-	// one of its worktrees is that worktree, whose branch is the one
-	// checked out here.
-	tree := s.tree
-	if tree == "" {
-		tree = "."
-		if named := os.Getenv("MACPORTS_TREE"); named != "" {
-			tree = engine.Here(ctx, named, ".", cmp.Or(s.git, os.Getenv("GIT_BIN")))
-		}
-	}
-	return engine.Options{
-		Tree:      tree,
-		Git:       cmp.Or(s.git, os.Getenv("GIT_BIN")),
-		Database:  database,
-		Worktrees: file.Worktrees,
-		// holds.majors = "allow" lets bump and serve move a major version.
-		AllowMajors: !file.Holds.HoldMajors(),
-		Tests:       model.TestPolicy(file.Check.Tests),
-		// DOCKHAND_UPSTREAM fetches master from a mirror or, in tests, a
-		// local repository.
-		Upstream: os.Getenv("DOCKHAND_UPSTREAM"),
-		// DOCKHAND_PULL_REQUESTS sends pull requests to a sandbox, a fork
-		// of MacPorts' repository, for the acceptance test's repeatable
-		// rows; submit's preview names it.
-		PullRequests: os.Getenv(pullRequestsVariable),
-		// Readings are a saving: where the cache can't be placed, none
-		// are kept.
-		Readings: readingCache(),
-	}, file, configPath, nil
+// composeOptions are the command line's selections, as compose takes them.
+func (s *settings) composeOptions() compose.Options {
+	return compose.Options{Tree: s.tree, Database: s.database, Git: s.git, NamesBranch: s.namesBranch}
 }
 
+// options resolves the engine's options, reading the configuration file
+// (compose.Settings).
+func (s *settings) options(ctx context.Context) (engine.Options, config.File, string, error) {
+	return compose.Settings(ctx, s.composeOptions())
+}
+
+// open opens the engine through compose, asking the person, on a
+// terminal, to migrate a database a process on the older schema is
+// working with.
 func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
-	options, file, configPath, err := s.options(ctx)
-	if err != nil {
-		return nil, err
-	}
-	e, err := engine.Open(ctx, options)
-	if errors.Is(err, engine.ErrNotPortsTree) && s.namesBranch && s.tree == "" && os.Getenv("MACPORTS_TREE") == "" {
-		if options.Tree, err = s.registeredCheckout(ctx, options, err); err == nil {
-			e, err = engine.Open(ctx, options)
-		}
-	}
+	options := s.composeOptions()
+	assembly, err := compose.Open(ctx, options, s.dependencies())
 	if refused := new(engine.LiveUnderMigrationError); errors.As(err, &refused) && s.streams.terminal() {
 		// A person decides: their checks can be resumed by this build
 		// once they stop, as dockhand wait resumes a stopped check.
@@ -130,86 +79,21 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 		}
 		if migrate {
 			options.MigrateUnderLive = true
-			e, err = engine.Open(ctx, options)
+			assembly, err = compose.Open(ctx, options, s.dependencies())
 		}
 	}
 	if err != nil {
 		return nil, err
 	}
-	s.file, s.opened, s.openedWith = file, e, options
-	e.ConfigFile = configPath
-	e.Builds = engine.Builds{Default: file.Build.Default, Unattended: file.Build.Unattended, Profiles: map[string]engine.Profile{}}
-	for name, profile := range file.Build.Profiles {
-		releases, rule := profile.List()
-		e.Builds.Profiles[name] = engine.Profile{Provider: profile.Provider, Releases: releases, Rule: rule}
-	}
-	e.Providers = map[string]buildenv.Provider{}
-	if command := file.Providers.Command; command != nil {
-		e.Providers[buildenv.Command] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}
-	}
-	// One GitHub runtime, which the engine's forge, discovery, and project
-	// inspection share with Actions (CX-11).
-	e.GitHub = &githubapi.Runtime{Client: authAPI(authStore)}
-	remote := file.Providers.GitHub.Remote
-	github := &ghactions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
-		API: ghactions.GitHub{Client: e.GitHub.Client}, BuildTimeout: file.Providers.GitHub.BuildBound()}
-	if testActions != nil {
-		github.API, github.Sleep = testActions, func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
-	}
-	e.Providers[buildenv.GitHub] = github
-	// Tart builds wherever Tart is installed; its images are checked when a
-	// check names a release.
-	if _, err := lookTart("tart"); err == nil {
-		e.Providers[buildenv.Tart] = &tart.Provider{Repo: e.Repo, Index: e.PortIndex, TestTimeout: file.Providers.Tart.Timeout(), BuildTimeout: file.Providers.Tart.BuildBound()}
-	}
-	if testLeftovers != nil {
-		e.Providers[testLeftovers.Name()] = testLeftovers
-	}
-	if testPreparer != nil {
-		e.Preparer = testPreparer(e)
-	}
-	e.GitHubCLI = gitHubCLI
-	if testForge != nil {
-		e.Forge = testForge(e)
-	}
-	if testPortReader != nil {
-		e.PortReader = testPortReader
-	}
-	if testDependentReader != nil {
-		e.DependentReader = testDependentReader
-	}
-	if testOutdatedReader != nil {
-		e.OutdatedReader = testOutdatedReader
-	}
-	if testHTTPS != nil {
-		e.HTTPS = testHTTPS
-	}
-	if testArchiveFetcher != nil {
-		e.ArchiveFetcher = testArchiveFetcher(e)
-	}
-	return e, nil
+	s.file, s.opened, s.openedWith = assembly.File, assembly.Engine, assembly.Options
+	return assembly.Engine, nil
 }
 
-// registeredCheckout is the one ports checkout the database registered,
-// for a command naming a branch run outside any checkout; refused, as
-// outside was, where none is, and naming them where several are, since
-// which one isn't plain.
-func (s *settings) registeredCheckout(ctx context.Context, options engine.Options, outside error) (string, error) {
-	checkouts, err := engine.Checkouts(ctx, options)
-	if err != nil {
-		return "", err
-	}
-	switch len(checkouts) {
-	case 0:
-		return "", outside
-	case 1:
-		return checkouts[0], nil
-	}
-	var named []string
-	for _, checkout := range checkouts {
-		named = append(named, config.Tilde(checkout))
-	}
-	return "", fmt.Errorf("this isn't a ports checkout, and dockhand knows several: %s; choose one with --tree or MACPORTS_TREE", strings.Join(named, ", "))
+// dependencies are the stand-ins the tests set, for compose.
+func (s *settings) dependencies() compose.Dependencies {
+	return compose.Dependencies{Preparer: testPreparer, Forge: testForge, ArchiveFetcher: testArchiveFetcher, PortReader: testPortReader,
+		DependentReader: testDependentReader, OutdatedReader: testOutdatedReader, ProjectReader: testProjectReader, HTTPS: testHTTPS,
+		GitHubCLI: gitHubCLI, Actions: testActions, Leftovers: testLeftovers, LookTart: lookTart, GitHubClient: authAPI, Store: authStore}
 }
 
 // testHTTPS, when set, stands in for asking URLs over HTTPS.
@@ -237,13 +121,3 @@ var testDependentReader engine.DependentReader
 
 // testOutdatedReader, when set, stands in for upstream discovery.
 var testOutdatedReader engine.OutdatedReader
-
-// readingCache is where readings are kept, or none where it can't be
-// placed.
-func readingCache() string {
-	directory, err := engine.ReadingCache()
-	if err != nil {
-		return ""
-	}
-	return directory
-}

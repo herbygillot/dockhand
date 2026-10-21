@@ -53,9 +53,6 @@ its go-get answer.`,
 				return err
 			}
 			defer e.Close()
-			if testProjectReader != nil {
-				e.ProjectReader = testProjectReader
-			}
 			observed, err := e.ObserveProject(ctx, args[0])
 			if err != nil {
 				return err

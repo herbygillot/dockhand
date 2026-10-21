@@ -84,3 +84,21 @@ calls of 5,000 and gone on:
 
 Still to come in this step: the spend log's environment half moving to
 compose.
+
+## compose, its first slice
+
+`internal/compose` assembles the engine for a command. `Settings`
+resolves the engine's options from the command line's, the environment,
+and the configuration file. `Open` opens the engine and gives it its
+builds, providers, GitHub runtime, and the stand-ins a test hands it
+(`Dependencies`). It also falls back to the registered checkout for a
+command naming a branch, as settings did. command imports compose, the
+architecture thread's acceptable alternative, so command's own tests can
+give it stand-ins without an import cycle. The person's answer on a
+migration under a live process stays command's, which asks and opens
+again with `MigrateUnderLive`.
+
+For now settings hands compose the stand-ins the tests set as package
+variables (`settings.dependencies`). Making them per-test, so command's
+tests can run with `t.Parallel`, is the next slice, with the host's
+seams and their `Timings`.

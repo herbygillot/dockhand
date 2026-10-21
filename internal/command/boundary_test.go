@@ -29,9 +29,9 @@ var commandImports = map[string]string{
 	// and a commit-rule finding, whose explanations explain prints.
 	"internal/macports/portfile":    "vocabulary in engine results",
 	"internal/macports/commitrules": "vocabulary in engine results, and explain's text",
+	"internal/compose":              "the engine, its providers, and its GitHub runtime, assembled for the command",
 	"internal/buildenv":             "composition: the contract the providers it composes meet",
 	"internal/buildenv/ghactions":   "composition: the github provider",
-	"internal/buildenv/script":      "composition: the command provider",
 	"internal/buildenv/tart":        "composition: the tart provider",
 	"internal/github":               "composition and auth: GitHub's client and login",
 	"internal/credential":           "auth: where the login is kept",
