@@ -433,6 +433,29 @@ func (e Evidence) TestsReading(result model.TargetResult) string {
 	return words
 }
 
+// CellCheck names the check a cell's result came from where it isn't the
+// newest check's own: the check that built a reused result, or an earlier
+// check of the same files whose result fills the cell (fill). Empty for
+// the newest check's own, and for a cell with no result. The terminal
+// says it beside the cell, as "✓ (check-440)": after an edit between
+// checks, nothing said which cells were the newest's (the exiv2 session's
+// notes, 2026-10-21).
+func (e Evidence) CellCheck(cell Cell) string {
+	if cell.Kind != CellRecorded {
+		return ""
+	}
+	if cell.ReusedFrom != "" {
+		if found, ok := e.origins[cell.ReusedFrom]; ok {
+			return found.Check
+		}
+	}
+	execution, ok := e.Executions[cell.Execution]
+	if !ok || execution.Run == e.Run.ID {
+		return ""
+	}
+	return e.Checks()[execution.Run]
+}
+
 // Runs are the provider runs behind one environment's results, in the
 // plan's order of environments, oldest first: usually one, or an earlier
 // attempt's too when it finished some targets, or an earlier check's.

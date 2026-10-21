@@ -326,3 +326,20 @@ func TestWhatStatusShowsIsWhatChecksPlanned(t *testing.T) {
 	require.Equal(t, []int{0, 1, 2}, e.Shown())
 	require.Equal(t, []int{0, 1}, e.Checked(), "macOS 12, planned and not reached, stays; 26, never planned, goes")
 }
+
+// A cell another check gave names it: an earlier check of the same files
+// whose result fills it, or the check that built a reused result; the
+// newest check's own names none (the exiv2 session's notes, 2026-10-21).
+func TestACellFromAnotherCheckNamesIt(t *testing.T) {
+	newest := model.Run{ID: "r2", Number: 2}
+	e := Evidence{Run: newest, Earlier: []model.Run{{ID: "r1", Number: 1}},
+		Executions: map[model.ExecutionID]model.GuestExecution{"x1": {ID: "x1", Run: "r1"}, "x2": {ID: "x2", Run: "r2"}},
+		origins:    map[model.ExecutionID]Origin{"x0": {Execution: model.GuestExecution{ID: "x0", Run: "r0"}, Check: "check-440"}}}
+	cell := func(execution, reused model.ExecutionID) Cell {
+		return Cell{Kind: CellRecorded, TargetResult: model.TargetResult{Outcome: model.OutcomePassed, Execution: execution, ReusedFrom: reused}}
+	}
+	require.Empty(t, e.CellCheck(cell("x2", "")), "the newest check's own")
+	require.Equal(t, "check-1", e.CellCheck(cell("x1", "")), "an earlier check of the same files")
+	require.Equal(t, "check-440", e.CellCheck(cell("x2", "x0")), "the check that built what the newest reused")
+	require.Empty(t, e.CellCheck(Cell{Kind: CellNotRun}))
+}

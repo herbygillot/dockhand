@@ -718,6 +718,10 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 // L3a).
 func resultWords(evidence engine.Evidence, target engine.TargetEvidence, environment int) string {
 	words := engine.EvidenceWords(evidence, target, environment, "")
+	// A cell another check gave names it, unless its tests' reading did.
+	if check := evidence.CellCheck(target.Outcomes[environment]); check != "" && !strings.Contains(words, check) {
+		words += " (" + check + ")"
+	}
 	if reason := target.Outcomes[environment].NotReusable; reason != "" {
 		words += "; not reusable: " + reason
 	}
