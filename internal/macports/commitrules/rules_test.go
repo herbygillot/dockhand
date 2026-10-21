@@ -74,6 +74,7 @@ func TestALongLineBesideAURLIsFlagged(t *testing.T) {
 	findings := CheckCommits([]Commit{{ID: "a", Message: "libextractor: fix the build\n\n" + long + "\n"}})
 	require.Equal(t, []string{"body-wrap"}, codes(findings))
 	spared := "libextractor: fix the build\n\nhttps://github.com/macports/macports-ports/blob/master/graphics/exiv2/files/patch-x.diff\n" +
-		"Closes: https://trac.macports.org/ticket/71234#comment:12-and-a-long-anchor-here\n"
+		"Closes: https://trac.macports.org/ticket/71234#comment:12-and-a-long-anchor-here\n" +
+		"Generated-By: Dockhand v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480 (https://github.com/herbygillot/dockhand)\n"
 	require.Empty(t, CheckCommits([]Commit{{ID: "b", Message: spared}}))
 }

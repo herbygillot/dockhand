@@ -98,9 +98,11 @@ var (
 	followUp   = regexp.MustCompile(`(?i)^(fixup!|squash!|amend!)|\b(oops|typo|address(ed)? (review|comments|feedback)|review (comments|feedback)|fix (checksums?|the build|lint|previous|last commit|revision))\b`)
 	bareTicket = regexp.MustCompile(`(^|[\s(])#(\d{4,})\b`)
 	longURL    = regexp.MustCompile(`^\S*https?://\S+$`)
-	// urlTrailer is a trailer whose value is a URL, as Closes:
-	// https://trac.macports.org/ticket/71234, which may run long too.
-	urlTrailer = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*:\s+\S*https?://\S+$`)
+	// urlTrailer is a trailer whose value ends in a URL, as Closes:
+	// https://trac.macports.org/ticket/71234, or Generated-By's "Dockhand
+	// <build> (https://github.com/herbygillot/dockhand)", which may run
+	// long too.
+	urlTrailer = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*:\s.*https?://\S+$`)
 )
 
 // CheckCommits applies the message rules to a branch's commits, oldest
