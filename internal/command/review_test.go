@@ -60,7 +60,7 @@ func TestTidyAsksAboutAPersonsCommits(t *testing.T) {
 
 	var out, errs bytes.Buffer
 	input := "a\ne\njq: describe the b option\nd\na\n"
-	err = Run(t.Context(), []string{"tidy"}, Streams{In: strings.NewReader(input), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"tidy"}, Streams{In: strings.NewReader(input), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "  1  (needs a subject)\n       combines \"wip\", \"oops\"\n")
 	require.Contains(t, errs.String(), "Can't apply this plan: the commit for textproc/jq needs a subject")
@@ -146,7 +146,7 @@ func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 	_, _, err = dockhand(t, "undo", "tidy-1")
 	require.NoError(t, err)
 	var buffer, errs bytes.Buffer
-	err = Run(t.Context(), []string{"tidy"}, Streams{In: strings.NewReader("g\n1+3\ng\n1+2\na\n"), Out: &buffer, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"tidy"}, Streams{In: strings.NewReader("g\n1+3\ng\n1+2\na\n"), Out: &buffer, Err: &errs, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "Review diff [d] · Change groups [g] · Edit message [e] · Apply [a] · Cancel [q]")
 	require.Contains(t, errs.String(), `Not changed: "3" is not one of the commits, 1 to 2`)

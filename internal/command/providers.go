@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -30,6 +31,11 @@ type tartImages interface {
 
 // testTartImages, when set, stands in for dockhand's Tart images.
 var testTartImages tartImages
+
+// lookTart finds Tart for setup's report; the tests find none, so they
+// don't depend on the machine they run on. The engine's is compose's
+// (Dependencies.LookTart).
+var lookTart = exec.LookPath
 
 // images is dockhand's Tart images, or nil when Tart isn't installed.
 func images() tartImages {

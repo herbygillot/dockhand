@@ -33,7 +33,7 @@ func asMaintainer(t *testing.T, w world) {
 func shipAnswering(t *testing.T, answers string, args ...string) (string, string, error) {
 	t.Helper()
 	var out, errs bytes.Buffer
-	err := Run(t.Context(), append([]string{"ship"}, args...), Streams{In: strings.NewReader(answers), Out: &out, Err: &errs, interactive: true})
+	err := runFor(t, t.Context(), append([]string{"ship"}, args...), Streams{In: strings.NewReader(answers), Out: &out, Err: &errs, interactive: true})
 	return out.String(), errs.String(), err
 }
 
@@ -164,7 +164,7 @@ JSON
 	// The bumper stands in jq's release for any port, so yq's commit is
 	// held by the commit rules: one change held, and the rest goes on.
 	var both bytes.Buffer
-	err := Run(t.Context(), []string{"ship", "jq", "yq", "--yes"}, Streams{In: strings.NewReader(""), Out: &both, Err: &both})
+	err := runFor(t, t.Context(), []string{"ship", "jq", "yq", "--yes"}, Streams{In: strings.NewReader(""), Out: &both, Err: &both})
 	out := both.String()
 	require.Equal(t, 3, ExitCode(err), out)
 	require.EqualError(t, err, "yq-1.8.1 stopped; the rest went on")
@@ -282,8 +282,7 @@ func TestShipsJSONSaysWhatStopped(t *testing.T) {
 func TestShipStartsNoBranchForAnEditItCantMakeUnattended(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(*engine.Engine) engine.Preparer { return refuser{} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(*engine.Engine) engine.Preparer { return refuser{} }
 	_, _, err := dockhand(t, "ship", "jq", "--yes", "--to", "commit")
 	require.ErrorContains(t, err, "Could not update jq automatically: its pre-fetch hook runs exec\nNo branch was started.")
 	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")

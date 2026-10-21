@@ -24,9 +24,8 @@ func newWorld(t *testing.T) world {
 	t.Helper()
 	// What would ask GitHub, such as an update looking for other open pull
 	// requests, asks a fake that knows of none, unless a test gives its own.
-	testForge = func(*engine.Engine) engine.Forge { return forgetest.New("", "") }
-	testHTTPS = testsupport.HTTPSAnswers{}
-	t.Cleanup(func() { testForge, testHTTPS = nil, nil })
+	stands(t).Forge = func(*engine.Engine) engine.Forge { return forgetest.New("", "") }
+	stands(t).HTTPS = testsupport.HTTPSAnswers{}
 	// Git reports resolved paths; on macOS the temporary directory is
 	// reached through /var, a link to /private/var.
 	root, err := filepath.EvalSymlinks(t.TempDir())
@@ -61,7 +60,7 @@ const settle = 2 * time.Minute
 func dockhand(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 	var out, errs bytes.Buffer
-	err := Run(t.Context(), args, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+	err := runFor(t, t.Context(), args, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	return out.String(), errs.String(), err
 }
 
@@ -182,16 +181,14 @@ func TestMacPortsTreeKeepsTheWorktreeYouAreIn(t *testing.T) {
 // Tart otherwise, so this ran nowhere (the test plan's step 3).
 func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
 	newWorld(t)
-	look := lookTart
-	t.Cleanup(func() { lookTart = look })
-	var s settings
+	s := settings{deps: standsFor(t)}
 	e, err := s.open(t.Context())
 	require.NoError(t, err)
 	require.NotContains(t, e.Providers, "tart")
 	e.Close()
 
-	lookTart = func(string) (string, error) { return "/opt/homebrew/bin/tart", nil }
-	s = settings{}
+	stands(t).LookTart = func(string) (string, error) { return "/opt/homebrew/bin/tart", nil }
+	s = settings{deps: standsFor(t)}
 	e, err = s.open(t.Context())
 	require.NoError(t, err)
 	defer e.Close()
@@ -213,7 +210,7 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	require.NoError(t, os.Symlink(git, filepath.Join(bin, "git")))
 	t.Setenv("PATH", bin)
 	var out, errs bytes.Buffer
-	err = Run(t.Context(), []string{"setup"}, Streams{In: strings.NewReader("\nn\n"), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"setup"}, Streams{In: strings.NewReader("\nn\n"), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "Keep branch worktrees in ")
 	require.Contains(t, errs.String(), "? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ")

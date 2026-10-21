@@ -19,7 +19,7 @@ import (
 func bumpOn(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 	var out, errs bytes.Buffer
-	err := Run(t.Context(), append([]string{"bump"}, args...), Streams{In: strings.NewReader("y\ny\ny\n"), Out: &out, Err: &errs, interactive: true})
+	err := runFor(t, t.Context(), append([]string{"bump"}, args...), Streams{In: strings.NewReader("y\ny\ny\n"), Out: &out, Err: &errs, interactive: true})
 	return out.String(), errs.String(), err
 }
 

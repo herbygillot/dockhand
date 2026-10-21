@@ -12,9 +12,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
-// testProjectReader, when set, stands in for GitHub in create.
-var testProjectReader engine.ProjectReader
-
 func createCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchChoice
 	var name, category string

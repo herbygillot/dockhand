@@ -71,7 +71,7 @@ func TestCheckOffersToTrackAnUntrackedCheckout(t *testing.T) {
 	_, _, err := dockhand(t, "check", "--plan")
 	require.ErrorContains(t, err, "dockhand adopt my-jq tracks it, then run this again")
 	var out, errs bytes.Buffer
-	err = Run(t.Context(), []string{"check", "--plan"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"check", "--plan"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err, errs.String())
 	require.Contains(t, errs.String(), "? my-jq isn't tracked; track it with adopt? [y/N] ")
 	require.Contains(t, errs.String(), "Tracking my-jq.\n")
@@ -84,7 +84,7 @@ func TestCheckOffersToTrackAnUntrackedCheckout(t *testing.T) {
 	require.ErrorContains(t, err, "git switch -c dockhand/<name> and dockhand adopt")
 	out.Reset()
 	errs.Reset()
-	err = Run(t.Context(), []string{"check", "--plan"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"check", "--plan"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err, errs.String())
 	require.Regexp(t, `Started jq-[a-z0-9]{4} at this commit, and tracking it\.\n`, errs.String(), "named for its port")
 	require.Regexp(t, `^dockhand/jq-[a-z0-9]{4}$`, testsupport.Git(t, w.clone, "branch", "--show-current"))
@@ -107,7 +107,7 @@ func TestStartOffersAnArchivedBranchsName(t *testing.T) {
 	_, _, err = dockhand(t, "start", "notes")
 	require.EqualError(t, err, "dockhand/notes is an archived branch, whose record keeps the name; on a terminal start offers to rename it notes-archived, or choose another name")
 	var out, errs bytes.Buffer
-	err = Run(t.Context(), []string{"start", "notes"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"start", "notes"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err, errs.String())
 	require.Contains(t, errs.String(), "? notes is archived. Rename the archived branch to free this name? [y/N] ")
 	require.Contains(t, out.String(), "Renamed the archived notes to notes-archived; dockhand archive --undo notes-archived brings it back.\n")

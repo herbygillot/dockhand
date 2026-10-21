@@ -193,7 +193,7 @@ func TestSetupShowsTheProviders(t *testing.T) {
 	// a268b6e5).
 	images.status.Restorable = []macos.Release{release(t, "tahoe")}
 	var told, asked bytes.Buffer
-	err = Run(t.Context(), []string{"setup"}, Streams{In: strings.NewReader("n\nn\nn\nn\n"), Out: &told, Err: &asked, interactive: true})
+	err = runFor(t, t.Context(), []string{"setup"}, Streams{In: strings.NewReader("n\nn\nn\nn\n"), Out: &told, Err: &asked, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, told.String()+asked.String(), "? Restore the Tart image for this Mac’s macOS version from its saved original? This takes about a minute and requires no download. [y/N] ")
 	require.NotContains(t, told.String()+asked.String(), "It downloads macOS")
@@ -235,7 +235,7 @@ func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
 		MacPorts: tart.DefaultMacPorts, CommandLineTools: "16.2", Xcode: "15.4"}}
 	useImages(t, images)
 	var out, errs bytes.Buffer
-	err := Run(t.Context(), []string{"setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
+	err := runFor(t, t.Context(), []string{"setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err, errs.String())
 	require.Equal(t, []string{"15.4"}, images.downloaded)
 	require.Len(t, images.asked, 2, "setup runs again once it's downloaded")
@@ -246,7 +246,7 @@ func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
 
 	images.errs, images.downloaded = []error{missing}, nil
 	out.Reset()
-	err = Run(t.Context(), []string{"setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes"}, Streams{In: strings.NewReader("n\n"), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes"}, Streams{In: strings.NewReader("n\n"), Out: &out, Err: &errs, interactive: true})
 	require.ErrorContains(t, err, "Sonoma's Xcode is 15.4", "declined")
 	require.Empty(t, images.downloaded)
 

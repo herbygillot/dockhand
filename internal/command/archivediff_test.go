@@ -90,8 +90,7 @@ func TestDiffArchiveShowsWhatChangedInside(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
-	testArchiveFetcher = func(e *engine.Engine) engine.ArchiveFetcher { return sourceArchives{repo: e.Repo} }
-	t.Cleanup(func() { testArchiveFetcher = nil })
+	stands(t).ArchiveFetcher = func(e *engine.Engine) engine.ArchiveFetcher { return sourceArchives{repo: e.Repo} }
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
@@ -122,8 +121,7 @@ func TestDiffArchivePairsWhatCorresponds(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
-	testArchiveFetcher = func(e *engine.Engine) engine.ArchiveFetcher { return sourceArchives{repo: e.Repo, manual: true} }
-	t.Cleanup(func() { testArchiveFetcher = nil })
+	stands(t).ArchiveFetcher = func(e *engine.Engine) engine.ArchiveFetcher { return sourceArchives{repo: e.Repo, manual: true} }
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))

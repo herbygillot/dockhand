@@ -94,8 +94,7 @@ func (b bumper) Prepare(ctx context.Context, r editprep.Request) (editprep.Resul
 }
 
 func withBumper(t *testing.T) {
-	testPreparer = func(e *engine.Engine) engine.Preparer { return bumper{repo: e.Repo} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return bumper{repo: e.Repo} }
 }
 
 func versioned(t *testing.T, w world) {
@@ -154,7 +153,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\); --new without --plan starts the branch\n`, planned)
 	require.Contains(t, planned, "+version 1.8.1")
 	var asked, told bytes.Buffer
-	err = Run(t.Context(), []string{"update", "jq", "--plan"}, Streams{In: strings.NewReader("y\n"), Out: &told, Err: &asked, interactive: true})
+	err = runFor(t, t.Context(), []string{"update", "jq", "--plan"}, Streams{In: strings.NewReader("y\n"), Out: &told, Err: &asked, interactive: true})
 	require.NoError(t, err)
 	require.NotContains(t, asked.String(), "? ", "a plan asks nothing")
 	require.Contains(t, told.String(), "Planned on master ")
@@ -169,7 +168,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	// With no open branch changing the port, the update starts one, in
 	// a script too, and says so first (the command-line UX review, §2).
 	var out, errs bytes.Buffer
-	err = Run(t.Context(), []string{"update", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+	err = runFor(t, t.Context(), []string{"update", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.NoError(t, err)
 	require.Regexp(t, `^jq is in no open branch, so this starts one for it, named for the version it moves to\.\n`, errs.String())
 	started := regexp.MustCompile(`Started dockhand/(jq-1\.8\.1) from master `).FindStringSubmatch(out.String())
@@ -185,7 +184,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 
 	out.Reset()
 	errs.Reset()
-	err = Run(t.Context(), []string{"checksums", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"checksums", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "Working in "+name+", the one open branch changing jq")
 	require.NotContains(t, errs.String(), "? ", "nothing else could be meant, so nothing is asked")
@@ -193,7 +192,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	require.Contains(t, out.String(), "Updated checksums.")
 
 	out.Reset()
-	err = Run(t.Context(), []string{"update", "jq", "1.9", "--new"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+	err = runFor(t, t.Context(), []string{"update", "jq", "1.9", "--new"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.NoError(t, err)
 	another := regexp.MustCompile(`Started dockhand/(jq-1\.9) from master `).FindStringSubmatch(out.String())
 	require.NotNil(t, another, out.String())
@@ -203,7 +202,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 		"a branch not checked out here is gone to first, since a check from elsewhere takes its committed head")
 
 	out.Reset()
-	err = Run(t.Context(), []string{"update", "jq", "2.0", "--branch", another[1]}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+	err = runFor(t, t.Context(), []string{"update", "jq", "2.0", "--branch", another[1]}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "jq: 1.9 → 2.0")
 
@@ -332,8 +331,7 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	testsupport.Git(t, w.upstream, "add", "-A")
 	testsupport.Git(t, w.upstream, "commit", "-q", "-m", "yq and jo")
 	withBumper(t)
-	testDependentReader = jqDependents{}
-	t.Cleanup(func() { testDependentReader = nil })
+	stands(t).DependentReader = jqDependents{}
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
@@ -351,11 +349,11 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(dir, "textproc/yq/Portfile"), "a plan bumps nothing")
 
 	// One that links it only under a variant is listed apart.
-	testDependentReader = jqDependents{under: true}
+	stands(t).DependentReader = jqDependents{under: true}
 	out, _, err = dockhand(t, "update", "jq", "--revbump-dependents", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, ":\n  yq\n  · under a variant, found in the Portfile, which the index doesn't record: jo (+jq)\n")
-	testDependentReader = jqDependents{}
+	stands(t).DependentReader = jqDependents{}
 
 	out, _, err = dockhand(t, "update", "jq", "--revbump-dependents")
 	require.NoError(t, err)
@@ -419,8 +417,7 @@ func (c chatty) Prepare(ctx context.Context, r editprep.Request) (editprep.Resul
 func TestProgressGoesToStandardError(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(e *engine.Engine) engine.Preparer { return chatty{bumper{repo: e.Repo}} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return chatty{bumper{repo: e.Repo}} }
 
 	out, errs, err := dockhand(t, "update", "jq", "--new")
 	require.NoError(t, err)
@@ -479,7 +476,7 @@ func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
 	versioned(t, w)
 	withBumper(t)
 	g := &forgetest.GitHub{Others: []forge.PullRequestSummary{{Number: 34620, Title: "jq: update to 1.8.0", URL: "https://github.com/macports/macports-ports/pull/34620"}}}
-	testForge = func(*engine.Engine) engine.Forge { return g }
+	stands(t).Forge = func(*engine.Engine) engine.Forge { return g }
 
 	planned, _, err := dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
@@ -521,8 +518,7 @@ func (b uncertainBumper) ResolveRelease(ctx context.Context, r editprep.Request)
 func TestAnUncertainNewestReleaseIsNamedNotChosen(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(e *engine.Engine) engine.Preparer { return uncertainBumper{bumper{repo: e.Repo}} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return uncertainBumper{bumper{repo: e.Repo}} }
 	withScript(t, w, "passed")
 	withGitHub(t, w)
 
@@ -557,8 +553,7 @@ func (b regenerating) Prepare(ctx context.Context, r editprep.Request) (editprep
 func TestAnUpdateCountsTheCratesItWrote(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(e *engine.Engine) engine.Preparer { return regenerating{bumper{repo: e.Repo}} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return regenerating{bumper{repo: e.Repo}} }
 	result, err := jsonOf(t, "update", "jq", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{"option": "cargo.crates", "count": float64(352), "changed": float64(160),
@@ -584,8 +579,7 @@ func (limitedBumper) ResolveRelease(context.Context, editprep.Request) (model.Re
 func TestARateLimitedUpdateSaysSo(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(e *engine.Engine) engine.Preparer { return limitedBumper{bumper{repo: e.Repo}} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return limitedBumper{bumper{repo: e.Repo}} }
 	_, _, err := dockhand(t, "update", "jq", "--new", "--plan")
 	require.EqualError(t, err, "GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT; nothing was changed")
 }
@@ -617,8 +611,7 @@ func (b subportBumper) Prepare(ctx context.Context, r editprep.Request) (editpre
 func TestAnUpdateNamesThePortAsAsked(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(e *engine.Engine) engine.Preparer { return subportBumper{bumper{repo: e.Repo}} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return subportBumper{bumper{repo: e.Repo}} }
 	out, _, err := dockhand(t, "update", "jq", "--new", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq: 1.7.1 → 1.8.1")

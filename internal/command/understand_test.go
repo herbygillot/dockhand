@@ -60,8 +60,7 @@ func TestDiffAndImpact(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "Nothing changed under those paths.")
 
-	testDependentReader = jqDependents{}
-	t.Cleanup(func() { testDependentReader = nil })
+	stands(t).DependentReader = jqDependents{}
 	out, _, err = dockhand(t, "impact")
 	require.NoError(t, err)
 	require.Equal(t, `Changed ports     jq
@@ -72,11 +71,11 @@ Next: dockhand check --also yq,jo (it builds them against the branch)
 
 	// A changed directory's other ports are named as the base's index has
 	// them: devel/libuv's libuv-devel read as libuv alone (batch 32).
-	testDependentReader = jqAndDevel{}
+	stands(t).DependentReader = jqAndDevel{}
 	out, _, err = dockhand(t, "impact")
 	require.NoError(t, err)
 	require.Contains(t, out, "Changed ports     jq and jq-devel\n")
-	testDependentReader = jqDependents{}
+	stands(t).DependentReader = jqDependents{}
 
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\nrevision 1\n"), 0o644))
 	out, _, err = dockhand(t, "impact")

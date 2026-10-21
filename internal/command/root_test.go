@@ -13,7 +13,7 @@ import (
 // Outside a ports checkout, dockhand alone says how to begin.
 func TestBareDockhandSaysHowToStart(t *testing.T) {
 	var out bytes.Buffer
-	err := Run(t.Context(), nil, Streams{In: strings.NewReader(""), Out: &out, Err: &out})
+	err := runFor(t, t.Context(), nil, Streams{In: strings.NewReader(""), Out: &out, Err: &out})
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "dockhand setup sets up")
 	require.Contains(t, out.String(), "docs/usage.md is the guide")
@@ -22,14 +22,14 @@ func TestBareDockhandSaysHowToStart(t *testing.T) {
 
 func TestVersionNamesTheBuild(t *testing.T) {
 	var out bytes.Buffer
-	err := Run(t.Context(), []string{"--version"}, Streams{In: strings.NewReader(""), Out: &out, Err: &out})
+	err := runFor(t, t.Context(), []string{"--version"}, Streams{In: strings.NewReader(""), Out: &out, Err: &out})
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(out.String(), "dockhand "), out.String())
 }
 
 func TestAnUnknownCommandIsRefused(t *testing.T) {
 	var out bytes.Buffer
-	err := Run(t.Context(), []string{"bump", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &out})
+	err := runFor(t, t.Context(), []string{"bump", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &out})
 	require.Error(t, err)
 }
 

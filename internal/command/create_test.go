@@ -61,9 +61,9 @@ func (c checksummer) Prepare(ctx context.Context, request editprep.Request) (edi
 func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testProjectReader = riftProject{}
-	testPreparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
-	t.Cleanup(func() { testProjectReader, testPreparer = nil, nil })
+	stands(t).ProjectReader = riftProject{}
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
+	t.Cleanup(func() { stands(t).Preparer = nil })
 	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("maintainer = \"{@ada example.org:ada} openmaintainer\"\n"), 0o644))
 
@@ -103,7 +103,7 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	// A name a port already has is refused, with --name named; with
 	// --new, before a branch is started for it, where one was started and
 	// left behind (the sand-runner port).
-	testProjectReader = jqProject{}
+	stands(t).ProjectReader = jqProject{}
 	_, _, err = dockhand(t, "create", "https://github.com/jqlang/jq", "--category", "sysutils")
 	require.ErrorContains(t, err, "there is already a port jq, at textproc/jq; --name names this one otherwise, or dockhand update jq updates that one")
 	_, _, err = dockhand(t, "create", "https://github.com/jqlang/jq", "--new", "--category", "sysutils")
@@ -135,11 +135,11 @@ func (txtProject) Project(context.Context, string) (engine.Project, error) {
 func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testProjectReader = txtProject{}
-	testPreparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
-	t.Cleanup(func() { testProjectReader, testPreparer = nil, nil })
+	stands(t).ProjectReader = txtProject{}
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
+	t.Cleanup(func() { stands(t).Preparer = nil })
 
-	testHTTPS = testsupport.HTTPSAnswers{"https://txt.hellman.io/": true}
+	stands(t).HTTPS = testsupport.HTTPSAnswers{"https://txt.hellman.io/": true}
 	out, _, err := dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new")
 	require.NoError(t, err)
 	require.Contains(t, out, "  homepage: using HTTPS, as MacPorts recommends (GitHub supplied http://txt.hellman.io/)\n", "the finding 6 of the txt run")
@@ -185,7 +185,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 
 	// Where https doesn't answer, the homepage is written as GitHub gives
 	// it, and said.
-	testHTTPS = testsupport.HTTPSAnswers{}
+	stands(t).HTTPS = testsupport.HTTPSAnswers{}
 	out, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new", "--name", "txt-plain")
 	require.NoError(t, err)
 	require.NotContains(t, out, "homepage: over HTTPS")
@@ -209,10 +209,9 @@ func (maintainedPort) Spellings(_ context.Context, _ model.Source, spelling stri
 func TestCreateSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testProjectReader = txtProject{}
-	testPreparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
-	testPortReader = maintainedPort{}
-	t.Cleanup(func() { testProjectReader, testPreparer, testPortReader = nil, nil, nil })
+	stands(t).ProjectReader = txtProject{}
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
+	stands(t).PortReader = maintainedPort{}
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
 	require.NoFileExists(t, config)
 
@@ -256,10 +255,9 @@ func (pythonPorts) Ports(_ context.Context, _ model.Source, directory string, _ 
 func TestCreateTakesThePythonPortGroupsDefault(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testProjectReader = toolProject{}
-	testPreparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
-	testPortReader = pythonPorts{}
-	t.Cleanup(func() { testProjectReader, testPreparer, testPortReader = nil, nil, nil })
+	stands(t).ProjectReader = toolProject{}
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
+	stands(t).PortReader = pythonPorts{}
 	out, _, err := dockhand(t, "create", "https://github.com/o/tool", "--new", "--category", "textproc")
 	require.NoError(t, err)
 	branch := regexp.MustCompile(`dockhand/(py-tool-new)`).FindStringSubmatch(out)[1]

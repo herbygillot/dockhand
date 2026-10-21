@@ -4,12 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/buildenv"
-	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -35,6 +32,9 @@ type settings struct {
 	// overAllowance is --over-allowance: a look goes on past what's left
 	// of the hour's GitHub allowance (allowLook).
 	overAllowance bool
+	// deps are the stand-ins for what compose makes, which a test gives;
+	// the real ones where they're empty.
+	deps compose.Dependencies
 }
 
 // overAllowanceFlag registers --over-allowance on a command that looks up
@@ -89,35 +89,15 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	return assembly.Engine, nil
 }
 
-// dependencies are the stand-ins the tests set, for compose.
+// dependencies are the stand-ins for compose: those given, with the
+// login's parts the command shares with setup github (authAPI, authStore).
 func (s *settings) dependencies() compose.Dependencies {
-	return compose.Dependencies{Preparer: testPreparer, Forge: testForge, ArchiveFetcher: testArchiveFetcher, PortReader: testPortReader,
-		DependentReader: testDependentReader, OutdatedReader: testOutdatedReader, ProjectReader: testProjectReader, HTTPS: testHTTPS,
-		GitHubCLI: gitHubCLI, Actions: testActions, Leftovers: testLeftovers, LookTart: lookTart, GitHubClient: authAPI, Store: authStore}
+	d := s.deps
+	if d.GitHubClient == nil {
+		d.GitHubClient = authAPI
+	}
+	if d.Store == nil {
+		d.Store = authStore
+	}
+	return d
 }
-
-// testHTTPS, when set, stands in for asking URLs over HTTPS.
-var testHTTPS engine.HTTPSProbe
-
-// testArchiveFetcher, when set, stands in for fetching archives.
-var testArchiveFetcher func(*engine.Engine) engine.ArchiveFetcher
-
-// testActions, when set, stands in for GitHub Actions.
-var testActions ghactions.API
-
-// testLeftovers, when set, is a provider with environments left behind,
-// registered under its name in place of whichever the configuration made.
-var testLeftovers buildenv.LeftoverProvider
-
-// lookTart finds Tart; the tests find none, so they don't depend on the
-// machine they run on.
-var lookTart = exec.LookPath
-
-// testPortReader, when set, stands in for MacPorts' evaluator in plans.
-var testPortReader engine.PortReader
-
-// testDependentReader, when set, stands in for the port index in impact.
-var testDependentReader engine.DependentReader
-
-// testOutdatedReader, when set, stands in for upstream discovery.
-var testOutdatedReader engine.OutdatedReader

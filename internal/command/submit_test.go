@@ -28,8 +28,7 @@ func withGitHub(t *testing.T, w world) *forgetest.GitHub {
 	testsupport.Git(t, w.clone, "remote", "add", "fork", fork)
 	g := forgetest.New(w.upstream, fork)
 	g.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
-	testForge = func(*engine.Engine) engine.Forge { return g }
-	t.Cleanup(func() { testForge = nil })
+	stands(t).Forge = func(*engine.Engine) engine.Forge { return g }
 	return g
 }
 
@@ -95,7 +94,7 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.EqualError(t, err, "--plan previews the submission; it goes without --yes")
 
 	var stdout, errs bytes.Buffer
-	err = Run(t.Context(), []string{"submit", "--draft"}, Streams{In: strings.NewReader("y\n\np\ns\n"), Out: &stdout, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"submit", "--draft"}, Streams{In: strings.NewReader("y\n\np\ns\n"), Out: &stdout, Err: &errs, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "? Did you test the basic functionality of all binary files? [y/N] ")
 	require.Contains(t, stdout.String(), "Opened draft #34901  https://github.com/macports/macports-ports/pull/34901\n")
@@ -115,8 +114,7 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
 	withGitHub(t, w)
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
@@ -507,7 +505,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- runFor(t, ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(served.String(), "jq-update: #34901: CI failing\n") }, settle, 10*time.Millisecond)
 	stop()
@@ -581,8 +579,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 func TestShipPassingAndSubmitReady(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
 	g := withGitHub(t, w)
 	withScript(t, w, "failed")
 	_, _, err := dockhand(t, "start", "jq-update")
@@ -614,7 +611,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	require.Empty(t, g.PRs)
 
 	var stdout, stderr bytes.Buffer
-	err = Run(t.Context(), []string{"ship", "--passing"}, Streams{In: strings.NewReader("y\ny\nn\n"), Out: &stdout, Err: &stderr, interactive: true})
+	err = runFor(t, t.Context(), []string{"ship", "--passing"}, Streams{In: strings.NewReader("y\ny\nn\n"), Out: &stdout, Err: &stderr, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, stderr.String(), "? Ship it? [y/N] ")
 	require.Contains(t, stdout.String(), "Opened #34901")
@@ -645,12 +642,12 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	_, _, err = dockhand(t, "submit", "--ready", "--yes")
 	require.EqualError(t, err, refused+"The GitHub CLI wasn't used: the GitHub CLI isn't installed.")
 	var byCLI []int
-	gitHubCLI = signedIn{login: "bob", readied: &byCLI}
-	t.Cleanup(func() { gitHubCLI = signedIn{} })
+	stands(t).GitHubCLI = signedIn{login: "bob", readied: &byCLI}
+	t.Cleanup(func() { stands(t).GitHubCLI = signedIn{} })
 	_, _, err = dockhand(t, "submit", "--ready", "--yes")
 	require.EqualError(t, err, refused+"The GitHub CLI wasn't used: it's signed in as bob, and dockhand as ada.")
 	require.Empty(t, byCLI, "another account's CLI isn't used")
-	gitHubCLI = signedIn{login: "Ada", readied: &byCLI}
+	stands(t).GitHubCLI = signedIn{login: "Ada", readied: &byCLI}
 	out, _, err = dockhand(t, "submit", "--ready", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "Marked #34901 ready for review with the GitHub CLI: the macports organization refuses dockhand's app.\n")
@@ -740,7 +737,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 
 	fix("# and the docs")
 	var stdout, errs bytes.Buffer
-	err = Run(t.Context(), []string{"submit", "--no-check", "--tested-binaries"}, Streams{In: strings.NewReader("s\n\n"), Out: &stdout, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"submit", "--no-check", "--tested-binaries"}, Streams{In: strings.NewReader("s\n\n"), Out: &stdout, Err: &errs, interactive: true})
 	require.NoError(t, err, stdout.String())
 	require.Contains(t, errs.String(), "? ask @ryandesign to review again? [Y/n] ")
 	require.Contains(t, stdout.String(), "Asked @ryandesign to review again.\n")

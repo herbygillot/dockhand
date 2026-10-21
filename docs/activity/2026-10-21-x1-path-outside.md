@@ -102,3 +102,22 @@ For now settings hands compose the stand-ins the tests set as package
 variables (`settings.dependencies`). Making them per-test, so command's
 tests can run with `t.Parallel`, is the next slice, with the host's
 seams and their `Timings`.
+
+## The engine's stand-ins, a run's
+
+The engine's stand-ins aren't package variables any more: `testPreparer`,
+`testForge`, the port, dependent, outdated, and project readers,
+`testHTTPS`, `testArchiveFetcher`, `testActions`, `testLeftovers`, the
+engine's Tart lookup, and `gitHubCLI`. `Run` takes none; `run` takes a
+command line's `compose.Dependencies`. command's tests keep each test's
+own by its name (stands_test.go: `stands(t)`, `standsFor(t)`, `runFor`),
+a subtest taking its parent's. So tests no longer share them through the
+package, which `t.Parallel` needs.
+
+What's still the package's: the login's parts (`authFlow`, `authStore`,
+`authAPI`, `openBrowser`), serve's and watch's timings and launchd, Tart's
+images and support for setup's report, and cleanup's start. Those are the
+host's, and go next, as `Host` and its `Timings`. Command's tests also
+set the process's environment (HOME, MACPORTS_TREE), which `t.Parallel`
+refuses. That waits for one `Invocation` carrying the environment (the
+split's 7d rows 1 and 10), also in this item.

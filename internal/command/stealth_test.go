@@ -81,8 +81,7 @@ func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 	w := newWorld(t)
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name                jq\nversion             1.7.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
 	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
-	testPreparer = func(e *engine.Engine) engine.Preparer { return rechecksummer{repo: e.Repo} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return rechecksummer{repo: e.Repo} }
 
 	out, _, err := dockhand(t, "checksums", "jq", "--new")
 	require.NoError(t, err)
@@ -121,8 +120,7 @@ func (refuser) Prepare(context.Context, editprep.Request) (editprep.Result, erro
 func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(*engine.Engine) engine.Preparer { return refuser{} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(*engine.Engine) engine.Preparer { return refuser{} }
 
 	_, _, err := dockhand(t, "update", "jq", "--new")
 	require.Error(t, err)
@@ -156,7 +154,7 @@ func TestShipSettlesWhereBeforeTheEdit(t *testing.T) {
 	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 
 	var out, errs bytes.Buffer
-	err = Run(t.Context(), []string{"ship", "jq", "--yes", "--on", "command", "--tested-binaries"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"ship", "jq", "--yes", "--on", "command", "--tested-binaries"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err, errs.String())
 	require.NotContains(t, errs.String(), "Apply [a]")
 	require.NotContains(t, errs.String(), "Did you test", "the flag answered the template's questions")
@@ -170,8 +168,7 @@ func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {
 	w := newWorld(t)
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name                jq\nversion             1.7.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
 	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
-	testPreparer = func(e *engine.Engine) engine.Preparer { return rechecksummer{repo: e.Repo} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return rechecksummer{repo: e.Repo} }
 
 	out, _, err := dockhand(t, "checksums", "jq", "--new", "--no-revbump")
 	require.NoError(t, err)

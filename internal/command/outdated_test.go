@@ -49,8 +49,7 @@ func (j *jqIsOutdated) Outdated(_ context.Context, _ model.ObjectID, request eng
 
 func withOutdated(t *testing.T) *jqIsOutdated {
 	reader := &jqIsOutdated{}
-	testOutdatedReader = reader
-	t.Cleanup(func() { testOutdatedReader = nil })
+	stands(t).OutdatedReader = reader
 	return reader
 }
 
@@ -160,7 +159,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	require.ErrorContains(t, err, "without a terminal, --yes starts what is shown")
 
 	var stdout, errs bytes.Buffer
-	err = Run(t.Context(), []string{"update", "--mine"}, Streams{In: strings.NewReader("y\n"), Out: &stdout, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"update", "--mine"}, Streams{In: strings.NewReader("y\n"), Out: &stdout, Err: &errs, interactive: true})
 	require.NoError(t, err, errs.String())
 	require.Contains(t, errs.String(), "? Start them? [y/N] ")
 	require.Contains(t, stdout.String(), "jq: 1.7.1 → 1.8.1")
@@ -217,7 +216,7 @@ func TestOutdatedShowsItsProgressAtATerminal(t *testing.T) {
 	versioned(t, w)
 	reader := withOutdated(t)
 	var out, errs bytes.Buffer
-	err := Run(t.Context(), []string{"outdated", "jq", "lost"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
+	err := runFor(t, t.Context(), []string{"outdated", "jq", "lost"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
 	require.Equal(t, 3, ExitCode(err), "lost couldn't be checked")
 	require.Equal(t, "\r\033[KLooking up each port's newest release: 0 of 2\r\033[KLooking up each port's newest release: 1 of 2\r\033[K", errs.String())
 	require.NotContains(t, out.String(), "Looking up")
@@ -250,14 +249,14 @@ func TestAnInterruptedLookPrintsWhatItFound(t *testing.T) {
 	asMaintainer(t, w)
 	for _, args := range [][]string{{"outdated", "jq", "lost"}, {"update", "--mine"}, {"ship", "--mine"}} {
 		ctx, cancel := context.WithCancel(t.Context())
-		testOutdatedReader = cutShort{cancel: cancel}
+		stands(t).OutdatedReader = cutShort{cancel: cancel}
 		var out, errs bytes.Buffer
-		err := Run(ctx, args, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+		err := runFor(t, ctx, args, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 		require.ErrorIs(t, err, context.Canceled, args)
 		require.Contains(t, out.String(), "Interrupted after looking up 1 of 2 ports", args)
 		require.Contains(t, out.String(), "  jq     1.7.1   1.8.1    update\n", args)
 	}
-	testOutdatedReader = nil
+	stands(t).OutdatedReader = nil
 	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "update --mine and ship --mine started nothing")
 }
 

@@ -168,8 +168,7 @@ func (f *fakeActions) JobLog(_ context.Context, _ string, job int64) ([]byte, er
 }
 
 func withActions(t *testing.T, f *fakeActions) {
-	testActions = f
-	t.Cleanup(func() { testActions = nil })
+	stands(t).Actions = f
 }
 
 func built(port string, testsFail bool) string {
@@ -193,8 +192,7 @@ func githubBranch(t *testing.T) (*fakeActions, world) {
 	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	testPortReader = onePort{}
-	t.Cleanup(func() { testPortReader = nil })
+	stands(t).PortReader = onePort{}
 	g := withGitHub(t, w)
 	recordPushes(t, g.Fork)
 	f := &fakeActions{fork: g.Fork}
@@ -337,7 +335,7 @@ func TestAResumedGitHubCheckReadsTheRunItLeft(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := t.Context()
-	e, err := (&settings{}).open(ctx)
+	e, err := (&settings{deps: standsFor(t)}).open(ctx)
 	require.NoError(t, err)
 	defer e.Close()
 	run, err := e.RunNamed(ctx, "check-1")
@@ -462,7 +460,7 @@ func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	g := testForge(nil).(*forgetest.GitHub)
+	g := stands(t).Forge(nil).(*forgetest.GitHub)
 	g.PRs[34901].State = forge.PullRequestMerged
 	t.Setenv("MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "status", "--refresh")

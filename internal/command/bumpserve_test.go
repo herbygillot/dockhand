@@ -141,11 +141,10 @@ func concernedWorld(t *testing.T, concerns concerned, search error) *forgetest.G
 	t.Helper()
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(e *engine.Engine) engine.Preparer {
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer {
 		concerns.bumper = bumper{repo: e.Repo}
 		return concerns
 	}
-	t.Cleanup(func() { testPreparer = nil })
 	g := withGitHub(t, w)
 	g.Others, g.SearchErr = nil, search
 	withScript(t, w, "passed")
@@ -193,7 +192,7 @@ func serveWith(t *testing.T, concerns concerned, search error) (bool, string) {
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- Run(ctx, []string{"serve", "--ship-to", "submit"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- runFor(t, ctx, []string{"serve", "--ship-to", "submit"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	// It opens the pull request, holds the branch for a look, or stops
 	// the update before its check.

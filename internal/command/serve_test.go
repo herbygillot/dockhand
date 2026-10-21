@@ -80,7 +80,7 @@ func TestACheckIsHandedToServe(t *testing.T) {
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- runFor(t, ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, settle, 10*time.Millisecond)
 
@@ -125,7 +125,7 @@ func TestServeStopsForAnUpgrade(t *testing.T) {
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- Run(t.Context(), []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- runFor(t, t.Context(), []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, settle, 10*time.Millisecond)
 	// The new build is a new file at the same path.
@@ -155,7 +155,7 @@ func TestServeStopsWhenUninstalled(t *testing.T) {
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- Run(t.Context(), []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- runFor(t, t.Context(), []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, settle, 10*time.Millisecond)
 	require.NoError(t, os.Remove(executable))
@@ -280,7 +280,7 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 		var served syncBuffer
 		done := make(chan error)
 		go func() {
-			done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+			done <- runFor(t, ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 		}()
 		require.Eventually(t, func() bool { return strings.Contains(served.String(), until) }, settle, 10*time.Millisecond)
 		time.Sleep(100 * time.Millisecond)
@@ -342,7 +342,7 @@ JSON
 		var served syncBuffer
 		done := make(chan error)
 		go func() {
-			done <- Run(t.Context(), []string{"serve", "--drain"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+			done <- runFor(t, t.Context(), []string{"serve", "--drain"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 		}()
 		check()
 		require.NoError(t, os.WriteFile(filepath.Join(w.home, "go"), nil, 0o644))
@@ -446,7 +446,7 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- runFor(t, ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(served.String(), "logged in again as ada") }, settle, 10*time.Millisecond)
 	stop()
@@ -492,7 +492,7 @@ func TestServeSaysALoginItCantRead(t *testing.T) {
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- runFor(t, ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(served.String(), "logged in again as ada") }, settle, 10*time.Millisecond)
 	stop()

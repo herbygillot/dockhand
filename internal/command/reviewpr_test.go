@@ -40,7 +40,7 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 	require.True(t, strings.HasPrefix(out, "Reviewed at "))
 
 	var stdout, errs bytes.Buffer
-	err = Run(t.Context(), []string{"review", "#34905"}, Streams{In: strings.NewReader("r\nc\n"), Out: &stdout, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"review", "#34905"}, Streams{In: strings.NewReader("r\nc\n"), Out: &stdout, Err: &errs, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "? post as: c comment · e edit first · n don't post", "read access can't request changes")
 	require.Contains(t, errs.String(), "Requesting changes requires write or triage access; your access is read access.")

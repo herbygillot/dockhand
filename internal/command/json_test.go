@@ -244,8 +244,7 @@ func (b unfetchedPrevious) Prepare(ctx context.Context, r editprep.Request) (edi
 func TestUpdateJSONCarriesTheUpstreamComparison(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
 	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
@@ -261,8 +260,7 @@ func TestUpdateJSONCarriesTheUpstreamComparison(t *testing.T) {
 func TestAnUpdatesPlanSaysWhatUpstreamChanged(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	testPreparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
-	t.Cleanup(func() { testPreparer = nil })
+	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
 	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))

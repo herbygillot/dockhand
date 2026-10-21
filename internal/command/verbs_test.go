@@ -176,7 +176,7 @@ func TestSeveralBranchesForAPortAreOneQuestion(t *testing.T) {
 	}
 	run := func(answer string) (string, string, error) {
 		var out, errs bytes.Buffer
-		err := Run(t.Context(), []string{"edit", "jq", "--no-open"}, Streams{In: strings.NewReader(answer + "\n"), Out: &out, Err: &errs, interactive: true})
+		err := runFor(t, t.Context(), []string{"edit", "jq", "--no-open"}, Streams{In: strings.NewReader(answer + "\n"), Out: &out, Err: &errs, interactive: true})
 		return out.String(), errs.String(), err
 	}
 	_, errs, err := run("2")

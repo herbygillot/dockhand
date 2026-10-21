@@ -105,7 +105,7 @@ func TestArchiveAsksCommitOrDiscard(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", w.clone)
 
 	var out, errs bytes.Buffer
-	err = Run(t.Context(), []string{"archive", "jq-update"}, Streams{In: strings.NewReader("c\n"), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"archive", "jq-update"}, Streams{In: strings.NewReader("c\n"), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "jq-update's worktree stays for now: it has uncommitted edits to textproc/jq/Portfile.\n? commit them, discard them, or keep the worktree? ")
 	require.Contains(t, out.String(), "Archived jq-update, and removed its worktree;")
@@ -118,7 +118,7 @@ func TestArchiveAsksCommitOrDiscard(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(scratch, "notes.txt"), []byte("mine\n"), 0o644))
 	out.Reset()
 	errs.Reset()
-	err = Run(t.Context(), []string{"archive", "scratch"}, Streams{In: strings.NewReader("d\n"), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"archive", "scratch"}, Streams{In: strings.NewReader("d\n"), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err)
 	require.NoDirExists(t, scratch)
 

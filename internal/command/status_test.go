@@ -146,7 +146,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, os.WriteFile(live, []byte("--->  Building jq\n"), 0o644))
 	ctx, stop := context.WithTimeout(t.Context(), 1500*time.Millisecond)
 	var followed, followedErrs bytes.Buffer
-	err = Run(ctx, []string{"logs", "check-2", "jq", "--follow"}, Streams{In: strings.NewReader(""), Out: &followed, Err: &followedErrs})
+	err = runFor(t, ctx, []string{"logs", "check-2", "jq", "--follow"}, Streams{In: strings.NewReader(""), Out: &followed, Err: &followedErrs})
 	stop()
 	require.ErrorIs(t, err, context.DeadlineExceeded, followedErrs.String())
 	require.Equal(t, "--->  Building jq\n", followed.String())

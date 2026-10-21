@@ -61,8 +61,7 @@ func (p *leavingBuilder) RemoveLeftover(_ context.Context, ref string) error {
 func TestCleanRemovesWhatChecksLeft(t *testing.T) {
 	checkedBranch(t)
 	builder := &leavingBuilder{}
-	testLeftovers = builder
-	t.Cleanup(func() { testLeftovers = nil })
+	stands(t).Leftovers = builder
 	_, _, err := dockhand(t, "check")
 	require.NoError(t, err)
 	require.Len(t, builder.left, 1)

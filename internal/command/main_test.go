@@ -50,8 +50,6 @@ func TestMain(m *testing.M) {
 	// Every test's Mac takes Tart, whichever Mac runs it, but where it
 	// says it's an Intel Mac's (onIntel).
 	tartSupported = func() bool { return true }
-	// Nor the GitHub CLI this Mac has, signed in as its person.
-	gitHubCLI = signedIn{}
 	// Nor this Mac's GitHub login, read afresh by serve's identity check:
 	// a serve test's login is no one's, unless the test gives it one.
 	serveIdentity = func(*github.Runtime) func(context.Context) (string, error) { return nil }

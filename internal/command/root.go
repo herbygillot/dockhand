@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -123,7 +124,14 @@ things are.`
 
 // Run executes the command line in args.
 func Run(ctx context.Context, args []string, streams Streams) error {
+	return run(ctx, args, streams, compose.Dependencies{})
+}
+
+// run executes the command line with the stand-ins given, compose's real
+// ones where they're empty, which a test gives its own.
+func run(ctx context.Context, args []string, streams Streams, dependencies compose.Dependencies) error {
 	var settings settings
+	settings.deps = dependencies
 	stdout := streams.Out
 	streams = runStreams(streams, args)
 	settings.streams = streams

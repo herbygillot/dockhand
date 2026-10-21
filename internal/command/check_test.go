@@ -48,8 +48,7 @@ JSON
 `), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[providers.command]\nrun = \"~/bin/build-ports\"\nname = \"my build box\"\n"), 0o644))
-	testPortReader = onePort{}
-	t.Cleanup(func() { testPortReader = nil })
+	stands(t).PortReader = onePort{}
 }
 
 func TestCheckRunsHereWithoutServe(t *testing.T) {
