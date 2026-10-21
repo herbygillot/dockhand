@@ -65,6 +65,22 @@ Then:
   runtime, shares it. The process-global map and `SystemIdentity` are
   gone.
 
+Then, two of field testing's from Later (2026-10-19, at 6dd7745c),
+`outdated` over ryandesign's 2,133 ports and subports having said ~5,500
+calls of 5,000 and gone on:
+
+- A look weighs its estimate, about 2.6 requests a port, against what's
+  left of the hour. That count takes subports sharing a Portfile once.
+  GitHub's rate_limit endpoint, which counts against nothing, says what's
+  left (`Runtime.Allowance`, `Engine.GitHubAllowance`). Past it, the look
+  asks first on a terminal. Without one, it's refused unless
+  `--over-allowance`, on outdated, update, and ship, says to go on. The
+  outdated service asks before its first lookup (`Service.Allow`). Where
+  GitHub can't be asked, the look goes on as it did.
+- Subports of one Portfile that share its version and the options naming
+  its source are looked up once, the rest waiting for the first's answer,
+  each with its own copy of the release (`sharedLookups`). One cut short by
+  its own context isn't shared.
+
 Still to come in this step: the spend log's environment half moving to
-compose, the look's estimate checked against the hour's allowance, and
-subports sharing one source looked up once.
+compose.

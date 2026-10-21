@@ -14,13 +14,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // outdatedRequest is what --mine and the ports named choose.
 func outdatedRequest(ctx context.Context, s *settings, e *engine.Engine, streams Streams, ports []string, mine bool) (engine.OutdatedRequest, *lookups, error) {
 	looked := newLookups(streams)
-	request := engine.OutdatedRequest{Ports: ports, Progress: looked.progress}
+	request := engine.OutdatedRequest{Ports: ports, Progress: looked.progress, Allow: allowLook(e.GitHubAllowance, streams, s.overAllowance)}
 	if !mine {
 		if len(ports) == 0 {
 			return request, looked, errors.New("name ports, or choose yours with --mine")
@@ -76,6 +77,7 @@ checks them too.`,
 		},
 	}
 	cmd.Flags().BoolVar(&mine, "mine", false, "the ports whose maintainers line names you (config maintainer)")
+	overAllowanceFlag(cmd, s)
 	cmd.Flags().BoolVar(&all, "current", false, "list current ports and those that couldn't be checked too")
 	supportsJSON(cmd)
 	return cmd
@@ -280,6 +282,43 @@ func noneChecked(report engine.OutdatedReport) error {
 	return fmt.Errorf("no port could be checked, at master %s: %s", report.Master.Short(), problem)
 }
 
+// allowLook asks before a look whose estimate passes what's left of the
+// hour's GitHub allowance, as GitHub says it, which other sessions sharing
+// the login spend too: on a terminal, and refused without one unless
+// --over-allowance says to go on. outdated over ryandesign's 2,133 ports
+// and subports said ~5,500 calls of 5,000 and went on, and 106 were looked
+// up after ten minutes (field testing at 6dd7745c). Where GitHub can't be
+// asked, the look goes on, as it did.
+func allowLook(allowed func(context.Context) (github.Allowance, error), streams Streams, over bool) func(context.Context, int) error {
+	return func(ctx context.Context, lookups int) error {
+		if over {
+			return nil
+		}
+		estimate := lookCost(lookups)
+		allowance, err := allowed(ctx)
+		if err != nil || estimate <= allowance.Remaining {
+			return nil
+		}
+		words := fmt.Sprintf("Looking up %s ports asks GitHub about %s times, and the login has %s of its %s left this hour, until %s, which other sessions sharing it spend too",
+			prose.Count(lookups), prose.Count(estimate), prose.Count(allowance.Remaining), prose.Count(allowance.Limit), allowance.Reset.Local().Format("15:04"))
+		if !streams.terminal() {
+			return fmt.Errorf("%s; --over-allowance looks anyway", words)
+		}
+		yes, err := streams.askYes(words+".\n? Look anyway? [y/N] ", false)
+		if err != nil {
+			return err
+		}
+		if !yes {
+			return errors.New("nothing was looked up")
+		}
+		return nil
+	}
+}
+
+// lookCost is about how many requests looking up lookups ports asks of
+// GitHub, at about 2.6 a port, rounded to a hundred (costlyLook).
+func lookCost(lookups int) int { return (lookups*26/10 + 50) / 100 * 100 }
+
 // outdatedBatch is your ports with newer releases, as outdated --mine
 // finds them, split one branch a port: the updates ship --mine and update
 // --mine make. What it leaves is said, each port the plan skipped with
@@ -387,7 +426,7 @@ func (l *lookups) progress(done, total int) {
 	l.total.Store(int64(total))
 	if total >= costlyLook {
 		l.costly.Do(func() {
-			l.say(fmt.Sprintf("Looking up %s ports asks GitHub about %s times, of the 5,000 an hour a login has.", prose.Count(total), prose.Count((total*26/10+50)/100*100)))
+			l.say(fmt.Sprintf("Looking up %s ports asks GitHub about %s times, of the 5,000 an hour a login has.", prose.Count(total), prose.Count(lookCost(total))))
 		})
 	}
 	if !l.draw {

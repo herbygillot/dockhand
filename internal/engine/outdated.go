@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
@@ -25,6 +26,9 @@ type OutdatedRequest struct {
 	// Progress, when set, hears how many of the ports are looked up, as
 	// the lookups finish.
 	Progress func(done, total int)
+	// Allow, when set, is asked before the first lookup whether the look
+	// may go on, given how many it makes (outdated.Service.Allow).
+	Allow func(ctx context.Context, lookups int) error
 }
 
 // OutdatedPort is one port as its upstream stands.
@@ -260,7 +264,7 @@ type surveyedPorts struct {
 
 func (s *surveyedPorts) Outdated(ctx context.Context, commit model.ObjectID, request OutdatedRequest) ([]OutdatedPort, error) {
 	service := *s.service
-	service.Commit, service.Progress = string(commit), request.Progress
+	service.Commit, service.Progress, service.Allow = string(commit), request.Progress, request.Allow
 	result, err := service.Observe(ctx, outdated.Selection{Ports: request.Ports, Maintainers: request.Maintainers})
 	var ports []OutdatedPort
 	for _, port := range result.Ports {
@@ -422,4 +426,11 @@ func unresolvedWords(plan model.Plan) string {
 		return "it builds nothing"
 	}
 	return strings.Join(words, "; ")
+}
+
+// GitHubAllowance is what's left of the hour's GitHub requests for the
+// login the engine's runtime holds, for a look to weigh its cost first.
+func (e *Engine) GitHubAllowance(ctx context.Context) (github.Allowance, error) {
+	e.github()
+	return e.GitHub.Allowance(ctx)
 }

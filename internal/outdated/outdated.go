@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,6 +58,10 @@ type Service struct {
 	// Progress, when set, hears how many of the ports are looked up: once
 	// before the first, and after each, in order, never two at once.
 	Progress func(done, total int)
+	// Allow, when set, is asked before the first lookup whether the look
+	// may go on, given how many lookups it makes, a port's subports that
+	// share its Portfile counted once; its error stops the look.
+	Allow func(ctx context.Context, lookups int) error
 }
 
 // Observe captures local HEAD and assesses every selected port independently.
@@ -90,6 +95,15 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 	for _, problem := range files.Problems {
 		result.Ports = append(result.Ports, Port{Selector: problem.Port, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC(), Detail: problem.Detail}})
 	}
+	if s.Allow != nil {
+		portfiles := map[string]bool{}
+		for _, port := range files.Ports {
+			portfiles[port.Portfile] = true
+		}
+		if err := s.Allow(ctx, len(portfiles)); err != nil {
+			return result, err
+		}
+	}
 	// Ports are looked up concurrently, and the results keep the
 	// selection's order. Each has its own probe and interpreters, and
 	// evaluates candidate versions in overlays of the shared projection,
@@ -115,13 +129,14 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 	report(false)
 	group, gctx := errgroup.WithContext(ctx)
 	group.SetLimit(s.concurrency())
+	shared := &sharedLookups{lookups: map[string]*sharedLookup{}}
 	for i, selected := range files.Ports {
 		group.Go(func() error {
 			if err := gctx.Err(); err != nil {
 				return err
 			}
 			var err error
-			if observed[i], err = s.observeOne(gctx, editor, files, platform, selected); err != nil {
+			if observed[i], err = s.observeOne(gctx, editor, files, platform, selected, shared); err != nil {
 				return err
 			}
 			done[i] = true
@@ -172,6 +187,73 @@ func WithSiblings(ports []Port) []Port {
 	return ports
 }
 
+// sharedLookups are a look's upstream lookups by source, so subports of
+// one Portfile that share its version and source, as the php and p5
+// subports that made most of ryandesign's 2,133, are looked up once, where
+// each asked GitHub again (field testing at 6dd7745c).
+type sharedLookups struct {
+	mu      sync.Mutex
+	lookups map[string]*sharedLookup
+}
+
+type sharedLookup struct {
+	done   chan struct{}
+	result upstream.Result
+	err    error
+}
+
+// do is the lookup of key: the first asks, and the rest wait for its
+// answer. A lookup cut short by its own context isn't shared, and is asked
+// again by the next.
+func (s *sharedLookups) do(ctx context.Context, key string, lookup func(context.Context) (upstream.Result, error)) (upstream.Result, error) {
+	if s == nil || key == "" {
+		return lookup(ctx)
+	}
+	s.mu.Lock()
+	found, ok := s.lookups[key]
+	if !ok {
+		found = &sharedLookup{done: make(chan struct{})}
+		s.lookups[key] = found
+	}
+	s.mu.Unlock()
+	if ok {
+		select {
+		case <-found.done:
+			// Each port gets its own copy of the release found.
+			result := found.result
+			if result.Release != nil {
+				release := *result.Release
+				result.Release = &release
+			}
+			return result, found.err
+		case <-ctx.Done():
+			return upstream.Result{}, ctx.Err()
+		}
+	}
+	found.result, found.err = lookup(ctx)
+	if ctx.Err() != nil {
+		s.mu.Lock()
+		delete(s.lookups, key)
+		s.mu.Unlock()
+	}
+	close(found.done)
+	return found.result, found.err
+}
+
+// lookupKey is what a port's upstream lookup depends on: its Portfile, its
+// version, and the options that name its source and how its releases are
+// read. Subports that share all of them share the lookup.
+func lookupKey(portfile string, port macports.PortInfo) string {
+	if portfile == "" {
+		return ""
+	}
+	key := []string{portfile, port.Version}
+	for _, option := range []string{"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version", "livecheck.branch", "github.author", "github.project", "github.version", "github.tag_prefix", "github.tag_suffix", "gitlab.instance", "gitlab.author", "gitlab.project", "gitlab.version", "git.url", "git.branch", "distname", "distfiles", "master_sites"} {
+		key = append(key, port.Options[option])
+	}
+	return strings.Join(key, "\x00")
+}
+
 // slowLookup is how long one port's lookup goes before it's said.
 const slowLookup = 20 * time.Second
 
@@ -189,7 +271,7 @@ func (s *Service) concurrency() int {
 
 // observeOne looks up one selected port's newest release. A problem with
 // the port is its result; only releasing its probe can fail the survey.
-func (s *Service) observeOne(ctx context.Context, editor *portedit.Service, files *survey.Workspace, platform model.Platform, selected survey.Port) (Port, error) {
+func (s *Service) observeOne(ctx context.Context, editor *portedit.Service, files *survey.Workspace, platform model.Platform, selected survey.Port, shared *sharedLookups) (Port, error) {
 	// What loading a port says is the editor's, behind the scenes to a
 	// look that edits nothing: "py-wsaccel is a stub; editing
 	// py313-wsaccel" (field testing, 2026-10-02).
@@ -208,7 +290,7 @@ func (s *Service) observeOne(ctx context.Context, editor *portedit.Service, file
 		var bound *upstream.Discovery
 		bound, problem = s.Upstream.Bind(probe)
 		if problem == nil {
-			item.Result, problem = bound.Discover(ctx)
+			item.Result, problem = shared.do(ctx, lookupKey(selected.Portfile, probe.Port()), bound.Discover)
 		}
 	}
 	if problem != nil {

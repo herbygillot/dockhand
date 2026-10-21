@@ -117,6 +117,7 @@ pull requests, and ship takes a port's update as far as --to says.`,
 	version.flags(cmd)
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&mine, "mine", false, "update each of your ports with a newer release, in a branch of its own (config maintainer)")
+	overAllowanceFlag(cmd, s)
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --mine, start the branches without asking")
 	supportsJSON(cmd)
 	return cmd

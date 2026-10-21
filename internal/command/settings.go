@@ -40,6 +40,15 @@ type settings struct {
 	// namesBranch is a command naming a branch, by -b, -p, or --pr or by
 	// its name, which run outside any checkout finds the registered one.
 	namesBranch bool
+	// overAllowance is --over-allowance: a look goes on past what's left
+	// of the hour's GitHub allowance (allowLook).
+	overAllowance bool
+}
+
+// overAllowanceFlag registers --over-allowance on a command that looks up
+// ports' newest releases.
+func overAllowanceFlag(cmd *cobra.Command, s *settings) {
+	cmd.Flags().BoolVar(&s.overAllowance, "over-allowance", false, "look up the ports though the look's estimate passes what's left of the hour's GitHub allowance")
 }
 
 func (s *settings) flags(root *cobra.Command) {

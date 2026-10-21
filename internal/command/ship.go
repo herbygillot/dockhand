@@ -116,6 +116,7 @@ says whether any went through: 1 where none did, 3 where some need a look.`,
 	version.stageFlags(cmd)
 	cmd.Flags().StringVar(&to, "to", string(engine.ShipSubmit), "how far to carry each change: commit, check, or submit")
 	cmd.Flags().BoolVar(&mine, "mine", false, "your ports with newer releases, as outdated --mine finds them")
+	overAllowanceFlag(cmd, s)
 	cmd.Flags().BoolVar(&passing, "passing", false, "the branches whose check passed for their commits, with no pull request of those commits yet")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "ship without asking, holding where serve would")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the plan and change nothing")

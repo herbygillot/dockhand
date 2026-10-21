@@ -1,6 +1,8 @@
 package command
 
 import (
+	"errors"
+
 	"bytes"
 	"context"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -317,4 +320,30 @@ func TestALookOffATerminalSaysItsCountAsItGoes(t *testing.T) {
 	l.progress(2, 3)
 	l.progress(3, 3)
 	require.Equal(t, []string{"Looked up 1 of 3 ports' newest releases"}, said)
+}
+
+// A look whose estimate passes what's left of the hour's GitHub allowance
+// asks first on a terminal, and is refused without one unless
+// --over-allowance says to go on; one within it, or where GitHub can't be
+// asked, goes on as it did (field testing at 6dd7745c).
+func TestALookPastTheAllowanceAsksFirst(t *testing.T) {
+	reset := time.Date(2026, 10, 21, 15, 4, 0, 0, time.Local)
+	left := func(remaining int) func(context.Context) (github.Allowance, error) {
+		return func(context.Context) (github.Allowance, error) {
+			return github.Allowance{Remaining: remaining, Limit: 5000, Reset: reset}, nil
+		}
+	}
+	script := Streams{In: strings.NewReader(""), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}
+	require.NoError(t, allowLook(left(5000), script, false)(t.Context(), 100), "within it")
+	err := allowLook(left(1000), script, false)(t.Context(), 2133)
+	require.EqualError(t, err, "Looking up 2,133 ports asks GitHub about 5,500 times, and the login has 1,000 of its 5,000 left this hour, until 15:04, which other sessions sharing it spend too; --over-allowance looks anyway")
+	require.NoError(t, allowLook(left(1000), script, true)(t.Context(), 2133), "--over-allowance")
+	require.NoError(t, allowLook(func(context.Context) (github.Allowance, error) { return github.Allowance{}, errors.New("offline") }, script, false)(t.Context(), 2133), "GitHub can't be asked")
+
+	var asked bytes.Buffer
+	yes := Streams{In: strings.NewReader("y\n"), Out: &bytes.Buffer{}, Err: &asked, interactive: true}
+	require.NoError(t, allowLook(left(1000), yes, false)(t.Context(), 2133))
+	require.Contains(t, asked.String(), "? Look anyway? [y/N]")
+	no := Streams{In: strings.NewReader("\n"), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, interactive: true}
+	require.EqualError(t, allowLook(left(1000), no, false)(t.Context(), 2133), "nothing was looked up")
 }
