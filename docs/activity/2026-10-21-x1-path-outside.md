@@ -144,3 +144,14 @@ Left for this item: the device flow to `github.Login`/`Logout`,
 `engine.Setup`'s move and `offerSetup`, one `Invocation` carrying the
 environment, so command's tests can take `t.Parallel`, the spend log's
 variable to compose, and the `term` cut.
+
+## The login's device flow, GitHub's
+
+`github.Login` signs in with a device flow and keeps the login in a
+store, showing the code only where GitHub's address is over https and
+keeping nothing where the sign-in doesn't finish; `github.Logout`
+removes it and says where at GitHub the saved login's app is revoked.
+`github.LoginStore` is where it's kept, in place of command's own
+`credentials` interface. setup github keeps its wording, the browser,
+and the override notice. Their own tests are in
+internal/github/signin_test.go.

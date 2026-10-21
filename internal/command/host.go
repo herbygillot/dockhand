@@ -47,7 +47,7 @@ type host struct {
 	// The login's parts: its device flow, where it's kept, the client
 	// reading it, and the browser its page opens in.
 	authFlow    credential.DeviceFlow
-	authStore   credentials
+	authStore   github.LoginStore
 	authAPI     func(credential.Store) *github.Client
 	openBrowser func(ctx context.Context, address string) error
 }

@@ -1,9 +1,11 @@
 package github
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -284,4 +286,50 @@ func SavedLogin(ctx context.Context, store credential.Store) (credential.Login, 
 // given, at GitHub.
 func RevocationPage(clientID string) string {
 	return "https://github.com/settings/connections/applications/" + clientID
+}
+
+// LoginStore is where dockhand's login is kept, which logging out removes
+// it from.
+type LoginStore interface {
+	credential.Store
+	credential.Remover
+}
+
+// Login signs in to GitHub with flow's one-time code for the OAuth app
+// clientID, and keeps the login in store. present shows the person the
+// code and where to enter it, which is only ever GitHub's address over
+// https; nothing is kept where the sign-in doesn't finish.
+func Login(ctx context.Context, flow credential.DeviceFlow, store credential.Store, clientID string, present func(credential.DeviceAuthorization) error) (credential.Login, error) {
+	login, err := flow.Authorize(ctx, clientID, func(authorization credential.DeviceAuthorization) error {
+		if address, err := url.Parse(authorization.VerificationURL); err != nil || address.Scheme != "https" || address.Host == "" {
+			return fmt.Errorf("GitHub returned an invalid authorization URL, %q; an HTTPS URL is required, so the browser was not opened", authorization.VerificationURL)
+		}
+		return present(authorization)
+	})
+	if err != nil {
+		return credential.Login{}, err
+	}
+	saved, err := login.Encode()
+	if err != nil {
+		return credential.Login{}, errors.New("GitHub returned an incomplete login; nothing was saved")
+	}
+	if err := store.Put(ctx, CredentialKey, saved); err != nil {
+		return credential.Login{}, err
+	}
+	return login, nil
+}
+
+// Logout removes dockhand's login from store, and says where at GitHub
+// the access its OAuth app was given is revoked (RevocationPage): the
+// saved login's app, else dockhand's. It's store's ErrNotFound where
+// store keeps none.
+func Logout(ctx context.Context, store LoginStore) (revoke string, err error) {
+	clientID := DefaultOAuthClientID
+	if login, err := SavedLogin(ctx, store); err == nil || login.ClientID != "" {
+		clientID = cmp.Or(login.ClientID, clientID)
+	}
+	if err := store.Delete(ctx, CredentialKey); err != nil {
+		return "", err
+	}
+	return RevocationPage(clientID), nil
 }
