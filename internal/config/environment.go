@@ -18,6 +18,8 @@ var Environment = []Variable{
 	{Name: "DOCKHAND_DB"},
 	{Name: PathVariable, Agent: true},
 	{Name: "GIT_BIN"},
+	// A token in GH_TOKEN, else GITHUB_TOKEN, overrides dockhand's login,
+	// which the GitHub CLI's comes after (compose.Options.Signin).
 	{Name: "GH_TOKEN"},
 	{Name: "GITHUB_TOKEN"},
 	{Name: "DOCKHAND_UPSTREAM", Agent: true},

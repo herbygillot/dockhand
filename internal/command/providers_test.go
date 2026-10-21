@@ -289,7 +289,7 @@ func providers(t *testing.T) string {
 	require.NoError(t, err)
 	file, err := s.places().Load(path)
 	require.NoError(t, err)
-	return strings.Join(hosted(t).providerLines(t.Context(), file), "\n") + "\n"
+	return strings.Join(testSettings(t).providerLines(t.Context(), file), "\n") + "\n"
 }
 
 // An image whose MacPorts is older than this Mac's is said, with how to

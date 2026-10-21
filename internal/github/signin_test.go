@@ -74,20 +74,18 @@ func TestLoginShowsOnlyAnHTTPSAddressAndKeepsNothingUnfinished(t *testing.T) {
 	require.ErrorIs(t, err, credential.ErrNotFound)
 }
 
-func TestLoginSourceIsTheOverridingVariableThenAKeptLogin(t *testing.T) {
-	t.Setenv("GH_TOKEN", "")
-	t.Setenv("GITHUB_TOKEN", "")
+func TestLoginSourceIsTheOverrideThenAKeptLogin(t *testing.T) {
+	t.Parallel()
 	store := &removable{}
-	require.Equal(t, github.CredentialSource(""), github.LoginSource(t.Context(), store), "none kept")
+	signin := github.Signin{Store: store}
+	require.Equal(t, github.CredentialSource(""), github.LoginSource(t.Context(), signin), "none kept")
 	store.value = "gho_a_bare_token_from_an_earlier_dockhand"
-	require.Equal(t, github.CredentialSource(""), github.LoginSource(t.Context(), store), "an ended login is none")
+	require.Equal(t, github.CredentialSource(""), github.LoginSource(t.Context(), signin), "an ended login is none")
 	now := time.Now()
 	kept, err := credential.Login{Access: "gho_access", AccessExpiry: now.Add(time.Hour), Refresh: "ghr_refresh", RefreshExpiry: now.Add(time.Hour), Account: "ada", ClientID: "Iv1.other"}.Encode()
 	require.NoError(t, err)
 	store.value = kept
-	require.Equal(t, github.SourceKeychain, github.LoginSource(t.Context(), store))
-	t.Setenv("GITHUB_TOKEN", "ghp_token")
-	require.Equal(t, github.SourceGitHubEnvironment, github.LoginSource(t.Context(), store))
-	t.Setenv("GH_TOKEN", "ghp_token")
-	require.Equal(t, github.SourceGHEnvironment, github.LoginSource(t.Context(), store), "GH_TOKEN first")
+	require.Equal(t, github.SourceKeychain, github.LoginSource(t.Context(), signin))
+	signin.Token = github.Token{Secret: "ghp_token", Source: github.SourceGitHubEnvironment}
+	require.Equal(t, github.SourceGitHubEnvironment, github.LoginSource(t.Context(), signin), "the override first")
 }

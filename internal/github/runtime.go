@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/herbygillot/dockhand/internal/credential"
 )
 
 // Runtime is GitHub as one process reaches it: one client, its login, and
@@ -18,10 +16,9 @@ type Runtime struct {
 	Client *Client
 }
 
-// NewRuntime is GitHub as the person's login in store reaches it, GH_TOKEN
-// first (SystemClient).
-func NewRuntime(store credential.Store) *Runtime {
-	return &Runtime{Client: SystemClient(store)}
+// NewRuntime is GitHub as the person's login reaches it (SystemClient).
+func NewRuntime(signin Signin) *Runtime {
+	return &Runtime{Client: SystemClient(signin)}
 }
 
 // AccountChanged lets go of the login the client holds, and the API client

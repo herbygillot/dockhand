@@ -48,7 +48,7 @@ type host struct {
 	// reading it, and the browser its page opens in.
 	authFlow    credential.DeviceFlow
 	authStore   github.LoginStore
-	authAPI     func(credential.Store) *github.Client
+	authAPI     func(github.Signin) *github.Client
 	openBrowser func(ctx context.Context, address string) error
 }
 

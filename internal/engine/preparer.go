@@ -48,7 +48,7 @@ func (e *Engine) preparer() (Preparer, error) {
 func (e *Engine) github() *forgegithub.Client {
 	e.githubOnce.Do(func() {
 		if e.GitHub == nil {
-			e.GitHub = github.NewRuntime(keychain.Store{})
+			e.GitHub = github.NewRuntime(github.Signin{Store: keychain.Store{}})
 		}
 		e.githubClient = &forgegithub.Client{Client: e.GitHub.Client, GitExecutable: e.options.Git}
 	})

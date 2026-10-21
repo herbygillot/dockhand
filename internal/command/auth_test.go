@@ -68,8 +68,8 @@ func withAuth(t *testing.T, flow credential.DeviceFlow) memoryStore {
 	}))
 	t.Cleanup(server.Close)
 	hosted(t).authFlow, hosted(t).authStore = flow, store
-	hosted(t).authAPI = func(store credential.Store) *github.Client {
-		return &github.Client{HTTP: server.Client(), Config: github.Config{BaseURL: server.URL}, Credentials: github.SystemCredentials{Store: store, Key: github.CredentialKey}}
+	hosted(t).authAPI = func(signin github.Signin) *github.Client {
+		return &github.Client{HTTP: server.Client(), Config: github.Config{BaseURL: server.URL}, Credentials: github.SystemCredentials{Store: signin.Store, Key: github.CredentialKey, Override: signin.Token, CLI: signin.CLI}}
 	}
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
@@ -116,7 +116,7 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	require.NotEmpty(t, report.Result.Git.Version)
 	require.Equal(t, "macports/macports-ports", report.Result.Upstream.Repository)
 	t.Setenv("GH_TOKEN", "secret-token")
-	_, said := hosted(t).publishing(t.Context())
+	_, said := testSettings(t).publishing(t.Context())
 	require.Equal(t, githubLoginJSON{Account: "ada", Source: "GH_TOKEN"}, said, "GH_TOKEN takes precedence, and doesn't renew")
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("PATH", emptyPath)
@@ -128,7 +128,7 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	out, _, err = dockhand(t, "setup", "github", "--logout")
 	require.NoError(t, err)
 	require.Equal(t, "No dockhand GitHub credentials are saved in the Keychain.\n", out)
-	line, said := hosted(t).publishing(t.Context())
+	line, said := testSettings(t).publishing(t.Context())
 	require.Equal(t, "· not set up: dockhand setup github, when you're ready to submit", line, "no login anywhere")
 	require.Equal(t, githubLoginJSON{Problem: "not set up"}, said)
 }
@@ -147,14 +147,14 @@ func TestAFailedLoginSavesNothing(t *testing.T) {
 func TestALoginThatCantRenewIsSaid(t *testing.T) {
 	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	store[github.CredentialKey] = "gho_a_bare_token_from_an_earlier_dockhand"
-	line, _ := hosted(t).publishing(t.Context())
+	line, _ := testSettings(t).publishing(t.Context())
 	require.Equal(t, "! the saved GitHub login uses an older format; run dockhand setup github to sign in again", line)
 	expired := login("secret-token", "ada")
 	expired.AccessExpiry, expired.RefreshExpiry = time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)
 	saved, err := expired.Encode()
 	require.NoError(t, err)
 	store[github.CredentialKey] = saved
-	line, said := hosted(t).publishing(t.Context())
+	line, said := testSettings(t).publishing(t.Context())
 	require.Equal(t, "! the GitHub login expired after six months of inactivity; run dockhand setup github to sign in again", line)
 	require.Equal(t, githubLoginJSON{Problem: "the GitHub login expired after six months of inactivity; run dockhand setup github to sign in again"}, said)
 }

@@ -33,48 +33,35 @@ func (s savedCredential) Get(context.Context, credential.Key) (string, error) {
 }
 func (savedCredential) Put(context.Context, credential.Key, string) error { return nil }
 
-func TestSystemCredentialsPreferEnvironmentAndReuseGitHubCLI(t *testing.T) {
-	t.Run("GH_TOKEN", func(t *testing.T) {
-		t.Setenv("GH_TOKEN", "first")
-		t.Setenv("GITHUB_TOKEN", "second")
-		token, err := (github.SystemCredentials{}).Token(t.Context())
+func TestSystemCredentialsPreferTheOverrideAndReuseGitHubCLI(t *testing.T) {
+	t.Run("override", func(t *testing.T) {
+		t.Parallel()
+		saved := savedCredential{secret: "credential-from-keychain"}
+		token, err := (github.SystemCredentials{Store: saved, Override: github.Token{Secret: "first", Source: github.SourceGHEnvironment}}).Token(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, "first", token.Secret)
-	})
-	t.Run("GITHUB_TOKEN", func(t *testing.T) {
-		t.Setenv("GH_TOKEN", "")
-		t.Setenv("GITHUB_TOKEN", "second")
-		token, err := (github.SystemCredentials{}).Token(t.Context())
-		require.NoError(t, err)
-		require.Equal(t, "second", token.Secret)
+		require.Equal(t, github.Token{Secret: "first", Source: github.SourceGHEnvironment}, token)
 	})
 	t.Run("gh", func(t *testing.T) {
-		t.Setenv("GH_TOKEN", "")
-		t.Setenv("GITHUB_TOKEN", "")
+		t.Parallel()
 		dir := t.TempDir()
 		executable := filepath.Join(dir, "gh")
 		testsupport.WriteExecutable(t, executable, "#!/bin/sh\n[ \"$1 $2 $3 $4\" = \"auth token --hostname github.com\" ] || exit 2\nprintf fixture-from-gh\n")
-		t.Setenv("PATH", dir)
-		token, err := (github.SystemCredentials{}).Token(t.Context())
+		token, err := (github.SystemCredentials{CLI: executable}).Token(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, "fixture-from-gh", token.Secret)
 	})
 	t.Run("saved credential before gh", func(t *testing.T) {
-		t.Setenv("GH_TOKEN", "")
-		t.Setenv("GITHUB_TOKEN", "")
+		t.Parallel()
 		dir := t.TempDir()
 		executable := filepath.Join(dir, "gh")
 		testsupport.WriteExecutable(t, executable, "#!/bin/sh\nprintf credential-from-gh\n")
-		t.Setenv("PATH", dir)
-		source := github.SystemCredentials{Store: savedCredential{secret: "credential-from-keychain"}, Key: credential.Key{Service: "fixture", Account: "github.com"}}
+		source := github.SystemCredentials{Store: savedCredential{secret: "credential-from-keychain"}, Key: credential.Key{Service: "fixture", Account: "github.com"}, CLI: executable}
 		token, err := source.Token(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, "credential-from-keychain", token.Secret)
 	})
 	t.Run("missing", func(t *testing.T) {
-		t.Setenv("GH_TOKEN", "")
-		t.Setenv("GITHUB_TOKEN", "")
-		t.Setenv("PATH", t.TempDir())
+		t.Parallel()
 		_, err := (github.SystemCredentials{}).Token(t.Context())
 		require.ErrorIs(t, err, github.ErrAuthentication)
 		require.Contains(t, err.Error(), "GH_TOKEN")
@@ -157,18 +144,17 @@ func TestAuthenticationFailsBeforeWritesAndDoesNotLeakCredentials(t *testing.T) 
 func TestRejectedCredentialsIdentifySourceWithoutFallback(t *testing.T) {
 	for _, source := range []github.CredentialSource{github.SourceGHEnvironment, github.SourceGitHubEnvironment, github.SourceKeychain, github.SourceGitHubCLI} {
 		t.Run(string(source), func(t *testing.T) {
-			t.Setenv("GH_TOKEN", "")
-			t.Setenv("GITHUB_TOKEN", "")
+			t.Parallel()
 			const secret = "private-token"
 			dir := t.TempDir()
 			marker := filepath.Join(dir, "gh-called")
-			t.Setenv("GH_MARKER", marker)
-			testsupport.WriteExecutable(t, filepath.Join(dir, "gh"), "#!/bin/sh\nprintf called > \"$GH_MARKER\"\nprintf private-token\n")
-			t.Setenv("PATH", dir)
+			gh := filepath.Join(dir, "gh")
+			testsupport.WriteExecutable(t, gh, "#!/bin/sh\nprintf called > '"+marker+"'\nprintf private-token\n")
 			saved := savedCredential{secret: secret}
+			var override github.Token
 			switch source {
 			case github.SourceGHEnvironment, github.SourceGitHubEnvironment:
-				t.Setenv(string(source), secret)
+				override = github.Token{Secret: secret, Source: source}
 			case github.SourceGitHubCLI:
 				saved.err = credential.ErrNotFound
 			}
@@ -180,7 +166,7 @@ func TestRejectedCredentialsIdentifySourceWithoutFallback(t *testing.T) {
 				fmt.Fprintf(w, `{"message":%q}`, secret)
 			}))
 			defer server.Close()
-			client := &github.Client{Config: github.Config{BaseURL: server.URL}, Credentials: github.SystemCredentials{Store: saved}}
+			client := &github.Client{Config: github.Config{BaseURL: server.URL}, Credentials: github.SystemCredentials{Store: saved, Override: override, CLI: gh}}
 			for i := 0; i < 2; i++ {
 				_, err := client.AuthenticatedUser(t.Context())
 				require.ErrorIs(t, err, forge.ErrAuthentication)

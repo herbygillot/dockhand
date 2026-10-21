@@ -207,11 +207,10 @@ func TestAWaitIsSaidInWords(t *testing.T) {
 // A command's spend counts its own requests, and its log line names them.
 func TestSpendCountsAndLogs(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "github.log")
-	t.Setenv(spendLogVariable, log)
 	spend := StartSpend()
 	apiRequests.Add(3)
 	require.Equal(t, int64(3), spend.Requests())
-	spend.Log([]string{"status", "--refresh"})
+	spend.Log(log, []string{"status", "--refresh"})
 	data, err := os.ReadFile(log)
 	require.NoError(t, err)
 	require.Regexp(t, `^3\t\d+\tstatus --refresh\n$`, string(data))

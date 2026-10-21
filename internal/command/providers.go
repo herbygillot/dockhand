@@ -138,13 +138,13 @@ new one has passed.`,
 
 // providerLines say whether each provider is ready, one line each, as
 // setup shows them.
-func (h *host) providerLines(ctx context.Context, file config.File) []string {
-	tartLines := h.tartReadiness(ctx)
+func (s *settings) providerLines(ctx context.Context, file config.File) []string {
+	tartLines := s.tartReadiness(ctx)
 	lines := []string{fmt.Sprintf("%-8s %s", buildenv.Tart, tartLines[0])}
 	for _, line := range tartLines[1:] {
 		lines = append(lines, fmt.Sprintf("%-8s %s", "", line))
 	}
-	lines = append(lines, fmt.Sprintf("%-8s %s", buildenv.GitHub, h.githubReadiness(ctx)))
+	lines = append(lines, fmt.Sprintf("%-8s %s", buildenv.GitHub, s.githubReadiness(ctx)))
 	if command := file.Providers.Command; command != nil {
 		name := command.Name
 		if name == "" {
@@ -160,11 +160,11 @@ const noTart = "· needs Apple silicon; checks here build on GitHub, with --on g
 
 // tartReadiness is setup's Tart line, and the lines under it: a release's
 // each, where images are ready.
-func (h *host) tartReadiness(ctx context.Context) []string {
-	if !h.tartSupported() {
+func (s *settings) tartReadiness(ctx context.Context) []string {
+	if !s.host.tartSupported() {
 		return []string{noTart}
 	}
-	images := h.images()
+	images := s.host.images()
 	if images == nil {
 		return []string{"· needs Tart: " + installTart + ", then dockhand setup tart"}
 	}
@@ -275,8 +275,8 @@ func (h *host) tartReadiness(ctx context.Context) []string {
 	return lines
 }
 
-func (h *host) githubReadiness(ctx context.Context) string {
-	switch github.LoginSource(ctx, h.authStore) {
+func (s *settings) githubReadiness(ctx context.Context) string {
+	switch github.LoginSource(ctx, s.signin()) {
 	case "":
 		return "· needs a GitHub login, dockhand setup github, and your fork's Actions enabled"
 	case github.SourceKeychain:
@@ -289,16 +289,16 @@ func (h *host) githubReadiness(ctx context.Context) string {
 // Next: line, which jumped to update with Tart and the login undone (the
 // rc1 full stage's A2): a Tart image where Tart can build, and a login
 // where no token stands in for one.
-func (h *host) missingSteps(ctx context.Context) []string {
+func (s *settings) missingSteps(ctx context.Context) []string {
 	var steps []string
-	if h.tartSupported() {
-		if images := h.images(); images != nil {
+	if s.host.tartSupported() {
+		if images := s.host.images(); images != nil {
 			if status, err := images.Status(ctx); err == nil && (status.Readiness() == tart.NoImage || status.Readiness() == tart.XcodeOnly) {
 				steps = append(steps, "dockhand setup tart")
 			}
 		}
 	}
-	if github.LoginSource(ctx, h.authStore) == "" {
+	if github.LoginSource(ctx, s.signin()) == "" {
 		steps = append(steps, "dockhand setup github")
 	}
 	return steps

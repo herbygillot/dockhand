@@ -1,0 +1,32 @@
+package compose
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/github"
+)
+
+// GH_TOKEN's token overrides GITHUB_TOKEN's, and either dockhand's login;
+// the lock is beside the configuration, and gh is found on the command
+// line's PATH, not the process's.
+func TestSigninIsTheCommandLinesOwn(t *testing.T) {
+	t.Parallel()
+	home, bin := t.TempDir(), t.TempDir()
+	gh := filepath.Join(bin, "gh")
+	require.NoError(t, os.WriteFile(gh, []byte("#!/bin/sh\n"), 0o755))
+	options := Options{Env: []string{"HOME=" + home, "PATH=/nowhere:" + bin, "GITHUB_TOKEN=second"}}
+	signin := options.Signin(nil)
+	require.Equal(t, github.Token{Secret: "second", Source: github.SourceGitHubEnvironment}, signin.Token)
+	require.Equal(t, filepath.Join(home, ".dockhand", "github-login.lock"), signin.Lock)
+	require.Equal(t, gh, signin.CLI)
+
+	options.Env = append(options.Env, "GH_TOKEN= first ")
+	require.Equal(t, github.Token{Secret: "first", Source: github.SourceGHEnvironment}, options.Signin(nil).Token, "GH_TOKEN first, trimmed")
+
+	require.Empty(t, Options{Env: []string{"PATH=/nowhere"}}.Signin(nil).CLI)
+	require.Empty(t, Options{}.Signin(nil).Lock, "no home, no lock")
+}

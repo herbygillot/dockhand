@@ -266,3 +266,29 @@ invocation's HOME. The boundary test watches `os.UserCacheDir` too, and
 engine's row is gone. engine's own tests had cached port indexes in the
 person's real cache directory and read their real home; the fixture now
 has its own of both.
+
+## GitHub's login, reached as compose says
+
+github reads no environment. `github.Signin` is how the person's login
+is reached: an overriding `Token`, the `Store`, the renewal's `Lock`, and
+the GitHub CLI's path, `CLI`. `SystemClient`, `NewRuntime`, and
+`LoginSource` take one; `SystemCredentials` carries `Override`, `Lock`
+(a renewal is refused without one), and `CLI` (none where empty), and
+`github.CLI` with no `Path` isn't installed. `OverridingSource` and
+`LoginLock` are gone, and `Spend.Log` takes the log's path.
+
+compose's `Options.Signin(store)` holds the precedence, stated in the
+catalogue: GH_TOKEN's token, trimmed, else GITHUB_TOKEN's, ahead of the
+kept login, then gh, which `Options.LookPath` finds on the invocation's
+PATH; the lock is ~/.dockhand/github-login.lock under the invocation's
+home. `Options.SpendLog` is $DOCKHAND_GITHUB_LOG made absolute. The
+engine's GitHub CLI is gh on that PATH too.
+
+In command, setup's login readers (`providerLines`, `githubReadiness`,
+`missingSteps`, `publishing`, `githubLogin`, `githubLogout`,
+`tartReadiness`) are settings' methods, reading `settings.signin()`, the
+invocation's Signin over the host's keeping; `host.authAPI` and
+`compose.Dependencies.GitHubClient` take a Signin. github's own tests
+give the token, store, and gh as fields, and its precedence tests run in
+parallel; compose's signin_test holds the precedence. The boundary test's
+github row is gone.

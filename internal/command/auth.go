@@ -11,15 +11,15 @@ import (
 
 // githubLogin logs in to GitHub with the device flow and keeps the login
 // in the Keychain, as setup github and setup's offer do.
-func (h *host) githubLogin(ctx context.Context, streams Streams, clientID string, noBrowser bool) error {
-	login, err := github.Login(ctx, h.authFlow, h.authStore, clientID, func(authorization credential.DeviceAuthorization) error {
+func (s *settings) githubLogin(ctx context.Context, streams Streams, clientID string, noBrowser bool) error {
+	login, err := github.Login(ctx, s.host.authFlow, s.host.authStore, clientID, func(authorization credential.DeviceAuthorization) error {
 		fmt.Fprintf(streams.Err, "Copy this one-time code: %s\n", authorization.UserCode)
 		if noBrowser {
 			fmt.Fprintf(streams.Err, "Open %s, enter the code, and authorize dockhand.\nWaiting for authorization...\n", authorization.VerificationURL)
 			return nil
 		}
 		fmt.Fprintf(streams.Err, "Opening %s in your browser...\n", authorization.VerificationURL)
-		if err := h.openBrowser(ctx, authorization.VerificationURL); err != nil {
+		if err := s.host.openBrowser(ctx, authorization.VerificationURL); err != nil {
 			return fmt.Errorf("could not open the browser: %w; run dockhand setup github --no-browser to sign in using a URL you open manually", err)
 		}
 		fmt.Fprintln(streams.Err, "Waiting for authorization...")
@@ -29,7 +29,7 @@ func (h *host) githubLogin(ctx context.Context, streams Streams, clientID string
 		return err
 	}
 	fmt.Fprintf(streams.Out, "Logged in to github.com as %s. Credentials are saved in the macOS Keychain and renew automatically if you use dockhand at least once every six months.\n", login.Account)
-	if name := github.OverridingSource(); name != "" {
+	if name := s.signin().Token.Source; name != "" {
 		fmt.Fprintf(streams.Err, "%s is set and overrides this login. Unset it to use the credentials saved in the Keychain.\n", name)
 	}
 	return nil
@@ -37,8 +37,8 @@ func (h *host) githubLogin(ctx context.Context, streams Streams, clientID string
 
 // githubLogout removes dockhand's login from the Keychain, as setup github
 // --logout does.
-func (h *host) githubLogout(ctx context.Context, streams Streams) error {
-	revoke, err := github.Logout(ctx, h.authStore)
+func (s *settings) githubLogout(ctx context.Context, streams Streams) error {
+	revoke, err := github.Logout(ctx, s.host.authStore)
 	switch {
 	case errors.Is(err, credential.ErrNotFound):
 		fmt.Fprintln(streams.Out, "No dockhand GitHub credentials are saved in the Keychain.")

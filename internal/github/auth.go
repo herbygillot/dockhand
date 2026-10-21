@@ -3,8 +3,6 @@ package github
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -33,12 +31,29 @@ func (f TokenSourceFunc) Token(ctx context.Context) (Token, error) { return f(ct
 // credential store.
 var CredentialKey = credential.Key{Service: "github.com/herbygillot/dockhand", Account: "github.com"}
 
+// Signin is how the person's GitHub login is reached: a token that
+// overrides dockhand's own login, such as GH_TOKEN's, where one is given;
+// else the login kept in Store, which processes renewing it take the
+// file at Lock in turn for; else the GitHub CLI's, at CLI, where it's
+// installed. compose reads them from the command line's environment.
+type Signin struct {
+	Store credential.Store
+	Token Token
+	Lock  string
+	CLI   string
+}
+
 type SystemCredentials struct {
 	Store credential.Store
 	Key   credential.Key
-	// Lock is the file processes renewing the login take in turn;
-	// LoginLock where empty.
+	// Override is a token that takes precedence over the login in Store
+	// (Signin.Token), where it has a secret.
+	Override Token
+	// Lock is the file processes renewing the login take in turn; a
+	// renewal is refused without one.
 	Lock string
+	// CLI is the GitHub CLI, whose login is read last; none where empty.
+	CLI string
 	// Flow renews the login; GitHub's device flow where nil.
 	Flow *DeviceFlow
 	// renewed is a login renewed that the store didn't take, used until
@@ -47,28 +62,15 @@ type SystemCredentials struct {
 	renewed *pendingLogin
 }
 
-// SystemClient is GitHub as the person's login reaches it: GH_TOKEN or
-// GITHUB_TOKEN where set, else the login dockhand keeps in the store. It
-// is the one way dockhand makes that client.
-func SystemClient(store credential.Store) *Client {
-	return &Client{HTTP: fetch.Client, Credentials: SystemCredentials{Store: store, Key: CredentialKey, renewed: &pendingLogin{}}}
-}
-
-// OverridingSource is the variable whose token takes precedence over
-// dockhand's login, GH_TOKEN or GITHUB_TOKEN, or empty where neither is
-// set.
-func OverridingSource() CredentialSource {
-	for _, source := range []CredentialSource{SourceGHEnvironment, SourceGitHubEnvironment} {
-		if strings.TrimSpace(os.Getenv(string(source))) != "" {
-			return source
-		}
-	}
-	return ""
+// SystemClient is GitHub as the person's login reaches it (Signin). It is
+// the one way dockhand makes that client.
+func SystemClient(signin Signin) *Client {
+	return &Client{HTTP: fetch.Client, Credentials: SystemCredentials{Store: signin.Store, Key: CredentialKey, Override: signin.Token, Lock: signin.Lock, CLI: signin.CLI, renewed: &pendingLogin{}}}
 }
 
 func (s SystemCredentials) Token(ctx context.Context) (Token, error) {
-	if source := OverridingSource(); source != "" {
-		return resolvedToken(strings.TrimSpace(os.Getenv(string(source))), source)
+	if s.Override.Secret != "" {
+		return resolvedToken(s.Override.Secret, s.Override.Source)
 	}
 	if s.Store != nil {
 		token, found, err := s.login(ctx, Token{})
@@ -76,8 +78,8 @@ func (s SystemCredentials) Token(ctx context.Context) (Token, error) {
 			return token, err
 		}
 	}
-	path, err := exec.LookPath("gh")
-	if err != nil {
+	path := s.CLI
+	if path == "" {
 		return Token{}, fmt.Errorf("%w: run dockhand setup github, set GH_TOKEN or GITHUB_TOKEN, or authenticate with the GitHub CLI", ErrNoCredentials)
 	}
 	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "gh", Path: path, Args: []string{"auth", "token", "--hostname", "github.com"}, Limit: 1 << 16})
@@ -142,7 +144,7 @@ func (s CredentialSource) rejected() error {
 // Renew is a token after GitHub rejected one: the login renewed, where the
 // rejected token was its own, else whatever Token gives now.
 func (s SystemCredentials) Renew(ctx context.Context, rejected Token) (Token, error) {
-	if rejected.Source != SourceKeychain || s.Store == nil || OverridingSource() != "" {
+	if rejected.Source != SourceKeychain || s.Store == nil || s.Override.Secret != "" {
 		return s.Token(ctx)
 	}
 	token, found, err := s.login(ctx, rejected)

@@ -143,16 +143,13 @@ func StartSpend() Spend { return Spend{start: apiRequests.Load()} }
 // Requests is how many requests were sent since StartSpend.
 func (s Spend) Requests() int64 { return apiRequests.Load() - s.start }
 
-// spendLogVariable names a file each command appends a line to, --json or
-// not: how many requests it sent GitHub's API, how much of the hour's
-// allowance GitHub last said was spent, and what it was asked,
-// tab-separated, so a run can say which command spent it.
-const spendLogVariable = "DOCKHAND_GITHUB_LOG"
-
-// Log appends a command's line where spendLogVariable names a file;
-// one that can't be written is skipped, as a log is.
-func (s Spend) Log(args []string) {
-	path := os.Getenv(spendLogVariable)
+// Log appends a command's line to the spend log at path,
+// $DOCKHAND_GITHUB_LOG, where there's one, --json or not: how many
+// requests it sent GitHub's API, how much of the hour's allowance GitHub
+// last said was spent, and what it was asked, tab-separated, so a run can
+// say which command spent it. One that can't be written is skipped, as a
+// log is.
+func (s Spend) Log(path string, args []string) {
 	if path == "" {
 		return
 	}

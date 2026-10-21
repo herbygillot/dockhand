@@ -31,9 +31,9 @@ authorized until you revoke it on GitHub's page for it, which it names.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if logout {
-				return s.host.githubLogout(cmd.Context(), streams)
+				return s.githubLogout(cmd.Context(), streams)
 			}
-			return s.host.githubLogin(cmd.Context(), streams, clientID, noBrowser)
+			return s.githubLogin(cmd.Context(), streams, clientID, noBrowser)
 		},
 	}
 	cmd.Flags().StringVar(&clientID, "client-id", clientID, "the GitHub OAuth application's client ID (DOCKHAND_GITHUB_CLIENT_ID)")
@@ -51,13 +51,13 @@ authorized until you revoke it on GitHub's page for it, which it names.`,
 func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Streams, file config.File, configPath string) (string, error) {
 	written := ""
 	fmt.Fprintln(streams.Out)
-	if github.LoginSource(ctx, s.host.authStore) == "" {
+	if github.LoginSource(ctx, s.signin()) == "" {
 		login, err := streams.askYes("? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ", true)
 		if err != nil {
 			return written, err
 		}
 		if login {
-			if err := s.host.githubLogin(ctx, streams, cmp.Or(s.getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
+			if err := s.githubLogin(ctx, streams, cmp.Or(s.getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
 				fmt.Fprintf(streams.Err, "Not logged in: %v\n", err)
 			}
 		}

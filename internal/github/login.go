@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -17,17 +15,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
-
-// LoginLock is the file processes renewing dockhand's login take in turn,
-// beside its configuration: ~/.dockhand/github-login.lock. The command
-// line sets it where its configuration is elsewhere.
-var LoginLock = func() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(os.TempDir(), "dockhand-github-login.lock")
-	}
-	return filepath.Join(home, ".dockhand", "github-login.lock")
-}()
 
 // lockWait is how long a renewal waits for another process's.
 var lockWait = 30 * time.Second
@@ -131,11 +118,10 @@ func (s SystemCredentials) login(ctx context.Context, rejected Token) (Token, bo
 	// under it, where the other may have renewed it already.
 	waiting, cancel := context.WithTimeout(ctx, lockWait)
 	defer cancel()
-	path := s.Lock
-	if path == "" {
-		path = LoginLock
+	if s.Lock == "" {
+		return Token{}, true, errors.New("github: no lock file was given to renew the GitHub login under")
 	}
-	lock, err := filelock.Acquire(waiting, path, filelock.Exclusive)
+	lock, err := filelock.Acquire(waiting, s.Lock, filelock.Exclusive)
 	if err != nil {
 		return Token{}, true, fmt.Errorf("github: could not acquire the lock to renew the GitHub login: %w", err)
 	}
@@ -283,14 +269,14 @@ func SavedLogin(ctx context.Context, store credential.Store) (credential.Login, 
 }
 
 // LoginSource is where a login comes from, as dockhand tells without
-// asking GitHub: the variable that overrides dockhand's login
-// (OverridingSource), else the store, where it keeps a login that hasn't
-// ended (SavedLogin); else empty, which setup offers to fix.
-func LoginSource(ctx context.Context, store credential.Store) CredentialSource {
-	if source := OverridingSource(); source != "" {
-		return source
+// asking GitHub: the token that overrides dockhand's login, else the
+// store, where it keeps a login that hasn't ended (SavedLogin); else
+// empty, which setup offers to fix.
+func LoginSource(ctx context.Context, signin Signin) CredentialSource {
+	if signin.Token.Secret != "" {
+		return signin.Token.Source
 	}
-	if _, err := SavedLogin(ctx, store); err == nil {
+	if _, err := SavedLogin(ctx, signin.Store); err == nil {
 		return SourceKeychain
 	}
 	return ""

@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -58,6 +59,54 @@ func (o Options) Getenv(name string) string {
 	return value
 }
 
+// Signin is how the command line reaches the person's GitHub login, with
+// the login kept in store: GH_TOKEN's token, else GITHUB_TOKEN's, ahead of
+// it; its renewals' lock beside the configuration,
+// ~/.dockhand/github-login.lock; and the GitHub CLI on the command line's
+// PATH.
+func (o Options) Signin(store credential.Store) github.Signin {
+	signin := github.Signin{Store: store, CLI: o.LookPath("gh")}
+	for _, source := range []github.CredentialSource{github.SourceGHEnvironment, github.SourceGitHubEnvironment} {
+		if secret := strings.TrimSpace(o.Getenv(string(source))); secret != "" {
+			signin.Token = github.Token{Secret: secret, Source: source}
+			break
+		}
+	}
+	if home := o.Places().Home; home != "" {
+		signin.Lock = filepath.Join(home, ".dockhand", "github-login.lock")
+	}
+	return signin
+}
+
+// SpendLog is the file each command appends what it spent of GitHub's
+// allowance to, $DOCKHAND_GITHUB_LOG, or none.
+func (o Options) SpendLog() string {
+	if named := o.Getenv("DOCKHAND_GITHUB_LOG"); named != "" {
+		if path, err := o.Places().Absolute(named); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+// LookPath is the executable name finds on the command line's PATH, as
+// exec.LookPath finds it on the process's, or empty.
+func (o Options) LookPath(name string) string {
+	for _, directory := range filepath.SplitList(o.Getenv("PATH")) {
+		if directory == "" {
+			directory = "."
+		}
+		if !filepath.IsAbs(directory) {
+			directory = filepath.Join(o.Dir, directory)
+		}
+		path := filepath.Join(directory, name)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return path
+		}
+	}
+	return ""
+}
+
 // Places are the command line's home, $HOME, and working directory.
 func (o Options) Places() config.Places {
 	return config.Places{Home: o.Getenv("HOME"), Dir: o.Dir}
@@ -82,10 +131,10 @@ type Dependencies struct {
 	Leftovers buildenv.LeftoverProvider
 	// LookTart finds Tart; exec.LookPath where nil.
 	LookTart func(string) (string, error)
-	// GitHubClient is GitHub as the login in Store reaches it;
+	// GitHubClient is GitHub as the login reaches it, with Store's;
 	// github.SystemClient where nil, over the system keychain where Store
 	// is nil.
-	GitHubClient func(credential.Store) *github.Client
+	GitHubClient func(github.Signin) *github.Client
 	Store        credential.Store
 }
 
@@ -198,7 +247,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	if store == nil {
 		store = keychain.Store{}
 	}
-	e.GitHub = &github.Runtime{Client: client(store)}
+	e.GitHub = &github.Runtime{Client: client(options.Signin(store))}
 	remote := file.Providers.GitHub.Remote
 	actions := &ghactions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
 		API: ghactions.GitHub{Client: e.GitHub.Client}, BuildTimeout: file.Providers.GitHub.BuildBound()}
@@ -220,7 +269,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	}
 	e.GitHubCLI = dependencies.GitHubCLI
 	if e.GitHubCLI == nil {
-		e.GitHubCLI = github.CLI{}
+		e.GitHubCLI = github.CLI{Path: options.LookPath("gh")}
 	}
 	if dependencies.Preparer != nil {
 		e.Preparer = dependencies.Preparer(e)

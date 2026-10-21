@@ -95,13 +95,7 @@ func expiring(t *testing.T, refreshExpiry time.Time) *keptLogins {
 
 func renewer(server *httptest.Server, store credential.Store, lock string) github.SystemCredentials {
 	flow := &github.DeviceFlow{HTTP: server.Client(), Endpoint: oauth2.Endpoint{TokenURL: server.URL + "/access_token", AuthStyle: oauth2.AuthStyleInParams}}
-	return github.SystemClient(store).Credentials.(github.SystemCredentials).WithRenewal(flow, lock)
-}
-
-func noEnvironment(t *testing.T) {
-	t.Setenv("GH_TOKEN", "")
-	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("PATH", t.TempDir())
+	return github.SystemClient(github.Signin{Store: store}).Credentials.(github.SystemCredentials).WithRenewal(flow, lock)
 }
 
 // Two processes renewing at once renew once: the second takes the lock
@@ -109,7 +103,6 @@ func noEnvironment(t *testing.T) {
 // where spending the one-use refresh token twice would log the person out
 // (the GitHub auth flow review's plan, step 3).
 func TestTwoRenewalsAtOnceRenewOnce(t *testing.T) {
-	noEnvironment(t)
 	server, asked := tokenEndpoint(t, "")
 	store := expiring(t, time.Now().AddDate(0, 6, 0))
 	lock := filepath.Join(t.TempDir(), "github-login.lock")
@@ -139,7 +132,6 @@ func TestTwoRenewalsAtOnceRenewOnce(t *testing.T) {
 // GitHub refuses to renew is over; one GitHub couldn't renew just now
 // stays as it was.
 func TestALoginThatCantRenewSaysWhy(t *testing.T) {
-	noEnvironment(t)
 	lock := filepath.Join(t.TempDir(), "github-login.lock")
 
 	server, asked := tokenEndpoint(t, "")
@@ -180,11 +172,9 @@ func (locked) Is(target error) bool { return target == credential.ErrLocked }
 // isn't tried in its place: the saved login is still the one meant (the
 // rc10 full stage's F5).
 func TestALockedKeychainIsSaidAndNothingElseTried(t *testing.T) {
-	noEnvironment(t)
 	bin := t.TempDir()
 	testsupport.WriteExecutable(t, filepath.Join(bin, "gh"), "#!/bin/sh\necho gho_cli\n")
-	t.Setenv("PATH", bin)
-	_, err := github.SystemClient(&lockedStore{}).Credentials.Token(t.Context())
+	_, err := github.SystemClient(github.Signin{Store: &lockedStore{}, CLI: filepath.Join(bin, "gh")}).Credentials.Token(t.Context())
 	require.ErrorIs(t, err, credential.ErrLocked)
 	require.EqualError(t, err, "github: cannot read the saved GitHub login: the login Keychain is locked; unlock the Keychain or set GH_TOKEN for this command")
 }
@@ -192,7 +182,6 @@ func TestALockedKeychainIsSaidAndNothingElseTried(t *testing.T) {
 // A renewed login the store didn't take is used, said, and saved the next
 // time the login is asked for: the refresh token it replaced is spent.
 func TestARenewedLoginTheStoreRefusedIsUsedAndSavedLater(t *testing.T) {
-	noEnvironment(t)
 	server, asked := tokenEndpoint(t, "")
 	store := expiring(t, time.Now().AddDate(0, 6, 0))
 	store.refuse = true
@@ -222,7 +211,6 @@ func TestARenewedLoginTheStoreRefusedIsUsedAndSavedLater(t *testing.T) {
 // serve stopped acting on GitHub (CX-11's first half). The renewal is the
 // runtime's, not the process's (R3-32).
 func TestARenewalTheStoreRefusedIsTheRuntimes(t *testing.T) {
-	noEnvironment(t)
 	server, asked := tokenEndpoint(t, "")
 	store := expiring(t, time.Now().AddDate(0, 6, 0))
 	store.refuse = true
@@ -242,7 +230,6 @@ func TestARenewalTheStoreRefusedIsTheRuntimes(t *testing.T) {
 // replaced, never writes over it: serve, given a new login after its own
 // was revoked, kept the old one (the rc8 full stage's D-C3).
 func TestALoginSavedSinceAnUnsavedRenewalWins(t *testing.T) {
-	noEnvironment(t)
 	server, _ := tokenEndpoint(t, "")
 	store := expiring(t, time.Now().AddDate(0, 6, 0))
 	store.refuse = true
@@ -268,7 +255,6 @@ func TestALoginSavedSinceAnUnsavedRenewalWins(t *testing.T) {
 // A token GitHub rejects is renewed though it hadn't expired, and a
 // client's request tried again with the new one.
 func TestARejectedLoginIsRenewed(t *testing.T) {
-	noEnvironment(t)
 	tokens, asked := tokenEndpoint(t, "")
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer A2" {

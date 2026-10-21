@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/github"
 )
 
 // settings are the global selections. Each comes from its flag, then its
@@ -45,6 +46,10 @@ type settings struct {
 
 // getenv is the variable's value in the command line's environment.
 func (s *settings) getenv(name string) string { return s.composeOptions().Getenv(name) }
+
+// signin is how the command line reaches the person's GitHub login, with
+// the host's keeping of it (compose.Options.Signin).
+func (s *settings) signin() github.Signin { return s.composeOptions().Signin(s.host.authStore) }
 
 // places are the command line's home and working directory.
 func (s *settings) places() config.Places { return s.composeOptions().Places() }

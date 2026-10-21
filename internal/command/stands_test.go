@@ -10,7 +10,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/config"
-	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 )
@@ -66,7 +65,7 @@ func testHost() *host {
 	h.tartSupported = func() bool { return true }
 	h.identity = func(*github.Runtime) func(context.Context) (string, error) { return nil }
 	h.authStore = memoryStore{}
-	h.authAPI = func(credential.Store) *github.Client {
+	h.authAPI = func(github.Signin) *github.Client {
 		return &github.Client{Credentials: github.TokenSourceFunc(func(context.Context) (github.Token, error) { return github.Token{}, github.ErrNoCredentials })}
 	}
 	h.startCleanup = func(engine.Options) error { return nil }

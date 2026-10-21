@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -45,15 +44,10 @@ func (c CLI) MarkReady(ctx context.Context, ref forge.PullRequestRef) error {
 
 // run runs gh, saying what it said when it fails.
 func (c CLI) run(ctx context.Context, args ...string) ([]byte, error) {
-	path := c.Path
-	if path == "" {
-		found, err := exec.LookPath("gh")
-		if err != nil {
-			return nil, errors.New("the GitHub CLI isn't installed")
-		}
-		path = found
+	if c.Path == "" {
+		return nil, errors.New("the GitHub CLI isn't installed")
 	}
-	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "gh", Path: path, Args: args, Limit: 1 << 20})
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "gh", Path: c.Path, Args: args, Limit: 1 << 20})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

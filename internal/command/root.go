@@ -166,7 +166,7 @@ func run(ctx context.Context, line invocation, streams Streams, dependencies com
 	if verbosity, _ := root.PersistentFlags().GetCount("verbose"); verbosity > 0 && mode.githubRequests > 0 {
 		streams.status.say(fmt.Sprintf("GitHub's API: %s", prose.Plural(int(mode.githubRequests), "request")))
 	}
-	spend.Log(args)
+	spend.Log(settings.composeOptions().SpendLog(), args)
 	if !mode.json {
 		return err
 	}

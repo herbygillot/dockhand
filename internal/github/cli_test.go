@@ -36,7 +36,6 @@ func TestTheGitHubCLIRunsItsDocumentedCommands(t *testing.T) {
 
 	_, err = github.CLI{Path: script("silent", "")}.Login(t.Context())
 	require.EqualError(t, err, "the GitHub CLI named no account it's signed in as")
-	t.Setenv("PATH", filepath.Join(dir, "nothing here"))
 	_, err = github.CLI{}.Login(t.Context())
 	require.EqualError(t, err, "the GitHub CLI isn't installed")
 }
