@@ -352,7 +352,7 @@ checked out here, in your browser, and prints its address.`,
 			}
 			address := github.PullRequestURL(pr.Repository, pr.Number)
 			fmt.Fprintln(streams.Out, address)
-			return openBrowser(ctx, address)
+			return s.host.openBrowser(ctx, address)
 		},
 	}
 	where.register(cmd, s, "open")

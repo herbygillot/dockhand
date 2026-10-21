@@ -8,35 +8,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 )
-
-// servePoll is how often serve looks for work and a standby for the leader.
-var servePoll = 2 * time.Second
-
-// serveRefresh is how often serve reads your pull requests from GitHub.
-var serveRefresh = engine.PullRequestRefresh
-
-// serveGrace is how long serve's executable may be missing before serve
-// takes dockhand as uninstalled.
-var serveGrace = time.Minute
-
-// serveCleanup is how often serve runs automatic cleanup (decision 36).
-var serveCleanup = 24 * time.Hour
-
-// serveNow is the clock serve's daily work reads; tests set it.
-var serveNow = time.Now
 
 func serveCommand(s *settings, streams Streams) *cobra.Command {
 	var drain, install, uninstall, noNotify bool
@@ -101,7 +82,7 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
-			err = e.Serve(ctx, session, serveOptions(e, s.file, streams.Out, drain, cmp.Or(shipTo, s.file.Serve.Stage()), s.file.Serve.Notifies() && !noNotify))
+			err = e.Serve(ctx, session, s.host.serveOptions(e, s.file, streams.Out, drain, cmp.Or(shipTo, s.file.Serve.Stage()), s.file.Serve.Notifies() && !noNotify))
 			// Being stopped is how serve ends, not a failure.
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 				fmt.Fprintln(streams.Out, "serve: stopped")
@@ -119,38 +100,11 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 	return cmd
 }
 
-// serveIdentityEvery is how often serve reads who its login acts as.
-var serveIdentityEvery = time.Minute
-
-// serveIdentity is who serve's GitHub login acts as now, read afresh each
-// time it's asked, from the engine's own runtime, so a renewal its store
-// didn't take is the watcher's too. Tests stand another in.
-var serveIdentity = func(runtime *github.Runtime) func(context.Context) (string, error) {
-	watcher := runtime.Identity()
-	return func(ctx context.Context) (string, error) {
-		identity, err := watcher.Current(ctx)
-		return identity.Account, err
-	}
-}
-
-// servedExecutable is the file a long-lived serve watches for an upgrade;
-// a drain ends by itself, and watches none. Tests stand another in.
-var servedExecutable = func(drain bool) string {
-	if drain {
-		return ""
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-	return executable
-}
-
 // serveOptions turns the configuration and flags into what serve does,
 // its lines going to out and its notices to macOS notifications when
 // notify, serve.notify less --no-notify, allows; shipTo is serve.ship_to,
 // or --ship-to.
-func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain bool, shipTo string, notify bool) engine.ServeOptions {
+func (h *host) serveOptions(e *engine.Engine, file config.File, out io.Writer, drain bool, shipTo string, notify bool) engine.ServeOptions {
 	capacity := map[string]int{}
 	for name := range e.Providers {
 		capacity[name] = file.Capacity(name)
@@ -165,44 +119,28 @@ func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain bool,
 		Cleanup:         file.Cleanup.On(),
 		CleanupAge:      file.Cleanup.Age(),
 		Say:             func(line string) { fmt.Fprintln(out, line) },
-		Poll:            servePoll,
-		Refresh:         serveRefresh,
-		CleanupEvery:    serveCleanup,
+		Poll:            h.timings.servePoll,
+		Refresh:         h.timings.serveRefresh,
+		CleanupEvery:    h.timings.serveCleanup,
 		MinFree:         file.Cleanup.Free(),
 		Build:           buildinfo.Current().String(),
-		Executable:      servedExecutable(drain),
-		ExecutableGrace: serveGrace,
-		Identity:        serveIdentity(e.GitHub),
-		IdentityEvery:   serveIdentityEvery,
-		Now:             serveNow,
+		Executable:      h.executable(drain),
+		ExecutableGrace: h.timings.serveGrace,
+		Identity:        h.identity(e.GitHub),
+		IdentityEvery:   h.timings.serveIdentity,
+		Now:             h.now,
 	}
 	if notify {
-		options.Notify = func(title, text string) { _ = postNotification(title, text) }
+		options.Notify = func(title, text string) { _ = h.notify(title, text) }
 	}
 	return options
-}
-
-// postNotification shows a notification (macos.Notify); tests stand in
-// for it.
-var postNotification = func(title, text string) error {
-	if runtime.GOOS != "darwin" {
-		return nil
-	}
-	return macos.Notify(context.Background(), title, text)
 }
 
 // AgentLabel names serve's launchd agent.
 const AgentLabel = "io.github.herbygillot.dockhand.serve"
 
-// launchctl runs launchctl for serve's agent (macos.LaunchAgent), and
-// returns what it wrote; tests stand in for it, nil being launchctl's own.
-var launchctl func(ctx context.Context, args ...string) ([]byte, error)
-
-// agentOS is the operating system serve --install targets; tests set it.
-var agentOS = runtime.GOOS
-
 func serveAgent(ctx context.Context, s *settings, streams Streams, install bool, flags []string) error {
-	if agentOS != "darwin" {
+	if s.host.os != "darwin" {
 		return errors.New("serve --install requires macOS; on other platforms, run dockhand serve with your service manager")
 	}
 	home, err := os.UserHomeDir()
@@ -212,7 +150,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 	plist := filepath.Join(home, "Library", "LaunchAgents", AgentLabel+".plist")
 	// Both wait until launchd has let go of the agent, which bootout
 	// returns before (the rc10 full stage's B7).
-	agent := macos.LaunchAgent{Label: AgentLabel, Path: plist, Launchctl: launchctl}
+	agent := macos.LaunchAgent{Label: AgentLabel, Path: plist, Launchctl: s.host.launchctl}
 	if !install {
 		if err := agent.Remove(ctx); err != nil {
 			return err

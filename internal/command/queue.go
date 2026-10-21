@@ -250,7 +250,7 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 				if port == "" {
 					return errors.New("--follow follows one port's log: name it, as dockhand logs check-42 jq --follow")
 				}
-				return followPortLog(ctx, e, streams, run, port)
+				return followPortLog(ctx, e, streams, run, port, s.host.timings.followPoll)
 			}
 			logs, err := e.Logs(ctx, run.ID)
 			if err != nil {
@@ -319,7 +319,7 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 // target said it recorded no log until the target ended (the gnome-voice
 // session's notes, 2026-10-20). A check on GitHub Actions, whose log
 // comes back only with its run, says so, with the run's page.
-func followPortLog(ctx context.Context, e *engine.Engine, streams Streams, run model.Run, port string) error {
+func followPortLog(ctx context.Context, e *engine.Engine, streams Streams, run model.Run, port string, poll time.Duration) error {
 	out := streams.Out
 	var printed int
 	rest := func(data []byte) {
@@ -377,13 +377,10 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams Streams, run m
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(followPoll):
+		case <-time.After(poll):
 		}
 	}
 }
-
-// followPoll is how often logs --follow reads the log again.
-var followPoll = time.Second
 
 // writePortLogHeading says which build's log of a port this is: the
 // environment, the attempt of how many, the provider run, how it went,

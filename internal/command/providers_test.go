@@ -61,8 +61,7 @@ func (f *fakeImages) Setup(_ context.Context, options tart.SetupOptions, progres
 
 func useImages(t *testing.T, images *fakeImages) {
 	t.Helper()
-	testTartImages = images
-	t.Cleanup(func() { testTartImages = nil })
+	hosted(t).tartImages = images
 }
 
 func release(t *testing.T, name string) macos.Release {
@@ -75,9 +74,7 @@ func release(t *testing.T, name string) macos.Release {
 // onIntel says this Mac is an Intel one, which Tart's macOS guests
 // don't run on, whichever Mac runs the test.
 func onIntel(t *testing.T) {
-	previous := tartSupported
-	tartSupported = func() bool { return false }
-	t.Cleanup(func() { tartSupported = previous })
+	hosted(t).tartSupported = func() bool { return false }
 }
 
 // An Intel Mac is told Tart isn't for it, and where its checks build,
@@ -280,7 +277,7 @@ func providers(t *testing.T) string {
 	require.NoError(t, err)
 	file, err := config.Load(path)
 	require.NoError(t, err)
-	return strings.Join(providerLines(t.Context(), file), "\n") + "\n"
+	return strings.Join(hosted(t).providerLines(t.Context(), file), "\n") + "\n"
 }
 
 // An image whose MacPorts is older than this Mac's is said, with how to

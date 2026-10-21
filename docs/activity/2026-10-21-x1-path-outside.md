@@ -121,3 +121,26 @@ host's, and go next, as `Host` and its `Timings`. Command's tests also
 set the process's environment (HOME, MACPORTS_TREE), which `t.Parallel`
 refuses. That waits for one `Invocation` carrying the environment (the
 split's 7d rows 1 and 10), also in this item.
+
+## The host's seams, a run's
+
+The host's seams aren't package variables any more either. `host`
+(internal/command/host.go) holds what a command line reads of the Mac it
+runs on: serve's, watch's, and logs --follow's `timings`; serve's clock,
+identity check, watched executable, notifications, launchctl, and target
+OS; cleanup's start; Tart's lookup, images, and support for setup's
+report; and the login's device flow, keeping, client, and browser.
+`Run` gives `run` the Mac's own (`machineHost`); a test's is its own
+(`hosted(t)`, from `testHost`, which holds what TestMain used to set for
+every test). Settings carry it, and the functions that read it are its
+methods or take its timings. The engine's Tart lookup now falls back to
+the host's, so one stand-in covers both.
+
+Kept the type unexported, as `host` and `timings`: nothing outside the
+command package names it, and its fields' types (`tartImages`,
+`credentials`) are the package's own.
+
+Left for this item: the device flow to `github.Login`/`Logout`,
+`engine.Setup`'s move and `offerSetup`, one `Invocation` carrying the
+environment, so command's tests can take `t.Parallel`, the spend log's
+variable to compose, and the `term` cut.

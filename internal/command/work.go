@@ -53,7 +53,7 @@ one older than 2.40, which rebase needs.`,
 	}
 	cmd.Flags().StringVar(&worktrees, "worktrees", "", "keep branch worktrees in this directory, and remember it")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept the defaults, and offer nothing")
-	cmd.AddCommand(setupTartCommand(s, streams), setupGitHubCommand(streams))
+	cmd.AddCommand(setupTartCommand(s, streams), setupGitHubCommand(s, streams))
 	supportsJSON(cmd)
 	return cmd
 }
@@ -133,7 +133,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	} else {
 		fmt.Fprintf(out, "  Authoring    ! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports\n")
 	}
-	for i, line := range providerLines(cmd.Context(), file) {
+	for i, line := range s.host.providerLines(cmd.Context(), file) {
 		report.Providers = append(report.Providers, line)
 		label := ""
 		if i == 0 {
@@ -142,7 +142,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 		fmt.Fprintf(out, "  %-12s %s\n", label, line)
 	}
 	var publishLine string
-	publishLine, report.GitHub = publishing(cmd.Context())
+	publishLine, report.GitHub = s.host.publishing(cmd.Context())
 	fmt.Fprintf(out, "  Publishing   %s\n", publishLine)
 	fmt.Fprintf(out, "  Records      %s\n", config.Tilde(options.Database))
 	fmt.Fprintln(out)
@@ -160,7 +160,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	// of setup found missing.
 	// The setup still to do comes first.
 	first := ""
-	if steps := missingSteps(cmd.Context()); len(steps) > 0 {
+	if steps := s.host.missingSteps(cmd.Context()); len(steps) > 0 {
 		first = strings.Join(steps, ", then ") + ", then "
 	}
 	if file.Maintainer != "" {
@@ -457,10 +457,10 @@ type githubLoginJSON struct {
 // publishing says whose GitHub login submit would use, asked of GitHub,
 // and where its token comes from, with the same as JSON: GH_TOKEN or
 // GITHUB_TOKEN, dockhand's login in the Keychain, or the GitHub CLI's.
-func publishing(ctx context.Context) (string, githubLoginJSON) {
+func (h *host) publishing(ctx context.Context) (string, githubLoginJSON) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	status, err := authAPI(authStore).LoginStatus(ctx)
+	status, err := h.authAPI(h.authStore).LoginStatus(ctx)
 	switch {
 	case err == nil:
 		login := githubLoginJSON{Account: status.Account, Source: string(status.Source)}

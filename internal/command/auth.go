@@ -10,9 +10,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/credential"
-	"github.com/herbygillot/dockhand/internal/credential/keychain"
 	"github.com/herbygillot/dockhand/internal/github"
-	"github.com/herbygillot/dockhand/internal/macos"
 )
 
 // credentials is where the GitHub login is kept.
@@ -20,14 +18,6 @@ type credentials interface {
 	credential.Store
 	credential.Remover
 }
-
-// The login's parts, which tests stand in for.
-var (
-	authFlow    credential.DeviceFlow = &github.DeviceFlow{}
-	authStore   credentials           = keychain.Store{}
-	authAPI                           = github.SystemClient
-	openBrowser                       = macos.Open
-)
 
 // overridingToken is the variable whose token takes precedence over
 // dockhand's login, GH_TOKEN or GITHUB_TOKEN, or empty.
@@ -42,8 +32,8 @@ func overridingToken() string {
 
 // githubLogin logs in to GitHub with the device flow and keeps the login
 // in the Keychain, as setup github and setup's offer do.
-func githubLogin(ctx context.Context, streams Streams, clientID string, noBrowser bool) error {
-	value, err := authFlow.Authorize(ctx, clientID, func(authorization credential.DeviceAuthorization) error {
+func (h *host) githubLogin(ctx context.Context, streams Streams, clientID string, noBrowser bool) error {
+	value, err := h.authFlow.Authorize(ctx, clientID, func(authorization credential.DeviceAuthorization) error {
 		// The address is opened, or followed, only where it's
 		// GitHub's over https (the auth flow review's plan, step 4).
 		if address, err := url.Parse(authorization.VerificationURL); err != nil || address.Scheme != "https" || address.Host == "" {
@@ -55,7 +45,7 @@ func githubLogin(ctx context.Context, streams Streams, clientID string, noBrowse
 			return nil
 		}
 		fmt.Fprintf(streams.Err, "Opening %s in your browser...\n", authorization.VerificationURL)
-		if err := openBrowser(ctx, authorization.VerificationURL); err != nil {
+		if err := h.openBrowser(ctx, authorization.VerificationURL); err != nil {
 			return fmt.Errorf("could not open the browser: %w; run dockhand setup github --no-browser to sign in using a URL you open manually", err)
 		}
 		fmt.Fprintln(streams.Err, "Waiting for authorization...")
@@ -68,7 +58,7 @@ func githubLogin(ctx context.Context, streams Streams, clientID string, noBrowse
 	if err != nil {
 		return errors.New("GitHub returned an incomplete login; nothing was saved")
 	}
-	if err := authStore.Put(ctx, github.CredentialKey, saved); err != nil {
+	if err := h.authStore.Put(ctx, github.CredentialKey, saved); err != nil {
 		return err
 	}
 	fmt.Fprintf(streams.Out, "Logged in to github.com as %s. Credentials are saved in the macOS Keychain and renew automatically if you use dockhand at least once every six months.\n", value.Account)
@@ -80,12 +70,12 @@ func githubLogin(ctx context.Context, streams Streams, clientID string, noBrowse
 
 // githubLogout removes dockhand's login from the Keychain, as setup github
 // --logout does.
-func githubLogout(ctx context.Context, streams Streams) error {
+func (h *host) githubLogout(ctx context.Context, streams Streams) error {
 	clientID := github.DefaultOAuthClientID
-	if login, err := github.SavedLogin(ctx, authStore); err == nil || login.ClientID != "" {
+	if login, err := github.SavedLogin(ctx, h.authStore); err == nil || login.ClientID != "" {
 		clientID = cmp.Or(login.ClientID, clientID)
 	}
-	err := authStore.Delete(ctx, github.CredentialKey)
+	err := h.authStore.Delete(ctx, github.CredentialKey)
 	switch {
 	case errors.Is(err, credential.ErrNotFound):
 		fmt.Fprintln(streams.Out, "No dockhand GitHub credentials are saved in the Keychain.")

@@ -181,14 +181,14 @@ func TestMacPortsTreeKeepsTheWorktreeYouAreIn(t *testing.T) {
 // Tart otherwise, so this ran nowhere (the test plan's step 3).
 func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
 	newWorld(t)
-	s := settings{deps: standsFor(t)}
+	s := *testSettings(t)
 	e, err := s.open(t.Context())
 	require.NoError(t, err)
 	require.NotContains(t, e.Providers, "tart")
 	e.Close()
 
 	stands(t).LookTart = func(string) (string, error) { return "/opt/homebrew/bin/tart", nil }
-	s = settings{deps: standsFor(t)}
+	s = *testSettings(t)
 	e, err = s.open(t.Context())
 	require.NoError(t, err)
 	defer e.Close()

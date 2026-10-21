@@ -12,9 +12,7 @@ import (
 
 func fastWatch(t *testing.T) {
 	t.Helper()
-	poll := watchPoll
-	t.Cleanup(func() { watchPoll = poll })
-	watchPoll = 20 * time.Millisecond
+	hosted(t).timings.watchPoll = 20 * time.Millisecond
 }
 
 func TestWatchPrintsEventsAsLinesWithoutATerminal(t *testing.T) {

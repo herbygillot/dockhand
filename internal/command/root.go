@@ -124,14 +124,14 @@ things are.`
 
 // Run executes the command line in args.
 func Run(ctx context.Context, args []string, streams Streams) error {
-	return run(ctx, args, streams, compose.Dependencies{})
+	return run(ctx, args, streams, compose.Dependencies{}, machineHost())
 }
 
-// run executes the command line with the stand-ins given, compose's real
-// ones where they're empty, which a test gives its own.
-func run(ctx context.Context, args []string, streams Streams, dependencies compose.Dependencies) error {
+// run executes the command line on the host, with the stand-ins given,
+// compose's real ones where they're empty, which a test gives its own.
+func run(ctx context.Context, args []string, streams Streams, dependencies compose.Dependencies, host *host) error {
 	var settings settings
-	settings.deps = dependencies
+	settings.deps, settings.host = dependencies, host
 	stdout := streams.Out
 	streams = runStreams(streams, args)
 	settings.streams = streams

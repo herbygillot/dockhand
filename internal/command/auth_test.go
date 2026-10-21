@@ -59,8 +59,6 @@ func login(secret, account string) credential.Login {
 func withAuth(t *testing.T, flow credential.DeviceFlow) memoryStore {
 	t.Helper()
 	store := memoryStore{}
-	realFlow, realStore, realAPI, realBrowser := authFlow, authStore, authAPI, openBrowser
-	t.Cleanup(func() { authFlow, authStore, authAPI, openBrowser = realFlow, realStore, realAPI, realBrowser })
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer secret-token" {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -69,8 +67,8 @@ func withAuth(t *testing.T, flow credential.DeviceFlow) memoryStore {
 		json.NewEncoder(w).Encode(map[string]any{"login": "ada"})
 	}))
 	t.Cleanup(server.Close)
-	authFlow, authStore = flow, store
-	authAPI = func(store credential.Store) *github.Client {
+	hosted(t).authFlow, hosted(t).authStore = flow, store
+	hosted(t).authAPI = func(store credential.Store) *github.Client {
 		return &github.Client{HTTP: server.Client(), Config: github.Config{BaseURL: server.URL}, Credentials: github.SystemCredentials{Store: store, Key: github.CredentialKey}}
 	}
 	t.Setenv("GH_TOKEN", "")
@@ -83,7 +81,7 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	path := os.Getenv("PATH")
 	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	var opened string
-	openBrowser = func(_ context.Context, url string) error { opened = url; return nil }
+	hosted(t).openBrowser = func(_ context.Context, url string) error { opened = url; return nil }
 
 	out, errs, err := dockhand(t, "setup", "github")
 	require.NoError(t, err)
@@ -118,7 +116,7 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	require.NotEmpty(t, report.Result.Git.Version)
 	require.Equal(t, "macports/macports-ports", report.Result.Upstream.Repository)
 	t.Setenv("GH_TOKEN", "secret-token")
-	_, said := publishing(t.Context())
+	_, said := hosted(t).publishing(t.Context())
 	require.Equal(t, githubLoginJSON{Account: "ada", Source: "GH_TOKEN"}, said, "GH_TOKEN takes precedence, and doesn't renew")
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("PATH", emptyPath)
@@ -130,7 +128,7 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	out, _, err = dockhand(t, "setup", "github", "--logout")
 	require.NoError(t, err)
 	require.Equal(t, "No dockhand GitHub credentials are saved in the Keychain.\n", out)
-	line, said := publishing(t.Context())
+	line, said := hosted(t).publishing(t.Context())
 	require.Equal(t, "· not set up: dockhand setup github, when you're ready to submit", line, "no login anywhere")
 	require.Equal(t, githubLoginJSON{Problem: "not set up"}, said)
 }
@@ -149,14 +147,14 @@ func TestAFailedLoginSavesNothing(t *testing.T) {
 func TestALoginThatCantRenewIsSaid(t *testing.T) {
 	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	store[github.CredentialKey] = "gho_a_bare_token_from_an_earlier_dockhand"
-	line, _ := publishing(t.Context())
+	line, _ := hosted(t).publishing(t.Context())
 	require.Equal(t, "! the saved GitHub login uses an older format; run dockhand setup github to sign in again", line)
 	expired := login("secret-token", "ada")
 	expired.AccessExpiry, expired.RefreshExpiry = time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)
 	saved, err := expired.Encode()
 	require.NoError(t, err)
 	store[github.CredentialKey] = saved
-	line, said := publishing(t.Context())
+	line, said := hosted(t).publishing(t.Context())
 	require.Equal(t, "! the GitHub login expired after six months of inactivity; run dockhand setup github to sign in again", line)
 	require.Equal(t, githubLoginJSON{Problem: "the GitHub login expired after six months of inactivity; run dockhand setup github to sign in again"}, said)
 }
@@ -164,7 +162,7 @@ func TestALoginThatCantRenewIsSaid(t *testing.T) {
 func TestADeviceFlowAddressThatIsntHTTPSIsntOpened(t *testing.T) {
 	withAuth(t, plainFlow{})
 	opened := ""
-	openBrowser = func(_ context.Context, url string) error { opened = url; return nil }
+	hosted(t).openBrowser = func(_ context.Context, url string) error { opened = url; return nil }
 	_, _, err := dockhand(t, "setup", "github")
 	require.ErrorContains(t, err, "an HTTPS URL is required, so the browser was not opened")
 	require.Empty(t, opened)

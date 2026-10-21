@@ -16,7 +16,7 @@ import (
 
 // setupGitHubCommand logs in to GitHub, or with --logout removes the
 // login.
-func setupGitHubCommand(streams Streams) *cobra.Command {
+func setupGitHubCommand(s *settings, streams Streams) *cobra.Command {
 	clientID := cmp.Or(os.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID)
 	var noBrowser, logout bool
 	cmd := &cobra.Command{
@@ -32,9 +32,9 @@ authorized until you revoke it on GitHub's page for it, which it names.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if logout {
-				return githubLogout(cmd.Context(), streams)
+				return s.host.githubLogout(cmd.Context(), streams)
 			}
-			return githubLogin(cmd.Context(), streams, clientID, noBrowser)
+			return s.host.githubLogin(cmd.Context(), streams, clientID, noBrowser)
 		},
 	}
 	cmd.Flags().StringVar(&clientID, "client-id", clientID, "the GitHub OAuth application's client ID (DOCKHAND_GITHUB_CLIENT_ID)")
@@ -53,13 +53,13 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 	written := ""
 	fmt.Fprintln(streams.Out)
 	if overridingToken() == "" {
-		if _, err := github.SavedLogin(ctx, authStore); err != nil {
+		if _, err := github.SavedLogin(ctx, s.host.authStore); err != nil {
 			login, err := streams.askYes("? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ", true)
 			if err != nil {
 				return written, err
 			}
 			if login {
-				if err := githubLogin(ctx, streams, cmp.Or(os.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
+				if err := s.host.githubLogin(ctx, streams, cmp.Or(os.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
 					fmt.Fprintf(streams.Err, "Not logged in: %v\n", err)
 				}
 			}
@@ -84,7 +84,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 			fmt.Fprintf(streams.Out, "· maintainer: %s, for --mine, create, and serve's daily look\n", engine.MaintainerWords(suggestion, config.Tilde(configPath)))
 		}
 	}
-	if images := images(); images != nil {
+	if images := s.host.images(); images != nil {
 		makeImage := false
 		if status, err := images.Status(ctx); err == nil && !status.HasHostImage() {
 			question := fmt.Sprintf("? Create a Tart image for this Mac’s macOS version? This downloads macOS and uses up to %s of disk space. [y/N] ", tart.SetupDisk)

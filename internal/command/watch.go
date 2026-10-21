@@ -15,17 +15,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
-// watchPoll is how often status --watch looks at the journal.
-var watchPoll = time.Second
-
-// watchRedraw is how often the live view is redrawn with nothing new, so
-// its ages stay true, and watchProgress how often at most for a check's
-// progress alone, which the list of checks shows.
-var watchRedraw, watchProgress = 30 * time.Second, 5 * time.Second
-
 // statusWatch is status --watch: status kept current as serve works, a
 // view redrawn on a terminal, else events as lines; it only observes.
-func statusWatch(ctx context.Context, e *engine.Engine, streams Streams, plain bool) error {
+func statusWatch(ctx context.Context, e *engine.Engine, streams Streams, plain bool, timings timings) error {
 	// One observer for the whole watch, however often it redraws.
 	ctx, _, end, err := e.Observing(ctx)
 	if err != nil {
@@ -33,9 +25,9 @@ func statusWatch(ctx context.Context, e *engine.Engine, streams Streams, plain b
 	}
 	defer end()
 	if plain || !streams.terminal() || !streams.outTerminal() {
-		err = watchPlain(ctx, e, streams)
+		err = watchPlain(ctx, e, streams, timings)
 	} else {
-		err = watchLive(ctx, e, streams)
+		err = watchLive(ctx, e, streams, timings)
 	}
 	// Being stopped is how a watch ends.
 	if ctx.Err() != nil && (err == nil || errors.Is(err, ctx.Err())) {
@@ -68,7 +60,7 @@ func (c *journalCursor) next(ctx context.Context) ([]model.Event, error) {
 }
 
 // watchPlain prints status once, then each event as it is journaled.
-func watchPlain(ctx context.Context, e *engine.Engine, streams Streams) error {
+func watchPlain(ctx context.Context, e *engine.Engine, streams Streams, timings timings) error {
 	cursor := &journalCursor{e: e}
 	if err := cursor.start(ctx); err != nil {
 		return err
@@ -82,7 +74,7 @@ func watchPlain(ctx context.Context, e *engine.Engine, streams Streams) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(watchPoll):
+		case <-time.After(timings.watchPoll):
 		}
 		events, err := cursor.next(ctx)
 		if err != nil {
@@ -136,7 +128,7 @@ const (
 // watchLive redraws status on a terminal as what it shows changes, and
 // runs the commands typed at it. A check's progress isn't redrawn for: it
 // redrew every branch's status each second of every check (SQL-O6).
-func watchLive(ctx context.Context, e *engine.Engine, streams Streams) error {
+func watchLive(ctx context.Context, e *engine.Engine, streams Streams, timings timings) error {
 	fmt.Fprint(streams.Out, enterView)
 	defer fmt.Fprint(streams.Out, leaveView)
 	cursor := &journalCursor{e: e}
@@ -209,7 +201,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams) error {
 				paused = true
 			}
 			want <- struct{}{}
-		case <-time.After(watchPoll):
+		case <-time.After(timings.watchPoll):
 			if paused {
 				continue
 			}
@@ -220,7 +212,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams) error {
 			changed := slices.ContainsFunc(events, func(event model.Event) bool { return event.Kind.ChangesStatus() })
 			// Progress waits for its interval, and isn't lost meanwhile.
 			progressed = progressed || slices.ContainsFunc(events, func(event model.Event) bool { return event.Kind == model.EventProgress })
-			if changed || progressed && time.Since(drawn) >= watchProgress || time.Since(drawn) >= watchRedraw {
+			if changed || progressed && time.Since(drawn) >= timings.watchProgress || time.Since(drawn) >= timings.watchRedraw {
 				draw()
 				progressed = false
 			}

@@ -17,11 +17,10 @@ import (
 func TestACommandStartsCleanupWhenItIsDue(t *testing.T) {
 	w := newWorld(t)
 	var started []engine.Options
-	startCleanup = func(options engine.Options) error {
+	hosted(t).startCleanup = func(options engine.Options) error {
 		started = append(started, options)
 		return nil
 	}
-	t.Cleanup(func() { startCleanup = func(engine.Options) error { return nil } })
 
 	_, _, err := dockhand(t, "status")
 	require.NoError(t, err)

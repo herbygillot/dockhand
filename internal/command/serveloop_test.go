@@ -26,19 +26,13 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	// yq may have a newer release, which serve lists for a look, and
 	// neither calls current nor prepares.
 	withOutdated(t).uncertain = true
-	poll := servePoll
-	t.Cleanup(func() { servePoll = poll })
-	servePoll = 20 * time.Millisecond
+	hosted(t).timings.servePoll = 20 * time.Millisecond
 	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
-	now := serveNow
-	t.Cleanup(func() { serveNow = now })
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
-	serveNow = func() time.Time { return morning }
+	hosted(t).now = func() time.Time { return morning }
 	var mu sync.Mutex
 	var notes []string
-	post := postNotification
-	t.Cleanup(func() { postNotification = post })
-	postNotification = func(title, text string) error {
+	hosted(t).notify = func(title, text string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		notes = append(notes, title+": "+text)
@@ -97,21 +91,17 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	g.Others = nil
 	withScript(t, w, "passed")
 	withOutdated(t)
-	poll := servePoll
-	t.Cleanup(func() { servePoll = poll })
-	servePoll = 20 * time.Millisecond
+	hosted(t).timings.servePoll = 20 * time.Millisecond
 	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
-	now := serveNow
-	t.Cleanup(func() { serveNow = now })
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
-	serveNow = func() time.Time { return morning }
+	hosted(t).now = func() time.Time { return morning }
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"@ada\"\n"), append(data, []byte("\n[serve]\nship_to = \"submit\"\nsubmit_limit = 1\nnotify = false\n")...)...), 0o644))
 	// One pull request was opened earlier today, by an earlier serve, and
 	// one yesterday, which today's limit doesn't count.
-	e, err := (&settings{}).open(t.Context())
+	e, err := testSettings(t).open(t.Context())
 	require.NoError(t, err)
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
 		for _, at := range []time.Time{morning.Add(-25 * time.Hour), morning.Add(-time.Hour)} {
@@ -156,14 +146,10 @@ func TestServeLooksAgainAfterStoppingMidLook(t *testing.T) {
 	g := withGitHub(t, w)
 	g.Others = nil
 	withScript(t, w, "passed")
-	poll := servePoll
-	t.Cleanup(func() { servePoll = poll })
-	servePoll = 20 * time.Millisecond
+	hosted(t).timings.servePoll = 20 * time.Millisecond
 	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
-	now := serveNow
-	t.Cleanup(func() { serveNow = now })
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
-	serveNow = func() time.Time { return morning }
+	hosted(t).now = func() time.Time { return morning }
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)

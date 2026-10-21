@@ -130,9 +130,7 @@ func TestUndoAndOpen(t *testing.T) {
 	require.ErrorContains(t, err, "jq-update has no tidy or rebase to undo")
 
 	var opened []string
-	real := openBrowser
-	t.Cleanup(func() { openBrowser = real })
-	openBrowser = func(_ context.Context, address string) error {
+	hosted(t).openBrowser = func(_ context.Context, address string) error {
 		opened = append(opened, address)
 		return nil
 	}

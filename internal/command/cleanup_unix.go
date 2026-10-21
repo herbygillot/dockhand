@@ -13,9 +13,8 @@ import (
 
 // startCleanup starts dockhand clean --automatic on the same checkout and
 // database, in a session of its own, writing to cleanup.log beside the
-// database; the command that starts it exits without waiting. The tests
-// replace it.
-var startCleanup = func(options engine.Options) error {
+// database; the command that starts it exits without waiting.
+func startCleanup(options engine.Options) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err

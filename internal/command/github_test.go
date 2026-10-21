@@ -335,7 +335,7 @@ func TestAResumedGitHubCheckReadsTheRunItLeft(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := t.Context()
-	e, err := (&settings{deps: standsFor(t)}).open(ctx)
+	e, err := testSettings(t).open(ctx)
 	require.NoError(t, err)
 	defer e.Close()
 	run, err := e.RunNamed(ctx, "check-1")

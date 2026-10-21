@@ -48,9 +48,7 @@ func checkedBranch(t *testing.T) world {
 	versioned(t, w)
 	withBumper(t)
 	withScript(t, w, "passed")
-	poll := servePoll
-	t.Cleanup(func() { servePoll = poll })
-	servePoll = 20 * time.Millisecond
+	hosted(t).timings.servePoll = 20 * time.Millisecond
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
@@ -119,9 +117,7 @@ func TestServeStopsForAnUpgrade(t *testing.T) {
 	checkedBranch(t)
 	executable := filepath.Join(t.TempDir(), "dockhand")
 	require.NoError(t, os.WriteFile(executable, []byte("rc4"), 0o755))
-	real := servedExecutable
-	t.Cleanup(func() { servedExecutable = real })
-	servedExecutable = func(bool) string { return executable }
+	hosted(t).executable = func(bool) string { return executable }
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
@@ -148,10 +144,8 @@ func TestServeStopsWhenUninstalled(t *testing.T) {
 	checkedBranch(t)
 	executable := filepath.Join(t.TempDir(), "dockhand")
 	require.NoError(t, os.WriteFile(executable, []byte("rc6"), 0o755))
-	realExecutable, realGrace := servedExecutable, serveGrace
-	t.Cleanup(func() { servedExecutable, serveGrace = realExecutable, realGrace })
-	servedExecutable = func(bool) string { return executable }
-	serveGrace = 200 * time.Millisecond
+	hosted(t).executable = func(bool) string { return executable }
+	hosted(t).timings.serveGrace = 200 * time.Millisecond
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
@@ -184,9 +178,7 @@ func withLaunchd(t *testing.T, printsUntilGone int) *[][]string {
 	t.Helper()
 	var calls [][]string
 	loaded, going := false, 0
-	realLaunchctl, realOS := launchctl, agentOS
-	t.Cleanup(func() { launchctl, agentOS = realLaunchctl, realOS })
-	launchctl = func(_ context.Context, args ...string) ([]byte, error) {
+	hosted(t).launchctl = func(_ context.Context, args ...string) ([]byte, error) {
 		switch args[0] {
 		case "print":
 			if loaded && going > 0 {
@@ -212,11 +204,11 @@ func withLaunchd(t *testing.T, printsUntilGone int) *[][]string {
 func TestServeInstallsALaunchdAgent(t *testing.T) {
 	w := checkedBranch(t)
 	calls := withLaunchd(t, 2)
-	agentOS = "linux"
+	hosted(t).os = "linux"
 	_, _, err := dockhand(t, "serve", "--install")
 	require.ErrorContains(t, err, "serve --install requires macOS")
 
-	agentOS = "darwin"
+	hosted(t).os = "darwin"
 	out, _, err := dockhand(t, "serve", "--install")
 	require.NoError(t, err)
 	require.Contains(t, out, "serve now starts at login and restarts if it stops.\n  Agent  ~/Library/LaunchAgents/"+AgentLabel+".plist\n  Log    ~/.dockhand/logs/serve.log\n")
@@ -246,7 +238,7 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	require.Contains(t, out, "Removed the serve agent")
 	require.Len(t, *calls, 1, "uninstall only boots it out")
 	require.NoFileExists(t, filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
-	loaded, err := macos.LaunchAgent{Label: AgentLabel, Launchctl: launchctl}.Loaded(t.Context())
+	loaded, err := macos.LaunchAgent{Label: AgentLabel, Launchctl: hosted(t).launchctl}.Loaded(t.Context())
 	require.NoError(t, err)
 	require.False(t, loaded, "gone when uninstall returns")
 }
@@ -256,9 +248,7 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 	versioned(t, w)
 	withBumper(t)
 	g := withGitHub(t, w)
-	poll := servePoll
-	t.Cleanup(func() { servePoll = poll })
-	servePoll = 20 * time.Millisecond
+	hosted(t).timings.servePoll = 20 * time.Millisecond
 	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
@@ -378,8 +368,8 @@ JSON
 // turns them off for one run.
 func TestNotificationsCanBeTurnedOff(t *testing.T) {
 	e := &engine.Engine{Providers: map[string]buildenv.Provider{}}
-	require.NotNil(t, serveOptions(e, config.File{}, io.Discard, false, "list", true).Notify)
-	require.Nil(t, serveOptions(e, config.File{}, io.Discard, false, "list", false).Notify)
+	require.NotNil(t, hosted(t).serveOptions(e, config.File{}, io.Discard, false, "list", true).Notify)
+	require.Nil(t, hosted(t).serveOptions(e, config.File{}, io.Discard, false, "list", false).Notify)
 	off := false
 	file := config.File{Serve: config.Serve{Notify: &off}}
 	require.False(t, file.Serve.Notifies())
@@ -392,7 +382,7 @@ func TestNotificationsCanBeTurnedOff(t *testing.T) {
 func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
 	w := checkedBranch(t)
 	withLaunchd(t, 0)
-	agentOS = "darwin"
+	hosted(t).os = "darwin"
 	git, err := exec.LookPath("git")
 	require.NoError(t, err)
 	t.Setenv("GIT_BIN", git)
@@ -422,10 +412,8 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 	checkedBranch(t)
 	var mu sync.Mutex
 	answers := []string{"ada", "", "", "bob", "revoked", "revoked", "ada"}
-	realIdentity, realEvery := serveIdentity, serveIdentityEvery
-	t.Cleanup(func() { serveIdentity, serveIdentityEvery = realIdentity, realEvery })
-	serveIdentityEvery = 50 * time.Millisecond
-	serveIdentity = func(*github.Runtime) func(context.Context) (string, error) {
+	hosted(t).timings.serveIdentity = 50 * time.Millisecond
+	hosted(t).identity = func(*github.Runtime) func(context.Context) (string, error) {
 		return func(context.Context) (string, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -468,10 +456,8 @@ func TestServeSaysALoginItCantRead(t *testing.T) {
 	checkedBranch(t)
 	var mu sync.Mutex
 	answers := []string{"ada", "revoked", "unread", "unread", "ada"}
-	realIdentity, realEvery := serveIdentity, serveIdentityEvery
-	t.Cleanup(func() { serveIdentity, serveIdentityEvery = realIdentity, realEvery })
-	serveIdentityEvery = 50 * time.Millisecond
-	serveIdentity = func(*github.Runtime) func(context.Context) (string, error) {
+	hosted(t).timings.serveIdentity = 50 * time.Millisecond
+	hosted(t).identity = func(*github.Runtime) func(context.Context) (string, error) {
 		return func(context.Context) (string, error) {
 			mu.Lock()
 			defer mu.Unlock()

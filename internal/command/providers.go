@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -29,20 +28,12 @@ type tartImages interface {
 	DownloadXcode(ctx context.Context, missing *tart.MissingXcode, in io.Reader, out, errs io.Writer) (string, error)
 }
 
-// testTartImages, when set, stands in for dockhand's Tart images.
-var testTartImages tartImages
-
-// lookTart finds Tart for setup's report; the tests find none, so they
-// don't depend on the machine they run on. The engine's is compose's
-// (Dependencies.LookTart).
-var lookTart = exec.LookPath
-
 // images is dockhand's Tart images, or nil when Tart isn't installed.
-func images() tartImages {
-	if testTartImages != nil {
-		return testTartImages
+func (h *host) images() tartImages {
+	if h.tartImages != nil {
+		return h.tartImages
 	}
-	if _, err := lookTart("tart"); err != nil {
+	if _, err := h.lookTart("tart"); err != nil {
 		return nil
 	}
 	return &tart.Provider{}
@@ -79,7 +70,7 @@ as it is. --rebuild makes a replacement, and keeps the old one until the
 new one has passed.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !tartSupported() {
+			if !s.host.tartSupported() {
 				return errors.New("Tart's macOS images need Apple silicon, and this Mac isn't; checks here build on GitHub, with --on github")
 			}
 			if len(args) == 1 {
@@ -90,7 +81,7 @@ new one has passed.`,
 				return err
 			}
 			options.Xcodes = file.Providers.Tart.Xcode
-			images := images()
+			images := s.host.images()
 			if images == nil {
 				return fmt.Errorf("checks build in Tart VMs, and Tart isn't installed: %s", installTart)
 			}
@@ -146,9 +137,9 @@ new one has passed.`,
 
 // providerLines say whether each provider is ready, one line each, as
 // setup shows them.
-func providerLines(ctx context.Context, file config.File) []string {
-	lines := []string{fmt.Sprintf("%-8s %s", buildenv.Tart, tartReadiness(ctx))}
-	lines = append(lines, fmt.Sprintf("%-8s %s", buildenv.GitHub, githubReadiness(ctx)))
+func (h *host) providerLines(ctx context.Context, file config.File) []string {
+	lines := []string{fmt.Sprintf("%-8s %s", buildenv.Tart, h.tartReadiness(ctx))}
+	lines = append(lines, fmt.Sprintf("%-8s %s", buildenv.GitHub, h.githubReadiness(ctx)))
 	if command := file.Providers.Command; command != nil {
 		name := command.Name
 		if name == "" {
@@ -159,17 +150,14 @@ func providerLines(ctx context.Context, file config.File) []string {
 	return lines
 }
 
-// tartSupported is tart.Supported, which a test sets to see an Intel Mac.
-var tartSupported = tart.Supported
-
 // noTart says why Tart isn't for this Mac, and where its checks build.
 const noTart = "· needs Apple silicon; checks here build on GitHub, with --on github"
 
-func tartReadiness(ctx context.Context) string {
-	if !tartSupported() {
+func (h *host) tartReadiness(ctx context.Context) string {
+	if !h.tartSupported() {
 		return noTart
 	}
-	images := images()
+	images := h.images()
 	if images == nil {
 		return "· needs Tart: " + installTart + ", then dockhand setup tart"
 	}
@@ -246,11 +234,11 @@ func tartReadiness(ctx context.Context) string {
 	return line
 }
 
-func githubReadiness(ctx context.Context) string {
+func (h *host) githubReadiness(ctx context.Context) string {
 	if overridingToken() != "" {
 		return "✓ with your GitHub token; your fork's Actions must be enabled"
 	}
-	if _, err := authStore.Get(ctx, github.CredentialKey); err == nil {
+	if _, err := h.authStore.Get(ctx, github.CredentialKey); err == nil {
 		return "✓ with your GitHub login; your fork's Actions must be enabled"
 	}
 	return "· needs a GitHub login, dockhand setup github, and your fork's Actions enabled"
@@ -260,17 +248,17 @@ func githubReadiness(ctx context.Context) string {
 // Next: line, which jumped to update with Tart and the login undone (the
 // rc1 full stage's A2): a Tart image where Tart can build, and a login
 // where no token stands in for one.
-func missingSteps(ctx context.Context) []string {
+func (h *host) missingSteps(ctx context.Context) []string {
 	var steps []string
-	if tartSupported() {
-		if images := images(); images != nil {
+	if h.tartSupported() {
+		if images := h.images(); images != nil {
 			if status, err := images.Status(ctx); err == nil && (status.Readiness() == tart.NoImage || status.Readiness() == tart.XcodeOnly) {
 				steps = append(steps, "dockhand setup tart")
 			}
 		}
 	}
 	if overridingToken() == "" {
-		if _, err := authStore.Get(ctx, github.CredentialKey); err != nil {
+		if _, err := h.authStore.Get(ctx, github.CredentialKey); err != nil {
 			steps = append(steps, "dockhand setup github")
 		}
 	}

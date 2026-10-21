@@ -35,6 +35,8 @@ type settings struct {
 	// deps are the stand-ins for what compose makes, which a test gives;
 	// the real ones where they're empty.
 	deps compose.Dependencies
+	// host is the Mac's, or a test's stand-in.
+	host *host
 }
 
 // overAllowanceFlag registers --over-allowance on a command that looks up
@@ -90,14 +92,18 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 }
 
 // dependencies are the stand-ins for compose: those given, with the
-// login's parts the command shares with setup github (authAPI, authStore).
+// login's parts the command shares with setup github, and Tart as the
+// host finds it.
 func (s *settings) dependencies() compose.Dependencies {
 	d := s.deps
 	if d.GitHubClient == nil {
-		d.GitHubClient = authAPI
+		d.GitHubClient = s.host.authAPI
 	}
 	if d.Store == nil {
-		d.Store = authStore
+		d.Store = s.host.authStore
+	}
+	if d.LookTart == nil {
+		d.LookTart = s.host.lookTart
 	}
 	return d
 }
