@@ -48,7 +48,7 @@ func TestTheEnvironmentIsTheOneUsageLists(t *testing.T) {
 }
 
 // Every variable dockhand's code reads by name is in the catalogue, but
-// for PATH and HOME, which every program reads.
+// for PATH, HOME, and XDG_CACHE_HOME, which every program reads.
 func TestEveryVariableReadIsCatalogued(t *testing.T) {
 	var names []string
 	for _, variable := range config.Environment {
@@ -79,7 +79,7 @@ func TestEveryVariableReadIsCatalogued(t *testing.T) {
 			}
 			name, err := strconv.Unquote(literal.Value)
 			require.NoError(t, err)
-			if name == "PATH" || name == "HOME" || name == "DOCKHAND_FAILPOINT" || strings.HasPrefix(name, "DOCKHAND_TEST_") {
+			if name == "PATH" || name == "HOME" || name == "XDG_CACHE_HOME" || name == "DOCKHAND_FAILPOINT" || strings.HasPrefix(name, "DOCKHAND_TEST_") {
 				return true
 			}
 			require.True(t, slices.Contains(names, name), "%s reads %s, which config.Environment doesn't list", files.Position(call.Pos()), name)

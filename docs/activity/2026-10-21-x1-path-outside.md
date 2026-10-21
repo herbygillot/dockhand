@@ -250,3 +250,19 @@ exempt with PATH.
 
 Tests still set the process's environment and run with it; the readers
 below compose are next, then the tests' own environment.
+
+## The engine's home and caches, compose's
+
+engine reads no environment. `engine.Options` gains `Home`, which
+`DefaultWorktrees` is under (beside the clone where it's empty), and
+`IndexMirror`; `Indexes`, the port index cache, is now required where an
+index is staged, and `ReadingCache` and `IndexCache` are gone. compose
+resolves all of them from the invocation: $DOCKHAND_READING_CACHE and
+$DOCKHAND_INDEX_CACHE made absolute against its directory, else
+`dockhand/readings` and `dockhand/indexes` in the user cache directory,
+which `Options.cacheDirectory` finds as `os.UserCacheDir` does
+(~/Library/Caches on macOS, else $XDG_CACHE_HOME or ~/.cache), from the
+invocation's HOME. The boundary test watches `os.UserCacheDir` too, and
+engine's row is gone. engine's own tests had cached port indexes in the
+person's real cache directory and read their real home; the fixture now
+has its own of both.

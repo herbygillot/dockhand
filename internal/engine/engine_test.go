@@ -75,7 +75,7 @@ func setup(t *testing.T) fixture {
 	// The worktrees are the fixture's own, never the person's
 	// ~/Source/macports-branches, which the default is.
 	f.options = Options{Tree: f.clone, Database: filepath.Join(root, "home", ".dockhand", "dockhand.db"), Upstream: f.upstream, Now: func() time.Time { return at },
-		Worktrees: filepath.Join(root, "src", "macports-branches")}
+		Worktrees: filepath.Join(root, "src", "macports-branches"), Indexes: filepath.Join(root, "cache", "indexes"), Home: filepath.Join(root, "home")}
 	return f
 }
 
@@ -138,9 +138,7 @@ func TestStartMakesASparseWorktreeFromFreshMaster(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	require.Equal(t, filepath.Join(filepath.Dir(f.clone), "macports-branches"), e.Worktrees(), "the fixture's worktrees setting")
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		require.Equal(t, filepath.Join(home, "Source", "macports-branches"), e.DefaultWorktrees(), "the default, wherever the clone is")
-	}
+	require.Equal(t, filepath.Join(f.options.Home, "Source", "macports-branches"), e.DefaultWorktrees(), "the default, wherever the clone is")
 
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)

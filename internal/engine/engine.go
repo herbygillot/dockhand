@@ -47,6 +47,9 @@ type Options struct {
 	// Worktrees is the directory managed worktrees live in; when empty,
 	// ~/Source/macports-branches (DefaultWorktrees).
 	Worktrees string
+	// Home is the person's home directory, which DefaultWorktrees is
+	// under.
+	Home string
 	// Upstream is the URL master is fetched from; UpstreamURL when empty.
 	Upstream string
 	// PullRequests is the repository pull requests go to;
@@ -69,8 +72,10 @@ type Options struct {
 	// Readings is where readings of upstream's archives are kept
 	// (ReadingCache); none are kept when empty.
 	Readings string
-	// Indexes is where port indexes are cached; IndexCache's when empty.
-	Indexes string
+	// Indexes is where port indexes are cached, which staging an index
+	// needs; IndexMirror is the directory a cache with no generation near
+	// enough is seeded from, MacPorts' own when empty.
+	Indexes, IndexMirror string
 	// AllowMajors lets an update nobody looks over move a port's major
 	// version without a look; holds.majors = "allow". Held otherwise.
 	AllowMajors bool
@@ -313,11 +318,10 @@ func (e *Engine) Clone() string { return filepath.Dir(e.Repo.CommonDir) }
 // person's branches are in one place they know. Without a home directory,
 // they go beside the clone.
 func (e *Engine) DefaultWorktrees() string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
+	if e.options.Home == "" {
 		return filepath.Join(filepath.Dir(e.Clone()), "macports-branches")
 	}
-	return filepath.Join(home, "Source", "macports-branches")
+	return filepath.Join(e.options.Home, "Source", "macports-branches")
 }
 
 // Worktrees is where managed worktrees go.

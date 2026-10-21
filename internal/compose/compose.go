@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -132,6 +133,8 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 			tree = engine.Here(ctx, named, cmp.Or(options.Dir, "."), git)
 		}
 	}
+	readings, _ := options.cacheDirectory("DOCKHAND_READING_CACHE", "readings")
+	indexes, _ := options.cacheDirectory("DOCKHAND_INDEX_CACHE", "indexes")
 	return engine.Options{
 		Tree:      tree,
 		Git:       git,
@@ -148,8 +151,12 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		// rows; submit's preview names it.
 		PullRequests: options.Getenv(PullRequestsVariable),
 		// Readings are a saving: where the cache can't be placed, none
-		// are kept.
-		Readings:         readingCache(),
+		// are kept; port indexes are staged, so their cache is refused
+		// when they're staged.
+		Readings:         readings,
+		Indexes:          indexes,
+		IndexMirror:      options.Getenv("DOCKHAND_INDEX_MIRROR"),
+		Home:             places.Home,
 		MigrateUnderLive: options.MigrateUnderLive,
 	}, file, configPath, nil
 }
@@ -264,12 +271,24 @@ func registeredCheckout(ctx context.Context, options engine.Options, places conf
 	return "", fmt.Errorf("this isn't a ports checkout, and dockhand knows several: %s; choose one with --tree or MACPORTS_TREE", strings.Join(named, ", "))
 }
 
-// readingCache is where readings are kept, or none where it can't be
-// placed.
-func readingCache() string {
-	directory, err := engine.ReadingCache()
-	if err != nil {
-		return ""
+// cacheDirectory is dockhand's directory, named, in the command line's
+// user cache directory: ~/Library/Caches on macOS, else $XDG_CACHE_HOME or
+// ~/.cache, as os.UserCacheDir has it; or the variable's value, made
+// absolute, where it's set. It is disposable.
+func (o Options) cacheDirectory(variable, name string) (string, error) {
+	places := o.Places()
+	if chosen := o.Getenv(variable); chosen != "" {
+		return places.Absolute(chosen)
 	}
-	return directory
+	cache := o.Getenv("XDG_CACHE_HOME")
+	if runtime.GOOS == "darwin" || !filepath.IsAbs(cache) {
+		if places.Home == "" {
+			return "", errors.New("$HOME is not defined")
+		}
+		cache = filepath.Join(places.Home, ".cache")
+		if runtime.GOOS == "darwin" {
+			cache = filepath.Join(places.Home, "Library", "Caches")
+		}
+	}
+	return filepath.Join(cache, "dockhand", name), nil
 }

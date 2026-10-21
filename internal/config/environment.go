@@ -10,7 +10,7 @@ type Variable struct {
 }
 
 // Environment is every variable dockhand reads, which usage.md's table
-// lists, apart from HOME; PATH, which serve's agent keeps too; the
+// lists, apart from HOME and XDG_CACHE_HOME; PATH, which serve's agent keeps too; the
 // acceptance build's DOCKHAND_FAILPOINT; and tests' DOCKHAND_TEST_*
 // variables.
 var Environment = []Variable{

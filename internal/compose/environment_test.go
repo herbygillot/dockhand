@@ -18,7 +18,7 @@ import (
 // environmentReads are the calls that read the process's environment,
 // home, or working directory, or start a program that inherits them.
 var environmentReads = map[string][]string{
-	"os":      {"Getenv", "LookupEnv", "UserHomeDir", "Environ", "Getwd"},
+	"os":      {"Getenv", "LookupEnv", "UserHomeDir", "UserCacheDir", "Environ", "Getwd"},
 	"os/exec": {"Command", "CommandContext"},
 }
 
@@ -31,7 +31,6 @@ var readersBelow = map[string]int{
 	"archive":            1,
 	"buildenv/script":    2,
 	"buildenv/tart":      1,
-	"engine":             4,
 	"git":                2,
 	"github":             4,
 	"macports/portindex": 1,

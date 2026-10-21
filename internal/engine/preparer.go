@@ -2,8 +2,7 @@ package engine
 
 import (
 	"context"
-	"os"
-	"path/filepath"
+	"errors"
 
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
 	"github.com/herbygillot/dockhand/internal/editprep"
@@ -87,7 +86,7 @@ func (e *Engine) indexConfig() (portindex.Config, error) {
 	if err != nil {
 		return portindex.Config{}, err
 	}
-	return portindex.Config{CacheDirectory: cache, Mirror: &portindex.Mirror{HTTP: fetch.Client, Base: os.Getenv("DOCKHAND_INDEX_MIRROR")}}, nil
+	return portindex.Config{CacheDirectory: cache, Mirror: &portindex.Mirror{HTTP: fetch.Client, Base: e.options.IndexMirror}}, nil
 }
 
 // PortIndex is how the engine stages a tree's port index for a platform,
@@ -113,38 +112,10 @@ func (e *Engine) PortIndex() (portindex.Source, error) {
 	return stager, nil
 }
 
-// ReadingCache is where readings of upstream's archives are kept:
-// $DOCKHAND_READING_CACHE, else dockhand/readings in the user's cache
-// directory. It is disposable.
-func ReadingCache() (string, error) {
-	if chosen := os.Getenv("DOCKHAND_READING_CACHE"); chosen != "" {
-		return filepath.Abs(chosen)
-	}
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(cache, "dockhand", "readings"), nil
-}
-
-// indexCache is where this engine keeps port indexes: Options.Indexes,
-// else IndexCache.
+// indexCache is where this engine keeps port indexes (Options.Indexes).
 func (e *Engine) indexCache() (string, error) {
-	if e.options.Indexes != "" {
-		return e.options.Indexes, nil
+	if e.options.Indexes == "" {
+		return "", errors.New("no directory to cache port indexes in was given")
 	}
-	return IndexCache()
-}
-
-// IndexCache is where port indexes are kept: $DOCKHAND_INDEX_CACHE, else
-// dockhand/indexes in the user's cache directory. It is disposable.
-func IndexCache() (string, error) {
-	if chosen := os.Getenv("DOCKHAND_INDEX_CACHE"); chosen != "" {
-		return filepath.Abs(chosen)
-	}
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(cache, "dockhand", "indexes"), nil
+	return e.options.Indexes, nil
 }
