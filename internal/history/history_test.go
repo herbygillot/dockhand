@@ -42,7 +42,7 @@ func newWorld(t *testing.T) world {
 	testsupport.Git(t, root, "switch", "-q", "-c", "dockhand/jq")
 	testsupport.Git(t, root, "commit", "-q", "--allow-empty", "-m", "jq: one")
 	head := testsupport.Git(t, root, "rev-parse", "HEAD")
-	repo, err := git.Open(t.Context(), root, "")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	s, err := sqlite.Open(t.Context(), filepath.Join(filepath.Dir(root), "dockhand.db"), sqlite.Options{})
 	require.NoError(t, err)

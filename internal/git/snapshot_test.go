@@ -18,7 +18,7 @@ func snapshotRepo(t *testing.T) *git.Repository {
 	root := t.TempDir()
 	output, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", root).CombinedOutput()
 	require.NoError(t, err, "%s", output)
-	repo, err := git.Open(t.Context(), root, "")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	return repo
 }

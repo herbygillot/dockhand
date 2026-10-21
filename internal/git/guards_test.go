@@ -28,7 +28,7 @@ func TestARefUpdateThatDiesIsUncertain(t *testing.T) {
 	// git, but update-ref ends as if killed, after what it was given.
 	fake := filepath.Join(t.TempDir(), "git")
 	testsupport.WriteExecutable(t, fake, "#!/bin/sh\nfor a do case \"$a\" in update-ref) cat >/dev/null; kill -9 $$;; esac; done\nexec "+real+" \"$@\"\n")
-	dying, err := git.Open(t.Context(), repo.Root, fake)
+	dying, err := git.Open(t.Context(), repo.Root, git.Program{Executable: fake, Env: os.Environ()})
 	require.NoError(t, err)
 	change := []git.RefChange{{Name: "refs/heads/feature", Desired: git.RefValue{Exists: true, Object: head}}}
 	err = dying.UpdateRefs(t.Context(), change)

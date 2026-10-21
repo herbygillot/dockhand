@@ -85,7 +85,7 @@ func (r *Repository) AddSparseWorktree(ctx context.Context, directory, branch st
 			err = errors.Join(err, r.RemoveWorktree(cleanup, directory))
 		}
 	}()
-	worktree := &Repository{Root: directory, CommonDir: r.CommonDir, Executable: r.Executable}
+	worktree := &Repository{Root: directory, CommonDir: r.CommonDir, Program: r.Program}
 	if _, err := worktree.output(ctx, append([]string{"sparse-checkout", "set", "--cone", "--"}, cone...)...); err != nil {
 		return err
 	}

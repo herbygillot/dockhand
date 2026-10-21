@@ -23,7 +23,7 @@ func TestCommitTreesBatchesAndValidatesImmutableInputs(t *testing.T) {
 			command := exec.CommandContext(t.Context(), executable, "init", "--quiet", "--object-format="+format, root)
 			output, err := command.CombinedOutput()
 			require.NoError(t, err, "%s", output)
-			repo, err := git.Open(t.Context(), root, executable)
+			repo, err := git.Open(t.Context(), root, git.Program{Executable: executable, Env: os.Environ()})
 			require.NoError(t, err)
 			signature := git.Signature{Name: "Test", Email: "test@example.invalid", When: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 			expected := make(map[string]string)

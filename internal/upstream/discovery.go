@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/git"
 	"net/http"
 	"strings"
 	"time"
@@ -116,9 +117,8 @@ type Service struct {
 	// EvaluateVersions evaluates several source versions in one pass when the
 	// bound probe supports it; discovery falls back to EvaluateVersion otherwise.
 	EvaluateVersions func(context.Context, []string) ([]string, error)
-	// Git is the git executable a port tracking a branch is read with; git
-	// on PATH when empty.
-	Git string
+	// Git is the git a port tracking a branch is read with.
+	Git git.Program
 }
 
 func (s *Service) repository(port macports.PortInfo, automatic bool) (portsource.Spec, forge.Repository, error) {

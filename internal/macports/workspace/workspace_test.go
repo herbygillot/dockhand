@@ -39,7 +39,7 @@ func newFixture(t *testing.T) *fixture {
 	f.run("add", "-A", ".")
 	f.run("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "fixture")
 	var err error
-	f.repo, err = git.Open(t.Context(), f.root, "")
+	f.repo, err = git.Open(t.Context(), f.root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	return f
 }

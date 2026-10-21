@@ -39,7 +39,7 @@ func (e *Engine) followRenames(ctx context.Context, name string) (map[model.Bran
 		if _, _, err := e.Repo.Branch(ctx, branch.Name); !errors.Is(err, git.ErrBranchMissing) {
 			continue
 		}
-		worktree, err := git.Open(ctx, branch.Worktree, e.options.Git)
+		worktree, err := git.Open(ctx, branch.Worktree, e.options.git())
 		if err != nil {
 			continue
 		}

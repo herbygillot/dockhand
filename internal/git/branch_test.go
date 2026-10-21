@@ -20,7 +20,7 @@ func TestBranchLockChild(t *testing.T) {
 	if path == "" {
 		t.Skip("subprocess helper")
 	}
-	repo, err := git.Open(t.Context(), path, "")
+	repo, err := git.Open(t.Context(), path, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	require.NoError(t, repo.WithBranchLock(t.Context(), "candidate", func(ctx context.Context) error {
 		fmt.Fprintln(os.Stdout, "locked")
@@ -38,7 +38,7 @@ func TestBranchLockCoordinatesProcessesAndReleasesOnExit(t *testing.T) {
 	root := t.TempDir()
 	output, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", root).CombinedOutput()
 	require.NoError(t, err, "%s", output)
-	repo, err := git.Open(t.Context(), root, "")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	child := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestBranchLockChild$")
 	child.Env = append(os.Environ(), "DOCKHAND_BRANCH_LOCK_CHILD="+root)
@@ -86,7 +86,7 @@ func TestAuthorUsesRepositoryIdentity(t *testing.T) {
 	// Repository operations ignore ambient Git author overrides.
 	t.Setenv("GIT_AUTHOR_NAME", "Chosen Author")
 	t.Setenv("GIT_AUTHOR_EMAIL", "chosen@example.invalid")
-	repo, err := git.Open(t.Context(), root, "")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	author, err := repo.Author(t.Context())
 	require.NoError(t, err)
@@ -98,7 +98,7 @@ func TestBranchLockSurvivesDriverExitWhileGitStillRuns(t *testing.T) {
 	root := t.TempDir()
 	output, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", root).CombinedOutput()
 	require.NoError(t, err, "%s", output)
-	repo, err := git.Open(t.Context(), root, "")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	executable, err := exec.LookPath("git")
 	require.NoError(t, err)

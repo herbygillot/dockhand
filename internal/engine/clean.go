@@ -361,7 +361,7 @@ func (e *Engine) planCleanWorktree(ctx context.Context, branch model.Branch) (Cl
 // dirty says why a worktree holds work of its own: uncommitted edits to
 // tracked files, or untracked files.
 func (e *Engine) dirty(ctx context.Context, directory string) (string, error) {
-	worktree, err := git.Open(ctx, directory, e.options.Git)
+	worktree, err := git.Open(ctx, directory, e.options.git())
 	if err != nil {
 		return "", err
 	}

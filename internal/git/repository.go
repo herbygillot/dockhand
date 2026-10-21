@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -13,17 +14,32 @@ import (
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
-type Repository struct {
-	Root       string
-	CommonDir  string
+// Program is the git dockhand runs, "git" on Env's PATH when Executable
+// is empty, and the environment it runs in, which compose gives, git's own
+// variables filtered from it (repositoryEnv). An Env of nil is refused,
+// as none was given.
+type Program struct {
 	Executable string
+	Env        []string
 }
 
-func Open(ctx context.Context, directory, executable string) (*Repository, error) {
-	if executable == "" {
-		executable = "git"
+// path is the git executable to run, found on Env's PATH where it's a bare
+// name.
+func (p Program) path() (string, error) {
+	if p.Env == nil {
+		return "", errors.New("git: no environment was given to run git in")
 	}
-	r := &Repository{Root: directory, Executable: executable}
+	return subprocess.LookPath(cmp.Or(p.Executable, "git"), p.Env)
+}
+
+type Repository struct {
+	Program
+	Root      string
+	CommonDir string
+}
+
+func Open(ctx context.Context, directory string, program Program) (*Repository, error) {
+	r := &Repository{Root: directory, Program: program}
 	root, err := r.output(ctx, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return nil, err
@@ -58,13 +74,14 @@ func (r *Repository) output(ctx context.Context, args ...string) ([]byte, error)
 }
 
 func (r *Repository) command(ctx context.Context, env []string, args ...string) *exec.Cmd {
-	executable := r.Executable
-	if executable == "" {
-		executable = "git"
+	executable, err := r.path()
+	if err != nil {
+		// Run says why: the bare name isn't found, as exec.Command's isn't.
+		executable = cmp.Or(r.Executable, "git")
 	}
 	command := exec.CommandContext(ctx, executable, append([]string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsync=committed,reference", "-c", "core.fsyncMethod=fsync", "-c", "commit.gpgSign=false"}, args...)...)
 	command.Dir = r.Root
-	command.Env = append(repositoryEnv(), env...)
+	command.Env = append(repositoryEnv(r.Env), env...)
 	if file, ok := ctx.Value(branchLockKey{}).(*os.File); ok {
 		command.ExtraFiles = []*os.File{file}
 	}
@@ -73,6 +90,9 @@ func (r *Repository) command(ctx context.Context, env []string, args ...string) 
 }
 
 func (r *Repository) run(ctx context.Context, input []byte, env []string, args ...string) ([]byte, error) {
+	if _, err := r.path(); err != nil {
+		return nil, err
+	}
 	command := r.command(ctx, env, args...)
 	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: args[0], Path: command.Path, Args: command.Args[1:], Dir: command.Dir, Env: command.Env, Stdin: bytes.NewReader(input), ExtraFiles: command.ExtraFiles, WaitDelay: command.WaitDelay})
 	if err != nil {
@@ -103,7 +123,7 @@ func (r *Repository) runStatus(ctx context.Context, args ...string) ([]byte, int
 	return nil, -1, err
 }
 
-func repositoryEnv() []string {
+func repositoryEnv(base []string) []string {
 	blocked := map[string]bool{
 		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_COMMON_DIR": true,
 		"GIT_INDEX_FILE": true, "GIT_NAMESPACE": true, "GIT_OBJECT_DIRECTORY": true,
@@ -117,7 +137,7 @@ func repositoryEnv() []string {
 		"GIT_COMMITTER_NAME": true, "GIT_COMMITTER_EMAIL": true, "GIT_COMMITTER_DATE": true,
 	}
 	var result []string
-	for _, entry := range os.Environ() {
+	for _, entry := range base {
 		key, _, _ := strings.Cut(entry, "=")
 		if !blocked[key] && !strings.HasPrefix(key, "GIT_CONFIG_KEY_") && !strings.HasPrefix(key, "GIT_CONFIG_VALUE_") {
 			result = append(result, entry)

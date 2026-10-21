@@ -30,7 +30,7 @@ func portsCheckout(t *testing.T) (*git.Repository, string) {
 	testsupport.Git(t, root, "init", "-q", "-b", "master")
 	testsupport.Git(t, root, "add", "-A")
 	testsupport.Git(t, root, "commit", "-q", "-m", "init")
-	repo, err := git.Open(t.Context(), root, "")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	head, err := repo.Resolve(t.Context(), "HEAD")
 	require.NoError(t, err)
@@ -83,7 +83,7 @@ func TestSparseWorktreeHoldsOnlyItsConeAndLeavesTheCheckoutWhole(t *testing.T) {
 	require.NoError(t, repo.AddSparseWorktree(t.Context(), dir, "dockhand/jq-update", []string{"_resources"}))
 	require.Equal(t, []string{"README.md", "_resources/port1.0/group/github-1.0.tcl"}, files(t, dir))
 
-	worktree, err := git.Open(t.Context(), dir, "")
+	worktree, err := git.Open(t.Context(), dir, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	require.Equal(t, repo.CommonDir, worktree.CommonDir, "one repository, two checkouts")
 	branch, err := worktree.CurrentBranch(t.Context())

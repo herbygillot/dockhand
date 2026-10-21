@@ -365,7 +365,7 @@ func (e *Engine) resolveTags(ctx context.Context, builds []model.EnvironmentPlan
 func (e *Engine) resolveTag(ctx context.Context, source model.GitSource) model.GitSource {
 	ctx, cancel := context.WithTimeout(ctx, gitResolveTimeout)
 	defer cancel()
-	tags, err := git.ListRemoteTags(ctx, e.Repo.Executable, source.URL, source.Ref)
+	tags, err := git.ListRemoteTags(ctx, e.Repo.Program, source.URL, source.Ref)
 	source.ResolvedAt = e.now()
 	switch {
 	case err != nil:
@@ -382,7 +382,7 @@ func (e *Engine) resolveTag(ctx context.Context, source model.GitSource) model.G
 func (e *Engine) resolveGit(ctx context.Context, source model.GitSource) model.GitSource {
 	ctx, cancel := context.WithTimeout(ctx, gitResolveTimeout)
 	defer cancel()
-	checkout, err := git.CloneCheckout(ctx, e.Repo.Executable, source.URL, source.Ref)
+	checkout, err := git.CloneCheckout(ctx, e.Repo.Program, source.URL, source.Ref)
 	source.ResolvedAt = e.now()
 	switch {
 	case errors.Is(err, git.ErrNoRef) && source.Ref == "":

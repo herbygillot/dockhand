@@ -48,7 +48,7 @@ func TestReplayRebasesWithoutACheckout(t *testing.T) {
 	testsupport.Git(t, root, "add", "-A")
 	master := commit("b: update, d: new port")
 
-	repo, err := git.Open(t.Context(), root, "")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	committer := git.Signature{Name: "Dockhand Test", Email: "test@example.org", When: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)}
 	replayed, err := repo.Replay(t.Context(), master, base, head, committer)

@@ -50,7 +50,7 @@ func (e *Engine) github() *forgegithub.Client {
 		if e.GitHub == nil {
 			e.GitHub = github.NewRuntime(github.Signin{Store: keychain.Store{}})
 		}
-		e.githubClient = &forgegithub.Client{Client: e.GitHub.Client, GitExecutable: e.options.Git}
+		e.githubClient = &forgegithub.Client{Client: e.GitHub.Client, Git: e.options.git()}
 	})
 	return e.githubClient
 }
@@ -58,7 +58,7 @@ func (e *Engine) github() *forgegithub.Client {
 // discovery finds ports' newest releases upstream, on GitHub and GitLab.
 func (e *Engine) discovery(ports *selection.Reader) *upstream.Service {
 	return &upstream.Service{
-		Ports: ports, HTTP: fetch.Client, Versions: ports, Git: e.options.Git,
+		Ports: ports, HTTP: fetch.Client, Versions: ports, Git: e.options.git(),
 		Catalogs: map[portsource.Forge]upstream.Catalog{
 			portsource.GitHub: e.github(),
 			portsource.GitLab: &forgegitlab.Client{HTTP: fetch.Client},

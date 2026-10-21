@@ -31,7 +31,7 @@ var readersBelow = map[string]int{
 	"archive":            1,
 	"buildenv/script":    2,
 	"buildenv/tart":      1,
-	"git":                2,
+	"git":                1,
 	"macports/portindex": 1,
 	"tart":               1,
 	"tart/guestssh":      1,

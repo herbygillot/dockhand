@@ -4,14 +4,14 @@ import (
 	"context"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/git"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
 )
 
 type Client struct {
 	*githubapi.Client
-	// GitExecutable reads tags with plain git when the API cannot; empty
-	// finds git on PATH.
-	GitExecutable string
+	// Git reads tags with plain git when the API cannot.
+	Git git.Program
 }
 
 // Login is who the client acts as, asked of GitHub, and where its token

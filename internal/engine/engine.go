@@ -40,8 +40,12 @@ const UpstreamRepository = "macports/macports-ports"
 type Options struct {
 	// Tree is a directory inside the ports checkout; "." when empty.
 	Tree string
-	// Git is the git executable; "git" when empty.
+	// Git is the git executable; "git" on Env's PATH when empty.
 	Git string
+	// Env is the environment the programs dockhand runs run in, git,
+	// port-tclsh, Tart, and ssh among them: the command line's, as compose
+	// builds it.
+	Env []string
 	// Database is the store's path.
 	Database string
 	// Worktrees is the directory managed worktrees live in; when empty,
@@ -84,6 +88,9 @@ type Options struct {
 	// architecture review of 5897a82, R3-35); declared where it's empty.
 	Tests model.TestPolicy
 }
+
+// git is the git dockhand runs, in Env.
+func (o Options) git() git.Program { return git.Program{Executable: o.Git, Env: o.Env} }
 
 // Engine is bound to one ports checkout and its registered repository.
 type Engine struct {
@@ -233,7 +240,7 @@ func Checkouts(ctx context.Context, options Options) ([]string, error) {
 // registers the repository. A directory that is not a ports tree is
 // refused before anything is recorded for it.
 func Open(ctx context.Context, options Options) (*Engine, error) {
-	repo, err := OpenPortsTree(ctx, options.Tree, options.Git)
+	repo, err := OpenPortsTree(ctx, options.Tree, options.git())
 	if err != nil {
 		return nil, err
 	}
@@ -339,11 +346,8 @@ var ErrNotPortsTree = errors.New("not a MacPorts ports tree")
 // git on PATH, and refuses one older than dockhand works with
 // (git.MinimumVersion), saying how to get a newer one.
 func GitVersion(ctx context.Context, options Options) (git.Version, error) {
-	executable := options.Git
-	if executable == "" {
-		executable = "git"
-	}
-	version, err := git.ExecutableVersion(ctx, executable)
+	executable := cmp.Or(options.Git, "git")
+	version, err := git.ExecutableVersion(ctx, options.git())
 	if err != nil {
 		return version, fmt.Errorf("dockhand runs Git, and %s can't be run: %w; install Git, such as with: sudo port install git", executable, err)
 	}
@@ -358,12 +362,12 @@ func GitVersion(ctx context.Context, options Options) (git.Version, error) {
 // worktree when it is a worktree of the same repository, whose branch is
 // the one checked out here, and tree otherwise. Inside a branch's
 // worktree, that worktree is the checkout it belongs to.
-func Here(ctx context.Context, tree, dir, executable string) string {
-	named, err := git.Open(ctx, tree, executable)
+func Here(ctx context.Context, tree, dir string, program git.Program) string {
+	named, err := git.Open(ctx, tree, program)
 	if err != nil {
 		return tree
 	}
-	here, err := git.Open(ctx, dir, executable)
+	here, err := git.Open(ctx, dir, program)
 	if err != nil || !sameDirectory(here.CommonDir, named.CommonDir) {
 		return tree
 	}
@@ -381,11 +385,11 @@ func sameDirectory(a, b string) bool {
 // OpenPortsTree opens the checkout containing dir and refuses anything that
 // is not a ports tree: at least one <category>/<port>/Portfile in the
 // working tree, or, for a sparse checkout, on one of its local branches.
-func OpenPortsTree(ctx context.Context, dir, executable string) (*git.Repository, error) {
+func OpenPortsTree(ctx context.Context, dir string, program git.Program) (*git.Repository, error) {
 	if dir == "" {
 		dir = "."
 	}
-	repo, err := git.Open(ctx, dir, executable)
+	repo, err := git.Open(ctx, dir, program)
 	if err != nil {
 		return nil, &notCheckout{dir: dir, err: err}
 	}

@@ -3,7 +3,6 @@ package git
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -24,17 +23,14 @@ type Version struct {
 // commits (Replay).
 var MinimumVersion = Version{Major: 2, Minor: 40}
 
-// ExecutableVersion runs a Git executable, "git" on PATH when empty, and
-// reads its version.
-func ExecutableVersion(ctx context.Context, executable string) (Version, error) {
-	if executable == "" {
-		executable = "git"
-	}
-	path, err := exec.LookPath(executable)
+// ExecutableVersion runs the program's git, "git" on its PATH when empty,
+// and reads its version.
+func ExecutableVersion(ctx context.Context, program Program) (Version, error) {
+	path, err := program.path()
 	if err != nil {
 		return Version{}, err
 	}
-	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: "version", Path: path, Args: []string{"version"}})
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: "version", Path: path, Args: []string{"version"}, Env: program.Env})
 	if err != nil {
 		return Version{}, err
 	}

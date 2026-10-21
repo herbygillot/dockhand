@@ -79,7 +79,7 @@ func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports)
 	testsupport.Git(t, upstream, "commit", "-q", "-m", "init")
 	testsupport.Git(t, root, "clone", "-q", upstream, clone)
 
-	e, err := engine.Open(t.Context(), engine.Options{Tree: clone, Database: filepath.Join(root, "db", "dockhand.db"), Upstream: upstream, Worktrees: filepath.Join(root, "worktrees")})
+	e, err := engine.Open(t.Context(), engine.Options{Env: os.Environ(), Tree: clone, Database: filepath.Join(root, "db", "dockhand.db"), Upstream: upstream, Worktrees: filepath.Join(root, "worktrees")})
 	require.NoError(t, err)
 	t.Cleanup(func() { e.Close() })
 	branch, err := e.Start(t.Context(), engine.StartRequest{Name: "jq-update", Here: true})

@@ -833,7 +833,7 @@ func (e *Engine) openWorktree(ctx context.Context, branch model.Branch) (*git.Re
 	if branch.Worktree == "" || !exists(branch.Worktree) {
 		return nil, fmt.Errorf("%s has no worktree here", branch.Name)
 	}
-	worktree, err := git.Open(ctx, branch.Worktree, e.options.Git)
+	worktree, err := git.Open(ctx, branch.Worktree, e.options.git())
 	if err != nil {
 		return nil, err
 	}
@@ -1018,7 +1018,7 @@ func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, por
 // all, where it's checked out there, else its head's.
 func (e *Engine) branchTree(ctx context.Context, branch model.Branch, head string) (model.ObjectID, error) {
 	if branch.Worktree != "" && exists(branch.Worktree) {
-		worktree, err := git.Open(ctx, branch.Worktree, e.options.Git)
+		worktree, err := git.Open(ctx, branch.Worktree, e.options.git())
 		if err != nil {
 			return "", err
 		}
@@ -1075,7 +1075,7 @@ func (e *Engine) workingEdits(ctx context.Context, branch model.Branch) ([]strin
 	if branch.Worktree == "" || !exists(branch.Worktree) {
 		return nil, nil
 	}
-	worktree, err := git.Open(ctx, branch.Worktree, e.options.Git)
+	worktree, err := git.Open(ctx, branch.Worktree, e.options.git())
 	if err != nil {
 		return nil, err
 	}

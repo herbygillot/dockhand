@@ -1,6 +1,7 @@
 package github_test
 
 import (
+	"github.com/herbygillot/dockhand/internal/git"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -40,7 +41,7 @@ func refusingClient(t *testing.T, status int, base string) *github.Client {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
 	t.Cleanup(server.Close)
-	return &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, CloneURL: base}}}
+	return &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, CloneURL: base}}, Git: git.Program{Env: os.Environ()}}
 }
 
 // An API that refuses to answer, as a rate limit or a proxy does, leaves the

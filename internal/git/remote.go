@@ -229,14 +229,14 @@ func (r *Repository) MergeBase(ctx context.Context, a, b string) (string, error)
 // names, read by URL with ls-remote as MacPorts' git livecheck reads it
 // (livecheck.type git: git ls-remote <url> <branch>, the first object it
 // prints). It runs outside any checkout, and never prompts.
-func RemoteBranchCommit(ctx context.Context, executable, url, branch string) (string, error) {
+func RemoteBranchCommit(ctx context.Context, program Program, url, branch string) (string, error) {
 	if !validRemoteURL(url) {
 		return "", fmt.Errorf("git: invalid remote")
 	}
 	if branch != "HEAD" && !ValidRefName("refs/heads/"+strings.TrimPrefix(branch, "refs/heads/")) {
 		return "", fmt.Errorf("git: invalid branch %q", branch)
 	}
-	out, err := outside(ctx, executable, "ls-remote", "--", url, branch)
+	out, err := outside(ctx, program, "ls-remote", "--", url, branch)
 	if err != nil {
 		return "", err
 	}
@@ -258,7 +258,7 @@ type RemoteTag struct{ Name, Object string }
 // a named tag the remote lacks is absent from the result. It runs outside
 // any checkout, so no repository's configuration applies, and never
 // prompts for credentials.
-func ListRemoteTags(ctx context.Context, executable, url string, names ...string) ([]RemoteTag, error) {
+func ListRemoteTags(ctx context.Context, program Program, url string, names ...string) ([]RemoteTag, error) {
 	if !validRemoteURL(url) {
 		return nil, fmt.Errorf("git: invalid remote")
 	}
@@ -272,7 +272,7 @@ func ListRemoteTags(ctx context.Context, executable, url string, names ...string
 		// A pattern matches the tag, not its peeled line; ask for both.
 		args = append(args, "refs/tags/"+name, "refs/tags/"+name+"^{}")
 	}
-	out, err := outside(ctx, executable, args...)
+	out, err := outside(ctx, program, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +346,7 @@ func ValidAbbreviation(name string) bool { return abbreviated.MatchString(name) 
 // new branch from. A name none resolves is an abbreviated commit, where it
 // has that form, or ErrNoRef. It runs outside any checkout, so no
 // repository's configuration applies, and never prompts for credentials.
-func CloneCheckout(ctx context.Context, executable, url, name string) (Checkout, error) {
+func CloneCheckout(ctx context.Context, program Program, url, name string) (Checkout, error) {
 	if !validRemoteURL(url) {
 		return Checkout{}, fmt.Errorf("git: invalid remote")
 	}
@@ -354,7 +354,7 @@ func CloneCheckout(ctx context.Context, executable, url, name string) (Checkout,
 	if lower := strings.ToLower(name); ValidObjectID(lower) {
 		return Checkout{Commit: lower}, nil
 	}
-	out, err := outside(ctx, executable, "ls-remote", "--symref", "--", url, "HEAD", "refs/heads/*", "refs/tags/*")
+	out, err := outside(ctx, program, "ls-remote", "--symref", "--", url, "HEAD", "refs/heads/*", "refs/tags/*")
 	if err != nil {
 		return Checkout{}, err
 	}
@@ -433,11 +433,11 @@ func CloneCheckout(ctx context.Context, executable, url, name string) (Checkout,
 // no repository above it. Run from the temporary directory, a repository
 // enclosing it, with url.insteadOf, rewrote ls-remote's URL to a local
 // path (the code-organization review's finding 30).
-func outside(ctx context.Context, executable string, args ...string) ([]byte, error) {
+func outside(ctx context.Context, program Program, args ...string) ([]byte, error) {
 	dir, err := scratch.Dir("git-")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(dir)
-	return (&Repository{Root: dir, Executable: executable}).run(ctx, nil, []string{"GIT_CEILING_DIRECTORIES=" + filepath.Dir(dir)}, args...)
+	return (&Repository{Root: dir, Program: program}).run(ctx, nil, []string{"GIT_CEILING_DIRECTORIES=" + filepath.Dir(dir)}, args...)
 }

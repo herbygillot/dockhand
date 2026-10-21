@@ -1,6 +1,7 @@
 package ghactions
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -34,7 +35,7 @@ func TestTheChecksBranchGoesOnlyWhileItHoldsTheCommit(t *testing.T) {
 	later := testsupport.Git(t, clone, "rev-parse", "HEAD")
 	fork := filepath.Join(root, "fork.git")
 	testsupport.Git(t, root, "init", "-q", "--bare", fork)
-	repo, err := git.Open(t.Context(), clone, "")
+	repo, err := git.Open(t.Context(), clone, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	p := &Provider{Repo: repo}
 	target := buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}

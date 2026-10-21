@@ -124,7 +124,7 @@ func survey() (err error) {
 	if err != nil {
 		return err
 	}
-	repo, err := git.Open(ctx, root, *gitBin)
+	repo, err := git.Open(ctx, root, git.Program{Executable: *gitBin, Env: os.Environ()})
 	if err != nil {
 		return err
 	}

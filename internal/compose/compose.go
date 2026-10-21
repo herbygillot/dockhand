@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -25,8 +24,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
 	"github.com/herbygillot/dockhand/internal/engine"
+	gitprogram "github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 )
 
@@ -90,22 +91,14 @@ func (o Options) SpendLog() string {
 	return ""
 }
 
-// LookPath is the executable name finds on the command line's PATH, as
-// exec.LookPath finds it on the process's, or empty.
+// LookPath is the executable name finds on the command line's PATH
+// (subprocess.LookPath), or empty.
 func (o Options) LookPath(name string) string {
-	for _, directory := range filepath.SplitList(o.Getenv("PATH")) {
-		if directory == "" {
-			directory = "."
-		}
-		if !filepath.IsAbs(directory) {
-			directory = filepath.Join(o.Dir, directory)
-		}
-		path := filepath.Join(directory, name)
-		if info, err := os.Stat(path); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-			return path
-		}
+	path, err := subprocess.LookPath(name, o.Env)
+	if err != nil {
+		return ""
 	}
-	return ""
+	return path
 }
 
 // TartPlaces are where dockhand's Tart work lives on this Mac: Home, its
@@ -218,7 +211,7 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 	if tree == "" {
 		tree = cmp.Or(options.Dir, ".")
 		if named := options.Getenv("MACPORTS_TREE"); named != "" {
-			tree = engine.Here(ctx, named, cmp.Or(options.Dir, "."), git)
+			tree = engine.Here(ctx, named, cmp.Or(options.Dir, "."), gitprogram.Program{Executable: git, Env: options.Env})
 		}
 	}
 	readings, _ := options.cacheDirectory("DOCKHAND_READING_CACHE", "readings")
@@ -226,6 +219,7 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 	return engine.Options{
 		Tree:      tree,
 		Git:       git,
+		Env:       options.Env,
 		Database:  database,
 		Worktrees: file.Worktrees,
 		// holds.majors = "allow" lets bump and serve move a major version.

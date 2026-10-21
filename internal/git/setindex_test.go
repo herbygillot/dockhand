@@ -32,7 +32,7 @@ func TestSetIndexRestoresARecordedIndexInASparseCheckout(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "a/Portfile"), []byte("staged\n"), 0o644))
 	testsupport.Git(t, worktree, "add", "a/Portfile")
 	testsupport.Git(t, worktree, "rm", "-q", "--cached", "a/gone")
-	repo, err := git.Open(t.Context(), worktree, "")
+	repo, err := git.Open(t.Context(), worktree, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	recorded, err := repo.IndexTree(t.Context())
 	require.NoError(t, err)

@@ -34,7 +34,7 @@ func TestMoveCheckoutTakesASparseCheckoutBack(t *testing.T) {
 	testsupport.Git(t, worktree, "rebase", "-q", "master")
 	after := testsupport.Git(t, worktree, "rev-parse", "HEAD")
 	require.NoFileExists(t, filepath.Join(worktree, "b/Portfile"))
-	repo, err := git.Open(t.Context(), worktree, "")
+	repo, err := git.Open(t.Context(), worktree, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "a/Portfile"), []byte("mine\n"), 0o644))

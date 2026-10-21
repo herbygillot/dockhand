@@ -30,7 +30,7 @@ func TestObserveKeepsCommittedSourceAndCleansWorkspace(t *testing.T) {
 		output, err := command.CombinedOutput()
 		require.NoError(t, err, "%s", output)
 	}
-	repo, err := git.Open(t.Context(), root, "")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	before, err := repo.ReadRefs(t.Context(), "refs/heads/")
 	require.NoError(t, err)
@@ -89,7 +89,7 @@ func TestObserveLooksUpPortsTogetherInOrder(t *testing.T) {
 		output, err := command.CombinedOutput()
 		require.NoError(t, err, "%s", output)
 	}
-	repo, err := git.Open(t.Context(), root, "")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	t.Setenv("TMPDIR", t.TempDir())
 	ports := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
@@ -145,7 +145,7 @@ if {${subport} eq ${name}} {
 		output, err := command.CombinedOutput()
 		require.NoError(t, err, "%s", output)
 	}
-	repo, err := git.Open(t.Context(), root, "")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	t.Setenv("TMPDIR", t.TempDir())
 	ports := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}

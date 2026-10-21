@@ -315,3 +315,21 @@ The provisioning code's pin (`setupPin`) is updated, with
 holds. tart's and provision's tests give their homes and run in
 parallel where they set nothing. The boundary test's tart and guestssh
 rows are down to each one `os.Environ`, which the Env slice takes next.
+
+## git runs in the environment it's given
+
+`git.Program` is the git dockhand runs and the environment it runs in:
+`git.Open`, `ExecutableVersion`, `CloneCheckout`, `ListRemoteTags`, and
+`RemoteBranchCommit` take one in place of an executable's name, a
+`Repository` embeds it, and a nil `Env` is refused ("no environment was
+given to run git in") rather than read from the process. git's own
+variables are filtered from that Env as they were from the process's,
+and a bare `git` is found on its PATH by `subprocess.LookPath`, which
+compose's `Options.LookPath` now uses too. `engine.Options.Env` is the
+invocation's, which compose sets, and the engine's git, upstream's, and
+the GitHub forge's tag fallback run in it (`Options.git()`;
+`upstream.Service.Git` and `forge/github.Client.Git` are Programs).
+`engine.Here` and `OpenPortsTree` take a Program. Tests give
+`os.Environ()` where they gave no executable. git's row in the boundary
+test is down to its one `exec.CommandContext`, the batch readers' pipes,
+now started from an absolute path.

@@ -74,7 +74,7 @@ func setup(t *testing.T) fixture {
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 2")
 	// The worktrees are the fixture's own, never the person's
 	// ~/Source/macports-branches, which the default is.
-	f.options = Options{Tree: f.clone, Database: filepath.Join(root, "home", ".dockhand", "dockhand.db"), Upstream: f.upstream, Now: func() time.Time { return at },
+	f.options = Options{Env: os.Environ(), Tree: f.clone, Database: filepath.Join(root, "home", ".dockhand", "dockhand.db"), Upstream: f.upstream, Now: func() time.Time { return at },
 		Worktrees: filepath.Join(root, "src", "macports-branches"), Indexes: filepath.Join(root, "cache", "indexes"), Home: filepath.Join(root, "home")}
 	return f
 }
@@ -123,13 +123,13 @@ func TestOpenRefusesADirectoryThatIsNotAPortsTree(t *testing.T) {
 	testsupport.Git(t, root, "add", "-A")
 	testsupport.Git(t, root, "commit", "-q", "-m", "init")
 	database := filepath.Join(t.TempDir(), "dockhand.db")
-	_, err := Open(t.Context(), Options{Tree: root, Database: database})
+	_, err := Open(t.Context(), Options{Env: os.Environ(), Tree: root, Database: database})
 	require.ErrorIs(t, err, ErrNotPortsTree)
 	require.ErrorContains(t, err, "--tree")
 	_, err = os.Stat(database)
 	require.ErrorIs(t, err, os.ErrNotExist, "nothing is recorded for it")
 
-	_, err = Open(t.Context(), Options{Tree: t.TempDir(), Database: database})
+	_, err = Open(t.Context(), Options{Env: os.Environ(), Tree: t.TempDir(), Database: database})
 	require.ErrorContains(t, err, "not in a Git checkout")
 }
 
@@ -403,12 +403,12 @@ func TestHereIsTheWorktreeACommandRunsIn(t *testing.T) {
 	require.NoError(t, os.Mkdir(inside, 0o755))
 
 	for _, named := range []string{tree, link} {
-		require.Equal(t, worktree, Here(t.Context(), named, branch.Worktree, ""), "the worktree run in")
-		require.Equal(t, worktree, Here(t.Context(), named, inside, ""), "a directory inside it")
-		require.Equal(t, named, Here(t.Context(), named, t.TempDir(), ""), "not in a checkout")
-		require.Equal(t, named, Here(t.Context(), named, f.upstream, ""), "in another repository")
+		require.Equal(t, worktree, Here(t.Context(), named, branch.Worktree, git.Program{Env: os.Environ()}), "the worktree run in")
+		require.Equal(t, worktree, Here(t.Context(), named, inside, git.Program{Env: os.Environ()}), "a directory inside it")
+		require.Equal(t, named, Here(t.Context(), named, t.TempDir(), git.Program{Env: os.Environ()}), "not in a checkout")
+		require.Equal(t, named, Here(t.Context(), named, f.upstream, git.Program{Env: os.Environ()}), "in another repository")
 	}
-	require.Equal(t, "/nowhere", Here(t.Context(), "/nowhere", branch.Worktree, ""), "a tree that isn't a checkout is left to fail as it would")
+	require.Equal(t, "/nowhere", Here(t.Context(), "/nowhere", branch.Worktree, git.Program{Env: os.Environ()}), "a tree that isn't a checkout is left to fail as it would")
 }
 
 // The store says what holds a migration, and the engine the way on (the

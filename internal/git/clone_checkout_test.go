@@ -75,14 +75,14 @@ func checkedOut(t *testing.T, remote, name string) string {
 func TestCloneCheckoutLandsWhereAFreshClonesCheckoutDoes(t *testing.T) {
 	remote, commits := refsRemote(t)
 	for _, name := range []string{"", "main", "v1.0", "v2.0", "feature", "origin/feature", "release", "origin/release", "tags/v2.0", "refs/tags/v1.0", "HEAD", "origin/HEAD", "origin/main"} {
-		got, err := git.CloneCheckout(t.Context(), "", remote, name)
+		got, err := git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, name)
 		require.NoError(t, err, "%q", name)
 		require.Equal(t, git.Checkout{Commit: checkedOut(t, remote, name)}, got, "%q", name)
 	}
-	got, err := git.CloneCheckout(t.Context(), "", remote, "main")
+	got, err := git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, "main")
 	require.NoError(t, err)
 	require.Equal(t, commits["three"], got.Commit, "the default branch is checked out as itself, not the tag of its name")
-	got, err = git.CloneCheckout(t.Context(), "", remote, "release")
+	got, err = git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, "release")
 	require.NoError(t, err)
 	require.Equal(t, commits["two"], got.Commit, "a tag comes before a branch of its name")
 }
@@ -93,21 +93,21 @@ func TestCloneCheckoutLandsWhereAFreshClonesCheckoutDoes(t *testing.T) {
 func TestCloneCheckoutOfACommitOrOfNoRef(t *testing.T) {
 	remote, commits := refsRemote(t)
 	missing := filepath.Join(t.TempDir(), "missing.git")
-	got, err := git.CloneCheckout(t.Context(), "", missing, strings.ToUpper(commits["four"]))
+	got, err := git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, missing, strings.ToUpper(commits["four"]))
 	require.NoError(t, err, "a whole commit asks nothing of the remote")
 	require.Equal(t, git.Checkout{Commit: commits["four"]}, got)
 
 	short := strings.ToUpper(commits["four"][:7])
-	got, err = git.CloneCheckout(t.Context(), "", remote, short)
+	got, err = git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, short)
 	require.NoError(t, err)
 	require.Equal(t, git.Checkout{Abbreviation: strings.ToLower(short)}, got)
 	require.True(t, strings.HasPrefix(checkedOut(t, remote, short), got.Abbreviation), "what the clone checks out begins with it")
 
-	_, err = git.CloneCheckout(t.Context(), "", remote, "v9.9")
+	_, err = git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, "v9.9")
 	require.ErrorIs(t, err, git.ErrNoRef)
-	_, err = git.CloneCheckout(t.Context(), "", remote, "v1.0^{}")
+	_, err = git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, "v1.0^{}")
 	require.ErrorIs(t, err, git.ErrNoRef, "revision syntax is no ref")
-	_, err = git.CloneCheckout(t.Context(), "", missing, "v1.0")
+	_, err = git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, missing, "v1.0")
 	require.Error(t, err)
 	require.NotErrorIs(t, err, git.ErrNoRef, "a remote that can't be read is no answer about its refs")
 }

@@ -31,7 +31,7 @@ func preparationFixture(t *testing.T, body string) (*editprep.Service, editprep.
 	}
 	testsupport.Git(t, root, "add", "--", ".")
 	testsupport.Git(t, root, "commit", "--quiet", "-m", "fixture")
-	repo, err := git.Open(t.Context(), root, "")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	commit, tree, err := repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)

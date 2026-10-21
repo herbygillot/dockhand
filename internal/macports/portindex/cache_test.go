@@ -37,7 +37,7 @@ func newIndexFixture(t *testing.T) *indexFixture {
 	f := &indexFixture{t: t, root: t.TempDir(), config: Config{Executable: executable, CacheDirectory: t.TempDir()}}
 	f.run("init", "-q", "-b", "main")
 	var err error
-	f.repo, err = git.Open(t.Context(), f.root, "")
+	f.repo, err = git.Open(t.Context(), f.root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
 	return f
 }

@@ -2,12 +2,14 @@ package upstream_test
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	gitprogram "github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
@@ -42,7 +44,7 @@ func TestAPortTrackingABranchSaysWhenItMoved(t *testing.T) {
 	port := macports.PortInfo{Name: "goat", Version: "20220814", Options: map[string]string{
 		"livecheck.type": "git", "livecheck.url": repository, "livecheck.version": pinned[:7], "livecheck.branch": "", "distname": "goat-20220814",
 	}}
-	service := upstream.Service{EvaluateVersion: identityVersion, Versions: noVersions{}}
+	service := upstream.Service{EvaluateVersion: identityVersion, Versions: noVersions{}, Git: gitprogram.Program{Env: os.Environ()}}
 
 	current, err := service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)

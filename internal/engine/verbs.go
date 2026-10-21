@@ -354,7 +354,7 @@ func (e *Engine) ArchiveBranch(ctx context.Context, request ArchiveRequest) (Arc
 		result.Kept = dirty
 		return result, nil
 	}
-	if worktree, err := git.Open(ctx, branch.Worktree, e.options.Git); err == nil {
+	if worktree, err := git.Open(ctx, branch.Worktree, e.options.git()); err == nil {
 		result.IgnoredRemoved, _ = worktree.IgnoredFiles(ctx)
 	}
 	if err := e.Repo.RemoveWorktree(ctx, branch.Worktree); err != nil {

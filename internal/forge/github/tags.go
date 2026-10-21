@@ -131,7 +131,7 @@ func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
 // too, so a rate limit is still recognized.
 func (r *repository) gitTag(ctx context.Context, name string, cause error) (forge.Tag, error) {
 	progress.VerboseReport(ctx, "GitHub API could not read tag %s of %s (%v); reading it with git", name, r.name, cause)
-	tags, err := git.ListRemoteTags(ctx, r.client.GitExecutable, r.cloneURL(), name)
+	tags, err := git.ListRemoteTags(ctx, r.client.Git, r.cloneURL(), name)
 	if err != nil {
 		return forge.Tag{}, errors.Join(cause, fmt.Errorf("github: reading tag %s of %s with git: %w", name, r.name, err))
 	}
@@ -146,7 +146,7 @@ func (r *repository) gitTag(ctx context.Context, name string, cause error) (forg
 // such a tag never parses as a release version.
 func (r *repository) gitTags(ctx context.Context, cause error) ([]forge.Tag, error) {
 	progress.VerboseReport(ctx, "GitHub API could not list the tags of %s (%v); listing them with git", r.name, cause)
-	listed, err := git.ListRemoteTags(ctx, r.client.GitExecutable, r.cloneURL())
+	listed, err := git.ListRemoteTags(ctx, r.client.Git, r.cloneURL())
 	if err != nil {
 		return nil, errors.Join(cause, fmt.Errorf("github: listing the tags of %s with git: %w", r.name, err))
 	}

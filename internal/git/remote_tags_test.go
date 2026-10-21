@@ -47,7 +47,7 @@ func tagged(t *testing.T) (string, string) {
 
 func TestListRemoteTagsPeelsAnnotatedTagsToTheirCommit(t *testing.T) {
 	remote, commit := tagged(t)
-	tags, err := git.ListRemoteTags(t.Context(), "", remote)
+	tags, err := git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, remote)
 	require.NoError(t, err)
 	byName := map[string]string{}
 	for _, tag := range tags {
@@ -62,18 +62,18 @@ func TestListRemoteTagsPeelsAnnotatedTagsToTheirCommit(t *testing.T) {
 
 func TestListRemoteTagsReturnsOnlyTheExactNamesAsked(t *testing.T) {
 	remote, commit := tagged(t)
-	tags, err := git.ListRemoteTags(t.Context(), "", remote, "v1.0")
+	tags, err := git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, remote, "v1.0")
 	require.NoError(t, err)
 	require.Equal(t, []git.RemoteTag{{Name: "v1.0", Object: commit}}, tags, "release/v1.0 ends with the same components and is not v1.0")
-	tags, err = git.ListRemoteTags(t.Context(), "", remote, "v2.0-signed")
+	tags, err = git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, remote, "v2.0-signed")
 	require.NoError(t, err)
 	require.Equal(t, []git.RemoteTag{{Name: "v2.0-signed", Object: commit}}, tags, "a tag asked for by name peels as a listed one does")
-	tags, err = git.ListRemoteTags(t.Context(), "", remote, "v9.9")
+	tags, err = git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, remote, "v9.9")
 	require.NoError(t, err)
 	require.Empty(t, tags)
-	_, err = git.ListRemoteTags(t.Context(), "", remote, "bad..name")
+	_, err = git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, remote, "bad..name")
 	require.Error(t, err)
-	_, err = git.ListRemoteTags(t.Context(), "", filepath.Join(t.TempDir(), "missing.git"))
+	_, err = git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, filepath.Join(t.TempDir(), "missing.git"))
 	require.Error(t, err)
 }
 
@@ -85,7 +85,7 @@ func TestListRemoteTagsReturnsOnlyTheExactNamesAsked(t *testing.T) {
 // is made under that temporary directory.
 func TestARemoteIsReadOutsideAnyRepository(t *testing.T) {
 	if url := os.Getenv("DOCKHAND_TEST_OUTSIDE_URL"); url != "" {
-		tags, err := git.ListRemoteTags(t.Context(), "git", url)
+		tags, err := git.ListRemoteTags(t.Context(), git.Program{Executable: "git", Env: os.Environ()}, url)
 		if err != nil {
 			t.Log("outside: not read")
 			return
