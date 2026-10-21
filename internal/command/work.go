@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -65,40 +64,27 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	if err != nil {
 		return err
 	}
-	// A Git too old is refused before anything is recorded.
-	gitVersion, err := engine.GitVersion(cmd.Context(), options)
-	if err != nil {
-		return err
+	named := ""
+	if worktrees != "" {
+		if named, err = config.Absolute(worktrees); err != nil {
+			return err
+		}
 	}
-	e, err := engine.Open(cmd.Context(), options)
+	e, found, err := engine.Setup(cmd.Context(), options, named)
+	report := setupReport{SetupReport: found, Providers: []string{}}
+	defer func() { streams.emit(report) }()
 	if err != nil {
 		return err
 	}
 	defer e.Close()
 	out := streams.Out
-	report := setupReport{Checkout: e.Clone(), Providers: []string{}}
-	defer func() { streams.emit(report) }()
-
-	upstream, err := e.UpstreamRemote(cmd.Context())
-	if err != nil {
-		return err
-	}
-	report.Upstream = setupUpstreamJSON{Repository: engine.UpstreamRepository, FetchedFrom: e.Upstream()}
-	if upstream != nil {
-		report.Upstream.Remote = upstream.Name
-		fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", config.Tilde(e.Clone()), engine.UpstreamRepository, upstream.Name)
+	if remote := report.Upstream.Remote; remote != "" {
+		fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", config.Tilde(report.Checkout), report.Upstream.Repository, remote)
 	} else {
-		fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", config.Tilde(e.Clone()), engine.UpstreamRepository, e.Upstream())
+		fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", config.Tilde(report.Checkout), report.Upstream.Repository, report.Upstream.FetchedFrom)
 	}
-
-	chosen := file.Worktrees
-	switch {
-	case worktrees != "":
-		if chosen, err = config.Absolute(worktrees); err != nil {
-			return err
-		}
-	case chosen == "" && streams.terminal() && !yes:
-		answer, err := ask(streams, fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", config.Tilde(e.DefaultWorktrees())))
+	if report.Unchosen && streams.terminal() && !yes {
+		answer, err := ask(streams, fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", config.Tilde(report.Worktrees)))
 		if err != nil {
 			return err
 		}
@@ -110,25 +96,21 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 			if where == "" {
 				return fmt.Errorf("no directory given; rerun with --worktrees <directory>")
 			}
-			if chosen, err = config.Absolute(where); err != nil {
+			directory, err := config.Absolute(where)
+			if err != nil {
 				return err
 			}
+			report.Choose(directory)
 		}
 	}
-	if chosen != "" && chosen != file.Worktrees {
-		if err := config.SetWorktrees(configPath, chosen); err != nil {
+	if report.Remember != "" {
+		if err := config.SetWorktrees(configPath, report.Remember); err != nil {
 			return err
 		}
 	}
-	if chosen == "" {
-		chosen = e.DefaultWorktrees()
-	}
-	report.Git = setupGitJSON{Version: gitVersion.String(), Path: gitVersion.Path}
-	report.Worktrees, report.Records = chosen, options.Database
-	fmt.Fprintf(out, "  Git          ✓ %s at %s\n", gitVersion, config.Tilde(gitVersion.Path))
-	fmt.Fprintf(out, "  Branches     worktrees in %s\n", config.Tilde(chosen))
-	if tclsh := e.Tclsh(); tclsh != "" {
-		report.MacPorts = filepath.Dir(filepath.Dir(tclsh))
+	fmt.Fprintf(out, "  Git          ✓ %s at %s\n", report.Git.Version, config.Tilde(report.Git.Path))
+	fmt.Fprintf(out, "  Branches     worktrees in %s\n", config.Tilde(report.Worktrees))
+	if report.MacPorts != "" {
 		fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", config.Tilde(report.MacPorts))
 	} else {
 		fmt.Fprintf(out, "  Authoring    ! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports\n")
@@ -144,7 +126,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	var publishLine string
 	publishLine, report.GitHub = s.host.publishing(cmd.Context())
 	fmt.Fprintf(out, "  Publishing   %s\n", publishLine)
-	fmt.Fprintf(out, "  Records      %s\n", config.Tilde(options.Database))
+	fmt.Fprintf(out, "  Records      %s\n", config.Tilde(report.Records))
 	fmt.Fprintln(out)
 	if streams.terminal() && !yes {
 		written, err := offerSetup(cmd.Context(), s, e, streams, file, configPath)
@@ -412,36 +394,12 @@ func ask(streams Streams, question string) (string, error) {
 	return strings.TrimSpace(line), nil
 }
 
-// setupReport is what setup reports, as --json gives it: the checkout,
-// where master comes from, the Git dockhand runs, where worktrees go,
-// MacPorts, the places a check can build, as setup words each, the GitHub
-// login, and the records. It is the command package review's SetupReport,
-// which part 3's engine.Setup returns, and it stands for auth status
-// --json, which it replaces (the rc9 full stage's D-C4).
+// setupReport is what setup reports, as --json gives it: the engine's
+// findings, the places a check can build, and the GitHub login.
 type setupReport struct {
-	Checkout  string            `json:"checkout"`
-	Upstream  setupUpstreamJSON `json:"upstream"`
-	Git       setupGitJSON      `json:"git"`
-	Worktrees string            `json:"worktrees"`
-	// MacPorts is the prefix whose port-tclsh dockhand evaluates with;
-	// empty where there's none.
-	MacPorts  string          `json:"macports"`
+	engine.SetupReport
 	Providers []string        `json:"providers"`
 	GitHub    githubLoginJSON `json:"github"`
-	Records   string          `json:"records"`
-}
-
-// setupUpstreamJSON is MacPorts' repository, the checkout's remote for it
-// where it has one, and where master is fetched from.
-type setupUpstreamJSON struct {
-	Repository  string `json:"repository"`
-	Remote      string `json:"remote,omitempty"`
-	FetchedFrom string `json:"fetched_from"`
-}
-
-type setupGitJSON struct {
-	Version string `json:"version"`
-	Path    string `json:"path"`
 }
 
 // githubLoginJSON is the GitHub login submit would use: its account and

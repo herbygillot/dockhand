@@ -73,3 +73,21 @@ func TestLoginShowsOnlyAnHTTPSAddressAndKeepsNothingUnfinished(t *testing.T) {
 	_, err = store.Get(t.Context(), github.CredentialKey)
 	require.ErrorIs(t, err, credential.ErrNotFound)
 }
+
+func TestLoginSourceIsTheOverridingVariableThenAKeptLogin(t *testing.T) {
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	store := &removable{}
+	require.Equal(t, github.CredentialSource(""), github.LoginSource(t.Context(), store), "none kept")
+	store.value = "gho_a_bare_token_from_an_earlier_dockhand"
+	require.Equal(t, github.CredentialSource(""), github.LoginSource(t.Context(), store), "an ended login is none")
+	now := time.Now()
+	kept, err := credential.Login{Access: "gho_access", AccessExpiry: now.Add(time.Hour), Refresh: "ghr_refresh", RefreshExpiry: now.Add(time.Hour), Account: "ada", ClientID: "Iv1.other"}.Encode()
+	require.NoError(t, err)
+	store.value = kept
+	require.Equal(t, github.SourceKeychain, github.LoginSource(t.Context(), store))
+	t.Setenv("GITHUB_TOKEN", "ghp_token")
+	require.Equal(t, github.SourceGitHubEnvironment, github.LoginSource(t.Context(), store))
+	t.Setenv("GH_TOKEN", "ghp_token")
+	require.Equal(t, github.SourceGHEnvironment, github.LoginSource(t.Context(), store), "GH_TOKEN first")
+}

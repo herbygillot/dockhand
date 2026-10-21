@@ -155,3 +155,34 @@ removes it and says where at GitHub the saved login's app is revoked.
 `credentials` interface. setup github keeps its wording, the browser,
 and the override notice. Their own tests are in
 internal/github/signin_test.go.
+
+## Setup's findings, the engine's; the login's source, GitHub's
+
+`engine.Setup` (engine/setup.go) does what runSetup did of the checkout:
+refuses a Git too old before anything's recorded, opens the engine, finds
+MacPorts' remote and where master comes from, places worktrees (the
+named directory, else the configured one, else the default, with
+`Unchosen` where setup may ask, `Choose` for the answer, and `Remember`
+for what the configuration should keep), and finds the MacPorts prefix.
+Its `SetupReport` is setup's `--json` record, which command's
+`setupReport` embeds beside the providers and GitHub lines, so the JSON's
+fields are unchanged. runSetup asks the worktrees question and words the
+report.
+
+`github.OverridingSource` is GH_TOKEN, then GITHUB_TOKEN, as
+`SystemCredentials.Token` reads them, in place of command's
+`overridingToken`. `github.LoginSource` is where a login comes from
+without asking GitHub, the variable or a kept login that hasn't ended,
+which setup's providers line, its Next: steps, and its login offer each
+walked themselves (the split's 7a row 2, left partial). One change in
+what's said: a kept login that has ended (an earlier dockhand's, or past
+six months) now reads as none in the providers line and the Next: steps,
+as the offer already took it; the publishing line still says why.
+
+offerSetup is left as questions: its rules are now github's
+(`LoginSource`), the engine's (`SuggestMaintainerAtMaster`), and Tart's
+(`HasHostImage`, `HostRestorable`).
+
+The boundary test's rows for buildenv/tart, github, credential, and
+keychain say "setup's, until part 4.2", and buildenv's and ghactions'
+say the vocabulary check's words use (architecture, at 970b86e9).

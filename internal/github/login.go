@@ -282,6 +282,20 @@ func SavedLogin(ctx context.Context, store credential.Store) (credential.Login, 
 	return login, nil
 }
 
+// LoginSource is where a login comes from, as dockhand tells without
+// asking GitHub: the variable that overrides dockhand's login
+// (OverridingSource), else the store, where it keeps a login that hasn't
+// ended (SavedLogin); else empty, which setup offers to fix.
+func LoginSource(ctx context.Context, store credential.Store) CredentialSource {
+	if source := OverridingSource(); source != "" {
+		return source
+	}
+	if _, err := SavedLogin(ctx, store); err == nil {
+		return SourceKeychain
+	}
+	return ""
+}
+
 // RevocationPage is where the person revokes the login an OAuth app was
 // given, at GitHub.
 func RevocationPage(clientID string) string {

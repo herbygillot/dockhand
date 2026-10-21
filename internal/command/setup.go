@@ -52,16 +52,14 @@ authorized until you revoke it on GitHub's page for it, which it names.`,
 func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Streams, file config.File, configPath string) (string, error) {
 	written := ""
 	fmt.Fprintln(streams.Out)
-	if overridingToken() == "" {
-		if _, err := github.SavedLogin(ctx, s.host.authStore); err != nil {
-			login, err := streams.askYes("? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ", true)
-			if err != nil {
-				return written, err
-			}
-			if login {
-				if err := s.host.githubLogin(ctx, streams, cmp.Or(os.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
-					fmt.Fprintf(streams.Err, "Not logged in: %v\n", err)
-				}
+	if github.LoginSource(ctx, s.host.authStore) == "" {
+		login, err := streams.askYes("? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ", true)
+		if err != nil {
+			return written, err
+		}
+		if login {
+			if err := s.host.githubLogin(ctx, streams, cmp.Or(os.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
+				fmt.Fprintf(streams.Err, "Not logged in: %v\n", err)
 			}
 		}
 	}

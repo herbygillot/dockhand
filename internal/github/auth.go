@@ -54,12 +54,21 @@ func SystemClient(store credential.Store) *Client {
 	return &Client{HTTP: fetch.Client, Credentials: SystemCredentials{Store: store, Key: CredentialKey, renewed: &pendingLogin{}}}
 }
 
-func (s SystemCredentials) Token(ctx context.Context) (Token, error) {
-	if token := strings.TrimSpace(os.Getenv("GH_TOKEN")); token != "" {
-		return resolvedToken(token, SourceGHEnvironment)
+// OverridingSource is the variable whose token takes precedence over
+// dockhand's login, GH_TOKEN or GITHUB_TOKEN, or empty where neither is
+// set.
+func OverridingSource() CredentialSource {
+	for _, source := range []CredentialSource{SourceGHEnvironment, SourceGitHubEnvironment} {
+		if strings.TrimSpace(os.Getenv(string(source))) != "" {
+			return source
+		}
 	}
-	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
-		return resolvedToken(token, SourceGitHubEnvironment)
+	return ""
+}
+
+func (s SystemCredentials) Token(ctx context.Context) (Token, error) {
+	if source := OverridingSource(); source != "" {
+		return resolvedToken(strings.TrimSpace(os.Getenv(string(source))), source)
 	}
 	if s.Store != nil {
 		token, found, err := s.login(ctx, Token{})
@@ -133,7 +142,7 @@ func (s CredentialSource) rejected() error {
 // Renew is a token after GitHub rejected one: the login renewed, where the
 // rejected token was its own, else whatever Token gives now.
 func (s SystemCredentials) Renew(ctx context.Context, rejected Token) (Token, error) {
-	if rejected.Source != SourceKeychain || s.Store == nil || os.Getenv("GH_TOKEN") != "" || os.Getenv("GITHUB_TOKEN") != "" {
+	if rejected.Source != SourceKeychain || s.Store == nil || OverridingSource() != "" {
 		return s.Token(ctx)
 	}
 	token, found, err := s.login(ctx, rejected)

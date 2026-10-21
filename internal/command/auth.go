@@ -4,23 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/github"
 )
-
-// overridingToken is the variable whose token takes precedence over
-// dockhand's login, GH_TOKEN or GITHUB_TOKEN, or empty.
-func overridingToken() string {
-	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
-		if strings.TrimSpace(os.Getenv(name)) != "" {
-			return name
-		}
-	}
-	return ""
-}
 
 // githubLogin logs in to GitHub with the device flow and keeps the login
 // in the Keychain, as setup github and setup's offer do.
@@ -42,7 +29,7 @@ func (h *host) githubLogin(ctx context.Context, streams Streams, clientID string
 		return err
 	}
 	fmt.Fprintf(streams.Out, "Logged in to github.com as %s. Credentials are saved in the macOS Keychain and renew automatically if you use dockhand at least once every six months.\n", login.Account)
-	if name := overridingToken(); name != "" {
+	if name := github.OverridingSource(); name != "" {
 		fmt.Fprintf(streams.Err, "%s is set and overrides this login. Unset it to use the credentials saved in the Keychain.\n", name)
 	}
 	return nil

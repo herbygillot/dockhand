@@ -235,13 +235,13 @@ func (h *host) tartReadiness(ctx context.Context) string {
 }
 
 func (h *host) githubReadiness(ctx context.Context) string {
-	if overridingToken() != "" {
-		return "✓ with your GitHub token; your fork's Actions must be enabled"
-	}
-	if _, err := h.authStore.Get(ctx, github.CredentialKey); err == nil {
+	switch github.LoginSource(ctx, h.authStore) {
+	case "":
+		return "· needs a GitHub login, dockhand setup github, and your fork's Actions enabled"
+	case github.SourceKeychain:
 		return "✓ with your GitHub login; your fork's Actions must be enabled"
 	}
-	return "· needs a GitHub login, dockhand setup github, and your fork's Actions enabled"
+	return "✓ with your GitHub token; your fork's Actions must be enabled"
 }
 
 // missingSteps are the setup commands still to run, in order, for setup's
@@ -257,10 +257,8 @@ func (h *host) missingSteps(ctx context.Context) []string {
 			}
 		}
 	}
-	if overridingToken() == "" {
-		if _, err := h.authStore.Get(ctx, github.CredentialKey); err != nil {
-			steps = append(steps, "dockhand setup github")
-		}
+	if github.LoginSource(ctx, h.authStore) == "" {
+		steps = append(steps, "dockhand setup github")
 	}
 	return steps
 }
