@@ -37,7 +37,7 @@ func (t Tools) Resolve(kind string) (string, error) {
 	}
 	resolved, err := exec.LookPath(path)
 	if err != nil {
-		return "", fmt.Errorf("%w %s: missing executable %s; install the tool or select --%s", ErrToolUnavailable, kind, name, name)
+		return "", fmt.Errorf("%w %s: missing executable %s; install it, as sudo port install %s, so it's on PATH", ErrToolUnavailable, kind, name, name)
 	}
 	return filepath.Abs(resolved)
 }

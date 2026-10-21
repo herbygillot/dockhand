@@ -277,9 +277,9 @@ func TestAnUnattendedUpdateLooksForOthersBeforeItsEdit(t *testing.T) {
 	require.Equal(t, fake.Others, update.Others)
 }
 
-// submit --passing and serve read one definition of a passing branch:
+// ship --passing and serve read one definition of a passing branch:
 // editing a passed branch takes it out of both.
-func TestPassingIsOneDefinitionForSubmitAndServe(t *testing.T) {
+func TestPassingIsOneDefinitionForShipAndServe(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
@@ -303,7 +303,7 @@ func TestPassingIsOneDefinitionForSubmitAndServe(t *testing.T) {
 	require.Equal(t, 1, passing.Others, "its check no longer covers its files")
 	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
-	require.Empty(t, candidates, "and serve submits it no more than submit --passing would")
+	require.Empty(t, candidates, "and serve submits it no more than ship --passing would")
 }
 
 // A Git-fetched port whose update chose a commit its tag no longer named

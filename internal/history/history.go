@@ -293,5 +293,5 @@ func (h *Transitions) dropCheckpointRefs(ctx context.Context, checkpoint model.C
 // and its record wasn't: the next of these commands on the branch
 // finishes the record.
 func Unfinished(what string, err error) error {
-	return fmt.Errorf("%s, but recording it failed: %w; the next dockhand tidy, rebase, or restore of this branch finishes the record", what, err)
+	return fmt.Errorf("%s, but recording it failed: %w; the next dockhand tidy, rebase, or undo of this branch finishes the record", what, err)
 }

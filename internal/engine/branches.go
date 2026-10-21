@@ -842,7 +842,7 @@ func (e *Engine) checkOutAgain(ctx context.Context, branch model.Branch) error {
 		// doesn't free the name, which it read as if it did (the rc7 full
 		// stage).
 		if branch.State == model.BranchArchived {
-			return fmt.Errorf("%s's worktree %s is gone, and so is its Git branch, so nothing of it is left; its record is archived, and keeps the name: start the work under another name (reusing an archived branch's name comes after the release)", branch.Name, branch.Worktree)
+			return fmt.Errorf("%s's worktree %s is gone, and so is its Git branch, so nothing of it is left; its record is archived, and keeps the name: dockhand start %s, on a terminal, offers to rename it aside and start afresh, or start the work under another name", branch.Name, branch.Worktree, branch.ShortName())
 		}
 		return fmt.Errorf("%s's worktree %s is gone, and so is its Git branch, so nothing of it is left: dockhand archive %s sets its record aside, and the name stays taken; another name starts afresh", branch.Name, branch.Worktree, branch.ShortName())
 	}

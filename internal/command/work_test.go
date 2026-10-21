@@ -145,7 +145,7 @@ func TestAnEndedInputTakesTheDefault(t *testing.T) {
 	require.Empty(t, answer)
 }
 
-// init refuses a Git older than dockhand works with, before recording
+// setup refuses a Git older than dockhand works with, before recording
 // anything, and says how to get a newer one.
 func TestSetupRefusesAnOldGit(t *testing.T) {
 	w := newWorld(t)

@@ -254,7 +254,7 @@ func TestAnUncertainCommitIsReadBack(t *testing.T) {
 		}},
 		{"its settling didn't land", applied, false, func(t *testing.T, e *Engine, branch model.Branch, result TidyResult, err error) {
 			require.ErrorContains(t, err, "the commits are made, but recording it failed")
-			require.ErrorContains(t, err, "the next dockhand tidy, rebase, or restore of this branch finishes the record")
+			require.ErrorContains(t, err, "the next dockhand tidy, rebase, or undo of this branch finishes the record")
 			require.Equal(t, string(result.Checkpoint.After), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "never undone")
 			require.Equal(t, model.CheckpointPrepared, checkpointNumbered(t, e, 1).State)
 			_, _, err = e.Restore(t.Context(), "tidy-1")

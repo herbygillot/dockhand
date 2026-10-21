@@ -80,7 +80,7 @@ path-check:
 # never edited; an escaped mutant is a change no test noticed. MUTATE_RUN
 # narrows the tests each mutant runs, as engine's whole suite would take
 # minutes a mutant: make mutate MUTATE=internal/engine/clean.go
-# MUTATE_RUN='^Test(Clean|Legacy)'. Not in CI (the test plan's step 4).
+# MUTATE_RUN='^TestClean'. Not in CI (the test plan's step 4).
 GO_MUTESTING ?= github.com/jonbaldie/go-mutesting/cmd/go-mutesting@v0.0.0-20260517115904-2b96df113935
 MUTATE ?= ./internal/reuse ./internal/macports/commitrules
 MUTATE_RUN ?=

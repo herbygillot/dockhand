@@ -139,7 +139,7 @@ new one has passed.`,
 }
 
 // providerLines say whether each provider is ready, one line each, as
-// providers and init show them.
+// setup shows them.
 func providerLines(ctx context.Context, file config.File) []string {
 	lines := []string{fmt.Sprintf("%-8s %s", buildenv.Tart, tartReadiness(ctx))}
 	lines = append(lines, fmt.Sprintf("%-8s %s", buildenv.GitHub, githubReadiness(ctx)))

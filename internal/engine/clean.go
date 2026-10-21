@@ -69,10 +69,11 @@ type CleanBranch struct {
 // that went on past the merge, are kept. The branch's record stays, so it
 // is still searchable.
 //
-// Closed and archived branches, when asked for, lose only their worktree:
-// their work isn't merged, so the Git branch, the fork's branch, and
-// dockhand's checkpoints stay, and the worktree is checked out again when
-// it is next needed.
+// Closed branches, when asked for (clean --closed), lose only their
+// worktree: their work isn't merged, so the Git branch, the fork's branch,
+// and dockhand's checkpoints stay, and the worktree is checked out again
+// when it is next needed. An archived branch is cleaned by name, clean
+// <name> (PlanCleanBranches).
 func (e *Engine) PlanClean(ctx context.Context, states ...model.BranchState) ([]CleanBranch, error) {
 	if len(states) == 0 {
 		states = []model.BranchState{model.BranchMerged}

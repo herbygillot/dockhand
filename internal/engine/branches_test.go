@@ -42,7 +42,7 @@ func TestAGoneBranchSaysHowToSetItAside(t *testing.T) {
 	// Archived, it says the name is still held, where archive's advice read
 	// as freeing it (the rc7 full stage).
 	_, err = e.Path(t.Context(), "poppler-25.09")
-	require.ErrorContains(t, err, "its record is archived, and keeps the name: start the work under another name (reusing an archived branch's name comes after the release)")
+	require.ErrorContains(t, err, "its record is archived, and keeps the name: dockhand start poppler-25.09, on a terminal, offers to rename it aside and start afresh, or start the work under another name")
 	require.NotContains(t, err.Error(), "dockhand archive")
 }
 

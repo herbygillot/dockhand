@@ -65,7 +65,8 @@ func commitUnasked(options shipOptions, tidy TidyPlan) error {
 // compared, in a branch started once there is an edit to make; commits
 // the edit where it may go on (commitUnasked); and to ShipCheck queues a check of
 // that commit where options.Where says. What stopped it is its Problem,
-// after whatever it had done. Submitting is item 4's, with ship itself.
+// after whatever it had done. It submits nothing: serve and ship --passing
+// submit what passed.
 func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOptions) PreparedUpdate {
 	done := PreparedUpdate{}
 	var err error

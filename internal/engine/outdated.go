@@ -390,8 +390,8 @@ type PreparedUpdate struct {
 
 // PrepareOutdated updates each planned port from fresh master, with the
 // upstream archives compared, in a branch started once there is an edit
-// to make; commits the edit when the plan is unambiguous; and with Check
-// queues a check of that commit. A
+// to make; commits the edit when the plan is unambiguous; and with To
+// ShipCheck queues a check of that commit. A
 // problem with one port is reported beside the others, and never stops
 // them.
 func (e *Engine) PrepareOutdated(ctx context.Context, plan OutdatedPlan, options PrepareOptions) []PreparedUpdate {

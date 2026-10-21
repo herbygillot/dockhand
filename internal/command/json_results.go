@@ -71,7 +71,7 @@ type updateJSON struct {
 	// PlainHTTP are the port's URLs over plain HTTP, and whether each
 	// answers over HTTPS.
 	PlainHTTP []plainHTTPJSON `json:"plain_http,omitempty"`
-	// Tidy, Check, and Submit are the steps update --submit and bump go on
+	// Tidy, Check, and Submit are the steps ship and bump go on
 	// to, each as tidy, check, and submit report it, as far as they went.
 	Tidy   *tidyJSON   `json:"tidy,omitempty"`
 	Check  *checkJSON  `json:"check,omitempty"`

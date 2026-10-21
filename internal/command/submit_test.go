@@ -110,7 +110,7 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 }
 
 // The preview says what comparing the upstream archives found, as update
-// did and submit --passing does, and its JSON carries it: a person's own
+// did and ship --passing does, and its JSON carries it: a person's own
 // submission shows it, and isn't held for it (D4).
 func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
 	w := newWorld(t)
@@ -578,7 +578,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	require.Contains(t, out, "  PR       —\n", "the open branch of the name, not the merged record")
 }
 
-func TestSubmitCheckPassingAndReady(t *testing.T) {
+func TestShipPassingAndSubmitReady(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	testPreparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }

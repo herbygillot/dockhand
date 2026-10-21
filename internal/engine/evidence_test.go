@@ -47,7 +47,7 @@ func checkHead(t *testing.T, e *Engine, branch model.Branch, only ...string) mod
 }
 
 // A check narrowed with --only never quietly shrinks what submit requires
-// (Design v3 §7), for submit, submit --passing, and serve alike; and a
+// (Design v3 §7), for submit, ship --passing, and serve alike; and a
 // narrowed check after a full one keeps the full one's results, since a
 // result holds for its tree. From the 2026-09-25 implementation review.
 func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
@@ -67,7 +67,7 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 	require.ErrorContains(t, err, "--accept libharbor: no check of these files built it")
 	passing, err := e.PassingBranches(t.Context())
 	require.NoError(t, err)
-	require.Empty(t, passing.Ready, "submit --passing and serve don't count it as passing")
+	require.Empty(t, passing.Ready, "ship --passing and serve don't count it as passing")
 	require.Equal(t, 1, passing.Others)
 
 	full := checkHead(t, e, branch)
@@ -243,7 +243,7 @@ func TestAResultStandsOnlyWhileItsEnvironmentDoes(t *testing.T) {
 	require.Contains(t, remade, "libharbor: the previous check is no longer valid")
 	passing, err := e.PassingBranches(t.Context())
 	require.NoError(t, err)
-	require.Empty(t, passing.Ready, "submit --passing and serve don't count it as passing")
+	require.Empty(t, passing.Ready, "ship --passing and serve don't count it as passing")
 
 	// A narrowed check in the environment as it is now builds what it
 	// selects; what it left out still needs building there, whichever

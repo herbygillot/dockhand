@@ -6,8 +6,8 @@ port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
 	host_only "serve as a launchd agent with Tart" || return 0
 	allow_change "*"
-	# The check is queued for serve to run: update's --check goes with
-	# --outdated alone, and refused this row's setup (the rc8 full stage).
+	# The branch is made with update --new, and its check queued for serve
+	# to run apart, as the rc8 full stage settled this row's setup.
 	dh_setup update "$(port)" --new || return 0
 	# --fresh, so a guest runs under the agent rather than an earlier
 	# build being reused (the rc9 full stage).

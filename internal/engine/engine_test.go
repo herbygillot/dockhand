@@ -136,7 +136,10 @@ func TestStartMakesASparseWorktreeFromFreshMaster(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
-	require.Equal(t, filepath.Join(filepath.Dir(f.clone), "macports-branches"), e.Worktrees(), "beside the clone")
+	require.Equal(t, filepath.Join(filepath.Dir(f.clone), "macports-branches"), e.Worktrees(), "the fixture's worktrees setting")
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		require.Equal(t, filepath.Join(home, "Source", "macports-branches"), e.DefaultWorktrees(), "the default, wherever the clone is")
+	}
 
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)
