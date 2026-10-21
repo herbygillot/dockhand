@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -197,8 +198,8 @@ set foreignManagers {}
 
 func twoTargets(tests string) guestInput {
 	return guestInput{Run: "check-1", Attempt: 1, Tests: tests, Targets: []guestTarget{
-		{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile", Log: logName("libharbor")},
-		{ID: "harbor-cli", Name: "harbor-cli", Portfile: "devel/harbor-cli/Portfile", DependsOn: []string{"libharbor"}, Log: logName("harbor-cli")},
+		{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile", Log: buildenv.LogName("libharbor")},
+		{ID: "harbor-cli", Name: "harbor-cli", Portfile: "devel/harbor-cli/Portfile", DependsOn: []string{"libharbor"}, Log: buildenv.LogName("harbor-cli")},
 	}}
 }
 

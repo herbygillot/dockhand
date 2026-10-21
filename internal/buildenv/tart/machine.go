@@ -53,6 +53,7 @@ type guest interface {
 	Upload(ctx context.Context, local, path string, sudo bool) error
 	Read(ctx context.Context, path string, sudo bool) ([]byte, error)
 	Download(ctx context.Context, path, local string, sudo bool) error
+	Append(ctx context.Context, path, local string, sudo bool) error
 	Close(ctx context.Context)
 }
 

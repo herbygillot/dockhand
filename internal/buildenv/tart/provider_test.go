@@ -184,6 +184,8 @@ type fakeGuest struct {
 	// commands run, other than launchd's.
 	uploads  map[string][]byte
 	commands [][]string
+	// appended are the logs followed, a name each time.
+	appended []string
 }
 
 func (g *fakeGuest) Command(_ context.Context, _ io.Reader, args ...string) ([]byte, error) {
@@ -232,6 +234,22 @@ func (g *fakeGuest) Read(_ context.Context, path string, _ bool) ([]byte, error)
 }
 func (g *fakeGuest) Download(_ context.Context, path, local string, _ bool) error {
 	return os.WriteFile(local, []byte(g.logs[filepath.Base(path)]), 0o644)
+}
+func (g *fakeGuest) Append(_ context.Context, path, local string, _ bool) error {
+	g.mu.Lock()
+	text := g.logs[filepath.Base(path)]
+	g.appended = append(g.appended, filepath.Base(path))
+	g.mu.Unlock()
+	had, _ := os.ReadFile(local)
+	if len(had) > len(text) {
+		return nil
+	}
+	file, err := os.OpenFile(local, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	_, err = file.WriteString(text[len(had):])
+	return errors.Join(err, file.Close())
 }
 func (g *fakeGuest) Close(context.Context) {}
 
@@ -962,8 +980,25 @@ func TestTheProgressSaysWhatBuildsFromSource(t *testing.T) {
 // A target's log is named by its target, for a multi-port check's
 // directory to say whose each is (the exiv2 session's notes, 2026-10-21).
 func TestALogIsNamedByItsTarget(t *testing.T) {
-	require.Equal(t, "luminance-hdr.log", logName("luminance-hdr"))
-	require.Equal(t, "s2n-tls+tests.log", logName("s2n-tls+tests"))
-	require.Equal(t, "a_b.log", logName("a/b"))
-	require.Equal(t, "_.hidden.log", logName(".hidden"))
+	require.Equal(t, "luminance-hdr.log", buildenv.LogName("luminance-hdr"))
+	require.Equal(t, "s2n-tls+tests.log", buildenv.LogName("s2n-tls+tests"))
+	require.Equal(t, "a_b.log", buildenv.LogName("a/b"))
+	require.Equal(t, "_.hidden.log", buildenv.LogName(".hidden"))
+}
+
+// The log of the target the guest is building is copied out as it grows,
+// at each read, by its target's name, for logs --follow; the finished
+// log's copy replaces it (the gnome-voice session's notes, 2026-10-20).
+func TestTheBuildingTargetsLogIsCopiedAsItGrows(t *testing.T) {
+	t.Parallel()
+	mac := newMac(guestResults{State: "running", Building: "libharbor"}, guestResults{State: "running", Building: "libharbor"},
+		guestResults{State: "finished", Targets: []guestResult{{ID: "libharbor", Outcome: "passed", Tests: "none", Log: "libharbor.log"}, {ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log"}}})
+	mac.guest.logs["libharbor.log"] = "--->  Building libharbor\n"
+	job := tartJob(t, 1)
+	build := &fakeBuild{}
+	require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
+	require.Contains(t, mac.guest.appended, "libharbor.log")
+	data, err := os.ReadFile(filepath.Join(job.Directory, "libharbor.log"))
+	require.NoError(t, err)
+	require.Equal(t, "--->  Building libharbor\n", string(data), "copied once as it grew, then replaced whole")
 }

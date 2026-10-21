@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -586,6 +590,43 @@ type RunLogs struct {
 	// Progress is what a running run last said of its work, as "macOS 26
 	// (Tahoe) arm64: building gnome-voice: configure".
 	Progress string
+}
+
+// LiveLog is where a running run's driver is copying port's log as the
+// guest writes it (buildenv.LogName), in the newest of its builds'
+// directories, for logs --follow; empty where none is copied yet, as
+// before the build reaches the port, or on a provider that copies none.
+// port is a target's ID or its port's name, which a variant build's ID
+// begins with.
+func (e *Engine) LiveLog(ctx context.Context, id model.RunID, port string) (string, error) {
+	var run model.Run
+	var plan model.Plan
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		if run, err = r.Run(id); err != nil {
+			return err
+		}
+		plan, err = r.Plan(run.Plan)
+		return err
+	}); err != nil {
+		return "", err
+	}
+	newest, at := "", time.Time{}
+	for _, target := range plan.Targets {
+		if string(target.ID) != port && target.Target.Name != port && target.Target.Subport != port {
+			continue
+		}
+		found, err := filepath.Glob(filepath.Join(e.LogDirectory(), run.Name(), "*", buildenv.LogName(target.ID)))
+		if err != nil {
+			return "", err
+		}
+		for _, path := range found {
+			if info, err := os.Stat(path); err == nil && info.ModTime().After(at) {
+				newest, at = path, info.ModTime()
+			}
+		}
+	}
+	return newest, nil
 }
 
 // Building reports whether the run's progress says it's building port,

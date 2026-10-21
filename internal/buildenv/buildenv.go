@@ -10,6 +10,7 @@ package buildenv
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -297,3 +298,22 @@ type Fork struct {
 // github provider does. The provider removes each once the check is done
 // with its run; clean removes a merged branch's that are left.
 const CheckBranchPrefix = "dockhand-check/"
+
+// LogName is a target's log's name in its build's log directory, and in
+// a Tart guest,
+// by its target, as luminance-hdr.log or s2n-tls+tests.log: named for its
+// place in the job, target-3.log, nothing in a multi-port check's
+// directory said which log was whose (the exiv2 session's notes,
+// 2026-10-21). A character a file name shouldn't hold is written _.
+func LogName(id model.TargetID) string {
+	name := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._+-", r) {
+			return r
+		}
+		return '_'
+	}, string(id))
+	if name == "" || strings.HasPrefix(name, ".") {
+		name = "_" + name
+	}
+	return name + ".log"
+}

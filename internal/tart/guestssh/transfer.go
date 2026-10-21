@@ -93,6 +93,24 @@ func (g *Guest) Download(ctx context.Context, path, local string, sudo bool) err
 	}
 }
 
+// Append copies what a file the guest is still writing has grown by since
+// local was last appended to: the bytes past local's size, appended to it,
+// or the whole file where local isn't there. It's a copy to follow, not a
+// checked transfer as Download's is: the guest's file grows while it's
+// read, and a Download of the finished file replaces it.
+func (g *Guest) Append(ctx context.Context, path, local string, sudo bool) error {
+	file, err := os.OpenFile(local, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return errors.Join(err, file.Close())
+	}
+	err = g.stream(ctx, file, elevate(sudo, "/usr/bin/tail", "-c", fmt.Sprintf("+%d", info.Size()+1), path)...)
+	return errors.Join(err, file.Close())
+}
+
 // Read returns a small file from the guest, checked like Download.
 func (g *Guest) Read(ctx context.Context, path string, sudo bool) ([]byte, error) {
 	for attempt := 1; ; attempt++ {

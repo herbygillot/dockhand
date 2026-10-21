@@ -1,6 +1,8 @@
 package command
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -136,6 +138,22 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "Canceled check-1 before it started.\ncheck-2 replaces check-1.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
 
+	// --follow prints a target's log as the driver copies it, until its
+	// build ends (the gnome-voice session's notes, 2026-10-20): check-2,
+	// queued, has a copy of jq's log so far, and following waits on.
+	live := filepath.Join(w.home, ".dockhand", "logs", "check-2", "command-1", "jq.log")
+	require.NoError(t, os.MkdirAll(filepath.Dir(live), 0o755))
+	require.NoError(t, os.WriteFile(live, []byte("--->  Building jq\n"), 0o644))
+	ctx, stop := context.WithTimeout(t.Context(), 1500*time.Millisecond)
+	var followed, followedErrs bytes.Buffer
+	err = Run(ctx, []string{"logs", "check-2", "jq", "--follow"}, Streams{In: strings.NewReader(""), Out: &followed, Err: &followedErrs})
+	stop()
+	require.ErrorIs(t, err, context.DeadlineExceeded, followedErrs.String())
+	require.Equal(t, "--->  Building jq\n", followed.String())
+	_, _, err = dockhand(t, "logs", "check-2", "--follow")
+	require.ErrorContains(t, err, "--follow follows one port's log: name it")
+	require.NoError(t, os.RemoveAll(filepath.Dir(live)))
+
 	// In the branch's worktree, cancel and wait take its latest check (the
 	// hugo exercise's certigo run, finding 4).
 	out, _, err = dockhand(t, "cancel")
@@ -181,6 +199,10 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.Equal(t, out, whole)
 	_, _, err = dockhand(t, "logs", "check-3", "--full")
 	require.EqualError(t, err, "--full requires a port name, for example: dockhand logs check-42 jq --full")
+	// A build that ended is printed whole, and following ends.
+	ended, _, err := dockhand(t, "logs", "check-3", "jq", "--follow")
+	require.NoError(t, err)
+	require.Equal(t, out, ended)
 	// A port named alone is the branch's latest check's (field testing,
 	// 2026-10-02).
 	alone, _, err := dockhand(t, "logs", "jq")

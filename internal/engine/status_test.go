@@ -1,7 +1,10 @@
 package engine
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -65,4 +68,34 @@ func TestARunningRunSaysWhatItsBuilding(t *testing.T) {
 	logs.Run.State = model.RunPassed
 	_, ok = logs.Building("gnome-voice")
 	require.False(t, ok, "a run that ended builds nothing")
+}
+
+// A running target's log is found where the driver copies it as it grows,
+// by the target's name, in the newest of the run's build directories, by
+// its port's name too (the gnome-voice session's notes, 2026-10-20).
+func TestARunningTargetsLogIsFoundWhereTheDriverCopiesIt(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := twoPortBranch(t, e)
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+	require.NoError(t, err)
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+	require.NoError(t, err)
+	path, err := e.LiveLog(t.Context(), queued.ID, "jq")
+	require.NoError(t, err)
+	require.Empty(t, path, "nothing copied yet")
+
+	older := filepath.Join(e.LogDirectory(), queued.Name(), "command-1", "jq.log")
+	newer := filepath.Join(e.LogDirectory(), queued.Name(), "command-2", "jq.log")
+	for _, name := range []string{older, newer} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+		require.NoError(t, os.WriteFile(name, []byte("building jq\n"), 0o644))
+	}
+	require.NoError(t, os.Chtimes(older, time.Now().Add(-time.Hour), time.Now().Add(-time.Hour)))
+	path, err = e.LiveLog(t.Context(), queued.ID, "jq")
+	require.NoError(t, err)
+	require.Equal(t, newer, path, "the newest attempt's")
 }

@@ -12,7 +12,7 @@ Dockhand helps contributors to [macports/macports-ports](https://github.com/macp
 
 Each change lives on an ordinary Git branch, with its own working directory. You can edit with your usual tools, review each step, or let Dockhand take a routine update through to a pull request. Pushes go to your fork; you do not need commit access to MacPorts.
 
-> These examples use the v0.4.0 command interface under development on `main`. Commands may differ in earlier releases. Run `dockhand --version` to check your build and `dockhand <command> --help` for its options.
+> These examples use the v0.4.0 command interface, released as v0.4.0; `main` heads for v0.5.0, and may add to it. Commands may differ in earlier releases. Run `dockhand --version` to check your build and `dockhand <command> --help` for its options.
 
 ## Install
 
@@ -236,7 +236,7 @@ New Portfiles include `# dockhand: unconfirmed` markers for inferred values. Rev
 
 ## Known issues in v0.4.0
 
-Each is rough, harms nothing a look wouldn't catch, and has a workaround. Most are planned for v0.5.0, and the last eleven are fixed on `main` already.
+Each is rough, harms nothing a look wouldn't catch, and has a workaround. Most are planned for v0.5.0, and the last ten are fixed on `main` already.
 
 - `check` builds on this Mac's release unless told otherwise, `build.default`'s `host`, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--build macports-ci` checks on all three, and `build.default = "macports-ci"` makes it the default.
 - A Go port whose module moved hosts, as pomo moved from GitHub to Codeberg, is planned without naming the move. Compare the new release's `go.mod` module path with the Portfile's before `tidy`.
@@ -256,7 +256,6 @@ Each is rough, harms nothing a look wouldn't catch, and has a workaround. Most a
 - `update` refuses a port whose PortGroup reads the host while it loads, as qmake5's asks whether Xcode and an SDK are there, with "version probe is inconclusive: modeled context depends on host state", though its version line and archives read nothing of the host: LibreCAD, cpi, the PyQt5 and Qt 5 ports, and about 100 in all. Edit the version line by hand, then run `dockhand checksums <port>`. Fixed on `main` for v0.5.0.
 - `dockhand update <port>` for a port that pins its source to a commit and tracks a branch, `livecheck.type git`, as wezterm does, stops with a Go panic before it changes anything, and `update <port> <version>` refuses. `outdated` says such a port's branch has moved past its pin; edit the commit and the version by hand, as it says, then `dockhand checksums <port>`. Fixed on `main` for v0.5.0: `update` moves the pin to the branch's head, or a commit named, with the version the port's scheme gives it.
 - `tidy` commits a Portfile whose `patchfiles` names a new patch that Git doesn't track yet without the patch, and the check then fails fetching it. `git add` a new patch before `tidy`. `check` warns of an untracked file in a port it builds, but `ship` doesn't. Fixed on `main` for v0.5.0: `tidy` commits the patches `patchfiles` names with their Portfile and lists any other untracked file it leaves out, and `check`, `ship`, and `serve` refuse before a VM starts while a named patch is untracked.
-- `logs` of a running check says it recorded no log until the target ends. `status` and `wait` show the port it's building and MacPorts' phase meanwhile. Fixed on `main` for v0.5.0: `logs` says the target is building, and the step, and that `dockhand wait` follows it.
 - A diagnostic check of some of a branch's ports on a release `build.default` doesn't name, such as `check --only ufraw --on ventura`, makes `submit` ask for every port of the branch there. Check the other ports on that release too, or make a diagnostic check on a branch of its own. Fixed on `main` for v0.5.0: outside `build.default`'s releases, a port is asked for only where a check planned it.
 - The upstream comparison reads build files only at the top of a port's source. A port that builds from a directory below it, as i2pd's `cmake.source_dir ${worksrcpath}/build` does, or with `configure.dir`, `cargo.dir`, or `build.dir` there, can say "no build file changes" where that directory's build file changed. `dockhand diff --source --stat` lists it; read its change before submitting. Fixed on `main` for v0.5.0: those directories' build files are compared too.
 - `update --follow-moves` on a branch already at the version, as after an update said upstream had moved, changes nothing, and `submit` still holds on the move. Pass `--follow-moves` on the update that moves the version, or edit github.setup's owner by hand. Fixed on `main` for v0.5.0: it points github.setup at the move, and the hold goes.

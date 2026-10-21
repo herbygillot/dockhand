@@ -454,24 +454,6 @@ type guestTarget struct {
 	Log string `json:"log"`
 }
 
-// logName is a target's log's name in the guest and the log directory,
-// by its target, as luminance-hdr.log or s2n-tls+tests.log: named for its
-// place in the job, target-3.log, nothing in a multi-port check's
-// directory said which log was whose (the exiv2 session's notes,
-// 2026-10-21). A character a file name shouldn't hold is written _.
-func logName(id model.TargetID) string {
-	name := strings.Map(func(r rune) rune {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._+-", r) {
-			return r
-		}
-		return '_'
-	}, string(id))
-	if name == "" || strings.HasPrefix(name, ".") {
-		name = "_" + name
-	}
-	return name + ".log"
-}
-
 // guestGit is what a Git-fetched target's fetch must check out (batch 20):
 // its ref, for the guest's words, and the commit the ref named when the
 // check was planned, or the abbreviation that commit begins with. Expect
@@ -576,7 +558,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		if target.Target.Subport != "" {
 			name = target.Target.Subport
 		}
-		t := guestTarget{ID: string(target.ID), Name: name, Portfile: target.Target.Portfile, Variants: target.Target.Variants, Log: logName(target.ID)}
+		t := guestTarget{ID: string(target.ID), Name: name, Portfile: target.Target.Portfile, Variants: target.Target.Variants, Log: buildenv.LogName(target.ID)}
 		for _, dependency := range target.DependsOn {
 			t.DependsOn = append(t.DependsOn, string(dependency))
 		}
@@ -1000,6 +982,12 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 			return err
 		}
 		building = results.Building
+		// What it's building has its log copied as it grows, for logs
+		// --follow, in any process, where the log came back only when
+		// the target ended (the gnome-voice session's notes, 2026-10-20).
+		if building != "" {
+			p.liveLog(ctx, g, job, model.TargetID(building))
+		}
 		if line := buildingWords(job, release, results); line != said {
 			said = line
 			if line != "" {
@@ -1075,7 +1063,7 @@ func interrupted(job buildenv.Job, build buildenv.Build, building string, cause 
 	result := model.TargetResult{Target: job.Targets[i].ID, Outcome: model.OutcomeInterrupted, Detail: detail}
 	if fetch != nil {
 		// The guest names each target's log by its target.
-		result.Log = fetch(logName(job.Targets[i].ID))
+		result.Log = fetch(buildenv.LogName(job.Targets[i].ID))
 	}
 	if err := build.Record(result); err != nil {
 		return fmt.Errorf("%w; %s wasn't recorded as interrupted: %v", cause, building, err)
@@ -1113,6 +1101,20 @@ func (p *Provider) partialLog(ctx context.Context, g guest, job buildenv.Job, na
 		return ""
 	}
 	return local
+}
+
+// liveLog copies what the log of the target building has grown by since
+// the last read into the job's directory, by its name (buildenv.LogName),
+// within the poll's time; a copy that can't be made waits for the next
+// read. The finished log's Download replaces it.
+func (p *Provider) liveLog(ctx context.Context, g guest, job buildenv.Job, id model.TargetID) {
+	if job.Directory == "" || os.MkdirAll(job.Directory, 0o755) != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, max(p.poll(), 5*time.Second))
+	defer cancel()
+	name := buildenv.LogName(id)
+	_ = g.Append(ctx, guestRoot+"/"+name, filepath.Join(job.Directory, name), true)
 }
 
 func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build buildenv.Build, got guestResult) error {

@@ -10,9 +10,11 @@ import (
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/coord"
@@ -172,7 +174,7 @@ branch, for its latest check from anywhere.`,
 
 func logsCommand(s *settings, streams Streams) *cobra.Command {
 	var port string
-	var full bool
+	var full, follow bool
 	var where branchFlags
 	cmd := &cobra.Command{
 		Use:   "logs [check or provider run] [port]",
@@ -190,7 +192,8 @@ semgrep prints it from the latest check of semgrep's branch. Where its
 provider recorded where each step of the build began, as Tart's does, it
 lists them with their lines first, and prints from the port's own build on,
 leaving out its dependencies' installs before it; --full prints the whole
-log.`,
+log. --follow prints a port's log as its build writes it, and the rest once
+the build ends, where its provider copies it as it grows, as Tart's does.`,
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A port named as an argument (field testing, 2026-10-02: logs
@@ -242,6 +245,12 @@ log.`,
 			}
 			if err != nil {
 				return err
+			}
+			if follow {
+				if port == "" {
+					return errors.New("--follow follows one port's log: name it, as dockhand logs check-42 jq --follow")
+				}
+				return followPortLog(ctx, e, streams, run, port)
 			}
 			logs, err := e.Logs(ctx, run.ID)
 			if err != nil {
@@ -298,9 +307,83 @@ log.`,
 	}
 	where.register(cmd, s, "show the latest check of")
 	cmd.Flags().BoolVar(&full, "full", false, "with a port, print the whole log")
+	cmd.Flags().BoolVar(&follow, "follow", false, "with a port, print its log as its build writes it, until the build ends")
+	cmd.MarkFlagsMutuallyExclusive("full", "follow")
 	supportsJSON(cmd)
 	return cmd
 }
+
+// followPortLog prints a port's log as its build writes it, from the copy
+// the run's driver keeps of it (Engine.LiveLog), in any process, and the
+// rest once the build's result is recorded, where logs of a running
+// target said it recorded no log until the target ended (the gnome-voice
+// session's notes, 2026-10-20). A check on GitHub Actions, whose log
+// comes back only with its run, says so, with the run's page.
+func followPortLog(ctx context.Context, e *engine.Engine, streams Streams, run model.Run, port string) error {
+	out := streams.Out
+	var printed int
+	rest := func(data []byte) {
+		if printed < len(data) {
+			_, _ = out.Write(data[printed:])
+			printed = len(data)
+		}
+	}
+	said := false
+	for {
+		logs, err := e.Logs(ctx, run.ID)
+		if err != nil {
+			return err
+		}
+		if chosen, _, ok := portLogs(logs, port); ok {
+			data, err := buildlog.ReadFile(chosen.result.Log)
+			if err != nil {
+				return err
+			}
+			rest(data)
+			return nil
+		}
+		if logs.Run.State.Terminal() {
+			return fmt.Errorf("%s ended without a log of %s", logs.Run.Name(), port)
+		}
+		if stoppedRun(ctx, e, logs.Run) {
+			return fmt.Errorf("%s stopped before %s's build ended; dockhand wait %s resumes it", logs.Run.Name(), port, logs.Run.Name())
+		}
+		path, err := e.LiveLog(ctx, run.ID, port)
+		if err != nil {
+			return err
+		}
+		switch {
+		case path != "":
+			if data, err := os.ReadFile(path); err == nil {
+				rest(data)
+			}
+		case !said:
+			providers, err := e.RunProviders(ctx, logs.Run)
+			if err != nil {
+				return err
+			}
+			if len(providers) > 0 && !slices.ContainsFunc(providers, func(p string) bool { return p != buildenv.GitHub }) {
+				where := ""
+				for _, execution := range logs.Executions {
+					if ref := execution.Execution.ProviderRef; ref != "" {
+						where = "; its run: " + ref
+					}
+				}
+				return fmt.Errorf("%s builds on GitHub Actions, whose log comes back only when its run ends, so it can't be followed here%s", logs.Run.Name(), where)
+			}
+			fmt.Fprintf(streams.Err, "%s hasn't reached %s yet; following once it does.\n", logs.Run.Name(), port)
+			said = true
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(followPoll):
+		}
+	}
+}
+
+// followPoll is how often logs --follow reads the log again.
+var followPoll = time.Second
 
 // writePortLogHeading says which build's log of a port this is: the
 // environment, the attempt of how many, the provider run, how it went,
