@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -420,4 +421,16 @@ func TestAMigrationRefusedSaysTheWayOn(t *testing.T) {
 	require.EqualError(t, err, "1 dockhand process is working on schema 31 (v0.4.0): migrating the database to schema 32 would leave them unable to record what they do; wait for them to finish, or stop them, and run this again")
 	refused := new(store.LiveUnderMigrationError)
 	require.ErrorAs(t, err, &refused, "the store's, under it")
+}
+
+// The forge, discovery, and project inspection share one GitHub client,
+// the process's runtime's, where each made its own (CX-11).
+func TestTheEngineSharesOneGitHubClient(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	e.GitHub = &github.Runtime{Client: &github.Client{}}
+	first, again := e.github(), e.github()
+	require.Same(t, first, again)
+	require.Same(t, e.GitHub.Client, first.Client)
 }

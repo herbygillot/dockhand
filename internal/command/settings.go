@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
+	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -137,9 +138,12 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	if command := file.Providers.Command; command != nil {
 		e.Providers[buildenv.Command] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}
 	}
+	// One GitHub runtime, which the engine's forge, discovery, and project
+	// inspection share with Actions (CX-11).
+	e.GitHub = &githubapi.Runtime{Client: authAPI(authStore)}
 	remote := file.Providers.GitHub.Remote
 	github := &ghactions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
-		API: ghactions.GitHub{Client: authAPI(authStore)}, BuildTimeout: file.Providers.GitHub.BuildBound()}
+		API: ghactions.GitHub{Client: e.GitHub.Client}, BuildTimeout: file.Providers.GitHub.BuildBound()}
 	if testActions != nil {
 		github.API, github.Sleep = testActions, func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
 	}

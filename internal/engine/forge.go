@@ -55,14 +55,16 @@ func (e *Engine) forge() Forge {
 	return e.Forge
 }
 
-// dropForge lets go of the GitHub client the engine assembled, and the
-// token it holds, so the next use reads the login as it is now: serve's,
-// when the login changed under it. One the engine was given stays.
+// dropForge lets go of the login the engine's GitHub runtime holds, so the
+// next use reads it as it is now: serve's, when the login changed under
+// it. A forge the engine was given stays as it is.
 func (e *Engine) dropForge() {
 	e.lazy.Lock()
 	defer e.lazy.Unlock()
 	if e.forgeMade {
-		e.Forge, e.forgeMade = nil, false
+		// The runtime the forge shares with discovery and the rest forgets
+		// the login, in one place for all of them.
+		e.GitHub.AccountChanged()
 	}
 }
 

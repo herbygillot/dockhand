@@ -17,6 +17,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
+	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -88,6 +89,10 @@ type Engine struct {
 	Preparer Preparer
 	// Forge publishes; GitHub when nil.
 	Forge Forge
+	// GitHub is the process's one GitHub runtime, which the forge,
+	// discovery, the source archiver, and project inspection share; the
+	// system keychain's login when nil (github.NewRuntime).
+	GitHub *github.Runtime
 	// GitHubCLI marks a draft ready where an organization refuses the
 	// forge's app; none when nil.
 	GitHubCLI GitHubCLI
@@ -142,6 +147,10 @@ type Engine struct {
 	lazy sync.Mutex
 	// forgeMade is whether forge assembled Forge, rather than being given it.
 	forgeMade bool
+	// githubOnce makes githubClient, the one forge client the engine's
+	// GitHub runtime serves (github).
+	githubOnce   sync.Once
+	githubClient *forgegithub.Client
 	// required is build.default's environments as last resolved, kept for
 	// requiredWait (requiredEnvironments).
 	required requiredRead

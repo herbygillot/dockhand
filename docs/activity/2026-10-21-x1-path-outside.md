@@ -40,3 +40,21 @@ At the architecture thread's word: `internal/macports/treequery`, not
 - Its tests moved with it: dependents in the index, fetching from the
   mirror after a stealth update, the fetch plan's refusals, and an
   unknown name being no port.
+
+## One GitHub runtime, its first slice (CX-11)
+
+`github.Runtime` holds the process's one GitHub client, which the
+architecture thread placed in internal/github. The engine's forge,
+upstream discovery's GitHub catalog, the source archiver (discovery
+itself), and create's project inspection share one forge client made
+from it, `Engine.github`, made once, where each call made a new client
+with its own login and rate limits. command's settings hand the engine
+the runtime that Actions uses too. `dropForge`, serve's account change,
+is now `Runtime.AccountChanged`: the client forgets its authenticated
+API client, the credentials it held, and what it remembered of finding
+none, in one place for everything sharing it.
+
+Still to come in this step: the forge's archive bodies over the
+runtime's HTTP, the process-global pending login (R3-32), the spend log's
+environment half moving to compose, the look's estimate checked against
+the hour's allowance, and subports sharing one source looked up once.

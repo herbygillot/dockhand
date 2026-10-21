@@ -171,6 +171,14 @@ func (c *Client) sdkClient(authenticated bool, source func() CredentialSource, c
 	return gh.NewClient(options...)
 }
 
+// forgetLogin drops the authenticated client and the credentials it held,
+// and what it remembered of finding none, for Runtime.AccountChanged.
+func (c *Client) forgetLogin() {
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+	c.authSDK, c.credentials, c.anonymousUntil = nil, nil, time.Time{}
+}
+
 // CredentialSource is where the token the client last carried came from;
 // empty before it has asked for one.
 func (c *Client) CredentialSource() CredentialSource {
