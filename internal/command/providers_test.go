@@ -110,7 +110,9 @@ func TestProviderLinesShowTheImages(t *testing.T) {
 	require.Contains(t, out, "tart     · no image: macOS 26's image was deleted and its golden copy kept: dockhand setup tart tahoe restores it, in about a minute\n")
 	images.status.Base = []macos.Release{release(t, "sequoia")}
 	out = providers(t)
-	require.Contains(t, out, "tart     ✓ images for macOS 15; macOS 26's image was deleted and its golden copy kept: dockhand setup tart tahoe restores it, in about a minute\n", "and none for this Mac's isn't said again")
+	require.Contains(t, out, "tart     ✓ ready for macOS 15\n"+
+		"           macOS 15 Sequoia   base image\n"+
+		"           macOS 26's image was deleted and its golden copy kept: dockhand setup tart tahoe restores it, in about a minute\n", "and none for this Mac's isn't said again")
 	images.status.Base, images.status.Restorable = nil, nil
 
 	// An Xcode image made without the plain one is said (the rc1 full
@@ -122,15 +124,24 @@ func TestProviderLinesShowTheImages(t *testing.T) {
 
 	images.status.Base = []macos.Release{release(t, "sonoma"), release(t, "sequoia")}
 	out = providers(t)
-	require.Contains(t, out, "tart     ✓ images for macOS 14, 15; none for this Mac's macOS 26: dockhand setup tart\n")
+	require.Contains(t, out, "tart     ✓ ready for macOS 14 and 15\n"+
+		"           macOS 14 Sonoma    base image\n"+
+		"           macOS 15 Sequoia   base image\n"+
+		"           none for this Mac's macOS 26: dockhand setup tart\n")
 
 	images.status.Base = append(images.status.Base, release(t, "tahoe"))
 	out = providers(t)
-	require.Contains(t, out, "tart     ✓ images for macOS 14, 15, 26\n")
+	require.Contains(t, out, "tart     ✓ ready for macOS 14, 15, and 26\n"+
+		"           macOS 14 Sonoma    base image\n"+
+		"           macOS 15 Sequoia   base image\n"+
+		"           macOS 26 Tahoe     base image\n")
 
 	images.status.Xcode = []macos.Release{release(t, "tahoe")}
 	out = providers(t)
-	require.Contains(t, out, "tart     ✓ images for macOS 14, 15, 26, with Xcode for 26\n")
+	require.Contains(t, out, "tart     ✓ ready for macOS 14, 15, and 26\n"+
+		"           macOS 14 Sonoma    base image\n"+
+		"           macOS 15 Sequoia   base image\n"+
+		"           macOS 26 Tahoe     Xcode image\n", "a release's checks build in its Xcode image")
 
 	// A provider that can't say is shown, not fatal.
 	images.err = errors.New("listing dockhand's Tart images: tart list failed")
@@ -290,8 +301,40 @@ func TestProviderLinesSayAnImageBehindThisMacsMacPorts(t *testing.T) {
 	sequoia := release(t, "sequoia")
 	images.status = tart.Status{Host: tahoe, Base: []macos.Release{sequoia, tahoe}, Xcode: []macos.Release{tahoe},
 		Behind: []tart.BehindImage{{Release: sequoia, MacPorts: "2.12.6", Host: "2.12.7"}, {Release: tahoe, Xcode: true, MacPorts: "2.12.6", Host: "2.12.7"}}}
-	require.Contains(t, providers(t), "tart     ✓ images for macOS 15, 26, with Xcode for 26; macOS 15's image and macOS 26's Xcode image have MacPorts 2.12.6, older than this Mac's 2.12.7: "+
-		"dockhand setup tart sequoia --rebuild; dockhand setup tart tahoe --rebuild --xcode <folder> (Xcode "+tahoe.Xcode+"'s .xip, or a folder xcodes downloads it into)\n", "one clause, each image's rebuild in it")
+	require.Contains(t, providers(t), "tart     ✓ ready for macOS 15 and 26\n"+
+		"           macOS 15 Sequoia   base image    MacPorts 2.12.6, older than this Mac's 2.12.7\n"+
+		"             dockhand setup tart sequoia --rebuild\n"+
+		"           macOS 26 Tahoe     Xcode image   MacPorts 2.12.6, older than this Mac's 2.12.7\n"+
+		"             dockhand setup tart tahoe --rebuild --xcode <folder>\n"+
+		"             (Xcode "+tahoe.Xcode+"'s .xip, or a folder xcodes downloads it into)\n", "each image behind has its rebuild under it")
+}
+
+// Where a release's Xcode image, which its checks build in, is current,
+// its base image behind it is said once, with no rebuild (the person,
+// 2026-10-21 21:50Z: six rebuilds asked for that no check needed).
+func TestProviderLinesSayOnlyTheImagesChecksBuildIn(t *testing.T) {
+	images := &fakeImages{}
+	useImages(t, images)
+	var releases []macos.Release
+	for _, slug := range []string{"monterey", "ventura", "sonoma", "sequoia", "tahoe"} {
+		releases = append(releases, release(t, slug))
+	}
+	status := tart.Status{Host: releases[4], Base: releases, Xcode: releases, MacPorts: map[string]string{}}
+	for _, one := range releases {
+		status.Behind = append(status.Behind, tart.BehindImage{Release: one, MacPorts: "2.12.6", Host: "2.12.7"})
+		status.MacPorts["dockhand-base-"+one.Slug] = "2.12.6"
+		status.MacPorts["dockhand-xcode-"+one.Slug] = "2.12.7"
+	}
+	images.status = status
+	out := providers(t)
+	require.Contains(t, out, "tart     ✓ ready for macOS 12, 13, 14, 15, and 26\n"+
+		"           macOS 12 Monterey   Xcode image   MacPorts 2.12.7\n"+
+		"           macOS 13 Ventura    Xcode image   MacPorts 2.12.7\n"+
+		"           macOS 14 Sonoma     Xcode image   MacPorts 2.12.7\n"+
+		"           macOS 15 Sequoia    Xcode image   MacPorts 2.12.7\n"+
+		"           macOS 26 Tahoe      Xcode image   MacPorts 2.12.7\n"+
+		"           Their base images have MacPorts 2.12.6, which no check builds with while the release has its Xcode image\n")
+	require.NotContains(t, out, "--rebuild")
 }
 
 // An Xcode image made again says where its release's base image keeps an

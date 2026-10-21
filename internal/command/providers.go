@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -138,7 +139,11 @@ new one has passed.`,
 // providerLines say whether each provider is ready, one line each, as
 // setup shows them.
 func (h *host) providerLines(ctx context.Context, file config.File) []string {
-	lines := []string{fmt.Sprintf("%-8s %s", buildenv.Tart, h.tartReadiness(ctx))}
+	tartLines := h.tartReadiness(ctx)
+	lines := []string{fmt.Sprintf("%-8s %s", buildenv.Tart, tartLines[0])}
+	for _, line := range tartLines[1:] {
+		lines = append(lines, fmt.Sprintf("%-8s %s", "", line))
+	}
 	lines = append(lines, fmt.Sprintf("%-8s %s", buildenv.GitHub, h.githubReadiness(ctx)))
 	if command := file.Providers.Command; command != nil {
 		name := command.Name
@@ -153,17 +158,19 @@ func (h *host) providerLines(ctx context.Context, file config.File) []string {
 // noTart says why Tart isn't for this Mac, and where its checks build.
 const noTart = "· needs Apple silicon; checks here build on GitHub, with --on github"
 
-func (h *host) tartReadiness(ctx context.Context) string {
+// tartReadiness is setup's Tart line, and the lines under it: a release's
+// each, where images are ready.
+func (h *host) tartReadiness(ctx context.Context) []string {
 	if !h.tartSupported() {
-		return noTart
+		return []string{noTart}
 	}
 	images := h.images()
 	if images == nil {
-		return "· needs Tart: " + installTart + ", then dockhand setup tart"
+		return []string{"· needs Tart: " + installTart + ", then dockhand setup tart"}
 	}
 	status, err := images.Status(ctx)
 	if err != nil {
-		return "! " + err.Error()
+		return []string{"! " + err.Error()}
 	}
 	var host string
 	if status.Host.Product != "" {
@@ -196,42 +203,76 @@ func (h *host) tartReadiness(ctx context.Context) string {
 	switch status.Readiness() {
 	case tart.XcodeOnly:
 		if restore != "" {
-			return fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which a check needs beside it: %s", products(status.Xcode), restore)
+			return []string{fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which a check needs beside it: %s", products(status.Xcode), restore)}
 		}
-		return fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which a check needs beside it: dockhand setup tart   (%s)", products(status.Xcode), cost)
+		return []string{fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which a check needs beside it: dockhand setup tart   (%s)", products(status.Xcode), cost)}
 	case tart.NoImage:
 		if restore != "" {
-			return "· no image: " + restore
+			return []string{"· no image: " + restore}
 		}
-		return fmt.Sprintf("· not set up: dockhand setup tart   (%s)", cost)
+		return []string{fmt.Sprintf("· not set up: dockhand setup tart   (%s)", cost)}
 	}
-	line := "✓ images for macOS " + products(status.Base)
-	if len(status.Xcode) > 0 {
-		line += ", with Xcode for " + products(status.Xcode)
+	// A heading, then a line for each release, aligned: the image its
+	// checks build in, which is its Xcode image wherever it has one, and
+	// that image's MacPorts, with its rebuild under it where it's behind
+	// this Mac's (the person, 2026-10-21 21:50Z, on the one run-on line).
+	var ready []string
+	for _, release := range status.Base {
+		ready = append(ready, release.Product)
+	}
+	lines := []string{"✓ ready for macOS " + prose.And(ready)}
+	type row struct{ name, image, macports, rebuild string }
+	var rows []row
+	var baseBehind []string
+	nameWidth, imageWidth := 0, 0
+	for _, release := range macos.Known() {
+		xcode, ok := status.CheckImage(release)
+		if !ok {
+			continue
+		}
+		one := row{name: "macOS " + release.Product + " " + release.Name, image: "base image"}
+		if xcode {
+			one.image = "Xcode image"
+			if !slices.ContainsFunc(status.Base, func(base macos.Release) bool { return base.Darwin == release.Darwin }) {
+				one.image = "Xcode image, no base image beside it: dockhand setup tart " + release.Slug
+			}
+			if behind, ok := status.BehindOf(release, false); ok && !slices.Contains(baseBehind, behind.MacPorts) {
+				baseBehind = append(baseBehind, behind.MacPorts)
+			}
+		}
+		if version := status.ImageMacPorts(release, xcode); version != "" {
+			one.macports = "MacPorts " + version
+		}
+		if behind, ok := status.BehindOf(release, xcode); ok {
+			one.macports = fmt.Sprintf("MacPorts %s, older than this Mac's %s", behind.MacPorts, behind.Host)
+			one.rebuild = engine.RemakeWords(release, xcode)
+		}
+		nameWidth, imageWidth = max(nameWidth, len(one.name)), max(imageWidth, len(one.image))
+		rows = append(rows, one)
+	}
+	for _, one := range rows {
+		line := fmt.Sprintf("  %-*s   %-*s   %s", nameWidth, one.name, imageWidth, one.image, one.macports)
+		lines = append(lines, strings.TrimRight(line, " "))
+		if one.rebuild != "" {
+			// The Xcode image's note goes on a line of its own, so no line
+			// runs past the terminal.
+			command, note, _ := strings.Cut(one.rebuild, " (")
+			lines = append(lines, "    "+command)
+			if note != "" {
+				lines = append(lines, "    ("+note)
+			}
+		}
+	}
+	if len(baseBehind) > 0 {
+		lines = append(lines, fmt.Sprintf("  Their base images have MacPorts %s, which no check builds with while the release has its Xcode image", strings.Join(baseBehind, " or ")))
 	}
 	if status.Readiness() == tart.NotForHost && !status.HostRestorable() {
-		line += "; none for this Mac's " + host + ": dockhand setup tart"
+		lines = append(lines, "  none for this Mac's "+host+": dockhand setup tart")
 	}
 	if restore != "" {
-		line += "; " + restore
+		lines = append(lines, "  "+restore)
 	}
-	// An image keeps the MacPorts it was made with, which falls behind
-	// this Mac's, which reads its ports (the person's "yes", 2026-10-16).
-	// The images behind are said in one clause for each pair of versions,
-	// each with its rebuild, an Xcode image's Xcode named where it said
-	// <Xcode> (field testing, 2026-10-16).
-	var behind []engine.MacPortsBehind
-	for _, image := range status.Behind {
-		which := "macOS " + image.Release.Product + "'s image"
-		if image.Xcode {
-			which = "macOS " + image.Release.Product + "'s Xcode image"
-		}
-		behind = append(behind, engine.MacPortsBehind{Name: which, Image: image.MacPorts, Host: image.Host, Remedy: engine.RemakeWords(image.Release, image.Xcode)})
-	}
-	for _, clause := range engine.OlderMacPorts(behind, false) {
-		line += "; " + clause
-	}
-	return line
+	return lines
 }
 
 func (h *host) githubReadiness(ctx context.Context) string {

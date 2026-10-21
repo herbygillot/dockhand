@@ -33,6 +33,45 @@ type Status struct {
 	// Behind are the images whose MacPorts is older than this Mac's, which
 	// reads the ports they build.
 	Behind []BehindImage
+	// MacPorts are the MacPorts each image was made with, as its record
+	// says, by its name; an image with no record has none.
+	MacPorts map[string]string
+}
+
+// CheckImage is whether a release's checks build in its Xcode image,
+// which they do wherever it has one, else in its base image; ok is false
+// where it has neither.
+func (s Status) CheckImage(release macos.Release) (xcode, ok bool) {
+	has := func(releases []macos.Release) bool {
+		return slices.ContainsFunc(releases, func(one macos.Release) bool { return one.Darwin == release.Darwin })
+	}
+	switch {
+	case has(s.Xcode):
+		return true, true
+	case has(s.Base):
+		return false, true
+	}
+	return false, false
+}
+
+// ImageMacPorts is the MacPorts a release's base or Xcode image was made
+// with, as its record says, or empty.
+func (s Status) ImageMacPorts(release macos.Release, xcode bool) string {
+	if xcode {
+		return s.MacPorts[xcodeImage(release)]
+	}
+	return s.MacPorts[baseImage(release)]
+}
+
+// BehindOf is the release's base or Xcode image, where it's behind this
+// Mac's MacPorts.
+func (s Status) BehindOf(release macos.Release, xcode bool) (BehindImage, bool) {
+	for _, image := range s.Behind {
+		if image.Release.Darwin == release.Darwin && image.Xcode == xcode {
+			return image, true
+		}
+	}
+	return BehindImage{}, false
 }
 
 // BehindImage is an image with an older MacPorts than this Mac's: its
@@ -102,6 +141,12 @@ func (p *Provider) Status(ctx context.Context) (Status, error) {
 			return
 		}
 		if manifest, found, err := tartvm.ReadImageRecord(runtime.Home, name); err == nil && found {
+			if manifest.MacPortsVersion != "" {
+				if status.MacPorts == nil {
+					status.MacPorts = map[string]string{}
+				}
+				status.MacPorts[name] = manifest.MacPortsVersion
+			}
 			if version, host := p.behind(ctx, manifest.MacPortsVersion); version != "" {
 				status.Behind = append(status.Behind, BehindImage{Release: release, Xcode: xcode, MacPorts: version, Host: host})
 			}
