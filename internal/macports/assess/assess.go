@@ -421,9 +421,16 @@ func (a *assessment) pair(pair Pair) {
 	why := func(system project.System) string {
 		return fmt.Sprintf("%s builds with %s, not %s", port.Name, strings.Join(names, " and "), system)
 	}
+	// What the Portfile sets is said first where it was read; where it
+	// wasn't, named answers yes to everything, and nothing is the
+	// Portfile's.
+	var sets func(string) bool
+	if a.input.Portfile != nil {
+		sets = func(option string) bool { return portfile.Mentions(a.input.Portfile, option) }
+	}
 	changes := sourcecompare.Compare(pair.Before, pair.After, a.input.Versions, func(option string) bool {
 		return a.input.Portfile == nil || portfile.Mentions(a.input.Portfile, option)
-	})
+	}, sets)
 	// Each manifest's dependency findings are put in order as a run: what
 	// holds first. A proven manifest's are counted in one line, where the
 	// file is.

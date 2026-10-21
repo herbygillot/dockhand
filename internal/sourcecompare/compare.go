@@ -109,10 +109,16 @@ type Versions struct{ Old, New string }
 // archive's top, whose name, the version's, is set aside so the same file
 // compares across versions. A version whose project couldn't be found is
 // said. named says whether the port's Portfile names a build option, so
-// may set it, in any variant; nil names none.
-func Compare(older, newer project.Reading, versions Versions, named func(option string) bool) []Change {
+// may set it, in any variant; nil names none. sets says whether a Portfile
+// that was read names it, which a change to it says first: nil where none
+// was read, where named answers yes to everything, and nothing is said to
+// be the Portfile's.
+func Compare(older, newer project.Reading, versions Versions, named, sets func(option string) bool) []Change {
 	if named == nil {
 		named = func(string) bool { return false }
+	}
+	if sets == nil {
+		sets = func(string) bool { return false }
 	}
 	var lost []Change
 	for _, side := range []struct {
@@ -219,9 +225,9 @@ func Compare(older, newer project.Reading, versions Versions, named func(option 
 			case !hasNow:
 				how, what = "removed", "was removed"
 			case base == "configure.ac" || base == "configure.in":
-				what += autoconfWords(project.ReadAutoconf(old.Data), project.ReadAutoconf(now.Data))
+				what += autoconfWords(project.ReadAutoconf(old.Data), project.ReadAutoconf(now.Data), sets)
 			case base == "CMakeLists.txt":
-				summary := cmakeWords(documents[0], documents[1])
+				summary := cmakeWords(documents[0], documents[1], sets)
 				what += summary
 				if where := cmakeElsewhere(documents[0], documents[1], versions, named); where != "" && strings.HasPrefix(summary, ":") {
 					what += "; besides, lines change " + where
@@ -730,11 +736,16 @@ func pythonBackend(old, now project.Reading) []Change {
 // its macros name it: ": --enable-gui added; pkg-config module gtk4
 // added", or nothing where none moved (field testing, batch 11:
 // dateutils's "configure.ac changed" held with nothing to act on).
-func autoconfWords(old, now project.AutoconfFacts) string {
-	var said []string
+// sets says whether the port's Portfile, read, names an option (Compare):
+// a change to one it does is said first, and never counted away.
+func autoconfWords(old, now project.AutoconfFacts, sets func(string) bool) string {
+	var lead, said []string
 	// A list that leaves a name out, one it couldn't read, says nothing of
 	// a name missing from it: 1.3.49's $pnglibbase.
-	moved := func(before, after []string, what string, beforeIncomplete, afterIncomplete bool) {
+	moved := func(before, after []string, what, negative string, beforeIncomplete, afterIncomplete bool) {
+		portfiles := func(name string) bool {
+			return negative != "" && (sets(what+name) || sets(negative+name))
+		}
 		for _, name := range after {
 			if !slices.Contains(before, name) && !beforeIncomplete {
 				said = append(said, what+name+" added")
@@ -742,23 +753,34 @@ func autoconfWords(old, now project.AutoconfFacts) string {
 		}
 		for _, name := range before {
 			if !slices.Contains(after, name) && !afterIncomplete {
+				if portfiles(name) {
+					lead = append(lead, what+name+", which the Portfile sets, was removed")
+					continue
+				}
 				said = append(said, what+name+" removed")
 			}
 		}
 	}
-	moved(old.Enables, now.Enables, "--enable-", false, false)
-	moved(old.Withs, now.Withs, "--with-", false, false)
-	moved(old.Modules, now.Modules, "pkg-config module ", false, false)
-	moved(old.Libraries, now.Libraries, "library ", old.LibrariesIncomplete, now.LibrariesIncomplete)
+	moved(old.Enables, now.Enables, "--enable-", "--disable-", false, false)
+	moved(old.Withs, now.Withs, "--with-", "--without-", false, false)
+	moved(old.Modules, now.Modules, "pkg-config module ", "", false, false)
+	moved(old.Libraries, now.Libraries, "library ", "", old.LibrariesIncomplete, now.LibrariesIncomplete)
+	said = append(lead, said...)
 	if len(said) == 0 {
 		return ", in nothing it names as an option, a pkg-config module, or a library"
 	}
 	return ": " + strings.Join(said, "; ")
 }
 
-func cmakeWords(old, now project.CMakeDocument) string {
+// cmakeWords say what a CMakeLists.txt's change declares: its options and
+// the packages it finds. A change to an option the Portfile sets (sets)
+// leads, and is never counted away: duckdb 2.0.0 dropped
+// ENABLE_EXTENSION_AUTOLOADING, which the Portfile passes as -D…=1, and
+// it fell into "and 7 more" behind the options added (field testing,
+// 2026-10-21). The rest keep their order, and the count.
+func cmakeWords(old, now project.CMakeDocument, sets func(string) bool) string {
 	before, after := old.Facts(), now.Facts()
-	var said []string
+	var lead, said []string
 	for _, name := range slices.Sorted(maps.Keys(after.Options)) {
 		option, was := after.Options[name], before.Options[name]
 		switch _, had := before.Options[name]; {
@@ -768,12 +790,18 @@ func cmakeWords(old, now project.CMakeDocument) string {
 				by = strings.ToLower(by)
 			}
 			said = append(said, fmt.Sprintf("option %s added, %s by default", name, by))
+		case was.Default != option.Default && sets(name):
+			lead = append(lead, fmt.Sprintf("option %s, which the Portfile sets, has its default move from %s to %s", name, was.Default, option.Default))
 		case was.Default != option.Default:
 			said = append(said, fmt.Sprintf("option %s's default moves from %s to %s", name, was.Default, option.Default))
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(before.Options)) {
 		if _, has := after.Options[name]; !has {
+			if sets(name) {
+				lead = append(lead, "option "+name+", which the Portfile sets, was removed")
+				continue
+			}
 			said = append(said, "option "+name+" removed")
 		}
 	}
@@ -816,12 +844,12 @@ func cmakeWords(old, now project.CMakeDocument) string {
 		}
 	}
 	switch {
-	case len(said) == 0:
+	case len(lead) == 0 && len(said) == 0:
 		return ", though no option or find_package did"
 	case len(said) > cmakeNamed:
-		return fmt.Sprintf(": %s; and %d more", strings.Join(said[:cmakeNamed], "; "), len(said)-cmakeNamed)
+		return fmt.Sprintf(": %s; and %d more", strings.Join(append(lead, said[:cmakeNamed]...), "; "), len(said)-cmakeNamed)
 	}
-	return ": " + strings.Join(said, "; ")
+	return ": " + strings.Join(append(lead, said...), "; ")
 }
 
 // cmakeElsewhere says where a CMakeLists.txt changed beside what it

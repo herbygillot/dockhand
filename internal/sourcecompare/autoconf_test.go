@@ -18,8 +18,8 @@ func TestAConfigureAcChangeSaysWhatItAsks(t *testing.T) {
 	t.Parallel()
 	old := project.ReadAutoconf([]byte("AC_ARG_ENABLE([fast-arith])\nAC_CHECK_LIB([m], [floor])\n"))
 	now := project.ReadAutoconf([]byte("AC_ARG_ENABLE([fast-arith])\nAC_ARG_ENABLE([contrib])\nPKG_CHECK_MODULES([TZ], [libtzdb])\n"))
-	require.Equal(t, ": --enable-contrib added; pkg-config module libtzdb added; library m removed", autoconfWords(old, now))
-	require.Equal(t, ", in nothing it names as an option, a pkg-config module, or a library", autoconfWords(old, old))
+	require.Equal(t, ": --enable-contrib added; pkg-config module libtzdb added; library m removed", autoconfWords(old, now, none))
+	require.Equal(t, ", in nothing it names as an option, a pkg-config module, or a library", autoconfWords(old, old, none))
 }
 
 // A library a configure.ac names through a variable is the word the file
@@ -44,7 +44,7 @@ func TestALibraryNamedByAVariableIsNotRemoved(t *testing.T) {
 	require.Contains(t, now.Libraries, "zstd")
 	require.Contains(t, now.Libraries, "freetype")
 	require.True(t, now.LibrariesIncomplete, "$pnglibbase is set from sed's output")
-	words := autoconfWords(old, now)
+	words := autoconfWords(old, now, none)
 	require.NotContains(t, words, "library freetype removed")
 	require.NotContains(t, words, "library zstd removed")
 	require.Contains(t, words, "pkg-config module libturbojpeg removed")
@@ -52,8 +52,8 @@ func TestALibraryNamedByAVariableIsNotRemoved(t *testing.T) {
 	literal := project.ReadAutoconf([]byte("zstd=zstd\nAC_CHECK_LIB([$zstd], [ZSTD_createDStream])\nAC_CHECK_LIB([${png}], [png_read])\n"))
 	require.Equal(t, []string{"zstd"}, literal.Libraries)
 	require.True(t, literal.LibrariesIncomplete)
-	require.Equal(t, ": library zstd added", autoconfWords(project.ReadAutoconf(nil), literal), "an incomplete list's own names are said")
-	require.Equal(t, ": library zstd added", autoconfWords(project.ReadAutoconf([]byte("AC_CHECK_LIB([m], [sqrt])\n")), literal), "m isn't said removed")
+	require.Equal(t, ": library zstd added", autoconfWords(project.ReadAutoconf(nil), literal, none), "an incomplete list's own names are said")
+	require.Equal(t, ": library zstd added", autoconfWords(project.ReadAutoconf([]byte("AC_CHECK_LIB([m], [sqrt])\n")), literal, none), "m isn't said removed")
 }
 
 // A Makefile.am's -version-info moving anywhere in the source is a new
@@ -125,4 +125,16 @@ func TestAPythonBackendMovingIsSaid(t *testing.T) {
 		Message: "upstream's pyproject.toml moves its build backend from poetry.core.masonry.api to setuptools.build_meta"}},
 		pythonBackend(reading("poetry.core.masonry.api"), reading("setuptools.build_meta")))
 	require.Empty(t, pythonBackend(reading("hatchling.build"), reading("hatchling.build")))
+}
+
+// none is a Portfile that sets nothing.
+func none(string) bool { return false }
+
+// A switch the Portfile sets that upstream removed is said first, and as
+// the Portfile's (field testing's duckdb, 2026-10-21).
+func TestARemovedSwitchThePortfileSetsLeads(t *testing.T) {
+	old := project.ReadAutoconf([]byte("AC_ARG_ENABLE([gui])\nAC_ARG_ENABLE([docs])\nAC_ARG_WITH([zlib])\n"))
+	now := project.ReadAutoconf([]byte("AC_ARG_ENABLE([extra])\n"))
+	sets := func(word string) bool { return word == "--disable-docs" || word == "--without-zlib" }
+	require.Equal(t, ": --enable-docs, which the Portfile sets, was removed; --with-zlib, which the Portfile sets, was removed; --enable-extra added; --enable-gui removed", autoconfWords(old, now, sets))
 }

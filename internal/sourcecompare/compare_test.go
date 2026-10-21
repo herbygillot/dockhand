@@ -24,7 +24,7 @@ func compareArchives(t *testing.T, older, newer string, versions Versions) ([]Ch
 		}
 		readings[i] = reading
 	}
-	return Compare(readings[0], readings[1], versions, nil), nil
+	return Compare(readings[0], readings[1], versions, nil, nil), nil
 }
 
 // compareNamed compares two archives as compareArchives does, with a
@@ -37,7 +37,7 @@ func compareNamed(t *testing.T, older, newer string, versions Versions, options 
 		require.NoError(t, err)
 		readings[i] = reading
 	}
-	return Compare(readings[0], readings[1], versions, func(option string) bool { return slices.Contains(options, option) })
+	return Compare(readings[0], readings[1], versions, func(option string) bool { return slices.Contains(options, option) }, func(option string) bool { return slices.Contains(options, option) })
 }
 
 // hows are the changes as their kind, how, and path.
@@ -425,7 +425,7 @@ func TestAChangesPlaceIsTheBlockTheDocumentReads(t *testing.T) {
 	}
 	compare := func(before, after string) []Change {
 		t.Helper()
-		return Compare(read(before), read(after), Versions{}, nil)
+		return Compare(read(before), read(after), Versions{}, nil, nil)
 	}
 	multiline := func(word string) string {
 		return "option(DEMO \"demo\" OFF)\nif(\n  DEMO\n)\n  message(STATUS \"" + word + "\")\nendif()\n"
@@ -485,4 +485,34 @@ func TestAnRDescriptionIsComparedByItsDependencies(t *testing.T) {
 	moved := rDescription("DESCRIPTION", []byte(description("1.7-3", "grid, lattice")), []byte(description("1.7-4", "grid, lattice, stats")))
 	require.Equal(t, "changed", moved.How)
 	require.Equal(t, "upstream's DESCRIPTION changed: Imports was grid, lattice, now grid, lattice, stats", moved.Message)
+}
+
+// An option the Portfile sets that upstream removed leads, and is never
+// counted away behind the options added: duckdb 2.0.0 dropped
+// ENABLE_EXTENSION_AUTOLOADING and ENABLE_EXTENSION_AUTOINSTALL, which its
+// Portfile passes as -D…=1, and they fell into "and 7 more" (field
+// testing, 2026-10-21).
+func TestARemovedOptionThePortfileSetsLeads(t *testing.T) {
+	var old, now strings.Builder
+	old.WriteString("project(duckdb)\noption(ENABLE_EXTENSION_AUTOLOADING \"a\" OFF)\noption(ENABLE_EXTENSION_AUTOINSTALL \"b\" OFF)\noption(KEPT \"k\" ON)\n")
+	now.WriteString("project(duckdb)\noption(KEPT \"k\" ON)\n")
+	for _, name := range []string{"COVERAGE", "A1", "A2", "A3", "A4", "A5", "A6"} {
+		now.WriteString("option(" + name + " \"x\" OFF)\n")
+	}
+	changes := compareNamed(t,
+		testsupport.Tarball(t, "duckdb-1.5.6", map[string]string{"CMakeLists.txt": old.String()}),
+		testsupport.Tarball(t, "duckdb-2.0.0", map[string]string{"CMakeLists.txt": now.String()}),
+		Versions{Old: "1.5.6", New: "2.0.0"}, "ENABLE_EXTENSION_AUTOLOADING", "ENABLE_EXTENSION_AUTOINSTALL")
+	i := slices.IndexFunc(changes, func(c Change) bool { return c.Path == "CMakeLists.txt" })
+	require.GreaterOrEqual(t, i, 0)
+	require.Contains(t, changes[i].Message, "upstream's CMakeLists.txt changed: option ENABLE_EXTENSION_AUTOINSTALL, which the Portfile sets, was removed; option ENABLE_EXTENSION_AUTOLOADING, which the Portfile sets, was removed; option A1 added, off by default")
+	require.Contains(t, changes[i].Message, "; and 2 more", "the rest are counted, the Portfile's aren't")
+
+	// Where no Portfile was read, nothing is the Portfile's.
+	plain, err := compareArchives(t,
+		testsupport.Tarball(t, "duckdb-1.5.6", map[string]string{"CMakeLists.txt": old.String()}),
+		testsupport.Tarball(t, "duckdb-2.0.0", map[string]string{"CMakeLists.txt": now.String()}),
+		Versions{Old: "1.5.6", New: "2.0.0"})
+	require.NoError(t, err)
+	require.NotContains(t, plain[slices.IndexFunc(plain, func(c Change) bool { return c.Path == "CMakeLists.txt" })].Message, "which the Portfile sets")
 }
