@@ -294,7 +294,7 @@ func TestACMakeListsChangeSaysWhereElseItChanged(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, changes, 1)
 	require.Equal(t, "changed", changes[0].How)
-	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_PROTOBUF_ENCODER added, off by default; find_package(Jansson) moves, under FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER; besides, lines change under if(FLB_ALL), under if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER), under if(FLB_AVRO_ENCODER)", changes[0].Message)
+	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_PROTOBUF_ENCODER added, off by default, gating add_definitions; find_package(Jansson) moves, under FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER; besides, lines change under if(FLB_ALL), under if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER), under if(FLB_AVRO_ENCODER)", changes[0].Message)
 }
 
 // What the default build can't reach holds nothing, as the person decided
@@ -376,7 +376,7 @@ add_library(flb a.c)
 	require.Equal(t, "upstream's CMakeLists.txt adds option FLB_PROTOBUF_ENCODER, off by default, which gates find_package(Protobuf); otherwise changes only what the default build doesn't reach, under if(FLB_ALL), under if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER), under if(FLB_AVRO_ENCODER): neither it nor the Portfile turns FLB_ALL, FLB_AVRO_ENCODER, or FLB_PROTOBUF_ENCODER on; each option builds as its default", unset.Message)
 	all := compare("FLB_ALL")
 	require.Equal(t, "changed", all.How, "a variant may turn FLB_ALL on")
-	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_PROTOBUF_ENCODER added, off by default; find_package(Jansson) moves, under FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER; find_package(Protobuf) added, under FLB_PROTOBUF_ENCODER; besides, lines change under if(FLB_ALL)", all.Message)
+	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_PROTOBUF_ENCODER added, off by default, gating flb_definition; find_package(Jansson) moves, under FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER; find_package(Protobuf) added, under FLB_PROTOBUF_ENCODER; besides, lines change under if(FLB_ALL)", all.Message)
 
 	comments := strings.Replace(before, "# Avro", "# Avro, and nothing else", 1)
 	changes := compareNamed(t,
@@ -515,4 +515,30 @@ func TestARemovedOptionThePortfileSetsLeads(t *testing.T) {
 		Versions{Old: "1.5.6", New: "2.0.0"})
 	require.NoError(t, err)
 	require.NotContains(t, plain[slices.IndexFunc(plain, func(c Change) bool { return c.Path == "CMakeLists.txt" })].Message, "which the Portfile sets")
+}
+
+// An added option says what its if()s gate, by command and file, and
+// claims nothing of what the build lost; one gating a command in a loop
+// over a list the Portfile sets leads as the Portfile's (duckdb 2.0.0's
+// LINK_CORE_EXTENSIONS, field testing, 2026-10-21).
+func TestAnAddedOptionSaysWhatItGates(t *testing.T) {
+	old := "project(duckdb)\ninclude(tools.cmake)\noption(A_FIRST \"a\" OFF)\n"
+	now := "project(duckdb)\ninclude(tools.cmake)\noption(A_FIRST \"a\" OFF)\noption(AAA \"x\" OFF)\noption(LINK_CORE_EXTENSIONS \"l\" OFF)\n"
+	tools := "foreach(EXT IN LISTS BUILD_EXTENSIONS)\n  if(LINK_CORE_EXTENSIONS)\n    duckdb_extension_statically_link(${EXT})\n    set(X 1)\n  endif()\nendforeach()\nif(NOT LINK_CORE_EXTENSIONS)\n  unlinked()\nendif()\n"
+	for _, test := range []struct {
+		options []string
+		want    string
+	}{
+		{[]string{"BUILD_EXTENSIONS"}, "option LINK_CORE_EXTENSIONS added, off by default, gating duckdb_extension_statically_link in tools.cmake; option AAA added, off by default"},
+		{nil, "option AAA added, off by default; option LINK_CORE_EXTENSIONS added, off by default, gating duckdb_extension_statically_link in tools.cmake"},
+	} {
+		changes := compareNamed(t,
+			testsupport.Tarball(t, "duckdb-1.5.6", map[string]string{"CMakeLists.txt": old, "tools.cmake": "\n"}),
+			testsupport.Tarball(t, "duckdb-2.0.0", map[string]string{"CMakeLists.txt": now, "tools.cmake": tools}),
+			Versions{Old: "1.5.6", New: "2.0.0"}, test.options...)
+		i := slices.IndexFunc(changes, func(c Change) bool { return c.Path == "CMakeLists.txt" })
+		require.GreaterOrEqual(t, i, 0)
+		require.Contains(t, changes[i].Message, "upstream's CMakeLists.txt changed: "+test.want, "Portfile sets %v", test.options)
+		require.NotContains(t, changes[i].Message, "unlinked", "what NOT the option reaches isn't its gate")
+	}
 }

@@ -56,6 +56,17 @@ type CMakeStatement struct {
 	Text  string
 	Under []CMakeCondition
 	File  string
+	// Loops are the foreach() loops it's in, outermost first, each as a
+	// condition of the names its list reads: "EXT IN LISTS
+	// BUILD_EXTENSIONS" names BUILD_EXTENSIONS. They're apart from Under,
+	// which says where a line changed by its if()s.
+	Loops []CMakeCondition
+}
+
+// Name is the command the statement is, as written: "foreach".
+func (s CMakeStatement) Name() string {
+	name, _, _ := strings.Cut(s.Text, "(")
+	return strings.TrimSpace(name)
 }
 
 // CMakeCondition is a branch's condition: as written, "FLB_TLS AND (NOT
@@ -265,6 +276,37 @@ func (d CMakeDocument) conditions(branches []cmakeBranch) []CMakeCondition {
 	return conditions
 }
 
+// cmakeLoop is a foreach()'s loop as a condition: its arguments, and the
+// names its list reads, those after IN LISTS or ITEMS, or a variable's
+// reference, not the loop's own variable.
+func cmakeLoop(args []string) CMakeCondition {
+	loop := CMakeCondition{Text: strings.Join(args, " ")}
+	add := func(name string) {
+		if name != "" && !slices.Contains(loop.Names, name) {
+			loop.Names = append(loop.Names, name)
+		}
+	}
+	lists := false
+	for i, arg := range args {
+		switch {
+		case i == 0:
+		case arg == "IN" || arg == "ITEMS" || arg == "RANGE" || arg == "ZIP_LISTS":
+		case arg == "LISTS":
+			lists = true
+		case lists && arg != "" && isIdentStart(arg[0]):
+			add(arg)
+		default:
+			for _, reference := range cmakeReference.FindAllStringSubmatch(arg, -1) {
+				add(reference[1])
+			}
+		}
+	}
+	return loop
+}
+
+// cmakeReference is a variable's reference, ${NAME}.
+var cmakeReference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
 // cmakeNames are the names a condition tests: its words but for CMake's
 // operators and constants, a variable's reference as its name.
 func cmakeNames(args []string) []string {
@@ -386,11 +428,24 @@ func (d CMakeDocument) walk(nodes []cmakeNode, under []CMakeCondition, off map[s
 // each written in one line. Comments aren't commands, and aren't read.
 func (d CMakeDocument) Statements(leave func(name string, args []string) bool, off map[string]bool) []CMakeStatement {
 	var statements []CMakeStatement
+	// The loops open where each command is read, in the order the default
+	// build reads them: an include() inside a loop reads within it.
+	var loops []CMakeCondition
 	d.walk(d.nodes, nil, off, func(command cmakeCommand, under []CMakeCondition) {
+		in := slices.Clone(loops)
+		switch command.name {
+		case "foreach":
+			loops = append(loops, cmakeLoop(command.args))
+		case "endforeach":
+			if len(loops) > 0 {
+				loops = loops[:len(loops)-1]
+			}
+			in = slices.Clone(loops)
+		}
 		if leave != nil && leave(command.name, command.args) {
 			return
 		}
-		statements = append(statements, CMakeStatement{Text: command.line(), Under: under, File: command.file})
+		statements = append(statements, CMakeStatement{Text: command.line(), Under: under, File: command.file, Loops: in})
 	})
 	return statements
 }

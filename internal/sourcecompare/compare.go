@@ -781,6 +781,7 @@ func autoconfWords(old, now project.AutoconfFacts, sets func(string) bool) strin
 func cmakeWords(old, now project.CMakeDocument, sets func(string) bool) string {
 	before, after := old.Facts(), now.Facts()
 	var lead, said []string
+	statements := now.Statements(nil, nil)
 	for _, name := range slices.Sorted(maps.Keys(after.Options)) {
 		option, was := after.Options[name], before.Options[name]
 		switch _, had := before.Options[name]; {
@@ -789,7 +790,16 @@ func cmakeWords(old, now project.CMakeDocument, sets func(string) bool) string {
 			if by == "ON" || by == "OFF" {
 				by = strings.ToLower(by)
 			}
-			said = append(said, fmt.Sprintf("option %s added, %s by default", name, by))
+			words := fmt.Sprintf("option %s added, %s by default", name, by)
+			gating, portfiles := cmakeGated(statements, name, sets)
+			if gating != "" {
+				words += ", gating " + gating
+			}
+			if portfiles {
+				lead = append(lead, words)
+			} else {
+				said = append(said, words)
+			}
 		case was.Default != option.Default && sets(name):
 			lead = append(lead, fmt.Sprintf("option %s, which the Portfile sets, has its default move from %s to %s", name, was.Default, option.Default))
 		case was.Default != option.Default:
@@ -851,6 +861,66 @@ func cmakeWords(old, now project.CMakeDocument, sets func(string) bool) string {
 	}
 	return ": " + strings.Join(append(lead, said...), "; ")
 }
+
+// cmakeGated names the commands an option's if()s gate, by name and
+// file, the first cmakeGates of them and a count of the rest: "gating
+// duckdb_extension_statically_link in extension/extension_build_tools.cmake".
+// It says what the option turns on, and claims nothing of what the build
+// lost: duckdb 2.0.0's LINK_CORE_EXTENSIONS, off by default, gates the
+// linking its default build had done (field testing, 2026-10-21). set(),
+// and list() and string(), which set variables as it does, message(), and
+// the blocks' own heads aren't named, nor a find_package,
+// said with the packages. portfiles reports a
+// gated command in a loop over a list the Portfile sets, as duckdb's
+// BUILD_EXTENSIONS, which then leads.
+func cmakeGated(statements []project.CMakeStatement, option string, sets func(string) bool) (gating string, portfiles bool) {
+	var named []string
+	for _, statement := range statements {
+		switch statement.Name() {
+		case "set", "unset", "list", "string", "message", "if", "elseif", "else", "endif", "foreach", "endforeach", "while", "endwhile",
+			"option", "cmake_dependent_option", "return", "continue", "break", "find_package":
+			// A find_package is said with the packages, under its option.
+			continue
+		}
+		if !slices.ContainsFunc(statement.Under, func(c project.CMakeCondition) bool { return gates(c, option) }) {
+			continue
+		}
+		for _, loop := range statement.Loops {
+			if slices.ContainsFunc(loop.Names, sets) {
+				portfiles = true
+			}
+		}
+		where := statement.Name()
+		if statement.File != "" {
+			where += " in " + statement.File
+		}
+		if !slices.Contains(named, where) {
+			named = append(named, where)
+		}
+	}
+	if len(named) > cmakeGates {
+		return fmt.Sprintf("%s, and %d more", strings.Join(named[:cmakeGates], ", "), len(named)-cmakeGates), portfiles
+	}
+	return strings.Join(named, ", "), portfiles
+}
+
+// gates reports a condition that holds where option is on: one testing it
+// as itself, not an else() of it, nor NOT it.
+func gates(condition project.CMakeCondition, option string) bool {
+	if !condition.Tests(option) {
+		return false
+	}
+	fields := strings.Fields(strings.NewReplacer("(", " ", ")", " ").Replace(condition.Text))
+	for i, field := range fields {
+		if (field == option || field == "${"+option+"}") && i > 0 && fields[i-1] == "NOT" {
+			return false
+		}
+	}
+	return true
+}
+
+// cmakeGates is how many of the commands an added option gates are named.
+const cmakeGates = 2
 
 // cmakeElsewhere says where a CMakeLists.txt changed beside what it
 // declares, its options and the packages it finds, among what the default

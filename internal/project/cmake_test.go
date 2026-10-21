@@ -166,3 +166,23 @@ func TestAVersionSetInPartsIsTheVersion(t *testing.T) {
 func cmakeDocument(text string) CMakeDocument {
 	return Reading{Files: map[string]File{"CMakeLists.txt": {Data: []byte(text)}}}.CMakeDocument("CMakeLists.txt")
 }
+
+// A statement carries the foreach() loops it's in, apart from its if()s,
+// each by the names its list reads: duckdb's linking sits in a loop over
+// BUILD_EXTENSIONS, which its Portfile sets (field testing, 2026-10-21).
+func TestAStatementKnowsTheLoopsItsIn(t *testing.T) {
+	document := cmakeDocument("foreach(EXT IN LISTS BUILD_EXTENSIONS)\n  if(LINK_CORE_EXTENSIONS)\n    link(${EXT})\n  endif()\n  foreach(x ${EXTRA} y)\n    inner()\n  endforeach()\nendforeach()\nafter()\n")
+	loops := map[string][]CMakeCondition{}
+	for _, statement := range document.Statements(nil, nil) {
+		loops[statement.Text] = statement.Loops
+		if statement.Text == "link(${EXT})" {
+			require.Equal(t, "link", statement.Name())
+			require.True(t, statement.Under[0].Tests("LINK_CORE_EXTENSIONS"))
+		}
+	}
+	builds := CMakeCondition{Text: "EXT IN LISTS BUILD_EXTENSIONS", Names: []string{"BUILD_EXTENSIONS"}}
+	require.Equal(t, []CMakeCondition{builds}, loops["link(${EXT})"])
+	require.Equal(t, []CMakeCondition{builds, {Text: "x ${EXTRA} y", Names: []string{"EXTRA"}}}, loops["inner()"])
+	require.Empty(t, loops["after()"])
+	require.Empty(t, loops["foreach(EXT IN LISTS BUILD_EXTENSIONS)"], "a loop's head is outside it")
+}
