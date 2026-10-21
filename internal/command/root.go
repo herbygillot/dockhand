@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -207,7 +208,18 @@ func newRoot(settings *settings, streams Streams) *cobra.Command {
 	root.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "say more of what dockhand does as it works on standard error: -v the work behind the scenes, -vv every step")
 	// A command that can't report as JSON is refused before it does
 	// anything, so --json never does work it can't report.
-	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		// A command naming a branch finds its checkout from anywhere
+		// (settings.registeredCheckout): by -b, -p, or --pr, or path,
+		// status, and archive by its name.
+		for _, flag := range []string{"branch", "port", "pr"} {
+			if f := cmd.Flags().Lookup(flag); f != nil && f.Changed {
+				settings.namesBranch = true
+			}
+		}
+		if len(args) > 0 && slices.Contains([]string{"path", "status", "archive"}, cmd.Name()) {
+			settings.namesBranch = true
+		}
 		// What the work reports as it goes goes to standard error (Design
 		// v3 §12): what a person needs to follow it, and with -v and -vv,
 		// the work behind the scenes and every step.

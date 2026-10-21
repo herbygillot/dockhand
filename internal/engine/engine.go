@@ -180,6 +180,41 @@ func assemble[T comparable](e *Engine, field *T, build func() (T, error)) (T, er
 	return *field, nil
 }
 
+// Checkouts are the ports checkouts the database has registered whose Git
+// directory is still there, for a command run outside any checkout that
+// names a branch: dockhand path <branch> run elsewhere failed "not a
+// MacPorts ports tree", though the branch's worktree was recorded (the
+// exiv2 field notes). It opens the database without a tree; one that
+// doesn't exist yet has none.
+func Checkouts(ctx context.Context, options Options) ([]string, error) {
+	if _, err := os.Stat(options.Database); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	s, err := sqlite.Open(ctx, options.Database, sqlite.Options{MigrateUnderLive: options.MigrateUnderLive, LiveWithin: coord.DefaultHungAfter})
+	if refused := new(store.LiveUnderMigrationError); errors.As(err, &refused) {
+		return nil, &LiveUnderMigrationError{refused}
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer s.Close()
+	dirs, err := s.Repositories(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var checkouts []string
+	for _, dir := range dirs {
+		// A clone's common directory is its .git; its checkout is beside it.
+		if filepath.Base(dir) != ".git" {
+			continue
+		}
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			checkouts = append(checkouts, filepath.Dir(dir))
+		}
+	}
+	return checkouts, nil
+}
+
 // Open checks that Tree is inside a ports checkout, opens the store, and
 // registers the repository. A directory that is not a ports tree is
 // refused before anything is recorded for it.
@@ -339,13 +374,27 @@ func OpenPortsTree(ctx context.Context, dir, executable string) (*git.Repository
 	}
 	repo, err := git.Open(ctx, dir, executable)
 	if err != nil {
-		return nil, fmt.Errorf("%s is not in a Git checkout (select one with --tree or MACPORTS_TREE): %w", dir, err)
+		return nil, &notCheckout{dir: dir, err: err}
 	}
 	if macports.ValidatePortsTree(repo.Root, dir) == nil || branchHoldsPorts(ctx, repo) {
 		return repo, nil
 	}
 	return nil, fmt.Errorf("%w: %s has no <category>/<port>/Portfile (select your macports-ports clone with --tree or MACPORTS_TREE)", ErrNotPortsTree, repo.Root)
 }
+
+// notCheckout is a directory outside any Git checkout, which is no ports
+// tree either (errors.Is ErrNotPortsTree), so a command naming a branch
+// looks for the registered one from there too.
+type notCheckout struct {
+	dir string
+	err error
+}
+
+func (n *notCheckout) Error() string {
+	return fmt.Sprintf("%s is not in a Git checkout (select one with --tree or MACPORTS_TREE): %v", n.dir, n.err)
+}
+
+func (n *notCheckout) Unwrap() []error { return []error{ErrNotPortsTree, n.err} }
 
 func branchHoldsPorts(ctx context.Context, repo *git.Repository) bool {
 	var names []string

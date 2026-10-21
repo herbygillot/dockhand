@@ -121,6 +121,13 @@ func TestOpenCreatesReopensAndRefusesOtherDatabases(t *testing.T) {
 	require.Equal(t, f.repo, again, "a registration is found, not repeated")
 	_, err = f.store.Register(t.Context(), "relative/.git")
 	require.ErrorIs(t, err, model.ErrInvalid)
+	// The checkouts registered are listed, oldest first, for a command
+	// run outside any to find the one it means.
+	_, err = f.store.Register(t.Context(), "/src/second/.git")
+	require.NoError(t, err)
+	dirs, err := f.store.Repositories(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{"/src/macports-ports/.git", "/src/second/.git"}, dirs)
 	require.NoError(t, f.store.Close())
 
 	reopened, err := Open(t.Context(), f.path, Options{})

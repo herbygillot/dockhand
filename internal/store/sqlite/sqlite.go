@@ -408,6 +408,27 @@ func (s *Store) Register(ctx context.Context, commonDir string) (model.Repositor
 	return id, err
 }
 
+// Repositories lists the registered Git common directories, oldest first.
+func (s *Store) Repositories(ctx context.Context) ([]string, error) {
+	var dirs []string
+	err := s.transaction(ctx, false, "", func(t *tx) error {
+		rows, err := t.conn.QueryContext(t.ctx, "SELECT common_dir FROM repositories ORDER BY created_at, id")
+		if err != nil {
+			return storageError(err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var dir string
+			if err := rows.Scan(&dir); err != nil {
+				return storageError(err)
+			}
+			dirs = append(dirs, dir)
+		}
+		return storageError(rows.Err())
+	})
+	return dirs, err
+}
+
 // View runs fn in a read transaction bound to the repository.
 func (s *Store) View(ctx context.Context, repository model.RepositoryID, fn func(store.Reader) error) error {
 	if repository == "" || fn == nil {

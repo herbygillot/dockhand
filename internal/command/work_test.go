@@ -243,3 +243,24 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 		require.ErrorContains(t, err, "Did you mean this?\n\t"+now+"\n", old)
 	}
 }
+
+// A command naming a branch, run outside any ports checkout, finds the
+// one checkout the database registered: dockhand path <branch> run
+// elsewhere failed "not a MacPorts ports tree", though the branch's
+// worktree was recorded (the exiv2 field notes). path alone still means
+// here.
+func TestABranchIsFoundFromOutsideTheTree(t *testing.T) {
+	w := newWorld(t)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", "")
+	t.Chdir(t.TempDir())
+	out, _, err := dockhand(t, "path", "jq-update")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(w.home, "Source", "macports-branches", "jq-update")+"\n", out)
+	out, _, err = dockhand(t, "status", "-b", "jq-update")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update")
+	_, _, err = dockhand(t, "path")
+	require.ErrorContains(t, err, "is not in a Git checkout", "path alone means here")
+}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -35,6 +36,9 @@ type settings struct {
 	openedWith engine.Options
 	// streams are the command's, for a question opening the engine asks.
 	streams Streams
+	// namesBranch is a command naming a branch, by -b, -p, or --pr or by
+	// its name, which run outside any checkout finds the registered one.
+	namesBranch bool
 }
 
 func (s *settings) flags(root *cobra.Command) {
@@ -102,6 +106,11 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 		return nil, err
 	}
 	e, err := engine.Open(ctx, options)
+	if errors.Is(err, engine.ErrNotPortsTree) && s.namesBranch && s.tree == "" && os.Getenv("MACPORTS_TREE") == "" {
+		if options.Tree, err = s.registeredCheckout(ctx, options, err); err == nil {
+			e, err = engine.Open(ctx, options)
+		}
+	}
 	if refused := new(engine.LiveUnderMigrationError); errors.As(err, &refused) && s.streams.terminal() {
 		// A person decides: their checks can be resumed by this build
 		// once they stop, as dockhand wait resumes a stopped check.
@@ -166,6 +175,28 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 		e.ArchiveFetcher = testArchiveFetcher(e)
 	}
 	return e, nil
+}
+
+// registeredCheckout is the one ports checkout the database registered,
+// for a command naming a branch run outside any checkout; refused, as
+// outside was, where none is, and naming them where several are, since
+// which one isn't plain.
+func (s *settings) registeredCheckout(ctx context.Context, options engine.Options, outside error) (string, error) {
+	checkouts, err := engine.Checkouts(ctx, options)
+	if err != nil {
+		return "", err
+	}
+	switch len(checkouts) {
+	case 0:
+		return "", outside
+	case 1:
+		return checkouts[0], nil
+	}
+	var named []string
+	for _, checkout := range checkouts {
+		named = append(named, config.Tilde(checkout))
+	}
+	return "", fmt.Errorf("this isn't a ports checkout, and dockhand knows several: %s; choose one with --tree or MACPORTS_TREE", strings.Join(named, ", "))
 }
 
 // testHTTPS, when set, stands in for asking URLs over HTTPS.

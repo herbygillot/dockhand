@@ -84,6 +84,10 @@ type Store interface {
 	// Register records the repository whose Git common directory is given,
 	// or returns the one already registered for it.
 	Register(ctx context.Context, commonDir string) (model.RepositoryID, error)
+	// Repositories are the Git common directories registered, in the order
+	// they were, for a command run outside any checkout to find the one
+	// it means.
+	Repositories(ctx context.Context) ([]string, error)
 	View(ctx context.Context, repository model.RepositoryID, fn func(Reader) error) error
 	Update(ctx context.Context, repository model.RepositoryID, fn func(Tx) error) error
 	Close() error
