@@ -145,7 +145,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 			}
 			earlier = append(earlier, check)
 		}
-		judged = evidence.Judge(own, plan, earlier, now)
+		judged = evidence.Judge(own, plan, earlier, now, required)
 		judged.Problem = problem
 		// A passed result no later check can reuse says why, so a rebuild
 		// isn't a silent hour (the architecture review's L3a).

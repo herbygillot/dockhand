@@ -318,7 +318,11 @@ func Merged(executions []model.GuestExecution, results map[model.ExecutionID][]m
 // blocked results were recorded in the attempt that recorded what blocked
 // them, after its provider (blockRemaining), so they stand and fall with
 // it.
-func Judge(primary Check, plan model.Plan, earlier []Check, now Identities) Evidence {
+//
+// Outside build.default's profile (required), a target is required only
+// where a check of the files planned it (outsideProfile).
+func Judge(primary Check, plan model.Plan, earlier []Check, now Identities, required []model.Environment) Evidence {
+	checks := append([]Check{primary}, earlier...)
 	primary.Plan = plan
 	evidence := Of(primary)
 	evidence.now = now
@@ -345,8 +349,43 @@ func Judge(primary Check, plan model.Plan, earlier []Check, now Identities) Evid
 			evidence.Earlier = append(evidence.Earlier, check.Run)
 		}
 	}
+	evidence.outsideProfile(required, checks)
 	evidence.settle()
 	return evidence
+}
+
+// outsideProfile asks nothing of a target, in an environment
+// build.default's profile doesn't cover (Covers), that no check of the
+// files planned there: its cell reads "—", as a release a profile skipped
+// does, and counts for nothing. Plan takes every check's environments, so
+// one diagnostic check --only ufraw on macOS 13 and 14 had submit ask for
+// all six of the branch's ports there (the exiv2 session's notes,
+// 2026-10-21). What a check found there still counts, a failure included,
+// and a target a check planned there and didn't reach, as when it
+// stopped, is still asked for.
+func (e *Evidence) outsideProfile(required []model.Environment, checks []Check) {
+	planned := func(environment model.Environment, id model.TargetID) bool {
+		for _, check := range checks {
+			if build, ok := check.Plan.In(environment); ok && build.Builds(id) {
+				return true
+			}
+		}
+		return false
+	}
+	for i, environment := range e.Plan.Environments {
+		if slices.ContainsFunc(required, func(r model.Environment) bool { return Covers(r, environment) }) {
+			continue
+		}
+		for t := range e.Targets {
+			cell := &e.Targets[t].Outcomes[i]
+			if cell.Kind != CellNotRun || planned(environment, e.Targets[t].Target.ID) {
+				continue
+			}
+			skipped := noResult(CellExcluded, environment, e.Targets[t].Target.ID)
+			skipped.Exclusion = model.Exclusion{Target: e.Targets[t].Target.Target, Reason: "outside build.default's profile, and no check of these files planned it here", Span: true}
+			*cell = skipped
+		}
+	}
 }
 
 // Plan is the plan a tree's evidence is judged against: the primary

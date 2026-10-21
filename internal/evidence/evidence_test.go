@@ -278,9 +278,9 @@ func TestRequiredEnvironmentsKeepWhatD17Accepted(t *testing.T) {
 
 	plan := Plan(newest.Plan, []model.Plan{mistaken.Plan}, []model.Environment{tahoeArm})
 	require.Equal(t, []model.Environment{tahoeArm, tahoeX86}, plan.Environments, "the Intel check planned it, so it's required")
-	judged := Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: "arm a", tahoeX86: "intel a"})
+	judged := Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: "arm a", tahoeX86: "intel a"}, []model.Environment{tahoeArm})
 	require.True(t, judged.Targets[0].Passed, "while its result there stands")
-	judged = Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: "arm a", tahoeX86: "intel b"})
+	judged = Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: "arm a", tahoeX86: "intel b"}, []model.Environment{tahoeArm})
 	require.True(t, judged.Targets[0].Missing(), "an Intel image made again since holds the branch until it's checked there again")
 	require.Equal(t, CellRemade, judged.Targets[0].Outcomes[1].Kind)
 
@@ -289,7 +289,7 @@ func TestRequiredEnvironmentsKeepWhatD17Accepted(t *testing.T) {
 	require.Equal(t, []model.Environment{tahoeArm, sequoia}, plan.Environments, "a default no check planned")
 	_, planned := plan.In(sequoia)
 	require.False(t, planned, "it has no plan of its own")
-	judged = Judge(newest, plan, nil, Identities{})
+	judged = Judge(newest, plan, nil, Identities{}, []model.Environment{tahoeArm, sequoia})
 	require.Equal(t, CellNotRun, judged.Targets[0].Outcomes[1].Kind, "so nothing says jq is excluded there, though a plan might")
 	require.True(t, judged.Targets[0].Missing())
 }
@@ -342,4 +342,64 @@ func TestACellFromAnotherCheckNamesIt(t *testing.T) {
 	require.Equal(t, "check-1", e.CellCheck(cell("x1", "")), "an earlier check of the same files")
 	require.Equal(t, "check-440", e.CellCheck(cell("x2", "x0")), "the check that built what the newest reused")
 	require.Empty(t, e.CellCheck(Cell{Kind: CellNotRun}))
+}
+
+// Outside build.default's profile a target is required only where a check
+// of the files planned it: one check --only ufraw on another release asked
+// nothing more of the branch's other ports there, where submit had asked
+// for all six (the exiv2 session's notes, 2026-10-21). What a check found
+// there counts, and a target a check planned there and didn't reach is
+// still asked for.
+func TestOutsideTheProfileOnlyWhatAChecksPlannedIsRequired(t *testing.T) {
+	ventura := model.Environment{Provider: "command", Platform: model.Platform{OS: "darwin", Version: "22", Architecture: "arm64"}}
+	sonoma := model.Environment{Provider: "command", Platform: model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}}
+	target := func(id string) model.PlanTarget {
+		return model.PlanTarget{ID: model.TargetID(id), Target: model.Target{Name: id}, Kind: model.Substantive, Role: model.Changed}
+	}
+	exiv2, ufraw, gthumb := target("exiv2"), target("ufraw"), target("gthumb")
+	passed := func(execution model.ExecutionID, ids ...model.TargetID) []model.TargetResult {
+		var results []model.TargetResult
+		for _, id := range ids {
+			results = append(results, model.TargetResult{Execution: execution, Target: id, Outcome: model.OutcomePassed})
+		}
+		return results
+	}
+	full := Check{Run: model.Run{ID: "run_1", Number: 1},
+		Plan:       model.Plan{Targets: []model.PlanTarget{exiv2, ufraw, gthumb}, Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{Environment: tahoeArm, Order: []model.TargetID{"exiv2", "ufraw", "gthumb"}}}},
+		Executions: []model.GuestExecution{{ID: "x1", Run: "run_1", Environment: tahoeArm}},
+		Results:    map[model.ExecutionID][]model.TargetResult{"x1": passed("x1", "exiv2", "ufraw", "gthumb")}}
+	// --only ufraw on Ventura, and gthumb planned on Sonoma by a check that
+	// stopped before it.
+	diagnostic := Check{Run: model.Run{ID: "run_2", Number: 2},
+		Plan: model.Plan{Targets: []model.PlanTarget{ufraw, gthumb}, Omitted: []model.PlanTarget{exiv2}, Environments: []model.Environment{ventura, sonoma},
+			Builds: []model.EnvironmentPlan{{Environment: ventura, Order: []model.TargetID{"ufraw"}}, {Environment: sonoma, Order: []model.TargetID{"gthumb"}}}},
+		Executions: []model.GuestExecution{{ID: "x2", Run: "run_2", Environment: ventura}},
+		Results:    map[model.ExecutionID][]model.TargetResult{"x2": passed("x2", "ufraw")}}
+	required := []model.Environment{tahoeArm}
+	plan := Plan(diagnostic.Plan, []model.Plan{full.Plan}, required)
+	judged := Judge(diagnostic, plan, []Check{full}, Identities{}, required)
+	cells := map[model.TargetID][]CellKind{}
+	for _, te := range judged.Targets {
+		for _, c := range te.Outcomes {
+			cells[te.Target.ID] = append(cells[te.Target.ID], c.Kind)
+		}
+	}
+	// Environments: Ventura, Sonoma (the diagnostic's), then Tahoe.
+	require.Equal(t, []model.Environment{ventura, sonoma, tahoeArm}, judged.Plan.Environments)
+	require.Equal(t, []CellKind{CellRecorded, CellExcluded, CellRecorded}, cells["ufraw"], "Ventura's result counts")
+	require.Equal(t, []CellKind{CellExcluded, CellNotRun, CellRecorded}, cells["gthumb"], "planned on Sonoma and not reached, so still asked for there")
+	require.Equal(t, []CellKind{CellExcluded, CellExcluded, CellRecorded}, cells["exiv2"], "--only left it out on releases outside the profile")
+	for _, te := range judged.Targets {
+		if te.Target.ID != "gthumb" {
+			require.False(t, te.Missing(), "%s is asked nothing more", te.Target.ID)
+		}
+	}
+	require.True(t, judged.Targets[slices.IndexFunc(judged.Targets, func(te TargetEvidence) bool { return te.Target.ID == "gthumb" })].Missing())
+	require.Equal(t, "—", func() string {
+		c := judged.Targets[0].Outcomes[1]
+		if c.Kind == CellExcluded && c.Exclusion.Span {
+			return "—"
+		}
+		return string(c.Kind)
+	}())
 }
