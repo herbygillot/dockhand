@@ -88,7 +88,7 @@ true, it runs that baseline by itself.`,
 				return previewBaseline(ctx, e, streams, branch, only)
 			}
 			if baseline {
-				return runBaseline(ctx, e, streams, branch, only, enqueue)
+				return runBaseline(ctx, e, streams, branch, only, enqueue, s.places())
 			}
 			mode := captureMode(head, staged, workingTree)
 			place, err := e.Where(ctx, engine.WhereRequest{On: on, Build: build})
@@ -161,7 +161,7 @@ true, it runs that baseline by itself.`,
 			if len(replaced) > 0 {
 				fmt.Fprintf(streams.Out, "%s replaces %s.\n", run.Name(), strings.Join(replaced, ", "))
 			}
-			err = runQueued(ctx, e, run, streams, enqueue)
+			err = runQueued(ctx, e, run, streams, enqueue, s.places())
 			// A check that passed says what moves the branch on now, as
 			// status would; one run for submit leaves that to submit.
 			if err == nil && !enqueue {
@@ -178,7 +178,7 @@ true, it runs that baseline by itself.`,
 				finished, _ := e.RunNamed(ctx, run.Name())
 				if offer, _ := e.BaselineCandidates(ctx, finished); len(offer.Ports) > 0 {
 					fmt.Fprintln(streams.Out, "Running a baseline comparison because check.baseline is enabled:")
-					if baselineErr := runBaseline(ctx, e, streams, branch, nil, false); baselineErr != nil {
+					if baselineErr := runBaseline(ctx, e, streams, branch, nil, false, s.places()); baselineErr != nil {
 						fmt.Fprintf(streams.Err, "baseline: %v\n", baselineErr)
 					}
 				}
@@ -213,7 +213,7 @@ true, it runs that baseline by itself.`,
 // runQueued sees a queued run through (Design v3 §11): handed to serve and
 // followed when serve leads, otherwise run here; with enqueue, only
 // queued, saying whether anything will run it.
-func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams Streams, enqueue bool) error {
+func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams Streams, enqueue bool, places config.Places) error {
 	session, err := e.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return err
@@ -239,10 +239,10 @@ func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams Str
 		return nil
 	case leader != nil:
 		fmt.Fprintf(streams.Err, "%s handed to serve (pid %d); following it. Ctrl-C stops following, not the check.\n", run.Name(), leader.PID)
-		return follow(ctx, e, session, run, streams, false)
+		return follow(ctx, e, session, run, streams, false, places)
 	}
 	fmt.Fprintf(streams.Err, "%s runs here, since no dockhand serve is running. Ctrl-C stops it and keeps what finished.\n", run.Name())
-	return follow(ctx, e, session, run, streams, true)
+	return follow(ctx, e, session, run, streams, true, places)
 }
 
 // captureMode is the files check's flags ask for, or CaptureAuto where
@@ -447,7 +447,7 @@ func writeExclusions(out io.Writer, plan model.Plan) {
 
 // follow shows a run's progress until it ends, driving it here when drive
 // is set, and reports its outcome.
-func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams Streams, drive bool) error {
+func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams Streams, drive bool, places config.Places) error {
 	journal := &journal{e: e, run: run.ID, out: streams.Err}
 	watching, stop := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -477,7 +477,7 @@ func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 	if err != nil {
 		return err
 	}
-	return report(context.WithoutCancel(ctx), e, run, streams)
+	return report(context.WithoutCancel(ctx), e, run, streams, places)
 }
 
 // journal prints a run's progress events as they are appended.
@@ -505,7 +505,7 @@ func (j *journal) show(ctx context.Context) {
 
 // report prints a finished run's results and returns the exit its outcome
 // calls for.
-func report(ctx context.Context, e *engine.Engine, run model.Run, streams Streams) error {
+func report(ctx context.Context, e *engine.Engine, run model.Run, streams Streams, places config.Places) error {
 	if run.BaselineOf != "" {
 		return reportBaseline(ctx, e, run, streams)
 	}
@@ -543,7 +543,7 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 	case model.RunFailed:
 		writeFailureLines(out, evidence)
 		if logs, err := e.Logs(ctx, run.ID); err == nil {
-			writeFailureLogs(out, logs)
+			writeFailureLogs(out, places, logs)
 		}
 		if err := hintBaseline(ctx, e, out, run); err != nil {
 			fmt.Fprintf(streams.Err, "baseline: %v\n", err)
@@ -612,7 +612,7 @@ func stopWords(run model.Run, wasQueued bool) string {
 // attempt, .gz once compressed, and why an attempt was tried again, where
 // a failed check said only "dockhand logs check-N" (the exiv2 field notes,
 // 2026-10-19).
-func writeFailureLogs(out io.Writer, logs engine.RunLogs) {
+func writeFailureLogs(out io.Writer, places config.Places, logs engine.RunLogs) {
 	var lines []string
 	for _, execution := range logs.Executions {
 		x := execution.Execution
@@ -622,7 +622,7 @@ func writeFailureLogs(out io.Writer, logs engine.RunLogs) {
 		}
 		for _, result := range execution.Results {
 			if result.Log != "" && (result.Outcome == model.OutcomeFailed || result.Outcome == model.OutcomeInterrupted || result.Tests.Failed()) {
-				lines = append(lines, fmt.Sprintf("  %s on %s: %s", result.Target, where, config.Tilde(buildlog.Where(result.Log))))
+				lines = append(lines, fmt.Sprintf("  %s on %s: %s", result.Target, where, places.Tilde(buildlog.Where(result.Log))))
 			}
 		}
 	}
@@ -757,7 +757,7 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams Streams, bra
 
 // runBaseline plans a baseline of the branch's latest check and runs it,
 // here or through serve.
-func runBaseline(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, only []string, enqueue bool) error {
+func runBaseline(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, only []string, enqueue bool, places config.Places) error {
 	baseline, err := e.PlanBaseline(ctx, branch, only)
 	if err != nil {
 		return err
@@ -767,7 +767,7 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams Streams, branch 
 	if err != nil {
 		return err
 	}
-	return runQueued(ctx, e, run, streams, enqueue)
+	return runQueued(ctx, e, run, streams, enqueue, places)
 }
 
 // writeBaselineHeader says what a baseline builds, and what it leaves out.

@@ -92,7 +92,7 @@ the check runs here, as a foreground check would.`,
 				return err
 			}
 			if run.State.Terminal() {
-				return report(ctx, e, run, streams)
+				return report(ctx, e, run, streams, s.places())
 			}
 			session, err := e.Session(ctx, model.SessionForeground)
 			if err != nil {
@@ -109,10 +109,10 @@ the check runs here, as a foreground check would.`,
 			}
 			if leader != nil || holder != nil {
 				fmt.Fprintf(streams.Err, "Following %s. Press Ctrl-C to stop watching; the check will continue.\n", run.Name())
-				return follow(ctx, e, session, run, streams, false)
+				return follow(ctx, e, session, run, streams, false, s.places())
 			}
 			fmt.Fprintf(streams.Err, "No dockhand serve is running, so %s will run here. Press Ctrl-C to stop it; completed results will be saved.\n", run.Name())
-			return follow(ctx, e, session, run, streams, true)
+			return follow(ctx, e, session, run, streams, true, s.places())
 		},
 	}
 	where.register(cmd, s, "follow the latest check of")
@@ -261,7 +261,7 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 			}
 			if port == "" {
 				streams.emit(logsView(logs))
-				return writeLogs(streams.Out, logs, stoppedRun(ctx, e, logs.Run))
+				return writeLogs(streams.Out, s.places(), logs, stoppedRun(ctx, e, logs.Run))
 			}
 			chosen, others, ok := portLogs(logs, port)
 			if !ok {
@@ -301,8 +301,8 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 			if full || len(found.Steps) == 0 {
 				where = streams.Err
 			}
-			writePortLogHeading(where, logs, port, chosen, others)
-			return writePortLog(streams.Out, found, data, full)
+			writePortLogHeading(where, s.places(), logs, port, chosen, others)
+			return writePortLog(streams.Out, s.places(), found, data, full)
 		},
 	}
 	where.register(cmd, s, "show the latest check of")
@@ -387,10 +387,10 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams Streams, run m
 // and where its log is, .gz once compressed; what ended each earlier
 // attempt in that environment, which a retry's log doesn't say; and the
 // port's other builds, each with how to see its log.
-func writePortLogHeading(out io.Writer, logs engine.RunLogs, port string, chosen portLog, others []portLog) {
+func writePortLogHeading(out io.Writer, places config.Places, logs engine.RunLogs, port string, chosen portLog, others []portLog) {
 	execution := chosen.execution
 	fmt.Fprintf(out, "%s's log on %s, attempt %d of %d, run %s: %s; %s\n", port, engine.DescribeEnvironment(execution.Environment), execution.Attempt, model.MaxAttempts, execution.ID,
-		portBuildWords(chosen.result), config.Tilde(buildlog.Where(chosen.result.Log)))
+		portBuildWords(chosen.result), places.Tilde(buildlog.Where(chosen.result.Log)))
 	for _, earlier := range logs.Executions {
 		if earlier.Execution.Environment == execution.Environment && earlier.Execution.Attempt < execution.Attempt {
 			ended := cmp.Or(earlier.Execution.Detail, string(earlier.Execution.State))
@@ -460,7 +460,7 @@ func portBuildWords(result model.TargetResult) string {
 // own phases began near line 46,400 of 47,000 (the hugo exercise). all
 // prints the whole log alone, as it is printed where no steps were
 // recorded.
-func writePortLog(out io.Writer, result model.TargetResult, data []byte, all bool) error {
+func writePortLog(out io.Writer, places config.Places, result model.TargetResult, data []byte, all bool) error {
 	if all {
 		_, err := out.Write(data)
 		return err
@@ -475,7 +475,7 @@ func writePortLog(out io.Writer, result model.TargetResult, data []byte, all boo
 		_, err := out.Write(data)
 		return err
 	}
-	fmt.Fprintf(out, "Steps in %s:\n", config.Tilde(buildlog.Where(result.Log)))
+	fmt.Fprintf(out, "Steps in %s:\n", places.Tilde(buildlog.Where(result.Log)))
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, step := range result.Steps {
 		fmt.Fprintf(tw, "  %s\tline %d\n", step.Name, step.Line)
@@ -607,7 +607,7 @@ func stoppedRun(ctx context.Context, e *engine.Engine, run model.Run) bool {
 // writeLogs says what a check recorded, its state first: a run whose
 // process ended is said as stopped, where it read "running" (field
 // testing's rust check, 2026-10-15).
-func writeLogs(out io.Writer, logs engine.RunLogs, stopped bool) error {
+func writeLogs(out io.Writer, places config.Places, logs engine.RunLogs, stopped bool) error {
 	if stopped {
 		name := logs.Run.Name()
 		fmt.Fprintf(out, "%s · stopped: the process running it ended; dockhand wait %s resumes it\n", name, name)
@@ -651,7 +651,7 @@ func writeLogs(out io.Writer, logs engine.RunLogs, stopped bool) error {
 				line += ", as built by run " + string(result.ReusedFrom)
 			}
 			if result.Log != "" {
-				line += "  " + config.Tilde(buildlog.Where(result.Log))
+				line += "  " + places.Tilde(buildlog.Where(result.Log))
 			}
 			fmt.Fprintln(out, line)
 			// A Git-fetched target's build says what it fetched, or that
@@ -669,7 +669,7 @@ func writeLogs(out io.Writer, logs engine.RunLogs, stopped bool) error {
 					line += " at " + string(part.Phase)
 				}
 				if part.Log != "" {
-					line += "  " + config.Tilde(buildlog.Where(part.Log))
+					line += "  " + places.Tilde(buildlog.Where(part.Log))
 				}
 				fmt.Fprintln(out, line)
 			}

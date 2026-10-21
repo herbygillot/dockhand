@@ -47,7 +47,8 @@ func TestTheEnvironmentIsTheOneUsageLists(t *testing.T) {
 	require.ElementsMatch(t, config.AgentVariables(), kept, "usage.md's sentence on the agent")
 }
 
-// Every variable dockhand's code reads by name is in the catalogue.
+// Every variable dockhand's code reads by name is in the catalogue, but
+// for PATH and HOME, which every program reads.
 func TestEveryVariableReadIsCatalogued(t *testing.T) {
 	var names []string
 	for _, variable := range config.Environment {
@@ -69,7 +70,7 @@ func TestEveryVariableReadIsCatalogued(t *testing.T) {
 				return true
 			}
 			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || (selector.Sel.Name != "Getenv" && selector.Sel.Name != "LookupEnv") {
+			if !ok || (selector.Sel.Name != "Getenv" && selector.Sel.Name != "getenv" && selector.Sel.Name != "LookupEnv") {
 				return true
 			}
 			literal, ok := call.Args[0].(*ast.BasicLit)
@@ -78,7 +79,7 @@ func TestEveryVariableReadIsCatalogued(t *testing.T) {
 			}
 			name, err := strconv.Unquote(literal.Value)
 			require.NoError(t, err)
-			if name == "PATH" || name == "DOCKHAND_FAILPOINT" || strings.HasPrefix(name, "DOCKHAND_TEST_") {
+			if name == "PATH" || name == "HOME" || name == "DOCKHAND_FAILPOINT" || strings.HasPrefix(name, "DOCKHAND_TEST_") {
 				return true
 			}
 			require.True(t, slices.Contains(names, name), "%s reads %s, which config.Environment doesn't list", files.Position(call.Pos()), name)

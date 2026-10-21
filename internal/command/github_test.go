@@ -496,6 +496,6 @@ func TestRequiredTestsFailACheckOnGitHub(t *testing.T) {
 func TestAGitHubLogWithoutHeadingsIsPrintedWholeAndSaid(t *testing.T) {
 	var out bytes.Buffer
 	result := model.TargetResult{Target: "jq", Log: "build-macos-15.log", Builders: []model.BuilderResult{{Builder: "build (macos-15)"}}}
-	require.NoError(t, writePortLog(&out, result, []byte("a log\n"), false))
+	require.NoError(t, writePortLog(&out, testPlaces(t), result, []byte("a log\n"), false))
 	require.Equal(t, "No build-step markers were found for jq. Showing the full log.\n\na log\n", out.String())
 }

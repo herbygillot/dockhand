@@ -66,7 +66,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	}
 	named := ""
 	if worktrees != "" {
-		if named, err = config.Absolute(worktrees); err != nil {
+		if named, err = s.places().Absolute(worktrees); err != nil {
 			return err
 		}
 	}
@@ -79,12 +79,12 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	defer e.Close()
 	out := streams.Out
 	if remote := report.Upstream.Remote; remote != "" {
-		fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", config.Tilde(report.Checkout), report.Upstream.Repository, remote)
+		fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", s.places().Tilde(report.Checkout), report.Upstream.Repository, remote)
 	} else {
-		fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", config.Tilde(report.Checkout), report.Upstream.Repository, report.Upstream.FetchedFrom)
+		fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", s.places().Tilde(report.Checkout), report.Upstream.Repository, report.Upstream.FetchedFrom)
 	}
 	if report.Unchosen && streams.terminal() && !yes {
-		answer, err := ask(streams, fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", config.Tilde(report.Worktrees)))
+		answer, err := ask(streams, fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", s.places().Tilde(report.Worktrees)))
 		if err != nil {
 			return err
 		}
@@ -96,7 +96,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 			if where == "" {
 				return fmt.Errorf("no directory given; rerun with --worktrees <directory>")
 			}
-			directory, err := config.Absolute(where)
+			directory, err := s.places().Absolute(where)
 			if err != nil {
 				return err
 			}
@@ -108,10 +108,10 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 			return err
 		}
 	}
-	fmt.Fprintf(out, "  Git          ✓ %s at %s\n", report.Git.Version, config.Tilde(report.Git.Path))
-	fmt.Fprintf(out, "  Branches     worktrees in %s\n", config.Tilde(report.Worktrees))
+	fmt.Fprintf(out, "  Git          ✓ %s at %s\n", report.Git.Version, s.places().Tilde(report.Git.Path))
+	fmt.Fprintf(out, "  Branches     worktrees in %s\n", s.places().Tilde(report.Worktrees))
 	if report.MacPorts != "" {
-		fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", config.Tilde(report.MacPorts))
+		fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", s.places().Tilde(report.MacPorts))
 	} else {
 		fmt.Fprintf(out, "  Authoring    ! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports\n")
 	}
@@ -126,7 +126,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	var publishLine string
 	publishLine, report.GitHub = s.host.publishing(cmd.Context())
 	fmt.Fprintf(out, "  Publishing   %s\n", publishLine)
-	fmt.Fprintf(out, "  Records      %s\n", config.Tilde(report.Records))
+	fmt.Fprintf(out, "  Records      %s\n", s.places().Tilde(report.Records))
 	fmt.Fprintln(out)
 	if streams.terminal() && !yes {
 		written, err := offerSetup(cmd.Context(), s, e, streams, file, configPath)
@@ -214,7 +214,7 @@ tracked files.`,
 				return nil
 			}
 			fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now)\nDirectory: %s\nNext: cd \"$(dockhand path %s)\"\n",
-				branch.Name, branch.Base.Short(), config.Tilde(branch.Worktree), branch.ShortName())
+				branch.Name, branch.Base.Short(), s.places().Tilde(branch.Worktree), branch.ShortName())
 			return nil
 		},
 	}
@@ -249,7 +249,7 @@ edit and you have write access, and never rewrites their description.`,
 				if len(args) > 0 {
 					return errors.New("--pr names the pull request; adopt takes a branch or --pr, not both")
 				}
-				return adoptPullRequest(cmd.Context(), e, streams, pr)
+				return adoptPullRequest(cmd.Context(), e, streams, s.places(), pr)
 			}
 			request := engine.AdoptRequest{}
 			if len(args) == 1 {
@@ -296,7 +296,7 @@ func writePlaced(out io.Writer, adoption engine.Adoption) {
 	}
 }
 
-func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, number int) error {
+func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, places config.Places, number int) error {
 	adoption, err := e.AdoptPullRequest(ctx, number)
 	if err != nil {
 		return err
@@ -313,7 +313,7 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, nu
 		edits = "maintainers can't push to it; suggest changes with dockhand review " + fmt.Sprint(number)
 	}
 	fmt.Fprintf(streams.Out, "Adopted %s: %q by @%s, %s%s; %s.\nDirectory: %s\n", adoption.Branch.ShortName(), adoption.Title, adoption.Author,
-		prose.Plural(adoption.Commits, "commit"), describeScope(adoption.Scope, nil), edits, config.Tilde(adoption.Branch.Worktree))
+		prose.Plural(adoption.Commits, "commit"), describeScope(adoption.Scope, nil), edits, places.Tilde(adoption.Branch.Worktree))
 	return nil
 }
 

@@ -223,3 +223,30 @@ buildenv/tart, macports/portindex, tart/host, and tcl/shell. A count may
 only fall, and must be lowered as it does. subprocess (where every
 program starts, with the Env it's given), forgetest, and the acceptance
 build's failpoints stay.
+
+## The command line's invocation
+
+`Run` makes an `invocation`, the arguments with `os.Environ()` and
+`os.Getwd()`, and nothing in command reads the process's environment
+after it: settings carry the invocation's environment and directory
+(`getenv`, `places`), and compose reads them in place of the process's
+(`compose.Options.Env` and `Dir`, with `Getenv` and `Places`). The tree
+defaults to the invocation's directory, MACPORTS_TREE's worktree is found
+from it, and diff's paths are read against it.
+
+config reads nothing itself. `config.Places`, a home and a working
+directory, carries what read HOME and the working directory:
+`ConfigPath` (in place of `Path`, $DOCKHAND_CONFIG's value made absolute
+against the directory, else ~/.dockhand/config.toml), `Load` with the
+worktrees' ~ expanded (plain `Load` keeps the ~ as written), `Tilde`, and
+`Absolute`. The writers that abbreviate a path take the places. serve
+--install's agent, its LaunchAgents folder, its database path, and the
+variables it carries are the invocation's; so are setup github's client
+ID and the editor.
+
+The boundary test's config row is gone. The catalogue's test now also
+reads `Getenv`/`getenv` calls, which caught compose's HOME; HOME is
+exempt with PATH.
+
+Tests still set the process's environment and run with it; the readers
+below compose are next, then the tests' own environment.

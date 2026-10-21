@@ -378,7 +378,7 @@ func TestLogsSayWhatAGitFetchedBuildFetched(t *testing.T) {
 			Git:     map[model.TargetID]engine.GitFetch{"libharbor": {Expected: source}}},
 	}}
 	var out bytes.Buffer
-	require.NoError(t, writeLogs(&out, logs, false))
+	require.NoError(t, writeLogs(&out, testPlaces(t), logs, false))
 	require.Contains(t, out.String(), "    libharbor passed\n      fetched 1a2b3c4, the commit git.branch v4 named when the check was planned\n    harbor-cli passed\n")
 	require.Contains(t, out.String(), "    libharbor passed\n      which commit of git.branch v4 it fetched isn't known: its provider didn't say; 1a2b3c4 was expected\n")
 

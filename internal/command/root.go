@@ -122,16 +122,30 @@ dockhand bump <port> does all four asking nothing, and stops where you
 should look. docs/usage.md is the guide, and dockhand status shows where
 things are.`
 
-// Run executes the command line in args.
+// Run executes the command line in args, in the process's environment and
+// working directory.
 func Run(ctx context.Context, args []string, streams Streams) error {
-	return run(ctx, args, streams, compose.Dependencies{}, machineHost())
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	return run(ctx, invocation{args: args, env: os.Environ(), dir: dir}, streams, compose.Dependencies{}, machineHost())
+}
+
+// invocation is a command line: its arguments, and the environment and
+// working directory it reads, as os.Environ and os.Getwd give them, in
+// place of the process's.
+type invocation struct {
+	args, env []string
+	dir       string
 }
 
 // run executes the command line on the host, with the stand-ins given,
 // compose's real ones where they're empty, which a test gives its own.
-func run(ctx context.Context, args []string, streams Streams, dependencies compose.Dependencies, host *host) error {
+func run(ctx context.Context, line invocation, streams Streams, dependencies compose.Dependencies, host *host) error {
+	args := line.args
 	var settings settings
-	settings.deps, settings.host = dependencies, host
+	settings.deps, settings.host, settings.env, settings.dir = dependencies, host, line.env, line.dir
 	stdout := streams.Out
 	streams = runStreams(streams, args)
 	settings.streams = streams
@@ -207,7 +221,7 @@ func newRoot(settings *settings, streams Streams) *cobra.Command {
 				return cmd.Help()
 			}
 			defer e.Close()
-			return showStatus(cmd.Context(), e, streams, nil, false, false, branchFlags{})
+			return showStatus(cmd.Context(), e, streams, nil, false, false, branchFlags{}, settings.places())
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")

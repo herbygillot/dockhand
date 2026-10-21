@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -51,8 +50,7 @@ MacPorts' distfiles mirror.`,
 			if archives {
 				return diffArchives(ctx, e, streams, branch, args, stat)
 			}
-			here, _ := os.Getwd()
-			diff, err := e.Diff(ctx, branch, engine.TreePaths(branch, here, args))
+			diff, err := e.Diff(ctx, branch, engine.TreePaths(branch, s.dir, args))
 			if err != nil {
 				return err
 			}

@@ -37,7 +37,17 @@ type settings struct {
 	deps compose.Dependencies
 	// host is the Mac's, or a test's stand-in.
 	host *host
+	// env and dir are the command line's environment and working
+	// directory (invocation), which compose reads.
+	env []string
+	dir string
 }
+
+// getenv is the variable's value in the command line's environment.
+func (s *settings) getenv(name string) string { return s.composeOptions().Getenv(name) }
+
+// places are the command line's home and working directory.
+func (s *settings) places() config.Places { return s.composeOptions().Places() }
 
 // overAllowanceFlag registers --over-allowance on a command that looks up
 // ports' newest releases.
@@ -57,7 +67,7 @@ const pullRequestsVariable = compose.PullRequestsVariable
 
 // composeOptions are the command line's selections, as compose takes them.
 func (s *settings) composeOptions() compose.Options {
-	return compose.Options{Tree: s.tree, Database: s.database, Git: s.git, NamesBranch: s.namesBranch}
+	return compose.Options{Tree: s.tree, Database: s.database, Git: s.git, NamesBranch: s.namesBranch, Env: s.env, Dir: s.dir}
 }
 
 // options resolves the engine's options, reading the configuration file

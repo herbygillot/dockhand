@@ -123,7 +123,7 @@ cancel stops a check. None means another.`,
 				}
 			}
 			streams.emit(map[string]any{"branches": cleanView(plans), "leftovers": leftoversView(leftovers), "applied": false})
-			removable := writeClean(streams.Out, plans, false) + writeLeftovers(streams.Out, leftovers, false)
+			removable := writeClean(streams.Out, plans, false, s.places()) + writeLeftovers(streams.Out, leftovers, false)
 			if removable == 0 {
 				fmt.Fprintln(streams.Out, "Nothing to remove.")
 				return nil
@@ -143,7 +143,7 @@ cancel stops a check. None means another.`,
 			// shown in full: thirty branches' blocks printed twice were
 			// a lot to read (field testing's cleanup, af03bbab).
 			fmt.Fprintln(streams.Out)
-			writeCleanDone(streams.Out, done)
+			writeCleanDone(streams.Out, done, s.places())
 			writeLeftovers(streams.Out, removed, true)
 			return errors.Join(err, leftoverErr)
 		},
@@ -201,7 +201,7 @@ func (s *settings) cleanupAfter(streams Streams, command string) {
 
 // writeClean lists what clean would do, or did, and counts what it would
 // remove.
-func writeClean(out io.Writer, plans []engine.CleanBranch, done bool) int {
+func writeClean(out io.Writer, plans []engine.CleanBranch, done bool, places config.Places) int {
 	count := 0
 	for _, plan := range plans {
 		line := plan.Branch.ShortName()
@@ -222,11 +222,11 @@ func writeClean(out io.Writer, plans []engine.CleanBranch, done bool) int {
 			}
 			switch {
 			case step.Kept != "":
-				fmt.Fprintf(out, "  keep     %s: %s\n", cleanWords(step.What), step.Kept)
+				fmt.Fprintf(out, "  keep     %s: %s\n", cleanWords(places, step.What), step.Kept)
 			case done && step.Done:
-				fmt.Fprintf(out, "  removed  %s%s\n", cleanWords(step.What), why)
+				fmt.Fprintf(out, "  removed  %s%s\n", cleanWords(places, step.What), why)
 			default:
-				fmt.Fprintf(out, "  remove   %s%s\n", cleanWords(step.What), why)
+				fmt.Fprintf(out, "  remove   %s%s\n", cleanWords(places, step.What), why)
 				count++
 			}
 		}
@@ -268,24 +268,24 @@ func writeLeftovers(out io.Writer, leftovers []engine.Leftover, done bool) int {
 }
 
 // cleanWords abbreviates a worktree's path under your home.
-func cleanWords(what string) string {
+func cleanWords(places config.Places, what string) string {
 	if path, ok := strings.CutPrefix(what, "worktree "); ok {
-		return "worktree " + config.Tilde(path)
+		return "worktree " + places.Tilde(path)
 	}
 	return what
 }
 
 // writeCleanDone says what clean did, one line a branch: what it removed,
 // and what it kept and why.
-func writeCleanDone(out io.Writer, plans []engine.CleanBranch) {
+func writeCleanDone(out io.Writer, plans []engine.CleanBranch, places config.Places) {
 	for _, plan := range plans {
 		var removed, kept []string
 		for _, step := range plan.Steps {
 			switch {
 			case step.Kept != "":
-				kept = append(kept, cleanWords(step.What)+" ("+step.Kept+")")
+				kept = append(kept, cleanWords(places, step.What)+" ("+step.Kept+")")
 			case step.Done:
-				removed = append(removed, cleanWords(step.What))
+				removed = append(removed, cleanWords(places, step.What))
 			}
 		}
 		line := plan.Branch.ShortName()

@@ -429,14 +429,14 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 			deferred = true
 			request.Start = &engine.StartRequest{}
 		} else {
-			announce(out, branch, started)
+			announce(out, s.places(), branch, started)
 		}
 	}
 	request.Branch, request.FromMaster = branch, fromMaster
 	update, err = e.Update(ctx, request)
 	if update.Started {
 		branch, started = update.Branch, true
-		announce(out, branch, started)
+		announce(out, s.places(), branch, started)
 	}
 	if update.RenamedFrom != "" {
 		branch = update.Branch
@@ -683,11 +683,11 @@ func nextIn(ctx context.Context, e *engine.Engine, branch model.Branch, steps ..
 
 // announce says which branch an edit is in, and whether it was just
 // started.
-func announce(out io.Writer, branch model.Branch, started bool) {
+func announce(out io.Writer, places config.Places, branch model.Branch, started bool) {
 	if started {
 		fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, branch.Base.Short())
 	}
-	fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), config.Tilde(branch.Worktree))
+	fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), places.Tilde(branch.Worktree))
 }
 
 // byHand says that dockhand can't make the edit by itself, why, and how

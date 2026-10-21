@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -39,6 +38,28 @@ type Options struct {
 	// NamesBranch is a command naming a branch, which run outside any
 	// checkout finds the one the database registered (registeredCheckout).
 	NamesBranch bool
+	// Env is the command line's environment, as os.Environ gives one, and
+	// Dir its working directory, which compose reads in place of the
+	// process's.
+	Env []string
+	Dir string
+}
+
+// Getenv is the variable's value in the command line's environment, or
+// empty.
+func (o Options) Getenv(name string) string {
+	value := ""
+	for _, entry := range o.Env {
+		if key, rest, ok := strings.Cut(entry, "="); ok && key == name {
+			value = rest
+		}
+	}
+	return value
+}
+
+// Places are the command line's home, $HOME, and working directory.
+func (o Options) Places() config.Places {
+	return config.Places{Home: o.Getenv("HOME"), Dir: o.Dir}
 }
 
 // Dependencies stand in for what compose would make: the readers,
@@ -84,35 +105,36 @@ const PullRequestsVariable = "DOCKHAND_PULL_REQUESTS"
 // Settings resolves the engine's options from the command line's, the
 // environment, and the configuration file, which it reads.
 func Settings(ctx context.Context, options Options) (engine.Options, config.File, string, error) {
-	configPath, err := config.Path()
+	places := options.Places()
+	configPath, err := places.ConfigPath(options.Getenv(config.PathVariable))
 	if err != nil {
 		return engine.Options{}, config.File{}, "", err
 	}
-	file, err := config.Load(configPath)
+	file, err := places.Load(configPath)
 	if err != nil {
 		return engine.Options{}, config.File{}, "", err
 	}
-	database := cmp.Or(options.Database, os.Getenv("DOCKHAND_DB"))
+	git := cmp.Or(options.Git, options.Getenv("GIT_BIN"))
+	database := cmp.Or(options.Database, options.Getenv("DOCKHAND_DB"))
 	if database == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return engine.Options{}, config.File{}, "", err
+		if places.Home == "" {
+			return engine.Options{}, config.File{}, "", errors.New("$HOME is not defined; name the database with --db or DOCKHAND_DB")
 		}
-		database = filepath.Join(home, ".dockhand", "dockhand.db")
+		database = filepath.Join(places.Home, ".dockhand", "dockhand.db")
 	}
 	// With no --tree, MACPORTS_TREE names the checkout, and a directory in
 	// one of its worktrees is that worktree, whose branch is the one
 	// checked out here.
 	tree := options.Tree
 	if tree == "" {
-		tree = "."
-		if named := os.Getenv("MACPORTS_TREE"); named != "" {
-			tree = engine.Here(ctx, named, ".", cmp.Or(options.Git, os.Getenv("GIT_BIN")))
+		tree = cmp.Or(options.Dir, ".")
+		if named := options.Getenv("MACPORTS_TREE"); named != "" {
+			tree = engine.Here(ctx, named, cmp.Or(options.Dir, "."), git)
 		}
 	}
 	return engine.Options{
 		Tree:      tree,
-		Git:       cmp.Or(options.Git, os.Getenv("GIT_BIN")),
+		Git:       git,
 		Database:  database,
 		Worktrees: file.Worktrees,
 		// holds.majors = "allow" lets bump and serve move a major version.
@@ -120,11 +142,11 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		Tests:       model.TestPolicy(file.Check.Tests),
 		// DOCKHAND_UPSTREAM fetches master from a mirror or, in tests, a
 		// local repository.
-		Upstream: os.Getenv("DOCKHAND_UPSTREAM"),
+		Upstream: options.Getenv("DOCKHAND_UPSTREAM"),
 		// DOCKHAND_PULL_REQUESTS sends pull requests to a sandbox, a fork
 		// of MacPorts' repository, for the acceptance test's repeatable
 		// rows; submit's preview names it.
-		PullRequests: os.Getenv(PullRequestsVariable),
+		PullRequests: options.Getenv(PullRequestsVariable),
 		// Readings are a saving: where the cache can't be placed, none
 		// are kept.
 		Readings:         readingCache(),
@@ -142,8 +164,8 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		return Assembly{}, err
 	}
 	e, err := engine.Open(ctx, engineOptions)
-	if errors.Is(err, engine.ErrNotPortsTree) && options.NamesBranch && options.Tree == "" && os.Getenv("MACPORTS_TREE") == "" {
-		if engineOptions.Tree, err = registeredCheckout(ctx, engineOptions, err); err == nil {
+	if errors.Is(err, engine.ErrNotPortsTree) && options.NamesBranch && options.Tree == "" && options.Getenv("MACPORTS_TREE") == "" {
+		if engineOptions.Tree, err = registeredCheckout(ctx, engineOptions, options.Places(), err); err == nil {
 			e, err = engine.Open(ctx, engineOptions)
 		}
 	}
@@ -224,7 +246,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 // for a command naming a branch run outside any checkout; refused, as
 // outside was, where none is, and naming them where several are, since
 // which one isn't plain.
-func registeredCheckout(ctx context.Context, options engine.Options, outside error) (string, error) {
+func registeredCheckout(ctx context.Context, options engine.Options, places config.Places, outside error) (string, error) {
 	checkouts, err := engine.Checkouts(ctx, options)
 	if err != nil {
 		return "", err
@@ -237,7 +259,7 @@ func registeredCheckout(ctx context.Context, options engine.Options, outside err
 	}
 	var named []string
 	for _, checkout := range checkouts {
-		named = append(named, config.Tilde(checkout))
+		named = append(named, places.Tilde(checkout))
 	}
 	return "", fmt.Errorf("this isn't a ports checkout, and dockhand knows several: %s; choose one with --tree or MACPORTS_TREE", strings.Join(named, ", "))
 }

@@ -440,20 +440,41 @@ func ageWords(age time.Duration) string {
 	return fmt.Sprintf("%dm", age/time.Minute)
 }
 
-// Path is the configuration file to use: $DOCKHAND_CONFIG, or
-// ~/.dockhand/config.toml.
-func Path() (string, error) {
-	if path := os.Getenv(PathVariable); path != "" {
-		return filepath.Abs(path)
+// Places are a command line's home and working directory, which the
+// paths a person gives are read against and shown in.
+type Places struct {
+	Home, Dir string
+}
+
+// errNoHome is a command line without a home directory.
+var errNoHome = errors.New("$HOME is not defined")
+
+// ConfigPath is the configuration file to use: named, $DOCKHAND_CONFIG's
+// value, where it's set, else ~/.dockhand/config.toml.
+func (p Places) ConfigPath(named string) (string, error) {
+	if named != "" {
+		return p.Absolute(named)
 	}
-	home, err := os.UserHomeDir()
+	if p.Home == "" {
+		return "", errNoHome
+	}
+	return filepath.Join(p.Home, ".dockhand", "config.toml"), nil
+}
+
+// Load reads the file at path, its worktrees' leading ~ expanded.
+func (p Places) Load(path string) (File, error) {
+	f, err := Load(path)
 	if err != nil {
-		return "", err
+		return f, err
 	}
-	return filepath.Join(home, ".dockhand", "config.toml"), nil
+	if f.Worktrees, err = p.withHome(f.Worktrees); err != nil {
+		return File{}, fmt.Errorf("%s: worktrees: %w", path, err)
+	}
+	return f, nil
 }
 
 // Load reads the file at path. A missing file is an empty configuration.
+// A worktrees directory under ~ is kept as written (Places.Load).
 func Load(path string) (File, error) {
 	var f File
 	data, err := os.ReadFile(path)
@@ -495,7 +516,7 @@ func parse(path, text string) (File, error) {
 		}
 		return File{}, fmt.Errorf("%s: unknown setting %s", path, strings.Join(keys, ", "))
 	}
-	if f.Worktrees, err = expandHome(f.Worktrees); err != nil {
+	if err := absoluteOrHome(f.Worktrees); err != nil {
 		return File{}, fmt.Errorf("%s: worktrees: %w", path, err)
 	}
 	switch f.Check.Tests {
@@ -604,13 +625,12 @@ func (f File) Maintainers() []string {
 // Tilde abbreviates the home directory in a path shown to a person: ~ and
 // ~/rest. A home reached through a symbolic link is matched in its
 // resolved form too, as Git reports resolved paths.
-func Tilde(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
+func (p Places) Tilde(path string) string {
+	if p.Home == "" {
 		return path
 	}
-	homes := []string{home}
-	if resolved, err := filepath.EvalSymlinks(home); err == nil && resolved != home {
+	homes := []string{p.Home}
+	if resolved, err := filepath.EvalSymlinks(p.Home); err == nil && resolved != p.Home {
 		homes = append(homes, resolved)
 	}
 	for _, home := range homes {
@@ -626,38 +646,34 @@ func Tilde(path string) string {
 
 // Absolute is a path a person gave, its leading ~ expanded, made absolute
 // against the working directory.
-func Absolute(path string) (string, error) {
-	path, err := withHome(path)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Abs(path)
-}
-
-// withHome expands a path's leading ~.
-func withHome(path string) (string, error) {
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		path = filepath.Join(home, strings.TrimPrefix(path, "~"))
-	}
-	return path, nil
-}
-
-func expandHome(path string) (string, error) {
-	if path == "" {
-		return "", nil
-	}
-	path, err := withHome(path)
+func (p Places) Absolute(path string) (string, error) {
+	path, err := p.withHome(path)
 	if err != nil {
 		return "", err
 	}
 	if !filepath.IsAbs(path) {
-		return "", fmt.Errorf("%q is not an absolute path", path)
+		path = filepath.Join(p.Dir, path)
 	}
 	return filepath.Clean(path), nil
+}
+
+// withHome expands a path's leading ~.
+func (p Places) withHome(path string) (string, error) {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		if p.Home == "" {
+			return "", errNoHome
+		}
+		path = filepath.Join(p.Home, strings.TrimPrefix(path, "~"))
+	}
+	return path, nil
+}
+
+// absoluteOrHome refuses a path that's neither absolute nor under ~.
+func absoluteOrHome(path string) error {
+	if path == "" || path == "~" || strings.HasPrefix(path, "~/") || filepath.IsAbs(path) {
+		return nil
+	}
+	return fmt.Errorf("%q is not an absolute path", path)
 }
 
 // SetWorktrees records the worktrees directory in the file at path,

@@ -143,9 +143,9 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 	if s.host.os != "darwin" {
 		return errors.New("serve --install requires macOS; on other platforms, run dockhand serve with your service manager")
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
+	home := s.places().Home
+	if home == "" {
+		return errors.New("$HOME is not defined, so serve --install has no LaunchAgents folder")
 	}
 	plist := filepath.Join(home, "Library", "LaunchAgents", AgentLabel+".plist")
 	// Both wait until launchd has let go of the agent, which bootout
@@ -176,7 +176,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 		return err
 	}
 	// launchd starts the agent in /, so every path it's given is absolute.
-	database, err := filepath.Abs(options.Database)
+	database, err := s.places().Absolute(options.Database)
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 	if options.Git != "" {
 		arguments = append(arguments, "--git", options.Git)
 	}
-	environment, err := agentEnvironment()
+	environment, err := agentEnvironment(s)
 	if err != nil {
 		return err
 	}
@@ -195,7 +195,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 	if err := agent.Install(ctx, agentJob(append(arguments, flags...), environment, logs)); err != nil {
 		return err
 	}
-	fmt.Fprintf(streams.Out, "serve now starts at login and restarts if it stops.\n  Agent  %s\n  Log    %s\n", config.Tilde(plist), config.Tilde(logs))
+	fmt.Fprintf(streams.Out, "serve now starts at login and restarts if it stops.\n  Agent  %s\n  Log    %s\n", s.places().Tilde(plist), s.places().Tilde(logs))
 	var carried []string
 	for _, variable := range environment[1:] {
 		carried = append(carried, variable[0])
@@ -204,7 +204,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 		fmt.Fprintf(streams.Out, "  With   %s, as set now\n", strings.Join(carried, ", "))
 	}
 	for _, token := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
-		if os.Getenv(token) != "" {
+		if s.getenv(token) != "" {
 			fmt.Fprintf(streams.Out, "%s is omitted from the agent file because that file is readable by other users on this Mac. serve uses the GitHub credentials saved in the Keychain; run dockhand setup github to save them.\n", token)
 		}
 	}
@@ -215,16 +215,16 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 // agentEnvironment is PATH and whichever of the agent's variables
 // (config.AgentVariables) are set, each a local path made absolute, since
 // launchd starts the agent in /.
-func agentEnvironment() ([][2]string, error) {
-	environment := [][2]string{{"PATH", os.Getenv("PATH")}}
+func agentEnvironment(s *settings) ([][2]string, error) {
+	environment := [][2]string{{"PATH", s.getenv("PATH")}}
 	for _, name := range config.AgentVariables() {
-		value := os.Getenv(name)
+		value := s.getenv(name)
 		if value == "" {
 			continue
 		}
-		if _, err := os.Stat(value); err == nil && !filepath.IsAbs(value) {
-			if value, err = filepath.Abs(value); err != nil {
-				return nil, err
+		if !filepath.IsAbs(value) {
+			if absolute := filepath.Join(s.dir, value); fileExists(absolute) {
+				value = absolute
 			}
 		}
 		environment = append(environment, [2]string{name, value})
@@ -243,4 +243,10 @@ func agentJob(arguments []string, environment [][2]string, log string) macos.Lau
 	// Kept alive while dockhand is installed, and not after port uninstall
 	// removes it.
 	return macos.LaunchdJob{Label: AgentLabel, Arguments: arguments, Log: log, Environment: variables, KeepAlive: true, KeepAliveWhile: arguments[0], ProcessType: "Background"}
+}
+
+// fileExists is whether something is at path.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

@@ -273,9 +273,10 @@ func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
 // one a line.
 func providers(t *testing.T) string {
 	t.Helper()
-	path, err := config.Path()
+	s := testSettings(t)
+	path, err := s.places().ConfigPath(s.getenv(config.PathVariable))
 	require.NoError(t, err)
-	file, err := config.Load(path)
+	file, err := s.places().Load(path)
 	require.NoError(t, err)
 	return strings.Join(hosted(t).providerLines(t.Context(), file), "\n") + "\n"
 }

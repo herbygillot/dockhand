@@ -46,7 +46,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				all = append(all, configSetting{Key: key, Value: value, Source: source})
 			}
 			set := func(key, value string) { add(key, value, defaults[key]) }
-			set("worktrees", config.Tilde(file.Worktrees))
+			set("worktrees", s.places().Tilde(file.Worktrees))
 			set("maintainer", file.Maintainer)
 			set("build.default", file.Build.Default)
 			set("build.unattended", file.Build.Unattended)
@@ -119,7 +119,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			set("providers.github.capacity", positive(file.Providers.GitHub.Capacity))
 			set("providers.github.build_timeout", file.Providers.GitHub.BuildTimeout)
 			streams.emit(map[string]any{"file": path, "database": options.Database, "settings": all})
-			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", config.Tilde(path), config.Tilde(options.Database))
+			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", s.places().Tilde(path), s.places().Tilde(options.Database))
 			width := 0
 			for _, setting := range all {
 				width = max(width, len(setting.Key))

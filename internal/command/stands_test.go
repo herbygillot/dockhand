@@ -2,12 +2,14 @@ package command
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/compose"
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -91,12 +93,27 @@ func standsFor(t testing.TB) *standing {
 func runFor(t testing.TB, ctx context.Context, args []string, streams Streams) error {
 	t.Helper()
 	found := standsFor(t)
-	return run(ctx, args, streams, found.deps, found.host)
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	return run(ctx, invocation{args: args, env: os.Environ(), dir: dir}, streams, found.deps, found.host)
 }
 
 // testSettings are a command's settings, with the test's stand-ins.
 func testSettings(t testing.TB) *settings {
 	t.Helper()
 	found := standsFor(t)
-	return &settings{deps: found.deps, host: found.host}
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &settings{deps: found.deps, host: found.host, env: os.Environ(), dir: dir}
+}
+
+// testPlaces are the test's home and working directory, as a command run
+// in it reads them.
+func testPlaces(t testing.TB) config.Places {
+	t.Helper()
+	return testSettings(t).places()
 }

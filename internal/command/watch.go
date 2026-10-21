@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -17,7 +18,7 @@ import (
 
 // statusWatch is status --watch: status kept current as serve works, a
 // view redrawn on a terminal, else events as lines; it only observes.
-func statusWatch(ctx context.Context, e *engine.Engine, streams Streams, plain bool, timings timings) error {
+func statusWatch(ctx context.Context, e *engine.Engine, streams Streams, plain bool, timings timings, places config.Places) error {
 	// One observer for the whole watch, however often it redraws.
 	ctx, _, end, err := e.Observing(ctx)
 	if err != nil {
@@ -25,9 +26,9 @@ func statusWatch(ctx context.Context, e *engine.Engine, streams Streams, plain b
 	}
 	defer end()
 	if plain || !streams.terminal() || !streams.outTerminal() {
-		err = watchPlain(ctx, e, streams, timings)
+		err = watchPlain(ctx, e, streams, timings, places)
 	} else {
-		err = watchLive(ctx, e, streams, timings)
+		err = watchLive(ctx, e, streams, timings, places)
 	}
 	// Being stopped is how a watch ends.
 	if ctx.Err() != nil && (err == nil || errors.Is(err, ctx.Err())) {
@@ -60,12 +61,12 @@ func (c *journalCursor) next(ctx context.Context) ([]model.Event, error) {
 }
 
 // watchPlain prints status once, then each event as it is journaled.
-func watchPlain(ctx context.Context, e *engine.Engine, streams Streams, timings timings) error {
+func watchPlain(ctx context.Context, e *engine.Engine, streams Streams, timings timings, places config.Places) error {
 	cursor := &journalCursor{e: e}
 	if err := cursor.start(ctx); err != nil {
 		return err
 	}
-	if err := showStatus(ctx, e, streams, nil, false, false, branchFlags{}); err != nil {
+	if err := showStatus(ctx, e, streams, nil, false, false, branchFlags{}, places); err != nil {
 		return err
 	}
 	fmt.Fprintln(streams.Out, "\nWatching for changes. Press Ctrl-C to stop watching.")
@@ -128,7 +129,7 @@ const (
 // watchLive redraws status on a terminal as what it shows changes, and
 // runs the commands typed at it. A check's progress isn't redrawn for: it
 // redrew every branch's status each second of every check (SQL-O6).
-func watchLive(ctx context.Context, e *engine.Engine, streams Streams, timings timings) error {
+func watchLive(ctx context.Context, e *engine.Engine, streams Streams, timings timings, places config.Places) error {
 	fmt.Fprint(streams.Out, enterView)
 	defer fmt.Fprint(streams.Out, leaveView)
 	cursor := &journalCursor{e: e}
@@ -156,7 +157,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams, timings t
 	var drawn time.Time
 	draw := func() {
 		var view bytes.Buffer
-		if err := showStatus(ctx, e, Streams{Out: &view, Err: &view}, nil, false, false, branchFlags{}); err != nil {
+		if err := showStatus(ctx, e, Streams{Out: &view, Err: &view}, nil, false, false, branchFlags{}, places); err != nil {
 			fmt.Fprintf(&view, "status: %v\n", err)
 		}
 		drawn = time.Now()

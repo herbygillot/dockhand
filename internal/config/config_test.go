@@ -40,10 +40,9 @@ func TestUnknownAndMalformedSettingsAreRefusedByName(t *testing.T) {
 
 func TestHomeIsExpanded(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
 	path := filepath.Join(t.TempDir(), "config.toml")
 	require.NoError(t, os.WriteFile(path, []byte("worktrees = \"~/src/macports-branches\"\n"), 0o600))
-	f, err := Load(path)
+	f, err := Places{Home: home}.Load(path)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(home, "src", "macports-branches"), f.Worktrees)
 }
@@ -67,17 +66,20 @@ func TestSetWorktreesKeepsTheRestOfTheFile(t *testing.T) {
 	require.Error(t, SetWorktrees(path, "relative"), "only absolute directories")
 }
 
-func TestPathFollowsTheEnvironment(t *testing.T) {
+func TestConfigPathIsTheNamedFileElseTheHomes(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv(PathVariable, "")
-	path, err := Path()
+	places := Places{Home: home, Dir: "/work"}
+	path, err := places.ConfigPath("")
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(home, ".dockhand", "config.toml"), path)
-	t.Setenv(PathVariable, "/elsewhere/config.toml")
-	path, err = Path()
+	path, err = places.ConfigPath("/elsewhere/config.toml")
 	require.NoError(t, err)
 	require.Equal(t, "/elsewhere/config.toml", path)
+	path, err = places.ConfigPath("here.toml")
+	require.NoError(t, err)
+	require.Equal(t, "/work/here.toml", path, "against the command line's directory")
+	_, err = Places{}.ConfigPath("")
+	require.ErrorContains(t, err, "$HOME is not defined")
 }
 
 func TestCheckAndProviderSettings(t *testing.T) {

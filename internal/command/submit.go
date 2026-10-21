@@ -107,7 +107,7 @@ kept.
 				case "p":
 					fmt.Fprintf(streams.Out, "\n%s\n\n%s\n", plan.Title, plan.Body)
 				case "e":
-					edited, err := editText(ctx, plan.Body)
+					edited, err := editText(ctx, s.editorCommand(), plan.Body)
 					if err != nil {
 						fmt.Fprintln(streams.Err, err)
 						continue
@@ -600,8 +600,7 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 }
 
 // editText opens text in $VISUAL or $EDITOR and returns what was saved.
-func editText(ctx context.Context, text string) (string, error) {
-	editor := editorCommand()
+func editText(ctx context.Context, editor, text string) (string, error) {
 	if editor == "" {
 		return "", errors.New("Set $VISUAL or $EDITOR to edit the description here, or edit it on GitHub after submitting. Dockhand preserves your edits.")
 	}

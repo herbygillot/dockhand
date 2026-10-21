@@ -868,8 +868,8 @@ JSON
 // dies with the editor open leaves the buffer to the next one's sweep.
 func TestTheDescriptionIsEditedInTheRunRoot(t *testing.T) {
 	record := filepath.Join(t.TempDir(), "path")
-	t.Setenv("VISUAL", `edit() { printf '%s' "$1" > '`+record+`'; printf 'edited' > "$1"; }; edit`)
-	text, err := editText(t.Context(), "draft")
+	editor := `edit() { printf '%s' "$1" > '` + record + `'; printf 'edited' > "$1"; }; edit`
+	text, err := editText(t.Context(), editor, "draft")
 	require.NoError(t, err)
 	require.Equal(t, "edited", text)
 	path, err := os.ReadFile(record)

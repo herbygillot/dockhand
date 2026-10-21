@@ -12,7 +12,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -51,7 +50,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 			}
 			portfile := filepath.Join(branch.Worktree, filepath.FromSlash(directory), "Portfile")
 			streams.emit(map[string]any{"branch": branchRef(branch), "started": started, "directory": directory, "portfile": portfile})
-			editor := editorCommand()
+			editor := s.editorCommand()
 			// --no-open only brings the port's files in, for an editor of
 			// the person's own, where EDITOR=true stood in for it (field
 			// testing's batch 13).
@@ -59,7 +58,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 				fmt.Fprintln(streams.Out, portfile)
 				return nil
 			}
-			fmt.Fprintf(streams.Err, "%s · %s\n", branch.ShortName(), config.Tilde(portfile))
+			fmt.Fprintf(streams.Err, "%s · %s\n", branch.ShortName(), s.places().Tilde(portfile))
 			if err := runEditor(ctx, editor, portfile); err != nil {
 				return err
 			}
@@ -206,7 +205,7 @@ anywhere.`,
 				return err
 			}
 			fmt.Fprintf(streams.Out, "%s repeats %s: %s\n", run.Name(), previous.Name(), engine.Describe(revision))
-			return runQueued(ctx, e, run, streams, enqueue)
+			return runQueued(ctx, e, run, streams, enqueue, s.places())
 		},
 	}
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue it and return")
@@ -393,8 +392,8 @@ func commitOrDiscard(ctx context.Context, e *engine.Engine, streams Streams, req
 
 // editorCommand is the person's editor, $VISUAL or else $EDITOR, as a
 // shell command; empty where neither is set.
-func editorCommand() string {
-	return cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"))
+func (s *settings) editorCommand() string {
+	return cmp.Or(s.getenv("VISUAL"), s.getenv("EDITOR"))
 }
 
 // runEditor opens path in editor on the terminal dockhand runs on, and

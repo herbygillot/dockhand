@@ -244,11 +244,11 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 		"  checksum      line 46005\n" +
 		"  install       line 46006\n"
 	var out strings.Builder
-	require.NoError(t, writePortLog(&out, result, data, false))
+	require.NoError(t, writePortLog(&out, testPlaces(t), result, data, false))
 	require.Equal(t, steps+"Showing from line 46004, where the build for hugo begins. Use --full to include the previous 46003 lines, including dependency installation.\n\n"+own, out.String())
 
 	out.Reset()
-	require.NoError(t, writePortLog(&out, result, data, true))
+	require.NoError(t, writePortLog(&out, testPlaces(t), result, data, true))
 	require.Equal(t, string(data), out.String(), "--full prints the log alone")
 
 	view := portLogView(model.Run{Number: 48}, result, data)
@@ -261,14 +261,14 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 	// a log that ends before its own build was to begin is printed whole,
 	// saying so.
 	out.Reset()
-	require.NoError(t, writePortLog(&out, model.TargetResult{Target: "hugo", Log: path}, data, false))
+	require.NoError(t, writePortLog(&out, testPlaces(t), model.TargetResult{Target: "hugo", Log: path}, data, false))
 	require.Equal(t, string(data), out.String())
 	out.Reset()
 	alone := model.TargetResult{Target: "hugo", Log: path, Steps: []model.LogStep{{Name: model.StepClean, Line: 1}, {Name: model.StepFetch, Line: 2}}}
-	require.NoError(t, writePortLog(&out, alone, []byte("--->  Cleaning hugo\n--->  Fetching hugo\n"), false))
+	require.NoError(t, writePortLog(&out, testPlaces(t), alone, []byte("--->  Cleaning hugo\n--->  Fetching hugo\n"), false))
 	require.Equal(t, "Steps in "+path+":\n  clean  line 1\n  fetch  line 2\n\n--->  Cleaning hugo\n--->  Fetching hugo\n", out.String())
 	out.Reset()
-	require.NoError(t, writePortLog(&out, result, []byte("--->  Deactivating zlib\n"), false))
+	require.NoError(t, writePortLog(&out, testPlaces(t), result, []byte("--->  Deactivating zlib\n"), false))
 	require.Equal(t, steps+"The log ends before line 46004, where hugo's own build was recorded to begin, so it's printed whole.\n\n--->  Deactivating zlib\n", out.String())
 	require.Zero(t, portLogView(model.Run{Number: 48}, alone, nil).OwnBuild)
 }

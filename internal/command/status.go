@@ -71,7 +71,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 			}
 			defer e.Close()
 			if watch {
-				return statusWatch(cmd.Context(), e, streams, plain, s.host.timings)
+				return statusWatch(cmd.Context(), e, streams, plain, s.host.timings, s.places())
 			}
 			if refresh {
 				// A read GitHub refused, as with a revoked login, is the
@@ -81,7 +81,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 					if streams.json() {
 						return err
 					}
-					if shown := showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where); shown != nil {
+					if shown := showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where, s.places()); shown != nil {
 						return shown
 					}
 					return err
@@ -92,7 +92,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 				// prompt, reads nothing.
 				readStalePullRequests(cmd.Context(), e, streams.Err)
 			}
-			return showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where)
+			return showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where, s.places())
 		},
 	}
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "read your pull requests' state, reviews, and CI from GitHub first")
@@ -106,7 +106,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 	return cmd
 }
 
-func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []string, attentionOnly, all bool, where branchFlags) error {
+func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []string, attentionOnly, all bool, where branchFlags, places config.Places) error {
 	port := where.port
 	ctx, _, end, err := e.Observing(ctx)
 	if err != nil {
@@ -122,7 +122,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 			view := branchView(status)
 			streams.emit(statusJSON{Attention: attentionView(attentionFor(status)), Branches: []branchJSON{view}})
 		}
-		return showBranch(ctx, e, streams.Out, branch)
+		return showBranch(ctx, e, streams.Out, places, branch)
 	}
 	// A read reaches a merged branch's record, as path does.
 	if len(args) == 1 || where.branch != "" {
@@ -613,14 +613,14 @@ func serveWords(s engine.ServeState) string {
 	return line + " · queue: " + prose.Plural(s.Queue, "run")
 }
 
-func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch) error {
+func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places config.Places, branch model.Branch) error {
 	status, err := judgedStatus(ctx, e, branch)
 	if err != nil {
 		return err
 	}
 	head := branch.ShortName()
 	if branch.Worktree != "" && !status.Cleaned() {
-		head += " · " + config.Tilde(branch.Worktree)
+		head += " · " + places.Tilde(branch.Worktree)
 	}
 	fmt.Fprintln(out, head)
 	if status.Cleaned() {
