@@ -916,7 +916,11 @@ func (b *build) Record(result model.TargetResult) error {
 			return err
 		}
 		message := fmt.Sprintf("%s: %s %s", DescribeEnvironment(b.execution.Environment), result.Target, result.Outcome)
-		if result.Phase != "" {
+		switch {
+		case result.Phase == model.PhaseDependencies:
+			// The dependency's failure is said with MacPorts' words for it.
+			message = fmt.Sprintf("%s: %s: %s: %s", DescribeEnvironment(b.execution.Environment), result.Target, result.Phase.FailureWords(), result.Detail)
+		case result.Phase != "":
 			message += " at " + string(result.Phase)
 		}
 		_, err := b.d.session.Emit(tx, model.Event{Branch: b.d.run.Branch, Run: b.d.run.ID, Target: result.Target, Kind: model.EventTargetResult, Level: model.LevelInfo, Message: message})

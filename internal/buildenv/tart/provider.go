@@ -450,6 +450,26 @@ type guestTarget struct {
 	// Git is what a Git-fetched target's fetch must check out; absent for
 	// a port fetched otherwise.
 	Git *guestGit `json:"git,omitempty"`
+	// Log is the name of its log, by its target (logName).
+	Log string `json:"log"`
+}
+
+// logName is a target's log's name in the guest and the log directory,
+// by its target, as luminance-hdr.log or s2n-tls+tests.log: named for its
+// place in the job, target-3.log, nothing in a multi-port check's
+// directory said which log was whose (the exiv2 session's notes,
+// 2026-10-21). A character a file name shouldn't hold is written _.
+func logName(id model.TargetID) string {
+	name := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._+-", r) {
+			return r
+		}
+		return '_'
+	}, string(id))
+	if name == "" || strings.HasPrefix(name, ".") {
+		name = "_" + name
+	}
+	return name + ".log"
 }
 
 // guestGit is what a Git-fetched target's fetch must check out (batch 20):
@@ -556,7 +576,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		if target.Target.Subport != "" {
 			name = target.Target.Subport
 		}
-		t := guestTarget{ID: string(target.ID), Name: name, Portfile: target.Target.Portfile, Variants: target.Target.Variants}
+		t := guestTarget{ID: string(target.ID), Name: name, Portfile: target.Target.Portfile, Variants: target.Target.Variants, Log: logName(target.ID)}
 		for _, dependency := range target.DependsOn {
 			t.DependsOn = append(t.DependsOn, string(dependency))
 		}
@@ -1054,8 +1074,8 @@ func interrupted(job buildenv.Job, build buildenv.Build, building string, cause 
 	detail := strings.TrimPrefix(cause.Error(), buildenv.ErrInfrastructure.Error()+": ")
 	result := model.TargetResult{Target: job.Targets[i].ID, Outcome: model.OutcomeInterrupted, Detail: detail}
 	if fetch != nil {
-		// The guest names each target's log for its place in the job.
-		result.Log = fetch(fmt.Sprintf("target-%d.log", i+1))
+		// The guest names each target's log by its target.
+		result.Log = fetch(logName(job.Targets[i].ID))
 	}
 	if err := build.Record(result); err != nil {
 		return fmt.Errorf("%w; %s wasn't recorded as interrupted: %v", cause, building, err)

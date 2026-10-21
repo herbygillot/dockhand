@@ -103,7 +103,14 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // field notes, 2026-10-19). The log says less of archives' installs and
 // more of a test's failure; nothing is built or judged otherwise, so the
 // protocol stays 3.
-const guestPin = "ad82ff8a83db0774dc15427fe9f767c006ed17d658bbb3b56ee6bc5495ccac83"
+//
+// Since the exiv2 session's notes (2026-10-21) each target's log is named
+// by its target, as the host names it, and a failure installing its
+// dependencies is at a phase of its own, dependencies, with MacPorts' line
+// naming the dependency for its detail, where it read as install's. A
+// failed result is no evidence a later check reuses, and nothing is built
+// otherwise, so the protocol stays 3.
+const guestPin = "a2710d41a45c0208edc8900b388e69a6e2be15c152288b6aba81149a68d06fe6"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

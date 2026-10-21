@@ -74,7 +74,13 @@ case "$*" in
   *" deactivate "*|*" clean "*|*" lint "*|*" install "*|*" fetch "*|*" checksum "*|*" test "*)
     echo "port $*"
     case "$*" in
-      "-N -d install --unrequested "*|"-N install --unrequested "*) if [ "${DEPLINES:-0}" -gt 0 ]; then yes "a dependency's line" | head -n "$DEPLINES"; fi ;;
+      "-N -d install --unrequested "*|"-N install --unrequested "*)
+        if [ "${DEPLINES:-0}" -gt 0 ]; then yes "a dependency's line" | head -n "$DEPLINES"; fi
+        if [ -n "$DEPFAILS" ]; then
+          echo "Error: Failed to build $DEPFAILS: command execution failed"
+          echo "Error: See /opt/local/var/macports/logs/$DEPFAILS/main.log for details."
+          exit 1
+        fi ;;
       *" lint "*) if [ -n "$LINTSAYS" ]; then echo "$LINTSAYS"; fi ;;
     esac ;;
 esac
@@ -185,14 +191,14 @@ set foreignManagers {}
 	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	return command
 }
 
 func twoTargets(tests string) guestInput {
 	return guestInput{Run: "check-1", Attempt: 1, Tests: tests, Targets: []guestTarget{
-		{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile"},
-		{ID: "harbor-cli", Name: "harbor-cli", Portfile: "devel/harbor-cli/Portfile", DependsOn: []string{"libharbor"}},
+		{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile", Log: logName("libharbor")},
+		{ID: "harbor-cli", Name: "harbor-cli", Portfile: "devel/harbor-cli/Portfile", DependsOn: []string{"libharbor"}, Log: logName("harbor-cli")},
 	}}
 }
 
@@ -209,8 +215,8 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 	require.Equal(t, "finished", results.State, results.Detail)
 	steps := []guestStep{{"clean", 1}, {"lint", 2}, {"dependencies", 3}, {"fetch", 4}, {"checksum", 5}, {"install", 6}}
 	require.Equal(t, []guestResult{
-		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestPort{}, Steps: append(slices.Clone(steps), guestStep{"test", 7})},
-		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log", Active: []guestPort{}, Steps: steps},
+		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "libharbor.log", Active: []guestPort{}, Steps: append(slices.Clone(steps), guestStep{"test", 7})},
+		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log", Active: []guestPort{}, Steps: steps},
 	}, results.Targets)
 	// The guest says what uname -m says, here the Mac running the test's.
 	require.Equal(t, map[string]string{"arm64": "arm64", "amd64": "x86_64"}[runtime.GOARCH], results.Environment["architecture"])
@@ -336,7 +342,7 @@ func TestAFailedTestPhaseBringsBackTheTestsOwnLogs(t *testing.T) {
 	require.NoError(t, os.WriteFile(ctest, []byte("3/8 Testing: bugfixes-test\nbugfixes-test: expected 4, got 5\n"), 0o644))
 	results, _ := guestRunIn(t, root, twoTargets("declared"), "TESTED=libharbor", "FAIL=test:libharbor")
 	require.Equal(t, "failed", results.Targets[0].Tests)
-	log, err := os.ReadFile(filepath.Join(root, "target-1.log"))
+	log, err := os.ReadFile(filepath.Join(root, "libharbor.log"))
 	require.NoError(t, err)
 	require.Contains(t, string(log), "dockhand: the last lines of build/Testing/Temporary/LastTest.log, the tests' own log:\n3/8 Testing: bugfixes-test\nbugfixes-test: expected 4, got 5\n")
 
@@ -345,7 +351,7 @@ func TestAFailedTestPhaseBringsBackTheTestsOwnLogs(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(passing, "checkouts", "libharbor-work", "test-suite.log"), []byte("PASS: all\n"), 0o644))
 	results, _ = guestRunIn(t, passing, twoTargets("declared"), "TESTED=libharbor")
 	require.Equal(t, "passed", results.Targets[0].Tests)
-	log, err = os.ReadFile(filepath.Join(passing, "target-1.log"))
+	log, err = os.ReadFile(filepath.Join(passing, "libharbor.log"))
 	require.NoError(t, err)
 	require.NotContains(t, string(log), "the tests' own log")
 }
@@ -416,7 +422,7 @@ func TestATargetBlockedBeforeIsNotBuilt(t *testing.T) {
 	input.Targets = input.Targets[1:]
 	input.Targets[0].Blocked = true
 	results, commands := guestRun(t, input)
-	require.Equal(t, []guestResult{{ID: "harbor-cli", Outcome: "blocked", Tests: "none", Log: "target-1.log"}}, results.Targets)
+	require.Equal(t, []guestResult{{ID: "harbor-cli", Outcome: "blocked", Tests: "none", Log: "harbor-cli.log"}}, results.Targets)
 	for _, command := range commands {
 		require.NotContains(t, command, "subport=", "only the guest's setup ran port")
 	}
@@ -544,7 +550,7 @@ func TestAGitFetchThatCantBeReadBuildsAsBefore(t *testing.T) {
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Equal(t, "passed", results.Targets[0].Outcome, results.Targets[0].Detail)
 	require.Empty(t, results.Targets[0].Fetched)
-	log, err := os.ReadFile(filepath.Join(root, "target-1.log"))
+	log, err := os.ReadFile(filepath.Join(root, "libharbor.log"))
 	require.NoError(t, err)
 	require.Contains(t, string(log), "dockhand: which commit the fetch checked out wasn't read:")
 	require.Equal(t, "passed", results.Targets[1].Outcome, results.Targets[1].Detail)
@@ -674,7 +680,7 @@ func TestTheGuestSaysWhichDependenciesBuildFromSource(t *testing.T) {
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Contains(t, commands, "-N -b archivefetch zlib")
 	require.Contains(t, commands, "-N -b archivefetch rust")
-	log, err := os.ReadFile(filepath.Join(root, "target-1.log"))
+	log, err := os.ReadFile(filepath.Join(root, "libharbor.log"))
 	require.NoError(t, err)
 	require.Contains(t, string(log), "dockhand: no binary archive for rust on this release; install builds it from source\n")
 	require.Empty(t, results.FromSource, "cleared once the target's result is written")
@@ -682,4 +688,16 @@ func TestTheGuestSaysWhichDependenciesBuildFromSource(t *testing.T) {
 	// for a compiler's error and MacPorts' "Command failed:" line; where
 	// nothing does, it's quiet (the exiv2 field notes, 2026-10-19).
 	require.Contains(t, commands, "-N -d install --unrequested zlib rust")
+}
+
+// A dependency's failure is the dependency's, at a phase of its own, with
+// MacPorts' line naming it: it read as the target's install failing
+// (the exiv2 session's notes, 2026-10-21: luminance-hdr, where
+// qt5-qtwebengine had failed to build).
+func TestADependencysFailureIsItsOwnPhase(t *testing.T) {
+	t.Parallel()
+	results, _ := guestRun(t, twoTargets("declared"), "DEPS=libharbor=qt5-qtwebengine", "DEPFAILS=qt5-qtwebengine")
+	require.Equal(t, "failed", results.Targets[0].Outcome)
+	require.Equal(t, "dependencies", results.Targets[0].Phase)
+	require.Contains(t, results.Targets[0].Detail, "Failed to build qt5-qtwebengine: command execution failed")
 }

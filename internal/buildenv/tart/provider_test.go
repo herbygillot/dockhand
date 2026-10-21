@@ -612,13 +612,13 @@ func TestTheTargetALostGuestWasBuildingIsInterrupted(t *testing.T) {
 	}{
 		"errored": {
 			newMac(guestResults{State: "running", Targets: []guestResult{passed}}, guestResults{State: "errored", Building: "harbor-cli", Targets: []guestResult{passed}, Detail: "building harbor-cli: no such variable"}),
-			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest: building harbor-cli: no such variable", Log: "target-2.log"}},
+			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest: building harbor-cli: no such variable", Log: "harbor-cli.log"}},
 		},
 		// What the guest wrote last, read after it stopped, is taken first:
 		// libharbor finished, and harbor-cli was building.
 		"exited": {
 			newMac(guestResults{State: "running", Building: "libharbor"}, guestResults{State: "running", Building: "harbor-cli", Targets: []guestResult{passed}}),
-			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest program stopped before it finished: the runner's last words", Log: "target-2.log"}},
+			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest program stopped before it finished: the runner's last words", Log: "harbor-cli.log"}},
 		},
 		"between targets": {newMac(guestResults{State: "running", Targets: []guestResult{passed}}), []model.TargetResult{}},
 	} {
@@ -631,7 +631,8 @@ func TestTheTargetALostGuestWasBuildingIsInterrupted(t *testing.T) {
 			require.ErrorIs(t, err, buildenv.ErrInfrastructure)
 			require.Equal(t, model.OutcomePassed, build.results[0].Outcome, "what the guest finished stays recorded")
 			// The partial log of what it was building is fetched where the
-			// guest still answers (the exiv2 field notes, 2026-10-19).
+			// guest still answers (the exiv2 field notes, 2026-10-19), by
+			// its target's name.
 			for i := range build.results[1:] {
 				if log := build.results[1+i].Log; log != "" {
 					require.FileExists(t, log)
@@ -956,4 +957,13 @@ func TestTheProgressSaysWhatBuildsFromSource(t *testing.T) {
 	require.NoError(t, err)
 	line := buildingWords(job, tahoe, guestResults{Building: "libharbor", Phase: "dependencies", FromSource: []string{"rust", "cargo"}})
 	require.Equal(t, "building libharbor (1 of 2): dependencies; rust, cargo: no archive for macOS 26 arm64; building from source", line)
+}
+
+// A target's log is named by its target, for a multi-port check's
+// directory to say whose each is (the exiv2 session's notes, 2026-10-21).
+func TestALogIsNamedByItsTarget(t *testing.T) {
+	require.Equal(t, "luminance-hdr.log", logName("luminance-hdr"))
+	require.Equal(t, "s2n-tls+tests.log", logName("s2n-tls+tests"))
+	require.Equal(t, "a_b.log", logName("a/b"))
+	require.Equal(t, "_.hidden.log", logName(".hidden"))
 }

@@ -564,6 +564,12 @@ const failureLines = 15
 func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 	for _, target := range evidence.Targets {
 		for i := range target.Outcomes {
+			// A dependency's failure is said with MacPorts' line naming the
+			// dependency, which the log's last lines may not hold.
+			if cell := target.Outcomes[i]; cell.Kind == engine.CellRecorded && cell.Outcome == model.OutcomeFailed && cell.Phase == model.PhaseDependencies {
+				fmt.Fprintf(out, "%s: a dependency failed on %s: %s\n\n", target.Target.ID, engine.DescribeEnvironment(evidence.Plan.Environments[i]), cell.Detail)
+				continue
+			}
 			lines := engine.FailureLines(evidence, target, i, failureLines)
 			if len(lines) == 0 {
 				continue

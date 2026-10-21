@@ -367,7 +367,7 @@ func portLogs(logs engine.RunLogs, port string) (portLog, []portLog, bool) {
 func portBuildWords(result model.TargetResult) string {
 	switch {
 	case result.Outcome == model.OutcomeFailed && result.Phase != "":
-		return "failed at " + string(result.Phase)
+		return result.Phase.FailureWords()
 	case result.Tests.Failed():
 		return string(result.Outcome) + ", its tests " + strings.ReplaceAll(string(result.Tests), "-", " ")
 	}
@@ -559,7 +559,9 @@ func writeLogs(out io.Writer, logs engine.RunLogs, stopped bool) error {
 		}
 		for _, result := range execution.Results {
 			line := fmt.Sprintf("    %s %s", result.Target, result.Outcome)
-			if result.Phase != "" {
+			if result.Phase == model.PhaseDependencies {
+				line = fmt.Sprintf("    %s: %s", result.Target, result.Phase.FailureWords())
+			} else if result.Phase != "" {
 				line += " at " + string(result.Phase)
 			}
 			if result.Detail != "" {

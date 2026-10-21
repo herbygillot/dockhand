@@ -125,9 +125,10 @@ func TestABaselineTakesPortsThatFailedWhileBuilding(t *testing.T) {
 		target("passes", passed, passed),
 		target("advisory", passed, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut}),
 		target("tested", model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsPassed}, passed),
+		target("dependency", failed(model.PhaseDependencies), passed),
 	}}
 	worthy, skipped := BaselineWorthy(evidence)
-	require.Equal(t, []string{"installs", "tests", "both", "advisory"}, worthy, "tests that failed where they only report are worth one too (the libuv run's finding 5)")
+	require.Equal(t, []string{"installs", "tests", "both", "advisory", "dependency"}, worthy, "tests that failed where they only report are worth one too (the libuv run's finding 5)")
 	require.Equal(t, []string{"lints", "fetches"}, skipped)
 	require.Equal(t, planning.Limited{Environments: []model.Environment{tahoeX86}, Elsewhere: evidence.Run.Name() + " didn't fail it there"}, rebuildWhere(evidence, "advisory"), "rebuilt where its tests failed")
 }

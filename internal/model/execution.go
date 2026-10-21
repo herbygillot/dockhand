@@ -178,17 +178,31 @@ func (o Outcome) Complete() bool {
 type Phase string
 
 const (
-	PhaseLint     Phase = "lint"
-	PhaseFetch    Phase = "fetch"
-	PhaseChecksum Phase = "checksum"
-	PhaseInstall  Phase = "install"
-	PhaseTest     Phase = "test"
+	PhaseLint Phase = "lint"
+	// PhaseDependencies is the install of a target's dependencies, whose
+	// failure is a dependency's: it read as the target's own install's,
+	// "luminance-hdr failed at install", where qt5-qtwebengine had failed
+	// to build (the exiv2 session's notes, 2026-10-21).
+	PhaseDependencies Phase = "dependencies"
+	PhaseFetch        Phase = "fetch"
+	PhaseChecksum     Phase = "checksum"
+	PhaseInstall      Phase = "install"
+	PhaseTest         Phase = "test"
 )
+
+// FailureWords say a failure at the phase: "failed at install", and "a
+// dependency failed" for a dependency's.
+func (p Phase) FailureWords() string {
+	if p == PhaseDependencies {
+		return "a dependency failed"
+	}
+	return "failed at " + string(p)
+}
 
 // Valid reports one of the phases a check stops at.
 func (p Phase) Valid() bool {
 	switch p {
-	case PhaseLint, PhaseFetch, PhaseChecksum, PhaseInstall, PhaseTest:
+	case PhaseLint, PhaseDependencies, PhaseFetch, PhaseChecksum, PhaseInstall, PhaseTest:
 		return true
 	}
 	return false
@@ -233,7 +247,7 @@ const (
 	StepLint  Step = Step(PhaseLint)
 	// StepDependencies installs the target's dependencies, which can be
 	// most of its log.
-	StepDependencies Step = "dependencies"
+	StepDependencies Step = Step(PhaseDependencies)
 	StepFetch        Step = Step(PhaseFetch)
 	StepChecksum     Step = Step(PhaseChecksum)
 	StepInstall      Step = Step(PhaseInstall)

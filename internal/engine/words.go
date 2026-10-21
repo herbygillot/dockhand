@@ -65,7 +65,7 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted string) 
 	case model.OutcomeFailed:
 		words = "✗ failed"
 		if result.Phase != "" {
-			words += " at " + string(result.Phase)
+			words = "✗ " + result.Phase.FailureWords()
 		}
 		if result.Phase == model.PhaseTest && result.Tests == model.TestsTimedOut {
 			words += ": tests timed out"

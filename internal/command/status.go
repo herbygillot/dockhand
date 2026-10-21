@@ -350,6 +350,11 @@ func attentionFor(s engine.BranchStatus) []attention {
 	case model.RunFailed:
 		for _, target := range s.Evidence.Failed() {
 			for i, result := range target.Outcomes {
+				if result.Outcome == model.OutcomeFailed && result.Phase == model.PhaseDependencies {
+					// The dependency is named beside it, as MacPorts says it.
+					return row(attentionFailed, fmt.Sprintf("%s: a dependency failed on %s (%s): %s", target.Target.Target.Name, engine.DescribeEnvironment(s.Evidence.Plan.Environments[i]), run.Name(), result.Detail),
+						fmt.Sprintf("dockhand logs %s %s", run.Name(), target.Target.Target.Name))
+				}
 				if result.Outcome == model.OutcomeFailed {
 					return row(attentionFailed, fmt.Sprintf("%s failed at %s on %s (%s)", target.Target.Target.Name, result.Phase, engine.DescribeEnvironment(s.Evidence.Plan.Environments[i]), run.Name()),
 						fmt.Sprintf("dockhand logs %s %s", run.Name(), target.Target.Target.Name))

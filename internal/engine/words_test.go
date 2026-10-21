@@ -24,6 +24,7 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 		{model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut}, "", "✓ build passed; tests timed out (advisory)"},
 		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseTest, Tests: model.TestsTimedOut}, "", "✗ failed at test: tests timed out"},
 		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, "", "✗ failed at install"},
+		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseDependencies, Detail: "Failed to build qt5-qtwebengine: command execution failed"}, "", "✗ a dependency failed"},
 		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, acceptedUnestablished, "✗ failed at install, accepted: cause not established"},
 		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, "fails at the base too (check-394)", "✗ failed at install, accepted: fails at the base too (check-394)"},
 		{model.TargetResult{Outcome: model.OutcomeBlocked}, "", "✗ blocked by a failed changed dependency"},

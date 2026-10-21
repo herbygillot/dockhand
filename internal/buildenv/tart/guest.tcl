@@ -438,8 +438,11 @@ proc build {index target} {
     global root port input results
     set id [dict get $target id]
     set name [dict get $target name]
-    set log $root/target-$index.log
-    set result [dict create id $id outcome "" phase "" tests none log target-$index.log detail ""]
+    # Each target's log is named by its target, as the host names it.
+    set logname target-$index.log
+    if {[dict exists $target log] && [dict get $target log] ne ""} { set logname [dict get $target log] }
+    set log $root/$logname
+    set result [dict create id $id outcome "" phase "" tests none log $logname detail ""]
     close [open $log a]
     if {[dict exists $target blocked] && [dict get $target blocked]} {
         dict set result outcome blocked
@@ -520,9 +523,11 @@ proc build {index target} {
         # field notes, 2026-10-19).
         set debug [expr {[llength $fromsource] ? {-d} : {}}]
         if {[set message [timed $log [concat [list $port -N] $debug [list install --unrequested] $dependencies] [{*}$left]]] eq "timed out"} {
-            return [{*}$fail $result install "installing its dependencies, $over"]
+            return [{*}$fail $result dependencies "installing its dependencies, $over"]
         } elseif {$message ne ""} {
-            return [{*}$fail $result install "a dependency failed to install: [why $log $message]"]
+            # A phase of its own, with MacPorts' line naming the dependency,
+            # "Failed to build qt5-qtwebengine: command execution failed".
+            return [{*}$fail $result dependencies [why $log $message]]
         }
         # A dependency with no archive for the guest's release builds from
         # source, and what it built with stays active for the target: git

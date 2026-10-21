@@ -446,7 +446,9 @@ func failedAt(result model.TargetResult) (building, before bool) {
 		return false, false
 	}
 	switch result.Phase {
-	case model.PhaseInstall, model.PhaseTest:
+	// A dependency's failure is one master answers too: failing alike
+	// there says it isn't the branch's.
+	case model.PhaseDependencies, model.PhaseInstall, model.PhaseTest:
 		return true, false
 	case model.PhaseLint, model.PhaseFetch, model.PhaseChecksum:
 		return false, true
