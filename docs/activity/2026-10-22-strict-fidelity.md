@@ -75,3 +75,14 @@ Tests:
 `--shared-release` is the decision that answers `SiblingMoves` and, now, `SiblingOwnSource`. Each update makes it, and `Result.Scope` records which members moved, so no stored decision is needed: a checksum refresh doesn't ask for it again.
 
 I ran a plan on the real tree at master 97ece80, with a scratch build and database: `update xapian-core --plan` says xapian-core is already at 1.4.32. The tree's Portfile has this shape, with one checksums block shared by every binding subport, which plans as one owner's archive written once. Proving it on a real release waits for xapian's next one, so that check goes to field testing.
+
+## Step 6: what Observe finds has a kind, and revision sharing is observed
+
+- **What Observe finds.** Each difference between an evaluation and its prediction is now also a typed `fidelity.Observed{Kind, Port, Field}` in `Report.Observed`, beside the sentence in `UnexpectedChanges`. There are three kinds, as architecture's point 4 has them:
+  - `Unpredicted`: a change the prediction didn't make, in a port it changes, in the port set, or in the context.
+  - `PredictedMissing`: a change the prediction made that didn't come out so.
+  - `ProtectedMoved`: a port the prediction left as it was that moved.
+  Callers still refuse on `Err()` until each says its finding.
+- **Revision sharing, observed.** A revbump's siblings that share the revision line move with it, as the python PortGroup's subports share their stub's. `fidelity.Revision` took a sibling as sharing it where it stood at the selected port's revision and rose by one alongside. It now takes the ports given as sharing. `portedit.revisionSharing` observes them by writing a sentinel, 7919, in the edited literal's place (`sentinelEdit`) and evaluating the family once more. A port whose revision follows the sentinel shares the line (`fidelity.Sharing`). It costs one evaluation per revbump. `TestARevbumpOfASubportSharingTheRevision`, py-lmdb's shape, passes on the observation.
+
+The checksums sharing in `Checksums` and `ScopedChecksumsOf`, for a sibling of the same version with the same checksums before, stays a rule. A shared release now plans each member that declares checksums of its own as an owner, so what's left is a refresh's subports that share their stub's one declaration. There the rule and an observation could differ only if the edit also wrote a sibling's own declaration to the same values, and a refresh writes only the spans the binding located for the target. A sentinel for it waits for a case that needs it.

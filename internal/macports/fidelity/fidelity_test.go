@@ -41,14 +41,22 @@ func TestRevisionAndChecksumsReportOnlyIntendedChanges(t *testing.T) {
 		"main":  {Name: "main", Version: "1", Revision: 1, Options: map[string]string{"checksums": "sha256 aaaa"}},
 		"child": {Name: "child", Version: "2", Revision: 3, Options: map[string]string{}},
 	})
-	report := Revision(before, bumped, "main")
+	report := Revision(before, bumped, "main", nil)
 	require.Equal(t, []string{"main.revision +1"}, report.ExpectedChanges)
 	require.Empty(t, report.UnexpectedChanges)
 	sibling := snapshot(map[string]macports.PortInfo{
 		"main":  {Name: "main", Version: "1", Revision: 1, Options: map[string]string{"checksums": "sha256 aaaa"}},
 		"child": {Name: "child", Version: "2", Revision: 4, Options: map[string]string{}},
 	})
-	require.NotEmpty(t, Revision(before, sibling, "main").UnexpectedChanges, "a sibling revision change is unexpected")
+	require.NotEmpty(t, Revision(before, sibling, "main", nil).UnexpectedChanges, "a sibling revision change is unexpected")
+	// One that shares the literal, as observed, moves with it: here child's
+	// revision line is the edited one, though it stood at another number.
+	require.Empty(t, Revision(before, sibling, "main", []string{"child"}).UnexpectedChanges)
+	sentinel := snapshot(map[string]macports.PortInfo{
+		"main":  {Name: "main", Version: "1", Revision: 7919, Options: map[string]string{"checksums": "sha256 aaaa"}},
+		"child": {Name: "child", Version: "2", Revision: 3, Options: map[string]string{}},
+	})
+	require.Equal(t, []string{"main"}, Sharing(before, sentinel, func(old, next macports.PortInfo) bool { return old.Revision != next.Revision }))
 
 	refreshed := snapshot(map[string]macports.PortInfo{
 		"main":  {Name: "main", Version: "1", Revision: 0, Options: map[string]string{"checksums": "sha256 bbbb"}},

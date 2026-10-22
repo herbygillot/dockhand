@@ -37,6 +37,20 @@ func TestAnEvaluationIsItsPrediction(t *testing.T) {
 	})
 	wrong.Root = "/after"
 	wrong.Platform.Version = "24"
+	report = prediction.Observe(before, wrong)
 	require.Equal(t, []string{"child: port set changed", "evaluation context changed", "extra: port set changed", "main.checksums changed", "main.revision: expected 3, got 4"},
-		prediction.Observe(before, wrong).UnexpectedChanges)
+		report.UnexpectedChanges)
+	// Each of its kind: what the prediction changed that didn't come
+	// out so, what it didn't predict, and a port it left as it was moving.
+	require.ElementsMatch(t, []Observed{
+		{Kind: Unpredicted}, {Kind: Unpredicted, Port: "extra"}, {Kind: PredictedMissing, Port: "child"},
+		{Kind: PredictedMissing, Port: "main", Field: "revision"}, {Kind: PredictedMissing, Port: "main", Field: "checksums"},
+	}, report.Observed)
+	moved := after
+	moved.Ports = map[string]macports.PortInfo{"main": after.Ports["main"], "child": {Name: "child", Version: "1", Revision: 1, Options: map[string]string{"homepage": "x"}}}
+	moved.Ports["main"].Options["homepage"] = "y"
+	require.ElementsMatch(t, []Observed{
+		{Kind: ProtectedMoved, Port: "child", Field: "revision"}, {Kind: ProtectedMoved, Port: "child", Field: "homepage"},
+		{Kind: Unpredicted, Port: "main", Field: "homepage"},
+	}, prediction.Observe(before, moved).Observed)
 }

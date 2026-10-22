@@ -303,7 +303,11 @@ func (s *Service) prepare(ctx context.Context, request Request, input *sourceInp
 	if err != nil {
 		return Result{}, err
 	}
-	err = result.commitEdit(input, request, evaluated.edit, fidelity.Revision(family, evaluated.after, input.target.Name), "revbump")
+	sharing, err := s.revisionSharing(ctx, input, revised, family)
+	if err != nil {
+		return Result{}, err
+	}
+	err = result.commitEdit(input, request, evaluated.edit, fidelity.Revision(family, evaluated.after, input.target.Name, sharing), "revbump")
 	return result, err
 }
 

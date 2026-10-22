@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -96,6 +97,54 @@ func revisionReset(contents []byte, path string, info macports.PortInfo, events 
 // it, as LyX's is set in each branch of an if, refused as "nonzero
 // revision is set outside the supported scope" (the roadmap's v0.5.0 part
 // 3, step 2). The evaluated edit is held to the raise, as any revbump is.
+// revisionSharing are the ports the revision literal a bump wrote reaches:
+// those whose revision follows a sentinel written in its place, observed
+// in one more evaluation, where a sibling that rose by one alongside was
+// taken to share it (strict fidelity, architecture's point 3). A bump that
+// isn't one literal's edit shares nothing.
+func (s *Service) revisionSharing(ctx context.Context, input *sourceInput, revised []byte, family macports.Snapshot) ([]string, error) {
+	const sentinel = 7919
+	probe, ok := sentinelEdit(input.data, revised, strconv.Itoa(sentinel))
+	if !ok {
+		return nil, nil
+	}
+	evaluated, err := s.evaluateEdit(ctx, input, probe)
+	if err != nil {
+		return nil, fmt.Errorf("%w: which ports the revision line reaches couldn't be observed: %w", errProbeInconclusive, err)
+	}
+	return fidelity.Sharing(family, evaluated.after, func(old, next macports.PortInfo) bool { return next.Revision != old.Revision }), nil
+}
+
+// sentinelEdit is an edit's one changed span with a sentinel written in
+// place of what the edit wrote there; false where the edit changed more
+// than one span, or nothing.
+func sentinelEdit(before, after []byte, sentinel string) ([]byte, bool) {
+	start := 0
+	for start < len(before) && start < len(after) && before[start] == after[start] {
+		start++
+	}
+	end := 0
+	for end < len(before)-start && end < len(after)-start && before[len(before)-1-end] == after[len(after)-1-end] {
+		end++
+	}
+	if start == len(before) && start == len(after) {
+		return nil, false
+	}
+	// The written text must be one number, the literal, its digits whole.
+	for start > 0 && after[start-1] >= '0' && after[start-1] <= '9' {
+		start--
+	}
+	for end > 0 && after[len(after)-end] >= '0' && after[len(after)-end] <= '9' {
+		end--
+	}
+	written := after[start : len(after)-end]
+	if _, err := strconv.Atoi(string(written)); err != nil {
+		return nil, false
+	}
+	probe := append(append(append([]byte{}, after[:start]...), sentinel...), after[len(after)-end:]...)
+	return probe, true
+}
+
 func (s *Service) bumpRevision(ctx context.Context, input *sourceInput, contents []byte, current int) ([]byte, error) {
 	bumped, err := portfile.BumpRevision(contents, input.target.Subport, current)
 	if err == nil || !errors.Is(err, portfile.ErrUnsupported) {

@@ -26,6 +26,9 @@ type Report struct {
 	After             macports.Snapshot
 	ExpectedChanges   []string
 	UnexpectedChanges []string
+	// Observed are the unexpected changes, each of its kind, where a
+	// prediction was observed (Prediction.Observe).
+	Observed []Observed
 }
 
 // Err is the report's unexpected changes as one ErrMismatch, said once and
@@ -53,16 +56,16 @@ func CheckSnapshot(snapshot macports.Snapshot, bound macports.Context) error {
 	return nil
 }
 
-// Revision expects only the selected port's revision to advance by one.
-func Revision(before, after macports.Snapshot, selected string) Report {
+// Revision expects the selected port's revision to advance by one, and
+// each sibling's that shares its revision line: the ports the edited
+// literal reaches, as the python PortGroup's subports share their stub's,
+// which the editor observes by writing a sentinel there (Sharing), where
+// a sibling that rose by one alongside was taken to share it.
+func Revision(before, after macports.Snapshot, selected string, sharing []string) Report {
 	prediction := Predict(before)
 	prediction.Expected = []string{selected + ".revision +1"}
-	for name, old := range before.Ports {
-		next, is := after.Ports[name]
-		// A sibling that shares the selected port's revision line moves
-		// with it, as the python PortGroup's subports share their stub's:
-		// one at the selected port's revision that rises with it.
-		shared := name != selected && is && old.Revision == before.Ports[selected].Revision && next.Revision == old.Revision+1
+	for _, name := range slices.Sorted(maps.Keys(before.Ports)) {
+		shared := name != selected && slices.Contains(sharing, name)
 		if name != selected && !shared {
 			continue
 		}
@@ -75,6 +78,20 @@ func Revision(before, after macports.Snapshot, selected string) Report {
 		}
 	}
 	return prediction.Observe(before, after)
+}
+
+// Sharing are the ports a literal reaches: those whose field, by want,
+// differs between an evaluation with the literal as before and one with a
+// sentinel written in its place, as the editor observes them. A port a
+// literal reaches moves with it; one it doesn't stays as it was.
+func Sharing(before, sentinel macports.Snapshot, moved func(old, next macports.PortInfo) bool) []string {
+	var names []string
+	for _, name := range slices.Sorted(maps.Keys(before.Ports)) {
+		if next, ok := sentinel.Ports[name]; ok && moved(before.Ports[name], next) {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // ComparablePort normalizes a port for comparison: the revision is compared
