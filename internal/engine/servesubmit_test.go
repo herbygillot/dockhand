@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -507,4 +508,19 @@ func TestAMajorVersionHoldsAnUnattendedUpdate(t *testing.T) {
 
 	e.options.AllowMajors = true
 	require.Nil(t, e.majorHold("jq", "1.7.1", "2.0.0"), "holds.majors = \"allow\"")
+}
+
+// A commit-rule error holds a submission nobody looks over, as tidy
+// rewrites the commit it's in; a warning is said and holds nothing, as
+// tidy keeps the commit: serve held a branch over a body line tidy called
+// nothing to tidy (the direction synthesis's first contradiction).
+func TestOnlyACommitRuleErrorHolds(t *testing.T) {
+	t.Parallel()
+	wrap := commitrules.Finding{Code: "body-wrap", Severity: commitrules.Warning, Commit: "abc1234", Message: "body has lines over 72 characters"}
+	merge := commitrules.Finding{Code: "merge", Severity: commitrules.Error, Commit: "def5678", Message: "is a merge; rebase instead"}
+	require.Empty(t, SubmitPlan{Findings: []commitrules.Finding{wrap}}.Held())
+	held := SubmitPlan{Findings: []commitrules.Finding{wrap, merge}}.Held()
+	require.Len(t, held, 1)
+	require.Equal(t, model.FromCommitRules, held[0].Origin)
+	require.Equal(t, "merge", held[0].Rule)
 }

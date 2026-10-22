@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -131,7 +132,7 @@ func HoldLines(concerns []model.Concern) []string {
 // nobody to look it over (the assessment design, E), each once: what its
 // assessments found that a passing build can't catch, or couldn't check
 // (D4); a Git-fetched source whose tag moved between its update, its
-// check, and now (Moved); a commit-rule finding; and another open pull
+// check, and now (Moved); a commit-rule error; and another open pull
 // request for its ports, or not knowing whether there is one. A person's own submission
 // shows them and goes ahead, and each kind of submission keeps its own
 // rules over its evidence (§3's publication rule).
@@ -156,8 +157,14 @@ func (p SubmitPlan) Concerns() []model.Concern {
 	for _, floor := range p.Floors {
 		add(floor)
 	}
+	// A commit-rule error holds, as tidy rewrites the commits it's in; a
+	// warning is said and holds nothing, as tidy keeps the commits it's
+	// in: serve held a branch for a body line over 72 characters that tidy
+	// called nothing to tidy (the direction synthesis's first contradiction).
 	for _, finding := range p.Findings {
-		add(model.Concern{Origin: model.FromCommitRules, Rule: finding.Code, Detail: "commit rules: " + finding.String()})
+		if finding.Severity == commitrules.Error {
+			add(model.Concern{Origin: model.FromCommitRules, Rule: finding.Code, Detail: "commit rules: " + finding.String()})
+		}
 	}
 	for _, concern := range othersConcerns(p.Others, p.SearchProblem) {
 		add(concern)
