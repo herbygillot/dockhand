@@ -37,7 +37,7 @@ func cleanStates(merged, closed bool) []model.BranchState {
 }
 
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
-	var merged, closed, yes, automatic, forget bool
+	var merged, closed, yes, automatic, forget, plan bool
 	cmd := &cobra.Command{
 		Use:   "clean [branch...] [--merged] [--closed]",
 		Short: "Remove what merged branches leave behind",
@@ -75,7 +75,9 @@ cancel stops a check. None means another.
 --delete forgets archived branches named: it deletes each one's Git branch,
 unmerged commits included, which it lists first, and its worktree, and
 forgets its record, keeping of its checks only what another branch's
-results were reused from. It asks, and without a terminal needs --yes.`,
+results were reused from. It asks, and without a terminal needs --yes.
+
+--plan shows what it would remove, or forget, and removes nothing.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.Open(ctx)
@@ -90,7 +92,7 @@ results were reused from. It asks, and without a terminal needs --yes.`,
 				return cleanAutomatically(ctx, e, streams, s.File)
 			}
 			if forget {
-				return forgetBranches(ctx, e, streams, args, yes)
+				return forgetBranches(ctx, e, streams, args, yes, plan)
 			}
 			// Which branches merged is their pull requests' to say, read
 			// now: two merged a minute before were left out, unsaid, until
@@ -139,6 +141,10 @@ results were reused from. It asks, and without a terminal needs --yes.`,
 				fmt.Fprintln(streams.Out, "Nothing to remove.")
 				return nil
 			}
+			if plan {
+				fmt.Fprintln(streams.Out, "Nothing was removed (--plan).")
+				return nil
+			}
 			ok, _, err := streams.Decide(yes, term.Decision{Question: fmt.Sprintf("? Remove %s? [y/N] ", prose.Plural(removable, "item")), Undone: "nothing was removed", ByYes: "--yes removes these"})
 			if err != nil {
 				return err
@@ -167,6 +173,8 @@ results were reused from. It asks, and without a terminal needs --yes.`,
 	cmd.Flags().BoolVar(&merged, "merged", true, "merged branches: their worktree, local branch, and fork branch")
 	cmd.Flags().BoolVar(&closed, "closed", false, "also branches whose pull request closed unmerged: their worktree only")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
+	cmd.Flags().BoolVar(&plan, "plan", false, "show what it would remove and change nothing")
+	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	cmd.Flags().BoolVar(&forget, "delete", false, "forget the archived branches named: their Git branch, worktree, and record")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
 	_ = cmd.Flags().MarkHidden("automatic")
@@ -367,7 +375,7 @@ func writeCleanDone(out io.Writer, plans []engine.CleanBranch, places config.Pla
 
 // forgetBranches is clean --delete: the archived branches named, each said
 // with what goes, its unmerged commits listed, then forgotten once asked.
-func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams, names []string, yes bool) error {
+func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams, names []string, yes, plan bool) error {
 	if len(names) == 0 {
 		return errors.New("--delete forgets archived branches named; name each")
 	}
@@ -399,6 +407,10 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 			}
 		}
 		fmt.Fprintln(out, "  its record, but for what other branches' results reused of its checks")
+	}
+	if plan {
+		fmt.Fprintln(out, "Nothing was forgotten (--plan).")
+		return nil
 	}
 	ok, _, err := streams.Decide(yes, term.Decision{Question: fmt.Sprintf("? Forget %s? [y/N] ", prose.Plural(len(plans), "branch")), Undone: "nothing was forgotten", ByYes: "--yes forgets these"})
 	if err != nil || !ok {

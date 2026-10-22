@@ -15,7 +15,8 @@ import (
 )
 
 // The shared-flag contract (the command UX review's §9, part 5's item 6),
-// over the command tree: --json on every command, --plan and --yes apart
+// over the command tree: --json and --plan on every command but those that
+// say why not, --plan and --yes apart
 // wherever both are, an edit's --plan alike with no branch to plan in, and
 // a question without a terminal refused alike. A check run here keeping
 // to its provider's capacity is check's test
@@ -28,6 +29,39 @@ var noJSON = map[string]string{
 	"shell":        "prints a shell's completion script",
 	"setup github": "a sign-in, asked on a terminal",
 	"setup tart":   "makes an image, its provisioner's progress the output",
+}
+
+// noPlan are the commands with no --plan, each with why: what they do is
+// what they'd show, they ask before what they change, or, create and
+// rebase, a plan of their own is Later's, since each is undone already
+// (the roadmap's bump and clean fix, 2026-10-22). Every other command
+// takes --plan, so a new one says here why it doesn't.
+var noPlan = map[string]string{
+	"adopt":        "records a branch that exists, which archive sets aside again",
+	"archive":      "sets a branch aside, which archive --undo brings back",
+	"cancel":       "stops a check, keeping what it finished",
+	"config":       "shows or sets one setting, which it names",
+	"diff":         "reads only",
+	"edit":         "opens the Portfile in your editor",
+	"explain":      "reads only",
+	"impact":       "reads only",
+	"logs":         "reads only",
+	"open":         "opens a page",
+	"outdated":     "reads only",
+	"path":         "says a branch's directory, checking it out again where it's gone",
+	"retry":        "queues a check again, as check --plan previews",
+	"review":       "shows the review and posts it only when asked",
+	"serve":        "runs what's queued; --drain says when it stops",
+	"setup":        "says what's set up, and asks before each part it sets up",
+	"setup github": "a sign-in, asked on a terminal",
+	"setup tart":   "makes an image, saying its size first",
+	"shell":        "prints a shell's completion script",
+	"start":        "starts a branch, which archive sets aside",
+	"status":       "reads only",
+	"undo":         "restores a checkpoint, keeping the one it replaces",
+	"wait":         "follows a check",
+	"create":       "Later: a plan of what it would write; its branch is archived to undo it",
+	"rebase":       "Later: a plan of the commits it would replay; its checkpoint undoes it",
 }
 
 // commands are the command tree's runnable commands, by their path below
@@ -71,6 +105,20 @@ func TestTheSharedFlagsMeanOneThing(t *testing.T) {
 	}
 	for name := range noJSON {
 		require.Contains(t, commands(t), name, "noJSON names a command there isn't")
+	}
+}
+
+// Every command takes --plan but those that say why not.
+func TestEveryCommandPlansOrSaysWhyNot(t *testing.T) {
+	t.Parallel()
+	found := commands(t)
+	for name, cmd := range found {
+		_, exempt := noPlan[name]
+		hasPlan := cmd.Flags().Lookup("plan") != nil
+		require.True(t, hasPlan != exempt, "%s: --plan %v, and noPlan names it %v; give it --plan, or say why not", name, hasPlan, exempt)
+	}
+	for name := range noPlan {
+		require.Contains(t, found, name, "noPlan names a command there isn't")
 	}
 }
 

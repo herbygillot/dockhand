@@ -1,6 +1,8 @@
 package bump
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/command/author"
@@ -18,6 +20,7 @@ import (
 // submissions hold (the person's word that bump stays, 2026-10-15).
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var version author.VersionUpdate
+	var plan bool
 	cmd := &cobra.Command{
 		Use:   "bump <port> [version]",
 		Short: "Update a port, check it, and open a pull request without prompts",
@@ -52,7 +55,8 @@ It stops wherever a person should look:
 The pull request's tested checkboxes stay unticked unless --tested-binaries
 or --tested-variants says otherwise: they say what you tested, which
 dockhand can't. The check builds where build.unattended's profile says;
---build or --on names another.`,
+--build or --on names another. --plan shows what it would do, as ship
+--plan shows it, and changes nothing.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -76,12 +80,17 @@ dockhand can't. The check builds where build.unattended's profile says;
 			if err != nil {
 				return err
 			}
+			if plan {
+				fmt.Fprintln(streams.Out, "Nothing was shipped (--plan).")
+				return nil
+			}
 			version.Linked.NoteSet = cmd.Flags().Changed("note")
 			return ship.ShipAll(ctx, s, streams, whole, targets, engine.ShipSubmit, model.AnsweredYes, version)
 		},
 	}
 	version.Flags(cmd)
 	version.StageFlags(cmd)
+	cmd.Flags().BoolVar(&plan, "plan", false, "show what it would do and change nothing")
 	settings.SupportsJSON(cmd)
 	return cmd
 }

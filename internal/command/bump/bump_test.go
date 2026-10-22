@@ -176,3 +176,18 @@ func TestBumpHoldsWhatServeWould(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "Opened #34901", "a person's submit after a look needs no new check")
 }
+
+// bump --plan shows what ship would do, and changes nothing.
+func TestBumpPlanChangesNothing(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	out, _, err := cmdtest.Dockhand(t, "bump", "jq", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, "  jq  a version update from master, to submit\nNothing was shipped (--plan).\n", out)
+	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"))
+	require.Empty(t, g.PRs)
+}

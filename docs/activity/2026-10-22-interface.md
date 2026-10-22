@@ -373,3 +373,15 @@ mark's column (`view.Unmarked`).
   and check-1 is using it". The capacity is the engine's
   (`Engine.Capacity`, which compose sets from the configuration), and
   serve reads it there, where it took its own copy in `ServeOptions`.
+
+## After item 6: bump and clean take --plan
+
+- **`bump <port> --plan`** shows ship's own preview of `ship <port>`, its
+  row and "Nothing was shipped (--plan).", and changes nothing; **`clean
+  --plan`** prints the plan clean shows before it asks, and "Nothing was
+  removed (--plan).", as does `clean --delete --plan` for what it would
+  forget; `--plan` and `--yes` go apart there too.
+- **The contract test names every command without `--plan`**, each with
+  why (`noPlan`): what it does is what it'd show, it asks first, or, for
+  create and rebase, a plan of its own is Later's, since each is undone
+  already. A new command without one fails the test until it says why.

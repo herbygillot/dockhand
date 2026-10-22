@@ -76,6 +76,12 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	require.Equal(t, term.ExitFailure, term.ExitCode(err))
 	require.Equal(t, "jq-update (archived)\n  remove   worktree ~/Source/macports-branches/jq-update\n"+
 		"  keep     branch dockhand/jq-update: dockhand path jq-update checks it out again\n", out)
+	out, _, err = cmdtest.Dockhand(t, "clean", "jq-update", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, "jq-update (archived)\n  remove   worktree ~/Source/macports-branches/jq-update\n"+
+		"  keep     branch dockhand/jq-update: dockhand path jq-update checks it out again\n"+
+		"Nothing was removed (--plan).\n", out)
+	require.DirExists(t, dir)
 	out, _, err = cmdtest.Dockhand(t, "clean", "jq-update", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "\nRemoved 1 worktree.\n", "one line, once done")
