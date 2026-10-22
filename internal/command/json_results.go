@@ -79,7 +79,7 @@ type updateJSON struct {
 }
 
 // gather puts one step's result in an update's that went on.
-func (u *updateJSON) gather(step any) {
+func (u *updateJSON) Gather(step any) {
 	switch step := step.(type) {
 	case updateJSON:
 		step.Tidy, step.Check, step.Submit = u.Tidy, u.Check, u.Submit
@@ -93,7 +93,7 @@ func (u *updateJSON) gather(step any) {
 	}
 }
 
-func (u *updateJSON) result() any { return *u }
+func (u *updateJSON) Result() any { return *u }
 
 type upstreamJSON struct {
 	Changes []upstreamChangeJSON `json:"changes"`
@@ -355,7 +355,7 @@ type submitJSON struct {
 }
 
 // gather takes the submission's result, or its check's.
-func (s *submitJSON) gather(step any) {
+func (s *submitJSON) Gather(step any) {
 	switch step := step.(type) {
 	case submitJSON:
 		step.Check = s.Check
@@ -365,7 +365,7 @@ func (s *submitJSON) gather(step any) {
 	}
 }
 
-func (s *submitJSON) result() any { return *s }
+func (s *submitJSON) Result() any { return *s }
 
 // unfoundBuildJSON is a build the commits name in Generated-By that
 // nobody else can find.
@@ -705,7 +705,7 @@ func (b *batchJSON) next() {
 	b.at = &b.Changes[len(b.Changes)-1]
 }
 
-func (b *batchJSON) gather(step any) {
+func (b *batchJSON) Gather(step any) {
 	if skipped, ok := step.([]skippedJSON); ok {
 		b.Skipped = append(b.Skipped, skipped...)
 		return
@@ -713,10 +713,10 @@ func (b *batchJSON) gather(step any) {
 	if b.at == nil {
 		b.next()
 	}
-	b.at.gather(step)
+	b.at.Gather(step)
 }
 
-func (b *batchJSON) result() any {
+func (b *batchJSON) Result() any {
 	changes := slices.DeleteFunc(slices.Clone(b.Changes), func(change updateJSON) bool { return reflect.ValueOf(change).IsZero() })
 	return batchJSON{Changes: append([]updateJSON{}, changes...), Skipped: append([]skippedJSON{}, b.Skipped...)}
 }

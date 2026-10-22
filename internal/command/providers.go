@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // tartImages is what setup and setup tart ask of dockhand's Tart images.
@@ -43,7 +44,7 @@ func (s *settings) images() tartImages {
 // installTart installs Tart from MacPorts.
 const installTart = "sudo port install tart"
 
-func setupTartCommand(s *settings, streams Streams) *cobra.Command {
+func setupTartCommand(s *settings, streams term.Streams) *cobra.Command {
 	var options tart.SetupOptions
 	cmd := &cobra.Command{
 		Use:   "tart [release]",
@@ -309,7 +310,7 @@ func (s *settings) missingSteps(ctx context.Context) []string {
 // when it needs it; dockhand never sees it. Without one it downloads, as
 // setup downloads a vanilla image, with the sign-in xcodes keeps, and
 // shows what xcodes said when it fails.
-func offerXcode(ctx context.Context, images tartImages, streams Streams, missing *tart.MissingXcode) error {
+func offerXcode(ctx context.Context, images tartImages, streams term.Streams, missing *tart.MissingXcode) error {
 	_, installed := images.Xcodes()
 	switch {
 	case missing.Folder == "":
@@ -320,8 +321,8 @@ func offerXcode(ctx context.Context, images tartImages, streams Streams, missing
 	fmt.Fprintf(streams.Out, "%s's Xcode is %s, and %s has no archive of it.\n", missing.Release.Name, missing.Version, missing.Folder)
 	var path string
 	var err error
-	if streams.terminal() {
-		download, err := streams.askYes(fmt.Sprintf("Download Xcode %s with xcodes, signing in with your Apple ID? [y/N] ", missing.Version), false)
+	if streams.Terminal() {
+		download, err := streams.AskYes(fmt.Sprintf("Download Xcode %s with xcodes, signing in with your Apple ID? [y/N] ", missing.Version), false)
 		if err != nil {
 			return err
 		}

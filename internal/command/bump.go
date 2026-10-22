@@ -5,12 +5,13 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // bumpCommand is ship's single-port front, ship <port> --yes with a
 // version to pin: nobody looks before it submits, so it holds what serve's
 // submissions hold (the person's word that bump stays, 2026-10-15).
-func bumpCommand(s *settings, streams Streams) *cobra.Command {
+func bumpCommand(s *settings, streams term.Streams) *cobra.Command {
 	var version versionUpdate
 	cmd := &cobra.Command{
 		Use:   "bump <port> [version]",
@@ -54,7 +55,7 @@ dockhand can't. The check builds where build.unattended's profile says;
 				return err
 			}
 			whole := &batchJSON{}
-			streams.linkSteps(whole)
+			streams.LinkSteps(whole)
 			e, err := s.open(ctx)
 			if err != nil {
 				return err

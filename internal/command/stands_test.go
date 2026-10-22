@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // standIns are each test's stand-ins for what compose makes and for the
@@ -157,7 +158,7 @@ func standsFor(t testing.TB) *standing {
 }
 
 // runFor runs a command line in the test, with its stand-ins.
-func runFor(t testing.TB, ctx context.Context, args []string, streams Streams) error {
+func runFor(t testing.TB, ctx context.Context, args []string, streams term.Streams) error {
 	t.Helper()
 	found := standsFor(t)
 	return run(ctx, invocationFor(t, args), streams, found.deps, found.host)

@@ -15,9 +15,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func editCommand(s *settings, streams Streams) *cobra.Command {
+func editCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchChoice
 	var noOpen bool
 	cmd := &cobra.Command{
@@ -49,12 +50,12 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 				return err
 			}
 			portfile := filepath.Join(branch.Worktree, filepath.FromSlash(directory), "Portfile")
-			streams.emit(map[string]any{"branch": branchRef(branch), "started": started, "directory": directory, "portfile": portfile})
+			streams.Emit(map[string]any{"branch": branchRef(branch), "started": started, "directory": directory, "portfile": portfile})
 			editor := s.editorCommand()
 			// --no-open only brings the port's files in, for an editor of
 			// the person's own, where EDITOR=true stood in for it (field
 			// testing's batch 13).
-			if noOpen || !streams.terminal() || editor == "" {
+			if noOpen || !streams.Terminal() || editor == "" {
 				fmt.Fprintln(streams.Out, portfile)
 				return nil
 			}
@@ -72,7 +73,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 	return cmd
 }
 
-func revbumpCommand(s *settings, streams Streams) *cobra.Command {
+func revbumpCommand(s *settings, streams term.Streams) *cobra.Command {
 	var selector, subject, newName string
 	var plan bool
 	cmd := &cobra.Command{
@@ -121,7 +122,7 @@ since a rebuild has its own reason.`,
 				width = max(width, len(port))
 			}
 			result := revbumpJSON{Branch: branchRef(branch), Started: started, Subject: strings.TrimSpace(subject), Applied: !plan, Ports: []revbumpedJSON{}}
-			defer func() { streams.emit(result) }()
+			defer func() { streams.Emit(result) }()
 			for _, port := range args {
 				update, err := e.Update(ctx, engine.UpdateRequest{Branch: branch, Action: model.EditRevbump, Port: port, Subject: subject, Plan: plan})
 				if err != nil {
@@ -172,7 +173,7 @@ func revbumpBranch(ctx context.Context, e *engine.Engine, selector, port string,
 	return startFor(ctx, e, port, engine.WorkRevbump)
 }
 
-func retryCommand(s *settings, streams Streams) *cobra.Command {
+func retryCommand(s *settings, streams term.Streams) *cobra.Command {
 	var enqueue bool
 	var where branchFlags
 	cmd := &cobra.Command{
@@ -214,7 +215,7 @@ anywhere.`,
 	return cmd
 }
 
-func rebaseCommand(s *settings, streams Streams) *cobra.Command {
+func rebaseCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	cmd := &cobra.Command{
 		Use:   "rebase",
@@ -243,7 +244,7 @@ rebase that conflicts is abandoned with the branch as it was.`,
 			if rebased.Checkpoint != nil {
 				result["checkpoint"] = rebased.Checkpoint.Name()
 			}
-			streams.emit(result)
+			streams.Emit(result)
 			if rebased.UpToDate {
 				fmt.Fprintf(streams.Out, "%s already starts from master %s (fetched just now).\n", branch.ShortName(), rebased.To.Short())
 				return nil
@@ -282,7 +283,7 @@ rebase that conflicts is abandoned with the branch as it was.`,
 	return cmd
 }
 
-func archiveCommand(s *settings, streams Streams) *cobra.Command {
+func archiveCommand(s *settings, streams term.Streams) *cobra.Command {
 	var undo, keep, discard bool
 	var where branchFlags
 	cmd := &cobra.Command{
@@ -323,13 +324,13 @@ closes it.`,
 			if err != nil {
 				return err
 			}
-			if archived.Kept != "" && streams.terminal() {
+			if archived.Kept != "" && streams.Terminal() {
 				if archived, err = commitOrDiscard(ctx, e, streams, request, archived); err != nil {
 					return err
 				}
 			}
 			branch = archived.Branch
-			streams.emit(map[string]any{"branch": branch.ShortName(), "state": branch.State, "worktree_removed": archived.Removed != "", "worktree_kept": archived.Kept,
+			streams.Emit(map[string]any{"branch": branch.ShortName(), "state": branch.State, "worktree_removed": archived.Removed != "", "worktree_kept": archived.Kept,
 				"ignored_removed": nonNil(archived.IgnoredRemoved)})
 			out := streams.Out
 			if undo {
@@ -367,9 +368,9 @@ closes it.`,
 // commitOrDiscard asks what to do with the edits a worktree being
 // archived holds: commit them, where tidy's plan needs no words from the
 // person; discard them; or keep the worktree.
-func commitOrDiscard(ctx context.Context, e *engine.Engine, streams Streams, request engine.ArchiveRequest, archived engine.Archived) (engine.Archived, error) {
+func commitOrDiscard(ctx context.Context, e *engine.Engine, streams term.Streams, request engine.ArchiveRequest, archived engine.Archived) (engine.Archived, error) {
 	fmt.Fprintf(streams.Err, "%s's worktree stays for now: %s.\n", archived.Branch.ShortName(), archived.Kept)
-	answer, err := ask(streams, "? commit them, discard them, or keep the worktree? [c]ommit / [d]iscard / [K]eep ")
+	answer, err := streams.Ask("? commit them, discard them, or keep the worktree? [c]ommit / [d]iscard / [K]eep ")
 	if err != nil {
 		return archived, err
 	}

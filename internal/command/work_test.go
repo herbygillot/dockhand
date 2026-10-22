@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -60,7 +61,7 @@ const settle = 2 * time.Minute
 func dockhand(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 	var out, errs bytes.Buffer
-	err := runFor(t, t.Context(), args, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+	err := runFor(t, t.Context(), args, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	return out.String(), errs.String(), err
 }
 
@@ -133,22 +134,6 @@ func TestCommandsRefuseADirectoryThatIsNotAPortsTree(t *testing.T) {
 	require.ErrorContains(t, err, "not in a Git checkout")
 }
 
-func TestDevNullIsNotATerminal(t *testing.T) {
-	t.Parallel()
-	null, err := os.Open(os.DevNull)
-	require.NoError(t, err)
-	defer null.Close()
-	require.False(t, Streams{In: null}.terminal(), "commands never prompt when input is /dev/null")
-	require.False(t, Streams{In: strings.NewReader("y\n")}.terminal())
-}
-
-func TestAnEndedInputTakesTheDefault(t *testing.T) {
-	t.Parallel()
-	answer, err := ask(Streams{In: strings.NewReader(""), Err: &bytes.Buffer{}}, "Keep? [Y/n] ")
-	require.NoError(t, err)
-	require.Empty(t, answer)
-}
-
 // setup refuses a Git older than dockhand works with, before recording
 // anything, and says how to get a newer one.
 func TestSetupRefusesAnOldGit(t *testing.T) {
@@ -219,7 +204,7 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	require.NoError(t, os.Symlink(git, filepath.Join(bin, "git")))
 	setenv(t, "PATH", bin)
 	var out, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"setup"}, Streams{In: strings.NewReader("\nn\n"), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"setup"}, term.Streams{In: strings.NewReader("\nn\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "Keep branch worktrees in ")
 	require.Contains(t, errs.String(), "? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ")

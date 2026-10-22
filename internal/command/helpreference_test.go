@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -56,7 +57,7 @@ func TestEveryNamedCommandExists(t *testing.T) {
 func rootForReference(t *testing.T) *cobra.Command {
 	t.Helper()
 	var s settings
-	streams := runStreams(Streams{Out: io.Discard, Err: io.Discard}, nil)
+	streams := term.Begin(term.Streams{Out: io.Discard, Err: io.Discard}, nil)
 	s.streams = streams
 	root := newRoot(&s, streams)
 	// Cobra adds --help and --version as it executes.
@@ -404,7 +405,7 @@ func held(port, version string) error {
 	if version != "" {
 		next += " " + version
 	}
-	return exitf(3, "%s waits for your look\nOnce it's fine: %s --new --submit", port, next)
+	return term.Exitf(3, "%s waits for your look\nOnce it's fine: %s --new --submit", port, next)
 }`, 0)
 	require.NoError(t, err)
 	var problems []string

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,7 +54,7 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	// A failed check points to the baseline.
 	next("failed")
 	out, _, err := dockhand(t, "check")
-	require.Equal(t, 2, ExitCode(err))
+	require.Equal(t, 2, term.ExitCode(err))
 	require.Regexp(t, "\n\nTo see whether jq fails at master [0-9a-f]{7} too: dockhand check --baseline --branch jq-update\n$", out)
 	// --plan shows the baseline, and runs nothing: the numbers below would
 	// move if it had (the libuv run's finding 4).
@@ -79,7 +80,7 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	withOutcomeScript(t, w, "[check]\nbaseline = true\n")
 	next("failed")
 	out, _, err = dockhand(t, "check")
-	require.Equal(t, 2, ExitCode(err))
+	require.Equal(t, 2, term.ExitCode(err))
 	require.Contains(t, out, "dockhand check --baseline --branch jq-update\nRunning a baseline comparison because check.baseline is enabled:\njq-update · baseline of check-4: jq at master ")
 	require.Contains(t, out, "  ✗ fails at the base too, at install. Both results are kept; the cause isn't established.\n")
 
@@ -87,7 +88,7 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	// hint, and check.baseline doesn't run.
 	next("failed fetch")
 	out, _, err = dockhand(t, "check")
-	require.Equal(t, 2, ExitCode(err))
+	require.Equal(t, 2, term.ExitCode(err))
 	require.Contains(t, out, "  jq  ✗ failed at fetch\n")
 	require.NotContains(t, out, "--baseline")
 	require.NotContains(t, out, "check.baseline")
@@ -97,7 +98,7 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	// Only the branch's newest check points to it, the one --baseline
 	// looks into.
 	out, _, err = dockhand(t, "wait", "check-4")
-	require.Equal(t, 2, ExitCode(err))
+	require.Equal(t, 2, term.ExitCode(err))
 	require.NotContains(t, out, "--baseline")
 }
 
@@ -117,7 +118,7 @@ func TestCheckReportsItsBaselineInsideIt(t *testing.T) {
 
 	next("failed")
 	checked, err := jsonOf(t, "check")
-	require.Equal(t, 2, ExitCode(err))
+	require.Equal(t, 2, term.ExitCode(err))
 	require.Equal(t, "check-1", dig(t, checked.Result, "run", "name"))
 	require.Equal(t, "failed", dig(t, checked.Result, "run", "state"))
 	require.NotContains(t, checked.Result["run"], "baseline_of", "the check is the branch's own")

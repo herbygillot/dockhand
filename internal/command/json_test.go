@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // decoded is a --json envelope, read back loosely.
@@ -36,7 +37,7 @@ func jsonOf(t *testing.T, args ...string) (decoded, error) {
 	require.NoError(t, json.Unmarshal([]byte(out), &envelope), "standard output is only the envelope: %s", out)
 	require.Equal(t, 1, envelope.Version)
 	if err != nil {
-		require.Equal(t, ExitCode(err), envelope.ExitCode)
+		require.Equal(t, term.ExitCode(err), envelope.ExitCode)
 		require.Empty(t, err.Error(), "the envelope carries the error, not standard error")
 	}
 	return envelope, err
@@ -218,7 +219,7 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	g.PRs[34901].State = forge.PullRequestMerged
 	setenv(t, "MACPORTS_TREE", w.clone)
 	preview, err := jsonOf(t, "clean")
-	require.Equal(t, ExitFailure, ExitCode(err), "a preview without --yes removes nothing, and refuses")
+	require.Equal(t, term.ExitFailure, term.ExitCode(err), "a preview without --yes removes nothing, and refuses")
 	require.Equal(t, false, preview.Result["applied"])
 	require.Equal(t, false, dig(t, preview.Result, "branches", 0, "steps", 0, "removed"))
 	require.Equal(t, "worktree", dig(t, preview.Result, "branches", 0, "steps", 0, "kind"), "what each step removes")
@@ -304,7 +305,7 @@ func TestShipReportsOneShape(t *testing.T) {
 	committed("jq-failing")
 	next("failed")
 	failed, err := jsonOf(t, "ship", "--yes")
-	require.Equal(t, 2, ExitCode(err))
+	require.Equal(t, 2, term.ExitCode(err))
 	require.Equal(t, "jq: update to 1.8.1", dig(t, change(failed.Result), "submit", "title"))
 	require.Equal(t, "failed", dig(t, change(failed.Result), "check", "run", "state"))
 	require.Nil(t, dig(t, change(failed.Result), "submit", "pull_request"))

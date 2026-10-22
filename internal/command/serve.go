@@ -17,9 +17,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func serveCommand(s *settings, streams Streams) *cobra.Command {
+func serveCommand(s *settings, streams term.Streams) *cobra.Command {
 	var drain, install, uninstall, noNotify bool
 	var shipTo string
 	cmd := &cobra.Command{
@@ -139,7 +140,7 @@ func (h *host) serveOptions(e *engine.Engine, file config.File, out io.Writer, d
 // AgentLabel names serve's launchd agent.
 const AgentLabel = "io.github.herbygillot.dockhand.serve"
 
-func serveAgent(ctx context.Context, s *settings, streams Streams, install bool, flags []string) error {
+func serveAgent(ctx context.Context, s *settings, streams term.Streams, install bool, flags []string) error {
 	if s.host.os != "darwin" {
 		return errors.New("serve --install requires macOS; on other platforms, run dockhand serve with your service manager")
 	}

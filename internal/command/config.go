@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // configSetting is one line of dockhand config: a key, its value, and
@@ -22,7 +23,7 @@ type configSetting struct {
 	Source string `json:"source"`
 }
 
-func configCommand(s *settings, streams Streams) *cobra.Command {
+func configCommand(s *settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show the settings in effect, and where each comes from",
@@ -118,7 +119,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			set("providers.github.remote", file.Providers.GitHub.Remote)
 			set("providers.github.capacity", positive(file.Providers.GitHub.Capacity))
 			set("providers.github.build_timeout", file.Providers.GitHub.BuildTimeout)
-			streams.emit(map[string]any{"file": path, "database": options.Database, "settings": all})
+			streams.Emit(map[string]any{"file": path, "database": options.Database, "settings": all})
 			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", s.places().Tilde(path), s.places().Tilde(options.Database))
 			width := 0
 			for _, setting := range all {

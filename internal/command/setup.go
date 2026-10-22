@@ -11,11 +11,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // setupGitHubCommand logs in to GitHub, or with --logout removes the
 // login.
-func setupGitHubCommand(s *settings, streams Streams) *cobra.Command {
+func setupGitHubCommand(s *settings, streams term.Streams) *cobra.Command {
 	clientID := cmp.Or(s.getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID)
 	var noBrowser, logout bool
 	cmd := &cobra.Command{
@@ -48,11 +49,11 @@ authorized until you revoke it on GitHub's page for it, which it names.`,
 // default for its download, the Tart image of this Mac's macOS. Each is
 // the person's to decline, and one that fails is said, and the rest go on.
 // It says the maintainers line it wrote, or nothing.
-func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Streams, file config.File, configPath string) (string, error) {
+func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams term.Streams, file config.File, configPath string) (string, error) {
 	written := ""
 	fmt.Fprintln(streams.Out)
 	if github.LoginSource(ctx, s.signin()) == "" {
-		login, err := streams.askYes("? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ", true)
+		login, err := streams.AskYes("? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ", true)
 		if err != nil {
 			return written, err
 		}
@@ -66,7 +67,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 		suggestion := e.SuggestMaintainerAtMaster(ctx)
 		if len(suggestion.Spellings) > 0 {
 			line := suggestion.Spellings[0].Maintainer.String()
-			write, err := streams.askYes(fmt.Sprintf("? Save maintainer = %q in %s? This matches the maintainer entry in ports listing @%s. [Y/n] ", line, s.places().Tilde(configPath), suggestion.Login), true)
+			write, err := streams.AskYes(fmt.Sprintf("? Save maintainer = %q in %s? This matches the maintainer entry in ports listing @%s. [Y/n] ", line, s.places().Tilde(configPath), suggestion.Login), true)
 			if err != nil {
 				return written, err
 			}
@@ -90,7 +91,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams Stre
 				// about a minute, with no download.
 				question = "? Restore the Tart image for this Mac’s macOS version from its saved original? This takes about a minute and requires no download. [y/N] "
 			}
-			if makeImage, err = streams.askYes(question, false); err != nil {
+			if makeImage, err = streams.AskYes(question, false); err != nil {
 				return written, err
 			}
 		}

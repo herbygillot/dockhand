@@ -16,10 +16,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // outdatedRequest is what --mine and the ports named choose.
-func outdatedRequest(ctx context.Context, s *settings, e *engine.Engine, streams Streams, ports []string, mine bool) (engine.OutdatedRequest, *lookups, error) {
+func outdatedRequest(ctx context.Context, s *settings, e *engine.Engine, streams term.Streams, ports []string, mine bool) (engine.OutdatedRequest, *lookups, error) {
 	looked := newLookups(streams)
 	request := engine.OutdatedRequest{Ports: ports, Progress: looked.progress, Allow: allowLook(e.GitHubAllowance, streams, s.overAllowance)}
 	if !mine {
@@ -39,7 +40,7 @@ func outdatedRequest(ctx context.Context, s *settings, e *engine.Engine, streams
 	return request, looked, nil
 }
 
-func outdatedCommand(s *settings, streams Streams) *cobra.Command {
+func outdatedCommand(s *settings, streams term.Streams) *cobra.Command {
 	var mine, all bool
 	cmd := &cobra.Command{
 		Use:   "outdated [port...]",
@@ -66,13 +67,13 @@ checks them too.`,
 			looked.stop()
 			if err != nil {
 				if looked.cutShort(ctx, report) {
-					streams.emit(outdatedView(report))
+					streams.Emit(outdatedView(report))
 					fmt.Fprintf(streams.Out, "Interrupted after looking up %d of %d ports; what those found:\n", len(report.Ports), looked.total.Load())
 					_ = writeOutdated(context.WithoutCancel(ctx), e, streams.Out, report, all)
 				}
 				return err
 			}
-			streams.emit(outdatedView(report))
+			streams.Emit(outdatedView(report))
 			return writeOutdated(ctx, e, streams.Out, report, all)
 		},
 	}
@@ -239,7 +240,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	// Exit 3, attention: a script can't take an incomplete look for a
 	// whole one. What's said is above, so the exit says nothing more.
 	if unknown > 0 {
-		return &ExitError{Code: ExitAttention}
+		return &term.ExitError{Code: term.ExitAttention}
 	}
 	return nil
 }
@@ -289,7 +290,7 @@ func noneChecked(report engine.OutdatedReport) error {
 // and subports said ~5,500 calls of 5,000 and went on, and 106 were looked
 // up after ten minutes (field testing at 6dd7745c). Where GitHub can't be
 // asked, the look goes on, as it did.
-func allowLook(allowed func(context.Context) (github.Allowance, error), streams Streams, over bool) func(context.Context, int) error {
+func allowLook(allowed func(context.Context) (github.Allowance, error), streams term.Streams, over bool) func(context.Context, int) error {
 	return func(ctx context.Context, lookups int) error {
 		if over {
 			return nil
@@ -301,10 +302,10 @@ func allowLook(allowed func(context.Context) (github.Allowance, error), streams 
 		}
 		words := fmt.Sprintf("Looking up %s ports asks GitHub about %s times, and the login has %s of its %s left this hour, until %s, which other sessions sharing it spend too",
 			prose.Count(lookups), prose.Count(estimate), prose.Count(allowance.Remaining), prose.Count(allowance.Limit), allowance.Reset.Local().Format("15:04"))
-		if !streams.terminal() {
+		if !streams.Terminal() {
 			return fmt.Errorf("%s; --over-allowance looks anyway", words)
 		}
-		yes, err := streams.askYes(words+".\n? Look anyway? [y/N] ", false)
+		yes, err := streams.AskYes(words+".\n? Look anyway? [y/N] ", false)
 		if err != nil {
 			return err
 		}
@@ -323,7 +324,7 @@ func lookCost(lookups int) int { return (lookups*26/10 + 50) / 100 * 100 }
 // finds them, split one branch a port: the updates ship --mine and update
 // --mine make. What it leaves is said, each port the plan skipped with
 // why, and the rest counted by what the look found of them.
-func outdatedBatch(ctx context.Context, s *settings, e *engine.Engine, streams Streams) (engine.OutdatedPlan, error) {
+func outdatedBatch(ctx context.Context, s *settings, e *engine.Engine, streams term.Streams) (engine.OutdatedPlan, error) {
 	request, looked, err := outdatedRequest(ctx, s, e, streams, nil, true)
 	if err != nil {
 		return engine.OutdatedPlan{}, err
@@ -349,7 +350,7 @@ func outdatedBatch(ctx context.Context, s *settings, e *engine.Engine, streams S
 		fmt.Fprintf(streams.Out, "  %s: left as it is: %s\n", skip.Port, skip.Reason)
 		skipped = append(skipped, skippedJSON{Port: skip.Port, Reason: skip.Reason})
 	}
-	streams.emit(skipped)
+	streams.Emit(skipped)
 	if line := restWords(report, plan); line != "" {
 		fmt.Fprintln(streams.Out, line)
 	}
@@ -398,7 +399,7 @@ func restWords(report engine.OutdatedReport, plan engine.OutdatedPlan) string {
 // two ports was killed after 13 minutes, its wait unsaid (field testing at
 // c9ad2112). It remembers how many there are, for a look cut short.
 type lookups struct {
-	line  *statusLine
+	line  *term.StatusLine
 	draw  bool
 	total atomic.Int64
 	// costly says once what a large look spends of GitHub's allowance.
@@ -412,8 +413,8 @@ type lookups struct {
 	said         time.Time
 }
 
-func newLookups(streams Streams) *lookups {
-	return &lookups{line: streams.stderrLine(), draw: streams.errTerminal(), say: streams.status.say, first: 10 * time.Second, every: 30 * time.Second, started: time.Now()}
+func newLookups(streams term.Streams) *lookups {
+	return &lookups{line: streams.Status(), draw: streams.ErrTerminal(), say: streams.Say, first: 10 * time.Second, every: 30 * time.Second, started: time.Now()}
 }
 
 // costlyLook is the number of ports past which a look says what it spends
@@ -440,16 +441,16 @@ func (l *lookups) progress(done, total int) {
 		return
 	}
 	if done == total {
-		l.line.clear()
+		l.line.Clear()
 		return
 	}
-	l.line.show(fmt.Sprintf("Looking up each port's newest release: %d of %d", done, total))
+	l.line.Show(fmt.Sprintf("Looking up each port's newest release: %d of %d", done, total))
 }
 
 // stop clears the count, which a look cut short leaves drawn.
 func (l *lookups) stop() {
 	if l.draw {
-		l.line.clear()
+		l.line.Clear()
 	}
 }
 

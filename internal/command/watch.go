@@ -14,18 +14,19 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // statusWatch is status --watch: status kept current as serve works, a
 // view redrawn on a terminal, else events as lines; it only observes.
-func statusWatch(ctx context.Context, e *engine.Engine, streams Streams, plain bool, timings timings, places config.Places) error {
+func statusWatch(ctx context.Context, e *engine.Engine, streams term.Streams, plain bool, timings timings, places config.Places) error {
 	// One observer for the whole watch, however often it redraws.
 	ctx, _, end, err := e.Observing(ctx)
 	if err != nil {
 		return err
 	}
 	defer end()
-	if plain || !streams.terminal() || !streams.outTerminal() {
+	if plain || !streams.Terminal() || !streams.OutTerminal() {
 		err = watchPlain(ctx, e, streams, timings, places)
 	} else {
 		err = watchLive(ctx, e, streams, timings, places)
@@ -61,7 +62,7 @@ func (c *journalCursor) next(ctx context.Context) ([]model.Event, error) {
 }
 
 // watchPlain prints status once, then each event as it is journaled.
-func watchPlain(ctx context.Context, e *engine.Engine, streams Streams, timings timings, places config.Places) error {
+func watchPlain(ctx context.Context, e *engine.Engine, streams term.Streams, timings timings, places config.Places) error {
 	cursor := &journalCursor{e: e}
 	if err := cursor.start(ctx); err != nil {
 		return err
@@ -129,7 +130,7 @@ const (
 // watchLive redraws status on a terminal as what it shows changes, and
 // runs the commands typed at it. A check's progress isn't redrawn for: it
 // redrew every branch's status each second of every check (SQL-O6).
-func watchLive(ctx context.Context, e *engine.Engine, streams Streams, timings timings, places config.Places) error {
+func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timings timings, places config.Places) error {
 	fmt.Fprint(streams.Out, enterView)
 	defer fmt.Fprint(streams.Out, leaveView)
 	cursor := &journalCursor{e: e}
@@ -144,7 +145,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams, timings t
 	lines := make(chan input)
 	go func() {
 		for range want {
-			line, err := streams.lines.ReadString('\n')
+			line, err := streams.ReadLine()
 			select {
 			case lines <- input{strings.TrimSpace(line), err}:
 			case <-ctx.Done():
@@ -157,7 +158,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams, timings t
 	var drawn time.Time
 	draw := func() {
 		var view bytes.Buffer
-		if err := showStatus(ctx, e, Streams{Out: &view, Err: &view}, nil, false, false, branchFlags{}, places); err != nil {
+		if err := showStatus(ctx, e, term.Streams{Out: &view, Err: &view}, nil, false, false, branchFlags{}, places); err != nil {
 			fmt.Fprintf(&view, "status: %v\n", err)
 		}
 		drawn = time.Now()

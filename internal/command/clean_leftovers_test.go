@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // leavingBuilder passes every target, names its environment on the
@@ -69,13 +70,13 @@ func TestCleanRemovesWhatChecksLeft(t *testing.T) {
 	vm := builder.left[0]
 
 	out, _, err := dockhand(t, "clean")
-	require.Equal(t, ExitFailure, ExitCode(err), "a script's clean without --yes removes nothing, and refuses")
+	require.Equal(t, term.ExitFailure, term.ExitCode(err), "a script's clean without --yes removes nothing, and refuses")
 	require.Equal(t, "Left by checks\n"+
 		"  remove   VM "+vm+", left by check-1\n"+
 		"  keep     VM vm-elsewhere: no check of this checkout made it\n", out)
 
 	result, err := jsonOf(t, "clean")
-	require.Equal(t, ExitFailure, ExitCode(err))
+	require.Equal(t, term.ExitFailure, term.ExitCode(err))
 	require.Equal(t, vm, dig(t, result.Result, "leftovers", 0, "ref"))
 	require.Equal(t, "check-1", dig(t, result.Result, "leftovers", 0, "check"))
 	require.Equal(t, false, dig(t, result.Result, "leftovers", 0, "removed"))

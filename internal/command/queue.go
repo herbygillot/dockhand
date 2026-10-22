@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // writeQueue is status's list of the checks queued and running, oldest
@@ -69,7 +70,7 @@ func queueView(queue []engine.QueuedCheck) *[]queuedRunJSON {
 	return &rows
 }
 
-func waitCommand(s *settings, streams Streams) *cobra.Command {
+func waitCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	cmd := &cobra.Command{
 		Use:   "wait [check]",
@@ -120,7 +121,7 @@ the check runs here, as a foreground check would.`,
 	return cmd
 }
 
-func cancelCommand(s *settings, streams Streams) *cobra.Command {
+func cancelCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	cmd := &cobra.Command{
 		Use:   "cancel [check]",
@@ -158,7 +159,7 @@ branch, for its latest check from anywhere.`,
 			if err != nil {
 				return err
 			}
-			streams.emit(map[string]any{"run": runView(run), "canceled": run.State == model.RunCanceled})
+			streams.Emit(map[string]any{"run": runView(run), "canceled": run.State == model.RunCanceled})
 			if run.State == model.RunCanceled {
 				fmt.Fprintln(streams.Out, stopWords(run, wasQueued))
 				return nil
@@ -172,7 +173,7 @@ branch, for its latest check from anywhere.`,
 	return cmd
 }
 
-func logsCommand(s *settings, streams Streams) *cobra.Command {
+func logsCommand(s *settings, streams term.Streams) *cobra.Command {
 	var port string
 	var full, follow bool
 	var where branchFlags
@@ -260,7 +261,7 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 				logs.Executions = slices.DeleteFunc(logs.Executions, func(execution engine.ExecutionLogs) bool { return execution.Execution.ID != only })
 			}
 			if port == "" {
-				streams.emit(logsView(logs))
+				streams.Emit(logsView(logs))
 				return writeLogs(streams.Out, s.places(), logs, stoppedRun(ctx, e, logs.Run))
 			}
 			chosen, others, ok := portLogs(logs, port)
@@ -291,7 +292,7 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 			for _, other := range others {
 				view.Elsewhere = append(view.Elsewhere, portLogElsewhereJSON{Execution: string(other.execution.ID), Environment: environmentView(other.execution.Environment), Outcome: string(other.result.Outcome), Tests: string(other.result.Tests)})
 			}
-			streams.emit(view)
+			streams.Emit(view)
 			// Which build's log this is goes with the steps, or beside a log
 			// printed alone, so the log stays as it is: its environment,
 			// attempt, run, and path, and what ended an earlier attempt
@@ -319,7 +320,7 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 // target said it recorded no log until the target ended (the gnome-voice
 // session's notes, 2026-10-20). A check on GitHub Actions, whose log
 // comes back only with its run, says so, with the run's page.
-func followPortLog(ctx context.Context, e *engine.Engine, streams Streams, run model.Run, port string, poll time.Duration) error {
+func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, run model.Run, port string, poll time.Duration) error {
 	out := streams.Out
 	var printed int
 	rest := func(data []byte) {
@@ -545,7 +546,7 @@ func latestCheckHere(ctx context.Context, e *engine.Engine, unnamed string) (mod
 // the branch -b, -p, or --pr names, else of the one checked out here: a
 // branch has one check at a time, so it is the one queued or running, if
 // any is (the second look's §3). unnamed says what to do elsewhere.
-func namedOrLatest(ctx context.Context, e *engine.Engine, streams Streams, where branchFlags, args []string, unnamed string) (model.Run, error) {
+func namedOrLatest(ctx context.Context, e *engine.Engine, streams term.Streams, where branchFlags, args []string, unnamed string) (model.Run, error) {
 	if len(args) == 1 {
 		if where.explicit() {
 			return model.Run{}, errors.New("name a check or a branch, not both")
@@ -557,7 +558,7 @@ func namedOrLatest(ctx context.Context, e *engine.Engine, streams Streams, where
 
 // latestOf is the latest check of the branch the flags name, else of the
 // one checked out here.
-func latestOf(ctx context.Context, e *engine.Engine, streams Streams, where branchFlags, unnamed string) (model.Run, error) {
+func latestOf(ctx context.Context, e *engine.Engine, streams term.Streams, where branchFlags, unnamed string) (model.Run, error) {
 	if !where.explicit() {
 		return latestCheckHere(ctx, e, unnamed)
 	}

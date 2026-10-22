@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -179,7 +180,7 @@ func TestSeveralBranchesForAPortAreOneQuestion(t *testing.T) {
 	}
 	run := func(answer string) (string, string, error) {
 		var out, errs bytes.Buffer
-		err := runFor(t, t.Context(), []string{"edit", "jq", "--no-open"}, Streams{In: strings.NewReader(answer + "\n"), Out: &out, Err: &errs, interactive: true})
+		err := runFor(t, t.Context(), []string{"edit", "jq", "--no-open"}, term.Streams{In: strings.NewReader(answer + "\n"), Out: &out, Err: &errs}.AsTerminal())
 		return out.String(), errs.String(), err
 	}
 	_, errs, err := run("2")

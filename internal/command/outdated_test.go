@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -71,7 +72,7 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	// command exits 3 (the rc6 full stage, D-N4).
 	var partial bytes.Buffer
 	err := writeOutdated(t.Context(), nil, &partial, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{{Port: "jq", Problem: "GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT"}, current("fd")}}, false)
-	require.Equal(t, 3, ExitCode(err))
+	require.Equal(t, 3, term.ExitCode(err))
 	require.Equal(t, "1 of 2 ports couldn't be checked: GitHub's rate limit for your login resets in 18 minutes, at 23:24 EDT\nOf the 1 port checked, none has a newer release, at master 1bb30d5 · --current lists those it couldn't check\n",
 		partial.String(), "a port that couldn't be checked isn't said to have none")
 
@@ -140,13 +141,13 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada} openmaintainer\"\n"), data...), 0o644))
 
 	out, _, err := dockhand(t, "outdated", "--mine")
-	require.Equal(t, 3, ExitCode(err), "one couldn't be checked")
+	require.Equal(t, 3, term.ExitCode(err), "one couldn't be checked")
 	require.Equal(t, []string{"@ada", "example.org:ada"}, reader.asked[0].Maintainers)
 	require.Contains(t, out, "  PORT   NOW     NEWEST   DOCKHAND CAN\n  jq     1.7.1   1.8.1    update\n")
 	require.Contains(t, out, "1 of 2 ports couldn't be checked: no forge could be found for it\nOf the 1 port checked, 1 has a newer release, at master ")
 	require.Contains(t, out, " · --current lists those it couldn't check\n")
 	out, _, err = dockhand(t, "outdated", "--mine", "--current")
-	require.Equal(t, 3, ExitCode(err))
+	require.Equal(t, 3, term.ExitCode(err))
 	require.Contains(t, out, "couldn't check: no forge could be found for it")
 
 	// --mine updates each in a branch of its own, nothing committed, and
@@ -161,14 +162,14 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	require.ErrorContains(t, err, "without a terminal, --yes starts what is shown")
 
 	var stdout, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"update", "--mine"}, Streams{In: strings.NewReader("y\n"), Out: &stdout, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"update", "--mine"}, term.Streams{In: strings.NewReader("y\n"), Out: &stdout, Err: &errs}.AsTerminal())
 	require.NoError(t, err, errs.String())
 	require.Contains(t, errs.String(), "? Start them? [y/N] ")
 	require.Contains(t, stdout.String(), "jq: 1.7.1 → 1.8.1")
 	require.NotContains(t, stdout.String(), "Proposed commit", "nothing is committed")
 
 	out, _, err = dockhand(t, "outdated", "jq")
-	require.Equal(t, 3, ExitCode(err), "the fixture's lost couldn't be checked")
+	require.Equal(t, 3, term.ExitCode(err), "the fixture's lost couldn't be checked")
 	require.Regexp(t, `jq     1\.7\.1   1\.8\.1    already in jq-1\.8\.1\n`, out)
 	out, _, err = dockhand(t, "update", "--mine", "--yes")
 	require.NoError(t, err)
@@ -199,7 +200,7 @@ func TestUpdateMineLeavesAnUncertainPortForALook(t *testing.T) {
 	require.Contains(t, out, "1 that may have one, for your look")
 
 	result, err := jsonOf(t, "outdated", "jq", "lost", "yq")
-	require.Equal(t, 3, ExitCode(err), "lost couldn't be checked")
+	require.Equal(t, 3, term.ExitCode(err), "lost couldn't be checked")
 	require.EqualValues(t, 1, dig(t, result.Result, "unchecked"))
 	yq := dig(t, result.Result, "ports", 2)
 	require.Equal(t, "yq", dig(t, yq, "port"))
@@ -220,13 +221,13 @@ func TestOutdatedShowsItsProgressAtATerminal(t *testing.T) {
 	versioned(t, w)
 	reader := withOutdated(t)
 	var out, errs bytes.Buffer
-	err := runFor(t, t.Context(), []string{"outdated", "jq", "lost"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
-	require.Equal(t, 3, ExitCode(err), "lost couldn't be checked")
+	err := runFor(t, t.Context(), []string{"outdated", "jq", "lost"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs}.AsTerminal())
+	require.Equal(t, 3, term.ExitCode(err), "lost couldn't be checked")
 	require.Equal(t, "\r\033[KLooking up each port's newest release: 0 of 2\r\033[KLooking up each port's newest release: 1 of 2\r\033[K", errs.String())
 	require.NotContains(t, out.String(), "Looking up")
 
 	_, errOut, err := dockhand(t, "outdated", "jq", "lost")
-	require.Equal(t, 3, ExitCode(err))
+	require.Equal(t, 3, term.ExitCode(err))
 	require.NotContains(t, errOut, "Looking up", "no terminal, no count drawn")
 	require.NotNil(t, reader.asked[1].Progress, "the count is still followed, for a look cut short")
 }
@@ -256,24 +257,13 @@ func TestAnInterruptedLookPrintsWhatItFound(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		stands(t).OutdatedReader = cutShort{cancel: cancel}
 		var out, errs bytes.Buffer
-		err := runFor(t, ctx, args, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+		err := runFor(t, ctx, args, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 		require.ErrorIs(t, err, context.Canceled, args)
 		require.Contains(t, out.String(), "Interrupted after looking up 1 of 2 ports", args)
 		require.Contains(t, out.String(), "  jq     1.7.1   1.8.1    update\n", args)
 	}
 	stands(t).OutdatedReader = nil
 	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "update --mine and ship --mine started nothing")
-}
-
-// A line printed while the count shows clears it, and draws it again after.
-func TestAReportPrintsAroundTheCount(t *testing.T) {
-	t.Parallel()
-	var err bytes.Buffer
-	line := &statusLine{w: &err}
-	line.show("Looking up each port's newest release: 1 of 2")
-	line.say("Building the PortIndex")
-	line.clear()
-	require.Equal(t, "\r\033[KLooking up each port's newest release: 1 of 2\r\033[KBuilding the PortIndex\nLooking up each port's newest release: 1 of 2\r\033[K", err.String())
 }
 
 // What a batch leaves is counted by what the look found of each, naming
@@ -296,8 +286,8 @@ func TestABatchCountsWhatItLeaves(t *testing.T) {
 // done, 3 where some need a look, and 0 where all were.
 func TestABatchsExitSaysWhetherAnythingWorked(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, 1, ExitCode(batchExit([]string{"jq"}, 1, "shipped")), "none could be done")
-	require.Equal(t, 3, ExitCode(batchExit([]string{"jq"}, 2, "shipped")), "some need a look")
+	require.Equal(t, 1, term.ExitCode(batchExit([]string{"jq"}, 1, "shipped")), "none could be done")
+	require.Equal(t, 3, term.ExitCode(batchExit([]string{"jq"}, 2, "shipped")), "some need a look")
 	require.NoError(t, batchExit(nil, 2, "shipped"), "all were done")
 }
 
@@ -343,7 +333,7 @@ func TestALookPastTheAllowanceAsksFirst(t *testing.T) {
 			return github.Allowance{Remaining: remaining, Limit: 5000, Reset: reset}, nil
 		}
 	}
-	script := Streams{In: strings.NewReader(""), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}
+	script := term.Streams{In: strings.NewReader(""), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}
 	require.NoError(t, allowLook(left(5000), script, false)(t.Context(), 100), "within it")
 	err := allowLook(left(1000), script, false)(t.Context(), 2133)
 	require.EqualError(t, err, "Looking up 2,133 ports asks GitHub about 5,500 times, and the login has 1,000 of its 5,000 left this hour, until 15:04, which other sessions sharing it spend too; --over-allowance looks anyway")
@@ -351,9 +341,9 @@ func TestALookPastTheAllowanceAsksFirst(t *testing.T) {
 	require.NoError(t, allowLook(func(context.Context) (github.Allowance, error) { return github.Allowance{}, errors.New("offline") }, script, false)(t.Context(), 2133), "GitHub can't be asked")
 
 	var asked bytes.Buffer
-	yes := Streams{In: strings.NewReader("y\n"), Out: &bytes.Buffer{}, Err: &asked, interactive: true}
+	yes := term.Streams{In: strings.NewReader("y\n"), Out: &bytes.Buffer{}, Err: &asked}.AsTerminal()
 	require.NoError(t, allowLook(left(1000), yes, false)(t.Context(), 2133))
 	require.Contains(t, asked.String(), "? Look anyway? [y/N]")
-	no := Streams{In: strings.NewReader("\n"), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, interactive: true}
+	no := term.Streams{In: strings.NewReader("\n"), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}.AsTerminal()
 	require.EqualError(t, allowLook(left(1000), no, false)(t.Context(), 2133), "nothing was looked up")
 }

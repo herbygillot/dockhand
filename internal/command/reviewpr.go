@@ -13,9 +13,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func reviewCommand(s *settings, streams Streams) *cobra.Command {
+func reviewCommand(s *settings, streams term.Streams) *cobra.Command {
 	var comment, requestChanges, markdown bool
 	cmd := &cobra.Command{
 		Use:   "review <pr>",
@@ -47,7 +48,7 @@ access. --markdown prints the text, for pasting.`,
 			}
 			fmt.Fprintln(streams.Err, experimentalWords(number, report.Author))
 			body := report.Markdown()
-			streams.emit(reviewView(report))
+			streams.Emit(reviewView(report))
 			if markdown {
 				fmt.Fprint(streams.Out, body)
 				return e.RecordReview(ctx, report, "")
@@ -56,18 +57,18 @@ access. --markdown prints the text, for pasting.`,
 			switch {
 			case comment || requestChanges:
 				return postReview(ctx, e, streams, report, body, requestChanges)
-			case !streams.terminal():
+			case !streams.Terminal():
 				if err := e.RecordReview(ctx, report, ""); err != nil {
 					return err
 				}
-				return &ExitError{Code: ExitFailure, Message: "No review was posted. In a script, use --comment or --request-changes to post it."}
+				return &term.ExitError{Code: term.ExitFailure, Message: "No review was posted. In a script, use --comment or --request-changes to post it."}
 			}
 			for {
 				choices := "c comment · r request changes · e edit first · n don't post"
 				if !report.CanRequestChanges() {
 					choices = "c comment · e edit first · n don't post"
 				}
-				answer, err := ask(streams, "? post as: "+choices+"  ")
+				answer, err := streams.Ask("? post as: " + choices + "  ")
 				if err != nil {
 					return err
 				}
@@ -102,7 +103,7 @@ access. --markdown prints the text, for pasting.`,
 	return cmd
 }
 
-func postReview(ctx context.Context, e *engine.Engine, streams Streams, report engine.ReviewReport, body string, requestChanges bool) error {
+func postReview(ctx context.Context, e *engine.Engine, streams term.Streams, report engine.ReviewReport, body string, requestChanges bool) error {
 	url, err := e.PostReview(ctx, report, body, requestChanges)
 	if err != nil {
 		return err
@@ -112,7 +113,7 @@ func postReview(ctx context.Context, e *engine.Engine, streams Streams, report e
 	if requestChanges {
 		result.Posted = "request-changes"
 	}
-	streams.emit(result)
+	streams.Emit(result)
 	how := "a comment"
 	if requestChanges {
 		how = "changes requested"

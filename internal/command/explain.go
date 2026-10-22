@@ -8,9 +8,10 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func explainCommand(streams Streams) *cobra.Command {
+func explainCommand(streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "explain [code]",
 		Short: "Say what a commit rule asks, and where MacPorts asks it",
@@ -22,7 +23,7 @@ code, it lists them.`,
 		RunE: func(_ *cobra.Command, args []string) error {
 			out := streams.Out
 			if len(args) == 0 {
-				streams.emit(map[string]any{"codes": commitrules.Codes()})
+				streams.Emit(map[string]any{"codes": commitrules.Codes()})
 				for _, code := range commitrules.Codes() {
 					explanation, _ := commitrules.Explain(code)
 					fmt.Fprintf(out, "%-22s %s\n", code, prose.FirstSentence(explanation.Rule))
@@ -37,7 +38,7 @@ code, it lists them.`,
 			for _, source := range explanation.Sources {
 				sources = append(sources, map[string]string{"title": source.Title, "url": source.URL, "quote": source.Quote})
 			}
-			streams.emit(map[string]any{"code": explanation.Code, "rule": explanation.Rule, "sources": sources})
+			streams.Emit(map[string]any{"code": explanation.Code, "rule": explanation.Rule, "sources": sources})
 			fmt.Fprintf(out, "%s\n\n%s\n", explanation.Code, prose.Wrap(explanation.Rule, 76))
 			for _, source := range explanation.Sources {
 				fmt.Fprintf(out, "\n%s\n%s\n", source.Title, source.URL)

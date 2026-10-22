@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -19,7 +20,7 @@ import (
 func bumpOn(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 	var out, errs bytes.Buffer
-	err := runFor(t, t.Context(), append([]string{"bump"}, args...), Streams{In: strings.NewReader("y\ny\ny\n"), Out: &out, Err: &errs, interactive: true})
+	err := runFor(t, t.Context(), append([]string{"bump"}, args...), term.Streams{In: strings.NewReader("y\ny\ny\n"), Out: &out, Err: &errs}.AsTerminal())
 	return out.String(), errs.String(), err
 }
 
@@ -136,7 +137,7 @@ func TestShipAndBumpReportTheSameJSON(t *testing.T) {
 	g.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
 	g.Quiet = g.Searches + 1
 	held, err := jsonOf(t, "bump", "jq")
-	require.Equal(t, 3, ExitCode(err))
+	require.Equal(t, 3, term.ExitCode(err))
 	change := dig(t, held.Result, "changes", 0).(map[string]any)
 	require.Equal(t, "1.8.1", dig(t, change, "after", "version"))
 	require.Nil(t, dig(t, change, "submit", "pull_request"))
@@ -158,16 +159,16 @@ func TestBumpHoldsWhatServeWould(t *testing.T) {
 	g := withGitHub(t, w) // it finds #34777 open for jq
 
 	_, _, err := bumpOn(t, "jq", "--tested-binaries")
-	require.Equal(t, 3, ExitCode(err), "it needs your attention")
+	require.Equal(t, 3, term.ExitCode(err), "it needs your attention")
 	require.EqualError(t, err, "jq waits for your look, so nothing was changed: #34777 is open for the same port: jq: update to 1.8.0\nOnce it's fine: dockhand ship jq, on a terminal")
 	require.Equal(t, 1, g.Searches, "looked for once, before the edit")
 	g.SearchErr = errors.New("rate limited")
 	g.Others = nil
 	_, _, err = bumpOn(t, "jq", "1.8.1")
-	require.Equal(t, 3, ExitCode(err))
+	require.Equal(t, 3, term.ExitCode(err))
 	require.EqualError(t, err, "jq waits for your look, so nothing was changed: couldn't look for other open pull requests: rate limited\nOnce it's fine: dockhand update jq 1.8.1 --new, then dockhand ship -p jq on a terminal")
 	held, err := jsonOf(t, "bump", "jq")
-	require.Equal(t, 3, ExitCode(err))
+	require.Equal(t, 3, term.ExitCode(err))
 	require.Nil(t, held.Result, "a refusal before anything is done reports only its error")
 	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started, so nothing was downloaded or built")
 
@@ -175,7 +176,7 @@ func TestBumpHoldsWhatServeWould(t *testing.T) {
 	g.SearchErr, g.Others = nil, []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
 	g.Quiet = g.Searches + 1
 	_, _, err = bumpOn(t, "jq", "--tested-binaries")
-	require.Equal(t, 3, ExitCode(err), "it needs your attention")
+	require.Equal(t, 3, term.ExitCode(err), "it needs your attention")
 	require.Regexp(t, `^jq-1\.8\.1(-[a-z0-9]{4})? passed its check and waits for your look, so nothing was submitted: #34777 is open for the same port: jq: update to 1\.8\.0\nOnce it's fine: dockhand submit --branch jq-1\.8\.1(-[a-z0-9]{4})?$`, err.Error())
 	require.Empty(t, g.PRs)
 

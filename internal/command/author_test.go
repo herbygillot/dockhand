@@ -24,6 +24,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -155,7 +156,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\); --new without --plan starts the branch\n`, planned)
 	require.Contains(t, planned, "+version 1.8.1")
 	var asked, told bytes.Buffer
-	err = runFor(t, t.Context(), []string{"update", "jq", "--plan"}, Streams{In: strings.NewReader("y\n"), Out: &told, Err: &asked, interactive: true})
+	err = runFor(t, t.Context(), []string{"update", "jq", "--plan"}, term.Streams{In: strings.NewReader("y\n"), Out: &told, Err: &asked}.AsTerminal())
 	require.NoError(t, err)
 	require.NotContains(t, asked.String(), "? ", "a plan asks nothing")
 	require.Contains(t, told.String(), "Planned on master ")
@@ -170,7 +171,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	// With no open branch changing the port, the update starts one, in
 	// a script too, and says so first (the command-line UX review, §2).
 	var out, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"update", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+	err = runFor(t, t.Context(), []string{"update", "jq"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.NoError(t, err)
 	require.Regexp(t, `^jq is in no open branch, so this starts one for it, named for the version it moves to\.\n`, errs.String())
 	started := regexp.MustCompile(`Started dockhand/(jq-1\.8\.1) from master `).FindStringSubmatch(out.String())
@@ -186,7 +187,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 
 	out.Reset()
 	errs.Reset()
-	err = runFor(t, t.Context(), []string{"checksums", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"checksums", "jq"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "Working in "+name+", the one open branch changing jq")
 	require.NotContains(t, errs.String(), "? ", "nothing else could be meant, so nothing is asked")
@@ -194,7 +195,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	require.Contains(t, out.String(), "Updated checksums.")
 
 	out.Reset()
-	err = runFor(t, t.Context(), []string{"update", "jq", "1.9", "--new"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+	err = runFor(t, t.Context(), []string{"update", "jq", "1.9", "--new"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.NoError(t, err)
 	another := regexp.MustCompile(`Started dockhand/(jq-1\.9) from master `).FindStringSubmatch(out.String())
 	require.NotNil(t, another, out.String())
@@ -204,7 +205,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 		"a branch not checked out here is gone to first, since a check from elsewhere takes its committed head")
 
 	out.Reset()
-	err = runFor(t, t.Context(), []string{"update", "jq", "2.0", "--branch", another[1]}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+	err = runFor(t, t.Context(), []string{"update", "jq", "2.0", "--branch", another[1]}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "jq: 1.9 → 2.0")
 
@@ -535,13 +536,13 @@ func TestAnUncertainNewestReleaseIsNamedNotChosen(t *testing.T) {
 	withGitHub(t, w)
 
 	_, _, err := dockhand(t, "update", "jq", "--new")
-	require.Equal(t, 3, ExitCode(err), "it needs a look")
+	require.Equal(t, 3, term.ExitCode(err), "it needs a look")
 	require.EqualError(t, err, "can't tell whether jq is current, so nothing was changed: jq-1.9.0 compares newer, but its commit is older than jq-1.7.1's\nIf jq-1.9.0 is a release: dockhand update jq 1.9.0\nIf it isn't, as an old tag spelled oddly: a livecheck.regex in the Portfile that leaves jq-1.9.0 out keeps it out of later looks")
 	_, _, err = bumpOn(t, "jq")
-	require.Equal(t, 3, ExitCode(err))
+	require.Equal(t, 3, term.ExitCode(err))
 	require.ErrorContains(t, err, "\nIf jq-1.9.0 is a release: dockhand bump jq 1.9.0")
 	result, err := jsonOf(t, "update", "jq", "--plan")
-	require.Equal(t, 3, ExitCode(err))
+	require.Equal(t, 3, term.ExitCode(err))
 	require.Nil(t, result.Result, "a refusal before anything is done reports only its error")
 	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 

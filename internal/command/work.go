@@ -1,7 +1,6 @@
 package command
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -16,13 +15,14 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // setupCommand registers the checkout, reports dockhand's health, and on
 // a terminal offers what's missing (the command-line UX review's §6): one
 // first-run command, rerun for the health check, in place of init,
 // providers, and auth.
-func setupCommand(s *settings, streams Streams) *cobra.Command {
+func setupCommand(s *settings, streams term.Streams) *cobra.Command {
 	var worktrees string
 	var yes bool
 	cmd := &cobra.Command{
@@ -59,7 +59,7 @@ one older than 2.40, which rebase needs.`,
 
 // runSetup registers the checkout and reports, and on a terminal, unless
 // yes, offers what's missing.
-func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string, yes bool) error {
+func runSetup(cmd *cobra.Command, s *settings, streams term.Streams, worktrees string, yes bool) error {
 	options, file, configPath, err := s.options(cmd.Context())
 	if err != nil {
 		return err
@@ -72,7 +72,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	}
 	e, found, err := engine.Setup(cmd.Context(), options, named)
 	report := setupReport{SetupReport: found, Providers: []string{}}
-	defer func() { streams.emit(report) }()
+	defer func() { streams.Emit(report) }()
 	if err != nil {
 		return err
 	}
@@ -83,13 +83,13 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	} else {
 		fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", s.places().Tilde(report.Checkout), report.Upstream.Repository, report.Upstream.FetchedFrom)
 	}
-	if report.Unchosen && streams.terminal() && !yes {
-		answer, err := ask(streams, fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", s.places().Tilde(report.Worktrees)))
+	if report.Unchosen && streams.Terminal() && !yes {
+		answer, err := streams.Ask(fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", s.places().Tilde(report.Worktrees)))
 		if err != nil {
 			return err
 		}
 		if strings.HasPrefix(strings.ToLower(answer), "n") {
-			where, err := ask(streams, "Where, then? ")
+			where, err := streams.Ask("Where, then? ")
 			if err != nil {
 				return err
 			}
@@ -128,7 +128,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	fmt.Fprintf(out, "  Publishing   %s\n", publishLine)
 	fmt.Fprintf(out, "  Records      %s\n", s.places().Tilde(report.Records))
 	fmt.Fprintln(out)
-	if streams.terminal() && !yes {
+	if streams.Terminal() && !yes {
 		written, err := offerSetup(cmd.Context(), s, e, streams, file, configPath)
 		if err != nil {
 			return err
@@ -153,7 +153,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams Streams, worktrees string
 	return nil
 }
 
-func startCommand(s *settings, streams Streams) *cobra.Command {
+func startCommand(s *settings, streams term.Streams) *cobra.Command {
 	var here bool
 	var ports []string
 	cmd := &cobra.Command{
@@ -186,8 +186,8 @@ tracked files.`,
 			branch, err := e.Start(ctx, engine.StartRequest{Name: name, Here: here, Ports: ports})
 			// An archived branch's name is offered back: renamed aside, the
 			// archived one keeps its work under <name>-archived.
-			if taken := new(engine.TakenError); errors.As(err, &taken) && taken.Branch.State == model.BranchArchived && taken.Branch.PullRequest == nil && streams.terminal() {
-				ok, _, askErr := streams.decide(false, decision{question: fmt.Sprintf("? %s is archived. Rename the archived branch to free this name? [y/N] ", taken.Branch.ShortName()), undone: "nothing was started"})
+			if taken := new(engine.TakenError); errors.As(err, &taken) && taken.Branch.State == model.BranchArchived && taken.Branch.PullRequest == nil && streams.Terminal() {
+				ok, _, askErr := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? %s is archived. Rename the archived branch to free this name? [y/N] ", taken.Branch.ShortName()), Undone: "nothing was started"})
 				if askErr != nil {
 					return askErr
 				}
@@ -208,7 +208,7 @@ tracked files.`,
 					return fmt.Errorf("%s was started, but %w", branch.Name, err)
 				}
 			}
-			streams.emit(map[string]any{"branch": branchRef(branch)})
+			streams.Emit(map[string]any{"branch": branchRef(branch)})
 			if here {
 				fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now) in this checkout, and switched to it.\n", branch.Name, branch.Base.Short())
 				return nil
@@ -224,7 +224,7 @@ tracked files.`,
 	return cmd
 }
 
-func adoptCommand(s *settings, streams Streams) *cobra.Command {
+func adoptCommand(s *settings, streams term.Streams) *cobra.Command {
 	var pr int
 	cmd := &cobra.Command{
 		Use:   "adopt [branch]",
@@ -259,7 +259,7 @@ edit and you have write access, and never rewrites their description.`,
 			if err != nil {
 				return err
 			}
-			streams.emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "renamed_from": adoption.Renamed, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames()),
+			streams.Emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "renamed_from": adoption.Renamed, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames()),
 				"uncommitted": nonNil(adoption.Uncommitted), "placed": adoption.Placed, "unplaced": adoption.Unplaced})
 			if adoption.Already {
 				fmt.Fprintf(streams.Out, "%s is already tracked.\n", adoption.Branch.Name)
@@ -296,13 +296,13 @@ func writePlaced(out io.Writer, adoption engine.Adoption) {
 	}
 }
 
-func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, places config.Places, number int) error {
+func adoptPullRequest(ctx context.Context, e *engine.Engine, streams term.Streams, places config.Places, number int) error {
 	adoption, err := e.AdoptPullRequest(ctx, number)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintln(streams.Err, experimentalWords(number, adoption.Author))
-	streams.emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "number": number, "title": adoption.Title,
+	streams.Emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "number": number, "title": adoption.Title,
 		"author": adoption.Author, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames()), "maintainers_can_edit": adoption.MaintainerCanModify})
 	if adoption.Already {
 		fmt.Fprintf(streams.Out, "#%d is already tracked, as %s.\n", number, adoption.Branch.ShortName())
@@ -317,7 +317,7 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, pl
 	return nil
 }
 
-func pathCommand(s *settings, streams Streams) *cobra.Command {
+func pathCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	cmd := &cobra.Command{
 		Use:   "path [branch]",
@@ -355,7 +355,7 @@ any, the branch checked out here.`,
 					return err
 				}
 			}
-			streams.emit(map[string]string{"path": path})
+			streams.Emit(map[string]string{"path": path})
 			fmt.Fprintln(streams.Out, path)
 			return nil
 		},
@@ -377,21 +377,6 @@ func describeScope(scope engine.Scope, uncommitted []string) string {
 		words += ", with edits not yet committed to " + prose.And(uncommitted)
 	}
 	return words
-}
-
-// ask puts a question on stderr and reads one line. Input that ends
-// without an answer is an empty answer, which takes the default.
-func ask(streams Streams, question string) (string, error) {
-	fmt.Fprint(streams.Err, question)
-	lines := streams.lines
-	if lines == nil {
-		lines = bufio.NewReader(streams.In)
-	}
-	line, err := lines.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", err
-	}
-	return strings.TrimSpace(line), nil
 }
 
 // setupReport is what setup reports, as --json gives it: the engine's

@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -157,7 +158,7 @@ func TestShipSettlesWhereBeforeTheEdit(t *testing.T) {
 	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 
 	var out, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"ship", "jq", "--yes", "--on", "command", "--tested-binaries"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"ship", "jq", "--yes", "--on", "command", "--tested-binaries"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err, errs.String())
 	require.NotContains(t, errs.String(), "Apply [a]")
 	require.NotContains(t, errs.String(), "Did you test", "the flag answered the template's questions")

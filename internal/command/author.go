@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // branchChoice is the branch an authoring command was pointed at.
@@ -47,7 +48,7 @@ func (c *branchChoice) flags(cmd *cobra.Command) {
 	cmd.MarkFlagsMutuallyExclusive("branch", "new")
 }
 
-func updateCommand(s *settings, streams Streams) *cobra.Command {
+func updateCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchChoice
 	var plan, mine, yes bool
 	var version versionUpdate
@@ -111,9 +112,9 @@ pull requests, and ship takes a port's update as far as --to says.`,
 
 // updateMine is update --mine: ship's edit stage over your outdated ports,
 // each in a branch of its own, nothing committed (decision 7, 2026-10-13).
-func updateMine(ctx context.Context, s *settings, streams Streams, version versionUpdate, plan, yes bool) error {
+func updateMine(ctx context.Context, s *settings, streams term.Streams, version versionUpdate, plan, yes bool) error {
 	whole := &batchJSON{}
-	streams.linkSteps(whole)
+	streams.LinkSteps(whole)
 	e, err := s.open(ctx)
 	if err != nil {
 		return err
@@ -142,7 +143,7 @@ func updateMine(ctx context.Context, s *settings, streams Streams, version versi
 		fmt.Fprintln(out, "Nothing was started (--plan).")
 		return nil
 	}
-	ok, _, err := streams.decide(yes, decision{question: "? Start them? [y/N] ", undone: "nothing was started", byYes: "--yes starts what is shown"})
+	ok, _, err := streams.Decide(yes, term.Decision{Question: "? Start them? [y/N] ", Undone: "nothing was started", ByYes: "--yes starts what is shown"})
 	if err != nil {
 		return err
 	}
@@ -172,14 +173,14 @@ func updateMine(ctx context.Context, s *settings, streams Streams, version versi
 func batchExit(failed []string, total int, done string) error {
 	switch {
 	case len(failed) > 0 && len(failed) == total:
-		return &ExitError{Code: ExitFailure, Message: "nothing was " + done + ": " + strings.Join(failed, ", ") + " stopped"}
+		return &term.ExitError{Code: term.ExitFailure, Message: "nothing was " + done + ": " + strings.Join(failed, ", ") + " stopped"}
 	case len(failed) > 0:
-		return &ExitError{Code: ExitAttention, Message: strings.Join(failed, ", ") + " stopped; the rest went on"}
+		return &term.ExitError{Code: term.ExitAttention, Message: strings.Join(failed, ", ") + " stopped; the rest went on"}
 	}
 	return nil
 }
 
-func checksumsCommand(s *settings, streams Streams) *cobra.Command {
+func checksumsCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchChoice
 	var plan, keepOld, keepRevision bool
 	cmd := &cobra.Command{
@@ -318,7 +319,7 @@ func (v versionUpdate) request(args []string, plan bool) (engine.UpdateRequest, 
 // as tidy previews them, where it has any, and returns the branch as it is
 // after; applied is false where the person declined, which undone says.
 // yes applies an unambiguous plan without asking (decideTidy).
-func tidyBranch(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, undone string) (model.Branch, bool, error) {
+func tidyBranch(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, undone string) (model.Branch, bool, error) {
 	out := streams.Out
 	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
 	if err != nil {
@@ -326,7 +327,7 @@ func tidyBranch(ctx context.Context, e *engine.Engine, streams Streams, branch m
 	}
 	if !proposal.Keep {
 		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), describeWork(proposal))
-		streams.emit(tidyView(proposal))
+		streams.Emit(tidyView(proposal))
 		writeTidyPlan(out, proposal, false)
 		// A plan of dockhand's own edits is applied unasked; one with the
 		// person's is reviewed on a terminal, and held where nobody looks,
@@ -334,7 +335,7 @@ func tidyBranch(ctx context.Context, e *engine.Engine, streams Streams, branch m
 		// plan it hasn't shown (Codex's review of 832f059e, high 1). The
 		// hold names tidy, as serve's does, where tidy's own refusal
 		// offered --yes, which ship's --yes isn't.
-		if !streams.terminal() {
+		if !streams.Terminal() {
 			if err := proposal.HeldForLook(model.AnsweredNobody); err != nil {
 				return branch, false, fmt.Errorf("%w; %s", err, undone)
 			}
@@ -382,7 +383,7 @@ type linkedOptions struct {
 }
 
 // author finds the branch, makes the edit, and reports it.
-func author(ctx context.Context, s *settings, streams Streams, where branchChoice, work engine.Work, request engine.UpdateRequest, linked linkedOptions) (branch model.Branch, update engine.Update, err error) {
+func author(ctx context.Context, s *settings, streams term.Streams, where branchChoice, work engine.Work, request engine.UpdateRequest, linked linkedOptions) (branch model.Branch, update engine.Update, err error) {
 	// A version update's plan with --new is a look before starting a
 	// branch, against master as fetched now; anything else needs one.
 	fromMaster := where.isNew() && request.Plan
@@ -416,7 +417,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		// A plan asks nothing that would start a branch.
 		choosing := streams
 		if request.Plan {
-			choosing = streams.unattended()
+			choosing = streams.Unattended()
 		}
 		var chosen chosenBranch
 		chosen, err = chooseBranch(ctx, e, choosing, where, request.Port, work)
@@ -444,7 +445,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	}
 	if err != nil && started {
 		// The branch it started stays, for the edit by hand.
-		streams.emit(updateView(branch, started, update, request.Plan))
+		streams.Emit(updateView(branch, started, update, request.Plan))
 	}
 	if fromMaster && err == nil {
 		why := ""
@@ -480,7 +481,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		return branch, update, err
 	}
 	result := updateView(branch, started, update, request.Plan)
-	streams.emit(result)
+	streams.Emit(result)
 	if update.Current {
 		switch {
 		case deferred:
@@ -543,7 +544,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		writePlainHTTP(out, update.PlainHTTP)
 		if linked.revbump {
 			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, true)
-			streams.emit(result)
+			streams.Emit(result)
 			return branch, update, err
 		}
 		// A checksum refresh's plan is its check: it says which archives
@@ -552,7 +553,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 			writeLeft(out, update.ChecksumsLeft)
 			if len(update.Differing) > 0 {
 				fmt.Fprintf(out, "%d of %s don't match their checksums: %s\n", len(update.Differing), prose.Plural(update.Compared, "distfile"), strings.Join(update.Differing, ", "))
-				return branch, update, &ExitError{Code: ExitAttention}
+				return branch, update, &term.ExitError{Code: term.ExitAttention}
 			}
 		}
 		return branch, update, nil
@@ -647,7 +648,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, false); err != nil {
 			return branch, update, err
 		}
-		streams.emit(result)
+		streams.Emit(result)
 	}
 	if !linked.goesOn {
 		fmt.Fprintln(out, "Next: "+nextAfterEdit(ctx, e, branch))
@@ -762,7 +763,7 @@ func uncertainUpdate(port string, aside []engine.SetAside, linked linkedOptions,
 	// One that isn't a release, as certgraph's tag on an older commit
 	// isn't, is better left out by the port's own livecheck than updated
 	// to "after a look" (field testing at c97bca63).
-	return exitf(ExitAttention, "can't tell whether %s is current, so nothing was changed: %s\nIf %s is a release: dockhand %s %s %s\nIf it isn't, as an old tag spelled oddly: a livecheck.regex in the Portfile that leaves %s out keeps it out of later looks%s", port, setAsideWords(aside), aside[0].Tag, verb, port, aside[0].Source, aside[0].Tag, kept)
+	return term.Exitf(term.ExitAttention, "can't tell whether %s is current, so nothing was changed: %s\nIf %s is a release: dockhand %s %s %s\nIf it isn't, as an old tag spelled oddly: a livecheck.regex in the Portfile that leaves %s out keeps it out of later looks%s", port, setAsideWords(aside), aside[0].Tag, verb, port, aside[0].Source, aside[0].Tag, kept)
 }
 
 // heldBeforeEdit is an update nobody looks over, bump's or ship's with
@@ -775,7 +776,7 @@ func heldBeforeEdit(request engine.UpdateRequest, held []string) error {
 	if request.Version != "" {
 		next = fmt.Sprintf("dockhand update %s %s --new, then dockhand ship -p %s on a terminal", request.Port, request.Version, request.Port)
 	}
-	return exitf(ExitAttention, "%s waits for your look, so nothing was changed: %s\nOnce it's fine: %s", request.Port, strings.Join(held, "; "), next)
+	return term.Exitf(term.ExitAttention, "%s waits for your look, so nothing was changed: %s\nOnce it's fine: %s", request.Port, strings.Join(held, "; "), next)
 }
 
 // writeStealth shows each changed archive's checksums, before and after.
@@ -872,7 +873,7 @@ type chosenBranch struct {
 // checked out here; or the port's own open branch, one started for it
 // where none changes it, said first. Where several change it, a terminal
 // is asked once which, or for a new one, and a script is told them.
-func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where branchChoice, port string, work engine.Work) (chosenBranch, error) {
+func chooseBranch(ctx context.Context, e *engine.Engine, streams term.Streams, where branchChoice, port string, work engine.Work) (chosenBranch, error) {
 	selection, err := e.Select(ctx, engine.Selector{Branch: where.branch, New: where.isNew(), NewName: where.newName(), Port: port, Policy: engine.SelectOrStart}, work)
 	if err != nil {
 		return chosenBranch{}, err
@@ -888,7 +889,7 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 // script. A new branch chosen is the one Select starts for --new. say is
 // a command with --new where it wasn't given, which says the branch it
 // starts, and that --new starts another.
-func settleSelection(ctx context.Context, e *engine.Engine, streams Streams, selection engine.Selection, port string, work engine.Work, say bool) (chosenBranch, error) {
+func settleSelection(ctx context.Context, e *engine.Engine, streams term.Streams, selection engine.Selection, port string, work engine.Work, say bool) (chosenBranch, error) {
 	switch {
 	case selection.ForVersion:
 		fmt.Fprintf(streams.Err, "%s is in no open branch, so this starts one for it, named for the version it moves to.\n", port)
@@ -923,8 +924,8 @@ func settleSelection(ctx context.Context, e *engine.Engine, streams Streams, sel
 // choose asks which of the open branches changing a port to work in, one
 // question, a new branch among the answers where one may be started; a
 // script is told them all, by exact name.
-func choose(ctx context.Context, e *engine.Engine, streams Streams, port string, found []engine.PortBranch, mayStart bool) (model.Branch, bool, error) {
-	if !streams.terminal() {
+func choose(ctx context.Context, e *engine.Engine, streams term.Streams, port string, found []engine.PortBranch, mayStart bool) (model.Branch, bool, error) {
+	if !streams.Terminal() {
 		return model.Branch{}, false, &engine.AmbiguousError{Port: port, Branches: found}
 	}
 	fmt.Fprintf(streams.Err, "%s is changed in %d open branches:\n", port, len(found))
@@ -935,7 +936,7 @@ func choose(ctx context.Context, e *engine.Engine, streams Streams, port string,
 	if mayStart {
 		question = fmt.Sprintf("? which one, or n for a new branch? [1-%d/n] ", len(found))
 	}
-	answer, err := ask(streams, question)
+	answer, err := streams.Ask(question)
 	if err != nil {
 		return model.Branch{}, false, err
 	}

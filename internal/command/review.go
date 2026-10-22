@@ -14,9 +14,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func tidyCommand(s *settings, streams Streams) *cobra.Command {
+func tidyCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	var message, author, group, saveTo, apply string
 	var squash, plan, yes bool
@@ -72,7 +73,7 @@ commits, and its files are as they were when it was saved.`,
 					return fmt.Errorf("--group: %w", err)
 				}
 			}
-			streams.emit(tidyView(proposal))
+			streams.Emit(tidyView(proposal))
 			out := streams.Out
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), describeWork(proposal))
 			if proposal.Keep && len(proposal.Warnings) > 0 {
@@ -155,12 +156,12 @@ commits, and its files are as they were when it was saved.`,
 // explicit plan, the person's own, applies as given; without a terminal,
 // or with --yes, a plan made only of dockhand's own edits applies too,
 // and anything else needs review. It reports whether the plan applied.
-func decideTidy(ctx context.Context, e *engine.Engine, streams Streams, proposal engine.TidyPlan, explicit, yes bool, author string) (bool, error) {
+func decideTidy(ctx context.Context, e *engine.Engine, streams term.Streams, proposal engine.TidyPlan, explicit, yes bool, author string) (bool, error) {
 	out := streams.Out
 	// --yes applies the plan as shown, whosever its edits are, as --yes
 	// does elsewhere: a hand edit's plan tidy proposed itself had no way
 	// to be taken without a terminal (field testing's seventh report).
-	if explicit || !streams.terminal() || yes {
+	if explicit || !streams.Terminal() || yes {
 		answered := model.AnsweredNobody
 		if yes {
 			answered = model.AnsweredYes
@@ -171,7 +172,7 @@ func decideTidy(ctx context.Context, e *engine.Engine, streams Streams, proposal
 		return true, applyTidy(ctx, e, streams, proposal)
 	}
 	for {
-		answer, err := ask(streams, "Review diff [d] · Change groups [g] · Edit message [e] · Apply [a] · Cancel [q]\n> ")
+		answer, err := streams.Ask("Review diff [d] · Change groups [g] · Edit message [e] · Apply [a] · Cancel [q]\n> ")
 		if err != nil {
 			return false, err
 		}
@@ -183,7 +184,7 @@ func decideTidy(ctx context.Context, e *engine.Engine, streams Streams, proposal
 			}
 			fmt.Fprint(out, string(diff))
 		case "g":
-			spec, err := ask(streams, "Enter commit numbers in order; use + to combine them (for example, 2 1+3): ")
+			spec, err := streams.Ask("Enter commit numbers in order; use + to combine them (for example, 2 1+3): ")
 			if err != nil {
 				return false, err
 			}
@@ -324,10 +325,10 @@ func writeUntracked(out io.Writer, plan engine.TidyPlan) {
 
 // editSubjects asks for each commit's subject, keeping the rest of its
 // message.
-func editSubjects(streams Streams, plan *engine.TidyPlan) error {
+func editSubjects(streams term.Streams, plan *engine.TidyPlan) error {
 	for i := range plan.Groups {
 		group := &plan.Groups[i]
-		answer, err := ask(streams, fmt.Sprintf("Subject for commit %d [%s]: ", i+1, group.Subject()))
+		answer, err := streams.Ask(fmt.Sprintf("Subject for commit %d [%s]: ", i+1, group.Subject()))
 		if err != nil {
 			return err
 		}
@@ -340,7 +341,7 @@ func editSubjects(streams Streams, plan *engine.TidyPlan) error {
 
 // applySaved applies a plan saved with --plan --out. Saving it was the
 // review, so it is applied as it stands.
-func applySaved(ctx context.Context, e *engine.Engine, streams Streams, file string) error {
+func applySaved(ctx context.Context, e *engine.Engine, streams term.Streams, file string) error {
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return err
@@ -349,7 +350,7 @@ func applySaved(ctx context.Context, e *engine.Engine, streams Streams, file str
 	if err != nil {
 		return fmt.Errorf("%s: %w", file, err)
 	}
-	streams.emit(tidyView(proposal))
+	streams.Emit(tidyView(proposal))
 	fmt.Fprintf(streams.Out, "%s · the plan saved in %s\n", proposal.Branch.ShortName(), file)
 	writeTidyPlan(streams.Out, proposal, true)
 	if blocking := proposal.Blocking(); len(blocking) > 0 {
@@ -358,14 +359,14 @@ func applySaved(ctx context.Context, e *engine.Engine, streams Streams, file str
 	return applyTidy(ctx, e, streams, proposal)
 }
 
-func applyTidy(ctx context.Context, e *engine.Engine, streams Streams, plan engine.TidyPlan) error {
+func applyTidy(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.TidyPlan) error {
 	result, err := e.ApplyTidy(ctx, plan)
 	if err != nil {
 		return err
 	}
 	applied := tidyView(plan)
 	applied.Applied = &tidyAppliedJSON{Checkpoint: result.Checkpoint.Name(), Commits: result.Commits, Kept: result.Kept}
-	streams.emit(applied)
+	streams.Emit(applied)
 	name := result.Checkpoint.Name()
 	made := fmt.Sprintf("Created %s", prose.Plural(len(result.Commits), "commit"))
 	if result.Kept > 0 {
@@ -406,7 +407,7 @@ func modifiedBuildWarning(plan engine.TidyPlan, checkpoint string) string {
 // undoCommand puts back what a tidy or rebase replaced: the branch's
 // latest, or the checkpoint named (the command-line UX review's smaller
 // items: git restore restores files, and dockhand's restores history).
-func undoCommand(s *settings, streams Streams) *cobra.Command {
+func undoCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	cmd := &cobra.Command{
 		Use: "undo [<checkpoint>]",
@@ -454,12 +455,12 @@ checked out here.`,
 
 // restoreCheckpoint puts a branch back as it was before a checkpoint, and
 // says what it did.
-func restoreCheckpoint(ctx context.Context, e *engine.Engine, streams Streams, name string) error {
+func restoreCheckpoint(ctx context.Context, e *engine.Engine, streams term.Streams, name string) error {
 	checkpoint, branch, err := e.Restore(ctx, name)
 	if err != nil {
 		return err
 	}
-	streams.emit(map[string]any{"checkpoint": checkpoint.Name(), "branch": branch.ShortName(), "head": checkpoint.Before, "base": branch.Base})
+	streams.Emit(map[string]any{"checkpoint": checkpoint.Name(), "branch": branch.ShortName(), "head": checkpoint.Before, "base": branch.Base})
 	if checkpoint.Kind != model.CheckpointRebase {
 		fmt.Fprintf(streams.Out, "Restored %s to its history before %s (%s). The files are unchanged.\n", branch.Name, checkpoint.Name(), checkpoint.Before.Short())
 		return nil

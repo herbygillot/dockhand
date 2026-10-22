@@ -20,9 +20,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func statusCommand(s *settings, streams Streams) *cobra.Command {
+func statusCommand(s *settings, streams term.Streams) *cobra.Command {
 	var attentionOnly, all, refresh, watch, plain bool
 	var where branchFlags
 	cmd := &cobra.Command{
@@ -59,7 +60,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 			if plain && !watch {
 				return errors.New("--plain requires --watch")
 			}
-			if watch && (len(args) > 0 || attentionOnly || all || where.explicit() || streams.json()) {
+			if watch && (len(args) > 0 || attentionOnly || all || where.explicit() || streams.JSON()) {
 				return errors.New("--watch shows all current status and cannot be combined with a branch selector, --attention, --all, or --json")
 			}
 			if len(args) > 0 && where.explicit() {
@@ -78,7 +79,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 				// command's error: status is still shown, from what's
 				// recorded, but for --json, whose one envelope says it.
 				if err := refreshPullRequests(cmd.Context(), e, streams.Err); err != nil {
-					if streams.json() {
+					if streams.JSON() {
 						return err
 					}
 					if shown := showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where, s.places()); shown != nil {
@@ -106,7 +107,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 	return cmd
 }
 
-func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []string, attentionOnly, all bool, where branchFlags, places config.Places) error {
+func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, args []string, attentionOnly, all bool, where branchFlags, places config.Places) error {
 	port := where.port
 	ctx, _, end, err := e.Observing(ctx)
 	if err != nil {
@@ -114,13 +115,13 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 	}
 	defer end()
 	one := func(branch model.Branch) error {
-		if streams.json() {
+		if streams.JSON() {
 			status, err := judgedStatus(ctx, e, branch)
 			if err != nil {
 				return err
 			}
 			view := branchView(status)
-			streams.emit(statusJSON{Attention: attentionView(attentionFor(status)), Branches: []branchJSON{view}})
+			streams.Emit(statusJSON{Attention: attentionView(attentionFor(status)), Branches: []branchJSON{view}})
 		}
 		return showBranch(ctx, e, streams.Out, places, branch)
 	}
@@ -162,7 +163,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		switch {
 		case len(statuses) == 1 && !attentionOnly:
 			return one(statuses[0].Branch)
-		case len(statuses) == 0 && !attentionOnly && !streams.json():
+		case len(statuses) == 0 && !attentionOnly && !streams.JSON():
 			fmt.Fprintf(streams.Out, "No open branch touches %s yet. dockhand update %s starts one.\n", port, port)
 			return nil
 		}
@@ -186,7 +187,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		}
 	}
 	out := streams.Out
-	if streams.json() {
+	if streams.JSON() {
 		result := statusJSON{Attention: attentionView(rows)}
 		if !attentionOnly {
 			result.Branches = []branchJSON{}
@@ -197,12 +198,12 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 			result.Serve, result.ServeState = serveWords(serve), &view
 			result.Queue = queueView(queue)
 		}
-		streams.emit(result)
+		streams.Emit(result)
 	}
 	if attentionOnly {
-		writeAttention(out, rows, streams.width())
+		writeAttention(out, rows, streams.Width())
 		if len(rows) > 0 {
-			return &ExitError{Code: ExitAttention}
+			return &term.ExitError{Code: term.ExitAttention}
 		}
 		return nil
 	}
@@ -214,7 +215,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 	}
 	if len(rows) > 0 {
 		fmt.Fprintln(out, "Needs you")
-		writeAttention(out, rows, streams.width())
+		writeAttention(out, rows, streams.Width())
 		fmt.Fprintln(out)
 	}
 	if len(statuses) == 0 {

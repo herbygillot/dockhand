@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -95,7 +96,7 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.EqualError(t, err, "--plan previews the submission; it goes without --yes")
 
 	var stdout, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"submit", "--draft"}, Streams{In: strings.NewReader("y\n\np\ns\n"), Out: &stdout, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"submit", "--draft"}, term.Streams{In: strings.NewReader("y\n\np\ns\n"), Out: &stdout, Err: &errs}.AsTerminal())
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "? Did you test the basic functionality of all binary files? [y/N] ")
 	require.Contains(t, stdout.String(), "Opened draft #34901  https://github.com/macports/macports-ports/pull/34901\n")
@@ -517,13 +518,13 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(served.String(), "jq-update: #34901: CI failing\n") }, settle, 10*time.Millisecond)
 	stop()
 	require.NoError(t, <-done)
 	out, _, err = dockhand(t, "status", "--attention")
-	require.Equal(t, 3, ExitCode(err))
+	require.Equal(t, 3, term.ExitCode(err))
 	require.Contains(t, out, "✗ jq-update  #34901 MacPorts CI failing: macOS 26")
 	require.Contains(t, out, "open https://github.com/macports/macports-ports/pull/34901/checks")
 }
@@ -551,7 +552,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	require.Contains(t, errs, "jq-update: #34901 is merged")
 
 	out, _, err := dockhand(t, "clean", "--merged")
-	require.Equal(t, ExitFailure, ExitCode(err))
+	require.Equal(t, term.ExitFailure, term.ExitCode(err))
 	require.Contains(t, out, "jq-update (#34901, merged at ")
 	require.Contains(t, out, "  remove   worktree ~/Source/macports-branches/jq-update\n  remove   branch dockhand/jq-update\n  remove   ada/macports-ports:dockhand/jq-update\n")
 	require.DirExists(t, dir)
@@ -607,7 +608,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 
 	// ship checks the committed head first, and submits only what passed.
 	out, _, err := dockhand(t, "ship", "--yes")
-	require.Equal(t, 2, ExitCode(err))
+	require.Equal(t, 2, term.ExitCode(err))
 	require.ErrorContains(t, err, "; nothing was submitted")
 	require.Contains(t, out, "  jq-update  its branch, where it stands, to submit\n             jq: update to 1.8.1 · runs first; it is submitted only if it passes · opens a new one\n")
 	require.Contains(t, out, "jq-update · checking commit ")
@@ -625,7 +626,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	require.Empty(t, g.PRs)
 
 	var stdout, stderr bytes.Buffer
-	err = runFor(t, t.Context(), []string{"ship", "--passing"}, Streams{In: strings.NewReader("y\ny\nn\n"), Out: &stdout, Err: &stderr, interactive: true})
+	err = runFor(t, t.Context(), []string{"ship", "--passing"}, term.Streams{In: strings.NewReader("y\ny\nn\n"), Out: &stdout, Err: &stderr}.AsTerminal())
 	require.NoError(t, err)
 	require.Contains(t, stderr.String(), "? Ship it? [y/N] ")
 	require.Contains(t, stdout.String(), "Opened #34901")
@@ -752,7 +753,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 
 	fix("# and the docs")
 	var stdout, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"submit", "--no-check", "--tested-binaries"}, Streams{In: strings.NewReader("s\n\n"), Out: &stdout, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"submit", "--no-check", "--tested-binaries"}, term.Streams{In: strings.NewReader("s\n\n"), Out: &stdout, Err: &errs}.AsTerminal())
 	require.NoError(t, err, stdout.String())
 	require.Contains(t, errs.String(), "? ask @ryandesign to review again? [Y/n] ")
 	require.Contains(t, stdout.String(), "Asked @ryandesign to review again.\n")
@@ -1012,7 +1013,7 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	require.ErrorContains(t, err, "open-work is open, so there's nothing to clean")
 
 	out, _, err = dockhand(t, "clean", "jq-update")
-	require.Equal(t, ExitFailure, ExitCode(err))
+	require.Equal(t, term.ExitFailure, term.ExitCode(err))
 	require.Contains(t, out, "jq-update (#34901, merged at ")
 	require.NotContains(t, out, "other-work", "an archived branch not named is left")
 	require.Contains(t, out, "  remove   ada/macports-ports:dockhand/jq-update\n")

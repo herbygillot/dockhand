@@ -1,11 +1,9 @@
 package command
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"slices"
 	"strings"
@@ -17,24 +15,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
-
-// Streams are the standard streams a command reads and writes.
-type Streams struct {
-	In  io.Reader
-	Out io.Writer
-	Err io.Writer
-	// interactive stands in for a terminal in tests.
-	interactive bool
-	// lines reads answers from In; one reader for the whole command, so
-	// input it buffered for one question is there for the next.
-	lines *bufio.Reader
-	// mode is whether this command line reports as JSON, and its result.
-	mode *outputMode
-	// status is standard error's one redrawn line, which progress reports
-	// print around.
-	status *statusLine
-}
 
 // logo opens the main help, as it did in dockhand's earlier generations,
 // with the build's version on the line under it, indented a space to sit
@@ -45,68 +27,6 @@ const logo = `     _            _    _                     _
 | (_| | (_) | (__|   <| | | | (_| | | | | (_| |
  \__,_|\___/ \___|_|\_\_| |_|\__,_|_| |_|\__,_|
 `
-
-// stderrLine is the command's redrawn line on standard error.
-func (s Streams) stderrLine() *statusLine {
-	if s.status != nil {
-		return s.status
-	}
-	return &statusLine{w: s.Err}
-}
-
-// errTerminal reports whether errors and progress go to a terminal, where
-// a line can be redrawn.
-func (s Streams) errTerminal() bool { return s.onTerminal(s.Err) }
-
-// terminal reports whether the input is an interactive terminal, the only
-// place a command may ask a question.
-func (s Streams) terminal() bool { return s.onTerminal(s.In) }
-
-// outTerminal reports whether the output is a terminal that can be
-// redrawn.
-func (s Streams) outTerminal() bool { return s.onTerminal(s.Out) }
-
-// onTerminal reports whether one of the streams is a terminal. A --json
-// command line's never is: it's a script's, which never asks and reads
-// no redrawn line. /dev/null is a character device too, so this asks the
-// terminal driver rather than the file's mode, of the file under the
-// writer Run puts before the output, which watch's live view never saw
-// past (the command package review's three predicates, folded).
-func (s Streams) onTerminal(stream any) bool {
-	if s.json() {
-		return false
-	}
-	if s.interactive {
-		return true
-	}
-	if w, ok := stream.(*switchWriter); ok {
-		stream = w.w
-	}
-	file, ok := stream.(*os.File)
-	return ok && isTerminal(file.Fd())
-}
-
-// width is the output terminal's columns, for text to wrap at, else 80.
-func (s Streams) width() int {
-	stream := s.Out
-	if w, ok := stream.(*switchWriter); ok {
-		stream = w.w
-	}
-	if file, ok := stream.(*os.File); ok {
-		if columns := terminalWidth(file.Fd()); columns > 0 {
-			return columns
-		}
-	}
-	return 80
-}
-
-// unattended are the streams of a command that asks nothing, whatever its
-// input, as bump does: everything that would ask goes the way it goes
-// without a terminal.
-func (s Streams) unattended() Streams {
-	s.In, s.interactive, s.lines = strings.NewReader(""), false, nil
-	return s
-}
 
 // gettingStarted is the main help's introduction: how to begin, and where
 // the guide is.
@@ -124,7 +44,7 @@ things are.`
 
 // Run executes the command line in args, in the process's environment and
 // working directory.
-func Run(ctx context.Context, args []string, streams Streams) error {
+func Run(ctx context.Context, args []string, streams term.Streams) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return err
@@ -142,14 +62,12 @@ type invocation struct {
 
 // run executes the command line on the host, with the stand-ins given,
 // compose's real ones where they're empty, which a test gives its own.
-func run(ctx context.Context, line invocation, streams Streams, dependencies compose.Dependencies, host *host) error {
+func run(ctx context.Context, line invocation, streams term.Streams, dependencies compose.Dependencies, host *host) error {
 	args := line.args
 	var settings settings
 	settings.deps, settings.host, settings.env, settings.dir = dependencies, host, line.env, line.dir
-	stdout := streams.Out
-	streams = runStreams(streams, args)
+	streams = term.Begin(streams, args)
 	settings.streams = streams
-	out, mode := streams.Out.(*switchWriter), streams.mode
 	root := newRoot(&settings, streams)
 	// Cobra reads os.Args for nil arguments; Run's are only those given,
 	// so a test binary's own flags never reach a command.
@@ -159,50 +77,21 @@ func run(ctx context.Context, line invocation, streams Streams, dependencies com
 	root.SetErr(streams.Err)
 	spend := github.StartSpend()
 	err := root.ExecuteContext(ctx)
-	settings.cleanupAfter(streams, mode.command)
+	settings.cleanupAfter(streams, streams.Command())
 	// What the command spent of GitHub's hourly allowance, said with -v,
 	// in the envelope, and in the spend log.
-	mode.githubRequests = spend.Requests()
-	if verbosity, _ := root.PersistentFlags().GetCount("verbose"); verbosity > 0 && mode.githubRequests > 0 {
-		streams.status.say(fmt.Sprintf("GitHub's API: %s", prose.Plural(int(mode.githubRequests), "request")))
+	requests := spend.Requests()
+	if verbosity, _ := root.PersistentFlags().GetCount("verbose"); verbosity > 0 && requests > 0 {
+		streams.Say(fmt.Sprintf("GitHub's API: %s", prose.Plural(int(requests), "request")))
 	}
 	spend.Log(settings.composeOptions().SpendLog(), args)
-	if !mode.json {
-		return err
-	}
-	out.silent = false
-	if mode.command == "" {
-		mode.command = strings.Join(args, " ")
-	}
-	if writeErr := writeEnvelope(stdout, mode, err); writeErr != nil {
-		return writeErr
-	}
-	// The envelope carries the error; the exit code is still the outcome's.
-	if err != nil {
-		return &ExitError{Code: ExitCode(err)}
-	}
-	return nil
-}
-
-// runStreams are the streams a command line runs with: its input read by
-// line, its output switched off while --json gathers the envelope, its
-// output mode, and its status line.
-func runStreams(streams Streams, args []string) Streams {
-	if streams.lines == nil && streams.In != nil {
-		streams.lines = bufio.NewReader(streams.In)
-	}
-	streams.Out, streams.mode = &switchWriter{w: streams.Out}, &outputMode{json: asksForJSON(args)}
-	if streams.status == nil {
-		streams.status = &statusLine{w: streams.Err}
-	}
-	return streams
+	return streams.Finish(args, requests, err)
 }
 
 // newRoot is dockhand's command tree, which Run executes and the
 // help-reference test reads (the architecture review of 5897a82, R3-22:
-// a package-level seam in Run stood for it). streams are runStreams'.
-func newRoot(settings *settings, streams Streams) *cobra.Command {
-	out, mode := streams.Out.(*switchWriter), streams.mode
+// a package-level seam in Run stood for it). streams are term.Begin's.
+func newRoot(settings *settings, streams term.Streams) *cobra.Command {
 	var asJSON bool
 	var verbosity int
 	root := &cobra.Command{
@@ -255,24 +144,19 @@ func newRoot(settings *settings, streams Streams) *cobra.Command {
 				return
 			}
 			if update.About != "" {
-				streams.status.say("  " + update.Message)
+				streams.Say("  " + update.Message)
 				return
 			}
-			streams.status.say(update.Message)
+			streams.Say(update.Message)
 		}))
-		mode.command = strings.TrimPrefix(cmd.CommandPath(), "dockhand ")
+		command := strings.TrimPrefix(cmd.CommandPath(), "dockhand ")
 		if cmd == root {
-			mode.command = "status"
+			command = "status"
 		}
-		if !asJSON {
-			mode.json = false
-			return nil
+		streams.Reports(command, asJSON)
+		if asJSON && cmd.Annotations[jsonAnnotation] == "" {
+			return fmt.Errorf("--json isn't available for dockhand %s yet; its output is text only", command)
 		}
-		mode.json = true
-		if cmd.Annotations[jsonAnnotation] == "" {
-			return fmt.Errorf("--json isn't available for dockhand %s yet; its output is text only", mode.command)
-		}
-		out.silent = true
 		return nil
 	}
 	supportsJSON(root)

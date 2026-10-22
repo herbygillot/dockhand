@@ -1,4 +1,4 @@
-package command
+package term
 
 import "golang.org/x/sys/unix"
 

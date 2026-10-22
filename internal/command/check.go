@@ -21,9 +21,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func checkCommand(s *settings, streams Streams) *cobra.Command {
+func checkCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	var tests, variants, build string
 	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, yes bool
@@ -83,7 +84,7 @@ true, it runs that baseline by itself.`,
 			}
 			// The result is the check's, with a baseline check.baseline runs
 			// inside it.
-			streams.linkSteps(&checkJSON{})
+			streams.LinkSteps(&checkJSON{})
 			if baseline && plan {
 				return previewBaseline(ctx, e, streams, branch, only)
 			}
@@ -132,7 +133,7 @@ true, it runs that baseline by itself.`,
 			writePlan(out, proposed, e.PlanNotes(ctx, proposed), e.Remedy)
 			writePushes(out, proposed)
 			revision, planned := revisionView(capture.Revision), planView(proposed)
-			streams.emit(checkJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []targetJSON{}})
+			streams.Emit(checkJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []targetJSON{}})
 			if !proposed.Runnable() {
 				return errors.New("nothing was checked: " + unrunnable(proposed))
 			}
@@ -213,7 +214,7 @@ true, it runs that baseline by itself.`,
 // runQueued sees a queued run through (Design v3 §11): handed to serve and
 // followed when serve leads, otherwise run here; with enqueue, only
 // queued, saying whether anything will run it.
-func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams Streams, enqueue bool, places config.Places) error {
+func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, enqueue bool, places config.Places) error {
 	session, err := e.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return err
@@ -223,12 +224,12 @@ func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams Str
 	if err != nil {
 		return err
 	}
-	if enqueue && streams.json() {
+	if enqueue && streams.JSON() {
 		result, err := checkResult(ctx, e, run)
 		if err != nil {
 			return err
 		}
-		streams.emit(result)
+		streams.Emit(result)
 	}
 	switch {
 	case enqueue && leader == nil:
@@ -447,7 +448,7 @@ func writeExclusions(out io.Writer, plan model.Plan) {
 
 // follow shows a run's progress until it ends, driving it here when drive
 // is set, and reports its outcome.
-func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams Streams, drive bool, places config.Places) error {
+func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, drive bool, places config.Places) error {
 	journal := &journal{e: e, run: run.ID, out: streams.Err}
 	watching, stop := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -469,7 +470,7 @@ func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 		fmt.Fprintf(streams.Err, "%s was taken by serve (pid %d); following it.\n", run.Name(), taker.PID)
 	}
 	if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
-		err = &ExitError{Code: ExitInterrupted, Message: fmt.Sprintf("stopped following %s; it continues (dockhand wait %s)", run.Name(), run.Name())}
+		err = &term.ExitError{Code: term.ExitInterrupted, Message: fmt.Sprintf("stopped following %s; it continues (dockhand wait %s)", run.Name(), run.Name())}
 	}
 	stop()
 	<-done
@@ -505,7 +506,7 @@ func (j *journal) show(ctx context.Context) {
 
 // report prints a finished run's results and returns the exit its outcome
 // calls for.
-func report(ctx context.Context, e *engine.Engine, run model.Run, streams Streams, places config.Places) error {
+func report(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places) error {
 	if run.BaselineOf != "" {
 		return reportBaseline(ctx, e, run, streams)
 	}
@@ -514,13 +515,13 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 	if err != nil {
 		return err
 	}
-	if streams.json() {
+	if streams.JSON() {
 		result, err := checkResult(ctx, e, run)
 		if err != nil {
 			return err
 		}
 		result.Targets = evidenceView(evidence)
-		streams.emit(result)
+		streams.Emit(result)
 	}
 	fmt.Fprintln(out)
 	writeResults(out, "  ", evidence, false)
@@ -548,11 +549,11 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 		if err := hintBaseline(ctx, e, out, run); err != nil {
 			fmt.Fprintf(streams.Err, "baseline: %v\n", err)
 		}
-		return exitf(ExitCheckFailed, "%s failed for %s: %s. Logs: dockhand logs %s", run.Name(), engine.Describe(revision), run.Detail, run.Name())
+		return term.Exitf(term.ExitCheckFailed, "%s failed for %s: %s. Logs: dockhand logs %s", run.Name(), engine.Describe(revision), run.Detail, run.Name())
 	case model.RunCanceled:
 		return stoppedExit(run, evidence)
 	}
-	return exitf(ExitAttention, "%s needs attention: %s", run.Name(), run.Detail)
+	return term.Exitf(term.ExitAttention, "%s needs attention: %s", run.Name(), run.Detail)
 }
 
 // failureLines is how many of a failed step's last lines a check's
@@ -594,9 +595,9 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 // or nothing, when it finished nothing, as one cancelled while queued.
 func stoppedExit(run model.Run, evidence engine.Evidence) error {
 	if !evidence.Recorded() {
-		return exitf(ExitInterrupted, "%s stopped before anything finished", run.Name())
+		return term.Exitf(term.ExitInterrupted, "%s stopped before anything finished", run.Name())
 	}
-	return exitf(ExitInterrupted, "%s stopped; finished results are kept", run.Name())
+	return term.Exitf(term.ExitInterrupted, "%s stopped; finished results are kept", run.Name())
 }
 
 // stopWords say what cancelling a check did: one only queued is cancelled
@@ -743,7 +744,7 @@ func checkResult(ctx context.Context, e *engine.Engine, run model.Run) (checkJSO
 
 // previewBaseline shows the baseline check --baseline would run, and
 // runs nothing.
-func previewBaseline(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, only []string) error {
+func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string) error {
 	baseline, err := e.PreviewBaseline(ctx, branch, only)
 	if err != nil {
 		return err
@@ -751,13 +752,13 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams Streams, bra
 	writeBaselineHeader(streams.Out, branch, baseline)
 	writePlan(streams.Out, baseline.Plan, e.PlanNotes(ctx, baseline.Plan), e.Remedy)
 	planned := planView(baseline.Plan)
-	streams.emit(checkJSON{Branch: branch.ShortName(), Plan: &planned, Targets: []targetJSON{}})
+	streams.Emit(checkJSON{Branch: branch.ShortName(), Plan: &planned, Targets: []targetJSON{}})
 	return nil
 }
 
 // runBaseline plans a baseline of the branch's latest check and runs it,
 // here or through serve.
-func runBaseline(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, only []string, enqueue bool, places config.Places) error {
+func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string, enqueue bool, places config.Places) error {
 	baseline, err := e.PlanBaseline(ctx, branch, only)
 	if err != nil {
 		return err
@@ -791,7 +792,7 @@ func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Bas
 // reportBaseline sets each port's result at the base beside its result in
 // the check the baseline looks into. It says what happened in each run and
 // nothing more: a baseline never establishes a cause, and never fails.
-func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, streams Streams) error {
+func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams) error {
 	out := streams.Out
 	base, err := e.RunEvidence(ctx, run.ID)
 	if err != nil {
@@ -805,13 +806,13 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 	if err != nil {
 		return err
 	}
-	if streams.json() {
+	if streams.JSON() {
 		result, err := checkResult(ctx, e, run)
 		if err != nil {
 			return err
 		}
 		result.Targets = evidenceView(base)
-		streams.emit(result)
+		streams.Emit(result)
 	}
 	fmt.Fprintln(out)
 	writeBaselineResults(out, base, branch, revision.Source.Commit.Short())
@@ -819,7 +820,7 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 	case model.RunCanceled:
 		return stoppedExit(run, base)
 	case model.RunAttention:
-		return exitf(ExitAttention, "%s needs attention: %s", run.Name(), run.Detail)
+		return term.Exitf(term.ExitAttention, "%s needs attention: %s", run.Name(), run.Detail)
 	}
 	return nil
 }
@@ -884,7 +885,7 @@ func baselineWords(base, branch model.TargetResult, check string) string {
 // running, unless replace says to stop it (decision 29). A running check is
 // stopped only after asking, on a terminal; without one, --replace is the
 // consent. Finished results are kept. It returns the runs it stopped.
-func replaceActive(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, revision model.Revision, replace bool) ([]string, error) {
+func replaceActive(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, revision model.Revision, replace bool) ([]string, error) {
 	judging, observer, end, err := e.Observing(ctx)
 	if err != nil {
 		return nil, err
@@ -911,7 +912,7 @@ func replaceActive(ctx context.Context, e *engine.Engine, streams Streams, branc
 			continue
 		}
 		// A script that asked for a new check replaces it.
-		ok, _, err := streams.decide(false, decision{question: fmt.Sprintf("? stop %s, which is running? [y/N] ", run.Name()), nobody: answer(true)})
+		ok, _, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? stop %s, which is running? [y/N] ", run.Name()), Nobody: term.Answer(true)})
 		if err != nil {
 			return nil, err
 		}
@@ -963,13 +964,13 @@ const variantBuildsToAsk = 12
 
 // confirmVariantBuilds asks before a --variants each check makes more
 // than variantBuildsToAsk builds; without a terminal, --yes goes ahead.
-func confirmVariantBuilds(streams Streams, plan model.Plan, yes bool) error {
+func confirmVariantBuilds(streams term.Streams, plan model.Plan, yes bool) error {
 	builds := plan.BuildCount()
 	if !plan.EachVariant || builds <= variantBuildsToAsk || yes {
 		return nil
 	}
-	ok, _, err := streams.decide(false, decision{question: fmt.Sprintf("? --variants each will run %d full builds. Continue? [y/N] ", builds),
-		undone: fmt.Sprintf("nothing was checked (--variants each makes %d builds here)", builds), byYes: "--yes builds them"})
+	ok, _, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? --variants each will run %d full builds. Continue? [y/N] ", builds),
+		Undone: fmt.Sprintf("nothing was checked (--variants each makes %d builds here)", builds), ByYes: "--yes builds them"})
 	if err != nil {
 		return err
 	}

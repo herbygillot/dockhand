@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // concerned is bumper with what an update can find that a check can't:
@@ -187,7 +188,7 @@ func serveWith(t *testing.T, concerns concerned, search error) (bool, string) {
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"serve", "--ship-to", "submit"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- runFor(t, ctx, []string{"serve", "--ship-to", "submit"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	// It opens the pull request, holds the branch for a look, or stops
 	// the update before its check.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -33,7 +34,7 @@ func asMaintainer(t *testing.T, w world) {
 func shipAnswering(t *testing.T, answers string, args ...string) (string, string, error) {
 	t.Helper()
 	var out, errs bytes.Buffer
-	err := runFor(t, t.Context(), append([]string{"ship"}, args...), Streams{In: strings.NewReader(answers), Out: &out, Err: &errs, interactive: true})
+	err := runFor(t, t.Context(), append([]string{"ship"}, args...), term.Streams{In: strings.NewReader(answers), Out: &out, Err: &errs}.AsTerminal())
 	return out.String(), errs.String(), err
 }
 
@@ -169,9 +170,9 @@ JSON
 	// The bumper stands in jq's release for any port, so yq's commit is
 	// held by the commit rules: one change held, and the rest goes on.
 	var both bytes.Buffer
-	err := runFor(t, t.Context(), []string{"ship", "jq", "yq", "--yes"}, Streams{In: strings.NewReader(""), Out: &both, Err: &both})
+	err := runFor(t, t.Context(), []string{"ship", "jq", "yq", "--yes"}, term.Streams{In: strings.NewReader(""), Out: &both, Err: &both})
 	out := both.String()
-	require.Equal(t, 3, ExitCode(err), out)
+	require.Equal(t, 3, term.ExitCode(err), out)
 	require.EqualError(t, err, "yq-1.8.1 stopped; the rest went on")
 	jq, yq, ran := strings.Index(out, "jq-1.8.1 · checking commit "), strings.Index(out, "yq-1.8.1 · checking commit "), strings.Index(out, "check-1 runs here")
 	require.True(t, jq >= 0 && yq > jq && ran > yq, "both queued before either ran:\n%s", out)
@@ -194,7 +195,7 @@ func TestShipTakesEachStagesFlags(t *testing.T) {
 	_, _, err := dockhand(t, "ship", "jq", "--tests", "sometimes")
 	require.EqualError(t, err, `--tests "sometimes" is not declared, required, or skip`)
 	out, _, err := dockhand(t, "ship", "jq", "--yes", "--draft", "--type", "bugfix", "--tests", "skip")
-	require.Equal(t, 2, ExitCode(err), out)
+	require.Equal(t, 2, term.ExitCode(err), out)
 	require.Contains(t, out, "then submitting it as a draft")
 	require.Contains(t, out, "tests skip")
 	require.Len(t, g.PRs, 1)
@@ -276,7 +277,7 @@ func TestShipsJSONSaysWhatStopped(t *testing.T) {
 	testsupport.Git(t, w.upstream, "commit", "-q", "-m", "yq: 1.7.1")
 	g.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
 	result, err := jsonOf(t, "ship", "jq", "yq", "--yes", "--to", "commit")
-	require.Equal(t, 3, ExitCode(err), "jq stopped, and yq went on")
+	require.Equal(t, 3, term.ExitCode(err), "jq stopped, and yq went on")
 	require.Len(t, result.Result["skipped"], 1)
 	require.Equal(t, "jq", dig(t, result.Result, "skipped", 0, "port"))
 	require.Contains(t, dig(t, result.Result, "skipped", 0, "reason"), "#34777 is open for the same port")

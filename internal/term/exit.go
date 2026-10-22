@@ -1,4 +1,4 @@
-package command
+package term
 
 import (
 	"errors"
@@ -36,6 +36,7 @@ func ExitCode(err error) int {
 	return ExitFailure
 }
 
-func exitf(code int, format string, args ...any) error {
+// Exitf is an ExitError with code, its message formatted.
+func Exitf(code int, format string, args ...any) error {
 	return &ExitError{Code: code, Message: fmt.Sprintf(format, args...)}
 }

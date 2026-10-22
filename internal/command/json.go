@@ -1,8 +1,6 @@
 package command
 
 import (
-	"encoding/json"
-	"io"
 	"slices"
 	"strings"
 	"time"
@@ -15,9 +13,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
-// JSONVersion is the version of the --json envelope and the results in it.
-const JSONVersion = 1
-
 // jsonAnnotation marks a command that can report its result as JSON.
 const jsonAnnotation = "dockhand.json"
 
@@ -27,109 +22,6 @@ func supportsJSON(cmd *cobra.Command) {
 		cmd.Annotations = map[string]string{}
 	}
 	cmd.Annotations[jsonAnnotation] = "yes"
-}
-
-// outputMode is how one command line reports: as text, or as one JSON
-// envelope written when it ends.
-type outputMode struct {
-	json    bool
-	command string
-	result  any
-	// whole, while a command goes on from one step to the next, is its one
-	// result, which each step's result is gathered into (linkSteps).
-	whole gatherer
-	// githubRequests is how many requests the command sent GitHub's API.
-	githubRequests int64
-}
-
-// A gatherer is a command's result that the steps it goes on to report
-// into, so that the command has one shape wherever it stops: what a step
-// didn't reach is left out.
-type gatherer interface {
-	gather(step any)
-	result() any
-}
-
-// switchWriter is standard output, silenced while --json holds the
-// output for the envelope.
-type switchWriter struct {
-	w      io.Writer
-	silent bool
-}
-
-func (s *switchWriter) Write(p []byte) (int, error) {
-	if s.silent {
-		return len(p), nil
-	}
-	return s.w.Write(p)
-}
-
-// json reports whether the command line asked for --json.
-func (s Streams) json() bool { return s.mode != nil && s.mode.json }
-
-// emit keeps a command's result for the --json envelope.
-func (s Streams) emit(result any) {
-	if !s.json() {
-		return
-	}
-	if whole := s.mode.whole; whole != nil {
-		whole.gather(result)
-		s.mode.result = whole.result()
-		return
-	}
-	s.mode.result = result
-}
-
-// linkSteps makes whole the command's one result, with each later step's
-// inside it, so a script reads one shape wherever the command stopped:
-// ship's and bump's are the batch's, each change's update with its later
-// steps inside, and check's the check's. A command already gathering
-// keeps its own, as ship keeps its batch through each change's submission.
-func (s Streams) linkSteps(whole gatherer) {
-	if s.json() && s.mode.whole == nil {
-		s.mode.whole = whole
-	}
-}
-
-// envelope is what --json writes (Design v3 §12).
-type envelope struct {
-	Version  int     `json:"version"`
-	Command  string  `json:"command"`
-	ExitCode int     `json:"exit_code"`
-	Error    *string `json:"error"`
-	Result   any     `json:"result"`
-	// GitHubRequests is how many requests the command sent GitHub's API.
-	GitHubRequests int64 `json:"github_requests"`
-}
-
-func writeEnvelope(out io.Writer, mode *outputMode, err error) error {
-	value := envelope{Version: JSONVersion, Command: mode.command, Result: mode.result, GitHubRequests: mode.githubRequests}
-	if err != nil {
-		value.ExitCode = ExitCode(err)
-		if message := err.Error(); message != "" {
-			value.Error = &message
-		}
-	}
-	data, marshalErr := json.MarshalIndent(value, "", "  ")
-	if marshalErr != nil {
-		return marshalErr
-	}
-	_, writeErr := out.Write(append(data, '\n'))
-	return writeErr
-}
-
-// asksForJSON reports whether a command line asks for --json, before its
-// flags are parsed, so a line that fails to parse still gets its envelope.
-func asksForJSON(args []string) bool {
-	for _, arg := range args {
-		if arg == "--" {
-			return false
-		}
-		if arg == "--json" || arg == "--json=true" {
-			return true
-		}
-	}
-	return false
 }
 
 type runJSON struct {
@@ -403,7 +295,7 @@ type checkJSON struct {
 }
 
 // gather takes a check's result, or the baseline's that looks into it.
-func (c *checkJSON) gather(step any) {
+func (c *checkJSON) Gather(step any) {
 	if step, ok := step.(checkJSON); ok {
 		if c.Run != nil && step.Run != nil && step.Run.BaselineOf == c.Run.ID {
 			c.Baseline = &step
@@ -414,7 +306,7 @@ func (c *checkJSON) gather(step any) {
 	}
 }
 
-func (c *checkJSON) result() any { return *c }
+func (c *checkJSON) Result() any { return *c }
 
 type pullRequestJSON struct {
 	Repository string     `json:"repository"`

@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
@@ -50,7 +51,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 		var served syncBuffer
 		done := make(chan error)
 		go func() {
-			done <- runFor(t, ctx, append([]string{"serve"}, args...), Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+			done <- runFor(t, ctx, append([]string{"serve"}, args...), term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 		}()
 		for _, text := range until {
 			require.Eventually(t, func() bool { return strings.Contains(served.String(), text) }, settle, 10*time.Millisecond, served.String())
@@ -119,7 +120,7 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	require.Eventually(t, func() bool {
 		return strings.Contains(served.String(), "waits for tomorrow; today's limit of 1 pull request is reached")
@@ -161,14 +162,14 @@ func TestServeLooksAgainAfterStoppingMidLook(t *testing.T) {
 	ctx, stop := context.WithCancel(t.Context())
 	stands(t).OutdatedReader = stopsServe{stop: stop}
 	var first syncBuffer
-	require.NoError(t, runFor(t, ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &first, Err: &first}))
+	require.NoError(t, runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &first, Err: &first}))
 
 	withOutdated(t)
 	ctx, stop = context.WithCancel(t.Context())
 	var again syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &again, Err: &again})
+		done <- runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &again, Err: &again})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(again.String(), "serve: 1 port of yours has newer releases: jq") },
 		settle, 10*time.Millisecond, again.String())

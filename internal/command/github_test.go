@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -477,7 +478,7 @@ func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 	require.NoError(t, err)
 
 	out, _, err := dockhand(t, "clean")
-	require.Equal(t, ExitFailure, ExitCode(err))
+	require.Equal(t, term.ExitFailure, term.ExitCode(err))
 	require.Contains(t, out, "  remove   ada/macports-ports:"+checked+"\n")
 	_, _, err = dockhand(t, "clean", "--yes")
 	require.NoError(t, err)

@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // settings are the global selections. Each comes from its flag, then its
@@ -26,7 +27,7 @@ type settings struct {
 	opened     *engine.Engine
 	openedWith engine.Options
 	// streams are the command's, for a question opening the engine asks.
-	streams Streams
+	streams term.Streams
 	// namesBranch is a command naming a branch, by -b, -p, or --pr or by
 	// its name, which run outside any checkout finds the registered one.
 	namesBranch bool
@@ -87,10 +88,10 @@ func (s *settings) options(ctx context.Context) (engine.Options, config.File, st
 func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	options := s.composeOptions()
 	assembly, err := compose.Open(ctx, options, s.dependencies())
-	if refused := new(engine.LiveUnderMigrationError); errors.As(err, &refused) && s.streams.terminal() {
+	if refused := new(engine.LiveUnderMigrationError); errors.As(err, &refused) && s.streams.Terminal() {
 		// A person decides: their checks can be resumed by this build
 		// once they stop, as dockhand wait resumes a stopped check.
-		migrate, askErr := s.streams.askYes(fmt.Sprintf("%v.\n? Migrate anyway? What they're doing stops, and this dockhand can resume a stopped check. [y/N] ", refused), false)
+		migrate, askErr := s.streams.AskYes(fmt.Sprintf("%v.\n? Migrate anyway? What they're doing stops, and this dockhand can resume a stopped check. [y/N] ", refused), false)
 		if askErr != nil {
 			return nil, askErr
 		}

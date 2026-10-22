@@ -16,9 +16,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/scratch"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func submitCommand(s *settings, streams Streams) *cobra.Command {
+func submitCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	var note string
 	var request engine.SubmitRequest
@@ -78,7 +79,7 @@ kept.
 			if err != nil {
 				return err
 			}
-			streams.emit(submitView(plan))
+			streams.Emit(submitView(plan))
 			writeSubmitPlan(streams.Out, plan)
 			if len(plan.Blocking) > 0 {
 				return errors.New("nothing was submitted")
@@ -89,8 +90,8 @@ kept.
 				fmt.Fprintln(streams.Out, "Nothing was submitted (--plan).")
 				return nil
 			}
-			if !streams.terminal() {
-				if _, _, err := streams.decide(yes, decision{undone: "nothing was submitted", byYes: "--yes submits exactly what is shown"}); err != nil {
+			if !streams.Terminal() {
+				if _, _, err := streams.Decide(yes, term.Decision{Undone: "nothing was submitted", ByYes: "--yes submits exactly what is shown"}); err != nil {
 					return err
 				}
 				return finishSubmit(ctx, e, streams, plan, ready, s.file.Submit.RerequestReview)
@@ -99,7 +100,7 @@ kept.
 				return err
 			}
 			for {
-				answer, err := ask(streams, "Preview [p] · Edit description [e] · Submit [s] · Cancel [q]\n> ")
+				answer, err := streams.Ask("Preview [p] · Edit description [e] · Submit [s] · Cancel [q]\n> ")
 				if err != nil {
 					return err
 				}
@@ -147,11 +148,11 @@ kept.
 // askTested asks the template's last two questions, which only the person
 // can answer, unless they answered them with flags or the description
 // they edited stands.
-func askTested(streams Streams, plan *engine.SubmitPlan) error {
+func askTested(streams term.Streams, plan *engine.SubmitPlan) error {
 	if plan.Request.TestedBinaries || plan.Request.TestedVariants || plan.Existing != nil && plan.BodyKept {
 		return nil
 	}
-	binaries, err := streams.askYes("? Did you test the basic functionality of all binary files? [y/N] ", false)
+	binaries, err := streams.AskYes("? Did you test the basic functionality of all binary files? [y/N] ", false)
 	if err != nil {
 		return err
 	}
@@ -161,7 +162,7 @@ func askTested(streams Streams, plan *engine.SubmitPlan) error {
 		_, _, variants = plan.Evidence.VariantsBuilt()
 	}
 	if !variants {
-		if variants, err = streams.askYes("? Did you check that the most important variants aren't broken? [y/N] ", false); err != nil {
+		if variants, err = streams.AskYes("? Did you check that the most important variants aren't broken? [y/N] ", false); err != nil {
 			return err
 		}
 	}
@@ -198,7 +199,7 @@ func writeDescription(out io.Writer, plan engine.SubmitPlan) {
 
 // finishSubmit applies a plan, then takes its pull request out of draft
 // when --ready asked.
-func finishSubmit(ctx context.Context, e *engine.Engine, streams Streams, plan engine.SubmitPlan, ready bool, rerequest string) error {
+func finishSubmit(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.SubmitPlan, ready bool, rerequest string) error {
 	if err := applySubmit(ctx, e, streams, plan, rerequest); err != nil {
 		return err
 	}
@@ -546,7 +547,7 @@ func updatedWords(edited engine.SubmitEdits, number int) string {
 // as rerequest says: ask (the default), always, or never. Its JSON names
 // them, and whether each was asked (the rc8 full stage's B4), however it
 // ends once the submission is made.
-func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan engine.SubmitPlan, rerequest string) error {
+func applySubmit(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.SubmitPlan, rerequest string) error {
 	submitted, err := e.ApplySubmit(ctx, plan)
 	if err != nil {
 		return err
@@ -555,7 +556,7 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	result := submitView(plan)
 	result.PullRequest = &submittedJSON{Number: pr.Ref.Number, URL: pr.Ref.URL, Created: submitted.Created, Pushed: submitted.Pushed, Draft: plan.Request.Draft,
 		UpdatedTitle: submitted.Edited.Title, UpdatedDescription: submitted.Edited.Body, ChangesRequestedBy: []changesRequestedJSON{}}
-	defer func() { streams.emit(result) }()
+	defer func() { streams.Emit(result) }()
 	switch {
 	case submitted.Created && plan.Request.Draft:
 		fmt.Fprintf(streams.Out, "Opened draft #%d  %s\n", pr.Ref.Number, pr.Ref.URL)
@@ -580,7 +581,7 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	}
 	who := "@" + strings.Join(observed.Observed.ChangesRequestedBy, ", @")
 	if rerequest != "always" {
-		again, how, err := streams.decide(false, decision{question: fmt.Sprintf("? ask %s to review again? [Y/n] ", who), yes: true, nobody: answer(false)})
+		again, how, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? ask %s to review again? [Y/n] ", who), Yes: true, Nobody: term.Answer(false)})
 		if how == model.AnsweredNobody {
 			fmt.Fprintf(streams.Out, "%s requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n", who)
 		}

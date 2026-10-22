@@ -381,3 +381,20 @@ is the host's memory store in tests, launchctl and notifications are the
 host's stand-ins, and failpoints are the acceptance build's, which
 command's tests don't build. The package's tests took 289 seconds one
 at a time and take 81 together; `go test -race` finds no race.
+
+## term, cut
+
+internal/term holds what was command's of the streams, as architecture
+drew it (2026-10-21): `Streams` with its terminal predicates
+(`Terminal`, `ErrTerminal`, `OutTerminal`), `Width`, `Unattended`, and
+`AsTerminal`, the interactive stand-in tests use where they set a field;
+the redrawn `StatusLine` and `Say`; questions (`Ask`, `ReadLine`, and
+consent's `Decision`, `Answer`, `Decide`, `AskYes`); the --json mode
+(`Begin`, `Reports`, `Command`, `JSON`, `Emit`, `LinkSteps`, `Gatherer`,
+and `Finish`, which writes the envelope, with `JSONVersion`); the exit
+codes (`ExitError`, `ExitCode`, `Exitf`, and the four codes); and the
+terminal files. command's result structs and its verbs' questions stay;
+its gatherers' methods are exported for term's interface. The terminal,
+consent, exit, and status-line tests moved with their code. cmd/dockhand
+names `term.Streams` and `term.ExitCode`, and command's boundary test
+allows internal/term in place of golang.org/x/sys/unix.

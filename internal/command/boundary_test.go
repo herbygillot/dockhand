@@ -37,7 +37,7 @@ var commandImports = map[string]string{
 	"internal/credential":           "setup's, until part 4.2: where the login is kept",
 	"internal/credential/keychain":  "setup's, until part 4.2: the macOS Keychain",
 	"github.com/spf13/cobra":        "the command line itself",
-	"golang.org/x/sys/unix":         "whether a stream is a terminal",
+	"internal/term":                 "the streams: terminals, questions, the --json envelope, and exit codes",
 	// Where a port's own build begins is the result's (model.OwnBuild);
 	// logs --port prints its log from that line, counted as the guest
 	// counts it.

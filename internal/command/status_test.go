@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -86,7 +87,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# more\n"), 0o644))
 	out, _, err = dockhand(t, "status", "--attention")
-	require.Equal(t, 3, ExitCode(err), "attention needed exits 3")
+	require.Equal(t, 3, term.ExitCode(err), "attention needed exits 3")
 	require.Equal(t, "  ! jq-update  snapshot 1 passed; the files have changed since\n               dockhand check --branch jq-update\n", out)
 
 	setenv(t, "MACPORTS_TREE", dir)
@@ -149,7 +150,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, os.WriteFile(live, []byte("--->  Building jq\n"), 0o644))
 	ctx, stop := context.WithTimeout(t.Context(), 1500*time.Millisecond)
 	var followed, followedErrs bytes.Buffer
-	err = runFor(t, ctx, []string{"logs", "check-2", "jq", "--follow"}, Streams{In: strings.NewReader(""), Out: &followed, Err: &followedErrs})
+	err = runFor(t, ctx, []string{"logs", "check-2", "jq", "--follow"}, term.Streams{In: strings.NewReader(""), Out: &followed, Err: &followedErrs})
 	stop()
 	require.ErrorIs(t, err, context.DeadlineExceeded, followedErrs.String())
 	require.Equal(t, "--->  Building jq\n", followed.String())

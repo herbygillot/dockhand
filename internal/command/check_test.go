@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -102,7 +103,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.ErrorContains(t, err, "check-2 is already queued for these files; dockhand wait check-2 follows it", "one check of a branch at a time")
 	out, _, err = dockhand(t, "check", "--replace")
 	require.Contains(t, out, "Canceled check-2 before it started.\ncheck-3 replaces check-2.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
-	require.Equal(t, 2, ExitCode(err), "a failed check exits 2")
+	require.Equal(t, 2, term.ExitCode(err), "a failed check exits 2")
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass. Logs: dockhand logs check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
 	require.Contains(t, out, "jq failed at install; the last it printed:\n    building from ", "what no reading of its log explained (the Vx port's field testing)")
@@ -425,23 +426,23 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 	writeVariants(&out, plan)
 	require.Equal(t, "Variants    jq with default variants, then each of +tests, +docs, +oniguruma, +static added to the defaults (excluding universal)\n", out.String())
 
-	require.NoError(t, confirmVariantBuilds(Streams{}, plan, false), "five builds, asked nothing")
+	require.NoError(t, confirmVariantBuilds(term.Streams{}, plan, false), "five builds, asked nothing")
 	for range 3 {
 		plan.Builds = append(plan.Builds, model.EnvironmentPlan{Environment: arm, Order: order})
 	}
-	require.EqualError(t, confirmVariantBuilds(Streams{In: strings.NewReader("")}, plan, false),
+	require.EqualError(t, confirmVariantBuilds(term.Streams{In: strings.NewReader("")}, plan, false),
 		"nothing was checked (--variants each makes 20 builds here): without a terminal, --yes builds them")
-	require.NoError(t, confirmVariantBuilds(Streams{}, plan, true))
+	require.NoError(t, confirmVariantBuilds(term.Streams{}, plan, true))
 	var asked strings.Builder
-	require.NoError(t, confirmVariantBuilds(Streams{In: strings.NewReader("y\n"), Out: &asked, Err: &asked, interactive: true}, plan, false))
-	require.EqualError(t, confirmVariantBuilds(Streams{In: strings.NewReader("n\n"), Out: &asked, Err: &asked, interactive: true}, plan, false), "nothing was checked")
+	require.NoError(t, confirmVariantBuilds(term.Streams{In: strings.NewReader("y\n"), Out: &asked, Err: &asked}.AsTerminal(), plan, false))
+	require.EqualError(t, confirmVariantBuilds(term.Streams{In: strings.NewReader("n\n"), Out: &asked, Err: &asked}.AsTerminal(), plan, false), "nothing was checked")
 	require.Contains(t, asked.String(), "? --variants each will run 20 full builds. Continue? [y/N] ")
 
 	single := model.Plan{Variants: "+tests", Targets: []model.PlanTarget{plan.Targets[1]}}
 	out.Reset()
 	writeVariants(&out, single)
 	require.Equal(t, "Variants    jq +tests, in place of its defaults\n", out.String())
-	require.NoError(t, confirmVariantBuilds(Streams{}, single, false), "only each asks")
+	require.NoError(t, confirmVariantBuilds(term.Streams{}, single, false), "only each asks")
 }
 
 // check --branch from another checkout takes a branch's working files

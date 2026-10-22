@@ -13,9 +13,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func diffCommand(s *settings, streams Streams) *cobra.Command {
+func diffCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	var stat, archives bool
 	cmd := &cobra.Command{
@@ -54,7 +55,7 @@ MacPorts' distfiles mirror.`,
 			if err != nil {
 				return err
 			}
-			streams.emit(diffView(diff, !stat))
+			streams.Emit(diffView(diff, !stat))
 			writeDiffSummary(streams.Out, diff)
 			if len(diff.Files) == 0 {
 				if len(args) > 0 {
@@ -81,7 +82,7 @@ MacPorts' distfiles mirror.`,
 }
 
 // diffArchives shows how the ports' source archives changed inside.
-func diffArchives(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, ports []string, stat bool) error {
+func diffArchives(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, ports []string, stat bool) error {
 	diffs, err := e.ArchiveDiff(ctx, branch, ports)
 	if err != nil {
 		return err
@@ -95,7 +96,7 @@ func diffArchives(ctx context.Context, e *engine.Engine, streams Streams, branch
 		}
 		views = append(views, view)
 	}
-	streams.emit(map[string]any{"branch": branchRef(branch), "archives": nonNil(views)})
+	streams.Emit(map[string]any{"branch": branchRef(branch), "archives": nonNil(views)})
 	out := streams.Out
 	if len(diffs) == 0 {
 		fmt.Fprintln(out, "No changed port has archives to compare.")
@@ -208,7 +209,7 @@ func portChangeWords(port engine.PortDiff) string {
 	return "changed"
 }
 
-func impactCommand(s *settings, streams Streams) *cobra.Command {
+func impactCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	cmd := &cobra.Command{
 		Use:   "impact [<port>...]",
@@ -234,7 +235,7 @@ some against the branch.`,
 			if err != nil {
 				return err
 			}
-			streams.emit(impactView(impact))
+			streams.Emit(impactView(impact))
 			writeImpact(streams.Out, impact, nextIn(ctx, e, branch, ""))
 			return nil
 		},
@@ -325,7 +326,7 @@ func orNone(value string) string {
 // openCommand opens a branch's pull request in the browser (the
 // command-line UX review's smaller items): status shows its number, and
 // no link.
-func openCommand(s *settings, streams Streams) *cobra.Command {
+func openCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	cmd := &cobra.Command{
 		Use:   "open",

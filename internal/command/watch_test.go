@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,7 +24,7 @@ func TestWatchPrintsEventsAsLinesWithoutATerminal(t *testing.T) {
 	var watched syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"status", "--watch"}, Streams{In: strings.NewReader(""), Out: &watched, Err: &watched})
+		done <- runFor(t, ctx, []string{"status", "--watch"}, term.Streams{In: strings.NewReader(""), Out: &watched, Err: &watched})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(watched.String(), "Watching for changes") }, settle, 10*time.Millisecond)
 	require.Contains(t, watched.String(), "jq-update", "status comes first")
@@ -47,7 +48,7 @@ func TestWatchRedrawsAndRunsWhatIsTyped(t *testing.T) {
 	var view syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, t.Context(), []string{"status", "--watch"}, Streams{In: typed, Out: &view, Err: &view, interactive: true})
+		done <- runFor(t, t.Context(), []string{"status", "--watch"}, term.Streams{In: typed, Out: &view, Err: &view}.AsTerminal())
 	}()
 	draws := func() int { return strings.Count(view.String(), "dockhand status --watch · ") }
 	require.Eventually(t, func() bool { return draws() == 1 }, settle, 10*time.Millisecond)

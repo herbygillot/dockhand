@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // cleanStates are the kinds of branch clean takes: --closed adds to merged
@@ -33,7 +34,7 @@ func cleanStates(merged, closed bool) []model.BranchState {
 	return states
 }
 
-func cleanCommand(s *settings, streams Streams) *cobra.Command {
+func cleanCommand(s *settings, streams term.Streams) *cobra.Command {
 	var merged, closed, yes, automatic bool
 	cmd := &cobra.Command{
 		Use:   "clean [branch...] [--merged] [--closed]",
@@ -122,13 +123,13 @@ cancel stops a check. None means another.`,
 					return err
 				}
 			}
-			streams.emit(map[string]any{"branches": cleanView(plans), "leftovers": leftoversView(leftovers), "applied": false})
+			streams.Emit(map[string]any{"branches": cleanView(plans), "leftovers": leftoversView(leftovers), "applied": false})
 			removable := writeClean(streams.Out, plans, false, s.places()) + writeLeftovers(streams.Out, leftovers, false)
 			if removable == 0 {
 				fmt.Fprintln(streams.Out, "Nothing to remove.")
 				return nil
 			}
-			ok, _, err := streams.decide(yes, decision{question: fmt.Sprintf("? Remove %s? [y/N] ", prose.Plural(removable, "item")), undone: "nothing was removed", byYes: "--yes removes these"})
+			ok, _, err := streams.Decide(yes, term.Decision{Question: fmt.Sprintf("? Remove %s? [y/N] ", prose.Plural(removable, "item")), Undone: "nothing was removed", ByYes: "--yes removes these"})
 			if err != nil {
 				return err
 			}
@@ -138,7 +139,7 @@ cancel stops a check. None means another.`,
 			}
 			done, err := e.ApplyClean(ctx, plans)
 			removed, leftoverErr := e.RemoveLeftovers(ctx, session, leftovers)
-			streams.emit(map[string]any{"branches": cleanView(done), "leftovers": leftoversView(removed), "applied": true})
+			streams.Emit(map[string]any{"branches": cleanView(done), "leftovers": leftoversView(removed), "applied": true})
 			// What was done is one line a branch, its plan having been
 			// shown in full: thirty branches' blocks printed twice were
 			// a lot to read (field testing's cleanup, af03bbab).
@@ -159,7 +160,7 @@ cancel stops a check. None means another.`,
 
 // cleanAutomatically is decision 36's automatic pass, as a command starts it
 // apart from itself once its own work is done, and says what it removed.
-func cleanAutomatically(ctx context.Context, e *engine.Engine, streams Streams, file config.File) error {
+func cleanAutomatically(ctx context.Context, e *engine.Engine, streams term.Streams, file config.File) error {
 	session, err := e.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return err
@@ -182,7 +183,7 @@ func cleanAutomatically(ctx context.Context, e *engine.Engine, streams Streams, 
 // command's own work is done, when it is due (decision 36): a day since the
 // last, or free space short, which it says. The command doesn't wait for
 // it. serve cleans up itself, and clean is cleaning.
-func (s *settings) cleanupAfter(streams Streams, command string) {
+func (s *settings) cleanupAfter(streams term.Streams, command string) {
 	e := s.opened
 	if e == nil || !s.file.Cleanup.On() || command == "clean" || command == "serve" {
 		return

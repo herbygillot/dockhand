@@ -10,9 +10,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func createCommand(s *settings, streams Streams) *cobra.Command {
+func createCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchChoice
 	var name, category string
 	cmd := &cobra.Command{
@@ -111,8 +112,8 @@ its go-get answer.`,
 			if err != nil {
 				return err
 			}
-			if category == "" && streams.terminal() {
-				answer, err := ask(streams, fmt.Sprintf("? category [%s]: ", observed.Category))
+			if category == "" && streams.Terminal() {
+				answer, err := streams.Ask(fmt.Sprintf("? category [%s]: ", observed.Category))
 				if err != nil {
 					return err
 				}
@@ -126,11 +127,11 @@ its go-get answer.`,
 				// Interrupted once the port was written, the result says
 				// what is there.
 				if created.Port != "" {
-					streams.emit(createdView(branch, created))
+					streams.Emit(createdView(branch, created))
 				}
 				return err
 			}
-			streams.emit(createdView(branch, created))
+			streams.Emit(createdView(branch, created))
 			if created.MovedFrom != "" {
 				fmt.Fprintf(out, "Moved %s from %s to %s, preserving all files and your edits.\n", created.Port, created.MovedFrom, created.Directory)
 				fmt.Fprintln(out, "Next: "+nextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))

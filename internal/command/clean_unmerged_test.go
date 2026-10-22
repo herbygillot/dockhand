@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -71,7 +72,7 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 
 	// Its worktree, checked out again, is clean's when named.
 	out, _, err = dockhand(t, "clean", "jq-update")
-	require.Equal(t, ExitFailure, ExitCode(err))
+	require.Equal(t, term.ExitFailure, term.ExitCode(err))
 	require.Equal(t, "jq-update (archived)\n  remove   worktree ~/Source/macports-branches/jq-update\n"+
 		"  keep     branch dockhand/jq-update: dockhand path jq-update checks it out again\n", out)
 	out, _, err = dockhand(t, "clean", "jq-update", "--yes")
@@ -108,7 +109,7 @@ func TestArchiveAsksCommitOrDiscard(t *testing.T) {
 	setenv(t, "MACPORTS_TREE", w.clone)
 
 	var out, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"archive", "jq-update"}, Streams{In: strings.NewReader("c\n"), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"archive", "jq-update"}, term.Streams{In: strings.NewReader("c\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "jq-update's worktree stays for now: it has uncommitted edits to textproc/jq/Portfile.\n? commit them, discard them, or keep the worktree? ")
 	require.Contains(t, out.String(), "Archived jq-update, and removed its worktree;")
@@ -121,7 +122,7 @@ func TestArchiveAsksCommitOrDiscard(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(scratch, "notes.txt"), []byte("mine\n"), 0o644))
 	out.Reset()
 	errs.Reset()
-	err = runFor(t, t.Context(), []string{"archive", "scratch"}, Streams{In: strings.NewReader("d\n"), Out: &out, Err: &errs, interactive: true})
+	err = runFor(t, t.Context(), []string{"archive", "scratch"}, term.Streams{In: strings.NewReader("d\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err)
 	require.NoDirExists(t, scratch)
 
