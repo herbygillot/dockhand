@@ -60,8 +60,9 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 		return nil
 	}
 	return Follow(ctx, e, session, run, streams, places, true, func(lead engine.Lead) {
-		if streams.Held() {
-			// A stage's notice is its redrawn line's (term.Streams.Held).
+		if quiet(streams) {
+			// The notice is the redrawn line's, and -v's line (part 5,
+			// item 4).
 			if streams.ErrTerminal() && lead.Here() {
 				streams.Status().Show(fmt.Sprintf("⋯ %s runs here; Ctrl-C stops it and keeps what finished", run.Name()))
 			}
@@ -75,12 +76,19 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 	})
 }
 
+// quiet reports whether a check's progress is the redrawn line's alone, as
+// at the default level and in a stage whose report is held back: its
+// attempts, record IDs, and provider steps are -v's (part 5, item 4).
+func quiet(streams term.Streams) bool {
+	return streams.Held() || streams.Verbose() == 0 && !streams.JSON()
+}
+
 // Follow shows a run's progress until it ends, driving it here where
 // nobody else sees it through, after before says who does, and reports its
 // outcome; named is where the command named what it checks already.
 func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, places config.Places, named bool, before func(engine.Lead)) error {
 	journal := &journal{e: e, run: run.ID, out: streams.Err}
-	if streams.Held() {
+	if quiet(streams) {
 		journal.held, journal.live = true, streams.ErrTerminal()
 		journal.status = streams.Status()
 	}

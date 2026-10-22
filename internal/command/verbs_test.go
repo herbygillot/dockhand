@@ -46,7 +46,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n# a note\n"), 0o644))
 	_, _, err = cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
-	out, errs, err := cmdtest.Dockhand(t, "retry", "check-1")
+	out, errs, err := cmdtest.Dockhand(t, "retry", "check-1", "-v")
 	require.NoError(t, err)
 	require.Contains(t, out, "check-2 repeats check-1: snapshot 1\n")
 	require.Contains(t, errs, "check-2 runs here")

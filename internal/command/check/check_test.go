@@ -55,7 +55,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--on", "ci")
 	require.EqualError(t, err, "--on ci is gone: --build macports-ci builds on the releases MacPorts' CI does")
 
-	out, errs, err := cmdtest.Dockhand(t, "check")
+	out, errs, err := cmdtest.Dockhand(t, "check", "-v")
 	require.NoError(t, err)
 	require.Contains(t, errs, "check-1 runs here, since no dockhand serve is running.")
 	require.Contains(t, errs, "command: jq passed")

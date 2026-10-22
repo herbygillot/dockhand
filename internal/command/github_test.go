@@ -221,7 +221,7 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "check", "--on", "github:sonoma")
 	require.ErrorContains(t, err, "takes no releases")
 
-	out, errs, err := cmdtest.Dockhand(t, "check", "--on", "github")
+	out, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
 	require.NoError(t, err, errs)
 	require.Contains(t, errs, "github: pushing to dockhand-check/")
 	require.Contains(t, errs, "github: in progress https://github.com/ada/macports-ports/actions/runs/7")
@@ -255,7 +255,7 @@ func TestGitHubRunsAFailureNoPortExplainsAgain(t *testing.T) {
 	f.logs = []map[string]string{{"build (macos-14)": "2026-09-25T10:00:00.0Z ##[error]bootstrap failed\n"}, {"build (macos-14)": built("jq", false)}}
 	f.conclusion = []string{"failure", "success"}
 
-	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github")
+	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
 	require.NoError(t, err, errs)
 	require.Contains(t, errs, "ended failure without building a port")
 	require.Contains(t, errs, "unsuccessful jobs again")
@@ -277,7 +277,7 @@ func TestTheLastAttemptOfAGitHubCheckRemovesItsBranch(t *testing.T) {
 	f.logs = []map[string]string{stuck, stuck, stuck}
 	f.conclusion = []string{"failure", "failure", "failure"}
 
-	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github")
+	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
 	require.Error(t, err, errs)
 	require.Equal(t, 2, f.reruns)
 	require.Len(t, f.runs, 1)
@@ -298,7 +298,7 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 	require.NoError(t, err, errs)
 	require.Empty(t, checkBranches(t, f))
 
-	out, errs, err := cmdtest.Dockhand(t, "retry", "check-1")
+	out, errs, err := cmdtest.Dockhand(t, "retry", "check-1", "-v")
 	require.NoError(t, err, errs)
 	require.Contains(t, out, "check-2 repeats check-1")
 	require.Contains(t, errs, "github: pushing to dockhand-check/")
@@ -363,7 +363,7 @@ func TestAResumedGitHubCheckReadsTheRunItLeft(t *testing.T) {
 	require.NotEmpty(t, checkBranches(t, f), "the run isn't read, so its branch stays")
 
 	f.hold = nil
-	_, errs, err := cmdtest.Dockhand(t, "wait", "check-1")
+	_, errs, err := cmdtest.Dockhand(t, "wait", "check-1", "-v")
 	require.NoError(t, err, errs)
 	require.Contains(t, errs, "github: jq passed")
 	require.Len(t, f.runs, 1, "the run it left, not another")
@@ -377,7 +377,7 @@ func TestGitHubReadsAFailedPortsPhase(t *testing.T) {
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": "2026-09-25T10:00:01.0Z ##[group]Listing subports\n2026-09-25T10:00:01.1Z jq\n2026-09-25T10:00:01.2Z ##[endgroup]\n2026-09-25T10:04:00.0Z ##[error]Failed to install jq\n"}}
 	f.conclusion = []string{"failure"}
 
-	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github")
+	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
 	require.Error(t, err)
 	require.Contains(t, errs, "github: jq failed at install")
 	require.Equal(t, 0, f.reruns)
@@ -442,7 +442,7 @@ func TestAGitHubRunPastItsBoundIsCancelled(t *testing.T) {
 	f.conclusion = []string{"success"}
 	f.hold = func() bool { return true }
 
-	out, errs, err := cmdtest.Dockhand(t, "check", "--on", "github")
+	out, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
 	require.Error(t, err, errs)
 	require.Equal(t, 1, f.canceled)
 	require.Contains(t, errs, "built past its 1m0s bound; cancelling it")
@@ -461,7 +461,7 @@ func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}}
 	f.conclusion = []string{"success"}
 	refuseDeletions(t, f.fork)
-	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github")
+	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
 	require.NoError(t, err, errs)
 	checked := checkBranches(t, f)
 	require.NotEmpty(t, checked)

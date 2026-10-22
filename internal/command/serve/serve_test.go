@@ -53,7 +53,7 @@ func TestACheckIsHandedToServe(t *testing.T) {
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, cmdtest.Settle, 10*time.Millisecond)
 
-	out, errs, err := cmdtest.Dockhand(t, "check")
+	out, errs, err := cmdtest.Dockhand(t, "check", "-v")
 	require.NoError(t, err)
 	require.Contains(t, errs, "check-1 handed to serve (pid ")
 	require.Contains(t, out, "\nPassed.\n", "the check's heading named what it checks")

@@ -31,8 +31,10 @@ act() {
 		# --fresh: a check that reuses an earlier build starts no guest,
 		# and the failpoint is never met (the rc8 full stage, which reused
 		# check-57's).
-		printf '$ DOCKHAND_FAILPOINT=tart.results:%s dockhand check -b %s --fresh\n' "$kind" "$branch" >>"$ROW_DIR/out.log"
-		DOCKHAND_FAILPOINT="tart.results:$kind" "$DI7_FP" check -b "$branch" --fresh </dev/null >"$ROW_DIR/check.$kind" 2>&1
+		# -v: the attempts and the notice that it runs here are -v's
+		# lines (part 5, item 4), which the row reads.
+		printf '$ DOCKHAND_FAILPOINT=tart.results:%s dockhand check -b %s --fresh -v\n' "$kind" "$branch" >>"$ROW_DIR/out.log"
+		DOCKHAND_FAILPOINT="tart.results:$kind" "$DI7_FP" check -b "$branch" --fresh -v </dev/null >"$ROW_DIR/check.$kind" 2>&1
 		printf '%s\n' "$?" >"$ROW_DIR/check.$kind.exit"
 		cat "$ROW_DIR/check.$kind" >>"$ROW_DIR/out.log"
 		printf '[exit %d]\n' "$(cat "$ROW_DIR/check.$kind.exit")" >>"$ROW_DIR/out.log"

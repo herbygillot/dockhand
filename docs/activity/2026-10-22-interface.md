@@ -288,3 +288,14 @@ mark's column (`view.Unmarked`).
 - The writer writes with `Write`, never `WriteString`, which a writer
   embedding a `bytes.Buffer` takes past its own `Write` (logs `--follow`'s
   test writer, which cancels on what it's written, never saw it).
+
+### check's progress at -v
+
+- **A check's progress is -v's wherever it runs** (`checkrun.quiet`): the
+  journal's attempts, record IDs, provider steps, and per-port lines, and
+  the notice that it runs here or was handed to serve, are said with `-v`;
+  at the default level, on a terminal, the latest is the line redrawn, and
+  off one nothing is said until the report. A kept archive found altered
+  or gone is still said. wait, which follows a check, reads the same.
+- Acceptance row D-I7 runs its checks with `-v`, since it reads "runs here"
+  and "attempt 2 of"; the command tests that read progress do too.
