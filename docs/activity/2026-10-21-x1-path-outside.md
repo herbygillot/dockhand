@@ -398,3 +398,10 @@ its gatherers' methods are exported for term's interface. The terminal,
 consent, exit, and status-line tests moved with their code. cmd/dockhand
 names `term.Streams` and `term.ExitCode`, and command's boundary test
 allows internal/term in place of golang.org/x/sys/unix.
+
+A leak the parallel run showed: serve --install's test named its
+database `.dockhand/dockhand.db`, and the store opened it against the
+process's directory, leaving internal/command/.dockhand behind. compose
+now makes `--db`, DOCKHAND_DB, `--tree`, and MACPORTS_TREE absolute
+against the invocation's directory (`Places.Absolute`, so a leading ~ is
+read too), with a test.

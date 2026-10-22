@@ -205,6 +205,11 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		}
 		database = filepath.Join(places.Home, ".dockhand", "dockhand.db")
 	}
+	// A path given is read against the command line's directory, never
+	// the process's, which a test running beside others shares.
+	if database, err = places.Absolute(database); err != nil {
+		return engine.Options{}, config.File{}, "", err
+	}
 	// With no --tree, MACPORTS_TREE names the checkout, and a directory in
 	// one of its worktrees is that worktree, whose branch is the one
 	// checked out here.
@@ -212,8 +217,14 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 	if tree == "" {
 		tree = cmp.Or(options.Dir, ".")
 		if named := options.Getenv("MACPORTS_TREE"); named != "" {
+			if named, err = places.Absolute(named); err != nil {
+				return engine.Options{}, config.File{}, "", err
+			}
 			tree = engine.Here(ctx, named, cmp.Or(options.Dir, "."), gitprogram.Program{Executable: git, Env: options.Env})
 		}
+	}
+	if tree, err = places.Absolute(tree); err != nil {
+		return engine.Options{}, config.File{}, "", err
 	}
 	readings, _ := options.cacheDirectory("DOCKHAND_READING_CACHE", "readings")
 	indexes, _ := options.cacheDirectory("DOCKHAND_INDEX_CACHE", "indexes")

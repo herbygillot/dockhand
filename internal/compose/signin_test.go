@@ -30,3 +30,14 @@ func TestSigninIsTheCommandLinesOwn(t *testing.T) {
 	require.Empty(t, Options{Env: []string{"PATH=/nowhere"}}.Signin(nil).CLI)
 	require.Empty(t, Options{}.Signin(nil).Lock, "no home, no lock")
 }
+
+// A database and tree named by relative paths are the command line's
+// directory's, not the process's, which parallel tests share.
+func TestRelativePathsAreTheCommandLinesDirectorys(t *testing.T) {
+	t.Parallel()
+	home, dir := t.TempDir(), t.TempDir()
+	options, _, _, err := Settings(t.Context(), Options{Database: ".dockhand/dockhand.db", Tree: "ports", Dir: dir, Env: []string{"HOME=" + home}})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(dir, ".dockhand", "dockhand.db"), options.Database)
+	require.Equal(t, filepath.Join(dir, "ports"), options.Tree)
+}
