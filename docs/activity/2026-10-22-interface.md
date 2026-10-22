@@ -49,3 +49,11 @@ which both take. Under `--plan` it shows the commits and makes none
 `--head` submits the committed head alone, as before. boundary_test's
 `verbImports` names submit → tidy beside the composites, and submit's
 merge check stays.
+
+### tidyrun, the stage three verbs run
+
+By architecture's answer, tidy's stage is a layer, `internal/command/tidyrun`,
+beside checkrun: `Stage`, `Decide`, `Apply`, and `EditSubjects`. The tidy
+verb is its front, and ship and submit import tidyrun, not tidy. The
+`submit → tidy` entry comes out of verbImports, and ship's tidy entry
+with it.

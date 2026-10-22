@@ -17,7 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/outdated"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/submit"
-	"github.com/herbygillot/dockhand/internal/command/tidy"
+	"github.com/herbygillot/dockhand/internal/command/tidyrun"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -364,7 +364,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		return nil, err
 	}
 	defer e.Close()
-	branch, applied, err := tidy.Stage(ctx, e, streams, branch, "nothing was checked or submitted")
+	branch, applied, err := tidyrun.Stage(ctx, e, streams, branch, "nothing was checked or submitted")
 	if err != nil || !applied || stage == engine.ShipCommit {
 		return nil, err
 	}

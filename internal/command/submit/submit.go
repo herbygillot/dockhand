@@ -12,7 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
-	"github.com/herbygillot/dockhand/internal/command/tidy"
+	"github.com/herbygillot/dockhand/internal/command/tidyrun"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -85,7 +85,7 @@ kept.
 				if preview {
 					return previewTidy(ctx, e, streams, request.Branch)
 				}
-				branch, applied, tidyErr := tidy.Stage(ctx, e, streams, request.Branch, "nothing was submitted")
+				branch, applied, tidyErr := tidyrun.Stage(ctx, e, streams, request.Branch, "nothing was submitted")
 				if tidyErr != nil || !applied {
 					return tidyErr
 				}

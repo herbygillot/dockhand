@@ -55,17 +55,16 @@ const module = "github.com/herbygillot/dockhand/"
 // layers are command's packages below its verbs, which import no verb and
 // not the root: what renders, follows a check, holds the Mac and the
 // settings, and finds a branch (part 4, item 2).
-var layers = map[string]bool{"view": true, "checkrun": true, "host": true, "settings": true, "branchflags": true, "cmdtest": true}
+var layers = map[string]bool{"view": true, "checkrun": true, "tidyrun": true, "host": true, "settings": true, "branchflags": true, "cmdtest": true}
 
 // verbImports are the verb packages a verb may import: the two
 // composites, ship, whose stages are author's edit, tidy's Decide,
 // submit's Apply, and outdated's Batch, and bump, ship's single-port
 // front; nothing else reaches across (architecture's answer, 2026-10-22).
 // update --mine is ship's edit stage over your outdated ports, outdated's
-// Batch.
-// submit commits what isn't committed first, as tidy's stage, Design v3
-// §3's chaining.
-var verbImports = map[string][]string{"ship": {"author", "tidy", "submit", "outdated"}, "bump": {"ship", "author"}, "author": {"outdated"}, "submit": {"tidy"}}
+// Batch. The stages several verbs run are layers, as checkrun and tidyrun
+// are, not verbs a verb imports.
+var verbImports = map[string][]string{"ship": {"author", "submit", "outdated"}, "bump": {"ship", "author"}, "author": {"outdated"}}
 
 // The command layer parses, finds context, prompts, and renders; the
 // engine decides (doc.go). It imports nothing past its layer, and it
