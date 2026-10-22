@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -46,9 +47,9 @@ access. --markdown prints the text, for pasting.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(streams.Err, experimentalWords(number, report.Author))
+			fmt.Fprintln(streams.Err, view.ExperimentalWords(number, report.Author))
 			body := report.Markdown()
-			streams.Emit(reviewView(report))
+			streams.Emit(view.ReviewView(report))
 			if markdown {
 				fmt.Fprint(streams.Out, body)
 				return e.RecordReview(ctx, report, "")
@@ -108,7 +109,7 @@ func postReview(ctx context.Context, e *engine.Engine, streams term.Streams, rep
 	if err != nil {
 		return err
 	}
-	result := reviewView(report)
+	result := view.ReviewView(report)
 	result.Body, result.Posted, result.PostedURL = body, "comment", url
 	if requestChanges {
 		result.Posted = "request-changes"
@@ -138,7 +139,7 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 	for _, finding := range report.Resolved {
 		fmt.Fprintf(out, "  ✓ resolved since %s: %s [%s]\n", report.Previous.Head.Short(), finding.Message, finding.Code)
 	}
-	switch lines := comparisonLines(report.Upstream); {
+	switch lines := view.ComparisonLines(report.Upstream); {
 	case report.UpstreamUnread != "":
 		fmt.Fprintf(out, "  · upstream's change wasn't assessed: %s\n", report.UpstreamUnread)
 	case len(lines) > 0:
@@ -162,15 +163,4 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 		fmt.Fprintf(out, "  %s\n", words)
 	}
 	fmt.Fprintln(out, "  · not checked here: port lint and the build; MacPorts CI runs both")
-}
-
-// experimentalWords is the notice review and adopt --pr carry until the
-// trust rule is in code (the release bar, 5): they evaluate someone else's
-// Portfiles with MacPorts on this Mac, as no other command does.
-func experimentalWords(number int, author string) string {
-	whose := "its author's"
-	if author != "" {
-		whose = "@" + author + "'s"
-	}
-	return fmt.Sprintf("Experimental: this command evaluates pull request #%d using %s Portfiles with MacPorts on this Mac. Read any Portfiles you do not trust before running it; isolated evaluation is not yet available.", number, whose)
 }

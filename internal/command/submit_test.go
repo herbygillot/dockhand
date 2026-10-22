@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
@@ -937,19 +938,19 @@ func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 		Executions: map[model.ExecutionID]model.GuestExecution{"tart_b": {ID: "tart_b", Run: "run_21"}},
 	}
 	require.Equal(t, "passed on "+engine.DescribeEnvironment(tahoe)+" for this commit's files (check-21); nothing built on "+engine.DescribeEnvironment(monterey)+", where every port's Portfile excludes it",
-		checkWords(engine.SubmitPlan{Evidence: evidence}))
+		view.CheckWords(engine.SubmitPlan{Evidence: evidence}))
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	evidence.Plan.Environments = append(evidence.Plan.Environments, sequoia)
 	evidence.Plan.Builds = append(evidence.Plan.Builds, model.EnvironmentPlan{Environment: sequoia, Exclusions: []model.Exclusion{{Target: target.Target, Reason: "minmax builds it on its oldest and newest releases", Span: true}}})
 	evidence.Targets[0].Outcomes = append(evidence.Targets[0].Outcomes, evidence.Targets[0].Outcomes[0])
-	require.NotContains(t, checkWords(engine.SubmitPlan{Evidence: evidence}), engine.DescribeEnvironment(sequoia), "minmax's choice isn't the ports' exclusion")
+	require.NotContains(t, view.CheckWords(engine.SubmitPlan{Evidence: evidence}), engine.DescribeEnvironment(sequoia), "minmax's choice isn't the ports' exclusion")
 
 	// An accepted failure says so, and why (field testing, #35662).
 	failed := &engine.Evidence{Run: model.Run{ID: "run_21", Number: 21}, Plan: model.Plan{Environments: []model.Environment{tahoe}},
 		Targets: []engine.TargetEvidence{{Target: target, Outcomes: cells([]model.TargetResult{{Execution: "tart_b", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}})}}}
 	failed.Targets[0].Outcomes[0].Environment = tahoe
 	require.Equal(t, "check-21: beekeeper-studio did not pass on "+engine.DescribeEnvironment(tahoe)+", accepted: fails at the base too (check-22)",
-		checkWords(engine.SubmitPlan{Evidence: failed, Accepted: map[string]engine.AcceptedFailure{"beekeeper-studio": {Kind: engine.AcceptedAtBase, Baselines: []string{"check-22"}}}}))
+		view.CheckWords(engine.SubmitPlan{Evidence: failed, Accepted: map[string]engine.AcceptedFailure{"beekeeper-studio": {Kind: engine.AcceptedAtBase, Baselines: []string{"check-22"}}}}))
 }
 
 // restricted is GitHub's refusal of an app an organization hasn't
@@ -1045,7 +1046,7 @@ func TestThePushLineSaysItWontPushOverAnotherPush(t *testing.T) {
 	t.Parallel()
 	plan := engine.SubmitPlan{Commit: strings.Repeat("7", 40), Replaces: true, OthersPushed: model.ObjectID(strings.Repeat("d", 40))}
 	plan.RemoteHead.Exists, plan.RemoteHead.Object = true, strings.Repeat("d", 40)
-	require.Equal(t, "won't push: someone else pushed ddddddd", pushWords(plan))
+	require.Equal(t, "won't push: someone else pushed ddddddd", view.PushWords(plan))
 }
 
 // The Checks line says where a port failed apart from where nothing of
@@ -1065,7 +1066,7 @@ func TestCheckWordsSayWhatWasntBuilt(t *testing.T) {
 			{TargetResult: model.TargetResult{Outcome: model.OutcomeNotRun}, Kind: engine.CellNotRun, Environment: tahoe},
 		},
 	}}}
-	said := checkWords(engine.SubmitPlan{Evidence: &evidence})
+	said := view.CheckWords(engine.SubmitPlan{Evidence: &evidence})
 	require.Equal(t, "check-323: grafana isn't built for these files on "+engine.DescribeEnvironment(tahoe), said)
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -142,7 +143,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
-	writePlan(&out, model.Plan{
+	view.WritePlan(&out, model.Plan{
 		Environments: []model.Environment{{Provider: "command"}},
 		Targets:      []model.PlanTarget{{ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}},
 		Omitted:      []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Kind: model.Substantive, Role: model.Changed}},
@@ -171,21 +172,21 @@ func TestCheckPlanSaysWhatAGitFetchMustCheckOut(t *testing.T) {
 			{Environment: intel, Order: []model.TargetID{"libharbor", "harbor-cli"}, Git: map[model.TargetID]model.GitSource{"libharbor": tag}},
 		}}
 	var out bytes.Buffer
-	writePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil)
 	require.Contains(t, out.String(), "Git         libharbor: git.branch v4 names 1a2b3c4 now, which its build must fetch\n"+
 		"            harbor-cli: which commit git.branch v2 names isn't known (its refs couldn't be read: timed out); its build records what it fetches, and stands for no later check\n")
 
-	view := planView(plan)
-	require.Equal(t, gitSourceJSON{URL: tag.URL, Branch: "v4", Commit: string(commit), ResolvedAt: tag.ResolvedAt}, view.Builds[1].Git["libharbor"])
-	require.NotContains(t, view.Builds[1].Git, "harbor-cli", "fetched otherwise there")
-	require.Nil(t, view.Builds[0].OmittedGit, "nothing left out")
-	require.Nil(t, view.Builds[0].Tags, "nothing fetched as a GitHub tag's archive")
+	viewed := view.PlanView(plan)
+	require.Equal(t, view.GitSourceJSON{URL: tag.URL, Branch: "v4", Commit: string(commit), ResolvedAt: tag.ResolvedAt}, viewed.Builds[1].Git["libharbor"])
+	require.NotContains(t, viewed.Builds[1].Git, "harbor-cli", "fetched otherwise there")
+	require.Nil(t, viewed.Builds[0].OmittedGit, "nothing left out")
+	require.Nil(t, viewed.Builds[0].Tags, "nothing fetched as a GitHub tag's archive")
 
 	// A port fetched as a GitHub tag's archive has its tag's commit under
 	// tags (D-N5), and isn't said among what Git fetches.
 	plan.Builds[0].Git = map[model.TargetID]model.GitSource{"harbor-cli": cli}
 	plan.Builds[0].Tags = map[model.TargetID]model.GitSource{"libharbor": tag}
-	require.Equal(t, map[string]gitSourceJSON{"libharbor": gitSourceView(tag)}, planView(plan).Builds[0].Tags)
+	require.Equal(t, map[string]view.GitSourceJSON{"libharbor": view.GitSourceView(tag)}, view.PlanView(plan).Builds[0].Tags)
 }
 
 // A Git-fetched target --only left out has the commit its tag names
@@ -209,14 +210,14 @@ func TestCheckPlanShowsTheGitSourcesOfWhatOnlyLeftOut(t *testing.T) {
 		Builds: []model.EnvironmentPlan{{Environment: arm, Order: []model.TargetID{"harbor-cli"},
 			Git: map[model.TargetID]model.GitSource{"harbor-cli": cli, "libharbor": tag, "harbor-viewer": viewer}}}}
 	var out bytes.Buffer
-	writePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil)
 	require.Contains(t, out.String(), "Git         harbor-cli: git.branch v2 names 9f8e7d6 now, which its build must fetch\n"+
 		"            libharbor (left out): git.branch v4 names 1a2b3c4 now, which an earlier check's build of it must have fetched to stand\n"+
 		"            harbor-viewer (left out): which commit git.branch v1 names isn't known (the repository has no branch or tag v1); no earlier check's result of it stands\n")
 
-	view := planView(plan)
-	require.Equal(t, map[string]gitSourceJSON{"harbor-cli": gitSourceView(cli)}, view.Builds[0].Git, "what it builds")
-	require.Equal(t, map[string]gitSourceJSON{"libharbor": gitSourceView(tag), "harbor-viewer": gitSourceView(viewer)}, view.Builds[0].OmittedGit, "what it left out, apart")
+	viewed := view.PlanView(plan)
+	require.Equal(t, map[string]view.GitSourceJSON{"harbor-cli": view.GitSourceView(cli)}, viewed.Builds[0].Git, "what it builds")
+	require.Equal(t, map[string]view.GitSourceJSON{"libharbor": view.GitSourceView(tag), "harbor-viewer": view.GitSourceView(viewer)}, viewed.Builds[0].OmittedGit, "what it left out, apart")
 }
 
 // On several environments the results are a grid, a column each headed
@@ -234,7 +235,7 @@ func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
 		{Target: targets[1], Outcomes: cells([]model.TargetResult{passed, failed})},
 	}}
 	var out bytes.Buffer
-	writeResults(&out, "  ", evidence, false)
+	view.WriteResults(&out, "  ", evidence, false)
 	require.Equal(t, "  PORT          macOS 26   macOS 15\n"+
 		"  flatbuffers   ✓          ✓\n"+
 		"  libsigmf      ✓          ✗ failed at install\n", out.String())
@@ -243,10 +244,10 @@ func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
 	evidence.Targets = evidence.Targets[:1]
 	evidence.Targets[0].Outcomes = cells([]model.TargetResult{passed})
 	out.Reset()
-	writeResults(&out, "  ", evidence, false)
+	view.WriteResults(&out, "  ", evidence, false)
 	require.Equal(t, "  flatbuffers  ✓\n", out.String())
 	out.Reset()
-	writeResults(&out, "  ", evidence, true)
+	view.WriteResults(&out, "  ", evidence, true)
 	require.Equal(t, "  flatbuffers  tart macOS 26 (Tahoe) arm64 ✓\n", out.String())
 }
 
@@ -264,7 +265,7 @@ func TestACheckReportsTheReleasesItPlanned(t *testing.T) {
 	plan := model.Plan{Environments: []model.Environment{monterey, next, tahoe}, Builds: []model.EnvironmentPlan{{Environment: monterey}, {Environment: next}}, Targets: targets}
 	e := engine.Evidence{Plan: plan, Targets: []engine.TargetEvidence{{Target: targets[0], Outcomes: cells([]model.TargetResult{{Outcome: model.OutcomePassed}, {Outcome: model.OutcomePassed}, {Outcome: model.OutcomeNotRun}})}}}
 	var out bytes.Buffer
-	writeResults(&out, "  ", e, false)
+	view.WriteResults(&out, "  ", e, false)
 	require.Equal(t, "  PORT    macOS 12   Darwin 26\n  exiv2   ✓          ✓\n", out.String())
 }
 
@@ -288,7 +289,7 @@ func TestCheckPlanShowsEachEnvironmentsOrder(t *testing.T) {
 				Exclusions: []model.Exclusion{old}},
 		}}
 	var out bytes.Buffer
-	writePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil)
 	require.Contains(t, out.String(), "Order       on tart macOS 26 (Tahoe) arm64: harbor-cli → libharbor\n"+
 		"            on tart macOS 26 (Tahoe) x86_64: libharbor → harbor-cli → harbor-intel\n"+
 		"Excluded    harbor-cli-old: replaced by harbor-cli\n"+
@@ -297,7 +298,7 @@ func TestCheckPlanShowsEachEnvironmentsOrder(t *testing.T) {
 	plan.Builds[0].Order, plan.Builds[0].Dependencies = []model.TargetID{"libharbor", "harbor-cli"}, map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}}
 	plan.Targets = []model.PlanTarget{target("libharbor"), target("harbor-cli"), target("harbor-intel")}
 	out.Reset()
-	writePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil)
 	require.Contains(t, out.String(), "Order       libharbor → harbor-cli → harbor-intel\n", "where they agree, one line")
 }
 
@@ -398,16 +399,16 @@ func TestAPlanRequiringTestsNamesWhatDeclaresNone(t *testing.T) {
 		Targets: []model.PlanTarget{{ID: "ov", Target: model.Target{Name: "ov"}, Kind: model.Substantive, Role: model.Changed}, {ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}},
 		Builds:  []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"ov", "jq"}, Untested: []model.TargetID{"ov"}}}}
 	var out bytes.Buffer
-	writePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil)
 	require.Contains(t, out.String(), "Tests       jq, which must pass\nNo tests    ov declares no tests; --tests required adds no test requirement for this port\n", "which do is said beside which don't")
 	plan.Builds[0].Untested = []model.TargetID{"ov", "jq"}
 	out.Reset()
-	writePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil)
 	require.Contains(t, out.String(), "No tests    ov, jq declare no tests; --tests required adds no test requirement for these ports\n")
 	require.NotContains(t, out.String(), "Tests       ")
 	plan.Tests = model.TestsDeclared
 	out.Reset()
-	writePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil)
 	require.NotContains(t, out.String(), "No tests")
 }
 
@@ -443,7 +444,7 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 	}
 	plan.Builds = []model.EnvironmentPlan{{Environment: arm, Order: order}}
 	var out strings.Builder
-	writeVariants(&out, plan)
+	view.WriteVariants(&out, plan)
 	require.Equal(t, "Variants    jq with default variants, then each of +tests, +docs, +oniguruma, +static added to the defaults (excluding universal)\n", out.String())
 
 	require.NoError(t, confirmVariantBuilds(term.Streams{}, plan, false), "five builds, asked nothing")
@@ -460,7 +461,7 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 
 	single := model.Plan{Variants: "+tests", Targets: []model.PlanTarget{plan.Targets[1]}}
 	out.Reset()
-	writeVariants(&out, single)
+	view.WriteVariants(&out, single)
 	require.Equal(t, "Variants    jq +tests, in place of its defaults\n", out.String())
 	require.NoError(t, confirmVariantBuilds(term.Streams{}, single, false), "only each asks")
 }

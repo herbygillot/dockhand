@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -79,7 +80,7 @@ kept.
 			if err != nil {
 				return err
 			}
-			streams.Emit(submitView(plan))
+			streams.Emit(view.SubmitView(plan))
 			writeSubmitPlan(streams.Out, plan)
 			if len(plan.Blocking) > 0 {
 				return errors.New("nothing was submitted")
@@ -246,8 +247,8 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 		rules = prose.Plural(len(plan.Findings), "finding") + " below"
 	}
 	fmt.Fprintf(out, "  Commits  %d, %s\n", len(plan.Commits), rules)
-	fmt.Fprintf(out, "  Push     %s\n", pushWords(plan))
-	fmt.Fprintf(out, "  Checks   %s\n", checkWords(plan))
+	fmt.Fprintf(out, "  Push     %s\n", view.PushWords(plan))
+	fmt.Fprintf(out, "  Checks   %s\n", view.CheckWords(plan))
 	if len(plan.Upstream) > 0 || len(plan.Moved) > 0 {
 		lines := upstreamLines(plan)
 		if len(lines) == 0 {
@@ -255,7 +256,7 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 		}
 		fmt.Fprintf(out, "  Upstream %s\n", strings.Join(lines, "\n           "))
 		if slices.ContainsFunc(lines, func(line string) bool { return strings.HasPrefix(line, "! ") }) {
-			fmt.Fprintf(out, "           %s\n", holdLegend)
+			fmt.Fprintf(out, "           %s\n", view.HoldLegend)
 		}
 	}
 	fmt.Fprintf(out, "  Other PRs  %s\n", otherWords(plan))
@@ -313,124 +314,13 @@ func noteLine(plan engine.SubmitPlan) string {
 // port when the branch updated several, and, under the Upstream label
 // every list of them has, doesn't say upstream again.
 func upstreamLines(plan engine.SubmitPlan) []string {
-	lines := comparisonLines(plan.Upstream)
+	lines := view.ComparisonLines(plan.Upstream)
 	// A Git-fetched port whose tag has moved since its check: the check
 	// built another source than this would submit.
 	for _, moved := range plan.Moved {
 		lines = append(lines, "! "+moved.Detail)
 	}
 	return lines
-}
-
-// comparisonLines are what each port's assessment found, a line each,
-// marked as update marks them, under an Upstream label. Where there are
-// several ports, each line names the ports that found it, said once for
-// all of them: a python port's subports each repeated a license finding
-// and a requirement's, whose other lines differed by provider (the Vx
-// port's field testing, 2026-10-04, py-coremltools and py-mlx-vlm).
-func comparisonLines(comparisons []engine.PortComparison) []string {
-	var lines []string
-	several := len(engine.Grouped(comparisons)) > 1
-	for _, l := range engine.ComparisonLines(comparisons) {
-		mark, port := "· ", ""
-		if l.Hold {
-			mark = "! "
-		}
-		if several {
-			port = strings.Join(l.Ports, ", ") + ": "
-		}
-		lines = append(lines, mark+port+l.Words)
-	}
-	return lines
-}
-
-func pushWords(plan engine.SubmitPlan) string {
-	switch plan.Push() {
-	case engine.PushOthersPushed:
-		return "won't push: someone else pushed " + plan.OthersPushed.Short()
-	case engine.PushNothingNew:
-		return "nothing new; the fork already has " + model.ObjectID(plan.Commit).Short()
-	case engine.PushReplaces:
-		return fmt.Sprintf("replaces the fork's branch at %s with %s, only if it is still there", model.ObjectID(plan.RemoteHead.Object).Short(), model.ObjectID(plan.Commit).Short())
-	case engine.PushAdds:
-		return fmt.Sprintf("adds to the fork's branch, up to %s", model.ObjectID(plan.Commit).Short())
-	}
-	return "creates the fork's branch at " + model.ObjectID(plan.Commit).Short()
-}
-
-func checkWords(plan engine.SubmitPlan) string {
-	evidence := plan.Evidence
-	switch {
-	case plan.Request.NoCheck:
-		return "none (--no-check); the pull request says MacPorts CI is its only check"
-	case plan.CheckNeeded:
-		return "runs first; it is submitted only if it passes"
-	case evidence == nil:
-		return "none has finished for this commit's files"
-	}
-	var environments, tested, excluded []string
-	for i, environment := range evidence.Plan.Environments {
-		words := engine.DescribeEnvironment(environment)
-		environments = append(environments, words)
-		switch {
-		case evidence.Tested(i):
-			tested = append(tested, words)
-		case evidence.ProfileSkips(i):
-			// The profile's choice, as minmax's past a port's oldest and
-			// newest releases, isn't the ports' exclusion, and the table
-			// leaves it out too (field testing at 9c5919dd: tart's line
-			// said macOS 26, which minmax skipped, was excluded).
-		case evidence.ExcludesAll(i):
-			excluded = append(excluded, words)
-		}
-	}
-	failed := evidence.Failed()
-	if len(failed) == 0 {
-		passed := fmt.Sprintf("passed on %s for this commit's files (%s)", strings.Join(tested, ", "), evidence.Run.Name())
-		if len(excluded) > 0 {
-			passed += fmt.Sprintf("; nothing built on %s, where every port's Portfile excludes it", strings.Join(excluded, ", "))
-		}
-		// What MacPorts' CI builds on that this check didn't: tart 2.40.1
-		// passed on 26 alone and failed CI on 15 (field testing, #35157).
-		if len(plan.UncoveredCI) > 0 {
-			passed += fmt.Sprintf("; MacPorts CI also builds on macOS %s, which no check here built on (--build macports-ci checks those)", prose.And(plan.UncoveredCI))
-		}
-		return passed
-	}
-	// Each port is said where it failed and where nothing of these files
-	// built it, apart: check-323 had passed grafana on macOS 12, and the
-	// line said it "did not pass on" 12 and 26 alike (field testing,
-	// grafana 13.2.4).
-	var said []string
-	for _, target := range failed {
-		var failedOn, unbuiltOn []string
-		for _, cell := range target.Outcomes {
-			switch {
-			case cell.Unbuilt():
-				unbuiltOn = append(unbuiltOn, engine.DescribeEnvironment(cell.Environment))
-			case cell.Kind == engine.CellRecorded && cell.Outcome != model.OutcomePassed:
-				failedOn = append(failedOn, engine.DescribeEnvironment(cell.Environment))
-			}
-		}
-		name := target.Target.Target.Name
-		// An accepted failure says so, and why: the line listed
-		// py-textual-fastdatatable's five accepted subports as "did not
-		// pass" with no word of it (field testing, #35662).
-		accepted := ""
-		if why, ok := plan.Accepted[name]; ok {
-			accepted = ", accepted: " + why.Words()
-		}
-		if len(failedOn) > 0 {
-			said = append(said, fmt.Sprintf("%s did not pass on %s%s", name, strings.Join(failedOn, ", "), accepted))
-		}
-		if len(unbuiltOn) > 0 {
-			said = append(said, fmt.Sprintf("%s isn't built for these files on %s", name, strings.Join(unbuiltOn, ", ")))
-		}
-		if len(failedOn) == 0 && len(unbuiltOn) == 0 {
-			said = append(said, fmt.Sprintf("%s did not pass on %s", name, strings.Join(environments, ", ")))
-		}
-	}
-	return fmt.Sprintf("%s: %s", evidence.Run.Name(), strings.Join(said, "; "))
 }
 
 func otherWords(plan engine.SubmitPlan) string {
@@ -553,9 +443,9 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams term.Streams, pl
 		return err
 	}
 	pr := submitted.PullRequest
-	result := submitView(plan)
-	result.PullRequest = &submittedJSON{Number: pr.Ref.Number, URL: pr.Ref.URL, Created: submitted.Created, Pushed: submitted.Pushed, Draft: plan.Request.Draft,
-		UpdatedTitle: submitted.Edited.Title, UpdatedDescription: submitted.Edited.Body, ChangesRequestedBy: []changesRequestedJSON{}}
+	result := view.SubmitView(plan)
+	result.PullRequest = &view.SubmittedJSON{Number: pr.Ref.Number, URL: pr.Ref.URL, Created: submitted.Created, Pushed: submitted.Pushed, Draft: plan.Request.Draft,
+		UpdatedTitle: submitted.Edited.Title, UpdatedDescription: submitted.Edited.Body, ChangesRequestedBy: []view.ChangesRequestedJSON{}}
 	defer func() { streams.Emit(result) }()
 	switch {
 	case submitted.Created && plan.Request.Draft:
@@ -574,7 +464,7 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams term.Streams, pl
 		return nil
 	}
 	for _, login := range observed.Observed.ChangesRequestedBy {
-		result.PullRequest.ChangesRequestedBy = append(result.PullRequest.ChangesRequestedBy, changesRequestedJSON{Login: login})
+		result.PullRequest.ChangesRequestedBy = append(result.PullRequest.ChangesRequestedBy, view.ChangesRequestedJSON{Login: login})
 	}
 	if !submitted.Pushed || len(observed.Observed.ChangesRequestedBy) == 0 || rerequest == "never" {
 		return nil

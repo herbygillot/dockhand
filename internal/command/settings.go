@@ -130,3 +130,14 @@ func (s *settings) dependencies() compose.Dependencies {
 // drain starts a background drain of the queue, outliving the command,
 // with the options the command was opened with; its pid.
 func (s *settings) drain() (int, error) { return s.host.startDrain(s.openedWith) }
+
+// jsonAnnotation marks a command that can report its result as JSON.
+const jsonAnnotation = "dockhand.json"
+
+// supportsJSON marks cmd as able to report its result with --json.
+func supportsJSON(cmd *cobra.Command) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[jsonAnnotation] = "yes"
+}

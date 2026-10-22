@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -74,7 +75,7 @@ commits, and its files are as they were when it was saved.`,
 					return fmt.Errorf("--group: %w", err)
 				}
 			}
-			streams.Emit(tidyView(proposal))
+			streams.Emit(view.TidyView(proposal))
 			out := streams.Out
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), describeWork(proposal))
 			if proposal.Keep && len(proposal.Warnings) > 0 {
@@ -351,7 +352,7 @@ func applySaved(ctx context.Context, e *engine.Engine, streams term.Streams, fil
 	if err != nil {
 		return fmt.Errorf("%s: %w", file, err)
 	}
-	streams.Emit(tidyView(proposal))
+	streams.Emit(view.TidyView(proposal))
 	fmt.Fprintf(streams.Out, "%s · the plan saved in %s\n", proposal.Branch.ShortName(), file)
 	writeTidyPlan(streams.Out, proposal, true)
 	if blocking := proposal.Blocking(); len(blocking) > 0 {
@@ -365,8 +366,8 @@ func applyTidy(ctx context.Context, e *engine.Engine, streams term.Streams, plan
 	if err != nil {
 		return err
 	}
-	applied := tidyView(plan)
-	applied.Applied = &tidyAppliedJSON{Checkpoint: result.Checkpoint.Name(), Commits: result.Commits, Kept: result.Kept}
+	applied := view.TidyView(plan)
+	applied.Applied = &view.TidyAppliedJSON{Checkpoint: result.Checkpoint.Name(), Commits: result.Commits, Kept: result.Kept}
 	streams.Emit(applied)
 	name := result.Checkpoint.Name()
 	made := fmt.Sprintf("Created %s", prose.Plural(len(result.Commits), "commit"))

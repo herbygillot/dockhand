@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -188,11 +189,11 @@ func TestARefusalsNextIsSaidLast(t *testing.T) {
 	t.Parallel()
 	ended := refusal.New(refusal.Auth, "the GitHub login expired after six months of inactivity").
 		Then(refusal.Next{Verb: refusal.VerbSetup, Args: []string{"github"}})
-	err := sayNext(fmt.Errorf("submit: %w", ended))
+	err := view.SayNext(fmt.Errorf("submit: %w", ended))
 	require.EqualError(t, err, "submit: the GitHub login expired after six months of inactivity\nNext: dockhand setup github")
 	require.Equal(t, refusal.Auth, refusal.KindOf(err))
 	composed := term.Exitf(term.ExitAttention, "held")
-	require.Equal(t, composed, sayNext(composed))
+	require.Equal(t, composed, view.SayNext(composed))
 	plain := errors.New("plain")
-	require.Equal(t, plain, sayNext(plain))
+	require.Equal(t, plain, view.SayNext(plain))
 }

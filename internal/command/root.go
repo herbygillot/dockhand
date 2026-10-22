@@ -11,11 +11,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
-	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -77,7 +77,7 @@ func run(ctx context.Context, line invocation, streams term.Streams, dependencie
 	root.SetOut(streams.Out)
 	root.SetErr(streams.Err)
 	spend := github.StartSpend()
-	err := sayNext(root.ExecuteContext(ctx))
+	err := view.SayNext(root.ExecuteContext(ctx))
 	cleanupAfter(&settings, streams, streams.Command())
 	// What the command spent of GitHub's hourly allowance, said with -v,
 	// in the envelope, and in the spend log.
@@ -266,37 +266,3 @@ func unknownCommand(cmd *cobra.Command, args []string) error {
 	}
 	return errors.New(message)
 }
-
-// sayNext is a refusal whose producer gave what moves it on, as a login
-// to sign in to again or a Tart image to set up, with that said last, as
-// status says a branch's: its words say what happened, and Next the
-// command (R3-31). A composed exit error says its own.
-func sayNext(err error) error {
-	r := refusal.Of(err)
-	if r == nil || len(r.Next) == 0 || errors.As(err, new(*term.ExitError)) {
-		return err
-	}
-	return nextSaid{err, renderSteps(r.Next)}
-}
-
-// renderSteps are a refusal's steps, each as renderNext renders it, in
-// order.
-func renderSteps(steps []refusal.Next) []string {
-	var lines []string
-	for _, step := range steps {
-		lines = append(lines, renderNext(step, ""))
-	}
-	return lines
-}
-
-// nextSaid is an error with a Next: line for each step, reaching the
-// error beneath.
-type nextSaid struct {
-	error
-	steps []string
-}
-
-func (n nextSaid) Error() string {
-	return n.error.Error() + "\nNext: " + strings.Join(n.steps, "\nNext: ")
-}
-func (n nextSaid) Unwrap() error { return n.error }

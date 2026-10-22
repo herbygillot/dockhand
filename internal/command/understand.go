@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -55,7 +56,7 @@ MacPorts' distfiles mirror.`,
 			if err != nil {
 				return err
 			}
-			streams.Emit(diffView(diff, !stat))
+			streams.Emit(view.DiffView(diff, !stat))
 			writeDiffSummary(streams.Out, diff)
 			if len(diff.Files) == 0 {
 				if len(args) > 0 {
@@ -89,14 +90,14 @@ func diffArchives(ctx context.Context, e *engine.Engine, streams term.Streams, b
 	}
 	var views []archiveDiffJSON
 	for _, diff := range diffs {
-		view := archiveDiffJSON{Directory: diff.Directory, Old: diff.Old, New: diff.New, Status: string(diff.Match.Status), Basis: string(diff.Match.Basis), OldFromMirror: diff.OldFromMirror, Same: diff.Same,
+		viewed := archiveDiffJSON{Directory: diff.Directory, Old: diff.Old, New: diff.New, Status: string(diff.Match.Status), Basis: string(diff.Match.Basis), OldFromMirror: diff.OldFromMirror, Same: diff.Same,
 			Changed: diff.Changed, Added: diff.Added, Removed: diff.Removed, Problem: diff.Problem}
 		if !stat {
-			view.Patch = string(diff.Patch)
+			viewed.Patch = string(diff.Patch)
 		}
-		views = append(views, view)
+		views = append(views, viewed)
 	}
-	streams.Emit(map[string]any{"branch": branchRef(branch), "archives": nonNil(views)})
+	streams.Emit(map[string]any{"branch": view.BranchRef(branch), "archives": view.NonNil(views)})
 	out := streams.Out
 	if len(diffs) == 0 {
 		fmt.Fprintln(out, "No changed port has archives to compare.")
@@ -190,15 +191,11 @@ func writeDiffSummary(out io.Writer, diff engine.BranchDiff) {
 		width = max(width, len(port.Directory))
 	}
 	for _, port := range diff.Ports {
-		fmt.Fprintf(out, "  %-*s  %s\n", width, port.Directory, portChangeWords(port))
+		fmt.Fprintf(out, "  %-*s  %s\n", width, port.Directory, view.PortChangeWords(port))
 	}
 	if len(diff.Other) > 0 {
 		fmt.Fprintf(out, "  CI builds nothing for %s\n", strings.Join(diff.Other, ", "))
 	}
-}
-
-func portChangeWords(port engine.PortDiff) string {
-	return strings.ReplaceAll(string(port.Change()), "_", " ")
 }
 
 func impactCommand(s *settings, streams term.Streams) *cobra.Command {
@@ -227,7 +224,7 @@ some against the branch.`,
 			if err != nil {
 				return err
 			}
-			streams.Emit(impactView(impact))
+			streams.Emit(view.ImpactView(impact))
 			writeImpact(streams.Out, impact, nextIn(ctx, e, branch, ""))
 			return nil
 		},
@@ -247,11 +244,11 @@ func writeImpact(out io.Writer, impact engine.Impact, in string) {
 			words += " and " + strings.Join(also, ", ")
 		}
 		if port.Change() != engine.PortChanged {
-			words += " (" + portChangeWords(port) + ")"
+			words += " (" + view.PortChangeWords(port) + ")"
 		}
 		changed = append(changed, words)
 	}
-	row("Changed ports", orNone(strings.Join(changed, ", ")))
+	row("Changed ports", view.OrNone(strings.Join(changed, ", ")))
 
 	var of []string
 	for _, directory := range impact.Of {
@@ -306,13 +303,6 @@ func writeImpact(out io.Writer, impact engine.Impact, in string) {
 				in, strings.Join(names, ","), len(chosen), len(impact.Dependents))
 		}
 	}
-}
-
-func orNone(value string) string {
-	if value == "" {
-		return "none"
-	}
-	return value
 }
 
 // openCommand opens a branch's pull request in the browser (the

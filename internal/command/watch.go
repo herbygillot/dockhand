@@ -159,13 +159,13 @@ func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timi
 
 	var drawn time.Time
 	draw := func() {
-		var view bytes.Buffer
-		if err := showStatus(ctx, e, term.Streams{Out: &view, Err: &view}, nil, false, false, branchFlags{}, places); err != nil {
-			fmt.Fprintf(&view, "status: %v\n", err)
+		var viewed bytes.Buffer
+		if err := showStatus(ctx, e, term.Streams{Out: &viewed, Err: &viewed}, nil, false, false, branchFlags{}, places); err != nil {
+			fmt.Fprintf(&viewed, "status: %v\n", err)
 		}
 		drawn = time.Now()
 		fmt.Fprintf(streams.Out, "%sdockhand status --watch · %s · c check · l logs · t tidy · s submit, each <branch> · q quits\n\n%s\n> ",
-			clearView, drawn.Format("15:04:05"), strings.TrimRight(view.String(), "\n"))
+			clearView, drawn.Format("15:04:05"), strings.TrimRight(viewed.String(), "\n"))
 	}
 	draw()
 	want <- struct{}{}

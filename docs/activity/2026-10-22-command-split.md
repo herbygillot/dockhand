@@ -52,3 +52,29 @@ a cut must remove first. Architecture checked the map and the order
     `PushReplaces`, `PushAdds`, or `PushCreates`, which `pushWords` words.
 - `underUpstream`, a one-line wrapper, is gone; its callers call
   `engine.UnderUpstream`.
+
+## Step 1: view
+
+`internal/command/view` holds json.go and json_results.go (now
+results.go), whole, and from the verb files the writers and words they
+shared: attention and its kinds, `AttentionFor`, `RenderNext`,
+`RenderSteps`, `SayNext`, `WriteNext`/`WriteNextFor`, `CheckState`, the
+results, plan, push, and queue writers, and the word functions
+(`PushWords`, `CheckWords`, `PortChangeWords`, `OrNone`, `HoldLegend`,
+`ExperimentalWords`, `WritePlainHTTP`, `ComparisonLines`). The 67 names
+command uses are exported, with `Attention`'s fields, `Mark`, and
+`BatchJSON.Next`. `supportsJSON` stayed with settings, its owner next.
+Local variables named `view` in command are `viewed`, so the package's
+name is free there.
+
+The moves were mechanical: a cutter for declarations with their
+comments, a go/types renamer over view, and the compiler's own
+"undefined" positions to qualify command's references, with nothing
+hand-edited but the boundary test.
+
+**The boundary test walks every package under internal/command** and
+asserts the shape architecture asked for. The layers (view, run, host,
+settings, branchflags, cmdtest) import no verb and not the root. A verb
+imports no other verb, except as `verbImports` names (bump → author).
+The engine-boundary allowlist holds for all of them, its unused entries
+counted across the tree.

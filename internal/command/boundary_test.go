@@ -4,7 +4,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
+	"io/fs"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -49,32 +51,59 @@ var commandImports = map[string]string{
 
 const module = "github.com/herbygillot/dockhand/"
 
+// layers are command's packages below its verbs, which import no verb and
+// not the root: what renders, follows a check, holds the Mac and the
+// settings, and finds a branch (part 4, item 2).
+var layers = map[string]bool{"view": true, "run": true, "host": true, "settings": true, "branchflags": true, "cmdtest": true}
+
+// verbImports are the verb packages a verb may import: bump is ship's
+// single-port front, and nothing else reaches across.
+var verbImports = map[string][]string{"bump": {"author"}}
+
 // The command layer parses, finds context, prompts, and renders; the
 // engine decides (doc.go). It imports nothing past its layer, and it
 // reads and writes records only through the engine, never with the
-// store's own transactions.
+// store's own transactions. Split into packages, its shape holds too: the
+// layers import no verb and not the root, and no verb another but as
+// verbImports names (architecture's note on the split, 2026-10-22).
 func TestCommandTalksToTheEngine(t *testing.T) {
 	t.Parallel()
-	entries, err := os.ReadDir(".")
-	require.NoError(t, err)
 	files := token.NewFileSet()
 	used := map[string]bool{}
-	for _, entry := range entries {
+	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
 		name := entry.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
+			return nil
 		}
-		file, err := parser.ParseFile(files, name, nil, parser.SkipObjectResolution)
+		pkg := filepath.Dir(path)
+		file, err := parser.ParseFile(files, path, nil, parser.SkipObjectResolution)
 		require.NoError(t, err)
 		for _, spec := range file.Imports {
-			path, err := strconv.Unquote(spec.Path.Value)
+			imported, err := strconv.Unquote(spec.Path.Value)
 			require.NoError(t, err)
-			if !strings.Contains(strings.Split(path, "/")[0], ".") {
+			if !strings.Contains(strings.Split(imported, "/")[0], ".") {
 				continue // the standard library
 			}
-			used[strings.TrimPrefix(path, module)] = true
-			if _, allowed := commandImports[strings.TrimPrefix(path, module)]; !allowed {
-				t.Errorf("%s imports %s: move the decision it serves into the engine, or name the import and why in commandImports", name, path)
+			local := strings.TrimPrefix(imported, module)
+			if within, ok := strings.CutPrefix(local, "internal/command"); ok {
+				within = strings.TrimPrefix(within, "/")
+				switch {
+				case pkg == ".":
+				case within == "":
+					t.Errorf("%s imports the command line's root: only cmd/dockhand does", path)
+				case layers[pkg] && !layers[within]:
+					t.Errorf("%s imports %s: a layer below the verbs imports no verb", path, within)
+				case !layers[pkg] && !layers[within] && !slices.Contains(verbImports[pkg], within):
+					t.Errorf("%s imports %s: a verb imports no other verb, but as verbImports names", path, within)
+				}
+				continue
+			}
+			used[local] = true
+			if _, allowed := commandImports[local]; !allowed {
+				t.Errorf("%s imports %s: move the decision it serves into the engine, or name the import and why in commandImports", path, imported)
 			}
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
@@ -87,7 +116,9 @@ func TestCommandTalksToTheEngine(t *testing.T) {
 			}
 			return true
 		})
-	}
+		return nil
+	})
+	require.NoError(t, err)
 	// The list shrinks as command does (the architecture review's X4).
 	for local := range commandImports {
 		if !used[local] {

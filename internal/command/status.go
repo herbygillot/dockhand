@@ -14,14 +14,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
-	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -122,8 +120,8 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			if err != nil {
 				return err
 			}
-			view := branchView(status)
-			streams.Emit(statusJSON{Attention: attentionView(attentionFor(status)), Branches: []branchJSON{view}})
+			viewed := view.BranchView(status)
+			streams.Emit(view.StatusJSON{Attention: view.AttentionView(view.AttentionFor(status)), Branches: []view.BranchJSON{viewed}})
 		}
 		return showBranch(ctx, e, streams.Out, places, branch)
 	}
@@ -170,9 +168,9 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			return nil
 		}
 	}
-	var rows []attention
+	var rows []view.Attention
 	for _, status := range statuses {
-		rows = append(rows, attentionFor(status)...)
+		rows = append(rows, view.AttentionFor(status)...)
 	}
 	var serve engine.ServeState
 	var queue []engine.QueuedCheck
@@ -194,16 +192,16 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 	}
 	out := streams.Out
 	if streams.JSON() {
-		result := statusJSON{Attention: attentionView(rows)}
+		result := view.StatusJSON{Attention: view.AttentionView(rows)}
 		if !attentionOnly {
-			result.Branches = []branchJSON{}
+			result.Branches = []view.BranchJSON{}
 			for _, status := range statuses {
-				result.Branches = append(result.Branches, branchView(status))
+				result.Branches = append(result.Branches, view.BranchView(status))
 			}
-			view := serveView(serve)
-			result.Serve, result.ServeState = serveWords(serve), &view
-			result.Queue = queueView(queue)
-			result.Processes = processesView(processes)
+			viewed := view.ServeView(serve)
+			result.Serve, result.ServeState = serveWords(serve), &viewed
+			result.Queue = view.QueueView(queue)
+			result.Processes = view.ProcessesView(processes)
 		}
 		streams.Emit(result)
 	}
@@ -246,7 +244,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			if status.Branch.State == model.BranchArchived {
 				name += " (archived)"
 			}
-			fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", name, ports, workWords(status), checkState(status), prWords(status))
+			fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", name, ports, workWords(status), view.CheckState(status), prWords(status))
 		}
 		table.Flush()
 	}
@@ -259,7 +257,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			fmt.Fprintf(out, "Your ports: %s may have newer releases; review needed. Last checked %s by serve. Run dockhand outdated %s for details.\n", prose.Plural(len(found.Uncertain), "port"), engine.Ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
 		}
 	}
-	writeQueue(out, queue)
+	view.WriteQueue(out, queue)
 	writeProcesses(out, processes)
 	fmt.Fprintf(out, "\n%s\n", serveWords(serve))
 	return nil
@@ -302,28 +300,6 @@ func processWords(process engine.Process) string {
 	return strings.Join(doing, ", ")
 }
 
-// attention is one row of what needs you, with the command that moves it.
-type attention struct {
-	kind               attentionKind
-	branch, what, next string
-}
-
-// attentionKind is what an attention row asks of the person, typed, where
-// its JSON kind was read back from the glyph its text printed (the command
-// package review's concept 6).
-type attentionKind string
-
-const (
-	attentionFailed   attentionKind = "failed"
-	attentionNeedsYou attentionKind = "needs_you"
-	attentionReady    attentionKind = "ready"
-)
-
-// mark is the kind's glyph in the text.
-func (k attentionKind) mark() string {
-	return map[attentionKind]string{attentionFailed: "✗", attentionNeedsYou: "!", attentionReady: "·"}[k]
-}
-
 // judgeStopped marks the statuses whose check stopped when the process
 // running it ended, which only a session can judge.
 func judgeStopped(ctx context.Context, e *engine.Engine, statuses []engine.BranchStatus) error {
@@ -346,76 +322,26 @@ func judgedStatus(ctx context.Context, e *engine.Engine, branch model.Branch) (e
 	return statuses[0], err
 }
 
-func attentionFor(s engine.BranchStatus) []attention {
-	var rows []attention
-	for _, a := range branchstate.Attend(s.Facts()) {
-		rows = append(rows, attention{kind: attentionKind(a.Kind), branch: a.Branch, what: a.Words(engine.Vocabulary{}), next: renderNext(a.Next, a.Reason)})
-	}
-	return rows
-}
-
-// renderNext is a Next as the command line it names: the one place a
-// verdict's next step becomes words (architecture, 2026-10-22). reason
-// adds the words a row's own next carries, as a submit after someone
-// else's push showing the comparison.
-func renderNext(next branchstate.Next, reason branchstate.Reason) string {
-	branch := " --branch " + next.Branch
-	args := ""
-	if len(next.Args) > 0 {
-		args = " " + strings.Join(next.Args, " ")
-	}
-	if next.Verb == "" {
-		return next.External
-	}
-	var line string
-	switch next.Verb {
-	case branchstate.VerbRefresh:
-		return "dockhand status --refresh reads it; dockhand adopt <new name>, if you renamed the branch"
-	case branchstate.VerbAdopt:
-		return "dockhand adopt <new name>, if you renamed it"
-	case branchstate.VerbStatus, branchstate.VerbArchive:
-		line = "dockhand " + string(next.Verb) + " " + next.Branch
-	case branchstate.VerbWait, branchstate.VerbLogs, branchstate.VerbEdit:
-		line = "dockhand " + string(next.Verb) + args
-	case refusal.VerbSetup:
-		return "dockhand setup" + args
-	case branchstate.VerbRerunCI:
-		return "dockhand retry --ci --branch " + next.Branch
-	case branchstate.VerbOpenChecks:
-		number, _ := strconv.Atoi(next.Args[1])
-		return "open " + github.PullRequestChecksURL(next.Args[0], number)
-	default:
-		line = "dockhand " + string(next.Verb) + branch + args
-	}
-	if next.After == branchstate.AfterFork {
-		line = "fork macports/macports-ports on GitHub and add it as a Git remote, then " + line
-	}
-	if reason == branchstate.SomeoneElsePushed {
-		line += " (it shows the comparison)"
-	}
-	return line
-}
-
 // writeAttention writes the rows, each one's message wrapped at width
 // beside its branch and its command on the line below: one long message
 // set every row's command column, which ended near column 400 (the
 // gnome-voice session's notes, 2026-10-20).
-func writeAttention(out io.Writer, rows []attention, width int) {
+func writeAttention(out io.Writer, rows []view.Attention, width int) {
 	column := 0
 	for _, row := range rows {
-		column = max(column, len([]rune(row.branch)))
+		column = max(column, len([]rune(row.Branch)))
 	}
 	// "  ! " and the branch, then two spaces.
 	column += 6
 	indent := strings.Repeat(" ", column)
 	for _, row := range rows {
-		lines := strings.Split(prose.Wrap(row.what, max(width-column, 20)), "\n")
-		fmt.Fprintf(out, "  %s %-*s  %s\n", row.kind.mark(), column-6, row.branch, lines[0])
+		lines := strings.Split(prose.Wrap(row.What, max(width-column, 20)), "\n")
+		fmt.Fprintf(out, "  %s %-*s  %s\n", row.Kind.Mark(), column-6, row.Branch, lines[0])
 		for _, line := range lines[1:] {
 			fmt.Fprintf(out, "%s%s\n", indent, line)
 		}
-		if row.next != "" {
-			fmt.Fprintf(out, "%s%s\n", indent, row.next)
+		if row.Next != "" {
+			fmt.Fprintf(out, "%s%s\n", indent, row.Next)
 		}
 	}
 }
@@ -436,55 +362,6 @@ func workWords(s engine.BranchStatus) string {
 		return prose.Plural(s.Commits, "commit") + " + edits"
 	}
 	return prose.Plural(s.Commits, "commit")
-}
-
-// checkState is the checks column: what is running, else what the latest
-// check says about the files as they are now.
-func checkState(s engine.BranchStatus) string {
-	suffix := ""
-	if !s.Current {
-		suffix = ", for older work"
-	}
-	switch s.CheckStanding() {
-	case branchstate.CheckStopped:
-		return fmt.Sprintf("stopped (%s)", s.Stopped.Name())
-	case branchstate.Checking:
-		run := *s.Checking()
-		return fmt.Sprintf("%s (%s)", run.State, run.Name())
-	case branchstate.NotChecked:
-		return "—"
-	case branchstate.CheckIncomplete:
-		// A passed check whose results no longer all stand, as after its
-		// environment changed, isn't a pass for the branch now. An archived
-		// branch asks nothing of its checks, as its attention doesn't, so
-		// its check is said as it ended: archived duckdb-cxx14's read
-		// "needs another check" (the dogfood run with 3086fdb3).
-		if s.Branch.State == model.BranchArchived {
-			return fmt.Sprintf("passed (%s)", s.Latest.Name())
-		}
-		return "passed, but needs another check"
-	case branchstate.CheckedOlder:
-		return "passed for older work"
-	case branchstate.CheckPassed:
-		// Untracked files a check took in with --include are compared as
-		// it had them, and said: they're in no commit yet.
-		if len(s.Included) > 0 {
-			return fmt.Sprintf("passed for %s, with %s included, untracked", engine.Describe(*s.LatestRevision), prose.And(s.Included))
-		}
-		// A check of the working files that tidy then committed unchanged
-		// checked the commit's files, as submit credits it.
-		if s.LatestRevision.Kind == model.RevisionCommit || s.Commits > 0 && len(s.Edited) == 0 {
-			return "passed for this commit"
-		}
-		return "passed for " + engine.Describe(*s.LatestRevision)
-	case branchstate.CheckFailed:
-		if s.Evidence == nil {
-			return fmt.Sprintf("failed (%s)", s.Latest.Name())
-		}
-		failed := len(s.Evidence.Failed())
-		return fmt.Sprintf("%d failed, %d passed%s", failed, len(s.Evidence.Targets)-failed, suffix)
-	}
-	return "needs attention" + suffix
 }
 
 func prWords(s engine.BranchStatus) string {
@@ -596,10 +473,10 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places con
 		if len(status.Edited) > 0 {
 			fmt.Fprintf(out, "  Edited   %s\n", strings.Join(status.Edited, ", "))
 		}
-		fmt.Fprintf(out, "  Checks   %s\n", checkState(status))
+		fmt.Fprintf(out, "  Checks   %s\n", view.CheckState(status))
 		if status.Evidence != nil {
 			// status has no plan above it, so one environment is named.
-			writeResults(out, "           ", *status.Evidence, true)
+			view.WriteResults(out, "           ", *status.Evidence, true)
 			if status.Evidence.Problem != "" {
 				fmt.Fprintf(out, "           ! %s\n", status.Evidence.Problem)
 			}
@@ -619,7 +496,7 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places con
 		pr += " · CI not read yet (dockhand status --refresh)"
 	}
 	fmt.Fprintf(out, "  PR       %s\n", pr)
-	writeNext(out, status)
+	view.WriteNext(out, status)
 	return nil
 }
 
@@ -633,28 +510,6 @@ func writeReleases(out io.Writer, status engine.BranchStatus) {
 	for _, moved := range status.Moved {
 		fmt.Fprintf(out, "           ! %s\n", moved.Detail)
 	}
-}
-
-// writeNext says what moves a branch on, as its attention row does.
-func writeNext(out io.Writer, status engine.BranchStatus) {
-	for _, row := range attentionFor(status) {
-		fmt.Fprintf(out, "Next: %s\n", row.next)
-	}
-}
-
-// writeNextFor says what moves a branch on after its check, as status
-// would.
-func writeNextFor(ctx context.Context, e *engine.Engine, out io.Writer, id model.BranchID) error {
-	branch, err := e.Branch(ctx, id)
-	if err != nil {
-		return err
-	}
-	status, err := e.BranchStatus(ctx, branch)
-	if err != nil {
-		return err
-	}
-	writeNext(out, status)
-	return nil
 }
 
 // refreshPullRequests reads the pull requests and says what changed, and

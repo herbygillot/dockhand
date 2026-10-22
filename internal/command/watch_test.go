@@ -45,22 +45,22 @@ func TestWatchRedrawsAndRunsWhatIsTyped(t *testing.T) {
 	require.NoError(t, err)
 
 	typed, typing := io.Pipe()
-	var view syncBuffer
+	var viewed syncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, t.Context(), []string{"status", "--watch"}, term.Streams{In: typed, Out: &view, Err: &view}.AsTerminal())
+		done <- runFor(t, t.Context(), []string{"status", "--watch"}, term.Streams{In: typed, Out: &viewed, Err: &viewed}.AsTerminal())
 	}()
-	draws := func() int { return strings.Count(view.String(), "dockhand status --watch · ") }
+	draws := func() int { return strings.Count(viewed.String(), "dockhand status --watch · ") }
 	require.Eventually(t, func() bool { return draws() == 1 }, settle, 10*time.Millisecond)
-	require.True(t, strings.HasPrefix(view.String(), enterView), "the view has a screen of its own")
-	require.Contains(t, view.String(), "c check · l logs · t tidy · s submit, each <branch> · q quits")
+	require.True(t, strings.HasPrefix(viewed.String(), enterView), "the view has a screen of its own")
+	require.Contains(t, viewed.String(), "c check · l logs · t tidy · s submit, each <branch> · q quits")
 
 	send := func(text string) {
 		_, err := io.WriteString(typing, text+"\n")
 		require.NoError(t, err)
 	}
 	send("x")
-	require.Eventually(t, func() bool { return strings.Contains(view.String(), `"x": c, l, t, or s and a branch`) }, settle, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(viewed.String(), `"x": c, l, t, or s and a branch`) }, settle, 10*time.Millisecond)
 
 	before := draws()
 	_, _, err = dockhand(t, "archive")
@@ -68,12 +68,12 @@ func TestWatchRedrawsAndRunsWhatIsTyped(t *testing.T) {
 	require.Eventually(t, func() bool { return draws() > before }, settle, 10*time.Millisecond, "a journaled change redraws the view")
 
 	send("l")
-	require.Eventually(t, func() bool { return strings.Contains(view.String(), "Press Enter to return to status.") }, settle, 10*time.Millisecond)
-	require.Contains(t, view.String(), "$ dockhand logs check-1\n")
+	require.Eventually(t, func() bool { return strings.Contains(viewed.String(), "Press Enter to return to status.") }, settle, 10*time.Millisecond)
+	require.Contains(t, viewed.String(), "$ dockhand logs check-1\n")
 	before = draws()
 	send("")
 	require.Eventually(t, func() bool { return draws() > before }, settle, 10*time.Millisecond)
 	send("q")
 	require.NoError(t, <-done)
-	require.True(t, strings.HasSuffix(view.String(), leaveView), "and gives the terminal back")
+	require.True(t, strings.HasSuffix(viewed.String(), leaveView), "and gives the terminal back")
 }

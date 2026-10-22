@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -262,10 +263,10 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 	require.NoError(t, writePortLog(&out, testPlaces(t), result, data, true))
 	require.Equal(t, string(data), out.String(), "--full prints the log alone")
 
-	view := portLogView(model.Run{Number: 48}, result, data)
-	require.Equal(t, 46004, view.OwnBuild)
-	require.Equal(t, logStepJSON{Name: "fetch", Line: 46004}, view.Steps[4])
-	require.Equal(t, string(data), view.Text, "the whole log, which the steps say where to cut")
+	viewed := view.PortLogView(model.Run{Number: 48}, result, data)
+	require.Equal(t, 46004, viewed.OwnBuild)
+	require.Equal(t, view.LogStepJSON{Name: "fetch", Line: 46004}, viewed.Steps[4])
+	require.Equal(t, string(data), viewed.Text, "the whole log, which the steps say where to cut")
 
 	// No steps recorded, as before them, or by another provider: the whole
 	// log. Steps with no dependencies' step have nothing to leave out; and
@@ -281,7 +282,7 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 	out.Reset()
 	require.NoError(t, writePortLog(&out, testPlaces(t), result, []byte("--->  Deactivating zlib\n"), false))
 	require.Equal(t, steps+"The log ends before line 46004, where hugo's own build was recorded to begin, so it's printed whole.\n\n--->  Deactivating zlib\n", out.String())
-	require.Zero(t, portLogView(model.Run{Number: 48}, alone, nil).OwnBuild)
+	require.Zero(t, view.PortLogView(model.Run{Number: 48}, alone, nil).OwnBuild)
 }
 
 // A build that recorded its steps but not the one --phase names says
@@ -340,25 +341,25 @@ func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
 			{Target: model.PlanTarget{Target: model.Target{Name: "jq"}, Role: model.Changed}, Unchecked: true, Outcomes: []engine.Cell{{Kind: engine.CellRemade, Environment: arm}}},
 			{Target: model.PlanTarget{Target: model.Target{Name: "oniguruma"}, Role: model.Also}, Unchecked: true, Outcomes: []engine.Cell{{Kind: engine.CellRemade, Environment: arm}}},
 		}}}
-	rows := attentionFor(status)
+	rows := view.AttentionFor(status)
 	require.Len(t, rows, 1)
-	require.Equal(t, "check-3 passed, but since then "+engine.DescribeEnvironment(arm)+" was made again, from another source or with other tools; jq must be built there again", rows[0].what)
-	require.Equal(t, "passed, but needs another check", checkState(status), "the table agrees")
+	require.Equal(t, "check-3 passed, but since then "+engine.DescribeEnvironment(arm)+" was made again, from another source or with other tools; jq must be built there again", rows[0].What)
+	require.Equal(t, "passed, but needs another check", view.CheckState(status), "the table agrees")
 
 	// Where the provider can say what changed, as Tart says a new guest
 	// protocol, it's said: the image is the one it was (the s2n-tls run).
 	status.Evidence.Targets[0].Outcomes[0].Change = "dockhand has begun to build each target from its source, never from a published archive, and from clean work"
-	rows = attentionFor(status)
-	require.Equal(t, "check-3 passed, but since then on "+engine.DescribeEnvironment(arm)+", dockhand has begun to build each target from its source, never from a published archive, and from clean work; jq must be built there again", rows[0].what)
-	require.Equal(t, "dockhand check --branch jq-update", rows[0].next, "no environments to name")
+	rows = view.AttentionFor(status)
+	require.Equal(t, "check-3 passed, but since then on "+engine.DescribeEnvironment(arm)+", dockhand has begun to build each target from its source, never from a published archive, and from clean work; jq must be built there again", rows[0].What)
+	require.Equal(t, "dockhand check --branch jq-update", rows[0].Next, "no environments to name")
 
 	// The check that builds it again builds where this one did, which
 	// check.on may not name: check-48 built on macOS 12 and 26, and a
 	// bare check built on 26 alone (the hugo exercise's re-checks).
 	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
 	status.Evidence.Plan.Environments = []model.Environment{monterey, arm, {Provider: "github"}}
-	rows = attentionFor(status)
-	require.Equal(t, "dockhand check --branch jq-update --on tart:12,26 --on github", rows[0].next)
+	rows = view.AttentionFor(status)
+	require.Equal(t, "dockhand check --branch jq-update --on tart:12,26 --on github", rows[0].Next)
 }
 
 // A passed branch an upstream finding holds says it as submit would treat
@@ -373,14 +374,14 @@ func TestStatusSaysAHoldAsSubmitTreatsIt(t *testing.T) {
 		LatestRevision: &model.Revision{Kind: model.RevisionCommit},
 		Evidence:       &engine.Evidence{Targets: []engine.TargetEvidence{{Target: model.PlanTarget{Target: model.Target{Name: "jq"}, Role: model.Changed}, Passed: true}}},
 		Held:           []model.Concern{held}}
-	require.Equal(t, "passed; upstream's COPYING changed; submit shows it for your look", attentionFor(status)[0].what)
+	require.Equal(t, "passed; upstream's COPYING changed; submit shows it for your look", view.AttentionFor(status)[0].What)
 	status.Branch.Origin = model.OriginServe
-	require.Equal(t, "passed; submission paused for review: upstream's COPYING changed", attentionFor(status)[0].what)
+	require.Equal(t, "passed; submission paused for review: upstream's COPYING changed", view.AttentionFor(status)[0].What)
 
 	// A second is counted beside the first, as serve says them all.
 	build := model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "build-file-changed", Path: "configure.ac", Class: model.Introduced, Detail: "upstream's configure.ac changed"}
 	status.Held = append(status.Held, build)
-	require.Equal(t, "passed; submission paused for review: upstream's COPYING changed (and 1 more: dockhand status jq-1.8.2)", attentionFor(status)[0].what)
+	require.Equal(t, "passed; submission paused for review: upstream's COPYING changed (and 1 more: dockhand status jq-1.8.2)", view.AttentionFor(status)[0].What)
 }
 
 // A passed branch whose update chose a release whose tag named another
@@ -397,15 +398,15 @@ func TestStatusSaysAReleaseMovedBeforeItsCheck(t *testing.T) {
 		LatestRevision: &model.Revision{Kind: model.RevisionCommit},
 		Evidence:       &engine.Evidence{Targets: []engine.TargetEvidence{{Target: model.PlanTarget{Target: model.Target{Name: "libharbor"}, Role: model.Changed}, Passed: true}}},
 		Moved:          []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Class: model.Introduced, Detail: detail}}}
-	rows := attentionFor(status)
+	rows := view.AttentionFor(status)
 	require.Len(t, rows, 1)
-	require.Equal(t, attention{kind: attentionNeedsYou, branch: "libharbor-4", what: "passed; " + detail, next: "dockhand submit --branch libharbor-4"}, rows[0])
+	require.Equal(t, view.Attention{Kind: view.AttentionNeedsYou, Branch: "libharbor-4", What: "passed; " + detail, Next: "dockhand submit --branch libharbor-4"}, rows[0])
 
 	status.Branch.Origin = model.OriginServe
-	require.Equal(t, "passed; submission paused for review: "+detail, attentionFor(status)[0].what)
+	require.Equal(t, "passed; submission paused for review: "+detail, view.AttentionFor(status)[0].What)
 
-	view := branchView(status)
-	require.Equal(t, []concernJSON{{Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Detail: detail}}, view.Moved)
+	viewed := view.BranchView(status)
+	require.Equal(t, []view.ConcernJSON{{Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Detail: detail}}, viewed.Moved)
 
 	// The branch's own view says it below the release.
 	status.Releases = []engine.PortRelease{{Port: "libharbor", Release: model.Release{Version: "4.0", Forge: "github", Repository: "harbor/libharbor", Tag: "v4", Commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}}
@@ -414,8 +415,8 @@ func TestStatusSaysAReleaseMovedBeforeItsCheck(t *testing.T) {
 	require.Equal(t, "  Release  libharbor 4.0, GitHub tag v4 of harbor/libharbor at aaaaaaa\n           ! "+detail+"\n", out.String())
 
 	status.Moved = nil
-	require.Equal(t, "passed; waiting for you to submit", attentionFor(status)[0].what, "without it, the row is what it was")
-	require.Nil(t, branchView(status).Moved)
+	require.Equal(t, "passed; waiting for you to submit", view.AttentionFor(status)[0].What, "without it, the row is what it was")
+	require.Nil(t, view.BranchView(status).Moved)
 }
 
 // A command judges who is alive through one observer session, however
@@ -452,26 +453,26 @@ func TestAnArchivedBranchAsksNothingOfItsChecks(t *testing.T) {
 	latest := model.Run{Number: 3, State: model.RunPassed}
 	revision := model.Revision{Kind: model.RevisionSnapshot, Snapshot: 1}
 	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/duckdb-cxx14", State: model.BranchOpen}, Latest: &latest, LatestRevision: &revision}
-	rows := attentionFor(status)
+	rows := view.AttentionFor(status)
 	require.Len(t, rows, 1, "an open branch is asked")
-	require.Equal(t, "snapshot 1 passed; the files have changed since", rows[0].what)
+	require.Equal(t, "snapshot 1 passed; the files have changed since", rows[0].What)
 	// However it ended, as submit refuses for these files' missing check.
 	latest.State = model.RunFailed
-	require.Equal(t, "snapshot 1 failed; the files have changed since", attentionFor(status)[0].what)
+	require.Equal(t, "snapshot 1 failed; the files have changed since", view.AttentionFor(status)[0].What)
 	latest.State = model.RunAttention
-	require.Equal(t, "snapshot 1 needed attention; the files have changed since", attentionFor(status)[0].what)
+	require.Equal(t, "snapshot 1 needed attention; the files have changed since", view.AttentionFor(status)[0].What)
 	latest.State = model.RunCanceled
-	require.Empty(t, attentionFor(status), "a canceled check found nothing")
+	require.Empty(t, view.AttentionFor(status), "a canceled check found nothing")
 	latest.State = model.RunPassed
 	status.Branch.State = model.BranchArchived
-	require.Empty(t, attentionFor(status))
+	require.Empty(t, view.AttentionFor(status))
 
 	// Nor does its checks column ask for another (the dogfood run with
 	// 3086fdb3); it says the check as it ended.
 	status.Evidence = &engine.Evidence{Targets: []engine.TargetEvidence{{Target: model.PlanTarget{Target: model.Target{Name: "duckdb"}, Role: model.Changed}, Unchecked: true}}}
-	require.Equal(t, "passed (check-3)", checkState(status))
+	require.Equal(t, "passed (check-3)", view.CheckState(status))
 	status.Branch.State = model.BranchOpen
-	require.Equal(t, "passed, but needs another check", checkState(status))
+	require.Equal(t, "passed, but needs another check", view.CheckState(status))
 }
 
 // A branch whose work is on master already, landed by another route, asks
@@ -482,9 +483,9 @@ func TestStatusSaysABranchsWorkIsOnMasterAlready(t *testing.T) {
 	t.Parallel()
 	branch := model.Branch{Name: "dockhand/duckdb-cxx14", State: model.BranchOpen}
 	status := engine.BranchStatus{Branch: branch, OnMaster: model.ObjectID(strings.Repeat("e", 40))}
-	require.Equal(t, []attention{{kind: attentionReady, branch: "duckdb-cxx14", what: "its changes are on master already, as of eeeeeee", next: "dockhand archive duckdb-cxx14"}}, attentionFor(status))
+	require.Equal(t, []view.Attention{{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee", Next: "dockhand archive duckdb-cxx14"}}, view.AttentionFor(status))
 	status.Branch.PullRequest = &model.PullRequest{Number: 35100}
-	require.NotContains(t, attentionFor(status), attention{kind: attentionReady, branch: "duckdb-cxx14", what: "its changes are on master already, as of eeeeeee", next: "dockhand archive duckdb-cxx14"})
+	require.NotContains(t, view.AttentionFor(status), view.Attention{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee", Next: "dockhand archive duckdb-cxx14"})
 }
 
 // A submission's JSON lists its concerns, a moved tag's among them, with
@@ -496,10 +497,10 @@ func TestSubmitJSONListsItsConcerns(t *testing.T) {
 	detail := "libharbor's git.branch v4 named aaaaaaa when the update was prepared, then to bbbbbbb when check-7 was planned. The check used a different source from the update"
 	plan := engine.SubmitPlan{Branch: model.Branch{Name: "dockhand/libharbor-4"},
 		Moved: []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Class: model.Introduced, Detail: detail}}}
-	view := submitView(plan)
-	require.Equal(t, []concernJSON{{Origin: "upstream", Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Class: string(model.Introduced), Detail: detail}}, view.Concerns)
-	require.Empty(t, view.Held, "held is an unattended submission's")
-	require.Equal(t, []concernJSON{}, submitView(engine.SubmitPlan{}).Concerns, "an empty list, never null")
+	viewed := view.SubmitView(plan)
+	require.Equal(t, []view.ConcernJSON{{Origin: "upstream", Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Class: string(model.Introduced), Detail: detail}}, viewed.Concerns)
+	require.Empty(t, viewed.Held, "held is an unattended submission's")
+	require.Equal(t, []view.ConcernJSON{}, view.SubmitView(engine.SubmitPlan{}).Concerns, "an empty list, never null")
 }
 
 // submit --json gives each accepted failure's reason as a kind, beside its
@@ -510,11 +511,11 @@ func TestSubmitJSONSaysWhyEachFailureIsAccepted(t *testing.T) {
 		"py313-tool": {Kind: engine.AcceptedAtBase, Baselines: []string{"check-2"}},
 		"py-tool":    {Kind: engine.AcceptedBlocked},
 	}}
-	require.Equal(t, []acceptedJSON{
+	require.Equal(t, []view.AcceptedJSON{
 		{Port: "py-tool", Kind: "blocked-by-accepted", Words: "blocked only by accepted failures"},
 		{Port: "py313-tool", Kind: "at-base", Baselines: []string{"check-2"}, Words: "fails at the base too (check-2)"},
-	}, submitView(plan).Accepted)
-	require.Nil(t, submitView(engine.SubmitPlan{}).Accepted, "absent where nothing is accepted")
+	}, view.SubmitView(plan).Accepted)
+	require.Nil(t, view.SubmitView(engine.SubmitPlan{}).Accepted, "absent where nothing is accepted")
 }
 
 // One long message sets no other row's width: each wraps at the terminal's
@@ -523,16 +524,16 @@ func TestSubmitJSONSaysWhyEachFailureIsAccepted(t *testing.T) {
 func TestAttentionRowsWrapWithTheirCommandBelow(t *testing.T) {
 	t.Parallel()
 	var out strings.Builder
-	writeAttention(&out, []attention{
-		{kind: attentionFailed, branch: "gnome-voice", what: "check-482 failed: gnome-voice failed to build on macOS 26 at configure, and the log names the missing dependency", next: "dockhand logs check-482 gnome-voice"},
-		{kind: attentionNeedsYou, branch: "jq", what: "snapshot 1 passed", next: "dockhand tidy --branch jq"},
+	writeAttention(&out, []view.Attention{
+		{Kind: view.AttentionFailed, Branch: "gnome-voice", What: "check-482 failed: gnome-voice failed to build on macOS 26 at configure, and the log names the missing dependency", Next: "dockhand logs check-482 gnome-voice"},
+		{Kind: view.AttentionNeedsYou, Branch: "jq", What: "snapshot 1 passed", Next: "dockhand tidy --branch jq"},
 	}, 60)
 	require.Equal(t, ""+
-		"  "+attentionFailed.mark()+" gnome-voice  check-482 failed: gnome-voice failed to\n"+
+		"  "+view.AttentionFailed.Mark()+" gnome-voice  check-482 failed: gnome-voice failed to\n"+
 		"                 build on macOS 26 at configure, and the log\n"+
 		"                 names the missing dependency\n"+
 		"                 dockhand logs check-482 gnome-voice\n"+
-		"  "+attentionNeedsYou.mark()+" jq           snapshot 1 passed\n"+
+		"  "+view.AttentionNeedsYou.Mark()+" jq           snapshot 1 passed\n"+
 		"                 dockhand tidy --branch jq\n", out.String())
 }
 
@@ -542,11 +543,11 @@ func TestEveryNextVerbRenders(t *testing.T) {
 	t.Parallel()
 	for _, verb := range refusal.Verbs {
 		next := branchstate.Next{Verb: verb, Branch: "jq-1.8.2", Args: []string{"macports/macports-ports", "35001"}}
-		line := renderNext(next, "")
+		line := view.RenderNext(next, "")
 		require.True(t, strings.HasPrefix(line, "dockhand ") || strings.HasPrefix(line, "open "), "%s renders as %q", verb, line)
 	}
 	require.Equal(t, "fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-1.8.2",
-		renderNext(branchstate.Next{Verb: branchstate.VerbSubmit, Branch: "jq-1.8.2", After: branchstate.AfterFork}, ""))
+		view.RenderNext(branchstate.Next{Verb: branchstate.VerbSubmit, Branch: "jq-1.8.2", After: branchstate.AfterFork}, ""))
 }
 
 // cancelOn is a writer that cancels once what's written holds want.
@@ -569,8 +570,8 @@ func (c *cancelOn) Write(p []byte) (int, error) {
 func TestSubmitJSONGivesEachBlocksKind(t *testing.T) {
 	t.Parallel()
 	plan := engine.SubmitPlan{Blocks: []branchstate.Block{{Kind: branchstate.BlockNoTitle}, {Kind: branchstate.BlockFailed, Port: "jq", Run: "check-2"}}}
-	require.Equal(t, []blockJSON{
+	require.Equal(t, []view.BlockJSON{
 		{Kind: "no-title", Words: "the pull request needs a title, since the branch changes several ports: give one with --title"},
 		{Kind: "failed", Port: "jq", Words: "jq did not pass in check-2; fix it, or share it as a draft (--draft); dockhand check --baseline sees whether master fails it the same way"},
-	}, submitView(plan).Blocks)
+	}, view.SubmitView(plan).Blocks)
 }

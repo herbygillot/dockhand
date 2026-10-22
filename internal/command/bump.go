@@ -3,6 +3,7 @@ package command
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -54,7 +55,7 @@ dockhand can't. The check builds where build.unattended's profile says;
 			if err := version.stageReady(); err != nil {
 				return err
 			}
-			whole := &batchJSON{}
+			whole := &view.BatchJSON{}
 			streams.LinkSteps(whole)
 			e, err := s.open(ctx)
 			if err != nil {

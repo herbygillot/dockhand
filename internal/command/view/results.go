@@ -1,26 +1,27 @@
-package command
+package view
 
 import (
-	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/macports/commitrules"
-	"github.com/herbygillot/dockhand/internal/model"
 	"maps"
 	"reflect"
 	"slices"
+
+	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/macports/commitrules"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // The --json results of the commands that change things. Each says what
 // was done, or with a plan or preview, what would be.
 
-type branchRefJSON struct {
+type BranchRefJSON struct {
 	Name      string `json:"name"`
 	GitBranch string `json:"git_branch"`
 	Worktree  string `json:"worktree"`
 	Base      string `json:"base"`
 }
 
-func branchRef(branch model.Branch) branchRefJSON {
-	return branchRefJSON{Name: branch.ShortName(), GitBranch: branch.Name, Worktree: branch.Worktree, Base: string(branch.Base)}
+func BranchRef(branch model.Branch) BranchRefJSON {
+	return BranchRefJSON{Name: branch.ShortName(), GitBranch: branch.Name, Worktree: branch.Worktree, Base: string(branch.Base)}
 }
 
 type versionJSON struct {
@@ -29,7 +30,7 @@ type versionJSON struct {
 }
 
 type updateJSON struct {
-	Branch  branchRefJSON `json:"branch"`
+	Branch  BranchRefJSON `json:"branch"`
 	Started bool          `json:"started"`
 	Port    string        `json:"port"`
 	Before  versionJSON   `json:"before"`
@@ -75,7 +76,7 @@ type updateJSON struct {
 	// Tidy, Check, and Submit are the steps ship and bump go on
 	// to, each as tidy, check, and submit report it, as far as they went.
 	Tidy   *tidyJSON   `json:"tidy,omitempty"`
-	Check  *checkJSON  `json:"check,omitempty"`
+	Check  *CheckJSON  `json:"check,omitempty"`
 	Submit *submitJSON `json:"submit,omitempty"`
 }
 
@@ -87,7 +88,7 @@ func (u *updateJSON) Gather(step any) {
 		*u = step
 	case tidyJSON:
 		u.Tidy = &step
-	case checkJSON:
+	case CheckJSON:
 		u.Check = &step
 	case submitJSON:
 		u.Submit = &step
@@ -110,13 +111,13 @@ type upstreamJSON struct {
 
 // upstreamView is a comparison under the JSON's upstream key, whose
 // changes are worded as under the text's Upstream heading.
-func upstreamView(comparison model.UpstreamComparison) upstreamJSON {
-	view := upstreamJSON{Changes: []upstreamChangeJSON{}, Problem: comparison.Problem, Held: comparison.Held(), Coverage: comparison.Coverage}
+func UpstreamView(comparison model.UpstreamComparison) upstreamJSON {
+	viewed := upstreamJSON{Changes: []upstreamChangeJSON{}, Problem: comparison.Problem, Held: comparison.Held(), Coverage: comparison.Coverage}
 	for _, change := range comparison.Changes {
-		view.Changes = append(view.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: engine.UnderUpstream(change).Message, Hold: change.Hold,
+		viewed.Changes = append(viewed.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: engine.UnderUpstream(change).Message, Hold: change.Hold,
 			Rule: change.Rule, Subject: change.Subject, Class: string(change.Class), Source: change.Source})
 	}
-	return view
+	return viewed
 }
 
 // portUpstreamJSON is what comparing a port's upstream archives found
@@ -185,51 +186,51 @@ type otherJSON struct {
 	URL    string `json:"url,omitempty"`
 }
 
-func updateView(branch model.Branch, started bool, update engine.Update, plan bool) updateJSON {
-	view := updateJSON{Branch: branchRef(branch), Started: started, Port: update.Port, CrossesMajor: update.CrossesMajor, Renamed: update.Renamed, Followed: update.Followed,
+func UpdateView(branch model.Branch, started bool, update engine.Update, plan bool) updateJSON {
+	viewed := updateJSON{Branch: BranchRef(branch), Started: started, Port: update.Port, CrossesMajor: update.CrossesMajor, Renamed: update.Renamed, Followed: update.Followed,
 		Before: versionJSON{update.Before.Version, update.Before.Revision}, After: versionJSON{update.After.Version, update.After.Revision},
-		Current: update.Current, Applied: update.Applied, Files: nonNil(update.Files), Distfiles: update.Distfiles, Subject: update.Subject, Patches: nonNil(update.PatchProblems), PatchesDropped: update.PatchesDropped, PatchesApplied: update.PatchesApplied,
-		Unchecked: nonNil(update.PatchesUnchecked)}
+		Current: update.Current, Applied: update.Applied, Files: NonNil(update.Files), Distfiles: update.Distfiles, Subject: update.Subject, Patches: NonNil(update.PatchProblems), PatchesDropped: update.PatchesDropped, PatchesApplied: update.PatchesApplied,
+		Unchecked: NonNil(update.PatchesUnchecked)}
 	if plan {
-		view.Diff = update.Diff
+		viewed.Diff = update.Diff
 	}
 	if upstream := update.Upstream; upstream != nil {
-		comparison := upstreamView(*upstream)
-		view.Upstream = &comparison
+		comparison := UpstreamView(*upstream)
+		viewed.Upstream = &comparison
 	}
 	for _, block := range update.Regenerated {
 		regenerated := regeneratedJSON{Option: block.Option, Count: block.Count, Changed: block.Changed}
 		for _, pin := range block.Dropped {
 			regenerated.Dropped = append(regenerated.Dropped, droppedPinJSON{Name: pin.Name, Pinned: pin.Pinned, Was: pin.Was, Locked: pin.Locked})
 		}
-		view.Regenerated = append(view.Regenerated, regenerated)
+		viewed.Regenerated = append(viewed.Regenerated, regenerated)
 	}
 	for _, pr := range update.Others {
-		view.Others = append(view.Others, otherJSON{Number: pr.Number, Title: pr.Title, URL: pr.URL})
+		viewed.Others = append(viewed.Others, otherJSON{Number: pr.Number, Title: pr.Title, URL: pr.URL})
 	}
-	view.OthersProblem = update.OthersProblem
+	viewed.OthersProblem = update.OthersProblem
 	for _, url := range update.PlainHTTP {
-		view.PlainHTTP = append(view.PlainHTTP, plainHTTPJSON{Option: url.Option, URL: url.URL, HTTPS: url.HTTPS, Answers: url.Answers})
+		viewed.PlainHTTP = append(viewed.PlainHTTP, plainHTTPJSON{Option: url.Option, URL: url.URL, HTTPS: url.HTTPS, Answers: url.Answers})
 	}
 	if stealth := update.Stealth; stealth != nil {
-		view.Stealth = &stealthJSON{Revbumped: stealth.Revbumped, RevbumpProblem: stealth.RevbumpProblem, DistSubdir: stealth.DistSubdir, Problem: stealth.Problem, Distfiles: []stealthDistfileJSON{}}
+		viewed.Stealth = &stealthJSON{Revbumped: stealth.Revbumped, RevbumpProblem: stealth.RevbumpProblem, DistSubdir: stealth.DistSubdir, Problem: stealth.Problem, Distfiles: []stealthDistfileJSON{}}
 		for _, d := range stealth.Distfiles {
-			view.Stealth.Distfiles = append(view.Stealth.Distfiles, stealthDistfileJSON{Name: d.Name,
+			viewed.Stealth.Distfiles = append(viewed.Stealth.Distfiles, stealthDistfileJSON{Name: d.Name,
 				Was: checksumJSON{d.Was.RMD160, d.Was.SHA256, d.Was.Size}, Now: checksumJSON{d.Now.RMD160, d.Now.SHA256, d.Now.Size}})
 		}
 	}
-	return view
+	return viewed
 }
 
-type revbumpJSON struct {
-	Branch  branchRefJSON   `json:"branch"`
+type RevbumpJSON struct {
+	Branch  BranchRefJSON   `json:"branch"`
 	Started bool            `json:"started"`
 	Subject string          `json:"subject"`
 	Applied bool            `json:"applied"`
-	Ports   []revbumpedJSON `json:"ports"`
+	Ports   []RevbumpedJSON `json:"ports"`
 }
 
-type revbumpedJSON struct {
+type RevbumpedJSON struct {
 	Port   string `json:"port"`
 	Before int    `json:"before"`
 	After  int    `json:"after"`
@@ -281,10 +282,10 @@ type tidyJSON struct {
 	LeftOut []string `json:"left_out"`
 	Ignored []string `json:"ignored"`
 	// Applied is what applying made, when it did.
-	Applied *tidyAppliedJSON `json:"applied"`
+	Applied *TidyAppliedJSON `json:"applied"`
 }
 
-type tidyAppliedJSON struct {
+type TidyAppliedJSON struct {
 	Checkpoint string   `json:"checkpoint"`
 	Commits    []string `json:"commits"`
 	// Kept is how many of the leading commits are the branch's own, as
@@ -292,21 +293,21 @@ type tidyAppliedJSON struct {
 	Kept int `json:"kept,omitempty"`
 }
 
-func tidyView(plan engine.TidyPlan) tidyJSON {
-	view := tidyJSON{Branch: plan.Branch.ShortName(), Keep: plan.Keep, Unambiguous: plan.Unambiguous(), Commits: []tidyCommitJSON{}, Findings: findingsView(plan.Findings), Warnings: findingsView(plan.Warnings),
-		Taken: nonNil(plan.Taken), LeftOut: nonNil(plan.LeftOut), Ignored: nonNil(plan.Ignored)}
+func TidyView(plan engine.TidyPlan) tidyJSON {
+	viewed := tidyJSON{Branch: plan.Branch.ShortName(), Keep: plan.Keep, Unambiguous: plan.Unambiguous(), Commits: []tidyCommitJSON{}, Findings: findingsView(plan.Findings), Warnings: findingsView(plan.Warnings),
+		Taken: NonNil(plan.Taken), LeftOut: NonNil(plan.LeftOut), Ignored: NonNil(plan.Ignored)}
 	for _, group := range plan.Groups {
-		commit := tidyCommitJSON{Subject: group.Subject(), Message: group.Message, Paths: nonNil(group.Paths), Ports: nonNil(group.Ports), Combines: []string{},
-			Working: group.Working, FromEdits: group.FromEdits, Created: group.Created, Notes: nonNil(group.Notes), Blocking: nonNil(group.Blocking)}
+		commit := tidyCommitJSON{Subject: group.Subject(), Message: group.Message, Paths: NonNil(group.Paths), Ports: NonNil(group.Ports), Combines: []string{},
+			Working: group.Working, FromEdits: group.FromEdits, Created: group.Created, Notes: NonNil(group.Notes), Blocking: NonNil(group.Blocking)}
 		if group.Author.Name != "" {
 			commit.Author = group.Author.Name + " <" + group.Author.Email + ">"
 		}
 		for _, combined := range group.Combines {
 			commit.Combines = append(commit.Combines, combined.ID)
 		}
-		view.Commits = append(view.Commits, commit)
+		viewed.Commits = append(viewed.Commits, commit)
 	}
-	return view
+	return viewed
 }
 
 type submitJSON struct {
@@ -329,7 +330,7 @@ type submitJSON struct {
 	Blocking    []string       `json:"blocking"`
 	LeftOut     []string       `json:"left_out"`
 	Body        string         `json:"body"`
-	PullRequest *submittedJSON `json:"pull_request"`
+	PullRequest *SubmittedJSON `json:"pull_request"`
 	// Upstream is what comparing the upstream archives found for each of
 	// the branch's updates that compared them.
 	Upstream []portUpstreamJSON `json:"upstream"`
@@ -350,17 +351,17 @@ type submitJSON struct {
 	// rule that raised it: a person's own submission shows them and goes
 	// ahead. A Git-fetched port whose tag moved, release-moved or
 	// source-moved, was said only in text (batch 32).
-	Concerns []concernJSON `json:"concerns"`
+	Concerns []ConcernJSON `json:"concerns"`
 	// Blocks are what stops the submission, each of its kind, with the
 	// port it's about where it's about one, and its words, which blocking
 	// lists alone.
-	Blocks []blockJSON `json:"blocks,omitempty"`
+	Blocks []BlockJSON `json:"blocks,omitempty"`
 	// Accepted are the failed ports the submission accepts, each with the
 	// kind of reason, and the baselines that fail it alike where that's
 	// the reason (R3-30).
-	Accepted []acceptedJSON `json:"accepted,omitempty"`
+	Accepted []AcceptedJSON `json:"accepted,omitempty"`
 	// Check is the check ship ran before submitting, as far as it went.
-	Check *checkJSON `json:"check,omitempty"`
+	Check *CheckJSON `json:"check,omitempty"`
 }
 
 // gather takes the submission's result, or its check's.
@@ -369,7 +370,7 @@ func (s *submitJSON) Gather(step any) {
 	case submitJSON:
 		step.Check = s.Check
 		*s = step
-	case checkJSON:
+	case CheckJSON:
 		s.Check = &step
 	}
 }
@@ -388,7 +389,7 @@ type unfoundBuildJSON struct {
 	Release string `json:"release,omitempty"`
 }
 
-type submittedJSON struct {
+type SubmittedJSON struct {
 	Number  int    `json:"number"`
 	URL     string `json:"url"`
 	Created bool   `json:"created"`
@@ -402,50 +403,50 @@ type submittedJSON struct {
 	// request that existed requested changes, as GitHub last reported
 	// them, and whether submit asked each to review again
 	// (submit.rerequest_review).
-	ChangesRequestedBy []changesRequestedJSON `json:"changes_requested_by"`
+	ChangesRequestedBy []ChangesRequestedJSON `json:"changes_requested_by"`
 }
 
 // changesRequestedJSON is a reviewer who requested changes, and whether
 // submit asked them to review again.
-type changesRequestedJSON struct {
+type ChangesRequestedJSON struct {
 	Login       string `json:"login"`
 	Rerequested bool   `json:"rerequested"`
 }
 
-func submitView(plan engine.SubmitPlan) submitJSON {
+func SubmitView(plan engine.SubmitPlan) submitJSON {
 	owner, _ := plan.ForkOwner()
-	view := submitJSON{Branch: plan.Branch.ShortName(), Title: plan.Title, Commit: plan.Commit, Commits: len(plan.Commits), From: plan.Head(), To: plan.Repository + ":" + engine.UpstreamBranch,
+	viewed := submitJSON{Branch: plan.Branch.ShortName(), Title: plan.Title, Commit: plan.Commit, Commits: len(plan.Commits), From: plan.Head(), To: plan.Repository + ":" + engine.UpstreamBranch,
 		Account: plan.Login.Account, LoginSource: plan.Login.Source, ForkOwner: owner,
-		Push: pushWords(plan), Checks: checkWords(plan), Findings: findingsView(plan.Findings), Blocking: nonNil(plan.Blocking), LeftOut: nonNil(plan.LeftOut), Body: plan.Body,
-		Upstream: []portUpstreamJSON{}, ModifiedBuilds: nonNil(plan.ModifiedBuilds), UnfoundBuilds: []unfoundBuildJSON{}, BuildsProblem: plan.BuildsProblem}
+		Push: PushWords(plan), Checks: CheckWords(plan), Findings: findingsView(plan.Findings), Blocking: NonNil(plan.Blocking), LeftOut: NonNil(plan.LeftOut), Body: plan.Body,
+		Upstream: []portUpstreamJSON{}, ModifiedBuilds: NonNil(plan.ModifiedBuilds), UnfoundBuilds: []unfoundBuildJSON{}, BuildsProblem: plan.BuildsProblem}
 	for _, found := range plan.Upstream {
-		view.Upstream = append(view.Upstream, portUpstreamJSON{Port: found.Port, upstreamJSON: upstreamView(found.Comparison)})
+		viewed.Upstream = append(viewed.Upstream, portUpstreamJSON{Port: found.Port, upstreamJSON: UpstreamView(found.Comparison)})
 	}
 	for _, build := range plan.UnfoundBuilds {
-		view.UnfoundBuilds = append(view.UnfoundBuilds, unfoundBuildJSON{Build: build.Build, Commits: build.Commits, Commit: build.Source.Commit, Release: build.Source.Release})
+		viewed.UnfoundBuilds = append(viewed.UnfoundBuilds, unfoundBuildJSON{Build: build.Build, Commits: build.Commits, Commit: build.Source.Commit, Release: build.Source.Release})
 	}
-	view.Concerns = concernsView(plan.Concerns())
+	viewed.Concerns = concernsView(plan.Concerns())
 	for _, block := range plan.Blocks {
-		view.Blocks = append(view.Blocks, blockJSON{Kind: string(block.Kind), Port: block.Port, Words: block.Words(engine.Vocabulary{})})
+		viewed.Blocks = append(viewed.Blocks, BlockJSON{Kind: string(block.Kind), Port: block.Port, Words: block.Words(engine.Vocabulary{})})
 	}
 	for _, port := range slices.Sorted(maps.Keys(plan.Accepted)) {
 		why := plan.Accepted[port]
-		accepted := acceptedJSON{Port: port, Kind: string(why.Kind), Baselines: why.Baselines, Words: why.Words()}
+		accepted := AcceptedJSON{Port: port, Kind: string(why.Kind), Baselines: why.Baselines, Words: why.Words()}
 		for _, dependency := range why.Dependencies {
 			accepted.Dependencies = append(accepted.Dependencies, dependencyJSON{Name: dependency.Name, Version: dependency.Version})
 		}
-		view.Accepted = append(view.Accepted, accepted)
+		viewed.Accepted = append(viewed.Accepted, accepted)
 	}
-	return view
+	return viewed
 }
 
-type blockJSON struct {
+type BlockJSON struct {
 	Kind  string `json:"kind"`
 	Port  string `json:"port,omitempty"`
 	Words string `json:"words"`
 }
 
-type acceptedJSON struct {
+type AcceptedJSON struct {
 	Port string `json:"port"`
 	// Kind is at-base, cause-not-established, blocked-by-accepted, or
 	// standing, a dependency's failure accepted for every branch, with the
@@ -488,26 +489,26 @@ type leftoverJSON struct {
 	Removed  bool   `json:"removed"`
 }
 
-func leftoversView(leftovers []engine.Leftover) []leftoverJSON {
+func LeftoversView(leftovers []engine.Leftover) []leftoverJSON {
 	views := []leftoverJSON{}
 	for _, leftover := range leftovers {
-		view := leftoverJSON{Provider: leftover.Provider, Ref: leftover.Ref, What: leftover.What, Kept: leftover.Kept, Removed: leftover.Done}
+		viewed := leftoverJSON{Provider: leftover.Provider, Ref: leftover.Ref, What: leftover.What, Kept: leftover.Kept, Removed: leftover.Done}
 		if leftover.Run != nil {
-			view.Check = leftover.Run.Name()
+			viewed.Check = leftover.Run.Name()
 		}
-		views = append(views, view)
+		views = append(views, viewed)
 	}
 	return views
 }
 
-func cleanView(plans []engine.CleanBranch) []cleanBranchJSON {
+func CleanView(plans []engine.CleanBranch) []cleanBranchJSON {
 	views := []cleanBranchJSON{}
 	for _, plan := range plans {
-		view := cleanBranchJSON{Branch: plan.Branch.ShortName(), Merged: string(plan.Merged), Steps: []cleanStepJSON{}, Superseded: plan.Superseded}
+		viewed := cleanBranchJSON{Branch: plan.Branch.ShortName(), Merged: string(plan.Merged), Steps: []cleanStepJSON{}, Superseded: plan.Superseded}
 		for _, step := range plan.Steps {
-			view.Steps = append(view.Steps, cleanStepJSON{Kind: string(step.Kind), What: step.What, Why: step.Why, Kept: step.Kept, Removed: step.Done})
+			viewed.Steps = append(viewed.Steps, cleanStepJSON{Kind: string(step.Kind), What: step.What, Why: step.Why, Kept: step.Kept, Removed: step.Done})
 		}
-		views = append(views, view)
+		views = append(views, viewed)
 	}
 	return views
 }
@@ -528,13 +529,13 @@ type reviewJSON struct {
 	PostedURL  string        `json:"posted_url,omitempty"`
 }
 
-func reviewView(report engine.ReviewReport) reviewJSON {
-	view := reviewJSON{Number: report.Ref.Number, Title: report.Title, URL: report.Ref.URL, Head: report.Head, Commits: len(report.Commits), Ports: nonNil(report.Ports),
+func ReviewView(report engine.ReviewReport) reviewJSON {
+	viewed := reviewJSON{Number: report.Ref.Number, Title: report.Title, URL: report.Ref.URL, Head: report.Head, Commits: len(report.Commits), Ports: NonNil(report.Ports),
 		Permission: report.Permission, Summary: report.Summary(), Findings: findingsView(report.Findings), Resolved: []string{}, Body: report.Markdown()}
 	for _, finding := range report.Resolved {
-		view.Resolved = append(view.Resolved, finding.Message+" ["+finding.Code+"]")
+		viewed.Resolved = append(viewed.Resolved, finding.Message+" ["+finding.Code+"]")
 	}
-	return view
+	return viewed
 }
 
 type logsJSON struct {
@@ -570,24 +571,24 @@ type resultLogJSON struct {
 	// Git is what a Git-fetched target's build was to fetch, and Fetched
 	// the commit it recorded fetching, absent where its provider didn't
 	// say.
-	Git     *gitSourceJSON `json:"git,omitempty"`
+	Git     *GitSourceJSON `json:"git,omitempty"`
 	Fetched string         `json:"fetched,omitempty"`
 	// Steps are where each step of the build began in its log, in the
 	// order they ran; absent where its provider didn't record them.
-	Steps []logStepJSON `json:"steps,omitempty"`
+	Steps []LogStepJSON `json:"steps,omitempty"`
 }
 
 // logStepJSON is where a step of a build began in its log: the line its
 // output starts on, counting from 1.
-type logStepJSON struct {
+type LogStepJSON struct {
 	Name string `json:"name"`
 	Line int    `json:"line"`
 }
 
-func logStepViews(steps []model.LogStep) []logStepJSON {
-	var views []logStepJSON
+func logStepViews(steps []model.LogStep) []LogStepJSON {
+	var views []LogStepJSON
 	for _, step := range steps {
-		views = append(views, logStepJSON{Name: string(step.Name), Line: step.Line})
+		views = append(views, LogStepJSON{Name: string(step.Name), Line: step.Line})
 	}
 	return views
 }
@@ -600,7 +601,7 @@ type portLogJSON struct {
 	Log  string  `json:"log"`
 	// Steps are where each step of the build began in the log, in the
 	// order they ran; absent where its provider didn't record them.
-	Steps []logStepJSON `json:"steps,omitempty"`
+	Steps []LogStepJSON `json:"steps,omitempty"`
 	// OwnBuild is the line the port's own build begins on, after its
 	// dependencies' installs, where the text output starts; absent where
 	// the steps don't say.
@@ -609,7 +610,7 @@ type portLogJSON struct {
 	// check's other builds of the port, where it built it in more than one
 	// place.
 	Execution string                 `json:"execution,omitempty"`
-	Elsewhere []portLogElsewhereJSON `json:"elsewhere,omitempty"`
+	Elsewhere []PortLogElsewhereJSON `json:"elsewhere,omitempty"`
 	// Phase is the step --phase picked out, whose lines alone are the
 	// text, from the line From.
 	Phase string `json:"phase,omitempty"`
@@ -617,39 +618,39 @@ type portLogJSON struct {
 	Text  string `json:"text"`
 }
 
-type portLogElsewhereJSON struct {
+type PortLogElsewhereJSON struct {
 	Execution   string          `json:"execution"`
 	Environment environmentJSON `json:"environment"`
 	Outcome     string          `json:"outcome"`
 	Tests       string          `json:"tests,omitempty"`
 }
 
-func portLogView(run model.Run, result model.TargetResult, data []byte) portLogJSON {
-	view := portLogJSON{Run: runView(run), Port: string(result.Target), Log: logWhere(result.Log), Steps: logStepViews(result.Steps), Text: string(data)}
+func PortLogView(run model.Run, result model.TargetResult, data []byte) portLogJSON {
+	viewed := portLogJSON{Run: RunView(run), Port: string(result.Target), Log: logWhere(result.Log), Steps: logStepViews(result.Steps), Text: string(data)}
 	if own, ok := result.OwnBuild(); ok {
-		view.OwnBuild = own.Line
+		viewed.OwnBuild = own.Line
 	}
-	return view
+	return viewed
 }
 
-func logsView(logs engine.RunLogs) logsJSON {
-	view := logsJSON{Run: runView(logs.Run), Executions: []executionLogsJSON{}}
+func LogsView(logs engine.RunLogs) logsJSON {
+	viewed := logsJSON{Run: RunView(logs.Run), Executions: []executionLogsJSON{}}
 	for _, execution := range logs.Executions {
 		x := execution.Execution
-		entry := executionLogsJSON{ID: string(x.ID), Reference: x.ProviderRef, Environment: environmentView(x.Environment), Attempt: x.Attempt, Identity: x.Identity, State: string(x.State), Detail: x.Detail,
+		entry := executionLogsJSON{ID: string(x.ID), Reference: x.ProviderRef, Environment: EnvironmentView(x.Environment), Attempt: x.Attempt, Identity: x.Identity, State: string(x.State), Detail: x.Detail,
 			Reused: x.Reused, Results: []resultLogJSON{}}
 		for _, result := range execution.Results {
-			view := resultLogJSON{Target: string(result.Target), Outcome: string(result.Outcome), Phase: string(result.Phase), Log: logWhere(result.Log),
+			viewed := resultLogJSON{Target: string(result.Target), Outcome: string(result.Outcome), Phase: string(result.Phase), Log: logWhere(result.Log),
 				ReusedFrom: string(result.ReusedFrom), Steps: logStepViews(result.Steps)}
 			if fetch, ok := execution.Git[result.Target]; ok {
-				source := gitSourceView(fetch.Expected)
-				view.Git, view.Fetched = &source, string(fetch.Fetched)
+				source := GitSourceView(fetch.Expected)
+				viewed.Git, viewed.Fetched = &source, string(fetch.Fetched)
 			}
-			entry.Results = append(entry.Results, view)
+			entry.Results = append(entry.Results, viewed)
 		}
-		view.Executions = append(view.Executions, entry)
+		viewed.Executions = append(viewed.Executions, entry)
 	}
-	return view
+	return viewed
 }
 
 type outdatedPortJSON struct {
@@ -711,25 +712,25 @@ func movedView(head *engine.Head) *movedJSON {
 	return &movedJSON{Branch: head.Branch, Commit: head.Commit}
 }
 
-func outdatedView(report engine.OutdatedReport) map[string]any {
+func OutdatedView(report engine.OutdatedReport) map[string]any {
 	ports := []outdatedPortJSON{}
 	for _, port := range report.Ports {
 		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Problem: port.Problem, OwnVersion: port.OwnVersion, With: port.With, Moved: movedView(port.Moved),
 			Class: string(port.Class()), Unpublished: port.Unpublished})
 	}
-	view := map[string]any{"master": report.Master, "ports": ports}
+	viewed := map[string]any{"master": report.Master, "ports": ports}
 	// How many couldn't be checked, and why, for a script, which the exit
 	// code says too (the rc6 full stage, D-N4).
 	if unchecked := report.Unchecked(); len(unchecked) > 0 {
-		view["unchecked"] = len(unchecked)
-		view["unchecked_why"] = report.UncheckedWords()
+		viewed["unchecked"] = len(unchecked)
+		viewed["unchecked_why"] = report.UncheckedWords()
 	}
-	return view
+	return viewed
 }
 
 // skippedJSON is a port a batch left alone, and why: an update already in
 // a branch, one it couldn't check, or one held for a look.
-type skippedJSON struct {
+type SkippedJSON struct {
 	Port   string `json:"port"`
 	Reason string `json:"reason"`
 }
@@ -738,33 +739,33 @@ type skippedJSON struct {
 // it went, an update's shape with its later steps inside it, and every
 // port the batch left alone, with why, so an empty batch says why it is
 // (the M1's quick stage, B3: a batch offline said null).
-type batchJSON struct {
+type BatchJSON struct {
 	Changes []updateJSON  `json:"changes"`
-	Skipped []skippedJSON `json:"skipped"`
+	Skipped []SkippedJSON `json:"skipped"`
 	// at is the change being gathered, whose steps follow it.
 	at *updateJSON
 }
 
 // next starts the next change's gathering.
-func (b *batchJSON) next() {
+func (b *BatchJSON) Next() {
 	b.Changes = append(b.Changes, updateJSON{})
 	b.at = &b.Changes[len(b.Changes)-1]
 }
 
-func (b *batchJSON) Gather(step any) {
-	if skipped, ok := step.([]skippedJSON); ok {
+func (b *BatchJSON) Gather(step any) {
+	if skipped, ok := step.([]SkippedJSON); ok {
 		b.Skipped = append(b.Skipped, skipped...)
 		return
 	}
 	if b.at == nil {
-		b.next()
+		b.Next()
 	}
 	b.at.Gather(step)
 }
 
-func (b *batchJSON) Result() any {
+func (b *BatchJSON) Result() any {
 	changes := slices.DeleteFunc(slices.Clone(b.Changes), func(change updateJSON) bool { return reflect.ValueOf(change).IsZero() })
-	return batchJSON{Changes: append([]updateJSON{}, changes...), Skipped: append([]skippedJSON{}, b.Skipped...)}
+	return BatchJSON{Changes: append([]updateJSON{}, changes...), Skipped: append([]SkippedJSON{}, b.Skipped...)}
 }
 
 // plainHTTPJSON is a URL a port names over plain HTTP, its https form, and

@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -67,13 +68,13 @@ checks them too.`,
 			looked.stop()
 			if err != nil {
 				if looked.cutShort(ctx, report) {
-					streams.Emit(outdatedView(report))
+					streams.Emit(view.OutdatedView(report))
 					fmt.Fprintf(streams.Out, "Interrupted after looking up %d of %d ports; what those found:\n", len(report.Ports), looked.total.Load())
 					_ = writeOutdated(context.WithoutCancel(ctx), e, streams.Out, report, all)
 				}
 				return err
 			}
-			streams.Emit(outdatedView(report))
+			streams.Emit(view.OutdatedView(report))
 			return writeOutdated(ctx, e, streams.Out, report, all)
 		},
 	}
@@ -330,10 +331,10 @@ func outdatedBatch(ctx context.Context, s *settings, e *engine.Engine, streams t
 	if err != nil {
 		return engine.OutdatedPlan{}, err
 	}
-	skipped := []skippedJSON{}
+	skipped := []view.SkippedJSON{}
 	for _, skip := range plan.Skipped {
 		fmt.Fprintf(streams.Out, "  %s: left as it is: %s\n", skip.Port, skip.Reason)
-		skipped = append(skipped, skippedJSON{Port: skip.Port, Reason: skip.Reason})
+		skipped = append(skipped, view.SkippedJSON{Port: skip.Port, Reason: skip.Reason})
 	}
 	streams.Emit(skipped)
 	if line := restWords(report, plan); line != "" {

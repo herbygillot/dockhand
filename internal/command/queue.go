@@ -16,58 +16,13 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildlog"
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/term"
 )
-
-// writeQueue is status's list of the checks queued and running, oldest
-// first, where queue listed them: each with its branch, what it checks,
-// where, and its state, a run whose process ended said to be stopped.
-func writeQueue(out io.Writer, queue []engine.QueuedCheck) {
-	if len(queue) == 0 {
-		return
-	}
-	fmt.Fprintln(out, "\nChecks queued and running")
-	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(table, "  RUN\tBRANCH\tSOURCE\tON\tSTATE\tDETAIL")
-	for _, queued := range queue {
-		run := queued.Run
-		var on []string
-		for _, environment := range queued.Plan.Environments {
-			on = append(on, engine.DescribeEnvironment(environment))
-		}
-		state, detail := string(run.State), run.Detail
-		if run.Origin == model.OriginServe && detail == "" {
-			detail = "started by serve"
-		}
-		// A running check says where it is, as the guest reports it.
-		if queued.Progress != "" {
-			detail = queued.Progress
-		}
-		if queued.Stopped {
-			state, detail = "stopped", "the process running it ended; dockhand wait "+run.Name()+" resumes it, cancel ends it"
-		}
-		fmt.Fprintf(table, "  %s\t%s\t%s\t%s\t%s\t%s\n", run.Name(), queued.Branch.ShortName(), engine.Describe(queued.Revision), strings.Join(on, ", "), state, detail)
-	}
-	_ = table.Flush()
-}
-
-// queueView is the queue for status's JSON.
-func queueView(queue []engine.QueuedCheck) *[]queuedRunJSON {
-	rows := []queuedRunJSON{}
-	for _, queued := range queue {
-		row := queuedRunJSON{runJSON: runView(queued.Run), Branch: queued.Branch.ShortName(), Revision: engine.Describe(queued.Revision), Environments: []environmentJSON{}}
-		row.Stopped, row.Progress = queued.Stopped, queued.Progress
-		for _, environment := range queued.Plan.Environments {
-			row.Environments = append(row.Environments, environmentView(environment))
-		}
-		rows = append(rows, row)
-	}
-	return &rows
-}
 
 func waitCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
@@ -151,7 +106,7 @@ branch, for its latest check from anywhere.`,
 			if err != nil {
 				return err
 			}
-			streams.Emit(map[string]any{"run": runView(run), "canceled": run.State == model.RunCanceled})
+			streams.Emit(map[string]any{"run": view.RunView(run), "canceled": run.State == model.RunCanceled})
 			if run.State == model.RunCanceled {
 				fmt.Fprintln(streams.Out, stopWords(run, wasQueued))
 				return nil
@@ -261,7 +216,7 @@ copies it as it grows, as Tart's does.`,
 				logs.Executions = slices.DeleteFunc(logs.Executions, func(execution engine.ExecutionLogs) bool { return execution.Execution.ID != only })
 			}
 			if port == "" {
-				streams.Emit(logsView(logs))
+				streams.Emit(view.LogsView(logs))
 				return writeLogs(streams.Out, s.places(), logs, stoppedRun(ctx, e, logs.Run))
 			}
 			chosen, others, ok := logs.ForPort(port)
@@ -287,10 +242,10 @@ copies it as it grows, as Tart's does.`,
 			if err != nil {
 				return err
 			}
-			view := portLogView(run, found, data)
-			view.Execution = string(chosen.Execution.ID)
+			viewed := view.PortLogView(run, found, data)
+			viewed.Execution = string(chosen.Execution.ID)
 			for _, other := range others {
-				view.Elsewhere = append(view.Elsewhere, portLogElsewhereJSON{Execution: string(other.Execution.ID), Environment: environmentView(other.Execution.Environment), Outcome: string(other.Result.Outcome), Tests: string(other.Result.Tests)})
+				viewed.Elsewhere = append(viewed.Elsewhere, view.PortLogElsewhereJSON{Execution: string(other.Execution.ID), Environment: view.EnvironmentView(other.Execution.Environment), Outcome: string(other.Result.Outcome), Tests: string(other.Result.Tests)})
 			}
 			// Which build's log this is goes with the steps, or beside a log
 			// printed alone or a step of it, so the log stays as it is: its
@@ -306,8 +261,8 @@ copies it as it grows, as Tart's does.`,
 				if !ok {
 					return fmt.Errorf("%s's log ends before line %d, where its %s step was recorded to begin", port, from, phase)
 				}
-				view.Text, view.Phase, view.From = string(lines), phase, from
-				streams.Emit(view)
+				viewed.Text, viewed.Phase, viewed.From = string(lines), phase, from
+				streams.Emit(viewed)
 				writePortLogHeading(streams.Err, s.places(), logs, port, chosen, others)
 				_, err := streams.Out.Write(lines)
 				return err
@@ -316,7 +271,7 @@ copies it as it grows, as Tart's does.`,
 			if full || len(found.Steps) == 0 {
 				where = streams.Err
 			}
-			streams.Emit(view)
+			streams.Emit(viewed)
 			writePortLogHeading(where, s.places(), logs, port, chosen, others)
 			return writePortLog(streams.Out, s.places(), found, data, full)
 		},

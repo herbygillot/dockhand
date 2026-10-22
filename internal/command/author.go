@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -113,7 +114,7 @@ pull requests, and ship takes a port's update as far as --to says.`,
 // updateMine is update --mine: ship's edit stage over your outdated ports,
 // each in a branch of its own, nothing committed (decision 7, 2026-10-13).
 func updateMine(ctx context.Context, s *settings, streams term.Streams, version versionUpdate, plan, yes bool) error {
-	whole := &batchJSON{}
+	whole := &view.BatchJSON{}
 	streams.LinkSteps(whole)
 	e, err := s.open(ctx)
 	if err != nil {
@@ -153,7 +154,7 @@ func updateMine(ctx context.Context, s *settings, streams term.Streams, version 
 	}
 	var failed []string
 	for _, update := range outdated.Updates {
-		whole.next()
+		whole.Next()
 		fmt.Fprintln(out)
 		request, err := version.request([]string{update.Port.Port}, false)
 		if err == nil {
@@ -161,7 +162,7 @@ func updateMine(ctx context.Context, s *settings, streams term.Streams, version 
 			_, _, err = author(ctx, s, streams, branchChoice{new: update.Name}, engine.WorkUpdate, request, version.linked)
 		}
 		if err != nil {
-			fmt.Fprintf(streams.Err, "%s: %v\n", update.Port.Port, sayNext(err))
+			fmt.Fprintf(streams.Err, "%s: %v\n", update.Port.Port, view.SayNext(err))
 			failed = append(failed, update.Port.Port)
 		}
 	}
@@ -327,7 +328,7 @@ func tidyBranch(ctx context.Context, e *engine.Engine, streams term.Streams, bra
 	}
 	if !proposal.Keep {
 		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), describeWork(proposal))
-		streams.Emit(tidyView(proposal))
+		streams.Emit(view.TidyView(proposal))
 		writeTidyPlan(out, proposal, false)
 		// A plan of dockhand's own edits is applied unasked; one with the
 		// person's is reviewed on a terminal, and held where nobody looks,
@@ -445,7 +446,7 @@ func author(ctx context.Context, s *settings, streams term.Streams, where branch
 	}
 	if err != nil && started {
 		// The branch it started stays, for the edit by hand.
-		streams.Emit(updateView(branch, started, update, request.Plan))
+		streams.Emit(view.UpdateView(branch, started, update, request.Plan))
 	}
 	if fromMaster && err == nil {
 		why := ""
@@ -464,7 +465,7 @@ func author(ctx context.Context, s *settings, streams term.Streams, where branch
 	if err != nil {
 		return branch, update, err
 	}
-	result := updateView(branch, started, update, request.Plan)
+	result := view.UpdateView(branch, started, update, request.Plan)
 	streams.Emit(result)
 	if update.Current {
 		switch {
@@ -476,7 +477,7 @@ func author(ctx context.Context, s *settings, streams term.Streams, where branch
 			fmt.Fprintf(out, "%s %s: %s; nothing to change.\n", update.Port, update.After, matchWords(update.Compared))
 		}
 		writeLeft(out, update.ChecksumsLeft)
-		writePlainHTTP(out, update.PlainHTTP)
+		view.WritePlainHTTP(out, update.PlainHTTP)
 		return branch, update, nil
 	}
 	if request.Action == model.EditUpdate {
@@ -525,7 +526,7 @@ func author(ctx context.Context, s *settings, streams term.Streams, where branch
 		writeUpstream(out, update.Upstream)
 		writePatches(out, update)
 		writeOthers(out, update)
-		writePlainHTTP(out, update.PlainHTTP)
+		view.WritePlainHTTP(out, update.PlainHTTP)
 		if linked.revbump {
 			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, true)
 			streams.Emit(result)
@@ -627,7 +628,7 @@ func author(ctx context.Context, s *settings, streams term.Streams, where branch
 	writeUpstream(out, update.Upstream)
 	writePatches(out, update)
 	writeOthers(out, update)
-	writePlainHTTP(out, update.PlainHTTP)
+	view.WritePlainHTTP(out, update.PlainHTTP)
 	if linked.revbump {
 		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, false); err != nil {
 			return branch, update, err
@@ -716,7 +717,7 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 			indexed = append(indexed, dependent.Name)
 		}
 	}
-	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", done.Base.Short(), orNone(prose.Few(indexed, 12, "port")))
+	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", done.Base.Short(), view.OrNone(prose.Few(indexed, 12, "port")))
 	if len(under) > 0 {
 		fmt.Fprintf(out, "  · under a variant, found in the Portfile, which the index doesn't record: %s\n", strings.Join(under, ", "))
 	}
@@ -730,7 +731,7 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 		return nil, err
 	}
 	if plan || len(done.Bump) == 0 {
-		return nonNil(names), nil
+		return view.NonNil(names), nil
 	}
 	fmt.Fprintf(out, "Revision bumped %s; subject \"<port>: %s\" recorded for tidy.\n", prose.Plural(len(done.Bumped), "port"), done.Subject)
 	return names, nil
@@ -900,7 +901,7 @@ func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 		// What couldn't be checked holds as a finding does (D4), so it is
 		// marked as one.
 		fmt.Fprintf(out, "! Upstream archives not compared: %s\n", comparison.Problem)
-		fmt.Fprintln(out, holdLegend)
+		fmt.Fprintln(out, view.HoldLegend)
 	case engine.NothingCompared(*comparison):
 		fmt.Fprintf(out, "Upstream not compared: %s.\n", engine.CoverageWords(*comparison))
 	case len(comparison.Changes) == 0:
@@ -917,28 +918,8 @@ func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 			fmt.Fprintf(out, "  · %s\n", words)
 		}
 		if comparison.Held() {
-			fmt.Fprintln(out, "  "+holdLegend)
+			fmt.Fprintln(out, "  "+view.HoldLegend)
 		}
-	}
-}
-
-// writeOthers names the port's other open pull requests the update found,
-// or why it couldn't look. They stop nothing: submit shows them again, and
-// bump and serve hold on one.
-// writePlainHTTP says the port's plain-HTTP URLs, which MacPorts would
-// have over HTTPS, with whether the https form answers. The Portfile is
-// left as it is: changing them is the maintainer's call.
-func writePlainHTTP(out io.Writer, plain []engine.PlainURL) {
-	if len(plain) == 0 {
-		return
-	}
-	fmt.Fprintln(out, "MacPorts prefers HTTPS; over plain HTTP:")
-	for _, url := range plain {
-		answer := url.HTTPS + " answers"
-		if !url.Answers {
-			answer = "https doesn't answer there"
-		}
-		fmt.Fprintf(out, "  %s %s: %s\n", url.Option, url.URL, answer)
 	}
 }
 
@@ -951,10 +932,6 @@ func writeOthers(out io.Writer, update engine.Update) {
 		fmt.Fprintf(out, "Also open for %s: #%d %s\n", update.Port, pr.Number, pr.Title)
 	}
 }
-
-// holdLegend says what the marks of an upstream finding mean, beside any
-// list with one that holds (the chezmoi run).
-const holdLegend = "(! holds bump's and serve's submission for your look; · holds nothing)"
 
 func upstreamWords(change model.UpstreamChange) string {
 	if change.Hold {

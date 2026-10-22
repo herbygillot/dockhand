@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -50,7 +51,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 				return err
 			}
 			portfile := filepath.Join(branch.Worktree, filepath.FromSlash(directory), "Portfile")
-			streams.Emit(map[string]any{"branch": branchRef(branch), "started": started, "directory": directory, "portfile": portfile})
+			streams.Emit(map[string]any{"branch": view.BranchRef(branch), "started": started, "directory": directory, "portfile": portfile})
 			editor := editorCommand(s)
 			// --no-open only brings the port's files in, for an editor of
 			// the person's own, where EDITOR=true stood in for it (field
@@ -121,14 +122,14 @@ since a rebuild has its own reason.`,
 			for _, port := range args {
 				width = max(width, len(port))
 			}
-			result := revbumpJSON{Branch: branchRef(branch), Started: started, Subject: strings.TrimSpace(subject), Applied: !plan, Ports: []revbumpedJSON{}}
+			result := view.RevbumpJSON{Branch: view.BranchRef(branch), Started: started, Subject: strings.TrimSpace(subject), Applied: !plan, Ports: []view.RevbumpedJSON{}}
 			defer func() { streams.Emit(result) }()
 			for _, port := range args {
 				update, err := e.Update(ctx, engine.UpdateRequest{Branch: branch, Action: model.EditRevbump, Port: port, Subject: subject, Plan: plan})
 				if err != nil {
 					return fmt.Errorf("%s: %w", port, err)
 				}
-				result.Ports = append(result.Ports, revbumpedJSON{Port: update.Port, Before: update.Before.Revision, After: update.After.Revision})
+				result.Ports = append(result.Ports, view.RevbumpedJSON{Port: update.Port, Before: update.Before.Revision, After: update.After.Revision})
 				fmt.Fprintf(out, "  %-*s  revision %d → %d\n", width, update.Port, update.Before.Revision, update.After.Revision)
 				if plan {
 					fmt.Fprint(out, update.Diff)
@@ -282,8 +283,8 @@ rebase that conflicts is abandoned with the branch as it was.`,
 				return err
 			}
 			if status.Current {
-				fmt.Fprintf(streams.Out, "%s checked these files already: %s.\n", status.Latest.Name(), checkState(status))
-				writeNext(streams.Out, status)
+				fmt.Fprintf(streams.Out, "%s checked these files already: %s.\n", status.Latest.Name(), view.CheckState(status))
+				view.WriteNext(streams.Out, status)
 				return nil
 			}
 			fmt.Fprintln(streams.Out, "Next: "+nextIn(ctx, e, branch, "dockhand check (the files it builds on have changed)"))
@@ -343,7 +344,7 @@ closes it.`,
 			}
 			branch = archived.Branch
 			streams.Emit(map[string]any{"branch": branch.ShortName(), "state": branch.State, "worktree_removed": archived.Removed != "", "worktree_kept": archived.Kept,
-				"ignored_removed": nonNil(archived.IgnoredRemoved)})
+				"ignored_removed": view.NonNil(archived.IgnoredRemoved)})
 			out := streams.Out
 			if undo {
 				fmt.Fprintf(out, "%s is back among your open branches.\n", branch.ShortName())

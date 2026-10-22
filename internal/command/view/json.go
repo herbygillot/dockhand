@@ -1,27 +1,14 @@
-package command
+package view
 
 import (
 	"slices"
 	"time"
-
-	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 )
-
-// jsonAnnotation marks a command that can report its result as JSON.
-const jsonAnnotation = "dockhand.json"
-
-// supportsJSON marks cmd as able to report its result with --json.
-func supportsJSON(cmd *cobra.Command) {
-	if cmd.Annotations == nil {
-		cmd.Annotations = map[string]string{}
-	}
-	cmd.Annotations[jsonAnnotation] = "yes"
-}
 
 type runJSON struct {
 	Name       string     `json:"name"`
@@ -39,7 +26,7 @@ type runJSON struct {
 	BaselineOf string `json:"baseline_of,omitempty"`
 }
 
-func runView(run model.Run) runJSON {
+func RunView(run model.Run) runJSON {
 	return runJSON{Name: run.Name(), ID: string(run.ID), State: string(run.State), Detail: run.Detail, Origin: string(run.Origin), CreatedAt: run.CreatedAt, FinishedAt: run.FinishedAt,
 		BaselineOf: string(run.BaselineOf)}
 }
@@ -53,7 +40,7 @@ type revisionJSON struct {
 	Commit      string `json:"commit,omitempty"`
 }
 
-func revisionView(revision model.Revision) revisionJSON {
+func RevisionView(revision model.Revision) revisionJSON {
 	return revisionJSON{ID: string(revision.ID), Kind: string(revision.Kind), Description: engine.Describe(revision), Tree: string(revision.Source.Tree), Base: string(revision.Source.Base), Commit: string(revision.Source.Commit)}
 }
 
@@ -65,12 +52,12 @@ type environmentJSON struct {
 	DeveloperTools string `json:"developer_tools,omitempty"`
 }
 
-func environmentView(environment model.Environment) environmentJSON {
+func EnvironmentView(environment model.Environment) environmentJSON {
 	return environmentJSON{Provider: environment.Provider, OS: environment.Platform.OS, Version: environment.Platform.Version, Architecture: environment.Platform.Architecture,
 		DeveloperTools: string(environment.DeveloperTools)}
 }
 
-type targetJSON struct {
+type TargetJSON struct {
 	Name      string   `json:"name"`
 	Portfile  string   `json:"portfile"`
 	Subport   string   `json:"subport,omitempty"`
@@ -123,10 +110,10 @@ type planJSON struct {
 	EachVariant bool   `json:"each_variant,omitempty"`
 	// Targets are the plan's, each with its dependencies in any
 	// environment and the environments where it needs Xcode.
-	Targets []targetJSON `json:"targets"`
+	Targets []TargetJSON `json:"targets"`
 	// Omitted are the changed targets --only left out, which submission
 	// still requires.
-	Omitted []targetJSON `json:"omitted"`
+	Omitted []TargetJSON `json:"omitted"`
 	// Builds are each environment's own order and dependencies.
 	Builds     []buildJSON     `json:"builds"`
 	Exclusions []exclusionJSON `json:"exclusions"`
@@ -142,25 +129,25 @@ type buildJSON struct {
 	DependsOn   map[string][]string `json:"depends_on,omitempty"`
 	// Git are the targets fetched with Git there, and what each one's
 	// build must fetch.
-	Git map[string]gitSourceJSON `json:"git,omitempty"`
+	Git map[string]GitSourceJSON `json:"git,omitempty"`
 	// OmittedGit are the targets --only left out (the plan's omitted)
 	// that are fetched with Git there, and the commit each one's tag
 	// names as the check is planned: the check doesn't build them, but an
 	// earlier check's result of one stands only where it fetched that
 	// commit.
-	OmittedGit map[string]gitSourceJSON `json:"omitted_git,omitempty"`
+	OmittedGit map[string]GitSourceJSON `json:"omitted_git,omitempty"`
 	// Tags are the targets there fetched as a GitHub tag's archive, built
 	// or left out by --only, and the commit each one's tag named as the
 	// check was planned: a later check doesn't reuse a build past a tag
 	// that moved, and a submission is held on one.
-	Tags map[string]gitSourceJSON `json:"tags,omitempty"`
+	Tags map[string]GitSourceJSON `json:"tags,omitempty"`
 }
 
 // gitSourceJSON is what a Git-fetched target's build is expected to fetch:
 // its repository and git.branch, and the commit git.branch named when the
 // check was planned, or the abbreviation it begins with, or why neither is
 // known.
-type gitSourceJSON struct {
+type GitSourceJSON struct {
 	URL          string    `json:"url"`
 	Branch       string    `json:"branch,omitempty"`
 	Commit       string    `json:"commit,omitempty"`
@@ -169,8 +156,8 @@ type gitSourceJSON struct {
 	ResolvedAt   time.Time `json:"resolved_at"`
 }
 
-func gitSourceView(source model.GitSource) gitSourceJSON {
-	return gitSourceJSON{URL: source.URL, Branch: source.Ref, Commit: string(source.Commit), Abbreviation: source.Abbreviation, Unresolved: source.Unresolved, ResolvedAt: source.ResolvedAt}
+func GitSourceView(source model.GitSource) GitSourceJSON {
+	return GitSourceJSON{URL: source.URL, Branch: source.Ref, Commit: string(source.Commit), Abbreviation: source.Abbreviation, Unresolved: source.Unresolved, ResolvedAt: source.ResolvedAt}
 }
 
 // unmetJSON is a target an environment can't build, and what it needs.
@@ -188,21 +175,21 @@ type exclusionJSON struct {
 	Reason   string           `json:"reason"`
 }
 
-func planView(plan model.Plan) planJSON {
-	view := planJSON{ID: string(plan.ID), Profile: plan.Profile, Tests: string(plan.Tests), Environments: []environmentJSON{}, Only: append([]string{}, plan.Only...), Also: append([]string{}, plan.Also...), Fresh: plan.Fresh, Keep: plan.Keep,
-		Variants: plan.Variants, EachVariant: plan.EachVariant, Targets: []targetJSON{}, Omitted: []targetJSON{}, Exclusions: []exclusionJSON{}, Unmet: []unmetJSON{}, Unresolved: []exclusionJSON{}}
+func PlanView(plan model.Plan) planJSON {
+	viewed := planJSON{ID: string(plan.ID), Profile: plan.Profile, Tests: string(plan.Tests), Environments: []environmentJSON{}, Only: append([]string{}, plan.Only...), Also: append([]string{}, plan.Also...), Fresh: plan.Fresh, Keep: plan.Keep,
+		Variants: plan.Variants, EachVariant: plan.EachVariant, Targets: []TargetJSON{}, Omitted: []TargetJSON{}, Exclusions: []exclusionJSON{}, Unmet: []unmetJSON{}, Unresolved: []exclusionJSON{}}
 	for _, environment := range plan.Environments {
-		view.Environments = append(view.Environments, environmentView(environment))
+		viewed.Environments = append(viewed.Environments, EnvironmentView(environment))
 	}
 	for _, target := range plan.Targets {
-		view.Targets = append(view.Targets, targetView(plan, target))
+		viewed.Targets = append(viewed.Targets, targetView(plan, target))
 	}
 	for _, target := range plan.Omitted {
-		view.Omitted = append(view.Omitted, targetView(plan, target))
+		viewed.Omitted = append(viewed.Omitted, targetView(plan, target))
 	}
-	view.Builds = []buildJSON{}
+	viewed.Builds = []buildJSON{}
 	for _, planned := range plan.Builds {
-		environment := environmentView(planned.Environment)
+		environment := EnvironmentView(planned.Environment)
 		build := buildJSON{Environment: environment, Order: []string{}}
 		for _, id := range planned.Order {
 			build.Order = append(build.Order, string(id))
@@ -214,89 +201,89 @@ func planView(plan model.Plan) planJSON {
 			}
 			if source, ok := planned.Git[id]; ok {
 				if build.Git == nil {
-					build.Git = map[string]gitSourceJSON{}
+					build.Git = map[string]GitSourceJSON{}
 				}
-				build.Git[string(id)] = gitSourceView(source)
+				build.Git[string(id)] = GitSourceView(source)
 			}
 		}
 		for _, target := range plan.Omitted {
 			if source, ok := planned.Git[target.ID]; ok {
 				if build.OmittedGit == nil {
-					build.OmittedGit = map[string]gitSourceJSON{}
+					build.OmittedGit = map[string]GitSourceJSON{}
 				}
-				build.OmittedGit[string(target.ID)] = gitSourceView(source)
+				build.OmittedGit[string(target.ID)] = GitSourceView(source)
 			}
 		}
 		for id, tag := range planned.Tags {
 			if build.Tags == nil {
-				build.Tags = map[string]gitSourceJSON{}
+				build.Tags = map[string]GitSourceJSON{}
 			}
-			build.Tags[string(id)] = gitSourceView(tag)
+			build.Tags[string(id)] = GitSourceView(tag)
 		}
-		view.Builds = append(view.Builds, build)
+		viewed.Builds = append(viewed.Builds, build)
 		for _, exclusion := range planned.Exclusions {
-			view.Exclusions = append(view.Exclusions, exclusionJSON{Target: exclusion.Target.Name, Platform: &environment, Reason: exclusion.Reason})
+			viewed.Exclusions = append(viewed.Exclusions, exclusionJSON{Target: exclusion.Target.Name, Platform: &environment, Reason: exclusion.Reason})
 		}
 		for _, unmet := range planned.Unmet {
-			view.Unmet = append(view.Unmet, unmetJSON{Target: string(unmet.Target), Environment: environment, Needs: string(unmet.Needs), Through: string(unmet.Through)})
+			viewed.Unmet = append(viewed.Unmet, unmetJSON{Target: string(unmet.Target), Environment: environment, Needs: string(unmet.Needs), Through: string(unmet.Through)})
 		}
 	}
 	for _, unresolved := range plan.Unresolved {
-		view.Unresolved = append(view.Unresolved, exclusionJSON{Target: unresolved.Target.Name, Reason: unresolved.Reason})
+		viewed.Unresolved = append(viewed.Unresolved, exclusionJSON{Target: unresolved.Target.Name, Reason: unresolved.Reason})
 	}
-	return view
+	return viewed
 }
 
-func targetView(plan model.Plan, target model.PlanTarget) targetJSON {
-	view := targetJSON{Name: string(target.ID), Portfile: target.Target.Portfile, Subport: target.Target.Subport, Kind: string(target.Kind), Role: string(target.Role)}
+func targetView(plan model.Plan, target model.PlanTarget) TargetJSON {
+	viewed := TargetJSON{Name: string(target.ID), Portfile: target.Target.Portfile, Subport: target.Target.Subport, Kind: string(target.Kind), Role: string(target.Role)}
 	for _, environment := range plan.Environments {
 		for _, dependency := range plan.DependsOnIn(environment, target.ID) {
-			if !slices.Contains(view.DependsOn, string(dependency)) {
-				view.DependsOn = append(view.DependsOn, string(dependency))
+			if !slices.Contains(viewed.DependsOn, string(dependency)) {
+				viewed.DependsOn = append(viewed.DependsOn, string(dependency))
 			}
 		}
 		if plan.NeedsXcodeIn(environment, target.ID) {
-			view.NeedsXcode = append(view.NeedsXcode, environmentView(environment))
+			viewed.NeedsXcode = append(viewed.NeedsXcode, EnvironmentView(environment))
 		}
 	}
-	return view
+	return viewed
 }
 
 // evidenceView is a finished run's targets with their results.
-func evidenceView(evidence engine.Evidence) []targetJSON {
-	targets := []targetJSON{}
+func EvidenceView(evidence engine.Evidence) []TargetJSON {
+	targets := []TargetJSON{}
 	for _, target := range evidence.Targets {
-		view := targetView(evidence.Plan, target.Target)
+		viewed := targetView(evidence.Plan, target.Target)
 		passed := target.Passed
-		view.Passed = &passed
+		viewed.Passed = &passed
 		for _, result := range target.Outcomes {
-			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: logWhere(result.Log), Detail: result.Detail, ReusedFrom: string(result.ReusedFrom),
+			viewed.Results = append(viewed.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: logWhere(result.Log), Detail: result.Detail, ReusedFrom: string(result.ReusedFrom),
 				Builders: builderViews(result.Builders),
 				Excluded: result.Kind == engine.CellExcluded, Remade: result.Kind == engine.CellRemade})
 		}
-		targets = append(targets, view)
+		targets = append(targets, viewed)
 	}
 	return targets
 }
 
 // checkJSON is check's, wait's, and retry's result.
-type checkJSON struct {
+type CheckJSON struct {
 	Branch   string        `json:"branch"`
 	Revision *revisionJSON `json:"revision,omitempty"`
 	Plan     *planJSON     `json:"plan,omitempty"`
 	Run      *runJSON      `json:"run"`
 	// Targets are the finished run's results; empty until it finishes.
-	Targets []targetJSON `json:"targets"`
+	Targets []TargetJSON `json:"targets"`
 	// Baseline is the baseline check.baseline ran after this check failed.
-	Baseline *checkJSON `json:"baseline,omitempty"`
+	Baseline *CheckJSON `json:"baseline,omitempty"`
 	// Altered are the kept archives found changed since they were kept,
 	// which no guest was given, each said as check says it.
 	Altered []string `json:"altered_archives,omitempty"`
 }
 
 // gather takes a check's result, or the baseline's that looks into it.
-func (c *checkJSON) Gather(step any) {
-	if step, ok := step.(checkJSON); ok {
+func (c *CheckJSON) Gather(step any) {
+	if step, ok := step.(CheckJSON); ok {
 		if c.Run != nil && step.Run != nil && step.Run.BaselineOf == c.Run.ID {
 			c.Baseline = &step
 			return
@@ -306,7 +293,7 @@ func (c *checkJSON) Gather(step any) {
 	}
 }
 
-func (c *checkJSON) Result() any { return *c }
+func (c *CheckJSON) Result() any { return *c }
 
 type pullRequestJSON struct {
 	Repository string     `json:"repository"`
@@ -330,10 +317,10 @@ type latestJSON struct {
 	// they are on disk now.
 	Current  bool         `json:"current"`
 	Included []string     `json:"included,omitempty"`
-	Targets  []targetJSON `json:"targets"`
+	Targets  []TargetJSON `json:"targets"`
 }
 
-type branchJSON struct {
+type BranchJSON struct {
 	Name      string `json:"name"`
 	GitBranch string `json:"git_branch"`
 	ID        string `json:"id"`
@@ -376,13 +363,13 @@ type branchJSON struct {
 	Assessment string   `json:"assessment,omitempty"`
 	// HeldConcerns are Held, typed, each with where it came from and the
 	// rule that raised it, beside held's words.
-	HeldConcerns []concernJSON `json:"concerns,omitempty"`
+	HeldConcerns []ConcernJSON `json:"concerns,omitempty"`
 	// Moved are the Git-fetched ports whose release's tag named another
 	// commit when the update chose it than when the latest check, of the
 	// files as they are now, planned it (rule release-moved), which hold a
 	// submission nobody looks over. Whether a tag names another commit now
 	// (source-moved) takes the network, which status never reads.
-	Moved []concernJSON `json:"moved,omitempty"`
+	Moved []ConcernJSON `json:"moved,omitempty"`
 	// OnMaster is the master dockhand last fetched where it has every
 	// change the branch's files make: its work landed by another route.
 	OnMaster string `json:"on_master,omitempty"`
@@ -393,7 +380,7 @@ type branchJSON struct {
 // pull request, where submit gives it; the port, the rule that raised it,
 // what it's about, such as the commit the check planned, how it stands
 // against the base, and its words.
-type concernJSON struct {
+type ConcernJSON struct {
 	Origin  string `json:"origin,omitempty"`
 	Port    string `json:"port"`
 	Rule    string `json:"rule"`
@@ -405,58 +392,58 @@ type concernJSON struct {
 }
 
 // concernsView is concerns as JSON, an empty list for none.
-func concernsView(concerns []model.Concern) []concernJSON {
-	view := []concernJSON{}
+func concernsView(concerns []model.Concern) []ConcernJSON {
+	viewed := []ConcernJSON{}
 	for _, concern := range concerns {
-		view = append(view, concernJSON{Origin: string(concern.Origin), Port: concern.Port, Rule: concern.Rule, Source: concern.Source, Path: concern.Path, Subject: concern.Subject,
+		viewed = append(viewed, ConcernJSON{Origin: string(concern.Origin), Port: concern.Port, Rule: concern.Rule, Source: concern.Source, Path: concern.Path, Subject: concern.Subject,
 			Class: string(concern.Class), Detail: concern.Detail})
 	}
-	return view
+	return viewed
 }
 
-func branchView(status engine.BranchStatus) branchJSON {
+func BranchView(status engine.BranchStatus) BranchJSON {
 	branch := status.Branch
-	view := branchJSON{Name: branch.ShortName(), GitBranch: branch.Name, ID: string(branch.ID), State: string(branch.State), Worktree: branch.Worktree, Managed: branch.Managed,
+	viewed := BranchJSON{Name: branch.ShortName(), GitBranch: branch.Name, ID: string(branch.ID), State: string(branch.State), Worktree: branch.Worktree, Managed: branch.Managed,
 		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Renamed: status.Renamed, Cleaned: status.Cleaned(), Commits: status.Commits,
-		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{},
+		Edited: NonNil(status.Edited), Directories: NonNil(status.Scope.Ports), Ports: NonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{},
 		Held: engine.HoldLines(status.Held), Assessment: string(status.Assessment), OnMaster: string(status.OnMaster), StartedFor: branch.Ports}
 	if len(status.Held) > 0 {
-		view.HeldConcerns = concernsView(status.Held)
+		viewed.HeldConcerns = concernsView(status.Held)
 	}
-	view.Changed, view.Notes = status.ChangedPorts()
-	view.Changed = nonNil(view.Changed)
-	if len(view.Notes) == 0 {
-		view.Notes = nil
+	viewed.Changed, viewed.Notes = status.ChangedPorts()
+	viewed.Changed = NonNil(viewed.Changed)
+	if len(viewed.Notes) == 0 {
+		viewed.Notes = nil
 	}
 	for _, found := range status.Releases {
 		release := found.Release
-		view.Releases = append(view.Releases, releaseJSON{Port: found.Port, Version: release.Version, Forge: release.Forge, Repository: release.Repository,
+		viewed.Releases = append(viewed.Releases, releaseJSON{Port: found.Port, Version: release.Version, Forge: release.Forge, Repository: release.Repository,
 			Tag: release.Tag, Commit: release.Commit, Distfiles: release.Archive})
 	}
 	for _, moved := range status.Moved {
-		view.Moved = append(view.Moved, concernJSON{Port: moved.Port, Rule: moved.Rule, Subject: moved.Subject, Detail: moved.Detail})
+		viewed.Moved = append(viewed.Moved, ConcernJSON{Port: moved.Port, Rule: moved.Rule, Subject: moved.Subject, Detail: moved.Detail})
 	}
 	for _, run := range status.Active {
-		active := runView(run)
+		active := RunView(run)
 		active.Stopped = status.Stopped != nil && status.Stopped.ID == run.ID
-		view.Active = append(view.Active, active)
+		viewed.Active = append(viewed.Active, active)
 	}
 	if status.Latest != nil && status.LatestRevision != nil {
-		latest := latestJSON{Run: runView(*status.Latest), Revision: revisionView(*status.LatestRevision), Current: status.Current, Included: status.Included, Targets: []targetJSON{}}
+		latest := latestJSON{Run: RunView(*status.Latest), Revision: RevisionView(*status.LatestRevision), Current: status.Current, Included: status.Included, Targets: []TargetJSON{}}
 		if status.Evidence != nil {
-			latest.Targets = evidenceView(*status.Evidence)
+			latest.Targets = EvidenceView(*status.Evidence)
 		}
-		view.Latest = &latest
+		viewed.Latest = &latest
 	}
 	if pr := branch.PullRequest; pr != nil {
-		view.PullRequest = &pullRequestJSON{Repository: pr.Repository, Number: pr.Number, URL: github.PullRequestURL(pr.Repository, pr.Number),
+		viewed.PullRequest = &pullRequestJSON{Repository: pr.Repository, Number: pr.Number, URL: github.PullRequestURL(pr.Repository, pr.Number),
 			Head: pr.Head, Pushed: string(pr.Pushed), Draft: pr.Draft}
 		if observed := pr.Observed; observed != nil {
 			at := observed.At
-			view.PullRequest.State, view.PullRequest.Review, view.PullRequest.Checks, view.PullRequest.Failing, view.PullRequest.ObservedAt = string(observed.State), string(observed.Review), string(observed.Checks), observed.Failing, &at
+			viewed.PullRequest.State, viewed.PullRequest.Review, viewed.PullRequest.Checks, viewed.PullRequest.Failing, viewed.PullRequest.ObservedAt = string(observed.State), string(observed.Review), string(observed.Checks), observed.Failing, &at
 		}
 	}
-	return view
+	return viewed
 }
 
 // builderJSON is one builder's part of a result.
@@ -496,17 +483,17 @@ type attentionJSON struct {
 	Next   string `json:"next"`
 }
 
-func attentionView(rows []attention) []attentionJSON {
+func AttentionView(rows []Attention) []attentionJSON {
 	views := []attentionJSON{}
 	for _, row := range rows {
-		views = append(views, attentionJSON{Kind: string(row.kind), Branch: row.branch, What: row.what, Next: row.next})
+		views = append(views, attentionJSON{Kind: string(row.Kind), Branch: row.Branch, What: row.What, Next: row.Next})
 	}
 	return views
 }
 
-type statusJSON struct {
+type StatusJSON struct {
 	Attention []attentionJSON `json:"attention"`
-	Branches  []branchJSON    `json:"branches,omitempty"`
+	Branches  []BranchJSON    `json:"branches,omitempty"`
 	// Serve is serve's state as a line, and ServeState as fields.
 	Serve      string     `json:"serve,omitempty"`
 	ServeState *serveJSON `json:"serve_state,omitempty"`
@@ -531,15 +518,15 @@ type processJSON struct {
 	Database int `json:"database_schema,omitempty"`
 }
 
-func processesView(processes []engine.Process) *[]processJSON {
+func ProcessesView(processes []engine.Process) *[]processJSON {
 	views := []processJSON{}
 	for _, process := range processes {
-		view := processJSON{PID: process.Session.PID, Kind: string(process.Session.Kind), Build: process.Session.Version, Started: process.Session.StartedAt.UTC().Format(time.RFC3339),
+		viewed := processJSON{PID: process.Session.PID, Kind: string(process.Session.Kind), Build: process.Session.Version, Started: process.Session.StartedAt.UTC().Format(time.RFC3339),
 			Leads: process.Leads, Runs: []string{}, Expects: process.Expects, Database: process.Database}
 		for _, run := range process.Runs {
-			view.Runs = append(view.Runs, run.Name())
+			viewed.Runs = append(viewed.Runs, run.Name())
 		}
-		views = append(views, view)
+		views = append(views, viewed)
 	}
 	return &views
 }
@@ -556,11 +543,11 @@ type serveJSON struct {
 	Stopped           int    `json:"stopped"`
 }
 
-func serveView(s engine.ServeState) serveJSON {
+func ServeView(s engine.ServeState) serveJSON {
 	return serveJSON{Running: s.Running, PID: s.PID, OpensPullRequests: s.OpensPullRequests, Build: s.Build, NotActing: s.NotActing, LoginProblem: s.LoginProblem, Queue: s.Queue, Stopped: s.Stopped}
 }
 
-func nonNil[T any](values []T) []T {
+func NonNil[T any](values []T) []T {
 	if values == nil {
 		return []T{}
 	}
@@ -594,16 +581,16 @@ type portChangeJSON struct {
 	Change    string `json:"change"`
 }
 
-func diffView(diff engine.BranchDiff, patch bool) diffJSON {
-	view := diffJSON{Branch: diff.Status.Branch.ShortName(), Base: string(diff.Status.Branch.Base), Edited: nonNil(diff.Status.Edited), Other: nonNil(diff.Other), Files: nonNil(diff.Files)}
-	view.Ports = []portChangeJSON{}
+func DiffView(diff engine.BranchDiff, patch bool) diffJSON {
+	viewed := diffJSON{Branch: diff.Status.Branch.ShortName(), Base: string(diff.Status.Branch.Base), Edited: NonNil(diff.Status.Edited), Other: NonNil(diff.Other), Files: NonNil(diff.Files)}
+	viewed.Ports = []portChangeJSON{}
 	for _, port := range diff.Ports {
-		view.Ports = append(view.Ports, portChangeJSON{Directory: port.Directory, Change: string(port.Change())})
+		viewed.Ports = append(viewed.Ports, portChangeJSON{Directory: port.Directory, Change: string(port.Change())})
 	}
 	if patch {
-		view.Patch = string(diff.Patch)
+		viewed.Patch = string(diff.Patch)
 	}
-	return view
+	return viewed
 }
 
 type impactJSON struct {
@@ -632,16 +619,16 @@ type sharedJSON struct {
 	Users     []string `json:"loaded_by"`
 }
 
-func impactView(impact engine.Impact) impactJSON {
-	view := impactJSON{Branch: impact.Diff.Status.Branch.ShortName(), Changed: nonNil(impact.Diff.Status.Scope.Ports), Defined: impact.Defined, LookedFor: nonNil(impact.Of),
+func ImpactView(impact engine.Impact) impactJSON {
+	viewed := impactJSON{Branch: impact.Diff.Status.Branch.ShortName(), Changed: NonNil(impact.Diff.Status.Scope.Ports), Defined: impact.Defined, LookedFor: NonNil(impact.Of),
 		Dependents: []dependentJSON{}, DependentsError: impact.Unread, Shared: []sharedJSON{}}
 	for _, dependent := range impact.Dependents {
-		view.Dependents = append(view.Dependents, dependentJSON{Name: dependent.Name, Directory: dependent.Directory, On: nonNil(dependent.On), Phases: nonNil(dependent.Phases)})
+		viewed.Dependents = append(viewed.Dependents, dependentJSON{Name: dependent.Name, Directory: dependent.Directory, On: NonNil(dependent.On), Phases: NonNil(dependent.Phases)})
 	}
 	for _, shared := range impact.Shared {
-		view.Shared = append(view.Shared, sharedJSON{Path: shared.Path, PortGroup: shared.PortGroup, Users: nonNil(shared.Users)})
+		viewed.Shared = append(viewed.Shared, sharedJSON{Path: shared.Path, PortGroup: shared.PortGroup, Users: NonNil(shared.Users)})
 	}
-	return view
+	return viewed
 }
 
 // logWhere is where a log is now, kept compressed or as written; empty for

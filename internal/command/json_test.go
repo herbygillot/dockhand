@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -330,13 +331,13 @@ func TestShipReportsOneShape(t *testing.T) {
 // hugo exercise's certigo run, finding 3).
 func TestUpstreamJSONWordsChangesUnderItsKey(t *testing.T) {
 	t.Parallel()
-	view := upstreamView(model.UpstreamComparison{Changes: []model.UpstreamChange{
+	viewed := view.UpstreamView(model.UpstreamComparison{Changes: []model.UpstreamChange{
 		{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod adds golang.org/x/net v0.44.0", Hold: true},
 		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true},
 	}})
-	require.Equal(t, "go.mod adds golang.org/x/net v0.44.0", view.Changes[0].Message)
-	require.Equal(t, "LICENSE changed; the Portfile's license line may need to follow", view.Changes[1].Message)
-	require.True(t, view.Held)
+	require.Equal(t, "go.mod adds golang.org/x/net v0.44.0", viewed.Changes[0].Message)
+	require.Equal(t, "LICENSE changed; the Portfile's license line may need to follow", viewed.Changes[1].Message)
+	require.True(t, viewed.Held)
 }
 
 // Serve's state is fields, and its line is written from them: whether it
@@ -347,12 +348,12 @@ func TestServesStateIsFieldsAndItsLine(t *testing.T) {
 	require.Equal(t, "serve: not running · queue: empty", serveWords(engine.ServeState{}))
 	running := engine.ServeState{Running: true, PID: 34857, OpensPullRequests: true, Queue: 2, Stopped: 1}
 	require.Equal(t, "serve: running (pid 34857) · opens PRs for passing updates · queue: 2 runs, 1 stopped", serveWords(running))
-	data, err := json.Marshal(serveView(running))
+	data, err := json.Marshal(view.ServeView(running))
 	require.NoError(t, err)
 	require.JSONEq(t, `{"running": true, "pid": 34857, "opens_pull_requests": true, "queue": 2, "stopped": 1}`, string(data))
 	running.OpensPullRequests, running.Stopped = false, 0
 	require.Equal(t, "serve: running (pid 34857) · queue: 2 runs", serveWords(running))
-	data, err = json.Marshal(serveView(running))
+	data, err = json.Marshal(view.ServeView(running))
 	require.NoError(t, err)
 	require.JSONEq(t, `{"running": true, "pid": 34857, "queue": 2, "stopped": 0}`, string(data))
 }
@@ -365,12 +366,12 @@ func TestLogsSayWhatTheEnvironmentWas(t *testing.T) {
 		{Execution: model.GuestExecution{ID: "tart_1", Attempt: 1, State: model.ExecutionFinished, Identity: "source sha256:a; setup 3"}},
 		{Execution: model.GuestExecution{ID: "command_1", Attempt: 1, State: model.ExecutionFinished}},
 	}}
-	data, err := json.Marshal(logsView(logs))
+	data, err := json.Marshal(view.LogsView(logs))
 	require.NoError(t, err)
-	var view map[string]any
-	require.NoError(t, json.Unmarshal(data, &view))
-	require.Equal(t, "source sha256:a; setup 3", dig(t, view, "executions", 0, "identity"))
-	require.NotContains(t, dig(t, view, "executions", 1), "identity")
+	var viewed map[string]any
+	require.NoError(t, json.Unmarshal(data, &viewed))
+	require.Equal(t, "source sha256:a; setup 3", dig(t, viewed, "executions", 0, "identity"))
+	require.NotContains(t, dig(t, viewed, "executions", 1), "identity")
 }
 
 // logs says, of a Git-fetched target's build, the commit it fetched and
@@ -392,14 +393,14 @@ func TestLogsSayWhatAGitFetchedBuildFetched(t *testing.T) {
 	require.Contains(t, out.String(), "    libharbor passed\n      fetched 1a2b3c4, the commit git.branch v4 named when the check was planned\n    harbor-cli passed\n")
 	require.Contains(t, out.String(), "    libharbor passed\n      which commit of git.branch v4 it fetched isn't known: its provider didn't say; 1a2b3c4 was expected\n")
 
-	data, err := json.Marshal(logsView(logs))
+	data, err := json.Marshal(view.LogsView(logs))
 	require.NoError(t, err)
-	var view map[string]any
-	require.NoError(t, json.Unmarshal(data, &view))
-	require.Equal(t, string(commit), dig(t, view, "executions", 0, "results", 0, "fetched"))
-	require.Equal(t, "v4", dig(t, view, "executions", 0, "results", 0, "git", "branch"))
-	require.NotContains(t, dig(t, view, "executions", 0, "results", 1), "git", "fetched otherwise")
-	require.NotContains(t, dig(t, view, "executions", 1, "results", 0), "fetched", "its provider didn't say")
+	var viewed map[string]any
+	require.NoError(t, json.Unmarshal(data, &viewed))
+	require.Equal(t, string(commit), dig(t, viewed, "executions", 0, "results", 0, "fetched"))
+	require.Equal(t, "v4", dig(t, viewed, "executions", 0, "results", 0, "git", "branch"))
+	require.NotContains(t, dig(t, viewed, "executions", 0, "results", 1), "git", "fetched otherwise")
+	require.NotContains(t, dig(t, viewed, "executions", 1, "results", 0), "fetched", "its provider didn't say")
 }
 
 // A plan's JSON carries what the person asked and what --only left out,
@@ -412,9 +413,9 @@ func TestAPlansJSONSaysWhatWasAskedAndLeftOut(t *testing.T) {
 			{ID: "oniguruma", Target: model.Target{Name: "oniguruma"}, Directory: "textproc/oniguruma", Kind: model.Unchanged, Role: model.Also}},
 		Omitted: []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Directory: "devel/libharbor", Kind: model.Substantive, Role: model.Changed}},
 		Builds:  []model.EnvironmentPlan{{Environment: arm, Order: []model.TargetID{"jq", "oniguruma"}}}}
-	view := planView(plan)
-	require.Equal(t, []string{"jq"}, view.Only)
-	require.Equal(t, []string{"oniguruma"}, view.Also)
-	require.Len(t, view.Omitted, 1)
-	require.Equal(t, "libharbor", view.Omitted[0].Name)
+	viewed := view.PlanView(plan)
+	require.Equal(t, []string{"jq"}, viewed.Only)
+	require.Equal(t, []string{"oniguruma"}, viewed.Also)
+	require.Len(t, viewed.Omitted, 1)
+	require.Equal(t, "libharbor", viewed.Omitted[0].Name)
 }

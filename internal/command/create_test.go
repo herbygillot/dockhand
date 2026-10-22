@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -229,9 +230,9 @@ func TestCreateSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 func TestPlainHTTPURLsAreSaid(t *testing.T) {
 	t.Parallel()
 	var out strings.Builder
-	writePlainHTTP(&out, nil)
+	view.WritePlainHTTP(&out, nil)
 	require.Empty(t, out.String())
-	writePlainHTTP(&out, []engine.PlainURL{
+	view.WritePlainHTTP(&out, []engine.PlainURL{
 		{PlainURL: macports.PlainURL{Option: "homepage", URL: "http://jqlang.example/"}, HTTPS: "https://jqlang.example/", Answers: true},
 		{PlainURL: macports.PlainURL{Option: "master_sites", URL: "http://dl.example/jq/"}, HTTPS: "https://dl.example/jq/"},
 	})

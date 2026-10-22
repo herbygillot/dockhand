@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -131,7 +132,7 @@ results were reused from. It asks, and without a terminal needs --yes.`,
 					return err
 				}
 			}
-			streams.Emit(map[string]any{"branches": cleanView(plans), "leftovers": leftoversView(leftovers), "applied": false})
+			streams.Emit(map[string]any{"branches": view.CleanView(plans), "leftovers": view.LeftoversView(leftovers), "applied": false})
 			removable := writeClean(streams.Out, plans, false, s.places()) + writeLeftovers(streams.Out, leftovers, false)
 			if removable == 0 {
 				fmt.Fprintln(streams.Out, "Nothing to remove.")
@@ -147,7 +148,7 @@ results were reused from. It asks, and without a terminal needs --yes.`,
 			}
 			done, err := e.ApplyClean(ctx, plans)
 			removed, leftoverErr := e.RemoveLeftovers(ctx, session, leftovers)
-			streams.Emit(map[string]any{"branches": cleanView(done), "leftovers": leftoversView(removed), "applied": true})
+			streams.Emit(map[string]any{"branches": view.CleanView(done), "leftovers": view.LeftoversView(removed), "applied": true})
 			// What was done is one line a branch, its plan having been
 			// shown in full: thirty branches' blocks printed twice were
 			// a lot to read (field testing's cleanup, af03bbab).

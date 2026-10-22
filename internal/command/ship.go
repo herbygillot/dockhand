@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -65,7 +66,7 @@ says whether any went through: 1 where none did, 3 where some need a look.`,
 			if chosen := len(args) > 0 || mine || passing; chosen && where.explicit() || len(args) > 0 && (mine || passing) || mine && passing {
 				return errors.New("choose one target source: port names, --mine, --passing, or a branch")
 			}
-			whole := &batchJSON{}
+			whole := &view.BatchJSON{}
 			streams.LinkSteps(whole)
 			e, err := s.open(ctx)
 			if err != nil {
@@ -249,7 +250,7 @@ func writeSubmitRow(ctx context.Context, e *engine.Engine, out io.Writer, indent
 		fmt.Fprintf(out, "%s✗ %v\n", indent, err)
 		return
 	}
-	fmt.Fprintf(out, "%s%s · %s · %s\n", indent, plan.Title, checkWords(plan), pullRequestWords(plan))
+	fmt.Fprintf(out, "%s%s · %s · %s\n", indent, plan.Title, view.CheckWords(plan), pullRequestWords(plan))
 	// Under a label of their own, the lines need no "upstream:" each (the
 	// ov run's finding 5).
 	if lines := upstreamLines(plan); len(lines) > 0 {
@@ -267,7 +268,7 @@ func writeSubmitRow(ctx context.Context, e *engine.Engine, out io.Writer, indent
 // each submitted as its check passes (decision 4): serve runs them side by
 // side where it leads, and a rerun follows a check still queued or
 // running for the same files rather than starting another.
-func shipAll(ctx context.Context, s *settings, streams term.Streams, whole *batchJSON, targets []shipTarget, stage engine.ShipStage, answered model.Answered, version versionUpdate) error {
+func shipAll(ctx context.Context, s *settings, streams term.Streams, whole *view.BatchJSON, targets []shipTarget, stage engine.ShipStage, answered model.Answered, version versionUpdate) error {
 	unattended := branchstate.Mode{Answered: answered}.Unattended()
 	if unattended {
 		streams = streams.Unattended()
@@ -281,14 +282,14 @@ func shipAll(ctx context.Context, s *settings, streams term.Streams, whole *batc
 		}
 		// In a batch, each change that stopped is in the result with why,
 		// where only the error said it (the rc1 full stage, S2).
-		streams.Emit([]skippedJSON{{Port: target.name(), Reason: err.Error()}})
-		fmt.Fprintf(streams.Err, "%s: %v\n", target.name(), sayNext(err))
+		streams.Emit([]view.SkippedJSON{{Port: target.name(), Reason: err.Error()}})
+		fmt.Fprintf(streams.Err, "%s: %v\n", target.name(), view.SayNext(err))
 		failed = append(failed, target.name())
 		return nil
 	}
 	var carried []carried
 	for _, target := range targets {
-		whole.next()
+		whole.Next()
 		done, err := shipOne(ctx, s, streams, target, stage, unattended, len(targets) > 1, version)
 		if err != nil {
 			if err := stopped(target, err); err != nil {
@@ -430,7 +431,7 @@ func prepareSubmit(ctx context.Context, s *settings, e *engine.Engine, streams t
 	if err != nil {
 		return pendingSubmit{}, nil, err
 	}
-	streams.Emit(submitView(plan))
+	streams.Emit(view.SubmitView(plan))
 	writeSubmitPlan(streams.Out, plan)
 	if len(plan.Blocking) > 0 {
 		return pendingSubmit{}, nil, errors.New("nothing was checked or submitted")
@@ -468,7 +469,7 @@ func submitPassed(ctx context.Context, s *settings, e *engine.Engine, streams te
 	if err != nil {
 		return err
 	}
-	streams.Emit(submitView(plan))
+	streams.Emit(view.SubmitView(plan))
 	fmt.Fprintln(streams.Out)
 	err = applySubmit(ctx, e, streams, plan, s.file.Submit.RerequestReview, pending.answered)
 	// The gate is the engine's (branchstate.Publish); ship words what it
@@ -482,11 +483,11 @@ func submitPassed(ctx context.Context, s *settings, e *engine.Engine, streams te
 		return errors.New("nothing was submitted")
 	case refused.Kind() == refusal.Attention:
 		held := engine.HoldLines(plan.Held())
-		view := submitView(plan)
-		view.Held = held
-		streams.Emit(view)
+		viewed := view.SubmitView(plan)
+		viewed.Held = held
+		streams.Emit(viewed)
 		name := plan.Branch.ShortName()
-		return term.Exitf(term.ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: %s", name, strings.Join(held, "; "), strings.Join(renderSteps(refused.Next), "; then "))
+		return term.Exitf(term.ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: %s", name, strings.Join(held, "; "), strings.Join(view.RenderSteps(refused.Next), "; then "))
 	}
 	return err
 }
@@ -537,8 +538,8 @@ func queueHead(ctx context.Context, s *settings, e *engine.Engine, streams term.
 		return nil, nil
 	}
 	fmt.Fprintf(streams.Out, "\n%s · checking %s%s\n", branch.ShortName(), engine.Describe(proposal.Capture.Revision), then)
-	writePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.Remedy)
-	writePushes(streams.Out, proposal.Plan)
+	view.WritePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.Remedy)
+	view.WritePushes(streams.Out, proposal.Plan)
 	if unrunnable := new(engine.UnrunnableError); errors.As(err, &unrunnable) {
 		return nil, fmt.Errorf("nothing was checked: %w", err)
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -209,7 +210,7 @@ tracked files.`,
 					return fmt.Errorf("%s was started, but %w", branch.Name, err)
 				}
 			}
-			streams.Emit(map[string]any{"branch": branchRef(branch)})
+			streams.Emit(map[string]any{"branch": view.BranchRef(branch)})
 			if here {
 				fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now) in this checkout, and switched to it.\n", branch.Name, branch.Base.Short())
 				return nil
@@ -260,8 +261,8 @@ edit and you have write access, and never rewrites their description.`,
 			if err != nil {
 				return err
 			}
-			streams.Emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "renamed_from": adoption.Renamed, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames()),
-				"uncommitted": nonNil(adoption.Uncommitted), "placed": adoption.Placed, "unplaced": adoption.Unplaced})
+			streams.Emit(map[string]any{"branch": view.BranchRef(adoption.Branch), "already": adoption.Already, "renamed_from": adoption.Renamed, "commits": adoption.Commits, "ports": view.NonNil(adoption.Scope.PortNames()),
+				"uncommitted": view.NonNil(adoption.Uncommitted), "placed": adoption.Placed, "unplaced": adoption.Unplaced})
 			if adoption.Already {
 				fmt.Fprintf(streams.Out, "%s is already tracked.\n", adoption.Branch.Name)
 				writePlaced(streams.Out, adoption)
@@ -302,9 +303,9 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams term.Stream
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(streams.Err, experimentalWords(number, adoption.Author))
-	streams.Emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "number": number, "title": adoption.Title,
-		"author": adoption.Author, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames()), "maintainers_can_edit": adoption.MaintainerCanModify})
+	fmt.Fprintln(streams.Err, view.ExperimentalWords(number, adoption.Author))
+	streams.Emit(map[string]any{"branch": view.BranchRef(adoption.Branch), "already": adoption.Already, "number": number, "title": adoption.Title,
+		"author": adoption.Author, "commits": adoption.Commits, "ports": view.NonNil(adoption.Scope.PortNames()), "maintainers_can_edit": adoption.MaintainerCanModify})
 	if adoption.Already {
 		fmt.Fprintf(streams.Out, "#%d is already tracked, as %s.\n", number, adoption.Branch.ShortName())
 		return nil
@@ -420,7 +421,7 @@ func publishing(ctx context.Context, s *settings) (string, githubLoginJSON) {
 		ended := refusal.Of(err)
 		line := "! " + ended.Words()
 		if len(ended.Next) > 0 {
-			line += "; run " + strings.Join(renderSteps(ended.Next), ", then ")
+			line += "; run " + strings.Join(view.RenderSteps(ended.Next), ", then ")
 		}
 		return line, githubLoginJSON{Problem: ended.Words()}
 	case errors.Is(err, github.ErrNoCredentials):

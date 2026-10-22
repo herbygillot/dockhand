@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -188,7 +189,7 @@ its go-get answer.`,
 				// flyctl run).
 				fmt.Fprintf(out, "  maintainers: nomaintainer (no maintainer configured). %s\n", engine.MaintainerWords(e.SuggestMaintainer(ctx, branch.Base), e.ConfigFile))
 			}
-			writePlainHTTP(out, created.PlainHTTP)
+			view.WritePlainHTTP(out, created.PlainHTTP)
 			fmt.Fprintln(out, "Next: "+nextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))
 			return nil
 		},
@@ -209,19 +210,19 @@ func buildWords(observed engine.Observed) string {
 }
 
 type createdJSON struct {
-	Branch      branchRefJSON `json:"branch"`
-	Port        string        `json:"port"`
-	Directory   string        `json:"directory"`
-	Version     string        `json:"version"`
-	Build       string        `json:"build"`
-	Category    string        `json:"category"`
-	Crates      int           `json:"crates"`
-	Unconfirmed []string      `json:"unconfirmed"`
-	Checksums   string        `json:"checksums_problem,omitempty"`
-	MovedFrom   string        `json:"moved_from,omitempty"`
+	Branch      view.BranchRefJSON `json:"branch"`
+	Port        string             `json:"port"`
+	Directory   string             `json:"directory"`
+	Version     string             `json:"version"`
+	Build       string             `json:"build"`
+	Category    string             `json:"category"`
+	Crates      int                `json:"crates"`
+	Unconfirmed []string           `json:"unconfirmed"`
+	Checksums   string             `json:"checksums_problem,omitempty"`
+	MovedFrom   string             `json:"moved_from,omitempty"`
 }
 
 func createdView(branch model.Branch, created engine.Created) createdJSON {
-	return createdJSON{Branch: branchRef(branch), Port: created.Port, Directory: created.Directory, Version: created.Version, Build: created.Build.System,
-		Category: created.Category, Crates: created.Crates, Unconfirmed: nonNil(created.Unconfirmed), Checksums: created.ChecksumsProblem, MovedFrom: created.MovedFrom}
+	return createdJSON{Branch: view.BranchRef(branch), Port: created.Port, Directory: created.Directory, Version: created.Version, Build: created.Build.System,
+		Category: created.Category, Crates: created.Crates, Unconfirmed: view.NonNil(created.Unconfirmed), Checksums: created.ChecksumsProblem, MovedFrom: created.MovedFrom}
 }
