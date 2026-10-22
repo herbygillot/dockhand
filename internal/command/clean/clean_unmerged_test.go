@@ -60,7 +60,7 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	// run with bf711891).
 	out, _, err = cmdtest.Dockhand(t, "status", "--all")
 	require.NoError(t, err)
-	require.Regexp(t, `(?m)^jq-update \(archived\)\s+1\s+1 commit\s`, out)
+	require.Regexp(t, `(?m)^    jq-update \(archived\)  1 commit  —$`, out)
 
 	out, _, err = cmdtest.Dockhand(t, "path", "jq-update")
 	require.NoError(t, err)

@@ -74,7 +74,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
-	require.Contains(t, out, "BRANCH     PORTS  WORK         CHECKS  PR\njq-update  0      nothing yet  —       —\n")
+	require.Contains(t, out, "Working (1)\n  ⋯ jq-update  nothing yet\n")
 	require.Contains(t, out, "serve: not running · queue: empty")
 
 	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
@@ -86,8 +86,11 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 	out, _, err = cmdtest.Dockhand(t)
 	require.NoError(t, err, "bare dockhand in a ports checkout is status")
-	require.Contains(t, out, "Needs you\n  ✓ jq-update  snapshot 1 passed; commit it for review\n               dockhand tidy --branch jq-update\n")
-	require.Contains(t, out, "jq-update  1      edits, uncommitted  passed for snapshot 1  —\n")
+	require.Contains(t, out, "Needs you (1)\n  ✓ jq-update  snapshot 1 passed; commit it for review\n               dockhand tidy --branch jq-update\n")
+	require.NotContains(t, out, "Working", "a branch that needs you is in that group alone")
+	out, _, err = cmdtest.Dockhand(t, "status", "-v")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update  1      edits, uncommitted  passed for snapshot 1  —\n", "-v's table of every branch")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# more\n"), 0o644))
 	out, _, err = cmdtest.Dockhand(t, "status", "--attention")
@@ -135,7 +138,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.ErrorContains(t, err, "check-1 is already queued for these files")
-	out, _, err := cmdtest.Dockhand(t, "status", "--all")
+	out, _, err := cmdtest.Dockhand(t, "status", "--all", "-v")
 	require.NoError(t, err)
 	require.Contains(t, out, "\nChecks queued and running\n  RUN      BRANCH     SOURCE      ON       STATE   DETAIL\n  check-1  jq-update  snapshot 1  command  queued  \n\nserve: not running · queue: 1 run\n")
 	_, _, err = cmdtest.Dockhand(t, "queue")

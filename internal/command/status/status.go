@@ -1,6 +1,7 @@
 package status
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
@@ -218,36 +220,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			fmt.Fprintf(out, "Followed %s, renamed by hand to %s.\n\n", status.Renamed, status.Branch.ShortName())
 		}
 	}
-	if len(rows) > 0 {
-		fmt.Fprintln(out, "Needs you")
-		writeAttention(out, rows, streams.Width())
-		fmt.Fprintln(out)
-	}
-	if len(statuses) == 0 {
-		fmt.Fprintln(out, "No open branches. dockhand update <port> starts one for a port, and dockhand start <name> one for other work.")
-	} else {
-		table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(table, "BRANCH\tPORTS\tWORK\tCHECKS\tPR")
-		for _, status := range statuses {
-			ports := strconv.Itoa(len(status.Scope.Ports))
-			if len(status.Scope.Ports) == 0 && len(status.Branch.Ports) > 0 {
-				// The ports it was started for, which it doesn't change yet.
-				ports = strconv.Itoa(len(status.Branch.Ports))
-			}
-			if status.Cleaned() {
-				// What its Git branch changed went with it.
-				ports = "—"
-			}
-			// An archived branch is said, as clean says it; its row
-			// read as an open one's (the dogfood run with bf711891).
-			name := status.Branch.ShortName()
-			if status.Branch.State == model.BranchArchived {
-				name += " (archived)"
-			}
-			fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", name, ports, workWords(status), view.CheckState(status), prWords(status))
-		}
-		table.Flush()
-	}
+	writeOverview(out, streams, statuses, rows, processes, all)
 	if found, ok := e.LastOutdatedLook(); ok && (len(found.Outdated) > 0 || len(found.Uncertain) > 0) {
 		fmt.Fprintln(out)
 		if len(found.Outdated) > 0 {
@@ -257,15 +230,198 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			fmt.Fprintf(out, "Your ports: %s may have newer releases; review needed. Last checked %s by serve. Run dockhand outdated %s for details.\n", prose.Plural(len(found.Uncertain), "port"), engine.Ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
 		}
 	}
-	view.WriteQueue(out, queue)
-	writeProcesses(out, processes)
+	// The checks and the processes are -v's tables: a check shows on its
+	// branch's row, and other processes are a line (part 5, item 4).
+	if streams.Verbose() > 0 {
+		view.WriteQueue(out, queue)
+		writeProcesses(out, processes)
+	} else if others := len(processes); others > 0 {
+		fmt.Fprintf(out, "\n%s working on this checkout; dockhand status -v lists %s.\n", prose.Plural(others, "other dockhand process"), map[bool]string{true: "it", false: "them"}[others == 1])
+	}
 	fmt.Fprintf(out, "\n%s\n", view.ServeWords(serve))
 	return nil
 }
 
+// writeOverview is the branches by bucket (branchstate.BucketOf): what
+// needs you, each row's why wrapped and its command below it; what's under
+// way, a line each; and what waits on reviewers, counted, and listed with
+// -v, which gives the whole table of branches, as status gave it before;
+// --all lists the merged, closed, and archived too. With nothing for the
+// person, it's one line.
+func writeOverview(out io.Writer, streams term.Streams, statuses []engine.BranchStatus, rows []view.Attention, processes []engine.Process, all bool) {
+	if len(statuses) == 0 && len(rows) == 0 {
+		fmt.Fprintln(out, "No open branches. dockhand update <port> starts one for a port, and dockhand start <name> one for other work.")
+		return
+	}
+	// A process that expects another schema needs you: what it records may
+	// not be read.
+	for _, process := range processes {
+		if process.Expects != 0 {
+			rows = append(rows, view.Attention{Kind: view.AttentionNeedsYou, Branch: fmt.Sprintf("pid %d", process.Session.PID),
+				What: fmt.Sprintf("expects schema %d and the database is at %d: what it records may not be read", process.Expects, process.Database),
+				Next: "stop it, and run this dockhand"})
+		}
+	}
+	buckets := map[branchstate.Bucket][]engine.BranchStatus{}
+	for _, status := range statuses {
+		bucket := branchstate.BucketOf(status.Facts())
+		buckets[bucket] = append(buckets[bucket], status)
+	}
+	working, waiting, done := buckets[branchstate.BucketWorking], buckets[branchstate.BucketWaiting], buckets[branchstate.BucketDone]
+	said := false
+	group := func(heading string, count int) {
+		if said {
+			fmt.Fprintln(out)
+		}
+		said = true
+		fmt.Fprintf(out, "%s (%d)\n", heading, count)
+	}
+	if len(rows) > 0 {
+		group("Needs you", len(rows))
+		writeAttention(out, rows, streams.Width())
+	}
+	if len(working) > 0 {
+		group("Working", len(working))
+		table := rowsWriter(out)
+		for _, status := range working {
+			next := ""
+			if step, ok := branchstate.Working(status.Facts()); ok {
+				next = view.RenderNext(step, "")
+			}
+			fmt.Fprintf(table, "  %s %s\t%s\t%s\n", view.Working, status.Branch.ShortName(), doingWords(status), next)
+		}
+		table.Flush()
+	}
+	if len(waiting) > 0 {
+		heading := fmt.Sprintf("Waiting on reviewers (%d): %s", len(waiting), ciTally(waiting))
+		if said {
+			fmt.Fprintln(out)
+		} else {
+			// Nothing else to say is one line.
+			heading = fmt.Sprintf("Nothing needs you; %s %s on reviewers (%s)", prose.Plural(len(waiting), "pull request"), map[bool]string{true: "waits", false: "wait"}[len(waiting) == 1], ciTally(waiting))
+		}
+		said = true
+		if streams.Verbose() == 0 {
+			heading += " · dockhand status -v lists them"
+		}
+		fmt.Fprintln(out, heading)
+	}
+	if all && len(done) > 0 {
+		group("Merged, closed, and archived", len(done))
+		table := rowsWriter(out)
+		for _, status := range done {
+			// An archived branch is said, as clean says it.
+			name := status.Branch.ShortName()
+			if status.Branch.State == model.BranchArchived {
+				name += " (archived)"
+			}
+			fmt.Fprintf(table, "  %s %s\t%s\t%s\n", view.Unmarked, name, workWords(status), prWords(status))
+		}
+		table.Flush()
+	}
+	if !said {
+		fmt.Fprintln(out, "Nothing needs you.")
+	}
+	if streams.Verbose() > 0 {
+		fmt.Fprintln(out)
+		writeBranches(out, statuses)
+	}
+}
+
+// rowsWriter sets a group's rows in columns, a line each with no spaces
+// after its last word, as a row with no command would leave.
+func rowsWriter(out io.Writer) *trimmedTable {
+	t := &trimmedTable{out: out}
+	t.Writer = tabwriter.NewWriter(&t.buf, 0, 0, 2, ' ', 0)
+	return t
+}
+
+// trimmedTable is a tabwriter whose lines are written without trailing
+// spaces once it's flushed.
+type trimmedTable struct {
+	*tabwriter.Writer
+	buf bytes.Buffer
+	out io.Writer
+}
+
+func (t *trimmedTable) Flush() {
+	t.Writer.Flush()
+	for line := range strings.SplitSeq(strings.TrimSuffix(t.buf.String(), "\n"), "\n") {
+		fmt.Fprintln(t.out, strings.TrimRight(line, " "))
+	}
+	t.buf.Reset()
+}
+
+// doingWords is what a branch under way is doing: its work, and its check
+// where it has one.
+func doingWords(status engine.BranchStatus) string {
+	words := workWords(status)
+	if check := view.CheckState(status); check != "—" {
+		words += " · " + check
+	}
+	return words
+}
+
+// ciTally counts the waiting pull requests by their CI: "CI passed 134,
+// running 8".
+func ciTally(waiting []engine.BranchStatus) string {
+	counts := map[model.PullRequestChecks]int{}
+	for _, status := range waiting {
+		checks := model.PullRequestChecks("")
+		if observed := status.Branch.PullRequest.Observed; observed != nil {
+			checks = observed.Checks
+		}
+		counts[checks]++
+	}
+	var tally []string
+	for _, kind := range []struct {
+		checks model.PullRequestChecks
+		words  string
+	}{{model.ChecksPassing, "passed"}, {model.ChecksPending, "running"}, {model.ChecksNone, "none"}, {"", "not read yet"}} {
+		if n := counts[kind.checks]; n > 0 {
+			tally = append(tally, fmt.Sprintf("%s %d", kind.words, n))
+			delete(counts, kind.checks)
+		}
+	}
+	for _, n := range counts {
+		tally = append(tally, fmt.Sprintf("other %d", n))
+	}
+	if len(tally) == 0 {
+		return "CI not read yet"
+	}
+	return "CI " + strings.Join(tally, ", ")
+}
+
+// writeBranches is every branch in a table, -v's: its ports, work, checks,
+// and pull request.
+func writeBranches(out io.Writer, statuses []engine.BranchStatus) {
+	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(table, "BRANCH\tPORTS\tWORK\tCHECKS\tPR")
+	for _, status := range statuses {
+		ports := strconv.Itoa(len(status.Scope.Ports))
+		if len(status.Scope.Ports) == 0 && len(status.Branch.Ports) > 0 {
+			// The ports it was started for, which it doesn't change yet.
+			ports = strconv.Itoa(len(status.Branch.Ports))
+		}
+		if status.Cleaned() {
+			// What its Git branch changed went with it.
+			ports = "—"
+		}
+		// An archived branch is said, as clean says it; its row
+		// read as an open one's (the dogfood run with bf711891).
+		name := status.Branch.ShortName()
+		if status.Branch.State == model.BranchArchived {
+			name += " (archived)"
+		}
+		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", name, ports, workWords(status), view.CheckState(status), prWords(status))
+	}
+	table.Flush()
+}
+
 // writeProcesses lists the dockhand processes working on the checkout,
-// each with what it does, and one whose schema isn't the database's said,
-// where the exiv2 agent compared pgrep and versions by hand.
+// each with what it does, where the exiv2 agent compared pgrep and
+// versions by hand; one whose schema isn't the database's is a row of
+// what needs you.
 func writeProcesses(out io.Writer, processes []engine.Process) {
 	if len(processes) == 0 {
 		return
@@ -277,11 +433,6 @@ func writeProcesses(out io.Writer, processes []engine.Process) {
 		fmt.Fprintf(table, "  %d\t%s\t%s\t%s\t%s\n", process.Session.PID, process.Session.Kind, cmp.Or(process.Session.Version, "unknown"), engine.Ago(process.Session.StartedAt), processWords(process))
 	}
 	table.Flush()
-	for _, process := range processes {
-		if process.Expects != 0 {
-			fmt.Fprintf(out, "! pid %d expects schema %d and the database is at %d: what it records may not be read; stop it and run this dockhand\n", process.Session.PID, process.Expects, process.Database)
-		}
-	}
 }
 
 // processWords is what a process is doing: leading the queue, running

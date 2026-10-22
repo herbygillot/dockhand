@@ -365,7 +365,8 @@ func (a Attention) Words(v Vocabulary) string {
 	case BranchGone:
 		return "its Git branch is gone"
 	case StoppedCheck:
-		return a.Run.Name() + " stopped: the process running it ended; dockhand wait " + a.Run.Name() + " resumes it, and dockhand cancel " + a.Run.Name() + " ends it"
+		// The row's command resumes it, said once (part 5, item 4).
+		return a.Run.Name() + " stopped: the process running it ended; the command below resumes it, and dockhand cancel --branch " + a.Branch + " ends it instead"
 	case SomeoneElsePushed:
 		return fmt.Sprintf("someone else pushed to #%d%s", pr.Number, age(pr.Observed.At))
 	case ChangesRequested:

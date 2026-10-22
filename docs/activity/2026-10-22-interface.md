@@ -232,3 +232,36 @@ mark's column (`view.Unmarked`).
     subject set apart.
   - review's upstream heading says "the pull request's head" where a
     finding already names that commit.
+
+## Item 4: status and the overview grammar
+
+### status by bucket
+
+- **The buckets are branchstate's** (`branchstate.Bucket`, `BucketOf`):
+  Needs you is a branch with a row of `Attend`'s; Done one merged, closed,
+  archived, or cleaned; Waiting one whose open pull request asks nothing of
+  you, its CI failing or a review asking for changes being a row of
+  `Attend`'s; and Working the rest. `branchstate.Working` is what moves a
+  Working branch on: `wait` on its check, or `check` where nothing checked
+  it yet.
+- **status's overview** is the buckets, each a heading with its count, an
+  empty one left out:
+  - Needs you keeps its rows, their why wrapped and their command below.
+    A process that expects another schema is one of its rows, where it was
+    a line under the processes table.
+  - Working is a line a branch: `⋯`, the branch, its work and its check,
+    and its command.
+  - Waiting on reviewers is a count with CI's tally, "Waiting on reviewers
+    (3): CI passed 2, running 1 · dockhand status -v lists them".
+  - `--all` adds "Merged, closed, and archived", a line each.
+  - With nothing else, it's one line: "Nothing needs you; 1 pull request
+    waits on reviewers (…)".
+- **-v** gives the table of every branch, as status gave it before, and
+  the checks and processes tables; at the default level, other processes
+  are a line, "2 other dockhand processes working on this checkout;
+  dockhand status -v lists them".
+- **A stopped check's row says its command once**: "check-1 stopped: the
+  process running it ended; the command below resumes it, and dockhand
+  cancel --branch jq-update ends it instead", where the message named
+  `dockhand wait check-1` above the row's own `dockhand wait check-1`.
+- status joins the "said once" check.

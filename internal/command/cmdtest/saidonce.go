@@ -92,10 +92,9 @@ func Overwidth(out string) []string {
 // which is meant to be read in full, nor help's; nor a question's on a
 // terminal, which says the report it asks about; nor serve's log, or
 // status --watch's redrawn view, which name what each line is about; nor
-// review --markdown's, a comment's text for pasting. status is item 4's,
-// whose groups say a step once.
+// review --markdown's, a comment's text for pasting.
 func saidOnceChecked(args []string, streams term.Streams) bool {
-	if streams.Terminal() || len(args) > 0 && (args[0] == "serve" || args[0] == "status") {
+	if streams.Terminal() || len(args) > 0 && args[0] == "serve" {
 		return false
 	}
 	for _, arg := range args {
