@@ -285,10 +285,9 @@ answered:
 - **`engine.RerunCI`** asks GitHub to re-run each failed run at the head;
   without write access it's an `Auth` refusal whose step is to ask a
   maintainer, or push, which runs CI anew.
-- **The command**, provisionally `dockhand retry --ci -b <branch>`, as
-  architecture recommended: the verb's spelling is Herby's call, asked
-  through the coordinator, and it's spelled in one place (renderNext and
-  retry's flag).
+- **The command** is `dockhand retry --ci -b <branch>`, as architecture
+  recommended and Herby chose ("extend `retry`", 2026-10-22 07:51Z),
+  spelled in one place (renderNext and retry's flag).
 
 ## Offline said as offline, and the network's holds kept (item 1's rest)
 
