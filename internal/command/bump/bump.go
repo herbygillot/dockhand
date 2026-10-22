@@ -1,10 +1,12 @@
-package command
+package bump
 
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/author"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
+	"github.com/herbygillot/dockhand/internal/command/ship"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -14,8 +16,8 @@ import (
 // bumpCommand is ship's single-port front, ship <port> --yes with a
 // version to pin: nobody looks before it submits, so it holds what serve's
 // submissions hold (the person's word that bump stays, 2026-10-15).
-func bumpCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
-	var version versionUpdate
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var version author.VersionUpdate
 	cmd := &cobra.Command{
 		Use:   "bump <port> [version]",
 		Short: "Update a port, check it, and open a pull request without prompts",
@@ -54,7 +56,7 @@ dockhand can't. The check builds where build.unattended's profile says;
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if err := version.stageReady(); err != nil {
+			if err := version.StageReady(); err != nil {
 				return err
 			}
 			whole := &view.BatchJSON{}
@@ -63,23 +65,23 @@ dockhand can't. The check builds where build.unattended's profile says;
 			if err != nil {
 				return err
 			}
-			targets, err := shipTargets(ctx, e, streams, args[:1], branchflags.BranchFlags{})
+			targets, err := ship.ShipTargets(ctx, e, streams, args[:1], branchflags.BranchFlags{})
 			if err == nil && len(args) == 2 {
-				targets[0].version = args[1]
+				targets[0].Version = args[1]
 			}
 			if err == nil {
-				writeShipPlan(ctx, e, streams.Out, targets, engine.ShipSubmit)
+				ship.WriteShipPlan(ctx, e, streams.Out, targets, engine.ShipSubmit)
 			}
 			e.Close()
 			if err != nil {
 				return err
 			}
-			version.linked.noteSet = cmd.Flags().Changed("note")
-			return shipAll(ctx, s, streams, whole, targets, engine.ShipSubmit, model.AnsweredYes, version)
+			version.Linked.NoteSet = cmd.Flags().Changed("note")
+			return ship.ShipAll(ctx, s, streams, whole, targets, engine.ShipSubmit, model.AnsweredYes, version)
 		},
 	}
-	version.flags(cmd)
-	version.stageFlags(cmd)
+	version.Flags(cmd)
+	version.StageFlags(cmd)
 	settings.SupportsJSON(cmd)
 	return cmd
 }

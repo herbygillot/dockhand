@@ -180,3 +180,12 @@ line without importing the root.
   plan's writers (`WriteSubmitPlan`, `PullRequestWords`, `UpstreamLines`,
   and their words) are view's, and so is author's `WriteUpstream`. The
   tests' `UnfetchedPrevious` and `Cells` are cmdtest's.
+- **review** (the pull request review, reviewpr.go).
+- **author**: update, checksums, edit, and revbump (`UpdateCommand`,
+  `ChecksumsCommand`, `EditCommand`, `RevbumpCommand`), with
+  `VersionUpdate` and `LinkedOptions` exported for ship and bump.
+- **ship**, its own package by architecture's answer, with `tidyBranch`
+  (ship's tidy stage, which author.go held). **bump** imports ship and
+  author. author imports outdated alone, for update --mine's batch, which
+  boundary_test's `verbImports` names with the composites.
+  stealth's `refuser` is `cmdtest.Refuser`.

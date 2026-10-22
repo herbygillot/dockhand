@@ -108,22 +108,11 @@ func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 	require.NotContains(t, out, "stealth")
 }
 
-// refuser stands in for MacPorts with a Portfile dockhand won't edit.
-type refuser struct{}
-
-func (refuser) ResolveRelease(context.Context, editprep.Request) (model.Release, error) {
-	return model.Release{Version: "1.8.1"}, nil
-}
-
-func (refuser) Prepare(context.Context, editprep.Request) (editprep.Result, error) {
-	return editprep.Result{}, editprep.ErrUnsupported.Because("its pre-fetch hook runs exec")
-}
-
 func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
-	cmdtest.Stands(t).Preparer = func(*engine.Engine) engine.Preparer { return refuser{} }
+	cmdtest.Stands(t).Preparer = func(*engine.Engine) engine.Preparer { return cmdtest.Refuser{} }
 
 	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--new")
 	require.Error(t, err)

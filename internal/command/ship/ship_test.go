@@ -1,4 +1,4 @@
-package command
+package ship
 
 import (
 	"bytes"
@@ -279,7 +279,7 @@ func TestShipStartsNoBranchForAnEditItCantMakeUnattended(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
-	cmdtest.Stands(t).Preparer = func(*engine.Engine) engine.Preparer { return refuser{} }
+	cmdtest.Stands(t).Preparer = func(*engine.Engine) engine.Preparer { return cmdtest.Refuser{} }
 	_, _, err := cmdtest.Dockhand(t, "ship", "jq", "--yes", "--to", "commit")
 	require.ErrorContains(t, err, "Could not update jq automatically: its pre-fetch hook runs exec\nNo branch was started.")
 	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")

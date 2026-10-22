@@ -11,17 +11,21 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/command/author"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/bump"
 	"github.com/herbygillot/dockhand/internal/command/clean"
 	"github.com/herbygillot/dockhand/internal/command/config"
 	"github.com/herbygillot/dockhand/internal/command/create"
 	"github.com/herbygillot/dockhand/internal/command/explain"
 	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/command/outdated"
+	"github.com/herbygillot/dockhand/internal/command/review"
 	"github.com/herbygillot/dockhand/internal/command/serve"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/setup"
 	"github.com/herbygillot/dockhand/internal/command/shell"
+	"github.com/herbygillot/dockhand/internal/command/ship"
 	"github.com/herbygillot/dockhand/internal/command/submit"
 	"github.com/herbygillot/dockhand/internal/command/tidy"
 	"github.com/herbygillot/dockhand/internal/command/understand"
@@ -179,13 +183,13 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	}
 	root.AddGroup(&cobra.Group{ID: "author", Title: "Author:"})
 	for _, command := range []*cobra.Command{
-		shipCommand(shared, streams),
-		bumpCommand(shared, streams),
-		updateCommand(shared, streams),
-		checksumsCommand(shared, streams),
-		revbumpCommand(shared, streams),
+		ship.Command(shared, streams),
+		bump.Command(shared, streams),
+		author.UpdateCommand(shared, streams),
+		author.ChecksumsCommand(shared, streams),
+		author.RevbumpCommand(shared, streams),
 		create.Command(shared, streams),
-		editCommand(shared, streams),
+		author.EditCommand(shared, streams),
 	} {
 		command.GroupID = "author"
 		root.AddCommand(command)
@@ -216,7 +220,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		tidy.Command(shared, streams),
 		submit.Command(shared, streams),
 		tidy.RebaseCommand(shared, streams),
-		reviewCommand(shared, streams),
+		review.Command(shared, streams),
 	} {
 		command.GroupID = "review"
 		root.AddCommand(command)

@@ -104,3 +104,14 @@ func (b UnfetchedPrevious) Prepare(ctx context.Context, r editprep.Request) (edi
 	result.PreviousProblem = "HTTP 404"
 	return result, err
 }
+
+// refuser stands in for MacPorts with a Portfile dockhand won't edit.
+type Refuser struct{}
+
+func (Refuser) ResolveRelease(context.Context, editprep.Request) (model.Release, error) {
+	return model.Release{Version: "1.8.1"}, nil
+}
+
+func (Refuser) Prepare(context.Context, editprep.Request) (editprep.Result, error) {
+	return editprep.Result{}, editprep.ErrUnsupported.Because("its pre-fetch hook runs exec")
+}

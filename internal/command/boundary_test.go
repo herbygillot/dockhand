@@ -56,9 +56,13 @@ const module = "github.com/herbygillot/dockhand/"
 // settings, and finds a branch (part 4, item 2).
 var layers = map[string]bool{"view": true, "checkrun": true, "host": true, "settings": true, "branchflags": true, "cmdtest": true}
 
-// verbImports are the verb packages a verb may import: bump is ship's
-// single-port front, and nothing else reaches across.
-var verbImports = map[string][]string{"bump": {"author"}}
+// verbImports are the verb packages a verb may import: the two
+// composites, ship, whose stages are author's edit, tidy's Decide,
+// submit's Apply, and outdated's Batch, and bump, ship's single-port
+// front; nothing else reaches across (architecture's answer, 2026-10-22).
+// update --mine is ship's edit stage over your outdated ports, outdated's
+// Batch.
+var verbImports = map[string][]string{"ship": {"author", "tidy", "submit", "outdated"}, "bump": {"ship", "author"}, "author": {"outdated"}}
 
 // The command layer parses, finds context, prompts, and renders; the
 // engine decides (doc.go). It imports nothing past its layer, and it

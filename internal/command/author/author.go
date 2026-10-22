@@ -1,4 +1,4 @@
-package command
+package author
 
 import (
 	"cmp"
@@ -11,11 +11,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/outdated"
 	"github.com/herbygillot/dockhand/internal/command/settings"
-	"github.com/herbygillot/dockhand/internal/command/tidy"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -24,10 +22,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func updateCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func UpdateCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchChoice
 	var plan, mine, yes bool
-	var version versionUpdate
+	var version VersionUpdate
 	cmd := &cobra.Command{
 		Use:   "update <port> [version]",
 		Short: "Update a port to a newer release",
@@ -68,16 +66,16 @@ pull requests, and ship takes a port's update as far as --to says.`,
 			if len(args) == 0 {
 				return errors.New("name the port to update, or update your outdated ports with --mine")
 			}
-			request, err := version.request(args, plan)
+			request, err := version.Request(args, plan)
 			if err != nil {
 				return err
 			}
-			_, _, err = author(cmd.Context(), s, streams, where, engine.WorkUpdate, request, version.linked)
+			_, _, err = Author(cmd.Context(), s, streams, where, engine.WorkUpdate, request, version.Linked)
 			return err
 		},
 	}
 	where.Register(cmd)
-	version.flags(cmd)
+	version.Flags(cmd)
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&mine, "mine", false, "update each of your ports with a newer release, in a branch of its own (config maintainer)")
 	settings.OverAllowanceFlag(cmd, s)
@@ -88,7 +86,7 @@ pull requests, and ship takes a port's update as far as --to says.`,
 
 // updateMine is update --mine: ship's edit stage over your outdated ports,
 // each in a branch of its own, nothing committed (decision 7, 2026-10-13).
-func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams, version versionUpdate, plan, yes bool) error {
+func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams, version VersionUpdate, plan, yes bool) error {
 	whole := &view.BatchJSON{}
 	streams.LinkSteps(whole)
 	e, err := s.Open(ctx)
@@ -131,10 +129,10 @@ func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams,
 	for _, update := range outdated.Updates {
 		whole.Next()
 		fmt.Fprintln(out)
-		request, err := version.request([]string{update.Port.Port}, false)
+		request, err := version.Request([]string{update.Port.Port}, false)
 		if err == nil {
 			request.Version, request.Release = update.Port.Newest, update.Port.Release
-			_, _, err = author(ctx, s, streams, branchflags.BranchChoice{New: update.Name}, engine.WorkUpdate, request, version.linked)
+			_, _, err = Author(ctx, s, streams, branchflags.BranchChoice{New: update.Name}, engine.WorkUpdate, request, version.Linked)
 		}
 		if err != nil {
 			fmt.Fprintf(streams.Err, "%s: %v\n", update.Port.Port, view.SayNext(err))
@@ -144,7 +142,7 @@ func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams,
 	return view.BatchExit(failed, len(outdated.Updates), "updated")
 }
 
-func checksumsCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func ChecksumsCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchChoice
 	var plan, keepOld, keepRevision bool
 	cmd := &cobra.Command{
@@ -186,7 +184,7 @@ none is open, and exits 3 where any doesn't.`,
 				}
 			}
 			request := engine.UpdateRequest{Action: model.EditChecksums, Port: port, EditIntent: model.EditIntent{KeepOldChecksums: keepOld}, KeepRevision: keepRevision, Plan: plan}
-			_, _, err := author(cmd.Context(), s, streams, where, engine.WorkChecksums, request, linkedOptions{})
+			_, _, err := Author(cmd.Context(), s, streams, where, engine.WorkChecksums, request, LinkedOptions{})
 			return err
 		},
 	}
@@ -226,95 +224,57 @@ func branchPort(ctx context.Context, s *settings.Settings, where branchflags.Bra
 
 // versionUpdate is what update and bump share: how the edit is made, and
 // what going on to the pull request takes.
-type versionUpdate struct {
-	keepOld, shared, obsolete, followMoves bool
-	linked                                 linkedOptions
+type VersionUpdate struct {
+	KeepOld, Shared, Obsolete, FollowMoves bool
+	Linked                                 LinkedOptions
 }
 
 // flags adds the edit's flags, which update, ship, and bump share.
-func (v *versionUpdate) flags(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&v.keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
-	cmd.Flags().BoolVar(&v.shared, "shared-release", false, "move every subport that shares the port's release")
-	cmd.Flags().BoolVar(&v.followMoves, "follow-moves", false, "where GitHub answers the port's repository by another name, point github.setup at it")
-	cmd.Flags().BoolVar(&v.obsolete, "with-obsolete", false, "also move the Portfile's obsolete stub for the port, one replaced_by it, to the same version")
-	cmd.Flags().BoolVar(&v.linked.revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
-	cmd.Flags().StringSliceVar(&v.linked.except, "except", nil, "leave this dependent out of --revbump-dependents")
+func (v *VersionUpdate) Flags(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&v.KeepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
+	cmd.Flags().BoolVar(&v.Shared, "shared-release", false, "move every subport that shares the port's release")
+	cmd.Flags().BoolVar(&v.FollowMoves, "follow-moves", false, "where GitHub answers the port's repository by another name, point github.setup at it")
+	cmd.Flags().BoolVar(&v.Obsolete, "with-obsolete", false, "also move the Portfile's obsolete stub for the port, one replaced_by it, to the same version")
+	cmd.Flags().BoolVar(&v.Linked.Revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
+	cmd.Flags().StringSliceVar(&v.Linked.Except, "except", nil, "leave this dependent out of --revbump-dependents")
 }
 
 // stageFlags adds the flags of the stages after the edit, defined once,
 // which ship and bump share: where to check, and the pull request's.
-func (v *versionUpdate) stageFlags(cmd *cobra.Command) {
-	cmd.Flags().StringArrayVar(&v.linked.on, "on", nil, "where to check, explicit environments (default build.default's profile, or build.unattended's where nobody looks)")
-	cmd.Flags().StringVar(&v.linked.build, "build", "", "where to check, by build profile (default build.default's, or build.unattended's where nobody looks)")
-	cmd.Flags().StringVar(&v.linked.tests, "tests", "", "the check's tests: declared (advisory), required, or skip (default check.tests)")
-	cmd.Flags().StringSliceVar(&v.linked.types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for an update dockhand made)")
-	cmd.Flags().BoolVar(&v.linked.draft, "draft", false, "open the pull request as a draft, even where its check fails")
-	cmd.Flags().BoolVar(&v.linked.testedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files")
-	cmd.Flags().BoolVar(&v.linked.testedVariants, "tested-variants", false, "state that you checked the most important variants")
-	cmd.Flags().StringVar(&v.linked.title, "title", "", "the pull request's title (default: the commit subject)")
-	cmd.Flags().StringVar(&v.linked.note, "note", "", "your own note in the pull request's description")
-	cmd.Flags().BoolVar(&v.linked.skipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")
+func (v *VersionUpdate) StageFlags(cmd *cobra.Command) {
+	cmd.Flags().StringArrayVar(&v.Linked.On, "on", nil, "where to check, explicit environments (default build.default's profile, or build.unattended's where nobody looks)")
+	cmd.Flags().StringVar(&v.Linked.Build, "build", "", "where to check, by build profile (default build.default's, or build.unattended's where nobody looks)")
+	cmd.Flags().StringVar(&v.Linked.Tests, "tests", "", "the check's tests: declared (advisory), required, or skip (default check.tests)")
+	cmd.Flags().StringSliceVar(&v.Linked.Types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for an update dockhand made)")
+	cmd.Flags().BoolVar(&v.Linked.Draft, "draft", false, "open the pull request as a draft, even where its check fails")
+	cmd.Flags().BoolVar(&v.Linked.TestedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files")
+	cmd.Flags().BoolVar(&v.Linked.TestedVariants, "tested-variants", false, "state that you checked the most important variants")
+	cmd.Flags().StringVar(&v.Linked.Title, "title", "", "the pull request's title (default: the commit subject)")
+	cmd.Flags().StringVar(&v.Linked.Note, "note", "", "your own note in the pull request's description")
+	cmd.Flags().BoolVar(&v.Linked.SkipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")
 	cmd.MarkFlagsMutuallyExclusive("build", "on")
 }
 
 // stageReady refuses what the later stages' flags can't take before
 // anything is done: a misspelled --tests.
-func (v versionUpdate) stageReady() error {
-	if v.linked.tests != "" && !model.TestPolicy(v.linked.tests).Valid() {
-		return fmt.Errorf("--tests %q is not declared, required, or skip", v.linked.tests)
+func (v VersionUpdate) StageReady() error {
+	if v.Linked.Tests != "" && !model.TestPolicy(v.Linked.Tests).Valid() {
+		return fmt.Errorf("--tests %q is not declared, required, or skip", v.Linked.Tests)
 	}
 	return nil
 }
 
 // request is the update of the port args name, to the version they name
 // or the newest.
-func (v versionUpdate) request(args []string, plan bool) (engine.UpdateRequest, error) {
-	if len(v.linked.except) > 0 && !v.linked.revbump {
+func (v VersionUpdate) Request(args []string, plan bool) (engine.UpdateRequest, error) {
+	if len(v.Linked.Except) > 0 && !v.Linked.Revbump {
 		return engine.UpdateRequest{}, errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
 	}
-	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], EditIntent: model.EditIntent{KeepOldChecksums: v.keepOld, SharedRelease: v.shared}, WithObsolete: v.obsolete, FollowMoves: v.followMoves, Plan: plan, CompareUpstream: true, LookForOthers: true}
+	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], EditIntent: model.EditIntent{KeepOldChecksums: v.KeepOld, SharedRelease: v.Shared}, WithObsolete: v.Obsolete, FollowMoves: v.FollowMoves, Plan: plan, CompareUpstream: true, LookForOthers: true}
 	if len(args) == 2 {
 		request.Version = args[1]
 	}
 	return request, nil
-}
-
-// tidyBranch commits a branch's edits as tidy would plan them, previewed
-// as tidy previews them, where it has any, and returns the branch as it is
-// after; applied is false where the person declined, which undone says.
-// yes applies an unambiguous plan without asking (decideTidy).
-func tidyBranch(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, undone string) (model.Branch, bool, error) {
-	out := streams.Out
-	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
-	if err != nil {
-		return branch, false, err
-	}
-	if !proposal.Keep {
-		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), view.DescribeWork(proposal))
-		streams.Emit(view.TidyView(proposal))
-		view.WriteTidyPlan(out, proposal, false)
-		// A plan of dockhand's own edits is applied unasked; one with the
-		// person's is reviewed on a terminal, and held where nobody looks,
-		// --yes or no terminal: --yes skips ship's question, and approves no
-		// plan it hasn't shown (Codex's review of 832f059e, high 1). The
-		// hold names tidy, as serve's does, where tidy's own refusal
-		// offered --yes, which ship's --yes isn't.
-		if !streams.Terminal() {
-			if err := proposal.Gate().CommitUnasked(branchstate.Mode{Answered: model.AnsweredNobody}); err != nil {
-				return branch, false, fmt.Errorf("%w; %s", err, undone)
-			}
-		}
-		applied, err := tidy.Decide(ctx, e, streams, proposal, false, proposal.Unambiguous(), "")
-		if err != nil {
-			return branch, false, fmt.Errorf("%w; %s", err, undone)
-		}
-		if !applied {
-			fmt.Fprintf(out, "%s.\n", prose.Sentence(undone))
-			return branch, false, nil
-		}
-	}
-	branch, err = e.Resolve(ctx, branch.ShortName())
-	return branch, err == nil, err
 }
 
 // linkedOptions are the edit's --revbump-dependents and --except, and what
@@ -322,32 +282,32 @@ func tidyBranch(ctx context.Context, e *engine.Engine, streams term.Streams, bra
 // and the pull request's words. unattended is bump's and ship's with --yes
 // or no terminal: nobody
 // looks before the submission, so it holds what serve's would.
-type linkedOptions struct {
-	revbump bool
-	except  []string
+type LinkedOptions struct {
+	Revbump bool
+	Except  []string
 	// goesOn is ship's: the edit goes on to its commit and on, so no
 	// next step is said after it.
-	goesOn                         bool
-	on                             []string
-	build                          string
-	testedBinaries, testedVariants bool
+	GoesOn                         bool
+	On                             []string
+	Build                          string
+	TestedBinaries, TestedVariants bool
 	// tests is the check's --tests; types and draft the submission's
 	// --type and --draft (the second look's §6: bump lacked them).
-	tests      string
-	types      []string
-	draft      bool
-	unattended bool
+	Tests      string
+	Types      []string
+	Draft      bool
+	Unattended bool
 	// title, note, and skipNotification are submit's, passed on; noteSet
 	// is whether --note was given, "" taking a note out. bump took none, so
 	// a test's pull request couldn't be marked one (the rc6 full stage, B2).
-	title            string
-	note             string
-	noteSet          bool
-	skipNotification bool
+	Title            string
+	Note             string
+	NoteSet          bool
+	SkipNotification bool
 }
 
 // author finds the branch, makes the edit, and reports it.
-func author(ctx context.Context, s *settings.Settings, streams term.Streams, where branchflags.BranchChoice, work engine.Work, request engine.UpdateRequest, linked linkedOptions) (branch model.Branch, update engine.Update, err error) {
+func Author(ctx context.Context, s *settings.Settings, streams term.Streams, where branchflags.BranchChoice, work engine.Work, request engine.UpdateRequest, linked LinkedOptions) (branch model.Branch, update engine.Update, err error) {
 	// A version update's plan with --new is a look before starting a
 	// branch, against master as fetched now; anything else needs one.
 	fromMaster := where.IsNew() && request.Plan
@@ -490,8 +450,8 @@ func author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		writePatches(out, update)
 		writeOthers(out, update)
 		view.WritePlainHTTP(out, update.PlainHTTP)
-		if linked.revbump {
-			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, true)
+		if linked.Revbump {
+			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, true)
 			streams.Emit(result)
 			return branch, update, err
 		}
@@ -592,13 +552,13 @@ func author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	writePatches(out, update)
 	writeOthers(out, update)
 	view.WritePlainHTTP(out, update.PlainHTTP)
-	if linked.revbump {
-		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, false); err != nil {
+	if linked.Revbump {
+		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, false); err != nil {
 			return branch, update, err
 		}
 		streams.Emit(result)
 	}
-	if !linked.goesOn {
+	if !linked.GoesOn {
 		fmt.Fprintln(out, "Next: "+nextAfterEdit(ctx, e, branch))
 	}
 	return branch, update, nil

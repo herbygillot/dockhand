@@ -1,4 +1,4 @@
-package command
+package review
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func reviewCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var comment, requestChanges, markdown bool
 	cmd := &cobra.Command{
 		Use:   "review <pr>",
