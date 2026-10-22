@@ -82,9 +82,9 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 		if recorded, ok := records[directory]; ok && recorded.Problem == "" {
 			continue
 		}
-		record := model.ChangeRecord{Branch: id, Tree: tree, Base: base, Directory: directory, Policy: fidelity.ChangePolicy, At: e.now()}
 		var sides [2]*macports.Snapshot
 		var texts [2][]byte
+		problem := ""
 		for i, source := range sources {
 			file, text, err := e.Repo.File(ctx, string(source.Tree), directory+"/Portfile")
 			if err != nil {
@@ -96,16 +96,12 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 			texts[i] = text
 			snapshot, err := family.Family(ctx, source, directory)
 			if err != nil {
-				record.Problem = sideWords[i] + ": " + err.Error()
+				problem = sideWords[i] + ": " + err.Error()
 				break
 			}
 			sides[i] = &snapshot
-			record.Platform, record.Runtime = snapshot.Platform, snapshot.Runtime.Provenance()
 		}
-		if record.Problem == "" {
-			record.Ports = fidelity.SubportChanges(directory, sides[0], sides[1])
-			record.Unseen, record.AllUnseen = portfile.UnseenChanges(texts[0], texts[1])
-		}
+		record := changeRecord(model.ChangeRecord{Branch: id, Tree: tree, Base: base, Directory: directory, At: e.now()}, sides, texts, problem)
 		made = append(made, record)
 		records[directory] = record
 	}
@@ -184,4 +180,26 @@ func recordedPorts(directories []string, records map[string]model.ChangeRecord) 
 		}
 	}
 	return ports, notes
+}
+
+// changeRecord is the one way a change record is made (L2's one-producer
+// half): record's branch, files, base, directory, and time, with what the
+// two sides' evaluations and Portfile texts say, base first, a side the
+// revision hasn't nil; the family evaluation's, or an update's own. A
+// problem that kept a side from being evaluated is the record's, which
+// then says nothing of its subports, and its readers take the directory's
+// text scope.
+func changeRecord(record model.ChangeRecord, sides [2]*macports.Snapshot, texts [2][]byte, problem string) model.ChangeRecord {
+	record.Policy, record.Problem = fidelity.ChangePolicy, problem
+	for _, side := range sides {
+		if side != nil {
+			record.Platform, record.Runtime = side.Platform, side.Runtime.Provenance()
+		}
+	}
+	if problem != "" {
+		return record
+	}
+	record.Ports = fidelity.SubportChanges(record.Directory, sides[0], sides[1])
+	record.Unseen, record.AllUnseen = portfile.UnseenChanges(texts[0], texts[1])
+	return record
 }

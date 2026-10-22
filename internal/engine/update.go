@@ -609,28 +609,24 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	var record *model.ChangeRecord
 	if len(result.Fidelity) > 0 && atBase && (branch.PullRequest == nil || !branch.PullRequest.Adopted) {
 		before, after := result.Fidelity[0].Before, result.Fidelity[len(result.Fidelity)-1].After
-		if before.Platform == after.Platform {
-			record = &model.ChangeRecord{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Directory: edit.Directory, Platform: after.Platform, Runtime: after.Runtime.Provenance(),
-				Ports: fidelity.SubportChanges(edit.Directory, &before, &after), Policy: fidelity.ChangePolicy, At: edit.At}
-			// What the edit changed in a block this Mac doesn't evaluate is
-			// said, as a record made from the base says it (batch 76):
-			// primed without it, a subport changed only there dropped out
-			// of submit's ports and tidy's groups, and the record is never
-			// made again (the architecture re-synthesis, L2c).
-			name := edit.Directory + "/Portfile"
-			baseFile, baseText, baseErr := worktree.File(ctx, trees[string(base)], name)
-			appliedFile, appliedText, appliedErr := worktree.File(ctx, applied, name)
-			if baseErr != nil || appliedErr != nil {
-				record = nil
-			} else {
-				if !baseFile.Exists {
-					baseText = nil
-				}
-				if !appliedFile.Exists {
-					appliedText = nil
-				}
-				record.Unseen, record.AllUnseen = portfile.UnseenChanges(baseText, appliedText)
+		// The same record the family evaluation makes, through the same
+		// producer, the Portfile's texts with it, so what the edit changed
+		// in a block this Mac doesn't evaluate is said as a record made
+		// from the base says it (batch 76; the architecture re-synthesis,
+		// L2c).
+		name := edit.Directory + "/Portfile"
+		baseFile, baseText, baseErr := worktree.File(ctx, trees[string(base)], name)
+		appliedFile, appliedText, appliedErr := worktree.File(ctx, applied, name)
+		if before.Platform == after.Platform && baseErr == nil && appliedErr == nil {
+			if !baseFile.Exists {
+				baseText = nil
 			}
+			if !appliedFile.Exists {
+				appliedText = nil
+			}
+			made := changeRecord(model.ChangeRecord{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Directory: edit.Directory, At: edit.At},
+				[2]*macports.Snapshot{&before, &after}, [2][]byte{baseText, appliedText}, "")
+			record = &made
 		}
 	}
 	// The files are written; a record that landed though its commit's
