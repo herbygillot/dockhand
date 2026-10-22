@@ -80,7 +80,8 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 		`Created textproc/rift/Portfile from the github and cargo PortGroups\n`+
 		`  cargo.crates: 1 crate, from Cargo.lock\n`+
 		`  checksums: 1 distfile \+ 1 crate\n`+
-		`  Review these fields and remove their unconfirmed markers: license \(from GitHub's detection\), long_description, destroot\n`+
+		`  Review these fields and remove their unconfirmed markers: license \(from GitHub's detection\),\n`+
+		`    long_description, destroot\n`+
 		`Next: cd "\$\(dockhand path rift-new\)", then dockhand edit rift, then dockhand check\n$`, out)
 
 	branch := regexp.MustCompile(`dockhand/(rift-new)`).FindStringSubmatch(out)[1]
@@ -147,9 +148,9 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new")
 	require.NoError(t, err)
 	require.Contains(t, out, "  homepage: using HTTPS, as MacPorts recommends (GitHub supplied http://txt.hellman.io/)\n", "the finding 6 of the txt run")
-	require.Contains(t, out, "txt 0.8.1 · Rust (Cargo.toml) · Cargo.toml says MIT OR Apache-2.0 · \"A fast, intuitive terminal text editor\"\n")
-	require.Contains(t, out, "Review these fields and remove their unconfirmed markers: category devel (guessed from the build system; create --category moves it), license (from Cargo.toml), long_description, maintainers")
-	require.Contains(t, out, "  maintainers: nomaintainer (no maintainer configured). set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in "+filepath.Join(w.Home, ".dockhand", "config.toml")+"\n",
+	require.Contains(t, out, "txt 0.8.1 · Rust (Cargo.toml) · Cargo.toml says MIT OR Apache-2.0 · \"A fast, intuitive terminal text\n  editor\"\n")
+	require.Contains(t, out, "Review these fields and remove their unconfirmed markers: category devel (guessed from the build\n    system; create --category moves it), license (from Cargo.toml), long_description, maintainers")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("  maintainers: nomaintainer (no maintainer configured). set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in "+filepath.Join(w.Home, ".dockhand", "config.toml")+"\n"),
 		"no port at the base names @ada")
 	branch := regexp.MustCompile(`dockhand/(txt-new)`).FindStringSubmatch(out)[1]
 	data, err := os.ReadFile(filepath.Join(w.Home, "Source", "macports-branches", branch, "devel/txt/Portfile"))
@@ -222,7 +223,7 @@ func TestCreateSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new", "--category", "editors")
 	require.NoError(t, err)
-	require.Contains(t, out, "  maintainers: nomaintainer (no maintainer configured). set maintainer = \"{@ada example.org:ada}\" in "+filepath.Join(w.Home, ".dockhand", "config.toml")+", as 12 of the ports that name @ada write it, or as others do: \"@ada\" (2)\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("  maintainers: nomaintainer (no maintainer configured). set maintainer = \"{@ada example.org:ada}\" in "+filepath.Join(w.Home, ".dockhand", "config.toml")+", as 12 of the ports that name @ada write it, or as others do: \"@ada\" (2)\n"))
 	require.NoFileExists(t, config, "it only suggests")
 }
 

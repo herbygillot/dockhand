@@ -148,6 +148,8 @@ as its build writes it, and the rest once the build ends, where its provider
 copies it as it grows, as Tart's does.`,
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// A log is read as it is (term.Streams.Unwrapped).
+			streams.Unwrapped()
 			// A port named as an argument (field testing, 2026-10-02: logs
 			// semgrep, and logs check-76 semgrep); with a branch named, the
 			// one argument is the port, and -p's port is the default.

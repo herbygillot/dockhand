@@ -58,6 +58,8 @@ agent that starts at login and restarts if it stops, and runs it with the
 flags given beside --install, such as --no-notify; --uninstall removes it.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// serve's output is a log, read a line an event (term.Streams.Unwrapped).
+			streams.Unwrapped()
 			ctx := cmd.Context()
 			switch shipTo {
 			case "", "list", "commit", "check", "submit":

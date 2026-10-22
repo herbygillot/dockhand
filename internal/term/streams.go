@@ -47,6 +47,8 @@ func Begin(streams Streams, args []string) Streams {
 	if streams.colourMarks() {
 		out = &markWriter{w: out}
 	}
+	// Prose wraps at the width, a terminal's or COLUMNS (wrapWriter).
+	out = &wrapWriter{w: out, width: streams.Width()}
 	streams.Out = &switchWriter{w: out}
 	if streams.status == nil {
 		streams.status = &StatusLine{w: streams.Err}
@@ -149,6 +151,8 @@ func underlying(stream any) any {
 		case *switchWriter:
 			stream = w.w
 		case *markWriter:
+			stream = w.w
+		case *wrapWriter:
 			stream = w.w
 		case *stageWriter:
 			stream = w.to

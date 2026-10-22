@@ -174,20 +174,20 @@ func TestSetupTart(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []tart.SetupOptions{{Release: "sonoma", MacPortsVersion: "2.12.5"}}, images.asked)
 	require.Contains(t, out, "Checking Tart images for Sonoma...\n", "the provisioner's progress is shown")
-	require.Contains(t, out, "Made dockhand-base-sonoma: macOS 14 (Sonoma) with Command Line Tools 16.2.0.0.1.1733547573 and MacPorts "+tart.DefaultMacPorts+".\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Made dockhand-base-sonoma: macOS 14 (Sonoma) with Command Line Tools 16.2.0.0.1.1733547573 and MacPorts "+tart.DefaultMacPorts+".\n"))
 	require.Contains(t, out, "Checks build on it with --on tart:sonoma.\n")
 
 	images.result.Reused = true
 	out, _, err = cmdtest.Dockhand(t, "setup", "tart", "--check")
 	require.NoError(t, err)
 	require.Equal(t, tart.SetupOptions{Check: true}, images.asked[1], "no release is this Mac's")
-	require.Contains(t, out, "Ready: dockhand-base-sonoma, macOS 14 (Sonoma) with Command Line Tools 16.2.0.0.1.1733547573 and MacPorts "+tart.DefaultMacPorts+", checked in a disposable clone.\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Ready: dockhand-base-sonoma, macOS 14 (Sonoma) with Command Line Tools 16.2.0.0.1.1733547573 and MacPorts "+tart.DefaultMacPorts+", checked in a disposable clone.\n"))
 
 	images.result = tart.SetupResult{Image: "dockhand-xcode-tahoe", Release: release(t, "tahoe"), MacPorts: tart.DefaultMacPorts, CommandLineTools: "26.6", Xcode: "26.1"}
 	out, _, err = cmdtest.Dockhand(t, "setup", "tart", "tahoe", "--xcode", "/Volumes/Xcodes")
 	require.NoError(t, err)
 	require.Equal(t, tart.SetupOptions{Release: "tahoe", Xcode: "/Volumes/Xcodes"}, images.asked[2])
-	require.Contains(t, out, "Made dockhand-xcode-tahoe: macOS 26 (Tahoe) with Xcode 26.1, Command Line Tools 26.6, and MacPorts "+tart.DefaultMacPorts+".\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Made dockhand-xcode-tahoe: macOS 26 (Tahoe) with Xcode 26.1, Command Line Tools 26.6, and MacPorts "+tart.DefaultMacPorts+".\n"))
 
 	images.err = errors.New("setup: image dockhand-base-sonoma failed validation")
 	_, _, err = cmdtest.Dockhand(t, "setup", "tart", "--rebuild")
@@ -365,5 +365,5 @@ func TestAnXcodeRebuildSaysItsBaseKeepsAnOlderMacPorts(t *testing.T) {
 		Behind: []tart.BehindImage{{Release: tahoe, MacPorts: "2.12.6", Host: "2.12.7"}}}
 	out, _, err := cmdtest.Dockhand(t, "setup", "tart", "tahoe", "--rebuild", "--xcode", t.TempDir())
 	require.NoError(t, err)
-	require.Contains(t, out, "Its base image has MacPorts 2.12.6, older than this Mac's 2.12.7: dockhand setup tart tahoe --rebuild, without --xcode, makes it again.\n", "the one sentence (the architecture review of 5897a82, R3-7)")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Its base image has MacPorts 2.12.6, older than this Mac's 2.12.7: dockhand setup tart tahoe --rebuild, without --xcode, makes it again.\n"), "the one sentence (the architecture review of 5897a82, R3-7)")
 }

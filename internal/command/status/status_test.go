@@ -44,7 +44,7 @@ func TestStatusCreditsACheckOfTheCommittedFilesToTheCommit(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Checks   passed for this commit\n")
-	require.Contains(t, out, "Next: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-update\n",
+	require.Contains(t, cmdtest.Flat(out), "Next: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-update\n",
 		"no remote pushes to a fork yet (the M1's rerun, D-S6)")
 	testsupport.Git(t, w.Clone, "remote", "add", "github-fork", "https://github.com/ada/macports-ports.git")
 	out, _, err = cmdtest.Dockhand(t, "status")
@@ -107,7 +107,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err, "inside a worktree, status is the branch's")
 	require.Contains(t, out, "jq-update in ~/Source/macports-branches/jq-update\n  Ports    jq (not yet evaluated)\n  Work     1 commit above master ")
-	require.Contains(t, out, "  Checks   passed for this commit\n           jq  command ✓\n  PR       —\nNext: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-update\n")
+	require.Contains(t, out, "\n  Checks   passed for this commit\n           jq  command ✓\n  PR       —\nNext: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit\n  --branch jq-update\n")
 
 	out, _, err = cmdtest.Dockhand(t, "status", "--port", "fd")
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.Contains(t, out, "check-3 · passed\n  command, attempt 1, run "+id+": finished\n")
 	out, _, err = cmdtest.Dockhand(t, "logs", id, "--port", "jq")
 	require.NoError(t, err)
-	require.Contains(t, out, "building from ")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("building from\n  "))
 	_, _, err = cmdtest.Dockhand(t, "logs", "tart_nosuchrunatall1")
 	require.ErrorContains(t, err, "tart_nosuchrunatall1 is neither a check, such as check-42, nor a provider run")
 	out, _, err = cmdtest.Dockhand(t, "logs", "check-3", "--port", "jq")

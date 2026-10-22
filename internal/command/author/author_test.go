@@ -99,7 +99,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	require.NotNil(t, started, out.String())
 	name := started[1]
 	require.Contains(t, out.String(), "Started dockhand/"+name+" from master ")
-	require.Contains(t, out.String(), " (fetched just now) in ~/Source/macports-branches/"+name+"\n", "named once, with its directory")
+	require.Contains(t, cmdtest.Flat(out.String()), cmdtest.Flat(" (fetched just now) in ~/Source/macports-branches/"+name+"\n"), "named once, with its directory")
 	testsupport.Git(t, filepath.Join(w.Home, "Source", "macports-branches", name), "commit", "-q", "-am", "jq: update to 1.8.1")
 
 	// With exactly one, the work goes there, a plan's too, and says so.
@@ -207,7 +207,7 @@ func TestAnUntrackedBranchHereIsTheirsToAdopt(t *testing.T) {
 	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "mine")
 	planned, _, err := cmdtest.Dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
-	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\), since mine doesn't change jq; --new without --plan starts the branch\n`, planned)
+	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\), since mine doesn't change jq; --new without --plan starts the branch\n`, cmdtest.Flat(planned))
 	_, said, err := cmdtest.Dockhand(t, "update", "jq", "1.8.1")
 	require.NoError(t, err)
 	require.Contains(t, said, "jq is in no open branch, so this starts one for it, named for the version it moves to.", "mine is no context, as master isn't")
@@ -461,7 +461,7 @@ func TestAnUpdateCountsTheCratesItWrote(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--new")
 	require.NoError(t, err)
 	require.Contains(t, out, " and 352 crates (160 changed).\n", "an empty block says nothing: no \"and 0 Git crates (0 changed)\" (the txt run's finding 6)")
-	require.Contains(t, out, "Removed the Portfile pin for soundtouch 0.4.1 (lockfile version: 0.4.0); the new lockfile now specifies 0.5.4.\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Removed the Portfile pin for soundtouch 0.4.1 (lockfile version: 0.4.0); the new lockfile now specifies 0.5.4.\n"))
 }
 
 // limitedBumper is a bumper GitHub's rate limit stops before it finds the

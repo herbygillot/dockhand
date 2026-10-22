@@ -108,7 +108,7 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.Contains(t, body, "- [x] tested basic functionality of all binary files?")
 	require.Contains(t, body, "- [ ] checked that the Portfile's most important [variants]")
 	require.Contains(t, body, "- [ ] checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change? (open for the same ports: #34777)")
-	require.Contains(t, stdout.String(), body, "the preview showed the description")
+	require.Contains(t, cmdtest.Flat(stdout.String()), cmdtest.Flat(body), "the preview showed the description")
 	require.Equal(t, testsupport.Git(t, dir, "rev-parse", "HEAD"), testsupport.Git(t, g.Fork, "rev-parse", "dockhand/jq-update"))
 }
 
@@ -134,7 +134,7 @@ func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ready to submit\n")
-	require.Contains(t, out, "  Upstream ! held: archives not compared: the current version's archives could not be fetched: HTTP 404\n")
+	require.Contains(t, out, "\n  Upstream ! held: archives not compared: the current version's archives could not be fetched: HTTP\n    404\n")
 	preview, err := cmdtest.JSONOf(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, []any{map[string]any{"port": "jq", "changes": []any{}, "held": true,
@@ -209,7 +209,7 @@ func TestSubmitShowsACommitNamingAModifiedBuild(t *testing.T) {
 	testsupport.Git(t, dir, "commit", "-q", "--amend", "-m", "jq: update to 1.8.1"+fmt.Sprintf(trailer, "+dirty"))
 	out, _, err = cmdtest.Dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
-	require.Contains(t, out, "  ! Generated-By names a dockhand build from uncommitted source in commit "+model.ObjectID(testsupport.Git(t, dir, "rev-parse", "HEAD")).Short()+". Run tidy again using a build from a pushed commit so others can identify the source.\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("  ! Generated-By names a dockhand build from uncommitted source in commit "+model.ObjectID(testsupport.Git(t, dir, "rev-parse", "HEAD")).Short()+". Run tidy again using a build from a pushed commit so others can identify the source.\n"))
 	preview, err := cmdtest.JSONOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Equal(t, []any{testsupport.Git(t, dir, "rev-parse", "HEAD")}, preview.Result["modified_builds"])
@@ -240,7 +240,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ready to submit\n")
-	require.Contains(t, out, "  ! commit "+model.ObjectID(head).Short()+"'s Generated-By names dockhand "+unpushed+", built from a commit dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("  ! commit "+model.ObjectID(head).Short()+"'s Generated-By names dockhand "+unpushed+", built from a commit dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there\n"))
 	preview, err := cmdtest.JSONOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Equal(t, []any{map[string]any{"build": unpushed, "commits": []any{head}, "commit": "14320eb7c0de"}}, preview.Result["unfound_builds"])
@@ -249,7 +249,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	g.Dockhand.Err = errors.New("github: API rate limit exceeded")
 	out, _, err = cmdtest.Dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
-	require.Contains(t, out, "  ! Could not verify the Dockhand builds listed in Generated-By on GitHub: github: API rate limit exceeded\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("  ! Could not verify the Dockhand builds listed in Generated-By on GitHub: github: API rate limit exceeded\n"))
 	require.NotContains(t, out, "pushed there")
 	preview, err = cmdtest.JSONOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
@@ -549,7 +549,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.Contains(t, out, "  ✗ jq-update  #34901 MacPorts CI failed fetching jq-1.8.1.tar.gz (mirror.sjtu.edu.cn answered 403)\n               on macOS 26 (just now)\n               dockhand retry --ci --branch jq-update\n")
 	out, _, err = cmdtest.Dockhand(t, "retry", "--ci", "--branch", "jq-update")
 	require.NoError(t, err)
-	require.Equal(t, "Asked GitHub to run #34901's failed CI again (1 workflow run); dockhand status --refresh reads how it went.\n", out)
+	require.Equal(t, cmdtest.Flat("Asked GitHub to run #34901's failed CI again (1 workflow run); dockhand status --refresh reads how it went.\n"), cmdtest.Flat(out))
 	require.Equal(t, []int64{7}, g.Rerun)
 	require.Equal(t, 1, g.LogsRead)
 }
@@ -584,7 +584,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 
 	out, _, err = cmdtest.Dockhand(t, "clean", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "jq-update: removed worktree ~/Source/macports-branches/jq-update, branch dockhand/jq-update, ada/macports-ports:dockhand/jq-update\n")
+	require.Contains(t, out, "jq-update: removed worktree ~/Source/macports-branches/jq-update, branch dockhand/jq-update,\n  ada/macports-ports:dockhand/jq-update\n")
 	require.NoDirExists(t, dir)
 	out, _, err = cmdtest.Dockhand(t, "clean")
 	require.NoError(t, err)
@@ -647,8 +647,8 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	// Without a terminal nobody looks, so it holds where serve would.
 	out, _, err = cmdtest.Dockhand(t, "ship", "--passing")
 	require.ErrorContains(t, err, "jq-update passed its check and waits for your look, so nothing was submitted: the upstream archives couldn't be compared")
-	require.Contains(t, out, "  jq-update  its branch, where it stands, to submit\n             jq: update to 1.8.1 · passed on command for this commit's files (check-2) · opens a new one\n")
-	require.Contains(t, out, "\n             Upstream ! held: archives not compared: the current version's archives could not be fetched: HTTP 404\n",
+	require.Contains(t, out, "  jq-update  its branch, where it stands, to submit\n             jq: update to 1.8.1 · passed on command for this commit's files (check-2) · opens a new\n               one\n")
+	require.Contains(t, out, "\n             Upstream ! held: archives not compared: the current version's archives could not be\n               fetched: HTTP 404\n",
 		"what upstream showed, in the plan, which holds only a submission nobody looks over")
 	require.Empty(t, g.PRs)
 
@@ -693,7 +693,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	cmdtest.Stands(t).GitHubCLI = cmdtest.SignedIn{Account: "Ada", Readied: &byCLI}
 	out, _, err = cmdtest.Dockhand(t, "submit", "--ready", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "Marked #34901 ready for review with the GitHub CLI: the macports organization refuses dockhand's app.\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Marked #34901 ready for review with the GitHub CLI: the macports organization refuses dockhand's app.\n"))
 	require.Equal(t, []int{34901}, byCLI)
 	require.Empty(t, g.Readied)
 	g.ReadyRefused = errors.New("github: Could not resolve to a node")
@@ -776,7 +776,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	fix("# drop the patch")
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err, out)
-	require.Contains(t, out, "@ryandesign requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n")
+	require.Contains(t, out, "@ryandesign requested changes; ask them to review again on GitHub, or set submit.rerequest_review =\n  \"always\"\n")
 	require.Empty(t, g.Rerequested)
 
 	fix("# and the docs")
@@ -838,7 +838,7 @@ func TestAdoptRecognizesARenamedBranch(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
 	out, _, err := cmdtest.Dockhand(t, "adopt")
 	require.NoError(t, err)
-	require.Equal(t, "Recognized jq-1.8 as a Git rename of dockhand/jq-update; retained its record, checks, and history.\nPull request #34901 keeps its original source branch; submit will continue pushing to ada/macports-ports:dockhand/jq-update.\n", out)
+	require.Equal(t, cmdtest.Flat("Recognized jq-1.8 as a Git rename of dockhand/jq-update; retained its record, checks, and history.\nPull request #34901 keeps its original source branch; submit will continue pushing to ada/macports-ports:dockhand/jq-update.\n"), cmdtest.Flat(out))
 	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "#34901")

@@ -73,14 +73,13 @@ func SaidOnce(out string) []string {
 	return append(broken, names...)
 }
 
-// Overwidth are a command line's lines wider than the width, the rest of
-// the rule, which item 4's prose writer and table cells bring the
-// commands to: until then it's reported, where DOCKHAND_TEST_SAID_ONCE_REPORT
-// asks, and not enforced.
+// Overwidth are a command line's lines wider than the width that could
+// have been wrapped (term.Wrapped): not a table's, whose cells a terminal
+// cuts, nor one with no space to break at, as a path or a URL.
 func Overwidth(out string) []string {
 	var wide []string
 	for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
-		if width := utf8.RuneCountInString(line); width > saidOnceWidth {
+		if width := utf8.RuneCountInString(line); width > saidOnceWidth && term.Wrapped(line, saidOnceWidth) != line {
 			wide = append(wide, fmt.Sprintf("%d columns, over %d: %q", width, saidOnceWidth, line))
 		}
 	}
@@ -92,9 +91,10 @@ func Overwidth(out string) []string {
 // which is meant to be read in full, nor help's; nor a question's on a
 // terminal, which says the report it asks about; nor serve's log, or
 // status --watch's redrawn view, which name what each line is about; nor
-// review --markdown's, a comment's text for pasting.
+// review --markdown's, a comment's text for pasting; nor logs' or diff's,
+// a log's lines and a diff's, which are written as they are.
 func saidOnceChecked(args []string, streams term.Streams) bool {
-	if streams.Terminal() || len(args) > 0 && args[0] == "serve" {
+	if streams.Terminal() || len(args) > 0 && slices.Contains([]string{"serve", "logs", "diff"}, args[0]) {
 		return false
 	}
 	for _, arg := range args {
@@ -128,17 +128,16 @@ func (w *saidOnceOut) Write(p []byte) (int, error) {
 }
 
 // checkSaidOnce reports what the output broke: in the test, or where
-// DOCKHAND_TEST_SAID_ONCE_REPORT names a file, appended there with what's over
-// the width.
+// DOCKHAND_TEST_SAID_ONCE_REPORT names a file, appended there.
 func checkSaidOnce(t testing.TB, args []string, out *saidOnceOut) {
 	t.Helper()
 	out.mu.Lock()
 	said := out.buf.String()
 	out.mu.Unlock()
-	broken := SaidOnce(said)
+	broken := append(SaidOnce(said), Overwidth(said)...)
 	if report := os.Getenv("DOCKHAND_TEST_SAID_ONCE_REPORT"); report != "" {
 		if file, err := os.OpenFile(report, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
-			for _, b := range append(broken, Overwidth(said)...) {
+			for _, b := range broken {
 				fmt.Fprintf(file, "%s\t%s\t%s\n", t.Name(), strings.Join(args, " "), b)
 			}
 			file.Close()
@@ -149,4 +148,15 @@ func checkSaidOnce(t testing.TB, args []string, out *saidOnceOut) {
 		return
 	}
 	t.Errorf("dockhand %s broke said once:\n  %s", strings.Join(args, " "), strings.Join(broken, "\n  "))
+}
+
+// hanging is a line's break and the hanging indent of the line after it.
+var hanging = regexp.MustCompile(`\n +`)
+
+// Flat is text with its wrapped lines joined, each break and the indent
+// after it one space, and its first line's indent dropped, for a test to
+// read words whose wrap moves with what the line holds, as a temporary
+// directory's path.
+func Flat(text string) string {
+	return strings.TrimLeft(hanging.ReplaceAllString(text, " "), " ")
 }

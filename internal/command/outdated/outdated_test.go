@@ -114,7 +114,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	require.Equal(t, []string{"@ada", "example.org:ada"}, reader.Asked[0].Maintainers)
 	require.Contains(t, out, "  PORT   NOW     NEWEST   DOCKHAND CAN\n  jq     1.7.1   1.8.1    update\n")
 	require.Contains(t, out, "1 of 2 ports couldn't be checked: no forge could be found for it\nOf the 1 port checked, 1 has a newer release, at master ")
-	require.Contains(t, out, " · --current lists those it couldn't check\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat(" · --current lists those it couldn't\n  check\n"))
 	out, _, err = cmdtest.Dockhand(t, "outdated", "--mine", "--current")
 	require.Equal(t, 3, term.ExitCode(err))
 	require.Contains(t, out, "couldn't check: no forge could be found for it")

@@ -90,10 +90,10 @@ func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 	require.Contains(t, out, "jq 1.7.1 · the distfile changed upstream without a new name (stealth update)\n"+
 		"  was   sha256 1f3a…c2d9   size 7,114,391\n"+
 		"  now   sha256 9b0c…77e1   size 7,114,508\n"+
-		"Updated checksums (1 distfile), revision 0 → 1, and dist_subdir jq/1.7.1_1, so mirrors keep both archives.\n"+
+		"Updated checksums (1 distfile), revision 0 → 1, and dist_subdir jq/1.7.1_1, so mirrors keep both\n  archives.\n"+
 		"Changed: textproc/jq/Portfile\n"+
-		"Bumped the revision because the source changed. Use --no-revbump only if the change needs no rebuild.\n")
-	dir := regexp.MustCompile(` in (\S+)\n`).FindStringSubmatch(out)[1]
+		"Bumped the revision because the source changed. Use --no-revbump only if the change needs no\n  rebuild.\n")
+	dir := regexp.MustCompile(` in (\S+)\n`).FindStringSubmatch(cmdtest.Flat(out))[1]
 	home := cmdtest.Getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
@@ -169,7 +169,7 @@ func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {
 	require.Contains(t, out, "Updated checksums (1 distfile) and dist_subdir jq/1.7.1_1, so mirrors keep both archives.\n"+
 		"Changed: textproc/jq/Portfile\n"+
 		"Inspect the source change before deciding whether it needs a revision bump.\n")
-	dir := regexp.MustCompile(` in (\S+)\n`).FindStringSubmatch(out)[1]
+	dir := regexp.MustCompile(` in (\S+)\n`).FindStringSubmatch(cmdtest.Flat(out))[1]
 	home := cmdtest.Getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
@@ -186,12 +186,12 @@ func TestANewVersionRemovesTheStealthDistSubdir(t *testing.T) {
 
 	planned, _, err := cmdtest.Dockhand(t, "update", "jq", "--new", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, planned, "Removes dist_subdir: a stealth update set it for the old version, and every archive of the new version has a name of its own.\n",
+	require.Contains(t, planned, "Removes dist_subdir: a stealth update set it for the old version, and every archive of the new\n  version has a name of its own.\n",
 		"the plan says it, as the update does (the hugo exercise's yq run, finding 2)")
 	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--new")
 	require.NoError(t, err)
-	require.Contains(t, out, "Removed dist_subdir: a stealth update set it for the old version, and every archive of the new version has a name of its own.\n")
-	dir := regexp.MustCompile(` in (\S+)\n`).FindStringSubmatch(out)[1]
+	require.Contains(t, out, "Removed dist_subdir: a stealth update set it for the old version, and every archive of the new\n  version has a name of its own.\n")
+	dir := regexp.MustCompile(` in (\S+)\n`).FindStringSubmatch(cmdtest.Flat(out))[1]
 	home := cmdtest.Getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)

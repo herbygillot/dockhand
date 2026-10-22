@@ -41,6 +41,8 @@ checked against its Portfile's checksums; when upstream no longer serves an
 archive as declared, as after a stealth update, the old one comes from
 MacPorts' distfiles mirror.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// A diff is read as it is (term.Streams.Unwrapped).
+			streams.Unwrapped()
 			ctx := cmd.Context()
 			e, err := s.Open(ctx)
 			if err != nil {

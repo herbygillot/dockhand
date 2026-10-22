@@ -265,3 +265,26 @@ mark's column (`view.Unmarked`).
   cancel --branch jq-update ends it instead", where the message named
   `dockhand wait check-1` above the row's own `dockhand wait check-1`.
 - status joins the "said once" check.
+
+### The prose writer, and the width enforced
+
+- **Standard output's prose wraps at the width** (`term.wrapWriter`, which
+  Begin puts under the output; `term.Wrapped` is one line as it sets it):
+  a line wider than the width breaks at its spaces, its later lines two
+  past its own indent, so a mark's text lines up under it. A table's line,
+  its cells set apart by two spaces or more, isn't wrapped; nor a word with
+  nowhere to break, a path or a URL; nor a line a terminal's escape codes
+  draw; nor what ends a line a prompt began. The width is a terminal's, or
+  `COLUMNS`, else 100.
+- **Logs and documents aren't wrapped** (`Streams.Unwrapped`): serve's log,
+  `logs`, `diff`, and review `--markdown`'s text for pasting.
+- **The width is enforced** in the "said once" check (`cmdtest.Overwidth`):
+  a line wider than 100 columns the writer would have wrapped fails the
+  test. logs and diff are left out of the check, as serve was.
+- **Tests read wrapped words with `cmdtest.Flat`**, which joins each break
+  and the indent after it, where the wrap moves with what the line holds,
+  as a temporary directory's path; tests of fixed text read the wrapped
+  lines.
+- The writer writes with `Write`, never `WriteString`, which a writer
+  embedding a `bytes.Buffer` takes past its own `Write` (logs `--follow`'s
+  test writer, which cancels on what it's written, never saw it).

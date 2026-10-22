@@ -57,7 +57,7 @@ func TestSetupStartPathAndAdopt(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "_resources/port1.0/group/github-1.0.tcl"), []byte("# group, edited\n"), 0o644))
 	out, _, err = cmdtest.Dockhand(t, "adopt")
 	require.NoError(t, err)
-	require.Regexp(t, `^Adopted edits-only: 0 commits above master [0-9a-f]{7}, with edits not yet committed to jq and _resources\.\n`, out)
+	require.Regexp(t, `^Adopted edits-only: 0 commits above master [0-9a-f]{7}, with edits not yet committed to jq and _resources\.\n`, cmdtest.Flat(out))
 }
 
 func TestSetupRemembersAChosenWorktreesDirectory(t *testing.T) {
@@ -159,8 +159,8 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	require.Contains(t, errs.String(), "Keep branch worktrees in ")
 	require.Contains(t, errs.String(), "? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ")
 	require.Contains(t, out.String(), "  Publishing     not set up: dockhand setup github, when you're ready to submit\n")
-	require.Contains(t, out.String(), "  maintainer: set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in ~/.dockhand/config.toml, for --mine, create, and serve's daily look\n")
-	require.Contains(t, out.String(), "Next: dockhand setup github, then dockhand update <port>, or set maintainer in the configuration file for dockhand outdated --mine\n", "no maintainer, so outdated --mine isn't named alone")
+	require.Contains(t, out.String(), "\n  maintainer: set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for\n    your GitHub login, or \"{example.org:you @you}\" with your email too, in ~/.dockhand/config.toml,\n    for --mine, create, and serve's daily look\n")
+	require.Contains(t, out.String(), "Next: dockhand setup github, then dockhand update <port>, or set maintainer in the configuration\n  file for dockhand outdated --mine\n", "no maintainer, so outdated --mine isn't named alone")
 
 	quiet, said, err := cmdtest.Dockhand(t, "setup", "-y")
 	require.NoError(t, err)

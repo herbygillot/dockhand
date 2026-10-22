@@ -17,7 +17,10 @@ func TestSaidOnce(t *testing.T) {
 	require.Empty(t, SaidOnce("Replaced check-1, canceled\n  RUN      STATE\n  check-1  canceled\n"), "a table")
 	require.Equal(t, []string{"1a2b3c4 named 2 times"}, SaidOnce("checking commit 1a2b3c4\nPassed for commit 1a2b3c4.\n"))
 	require.Equal(t, []string{"2 Next: lines"}, SaidOnce("Next: dockhand tidy\nNext: dockhand check\n"))
-	require.Len(t, Overwidth(strings.Repeat("x", 101)+"\n"+strings.Repeat("y", 100)), 1)
+	words := strings.Repeat("word ", 21)
+	require.Len(t, Overwidth(words+"\n"+strings.Repeat("y", 100)), 1, "prose the writer would wrap")
+	require.Empty(t, Overwidth(strings.Repeat("x", 101)), "nowhere to break")
+	require.Empty(t, Overwidth("  "+strings.Repeat("cell  ", 20)), "a table's")
 }
 
 // -v, --json, a preview, and help are read in full.

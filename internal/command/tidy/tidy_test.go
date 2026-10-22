@@ -125,7 +125,7 @@ func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "  1  jq: note harbor\n")
 	require.Contains(t, out, "  2  github-1.0: follow harbor's releases\n")
-	require.Contains(t, out, "Saved the plan to "+file+".")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Saved the plan to "+file+"."))
 	require.Equal(t, "jq: note harbor", testsupport.Git(t, w.Clone, "log", "-1", "--format=%s"), "saving changes nothing")
 
 	// A message reads in the saved plan as the commit will say it, and is
@@ -139,7 +139,7 @@ func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 
 	out, _, err = cmdtest.Dockhand(t, "tidy", "--apply", file)
 	require.NoError(t, err)
-	require.Contains(t, out, "harbor · the plan saved in "+file+"\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("harbor · the plan saved in "+file+"\n"))
 	// It shows each message as it will be written, the edit included, and
 	// not the notes on how the proposal was made (finding 2).
 	require.Contains(t, out, "\nCommits to write\n  1  jq: note harbor\n       includes edits not yet committed\n       files: textproc/jq/Portfile\n       author: Test <test@example.org>\n       body:\n         The note says why harbor needs jq.\n\n         It names the build.\n  2  github-1.0: follow harbor's releases\n")
@@ -186,7 +186,7 @@ func TestTidySaysWhatTheRulesWarnOfAndSavesTheCommitsToRewrite(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "tidy.toml")
 	out, _, err = cmdtest.Dockhand(t, "tidy", "--plan", "--out", file)
 	require.NoError(t, err)
-	require.Contains(t, out, "Saved the commits as they are to "+file+".")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Saved the commits as they are to "+file+"."))
 	saved, err := os.ReadFile(file)
 	require.NoError(t, err)
 	require.Contains(t, string(saved), long)

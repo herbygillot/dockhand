@@ -40,7 +40,7 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("mine\n"), 0o644))
 	archived, _, err := cmdtest.Dockhand(t, "archive", "jq-update")
 	require.NoError(t, err)
-	require.Contains(t, archived, "Archived jq-update; its worktree stays, since it has untracked files: notes.txt. dockhand archive --discard jq-update removes it, edits and all.\n")
+	require.Contains(t, archived, "Archived jq-update; its worktree stays, since it has untracked files: notes.txt. dockhand archive\n  --discard jq-update removes it, edits and all.\n")
 	require.DirExists(t, dir)
 	out, _, err := cmdtest.Dockhand(t, "clean")
 	require.NoError(t, err)
@@ -52,7 +52,7 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "build.log"), []byte("built\n"), 0o644))
 	archived, _, err = cmdtest.Dockhand(t, "archive", "--discard", "jq-update")
 	require.NoError(t, err)
-	require.Contains(t, archived, "Archived jq-update, and removed its worktree; its Git branch and pull request stay. dockhand archive --undo jq-update brings it back.\nIts ignored files went with it: build.log\n")
+	require.Contains(t, archived, "Archived jq-update, and removed its worktree; its Git branch and pull request stay. dockhand archive\n  --undo jq-update brings it back.\nIts ignored files went with it: build.log\n")
 	require.NoDirExists(t, dir)
 	require.Equal(t, head, strings.TrimSpace(testsupport.Git(t, w.Clone, "rev-parse", "dockhand/jq-update")), "the branch and its work stay")
 

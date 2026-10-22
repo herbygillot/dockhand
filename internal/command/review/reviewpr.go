@@ -54,6 +54,8 @@ access. --markdown prints the text, for pasting.`,
 			body := report.Markdown()
 			streams.Emit(view.ReviewView(report))
 			if markdown {
+				// Text for pasting is written as it is.
+				streams.Unwrapped()
 				fmt.Fprint(streams.Out, body)
 				return e.RecordReview(ctx, report, "")
 			}

@@ -35,7 +35,7 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 	require.Contains(t, said, "Experimental: this command evaluates pull request #34905 using its author's Portfiles", "the release bar's notice")
 	require.EqualError(t, err, "No review was posted. In a script, use --comment or --request-changes to post it.")
 	require.Contains(t, out, "review of #34905 \"Update jq docs\", as @ada (read access to macports/macports-ports)\n  1 commit changing jq\n")
-	require.Contains(t, out, `should start with the port it changes: "jq: …" [subject-port]`)
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat(`should start with the port it changes: "jq: …" [subject-port]`))
 	require.Empty(t, g.Reviews)
 
 	out, _, err = cmdtest.Dockhand(t, "review", "34905", "--markdown")
@@ -72,7 +72,7 @@ func TestAdoptSomeonesPullRequest(t *testing.T) {
 	out, said, err := cmdtest.Dockhand(t, "adopt", "--pr", "34905")
 	require.NoError(t, err)
 	require.Contains(t, said, "Experimental: this command evaluates pull request #34905 using @newcontrib's Portfiles with MacPorts on this Mac", "the release bar's notice")
-	require.Equal(t, "Adopted pr-34905: \"jq: document the options\" by @newcontrib, 1 commit, changing jq; maintainers can edit.\nDirectory: ~/Source/macports-branches/pr-34905\n", out)
+	require.Equal(t, cmdtest.Flat("Adopted pr-34905: \"jq: document the options\" by @newcontrib, 1 commit, changing jq; maintainers can edit.\nDirectory: ~/Source/macports-branches/pr-34905\n"), cmdtest.Flat(out))
 	require.FileExists(t, filepath.Join(w.Home, "Source", "macports-branches", "pr-34905", "textproc/jq/Portfile"))
 	out, _, err = cmdtest.Dockhand(t, "adopt", "--pr", "34905")
 	require.NoError(t, err)
