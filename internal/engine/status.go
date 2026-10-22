@@ -325,10 +325,11 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 			return status, err
 		}
 	}
-	if branch.Origin == model.OriginServe {
-		if status.Held, status.Assessment, err = e.assessedHolds(ctx, branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
-			return status, err
-		}
+	// What holds a branch is read for every branch, as status says it for
+	// each: paused where serve prepared it, and for a person's own, what
+	// submit shows (C2, where it was serve's alone).
+	if status.Held, status.Assessment, err = e.assessedHolds(ctx, branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
+		return status, err
 	}
 
 	var checks []model.Run
