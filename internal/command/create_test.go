@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -61,18 +62,18 @@ func (c checksummer) Prepare(ctx context.Context, request editprep.Request) (edi
 
 func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	stands(t).ProjectReader = riftProject{}
-	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
-	t.Cleanup(func() { stands(t).Preparer = nil })
-	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("maintainer = \"{@ada example.org:ada} openmaintainer\"\n"), 0o644))
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).ProjectReader = riftProject{}
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
+	t.Cleanup(func() { cmdtest.Stands(t).Preparer = nil })
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("maintainer = \"{@ada example.org:ada} openmaintainer\"\n"), 0o644))
 
-	_, _, err := dockhand(t, "create", "https://github.com/rift-dev/rift")
+	_, _, err := cmdtest.Dockhand(t, "create", "https://github.com/rift-dev/rift")
 	require.ErrorContains(t, err, "create needs a branch. Use --new to start one")
 
-	out, _, err := dockhand(t, "create", "https://github.com/rift-dev/rift", "--new", "--category", "textproc")
+	out, _, err := cmdtest.Dockhand(t, "create", "https://github.com/rift-dev/rift", "--new", "--category", "textproc")
 	require.NoError(t, err)
 	require.Regexp(t, `^rift 0\.4\.2 · Rust \(Cargo\.toml\) · GitHub says MIT · "Fast structural diff for config files"\n`+
 		`Started dockhand/rift-new from master [0-9a-f]+ \(fetched just now\)\n`+
@@ -83,7 +84,7 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 		`Next: cd "\$\(dockhand path rift-new\)", then dockhand edit rift, then dockhand check\n$`, out)
 
 	branch := regexp.MustCompile(`dockhand/(rift-new)`).FindStringSubmatch(out)[1]
-	dir := filepath.Join(w.home, "Source", "macports-branches", branch)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", branch)
 	data, err := os.ReadFile(filepath.Join(dir, "textproc/rift/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "github.setup        rift-dev rift 0.4.2 v\n")
@@ -92,25 +93,25 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	require.Contains(t, string(data), "    anyhow  1.0.89  86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6\n")
 	require.Equal(t, "textproc/rift/Portfile", strings.TrimSpace(testsupport.Git(t, dir, "diff", "--cached", "--name-only")), "staged, so check includes it")
 
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "tidy")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
 	require.Equal(t, "rift: new port, version 0.4.2", strings.TrimSpace(testsupport.Git(t, dir, "log", "-1", "--format=%s")))
 
 	// A category the tree keeps for itself is refused before anything is
 	// written (the helper-ownership review's table).
-	_, _, err = dockhand(t, "create", "https://github.com/rift-dev/rift", "--new", "--name", "rift2", "--category", "_resources")
+	_, _, err = cmdtest.Dockhand(t, "create", "https://github.com/rift-dev/rift", "--new", "--name", "rift2", "--category", "_resources")
 	require.ErrorContains(t, err, `"_resources" is not a category`)
 
 	// A name a port already has is refused, with --name named; with
 	// --new, before a branch is started for it, where one was started and
 	// left behind (the sand-runner port).
-	stands(t).ProjectReader = jqProject{}
-	_, _, err = dockhand(t, "create", "https://github.com/jqlang/jq", "--category", "sysutils")
+	cmdtest.Stands(t).ProjectReader = jqProject{}
+	_, _, err = cmdtest.Dockhand(t, "create", "https://github.com/jqlang/jq", "--category", "sysutils")
 	require.ErrorContains(t, err, "there is already a port jq, at textproc/jq; --name names this one otherwise, or dockhand update jq updates that one")
-	_, _, err = dockhand(t, "create", "https://github.com/jqlang/jq", "--new", "--category", "sysutils")
+	_, _, err = cmdtest.Dockhand(t, "create", "https://github.com/jqlang/jq", "--new", "--category", "sysutils")
 	require.ErrorContains(t, err, "there is already a port jq, at textproc/jq; --name names this one otherwise")
-	require.Empty(t, strings.TrimSpace(testsupport.Git(t, w.clone, "branch", "--list", "dockhand/jq-*")), "no branch was started for it")
+	require.Empty(t, strings.TrimSpace(testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/jq-*")), "no branch was started for it")
 }
 
 type jqProject struct{}
@@ -136,22 +137,22 @@ func (txtProject) Project(context.Context, string) (engine.Project, error) {
 // and 5).
 func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	stands(t).ProjectReader = txtProject{}
-	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
-	t.Cleanup(func() { stands(t).Preparer = nil })
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).ProjectReader = txtProject{}
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
+	t.Cleanup(func() { cmdtest.Stands(t).Preparer = nil })
 
-	stands(t).HTTPS = testsupport.HTTPSAnswers{"https://txt.hellman.io/": true}
-	out, _, err := dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new")
+	cmdtest.Stands(t).HTTPS = testsupport.HTTPSAnswers{"https://txt.hellman.io/": true}
+	out, _, err := cmdtest.Dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new")
 	require.NoError(t, err)
 	require.Contains(t, out, "  homepage: using HTTPS, as MacPorts recommends (GitHub supplied http://txt.hellman.io/)\n", "the finding 6 of the txt run")
 	require.Contains(t, out, "txt 0.8.1 · Rust (Cargo.toml) · Cargo.toml says MIT OR Apache-2.0 · \"A fast, intuitive terminal text editor\"\n")
 	require.Contains(t, out, "Review these fields and remove their unconfirmed markers: category devel (guessed from the build system; create --category moves it), license (from Cargo.toml), long_description, maintainers")
-	require.Contains(t, out, "  maintainers: nomaintainer (no maintainer configured). set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in "+filepath.Join(w.home, ".dockhand", "config.toml")+"\n",
+	require.Contains(t, out, "  maintainers: nomaintainer (no maintainer configured). set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in "+filepath.Join(w.Home, ".dockhand", "config.toml")+"\n",
 		"no port at the base names @ada")
 	branch := regexp.MustCompile(`dockhand/(txt-new)`).FindStringSubmatch(out)[1]
-	data, err := os.ReadFile(filepath.Join(w.home, "Source", "macports-branches", branch, "devel/txt/Portfile"))
+	data, err := os.ReadFile(filepath.Join(w.Home, "Source", "macports-branches", branch, "devel/txt/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "# dockhand: unconfirmed, from Cargo.toml's license field\nlicense             {MIT Apache-2}\n")
 	require.Contains(t, string(data), "description         A fast, intuitive terminal text editor\n")
@@ -160,10 +161,10 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	// Edited by hand, as create asks, and then created again with another
 	// category, it moves there, its edits kept; with none, it's said what
 	// moves it (the txt run's finding 1).
-	dir := filepath.Join(w.home, "Source", "macports-branches", branch)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", branch)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "devel/txt/Portfile"), append(data, []byte("\n# settled by hand\n")...), 0o644))
-	setenv(t, "MACPORTS_TREE", dir)
-	out, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "editors")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	out, _, err = cmdtest.Dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "editors")
 	require.NoError(t, err)
 	require.Contains(t, out, "Moved txt from devel/txt to editors/txt, preserving all files and your edits.\n")
 	moved, err := os.ReadFile(filepath.Join(dir, "editors/txt/Portfile"))
@@ -171,32 +172,32 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	require.Contains(t, string(moved), "# settled by hand\n")
 	require.NoDirExists(t, filepath.Join(dir, "devel/txt"))
 	require.Equal(t, "editors/txt/Portfile", strings.TrimSpace(testsupport.Git(t, dir, "diff", "--cached", "--name-only")), "staged where it now is")
-	_, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt")
+	_, _, err = cmdtest.Dockhand(t, "create", "https://github.com/ErikHellman/txt")
 	require.ErrorContains(t, err, "txt is this branch's new port, at editors/txt, not yet committed: dockhand edit txt edits it, and create --category <another> moves it")
 
 	// Its hand edits leave tidy's plan standing, with create's subject and
 	// no attribution, since dockhand didn't make them all (the txt run's
 	// finding 3). Committed, it's no longer create's to move.
-	out, _, err = dockhand(t, "tidy")
+	out, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
 	require.Contains(t, out, "new port from dockhand create, including your later edits")
 	require.Equal(t, "txt: new port, version 0.8.1", strings.TrimSpace(testsupport.Git(t, dir, "log", "-1", "--format=%s")))
 	require.NotContains(t, testsupport.Git(t, dir, "log", "-1", "--format=%B"), "Generated-By")
-	_, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "games")
+	_, _, err = cmdtest.Dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "games")
 	require.ErrorContains(t, err, "txt is this branch's new port, at editors/txt, and committed: dockhand edit txt edits it")
-	setenv(t, "MACPORTS_TREE", w.clone)
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 
 	// Where https doesn't answer, the homepage is written as GitHub gives
 	// it, and said.
-	stands(t).HTTPS = testsupport.HTTPSAnswers{}
-	out, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new", "--name", "txt-plain")
+	cmdtest.Stands(t).HTTPS = testsupport.HTTPSAnswers{}
+	out, _, err = cmdtest.Dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new", "--name", "txt-plain")
 	require.NoError(t, err)
 	require.NotContains(t, out, "homepage: over HTTPS")
 	require.Contains(t, out, "MacPorts prefers HTTPS; over plain HTTP:\n  homepage http://txt.hellman.io/: https doesn't answer there\n")
 }
 
 // maintainedPort is onePort, with an index whose ports write @ada two ways.
-type maintainedPort struct{ onePort }
+type maintainedPort struct{ cmdtest.OnePort }
 
 func (maintainedPort) Spellings(_ context.Context, _ model.Source, spelling string) ([]portindex.MaintainerSpelling, error) {
 	if spelling != "@ada" {
@@ -211,17 +212,17 @@ func (maintainedPort) Spellings(_ context.Context, _ model.Source, spelling stri
 // no config (the flyctl run, macports/macports-ports#35069).
 func TestCreateSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	stands(t).ProjectReader = txtProject{}
-	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
-	usePorts(stands(t), maintainedPort{})
-	config := filepath.Join(w.home, ".dockhand", "config.toml")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).ProjectReader = txtProject{}
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
+	cmdtest.UsePorts(cmdtest.Stands(t), maintainedPort{})
+	config := filepath.Join(w.Home, ".dockhand", "config.toml")
 	require.NoFileExists(t, config)
 
-	out, _, err := dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new", "--category", "editors")
+	out, _, err := cmdtest.Dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new", "--category", "editors")
 	require.NoError(t, err)
-	require.Contains(t, out, "  maintainers: nomaintainer (no maintainer configured). set maintainer = \"{@ada example.org:ada}\" in "+filepath.Join(w.home, ".dockhand", "config.toml")+", as 12 of the ports that name @ada write it, or as others do: \"@ada\" (2)\n")
+	require.Contains(t, out, "  maintainers: nomaintainer (no maintainer configured). set maintainer = \"{@ada example.org:ada}\" in "+filepath.Join(w.Home, ".dockhand", "config.toml")+", as 12 of the ports that name @ada write it, or as others do: \"@ada\" (2)\n")
 	require.NoFileExists(t, config, "it only suggests")
 }
 
@@ -248,7 +249,7 @@ func (toolProject) Project(_ context.Context, address string) (engine.Project, e
 }
 
 // pythonPorts read every port as the python PortGroup defaults it.
-type pythonPorts struct{ onePort }
+type pythonPorts struct{ cmdtest.OnePort }
 
 func (pythonPorts) Ports(_ context.Context, _ model.Source, directory string, _ model.Environment, _ map[string]bool) ([]macports.PortInfo, error) {
 	return []macports.PortInfo{{Name: filepath.Base(directory), Options: map[string]string{"python.default_version": "314"}}}, nil
@@ -259,15 +260,15 @@ func (pythonPorts) Ports(_ context.Context, _ model.Source, directory string, _ 
 // the PortGroup moved to 314 (the library survey, 2026-10-02).
 func TestCreateTakesThePythonPortGroupsDefault(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	stands(t).ProjectReader = toolProject{}
-	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
-	usePorts(stands(t), pythonPorts{})
-	out, _, err := dockhand(t, "create", "https://github.com/o/tool", "--new", "--category", "textproc")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).ProjectReader = toolProject{}
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
+	cmdtest.UsePorts(cmdtest.Stands(t), pythonPorts{})
+	out, _, err := cmdtest.Dockhand(t, "create", "https://github.com/o/tool", "--new", "--category", "textproc")
 	require.NoError(t, err)
 	branch := regexp.MustCompile(`dockhand/(py-tool-new)`).FindStringSubmatch(out)[1]
-	data, err := os.ReadFile(filepath.Join(w.home, "Source", "macports-branches", branch, "textproc/py-tool/Portfile"))
+	data, err := os.ReadFile(filepath.Join(w.Home, "Source", "macports-branches", branch, "textproc/py-tool/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "python.versions     314\n")
 }

@@ -13,19 +13,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// branchChoice is the branch an authoring command was pointed at.
+// BranchChoice is the branch an authoring command was pointed at.
 type BranchChoice struct {
 	Branch string
-	// new is --new's name, or newNamed where it named none; empty where
+	// New is --new's name, or newNamed where it named none; empty where
 	// --new wasn't given.
 	New string
 }
 
-// newNamed is --new given without a name: the branch is named for the
+// NewNamed is --new given without a name: the branch is named for the
 // port, or the version an update moves to.
 const NewNamed = "\x00"
 
-// isNew is whether --new was given; newName is the name it gave, if any.
+// IsNew is whether --new was given; newName is the name it gave, if any.
 func (c BranchChoice) IsNew() bool { return c.New != "" }
 
 func (c BranchChoice) NewName() string {
@@ -35,7 +35,7 @@ func (c BranchChoice) NewName() string {
 	return c.New
 }
 
-// nextIn is a Next: line's steps, run in a branch: as they are where it's
+// NextIn is a Next: line's steps, run in a branch: as they are where it's
 // checked out, and after a cd into its worktree elsewhere, since a check
 // from outside takes its committed head, not its edits. A Next: names
 // only what would be accepted (the release bar's rule), so the branch's
@@ -48,7 +48,7 @@ func NextIn(ctx context.Context, e *engine.Engine, branch model.Branch, steps ..
 	return fmt.Sprintf(`cd "$(dockhand path %s)", then %s`, branch.ShortName(), line)
 }
 
-// chosenBranch is the branch an authoring command works in, and whether it
+// ChosenBranch is the branch an authoring command works in, and whether it
 // was started for it; or, for forVersion, none yet: an update starts it,
 // named for the version it finds.
 type ChosenBranch struct {
@@ -57,7 +57,7 @@ type ChosenBranch struct {
 	ForVersion bool
 }
 
-// chooseBranch is the branch an authoring command works in, as
+// ChooseBranch is the branch an authoring command works in, as
 // engine.Select finds it: -b's, an existing one; one --new starts; the one
 // checked out here; or the port's own open branch, one started for it
 // where none changes it, said first. Where several change it, a terminal
@@ -70,7 +70,7 @@ func ChooseBranch(ctx context.Context, e *engine.Engine, streams term.Streams, w
 	return SettleSelection(ctx, e, streams, selection, port, work, !where.IsNew())
 }
 
-// settleSelection takes a selection: the branch found, said where it was
+// SettleSelection takes a selection: the branch found, said where it was
 // chosen for the port; the one to start, started, or for an update left
 // for it to start; or the choices, asked about once, a new branch among
 // them where the work may start one (the split's 7d row 7: the two
@@ -139,7 +139,7 @@ func choose(ctx context.Context, e *engine.Engine, streams term.Streams, port st
 	return found[n-1].Branch, false, nil
 }
 
-// startFor starts the branch Select names for the work on port, as --new
+// StartFor starts the branch Select names for the work on port, as --new
 // would.
 func StartFor(ctx context.Context, e *engine.Engine, port string, work engine.Work) (model.Branch, bool, error) {
 	selection, err := e.Select(ctx, engine.Selector{Port: port, New: true}, work)
@@ -171,7 +171,7 @@ func latestCheckHere(ctx context.Context, e *engine.Engine, unnamed string) (mod
 	return run, nil
 }
 
-// namedOrLatest is the check args name, or with none, the latest check of
+// NamedOrLatest is the check args name, or with none, the latest check of
 // the branch -b, -p, or --pr names, else of the one checked out here: a
 // branch has one check at a time, so it is the one queued or running, if
 // any is (the second look's §3). unnamed says what to do elsewhere.
@@ -185,7 +185,7 @@ func NamedOrLatest(ctx context.Context, e *engine.Engine, streams term.Streams, 
 	return LatestOf(ctx, e, streams, where, unnamed)
 }
 
-// latestOf is the latest check of the branch the flags name, else of the
+// LatestOf is the latest check of the branch the flags name, else of the
 // one checked out here.
 func LatestOf(ctx context.Context, e *engine.Engine, streams term.Streams, where BranchFlags, unnamed string) (model.Run, error) {
 	if !where.Explicit() {

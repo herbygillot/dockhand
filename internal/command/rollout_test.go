@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -18,39 +19,39 @@ import (
 // second look's §3).
 func TestTheSelectorReachesStatusPathArchiveAndRuns(t *testing.T) {
 	t.Parallel()
-	w := checkedBranch(t)
-	_, _, err := dockhand(t, "check")
+	w := cmdtest.CheckedBranch(t)
+	_, _, err := cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", w.clone)
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 
-	out, _, err := dockhand(t, "status", "-p", "jq")
+	out, _, err := cmdtest.Dockhand(t, "status", "-p", "jq")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ~/Source/macports-branches/jq-update\n", "one branch touches jq: shown in detail")
-	out, _, err = dockhand(t, "status", "-b", "jq-update")
+	out, _, err = cmdtest.Dockhand(t, "status", "-b", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ")
-	_, _, err = dockhand(t, "status", "jq-update", "-b", "jq-update")
+	_, _, err = cmdtest.Dockhand(t, "status", "jq-update", "-b", "jq-update")
 	require.EqualError(t, err, "name the branch once: as the argument, or with -b, -p, or --pr")
 
-	out, _, err = dockhand(t, "path", "-p", "jq")
+	out, _, err = cmdtest.Dockhand(t, "path", "-p", "jq")
 	require.NoError(t, err)
 	require.Contains(t, out, "macports-branches/jq-update\n")
 
-	out, _, err = dockhand(t, "logs", "-p", "jq")
+	out, _, err = cmdtest.Dockhand(t, "logs", "-p", "jq")
 	require.NoError(t, err)
 	require.Contains(t, out, "building from ", "jq's log, from its branch's latest check")
-	out, _, err = dockhand(t, "logs", "-b", "jq-update")
+	out, _, err = cmdtest.Dockhand(t, "logs", "-b", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, out, "check-1 · passed\n")
-	out, _, err = dockhand(t, "wait", "-p", "jq")
+	out, _, err = cmdtest.Dockhand(t, "wait", "-p", "jq")
 	require.NoError(t, err)
 	require.Contains(t, out, "Passed for snapshot 1.\n", "check-1, reported")
-	_, _, err = dockhand(t, "wait", "check-1", "-p", "jq")
+	_, _, err = cmdtest.Dockhand(t, "wait", "check-1", "-p", "jq")
 	require.EqualError(t, err, "name a check or a branch, not both")
-	_, _, err = dockhand(t, "cancel", "-b", "jq-update")
+	_, _, err = cmdtest.Dockhand(t, "cancel", "-b", "jq-update")
 	require.EqualError(t, err, "check-1 already passed")
 
-	out, _, err = dockhand(t, "archive", "-p", "jq")
+	out, _, err = cmdtest.Dockhand(t, "archive", "-p", "jq")
 	require.NoError(t, err)
 	require.Contains(t, out, "Archived jq-update")
 }
@@ -62,35 +63,35 @@ func TestTheSelectorReachesStatusPathArchiveAndRuns(t *testing.T) {
 // §2).
 func TestCheckOffersToTrackAnUntrackedCheckout(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withScript(t, w, "passed")
-	setenv(t, "MACPORTS_TREE", w.clone)
-	testsupport.Git(t, w.clone, "switch", "-q", "-c", "my-jq")
-	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n# mine\n"), 0o644))
-	testsupport.Git(t, w.clone, "commit", "-q", "-am", "jq: mine")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "my-jq")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n# mine\n"), 0o644))
+	testsupport.Git(t, w.Clone, "commit", "-q", "-am", "jq: mine")
 
-	_, _, err := dockhand(t, "check", "--plan")
+	_, _, err := cmdtest.Dockhand(t, "check", "--plan")
 	require.ErrorContains(t, err, "dockhand adopt my-jq tracks it, then run this again")
 	var out, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"check", "--plan"}, term.Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs}.AsTerminal())
+	err = cmdtest.RunFor(t, t.Context(), []string{"check", "--plan"}, term.Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err, errs.String())
 	require.Contains(t, errs.String(), "? my-jq isn't tracked; track it with adopt? [y/N] ")
 	require.Contains(t, errs.String(), "Tracking my-jq.\n")
 
 	// A commit of jq's, on no branch.
-	testsupport.Git(t, w.clone, "switch", "-q", "--detach")
-	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n# edited\n"), 0o644))
-	testsupport.Git(t, w.clone, "commit", "-q", "-am", "jq: edited")
-	_, _, err = dockhand(t, "check", "--plan")
+	testsupport.Git(t, w.Clone, "switch", "-q", "--detach")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n# edited\n"), 0o644))
+	testsupport.Git(t, w.Clone, "commit", "-q", "-am", "jq: edited")
+	_, _, err = cmdtest.Dockhand(t, "check", "--plan")
 	require.ErrorContains(t, err, "git switch -c dockhand/<name> and dockhand adopt")
 	out.Reset()
 	errs.Reset()
-	err = runFor(t, t.Context(), []string{"check", "--plan"}, term.Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs}.AsTerminal())
+	err = cmdtest.RunFor(t, t.Context(), []string{"check", "--plan"}, term.Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err, errs.String())
 	require.Regexp(t, `Started jq-[a-z0-9]{4} at this commit, and tracking it\.\n`, errs.String(), "named for its port")
-	require.Regexp(t, `^dockhand/jq-[a-z0-9]{4}$`, testsupport.Git(t, w.clone, "branch", "--show-current"))
+	require.Regexp(t, `^dockhand/jq-[a-z0-9]{4}$`, testsupport.Git(t, w.Clone, "branch", "--show-current"))
 }
 
 // A new branch that asks for an archived branch's name is offered it, on a
@@ -100,25 +101,25 @@ func TestCheckOffersToTrackAnUntrackedCheckout(t *testing.T) {
 // the rc8 full stage's B10).
 func TestStartOffersAnArchivedBranchsName(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	_, _, err := dockhand(t, "start", "notes")
+	w := cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "notes")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "start", "notes")
+	_, _, err = cmdtest.Dockhand(t, "start", "notes")
 	require.EqualError(t, err, `dockhand/notes is already a tracked branch, open: cd "$(dockhand path notes)" works in it, or choose another name`)
-	_, _, err = dockhand(t, "archive", "notes")
+	_, _, err = cmdtest.Dockhand(t, "archive", "notes")
 	require.NoError(t, err)
 
-	_, _, err = dockhand(t, "start", "notes")
+	_, _, err = cmdtest.Dockhand(t, "start", "notes")
 	require.EqualError(t, err, "dockhand/notes is an archived branch, whose record keeps the name; on a terminal start offers to rename it notes-archived, or choose another name")
 	var out, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"start", "notes"}, term.Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs}.AsTerminal())
+	err = cmdtest.RunFor(t, t.Context(), []string{"start", "notes"}, term.Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err, errs.String())
 	require.Contains(t, errs.String(), "? notes is archived. Rename the archived branch to free this name? [y/N] ")
 	require.Contains(t, out.String(), "Renamed the archived notes to notes-archived; dockhand archive --undo notes-archived brings it back.\n")
 	require.Contains(t, out.String(), "Created dockhand/notes from master ")
-	require.Contains(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/notes-archived"), "dockhand/notes-archived")
+	require.Contains(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/notes-archived"), "dockhand/notes-archived")
 
-	undone, _, err := dockhand(t, "archive", "--undo", "notes-archived")
+	undone, _, err := cmdtest.Dockhand(t, "archive", "--undo", "notes-archived")
 	require.NoError(t, err)
 	require.Contains(t, undone, "notes-archived is back among your open branches.\n")
 }
@@ -129,24 +130,24 @@ func TestStartOffersAnArchivedBranchsName(t *testing.T) {
 // rc1 full stage, D-S5).
 func TestStatusFollowsARenameOntoAnArchivedBranchsName(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	_, _, err := dockhand(t, "start", "ds5-after")
+	w := cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "ds5-after")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "archive", "ds5-after")
+	_, _, err = cmdtest.Dockhand(t, "archive", "ds5-after")
 	require.NoError(t, err)
-	testsupport.Git(t, w.clone, "branch", "-q", "-D", "dockhand/ds5-after")
-	_, _, err = dockhand(t, "start", "ds5-before")
+	testsupport.Git(t, w.Clone, "branch", "-q", "-D", "dockhand/ds5-after")
+	_, _, err = cmdtest.Dockhand(t, "start", "ds5-before")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "ds5-before")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "ds5-before")
 	testsupport.Git(t, dir, "branch", "-m", "dockhand/ds5-before", "dockhand/ds5-after")
 
-	setenv(t, "MACPORTS_TREE", w.clone)
-	out, errs, err := dockhand(t, "status")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	out, errs, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err, errs)
 	require.Contains(t, out, "Followed ds5-before, renamed by hand to ds5-after.\n")
-	out, _, err = dockhand(t, "status", "--all")
+	out, _, err = cmdtest.Dockhand(t, "status", "--all")
 	require.NoError(t, err)
 	require.Contains(t, out, "ds5-after-archived (archived)", "the archived record, renamed aside")
-	_, _, err = dockhand(t, "--json", "status")
+	_, _, err = cmdtest.Dockhand(t, "--json", "status")
 	require.NoError(t, err)
 }

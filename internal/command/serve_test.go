@@ -1,7 +1,6 @@
 package command
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -25,50 +25,17 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-// syncBuffer is a buffer two goroutines may share.
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
-
-func checkedBranch(t *testing.T) world {
-	t.Helper()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withScript(t, w, "passed")
-	hosted(t).Timings.ServePoll = 20 * time.Millisecond
-	_, _, err := dockhand(t, "start", "jq-update")
-	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
-	_, _, err = dockhand(t, "update", "jq")
-	require.NoError(t, err)
-	return w
-}
-
 func TestServeDrainsTheQueue(t *testing.T) {
 	t.Parallel()
-	checkedBranch(t)
-	_, _, err := dockhand(t, "check", "-d")
+	cmdtest.CheckedBranch(t)
+	_, _, err := cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	out, _, err := dockhand(t, "serve", "--drain")
+	out, _, err := cmdtest.Dockhand(t, "serve", "--drain")
 	require.NoError(t, err)
 	require.Contains(t, out, "serve: leading (pid ")
 	require.Contains(t, out, "builds on command (1 check at a time), github (2 checks at a time) · opens no pull requests; it only checks\n")
 	require.Contains(t, out, "check-1 jq-update: running\ncheck-1 jq-update: passed\nserve: the queue is empty\n")
-	out, _, err = dockhand(t, "status", "--all")
+	out, _, err = cmdtest.Dockhand(t, "status", "--all")
 	require.NoError(t, err)
 	require.NotContains(t, out, "Checks queued and running")
 	require.Contains(t, out, "\nserve: not running · queue: empty\n")
@@ -76,32 +43,32 @@ func TestServeDrainsTheQueue(t *testing.T) {
 
 func TestACheckIsHandedToServe(t *testing.T) {
 	t.Parallel()
-	checkedBranch(t)
+	cmdtest.CheckedBranch(t)
 	ctx, stop := context.WithCancel(t.Context())
-	var served syncBuffer
+	var served cmdtest.SyncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, settle, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, cmdtest.Settle, 10*time.Millisecond)
 
-	out, errs, err := dockhand(t, "check")
+	out, errs, err := cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
 	require.Contains(t, errs, "check-1 handed to serve (pid ")
 	require.Contains(t, out, "Passed for snapshot 1.")
 
-	out, _, err = dockhand(t, "check", "-d")
+	out, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)
 	require.Contains(t, out, "check-2 queued; serve (pid ")
 
-	var standby syncBuffer
+	var standby cmdtest.SyncBuffer
 	second, stopSecond := context.WithCancel(t.Context())
 	secondDone := make(chan error)
 	go func() {
-		secondDone <- runFor(t, second, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &standby, Err: &standby})
+		secondDone <- cmdtest.RunFor(t, second, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &standby, Err: &standby})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(standby.String(), "serve: standing by; another instance (pid ") }, settle, 10*time.Millisecond)
-	drained, _, err := dockhand(t, "serve", "--drain")
+	require.Eventually(t, func() bool { return strings.Contains(standby.String(), "serve: standing by; another instance (pid ") }, cmdtest.Settle, 10*time.Millisecond)
+	drained, _, err := cmdtest.Dockhand(t, "serve", "--drain")
 	require.NoError(t, err)
 	require.Contains(t, drained, "leads and runs the queue; nothing to drain here")
 
@@ -118,16 +85,16 @@ func TestACheckIsHandedToServe(t *testing.T) {
 // build; it had gone on running the old one (the rc3 full stage, A7).
 func TestServeStopsForAnUpgrade(t *testing.T) {
 	t.Parallel()
-	checkedBranch(t)
+	cmdtest.CheckedBranch(t)
 	executable := filepath.Join(t.TempDir(), "dockhand")
 	require.NoError(t, os.WriteFile(executable, []byte("rc4"), 0o755))
-	hosted(t).Executable = func(bool) string { return executable }
-	var served syncBuffer
+	cmdtest.Hosted(t).Executable = func(bool) string { return executable }
+	var served cmdtest.SyncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, t.Context(), []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- cmdtest.RunFor(t, t.Context(), []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, settle, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, cmdtest.Settle, 10*time.Millisecond)
 	// The new build is a new file at the same path.
 	next := executable + ".new"
 	require.NoError(t, os.WriteFile(next, []byte("rc5 build"), 0o755))
@@ -135,7 +102,7 @@ func TestServeStopsForAnUpgrade(t *testing.T) {
 	select {
 	case err := <-done:
 		require.NoError(t, err, "launchd restarts an agent that exits")
-	case <-time.After(settle):
+	case <-time.After(cmdtest.Settle):
 		t.Fatalf("serve didn't stop for the upgrade: %s", served.String())
 	}
 	require.Contains(t, served.String(), "serve: upgrade detected; waiting for active checks to finish before exiting so launchd can start the new version\nserve: stopped for the upgrade\n")
@@ -146,22 +113,22 @@ func TestServeStopsForAnUpgrade(t *testing.T) {
 // stage, A8).
 func TestServeStopsWhenUninstalled(t *testing.T) {
 	t.Parallel()
-	checkedBranch(t)
+	cmdtest.CheckedBranch(t)
 	executable := filepath.Join(t.TempDir(), "dockhand")
 	require.NoError(t, os.WriteFile(executable, []byte("rc6"), 0o755))
-	hosted(t).Executable = func(bool) string { return executable }
-	hosted(t).Timings.ServeGrace = 200 * time.Millisecond
-	var served syncBuffer
+	cmdtest.Hosted(t).Executable = func(bool) string { return executable }
+	cmdtest.Hosted(t).Timings.ServeGrace = 200 * time.Millisecond
+	var served cmdtest.SyncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, t.Context(), []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- cmdtest.RunFor(t, t.Context(), []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, settle, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, cmdtest.Settle, 10*time.Millisecond)
 	require.NoError(t, os.Remove(executable))
 	select {
 	case err := <-done:
 		require.NoError(t, err)
-	case <-time.After(settle):
+	case <-time.After(cmdtest.Settle):
 		t.Fatalf("serve didn't stop once uninstalled: %s", served.String())
 	}
 	require.Contains(t, served.String(), "serve: dockhand was uninstalled; stopping once its checks end. serve --uninstall removes the agent\nserve: stopped, as dockhand was uninstalled\n")
@@ -183,7 +150,7 @@ func withLaunchd(t *testing.T, printsUntilGone int) *[][]string {
 	t.Helper()
 	var calls [][]string
 	loaded, going := false, 0
-	hosted(t).Launchctl = func(_ context.Context, args ...string) ([]byte, error) {
+	cmdtest.Hosted(t).Launchctl = func(_ context.Context, args ...string) ([]byte, error) {
 		switch args[0] {
 		case "print":
 			if loaded && going > 0 {
@@ -208,19 +175,19 @@ func withLaunchd(t *testing.T, printsUntilGone int) *[][]string {
 
 func TestServeInstallsALaunchdAgent(t *testing.T) {
 	t.Parallel()
-	w := checkedBranch(t)
+	w := cmdtest.CheckedBranch(t)
 	calls := withLaunchd(t, 2)
-	hosted(t).OS = "linux"
-	_, _, err := dockhand(t, "serve", "--install")
+	cmdtest.Hosted(t).OS = "linux"
+	_, _, err := cmdtest.Dockhand(t, "serve", "--install")
 	require.ErrorContains(t, err, "serve --install requires macOS")
 
-	hosted(t).OS = "darwin"
-	out, _, err := dockhand(t, "serve", "--install")
+	cmdtest.Hosted(t).OS = "darwin"
+	out, _, err := cmdtest.Dockhand(t, "serve", "--install")
 	require.NoError(t, err)
 	require.Contains(t, out, "serve now starts at login and restarts if it stops.\n  Agent  ~/Library/LaunchAgents/"+AgentLabel+".plist\n  Log    ~/.dockhand/logs/serve.log\n")
-	plist, err := os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
+	plist, err := os.ReadFile(filepath.Join(w.Home, "Library", "LaunchAgents", AgentLabel+".plist"))
 	require.NoError(t, err)
-	require.Contains(t, string(plist), "<string>serve</string><string>--tree</string><string>"+w.clone+"</string>")
+	require.Contains(t, string(plist), "<string>serve</string><string>--tree</string><string>"+w.Clone+"</string>")
 	// Kept alive while dockhand is installed, and not once it's
 	// uninstalled, which left launchd respawning a missing program.
 	require.Regexp(t, `<key>KeepAlive</key><dict><key>PathState</key><dict><key>[^<]+</key><true/></dict></dict>`, string(plist))
@@ -230,73 +197,73 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	require.Equal(t, "bootout", (*calls)[0][0])
 	require.Equal(t, "bootstrap", (*calls)[1][0])
 	// Flags given beside --install shape the agent's runs.
-	_, _, err = dockhand(t, "serve", "--install", "--no-notify", "--ship-to", "submit")
+	_, _, err = cmdtest.Dockhand(t, "serve", "--install", "--no-notify", "--ship-to", "submit")
 	require.NoError(t, err)
-	plist, err = os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
+	plist, err = os.ReadFile(filepath.Join(w.Home, "Library", "LaunchAgents", AgentLabel+".plist"))
 	require.NoError(t, err)
-	require.Contains(t, string(plist), "<string>"+filepath.Join(w.home, ".dockhand", "dockhand.db")+"</string><string>--ship-to=submit</string><string>--no-notify</string></array>")
+	require.Contains(t, string(plist), "<string>"+filepath.Join(w.Home, ".dockhand", "dockhand.db")+"</string><string>--ship-to=submit</string><string>--no-notify</string></array>")
 	*calls = nil
 
 	// Uninstall waits until launchd has let the agent go, which it does
 	// after bootout returns, so a status read at once doesn't find it.
-	out, _, err = dockhand(t, "serve", "--uninstall")
+	out, _, err = cmdtest.Dockhand(t, "serve", "--uninstall")
 	require.NoError(t, err)
 	require.Contains(t, out, "Removed the serve agent")
 	require.Len(t, *calls, 1, "uninstall only boots it out")
-	require.NoFileExists(t, filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
-	loaded, err := macos.LaunchAgent{Label: AgentLabel, Launchctl: hosted(t).Launchctl}.Loaded(t.Context())
+	require.NoFileExists(t, filepath.Join(w.Home, "Library", "LaunchAgents", AgentLabel+".plist"))
+	loaded, err := macos.LaunchAgent{Label: AgentLabel, Launchctl: cmdtest.Hosted(t).Launchctl}.Loaded(t.Context())
 	require.NoError(t, err)
 	require.False(t, loaded, "gone when uninstall returns")
 }
 
 func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
-	hosted(t).Timings.ServePoll = 20 * time.Millisecond
-	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	cmdtest.Hosted(t).Timings.ServePoll = 20 * time.Millisecond
+	cmdtest.Setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	g.PRs[34901].State = forge.PullRequestMerged
-	setenv(t, "MACPORTS_TREE", w.clone)
-	_, _, err = dockhand(t, "status", "--refresh")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	_, _, err = cmdtest.Dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 
 	serveFor := func(until string) string {
 		ctx, stop := context.WithCancel(t.Context())
-		var served syncBuffer
+		var served cmdtest.SyncBuffer
 		done := make(chan error)
 		go func() {
-			done <- runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+			done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 		}()
-		require.Eventually(t, func() bool { return strings.Contains(served.String(), until) }, settle, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return strings.Contains(served.String(), until) }, cmdtest.Settle, 10*time.Millisecond)
 		time.Sleep(100 * time.Millisecond)
 		stop()
 		require.NoError(t, <-done)
 		return served.String()
 	}
 
-	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[cleanup]\nautomatic = false\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[cleanup]\nautomatic = false\n"), 0o644))
 	out := serveFor("serve: leading")
 	require.NotContains(t, out, "cleaned up", "turned off")
 	require.DirExists(t, dir)
 
-	require.NoError(t, os.Remove(filepath.Join(w.home, ".dockhand", "config.toml")))
+	require.NoError(t, os.Remove(filepath.Join(w.Home, ".dockhand", "config.toml")))
 	out = serveFor("jq-update: cleaned up after the merge: removed worktree ")
 	require.Contains(t, out, ", branch dockhand/jq-update, ada/macports-ports:dockhand/jq-update\n")
 	require.NoDirExists(t, dir)
-	require.FileExists(t, cleanupStamp(t, w.home))
+	require.FileExists(t, cleanupStamp(t, w.Home))
 
 	out = serveFor("serve: leading")
 	require.NotContains(t, out, "cleaned up", "once a day")
@@ -304,10 +271,10 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 
 func TestServeRunsChecksUpToEachProvidersCapacity(t *testing.T) {
 	t.Parallel()
-	w := checkedBranch(t)
+	w := cmdtest.CheckedBranch(t)
 	// The script holds each check until the go file appears, saying which
 	// ones started.
-	script := filepath.Join(w.home, "bin", "build-ports")
+	script := filepath.Join(w.Home, "bin", "build-ports")
 	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
 dir=$(dirname "$1")
 run=$(basename "$(dirname "$dir")")
@@ -318,38 +285,38 @@ cat > "$dir/result.json" <<JSON
 JSON
 `), 0o755))
 	configure := func(capacity int) {
-		require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"),
+		require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"),
 			[]byte(fmt.Sprintf("[providers.command]\nrun = \"~/bin/build-ports\"\ncapacity = %d\n", capacity)), 0o644))
 	}
-	_, _, err := dockhand(t, "check", "-d")
+	_, _, err := cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "start", "jq-other")
+	_, _, err = cmdtest.Dockhand(t, "start", "jq-other")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-other"))
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-other"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "check", "-d")
+	_, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)
 
 	started := func(run string) bool {
-		_, err := os.Stat(filepath.Join(w.home, "started-"+run))
+		_, err := os.Stat(filepath.Join(w.Home, "started-"+run))
 		return err == nil
 	}
 	serveUntil := func(capacity int, check func()) string {
 		configure(capacity)
-		var served syncBuffer
+		var served cmdtest.SyncBuffer
 		done := make(chan error)
 		go func() {
-			done <- runFor(t, t.Context(), []string{"serve", "--drain"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+			done <- cmdtest.RunFor(t, t.Context(), []string{"serve", "--drain"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 		}()
 		check()
-		require.NoError(t, os.WriteFile(filepath.Join(w.home, "go"), nil, 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(w.Home, "go"), nil, 0o644))
 		require.NoError(t, <-done)
 		return served.String()
 	}
 
 	out := serveUntil(2, func() {
-		require.Eventually(t, func() bool { return started("check-1") && started("check-2") }, settle, 10*time.Millisecond,
+		require.Eventually(t, func() bool { return started("check-1") && started("check-2") }, cmdtest.Settle, 10*time.Millisecond,
 			"with capacity 2, both checks run at once")
 	})
 	require.Contains(t, out, "builds on command (2 checks at a time)")
@@ -358,15 +325,15 @@ JSON
 
 	// With capacity 1, the second waits for the first.
 	for _, name := range []string{"go", "started-check-1", "started-check-2"} {
-		require.NoError(t, os.Remove(filepath.Join(w.home, name)))
+		require.NoError(t, os.Remove(filepath.Join(w.Home, name)))
 	}
-	_, _, err = dockhand(t, "check", "-d")
+	_, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
-	_, _, err = dockhand(t, "check", "-d")
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)
 	serveUntil(1, func() {
-		require.Eventually(t, func() bool { return started("check-3") || started("check-4") }, settle, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return started("check-3") || started("check-4") }, cmdtest.Settle, 10*time.Millisecond)
 		time.Sleep(200 * time.Millisecond)
 		require.False(t, started("check-3") && started("check-4"), "with capacity 1, one check at a time")
 	})
@@ -377,8 +344,8 @@ JSON
 func TestNotificationsCanBeTurnedOff(t *testing.T) {
 	t.Parallel()
 	e := &engine.Engine{Providers: map[string]buildenv.Provider{}}
-	require.NotNil(t, serveOptions(hosted(t), e, config.File{}, io.Discard, false, "list", true).Notify)
-	require.Nil(t, serveOptions(hosted(t), e, config.File{}, io.Discard, false, "list", false).Notify)
+	require.NotNil(t, serveOptions(cmdtest.Hosted(t), e, config.File{}, io.Discard, false, "list", true).Notify)
+	require.Nil(t, serveOptions(cmdtest.Hosted(t), e, config.File{}, io.Discard, false, "list", false).Notify)
 	off := false
 	file := config.File{Serve: config.Serve{Notify: &off}}
 	require.False(t, file.Serve.Notifies())
@@ -390,27 +357,27 @@ func TestNotificationsCanBeTurnedOff(t *testing.T) {
 // anyone on the Mac can read the agent's file; the install says so.
 func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
 	t.Parallel()
-	w := checkedBranch(t)
+	w := cmdtest.CheckedBranch(t)
 	withLaunchd(t, 0)
-	hosted(t).OS = "darwin"
+	cmdtest.Hosted(t).OS = "darwin"
 	git, err := exec.LookPath("git")
 	require.NoError(t, err)
-	setenv(t, "GIT_BIN", git)
-	require.NoError(t, os.MkdirAll(filepath.Join(w.home, "tart"), 0o755))
-	chdir(t, w.home)
-	setenv(t, "TART_HOME", "tart")
-	setenv(t, "GH_TOKEN", "ghp_secret")
+	cmdtest.Setenv(t, "GIT_BIN", git)
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, "tart"), 0o755))
+	cmdtest.Chdir(t, w.Home)
+	cmdtest.Setenv(t, "TART_HOME", "tart")
+	cmdtest.Setenv(t, "GH_TOKEN", "ghp_secret")
 
-	out, _, err := dockhand(t, "serve", "--install", "--db", ".dockhand/dockhand.db")
+	out, _, err := cmdtest.Dockhand(t, "serve", "--install", "--db", ".dockhand/dockhand.db")
 	require.NoError(t, err)
 	require.Contains(t, out, "  With   DOCKHAND_UPSTREAM, TART_HOME, as set now\n")
 	require.Contains(t, out, "GH_TOKEN is omitted from the agent file because that file is readable by other users on this Mac")
-	plist, err := os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
+	plist, err := os.ReadFile(filepath.Join(w.Home, "Library", "LaunchAgents", AgentLabel+".plist"))
 	require.NoError(t, err)
 	agent := string(plist)
-	require.Contains(t, agent, "<string>--db</string><string>"+filepath.Join(w.home, ".dockhand", "dockhand.db")+"</string><string>--git</string><string>"+git+"</string>")
-	require.Contains(t, agent, "<key>DOCKHAND_UPSTREAM</key><string>"+w.upstream+"</string>")
-	require.Contains(t, agent, "<key>TART_HOME</key><string>"+filepath.Join(w.home, "tart")+"</string>", "made absolute")
+	require.Contains(t, agent, "<string>--db</string><string>"+filepath.Join(w.Home, ".dockhand", "dockhand.db")+"</string><string>--git</string><string>"+git+"</string>")
+	require.Contains(t, agent, "<key>DOCKHAND_UPSTREAM</key><string>"+w.Upstream+"</string>")
+	require.Contains(t, agent, "<key>TART_HOME</key><string>"+filepath.Join(w.Home, "tart")+"</string>", "made absolute")
 	require.NotContains(t, agent, "ghp_secret")
 	require.NotContains(t, agent, "GH_TOKEN")
 }
@@ -420,11 +387,11 @@ func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
 // back; status says why it isn't acting (the rc6 full stage, D-C2).
 func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 	t.Parallel()
-	checkedBranch(t)
+	cmdtest.CheckedBranch(t)
 	var mu sync.Mutex
 	answers := []string{"ada", "", "", "bob", "revoked", "revoked", "ada"}
-	hosted(t).Timings.ServeIdentity = 50 * time.Millisecond
-	hosted(t).Identity = func(*github.Runtime) func(context.Context) (string, error) {
+	cmdtest.Hosted(t).Timings.ServeIdentity = 50 * time.Millisecond
+	cmdtest.Hosted(t).Identity = func(*github.Runtime) func(context.Context) (string, error) {
 		return func(context.Context) (string, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -442,12 +409,12 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 		}
 	}
 	ctx, stop := context.WithCancel(t.Context())
-	var served syncBuffer
+	var served cmdtest.SyncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(served.String(), "logged in again as ada") }, settle, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "logged in again as ada") }, cmdtest.Settle, 10*time.Millisecond)
 	stop()
 	require.NoError(t, <-done)
 	out := served.String()
@@ -465,11 +432,11 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 // logged in again once it can (the rc8 full stage's D-C3).
 func TestServeSaysALoginItCantRead(t *testing.T) {
 	t.Parallel()
-	checkedBranch(t)
+	cmdtest.CheckedBranch(t)
 	var mu sync.Mutex
 	answers := []string{"ada", "revoked", "unread", "unread", "ada"}
-	hosted(t).Timings.ServeIdentity = 50 * time.Millisecond
-	hosted(t).Identity = func(*github.Runtime) func(context.Context) (string, error) {
+	cmdtest.Hosted(t).Timings.ServeIdentity = 50 * time.Millisecond
+	cmdtest.Hosted(t).Identity = func(*github.Runtime) func(context.Context) (string, error) {
 		return func(context.Context) (string, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -487,12 +454,12 @@ func TestServeSaysALoginItCantRead(t *testing.T) {
 		}
 	}
 	ctx, stop := context.WithCancel(t.Context())
-	var served syncBuffer
+	var served cmdtest.SyncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(served.String(), "logged in again as ada") }, settle, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "logged in again as ada") }, cmdtest.Settle, 10*time.Millisecond)
 	stop()
 	require.NoError(t, <-done)
 	out := served.String()

@@ -12,13 +12,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
-// editorCommand is the person's editor, $VISUAL or else $EDITOR, as a
+// EditorCommand is the person's editor, $VISUAL or else $EDITOR, as a
 // shell command; empty where neither is set.
 func EditorCommand(s *Settings) string {
 	return cmp.Or(s.Getenv("VISUAL"), s.Getenv("EDITOR"))
 }
 
-// runEditor opens path in editor on the terminal dockhand runs on, and
+// RunEditor opens path in editor on the terminal dockhand runs on, and
 // waits for it.
 func RunEditor(ctx context.Context, editor, path string) error {
 	command := exec.CommandContext(ctx, "sh", "-c", editor+` "$1"`, "sh", path)
@@ -29,7 +29,7 @@ func RunEditor(ctx context.Context, editor, path string) error {
 	return nil
 }
 
-// editText opens text in $VISUAL or $EDITOR and returns what was saved.
+// EditText opens text in $VISUAL or $EDITOR and returns what was saved.
 func EditText(ctx context.Context, editor, text string) (string, error) {
 	if editor == "" {
 		return "", errors.New("Set $VISUAL or $EDITOR to edit the description here, or edit it on GitHub after submitting. Dockhand preserves your edits.")

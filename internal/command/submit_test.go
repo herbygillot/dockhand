@@ -14,51 +14,41 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
-	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
-func withGitHub(t *testing.T, w world) *forgetest.GitHub {
-	fork := filepath.Join(filepath.Dir(w.upstream), "fork.git")
-	testsupport.Git(t, filepath.Dir(w.upstream), "clone", "-q", "--bare", w.upstream, fork)
-	testsupport.Git(t, w.clone, "remote", "add", "fork", fork)
-	g := forgetest.New(w.upstream, fork)
-	g.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
-	stands(t).Forge = func(*engine.Engine) engine.Forge { return g }
-	return g
-}
-
 func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
-	_, _, err = dockhand(t, "submit", "--no-check")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check")
 	require.ErrorContains(t, err, "these edits are not committed: textproc/jq/Portfile. Commit them with dockhand tidy")
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
 
-	out, _, err := dockhand(t, "submit")
+	out, _, err := cmdtest.Dockhand(t, "submit")
 	require.ErrorContains(t, err, "nothing was submitted")
 	require.Contains(t, out, "jq-update · can't submit yet\n")
 	require.Contains(t, out, "✗ no check has finished for this commit's files")
 
-	out, _, err = dockhand(t, "submit", "--no-check")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check")
 	require.ErrorContains(t, err, "--yes submits exactly what is shown")
 	require.Contains(t, out, "jq-update · ready to submit\n"+
 		"  Title    jq: update to 1.8.1\n"+
@@ -73,7 +63,7 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 
 	// --plan is the preview on its own: it succeeds, and pushes and
 	// opens nothing.
-	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ready to submit\n")
 	require.Contains(t, out, "Nothing was submitted (--plan).\n")
@@ -82,23 +72,23 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 
 	// The acceptance test's sandbox takes the pull requests within itself,
 	// and the preview says it isn't MacPorts'.
-	setenv(t, "DOCKHAND_PULL_REQUESTS", "ada/macports-ports")
-	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	cmdtest.Setenv(t, "DOCKHAND_PULL_REQUESTS", "ada/macports-ports")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "  To       ada/macports-ports:master\n           a sandbox, not macports/macports-ports, as DOCKHAND_PULL_REQUESTS says\n")
-	setenv(t, "DOCKHAND_PULL_REQUESTS", "")
+	cmdtest.Setenv(t, "DOCKHAND_PULL_REQUESTS", "")
 	// The JSON names the account, where its token comes from, and whose
 	// the fork is (the rc9 full stage's D-C4).
-	named, err := jsonOf(t, "submit", "--no-check", "--plan")
+	named, err := cmdtest.JSONOf(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, "ada", named.Result["account"])
 	require.Equal(t, "GH_TOKEN", named.Result["login_source"])
 	require.Equal(t, "ada", named.Result["fork_owner"])
-	_, _, err = dockhand(t, "submit", "--plan", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--plan", "--yes")
 	require.EqualError(t, err, "--plan previews the submission; it goes without --yes")
 
 	var stdout, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"submit", "--draft"}, term.Streams{In: strings.NewReader("y\n\np\ns\n"), Out: &stdout, Err: &errs}.AsTerminal())
+	err = cmdtest.RunFor(t, t.Context(), []string{"submit", "--draft"}, term.Streams{In: strings.NewReader("y\n\np\ns\n"), Out: &stdout, Err: &errs}.AsTerminal())
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "? Did you test the basic functionality of all binary files? [y/N] ")
 	require.Contains(t, stdout.String(), "Opened draft #34901  https://github.com/macports/macports-ports/pull/34901\n")
@@ -117,23 +107,23 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 // submission shows it, and isn't held for it (D4).
 func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
-	withGitHub(t, w)
-	started, err := jsonOf(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{cmdtest.Bumper{Repo: e.Repo}} }
+	cmdtest.WithGitHub(t, w)
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", cmdtest.Dig(t, started.Result, "branch", "worktree").(string))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
 
-	out, _, err := dockhand(t, "submit", "--no-check", "--plan")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ready to submit\n")
 	require.Contains(t, out, "  Upstream ! archives not compared: the current version's archives could not be fetched: HTTP 404\n")
-	preview, err := jsonOf(t, "submit", "--no-check", "--plan")
+	preview, err := cmdtest.JSONOf(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, []any{map[string]any{"port": "jq", "changes": []any{}, "held": true,
 		"problem": "the current version's archives could not be fetched: HTTP 404"}}, preview.Result["upstream"])
@@ -190,27 +180,27 @@ func TestUpstreamIsSaidOnceUnderItsHeading(t *testing.T) {
 // build; the preview's JSON lists it. One naming a committed build isn't.
 func TestSubmitShowsACommitNamingAModifiedBuild(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withGitHub(t, w)
-	started, err := jsonOf(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithGitHub(t, w)
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := dig(t, started.Result, "branch", "worktree").(string)
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := cmdtest.Dig(t, started.Result, "branch", "worktree").(string)
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	trailer := "\n\nGenerated-By: Dockhand v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480%s (https://github.com/herbygillot/dockhand)"
 	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1"+fmt.Sprintf(trailer, ""))
-	out, _, err := dockhand(t, "submit", "--plan", "--no-check")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.NotContains(t, out, "uncommitted source")
 
 	testsupport.Git(t, dir, "commit", "-q", "--amend", "-m", "jq: update to 1.8.1"+fmt.Sprintf(trailer, "+dirty"))
-	out, _, err = dockhand(t, "submit", "--plan", "--no-check")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Contains(t, out, "  ! commit "+model.ObjectID(testsupport.Git(t, dir, "rev-parse", "HEAD")).Short()+" names a Dockhand build from uncommitted source in Generated-By. Run tidy again using a build from a pushed commit so others can identify the source.\n")
-	preview, err := jsonOf(t, "submit", "--plan", "--no-check")
+	preview, err := cmdtest.JSONOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Equal(t, []any{testsupport.Git(t, dir, "rev-parse", "HEAD")}, preview.Result["modified_builds"])
 }
@@ -223,46 +213,46 @@ func TestSubmitShowsACommitNamingAModifiedBuild(t *testing.T) {
 // Neither stops the submission.
 func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
-	started, err := jsonOf(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := dig(t, started.Result, "branch", "worktree").(string)
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := cmdtest.Dig(t, started.Result, "branch", "worktree").(string)
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	unpushed := "v0.0.0-20260924.0.0.20260928190000-14320eb7c0de"
 	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1\n\nGenerated-By: Dockhand "+unpushed+" (https://github.com/herbygillot/dockhand)")
 	head := testsupport.Git(t, dir, "rev-parse", "HEAD")
 
-	out, _, err := dockhand(t, "submit", "--plan", "--no-check")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ready to submit\n")
 	require.Contains(t, out, "  ! commit "+model.ObjectID(head).Short()+"'s Generated-By names dockhand "+unpushed+", built from a commit dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there\n")
-	preview, err := jsonOf(t, "submit", "--plan", "--no-check")
+	preview, err := cmdtest.JSONOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Equal(t, []any{map[string]any{"build": unpushed, "commits": []any{head}, "commit": "14320eb7c0de"}}, preview.Result["unfound_builds"])
 	require.NotContains(t, preview.Result, "builds_problem")
 
 	g.Dockhand.Err = errors.New("github: API rate limit exceeded")
-	out, _, err = dockhand(t, "submit", "--plan", "--no-check")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Contains(t, out, "  ! Could not verify the Dockhand builds listed in Generated-By on GitHub: github: API rate limit exceeded\n")
 	require.NotContains(t, out, "pushed there")
-	preview, err = jsonOf(t, "submit", "--plan", "--no-check")
+	preview, err = cmdtest.JSONOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Equal(t, []any{}, preview.Result["unfound_builds"])
 	require.Equal(t, "github: API rate limit exceeded", preview.Result["builds_problem"])
 
 	g.Dockhand.Err, g.Dockhand.Commits = nil, []string{"14320eb7c0de" + strings.Repeat("0", 28)}
-	out, _, err = dockhand(t, "submit", "--plan", "--no-check")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.NotContains(t, out, "Generated-By", "a build GitHub has is said nowhere")
 
 	g.Dockhand.Commits = nil
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	require.Len(t, g.PRs, 1, "nothing here stops the submission")
 }
@@ -306,34 +296,34 @@ func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
 // (the hugo exercise's re-submitting sshuttle, finding 3).
 func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	require.NotContains(t, g.PRs[34901].Body, "Built against the new libonig")
 
 	subject, rest, _ := strings.Cut(testsupport.Git(t, dir, "log", "-1", "--format=%B"), "\n")
 	testsupport.Git(t, dir, "commit", "-q", "--amend", "-m", subject+"\n\nBuilt against the new libonig.\n"+rest)
-	out, _, err := dockhand(t, "submit", "--no-check", "--plan")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; refreshes its Description section\n`, out)
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nBuilt against the new libonig.\n\n###### Type(s)")
 
 	edited := strings.Replace(g.PRs[34901].Body, "Built against the new libonig.", "What I tested by hand.", 1)
 	g.PRs[34901].Body = edited
-	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; its description is yours, and stays as it is\n`, out, "a Description a person edited is theirs")
 
@@ -344,7 +334,7 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 	unticked := strings.Replace(g.PRs[34901].Body, "- [x] enhancement", "- [ ] enhancement", 1)
 	g.PRs[34901].Body = unticked
 	for range 2 {
-		_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+		_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 		require.NoError(t, err)
 		require.Contains(t, g.PRs[34901].Body, "What I tested by hand.")
 		require.Contains(t, g.PRs[34901].Body, "- [ ] enhancement")
@@ -354,15 +344,15 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 	// included, when they ask: an adopted branch's description, which
 	// nothing recorded dockhand writing, kept September's Tested on under
 	// the v0.3.0 port's commit (#34756).
-	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--rewrite-description")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan", "--rewrite-description")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; replaces its whole description with dockhand's \(--rewrite-description\)\n`, out)
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes", "--rewrite-description")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--rewrite-description")
 	require.NoError(t, err)
 	require.NotContains(t, g.PRs[34901].Body, "What I tested by hand.")
 	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nBuilt against the new libonig.\n\n###### Type(s)")
 	require.Contains(t, g.PRs[34901].Body, "- [x] enhancement")
-	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out, "dockhand's again, once rewritten")
 }
@@ -387,28 +377,28 @@ func TestTheRefreshedPartsAreNamed(t *testing.T) {
 // #35084).
 func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
-	started, err := jsonOf(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", cmdtest.Dig(t, started.Result, "branch", "worktree").(string))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
 
 	note := "The tests failed on a permission error,\nbefore any test ran."
-	out, _, err := dockhand(t, "submit", "--no-check", "--plan", "--note", note)
+	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan", "--note", note)
 	require.NoError(t, err)
 	require.Contains(t, out, "  Note     The tests failed on a permission error, …\n")
 	require.Contains(t, out, "    The tests failed on a permission error,\n    before any test ran.\n")
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes", "--note", note)
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--note", note)
 	require.NoError(t, err)
 	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nThe tests failed on a permission error,\nbefore any test ran.\n\n###### Type(s)")
 
-	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "#34901 has nothing new: the fork has its commit, and its title and description are current\n", "the note is kept")
 	// and says so, since it outlives the commits it was written beside
@@ -416,25 +406,25 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	require.Contains(t, out, "  Note     The tests failed on a permission error, …\n           kept from an earlier submit, across rewritten commits; --note \"\" clears it\n")
 	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nThe tests failed")
 
-	out, _, err = dockhand(t, "submit", "--no-check", "--yes", "--note", "Fixed upstream.")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--note", "Fixed upstream.")
 	require.NoError(t, err)
 	require.Contains(t, out, "Updated #34901's description\n")
 	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nFixed upstream.\n\n###### Type(s)")
 	require.NotContains(t, g.PRs[34901].Body, "permission error")
 
-	updated, err := jsonOf(t, "submit", "--no-check", "--yes", "--note", "")
+	updated, err := cmdtest.JSONOf(t, "submit", "--no-check", "--yes", "--note", "")
 	require.NoError(t, err)
 	pr, _ := updated.Result["pull_request"].(map[string]any)
 	require.Equal(t, true, pr["updated_description"], "the JSON says what was rewritten")
 	require.Equal(t, false, pr["updated_title"])
 	require.NotContains(t, g.PRs[34901].Body, "Author's note")
-	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Note     missing; the commit has no body, so the description does not explain the change. Add --note \"…\".\n",
 		"with the note taken out, nothing says what changed (the Vx port's field testing)")
 
 	g.PRs[34901].Body = strings.Replace(g.PRs[34901].Body, "#### Description\n\n", "#### Description\n\nWhat I tested by hand.\n\n", 1)
-	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--note", "Fixed upstream.")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan", "--note", "Fixed upstream.")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Note     Fixed upstream.\n           ! note omitted: the description was edited or removed on GitHub, so Dockhand preserves it\n")
 }
@@ -443,89 +433,89 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 // the title, the description, or nothing at all.
 func TestSubmitSaysWhatItUpdated(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withGitHub(t, w)
-	started, err := jsonOf(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithGitHub(t, w)
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", cmdtest.Dig(t, started.Result, "branch", "worktree").(string))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 
-	out, _, err := dockhand(t, "submit", "--no-check", "--yes", "--title", "jq: update to 1.8.1, reviewed")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--title", "jq: update to 1.8.1, reviewed")
 	require.NoError(t, err)
 	require.Contains(t, out, "Updated #34901's title\n")
-	out, _, err = dockhand(t, "submit", "--no-check", "--yes", "--type", "bugfix")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--type", "bugfix")
 	require.NoError(t, err)
 	require.Contains(t, out, "Updated #34901's description\n")
-	out, _, err = dockhand(t, "submit", "--no-check", "--yes", "--type", "enhancement", "--title", "jq: update to 1.8.1")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--type", "enhancement", "--title", "jq: update to 1.8.1")
 	require.NoError(t, err)
 	require.Contains(t, out, "Updated #34901's title and description\n")
-	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "#34901 has nothing new: the fork has its commit, and its title and description are current\n")
 }
 
 func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	// status reads a pull request it has no reading of, or an old one,
 	// itself (SQL-O8); one it can't read now is said as last read, and
 	// status goes on.
 	g.ObserveErr = errors.New("dial tcp: connection refused")
-	out, errs, err := dockhand(t, "status")
+	out, errs, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  PR       #34901 · CI not read yet (dockhand status --refresh)\n", "until something reads it, status says how")
 	require.Contains(t, errs, "Could not refresh #34901; showing previously recorded status: dial tcp: connection refused\n")
 	g.ObserveErr = nil
-	out, errs, err = dockhand(t, "status")
+	out, errs, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, errs, "jq-update: #34901 is open\n")
 	require.Contains(t, out, "  PR       #34901\n", "read now")
 
 	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, Checks: forge.CheckSummary{Total: 2, Passed: 2}}
-	setenv(t, "MACPORTS_TREE", w.clone)
-	out, errs, err = dockhand(t, "status", "--refresh")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	out, errs, err = cmdtest.Dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 	require.Contains(t, errs, "jq-update: #34901: changes requested\n")
 	require.Contains(t, out, "Needs you\n  ! jq-update  #34901 changes requested (just now)\n               dockhand edit jq\n")
 	require.Contains(t, out, "#34901 changes requested, CI ✓")
-	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
-	out, _, err = dockhand(t, "status")
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  PR       #34901 changes requested, CI ✓\n", "once read, it says what it read")
-	setenv(t, "MACPORTS_TREE", w.clone)
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 
 	// serve reads them by itself.
 	g.Status = forge.PullRequestStatus{Review: "none", Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
-	hosted(t).Timings.ServePoll = 20 * time.Millisecond
+	cmdtest.Hosted(t).Timings.ServePoll = 20 * time.Millisecond
 	ctx, stop := context.WithCancel(t.Context())
-	var served syncBuffer
+	var served cmdtest.SyncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(served.String(), "jq-update: #34901: CI failing\n") }, settle, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "jq-update: #34901: CI failing\n") }, cmdtest.Settle, 10*time.Millisecond)
 	stop()
 	require.NoError(t, <-done)
-	out, _, err = dockhand(t, "status", "--attention")
+	out, _, err = cmdtest.Dockhand(t, "status", "--attention")
 	require.Equal(t, 3, term.ExitCode(err))
 	require.Contains(t, out, "✗ jq-update  #34901 MacPorts CI failing: macOS 26")
 	require.Contains(t, out, "open https://github.com/macports/macports-ports/pull/34901/checks")
@@ -536,10 +526,10 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	g.Failed = map[string][]forge.CIJob{string(g.ForkHead("dockhand/jq-update")): {{ID: 11, Run: 7, Attempt: 1, Name: "macOS 26"}}}
 	g.Logs = map[int64]string{11: "DEBUG: Fetching https://mirror.sjtu.edu.cn/macports/distfiles/jq/jq-1.8.1.tar.gz failed: The requested URL returned error: 403\n" +
 		"Error: Failed to fetch jq-1.8.1.tar.gz: The requested URL returned error: 403\n"}
-	out, _, err = dockhand(t, "status", "--attention", "--refresh")
+	out, _, err = cmdtest.Dockhand(t, "status", "--attention", "--refresh")
 	require.Equal(t, 3, term.ExitCode(err))
 	require.Contains(t, out, "  ✗ jq-update  #34901 MacPorts CI failed fetching jq-1.8.1.tar.gz\n               (mirror.sjtu.edu.cn answered 403) on macOS 26 (just now)\n               dockhand retry --ci --branch jq-update\n")
-	out, _, err = dockhand(t, "retry", "--ci", "--branch", "jq-update")
+	out, _, err = cmdtest.Dockhand(t, "retry", "--ci", "--branch", "jq-update")
 	require.NoError(t, err)
 	require.Equal(t, "Asked GitHub to run #34901's failed CI again (1 workflow run); dockhand status --refresh reads how it went.\n", out)
 	require.Equal(t, []int64{7}, g.Rerun)
@@ -548,60 +538,60 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 
 func TestCleanAfterTheMerge(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	g.PRs[34901].State = forge.PullRequestMerged
-	setenv(t, "MACPORTS_TREE", w.clone)
-	_, errs, err := dockhand(t, "status", "--refresh")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	_, errs, err := cmdtest.Dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 	require.Contains(t, errs, "jq-update: #34901 is merged")
 
-	out, _, err := dockhand(t, "clean", "--merged")
+	out, _, err := cmdtest.Dockhand(t, "clean", "--merged")
 	require.Equal(t, term.ExitFailure, term.ExitCode(err))
 	require.Contains(t, out, "jq-update (#34901, merged at ")
 	require.Contains(t, out, "  remove   worktree ~/Source/macports-branches/jq-update\n  remove   branch dockhand/jq-update\n  remove   ada/macports-ports:dockhand/jq-update\n")
 	require.DirExists(t, dir)
 
-	out, _, err = dockhand(t, "clean", "--yes")
+	out, _, err = cmdtest.Dockhand(t, "clean", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update: removed worktree ~/Source/macports-branches/jq-update, branch dockhand/jq-update, ada/macports-ports:dockhand/jq-update\n")
 	require.NoDirExists(t, dir)
-	out, _, err = dockhand(t, "clean")
+	out, _, err = cmdtest.Dockhand(t, "clean")
 	require.NoError(t, err)
 	require.Equal(t, "Nothing to remove.\n", out)
 
 	// What clean removed on purpose needs no one, and the record it keeps
 	// is found by name as status --all lists it (the hugo exercise's
 	// "Cleaning up", findings 1 and 2).
-	out, _, err = dockhand(t, "status", "--all")
+	out, _, err = cmdtest.Dockhand(t, "status", "--all")
 	require.NoError(t, err)
 	require.NotContains(t, out, "Needs you")
 	require.Regexp(t, `jq-update +— +cleaned +— +#34901 merged\n`, out)
 	require.NotContains(t, out, "not pushed")
-	all, err := jsonOf(t, "status", "--all")
+	all, err := cmdtest.JSONOf(t, "status", "--all")
 	require.NoError(t, err)
 	require.Empty(t, all.Result["attention"])
-	require.Equal(t, true, dig(t, all.Result, "branches", 0, "cleaned"))
-	out, _, err = dockhand(t, "status", "jq-update")
+	require.Equal(t, true, cmdtest.Dig(t, all.Result, "branches", 0, "cleaned"))
+	out, _, err = cmdtest.Dockhand(t, "status", "jq-update")
 	require.NoError(t, err)
 	require.Equal(t, "jq-update\n  Work     cleaned after its merge\n  PR       #34901 merged\n", out, "its worktree, ports, and checks went with it, and nothing is next")
-	_, _, err = dockhand(t, "update", "jq", "--branch", "jq-update")
+	_, _, err = cmdtest.Dockhand(t, "update", "jq", "--branch", "jq-update")
 	require.ErrorContains(t, err, "jq-update was merged as #34901 and cleaned; --new=jq-update starts a new branch of the name", "a merged branch takes no changes, nor is it replaced by --branch")
-	_, _, err = dockhand(t, "start", "jq-update")
+	_, _, err = cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err, "a merged branch's name can be used again")
-	out, _, err = dockhand(t, "status", "jq-update")
+	out, _, err = cmdtest.Dockhand(t, "status", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ~/Source/macports-branches/jq-update\n  Ports    none yet\n")
 	require.Contains(t, out, "  PR       —\n", "the open branch of the name, not the merged record")
@@ -609,33 +599,33 @@ func TestCleanAfterTheMerge(t *testing.T) {
 
 func TestShipPassingAndSubmitReady(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
-	g := withGitHub(t, w)
-	withScript(t, w, "failed")
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{cmdtest.Bumper{Repo: e.Repo}} }
+	g := cmdtest.WithGitHub(t, w)
+	cmdtest.WithScript(t, w, "failed")
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
 
 	// ship checks the committed head first, and submits only what passed.
-	out, _, err := dockhand(t, "ship", "--yes")
+	out, _, err := cmdtest.Dockhand(t, "ship", "--yes")
 	require.Equal(t, 2, term.ExitCode(err))
 	require.ErrorContains(t, err, "; nothing was submitted")
 	require.Contains(t, out, "  jq-update  its branch, where it stands, to submit\n             jq: update to 1.8.1 · runs first; it is submitted only if it passes · opens a new one\n")
 	require.Contains(t, out, "jq-update · checking commit ")
 	require.Empty(t, g.PRs, "a failed check submits nothing")
 
-	withScript(t, w, "passed")
-	_, _, err = dockhand(t, "check")
+	cmdtest.WithScript(t, w, "passed")
+	_, _, err = cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
 	// Without a terminal nobody looks, so it holds where serve would.
-	out, _, err = dockhand(t, "ship", "--passing")
+	out, _, err = cmdtest.Dockhand(t, "ship", "--passing")
 	require.ErrorContains(t, err, "jq-update passed its check and waits for your look, so nothing was submitted: the upstream archives couldn't be compared")
 	require.Contains(t, out, "  jq-update  its branch, where it stands, to submit\n             jq: update to 1.8.1 · passed on command for this commit's files (check-2) · opens a new one\n")
 	require.Contains(t, out, "\n             Upstream ! archives not compared: the current version's archives could not be fetched: HTTP 404\n",
@@ -643,14 +633,14 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	require.Empty(t, g.PRs)
 
 	var stdout, stderr bytes.Buffer
-	err = runFor(t, t.Context(), []string{"ship", "--passing"}, term.Streams{In: strings.NewReader("y\ny\nn\n"), Out: &stdout, Err: &stderr}.AsTerminal())
+	err = cmdtest.RunFor(t, t.Context(), []string{"ship", "--passing"}, term.Streams{In: strings.NewReader("y\ny\nn\n"), Out: &stdout, Err: &stderr}.AsTerminal())
 	require.NoError(t, err)
 	require.Contains(t, stderr.String(), "? Ship it? [y/N] ")
 	require.Contains(t, stdout.String(), "Opened #34901")
 	require.Contains(t, g.PRs[34901].Body, "- [x] tested basic functionality of all binary files?")
 	require.Contains(t, g.PRs[34901].Body, "- [ ] checked that the Portfile's most important [variants]")
 
-	out, _, err = dockhand(t, "ship", "--passing")
+	out, _, err = cmdtest.Dockhand(t, "ship", "--passing")
 	require.NoError(t, err)
 	require.Equal(t, "Nothing to ship.\n", out, "a pushed branch is done")
 
@@ -658,7 +648,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	// state, and a draft's preview names it; the preview shows the
 	// description, which only its JSON had (the sshuttle run, and the
 	// hugo exercise).
-	previewed, _, err := dockhand(t, "submit", "--plan", "--ready")
+	previewed, _, err := cmdtest.Dockhand(t, "submit", "--plan", "--ready")
 	require.NoError(t, err)
 	require.Contains(t, previewed, "#34901 isn't a draft, so --ready has nothing to do.\n")
 	require.Contains(t, previewed, "\nProposed pull request description:\n    Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**\n\n    #### Description\n")
@@ -671,28 +661,28 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	g.ReadyRefused = restricted{errors.New("github: the `macports` organization has enabled OAuth App access restrictions")}
 	refused := "marking #34901 ready for review: github: the `macports` organization has enabled OAuth App access restrictions\n" +
 		"It's still a draft. Mark it ready on its page, https://github.com/macports/macports-ports/pull/34901, or with the GitHub CLI, which signs in as its own app: gh pr ready 34901 --repo macports/macports-ports\n"
-	_, _, err = dockhand(t, "submit", "--ready", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--ready", "--yes")
 	require.EqualError(t, err, refused+"The GitHub CLI wasn't used: the GitHub CLI isn't installed.")
 	var byCLI []int
-	stands(t).GitHubCLI = signedIn{login: "bob", readied: &byCLI}
-	t.Cleanup(func() { stands(t).GitHubCLI = signedIn{} })
-	_, _, err = dockhand(t, "submit", "--ready", "--yes")
+	cmdtest.Stands(t).GitHubCLI = cmdtest.SignedIn{Account: "bob", Readied: &byCLI}
+	t.Cleanup(func() { cmdtest.Stands(t).GitHubCLI = cmdtest.SignedIn{} })
+	_, _, err = cmdtest.Dockhand(t, "submit", "--ready", "--yes")
 	require.EqualError(t, err, refused+"The GitHub CLI wasn't used: it's signed in as bob, and dockhand as ada.")
 	require.Empty(t, byCLI, "another account's CLI isn't used")
-	stands(t).GitHubCLI = signedIn{login: "Ada", readied: &byCLI}
-	out, _, err = dockhand(t, "submit", "--ready", "--yes")
+	cmdtest.Stands(t).GitHubCLI = cmdtest.SignedIn{Account: "Ada", Readied: &byCLI}
+	out, _, err = cmdtest.Dockhand(t, "submit", "--ready", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "Marked #34901 ready for review with the GitHub CLI: the macports organization refuses dockhand's app.\n")
 	require.Equal(t, []int{34901}, byCLI)
 	require.Empty(t, g.Readied)
 	g.ReadyRefused = errors.New("github: Could not resolve to a node")
-	_, _, err = dockhand(t, "submit", "--ready", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--ready", "--yes")
 	require.ErrorContains(t, err, "github: Could not resolve to a node\nIt's still a draft.")
 	require.NotContains(t, err.Error(), "wasn't used", "a refusal that isn't the organization's isn't the CLI's to try")
 	require.Equal(t, []int{34901}, byCLI)
 	g.ReadyRefused = nil
 
-	out, _, err = dockhand(t, "submit", "--ready", "--yes")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--ready", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "Marked #34901 ready for review.\n")
 	require.Equal(t, []int{34901}, g.Readied)
@@ -702,7 +692,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	// Nobody looks at a submission --yes makes, and no other pull
 	// request for the port holds it here.
 	g.Others = nil
-	out, _, err = dockhand(t, "ship", "--yes")
+	out, _, err = cmdtest.Dockhand(t, "ship", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "Passed for commit ")
 	require.NotContains(t, out, "Next: ", "ship submits; it doesn't send you to submit")
@@ -712,50 +702,50 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 
 func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	// The preview says whether submitting again changes the description.
-	out, _, err := dockhand(t, "submit", "--no-check", "--plan")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out)
-	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--tested-binaries")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan", "--tested-binaries")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; refreshes its description from Tested on down\n`, out)
 	// Its Type(s) are dockhand's too while unchanged, and --type names them
 	// on a pull request already open, as on a new one.
-	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--type", "bugfix")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan", "--type", "bugfix")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; refreshes its Type\(s\)\n`, out)
-	typed, err := jsonOf(t, "submit", "--no-check", "--plan", "--type", "bugfix")
+	typed, err := cmdtest.JSONOf(t, "submit", "--no-check", "--plan", "--type", "bugfix")
 	require.NoError(t, err)
 	require.Contains(t, typed.Result["body"], "- [x] bugfix\n- [ ] enhancement\n")
-	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--type", "enhancement")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan", "--type", "enhancement")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out, "an update is already an enhancement")
 	// Type(s) a person ticked on GitHub stay theirs, unless --type names others.
 	opened := g.PRs[34901].Body
 	g.PRs[34901].Body = strings.Replace(opened, "- [ ] bugfix", "- [x] bugfix", 1)
-	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out, "the person's tick stays")
-	typed, err = jsonOf(t, "submit", "--no-check", "--plan", "--type", "security fix")
+	typed, err = cmdtest.JSONOf(t, "submit", "--no-check", "--plan", "--type", "security fix")
 	require.NoError(t, err)
 	require.Contains(t, typed.Result["body"], "- [ ] bugfix\n- [ ] enhancement\n- [x] security fix\n")
 	g.PRs[34901].Body = opened
 	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}}
-	_, _, err = dockhand(t, "status", "--refresh")
+	_, _, err = cmdtest.Dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 
 	fix := func(line string) {
@@ -763,44 +753,44 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 		testsupport.Git(t, dir, "commit", "-q", "-am", "jq: "+line)
 	}
 	fix("# drop the patch")
-	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err, out)
 	require.Contains(t, out, "@ryandesign requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n")
 	require.Empty(t, g.Rerequested)
 
 	fix("# and the docs")
 	var stdout, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"submit", "--no-check", "--tested-binaries"}, term.Streams{In: strings.NewReader("s\n\n"), Out: &stdout, Err: &errs}.AsTerminal())
+	err = cmdtest.RunFor(t, t.Context(), []string{"submit", "--no-check", "--tested-binaries"}, term.Streams{In: strings.NewReader("s\n\n"), Out: &stdout, Err: &errs}.AsTerminal())
 	require.NoError(t, err, stdout.String())
 	require.Contains(t, errs.String(), "? ask @ryandesign to review again? [Y/n] ")
 	require.Contains(t, stdout.String(), "Asked @ryandesign to review again.\n")
 	require.Equal(t, []string{"ryandesign"}, g.Rerequested)
 
-	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"never\"\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"never\"\n"), 0o644))
 	fix("# once more")
-	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	require.NotContains(t, out, "ryandesign")
 	require.Equal(t, []string{"ryandesign"}, g.Rerequested, "never asks")
 
 	// The JSON names who requested changes, and whether each was asked to
 	// review again (the rc8 full stage's B4), as the text says it.
-	pullRequest := func(env decoded) map[string]any {
+	pullRequest := func(env cmdtest.Decoded) map[string]any {
 		t.Helper()
 		pr, ok := env.Result["pull_request"].(map[string]any)
 		require.True(t, ok, "%v", env.Result)
 		return pr
 	}
-	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"ask\"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"ask\"\n"), 0o644))
 	fix("# without a terminal")
-	result, err := jsonOf(t, "submit", "--no-check", "--yes")
+	result, err := cmdtest.JSONOf(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	require.Equal(t, []any{map[string]any{"login": "ryandesign", "rerequested": false}}, pullRequest(result)["changes_requested_by"])
 	require.Equal(t, false, pullRequest(result)["updated_title"])
-	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"always\"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"always\"\n"), 0o644))
 	fix("# always")
-	result, err = jsonOf(t, "submit", "--no-check", "--yes")
+	result, err = cmdtest.JSONOf(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	require.Equal(t, []any{map[string]any{"login": "ryandesign", "rerequested": true}}, pullRequest(result)["changes_requested_by"])
 	require.Equal(t, []string{"ryandesign", "ryandesign"}, g.Rerequested)
@@ -808,27 +798,27 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 
 func TestAdoptRecognizesARenamedBranch(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withGitHub(t, w)
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 
 	testsupport.Git(t, dir, "branch", "-m", "jq-1.8")
-	setenv(t, "MACPORTS_TREE", dir)
-	out, _, err := dockhand(t, "adopt")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	out, _, err := cmdtest.Dockhand(t, "adopt")
 	require.NoError(t, err)
 	require.Equal(t, "Recognized jq-1.8 as a Git rename of dockhand/jq-update; retained its record, checks, and history.\nPull request #34901 keeps its original source branch; submit will continue pushing to ada/macports-ports:dockhand/jq-update.\n", out)
-	out, _, err = dockhand(t, "status")
+	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "#34901")
 }
@@ -837,17 +827,17 @@ func TestAdoptRecognizesARenamedBranch(t *testing.T) {
 // so once (the person's ruling on the M1's quick stage, D-S5).
 func TestStatusFollowsARenamedBranch(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
 	testsupport.Git(t, dir, "branch", "-m", "dockhand/jq-1.8")
-	out, _, err := dockhand(t, "status")
+	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "Followed jq-update, renamed by hand to jq-1.8.\n")
 	require.NotContains(t, out, "Git branch is gone")
-	out, _, err = dockhand(t, "status")
+	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.NotContains(t, out, "Followed", "said once")
 	require.Contains(t, out, "jq-1.8")
@@ -859,24 +849,24 @@ func TestStatusFollowsARenamedBranch(t *testing.T) {
 // branch that moved while its check ran is not submitted.
 func TestShipKeepsToOneCheckAndItsCommit(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
-	withScript(t, w, "passed")
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	cmdtest.WithScript(t, w, "passed")
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
 
-	_, _, err = dockhand(t, "check", "--head", "--enqueue")
+	_, _, err = cmdtest.Dockhand(t, "check", "--head", "--enqueue")
 	require.NoError(t, err)
 	g.Others = nil
-	out, _, err := dockhand(t, "ship", "--yes")
+	out, _, err := cmdtest.Dockhand(t, "ship", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "check-1 is already queued for these files; following it.\n")
 	require.NotContains(t, out, "check-2", "no second check")
@@ -887,15 +877,15 @@ func TestShipKeepsToOneCheckAndItsCommit(t *testing.T) {
 	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: note the review")
 
 	// The build commits to the branch as it runs.
-	script := filepath.Join(w.home, "bin", "build-ports")
+	script := filepath.Join(w.Home, "bin", "build-ports")
 	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
 git -C "$MOVE_IN" commit -q --allow-empty -m "moved while checked"
 cat > "$(dirname "$1")/result.json" <<JSON
 {"version": 1, "targets": [{"id": "jq", "outcome": "passed"}]}
 JSON
 `), 0o755))
-	setenv(t, "MOVE_IN", dir)
-	_, _, err = dockhand(t, "ship", "--yes")
+	cmdtest.Setenv(t, "MOVE_IN", dir)
+	_, _, err = cmdtest.Dockhand(t, "ship", "--yes")
 	require.Error(t, err)
 	// What moves it on, branchstate's, is said last (R3-31).
 	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was checked; nothing was submitted, since ship binds [0-9a-f]{7}\nNext: dockhand submit --branch jq-update$`, err.Error())
@@ -992,53 +982,53 @@ func TestTheReadyStepIsPreviewed(t *testing.T) {
 // it suggested adopt as if something were wrong.
 func TestCleanNamesOneBranch(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", w.clone)
-	_, _, err = dockhand(t, "start", "other-work")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	_, _, err = cmdtest.Dockhand(t, "start", "other-work")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "archive", "other-work", "--keep-worktree")
+	_, _, err = cmdtest.Dockhand(t, "archive", "other-work", "--keep-worktree")
 	require.NoError(t, err)
 
 	// Cleaned by hand, before status knows of the merge.
-	testsupport.Git(t, w.clone, "worktree", "remove", "--force", dir)
-	testsupport.Git(t, w.clone, "branch", "-D", "dockhand/jq-update")
-	out, _, err := dockhand(t, "status")
+	testsupport.Git(t, w.Clone, "worktree", "remove", "--force", dir)
+	testsupport.Git(t, w.Clone, "branch", "-D", "dockhand/jq-update")
+	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "its Git branch is gone, and its pull request, #34901, may have\n               merged\n")
 	require.Contains(t, out, "dockhand status --refresh reads it")
 
 	g.PRs[34901].State = forge.PullRequestMerged
-	_, _, err = dockhand(t, "status", "--refresh")
+	_, _, err = cmdtest.Dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "clean", "other-work-missing")
+	_, _, err = cmdtest.Dockhand(t, "clean", "other-work-missing")
 	require.ErrorContains(t, err, "no tracked branch named other-work-missing")
-	_, _, err = dockhand(t, "start", "open-work")
+	_, _, err = cmdtest.Dockhand(t, "start", "open-work")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "clean", "open-work")
+	_, _, err = cmdtest.Dockhand(t, "clean", "open-work")
 	require.ErrorContains(t, err, "open-work is open, so there's nothing to clean")
 
-	out, _, err = dockhand(t, "clean", "jq-update")
+	out, _, err = cmdtest.Dockhand(t, "clean", "jq-update")
 	require.Equal(t, term.ExitFailure, term.ExitCode(err))
 	require.Contains(t, out, "jq-update (#34901, merged at ")
 	require.NotContains(t, out, "other-work", "an archived branch not named is left")
 	require.Contains(t, out, "  remove   ada/macports-ports:dockhand/jq-update\n")
-	out, _, err = dockhand(t, "clean", "jq-update", "--yes")
+	out, _, err = cmdtest.Dockhand(t, "clean", "jq-update", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update: removed ada/macports-ports:dockhand/jq-update\n")
-	require.DirExists(t, filepath.Join(w.home, "Source", "macports-branches", "other-work"), "the archived branch's worktree stays")
+	require.DirExists(t, filepath.Join(w.Home, "Source", "macports-branches", "other-work"), "the archived branch's worktree stays")
 }
 
 // The Push line says what the blocker holds, not the push it stops (the

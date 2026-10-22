@@ -14,7 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
-// writePushes says where a check pushes: "only checking" never hides a
+// WritePushes says where a check pushes: "only checking" never hides a
 // write to your fork (Design v3 §9).
 func WritePushes(out io.Writer, plan model.Plan) {
 	if slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == buildenv.GitHub }) {
@@ -25,7 +25,7 @@ func WritePushes(out io.Writer, plan model.Plan) {
 	}
 }
 
-// writePlan shows a plan, with remedy saying how to give an environment
+// WritePlan shows a plan, with remedy saying how to give an environment
 // what a target it can't build needs.
 func WritePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model.Unmet) string) {
 	var changed, extra []string
@@ -195,7 +195,7 @@ func writeExclusions(out io.Writer, plan model.Plan) {
 	}
 }
 
-// writeResults shows each target's result, indented. On one environment
+// WriteResults shows each target's result, indented. On one environment
 // it is a line each, "jq  ✓", the environment named when where says so.
 // On several it is a grid, a row per target and a column per environment
 // headed by its release, macOS 26, since the plan named the environments
@@ -257,7 +257,7 @@ func resultWords(evidence engine.Evidence, target engine.TargetEvidence, environ
 	return words
 }
 
-// writeVariants says what --variants builds: the one port with its
+// WriteVariants says what --variants builds: the one port with its
 // variants in place of its defaults, or, with each, its defaults and then
 // each variant it declares.
 func WriteVariants(out io.Writer, plan model.Plan) {
@@ -277,7 +277,7 @@ func WriteVariants(out io.Writer, plan model.Plan) {
 	}
 }
 
-// writeQueue is status's list of the checks queued and running, oldest
+// WriteQueue is status's list of the checks queued and running, oldest
 // first, where queue listed them: each with its branch, what it checks,
 // where, and its state, a run whose process ended said to be stopped.
 func WriteQueue(out io.Writer, queue []engine.QueuedCheck) {
@@ -309,7 +309,7 @@ func WriteQueue(out io.Writer, queue []engine.QueuedCheck) {
 	_ = table.Flush()
 }
 
-// queueView is the queue for status's JSON.
+// QueueView is the queue for status's JSON.
 func QueueView(queue []engine.QueuedCheck) *[]queuedRunJSON {
 	rows := []queuedRunJSON{}
 	for _, queued := range queue {

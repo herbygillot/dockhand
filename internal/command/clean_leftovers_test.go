@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 )
@@ -61,32 +62,32 @@ func (p *leavingBuilder) RemoveLeftover(_ context.Context, ref string) error {
 // what it can't vouch for.
 func TestCleanRemovesWhatChecksLeft(t *testing.T) {
 	t.Parallel()
-	checkedBranch(t)
+	cmdtest.CheckedBranch(t)
 	builder := &leavingBuilder{}
-	stands(t).Leftovers = builder
-	_, _, err := dockhand(t, "check")
+	cmdtest.Stands(t).Leftovers = builder
+	_, _, err := cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
 	require.Len(t, builder.left, 1)
 	vm := builder.left[0]
 
-	out, _, err := dockhand(t, "clean")
+	out, _, err := cmdtest.Dockhand(t, "clean")
 	require.Equal(t, term.ExitFailure, term.ExitCode(err), "a script's clean without --yes removes nothing, and refuses")
 	require.Equal(t, "Left by checks\n"+
 		"  remove   VM "+vm+", left by check-1\n"+
 		"  keep     VM vm-elsewhere: no check of this checkout made it\n", out)
 
-	result, err := jsonOf(t, "clean")
+	result, err := cmdtest.JSONOf(t, "clean")
 	require.Equal(t, term.ExitFailure, term.ExitCode(err))
-	require.Equal(t, vm, dig(t, result.Result, "leftovers", 0, "ref"))
-	require.Equal(t, "check-1", dig(t, result.Result, "leftovers", 0, "check"))
-	require.Equal(t, false, dig(t, result.Result, "leftovers", 0, "removed"))
+	require.Equal(t, vm, cmdtest.Dig(t, result.Result, "leftovers", 0, "ref"))
+	require.Equal(t, "check-1", cmdtest.Dig(t, result.Result, "leftovers", 0, "check"))
+	require.Equal(t, false, cmdtest.Dig(t, result.Result, "leftovers", 0, "removed"))
 
-	out, _, err = dockhand(t, "clean", "--yes")
+	out, _, err = cmdtest.Dockhand(t, "clean", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "\nLeft by checks\n  removed  VM "+vm+", left by check-1\n  keep     VM vm-elsewhere: no check of this checkout made it\n")
 	require.Empty(t, builder.left)
 
-	out, _, err = dockhand(t, "clean")
+	out, _, err = cmdtest.Dockhand(t, "clean")
 	require.NoError(t, err)
 	require.Equal(t, "Left by checks\n  keep     VM vm-elsewhere: no check of this checkout made it\nNothing to remove.\n", out)
 }

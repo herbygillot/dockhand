@@ -101,6 +101,11 @@ func TestCommandTalksToTheEngine(t *testing.T) {
 				}
 				continue
 			}
+			// The tests' harness reaches what the tests do: fakes, the
+			// forge's stand-in, testify. Only its shape is the layers'.
+			if pkg == "cmdtest" {
+				continue
+			}
 			used[local] = true
 			if _, allowed := commandImports[local]; !allowed {
 				t.Errorf("%s imports %s: move the decision it serves into the engine, or name the import and why in commandImports", path, imported)

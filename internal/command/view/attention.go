@@ -5,7 +5,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 )
 
-// attention is one row of what needs you, with the command that moves it.
+// Attention is one row of what needs you, with the command that moves it.
 type Attention struct {
 	Kind               attentionKind
 	Branch, What, Next string
@@ -22,7 +22,7 @@ const (
 	AttentionReady    attentionKind = "ready"
 )
 
-// mark is the kind's glyph in the text.
+// Mark is the kind's glyph in the text.
 func (k attentionKind) Mark() string {
 	return map[attentionKind]string{AttentionFailed: "✗", AttentionNeedsYou: "!", AttentionReady: "·"}[k]
 }

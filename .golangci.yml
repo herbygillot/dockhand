@@ -33,7 +33,8 @@ linters:
       - std-error-handling
     rules:
       # A test's fake servers and helper processes drop what fails: the
-      # test fails on what the code under test does with it.
-      - path: _test\.go
+      # test fails on what the code under test does with it. cmdtest is
+      # the command tests' shared harness, the same code out of _test.go.
+      - path: (_test\.go|internal/command/cmdtest/)
         linters:
           - errcheck

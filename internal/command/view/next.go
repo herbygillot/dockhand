@@ -17,7 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-// renderNext is a Next as the command line it names: the one place a
+// RenderNext is a Next as the command line it names: the one place a
 // verdict's next step becomes words (architecture, 2026-10-22). reason
 // adds the words a row's own next carries, as a submit after someone
 // else's push showing the comparison.
@@ -59,7 +59,7 @@ func RenderNext(next branchstate.Next, reason branchstate.Reason) string {
 	return line
 }
 
-// checkState is the checks column: what is running, else what the latest
+// CheckState is the checks column: what is running, else what the latest
 // check says about the files as they are now.
 func CheckState(s engine.BranchStatus) string {
 	suffix := ""
@@ -108,14 +108,14 @@ func CheckState(s engine.BranchStatus) string {
 	return "needs attention" + suffix
 }
 
-// writeNext says what moves a branch on, as its attention row does.
+// WriteNext says what moves a branch on, as its attention row does.
 func WriteNext(out io.Writer, status engine.BranchStatus) {
 	for _, row := range AttentionFor(status) {
 		fmt.Fprintf(out, "Next: %s\n", row.Next)
 	}
 }
 
-// writeNextFor says what moves a branch on after its check, as status
+// WriteNextFor says what moves a branch on after its check, as status
 // would.
 func WriteNextFor(ctx context.Context, e *engine.Engine, out io.Writer, id model.BranchID) error {
 	branch, err := e.Branch(ctx, id)
@@ -130,7 +130,7 @@ func WriteNextFor(ctx context.Context, e *engine.Engine, out io.Writer, id model
 	return nil
 }
 
-// sayNext is a refusal whose producer gave what moves it on, as a login
+// SayNext is a refusal whose producer gave what moves it on, as a login
 // to sign in to again or a Tart image to set up, with that said last, as
 // status says a branch's: its words say what happened, and Next the
 // command (R3-31). A composed exit error says its own.
@@ -142,7 +142,7 @@ func SayNext(err error) error {
 	return nextSaid{err, RenderSteps(r.Next)}
 }
 
-// renderSteps are a refusal's steps, each as renderNext renders it, in
+// RenderSteps are a refusal's steps, each as renderNext renders it, in
 // order.
 func RenderSteps(steps []refusal.Next) []string {
 	var lines []string

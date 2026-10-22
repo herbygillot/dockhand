@@ -143,7 +143,7 @@ type buildJSON struct {
 	Tags map[string]GitSourceJSON `json:"tags,omitempty"`
 }
 
-// gitSourceJSON is what a Git-fetched target's build is expected to fetch:
+// GitSourceJSON is what a Git-fetched target's build is expected to fetch:
 // its repository and git.branch, and the commit git.branch named when the
 // check was planned, or the abbreviation it begins with, or why neither is
 // known.
@@ -249,7 +249,7 @@ func targetView(plan model.Plan, target model.PlanTarget) TargetJSON {
 	return viewed
 }
 
-// evidenceView is a finished run's targets with their results.
+// EvidenceView is a finished run's targets with their results.
 func EvidenceView(evidence engine.Evidence) []TargetJSON {
 	targets := []TargetJSON{}
 	for _, target := range evidence.Targets {
@@ -266,7 +266,7 @@ func EvidenceView(evidence engine.Evidence) []TargetJSON {
 	return targets
 }
 
-// checkJSON is check's, wait's, and retry's result.
+// CheckJSON is check's, wait's, and retry's result.
 type CheckJSON struct {
 	Branch   string        `json:"branch"`
 	Revision *revisionJSON `json:"revision,omitempty"`
@@ -281,7 +281,7 @@ type CheckJSON struct {
 	Altered []string `json:"altered_archives,omitempty"`
 }
 
-// gather takes a check's result, or the baseline's that looks into it.
+// Gather takes a check's result, or the baseline's that looks into it.
 func (c *CheckJSON) Gather(step any) {
 	if step, ok := step.(CheckJSON); ok {
 		if c.Run != nil && step.Run != nil && step.Run.BaselineOf == c.Run.ID {
@@ -375,7 +375,7 @@ type BranchJSON struct {
 	OnMaster string `json:"on_master,omitempty"`
 }
 
-// concernJSON is what a submission nobody looks over waits on a person's
+// ConcernJSON is what a submission nobody looks over waits on a person's
 // look for: where it came from, upstream, the commit rules, or another
 // pull request, where submit gives it; the port, the rule that raised it,
 // what it's about, such as the commit the check planned, how it stands

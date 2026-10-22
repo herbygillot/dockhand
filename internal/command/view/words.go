@@ -21,7 +21,7 @@ func OrNone(value string) string {
 	return value
 }
 
-// comparisonLines are what each port's assessment found, a line each,
+// ComparisonLines are what each port's assessment found, a line each,
 // marked as update marks them, under an Upstream label. Where there are
 // several ports, each line names the ports that found it, said once for
 // all of them: a python port's subports each repeated a license finding
@@ -152,11 +152,11 @@ func WritePlainHTTP(out io.Writer, plain []engine.PlainURL) {
 	}
 }
 
-// holdLegend says what the marks of an upstream finding mean, beside any
+// HoldLegend says what the marks of an upstream finding mean, beside any
 // list with one that holds (the chezmoi run).
 const HoldLegend = "(! holds bump's and serve's submission for your look; · holds nothing)"
 
-// experimentalWords is the notice review and adopt --pr carry until the
+// ExperimentalWords is the notice review and adopt --pr carry until the
 // trust rule is in code (the release bar, 5): they evaluate someone else's
 // Portfiles with MacPorts on this Mac, as no other command does.
 func ExperimentalWords(number int, author string) string {

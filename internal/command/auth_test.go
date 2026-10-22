@@ -5,42 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/term"
 )
-
-type memoryStore map[credential.Key]string
-
-func (m memoryStore) Get(_ context.Context, key credential.Key) (string, error) {
-	value, ok := m[key]
-	if !ok {
-		return "", credential.ErrNotFound
-	}
-	return value, nil
-}
-
-func (m memoryStore) Put(_ context.Context, key credential.Key, value string) error {
-	m[key] = value
-	return nil
-}
-
-func (m memoryStore) Delete(_ context.Context, key credential.Key) error {
-	if _, ok := m[key]; !ok {
-		return credential.ErrNotFound
-	}
-	delete(m, key)
-	return nil
-}
 
 type deviceFlow struct {
 	value credential.Login
@@ -59,35 +35,14 @@ func login(secret, account string) credential.Login {
 	return credential.Login{Access: secret, AccessExpiry: time.Now().Add(8 * time.Hour), Refresh: "refresh-" + secret, RefreshExpiry: time.Now().AddDate(0, 6, 0), Account: account, ClientID: "fixture-client"}
 }
 
-func withAuth(t *testing.T, flow credential.DeviceFlow) memoryStore {
-	t.Helper()
-	store := memoryStore{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer secret-token" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]any{"login": "ada"})
-	}))
-	t.Cleanup(server.Close)
-	hosted(t).AuthFlow, hosted(t).AuthStore = flow, store
-	hosted(t).AuthAPI = func(signin github.Signin) *github.Client {
-		return &github.Client{HTTP: server.Client(), Config: github.Config{BaseURL: server.URL}, Credentials: github.SystemCredentials{Store: signin.Store, Key: github.CredentialKey, Override: signin.Token, CLI: signin.CLI}}
-	}
-	setenv(t, "GH_TOKEN", "")
-	setenv(t, "GITHUB_TOKEN", "")
-	setenv(t, "PATH", t.TempDir())
-	return store
-}
-
 func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	t.Parallel()
-	path := getenv(t, "PATH")
-	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
+	path := cmdtest.Getenv(t, "PATH")
+	store := cmdtest.WithAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	var opened string
-	hosted(t).OpenBrowser = func(_ context.Context, url string) error { opened = url; return nil }
+	cmdtest.Hosted(t).OpenBrowser = func(_ context.Context, url string) error { opened = url; return nil }
 
-	out, errs, err := dockhand(t, "setup", "github")
+	out, errs, err := cmdtest.Dockhand(t, "setup", "github")
 	require.NoError(t, err)
 	require.Contains(t, errs, "Copy this one-time code: ABCD-1234\nOpening https://github.com/login/device in your browser...\n")
 	require.Equal(t, "https://github.com/login/device", opened)
@@ -98,16 +53,16 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 
 	// The rest keeps the GitHub CLI out of reach, so a login it has on
 	// this machine can't stand in; setup needs git, though.
-	emptyPath := getenv(t, "PATH")
-	setenv(t, "PATH", path)
-	newWorld(t)
-	out, _, err = dockhand(t, "setup", "--yes")
+	emptyPath := cmdtest.Getenv(t, "PATH")
+	cmdtest.Setenv(t, "PATH", path)
+	cmdtest.NewWorld(t)
+	out, _, err = cmdtest.Dockhand(t, "setup", "--yes")
 	require.NoError(t, err)
 	until := time.Now().AddDate(0, 6, 0).Format("2 January 2006")
 	require.Contains(t, out, "  Publishing   ✓ ada, from dockhand's login in the Keychain, renewing itself until "+until+"\n")
 	// setup --json says the same for a script, as auth status --json did
 	// before it went (the rc9 full stage's D-C4).
-	out, _, err = dockhand(t, "--json", "setup")
+	out, _, err = cmdtest.Dockhand(t, "--json", "setup")
 	require.NoError(t, err)
 	var report struct {
 		Result setupReport `json:"result"`
@@ -119,28 +74,28 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	require.NotEmpty(t, report.Result.Checkout)
 	require.NotEmpty(t, report.Result.Git.Version)
 	require.Equal(t, "macports/macports-ports", report.Result.Upstream.Repository)
-	setenv(t, "GH_TOKEN", "secret-token")
-	_, said := publishing(t.Context(), testSettings(t))
+	cmdtest.Setenv(t, "GH_TOKEN", "secret-token")
+	_, said := publishing(t.Context(), cmdtest.TestSettings(t))
 	require.Equal(t, githubLoginJSON{Account: "ada", Source: "GH_TOKEN"}, said, "GH_TOKEN takes precedence, and doesn't renew")
-	setenv(t, "GH_TOKEN", "")
-	setenv(t, "PATH", emptyPath)
+	cmdtest.Setenv(t, "GH_TOKEN", "")
+	cmdtest.Setenv(t, "PATH", emptyPath)
 
-	out, _, err = dockhand(t, "setup", "github", "--logout")
+	out, _, err = cmdtest.Dockhand(t, "setup", "github", "--logout")
 	require.NoError(t, err)
 	require.Contains(t, out, "Removed dockhand's GitHub login from the Keychain.")
 	require.Contains(t, out, "To also revoke dockhand’s access on GitHub, visit https://github.com/settings/connections/applications/fixture-client\n")
-	out, _, err = dockhand(t, "setup", "github", "--logout")
+	out, _, err = cmdtest.Dockhand(t, "setup", "github", "--logout")
 	require.NoError(t, err)
 	require.Equal(t, "No dockhand GitHub credentials are saved in the Keychain.\n", out)
-	line, said := publishing(t.Context(), testSettings(t))
+	line, said := publishing(t.Context(), cmdtest.TestSettings(t))
 	require.Equal(t, "· not set up: dockhand setup github, when you're ready to submit", line, "no login anywhere")
 	require.Equal(t, githubLoginJSON{Problem: "not set up"}, said)
 }
 
 func TestAFailedLoginSavesNothing(t *testing.T) {
 	t.Parallel()
-	store := withAuth(t, deviceFlow{err: errors.New("the code expired")})
-	_, errs, err := dockhand(t, "setup", "github", "--no-browser")
+	store := cmdtest.WithAuth(t, deviceFlow{err: errors.New("the code expired")})
+	_, errs, err := cmdtest.Dockhand(t, "setup", "github", "--no-browser")
 	require.ErrorContains(t, err, "the code expired")
 	require.Contains(t, errs, "Open https://github.com/login/device, enter the code, and authorize dockhand.")
 	require.Empty(t, store)
@@ -151,26 +106,26 @@ func TestAFailedLoginSavesNothing(t *testing.T) {
 // opened nowhere (the auth flow review's plan, step 4).
 func TestALoginThatCantRenewIsSaid(t *testing.T) {
 	t.Parallel()
-	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
+	store := cmdtest.WithAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	store[github.CredentialKey] = "gho_a_bare_token_from_an_earlier_dockhand"
-	line, _ := publishing(t.Context(), testSettings(t))
+	line, _ := publishing(t.Context(), cmdtest.TestSettings(t))
 	require.Equal(t, "! the saved GitHub login uses an older format; run dockhand setup github", line)
 	expired := login("secret-token", "ada")
 	expired.AccessExpiry, expired.RefreshExpiry = time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)
 	saved, err := expired.Encode()
 	require.NoError(t, err)
 	store[github.CredentialKey] = saved
-	line, said := publishing(t.Context(), testSettings(t))
+	line, said := publishing(t.Context(), cmdtest.TestSettings(t))
 	require.Equal(t, "! the GitHub login expired after six months of inactivity; run dockhand setup github", line)
 	require.Equal(t, githubLoginJSON{Problem: "the GitHub login expired after six months of inactivity"}, said)
 }
 
 func TestADeviceFlowAddressThatIsntHTTPSIsntOpened(t *testing.T) {
 	t.Parallel()
-	withAuth(t, plainFlow{})
+	cmdtest.WithAuth(t, plainFlow{})
 	opened := ""
-	hosted(t).OpenBrowser = func(_ context.Context, url string) error { opened = url; return nil }
-	_, _, err := dockhand(t, "setup", "github")
+	cmdtest.Hosted(t).OpenBrowser = func(_ context.Context, url string) error { opened = url; return nil }
+	_, _, err := cmdtest.Dockhand(t, "setup", "github")
 	require.ErrorContains(t, err, "an HTTPS URL is required, so the browser was not opened")
 	require.Empty(t, opened)
 }

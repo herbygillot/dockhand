@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
@@ -29,7 +30,7 @@ import (
 // update didn't check, and a change outside any port, which tidy can't
 // commit unasked: its group has no port to name.
 type concerned struct {
-	bumper
+	cmdtest.Bumper
 	upstream  [2]map[string]string
 	toolchain *editprep.GoToolchain
 	patch     bool
@@ -37,7 +38,7 @@ type concerned struct {
 }
 
 func (c concerned) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
-	result, err := c.bumper.Prepare(ctx, r)
+	result, err := c.Bumper.Prepare(ctx, r)
 	if err != nil || len(result.Files) == 0 {
 		return result, err
 	}
@@ -65,12 +66,12 @@ func (c concerned) Prepare(ctx context.Context, r editprep.Request) (editprep.Re
 	}
 	if c.outside {
 		const group = "_resources/port1.0/group/github-1.0.tcl"
-		before, data, err := c.repo.File(ctx, string(r.Source.Tree), group)
+		before, data, err := c.Repo.File(ctx, string(r.Source.Tree), group)
 		if err != nil {
 			return result, err
 		}
 		edit := git.FileEdit{Path: group, Before: before, After: append(data, "# also changed\n"...), Mode: before.Mode}
-		tree, err := c.repo.EditTree(ctx, string(result.PreparedTree), []git.FileEdit{edit})
+		tree, err := c.Repo.EditTree(ctx, string(result.PreparedTree), []git.FileEdit{edit})
 		if err != nil {
 			return result, err
 		}
@@ -141,15 +142,15 @@ func TestBumpAndServeStopOnTheSameConditions(t *testing.T) {
 // GitHub knowing of no other pull request for jq, or failing to look.
 func concernedWorld(t *testing.T, concerns concerned, search error) *forgetest.GitHub {
 	t.Helper()
-	w := newWorld(t)
-	versioned(t, w)
-	stands(t).Preparer = func(e *engine.Engine) engine.Preparer {
-		concerns.bumper = bumper{repo: e.Repo}
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer {
+		concerns.Bumper = cmdtest.Bumper{Repo: e.Repo}
 		return concerns
 	}
-	g := withGitHub(t, w)
+	g := cmdtest.WithGitHub(t, w)
 	g.Others, g.SearchErr = nil, search
-	withScript(t, w, "passed")
+	cmdtest.WithScript(t, w, "passed")
 	return g
 }
 
@@ -157,7 +158,7 @@ func concernedWorld(t *testing.T, concerns concerned, search error) *forgetest.G
 func bumpWith(t *testing.T, concerns concerned, search error) (bool, string) {
 	t.Helper()
 	g := concernedWorld(t, concerns, search)
-	out, errs, err := bumpOn(t, "jq")
+	out, errs, err := cmdtest.BumpOn(t, "jq")
 	said := out + errs
 	if err != nil {
 		said += "error: " + err.Error()
@@ -170,25 +171,25 @@ func bumpWith(t *testing.T, concerns concerned, search error) (bool, string) {
 func serveWith(t *testing.T, concerns concerned, search error) (bool, string) {
 	t.Helper()
 	g := concernedWorld(t, concerns, search)
-	withOutdated(t)
-	hosted(t).Timings.ServePoll = 20 * time.Millisecond
+	cmdtest.WithOutdated(t)
+	cmdtest.Hosted(t).Timings.ServePoll = 20 * time.Millisecond
 	// The day's look runs from serve.outdated_at, 07:00 local by default:
 	// a clock left running found it not yet due past midnight, and serve
 	// prepared nothing (CI on the rc9 tag, 00:21 to 00:45 UTC).
 	morning := time.Date(2026, 10, 7, 8, 0, 0, 0, time.Local)
-	hosted(t).Now = func() time.Time { return morning }
-	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
-	hosted(t).Notify = func(string, string) error { return nil }
-	config := filepath.Join(getenv(t, "HOME"), ".dockhand", "config.toml")
+	cmdtest.Hosted(t).Now = func() time.Time { return morning }
+	cmdtest.Setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
+	cmdtest.Hosted(t).Notify = func(string, string) error { return nil }
+	config := filepath.Join(cmdtest.Getenv(t, "HOME"), ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada}\"\n"), append(data, []byte("\n[serve]\nship_to = \"check\"\n")...)...), 0o644))
 
 	ctx, stop := context.WithCancel(t.Context())
-	var served syncBuffer
+	var served cmdtest.SyncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"serve", "--ship-to", "submit"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- cmdtest.RunFor(t, ctx, []string{"serve", "--ship-to", "submit"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	// It opens the pull request, holds the branch for a look, or stops
 	// the update before its check.
@@ -202,7 +203,7 @@ func serveWith(t *testing.T, concerns concerned, search error) (bool, string) {
 		}
 		return false
 	}
-	for deadline := time.Now().Add(settle); !ended() && time.Now().Before(deadline); {
+	for deadline := time.Now().Add(cmdtest.Settle); !ended() && time.Now().Before(deadline); {
 		time.Sleep(10 * time.Millisecond)
 	}
 	require.True(t, ended(), served.String())

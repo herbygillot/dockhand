@@ -112,3 +112,24 @@ them; `os` is `OS`. Locals named `host` and `settings` in command are
   and from queue.go `NamedOrLatest`. `BranchFlags.Register` still takes
   the settings, for its completion's engine. It's a layer beside settings,
   which the boundary test allows.
+
+## Step 4: cmdtest
+
+`internal/command/cmdtest` is the tests' shared harness, moved out of the
+_test.go files that held it: the world (`NewWorld`, `World`), the
+stand-ins (`Stands`, `Hosted`, `Setenv`, `Chdir`, `UsePorts`,
+`TestSettings`, `TestPlaces`), the runs (`Dockhand`, `RunFor`, `JSONOf`,
+`Dig`), and the fakes (`Bumper`, `WithBumper`, `Versioned`, `WithScript`,
+`OnePort`, `WithGitHub`, `SignedIn`, `MemoryStore`, `WithAuth`,
+`WithOutdated`, `SyncBuffer`, `CheckedBranch`, `BumpOn`). Its only reach
+into the root was `run`. The root exports `RunWith`, and
+`settings.Invocation` is the command line it takes. A test binary's
+TestMain is `cmdtest.Main(m, RunWith)`, which also isolates the
+environment as the root's TestMain did. So cmdtest never imports the
+root, and a verb's external tests and the root's own run the same command
+line. `SignedIn`'s login field is `Account`, beside its `Login` method.
+The boundary test holds cmdtest to the layers' shape, not the
+engine-boundary list, since it reaches what the tests do.
+
+The exported names' doc comments were renamed with them, across the new
+packages.

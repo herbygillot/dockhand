@@ -53,23 +53,15 @@ func Run(ctx context.Context, args []string, streams term.Streams) error {
 	if err != nil {
 		return err
 	}
-	return run(ctx, invocation{args: args, env: os.Environ(), dir: dir}, streams, compose.Dependencies{}, host.MachineHost())
-}
-
-// invocation is a command line: its arguments, and the environment and
-// working directory it reads, as os.Environ and os.Getwd give them, in
-// place of the process's.
-type invocation struct {
-	args, env []string
-	dir       string
+	return RunWith(ctx, settings.Invocation{Args: args, Env: os.Environ(), Dir: dir}, streams, compose.Dependencies{}, host.MachineHost())
 }
 
 // run executes the command line on the host, with the stand-ins given,
 // compose's real ones where they're empty, which a test gives its own.
-func run(ctx context.Context, line invocation, streams term.Streams, dependencies compose.Dependencies, mac *host.Host) error {
-	args := line.args
+func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams, dependencies compose.Dependencies, mac *host.Host) error {
+	args := line.Args
 	var shared settings.Settings
-	shared.Deps, shared.Host, shared.Env, shared.Dir, shared.Command = dependencies, mac, line.env, line.dir, Run
+	shared.Deps, shared.Host, shared.Env, shared.Dir, shared.Command = dependencies, mac, line.Env, line.Dir, Run
 	streams = term.Begin(streams, args)
 	shared.Streams = streams
 	root := newRoot(&shared, streams)

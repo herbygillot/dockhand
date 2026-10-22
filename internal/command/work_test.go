@@ -7,130 +7,80 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/forge/forgetest"
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
-// world is a home directory, an upstream standing in for
-// macports/macports-ports, and the person's clone of it at ~/src.
-type world struct{ home, upstream, clone string }
-
-func newWorld(t *testing.T) world {
-	t.Helper()
-	// What would ask GitHub, such as an update looking for other open pull
-	// requests, asks a fake that knows of none, unless a test gives its own.
-	stands(t).Forge = func(*engine.Engine) engine.Forge { return forgetest.New("", "") }
-	stands(t).HTTPS = testsupport.HTTPSAnswers{}
-	// Git reports resolved paths; on macOS the temporary directory is
-	// reached through /var, a link to /private/var.
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	w := world{home: filepath.Join(root, "home"), upstream: filepath.Join(root, "upstream")}
-	w.clone = filepath.Join(w.home, "src", "macports-ports")
-	for name, content := range map[string]string{"_resources/port1.0/group/github-1.0.tcl": "# group\n", "textproc/jq/Portfile": "name jq\n"} {
-		require.NoError(t, os.MkdirAll(filepath.Join(w.upstream, filepath.Dir(name)), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(w.upstream, name), []byte(content), 0o644))
-	}
-	testsupport.Git(t, w.upstream, "init", "-q")
-	testsupport.Git(t, w.upstream, "add", "-A")
-	testsupport.Git(t, w.upstream, "commit", "-q", "-m", "init")
-	require.NoError(t, os.MkdirAll(filepath.Dir(w.clone), 0o755))
-	testsupport.Git(t, root, "clone", "-q", w.upstream, w.clone)
-	require.NoError(t, os.MkdirAll(w.home, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".gitconfig"), []byte("[user]\n\tname = Ada\n\temail = ada@example.org\n"), 0o644))
-	setenv(t, "HOME", w.home)
-	setenv(t, "DOCKHAND_UPSTREAM", w.upstream)
-	setenv(t, "DOCKHAND_DB", "")
-	setenv(t, "DOCKHAND_CONFIG", "")
-	setenv(t, "MACPORTS_TREE", w.clone)
-	return w
-}
-
-// settle bounds a wait for what a running serve or watch says. It's a
-// bound, not a pace: a wait ends as soon as the words appear, and on a
-// loaded machine, such as CI's runner beside the other tests, they can
-// take far longer than they do here; five seconds failed there (2026-10-02).
-const settle = 2 * time.Minute
-
-func dockhand(t *testing.T, args ...string) (string, string, error) {
-	t.Helper()
-	var out, errs bytes.Buffer
-	err := runFor(t, t.Context(), args, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
-	return out.String(), errs.String(), err
-}
-
 func TestSetupStartPathAndAdopt(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	out, _, err := dockhand(t, "setup", "--yes")
+	w := cmdtest.NewWorld(t)
+	out, _, err := cmdtest.Dockhand(t, "setup", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "Using ~/src/macports-ports; it has no remote for macports/macports-ports")
 	require.Regexp(t, `\n  Git          ✓ \d+\.\d+\.\d+ at \S+/git\n`, out)
 	require.Contains(t, out, "worktrees in ~/Source/macports-branches")
 	require.Contains(t, out, "Records      ~/.dockhand/dockhand.db")
-	_, err = os.Stat(filepath.Join(w.home, ".dockhand", "config.toml"))
+	_, err = os.Stat(filepath.Join(w.Home, ".dockhand", "config.toml"))
 	require.ErrorIs(t, err, os.ErrNotExist, "the default needs no configuration file")
 
-	out, _, err = dockhand(t, "start", "jq-update")
+	out, _, err = cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, out, "Created dockhand/jq-update from master ")
 	require.Contains(t, out, "Directory: ~/Source/macports-branches/jq-update")
 	require.Contains(t, out, `Next: cd "$(dockhand path jq-update)"`)
 
-	out, _, err = dockhand(t, "path", "jq-update")
+	out, _, err = cmdtest.Dockhand(t, "path", "jq-update")
 	require.NoError(t, err)
-	require.Equal(t, filepath.Join(w.home, "Source", "macports-branches", "jq-update")+"\n", out, "path prints only the path")
+	require.Equal(t, filepath.Join(w.Home, "Source", "macports-branches", "jq-update")+"\n", out, "path prints only the path")
 
-	testsupport.Git(t, w.clone, "switch", "-q", "-c", "update-jq")
-	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
-	testsupport.Git(t, w.clone, "commit", "-q", "-am", "Update jq")
-	out, _, err = dockhand(t, "adopt")
+	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "update-jq")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
+	testsupport.Git(t, w.Clone, "commit", "-q", "-am", "Update jq")
+	out, _, err = cmdtest.Dockhand(t, "adopt")
 	require.NoError(t, err)
 	require.Regexp(t, `^Adopted update-jq: 1 commit above master [0-9a-f]{7}, changing jq\.\n$`, out)
-	out, _, err = dockhand(t, "adopt", "update-jq")
+	out, _, err = cmdtest.Dockhand(t, "adopt", "update-jq")
 	require.NoError(t, err)
 	require.Equal(t, "update-jq is already tracked.\n", out)
 
-	_, _, err = dockhand(t, "path", "fd-update")
+	_, _, err = cmdtest.Dockhand(t, "path", "fd-update")
 	require.ErrorContains(t, err, "no tracked branch named fd-update")
 
 	// A branch whose work is all uncommitted edits names the ports they
 	// change, where it said "changing no ports yet".
-	testsupport.Git(t, w.clone, "switch", "-q", "-c", "edits-only", "master")
-	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.2\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "_resources/port1.0/group/github-1.0.tcl"), []byte("# group, edited\n"), 0o644))
-	out, _, err = dockhand(t, "adopt")
+	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "edits-only", "master")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.2\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "_resources/port1.0/group/github-1.0.tcl"), []byte("# group, edited\n"), 0o644))
+	out, _, err = cmdtest.Dockhand(t, "adopt")
 	require.NoError(t, err)
 	require.Regexp(t, `^Adopted edits-only: 0 commits above master [0-9a-f]{7}, with edits not yet committed to jq and _resources\.\n`, out)
 }
 
 func TestSetupRemembersAChosenWorktreesDirectory(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	testsupport.Git(t, w.clone, "remote", "add", "upstream", "https://github.com/macports/macports-ports.git")
-	out, _, err := dockhand(t, "setup", "--yes", "--worktrees", "~/work/branches")
+	w := cmdtest.NewWorld(t)
+	testsupport.Git(t, w.Clone, "remote", "add", "upstream", "https://github.com/macports/macports-ports.git")
+	out, _, err := cmdtest.Dockhand(t, "setup", "--yes", "--worktrees", "~/work/branches")
 	require.NoError(t, err)
 	require.Contains(t, out, "upstream is macports/macports-ports (remote upstream)")
 	require.Contains(t, out, "worktrees in ~/work/branches")
-	data, err := os.ReadFile(filepath.Join(w.home, ".dockhand", "config.toml"))
+	data, err := os.ReadFile(filepath.Join(w.Home, ".dockhand", "config.toml"))
 	require.NoError(t, err)
-	require.Equal(t, `worktrees = "`+filepath.Join(w.home, "work", "branches")+"\"\n", string(data))
+	require.Equal(t, `worktrees = "`+filepath.Join(w.Home, "work", "branches")+"\"\n", string(data))
 
-	out, _, err = dockhand(t, "start", "jq-update")
+	out, _, err = cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, out, "Directory: ~/work/branches/jq-update", "start follows the configuration")
 }
 
 func TestCommandsRefuseADirectoryThatIsNotAPortsTree(t *testing.T) {
 	t.Parallel()
-	newWorld(t)
-	_, _, err := dockhand(t, "--tree", t.TempDir(), "start", "x")
+	cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "--tree", t.TempDir(), "start", "x")
 	require.ErrorContains(t, err, "not in a Git checkout")
 }
 
@@ -138,14 +88,14 @@ func TestCommandsRefuseADirectoryThatIsNotAPortsTree(t *testing.T) {
 // anything, and says how to get a newer one.
 func TestSetupRefusesAnOldGit(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	old := filepath.Join(w.home, "bin", "git")
+	w := cmdtest.NewWorld(t)
+	old := filepath.Join(w.Home, "bin", "git")
 	require.NoError(t, os.MkdirAll(filepath.Dir(old), 0o755))
 	require.NoError(t, os.WriteFile(old, []byte("#!/bin/sh\necho 'git version 2.39.5 (Apple Git-154)'\n"), 0o755))
-	setenv(t, "GIT_BIN", old)
-	_, _, err := dockhand(t, "setup", "--yes")
+	cmdtest.Setenv(t, "GIT_BIN", old)
+	_, _, err := cmdtest.Dockhand(t, "setup", "--yes")
 	require.EqualError(t, err, "dockhand needs Git 2.40 or newer, and "+old+" is 2.39.5; install a newer one, such as with: sudo port install git, or name one with GIT_BIN")
-	require.NoFileExists(t, filepath.Join(w.home, ".dockhand", "dockhand.db"), "nothing was recorded")
+	require.NoFileExists(t, filepath.Join(w.Home, ".dockhand", "dockhand.db"), "nothing was recorded")
 }
 
 // With MACPORTS_TREE naming the checkout, as a person's shell does, a
@@ -154,17 +104,17 @@ func TestSetupRefusesAnOldGit(t *testing.T) {
 // MACPORTS_TREE used to win, so the worktree's branch was never "here".
 func TestMacPortsTreeKeepsTheWorktreeYouAreIn(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	setenv(t, "MACPORTS_TREE", w.clone)
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	worktree := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	chdir(t, worktree)
-	out, _, err := dockhand(t, "path")
+	worktree := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Chdir(t, worktree)
+	out, _, err := cmdtest.Dockhand(t, "path")
 	require.NoError(t, err)
 	require.Equal(t, worktree+"\n", out)
-	chdir(t, w.home)
-	_, _, err = dockhand(t, "path")
+	cmdtest.Chdir(t, w.Home)
+	_, _, err = cmdtest.Dockhand(t, "path")
 	require.ErrorContains(t, err, "this is your checkout's master, not one of dockhand's branches", "outside it, the checkout named, which has master out")
 	require.Equal(t, 1, strings.Count(err.Error(), "name one with"), "the advice said once: %v", err)
 }
@@ -173,15 +123,15 @@ func TestMacPortsTreeKeepsTheWorktreeYouAreIn(t *testing.T) {
 // Tart otherwise, so this ran nowhere (the test plan's step 3).
 func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
 	t.Parallel()
-	newWorld(t)
-	s := *testSettings(t)
+	cmdtest.NewWorld(t)
+	s := *cmdtest.TestSettings(t)
 	e, err := s.Open(t.Context())
 	require.NoError(t, err)
 	require.NotContains(t, e.Providers, "tart")
 	e.Close()
 
-	stands(t).LookTart = func(string) (string, error) { return "/opt/homebrew/bin/tart", nil }
-	s = *testSettings(t)
+	cmdtest.Stands(t).LookTart = func(string) (string, error) { return "/opt/homebrew/bin/tart", nil }
+	s = *cmdtest.TestSettings(t)
 	e, err = s.Open(t.Context())
 	require.NoError(t, err)
 	defer e.Close()
@@ -195,16 +145,16 @@ func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
 // here.
 func TestSetupOffersWhatsMissing(t *testing.T) {
 	t.Parallel()
-	newWorld(t)
+	cmdtest.NewWorld(t)
 	git, err := exec.LookPath("git")
 	require.NoError(t, err)
-	withAuth(t, nil)
+	cmdtest.WithAuth(t, nil)
 	// Git, and no Tart, so no image is offered.
 	bin := t.TempDir()
 	require.NoError(t, os.Symlink(git, filepath.Join(bin, "git")))
-	setenv(t, "PATH", bin)
+	cmdtest.Setenv(t, "PATH", bin)
 	var out, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"setup"}, term.Streams{In: strings.NewReader("\nn\n"), Out: &out, Err: &errs}.AsTerminal())
+	err = cmdtest.RunFor(t, t.Context(), []string{"setup"}, term.Streams{In: strings.NewReader("\nn\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "Keep branch worktrees in ")
 	require.Contains(t, errs.String(), "? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ")
@@ -212,16 +162,16 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	require.Contains(t, out.String(), "· maintainer: set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in ~/.dockhand/config.toml, for --mine, create, and serve's daily look\n")
 	require.Contains(t, out.String(), "Next: dockhand setup github, then dockhand update <port>, or set maintainer in the configuration file for dockhand outdated --mine\n", "no maintainer, so outdated --mine isn't named alone")
 
-	quiet, said, err := dockhand(t, "setup", "-y")
+	quiet, said, err := cmdtest.Dockhand(t, "setup", "-y")
 	require.NoError(t, err)
 	require.NotContains(t, said, "? ")
 	require.NotContains(t, quiet, "· maintainer:")
 
-	loggedOut, _, err := dockhand(t, "setup", "github", "--logout")
+	loggedOut, _, err := cmdtest.Dockhand(t, "setup", "github", "--logout")
 	require.NoError(t, err)
 	require.Contains(t, loggedOut, "No dockhand GitHub credentials are saved in the Keychain.")
 
-	help, _, err := dockhand(t, "--help")
+	help, _, err := cmdtest.Dockhand(t, "--help")
 	require.NoError(t, err)
 	require.Contains(t, help, "setup ")
 	for _, hidden := range []string{"\n  init ", "\n  auth ", "\n  providers "} {
@@ -229,7 +179,7 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	}
 	// v0.3.0's spellings are pointed at what replaced them, not run.
 	for old, now := range map[string]string{"init": "setup", "auth": "setup", "providers": "setup", "restore": "undo"} {
-		_, _, err = dockhand(t, old)
+		_, _, err = cmdtest.Dockhand(t, old)
 		require.ErrorContains(t, err, "unknown command \""+old+"\"")
 		require.ErrorContains(t, err, "Did you mean this?\n\t"+now+"\n", old)
 	}
@@ -242,17 +192,17 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 // here.
 func TestABranchIsFoundFromOutsideTheTree(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", "")
-	chdir(t, t.TempDir())
-	out, _, err := dockhand(t, "path", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", "")
+	cmdtest.Chdir(t, t.TempDir())
+	out, _, err := cmdtest.Dockhand(t, "path", "jq-update")
 	require.NoError(t, err)
-	require.Equal(t, filepath.Join(w.home, "Source", "macports-branches", "jq-update")+"\n", out)
-	out, _, err = dockhand(t, "status", "-b", "jq-update")
+	require.Equal(t, filepath.Join(w.Home, "Source", "macports-branches", "jq-update")+"\n", out)
+	out, _, err = cmdtest.Dockhand(t, "status", "-b", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update")
-	_, _, err = dockhand(t, "path")
+	_, _, err = cmdtest.Dockhand(t, "path")
 	require.ErrorContains(t, err, "is not in a Git checkout", "path alone means here")
 }

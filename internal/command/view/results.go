@@ -80,7 +80,7 @@ type updateJSON struct {
 	Submit *submitJSON `json:"submit,omitempty"`
 }
 
-// gather puts one step's result in an update's that went on.
+// Gather puts one step's result in an update's that went on.
 func (u *updateJSON) Gather(step any) {
 	switch step := step.(type) {
 	case updateJSON:
@@ -109,7 +109,7 @@ type upstreamJSON struct {
 	Coverage []model.Coverage `json:"coverage,omitempty"`
 }
 
-// upstreamView is a comparison under the JSON's upstream key, whose
+// UpstreamView is a comparison under the JSON's upstream key, whose
 // changes are worded as under the text's Upstream heading.
 func UpstreamView(comparison model.UpstreamComparison) upstreamJSON {
 	viewed := upstreamJSON{Changes: []upstreamChangeJSON{}, Problem: comparison.Problem, Held: comparison.Held(), Coverage: comparison.Coverage}
@@ -364,7 +364,7 @@ type submitJSON struct {
 	Check *CheckJSON `json:"check,omitempty"`
 }
 
-// gather takes the submission's result, or its check's.
+// Gather takes the submission's result, or its check's.
 func (s *submitJSON) Gather(step any) {
 	switch step := step.(type) {
 	case submitJSON:
@@ -406,7 +406,7 @@ type SubmittedJSON struct {
 	ChangesRequestedBy []ChangesRequestedJSON `json:"changes_requested_by"`
 }
 
-// changesRequestedJSON is a reviewer who requested changes, and whether
+// ChangesRequestedJSON is a reviewer who requested changes, and whether
 // submit asked them to review again.
 type ChangesRequestedJSON struct {
 	Login       string `json:"login"`
@@ -578,7 +578,7 @@ type resultLogJSON struct {
 	Steps []LogStepJSON `json:"steps,omitempty"`
 }
 
-// logStepJSON is where a step of a build began in its log: the line its
+// LogStepJSON is where a step of a build began in its log: the line its
 // output starts on, counting from 1.
 type LogStepJSON struct {
 	Name string `json:"name"`
@@ -728,14 +728,14 @@ func OutdatedView(report engine.OutdatedReport) map[string]any {
 	return viewed
 }
 
-// skippedJSON is a port a batch left alone, and why: an update already in
+// SkippedJSON is a port a batch left alone, and why: an update already in
 // a branch, one it couldn't check, or one held for a look.
 type SkippedJSON struct {
 	Port   string `json:"port"`
 	Reason string `json:"reason"`
 }
 
-// batchJSON is ship's result, and update --mine's: each change as far as
+// BatchJSON is ship's result, and update --mine's: each change as far as
 // it went, an update's shape with its later steps inside it, and every
 // port the batch left alone, with why, so an empty batch says why it is
 // (the M1's quick stage, B3: a batch offline said null).
@@ -746,7 +746,7 @@ type BatchJSON struct {
 	at *updateJSON
 }
 
-// next starts the next change's gathering.
+// Next starts the next change's gathering.
 func (b *BatchJSON) Next() {
 	b.Changes = append(b.Changes, updateJSON{})
 	b.at = &b.Changes[len(b.Changes)-1]

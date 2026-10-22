@@ -22,7 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-// runQueued sees a queued run through (Design v3 §11): handed to serve and
+// RunQueued sees a queued run through (Design v3 §11): handed to serve and
 // followed when serve leads, otherwise run here; with enqueue, only
 // queued, saying whether anything will run it, by a background drain
 // that drain starts where nothing leads.
@@ -68,7 +68,7 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 	})
 }
 
-// follow shows a run's progress until it ends, driving it here where
+// Follow shows a run's progress until it ends, driving it here where
 // nobody else sees it through, after before says who does, and reports its
 // outcome.
 func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, places config.Places, before func(engine.Lead)) error {
@@ -128,7 +128,7 @@ func (j *journal) show(ctx context.Context) {
 	}
 }
 
-// report prints a finished run's results and returns the exit its outcome
+// Report prints a finished run's results and returns the exit its outcome
 // calls for.
 func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places) error {
 	if run.BaselineOf != "" {
@@ -226,7 +226,7 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 	}
 }
 
-// stoppedExit says what a check that was stopped leaves: what it finished,
+// StoppedExit says what a check that was stopped leaves: what it finished,
 // or nothing, when it finished nothing, as one cancelled while queued.
 func StoppedExit(run model.Run, evidence engine.Evidence) error {
 	if !evidence.Recorded() {
@@ -235,7 +235,7 @@ func StoppedExit(run model.Run, evidence engine.Evidence) error {
 	return refusal.New(refusal.Interrupted, "%s stopped; finished results are kept", run.Name())
 }
 
-// stopWords say what cancelling a check did: one only queued is cancelled
+// StopWords say what cancelling a check did: one only queued is cancelled
 // before it started, and one running keeps what it finished.
 func StopWords(run model.Run, wasQueued bool) string {
 	if wasQueued {
@@ -351,7 +351,7 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 	return nil
 }
 
-// writeBaselineResults sets each port's result at the base beside the
+// WriteBaselineResults sets each port's result at the base beside the
 // branch's, in each environment where the baseline built it, and where
 // the check failed it but master doesn't build it. A baseline rebuilds a
 // port only where it failed, so elsewhere there is nothing to set beside.

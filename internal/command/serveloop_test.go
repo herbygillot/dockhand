@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -19,42 +20,42 @@ import (
 
 func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
 	g.Others = nil // nobody else's pull request updates jq, which would hold serve's
-	withScript(t, w, "passed")
+	cmdtest.WithScript(t, w, "passed")
 	// yq may have a newer release, which serve lists for a look, and
 	// neither calls current nor prepares.
-	withOutdated(t).uncertain = true
-	hosted(t).Timings.ServePoll = 20 * time.Millisecond
-	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
+	cmdtest.WithOutdated(t).Uncertain = true
+	cmdtest.Hosted(t).Timings.ServePoll = 20 * time.Millisecond
+	cmdtest.Setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
-	hosted(t).Now = func() time.Time { return morning }
+	cmdtest.Hosted(t).Now = func() time.Time { return morning }
 	var mu sync.Mutex
 	var notes []string
-	hosted(t).Notify = func(title, text string) error {
+	cmdtest.Hosted(t).Notify = func(title, text string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		notes = append(notes, title+": "+text)
 		return nil
 	}
 
-	config := filepath.Join(w.home, ".dockhand", "config.toml")
+	config := filepath.Join(w.Home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada}\"\n"), append(data, []byte("\n[serve]\nship_to = \"check\"\n")...)...), 0o644))
 
 	serveUntil := func(args []string, until ...string) string {
 		ctx, stop := context.WithCancel(t.Context())
-		var served syncBuffer
+		var served cmdtest.SyncBuffer
 		done := make(chan error)
 		go func() {
-			done <- runFor(t, ctx, append([]string{"serve"}, args...), term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+			done <- cmdtest.RunFor(t, ctx, append([]string{"serve"}, args...), term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 		}()
 		for _, text := range until {
-			require.Eventually(t, func() bool { return strings.Contains(served.String(), text) }, settle, 10*time.Millisecond, served.String())
+			require.Eventually(t, func() bool { return strings.Contains(served.String(), text) }, cmdtest.Settle, 10*time.Millisecond, served.String())
 		}
 		stop()
 		require.NoError(t, <-done)
@@ -73,8 +74,8 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	require.GreaterOrEqual(t, len(notes), 3, "prepared, passed, and opened")
 	mu.Unlock()
 
-	setenv(t, "MACPORTS_TREE", w.clone)
-	status, _, err := dockhand(t, "status")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	status, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Regexp(t, `· jq-1\.8\.1\s+#34901 opened by serve, without a person's review`, status)
 	require.Contains(t, status, "Your ports: 1 port has newer releases, as serve found ")
@@ -87,24 +88,24 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 
 func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
 	g.Others = nil
-	withScript(t, w, "passed")
-	withOutdated(t)
-	hosted(t).Timings.ServePoll = 20 * time.Millisecond
-	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
+	cmdtest.WithScript(t, w, "passed")
+	cmdtest.WithOutdated(t)
+	cmdtest.Hosted(t).Timings.ServePoll = 20 * time.Millisecond
+	cmdtest.Setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
-	hosted(t).Now = func() time.Time { return morning }
-	config := filepath.Join(w.home, ".dockhand", "config.toml")
+	cmdtest.Hosted(t).Now = func() time.Time { return morning }
+	config := filepath.Join(w.Home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"@ada\"\n"), append(data, []byte("\n[serve]\nship_to = \"submit\"\nsubmit_limit = 1\nnotify = false\n")...)...), 0o644))
 	// One pull request was opened earlier today, by an earlier serve, and
 	// one yesterday, which today's limit doesn't count.
-	e, err := testSettings(t).Open(t.Context())
+	e, err := cmdtest.TestSettings(t).Open(t.Context())
 	require.NoError(t, err)
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
 		for _, at := range []time.Time{morning.Add(-25 * time.Hour), morning.Add(-time.Hour)} {
@@ -117,14 +118,14 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	require.NoError(t, e.Close())
 
 	ctx, stop := context.WithCancel(t.Context())
-	var served syncBuffer
+	var served cmdtest.SyncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	require.Eventually(t, func() bool {
 		return strings.Contains(served.String(), "waits for tomorrow; today's limit of 1 pull request is reached")
-	}, settle, 10*time.Millisecond, served.String())
+	}, cmdtest.Settle, 10*time.Millisecond, served.String())
 	stop()
 	require.NoError(t, <-done)
 	require.Empty(t, g.PRs, "the limit holds across restarts")
@@ -144,35 +145,35 @@ func (s stopsServe) Outdated(context.Context, model.ObjectID, engine.OutdatedReq
 // run.
 func TestServeLooksAgainAfterStoppingMidLook(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
 	g.Others = nil
-	withScript(t, w, "passed")
-	hosted(t).Timings.ServePoll = 20 * time.Millisecond
-	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
+	cmdtest.WithScript(t, w, "passed")
+	cmdtest.Hosted(t).Timings.ServePoll = 20 * time.Millisecond
+	cmdtest.Setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
-	hosted(t).Now = func() time.Time { return morning }
-	config := filepath.Join(w.home, ".dockhand", "config.toml")
+	cmdtest.Hosted(t).Now = func() time.Time { return morning }
+	config := filepath.Join(w.Home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada}\"\n"), append(data, []byte("\n[serve]\nship_to = \"list\"\nnotify = false\n")...)...), 0o644))
 
 	ctx, stop := context.WithCancel(t.Context())
-	stands(t).OutdatedReader = stopsServe{stop: stop}
-	var first syncBuffer
-	require.NoError(t, runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &first, Err: &first}))
+	cmdtest.Stands(t).OutdatedReader = stopsServe{stop: stop}
+	var first cmdtest.SyncBuffer
+	require.NoError(t, cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &first, Err: &first}))
 
-	withOutdated(t)
+	cmdtest.WithOutdated(t)
 	ctx, stop = context.WithCancel(t.Context())
-	var again syncBuffer
+	var again cmdtest.SyncBuffer
 	done := make(chan error)
 	go func() {
-		done <- runFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &again, Err: &again})
+		done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &again, Err: &again})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(again.String(), "serve: 1 port of yours has newer releases: jq") },
-		settle, 10*time.Millisecond, again.String())
+		cmdtest.Settle, 10*time.Millisecond, again.String())
 	stop()
 	require.NoError(t, <-done)
 }

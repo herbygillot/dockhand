@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -79,12 +80,12 @@ func (r rechecksummer) Prepare(ctx context.Context, request editprep.Request) (e
 
 func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name                jq\nversion             1.7.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
-	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
-	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return rechecksummer{repo: e.Repo} }
+	w := cmdtest.NewWorld(t)
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name                jq\nversion             1.7.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: 1.7.1")
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return rechecksummer{repo: e.Repo} }
 
-	out, _, err := dockhand(t, "checksums", "jq", "--new")
+	out, _, err := cmdtest.Dockhand(t, "checksums", "jq", "--new")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq 1.7.1 · the distfile changed upstream without a new name (stealth update)\n"+
 		"  was   sha256 1f3a…c2d9   size 7,114,391\n"+
@@ -93,15 +94,15 @@ func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 		"Changed: textproc/jq/Portfile\n"+
 		"Bumped the revision because the source changed. Use --no-revbump only if the change needs no rebuild.\n")
 	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
-	home := getenv(t, "HOME")
+	home := cmdtest.Getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Equal(t, "name                jq\nversion             1.7.1\nrevision            1\nchecksums           sha256 "+newSHA+" size 7114508\ndist_subdir         ${name}/${version}_${revision}\n", string(data))
 
 	// A version edited by hand first is not a stealth update.
-	setenv(t, "MACPORTS_TREE", filepath.Join(home, dir[2:]))
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(home, dir[2:]))
 	require.NoError(t, os.WriteFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"), []byte("name                jq\nversion             1.8.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
-	out, _, err = dockhand(t, "checksums", "jq")
+	out, _, err = cmdtest.Dockhand(t, "checksums", "jq")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq 1.8.1\nUpdated checksums (1 distfile).\n")
 	require.NotContains(t, out, "stealth")
@@ -120,44 +121,44 @@ func (refuser) Prepare(context.Context, editprep.Request) (editprep.Result, erro
 
 func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	stands(t).Preparer = func(*engine.Engine) engine.Preparer { return refuser{} }
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).Preparer = func(*engine.Engine) engine.Preparer { return refuser{} }
 
-	_, _, err := dockhand(t, "update", "jq", "--new")
+	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--new")
 	require.Error(t, err)
 	require.Regexp(t, `^Could not update jq automatically: its pre-fetch hook runs exec\nKept: dockhand/jq-[a-z0-9]{4}, with nothing changed\.\n`+
 		`Next: edit the version, run port checksum jq, then copy the reported checksums into the Portfile\nNext: dockhand edit jq$`, err.Error())
 
-	_, _, err = dockhand(t, "checksums", "jq", "--new")
+	_, _, err = cmdtest.Dockhand(t, "checksums", "jq", "--new")
 	require.ErrorContains(t, err, "Could not update the checksums for jq automatically: its pre-fetch hook runs exec\n")
 
-	refused, err := jsonOf(t, "update", "jq", "--new")
+	refused, err := cmdtest.JSONOf(t, "update", "jq", "--new")
 	require.Error(t, err)
 	require.Contains(t, *refused.Error, "Could not update jq automatically")
 	require.Equal(t, true, refused.Result["started"], "the result names the branch kept for the edit by hand")
-	require.Regexp(t, `^dockhand/jq-[a-z0-9]{4}$`, dig(t, refused.Result, "branch", "git_branch"))
+	require.Regexp(t, `^dockhand/jq-[a-z0-9]{4}$`, cmdtest.Dig(t, refused.Result, "branch", "git_branch"))
 }
 
 // ship settles where to check before it edits anything, and passes on
 // what was tested.
 func TestShipSettlesWhereBeforeTheEdit(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withScript(t, w, "passed")
-	g := withGitHub(t, w)
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
 	g.Others = nil
 
-	_, _, err := dockhand(t, "update", "jq", "--new", "--on", "command")
+	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--new", "--on", "command")
 	require.ErrorContains(t, err, "unknown flag: --on", "update is the edit alone")
-	_, _, err = dockhand(t, "ship", "jq", "--yes", "--on", "nowhere")
+	_, _, err = cmdtest.Dockhand(t, "ship", "jq", "--yes", "--on", "nowhere")
 	require.EqualError(t, err, `--on nowhere: no provider "nowhere" is set up; nothing was changed`)
-	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")
 
 	var out, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"ship", "jq", "--yes", "--on", "command", "--tested-binaries"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs}.AsTerminal())
+	err = cmdtest.RunFor(t, t.Context(), []string{"ship", "jq", "--yes", "--on", "command", "--tested-binaries"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err, errs.String())
 	require.NotContains(t, errs.String(), "Apply [a]")
 	require.NotContains(t, errs.String(), "Did you test", "the flag answered the template's questions")
@@ -169,18 +170,18 @@ func TestShipSettlesWhereBeforeTheEdit(t *testing.T) {
 
 func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name                jq\nversion             1.7.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
-	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
-	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return rechecksummer{repo: e.Repo} }
+	w := cmdtest.NewWorld(t)
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name                jq\nversion             1.7.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: 1.7.1")
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return rechecksummer{repo: e.Repo} }
 
-	out, _, err := dockhand(t, "checksums", "jq", "--new", "--no-revbump")
+	out, _, err := cmdtest.Dockhand(t, "checksums", "jq", "--new", "--no-revbump")
 	require.NoError(t, err)
 	require.Contains(t, out, "Updated checksums (1 distfile) and dist_subdir jq/1.7.1_1, so mirrors keep both archives.\n"+
 		"Changed: textproc/jq/Portfile\n"+
 		"Inspect the source change before deciding whether it needs a revision bump.\n")
 	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
-	home := getenv(t, "HOME")
+	home := cmdtest.Getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "size 7114508\ndist_subdir         ${name}/${version}_1\n")
@@ -189,20 +190,20 @@ func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {
 
 func TestANewVersionRemovesTheStealthDistSubdir(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\ndist_subdir         ${name}/${version}_${revision}\nrevision 1\n"), 0o644))
-	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
-	withBumper(t)
+	w := cmdtest.NewWorld(t)
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\ndist_subdir         ${name}/${version}_${revision}\nrevision 1\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: 1.7.1")
+	cmdtest.WithBumper(t)
 
-	planned, _, err := dockhand(t, "update", "jq", "--new", "--plan")
+	planned, _, err := cmdtest.Dockhand(t, "update", "jq", "--new", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, planned, "Removes dist_subdir: a stealth update set it for the old version, and every archive of the new version has a name of its own.\n",
 		"the plan says it, as the update does (the hugo exercise's yq run, finding 2)")
-	out, _, err := dockhand(t, "update", "jq", "--new")
+	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--new")
 	require.NoError(t, err)
 	require.Contains(t, out, "Removed dist_subdir: a stealth update set it for the old version, and every archive of the new version has a name of its own.\n")
 	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
-	home := getenv(t, "HOME")
+	home := cmdtest.Getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 1.8.1\nrevision 1\n", string(data))

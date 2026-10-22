@@ -1,0 +1,64 @@
+package cmdtest
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
+	"github.com/herbygillot/dockhand/internal/term"
+	"github.com/herbygillot/dockhand/internal/testsupport"
+	"github.com/stretchr/testify/require"
+)
+
+// World is a home directory, an upstream standing in for
+// macports/macports-ports, and the person's clone of it at ~/src.
+type World struct{ Home, Upstream, Clone string }
+
+func NewWorld(t *testing.T) World {
+	t.Helper()
+	// What would ask GitHub, such as an update looking for other open pull
+	// requests, asks a fake that knows of none, unless a test gives its own.
+	Stands(t).Forge = func(*engine.Engine) engine.Forge { return forgetest.New("", "") }
+	Stands(t).HTTPS = testsupport.HTTPSAnswers{}
+	// Git reports resolved paths; on macOS the temporary directory is
+	// reached through /var, a link to /private/var.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	w := World{Home: filepath.Join(root, "home"), Upstream: filepath.Join(root, "upstream")}
+	w.Clone = filepath.Join(w.Home, "src", "macports-ports")
+	for name, content := range map[string]string{"_resources/port1.0/group/github-1.0.tcl": "# group\n", "textproc/jq/Portfile": "name jq\n"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(w.Upstream, filepath.Dir(name)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, name), []byte(content), 0o644))
+	}
+	testsupport.Git(t, w.Upstream, "init", "-q")
+	testsupport.Git(t, w.Upstream, "add", "-A")
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "init")
+	require.NoError(t, os.MkdirAll(filepath.Dir(w.Clone), 0o755))
+	testsupport.Git(t, root, "clone", "-q", w.Upstream, w.Clone)
+	require.NoError(t, os.MkdirAll(w.Home, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".gitconfig"), []byte("[user]\n\tname = Ada\n\temail = ada@example.org\n"), 0o644))
+	Setenv(t, "HOME", w.Home)
+	Setenv(t, "DOCKHAND_UPSTREAM", w.Upstream)
+	Setenv(t, "DOCKHAND_DB", "")
+	Setenv(t, "DOCKHAND_CONFIG", "")
+	Setenv(t, "MACPORTS_TREE", w.Clone)
+	return w
+}
+
+// Settle bounds a wait for what a running serve or watch says. It's a
+// bound, not a pace: a wait ends as soon as the words appear, and on a
+// loaded machine, such as CI's runner beside the other tests, they can
+// take far longer than they do here; five seconds failed there (2026-10-02).
+const Settle = 2 * time.Minute
+
+func Dockhand(t *testing.T, args ...string) (string, string, error) {
+	t.Helper()
+	var out, errs bytes.Buffer
+	err := RunFor(t, t.Context(), args, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+	return out.String(), errs.String(), err
+}

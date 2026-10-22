@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/engine"
 )
 
@@ -16,34 +17,34 @@ import (
 // cleanup.automatic = false starts none at all.
 func TestACommandStartsCleanupWhenItIsDue(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
+	w := cmdtest.NewWorld(t)
 	var started []engine.Options
-	hosted(t).StartCleanup = func(options engine.Options) error {
+	cmdtest.Hosted(t).StartCleanup = func(options engine.Options) error {
 		started = append(started, options)
 		return nil
 	}
 
-	_, _, err := dockhand(t, "status")
+	_, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Len(t, started, 1, "never cleaned")
-	require.Equal(t, filepath.Join(w.home, ".dockhand", "dockhand.db"), started[0].Database)
+	require.Equal(t, filepath.Join(w.Home, ".dockhand", "dockhand.db"), started[0].Database)
 
-	out, _, err := dockhand(t, "clean", "--automatic")
+	out, _, err := cmdtest.Dockhand(t, "clean", "--automatic")
 	require.NoError(t, err)
 	require.Contains(t, out, " cleaning up: 24h0m0s since the last\n")
 	require.Contains(t, out, "  removed 0 items\n")
 	require.Len(t, started, 1, "clean doesn't start another")
-	out, _, err = dockhand(t, "clean", "--automatic")
+	out, _, err = cmdtest.Dockhand(t, "clean", "--automatic")
 	require.NoError(t, err)
 	require.Empty(t, out, "not due again the same day")
 
-	_, _, err = dockhand(t, "status")
+	_, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Len(t, started, 1, "not again the same day")
 
-	require.NoError(t, os.Remove(cleanupStamp(t, w.home)))
-	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[cleanup]\nautomatic = false\n"), 0o644))
-	_, _, err = dockhand(t, "status")
+	require.NoError(t, os.Remove(cleanupStamp(t, w.Home)))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[cleanup]\nautomatic = false\n"), 0o644))
+	_, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Len(t, started, 1, "turned off")
 }

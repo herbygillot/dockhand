@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
@@ -88,28 +89,28 @@ func writeSourceArchive(into, top string, files map[string]string) (treequery.Fe
 
 func TestDiffArchiveShowsWhatChangedInside(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	stands(t).ArchiveFetcher = func(e *engine.Engine) engine.ArchiveFetcher { return sourceArchives{repo: e.Repo} }
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.Stands(t).ArchiveFetcher = func(e *engine.Engine) engine.ArchiveFetcher { return sourceArchives{repo: e.Repo} }
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
-	out, _, err := dockhand(t, "diff", "--source")
+	out, _, err := cmdtest.Dockhand(t, "diff", "--source")
 	require.NoError(t, err)
 	require.Contains(t, out, "textproc/jq · jq-1.7.1.tar.gz → jq-1.8.1.tar.gz: 2 files differ: 1 changed, 1 added\n\n")
 	require.Contains(t, out, "--- a/NEWS\n+++ b/NEWS\n@@ -1 +1 @@\n-jq 1.7.1\n+jq 1.8.1\n")
 	require.Contains(t, out, "+++ b/src/new.c\n")
 	require.NotContains(t, out, "src/jq.c")
 
-	out, _, err = dockhand(t, "diff", "--source", "--stat", "jq")
+	out, _, err = cmdtest.Dockhand(t, "diff", "--source", "--stat", "jq")
 	require.NoError(t, err)
 	require.Equal(t, "textproc/jq · jq-1.7.1.tar.gz → jq-1.8.1.tar.gz: 2 files differ: 1 changed, 1 added\n", out)
 
-	out, _, err = dockhand(t, "diff", "--source", "curl")
+	out, _, err = cmdtest.Dockhand(t, "diff", "--source", "curl")
 	require.NoError(t, err)
 	require.Equal(t, "No changed port has archives to compare.\n", out)
 }
@@ -120,22 +121,22 @@ func TestDiffArchiveShowsWhatChangedInside(t *testing.T) {
 // (the architecture review's finding 2).
 func TestDiffArchivePairsWhatCorresponds(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	stands(t).ArchiveFetcher = func(e *engine.Engine) engine.ArchiveFetcher { return sourceArchives{repo: e.Repo, manual: true} }
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.Stands(t).ArchiveFetcher = func(e *engine.Engine) engine.ArchiveFetcher { return sourceArchives{repo: e.Repo, manual: true} }
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
-	out, _, err := dockhand(t, "diff", "--source", "--stat")
+	out, _, err := cmdtest.Dockhand(t, "diff", "--source", "--stat")
 	require.NoError(t, err)
 	require.Equal(t, "textproc/jq · jq-1.7.1.tar.gz → jq-1.8.1.tar.gz: 2 files differ: 1 changed, 1 added\n\n"+
 		"textproc/jq · jq-manual.tar.gz is no longer fetched\n", out)
 
-	out, _, err = dockhand(t, "diff", "--source", "--stat", "--json")
+	out, _, err = cmdtest.Dockhand(t, "diff", "--source", "--stat", "--json")
 	require.NoError(t, err)
 	require.Contains(t, out, `"old": "jq-1.7.1.tar.gz",
         "new": "jq-1.8.1.tar.gz",

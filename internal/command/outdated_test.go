@@ -13,46 +13,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
-
-// jqIsOutdated stands in for upstream discovery: jq has 1.8.1, and lost
-// can't be checked. With uncertain, yq may have 5.0, which was set aside.
-type jqIsOutdated struct {
-	asked     []engine.OutdatedRequest
-	uncertain bool
-}
-
-// yqMayBeOutdated is a port whose newest release is uncertain: v5.0
-// compares newer, but was tagged on a commit older than v4.44.1's.
-var yqMayBeOutdated = engine.OutdatedPort{Port: "yq", Current: "4.44.1", Newest: "5.0", Uncertain: []engine.SetAside{{Tag: "v5.0", Version: "5.0", Source: "5.0", Predates: "v4.44.1"}}}
-
-func (j *jqIsOutdated) Outdated(_ context.Context, _ model.ObjectID, request engine.OutdatedRequest) ([]engine.OutdatedPort, error) {
-	j.asked = append(j.asked, request)
-	if request.Progress != nil {
-		for done := range 3 {
-			request.Progress(done, 2)
-		}
-	}
-	ports := []engine.OutdatedPort{
-		{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true},
-		{Port: "lost", Problem: "no forge could be found for it"},
-	}
-	if j.uncertain {
-		ports = append(ports, yqMayBeOutdated)
-	}
-	return ports, nil
-}
-
-func withOutdated(t *testing.T) *jqIsOutdated {
-	reader := &jqIsOutdated{}
-	stands(t).OutdatedReader = reader
-	return reader
-}
 
 // A report where nothing is newer says so in words that fit its count: a
 // port named alone by its name, and several as none of them.
@@ -88,8 +55,8 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	// finding 6).
 	row := "  PORT   NOW      NEWEST   DOCKHAND CAN\n  yq     4.44.1   5.0?     update yq 5.0 after a look: v5.0 compares newer, but its commit is older than v4.44.1's\n"
 	settle := "Where a tag set aside is an old one spelled oddly rather than a release, a livecheck.regex that skips it keeps it out of later looks.\n"
-	require.Equal(t, row+"yq may have a newer release, at master 1bb30d5\n"+settle, said(yqMayBeOutdated))
-	require.Equal(t, row+"None of 2 ports has a newer release, at master 1bb30d5 · 1 may have one, for a look\n"+settle, said(yqMayBeOutdated, current("jq")))
+	require.Equal(t, row+"yq may have a newer release, at master 1bb30d5\n"+settle, said(cmdtest.YqMayBeOutdated))
+	require.Equal(t, row+"None of 2 ports has a newer release, at master 1bb30d5 · 1 may have one, for a look\n"+settle, said(cmdtest.YqMayBeOutdated, current("jq")))
 
 	// Subports checked with a sibling that's listed are said on its row
 	// (field testing, 2026-10-02).
@@ -123,62 +90,62 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 
 func TestOutdatedThenUpdateMine(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withScript(t, w, "passed")
-	reader := withOutdated(t)
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	reader := cmdtest.WithOutdated(t)
 
-	_, _, err := dockhand(t, "outdated", "--mine")
-	require.ErrorContains(t, err, `--mine needs to know who you are, as your ports' maintainers lines name you: set maintainer to you as a Portfile's maintainers line writes you, such as "@you" for your GitHub login, or "{example.org:you @you}" with your email too, in `+filepath.Join(w.home, ".dockhand", "config.toml"))
-	setenv(t, "DOCKHAND_CONFIG", filepath.Join(w.home, "elsewhere.toml"))
-	_, _, err = dockhand(t, "outdated", "--mine")
-	require.ErrorContains(t, err, `in `+filepath.Join(w.home, "elsewhere.toml"), "the file read, not the default (the dogfood run with 251a1264)")
-	setenv(t, "DOCKHAND_CONFIG", "")
-	config := filepath.Join(w.home, ".dockhand", "config.toml")
+	_, _, err := cmdtest.Dockhand(t, "outdated", "--mine")
+	require.ErrorContains(t, err, `--mine needs to know who you are, as your ports' maintainers lines name you: set maintainer to you as a Portfile's maintainers line writes you, such as "@you" for your GitHub login, or "{example.org:you @you}" with your email too, in `+filepath.Join(w.Home, ".dockhand", "config.toml"))
+	cmdtest.Setenv(t, "DOCKHAND_CONFIG", filepath.Join(w.Home, "elsewhere.toml"))
+	_, _, err = cmdtest.Dockhand(t, "outdated", "--mine")
+	require.ErrorContains(t, err, `in `+filepath.Join(w.Home, "elsewhere.toml"), "the file read, not the default (the dogfood run with 251a1264)")
+	cmdtest.Setenv(t, "DOCKHAND_CONFIG", "")
+	config := filepath.Join(w.Home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada} openmaintainer\"\n"), data...), 0o644))
 
-	out, _, err := dockhand(t, "outdated", "--mine")
+	out, _, err := cmdtest.Dockhand(t, "outdated", "--mine")
 	require.Equal(t, 3, term.ExitCode(err), "one couldn't be checked")
-	require.Equal(t, []string{"@ada", "example.org:ada"}, reader.asked[0].Maintainers)
+	require.Equal(t, []string{"@ada", "example.org:ada"}, reader.Asked[0].Maintainers)
 	require.Contains(t, out, "  PORT   NOW     NEWEST   DOCKHAND CAN\n  jq     1.7.1   1.8.1    update\n")
 	require.Contains(t, out, "1 of 2 ports couldn't be checked: no forge could be found for it\nOf the 1 port checked, 1 has a newer release, at master ")
 	require.Contains(t, out, " · --current lists those it couldn't check\n")
-	out, _, err = dockhand(t, "outdated", "--mine", "--current")
+	out, _, err = cmdtest.Dockhand(t, "outdated", "--mine", "--current")
 	require.Equal(t, 3, term.ExitCode(err))
 	require.Contains(t, out, "couldn't check: no forge could be found for it")
 
 	// --mine updates each in a branch of its own, nothing committed, and
 	// --plan starts none.
-	out, _, err = dockhand(t, "update", "--mine", "--plan")
+	out, _, err = cmdtest.Dockhand(t, "update", "--mine", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "  lost: left as it is: no forge could be found for it\n")
 	require.Contains(t, out, "Will start 1 branch, one per port:\n  dockhand/jq-1.8.1  jq 1.7.1 → 1.8.1\n", "a row a port, with the name the run uses")
 	require.Contains(t, out, "Nothing was started (--plan).\n")
 
-	_, _, err = dockhand(t, "update", "--mine")
+	_, _, err = cmdtest.Dockhand(t, "update", "--mine")
 	require.ErrorContains(t, err, "without a terminal, --yes starts what is shown")
 
 	var stdout, errs bytes.Buffer
-	err = runFor(t, t.Context(), []string{"update", "--mine"}, term.Streams{In: strings.NewReader("y\n"), Out: &stdout, Err: &errs}.AsTerminal())
+	err = cmdtest.RunFor(t, t.Context(), []string{"update", "--mine"}, term.Streams{In: strings.NewReader("y\n"), Out: &stdout, Err: &errs}.AsTerminal())
 	require.NoError(t, err, errs.String())
 	require.Contains(t, errs.String(), "? Start them? [y/N] ")
 	require.Contains(t, stdout.String(), "jq: 1.7.1 → 1.8.1")
 	require.NotContains(t, stdout.String(), "Proposed commit", "nothing is committed")
 
-	out, _, err = dockhand(t, "outdated", "jq")
+	out, _, err = cmdtest.Dockhand(t, "outdated", "jq")
 	require.Equal(t, 3, term.ExitCode(err), "the fixture's lost couldn't be checked")
 	require.Regexp(t, `jq     1\.7\.1   1\.8\.1    already in jq-1\.8\.1\n`, out)
-	out, _, err = dockhand(t, "update", "--mine", "--yes")
+	out, _, err = cmdtest.Dockhand(t, "update", "--mine", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "  jq: left as it is: already in jq-")
 	require.Contains(t, out, "Nothing to update: no newer releases remain outside your existing branches.\n")
 
-	_, _, err = dockhand(t, "update", "--mine", "jq")
+	_, _, err = cmdtest.Dockhand(t, "update", "--mine", "jq")
 	require.EqualError(t, err, "--mine starts a branch for each of your ports; it takes no port, --branch, or --new")
-	_, _, err = dockhand(t, "update")
+	_, _, err = cmdtest.Dockhand(t, "update")
 	require.ErrorContains(t, err, "name the port to update, or update your outdated ports with --mine")
 }
 
@@ -187,49 +154,49 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 // aside (the update-workflow review's finding 6).
 func TestUpdateMineLeavesAnUncertainPortForALook(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	reader := withOutdated(t)
-	reader.uncertain = true
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	reader := cmdtest.WithOutdated(t)
+	reader.Uncertain = true
 	asMaintainer(t, w)
 
-	out, _, err := dockhand(t, "update", "--mine", "--plan")
+	out, _, err := cmdtest.Dockhand(t, "update", "--mine", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "Will start 1 branch, one per port:\n  dockhand/jq-")
 	require.Contains(t, out, "1 that may have one, for your look")
 
-	result, err := jsonOf(t, "outdated", "jq", "lost", "yq")
+	result, err := cmdtest.JSONOf(t, "outdated", "jq", "lost", "yq")
 	require.Equal(t, 3, term.ExitCode(err), "lost couldn't be checked")
-	require.EqualValues(t, 1, dig(t, result.Result, "unchecked"))
-	yq := dig(t, result.Result, "ports", 2)
-	require.Equal(t, "yq", dig(t, yq, "port"))
-	require.Equal(t, false, dig(t, yq, "outdated"))
-	require.Equal(t, "5.0", dig(t, yq, "newest"))
-	require.Equal(t, []any{map[string]any{"tag": "v5.0", "version": "5.0", "source": "5.0", "predates": "v4.44.1"}}, dig(t, yq, "uncertain"))
-	require.Nil(t, dig(t, result.Result, "ports", 0, "uncertain"), "absent for a port outdated for sure")
-	require.Equal(t, "uncertain", dig(t, yq, "class"))
-	require.Equal(t, "newer", dig(t, result.Result, "ports", 0, "class"))
-	require.Equal(t, "unchecked", dig(t, result.Result, "ports", 1, "class"))
+	require.EqualValues(t, 1, cmdtest.Dig(t, result.Result, "unchecked"))
+	yq := cmdtest.Dig(t, result.Result, "ports", 2)
+	require.Equal(t, "yq", cmdtest.Dig(t, yq, "port"))
+	require.Equal(t, false, cmdtest.Dig(t, yq, "outdated"))
+	require.Equal(t, "5.0", cmdtest.Dig(t, yq, "newest"))
+	require.Equal(t, []any{map[string]any{"tag": "v5.0", "version": "5.0", "source": "5.0", "predates": "v4.44.1"}}, cmdtest.Dig(t, yq, "uncertain"))
+	require.Nil(t, cmdtest.Dig(t, result.Result, "ports", 0, "uncertain"), "absent for a port outdated for sure")
+	require.Equal(t, "uncertain", cmdtest.Dig(t, yq, "class"))
+	require.Equal(t, "newer", cmdtest.Dig(t, result.Result, "ports", 0, "class"))
+	require.Equal(t, "unchecked", cmdtest.Dig(t, result.Result, "ports", 1, "class"))
 }
 
 // At a terminal, outdated shows how many ports are looked up on a line it
 // redraws, and clears it once they all are; elsewhere it shows nothing.
 func TestOutdatedShowsItsProgressAtATerminal(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	reader := withOutdated(t)
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	reader := cmdtest.WithOutdated(t)
 	var out, errs bytes.Buffer
-	err := runFor(t, t.Context(), []string{"outdated", "jq", "lost"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs}.AsTerminal())
+	err := cmdtest.RunFor(t, t.Context(), []string{"outdated", "jq", "lost"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs}.AsTerminal())
 	require.Equal(t, 3, term.ExitCode(err), "lost couldn't be checked")
 	require.Equal(t, "\r\033[KLooking up each port's newest release: 0 of 2\r\033[KLooking up each port's newest release: 1 of 2\r\033[K", errs.String())
 	require.NotContains(t, out.String(), "Looking up")
 
-	_, errOut, err := dockhand(t, "outdated", "jq", "lost")
+	_, errOut, err := cmdtest.Dockhand(t, "outdated", "jq", "lost")
 	require.Equal(t, 3, term.ExitCode(err))
 	require.NotContains(t, errOut, "Looking up", "no terminal, no count drawn")
-	require.NotNil(t, reader.asked[1].Progress, "the count is still followed, for a look cut short")
+	require.NotNil(t, reader.Asked[1].Progress, "the count is still followed, for a look cut short")
 }
 
 // cutShort stands in for a look interrupted after jq was found, and before
@@ -249,21 +216,21 @@ func (c cutShort) Outdated(_ context.Context, _ model.ObjectID, request engine.O
 // nothing.
 func TestAnInterruptedLookPrintsWhatItFound(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
 	asMaintainer(t, w)
 	for _, args := range [][]string{{"outdated", "jq", "lost"}, {"update", "--mine"}, {"ship", "--mine"}} {
 		ctx, cancel := context.WithCancel(t.Context())
-		stands(t).OutdatedReader = cutShort{cancel: cancel}
+		cmdtest.Stands(t).OutdatedReader = cutShort{cancel: cancel}
 		var out, errs bytes.Buffer
-		err := runFor(t, ctx, args, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+		err := cmdtest.RunFor(t, ctx, args, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 		require.ErrorIs(t, err, context.Canceled, args)
 		require.Contains(t, out.String(), "Interrupted after looking up 1 of 2 ports", args)
 		require.Contains(t, out.String(), "  jq     1.7.1   1.8.1    update\n", args)
 	}
-	stands(t).OutdatedReader = nil
-	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "update --mine and ship --mine started nothing")
+	cmdtest.Stands(t).OutdatedReader = nil
+	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "update --mine and ship --mine started nothing")
 }
 
 // What a batch leaves is counted by what the look found of each, naming

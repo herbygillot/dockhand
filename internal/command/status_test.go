@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -26,129 +27,129 @@ import (
 // tidy then committed: status credits it to the commit, as submit does.
 func TestStatusCreditsACheckOfTheCommittedFilesToTheCommit(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withScript(t, w, "passed")
-	started, err := jsonOf(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", cmdtest.Dig(t, started.Result, "branch", "worktree").(string))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "check")
+	_, _, err = cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
 
-	out, _, err := dockhand(t, "status")
+	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Checks   passed for this commit\n")
 	require.Contains(t, out, "Next: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-update\n",
 		"no remote pushes to a fork yet (the M1's rerun, D-S6)")
-	testsupport.Git(t, w.clone, "remote", "add", "github-fork", "https://github.com/ada/macports-ports.git")
-	out, _, err = dockhand(t, "status")
+	testsupport.Git(t, w.Clone, "remote", "add", "github-fork", "https://github.com/ada/macports-ports.git")
+	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "Next: dockhand submit --branch jq-update\n", "one does")
 
 	// Edits on top of the commit are what a check of the working files
 	// checked, not the commit.
-	dir := dig(t, started.Result, "branch", "worktree").(string)
+	dir := cmdtest.Dig(t, started.Result, "branch", "worktree").(string)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# more\n"), 0o644))
-	_, _, err = dockhand(t, "check")
+	_, _, err = cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
-	out, _, err = dockhand(t, "status")
+	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Checks   passed for snapshot 2\n")
 }
 
 func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withScript(t, w, "passed")
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
 
-	out, _, err := dockhand(t, "status")
+	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "BRANCH     PORTS  WORK         CHECKS  PR\njq-update  0      nothing yet  —       —\n")
 	require.Contains(t, out, "serve: not running · queue: empty")
 
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "check")
+	_, _, err = cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
 
-	setenv(t, "MACPORTS_TREE", w.clone)
-	out, _, err = dockhand(t)
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	out, _, err = cmdtest.Dockhand(t)
 	require.NoError(t, err, "bare dockhand in a ports checkout is status")
 	require.Contains(t, out, "Needs you\n  · jq-update  snapshot 1 passed; commit it for review\n               dockhand tidy --branch jq-update\n")
 	require.Contains(t, out, "jq-update  1      edits, uncommitted  passed for snapshot 1  —\n")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# more\n"), 0o644))
-	out, _, err = dockhand(t, "status", "--attention")
+	out, _, err = cmdtest.Dockhand(t, "status", "--attention")
 	require.Equal(t, 3, term.ExitCode(err), "attention needed exits 3")
 	require.Equal(t, "  ! jq-update  snapshot 1 passed; the files have changed since\n               dockhand check --branch jq-update\n", out)
 
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "tidy")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.ErrorContains(t, err, "review this plan in an interactive terminal", "the hand edit is not dockhand's")
-	_, _, err = dockhand(t, "tidy", "--squash", "--message", "jq: update to 1.8.1")
+	_, _, err = cmdtest.Dockhand(t, "tidy", "--squash", "--message", "jq: update to 1.8.1")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "check")
+	_, _, err = cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
-	out, _, err = dockhand(t, "status")
+	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err, "inside a worktree, status is the branch's")
 	require.Contains(t, out, "jq-update · ~/Source/macports-branches/jq-update\n  Ports    jq (not yet evaluated)\n  Work     1 commit above master ")
 	require.Contains(t, out, "  Checks   passed for this commit\n           jq  command ✓\n  PR       —\nNext: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-update\n")
 
-	out, _, err = dockhand(t, "status", "--port", "fd")
+	out, _, err = cmdtest.Dockhand(t, "status", "--port", "fd")
 	require.NoError(t, err)
 	require.Equal(t, "No open branch touches fd yet. dockhand update fd starts one.\n", out)
 }
 
 func TestQueueWaitCancelAndLogs(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withScript(t, w, "passed")
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "logs")
+	_, _, err = cmdtest.Dockhand(t, "logs")
 	require.ErrorContains(t, err, "jq-update has no check yet: dockhand check")
 	// A port's log, in a worktree whose branch has no check, says so,
 	// rather than to name a check outside the worktree (the rc5 rerun's
 	// A10).
-	_, _, err = dockhand(t, "logs", "jq")
+	_, _, err = cmdtest.Dockhand(t, "logs", "jq")
 	require.ErrorContains(t, err, "jq-update has no check yet, so no log of jq: dockhand check runs one")
 	require.NotContains(t, err.Error(), "outside its branch's worktree")
 
-	_, _, err = dockhand(t, "check", "-d")
+	_, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "check", "-d")
+	_, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.ErrorContains(t, err, "check-1 is already queued for these files")
-	out, _, err := dockhand(t, "status", "--all")
+	out, _, err := cmdtest.Dockhand(t, "status", "--all")
 	require.NoError(t, err)
 	require.Contains(t, out, "\nChecks queued and running\n  RUN      BRANCH     SOURCE      ON       STATE   DETAIL\n  check-1  jq-update  snapshot 1  command  queued  \n\nserve: not running · queue: 1 run\n")
-	_, _, err = dockhand(t, "queue")
+	_, _, err = cmdtest.Dockhand(t, "queue")
 	require.EqualError(t, err, "queue is part of status now: dockhand status lists the checks queued and running")
-	_, _, err = dockhand(t, "watch")
+	_, _, err = cmdtest.Dockhand(t, "watch")
 	require.EqualError(t, err, "watch is part of status now: dockhand status --watch keeps it current")
-	out, _, err = dockhand(t, "check", "-d", "--replace")
+	out, _, err = cmdtest.Dockhand(t, "check", "-d", "--replace")
 	require.NoError(t, err)
 	require.Contains(t, out, "Canceled check-1 before it started.\ncheck-2 replaces check-1.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
 
 	// --follow prints a target's log as the driver copies it, until its
 	// build ends (the gnome-voice session's notes, 2026-10-20): check-2,
 	// queued, has a copy of jq's log so far, and following waits on.
-	live := filepath.Join(w.home, ".dockhand", "logs", "check-2", "command-1", "jq.log")
+	live := filepath.Join(w.Home, ".dockhand", "logs", "check-2", "command-1", "jq.log")
 	require.NoError(t, os.MkdirAll(filepath.Dir(live), 0o755))
 	require.NoError(t, os.WriteFile(live, []byte("--->  Building jq\n"), 0o644))
 	// Following ends when its output has come, or after a generous
@@ -157,77 +158,77 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	ctx, stop := context.WithTimeout(t.Context(), 30*time.Second)
 	var followedErrs bytes.Buffer
 	followed := &cancelOn{want: "--->  Building jq\n", cancel: stop}
-	err = runFor(t, ctx, []string{"logs", "check-2", "jq", "--follow"}, term.Streams{In: strings.NewReader(""), Out: followed, Err: &followedErrs})
+	err = cmdtest.RunFor(t, ctx, []string{"logs", "check-2", "jq", "--follow"}, term.Streams{In: strings.NewReader(""), Out: followed, Err: &followedErrs})
 	stop()
 	require.ErrorIs(t, err, context.Canceled, followedErrs.String())
 	require.Equal(t, "--->  Building jq\n", followed.String())
-	_, _, err = dockhand(t, "logs", "check-2", "--follow")
+	_, _, err = cmdtest.Dockhand(t, "logs", "check-2", "--follow")
 	require.ErrorContains(t, err, "--follow follows one port's log: name it")
 	require.NoError(t, os.RemoveAll(filepath.Dir(live)))
 
 	// In the branch's worktree, cancel and wait take its latest check (the
 	// hugo exercise's certigo run, finding 4).
-	out, _, err = dockhand(t, "cancel")
+	out, _, err = cmdtest.Dockhand(t, "cancel")
 	require.NoError(t, err)
 	require.Equal(t, "Canceled check-2 before it started.\n", out)
-	_, _, err = dockhand(t, "cancel", "check-2")
+	_, _, err = cmdtest.Dockhand(t, "cancel", "check-2")
 	require.ErrorContains(t, err, "check-2 already canceled")
 
-	_, _, err = dockhand(t, "check", "-d")
+	_, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	out, errs, err := dockhand(t, "wait")
+	out, errs, err := cmdtest.Dockhand(t, "wait")
 	require.NoError(t, err)
 	require.Contains(t, errs, "No dockhand serve is running, so check-3 will run here.")
 	require.Contains(t, out, "Passed for snapshot 1.")
-	out, _, err = dockhand(t, "wait", "check-3")
+	out, _, err = cmdtest.Dockhand(t, "wait", "check-3")
 	require.NoError(t, err, "a finished run is reported as it ended")
 	require.Contains(t, out, "Passed for snapshot 1.")
-	_, _, err = dockhand(t, "wait", "check-2")
+	_, _, err = cmdtest.Dockhand(t, "wait", "check-2")
 	require.ErrorContains(t, err, "check-2 stopped before anything finished", "the check named, not the latest, which finished nothing")
 
-	out, _, err = dockhand(t, "logs", "check-3")
+	out, _, err = cmdtest.Dockhand(t, "logs", "check-3")
 	require.NoError(t, err)
 	require.Regexp(t, `check-3 · passed\n  command, attempt 1, run command_[a-z0-9]{16}: finished\n    jq passed  ~/\.dockhand/logs/check-3/command-1/command\.log\.gz\n`, out, "kept compressed once the check ended (D6)")
-	here, _, err := dockhand(t, "logs")
+	here, _, err := cmdtest.Dockhand(t, "logs")
 	require.NoError(t, err)
 	require.Equal(t, out, here, "in the branch's worktree, logs is its latest check's")
 	// A provider run's ID finds its evidence too.
 	id := regexp.MustCompile(`command_[a-z0-9]{16}`).FindString(out)
-	out, _, err = dockhand(t, "logs", id)
+	out, _, err = cmdtest.Dockhand(t, "logs", id)
 	require.NoError(t, err)
 	require.Contains(t, out, "check-3 · passed\n  command, attempt 1, run "+id+": finished\n")
-	out, _, err = dockhand(t, "logs", id, "--port", "jq")
+	out, _, err = cmdtest.Dockhand(t, "logs", id, "--port", "jq")
 	require.NoError(t, err)
 	require.Contains(t, out, "building from ")
-	_, _, err = dockhand(t, "logs", "tart_nosuchrunatall1")
+	_, _, err = cmdtest.Dockhand(t, "logs", "tart_nosuchrunatall1")
 	require.ErrorContains(t, err, "tart_nosuchrunatall1 is neither a check, such as check-42, nor a provider run")
-	out, _, err = dockhand(t, "logs", "check-3", "--port", "jq")
+	out, _, err = cmdtest.Dockhand(t, "logs", "check-3", "--port", "jq")
 	require.NoError(t, err)
 	require.Contains(t, out, "building from ")
 	require.NotContains(t, out, "Steps in", "a person's command records no steps, so the log is printed whole")
-	whole, _, err := dockhand(t, "logs", "check-3", "jq", "--full")
+	whole, _, err := cmdtest.Dockhand(t, "logs", "check-3", "jq", "--full")
 	require.NoError(t, err)
 	require.Equal(t, out, whole)
-	_, _, err = dockhand(t, "logs", "check-3", "--full")
+	_, _, err = cmdtest.Dockhand(t, "logs", "check-3", "--full")
 	require.EqualError(t, err, "--full requires a port name, for example: dockhand logs check-42 jq --full")
 	// A build that ended is printed whole, and following ends.
-	ended, _, err := dockhand(t, "logs", "check-3", "jq", "--follow")
+	ended, _, err := cmdtest.Dockhand(t, "logs", "check-3", "jq", "--follow")
 	require.NoError(t, err)
 	require.Equal(t, out, ended)
 	// A port named alone is the branch's latest check's (field testing,
 	// 2026-10-02).
-	alone, _, err := dockhand(t, "logs", "jq")
+	alone, _, err := cmdtest.Dockhand(t, "logs", "jq")
 	require.NoError(t, err)
 	require.Equal(t, out, alone)
-	_, _, err = dockhand(t, "logs", "check-9")
+	_, _, err = cmdtest.Dockhand(t, "logs", "check-9")
 	require.ErrorContains(t, err, "there is no run check-9")
 
-	setenv(t, "MACPORTS_TREE", w.clone)
-	_, _, err = dockhand(t, "logs")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	_, _, err = cmdtest.Dockhand(t, "logs")
 	require.ErrorContains(t, err, "name a check, such as check-42, a provider run, or a branch with -b or -p; in a branch's worktree, logs shows the branch's latest check")
-	_, _, err = dockhand(t, "wait")
+	_, _, err = cmdtest.Dockhand(t, "wait")
 	require.EqualError(t, err, "name a check, such as check-42, or a branch with -b or -p; in a branch's worktree, wait follows the branch's latest check")
-	_, _, err = dockhand(t, "cancel")
+	_, _, err = cmdtest.Dockhand(t, "cancel")
 	require.EqualError(t, err, "name a check, such as check-42, or a branch with -b or -p; in a branch's worktree, cancel stops the branch's latest check")
 }
 
@@ -256,11 +257,11 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 		"  checksum      line 46005\n" +
 		"  install       line 46006\n"
 	var out strings.Builder
-	require.NoError(t, writePortLog(&out, testPlaces(t), result, data, false))
+	require.NoError(t, writePortLog(&out, cmdtest.TestPlaces(t), result, data, false))
 	require.Equal(t, steps+"Showing from line 46004, where the build for hugo begins. Use --full to include the previous 46003 lines, including dependency installation.\n\n"+own, out.String())
 
 	out.Reset()
-	require.NoError(t, writePortLog(&out, testPlaces(t), result, data, true))
+	require.NoError(t, writePortLog(&out, cmdtest.TestPlaces(t), result, data, true))
 	require.Equal(t, string(data), out.String(), "--full prints the log alone")
 
 	viewed := view.PortLogView(model.Run{Number: 48}, result, data)
@@ -273,14 +274,14 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 	// a log that ends before its own build was to begin is printed whole,
 	// saying so.
 	out.Reset()
-	require.NoError(t, writePortLog(&out, testPlaces(t), model.TargetResult{Target: "hugo", Log: path}, data, false))
+	require.NoError(t, writePortLog(&out, cmdtest.TestPlaces(t), model.TargetResult{Target: "hugo", Log: path}, data, false))
 	require.Equal(t, string(data), out.String())
 	out.Reset()
 	alone := model.TargetResult{Target: "hugo", Log: path, Steps: []model.LogStep{{Name: model.StepClean, Line: 1}, {Name: model.StepFetch, Line: 2}}}
-	require.NoError(t, writePortLog(&out, testPlaces(t), alone, []byte("--->  Cleaning hugo\n--->  Fetching hugo\n"), false))
+	require.NoError(t, writePortLog(&out, cmdtest.TestPlaces(t), alone, []byte("--->  Cleaning hugo\n--->  Fetching hugo\n"), false))
 	require.Equal(t, "Steps in "+path+":\n  clean  line 1\n  fetch  line 2\n\n--->  Cleaning hugo\n--->  Fetching hugo\n", out.String())
 	out.Reset()
-	require.NoError(t, writePortLog(&out, testPlaces(t), result, []byte("--->  Deactivating zlib\n"), false))
+	require.NoError(t, writePortLog(&out, cmdtest.TestPlaces(t), result, []byte("--->  Deactivating zlib\n"), false))
 	require.Equal(t, steps+"The log ends before line 46004, where hugo's own build was recorded to begin, so it's printed whole.\n\n--->  Deactivating zlib\n", out.String())
 	require.Zero(t, view.PortLogView(model.Run{Number: 48}, alone, nil).OwnBuild)
 }
@@ -425,11 +426,11 @@ func TestStatusSaysAReleaseMovedBeforeItsCheck(t *testing.T) {
 // Each session is a row and two journal events.
 func TestStatusOpensOneObserverSession(t *testing.T) {
 	t.Parallel()
-	w := checkedBranch(t)
-	setenv(t, "MACPORTS_TREE", w.clone) // every branch, and serve's line
+	w := cmdtest.CheckedBranch(t)
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone) // every branch, and serve's line
 	started := func() int {
 		t.Helper()
-		e, err := testSettings(t).Open(t.Context())
+		e, err := cmdtest.TestSettings(t).Open(t.Context())
 		require.NoError(t, err)
 		defer e.Close()
 		var n int
@@ -440,7 +441,7 @@ func TestStatusOpensOneObserverSession(t *testing.T) {
 		return n
 	}
 	before := started()
-	_, _, err := dockhand(t, "status")
+	_, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Equal(t, before+1, started())
 }

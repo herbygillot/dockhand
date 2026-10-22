@@ -15,7 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-// branchFlags are how a command about a whole branch is told which (the
+// BranchFlags are how a command about a whole branch is told which (the
 // command-line UX review's §1, revised): -b its exact name, -p the port
 // it changes, or --pr the pull request it tracks; with none of them, the
 // branch checked out here. Each flag has one meaning, so a port's name
@@ -25,7 +25,7 @@ type BranchFlags struct {
 	PR           int
 }
 
-// register adds the flags to a command, -b with completion of the open
+// Register adds the flags to a command, -b with completion of the open
 // branches' names.
 func (b *BranchFlags) Register(cmd *cobra.Command, s *settings.Settings, verb string) {
 	cmd.Flags().StringVarP(&b.Branch, "branch", "b", "", verb+" this branch, by its exact name (the dockhand/ prefix is optional)")
@@ -35,13 +35,13 @@ func (b *BranchFlags) Register(cmd *cobra.Command, s *settings.Settings, verb st
 	_ = cmd.RegisterFlagCompletionFunc("branch", branchCompletion(s))
 }
 
-// explicit says whether a flag named the branch, rather than where the
+// Explicit says whether a flag named the branch, rather than where the
 // command runs.
 func (b BranchFlags) Explicit() bool {
 	return b.Branch != "" || b.Port != "" || b.PR != 0
 }
 
-// resolve finds the branch the flags name, else the one checked out here.
+// Resolve finds the branch the flags name, else the one checked out here.
 // A port one open branch changes names it, said on the first line; one
 // several change is asked about on a terminal and refused in a script,
 // with their exact names. A flag beats where the command runs, and says

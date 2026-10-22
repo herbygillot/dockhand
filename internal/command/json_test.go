@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -17,228 +18,183 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-// decoded is a --json envelope, read back loosely.
-type decoded struct {
-	Version  int            `json:"version"`
-	Command  string         `json:"command"`
-	ExitCode int            `json:"exit_code"`
-	Error    *string        `json:"error"`
-	Result   map[string]any `json:"result"`
-	// GitHubRequests is a pointer, so an envelope without it is told
-	// from one that sent none.
-	GitHubRequests *int64 `json:"github_requests"`
-}
-
-// jsonOf runs a command line with --json and decodes all of standard
-// output as its one envelope.
-func jsonOf(t *testing.T, args ...string) (decoded, error) {
-	t.Helper()
-	out, _, err := dockhand(t, append(args, "--json")...)
-	var envelope decoded
-	require.NoError(t, json.Unmarshal([]byte(out), &envelope), "standard output is only the envelope: %s", out)
-	require.Equal(t, 1, envelope.Version)
-	if err != nil {
-		require.Equal(t, term.ExitCode(err), envelope.ExitCode)
-		require.Empty(t, err.Error(), "the envelope carries the error, not standard error")
-	}
-	return envelope, err
-}
-
-// dig walks a decoded result by keys and indexes.
-func dig(t *testing.T, value any, path ...any) any {
-	t.Helper()
-	for _, step := range path {
-		switch key := step.(type) {
-		case string:
-			object, ok := value.(map[string]any)
-			require.True(t, ok, "%v is not an object at %q", value, key)
-			value = object[key]
-		case int:
-			list, ok := value.([]any)
-			require.True(t, ok && key < len(list), "%v has no item %d", value, key)
-			value = list[key]
-		}
-	}
-	return value
-}
-
 func TestJSONEnvelopes(t *testing.T) {
 	t.Parallel()
-	w := checkedBranch(t)
+	w := cmdtest.CheckedBranch(t)
 
-	planned, err := jsonOf(t, "check", "--plan")
+	planned, err := cmdtest.JSONOf(t, "check", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, "check", planned.Command)
 	require.Nil(t, planned.Error)
 	require.NotNil(t, planned.GitHubRequests, "every envelope says what it spent of GitHub's API")
-	require.Equal(t, "jq", dig(t, planned.Result, "plan", "targets", 0, "name"))
-	require.Equal(t, "substantive", dig(t, planned.Result, "plan", "targets", 0, "kind"))
-	require.Equal(t, "command", dig(t, planned.Result, "plan", "builds", 0, "environment", "provider"))
-	require.Equal(t, []any{"jq"}, dig(t, planned.Result, "plan", "builds", 0, "order"), "each environment's own order")
-	require.Equal(t, "a new snapshot", dig(t, planned.Result, "revision", "description"), "a plan records and numbers nothing")
+	require.Equal(t, "jq", cmdtest.Dig(t, planned.Result, "plan", "targets", 0, "name"))
+	require.Equal(t, "substantive", cmdtest.Dig(t, planned.Result, "plan", "targets", 0, "kind"))
+	require.Equal(t, "command", cmdtest.Dig(t, planned.Result, "plan", "builds", 0, "environment", "provider"))
+	require.Equal(t, []any{"jq"}, cmdtest.Dig(t, planned.Result, "plan", "builds", 0, "order"), "each environment's own order")
+	require.Equal(t, "a new snapshot", cmdtest.Dig(t, planned.Result, "revision", "description"), "a plan records and numbers nothing")
 	require.Nil(t, planned.Result["run"])
-	require.Equal(t, []any{}, dig(t, planned.Result, "plan", "only"))
-	require.Equal(t, []any{}, dig(t, planned.Result, "plan", "omitted"))
-	require.Equal(t, false, dig(t, planned.Result, "plan", "fresh"))
-	narrowed, err := jsonOf(t, "check", "--plan", "--only", "jq", "--fresh")
+	require.Equal(t, []any{}, cmdtest.Dig(t, planned.Result, "plan", "only"))
+	require.Equal(t, []any{}, cmdtest.Dig(t, planned.Result, "plan", "omitted"))
+	require.Equal(t, false, cmdtest.Dig(t, planned.Result, "plan", "fresh"))
+	narrowed, err := cmdtest.JSONOf(t, "check", "--plan", "--only", "jq", "--fresh")
 	require.NoError(t, err)
-	require.Equal(t, []any{"jq"}, dig(t, narrowed.Result, "plan", "only"), "what was asked, as the text says it")
-	require.Equal(t, true, dig(t, narrowed.Result, "plan", "fresh"))
+	require.Equal(t, []any{"jq"}, cmdtest.Dig(t, narrowed.Result, "plan", "only"), "what was asked, as the text says it")
+	require.Equal(t, true, cmdtest.Dig(t, narrowed.Result, "plan", "fresh"))
 
-	queued, err := jsonOf(t, "check", "-d")
+	queued, err := cmdtest.JSONOf(t, "check", "-d")
 	require.NoError(t, err)
-	require.Equal(t, "queued", dig(t, queued.Result, "run", "state"))
+	require.Equal(t, "queued", cmdtest.Dig(t, queued.Result, "run", "state"))
 	// status lists the queue, as queue did.
-	listed, err := jsonOf(t, "status", "--all")
+	listed, err := cmdtest.JSONOf(t, "status", "--all")
 	require.NoError(t, err)
-	require.Equal(t, "check-1", dig(t, listed.Result, "queue", 0, "name"))
-	require.Equal(t, "jq-update", dig(t, listed.Result, "queue", 0, "branch"))
+	require.Equal(t, "check-1", cmdtest.Dig(t, listed.Result, "queue", 0, "name"))
+	require.Equal(t, "jq-update", cmdtest.Dig(t, listed.Result, "queue", 0, "branch"))
 	require.Equal(t, "serve: not running · queue: 1 run", listed.Result["serve"])
 	// While the branch's first check waits, its latest check is null, and
 	// the check is among its active ones.
-	waiting, err := jsonOf(t, "status")
+	waiting, err := cmdtest.JSONOf(t, "status")
 	require.NoError(t, err)
-	require.Nil(t, dig(t, waiting.Result, "branches", 0, "latest_check"))
-	require.Equal(t, "check-1", dig(t, waiting.Result, "branches", 0, "active_checks", 0, "name"))
+	require.Nil(t, cmdtest.Dig(t, waiting.Result, "branches", 0, "latest_check"))
+	require.Equal(t, "check-1", cmdtest.Dig(t, waiting.Result, "branches", 0, "active_checks", 0, "name"))
 	require.Equal(t, map[string]any{"running": false, "queue": float64(1), "stopped": float64(0)}, listed.Result["serve_state"],
 		"serve's state as fields a script reads (the hugo exercise's certigo run, finding 6)")
 
-	waited, err := jsonOf(t, "wait", "check-1")
+	waited, err := cmdtest.JSONOf(t, "wait", "check-1")
 	require.NoError(t, err)
-	require.Equal(t, "passed", dig(t, waited.Result, "run", "state"))
-	require.Equal(t, "passed", dig(t, waited.Result, "targets", 0, "results", 0, "outcome"))
-	require.Equal(t, true, dig(t, waited.Result, "targets", 0, "passed"))
+	require.Equal(t, "passed", cmdtest.Dig(t, waited.Result, "run", "state"))
+	require.Equal(t, "passed", cmdtest.Dig(t, waited.Result, "targets", 0, "results", 0, "outcome"))
+	require.Equal(t, true, cmdtest.Dig(t, waited.Result, "targets", 0, "passed"))
 
-	status, err := jsonOf(t, "status")
+	status, err := cmdtest.JSONOf(t, "status")
 	require.NoError(t, err)
 	require.Equal(t, "status", status.Command)
-	branch := dig(t, status.Result, "branches", 0)
-	require.Equal(t, "jq-update", dig(t, branch, "name"))
-	require.Equal(t, "dockhand/jq-update", dig(t, branch, "git_branch"))
-	require.Equal(t, []any{"textproc/jq"}, dig(t, branch, "directories"))
-	require.Equal(t, true, dig(t, branch, "latest_check", "current"))
-	require.Equal(t, "check-1", dig(t, branch, "latest_check", "run", "name"))
-	require.Nil(t, dig(t, branch, "pull_request"))
-	everything, err := jsonOf(t, "status", "--all")
+	branch := cmdtest.Dig(t, status.Result, "branches", 0)
+	require.Equal(t, "jq-update", cmdtest.Dig(t, branch, "name"))
+	require.Equal(t, "dockhand/jq-update", cmdtest.Dig(t, branch, "git_branch"))
+	require.Equal(t, []any{"textproc/jq"}, cmdtest.Dig(t, branch, "directories"))
+	require.Equal(t, true, cmdtest.Dig(t, branch, "latest_check", "current"))
+	require.Equal(t, "check-1", cmdtest.Dig(t, branch, "latest_check", "run", "name"))
+	require.Nil(t, cmdtest.Dig(t, branch, "pull_request"))
+	everything, err := cmdtest.JSONOf(t, "status", "--all")
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{"running": false, "queue": float64(0), "stopped": float64(0)}, everything.Result["serve_state"])
 	require.Equal(t, []any{}, everything.Result["queue"], "an empty queue is said")
 
-	attention, err := jsonOf(t, "status", "--attention")
+	attention, err := cmdtest.JSONOf(t, "status", "--attention")
 	require.Error(t, err)
 	require.Equal(t, 3, attention.ExitCode)
-	require.Equal(t, "ready", dig(t, attention.Result, "attention", 0, "kind"))
-	require.Equal(t, "dockhand tidy --branch jq-update", dig(t, attention.Result, "attention", 0, "next"))
+	require.Equal(t, "ready", cmdtest.Dig(t, attention.Result, "attention", 0, "kind"))
+	require.Equal(t, "dockhand tidy --branch jq-update", cmdtest.Dig(t, attention.Result, "attention", 0, "next"))
 
-	diff, err := jsonOf(t, "diff")
+	diff, err := cmdtest.JSONOf(t, "diff")
 	require.NoError(t, err)
-	require.Equal(t, "changed", dig(t, diff.Result, "ports", 0, "change"))
-	require.Contains(t, dig(t, diff.Result, "patch"), "+version 1.8.1")
+	require.Equal(t, "changed", cmdtest.Dig(t, diff.Result, "ports", 0, "change"))
+	require.Contains(t, cmdtest.Dig(t, diff.Result, "patch"), "+version 1.8.1")
 
-	path, err := jsonOf(t, "path")
+	path, err := cmdtest.JSONOf(t, "path")
 	require.NoError(t, err)
 	require.Contains(t, path.Result["path"], "macports-branches/jq-update")
 
-	withScript(t, w, "failed")
-	failed, err := jsonOf(t, "check")
+	cmdtest.WithScript(t, w, "failed")
+	failed, err := cmdtest.JSONOf(t, "check")
 	require.Error(t, err)
 	require.Equal(t, 2, failed.ExitCode)
 	require.Contains(t, *failed.Error, "check-2 failed for snapshot 1")
-	require.Equal(t, "failed", dig(t, failed.Result, "targets", 0, "results", 0, "outcome"))
-	require.Equal(t, "install", dig(t, failed.Result, "targets", 0, "results", 0, "phase"))
+	require.Equal(t, "failed", cmdtest.Dig(t, failed.Result, "targets", 0, "results", 0, "outcome"))
+	require.Equal(t, "install", cmdtest.Dig(t, failed.Result, "targets", 0, "results", 0, "phase"))
 
-	refused, err := jsonOf(t, "status", "--watch")
+	refused, err := cmdtest.JSONOf(t, "status", "--watch")
 	require.Error(t, err)
 	require.Equal(t, 1, refused.ExitCode)
 	require.Equal(t, "--watch shows all current status and cannot be combined with a branch selector, --attention, --all, or --json", *refused.Error)
 	require.Nil(t, refused.Result)
 
-	unknown, err := jsonOf(t, "status", "--no-such-flag")
+	unknown, err := cmdtest.JSONOf(t, "status", "--no-such-flag")
 	require.Error(t, err)
 	require.Contains(t, *unknown.Error, "unknown flag: --no-such-flag")
 }
 
 func TestJSONForTheWholeLoop(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
-	withScript(t, w, "passed")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	cmdtest.WithScript(t, w, "passed")
 
-	started, err := jsonOf(t, "start", "jq-update")
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	require.Equal(t, "dockhand/jq-update", dig(t, started.Result, "branch", "git_branch"))
-	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	require.Equal(t, "dockhand/jq-update", cmdtest.Dig(t, started.Result, "branch", "git_branch"))
+	cmdtest.Setenv(t, "MACPORTS_TREE", cmdtest.Dig(t, started.Result, "branch", "worktree").(string))
 
-	planned, err := jsonOf(t, "update", "jq", "--plan")
+	planned, err := cmdtest.JSONOf(t, "update", "jq", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, false, planned.Result["applied"])
 	require.Contains(t, planned.Result["diff"], "+version 1.8.1")
-	updated, err := jsonOf(t, "update", "jq")
+	updated, err := cmdtest.JSONOf(t, "update", "jq")
 	require.NoError(t, err)
-	require.Equal(t, "1.7.1", dig(t, updated.Result, "before", "version"))
-	require.Equal(t, "1.8.1", dig(t, updated.Result, "after", "version"))
+	require.Equal(t, "1.7.1", cmdtest.Dig(t, updated.Result, "before", "version"))
+	require.Equal(t, "1.8.1", cmdtest.Dig(t, updated.Result, "after", "version"))
 	require.Equal(t, []any{"textproc/jq/Portfile"}, updated.Result["files"])
-	require.Equal(t, "not-compared", dig(t, updated.Result, "upstream", "coverage", 0, "policy"), "a port with no archives to compare says so")
+	require.Equal(t, "not-compared", cmdtest.Dig(t, updated.Result, "upstream", "coverage", 0, "policy"), "a port with no archives to compare says so")
 
-	_, err = jsonOf(t, "check")
+	_, err = cmdtest.JSONOf(t, "check")
 	require.NoError(t, err)
-	logs, err := jsonOf(t, "logs", "check-1")
+	logs, err := cmdtest.JSONOf(t, "logs", "check-1")
 	require.NoError(t, err)
-	require.Equal(t, "passed", dig(t, logs.Result, "executions", 0, "results", 0, "outcome"))
+	require.Equal(t, "passed", cmdtest.Dig(t, logs.Result, "executions", 0, "results", 0, "outcome"))
 
-	tidyPlan, err := jsonOf(t, "tidy", "--plan")
+	tidyPlan, err := cmdtest.JSONOf(t, "tidy", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, true, tidyPlan.Result["unambiguous"])
-	require.Equal(t, "jq: update to 1.8.1", dig(t, tidyPlan.Result, "commits", 0, "subject"))
+	require.Equal(t, "jq: update to 1.8.1", cmdtest.Dig(t, tidyPlan.Result, "commits", 0, "subject"))
 	require.Nil(t, tidyPlan.Result["applied"])
-	tidied, err := jsonOf(t, "tidy")
+	tidied, err := cmdtest.JSONOf(t, "tidy")
 	require.NoError(t, err)
-	require.Equal(t, "tidy-1", dig(t, tidied.Result, "applied", "checkpoint"))
+	require.Equal(t, "tidy-1", cmdtest.Dig(t, tidied.Result, "applied", "checkpoint"))
 
-	refused, err := jsonOf(t, "submit")
+	refused, err := cmdtest.JSONOf(t, "submit")
 	require.Error(t, err, "a --json command line never asks, so submit needs --yes")
 	require.Contains(t, *refused.Error, "--yes submits exactly what is shown")
 	require.Equal(t, "jq: update to 1.8.1", refused.Result["title"], "the preview is the result")
 	require.Nil(t, refused.Result["pull_request"])
-	submitted, err := jsonOf(t, "submit", "--yes")
+	submitted, err := cmdtest.JSONOf(t, "submit", "--yes")
 	require.NoError(t, err)
-	require.Equal(t, float64(34901), dig(t, submitted.Result, "pull_request", "number"))
-	require.Equal(t, true, dig(t, submitted.Result, "pull_request", "created"))
+	require.Equal(t, float64(34901), cmdtest.Dig(t, submitted.Result, "pull_request", "number"))
+	require.Equal(t, true, cmdtest.Dig(t, submitted.Result, "pull_request", "created"))
 	require.Len(t, g.PRs, 1)
-	afterSubmit, err := jsonOf(t, "status")
+	afterSubmit, err := cmdtest.JSONOf(t, "status")
 	require.NoError(t, err)
-	require.Equal(t, "https://github.com/macports/macports-ports/pull/34901", dig(t, afterSubmit.Result, "branches", 0, "pull_request", "url"))
+	require.Equal(t, "https://github.com/macports/macports-ports/pull/34901", cmdtest.Dig(t, afterSubmit.Result, "branches", 0, "pull_request", "url"))
 
-	explained, err := jsonOf(t, "explain", "merge")
+	explained, err := cmdtest.JSONOf(t, "explain", "merge")
 	require.NoError(t, err)
-	require.Equal(t, "https://guide.macports.org/#project.github", dig(t, explained.Result, "sources", 0, "url"))
+	require.Equal(t, "https://guide.macports.org/#project.github", cmdtest.Dig(t, explained.Result, "sources", 0, "url"))
 
 	// clean reads the pull request itself, with no status --refresh
 	// before it (field testing, 2026-10-02).
 	g.PRs[34901].State = forge.PullRequestMerged
-	setenv(t, "MACPORTS_TREE", w.clone)
-	preview, err := jsonOf(t, "clean")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	preview, err := cmdtest.JSONOf(t, "clean")
 	require.Equal(t, term.ExitFailure, term.ExitCode(err), "a preview without --yes removes nothing, and refuses")
 	require.Equal(t, false, preview.Result["applied"])
-	require.Equal(t, false, dig(t, preview.Result, "branches", 0, "steps", 0, "removed"))
-	require.Equal(t, "worktree", dig(t, preview.Result, "branches", 0, "steps", 0, "kind"), "what each step removes")
-	cleaned, err := jsonOf(t, "clean", "--yes")
+	require.Equal(t, false, cmdtest.Dig(t, preview.Result, "branches", 0, "steps", 0, "removed"))
+	require.Equal(t, "worktree", cmdtest.Dig(t, preview.Result, "branches", 0, "steps", 0, "kind"), "what each step removes")
+	cleaned, err := cmdtest.JSONOf(t, "clean", "--yes")
 	require.NoError(t, err)
-	require.Equal(t, true, dig(t, cleaned.Result, "branches", 0, "steps", 0, "removed"))
+	require.Equal(t, true, cmdtest.Dig(t, cleaned.Result, "branches", 0, "steps", 0, "removed"))
 
-	notJSON, err := jsonOf(t, "serve", "--drain")
+	notJSON, err := cmdtest.JSONOf(t, "serve", "--drain")
 	require.Error(t, err)
 	require.Equal(t, "--json isn't available for dockhand serve yet; its output is text only", *notJSON.Error)
 }
 
 // unfetchedPrevious is the bumper, where the current version's archives
 // couldn't be fetched to compare with the new one's.
-type unfetchedPrevious struct{ bumper }
+type unfetchedPrevious struct{ cmdtest.Bumper }
 
 func (b unfetchedPrevious) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
-	result, err := b.bumper.Prepare(ctx, r)
+	result, err := b.Bumper.Prepare(ctx, r)
 	result.PreviousProblem = "HTTP 404"
 	return result, err
 }
@@ -247,14 +203,14 @@ func (b unfetchedPrevious) Prepare(ctx context.Context, r editprep.Request) (edi
 // update prints it. (The architecture review of 2026-09-27, finding 6.)
 func TestUpdateJSONCarriesTheUpstreamComparison(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
-	started, err := jsonOf(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{cmdtest.Bumper{Repo: e.Repo}} }
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	cmdtest.Setenv(t, "MACPORTS_TREE", cmdtest.Dig(t, started.Result, "branch", "worktree").(string))
 
-	updated, err := jsonOf(t, "update", "jq")
+	updated, err := cmdtest.JSONOf(t, "update", "jq")
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{"changes": []any{}, "problem": "the current version's archives could not be fetched: HTTP 404", "held": true}, updated.Result["upstream"],
 		"archives it couldn't compare hold the update, as a finding would (D4)")
@@ -264,13 +220,13 @@ func TestUpdateJSONCarriesTheUpstreamComparison(t *testing.T) {
 // previews does: what a reviewer would ask about is part of the look.
 func TestAnUpdatesPlanSaysWhatUpstreamChanged(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
-	started, err := jsonOf(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{cmdtest.Bumper{Repo: e.Repo}} }
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
-	out, _, err := dockhand(t, "update", "jq", "--plan")
+	cmdtest.Setenv(t, "MACPORTS_TREE", cmdtest.Dig(t, started.Result, "branch", "worktree").(string))
+	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "Plan, nothing changed:")
 	require.Contains(t, out, "! Upstream archives not compared: the current version's archives could not be fetched: HTTP 404")
@@ -281,49 +237,49 @@ func TestAnUpdatesPlanSaysWhatUpstreamChanged(t *testing.T) {
 // a refusal before checking reports what blocks it.
 func TestShipReportsOneShape(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	g := withGitHub(t, w)
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
 	g.Others = nil
 	next := withOutcomeScript(t, w, "")
 	committed := func(name string) {
 		t.Helper()
-		started, err := jsonOf(t, "start", name)
+		started, err := cmdtest.JSONOf(t, "start", name)
 		require.NoError(t, err)
-		setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
-		_, _, err = dockhand(t, "update", "jq")
+		cmdtest.Setenv(t, "MACPORTS_TREE", cmdtest.Dig(t, started.Result, "branch", "worktree").(string))
+		_, _, err = cmdtest.Dockhand(t, "update", "jq")
 		require.NoError(t, err)
-		_, _, err = dockhand(t, "tidy")
+		_, _, err = cmdtest.Dockhand(t, "tidy")
 		require.NoError(t, err)
 	}
 
 	change := func(result map[string]any) map[string]any {
 		t.Helper()
 		require.Len(t, result["changes"], 1)
-		return dig(t, result, "changes", 0).(map[string]any)
+		return cmdtest.Dig(t, result, "changes", 0).(map[string]any)
 	}
 	committed("jq-failing")
 	next("failed")
-	failed, err := jsonOf(t, "ship", "--yes")
+	failed, err := cmdtest.JSONOf(t, "ship", "--yes")
 	require.Equal(t, 2, term.ExitCode(err))
-	require.Equal(t, "jq: update to 1.8.1", dig(t, change(failed.Result), "submit", "title"))
-	require.Equal(t, "failed", dig(t, change(failed.Result), "check", "run", "state"))
-	require.Nil(t, dig(t, change(failed.Result), "submit", "pull_request"))
-	refused, err := jsonOf(t, "ship", "--yes")
+	require.Equal(t, "jq: update to 1.8.1", cmdtest.Dig(t, change(failed.Result), "submit", "title"))
+	require.Equal(t, "failed", cmdtest.Dig(t, change(failed.Result), "check", "run", "state"))
+	require.Nil(t, cmdtest.Dig(t, change(failed.Result), "submit", "pull_request"))
+	refused, err := cmdtest.JSONOf(t, "ship", "--yes")
 	require.Error(t, err, "the failed check stands for the same commit")
-	require.Equal(t, "jq: update to 1.8.1", dig(t, change(refused.Result), "submit", "title"))
-	require.NotEmpty(t, dig(t, change(refused.Result), "submit", "blocking"))
+	require.Equal(t, "jq: update to 1.8.1", cmdtest.Dig(t, change(refused.Result), "submit", "title"))
+	require.NotEmpty(t, cmdtest.Dig(t, change(refused.Result), "submit", "blocking"))
 	require.NotContains(t, change(refused.Result), "check", "no check ran")
 	require.Empty(t, g.PRs)
 
 	committed("jq-passing")
 	next("passed")
-	passed, err := jsonOf(t, "ship", "--yes")
+	passed, err := cmdtest.JSONOf(t, "ship", "--yes")
 	require.NoError(t, err)
-	require.Equal(t, "jq: update to 1.8.1", dig(t, change(passed.Result), "submit", "title"))
-	require.Equal(t, "passed", dig(t, change(passed.Result), "check", "run", "state"))
-	require.Equal(t, true, dig(t, change(passed.Result), "submit", "pull_request", "created"))
+	require.Equal(t, "jq: update to 1.8.1", cmdtest.Dig(t, change(passed.Result), "submit", "title"))
+	require.Equal(t, "passed", cmdtest.Dig(t, change(passed.Result), "check", "run", "state"))
+	require.Equal(t, true, cmdtest.Dig(t, change(passed.Result), "submit", "pull_request", "created"))
 }
 
 // Under the JSON's upstream key, as under the text's Upstream heading, a
@@ -370,8 +326,8 @@ func TestLogsSayWhatTheEnvironmentWas(t *testing.T) {
 	require.NoError(t, err)
 	var viewed map[string]any
 	require.NoError(t, json.Unmarshal(data, &viewed))
-	require.Equal(t, "source sha256:a; setup 3", dig(t, viewed, "executions", 0, "identity"))
-	require.NotContains(t, dig(t, viewed, "executions", 1), "identity")
+	require.Equal(t, "source sha256:a; setup 3", cmdtest.Dig(t, viewed, "executions", 0, "identity"))
+	require.NotContains(t, cmdtest.Dig(t, viewed, "executions", 1), "identity")
 }
 
 // logs says, of a Git-fetched target's build, the commit it fetched and
@@ -389,7 +345,7 @@ func TestLogsSayWhatAGitFetchedBuildFetched(t *testing.T) {
 			Git:     map[model.TargetID]engine.GitFetch{"libharbor": {Expected: source}}},
 	}}
 	var out bytes.Buffer
-	require.NoError(t, writeLogs(&out, testPlaces(t), logs, false))
+	require.NoError(t, writeLogs(&out, cmdtest.TestPlaces(t), logs, false))
 	require.Contains(t, out.String(), "    libharbor passed\n      fetched 1a2b3c4, the commit git.branch v4 named when the check was planned\n    harbor-cli passed\n")
 	require.Contains(t, out.String(), "    libharbor passed\n      which commit of git.branch v4 it fetched isn't known: its provider didn't say; 1a2b3c4 was expected\n")
 
@@ -397,10 +353,10 @@ func TestLogsSayWhatAGitFetchedBuildFetched(t *testing.T) {
 	require.NoError(t, err)
 	var viewed map[string]any
 	require.NoError(t, json.Unmarshal(data, &viewed))
-	require.Equal(t, string(commit), dig(t, viewed, "executions", 0, "results", 0, "fetched"))
-	require.Equal(t, "v4", dig(t, viewed, "executions", 0, "results", 0, "git", "branch"))
-	require.NotContains(t, dig(t, viewed, "executions", 0, "results", 1), "git", "fetched otherwise")
-	require.NotContains(t, dig(t, viewed, "executions", 1, "results", 0), "fetched", "its provider didn't say")
+	require.Equal(t, string(commit), cmdtest.Dig(t, viewed, "executions", 0, "results", 0, "fetched"))
+	require.Equal(t, "v4", cmdtest.Dig(t, viewed, "executions", 0, "results", 0, "git", "branch"))
+	require.NotContains(t, cmdtest.Dig(t, viewed, "executions", 0, "results", 1), "git", "fetched otherwise")
+	require.NotContains(t, cmdtest.Dig(t, viewed, "executions", 1, "results", 0), "fetched", "its provider didn't say")
 }
 
 // A plan's JSON carries what the person asked and what --only left out,

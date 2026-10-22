@@ -2,8 +2,6 @@ package command
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,90 +11,57 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
+	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
-// onePort stands in for MacPorts: every directory defines one port, named
-// after it.
-type onePort struct{}
-
-func (onePort) Ports(_ context.Context, _ model.Source, directory string, _ model.Environment, variants map[string]bool) ([]macports.PortInfo, error) {
-	return []macports.PortInfo{{Name: filepath.Base(directory), Options: map[string]string{}}}, nil
-}
-
-func (onePort) Directory(context.Context, model.Source, string) (string, error) {
-	return "", errors.New("no such port")
-}
-
-// withScript configures a command provider that reports jq with the given
-// outcome.
-func withScript(t *testing.T, w world, outcome string) {
-	t.Helper()
-	script := filepath.Join(w.home, "bin", "build-ports")
-	require.NoError(t, os.MkdirAll(filepath.Dir(script), 0o755))
-	phase := ""
-	if outcome == "failed" {
-		phase = `, "phase": "install"`
-	}
-	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
-echo "building from $1"
-cat > "$(dirname "$1")/result.json" <<JSON
-{"version": 1, "targets": [{"id": "jq", "outcome": "`+outcome+`"`+phase+`}]}
-JSON
-`), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[providers.command]\nrun = \"~/bin/build-ports\"\nname = \"my build box\"\n"), 0o644))
-	usePorts(stands(t), onePort{})
-}
-
 func TestCheckRunsHereWithoutServe(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
-	_, _, err = dockhand(t, "check")
+	_, _, err = cmdtest.Dockhand(t, "check")
 	require.ErrorContains(t, err, "[providers.command]")
 
-	withScript(t, w, "passed")
-	out, _, err := dockhand(t, "check", "--plan")
+	cmdtest.WithScript(t, w, "passed")
+	out, _, err := cmdtest.Dockhand(t, "check", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, "jq-update · would capture the working files as a new snapshot\nChanged     jq\nProvider    command · tests declared\n", out)
-	_, _, err = dockhand(t, "check", "--on", "tart:tahoe")
+	_, _, err = cmdtest.Dockhand(t, "check", "--on", "tart:tahoe")
 	require.ErrorContains(t, err, "Tart isn't installed here")
 	// Build profiles name where, --on explicit environments, never both;
 	// --on ci went with check.on (the person's design, 2026-10-13).
-	out, _, err = dockhand(t, "check", "--plan", "--keep")
+	out, _, err = cmdtest.Dockhand(t, "check", "--plan", "--keep")
 	require.NoError(t, err)
 	require.Contains(t, out, "Keeps       each Tart environment's clone, stopped, where its guest finishes, for dockhand shell; clean or the branch's next check removes it\n")
-	_, _, err = dockhand(t, "check", "--baseline", "--keep")
+	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--keep")
 	require.ErrorContains(t, err, "none of the others can be")
-	_, _, err = dockhand(t, "check", "--plan", "--build", "minmax")
+	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--build", "minmax")
 	require.ErrorContains(t, err, "build profile minmax requires Tart, which is not installed")
-	_, _, err = dockhand(t, "check", "--plan", "--build", "nosuch")
+	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--build", "nosuch")
 	require.ErrorContains(t, err, "--build nosuch: unknown build profile")
-	_, _, err = dockhand(t, "check", "--plan", "--build", "host", "--on", "command")
+	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--build", "host", "--on", "command")
 	require.ErrorContains(t, err, "[build on]")
-	_, _, err = dockhand(t, "check", "--plan", "--on", "ci")
+	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--on", "ci")
 	require.EqualError(t, err, "--on ci is gone: --build macports-ci builds on the releases MacPorts' CI does")
 
-	out, errs, err := dockhand(t, "check")
+	out, errs, err := cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
 	require.Contains(t, errs, "check-1 runs here, since no dockhand serve is running.")
 	require.Contains(t, errs, "command: jq passed")
 	require.Contains(t, out, "jq-update · captured working files as snapshot 1\n", "the plan recorded nothing for the check to reuse")
 	require.Contains(t, out, "  jq  ✓\n\nPassed for snapshot 1.\nNext: dockhand tidy --branch jq-update\n", "what moves the branch on, as status says it")
-	out, _, err = dockhand(t, "check", "--plan")
+	out, _, err = cmdtest.Dockhand(t, "check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · checking snapshot 1\n", "a plan finds a snapshot already recorded of the same files")
 	require.Contains(t, out, "Reuse       when this check runs, it may reuse passing builds with identical inputs", "with a passed check before it, a plan says reuse may apply (the rc6 full stage, B5)")
@@ -104,17 +69,17 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	// With no serve leading, a background drain of its own runs it, on
 	// the same checkout and database.
 	var drained engine.Options
-	hosted(t).StartDrain = func(options engine.Options) (int, error) { drained = options; return 4242, nil }
-	out, _, err = dockhand(t, "check", "-d")
+	cmdtest.Hosted(t).StartDrain = func(options engine.Options) (int, error) { drained = options; return 4242, nil }
+	out, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)
 	require.Contains(t, out, "check-2 queued; a background drain (pid 4242) runs it. dockhand wait check-2 follows it.\n")
 	require.NotEmpty(t, drained.Database)
 	require.NotEmpty(t, drained.Env, "in the command line's environment")
 
-	withScript(t, w, "failed")
-	_, _, err = dockhand(t, "check")
+	cmdtest.WithScript(t, w, "failed")
+	_, _, err = cmdtest.Dockhand(t, "check")
 	require.ErrorContains(t, err, "check-2 is already queued for these files; dockhand wait check-2 follows it", "one check of a branch at a time")
-	out, _, err = dockhand(t, "check", "--replace")
+	out, _, err = cmdtest.Dockhand(t, "check", "--replace")
 	require.Contains(t, out, "Canceled check-2 before it started.\ncheck-3 replaces check-2.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
 	require.Equal(t, 2, term.ExitCode(err), "a failed check exits 2")
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass\nNext: dockhand logs check-3")
@@ -125,17 +90,17 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.Regexp(t, `\nLogs:\n  jq on command, attempt 1: ~/\.dockhand/logs/check-3/command-1/command\.log(\.gz)?\n`, out)
 	// A port's log says which build it is: the environment, the attempt
 	// of how many, the run, how it went, and where.
-	_, logged, err := dockhand(t, "logs", "check-3", "jq")
+	_, logged, err := cmdtest.Dockhand(t, "logs", "check-3", "jq")
 	require.NoError(t, err)
 	require.Regexp(t, `jq's log on command, attempt 1 of 3, run command_[a-z0-9]{16}: failed at install; ~/\.dockhand/logs/check-3/command-1/command\.log\.gz\n`, logged)
 	// --phase picks one step out of the log, which the command provider
 	// doesn't record, so it says so; a step a build doesn't take, or no
 	// port, is refused before anything is read.
-	_, _, err = dockhand(t, "logs", "check-3", "jq", "--phase", "install")
+	_, _, err = cmdtest.Dockhand(t, "logs", "check-3", "jq", "--phase", "install")
 	require.ErrorContains(t, err, "jq's build recorded no steps, so its install step can't be picked out of its log; logs without --phase prints it whole")
-	_, _, err = dockhand(t, "logs", "check-3", "jq", "--phase", "configure")
+	_, _, err = cmdtest.Dockhand(t, "logs", "check-3", "jq", "--phase", "configure")
 	require.ErrorContains(t, err, "--phase takes one of the steps a build takes: deactivate, clean, lint, dependencies, fetch, checksum, install, test")
-	_, _, err = dockhand(t, "logs", "check-3", "--phase", "fetch")
+	_, _, err = cmdtest.Dockhand(t, "logs", "check-3", "--phase", "fetch")
 	require.ErrorContains(t, err, "--phase requires a port name")
 }
 
@@ -360,19 +325,19 @@ func TestBaselineResultsShowWhereItRebuilt(t *testing.T) {
 // A misspelled --tests is refused before anything is captured or planned.
 func TestCheckRefusesAnUnknownTestPolicyAtOnce(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withScript(t, w, "passed")
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
-	_, _, err = dockhand(t, "update", "jq")
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
-	_, _, err = dockhand(t, "check", "--tests", "requried")
+	_, _, err = cmdtest.Dockhand(t, "check", "--tests", "requried")
 	require.EqualError(t, err, `--tests "requried" is not declared, required, or skip`)
-	out, _, err := dockhand(t, "status")
+	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.NotContains(t, out, "check-1", "nothing was queued")
 }
@@ -472,16 +437,16 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 // and edits beside them, which is meant is asked (the txt run's finding 2).
 func TestCheckingABranchWithNoCommitsTakesItsWorkingFiles(t *testing.T) {
 	t.Parallel()
-	w := checkedBranch(t)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	setenv(t, "MACPORTS_TREE", w.clone)
-	out, _, err := dockhand(t, "check", "--plan", "--branch", "jq-update")
+	w := cmdtest.CheckedBranch(t)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	out, _, err := cmdtest.Dockhand(t, "check", "--plan", "--branch", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · would capture the working files as a new snapshot\n")
 
 	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\nrevision 1\n"), 0o644))
-	_, _, err = dockhand(t, "check", "--plan", "--branch", "jq-update")
+	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--branch", "jq-update")
 	require.ErrorContains(t, err, "jq-update's worktree has edits (textproc/jq/Portfile); choose --head for the committed tip or --working-tree for the files")
 }
 
@@ -490,20 +455,20 @@ func TestCheckingABranchWithNoCommitsTakesItsWorkingFiles(t *testing.T) {
 // approved 2026-10-05).
 func TestStatusNamesAPortBuiltWithInclude(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withScript(t, w, "passed")
-	_, _, err := dockhand(t, "start", "vx")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithScript(t, w, "passed")
+	_, _, err := cmdtest.Dockhand(t, "start", "vx")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "vx")
-	setenv(t, "MACPORTS_TREE", dir)
-	out, _, err := dockhand(t, "status")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "vx")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Ports    none yet\n")
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "lang", "vx"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "lang", "vx", "Portfile"), []byte("name vx\nversion 1\n"), 0o644))
-	_, _, _ = dockhand(t, "check", "--include", "lang/vx/Portfile")
-	out, _, err = dockhand(t, "status")
+	_, _, _ = cmdtest.Dockhand(t, "check", "--include", "lang/vx/Portfile")
+	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Ports    none committed; vx built from untracked files (check --include)\n")
 }
@@ -514,34 +479,34 @@ func TestStatusNamesAPortBuiltWithInclude(t *testing.T) {
 // asked for a check of the same files. Once the file changes, it doesn't.
 func TestStatusComparesTheFilesACheckIncluded(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t)
-	versioned(t, w)
-	withBumper(t)
-	withScript(t, w, "passed")
-	_, _, err := dockhand(t, "start", "jq-update")
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	setenv(t, "MACPORTS_TREE", dir)
-	_, _, err = dockhand(t, "update", "jq")
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "tidy")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
 	patch := filepath.Join(dir, "textproc", "jq", "files", "fix.diff")
 	require.NoError(t, os.MkdirAll(filepath.Dir(patch), 0o755))
 	require.NoError(t, os.WriteFile(patch, []byte("--- a\n+++ b\n"), 0o644))
-	_, _, err = dockhand(t, "check", "--include", "textproc/jq/files/fix.diff")
+	_, _, err = cmdtest.Dockhand(t, "check", "--include", "textproc/jq/files/fix.diff")
 	require.NoError(t, err)
-	out, _, err := dockhand(t, "status")
+	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "with textproc/jq/files/fix.diff included, untracked")
 	require.NotContains(t, out, "changed since")
-	result, err := jsonOf(t, "status")
+	result, err := cmdtest.JSONOf(t, "status")
 	require.NoError(t, err)
-	require.Equal(t, true, dig(t, result.Result, "branches", 0, "latest_check", "current"))
-	require.Equal(t, []any{"textproc/jq/files/fix.diff"}, dig(t, result.Result, "branches", 0, "latest_check", "included"))
+	require.Equal(t, true, cmdtest.Dig(t, result.Result, "branches", 0, "latest_check", "current"))
+	require.Equal(t, []any{"textproc/jq/files/fix.diff"}, cmdtest.Dig(t, result.Result, "branches", 0, "latest_check", "included"))
 
 	require.NoError(t, os.WriteFile(patch, []byte("--- a\n+++ c\n"), 0o644))
-	result, err = jsonOf(t, "status")
+	result, err = cmdtest.JSONOf(t, "status")
 	require.NoError(t, err)
-	require.Equal(t, false, dig(t, result.Result, "branches", 0, "latest_check", "current"), "the included file changed")
+	require.Equal(t, false, cmdtest.Dig(t, result.Result, "branches", 0, "latest_check", "current"), "the included file changed")
 }
