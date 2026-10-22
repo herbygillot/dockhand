@@ -101,3 +101,23 @@ func TestSubjectPorts(t *testing.T) {
 	require.Equal(t, []string{"jq"}, commitmsg.SubjectPorts("jq: update to 1.8.1"))
 	require.Nil(t, commitmsg.SubjectPorts("Update jq"))
 }
+
+// A combined commit's message is its subject, its body, and the trailers
+// the commits it combines carried, Closes: before See: before the rest,
+// each once, an earlier Generated-By: left out, and this one last where dockhand
+// wrote the edit: tidy's composer, here beside its rules (the
+// code-organization review's finding 9).
+func TestComposeKeepsTheCombinedCommitsTrailers(t *testing.T) {
+	t.Parallel()
+	combined := []string{
+		"jq: update to 1.8.1\n\nSee: https://trac.macports.org/ticket/1\nCloses: https://trac.macports.org/ticket/2\n",
+		"jq: fix the build\n\nGenerated-By: Dockhand v0.3.0 (https://github.com/herbygillot/dockhand)\nCloses: https://trac.macports.org/ticket/2\nReported-by: Ada\n",
+	}
+	require.Equal(t, "jq: update to 1.8.1\n\nThe body.\n\nCloses: https://trac.macports.org/ticket/2\nSee: https://trac.macports.org/ticket/1\nReported-by: Ada\n"+commitmsg.GeneratedBy()+"\n",
+		commitmsg.Compose("jq: update to 1.8.1", "The body.", combined, true))
+	require.Equal(t, "jq: update to 1.8.1\n", commitmsg.Compose("jq: update to 1.8.1", "", nil, false))
+	text, trailers := commitmsg.SplitTrailers("The body.\n\nSee: x\nCloses: y")
+	require.Equal(t, "The body.", text)
+	require.Equal(t, []string{"See: x", "Closes: y"}, trailers)
+	require.Equal(t, "The body.", commitmsg.Body("jq: x\n\nThe body.\n\nSee: z\n"))
+}

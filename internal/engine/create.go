@@ -257,7 +257,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	if err != nil {
 		return Created{}, err
 	}
-	subject := fmt.Sprintf("%s: new port, version %s", name, version)
+	subject := name + ": new port"
 	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: request.Branch.ID, Kind: model.EditCreate, Port: name, Directory: directory,
 		Subject: subject, At: e.now(), Files: []model.EditedFile{{Path: portfile, After: model.ObjectID(blob)}}}
 	if err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {

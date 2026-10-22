@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -299,7 +298,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 		}
 		if chained {
 			for _, commit := range group.Combines {
-				if body(commit.Message) != "" {
+				if commitmsg.Body(commit.Message) != "" {
 					group.Notes = append(group.Notes, fmt.Sprintf("commit %s %q has a message body that this commit would not keep", model.ObjectID(commit.ID).Short(), commit.Subject()))
 				}
 			}
@@ -343,9 +342,9 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 		}
 		chosenBody := ""
 		if chosen != nil {
-			chosenBody = body(chosen.Message)
+			chosenBody = commitmsg.Body(chosen.Message)
 		}
-		group.Message = composeMessage(subject, chosenBody, group.Combines, chained)
+		group.Message = commitmsg.Compose(subject, chosenBody, commitMessages(group.Combines), chained)
 		group.Author, err = groupAuthor(group, person, author)
 		if err != nil {
 			return TidyPlan{}, err
@@ -391,7 +390,7 @@ func squash(groups []TidyGroup, changed []string, history []git.HistoryCommit, m
 	switch {
 	case strings.TrimSpace(message) != "":
 		subject, rest, _ := strings.Cut(strings.TrimSpace(message), "\n")
-		group.Message = composeMessage(subject, strings.TrimSpace(rest), history, false)
+		group.Message = commitmsg.Compose(subject, strings.TrimSpace(rest), commitMessages(history), false)
 	case len(groups) == 1 && len(groups[0].Blocking) == 0:
 		group.Message = groups[0].Message
 		group.Notes = append(group.Notes, "subject from the only commit it proposes")
@@ -676,67 +675,6 @@ func fromEdits(ctx context.Context, repo *git.Repository, baseTree, final, direc
 	}
 	subject := chainSubject(mine)
 	return true, subject, nil
-}
-
-var trailerLine = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*: \S`)
-
-// body is a message's text after its subject, less its trailer paragraph.
-func body(message string) string {
-	_, rest, _ := strings.Cut(strings.TrimSpace(message), "\n")
-	text, _ := splitTrailers(strings.TrimSpace(rest))
-	return text
-}
-
-// splitTrailers separates a body's final paragraph when every line of it
-// is a trailer.
-func splitTrailers(text string) (string, []string) {
-	paragraphs := strings.Split(text, "\n\n")
-	last := strings.Split(strings.TrimSpace(paragraphs[len(paragraphs)-1]), "\n")
-	for _, line := range last {
-		if !trailerLine.MatchString(line) {
-			return text, nil
-		}
-	}
-	return strings.TrimSpace(strings.Join(paragraphs[:len(paragraphs)-1], "\n\n")), last
-}
-
-// composeMessage writes a subject, a body, and the trailers the combined
-// commits carried: Closes:, then See:, then the others, then dockhand's
-// Generated-By: when dockhand wrote the edit.
-func composeMessage(subject, text string, combined []git.HistoryCommit, generated bool) string {
-	var closes, see, other []string
-	add := func(list *[]string, line string) {
-		if !slices.Contains(*list, line) {
-			*list = append(*list, line)
-		}
-	}
-	for _, commit := range combined {
-		_, rest, _ := strings.Cut(strings.TrimSpace(commit.Message), "\n")
-		_, trailers := splitTrailers(strings.TrimSpace(rest))
-		for _, line := range trailers {
-			switch {
-			case commitmsg.IsAttribution(line):
-			case strings.HasPrefix(line, "Closes:"):
-				add(&closes, line)
-			case strings.HasPrefix(line, "See:"):
-				add(&see, line)
-			default:
-				add(&other, line)
-			}
-		}
-	}
-	trailers := slices.Concat(closes, see, other)
-	if generated {
-		trailers = append(trailers, commitmsg.GeneratedBy())
-	}
-	parts := []string{strings.TrimSpace(subject)}
-	if text = strings.TrimSpace(text); text != "" {
-		parts = append(parts, text)
-	}
-	if len(trailers) > 0 {
-		parts = append(parts, strings.Join(trailers, "\n"))
-	}
-	return strings.Join(parts, "\n\n") + "\n"
 }
 
 // groupAuthor is who a proposed commit is attributed to: the person, for
@@ -1036,4 +974,13 @@ func unchangedCommit(had git.HistoryCommit, parent, tree string, group TidyGroup
 	return len(had.Parents) == 1 && had.Parents[0] == parent && had.Tree == tree &&
 		had.Author.Name == group.Author.Name && had.Author.Email == group.Author.Email && had.Author.When.Equal(group.Author.When) &&
 		commitmsg.Unchanged(had.Message, group.Message)
+}
+
+// commitMessages are commits' messages, as commitmsg composes from them.
+func commitMessages(commits []git.HistoryCommit) []string {
+	messages := make([]string, len(commits))
+	for i, commit := range commits {
+		messages[i] = commit.Message
+	}
+	return messages
 }

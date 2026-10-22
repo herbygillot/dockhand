@@ -151,7 +151,7 @@ func dockhandUpdate(commits []git.HistoryCommit, edits []model.Edit) bool {
 	updated := false
 	for _, commit := range commits {
 		_, rest, _ := strings.Cut(strings.TrimSpace(commit.Message), "\n")
-		_, trailers := splitTrailers(strings.TrimSpace(rest))
+		_, trailers := commitmsg.SplitTrailers(strings.TrimSpace(rest))
 		if !slices.ContainsFunc(trailers, commitmsg.IsAttribution) {
 			return false
 		}

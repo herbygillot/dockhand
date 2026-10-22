@@ -96,7 +96,7 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
-	require.Equal(t, "rift: new port, version 0.4.2", strings.TrimSpace(testsupport.Git(t, dir, "log", "-1", "--format=%s")))
+	require.Equal(t, "rift: new port", strings.TrimSpace(testsupport.Git(t, dir, "log", "-1", "--format=%s")))
 
 	// A category the tree keeps for itself is refused before anything is
 	// written (the helper-ownership review's table).
@@ -181,7 +181,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
 	require.Contains(t, out, "new port from dockhand create, including your later edits")
-	require.Equal(t, "txt: new port, version 0.8.1", strings.TrimSpace(testsupport.Git(t, dir, "log", "-1", "--format=%s")))
+	require.Equal(t, "txt: new port", strings.TrimSpace(testsupport.Git(t, dir, "log", "-1", "--format=%s")))
 	require.NotContains(t, testsupport.Git(t, dir, "log", "-1", "--format=%B"), "Generated-By")
 	_, _, err = cmdtest.Dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "games")
 	require.ErrorContains(t, err, "txt is this branch's new port, at editors/txt, and committed: dockhand edit txt edits it")
