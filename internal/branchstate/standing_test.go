@@ -54,3 +54,15 @@ func TestABaselineOrAStoppingRunLeavesTheBranchsStanding(t *testing.T) {
 		}
 	}
 }
+
+// Each standing has a name of its own, as status's JSON gives it (R3-34).
+func TestEachStandingHasAName(t *testing.T) {
+	t.Parallel()
+	seen := map[string]bool{}
+	for s := NotChecked; s <= CheckAttention; s++ {
+		require.NotEmpty(t, s.String())
+		require.False(t, seen[s.String()], s.String())
+		seen[s.String()] = true
+	}
+	require.Equal(t, "passed", CheckPassed.String())
+}

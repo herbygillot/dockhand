@@ -349,6 +349,10 @@ type BranchJSON struct {
 	Notes      map[string]string `json:"port_notes,omitempty"`
 	// Releases are where the branch's updates found their versions.
 	Releases []releaseJSON `json:"releases"`
+	// Standing is what the branch's checks establish of its files as they
+	// are now (branchstate.Standing), the one verdict status words, where
+	// the JSON gave the runs and left it to be judged again (R3-34).
+	Standing string `json:"check_standing"`
 	// Latest is the branch's newest finished check, null until one has
 	// finished: a check still running is among Active, and isn't the
 	// latest until it ends, where null read as no check while one ran.
@@ -406,7 +410,8 @@ func BranchView(status engine.BranchStatus) BranchJSON {
 	viewed := BranchJSON{Name: branch.ShortName(), GitBranch: branch.Name, ID: string(branch.ID), State: string(branch.State), Worktree: branch.Worktree, Managed: branch.Managed,
 		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Renamed: status.Renamed, Cleaned: status.Cleaned(), Commits: status.Commits,
 		Edited: NonNil(status.Edited), Directories: NonNil(status.Scope.Ports), Ports: NonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{},
-		Held: engine.HoldLines(status.Held), Assessment: string(status.Assessment), OnMaster: string(status.OnMaster), StartedFor: branch.Ports}
+		Held: engine.HoldLines(status.Held), Assessment: string(status.Assessment), OnMaster: string(status.OnMaster), StartedFor: branch.Ports,
+		Standing: status.Check().Standing().String()}
 	if len(status.Held) > 0 {
 		viewed.HeldConcerns = concernsView(status.Held)
 	}

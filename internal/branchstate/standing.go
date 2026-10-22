@@ -49,6 +49,12 @@ const (
 	CheckAttention
 )
 
+// String is the standing's name, as status's JSON gives it: not-checked,
+// checking, stopped, passed, incomplete, older, failed, or attention.
+func (s Standing) String() string {
+	return [...]string{"not-checked", "checking", "stopped", "passed", "incomplete", "older", "failed", "attention"}[s]
+}
+
 // Checking is the branch's one check queued or running (Run.BranchCheck),
 // nil while there's none, whatever baseline or stopping run is active: a
 // baseline of a passed check left the branch Checking, and serve waiting

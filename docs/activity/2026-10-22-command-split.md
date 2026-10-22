@@ -219,3 +219,16 @@ store needs a longer operation deadline, or go test a lower -p.
 One more load effect: outdated's terminal-progress test read a "Fetching
 master from …" line, which the engine says when fetching master takes
 over two seconds. The test leaves that line out.
+
+**The timeouts, checked** (at architecture's ask). The shared
+~/.dockhand/dockhand.db stayed at schema 32, and `lsof` sampled through
+a full run showed nothing holding it. Every database the test binaries
+held, 50 to 100 at once, was under its own test's temp directory.
+Every verb package with tests isolates HOME in its TestMain
+(cmdtest.Main), and `NewWorld` gives each test its own HOME. So it's
+per-test load: fsync, times 38 migrations, times about 20 binaries. It
+hasn't recurred, and it's left as it is. If it comes back, a
+`compose.Dependencies` field that cmdtest sets will carry a store option
+for tests, either `synchronous` off or every migration in one
+transaction with one sync, rather than a longer deadline, which only
+waits longer for the same work. `go test -p` in CI goes beside it.

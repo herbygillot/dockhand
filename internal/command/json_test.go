@@ -54,6 +54,7 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, cmdtest.Dig(t, waiting.Result, "branches", 0, "latest_check"))
 	require.Equal(t, "check-1", cmdtest.Dig(t, waiting.Result, "branches", 0, "active_checks", 0, "name"))
+	require.Equal(t, "checking", cmdtest.Dig(t, waiting.Result, "branches", 0, "check_standing"), "the verdict, not the runs to judge it from (R3-34)")
 	require.Equal(t, map[string]any{"running": false, "queue": float64(1), "stopped": float64(0)}, listed.Result["serve_state"],
 		"serve's state as fields a script reads (the hugo exercise's certigo run, finding 6)")
 
@@ -72,6 +73,7 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.Equal(t, []any{"textproc/jq"}, cmdtest.Dig(t, branch, "directories"))
 	require.Equal(t, true, cmdtest.Dig(t, branch, "latest_check", "current"))
 	require.Equal(t, "check-1", cmdtest.Dig(t, branch, "latest_check", "run", "name"))
+	require.Equal(t, "passed", cmdtest.Dig(t, branch, "check_standing"))
 	require.Nil(t, cmdtest.Dig(t, branch, "pull_request"))
 	everything, err := cmdtest.JSONOf(t, "status", "--all")
 	require.NoError(t, err)
