@@ -33,14 +33,14 @@ func TestALostReplyToOpeningAPullRequestIsReadBack(t *testing.T) {
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	fake.CreateFails, fake.Lost = true, true
-	submitted, err := e.ApplySubmit(t.Context(), plan)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Equal(t, 34901, submitted.PullRequest.Ref.Number)
 	require.Equal(t, 34901, recordedPullRequest(t, e, branch).Number)
 
 	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	_, err = e.ApplySubmit(t.Context(), again)
+	_, err = e.ApplySubmit(t.Context(), again, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Len(t, fake.Created, 1, "opened once")
 	require.Empty(t, fake.Updated, "and not written again")
@@ -57,7 +57,7 @@ func TestARequestThatNeverReachedGitHubIsMadeAgain(t *testing.T) {
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	fake.CreateFails = true
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.ErrorContains(t, err, "but could not create or update the pull request")
 	require.ErrorContains(t, err, "run dockhand submit again to finish")
 	require.Empty(t, fake.PRs)
@@ -66,7 +66,7 @@ func TestARequestThatNeverReachedGitHubIsMadeAgain(t *testing.T) {
 	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Nil(t, again.Existing)
-	submitted, err := e.ApplySubmit(t.Context(), again)
+	submitted, err := e.ApplySubmit(t.Context(), again, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.False(t, submitted.Pushed, "the fork has the commit already")
 	require.True(t, submitted.Created)
@@ -94,7 +94,7 @@ func TestAPullRequestOpenedButNotRecordedIsFoundByTheNextSubmit(t *testing.T) {
 	require.NoError(t, err)
 	kept := e.Store
 	e.Store = refusingStore{kept}
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.ErrorContains(t, err, "#34901 is open with commit ")
 	require.ErrorContains(t, err, "but dockhand could not save its record")
 	e.Store = kept
@@ -104,7 +104,7 @@ func TestAPullRequestOpenedButNotRecordedIsFoundByTheNextSubmit(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, again.Existing, "found by its head")
 	require.True(t, again.BodyKept, "what dockhand wrote isn't recorded, so its description is left as it is")
-	_, err = e.ApplySubmit(t.Context(), again)
+	_, err = e.ApplySubmit(t.Context(), again, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Equal(t, 34901, recordedPullRequest(t, e, branch).Number)
 	require.Len(t, fake.Created, 1)
@@ -126,9 +126,9 @@ func TestTwoSubmitsRacingOpenOnePullRequest(t *testing.T) {
 	second, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 
-	opened, err := e.ApplySubmit(t.Context(), first)
+	opened, err := e.ApplySubmit(t.Context(), first, model.AnsweredAsked)
 	require.NoError(t, err)
-	joined, err := e.ApplySubmit(t.Context(), second)
+	joined, err := e.ApplySubmit(t.Context(), second, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Equal(t, opened.PullRequest.Ref.Number, joined.PullRequest.Ref.Number)
 	require.Equal(t, first.Commit, string(fake.ForkHead("dockhand/jq-update")))
@@ -149,7 +149,7 @@ func TestASubmitRefusesABranchThatMovedAfterItsPlan(t *testing.T) {
 	require.NoError(t, err)
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# more\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: more")
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.ErrorIs(t, err, ErrStaleSubmit)
 	require.Empty(t, string(fake.ForkHead("dockhand/jq-update")), "nothing was pushed")
 	require.Empty(t, fake.PRs)

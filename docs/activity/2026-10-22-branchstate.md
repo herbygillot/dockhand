@@ -89,3 +89,21 @@ How a step was answered was read in three places (R3-9):
 `branchstate.Mode` now carries `model.Answered`, where step 1 had a copy of its own, and `Mode.Unattended()` is the one reading of consent. Ship, both the engine's and the command's, reads it.
 
 The plan's gate moves too. `TidyPlan.Gate()` gives the plan as `branchstate.Plan`. `Unambiguous`, `Blocking`, and `AppliesUnasked(mode, explicit)` are branchstate's, and `CommitUnasked(mode)` is the gate ship and serve commit through: dockhand's own edits only, where nobody looks. It replaces `TidyPlan.HeldForLook`, which reconverted the answer itself. tidy's command, verbs, and ship call it. The interactive review stays the command's: it asks, and it doesn't judge.
+
+## Step 5b: one gate for every submission (R3-10, R3-5's single owner)
+
+What lets a submission go was held in three places:
+- `ApplySubmit` refused on `Blocking`;
+- ship's `submitPassed` refused a moved commit and, where nobody looked, what held it;
+- serve's `SubmitForServe` refused what held it.
+
+`branchstate.Publish(publication, mode, vocabulary)` is now the one gate. A submission is refused when something blocks it, when its commit isn't the one it was bound to, or, where nobody looks, when something holds it. A person's own submission shows its holds and goes on. A refusal is a typed `branchstate.Refusal` of one of three kinds (blocked, moved, held), with its words, its holds, and a Next: submit again, after an edit or a look.
+
+`ApplySubmit(ctx, plan, answered)` calls the gate, as R3-10 asked:
+- submit passes `AnsweredAsked`, since it's a person's own;
+- serve passes `AnsweredNobody`;
+- ship passes what it was answered, binding its commit through the new `SubmitRequest.Bound`.
+
+Ship's `submitPassed` now asks the engine and words the refusal as ship says it, with the same ExitAttention and words as before. Its `Once it's fine:` line is `renderNext`'s. The draft rule after a failed check is `branchstate.SubmitsDespiteCheck`.
+
+The engine's tests call `ApplySubmit` with `AnsweredAsked`. Every test passes unchanged otherwise.

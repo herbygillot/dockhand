@@ -64,7 +64,7 @@ func TestAnEarlierClosedPullRequestOfTheSameNameIsntThisOnes(t *testing.T) {
 		require.Nil(t, plan.Existing)
 		require.NotNil(t, plan.Earlier)
 		require.Equal(t, 1, plan.Earlier.Ref.Number)
-		submitted, err := e.ApplySubmit(t.Context(), plan)
+		submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 		require.NoError(t, err)
 		require.True(t, submitted.Created, "a new pull request")
 		require.NotEqual(t, 1, submitted.PullRequest.Ref.Number)
@@ -82,7 +82,7 @@ func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, plan.Blocking, 1)
 	require.Contains(t, plan.Blocking[0], "no check has finished for this commit's files")
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.ErrorContains(t, err, "can't submit yet")
 	require.Empty(t, fake.Created)
 
@@ -99,7 +99,7 @@ func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 	require.Contains(t, plan.Body, "- [x] checked that there aren't other open [pull requests]")
 	require.Contains(t, plan.Body, "- [ ] checked your Portfile with `port lint`?")
 
-	submitted, err := e.ApplySubmit(t.Context(), plan)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.True(t, submitted.Created)
 	require.True(t, submitted.Pushed)
@@ -147,7 +147,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	first, err := e.ApplySubmit(t.Context(), plan)
+	first, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	branch, err = e.Resolve(t.Context(), "jq-update")
 	require.NoError(t, err)
@@ -172,7 +172,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, typed.Body, "- [x] bugfix")
 	require.Equal(t, DescriptionSections{Description: SectionCurrent, Types: SectionRefreshed, TestedOn: SectionCurrent}, typed.Sections)
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Len(t, fake.Created, 1)
 	require.Empty(t, fake.Updated, "the push is the update; the title and description had nothing new")
@@ -180,7 +180,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: update to 1.8.1, reviewed"})
 	require.NoError(t, err)
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Equal(t, first.PullRequest.Ref.Number, fake.Updated[0].ExistingPR.Number)
 	require.Equal(t, "jq: update to 1.8.1, reviewed", fake.PRs[first.PullRequest.Ref.Number].Title, "--title retitles")
@@ -202,7 +202,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	testsupport.Git(t, other, "add", "README")
 	testsupport.Git(t, other, "commit", "-q", "-m", "their change")
 	testsupport.Git(t, other, "push", "-q", "origin", "dockhand/jq-update")
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.ErrorIs(t, err, ErrStaleSubmit, "the push is conditional on the head submit saw")
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
@@ -222,7 +222,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.Empty(t, plan.Blocking)
 	require.Empty(t, plan.OthersPushed)
 	require.False(t, plan.Replaces)
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Equal(t, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")), fake.ForkHead("dockhand/jq-update"))
 
@@ -242,7 +242,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, plan.Replaces, "the amend replaces their commit")
 	require.Empty(t, plan.Blocking, "made from it, as the branch's reflog shows")
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Equal(t, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")), fake.ForkHead("dockhand/jq-update"))
 }
@@ -381,7 +381,7 @@ func TestAStandingAcceptanceIsRecordedAndTaken(t *testing.T) {
 	require.Empty(t, plan.Blocking)
 	require.Equal(t, AcceptedStanding, plan.Accepted["jq"].Kind)
 	require.Contains(t, plan.Body, "| jq | ✗ a dependency failed, accepted: standing: libgcc15 15.2.0_1 fails on this image¹ |")
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 
 	// Taken unasked by a later submission of the same failure; not once
@@ -424,7 +424,7 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	require.Contains(t, plan.Body, "| jq | ✓ tests passed |\n| harbor-viewer | ✗ failed at install, accepted: cause not established |\n")
 	require.Contains(t, plan.Body, "- [x] tried a full install with `sudo port -vst install`? (dockhand builds from source as MacPorts CI does, without trace mode)")
 	require.Contains(t, plan.Body, "- [x] tried existing tests with `sudo port test`?")
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		accepted, err := r.Decisions(branch.ID, model.FindingFailure, testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
@@ -461,7 +461,7 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	plan, err = e2.PlanSubmit(t.Context(), SubmitRequest{Branch: branch2, Draft: true})
 	require.NoError(t, err)
 	require.Empty(t, plan.Blocking)
-	_, err = e2.ApplySubmit(t.Context(), plan)
+	_, err = e2.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.True(t, fake2.Created[0].Draft)
 }
@@ -612,7 +612,7 @@ func TestAReadyTheOrganizationRefusesGoesThroughTheGitHubCLI(t *testing.T) {
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Draft: true})
 	require.NoError(t, err)
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	fake.ReadyRefused = restricted{errors.New("github: the `macports` organization has enabled OAuth App access restrictions")}
 
@@ -721,7 +721,7 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	quoted := "rust's tests didn't run: bootstrap panicked on a permission error.\n\nThe environment's, not the tests'.\n\n"
 	require.Contains(t, plan.Body, "#### Description\n\n"+quoted+"###### Type(s)\n")
 	require.Empty(t, recordedNote(), "a plan records nothing")
-	submitted, err := e.ApplySubmit(t.Context(), plan)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	number := submitted.PullRequest.Ref.Number
 	require.Equal(t, "rust's tests didn't run: bootstrap panicked on a permission error.\n\nThe environment's, not the tests'.", recordedNote())
@@ -731,7 +731,7 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, plan.Body, quoted)
 	require.Equal(t, DescriptionSections{Description: SectionCurrent, Types: SectionCurrent, TestedOn: SectionCurrent}, plan.Sections)
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Empty(t, fake.Updated, "nothing new")
 
@@ -743,7 +743,7 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	require.Equal(t, SectionRefreshed, plan.Sections.Description)
 	require.Contains(t, plan.Body, "#### Description\n\nFixed upstream in\n&#35;35090.\n\n###### Type(s)\n")
 	require.NotContains(t, plan.Body, "permission error")
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Len(t, fake.Updated, 1, "the note's change is the pull request's")
 	require.Equal(t, plan.Body, fake.PRs[number].Body)
@@ -751,7 +751,7 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, plan.Body, "#### Description\n\nFixed upstream.\n\n###### Type(s)\n")
 	require.NotContains(t, plan.Body, "#35090")
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 
 	// An empty note takes it out.
@@ -759,7 +759,7 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, SectionRefreshed, plan.Sections.Description)
 	require.Contains(t, plan.Body, "#### Description\n\n###### Type(s)\n")
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Len(t, fake.Updated, 3)
 	require.NotContains(t, fake.PRs[number].Body, "Author's note")
@@ -786,7 +786,7 @@ func TestArchiveReadsThePullRequestsState(t *testing.T) {
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	submitted, err := e.ApplySubmit(t.Context(), plan)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	branch, err = e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)

@@ -26,7 +26,7 @@ func mergedBranch(t *testing.T) (fixture, *Engine, *forgetest.GitHub, model.Bran
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	submitted, err := e.ApplySubmit(t.Context(), plan)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	fake.PRs[submitted.PullRequest.Ref.Number].State = forge.PullRequestMerged
 	refreshed, err := e.RefreshPullRequests(t.Context())

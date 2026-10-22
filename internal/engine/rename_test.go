@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -16,7 +17,7 @@ func TestARenamedBranchKeepsItsRecordAndItsPullRequest(t *testing.T) {
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	submitted, err := e.ApplySubmit(t.Context(), plan)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	number := submitted.PullRequest.Ref.Number
 
@@ -41,7 +42,7 @@ func TestARenamedBranchKeepsItsRecordAndItsPullRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, plan.Blocking)
 	require.Equal(t, "ada/macports-ports:dockhand/jq-update", plan.Head(), "a pull request's head can't move, so pushes go where it was opened from")
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Equal(t, testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), string(fake.ForkHead("dockhand/jq-update")))
 	require.Empty(t, fake.ForkHead("jq-with-docs"), "no new branch on the fork")

@@ -25,7 +25,7 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Equal(t, []string{"jq"}, plan.Searched, "the ports other pull requests were looked for under")
-	submitted, err := e.ApplySubmit(t.Context(), plan)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	number := submitted.PullRequest.Ref.Number
 
@@ -101,7 +101,7 @@ func TestServeSaysAnEndedLoginOnce(t *testing.T) {
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	e.Forge = endedLogin{fake}
 	var said, notified []string
@@ -134,7 +134,7 @@ func TestARejectedLoginFailsTheReadOnce(t *testing.T) {
 		require.NoError(t, err)
 		plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 		require.NoError(t, err)
-		_, err = e.ApplySubmit(t.Context(), plan)
+		_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 		require.NoError(t, err)
 	}
 	fake.ObserveErr = fmt.Errorf("%w: GitHub rejected the credential from Dockhand macOS Keychain", github.ErrAuthentication)
@@ -160,7 +160,7 @@ func TestStalePullRequestsAreReadAndADrainNamesTheUnwatched(t *testing.T) {
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	stale, err = e.PullRequestsStale(t.Context())
 	require.NoError(t, err)
@@ -213,7 +213,7 @@ func TestPullRequestsAreReadAtOnceWhereTheForgeCan(t *testing.T) {
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	submitted, err := e.ApplySubmit(t.Context(), plan)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	number := submitted.PullRequest.Ref.Number
 	fake.Statuses = map[int]forge.PullRequestStatus{number: {Review: "approved", Approvals: 1, Checks: forge.CheckSummary{Total: 2, Passed: 2}}}

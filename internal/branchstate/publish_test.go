@@ -1,0 +1,31 @@
+package branchstate
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/model"
+)
+
+// One gate for every submission: what blocks it stops it; a branch that
+// moved from the commit it was bound to stops it; what holds it stops it
+// only where nobody looks, and a person's own goes on, having shown it
+// (R3-10).
+func TestOneGateForEverySubmission(t *testing.T) {
+	held := model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "license-changed", Detail: "upstream's COPYING changed"}
+	p := Publication{Branch: "jq-1.8.2", Holds: []model.Concern{held}, Commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	asked, nobody := Mode{Answered: model.AnsweredAsked}, Mode{Answered: model.AnsweredNobody}
+	require.Nil(t, Publish(p, asked, words{}))
+	refusal := Publish(p, nobody, words{})
+	require.Equal(t, PublishHeld, refusal.Kind)
+	require.Equal(t, "jq-1.8.2 is held for a look: upstream's COPYING changed", refusal.Error())
+	require.True(t, refusal.Next.Advances(ActionSubmit), "submit again, after a look")
+
+	p.Bound = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	require.Equal(t, PublishMoved, Publish(p, asked, words{}).Kind)
+	p.Blocks = []Block{{Kind: BlockNoTitle}}
+	refusal = Publish(p, asked, words{})
+	require.Equal(t, PublishBlocked, refusal.Kind)
+	require.Contains(t, refusal.Error(), "can't submit yet: the pull request needs a title")
+}

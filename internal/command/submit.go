@@ -201,7 +201,8 @@ func writeDescription(out io.Writer, plan engine.SubmitPlan) {
 // finishSubmit applies a plan, then takes its pull request out of draft
 // when --ready asked.
 func finishSubmit(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.SubmitPlan, ready bool, rerequest string) error {
-	if err := applySubmit(ctx, e, streams, plan, rerequest); err != nil {
+	// A person's own submission: what holds it is shown, and it goes on.
+	if err := applySubmit(ctx, e, streams, plan, rerequest, model.AnsweredAsked); err != nil {
 		return err
 	}
 	if !ready {
@@ -548,8 +549,8 @@ func updatedWords(edited engine.SubmitEdits, number int) string {
 // as rerequest says: ask (the default), always, or never. Its JSON names
 // them, and whether each was asked (the rc8 full stage's B4), however it
 // ends once the submission is made.
-func applySubmit(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.SubmitPlan, rerequest string) error {
-	submitted, err := e.ApplySubmit(ctx, plan)
+func applySubmit(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.SubmitPlan, rerequest string, answered model.Answered) error {
+	submitted, err := e.ApplySubmit(ctx, plan, answered)
 	if err != nil {
 		return err
 	}

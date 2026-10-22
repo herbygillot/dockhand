@@ -390,9 +390,7 @@ func finishCarried(ctx context.Context, s *settings, streams term.Streams, done 
 	var checked error
 	if done.run != nil {
 		checked = runQueued(ctx, e, *done.run, streams, false, s)
-		// A draft goes up whatever its check found, as submit --draft
-		// allows, with the check's exit; anything else stops.
-		draft := done.submit != nil && done.submit.request.Draft
+		draft := done.submit != nil && branchstate.SubmitsDespiteCheck(done.submit.request.Draft)
 		if exit := new(term.ExitError); checked != nil && (!draft || !errors.As(checked, &exit)) {
 			if done.submit != nil && errors.As(checked, &exit) {
 				exit.Message += "; nothing was submitted"
@@ -410,11 +408,11 @@ func finishCarried(ctx context.Context, s *settings, streams term.Streams, done 
 }
 
 // pendingSubmit is a submission ship holds until its check ends: what it
-// asks, the commit it is bound to, and whether nobody looks before it goes.
+// asks, bound to its commit (SubmitRequest.Bound), and who answers for
+// it, nobody where nobody looks before it goes.
 type pendingSubmit struct {
-	request    engine.SubmitRequest
-	bound      string
-	unattended bool
+	request  engine.SubmitRequest
+	answered model.Answered
 }
 
 // prepareSubmit previews a branch's submission of its committed head, and
@@ -439,7 +437,11 @@ func prepareSubmit(ctx context.Context, s *settings, e *engine.Engine, streams t
 		request.TestedBinaries, request.TestedVariants = plan.Request.TestedBinaries, plan.Request.TestedVariants
 	}
 	request.PendingCheck = false
-	pending := pendingSubmit{request: request, bound: plan.Commit, unattended: place.Unattended}
+	request.Bound = plan.Commit
+	pending := pendingSubmit{request: request, answered: model.AnsweredAsked}
+	if place.Unattended {
+		pending.answered = model.AnsweredNobody
+	}
 	// What stands for the check asked submits as it is (PlanSubmit).
 	if !plan.CheckNeeded {
 		return pending, nil, nil
@@ -461,25 +463,27 @@ func submitPassed(ctx context.Context, s *settings, e *engine.Engine, streams te
 	if err != nil {
 		return err
 	}
-	if plan.Commit != pending.bound {
-		return fmt.Errorf("%s moved to %s while it was checked; nothing was submitted, since ship binds %s", plan.Branch.ShortName(), model.ObjectID(plan.Commit).Short(), model.ObjectID(pending.bound).Short())
-	}
 	streams.Emit(submitView(plan))
-	if len(plan.Blocking) > 0 {
+	fmt.Fprintln(streams.Out)
+	err = applySubmit(ctx, e, streams, plan, s.file.Submit.RerequestReview, pending.answered)
+	// The gate is the engine's (branchstate.Publish); ship words what it
+	// refused as ship says it.
+	refusal := new(branchstate.Refusal)
+	if !errors.As(err, &refusal) {
+		return err
+	}
+	switch refusal.Kind {
+	case branchstate.PublishBlocked:
 		writeSubmitPlan(streams.Out, plan)
 		return errors.New("nothing was submitted")
+	case branchstate.PublishHeld:
+		view := submitView(plan)
+		view.Held = engine.HoldLines(refusal.Holds)
+		streams.Emit(view)
+		name := plan.Branch.ShortName()
+		return term.Exitf(term.ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: %s", name, strings.Join(engine.HoldLines(refusal.Holds), "; "), renderNext(branchstate.Next{Verb: refusal.Next.Verb, Branch: name}, ""))
 	}
-	if pending.unattended {
-		if held := plan.Held(); len(held) > 0 {
-			view := submitView(plan)
-			view.Held = engine.HoldLines(held)
-			streams.Emit(view)
-			name := plan.Branch.ShortName()
-			return term.Exitf(term.ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: dockhand submit --branch %s", name, strings.Join(engine.HoldLines(held), "; "), name)
-		}
-	}
-	fmt.Fprintln(streams.Out)
-	return applySubmit(ctx, e, streams, plan, s.file.Submit.RerequestReview)
+	return err
 }
 
 // whereReady settles where a change's check builds before anything is

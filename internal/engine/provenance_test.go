@@ -68,7 +68,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 		}
 	}
 
-	submitted, err := e.ApplySubmit(t.Context(), plan)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.True(t, submitted.Created)
 }
@@ -94,6 +94,6 @@ func TestSubmitSaysOnceThatGitHubCouldntBeAskedAboutItsBuilds(t *testing.T) {
 	require.Len(t, plan.UnfoundBuilds, 1)
 	require.Equal(t, "devel", plan.UnfoundBuilds[0].Build)
 	require.Empty(t, plan.Blocking)
-	_, err = e.ApplySubmit(t.Context(), plan)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 }

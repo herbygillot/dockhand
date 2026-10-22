@@ -404,7 +404,7 @@ func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (
 	}
 	plan := candidate.Plan
 	plan.Body = plan.Body + "\n\n" + ServeNote + "\n"
-	submitted, err := e.ApplySubmit(ctx, plan)
+	submitted, err := e.ApplySubmit(ctx, plan, model.AnsweredNobody)
 	if err != nil {
 		return submitted, err
 	}

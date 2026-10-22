@@ -36,6 +36,10 @@ type SubmitRequest struct {
 	// Draft opens the pull request as a draft, which unfinished or failing
 	// checks allow.
 	Draft bool
+	// Bound is the commit a caller bound the submission to, as ship binds
+	// the one its check was of; ApplySubmit refuses another (branchstate
+	// .Publish). Empty where none was.
+	Bound string
 	// NoCheck submits without any check; the description says so.
 	NoCheck bool
 	// PendingCheck previews a submission whose check is still to run, for
@@ -827,9 +831,14 @@ var ErrStaleSubmit = errors.New("the branch changed after the submission was pre
 
 // ApplySubmit pushes the planned commit to your fork, only while the fork's
 // branch is as the plan saw it, and opens or updates the pull request.
-func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, error) {
-	if len(plan.Blocking) > 0 {
-		return Submitted{}, fmt.Errorf("can't submit yet: %s", strings.Join(plan.Blocking, "; "))
+func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered model.Answered) (Submitted, error) {
+	// The one gate of a submission, whoever submits it: what blocks it,
+	// the commit it was bound to, and, where nobody looks, what holds it
+	// (branchstate.Publish; R3-10, where ship and serve each held it).
+	publication := branchstate.Publication{Branch: plan.Branch.ShortName(), Blocks: plan.Blocks, Holds: holding(plan.Concerns(), plan.allowed),
+		Commit: model.ObjectID(plan.Commit), Bound: model.ObjectID(plan.Request.Bound)}
+	if refusal := branchstate.Publish(publication, branchstate.Mode{Answered: answered}, Vocabulary{}); refusal != nil {
+		return Submitted{}, refusal
 	}
 	worktree, err := e.worktree(ctx, plan.Branch)
 	if err != nil {
