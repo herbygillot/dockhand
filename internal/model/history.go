@@ -303,9 +303,26 @@ type Decision struct {
 // FindingKind is the kind of finding a decision answers.
 type FindingKind string
 
-// FindingFailure is a port's failure in a check: a failed revision-only
-// target or extra, or a changed port whose base fails it alike.
-const FindingFailure FindingKind = "failure"
+const (
+	// FindingFailure is a port's failure in a check: a failed revision-only
+	// target or extra, or a changed port whose base fails it alike.
+	FindingFailure FindingKind = "failure"
+	// FindingEnvironmentFailure is a dependency failing in an environment,
+	// whatever port needs it: Monterey's Xcode image refusing lang/gcc15 at
+	// pre-fetch, so that anything pulling in libgcc15 fails there, master
+	// included (the person's choice, 2026-10-18). Its decision is standing,
+	// its subject the dependency, and its evidence the dependency's
+	// version on the image (EnvironmentEvidence).
+	FindingEnvironmentFailure FindingKind = "environment-failure"
+)
+
+// EnvironmentEvidence is what a standing acceptance of a dependency's
+// failure rests on: the dependency's version and revision as the tree has
+// them, and the identity of the image it failed on. Either changing lapses
+// it.
+func EnvironmentEvidence(dependency FailedDependency, identity string) string {
+	return dependency.Version + " on " + identity
+}
 
 // DecisionAnswer is how a person answered a finding.
 type DecisionAnswer string
@@ -319,8 +336,10 @@ func (d Decision) Validate() error {
 	switch {
 	case d.Subject == "" || d.Evidence == "" || d.At.IsZero():
 		return invalid("decision on %q is incomplete", d.Subject)
-	case d.Finding != FindingFailure:
+	case d.Finding != FindingFailure && d.Finding != FindingEnvironmentFailure:
 		return invalid("decision on %s answers an unknown kind of finding %q", d.Subject, d.Finding)
+	case d.Finding == FindingEnvironmentFailure && d.Branch != "":
+		return invalid("a dependency's failure in an environment is accepted standing, on no branch: %s", d.Subject)
 	case d.Answer != Accepted:
 		return invalid("decision on %s has an unknown answer %q", d.Subject, d.Answer)
 	}

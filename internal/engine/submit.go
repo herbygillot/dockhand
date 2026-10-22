@@ -49,6 +49,10 @@ type SubmitRequest struct {
 	Tests        model.TestPolicy
 	// Accept acknowledges failed revision-only targets or extras by port.
 	Accept []string
+	// Standing accepts each port Accept names whose every failure is a
+	// dependency failing to install, by the dependency's version on the
+	// image it failed on, for every branch until either changes.
+	Standing bool
 	// Title replaces the branch's title, and the pull request's.
 	Title string
 	// Types are the template's Type(s) that apply.
@@ -135,6 +139,11 @@ type SubmitPlan struct {
 	// its baseline failing alike, the cause not established, or blocked
 	// only by accepted failures.
 	Accepted map[string]AcceptedFailure
+	// Standing are the standing decisions --standing asks for, which the
+	// submission records; StandingAccepted the failed ports a standing
+	// decision accepts, recorded or asked for.
+	Standing         []model.Decision
+	StandingAccepted map[string]AcceptedFailure
 	// UncoveredCI are the releases MacPorts' CI builds on that the check
 	// built on none of, which the preview and the pull request say.
 	UncoveredCI []string
@@ -363,6 +372,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	// What's recorded of the branch at this commit, read once for the
 	// phases below: the failures accepted, and the edits dockhand made.
 	var accepted []string
+	var standing []model.Decision
 	var edits []model.Edit
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		list, err := r.Decisions(branch.ID, model.FindingFailure, head)
@@ -370,6 +380,9 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 			accepted = append(accepted, d.Subject)
 		}
 		if err != nil {
+			return err
+		}
+		if standing, err = r.StandingDecisions(model.FindingEnvironmentFailure); err != nil {
 			return err
 		}
 		edits, err = r.Edits(branch.ID)
@@ -380,7 +393,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	// The phases, in order: the evidence and what blocks publishing it;
 	// where submit pushes, and the pull request open there (Existing),
 	// which the title and the search for others read.
-	if err := e.evidence(ctx, &plan, accepted); err != nil {
+	if err := e.evidence(ctx, &plan, accepted, standing); err != nil {
 		return plan, err
 	}
 	plan.Moved = e.movedSources(ctx, plan.Evidence)
@@ -423,7 +436,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 // evidence finds the evidence for the commit's files and applies the
 // publication rule, accepted being the failures already accepted at this
 // commit.
-func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []string) error {
+func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []string, standing []model.Decision) error {
 	request := plan.Request
 	for _, kind := range request.Types {
 		if !prdescription.IsType(kind) {
@@ -433,6 +446,9 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 	if request.NoCheck {
 		if len(request.Accept) > 0 {
 			return errors.New("--accept requires a failed check and cannot be combined with --no-check")
+		}
+		if request.Standing {
+			return errors.New("--standing accepts a failure a check found, and cannot be combined with --no-check")
 		}
 		return nil
 	}
@@ -504,12 +520,32 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 	if plan.AtBase, err = e.failsAtBase(ctx, plan.Branch.ID, evidence); err != nil {
 		return err
 	}
-	if err := acceptanceProblem(evidence, request.Accept, plan.AtBase); err != nil {
+	if request.Standing && len(request.Accept) == 0 {
+		return errors.New("--standing takes the ports --accept names: dockhand submit --accept <port> --standing")
+	}
+	if err := acceptanceProblem(evidence, request.Accept, plan.AtBase, request.Standing); err != nil {
 		return err
 	}
-	plan.Accepted = acceptedReasons(evidence, slices.Concat(accepted, request.Accept), plan.AtBase)
+	// The standing decisions asked for count here, as those recorded do,
+	// and are recorded with the submission.
+	if request.Standing {
+		for _, port := range request.Accept {
+			i := slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == port && t.Failing() })
+			failures, _ := environmentFailures(evidence, evidence.Targets[i])
+			for _, failure := range failures {
+				if !slices.ContainsFunc(plan.Standing, func(d model.Decision) bool {
+					return d.Subject == failure.Decision.Subject && d.Evidence == failure.Decision.Evidence
+				}) {
+					plan.Standing = append(plan.Standing, failure.Decision)
+				}
+			}
+		}
+		standing = append(slices.Clone(standing), plan.Standing...)
+	}
+	plan.StandingAccepted = standingAccepted(evidence, standing)
+	plan.Accepted = acceptedReasons(evidence, slices.Concat(accepted, request.Accept), plan.AtBase, plan.StandingAccepted)
 	if !request.Draft {
-		plan.Blocking = append(plan.Blocking, publicationProblems(evidence, slices.Concat(accepted, request.Accept), plan.AtBase)...)
+		plan.Blocking = append(plan.Blocking, publicationProblems(evidence, slices.Concat(accepted, request.Accept), plan.AtBase, plan.StandingAccepted)...)
 	}
 	return nil
 }
@@ -871,6 +907,12 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		}
 		for _, port := range plan.Request.Accept {
 			if err := tx.AddDecision(model.Decision{Branch: branch.ID, Finding: model.FindingFailure, Subject: port, Evidence: plan.Commit, Answer: model.Accepted, At: e.now()}); err != nil {
+				return err
+			}
+		}
+		for _, decision := range plan.Standing {
+			decision.At = e.now()
+			if err := tx.AddDecision(decision); err != nil {
 				return err
 			}
 		}

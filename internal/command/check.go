@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -561,6 +562,16 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		return nil
 	case model.RunFailed:
 		writeFailureLines(out, evidence)
+		// A failure a standing decision accepts is named, as submit takes
+		// it without a baseline.
+		if standing, err := e.StandingAccepted(ctx, evidence); err == nil {
+			for _, port := range slices.Sorted(maps.Keys(standing)) {
+				fmt.Fprintf(out, "%s's failure is accepted, %s; submit takes it.\n", port, standing[port].Words())
+			}
+			if len(standing) > 0 {
+				fmt.Fprintln(out)
+			}
+		}
 		if logs, err := e.Logs(ctx, run.ID); err == nil {
 			writeFailureLogs(out, places, logs)
 		}

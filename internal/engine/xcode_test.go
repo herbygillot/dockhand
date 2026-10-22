@@ -106,7 +106,7 @@ func TestATargetThatNeedsXcodeIsUnmetWithoutIt(t *testing.T) {
 			require.Equal(t, "· not built: needs Xcode, through libharbor", EvidenceWords(evidence, target, 0, AcceptedFailure{}))
 		}
 	}
-	problems := publicationProblems(evidence, nil, nil)
+	problems := publicationProblems(evidence, nil, nil, nil)
 	require.Contains(t, problems, "libharbor needs Xcode, which command macOS 26 (Tahoe) arm64 with the Command Line Tools hasn't; a check with Xcode there builds it, or share the branch as a draft (--draft)")
 
 	usePorts(e, xcodeOnArm{fakePorts: harborPorts(), broken: true})

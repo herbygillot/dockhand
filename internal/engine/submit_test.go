@@ -277,6 +277,13 @@ func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {
 // harbor-viewer an extra from --also.
 func checked(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outcome) {
 	t.Helper()
+	checkedWith(t, e, branch, jq, viewer, nil)
+}
+
+// checkedWith is checked, with its execution and jq's result as alter
+// leaves them.
+func checkedWith(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outcome, alter func(execution *model.GuestExecution, jq *model.TargetResult)) {
+	t.Helper()
 	head := model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 	tree := model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD^{tree}"))
 	at := time.Now().UTC().Truncate(time.Millisecond)
@@ -303,18 +310,19 @@ func checked(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outc
 		runRecord := model.Run{ID: model.RunID(store.NewID("run")), Branch: branch.ID, Revision: revision.ID, Plan: plan.ID, Number: number, Origin: model.OriginPerson, State: model.RunQueued, CreatedAt: at}
 		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID("tart")), Run: runRecord.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at,
 			Observed: model.Observed{MacOS: "26.6.2", Build: "25G71", Architecture: "arm64", Xcode: "26.6", XcodeBuild: "17F42", Tools: "26.6.0.0.1781586589"}}
+		jqResult := model.TargetResult{Execution: execution.ID, Target: "jq", Outcome: jq, Tests: model.TestsPassed, RecordedAt: at}
+		if jq == model.OutcomeFailed {
+			jqResult.Phase, jqResult.Tests = model.PhaseInstall, model.TestsNone
+		}
+		if alter != nil {
+			alter(&execution, &jqResult)
+		}
 		for _, step := range []func() error{
 			func() error { return tx.AddRevision(revision) },
 			func() error { return tx.AddPlan(plan) },
 			func() error { return tx.AddRun(runRecord) },
 			func() error { return tx.AddExecution(execution) },
-			func() error {
-				result := model.TargetResult{Execution: execution.ID, Target: "jq", Outcome: jq, Tests: model.TestsPassed, RecordedAt: at}
-				if jq == model.OutcomeFailed {
-					result.Phase, result.Tests = model.PhaseInstall, model.TestsNone
-				}
-				return tx.RecordResult(result)
-			},
+			func() error { return tx.RecordResult(jqResult) },
 			func() error {
 				if viewer == "" {
 					return nil // the check didn't reach it
@@ -341,6 +349,51 @@ func checked(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outc
 		}
 		return nil
 	}))
+}
+
+// submit --accept --standing takes a changed port whose every failure is a
+// dependency failing to install, with no baseline, and records the
+// acceptance for every branch: a later submission takes it unasked, until
+// the dependency's version or the image changes (the person's choice,
+// 2026-10-18).
+func TestAStandingAcceptanceIsRecordedAndTaken(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	gcc := model.FailedDependency{Name: "libgcc15", Version: "15.2.0_1"}
+	dependencyFailed := func(identity string) func(*model.GuestExecution, *model.TargetResult) {
+		return func(execution *model.GuestExecution, jq *model.TargetResult) {
+			execution.Identity = identity
+			jq.Phase, jq.Dependency, jq.Detail = model.PhaseDependencies, gcc, "Failed to build libgcc15: command execution failed"
+		}
+	}
+	checkedWith(t, e, branch, model.OutcomeFailed, model.OutcomePassed, dependencyFailed("image sha256:12; setup 3"))
+
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+	require.NotEmpty(t, plan.Blocking, "nothing accepts it yet")
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Standing: true})
+	require.ErrorContains(t, err, "--standing takes the ports --accept names")
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}, Standing: true})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocking)
+	require.Equal(t, AcceptedStanding, plan.Accepted["jq"].Kind)
+	require.Contains(t, plan.Body, "| jq | ✗ a dependency failed, accepted: standing: libgcc15 15.2.0_1 fails on this image¹ |")
+	_, err = e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+
+	// Taken unasked by a later submission of the same failure; not once
+	// the image is another.
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocking)
+	require.Equal(t, AcceptedStanding, plan.Accepted["jq"].Kind)
+	checkedWith(t, e, branch, model.OutcomeFailed, model.OutcomePassed, dependencyFailed("image sha256:13; setup 3"))
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+	require.NotEmpty(t, plan.Blocking, "a new image lapses it")
 }
 
 func TestSubmitFollowsThePublicationRule(t *testing.T) {

@@ -104,6 +104,18 @@ func TestEditsCheckpointsAndDecisions(t *testing.T) {
 		bad.Answer = "maybe"
 		return tx.AddDecision(bad)
 	}), model.ErrInvalid)
+	gcc := model.Decision{Finding: model.FindingEnvironmentFailure, Subject: "libgcc15", Evidence: model.EnvironmentEvidence(model.FailedDependency{Name: "libgcc15", Version: "15.2.0_1"}, "image sha256:12"), Answer: model.Accepted, At: at}
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddDecision(gcc); err != nil {
+			return err
+		}
+		return tx.AddDecision(gcc)
+	}), "repeating a standing decision changes nothing")
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
+		onBranch := gcc
+		onBranch.Branch = b.ID
+		return tx.AddDecision(onBranch)
+	}), model.ErrInvalid, "an environment's failure is accepted standing")
 
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
 		got, err := r.Branch(b.ID)
@@ -128,6 +140,12 @@ func TestEditsCheckpointsAndDecisions(t *testing.T) {
 		none, err := r.Decisions(b.ID, model.FindingFailure, "c2")
 		require.NoError(t, err)
 		require.Empty(t, none, "a decision holds for its evidence only")
+		standing, err := r.StandingDecisions(model.FindingEnvironmentFailure)
+		require.NoError(t, err)
+		require.Equal(t, []model.Decision{gcc}, standing, "a standing decision is no branch's")
+		none, err = r.StandingDecisions(model.FindingFailure)
+		require.NoError(t, err)
+		require.Empty(t, none)
 		return nil
 	}))
 }

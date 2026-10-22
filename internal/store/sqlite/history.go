@@ -161,8 +161,17 @@ func (t *tx) AddDecision(d model.Decision) error {
 }
 
 func (t *tx) Decisions(branch model.BranchID, finding model.FindingKind, evidence string) ([]model.Decision, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT ifnull(branch_id, ''), finding, subject, evidence, answer, at FROM decisions WHERE repository_id=? AND branch_id=? AND finding=? AND evidence=? ORDER BY subject",
+	return t.decisions("SELECT ifnull(branch_id, ''), finding, subject, evidence, answer, at FROM decisions WHERE repository_id=? AND branch_id=? AND finding=? AND evidence=? ORDER BY subject",
 		t.repo, branch, finding, evidence)
+}
+
+func (t *tx) StandingDecisions(finding model.FindingKind) ([]model.Decision, error) {
+	return t.decisions("SELECT '', finding, subject, evidence, answer, at FROM decisions WHERE repository_id=? AND branch_id IS NULL AND finding=? ORDER BY subject, evidence",
+		t.repo, finding)
+}
+
+func (t *tx) decisions(query string, args ...any) ([]model.Decision, error) {
+	rows, err := t.conn.QueryContext(t.ctx, query, args...)
 	if err != nil {
 		return nil, storageError(err)
 	}

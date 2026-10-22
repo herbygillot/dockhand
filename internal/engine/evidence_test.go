@@ -316,13 +316,13 @@ func TestWhatEvidenceSaysReadsInWords(t *testing.T) {
 	evidence := Evidence{Run: model.Run{ID: "run_2", Number: 2}, Plan: model.Plan{Environments: []model.Environment{tools}}, Targets: []TargetEvidence{needsXcode}}
 	require.Equal(t, "· not built: needs Xcode", EvidenceWords(evidence, needsXcode, 0, AcceptedFailure{}))
 	require.Equal(t, []string{"harbor-tools needs Xcode, which " + DescribeEnvironment(tools) + " hasn't; a check with Xcode there builds it, or share the branch as a draft (--draft)"},
-		publicationProblems(evidence, nil, nil))
+		publicationProblems(evidence, nil, nil, nil))
 
 	failed := TargetEvidence{Target: model.PlanTarget{ID: "oniguruma", Target: model.Target{Name: "oniguruma"}, Kind: model.Unchanged, Role: model.Also},
 		Outcomes: []Cell{recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall})}}
 	evidence = Evidence{Run: model.Run{ID: "run_1", Number: 1}, Plan: model.Plan{Environments: []model.Environment{tahoeArm}}, Targets: []TargetEvidence{failed}}
-	require.Equal(t, []string{"oniguruma (an extra from --also) did not pass in check-1; acknowledge it with --accept oniguruma if its failure is not this branch's doing"}, publicationProblems(evidence, nil, nil))
-	require.Empty(t, publicationProblems(evidence, []string{"oniguruma"}, nil))
+	require.Equal(t, []string{"oniguruma (an extra from --also) did not pass in check-1; acknowledge it with --accept oniguruma if its failure is not this branch's doing"}, publicationProblems(evidence, nil, nil, nil))
+	require.Empty(t, publicationProblems(evidence, []string{"oniguruma"}, nil, nil))
 }
 
 // cells are hand-built results as the evidence's cells: recorded, but for
@@ -374,15 +374,64 @@ func TestAPortBlockedOnlyByAcceptedFailuresIsAccepted(t *testing.T) {
 	evidence := Evidence{Run: model.Run{ID: "run_1", Number: 1}, Plan: model.Plan{Environments: environments, Builds: builds},
 		Targets: []TargetEvidence{changed("py313-tool", model.OutcomeFailed), changed("py314-tool", model.OutcomeFailed), changed("py-tool", model.OutcomeBlocked)}}
 	atBase := map[string][]string{"py313-tool": {"check-2"}, "py314-tool": {"check-2"}}
-	require.Empty(t, publicationProblems(evidence, []string{"py313-tool", "py314-tool"}, atBase))
+	require.Empty(t, publicationProblems(evidence, []string{"py313-tool", "py314-tool"}, atBase, nil))
 	// Each says why, the stub too, as its cell reads (field testing,
 	// #35662: it read as an unexplained failure).
-	reasons := acceptedReasons(evidence, []string{"py313-tool", "py314-tool"}, atBase)
+	reasons := acceptedReasons(evidence, []string{"py313-tool", "py314-tool"}, atBase, nil)
 	atCheck2 := AcceptedFailure{Kind: AcceptedAtBase, Baselines: []string{"check-2"}}
 	require.Equal(t, map[string]AcceptedFailure{"py313-tool": atCheck2, "py314-tool": atCheck2, "py-tool": {Kind: AcceptedBlocked}}, reasons)
 	require.Equal(t, "✗ blocked only by accepted failures", EvidenceWords(evidence, evidence.Targets[2], 0, reasons["py-tool"]))
 	require.Equal(t, "✗ failed at install, accepted: fails at the base too (check-2)", EvidenceWords(evidence, evidence.Targets[0], 0, reasons["py313-tool"]))
-	problems := publicationProblems(evidence, []string{"py313-tool"}, atBase)
+	problems := publicationProblems(evidence, []string{"py313-tool"}, atBase, nil)
 	require.Len(t, problems, 2, "py314-tool isn't accepted, so neither is the stub it blocks")
 	require.Contains(t, problems[1], "py-tool did not pass in check-1")
+}
+
+// A port whose every failure is a dependency's that a person accepted
+// standing, at its version on the image it failed on, is accepted on any
+// branch without a baseline, and its stub with it; the dependency's
+// version or the image changing lapses it, and a failure of any other kind
+// keeps the port from it (the person's choice, 2026-10-18: Monterey's
+// Xcode image refusing lang/gcc15, so anything pulling in libgcc15 failed
+// there).
+func TestAStandingAcceptanceTakesADependencysFailureOnItsImage(t *testing.T) {
+	t.Parallel()
+	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
+	gcc := model.FailedDependency{Name: "libgcc15", Version: "15.2.0_1"}
+	failed := model.TargetResult{Execution: "tart_1", Outcome: model.OutcomeFailed, Phase: model.PhaseDependencies, Detail: "Failed to build libgcc15: command execution failed", Dependency: gcc}
+	changed := func(name string, result model.TargetResult) TargetEvidence {
+		return TargetEvidence{Target: model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Kind: model.Substantive, Role: model.Changed},
+			Outcomes: []Cell{recorded(monterey, result), recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomePassed})}}
+	}
+	evidence := Evidence{Run: model.Run{ID: "run_1", Number: 1}, Plan: model.Plan{Environments: []model.Environment{monterey, tahoeArm}},
+		Executions: map[model.ExecutionID]model.GuestExecution{"tart_1": {ID: "tart_1", Environment: monterey, Identity: "image sha256:12; setup 3"}},
+		Targets:    []TargetEvidence{changed("gfortran-tool", failed)}}
+	decision := model.Decision{Finding: model.FindingEnvironmentFailure, Subject: "libgcc15", Evidence: model.EnvironmentEvidence(gcc, "image sha256:12; setup 3"), Answer: model.Accepted}
+
+	require.Len(t, publicationProblems(evidence, nil, nil, standingAccepted(evidence, nil)), 1, "with no standing decision, it blocks")
+	require.NoError(t, acceptanceProblem(evidence, []string{"gfortran-tool"}, nil, true), "--standing takes a dependency's failure without a baseline")
+	standing := standingAccepted(evidence, []model.Decision{decision})
+	require.Equal(t, map[string]AcceptedFailure{"gfortran-tool": {Kind: AcceptedStanding, Dependencies: []model.FailedDependency{gcc}}}, standing)
+	require.Empty(t, publicationProblems(evidence, nil, nil, standing))
+	require.Equal(t, "✗ a dependency failed, accepted: standing: libgcc15 15.2.0_1 fails on this image",
+		EvidenceWords(evidence, evidence.Targets[0], 0, acceptedReasons(evidence, nil, nil, standing)["gfortran-tool"]))
+
+	// Another version, or another image, lapses it.
+	for _, other := range []model.Decision{
+		{Finding: model.FindingEnvironmentFailure, Subject: "libgcc15", Evidence: model.EnvironmentEvidence(model.FailedDependency{Name: "libgcc15", Version: "15.1.0_0"}, "image sha256:12; setup 3")},
+		{Finding: model.FindingEnvironmentFailure, Subject: "libgcc15", Evidence: model.EnvironmentEvidence(gcc, "image sha256:13; setup 3")},
+	} {
+		require.Empty(t, standingAccepted(evidence, []model.Decision{other}))
+	}
+	// A failure of its own, or a dependency's that doesn't say its version,
+	// isn't an environment's.
+	own := failed
+	own.Phase, own.Dependency = model.PhaseInstall, model.FailedDependency{}
+	evidence.Targets = []TargetEvidence{changed("gfortran-tool", own)}
+	require.Empty(t, standingAccepted(evidence, []model.Decision{decision}))
+	require.ErrorContains(t, acceptanceProblem(evidence, []string{"gfortran-tool"}, nil, true), "a standing acceptance takes a dependency failing to install")
+	unversioned := failed
+	unversioned.Dependency.Version = ""
+	evidence.Targets = []TargetEvidence{changed("gfortran-tool", unversioned)}
+	require.Empty(t, standingAccepted(evidence, []model.Decision{decision}))
 }

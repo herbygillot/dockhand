@@ -201,6 +201,9 @@ type Reader interface {
 	// Decisions lists a branch's decisions on a kind of finding that rest
 	// on one piece of evidence, by subject.
 	Decisions(branch model.BranchID, finding model.FindingKind, evidence string) ([]model.Decision, error)
+	// StandingDecisions lists the decisions on a kind of finding that
+	// belong to no branch, by subject.
+	StandingDecisions(finding model.FindingKind) ([]model.Decision, error)
 	// LastReview is the newest review of a pull request; ErrNotFound when
 	// there is none.
 	LastReview(repository string, number int) (model.Review, error)

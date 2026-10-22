@@ -100,6 +100,12 @@ func (a AcceptedFailure) Words() string {
 		return "cause not established"
 	case AcceptedBlocked:
 		return "blocked only by accepted failures"
+	case AcceptedStanding:
+		var failing []string
+		for _, dependency := range a.Dependencies {
+			failing = append(failing, dependency.Name+" "+dependency.Version)
+		}
+		return "standing: " + prose.And(failing) + " fails on this image"
 	}
 	return ""
 }

@@ -423,17 +423,29 @@ func submitView(plan engine.SubmitPlan) submitJSON {
 	view.Concerns = concernsView(plan.Concerns())
 	for _, port := range slices.Sorted(maps.Keys(plan.Accepted)) {
 		why := plan.Accepted[port]
-		view.Accepted = append(view.Accepted, acceptedJSON{Port: port, Kind: string(why.Kind), Baselines: why.Baselines, Words: why.Words()})
+		accepted := acceptedJSON{Port: port, Kind: string(why.Kind), Baselines: why.Baselines, Words: why.Words()}
+		for _, dependency := range why.Dependencies {
+			accepted.Dependencies = append(accepted.Dependencies, dependencyJSON{Name: dependency.Name, Version: dependency.Version})
+		}
+		view.Accepted = append(view.Accepted, accepted)
 	}
 	return view
 }
 
 type acceptedJSON struct {
 	Port string `json:"port"`
-	// Kind is at-base, cause-not-established, or blocked-by-accepted.
-	Kind      string   `json:"kind"`
-	Baselines []string `json:"baselines,omitempty"`
-	Words     string   `json:"words"`
+	// Kind is at-base, cause-not-established, blocked-by-accepted, or
+	// standing, a dependency's failure accepted for every branch, with the
+	// Dependencies it takes.
+	Kind         string           `json:"kind"`
+	Baselines    []string         `json:"baselines,omitempty"`
+	Dependencies []dependencyJSON `json:"dependencies,omitempty"`
+	Words        string           `json:"words"`
+}
+
+type dependencyJSON struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
 type cleanStepJSON struct {
