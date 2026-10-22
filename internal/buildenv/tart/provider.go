@@ -653,6 +653,12 @@ type guestResult struct {
 	// failed it upstream, as a module proxy's stream reset; the build is
 	// tried again, as infrastructure.
 	Transient string `json:"transient,omitempty"`
+	// Dependency is the dependency whose failure failed the target at its
+	// dependencies phase, as MacPorts named it, and DependencyVersion its
+	// version and revision as the ports tree has them, 15.2.0_1; absent
+	// where MacPorts' line didn't say, or the tree didn't.
+	Dependency        string `json:"dependency,omitempty"`
+	DependencyVersion string `json:"dependency_version,omitempty"`
 }
 
 // guestStep is where a step of a target's build began in its log: the
@@ -1301,6 +1307,9 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 	}
 	if result.Outcome != model.OutcomeFailed {
 		result.Phase = ""
+	}
+	if result.Phase == model.PhaseDependencies {
+		result.Dependency = model.FailedDependency{Name: got.Dependency, Version: got.DependencyVersion}
 	}
 	if result.Tests == "" {
 		result.Tests = model.TestsNone

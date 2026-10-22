@@ -65,6 +65,11 @@ case "$*" in
       case "$*" in *" archivefetch $name") echo "Error: no archive for $name" >&2; exit 1 ;; esac
     done
     exit 0 ;;
+  *"-q info --line --version --revision "*)
+    for entry in $DEPVERSION; do
+      case "$*" in *" ${entry%%=*}") echo "${entry#*=}" | tr ',' '\t' ;; esac
+    done
+    exit 0 ;;
   *"-q rdeps --no-build "*)
     for entry in $RDEPS; do
       case "$*" in *"--no-build ${entry%%=*}") echo "${entry#*=}" | tr ',' '\n' | sed 's/^/  /' ;; esac
@@ -701,4 +706,12 @@ func TestADependencysFailureIsItsOwnPhase(t *testing.T) {
 	require.Equal(t, "failed", results.Targets[0].Outcome)
 	require.Equal(t, "dependencies", results.Targets[0].Phase)
 	require.Contains(t, results.Targets[0].Detail, "Failed to build qt5-qtwebengine: command execution failed")
+	require.Empty(t, results.Targets[0].DependencyVersion, "where the tree doesn't say, none")
+
+	// It names the dependency, and its version and revision as the tree
+	// has them, for an acceptance that stands until either changes.
+	results, commands := guestRun(t, twoTargets("declared"), "DEPS=libharbor=libgcc15", "DEPFAILS=libgcc15", "DEPVERSION=libgcc15=15.2.0,1")
+	require.Equal(t, "libgcc15", results.Targets[0].Dependency)
+	require.Equal(t, "15.2.0_1", results.Targets[0].DependencyVersion)
+	require.Contains(t, commands, "-q info --line --version --revision libgcc15")
 }

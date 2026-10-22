@@ -110,7 +110,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // naming the dependency for its detail, where it read as install's. A
 // failed result is no evidence a later check reuses, and nothing is built
 // otherwise, so the protocol stays 3.
-const guestPin = "a2710d41a45c0208edc8900b388e69a6e2be15c152288b6aba81149a68d06fe6"
+const guestPin = "d2e49201c24b5a1facdbee3df3d2642bc6c681ec21165767e38e4f587cee09fd"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

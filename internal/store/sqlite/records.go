@@ -546,7 +546,7 @@ func (t *tx) UpdateExecution(e model.GuestExecution) error {
 		e.State, e.Detail, e.ProviderRef, observed, observed, nullableMillis(e.FinishedAt), t.repo, e.ID)
 }
 
-const resultColumns = "r.execution_id, r.target_id, r.outcome, r.phase, r.tests, r.log, r.steps, r.detail, r.builders, r.inputs, r.archive, r.reused_from, r.recorded_at"
+const resultColumns = "r.execution_id, r.target_id, r.outcome, r.phase, r.tests, r.log, r.steps, r.detail, r.builders, r.inputs, r.archive, r.reused_from, r.dependency, r.dependency_version, r.recorded_at"
 
 func (t *tx) Check(id model.RunID) (store.Check, error) {
 	check := store.Check{Results: map[model.ExecutionID][]model.TargetResult{}, Origins: map[model.ExecutionID]store.Origin{}, Inputs: map[string]model.TargetInputs{}}
@@ -630,7 +630,7 @@ func (t *tx) Reusable(target model.TargetID, environment model.Environment, limi
 func resultFields(r *model.TargetResult) ([]any, func() error) {
 	var recorded int64
 	var steps, builders string
-	fields := []any{&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &steps, &r.Detail, &builders, &r.Inputs, &r.Archive, &r.ReusedFrom, &recorded}
+	fields := []any{&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &steps, &r.Detail, &builders, &r.Inputs, &r.Archive, &r.ReusedFrom, &r.Dependency.Name, &r.Dependency.Version, &recorded}
 	return fields, func() error {
 		if steps != "" {
 			if err := json.Unmarshal([]byte(steps), &r.Steps); err != nil {
@@ -723,8 +723,8 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	err = t.conn.QueryRowContext(t.ctx, "SELECT outcome FROM results WHERE repository_id=? AND execution_id=? AND target_id=?", t.repo, r.Execution, r.Target).Scan(&existing.Outcome)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, steps, detail, builders, inputs, archive, reused_from, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, millis(r.RecordedAt))
+		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, steps, detail, builders, inputs, archive, reused_from, dependency, dependency_version, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, r.Dependency.Name, r.Dependency.Version, millis(r.RecordedAt))
 		return err
 	case err != nil:
 		return storageError(err)
@@ -733,8 +733,8 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	if !existing.ReplacedBy(r) {
 		return fmt.Errorf("%w: %s's result in execution %s is %s and cannot become %s", store.ErrConflict, r.Target, r.Execution, existing.Outcome, r.Outcome)
 	}
-	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, steps=?, detail=?, builders=?, inputs=?, archive=?, reused_from=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
-		r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
+	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, steps=?, detail=?, builders=?, inputs=?, archive=?, reused_from=?, dependency=?, dependency_version=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
+		r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, r.Dependency.Name, r.Dependency.Version, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
 	return err
 }
 

@@ -301,8 +301,18 @@ type TargetResult struct {
 	// Archive is the digest of the archive the build made, sha256:<hex>;
 	// empty where the environment kept none, or the target wasn't
 	// installed.
-	Archive    string
+	Archive string
+	// Dependency is the dependency whose failure failed the target at its
+	// dependencies phase, where its provider said which; zero otherwise.
+	Dependency FailedDependency
 	RecordedAt time.Time
+}
+
+// FailedDependency is a dependency whose failure failed a target: its
+// name, and its version and revision as the ports tree had them, 15.2.0_1,
+// where the provider could say.
+type FailedDependency struct {
+	Name, Version string
 }
 
 // BuilderResult is one builder's part of a result: a runner's outcome,

@@ -527,7 +527,17 @@ proc build {index target} {
         } elseif {$message ne ""} {
             # A phase of its own, with MacPorts' line naming the dependency,
             # "Failed to build qt5-qtwebengine: command execution failed".
-            return [{*}$fail $result dependencies [why $log $message]]
+            set result [{*}$fail $result dependencies [why $log $message]]
+            # Which dependency failed, and its version and revision as the
+            # ports tree has them, for an acceptance of the failure that
+            # stands until either changes (the person's choice, 2026-10-18:
+            # Monterey's Xcode refusing lang/gcc15 at pre-fetch).
+            if {[regexp {Failed to [a-z]+ (\S+?):} [dict get $result detail] -> failed]} {
+                dict set result dependency $failed
+                lassign [split [fact $port -q info --line --version --revision $failed] \t] version revision
+                if {$version ne ""} { dict set result dependency_version $version[expr {$revision ne "" ? "_$revision" : ""}] }
+            }
+            return $result
         }
         # A dependency with no archive for the guest's release builds from
         # source, and what it built with stays active for the target: git

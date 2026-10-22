@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -488,7 +489,10 @@ func TestReusableResultsComeWithTheirBuilds(t *testing.T) {
 			case "ex_reused":
 				result.ReusedFrom = "ex_old"
 			case "ex_failed":
-				result.Outcome, result.Phase = model.OutcomeFailed, model.PhaseInstall
+				// A dependency's failure keeps which dependency, and its
+				// version, for a standing acceptance (schema 36).
+				result.Outcome, result.Phase = model.OutcomeFailed, model.PhaseDependencies
+				result.Dependency = model.FailedDependency{Name: "libgcc15", Version: "15.2.0_1"}
 			}
 			if err := tx.RecordResult(result); err != nil {
 				return err
@@ -511,6 +515,10 @@ func TestReusableResultsComeWithTheirBuilds(t *testing.T) {
 			require.Equal(t, built, build.Execution, "the execution that built it, read whole")
 		}
 		require.Equal(t, "26.0", builds[0].Execution.Observed.MacOS)
+		failed, err := rd.Results("ex_failed")
+		require.NoError(t, err)
+		i := slices.IndexFunc(failed, func(r model.TargetResult) bool { return r.Target == "libharbor" })
+		require.Equal(t, model.FailedDependency{Name: "libgcc15", Version: "15.2.0_1"}, failed[i].Dependency)
 
 		builds, err = rd.Reusable("libharbor", tahoe, 1)
 		require.NoError(t, err)
