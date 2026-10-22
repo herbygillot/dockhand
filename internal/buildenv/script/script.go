@@ -212,7 +212,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	// binary never stands in for the dependency.
 	for _, target := range job.Targets {
 		if _, blocked := build.Blocked(target.ID); blocked {
-			if err := build.Record(model.TargetResult{Target: target.ID, Outcome: model.OutcomeBlocked}); err != nil {
+			if err := build.Record(buildenv.Reported(model.TargetResult{Target: target.ID, Outcome: model.OutcomeBlocked})); err != nil {
 				return err
 			}
 			continue
@@ -230,13 +230,10 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		}
 		// What a Git fetch checked out is the script's to say; the engine
 		// judges it by the commit the request named.
-		if got.Fetched != "" {
-			if !git.ValidObjectID(got.Fetched) {
-				return buildenv.Infrastructure("%s: %s fetched %q, which isn't a commit", p.Label, target.ID, got.Fetched)
-			}
-			build.Fetched(target.ID, got.Fetched)
+		if got.Fetched != "" && !git.ValidObjectID(got.Fetched) {
+			return buildenv.Infrastructure("%s: %s fetched %q, which isn't a commit", p.Label, target.ID, got.Fetched)
 		}
-		if err := build.Record(recorded); err != nil {
+		if err := build.Record(buildenv.TargetReport{Result: recorded, Fetched: got.Fetched}); err != nil {
 			return err
 		}
 	}

@@ -778,15 +778,15 @@ type build struct {
 	tree    model.ObjectID
 	results map[model.TargetID]model.TargetResult
 	// inputs are what each target's build read, as the provider reported
-	// them (Consumed), until its result is recorded.
+	// them (TargetReport.Active), until its result is recorded.
 	inputs map[model.TargetID]model.TargetInputs
 	// fetched are the commits Git-fetched targets' builds checked out, as
-	// the provider reported them (Fetched), until each result is recorded.
+	// the provider reported them (TargetReport.Fetched), until each result is recorded.
 	fetched map[model.TargetID]model.ObjectID
 	// installs are the kept archives the guest installs targets from.
 	installs []buildenv.Archive
 	// active are the ports the provider reported active as targets
-	// built (Consumed), whose archives KeepDependency may keep.
+	// built (TargetReport.Active), whose archives KeepDependency may keep.
 	active []model.ActivePort
 }
 
@@ -806,10 +806,23 @@ func (b *build) Blocked(target model.TargetID) (model.TargetID, bool) {
 	return "", false
 }
 
-// Consumed completes what the provider saw with the revision's trees
-// (reuse.Inputs). Inputs that can't be read are left unknown, and a
-// result stands without them.
-func (b *build) Consumed(target model.TargetID, active []model.ActivePort) {
+// Record records a target's report: what its provider saw of the build,
+// then its result.
+func (b *build) Record(report buildenv.TargetReport) error {
+	target := report.Result.Target
+	if report.Fetched != "" {
+		b.fetchedBy(target, report.Fetched)
+	}
+	if report.Active != nil {
+		b.activeIn(target, report.Active)
+	}
+	return b.record(report.Result)
+}
+
+// activeIn completes what the provider saw active as a target built with
+// the revision's trees (reuse.Inputs). Inputs that can't be read are left
+// unknown, and a result stands without them.
+func (b *build) activeIn(target model.TargetID, active []model.ActivePort) {
 	planned, ok := b.d.plan.Target(target)
 	if !ok {
 		return
@@ -869,10 +882,10 @@ func (b *build) read(planned model.PlanTarget, active []model.ActivePort) (model
 	return inputs, true
 }
 
-// Fetched keeps the commit a Git-fetched target's build checked out, for
+// fetchedBy keeps the commit a Git-fetched target's build checked out, for
 // its result's inputs and for judging it by its plan (judgeSource). One
 // that isn't a commit is no answer.
-func (b *build) Fetched(target model.TargetID, commit string) {
+func (b *build) fetchedBy(target model.TargetID, commit string) {
 	if !git.ValidObjectID(commit) {
 		b.Progress(fmt.Sprintf("%s: its provider said its build fetched %q, which isn't a commit", target, commit))
 		return
@@ -880,7 +893,9 @@ func (b *build) Fetched(target model.TargetID, commit string) {
 	b.fetched[target] = model.ObjectID(commit)
 }
 
-func (b *build) Record(result model.TargetResult) error {
+// record records a target's result, with what its report said of its
+// build.
+func (b *build) record(result model.TargetResult) error {
 	result = b.d.plan.Tests.Judge(result)
 	if result.Tests == model.TestsFailed {
 		result.Detail = withFailedTests(result.Detail, result)
@@ -1087,7 +1102,7 @@ func (b *build) blockRemaining(targets []buildenv.Target) {
 			continue
 		}
 		if _, blocked := b.Blocked(target.ID); blocked {
-			_ = b.Record(model.TargetResult{Target: target.ID, Outcome: model.OutcomeBlocked})
+			_ = b.record(model.TargetResult{Target: target.ID, Outcome: model.OutcomeBlocked})
 		}
 	}
 }

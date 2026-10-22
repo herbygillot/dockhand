@@ -304,24 +304,6 @@ func (b *fakeBuild) Observe(observed model.Observed) error {
 	return nil
 }
 
-func (b *fakeBuild) Consumed(target model.TargetID, active []model.ActivePort) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.consumed == nil {
-		b.consumed = map[model.TargetID][]model.ActivePort{}
-	}
-	b.consumed[target] = active
-}
-
-func (b *fakeBuild) Fetched(target model.TargetID, commit string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.fetched == nil {
-		b.fetched = map[model.TargetID]string{}
-	}
-	b.fetched[target] = commit
-}
-
 func (b *fakeBuild) Keep(target model.TargetID, name string, fetch func(path string) error) error {
 	directory, err := os.MkdirTemp("", "dockhand-kept-")
 	if err != nil {
@@ -358,10 +340,23 @@ func (b *fakeBuild) KeepDependency(port model.ActivePort, name string, fetch fun
 func (b *fakeBuild) Blocked(target model.TargetID) (model.TargetID, bool) {
 	return "", b.blocked[target]
 }
-func (b *fakeBuild) Record(result model.TargetResult) error {
+func (b *fakeBuild) Record(report buildenv.TargetReport) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.results = append(b.results, result)
+	target := report.Result.Target
+	if report.Active != nil {
+		if b.consumed == nil {
+			b.consumed = map[model.TargetID][]model.ActivePort{}
+		}
+		b.consumed[target] = report.Active
+	}
+	if report.Fetched != "" {
+		if b.fetched == nil {
+			b.fetched = map[model.TargetID]string{}
+		}
+		b.fetched[target] = report.Fetched
+	}
+	b.results = append(b.results, report.Result)
 	return nil
 }
 func (b *fakeBuild) Progress(message string) {

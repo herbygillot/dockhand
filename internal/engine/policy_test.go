@@ -22,7 +22,7 @@ func (*advisoryHarbor) Execute(_ context.Context, job buildenv.Job, build builde
 		if target.ID == "libharbor" {
 			tests = model.TestsFailed
 		}
-		if err := build.Record(model.TargetResult{Target: target.ID, Outcome: model.OutcomePassed, Tests: tests}); err != nil {
+		if err := build.Record(buildenv.Reported(model.TargetResult{Target: target.ID, Outcome: model.OutcomePassed, Tests: tests})); err != nil {
 			return err
 		}
 	}

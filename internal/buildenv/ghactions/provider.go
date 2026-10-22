@@ -350,7 +350,7 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 	var unbuilt []string
 	for _, target := range job.Targets {
 		if _, blocked := build.Blocked(target.ID); blocked {
-			if err := build.Record(model.TargetResult{Target: target.ID, Outcome: model.OutcomeBlocked}); err != nil {
+			if err := build.Record(buildenv.Reported(model.TargetResult{Target: target.ID, Outcome: model.OutcomeBlocked})); err != nil {
 				return err
 			}
 			continue
@@ -363,7 +363,7 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 			continue
 		}
 		result.Target = target.ID
-		if err := build.Record(result); err != nil {
+		if err := build.Record(buildenv.Reported(result)); err != nil {
 			return err
 		}
 		recorded++

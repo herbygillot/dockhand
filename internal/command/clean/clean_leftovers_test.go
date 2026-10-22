@@ -33,7 +33,7 @@ func (p *leavingBuilder) Execute(_ context.Context, job buildenv.Job, build buil
 	p.left = append(p.left, ref)
 	p.mu.Unlock()
 	for _, target := range job.Targets {
-		if err := build.Record(model.TargetResult{Target: target.ID, Outcome: model.OutcomePassed, Tests: model.TestsNone}); err != nil {
+		if err := build.Record(buildenv.Reported(model.TargetResult{Target: target.ID, Outcome: model.OutcomePassed, Tests: model.TestsNone})); err != nil {
 			return err
 		}
 	}

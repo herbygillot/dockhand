@@ -193,7 +193,7 @@ func (p failsOn) Execute(_ context.Context, job buildenv.Job, build buildenv.Bui
 		if target.ID == p.target && job.Environment == p.environment {
 			result.Outcome, result.Phase = model.OutcomeFailed, model.PhaseInstall
 		}
-		if err := build.Record(result); err != nil {
+		if err := build.Record(buildenv.Reported(result)); err != nil {
 			return err
 		}
 	}

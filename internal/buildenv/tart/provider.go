@@ -1245,7 +1245,7 @@ func interrupted(job buildenv.Job, build buildenv.Build, building string, cause 
 		// The guest names each target's log by its target.
 		result.Log = fetch(buildenv.LogName(job.Targets[i].ID))
 	}
-	if err := build.Record(result); err != nil {
+	if err := build.Record(buildenv.Reported(result)); err != nil {
 		return fmt.Errorf("%w; %s wasn't recorded as interrupted: %v", cause, building, err)
 	}
 	return cause
@@ -1333,21 +1333,19 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 			}
 		}
 	}
-	if got.Fetched != "" {
-		if !git.ValidObjectID(got.Fetched) {
-			return buildenv.ErrDockhandFault.Because("the guest reported %s fetched %q, which isn't a commit", got.ID, got.Fetched)
-		}
-		build.Fetched(target.ID, got.Fetched)
+	report := buildenv.TargetReport{Fetched: got.Fetched}
+	if got.Fetched != "" && !git.ValidObjectID(got.Fetched) {
+		return buildenv.ErrDockhandFault.Because("the guest reported %s fetched %q, which isn't a commit", got.ID, got.Fetched)
 	}
 	if got.Active != nil {
-		active := make([]model.ActivePort, len(got.Active))
+		report.Active = make([]model.ActivePort, len(got.Active))
 		for i, port := range got.Active {
-			active[i] = model.ActivePort{Name: port.Name, Spec: port.Spec, Directory: port.Directory, Archive: port.Archive}
+			report.Active[i] = model.ActivePort{Name: port.Name, Spec: port.Spec, Directory: port.Directory, Archive: port.Archive}
 		}
-		build.Consumed(target.ID, active)
 	}
 	result.Archive, result.Detail = got.Archive, got.Detail
-	if err := build.Record(result); err != nil {
+	report.Result = result
+	if err := build.Record(report); err != nil {
 		return err
 	}
 	if got.Detail != "" {

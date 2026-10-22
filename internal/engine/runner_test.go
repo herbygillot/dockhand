@@ -110,13 +110,13 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 			return ctx.Err()
 		}
 		if _, blocked := build.Blocked(target.ID); blocked {
-			if err := build.Record(model.TargetResult{Target: target.ID, Outcome: model.OutcomeBlocked, Tests: model.TestsNone}); err != nil {
+			if err := build.Record(buildenv.Reported(model.TargetResult{Target: target.ID, Outcome: model.OutcomeBlocked, Tests: model.TestsNone})); err != nil {
 				return err
 			}
 			continue
 		}
 		if failing && target.ID == p.interrupts {
-			if err := build.Record(model.TargetResult{Target: target.ID, Outcome: model.OutcomeInterrupted, Detail: "the VM stopped"}); err != nil {
+			if err := build.Record(buildenv.Reported(model.TargetResult{Target: target.ID, Outcome: model.OutcomeInterrupted, Detail: "the VM stopped"})); err != nil {
 				return err
 			}
 			return buildenv.Infrastructure("the VM stopped")
@@ -129,12 +129,13 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 		if outcome == model.OutcomeFailed {
 			result.Phase = model.PhaseInstall
 		}
+		report := buildenv.TargetReport{}
 		if p.active != nil {
 			active := p.active
 			if found, ok := p.consumes[target.ID]; ok {
 				active = found
 			}
-			build.Consumed(target.ID, active)
+			report.Active = active
 			result.Archive = "sha256:" + string(target.ID)
 		}
 		name, content, digest := scriptedArchive(target.ID)
@@ -142,9 +143,10 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 			result.Archive = digest
 		}
 		if commit, ok := p.fetches[target.ID]; ok {
-			build.Fetched(target.ID, commit)
+			report.Fetched = commit
 		}
-		if err := build.Record(result); err != nil {
+		report.Result = result
+		if err := build.Record(report); err != nil {
 			return err
 		}
 		if p.keep && outcome == model.OutcomePassed {

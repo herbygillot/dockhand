@@ -134,29 +134,41 @@ type Target struct {
 	Tag *model.GitSource
 }
 
+// TargetReport is what a provider saw of one target's build, recorded whole
+// (CX-10, where what it observed came by callbacks that had to come before
+// its result): the result, and each observation of it, kept apart from
+// none where the provider couldn't see it.
+type TargetReport struct {
+	Result model.TargetResult
+	// Fetched is the commit a Git-fetched target's build checked out
+	// (Target.Git): the source it built, which its result keeps with its
+	// inputs, and which must be the commit the plan expected, or the
+	// result fails at fetch. Empty where the provider couldn't see it:
+	// the result then stands for its own check, and for no later one.
+	Fetched string
+	// Active are the ports that were active as the target built, other
+	// than the target: inputs of its build, which its result keeps
+	// (decision 28). Nil where the provider couldn't see them, and the
+	// result's inputs are then unknown; empty where there were none.
+	Active []model.ActivePort
+}
+
+// Reported is a result as a report with nothing seen beside it, as for a
+// target that was blocked or never built.
+func Reported(result model.TargetResult) TargetReport { return TargetReport{Result: result} }
+
 // Build is how a provider learns what to skip and records what happened.
 type Build interface {
 	// Blocked names a changed dependency of the target that did not pass,
 	// when there is one; the provider records the target as blocked
 	// rather than building it.
 	Blocked(target model.TargetID) (model.TargetID, bool)
-	// Record checkpoints one target's result. A complete verdict is final.
-	// An error is the store's: the result wasn't recorded, and the
-	// provider stops, whose execution then ends as an infrastructure
-	// failure and spends an attempt, since what it built can't be said.
-	Record(result model.TargetResult) error
-	// Consumed reports the ports that were active as a target built,
-	// other than the target, before its Record: they are inputs of its
-	// build, which its result keeps (decision 28). A provider that can't
-	// see them doesn't call it, and the result's inputs are unknown.
-	Consumed(target model.TargetID, active []model.ActivePort)
-	// Fetched reports the commit a Git-fetched target's build checked out
-	// (Target.Git), before its Record: the source it built, which its
-	// result keeps with its inputs, and which must be the commit the plan
-	// expected, or the result fails at fetch. A provider that can't see it
-	// doesn't call it, and what the build fetched is unknown: its result
-	// stands for its own check, and for no later one.
-	Fetched(target model.TargetID, commit string)
+	// Record checkpoints one target's report, its result with what its
+	// provider saw of its build. A complete verdict is final. An error is
+	// the store's: the result wasn't recorded, and the provider stops,
+	// whose execution then ends as an infrastructure failure and spends an
+	// attempt, since what it built can't be said.
+	Record(report TargetReport) error
 	// Keep keeps the archive a target's build made, after its Record, for
 	// a later build of a target that needs it to install rather than build
 	// it again (decision 28). fetch writes the archive whole to the path
