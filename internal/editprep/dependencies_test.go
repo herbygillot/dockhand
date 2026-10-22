@@ -71,7 +71,7 @@ func dependencyHelper(t *testing.T, body string) string {
 func TestGoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)
-	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "patched-curated", "local-patch", "unsupported-context", "moved"} {
+	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "patched-curated", "local-patch", "unsupported-context", "moved", "collateral"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
@@ -122,6 +122,12 @@ func TestGoDependencyPreparation(t *testing.T) {
 			}
 			if scenario == "unsupported-context" {
 				extra += "if {${os.major} < 23 && ${build_arch} eq \"arm64\"} { pre-fetch { set distfiles changed.tar.gz } }\n"
+			}
+			// A subport sharing the release whose notes spell the block: the
+			// block edit changes them, which nothing predicts, so it's refused
+			// (architecture, 2026-10-22: the block step predicts its blocks).
+			if scenario == "collateral" {
+				extra += "subport fixture-child { notes ${go.vendors} }\n"
 			}
 			var requests atomic.Int64
 			service, request := versionFixture(t, "go-setup", extra, func(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +184,8 @@ func TestGoDependencyPreparation(t *testing.T) {
 				require.ErrorContains(t, err, "requirements exactly")
 			case "override":
 				require.ErrorContains(t, err, "preserve these overrides")
+			case "collateral":
+				require.ErrorContains(t, err, "fixture-child.notes changed")
 			case "patched-curated":
 				require.ErrorContains(t, err, "post-patch edits a dependency manifest, and the Portfile's go.vendors isn't exactly what the current version's lock gives")
 				require.ErrorContains(t, err, "regenerating go.vendors with go2port")

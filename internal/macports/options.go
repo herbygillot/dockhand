@@ -32,11 +32,6 @@ var InfoOptions = []string{"name", "version", "revision", "epoch", "homepage"}
 // dockhand prefix or from Base's fetch machinery.
 var ComputedOptions = []string{"fetch.has_credentials", "fetch.archive_compatible", "dockhand.livecheck_standard", "dockhand.metadata_only", "dockhand.base_version", "dockhand.livecheck_declared", "livecheck.name", "dockhand.test_run", "dockhand.portgroups", "dockhand.known_fail", "dockhand.platforms_compatible", "dockhand.minimum_xcode", "dockhand.xcode", "dockhand.python_default", "dockhand.python_group_default", "dockhand.code"}
 
-// VersionFollowers are the options a version bump may change on the
-// selected port: those the source is named by, and a homepage that spells
-// the version. Anything else that moves is an unexpected change.
-var VersionFollowers = []string{"fetch.has_credentials", "version", "github.version", "gitlab.version", "go.version", "git.branch", "distname", "dist_subdir", "distfiles", "extract.only", "master_sites", "worksrcdir", "livecheck.version", "homepage"}
-
 // LivecheckOptions are the livecheck options a forge source's discovery
 // reads; LivecheckListingOptions are those an archive source's listing
 // discovery reads, curl behavior included.

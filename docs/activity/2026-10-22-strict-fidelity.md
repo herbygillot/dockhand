@@ -20,3 +20,24 @@ The proposal went to the architecture thread, and its answer, read at da1b3d5e, 
 `Revision`, `Checksums`, `ScopedChecksums`, the version rule, and portedit's `correctionReport` each now build a prediction and observe against it, where each had built its expectation inline and compared it its own way. Their behavior is unchanged except in two places:
 - `Revision` and the version rule now also check the context, which `Equivalent` checked for the others.
 - The version rule reports a revision that didn't reset as "expected 0, got N".
+
+## Step 2: the version step is its own evaluation, and VersionFollowers goes
+
+`ScopedVersion` is now the version step's prediction, observed:
+- each member of the release the evaluation moved (`ReleaseScope`) is at the release's version, with its revision reset;
+- git.branch is on the release's tag, for a member that fetches its own source;
+- the selected port has the intended checksums;
+- every protected sibling is as it was.
+
+Whatever the version's own evaluation changes in a member that moves now counts as the version's change, however the Portfile derives it, where only the 14 options in `macports.VersionFollowers`, plus anything matching `writesVersion`'s substitution, could follow. Both are gone, and so is the old per-member `version()`. The dependency-block step is where architecture placed strictness, and it predicts from the version step's evaluation, never from its own after. Each step predicts from its own before plus what it writes:
+- the checksums step moves the checksum fields;
+- the revision step resets the revision;
+- the block step starts from the archive step's prepared snapshot and moves only the blocks and what the Go and Cargo PortGroups fetch for them (distfiles, master_sites, extract.only, checksums), in the target and in every sibling that shares the release.
+
+Before, the block step copied `VersionFollowers` into affected siblings and left the target unchecked. A collateral change the block edit makes is now refused. The new `collateral` case in `TestGoDependencyPreparation` pins it: a subport whose notes spell `go.vendors`. It fails if the siblings are predicted as their after.
+
+Dependencies are the exception, and stay as before. A Portfile that adds `depends_lib port:other` when `$version eq {2.0}` makes a change for a person to make, not one that follows the version. `TestVersionPreparationRefusesCollateralChangesBeforeDownloading` keeps refusing it, and the fidelity unit test says it.
+
+This is looser than before for options. A version-conditional `patchfiles` or `license`, or a path the Portfile derives from the version, now follows it. The change record still lists every field that moved. No port refused before is refused now: dependencies were never among the followers.
+
+`belowSource` stays in `differences`. It normalizes where a port was evaluated, the build directory's hash, which every comparison of two evaluations needs, not the version.

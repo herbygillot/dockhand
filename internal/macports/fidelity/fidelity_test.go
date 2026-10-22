@@ -98,15 +98,20 @@ func TestVersionAllowsAHomepageThatFollowsTheVersion(t *testing.T) {
 	})
 	report := ScopedVersion(false, before, after, "main", model.Release{Version: "0.230.0"}, "sha256 bbbb")
 	require.Empty(t, report.UnexpectedChanges)
+	// Whatever else the version's evaluation moves is the version's, but a
+	// dependency.
 	after.Ports["main"].Options["description"] = "changed"
 	report = ScopedVersion(false, before, after, "main", model.Release{Version: "0.230.0"}, "sha256 bbbb")
-	require.NotEmpty(t, report.UnexpectedChanges, "other metadata still may not move")
+	require.Empty(t, report.UnexpectedChanges, "the version's evaluation is the prediction")
+	moved := after.Ports["main"]
+	moved.Dependencies = []macports.Dependency{{Phase: "lib", Spec: "port:other"}}
+	after.Ports["main"] = moved
+	require.Equal(t, []string{"main.dependencies changed"}, ScopedVersion(false, before, after, "main", model.Release{Version: "0.230.0"}, "sha256 bbbb").UnexpectedChanges)
 }
 
 // A field that moves only by the version written in it is the version's,
 // as go_toolchain's long_description, "provides Go 1.26.8": go-1.26's
-// update was refused as changing it (field testing at 1cc87c43). One
-// that changes otherwise still may not move.
+// update was refused as changing it (field testing at 1cc87c43).
 func TestVersionAllowsAFieldThatWritesTheVersion(t *testing.T) {
 	describe := func(version, extra string) macports.Snapshot {
 		return snapshot(map[string]macports.PortInfo{"go-1.26": {Name: "go-1.26", Version: version, Options: map[string]string{"checksums": "sha256 " + version,
@@ -114,8 +119,9 @@ func TestVersionAllowsAFieldThatWritesTheVersion(t *testing.T) {
 	}
 	report := ScopedVersion(false, describe("1.26.8", ""), describe("1.26.9", ""), "go-1.26", model.Release{Version: "1.26.9"}, "sha256 1.26.9")
 	require.Empty(t, report.UnexpectedChanges)
-	report = ScopedVersion(false, describe("1.26.8", ""), describe("1.26.9", ", and more"), "go-1.26", model.Release{Version: "1.26.9"}, "sha256 1.26.9")
-	require.Equal(t, []string{"go-1.26.long_description changed"}, report.UnexpectedChanges)
+	// A version other than the release's is unexpected.
+	report = ScopedVersion(false, describe("1.26.8", ""), describe("1.26.10", ""), "go-1.26", model.Release{Version: "1.26.9"}, "sha256 1.26.10")
+	require.Contains(t, report.UnexpectedChanges, "go-1.26.version: expected 1.26.9, got 1.26.10")
 }
 
 // A fetch is compared by its kind, which the options' compatible flag

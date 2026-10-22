@@ -444,46 +444,47 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
-	final := Fidelity{Before: family, After: after, ExpectedChanges: []string{input.target.Name + ".version, revision, source checksums and regenerated dependencies"}}
 	if len(family.Ports) != len(after.Ports) {
 		return Result{}, fmt.Errorf("%w: dependency regeneration changed the port set", ErrFidelity)
 	}
-	// A sibling that shares the release moves with the target: its version,
-	// the options that follow it, its checksums, and the regenerated block
-	// it shares. Every other sibling must be untouched. The scope decides
-	// which is which, and refuses an unauthorized move as the version check
-	// did before the downloads.
+	// A sibling that shares the release moves with the target: what the
+	// version's evaluation and the regenerated block it shares change in
+	// it are theirs, as the target's are. Every other sibling must be
+	// untouched. The scope decides which is which, and refuses an
+	// unauthorized move as the version check did before the downloads.
 	scope, err := fidelity.ReleaseScope(family, after, input.target.Name, request.SharedRelease)
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %v", ErrFidelity, err)
 	}
-	affected := map[string]bool{}
+	// The block step predicts from the version step's own evaluation, its
+	// archives' checksums written (Prepared), with only the blocks it
+	// writes moved, in every member that shares the release: a collateral
+	// change the block edit makes, in the target or a sibling, is
+	// unexpected (architecture, 2026-10-22). Every other sibling is as the
+	// family was.
+	prediction := fidelity.Predict(family)
+	prediction.Expected = []string{input.target.Name + ".version, revision, source checksums and regenerated dependencies"}
 	for _, member := range scope.Affected {
-		affected[member.Target.Name] = true
-	}
-	for name, old := range family.Ports {
-		if name == input.target.Name {
+		name := member.Target.Name
+		prepared, ok := result.Prepared.Ports[name]
+		if !ok {
 			continue
 		}
-		next, ok := after.Ports[name]
-		if !ok {
-			return Result{}, fmt.Errorf("%w: sibling port disappeared", ErrFidelity)
-		}
-		before, now := fidelity.ComparablePort(old, family.Root), fidelity.ComparablePort(next, after.Root)
-		if affected[name] {
-			before.Version = now.Version
-			for _, key := range append([]string{"checksums", depblock.Go, depblock.Cargo, depblock.CargoGit}, macports.VersionFollowers...) {
-				if value, ok := now.Options[key]; ok {
-					before.Options[key] = value
-				} else {
-					delete(before.Options, key)
-				}
+		port := fidelity.ComparablePort(prepared, result.Prepared.Root)
+		next := fidelity.ComparablePort(after.Ports[name], after.Root)
+		// The blocks, and what the Go and Cargo PortGroups fetch for them:
+		// each module or crate is a distfile of its own, from its own
+		// site, extracted apart, with its own checksums.
+		for _, block := range []string{depblock.Go, depblock.Cargo, depblock.CargoGit, "distfiles", "master_sites", "extract.only", "checksums"} {
+			if value, ok := next.Options[block]; ok {
+				port.Options[block] = value
+			} else {
+				delete(port.Options, block)
 			}
-		} else if old.Revision != next.Revision {
-			final.UnexpectedChanges = append(final.UnexpectedChanges, name+".revision changed")
 		}
-		final.UnexpectedChanges = append(final.UnexpectedChanges, fidelity.Compare(name, before, now)...)
+		prediction.Ports[name] = port
 	}
+	final := prediction.Observe(family, after)
 	if len(final.UnexpectedChanges) > 0 {
 		return Result{}, fmt.Errorf("%w: %v", ErrFidelity, final.UnexpectedChanges)
 	}

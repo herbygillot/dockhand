@@ -277,51 +277,6 @@ func Equivalent(expected, actual macports.Snapshot) error {
 	return nil
 }
 
-// Version expects the selected port to move to the release, its revision to
-// reset, and its source declarations and checksums to change, and nothing else.
-func version(before, after macports.Snapshot, selected string, release model.Release, checksums string) Report {
-	prediction := Predict(before)
-	prediction.Expected = []string{selected + ".version -> " + release.Version, selected + ".revision -> 0", selected + ".distfiles and checksums"}
-	var problems []string
-	if original, ok := before.Ports[selected]; ok {
-		if moved, ok := after.Ports[selected]; ok {
-			next := ComparablePort(moved, after.Root)
-			port := prediction.Port(selected)
-			port.Version, port.Revision = release.Version, 0
-			for _, key := range macports.VersionFollowers {
-				if value, ok := next.Options[key]; ok {
-					port.Options[key] = value
-				} else {
-					delete(port.Options, key)
-				}
-			}
-			// A field that moves only by the version written in it, as
-			// go_toolchain's long_description, "provides Go 1.26.8", is
-			// the version's: go-1.26's update was refused as changing it
-			// (field testing at 1cc87c43).
-			for key, value := range port.Options {
-				if moved, ok := next.Options[key]; ok && moved != value && writesVersion(value, moved, original.Version, release.Version) {
-					port.Options[key] = moved
-				}
-			}
-			if release.Tag != "" && next.Options["git.branch"] != release.Tag {
-				problems = append(problems, selected+".git.branch differs from selected tag")
-			}
-			actual, errs := syntax.ListValues(next.Options["checksums"])
-			expected, expectedErrs := syntax.ListValues(checksums)
-			if len(errs) > 0 || len(expectedErrs) > 0 || !slices.Equal(actual, expected) {
-				problems = append(problems, selected+".checksums differ from intended values")
-			}
-			port.Options["checksums"] = next.Options["checksums"]
-			prediction.Expect(selected, port)
-		}
-	}
-	report := prediction.Observe(before, after)
-	report.UnexpectedChanges = append(report.UnexpectedChanges, problems...)
-	slices.Sort(report.UnexpectedChanges)
-	return report
-}
-
 // GitVersion is the version expectation for a port fetched with git: the
 // version moves, the revision resets, nothing is downloaded, and git.branch
 // lands on branch, the resolved tag or the resolved commit. An empty branch
@@ -463,39 +418,52 @@ func followsObsolete(name, selected string, old, next, oldRoot, nextRoot macport
 		old.Version == oldRoot.Version && next.Version == nextRoot.Version
 }
 
-// ScopedVersion applies Version to every affected member of a release and
-// Equivalent to the rest. Without shared authorization the affected members
-// are the selected port and its obsolete followers.
+// ScopedVersion is the version step's prediction, observed: each member
+// of the release the evaluation moved (ReleaseScope) at the release's
+// version, its revision reset, and git.branch on the release's tag where
+// it fetches its own source, the selected port with the checksums
+// intended, and every protected sibling as it was. What the version's own
+// evaluation changes in a member that moves is the version's: its
+// archives, paths, and descriptions follow it however the Portfile derives
+// them, where a fixed list of options that followed it refused what it
+// didn't name (strict fidelity, as architecture settled it, 2026-10-22).
+// Its dependencies are the exception, as what a version-conditional
+// Portfile adds there is a change for a person to make, not the version's.
+// Without shared authorization the members are the selected port and its
+// obsolete followers.
 func ScopedVersion(shared bool, before, after macports.Snapshot, selected string, release model.Release, checksums string) Report {
 	scope, err := ReleaseScope(before, after, selected, shared)
 	if err != nil {
 		return Report{Before: before, After: after, UnexpectedChanges: []string{strings.TrimPrefix(err.Error(), ErrMismatch.Error()+": ")}}
 	}
-	if len(scope.Affected) == 1 && scope.Affected[0].Target.Name == selected {
-		return version(before, after, selected, release, checksums)
-	}
-	normalized := before
-	normalized.Ports = maps.Clone(before.Ports)
+	prediction := Predict(before)
+	prediction.Expected = []string{selected + ".version -> " + release.Version, selected + ".revision -> 0", selected + ".distfiles and checksums"}
 	var problems []string
 	for _, member := range scope.Affected {
 		name := member.Target.Name
-		oneBefore, oneAfter := before, after
-		oneBefore.Ports = map[string]macports.PortInfo{name: before.Ports[name]}
-		oneAfter.Ports = map[string]macports.PortInfo{name: after.Ports[name]}
-		ownRelease := release
-		if member.MetadataOnly {
-			ownRelease.Tag = ""
+		next := ComparablePort(after.Ports[name], after.Root)
+		if next.Version != release.Version {
+			problems = append(problems, fmt.Sprintf("%s.version: expected %s, got %s", name, release.Version, next.Version))
 		}
-		f := version(oneBefore, oneAfter, name, ownRelease, after.Ports[name].Options["checksums"])
-		problems = append(problems, f.UnexpectedChanges...)
-		// The member's after state joins the before snapshot, whose root
-		// is not the after root: normalize it by its own first.
-		normalized.Ports[name] = ComparablePort(after.Ports[name], after.Root)
+		if release.Tag != "" && !member.MetadataOnly && next.Options["git.branch"] != release.Tag {
+			problems = append(problems, name+".git.branch differs from selected tag")
+		}
+		if name == selected {
+			actual, errs := syntax.ListValues(next.Options["checksums"])
+			expected, expectedErrs := syntax.ListValues(checksums)
+			if len(errs) > 0 || len(expectedErrs) > 0 || !slices.Equal(actual, expected) {
+				problems = append(problems, name+".checksums differ from intended values")
+			}
+		} else {
+			prediction.Expected = append(prediction.Expected, name+" moves with "+selected)
+		}
+		next.Revision, next.Dependencies = 0, prediction.Ports[name].Dependencies
+		prediction.Ports[name] = next
 	}
-	if err := Equivalent(normalized, after); err != nil {
-		problems = append(problems, err.Error())
-	}
-	return Report{Before: before, After: after, UnexpectedChanges: problems}
+	report := prediction.Observe(before, after)
+	report.UnexpectedChanges = append(report.UnexpectedChanges, problems...)
+	slices.Sort(report.UnexpectedChanges)
+	return report
 }
 
 // ScopedChecksums applies Checksums across the affected members of a scope.
@@ -576,10 +544,4 @@ func SubportChanges(directory string, base, revision *macports.Snapshot) []model
 		changes = append(changes, change)
 	}
 	return changes
-}
-
-// writesVersion reports a value that differs from another only by the
-// version written in it, from one to the other, everywhere it's written.
-func writesVersion(value, moved, from, to string) bool {
-	return from != "" && from != to && strings.Contains(value, from) && strings.ReplaceAll(value, from, to) == moved
 }
