@@ -86,7 +86,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 	out, _, err = cmdtest.Dockhand(t)
 	require.NoError(t, err, "bare dockhand in a ports checkout is status")
-	require.Contains(t, out, "Needs you\n  · jq-update  snapshot 1 passed; commit it for review\n               dockhand tidy --branch jq-update\n")
+	require.Contains(t, out, "Needs you\n  ✓ jq-update  snapshot 1 passed; commit it for review\n               dockhand tidy --branch jq-update\n")
 	require.Contains(t, out, "jq-update  1      edits, uncommitted  passed for snapshot 1  —\n")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# more\n"), 0o644))

@@ -129,7 +129,7 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 	fmt.Fprintf(out, "review of #%d %q, as @%s (%s to %s)\n", report.Ref.Number, report.Title, report.Login, access, report.Ref.Repository)
 	fmt.Fprintf(out, "  %s\n", report.Summary())
 	if report.Behind != "" {
-		fmt.Fprintf(out, "  · %s\n", report.Behind)
+		fmt.Fprintf(out, "    %s\n", report.Behind)
 	}
 	for _, finding := range report.Findings {
 		fmt.Fprintf(out, "  %s\n", finding)
@@ -142,7 +142,7 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 	}
 	switch lines := view.ComparisonLines(report.Upstream); {
 	case report.UpstreamUnread != "":
-		fmt.Fprintf(out, "  · upstream's change wasn't assessed: %s\n", report.UpstreamUnread)
+		fmt.Fprintf(out, "  ! upstream's change wasn't assessed: %s\n", report.UpstreamUnread)
 	case len(lines) > 0:
 		// What MacPorts has of a dependency is read at the pull request's
 		// commits, which master may have moved past, as it had for an
@@ -163,5 +163,5 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 	if words := report.DependentsWords(); words != "" {
 		fmt.Fprintf(out, "  %s\n", words)
 	}
-	fmt.Fprintln(out, "  · not checked here: port lint and the build; MacPorts CI runs both")
+	fmt.Fprintln(out, "    not checked here: port lint and the build; MacPorts CI runs both")
 }

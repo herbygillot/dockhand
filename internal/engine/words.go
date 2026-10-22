@@ -39,7 +39,7 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted Accepted
 		}
 		return "— excluded"
 	case CellUnmet:
-		return "· not built: " + UnmetWords(result.Unmet)
+		return "! not built: " + UnmetWords(result.Unmet)
 	}
 	var words string
 	switch result.Outcome {
@@ -79,9 +79,9 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted Accepted
 		}
 		words = "✗ blocked by a failed changed dependency"
 	case model.OutcomeNotRun:
-		return "· not run"
+		return "! not run"
 	default:
-		return "· " + string(result.Outcome)
+		return "! " + string(result.Outcome)
 	}
 	if accepted.Kind != "" {
 		words += ", accepted: " + accepted.Words()

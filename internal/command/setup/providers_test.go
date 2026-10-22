@@ -87,7 +87,7 @@ func TestAnIntelMacChecksOnGitHub(t *testing.T) {
 	t.Parallel()
 	onIntel(t)
 	out := providers(t)
-	require.Contains(t, out, "tart     · needs Apple silicon; checks here build on GitHub, with --on github\n")
+	require.Contains(t, out, "tart       needs Apple silicon; checks here build on GitHub, with --on github\n")
 	_, _, err := cmdtest.Dockhand(t, "setup", "tart")
 	require.ErrorContains(t, err, "Tart's macOS images need Apple silicon, and this Mac isn't; checks here build on GitHub, with --on github")
 }
@@ -95,8 +95,8 @@ func TestAnIntelMacChecksOnGitHub(t *testing.T) {
 func TestProviderLinesWithoutTart(t *testing.T) {
 	t.Parallel()
 	out := providers(t)
-	require.Equal(t, "tart     · needs Tart: sudo port install tart, then dockhand setup tart\n"+
-		"github   · needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n", out)
+	require.Equal(t, "tart     ! needs Tart: sudo port install tart, then dockhand setup tart\n"+
+		"github   ! needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n", out)
 
 	_, _, err := cmdtest.Dockhand(t, "setup", "tart")
 	require.ErrorContains(t, err, "Tart isn't installed: sudo port install tart")
@@ -108,13 +108,13 @@ func TestProviderLinesShowTheImages(t *testing.T) {
 	useImages(t, images)
 	images.status = tart.Status{Host: release(t, "tahoe")}
 	out := providers(t)
-	require.Contains(t, out, "tart     · not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n")
+	require.Contains(t, out, "tart     ! not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n")
 
 	// A base image deleted with its golden copy kept is a restore, not a
 	// download (Codex's review, checked against a268b6e5).
 	images.status.Restorable = []macos.Release{release(t, "tahoe")}
 	out = providers(t)
-	require.Contains(t, out, "tart     · no image: macOS 26's image was deleted and its golden copy kept: dockhand setup tart tahoe restores it, in about a minute\n")
+	require.Contains(t, out, "tart     ! no image: macOS 26's image was deleted and its golden copy kept: dockhand setup tart tahoe restores it, in about a minute\n")
 	images.status.Base = []macos.Release{release(t, "sequoia")}
 	out = providers(t)
 	require.Contains(t, out, "tart     ✓ ready for macOS 15\n"+
@@ -126,7 +126,7 @@ func TestProviderLinesShowTheImages(t *testing.T) {
 	// stage's A2).
 	images.status.Xcode = []macos.Release{release(t, "tahoe")}
 	out = providers(t)
-	require.Contains(t, out, "tart     · Xcode image for macOS 26 ready; no plain image, which a check needs beside it: dockhand setup tart   (macOS 26, up to 60 GB)\n")
+	require.Contains(t, out, "tart     ! Xcode image for macOS 26 ready; no plain image, which a check needs beside it: dockhand setup tart   (macOS 26, up to 60 GB)\n")
 	images.status.Xcode = nil
 
 	images.status.Base = []macos.Release{release(t, "sonoma"), release(t, "sequoia")}
@@ -202,8 +202,8 @@ func TestSetupShowsTheProviders(t *testing.T) {
 	useImages(t, images)
 	out, _, err := cmdtest.Dockhand(t, "setup", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "  Providers    tart     · not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n"+
-		"               github   · needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n"+
+	require.Contains(t, out, "  Providers    tart     ! not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n"+
+		"               github   ! needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n"+
 		"  Publishing   ")
 
 	// With this Mac's image deleted and its golden copy kept, setup offers

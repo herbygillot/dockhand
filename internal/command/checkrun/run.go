@@ -359,7 +359,7 @@ func WriteBaselineResults(out io.Writer, base, branch engine.Evidence, master st
 	for _, row := range engine.BaselineComparison(base, branch) {
 		fmt.Fprintf(out, "%s at master %s · %s\n", row.Target, master, engine.DescribeEnvironment(row.Environment))
 		if row.Excluded != "" {
-			fmt.Fprintf(out, "  · not built at the base: %s\n", row.Excluded)
+			fmt.Fprintf(out, "    not built at the base: %s\n", row.Excluded)
 			continue
 		}
 		fmt.Fprintf(out, "  %s\n", BaselineWords(row.Base, row.Branch, branch.Run.Name()))
@@ -394,7 +394,7 @@ func BaselineWords(base, branch model.TargetResult, check string) string {
 	passed := func(r model.TargetResult) bool { return r.Outcome == model.OutcomePassed }
 	switch {
 	case base.Outcome != model.OutcomePassed && base.Outcome != model.OutcomeFailed:
-		return fmt.Sprintf("· not built at the base (%s)", base.Outcome)
+		return fmt.Sprintf("  not built at the base (%s)", base.Outcome)
 	case passed(base) && passed(branch) && (base.Tests.Failed() || branch.Tests.Failed()):
 		return "✓ builds at the base, as it does on the branch; " + baselineTestWords(base.Tests, branch.Tests, check)
 	case passed(base) && passed(branch):

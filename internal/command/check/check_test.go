@@ -319,7 +319,7 @@ func TestBaselineResultsShowWhereItRebuilt(t *testing.T) {
 	require.Equal(t, "jq at master 1a2b3c4 · tart macOS 15 (Sequoia) arm64\n"+
 		"  ✗ fails at the base too, at install. Both results are kept; the cause isn't established.\n"+
 		"gone at master 1a2b3c4 · tart macOS 26 (Tahoe) arm64\n"+
-		"  · not built at the base: replaced by other\n", out.String())
+		"    not built at the base: replaced by other\n", out.String())
 }
 
 // A misspelled --tests is refused before anything is captured or planned.

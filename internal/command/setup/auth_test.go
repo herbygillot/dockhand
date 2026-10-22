@@ -88,7 +88,7 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "No dockhand GitHub credentials are saved in the Keychain.\n", out)
 	line, said := publishing(t.Context(), cmdtest.TestSettings(t))
-	require.Equal(t, "· not set up: dockhand setup github, when you're ready to submit", line, "no login anywhere")
+	require.Equal(t, "  not set up: dockhand setup github, when you're ready to submit", line, "no login anywhere")
 	require.Equal(t, githubLoginJSON{Problem: "not set up"}, said)
 }
 

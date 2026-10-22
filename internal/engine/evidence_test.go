@@ -62,7 +62,7 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, submission.Blocking, 1)
 	require.Contains(t, submission.Blocking[0], "libharbor has changed, but these files haven't been built on command macOS 26 (Tahoe) arm64", "naming where")
-	require.Contains(t, submission.Body, "| libharbor | · not run |", "the pull request shows what wasn't built")
+	require.Contains(t, submission.Body, "| libharbor | ! not run |", "the pull request shows what wasn't built")
 	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update", Accept: []string{"libharbor"}})
 	require.ErrorContains(t, err, "--accept libharbor: no check of these files built it")
 	passing, err := e.PassingBranches(t.Context())
@@ -314,7 +314,7 @@ func TestWhatEvidenceSaysReadsInWords(t *testing.T) {
 	needsXcode := TargetEvidence{Target: model.PlanTarget{ID: "harbor-tools", Target: model.Target{Name: "harbor-tools"}, Role: model.Changed}, Unchecked: true,
 		Outcomes: []Cell{{TargetResult: model.TargetResult{Target: "harbor-tools", Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: tools, Unmet: unmet}}}
 	evidence := Evidence{Run: model.Run{ID: "run_2", Number: 2}, Plan: model.Plan{Environments: []model.Environment{tools}}, Targets: []TargetEvidence{needsXcode}}
-	require.Equal(t, "· not built: needs Xcode", EvidenceWords(evidence, needsXcode, 0, AcceptedFailure{}))
+	require.Equal(t, "! not built: needs Xcode", EvidenceWords(evidence, needsXcode, 0, AcceptedFailure{}))
 	require.Equal(t, []string{"harbor-tools needs Xcode, which " + DescribeEnvironment(tools) + " hasn't; a check with Xcode there builds it, or share the branch as a draft (--draft)"},
 		publicationProblems(evidence, nil, nil, nil))
 

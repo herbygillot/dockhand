@@ -3,7 +3,6 @@ package view
 import (
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/command/settings"
@@ -45,9 +44,6 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 			lines = []string{"compared; no license, build file, or dependency changes"}
 		}
 		fmt.Fprintf(out, "  Upstream %s\n", strings.Join(lines, "\n           "))
-		if slices.ContainsFunc(lines, func(line string) bool { return strings.HasPrefix(line, "! ") }) {
-			fmt.Fprintf(out, "           %s\n", HoldLegend)
-		}
 	}
 	fmt.Fprintf(out, "  Other PRs  %s\n", otherWords(plan))
 	fmt.Fprintf(out, "  PR       %s\n", PullRequestWords(plan))
@@ -108,7 +104,7 @@ func UpstreamLines(plan engine.SubmitPlan) []string {
 	// A Git-fetched port whose tag has moved since its check: the check
 	// built another source than this would submit.
 	for _, moved := range plan.Moved {
-		lines = append(lines, "! "+moved.Detail)
+		lines = append(lines, Look+" held: "+moved.Detail)
 	}
 	return lines
 }

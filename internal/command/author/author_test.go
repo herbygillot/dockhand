@@ -282,7 +282,7 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	cmdtest.UseDependents(cmdtest.Stands(t), cmdtest.JqDependents{Under: true})
 	out, _, err = cmdtest.Dockhand(t, "update", "jq", "--revbump-dependents", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, ":\n  yq\n  · under a variant, found in the Portfile, which the index doesn't record: jo (+jq)\n")
+	require.Contains(t, out, ":\n  yq\n    under a variant, found in the Portfile, which the index doesn't record: jo (+jq)\n")
 	cmdtest.UseDependents(cmdtest.Stands(t), cmdtest.JqDependents{})
 
 	out, _, err = cmdtest.Dockhand(t, "update", "jq", "--revbump-dependents")
@@ -295,7 +295,7 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 
 	out, _, err = cmdtest.Dockhand(t, "update", "jq", "2.0", "--revbump-dependents")
 	require.NoError(t, err)
-	require.Contains(t, out, "  · yq: the branch already changes it, so it is left as it is\n")
+	require.Contains(t, out, "    yq: the branch already changes it, so it is left as it is\n")
 }
 
 // Where an update found its version outlives the update's process: each

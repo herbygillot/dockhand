@@ -158,8 +158,8 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "Keep branch worktrees in ")
 	require.Contains(t, errs.String(), "? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ")
-	require.Contains(t, out.String(), "  Publishing   · not set up: dockhand setup github, when you're ready to submit\n")
-	require.Contains(t, out.String(), "· maintainer: set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in ~/.dockhand/config.toml, for --mine, create, and serve's daily look\n")
+	require.Contains(t, out.String(), "  Publishing     not set up: dockhand setup github, when you're ready to submit\n")
+	require.Contains(t, out.String(), "  maintainer: set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in ~/.dockhand/config.toml, for --mine, create, and serve's daily look\n")
 	require.Contains(t, out.String(), "Next: dockhand setup github, then dockhand update <port>, or set maintainer in the configuration file for dockhand outdated --mine\n", "no maintainer, so outdated --mine isn't named alone")
 
 	quiet, said, err := cmdtest.Dockhand(t, "setup", "-y")

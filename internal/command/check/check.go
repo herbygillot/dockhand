@@ -267,13 +267,13 @@ func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Bas
 	}
 	fmt.Fprintf(out, "%s · baseline of %s: %s at master %s\n", branch.ShortName(), baseline.Of.Name(), strings.Join(names, ", "), baseline.Revision.Source.Commit.Short())
 	if len(baseline.New) > 0 {
-		fmt.Fprintf(out, "  · left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
+		fmt.Fprintf(out, "    left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
 	}
 	if len(baseline.Unchanged) > 0 {
-		fmt.Fprintf(out, "  · %s. Use --only to include them.\n", engine.UnchangedWords(baseline.Unchanged, baseline.Of))
+		fmt.Fprintf(out, "    %s. Use --only to include them.\n", engine.UnchangedWords(baseline.Unchanged, baseline.Of))
 	}
 	if len(baseline.Skipped) > 0 {
-		fmt.Fprintf(out, "  · skipped in this baseline: %s failed at lint, fetch, or checksum. Use --only to include them.\n", strings.Join(baseline.Skipped, ", "))
+		fmt.Fprintf(out, "    skipped in this baseline: %s failed at lint, fetch, or checksum. Use --only to include them.\n", strings.Join(baseline.Skipped, ", "))
 	}
 }
 

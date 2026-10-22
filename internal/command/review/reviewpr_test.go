@@ -91,12 +91,12 @@ func TestAReviewSaysTheAssessmentAndTheDependents(t *testing.T) {
 		Dependents: []treequery.Dependent{{Name: "ttyd", Phases: []string{"library"}}, {Name: "luv", Phases: []string{"library"}}}}
 	var out bytes.Buffer
 	writeReview(&out, report)
-	require.Contains(t, out.String(), "  Upstream comparison using ports at pull request commit bbbbbbb (based on master aaaaaaa):\n    · patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED\n")
+	require.Contains(t, out.String(), "  Upstream comparison using ports at pull request commit bbbbbbb (based on master aaaaaaa):\n      patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED\n")
 	require.Contains(t, out.String(), "  2 dependents, from the index at aaaaaaa: ttyd (library), luv (library); candidates to look at.\n")
 
 	report.Upstream, report.UpstreamUnread, report.Dependents, report.DependentsUnread = nil, "assessing a revision needs MacPorts' evaluator", nil, "reading the port index: no index"
 	out.Reset()
 	writeReview(&out, report)
-	require.Contains(t, out.String(), "  · upstream's change wasn't assessed: assessing a revision needs MacPorts' evaluator\n")
+	require.Contains(t, out.String(), "  ! upstream's change wasn't assessed: assessing a revision needs MacPorts' evaluator\n")
 	require.Contains(t, out.String(), "  Dependents weren't read: reading the port index: no index.\n")
 }

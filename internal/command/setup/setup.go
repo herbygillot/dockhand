@@ -80,7 +80,7 @@ func offerSetup(ctx context.Context, s *settings.Settings, e *engine.Engine, str
 				fmt.Fprintf(streams.Out, "Saved maintainer = %q for --mine, create, and the daily release check in serve.\n", line)
 			}
 		} else {
-			fmt.Fprintf(streams.Out, "· maintainer: %s, for --mine, create, and serve's daily look\n", engine.MaintainerWords(suggestion, s.Places().Tilde(configPath)))
+			fmt.Fprintf(streams.Out, "  maintainer: %s, for --mine, create, and serve's daily look\n", engine.MaintainerWords(suggestion, s.Places().Tilde(configPath)))
 		}
 	}
 	if images := imagesOf(s); images != nil {

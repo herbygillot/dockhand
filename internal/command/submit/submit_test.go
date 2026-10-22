@@ -134,7 +134,7 @@ func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ready to submit\n")
-	require.Contains(t, out, "  Upstream ! archives not compared: the current version's archives could not be fetched: HTTP 404\n")
+	require.Contains(t, out, "  Upstream ! held: archives not compared: the current version's archives could not be fetched: HTTP 404\n")
 	preview, err := cmdtest.JSONOf(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, []any{map[string]any{"port": "jq", "changes": []any{}, "held": true,
@@ -158,15 +158,13 @@ func TestTheSubmitPreviewGivesEachUpstreamFindingALine(t *testing.T) {
 	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}}}),
 		"\n  Upstream compared; no license, build file, or dependency changes\n  Other PRs")
 	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}}}),
-		"\n  Upstream ! LICENSE changed\n"+
-			"           · go.mod drops golang.org/x/net\n"+
-			"           (! holds bump's and serve's submission for your look; · holds nothing)\n  Other PRs", "the label says upstream once")
+		"\n  Upstream ! held: LICENSE changed\n"+
+			"             go.mod drops golang.org/x/net\n  Other PRs", "the label says upstream once; a hold says so in its word")
 	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license}}},
 		engine.PortComparison{Port: "oniguruma6", Comparison: model.UpstreamComparison{Problem: "HTTP 404"}},
 		engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{}}),
-		"\n  Upstream ! jq: LICENSE changed\n"+
-			"           ! oniguruma6: archives not compared: HTTP 404\n"+
-			"           (! holds bump's and serve's submission for your look; · holds nothing)\n  Other PRs",
+		"\n  Upstream ! held: jq: LICENSE changed\n"+
+			"           ! held: oniguruma6: archives not compared: HTTP 404\n  Other PRs",
 		"an update with nothing to look at adds no line among others' findings")
 }
 
@@ -179,12 +177,12 @@ func TestUpstreamIsSaidOnceUnderItsHeading(t *testing.T) {
 	dropped := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod drops golang.org/x/net"}
 	var update bytes.Buffer
 	view.WriteUpstream(&update, &model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}})
-	require.Equal(t, "Upstream changes:\n  ! LICENSE changed\n  · go.mod drops golang.org/x/net\n  (! holds bump's and serve's submission for your look; · holds nothing)\n", update.String(), "a list with a mark that holds says what the marks mean (the chezmoi run)")
+	require.Equal(t, "Upstream changes:\n  ! held: LICENSE changed\n    go.mod drops golang.org/x/net\n", update.String(), "a hold says so in its word, where a legend said what the marks meant (the chezmoi run; part 5, item 2)")
 	update.Reset()
 	view.WriteUpstream(&update, &model.UpstreamComparison{Changes: []model.UpstreamChange{dropped}})
-	require.Equal(t, "Upstream changes:\n  · go.mod drops golang.org/x/net\n", update.String(), "one without needs no legend")
+	require.Equal(t, "Upstream changes:\n    go.mod drops golang.org/x/net\n", update.String(), "a finding that holds nothing carries no mark")
 	plan := engine.SubmitPlan{Upstream: []engine.PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}}}}}
-	require.Equal(t, []string{"! LICENSE changed", "· go.mod drops golang.org/x/net"}, view.UpstreamLines(plan), "every list of them has a heading now, --passing's too")
+	require.Equal(t, []string{"! held: LICENSE changed", "  go.mod drops golang.org/x/net"}, view.UpstreamLines(plan), "every list of them has a heading now, --passing's too")
 }
 
 // A commit whose Generated-By names a dockhand built from uncommitted
@@ -642,7 +640,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "ship", "--passing")
 	require.ErrorContains(t, err, "jq-update passed its check and waits for your look, so nothing was submitted: the upstream archives couldn't be compared")
 	require.Contains(t, out, "  jq-update  its branch, where it stands, to submit\n             jq: update to 1.8.1 · passed on command for this commit's files (check-2) · opens a new one\n")
-	require.Contains(t, out, "\n             Upstream ! archives not compared: the current version's archives could not be fetched: HTTP 404\n",
+	require.Contains(t, out, "\n             Upstream ! held: archives not compared: the current version's archives could not be fetched: HTTP 404\n",
 		"what upstream showed, in the plan, which holds only a submission nobody looks over")
 	require.Empty(t, g.PRs)
 

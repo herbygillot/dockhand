@@ -28,8 +28,8 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, AcceptedFailure{Kind: AcceptedUnestablished}, "✗ failed at install, accepted: cause not established"},
 		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, AcceptedFailure{Kind: AcceptedAtBase, Baselines: []string{"check-394"}}, "✗ failed at install, accepted: fails at the base too (check-394)"},
 		{model.TargetResult{Outcome: model.OutcomeBlocked}, AcceptedFailure{}, "✗ blocked by a failed changed dependency"},
-		{model.TargetResult{Outcome: model.OutcomeNotRun}, AcceptedFailure{}, "· not run"},
-		{model.TargetResult{Outcome: model.OutcomeInterrupted}, AcceptedFailure{}, "· interrupted"},
+		{model.TargetResult{Outcome: model.OutcomeNotRun}, AcceptedFailure{}, "! not run"},
+		{model.TargetResult{Outcome: model.OutcomeInterrupted}, AcceptedFailure{}, "! interrupted"},
 	} {
 		require.Equal(t, c.words, targetWords(model.Plan{}, recorded(command, c.result), "", c.accepted))
 	}
@@ -42,7 +42,7 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 	knownFail.Exclusion = model.Exclusion{Reason: "known_fail here, as the Portfile says"}
 	require.Equal(t, "— not built: known_fail here, as the Portfile says", targetWords(model.Plan{}, knownFail, "", AcceptedFailure{}), "why the plan left it out")
 	unmet := Cell{TargetResult: model.TargetResult{Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: command, Unmet: model.Unmet{Target: "jq", Environment: command, Needs: model.RequiresXcode}}
-	require.Equal(t, "· not built: "+UnmetWords(unmet.Unmet), targetWords(model.Plan{}, unmet, "", AcceptedFailure{}))
+	require.Equal(t, "! not built: "+UnmetWords(unmet.Unmet), targetWords(model.Plan{}, unmet, "", AcceptedFailure{}))
 }
 
 // An unmet minimum Xcode says what the environment has, where the plan

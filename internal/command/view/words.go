@@ -33,9 +33,9 @@ func ComparisonLines(comparisons []engine.PortComparison) []string {
 	var lines []string
 	several := len(engine.Grouped(comparisons)) > 1
 	for _, l := range engine.ComparisonLines(comparisons) {
-		mark, port := "· ", ""
+		mark, port := Unmarked+" ", ""
 		if l.Hold {
-			mark = "! "
+			mark = Look + " held: "
 		}
 		if several {
 			port = strings.Join(l.Ports, ", ") + ": "
@@ -154,10 +154,6 @@ func WritePlainHTTP(out io.Writer, plain []engine.PlainURL) {
 	}
 }
 
-// HoldLegend says what the marks of an upstream finding mean, beside any
-// list with one that holds (the chezmoi run).
-const HoldLegend = "(! holds bump's and serve's submission for your look; · holds nothing)"
-
 // ExperimentalWords is the notice review and adopt --pr carry until the
 // trust rule is in code (the release bar, 5): they evaluate someone else's
 // Portfiles with MacPorts on this Mac, as no other command does.
@@ -220,14 +216,13 @@ func WriteUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 	case comparison.Problem != "":
 		// What couldn't be checked holds as a finding does (D4), so it is
 		// marked as one.
-		fmt.Fprintf(out, "! Upstream archives not compared: %s\n", comparison.Problem)
-		fmt.Fprintln(out, HoldLegend)
+		fmt.Fprintf(out, "%s held: upstream archives not compared: %s\n", Look, comparison.Problem)
 	case engine.NothingCompared(*comparison):
 		fmt.Fprintf(out, "Upstream not compared: %s.\n", engine.CoverageWords(*comparison))
 	case len(comparison.Changes) == 0:
 		fmt.Fprintln(out, "Upstream source compared: no license, build file, or dependency changes.")
 		if words := engine.CoverageWords(*comparison); words != "" {
-			fmt.Fprintf(out, "  · %s\n", words)
+			fmt.Fprintf(out, "    %s\n", words)
 		}
 	default:
 		fmt.Fprintln(out, "Upstream changes:")
@@ -235,17 +230,17 @@ func WriteUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 			fmt.Fprintf(out, "  %s\n", UpstreamWords(engine.UnderUpstream(change)))
 		}
 		if words := engine.CoverageWords(*comparison); words != "" {
-			fmt.Fprintf(out, "  · %s\n", words)
-		}
-		if comparison.Held() {
-			fmt.Fprintln(out, "  "+HoldLegend)
+			fmt.Fprintf(out, "    %s\n", words)
 		}
 	}
 }
 
+// UpstreamWords are a finding as update and status say it: one that holds
+// says so in its word, "held", and one that doesn't carries no mark (part
+// 5, item 2, where "!" meant it held and "·" that it didn't).
 func UpstreamWords(change model.UpstreamChange) string {
 	if change.Hold {
-		return "! " + change.Message
+		return Look + " held: " + change.Message
 	}
-	return "· " + change.Message
+	return Unmarked + " " + change.Message
 }

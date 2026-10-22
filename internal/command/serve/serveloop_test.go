@@ -77,7 +77,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 	status, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
-	require.Regexp(t, `· jq-1\.8\.1\s+#34901 opened by serve, without a person's review`, status)
+	require.Regexp(t, `✓ jq-1\.8\.1\s+#34901 opened by serve, without a person's review`, status)
 	require.Contains(t, status, "Your ports: 1 port has newer releases, as serve found ")
 	require.Regexp(t, `Your ports: 1 port may have newer releases; review needed. Last checked .* by serve\. Run dockhand outdated yq for details\.\n`, status)
 

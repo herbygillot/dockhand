@@ -24,7 +24,7 @@ const (
 
 // Mark is the kind's glyph in the text.
 func (k attentionKind) Mark() string {
-	return map[attentionKind]string{AttentionFailed: "✗", AttentionNeedsYou: "!", AttentionReady: "·"}[k]
+	return map[attentionKind]string{AttentionFailed: Broken, AttentionNeedsYou: Look, AttentionReady: Done}[k]
 }
 
 func AttentionFor(s engine.BranchStatus) []Attention {

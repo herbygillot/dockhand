@@ -629,13 +629,13 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 	}
 	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", done.Base.Short(), view.OrNone(prose.Few(indexed, 12, "port")))
 	if len(under) > 0 {
-		fmt.Fprintf(out, "  · under a variant, found in the Portfile, which the index doesn't record: %s\n", strings.Join(under, ", "))
+		fmt.Fprintf(out, "    under a variant, found in the Portfile, which the index doesn't record: %s\n", strings.Join(under, ", "))
 	}
 	for _, dependent := range done.Changed {
-		fmt.Fprintf(out, "  · %s: the branch already changes it, so it is left as it is\n", dependent.Name)
+		fmt.Fprintf(out, "    %s: the branch already changes it, so it is left as it is\n", dependent.Name)
 	}
 	if len(done.Excepted) > 0 {
-		fmt.Fprintf(out, "  · left out with --except: %s\n", strings.Join(done.Excepted, ", "))
+		fmt.Fprintf(out, "    left out with --except: %s\n", strings.Join(done.Excepted, ", "))
 	}
 	if err != nil {
 		return nil, err
@@ -688,7 +688,7 @@ func writePatches(out io.Writer, update engine.Update) {
 		if update.Release != nil && update.Release.Version != "" {
 			source = update.Release.Version + "'s source"
 		}
-		fmt.Fprintf(out, "· %s to %s\n", engine.PatchesApply(update.PatchesApplied, len(update.PatchProblems)), source)
+		fmt.Fprintf(out, "✓ %s to %s\n", engine.PatchesApply(update.PatchesApplied, len(update.PatchProblems)), source)
 	}
 	for _, problem := range update.PatchProblems {
 		fmt.Fprintf(out, "! patch %s\n", problem)
@@ -697,7 +697,7 @@ func writePatches(out io.Writer, update engine.Update) {
 		fmt.Fprintf(out, "Removed patch %s and its file; the new source already includes the fix.\n", dropped)
 	}
 	for _, unchecked := range update.PatchesUnchecked {
-		fmt.Fprintf(out, "· patch %s\n", unchecked)
+		fmt.Fprintf(out, "  patch %s\n", unchecked)
 	}
 }
 

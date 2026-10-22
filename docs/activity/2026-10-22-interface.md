@@ -57,3 +57,37 @@ beside checkrun: `Stage`, `Decide`, `Apply`, and `EditSubjects`. The tidy
 verb is its front, and ship and submit import tidyrun, not tidy. The
 `submit → tidy` entry comes out of verbImports, and ship's tidy entry
 with it.
+
+## Item 2, §10's marks
+
+The marks are view's (view/marks.go), one meaning each across commands:
+`✗` broken, `!` look at this, `✓` done, `⋯` under way. `·` is only a
+separator, and a line for your information carries no mark, keeping the
+mark's column (`view.Unmarked`).
+
+- **Holds are said in a word.** An upstream finding that holds reads "!
+  held: LICENSE changed", and one that doesn't is unmarked, where `!`
+  meant it held and `·` that it didn't. The legend that explained them
+  ("! holds bump's and serve's submission…; · holds nothing") is gone
+  from update, submit, and the upstream report. A moved Git source reads
+  "! held: …" in submit's Upstream lines, and archives not compared read
+  "! held: upstream archives not compared: …".
+- **Status's ready row** ("passed; waiting for you to submit", "opened
+  by serve…") is `✓`, where it was `·`.
+- **Result cells**: a target an environment can't build reads "! not
+  built: needs Xcode", one not run "! not run", and another outcome "!
+  interrupted", where each was `·`. The pull request's table takes them
+  too.
+- **setup**:
+  - What you'd act on is `!`: "! needs Tart: …", "! not set up: dockhand
+    setup tart", "! no image: …", "! Xcode image … ready; no plain
+    image…", and "! needs a GitHub login…".
+  - What's for your information is unmarked: "needs Apple silicon; checks
+    here build on GitHub", the GitHub login not set up until you submit,
+    and the maintainer line.
+- **The rest that used `·` as a mark**: update's patch lines ("✓ N
+  patches apply …"), its dependents' notes, the baseline's "not built at
+  the base", review's lines ("! upstream's change wasn't assessed"), and
+  tidy's note on older builds. These are now `✓`, `!`, or unmarked by what
+  they say.
+- Acceptance row B9 reads setup's "! not set up" line.

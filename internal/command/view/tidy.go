@@ -90,7 +90,7 @@ func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 		}
 	}
 	if builds := plan.OlderBuilds(); len(builds) > 0 && !saved {
-		fmt.Fprintf(out, "  · the branch's commits name an older dockhand in Generated-By, %s: a commit tidy leaves as it is keeps it, and one it writes names this build\n", strings.Join(builds, ", "))
+		fmt.Fprintf(out, "    the branch's commits name an older dockhand in Generated-By, %s: a commit tidy leaves as it is keeps it, and one it writes names this build\n", strings.Join(builds, ", "))
 	}
 	WriteFindings(out, plan)
 	fmt.Fprintln(out)

@@ -150,7 +150,7 @@ func providerLines(ctx context.Context, s *settings.Settings, file config.File) 
 }
 
 // noTart says why Tart isn't for this Mac, and where its checks build.
-const noTart = "· needs Apple silicon; checks here build on GitHub, with --on github"
+const noTart = "  needs Apple silicon; checks here build on GitHub, with --on github"
 
 // tartReadiness is setup's Tart line, and the lines under it: a release's
 // each, where images are ready.
@@ -160,7 +160,7 @@ func tartReadiness(ctx context.Context, s *settings.Settings) []string {
 	}
 	images := imagesOf(s)
 	if images == nil {
-		return []string{"· needs Tart: " + installTart + ", then dockhand setup tart"}
+		return []string{"! needs Tart: " + installTart + ", then dockhand setup tart"}
 	}
 	status, err := images.Status(ctx)
 	if err != nil {
@@ -197,14 +197,14 @@ func tartReadiness(ctx context.Context, s *settings.Settings) []string {
 	switch status.Readiness() {
 	case tart.XcodeOnly:
 		if restore != "" {
-			return []string{fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which a check needs beside it: %s", products(status.Xcode), restore)}
+			return []string{fmt.Sprintf("! Xcode image for macOS %s ready; no plain image, which a check needs beside it: %s", products(status.Xcode), restore)}
 		}
-		return []string{fmt.Sprintf("· Xcode image for macOS %s ready; no plain image, which a check needs beside it: dockhand setup tart   (%s)", products(status.Xcode), cost)}
+		return []string{fmt.Sprintf("! Xcode image for macOS %s ready; no plain image, which a check needs beside it: dockhand setup tart   (%s)", products(status.Xcode), cost)}
 	case tart.NoImage:
 		if restore != "" {
-			return []string{"· no image: " + restore}
+			return []string{"! no image: " + restore}
 		}
-		return []string{fmt.Sprintf("· not set up: dockhand setup tart   (%s)", cost)}
+		return []string{fmt.Sprintf("! not set up: dockhand setup tart   (%s)", cost)}
 	}
 	// A heading, then a line for each release, aligned: the image its
 	// checks build in, which is its Xcode image wherever it has one, and
@@ -272,7 +272,7 @@ func tartReadiness(ctx context.Context, s *settings.Settings) []string {
 func githubReadiness(ctx context.Context, s *settings.Settings) string {
 	switch github.LoginSource(ctx, s.Signin()) {
 	case "":
-		return "· needs a GitHub login, dockhand setup github, and your fork's Actions enabled"
+		return "! needs a GitHub login, dockhand setup github, and your fork's Actions enabled"
 	case github.SourceKeychain:
 		return "✓ with your GitHub login; your fork's Actions must be enabled"
 	}
