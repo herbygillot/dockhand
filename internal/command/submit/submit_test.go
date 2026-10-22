@@ -626,7 +626,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	require.NoError(t, err)
 
 	// ship checks the committed head first, and submits only what passed.
-	out, _, err := cmdtest.Dockhand(t, "ship", "--yes")
+	out, _, err := cmdtest.Dockhand(t, "ship", "--yes", "-v")
 	require.Equal(t, 2, term.ExitCode(err))
 	require.ErrorContains(t, err, "; nothing was submitted")
 	require.Contains(t, out, "  jq-update  its branch, where it stands, to submit\n             jq: update to 1.8.1 · runs first; it is submitted only if it passes · opens a new one\n")

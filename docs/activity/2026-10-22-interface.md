@@ -196,3 +196,39 @@ mark's column (`view.Unmarked`).
   says it, and an update's `--plan` still does.
 - **submit --plan's description** shows its first 8 lines, then "+N lines
   (dockhand submit --plan -v shows it all)".
+
+### "Said once", as a test
+
+- **Every command test's default output is held to it** (`cmdtest.SaidOnce`,
+  which `cmdtest.RunFor` runs after each command line): a pull request's
+  URL, a run, or a commit named at most once outside a table, and at most
+  one `Next:`. A table's line, its cells set apart by two spaces, names
+  what it's about in a column, and a name in a path (a log's
+  `~/.dockhand/logs/check-1/…`) is where a file is. It isn't held of `-v`,
+  `--json`, `--plan`, help, a question on a terminal, serve's log, status
+  `--watch`, or review `--markdown`'s text for pasting; nor of status,
+  whose groups item 4 reworks.
+- **The width isn't enforced yet**: about 300 lines in the suite are over
+  100 columns, from prose that isn't wrapped and table cells that aren't
+  cut, which item 4's prose writer and cells bring in.
+  `DOCKHAND_TEST_SAID_ONCE_REPORT=<file>` appends both, said-once and width, to a
+  file instead of failing, to size what's left.
+- **What it found, fixed**:
+  - check's "Passed for commit 1a2b3c4." under "checking commit 1a2b3c4":
+    "Passed." where the command named what it checks (check, retry, ship);
+    wait, which names nothing first, still says it (`checkrun.Report`'s
+    `named`).
+  - `check --replace`'s "Canceled check-1 before it started." and "check-2
+    replaces check-1.": "Replaced check-1, canceled before it started."
+  - A baseline's header and rows each named master's commit, and the
+    header the check its results name: "jq-update · baseline at master
+    1a2b3c4: jq", then "jq · command". check.baseline's own follows the
+    failed check's pointer, which named the commit: "jq-update · baseline,
+    since check.baseline is on: jq", where "Running a baseline comparison
+    because check.baseline is enabled:" was a line of its own.
+  - ship's failed check expands its report alone; the plan it was queued
+    with is `-v`'s.
+  - clean's list of commits it deletes is a table, the commit and its
+    subject set apart.
+  - review's upstream heading says "the pull request's head" where a
+    finding already names that commit.

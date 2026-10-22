@@ -59,7 +59,7 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 		fmt.Fprintf(streams.Out, "%s queued; serve (pid %d) runs it. dockhand wait %s follows it.\n", run.Name(), leader.PID, run.Name())
 		return nil
 	}
-	return Follow(ctx, e, session, run, streams, places, func(lead engine.Lead) {
+	return Follow(ctx, e, session, run, streams, places, true, func(lead engine.Lead) {
 		if streams.Held() {
 			// A stage's notice is its redrawn line's (term.Streams.Held).
 			if streams.ErrTerminal() && lead.Here() {
@@ -77,8 +77,8 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 
 // Follow shows a run's progress until it ends, driving it here where
 // nobody else sees it through, after before says who does, and reports its
-// outcome.
-func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, places config.Places, before func(engine.Lead)) error {
+// outcome; named is where the command named what it checks already.
+func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, places config.Places, named bool, before func(engine.Lead)) error {
 	journal := &journal{e: e, run: run.ID, out: streams.Err}
 	if streams.Held() {
 		journal.held, journal.live = true, streams.ErrTerminal()
@@ -113,7 +113,7 @@ func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 	if err != nil {
 		return err
 	}
-	return Report(context.WithoutCancel(ctx), e, run, streams, places)
+	return Report(context.WithoutCancel(ctx), e, run, streams, places, named)
 }
 
 // journal prints a run's progress events as they are appended.
@@ -149,8 +149,8 @@ func (j *journal) show(ctx context.Context) {
 }
 
 // Report prints a finished run's results and returns the exit its outcome
-// calls for.
-func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places) error {
+// calls for; named is where the command named what it checked already.
+func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places, named bool) error {
 	if run.BaselineOf != "" {
 		return reportBaseline(ctx, e, run, streams)
 	}
@@ -179,11 +179,17 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		// A check of files an earlier check already built finishes at
 		// once: which check's results it took is said up front, so the
 		// instant pass isn't a surprise (the Vx port's field testing).
+		// What passed is named where the command didn't name it before
+		// the check, as wait doesn't (part 5, item 3).
+		passed := "Passed for " + engine.Describe(revision)
+		if named {
+			passed = "Passed"
+		}
 		if from := evidence.ReusedAll(); len(from) > 0 {
-			fmt.Fprintf(out, "Passed for %s, reusing %s's results: the same inputs, so nothing was built (--fresh builds again).\n", engine.Describe(revision), prose.And(from))
+			fmt.Fprintf(out, "%s, reusing %s's results: the same inputs, so nothing was built (--fresh builds again).\n", passed, prose.And(from))
 			return nil
 		}
-		fmt.Fprintf(out, "Passed for %s.\n", engine.Describe(revision))
+		fmt.Fprintf(out, "%s.\n", passed)
 		return nil
 	case model.RunFailed:
 		writeFailureLines(out, evidence)
@@ -348,10 +354,6 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 	if err != nil {
 		return err
 	}
-	revision, err := e.Revision(ctx, run.Revision)
-	if err != nil {
-		return err
-	}
 	if streams.JSON() {
 		result, err := checkResult(ctx, e, run)
 		if err != nil {
@@ -361,7 +363,7 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 		streams.Emit(result)
 	}
 	fmt.Fprintln(out)
-	WriteBaselineResults(out, base, branch, revision.Source.Commit.Short())
+	WriteBaselineResults(out, base, branch)
 	switch run.State {
 	case model.RunCanceled:
 		return StoppedExit(run, base)
@@ -375,9 +377,9 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 // branch's, in each environment where the baseline built it, and where
 // the check failed it but master doesn't build it. A baseline rebuilds a
 // port only where it failed, so elsewhere there is nothing to set beside.
-func WriteBaselineResults(out io.Writer, base, branch engine.Evidence, master string) {
+func WriteBaselineResults(out io.Writer, base, branch engine.Evidence) {
 	for _, row := range engine.BaselineComparison(base, branch) {
-		fmt.Fprintf(out, "%s at master %s · %s\n", row.Target, master, engine.DescribeEnvironment(row.Environment))
+		fmt.Fprintf(out, "%s · %s\n", row.Target, engine.DescribeEnvironment(row.Environment))
 		if row.Excluded != "" {
 			fmt.Fprintf(out, "    not built at the base: %s\n", row.Excluded)
 			continue

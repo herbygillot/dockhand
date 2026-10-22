@@ -38,13 +38,13 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	// move if it had (the libuv run's finding 4).
 	previewed, _, err := cmdtest.Dockhand(t, "check", "--baseline", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, previewed, "jq-update · baseline of check-2: jq at master ")
+	require.Regexp(t, "jq-update · baseline at master [0-9a-f]{7}: jq\n", previewed)
 	require.Contains(t, previewed, "Also        jq\nProvider    command · tests declared\n")
 	next("passed")
 	out, _, err = cmdtest.Dockhand(t, "check", "--baseline")
 	require.NoError(t, err, "a baseline is evidence, and never fails")
-	require.Contains(t, out, "jq-update · baseline of check-2: jq at master ")
-	require.Contains(t, out, "jq at master ")
+	require.Regexp(t, "jq-update · baseline at master [0-9a-f]{7}: jq\n", out)
+	require.Contains(t, out, "\njq · command\n", "the heading named master's commit")
 	require.Contains(t, out, "  ✓ builds at the base. This branch's result differs (check-2); the cause isn't established.\n")
 
 	out, _, err = cmdtest.Dockhand(t, "status")
@@ -59,7 +59,7 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	next("failed")
 	out, _, err = cmdtest.Dockhand(t, "check")
 	require.Equal(t, 2, term.ExitCode(err))
-	require.Contains(t, out, "dockhand check --baseline --branch jq-update\nRunning a baseline comparison because check.baseline is enabled:\njq-update · baseline of check-4: jq at master ")
+	require.Contains(t, out, "dockhand check --baseline --branch jq-update\njq-update · baseline, since check.baseline is on: jq\n")
 	require.Contains(t, out, "  ✗ fails at the base too, at install. Both results are kept; the cause isn't established.\n")
 
 	// A port that failed before building is the branch's own doing: no

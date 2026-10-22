@@ -347,7 +347,7 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 		if len(plan.Unmerged) > 0 {
 			fmt.Fprintf(out, "  ! %s master doesn't have, deleted with it:\n", prose.Plural(len(plan.Unmerged), "commit"))
 			for _, commit := range plan.Unmerged {
-				fmt.Fprintf(out, "    %s %s\n", model.ObjectID(commit.ID).Short(), commit.Subject)
+				fmt.Fprintf(out, "    %s  %s\n", model.ObjectID(commit.ID).Short(), commit.Subject)
 			}
 		}
 		fmt.Fprintln(out, "  its record, but for what other branches' results reused of its checks")

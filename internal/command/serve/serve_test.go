@@ -56,7 +56,7 @@ func TestACheckIsHandedToServe(t *testing.T) {
 	out, errs, err := cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
 	require.Contains(t, errs, "check-1 handed to serve (pid ")
-	require.Contains(t, out, "Passed for snapshot 1.")
+	require.Contains(t, out, "\nPassed.\n", "the check's heading named what it checks")
 
 	out, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)

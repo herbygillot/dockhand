@@ -144,7 +144,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.EqualError(t, err, "watch is part of status now: dockhand status --watch keeps it current")
 	out, _, err = cmdtest.Dockhand(t, "check", "-d", "--replace")
 	require.NoError(t, err)
-	require.Contains(t, out, "Canceled check-1 before it started.\ncheck-2 replaces check-1.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
+	require.Contains(t, out, "Replaced check-1, canceled before it started.\ncheck-2 queued", "it was only queued (the hugo exercise's certigo run, finding 5)")
 
 	// --follow prints a target's log as the driver copies it, until its
 	// build ends (the gnome-voice session's notes, 2026-10-20): check-2,

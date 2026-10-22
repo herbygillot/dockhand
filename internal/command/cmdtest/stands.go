@@ -167,7 +167,14 @@ func standsFor(t testing.TB) *standing {
 func RunFor(t testing.TB, ctx context.Context, args []string, streams term.Streams) error {
 	t.Helper()
 	found := standsFor(t)
-	return runner(ctx, invocationFor(t, args), streams, found.Deps, found.Host)
+	if !saidOnceChecked(args, streams) || streams.Out == nil {
+		return runner(ctx, invocationFor(t, args), streams, found.Deps, found.Host)
+	}
+	out := &saidOnceOut{to: streams.Out}
+	streams.Out = out
+	err := runner(ctx, invocationFor(t, args), streams, found.Deps, found.Host)
+	checkSaidOnce(t, args, out)
+	return err
 }
 
 // TestSettings are a command's settings, with the test's stand-ins.

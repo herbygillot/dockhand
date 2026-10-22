@@ -209,7 +209,7 @@ func TestShipTakesEachStagesFlags(t *testing.T) {
 
 	_, _, err := cmdtest.Dockhand(t, "ship", "jq", "--tests", "sometimes")
 	require.EqualError(t, err, `--tests "sometimes" is not declared, required, or skip`)
-	out, _, err := cmdtest.Dockhand(t, "ship", "jq", "--yes", "--draft", "--type", "bugfix", "--tests", "skip")
+	out, _, err := cmdtest.Dockhand(t, "ship", "jq", "--yes", "--draft", "--type", "bugfix", "--tests", "skip", "-v")
 	require.Equal(t, 2, term.ExitCode(err), out)
 	require.Contains(t, out, "then submitting it as a draft")
 	require.Contains(t, out, "tests skip")

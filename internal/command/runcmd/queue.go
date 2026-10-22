@@ -49,14 +49,14 @@ the check runs here, as a foreground check would.`,
 				return err
 			}
 			if run.State.Terminal() {
-				return checkrun.Report(ctx, e, run, streams, s.Places())
+				return checkrun.Report(ctx, e, run, streams, s.Places(), false)
 			}
 			session, err := e.Session(ctx, model.SessionForeground)
 			if err != nil {
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
-			return checkrun.Follow(ctx, e, session, run, streams, s.Places(), func(lead engine.Lead) {
+			return checkrun.Follow(ctx, e, session, run, streams, s.Places(), false, func(lead engine.Lead) {
 				if lead.Here() {
 					fmt.Fprintf(streams.Err, "No dockhand serve is running, so %s will run here. Press Ctrl-C to stop it; completed results will be saved.\n", run.Name())
 					return

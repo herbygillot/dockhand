@@ -50,7 +50,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "check-2 repeats check-1: snapshot 1\n")
 	require.Contains(t, errs, "check-2 runs here")
-	require.Contains(t, out, "Passed for snapshot 1.")
+	require.Contains(t, out, "\nPassed.\n", "the check's heading named what it checks")
 
 	_, _, err = cmdtest.Dockhand(t, "rebase")
 	require.ErrorContains(t, err, "has uncommitted edits")

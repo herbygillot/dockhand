@@ -5,6 +5,7 @@ import (
 
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -151,7 +153,13 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 		// 5.18.0 by then).
 		heading := "  Upstream:"
 		if report.Head != "" && report.Base != "" {
-			heading = fmt.Sprintf("  Upstream comparison using ports at pull request commit %s (based on master %s):", model.ObjectID(report.Head).Short(), model.ObjectID(report.Base).Short())
+			head := model.ObjectID(report.Head).Short()
+			heading = fmt.Sprintf("  Upstream comparison using ports at pull request commit %s (based on master %s):", head, model.ObjectID(report.Base).Short())
+			// Where a finding names the head, it's the pull request's head
+			// here, not named again (part 5, item 3).
+			if slices.ContainsFunc(report.Findings, func(f commitrules.Finding) bool { return strings.Contains(f.String(), head) }) {
+				heading = fmt.Sprintf("  Upstream comparison using ports at the pull request's head (based on master %s):", model.ObjectID(report.Base).Short())
+			}
 		}
 		fmt.Fprintln(out, heading)
 		for _, line := range lines {

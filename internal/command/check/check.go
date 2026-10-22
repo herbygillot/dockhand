@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/term"
 )
@@ -84,7 +85,7 @@ true, it runs that baseline by itself.`,
 				return previewBaseline(ctx, e, streams, branch, only)
 			}
 			if baseline {
-				return runBaseline(ctx, e, streams, branch, only, enqueue, s)
+				return runBaseline(ctx, e, streams, branch, only, enqueue, false, s)
 			}
 			mode := captureMode(head, staged, workingTree)
 			place, err := e.Where(ctx, engine.WhereRequest{On: on, Build: build})
@@ -157,13 +158,18 @@ true, it runs that baseline by itself.`,
 					ok, _, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? stop %s, which is running? [y/N] ", run.Name()), Nobody: term.Answer(true)})
 					return ok, err
 				}})
-			replaced := sayReplaced(streams.Out, queued)
+			replaced := replacedWords(queued)
 			if err != nil {
+				for _, words := range replaced {
+					fmt.Fprintf(streams.Out, "%s.\n", prose.Sentence(words))
+				}
 				return besideWords(err, capture.Revision)
 			}
 			run := queued.Run
 			if len(replaced) > 0 {
-				fmt.Fprintf(streams.Out, "%s replaces %s.\n", run.Name(), strings.Join(replaced, ", "))
+				// One line names each, where a line said each stopped and
+				// another what replaced them (part 5, item 3).
+				fmt.Fprintf(streams.Out, "Replaced %s.\n", strings.Join(replaced, "; "))
 			}
 			err = checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
 			// A check that passed says what moves the branch on now, as
@@ -181,8 +187,7 @@ true, it runs that baseline by itself.`,
 			if s.File.Check.Baseline && !enqueue {
 				finished, _ := e.RunNamed(ctx, run.Name())
 				if offer, _ := e.BaselineCandidates(ctx, finished); len(offer.Ports) > 0 {
-					fmt.Fprintln(streams.Out, "Running a baseline comparison because check.baseline is enabled:")
-					if baselineErr := runBaseline(ctx, e, streams, branch, nil, false, s); baselineErr != nil {
+					if baselineErr := runBaseline(ctx, e, streams, branch, nil, false, true, s); baselineErr != nil {
 						fmt.Fprintf(streams.Err, "baseline: %v\n", baselineErr)
 					}
 				}
@@ -237,7 +242,7 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 	if err != nil {
 		return err
 	}
-	writeBaselineHeader(streams.Out, branch, baseline)
+	writeBaselineHeader(streams.Out, branch, baseline, false)
 	view.WritePlan(streams.Out, baseline.Plan, e.PlanNotes(ctx, baseline.Plan), nil, e.Remedy)
 	planned := view.PlanView(baseline.Plan)
 	streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Plan: &planned, Targets: []view.TargetJSON{}})
@@ -246,12 +251,14 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 
 // runBaseline plans a baseline of the branch's latest check and runs it,
 // here or through serve.
-func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string, enqueue bool, s *settings.Settings) error {
+// runBaseline runs a baseline of a branch's failed check; auto is
+// check.baseline's, which the failed check's report pointed to.
+func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string, enqueue, auto bool, s *settings.Settings) error {
 	baseline, err := e.PlanBaseline(ctx, branch, only)
 	if err != nil {
 		return err
 	}
-	writeBaselineHeader(streams.Out, branch, baseline)
+	writeBaselineHeader(streams.Out, branch, baseline, auto)
 	run, err := e.EnqueueBaseline(ctx, branch, baseline, model.OriginPerson)
 	if err != nil {
 		return err
@@ -260,12 +267,19 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, br
 }
 
 // writeBaselineHeader says what a baseline builds, and what it leaves out.
-func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Baseline) {
+// Its results name the check they're beside, and check.baseline's follows
+// the failed check's pointer to it, which named master's commit (part 5,
+// item 3: each was said twice).
+func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Baseline, auto bool) {
 	var names []string
 	for _, target := range baseline.Plan.Targets {
 		names = append(names, string(target.ID))
 	}
-	fmt.Fprintf(out, "%s · baseline of %s: %s at master %s\n", branch.ShortName(), baseline.Of.Name(), strings.Join(names, ", "), baseline.Revision.Source.Commit.Short())
+	if auto {
+		fmt.Fprintf(out, "%s · baseline, since check.baseline is on: %s\n", branch.ShortName(), strings.Join(names, ", "))
+	} else {
+		fmt.Fprintf(out, "%s · baseline at master %s: %s\n", branch.ShortName(), baseline.Revision.Source.Commit.Short(), strings.Join(names, ", "))
+	}
 	if len(baseline.New) > 0 {
 		fmt.Fprintf(out, "    left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
 	}
@@ -297,16 +311,19 @@ func besideWords(err error, revision model.Revision) error {
 	return fmt.Errorf("%s is %s for %s; --replace stops it, keeping what it finished, and checks %s instead", active.Run.Name(), active.Run.State, engine.Describe(active.Checking), engine.Describe(revision))
 }
 
-// sayReplaced says each run a new check stopped, and returns their names.
-func sayReplaced(out io.Writer, queued engine.Queued) []string {
+// replacedWords say each run a new check stopped, and how: "check-1,
+// canceled before it started".
+func replacedWords(queued engine.Queued) []string {
 	var stopped []string
 	for i, run := range queued.Replaced {
-		if run.State == model.RunCanceled {
-			fmt.Fprintln(out, checkrun.StopWords(run, queued.Was[i].State == model.RunQueued))
-		} else {
-			fmt.Fprintf(out, "%s: stop requested; the process running it stops it at its next step.\n", run.Name())
+		switch {
+		case run.State != model.RunCanceled:
+			stopped = append(stopped, run.Name()+", which the process running it stops at its next step")
+		case queued.Was[i].State == model.RunQueued:
+			stopped = append(stopped, run.Name()+", canceled before it started")
+		default:
+			stopped = append(stopped, run.Name()+", stopped, keeping what it finished")
 		}
-		stopped = append(stopped, run.Name())
 	}
 	return stopped
 }

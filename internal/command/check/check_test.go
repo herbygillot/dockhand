@@ -60,7 +60,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.Contains(t, errs, "check-1 runs here, since no dockhand serve is running.")
 	require.Contains(t, errs, "command: jq passed")
 	require.Contains(t, out, "jq-update · captured working files as snapshot 1\n", "the plan recorded nothing for the check to reuse")
-	require.Contains(t, out, "  jq  ✓\n\nPassed for snapshot 1.\nNext: dockhand tidy --branch jq-update\n", "what moves the branch on, as status says it")
+	require.Contains(t, out, "  jq  ✓\n\nPassed.\nNext: dockhand tidy --branch jq-update\n", "what moves the branch on, as status says it")
 	out, _, err = cmdtest.Dockhand(t, "check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · checking snapshot 1\n", "a plan finds a snapshot already recorded of the same files")
@@ -80,7 +80,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "check")
 	require.ErrorContains(t, err, "check-2 is already queued for these files; dockhand wait check-2 follows it", "one check of a branch at a time")
 	out, _, err = cmdtest.Dockhand(t, "check", "--replace")
-	require.Contains(t, out, "Canceled check-2 before it started.\ncheck-3 replaces check-2.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
+	require.Contains(t, out, "Replaced check-2, canceled before it started.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
 	require.Equal(t, 2, term.ExitCode(err), "a failed check exits 2")
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass\nNext: dockhand logs check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
@@ -315,10 +315,10 @@ func TestBaselineResultsShowWhereItRebuilt(t *testing.T) {
 		{Target: gone, Outcomes: cmdtest.Cells([]model.TargetResult{notRun, notRun})},
 	}}
 	var out bytes.Buffer
-	checkrun.WriteBaselineResults(&out, base, branch, "1a2b3c4")
-	require.Equal(t, "jq at master 1a2b3c4 · tart macOS 15 (Sequoia) arm64\n"+
+	checkrun.WriteBaselineResults(&out, base, branch)
+	require.Equal(t, "jq · tart macOS 15 (Sequoia) arm64\n"+
 		"  ✗ fails at the base too, at install. Both results are kept; the cause isn't established.\n"+
-		"gone at master 1a2b3c4 · tart macOS 26 (Tahoe) arm64\n"+
+		"gone · tart macOS 26 (Tahoe) arm64\n"+
 		"    not built at the base: replaced by other\n", out.String())
 }
 

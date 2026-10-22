@@ -527,7 +527,8 @@ func finishCarried(ctx context.Context, s *settings.Settings, streams term.Strea
 		checks, check := streams.Staged("checking " + done.target.Name())
 		checked = checkrun.RunQueued(ctx, e, *done.run, checks, false, s.Places(), s.Drain)
 		if checked != nil {
-			done.queued.Say()
+			// The check's report alone expands: the plan it was queued
+			// with is -v's (part 5, item 3).
 			check.Say()
 		} else {
 			words := "passed"

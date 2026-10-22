@@ -227,7 +227,7 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 	require.Contains(t, errs, "github: in progress https://github.com/ada/macports-ports/actions/runs/7")
 	require.Contains(t, errs, "github: jq passed")
 	require.Contains(t, out, "  jq  ✓ build passed; tests failed (advisory)\n")
-	require.Contains(t, out, "Passed for snapshot 1.")
+	require.Contains(t, out, "\nPassed.\n", "the check's heading named what it checks")
 	require.Equal(t, 0, f.reruns)
 
 	// The commit was pushed to your fork, and its branch removed once the
