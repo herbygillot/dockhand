@@ -2,9 +2,7 @@ package portedit
 
 import (
 	"context"
-	"fmt"
 	"maps"
-	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
@@ -57,31 +55,21 @@ func (s *Service) correct(ctx context.Context, input *sourceInput, result *Resul
 // prepared, its allowed change made: the port set, each revision, and
 // every option fidelity compares.
 func correctionReport(before, after macports.Snapshot, c correction) Fidelity {
-	report := Fidelity{Before: before, After: after, ExpectedChanges: c.expected, UnexpectedChanges: []string{}}
-	for name := range after.Ports {
-		if _, ok := before.Ports[name]; !ok {
-			report.UnexpectedChanges = append(report.UnexpectedChanges, name+": port set changed")
-		}
-	}
-	for name, old := range before.Ports {
-		next, ok := after.Ports[name]
-		if !ok {
-			report.UnexpectedChanges = append(report.UnexpectedChanges, name+": port set changed")
-			continue
-		}
-		expected := old
-		if c.allowed != nil {
+	prediction := fidelity.Predict(before)
+	prediction.Expected = c.expected
+	if c.allowed != nil {
+		for name, old := range before.Ports {
+			next, ok := after.Ports[name]
+			if !ok {
+				continue
+			}
+			expected := old
 			expected.Options = maps.Clone(old.Options)
 			if expected.Options == nil {
 				expected.Options = map[string]string{}
 			}
-			expected = c.allowed(name, expected, next)
+			prediction.Expect(name, fidelity.ComparablePort(c.allowed(name, expected, next), before.Root))
 		}
-		if next.Revision != expected.Revision {
-			report.UnexpectedChanges = append(report.UnexpectedChanges, fmt.Sprintf("%s.revision: expected %d, got %d", name, expected.Revision, next.Revision))
-		}
-		report.UnexpectedChanges = append(report.UnexpectedChanges, fidelity.Compare(name, fidelity.ComparablePort(expected, before.Root), fidelity.ComparablePort(next, after.Root))...)
 	}
-	slices.Sort(report.UnexpectedChanges)
-	return report
+	return prediction.Observe(before, after)
 }

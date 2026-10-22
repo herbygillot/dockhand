@@ -55,41 +55,26 @@ func CheckSnapshot(snapshot macports.Snapshot, bound macports.Context) error {
 
 // Revision expects only the selected port's revision to advance by one.
 func Revision(before, after macports.Snapshot, selected string) Report {
-	result := Report{Before: before, After: after, ExpectedChanges: []string{selected + ".revision +1"}, UnexpectedChanges: []string{}}
-	names := map[string]bool{}
-	for name := range before.Ports {
-		names[name] = true
-	}
-	for name := range after.Ports {
-		names[name] = true
-	}
-	for name := range names {
-		old, was := before.Ports[name]
+	prediction := Predict(before)
+	prediction.Expected = []string{selected + ".revision +1"}
+	for name, old := range before.Ports {
 		next, is := after.Ports[name]
-		if !was || !is {
-			result.UnexpectedChanges = append(result.UnexpectedChanges, name+": port set changed")
-			continue
-		}
-		wanted := old.Revision
 		// A sibling that shares the selected port's revision line moves
 		// with it, as the python PortGroup's subports share their stub's:
 		// one at the selected port's revision that rises with it.
-		shared := name != selected && old.Revision == before.Ports[selected].Revision && next.Revision == wanted+1
-		if name == selected || shared {
-			wanted++
+		shared := name != selected && is && old.Revision == before.Ports[selected].Revision && next.Revision == old.Revision+1
+		if name != selected && !shared {
+			continue
 		}
+		port := prediction.Port(name)
+		port.Revision++
 		if shared {
-			result.ExpectedChanges = append(result.ExpectedChanges, name+".revision +1, shared")
+			prediction.Expect(name, port, name+".revision +1, shared")
+		} else {
+			prediction.Expect(name, port)
 		}
-		if next.Revision != wanted {
-			result.UnexpectedChanges = append(result.UnexpectedChanges, fmt.Sprintf("%s.revision: expected %d, got %d", name, wanted, next.Revision))
-		}
-		old = ComparablePort(old, before.Root)
-		next = ComparablePort(next, after.Root)
-		result.UnexpectedChanges = append(result.UnexpectedChanges, Compare(name, old, next)...)
 	}
-	slices.Sort(result.UnexpectedChanges)
-	return result
+	return prediction.Observe(before, after)
 }
 
 // ComparablePort normalizes a port for comparison: the revision is compared
@@ -295,59 +280,46 @@ func Equivalent(expected, actual macports.Snapshot) error {
 // Version expects the selected port to move to the release, its revision to
 // reset, and its source declarations and checksums to change, and nothing else.
 func version(before, after macports.Snapshot, selected string, release model.Release, checksums string) Report {
-	result := Report{Before: before, After: after, ExpectedChanges: []string{selected + ".version -> " + release.Version, selected + ".revision -> 0", selected + ".distfiles and checksums"}, UnexpectedChanges: []string{}}
-	names := map[string]bool{}
-	for name := range before.Ports {
-		names[name] = true
-	}
-	for name := range after.Ports {
-		names[name] = true
-	}
-	for name := range names {
-		original, was := before.Ports[name]
-		next, is := after.Ports[name]
-		if !was || !is {
-			result.UnexpectedChanges = append(result.UnexpectedChanges, name+": port set changed")
-			continue
-		}
-		old := ComparablePort(original, before.Root)
-		next = ComparablePort(next, after.Root)
-		if name == selected {
-			old.Version, old.Revision = release.Version, 0
+	prediction := Predict(before)
+	prediction.Expected = []string{selected + ".version -> " + release.Version, selected + ".revision -> 0", selected + ".distfiles and checksums"}
+	var problems []string
+	if original, ok := before.Ports[selected]; ok {
+		if moved, ok := after.Ports[selected]; ok {
+			next := ComparablePort(moved, after.Root)
+			port := prediction.Port(selected)
+			port.Version, port.Revision = release.Version, 0
 			for _, key := range macports.VersionFollowers {
 				if value, ok := next.Options[key]; ok {
-					old.Options[key] = value
+					port.Options[key] = value
 				} else {
-					delete(old.Options, key)
+					delete(port.Options, key)
 				}
 			}
-
 			// A field that moves only by the version written in it, as
 			// go_toolchain's long_description, "provides Go 1.26.8", is
 			// the version's: go-1.26's update was refused as changing it
 			// (field testing at 1cc87c43).
-			for key, value := range old.Options {
+			for key, value := range port.Options {
 				if moved, ok := next.Options[key]; ok && moved != value && writesVersion(value, moved, original.Version, release.Version) {
-					old.Options[key] = moved
+					port.Options[key] = moved
 				}
 			}
 			if release.Tag != "" && next.Options["git.branch"] != release.Tag {
-				result.UnexpectedChanges = append(result.UnexpectedChanges, name+".git.branch differs from selected tag")
+				problems = append(problems, selected+".git.branch differs from selected tag")
 			}
 			actual, errs := syntax.ListValues(next.Options["checksums"])
 			expected, expectedErrs := syntax.ListValues(checksums)
 			if len(errs) > 0 || len(expectedErrs) > 0 || !slices.Equal(actual, expected) {
-				result.UnexpectedChanges = append(result.UnexpectedChanges, name+".checksums differ from intended values")
+				problems = append(problems, selected+".checksums differ from intended values")
 			}
-			old.Options["checksums"] = next.Options["checksums"]
+			port.Options["checksums"] = next.Options["checksums"]
+			prediction.Expect(selected, port)
 		}
-		if old.Revision != next.Revision {
-			result.UnexpectedChanges = append(result.UnexpectedChanges, name+".revision changed unexpectedly")
-		}
-		result.UnexpectedChanges = append(result.UnexpectedChanges, Compare(name, old, next)...)
 	}
-	slices.Sort(result.UnexpectedChanges)
-	return result
+	report := prediction.Observe(before, after)
+	report.UnexpectedChanges = append(report.UnexpectedChanges, problems...)
+	slices.Sort(report.UnexpectedChanges)
+	return report
 }
 
 // GitVersion is the version expectation for a port fetched with git: the
@@ -370,42 +342,44 @@ func GitVersion(shared bool, before, after macports.Snapshot, selected string, r
 
 // Checksums expects only the selected port's checksums to change.
 func Checksums(before, after macports.Snapshot, selected, checksums string) Report {
-	expected := before
-	expected.Ports = maps.Clone(before.Ports)
-	info := expected.Ports[selected]
-	info.Options = maps.Clone(info.Options)
-	info.Options["checksums"] = checksums
-	expected.Ports[selected] = info
-	result := Report{Before: before, After: after, ExpectedChanges: []string{selected + ".checksums"}}
+	prediction := Predict(before)
+	port := prediction.Port(selected)
+	port.Options["checksums"] = checksums
+	prediction.Expect(selected, port, selected+".checksums")
 	// A sibling of the same version whose checksums were the selected
 	// port's, and are its new ones now, shares its declaration, as a python
 	// stub and its subports share one, and moves with it. A sibling that
 	// keeps its own is left as it was.
 	shared := before.Ports[selected]
-	for name, sibling := range before.Ports {
+	for _, name := range slices.Sorted(maps.Keys(before.Ports)) {
+		sibling := before.Ports[name]
 		if name == selected || sibling.Version != shared.Version || sibling.Options["checksums"] != shared.Options["checksums"] || after.Ports[name].Options["checksums"] != checksums {
 			continue
 		}
-		sibling.Options = maps.Clone(sibling.Options)
-		sibling.Options["checksums"] = checksums
-		expected.Ports[name] = sibling
-		result.ExpectedChanges = append(result.ExpectedChanges, name+".checksums, shared")
+		port := prediction.Port(name)
+		port.Options["checksums"] = checksums
+		prediction.Expect(name, port, name+".checksums, shared")
 	}
+	// The selected port's checksums are its list's values, however the
+	// list is written.
 	normalized := after
 	normalized.Ports = maps.Clone(after.Ports)
-	next := normalized.Ports[selected]
-	next.Options = maps.Clone(next.Options)
-	values, errs := syntax.ListValues(next.Options["checksums"])
-	wanted, wantedErrs := syntax.ListValues(checksums)
-	if len(errs) > 0 || len(wantedErrs) > 0 || !slices.Equal(values, wanted) {
-		result.UnexpectedChanges = append(result.UnexpectedChanges, selected+".checksums differ from intended values")
+	var problems []string
+	if next, ok := normalized.Ports[selected]; ok {
+		next.Options = maps.Clone(next.Options)
+		values, errs := syntax.ListValues(next.Options["checksums"])
+		wanted, wantedErrs := syntax.ListValues(checksums)
+		if len(errs) > 0 || len(wantedErrs) > 0 || !slices.Equal(values, wanted) {
+			problems = append(problems, selected+".checksums differ from intended values")
+		}
+		next.Options["checksums"] = checksums
+		normalized.Ports[selected] = next
 	}
-	next.Options["checksums"] = checksums
-	normalized.Ports[selected] = next
-	if err := Equivalent(expected, normalized); err != nil {
-		result.UnexpectedChanges = append(result.UnexpectedChanges, err.Error())
-	}
-	return result
+	report := prediction.Observe(before, normalized)
+	report.After = after
+	report.UnexpectedChanges = append(report.UnexpectedChanges, problems...)
+	slices.Sort(report.UnexpectedChanges)
+	return report
 }
 
 // ReleaseScope partitions sibling ports into those a release changes and those
@@ -529,23 +503,18 @@ func ScopedChecksums(scope *macports.ReleaseScope, before, after macports.Snapsh
 	if scope == nil {
 		return Checksums(before, after, selected, checksums)
 	}
-	expected := before
-	expected.Ports = maps.Clone(before.Ports)
+	prediction := Predict(before)
 	for _, member := range scope.Affected {
 		name := member.Target.Name
 		info := before.Ports[name]
 		if info.Version != member.After.Version || info.Options["checksums"] != before.Ports[selected].Options["checksums"] {
 			continue
 		}
-		info.Options = maps.Clone(info.Options)
-		info.Options["checksums"] = checksums
-		expected.Ports[name] = info
+		port := prediction.Port(name)
+		port.Options["checksums"] = checksums
+		prediction.Expect(name, port, name+".checksums")
 	}
-	result := Report{Before: before, After: after}
-	if err := Equivalent(expected, after); err != nil {
-		result.UnexpectedChanges = append(result.UnexpectedChanges, err.Error())
-	}
-	return result
+	return prediction.Observe(before, after)
 }
 
 // SubportChanges are what moved in each subport of a directory between
