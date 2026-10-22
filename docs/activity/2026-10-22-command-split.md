@@ -193,3 +193,12 @@ line without importing the root.
   `WaitCommand`, `CancelCommand`, `LogsCommand`, and `RetryCommand`. The
   log writers status's and json's tests read (`WritePortLog`,
   `WriteLogs`, `PhaseMissing`, `PortBuildWords`) are view's.
+
+One full run after runcmd (fbbede85, pushed before its log was read,
+against the rule) failed two submit tests opening their databases:
+"WAL setup" and "planner statistics: context deadline exceeded", the
+store's 30-second OperationTimeout at 48 seconds. Each verb's tests are
+now their own binary, and `go test ./...` ran about twenty at once on
+this Mac. The rerun of the whole suite passed. It's load, and the split
+raises it; CI runs fewer packages at once. If it comes back, the tests'
+store needs a longer operation deadline, or go test a lower -p.

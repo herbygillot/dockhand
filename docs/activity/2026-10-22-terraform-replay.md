@@ -79,3 +79,17 @@ were 3 lines where they had been 25. It found two things.
   terraform_select (1 of 2)". Its block is `subport terraform_select {}`,
   and BlockChanges reads the edit as terraform-1.16's alone. A check
   whose earlier build kept select's archive would install it instead.
+
+**terraform_select, read against the replay's DB copy** (correcting the
+guess above, which was right about the rule and wrong about the
+archive). check-549 did keep select's archive, sha256:8f921ec5…. Its
+file is in ~/.dockhand/archives next to the shared database, but
+`ArchiveDirectory` is the folder beside the database a run opens. The
+replay ran on a copy in its own scratch folder, whose archives folder
+check-553 created and filled with its own six archives. So the record
+was there and the file wasn't (`keptArchive`). check-553's events say as
+much of unzip: "the saved archive for unzip … is missing". With
+select's archive unavailable, select built beside terraform-1.16, which
+needs it, as the rule says. BlockChanges on the two trees gives
+terraform-1.16 alone, and select's recorded inputs hold no active ports.
+A replay copies the archives folder with the database.
