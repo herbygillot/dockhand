@@ -41,6 +41,8 @@ type observedPullRequest struct {
 	branch model.Branch
 	next   model.PullRequestObservation
 	err    error
+	// ci are its head's failed CI jobs newly classified (classifyCI).
+	ci []model.CIFailure
 }
 
 // RefreshPullRequests reads every open or closed branch's pull request
@@ -74,7 +76,11 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 			result.Refused = err
 			break
 		}
-		observed = append(observed, observedPullRequest{branch: branch, next: next, err: err})
+		o := observedPullRequest{branch: branch, next: next, err: err}
+		if err == nil {
+			o.ci = e.classifyCI(ctx, branch, next)
+		}
+		observed = append(observed, o)
 	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		result.Branches = nil
@@ -83,6 +89,11 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 			if o.err == nil {
 				if err := recordPullRequest(tx, o.branch, o.next, &refreshed); err != nil {
 					return err
+				}
+				for _, failure := range o.ci {
+					if err := tx.AddCIFailure(failure); err != nil {
+						return err
+					}
 				}
 			}
 			result.Branches = append(result.Branches, refreshed)

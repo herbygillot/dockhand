@@ -205,6 +205,9 @@ type Reader interface {
 	// StandingDecisions lists the decisions on a kind of finding that
 	// belong to no branch, by subject.
 	StandingDecisions(finding model.FindingKind) ([]model.Decision, error)
+	// CIFailures lists a branch's classified CI failures at a head, by
+	// check and job.
+	CIFailures(branch model.BranchID, head model.ObjectID) ([]model.CIFailure, error)
 	// LastReview is the newest review of a pull request; ErrNotFound when
 	// there is none.
 	LastReview(repository string, number int) (model.Review, error)
@@ -312,6 +315,9 @@ type Tx interface {
 	MarkRestored(checkpoint model.Checkpoint) error
 	// AddDecision records a decision; repeating one changes nothing.
 	AddDecision(decision model.Decision) error
+	// AddCIFailure records a CI job's failure, classified; a job's attempt
+	// is recorded once, and repeating it changes nothing.
+	AddCIFailure(failure model.CIFailure) error
 	// AddReview records a review of a pull request.
 	AddReview(review model.Review) error
 }

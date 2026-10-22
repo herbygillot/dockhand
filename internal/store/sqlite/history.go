@@ -189,6 +189,35 @@ func (t *tx) decisions(query string, args ...any) ([]model.Decision, error) {
 	return decisions, storageError(rows.Err())
 }
 
+func (t *tx) AddCIFailure(f model.CIFailure) error {
+	if err := f.Validate(); err != nil {
+		return err
+	}
+	_, err := t.exec("INSERT INTO ci_failures(repository_id, branch_id, head, run, attempt, job, check_name, cause, file, url, status, reason, at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+		t.repo, f.Branch, f.Head, f.Run, f.Attempt, f.Job, f.Check, f.Cause, f.File, f.URL, f.Status, f.Reason, millis(f.At))
+	return err
+}
+
+func (t *tx) CIFailures(branch model.BranchID, head model.ObjectID) ([]model.CIFailure, error) {
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT branch_id, head, run, attempt, job, check_name, cause, file, url, status, reason, at FROM ci_failures WHERE repository_id=? AND branch_id=? AND head=? ORDER BY check_name, job, attempt",
+		t.repo, branch, head)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	defer rows.Close()
+	var failures []model.CIFailure
+	for rows.Next() {
+		var f model.CIFailure
+		var at int64
+		if err := rows.Scan(&f.Branch, &f.Head, &f.Run, &f.Attempt, &f.Job, &f.Check, &f.Cause, &f.File, &f.URL, &f.Status, &f.Reason, &at); err != nil {
+			return nil, storageError(err)
+		}
+		f.At = fromMillis(at)
+		failures = append(failures, f)
+	}
+	return failures, storageError(rows.Err())
+}
+
 func (t *tx) AddReview(r model.Review) error {
 	if err := r.Validate(); err != nil {
 		return err

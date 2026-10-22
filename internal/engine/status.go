@@ -25,6 +25,9 @@ import (
 // into one "done".
 type BranchStatus struct {
 	Branch model.Branch
+	// CI are its pull request's failed CI jobs at the head last observed,
+	// as each was classified (classifyCI).
+	CI []model.CIFailure
 	// Missing is true when the Git branch is gone.
 	Missing bool
 	// Renamed is the branch's name before a rename by hand that this
@@ -224,7 +227,7 @@ func (s BranchStatus) Check() branchstate.Check {
 func (s BranchStatus) Facts() branchstate.Facts {
 	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Commits: s.Commits, Edited: s.Edited,
 		Held: s.Held, Moved: s.Moved, NotAssessed: s.Assessment == AssessmentPending, NoFork: s.NoFork, Pushed: s.Pushed(), OthersPushed: s.SomeoneElsePushed(),
-		Failing: s.Failing(), Ports: s.Scope.PortNames()}
+		Failing: s.Failing(), CI: s.CI, Ports: s.Scope.PortNames()}
 	if s.Evidence != nil {
 		if on, ok := OnValues(s.Evidence.Plan.Environments); ok {
 			b.CheckOn = on
@@ -240,11 +243,12 @@ type Vocabulary struct{}
 func (Vocabulary) Environment(environment model.Environment) string {
 	return DescribeEnvironment(environment)
 }
-func (Vocabulary) Revision(revision model.Revision) string { return Describe(revision) }
-func (Vocabulary) Ago(at time.Time) string                 { return Ago(at) }
-func (Vocabulary) Remade(target TargetEvidence) string     { return RemadeWords(target) }
-func (Vocabulary) Holds(concerns []model.Concern) []string { return HoldLines(concerns) }
-func (Vocabulary) Unmet(unmet model.Unmet) string          { return UnmetWords(unmet) }
+func (Vocabulary) Revision(revision model.Revision) string  { return Describe(revision) }
+func (Vocabulary) Ago(at time.Time) string                  { return Ago(at) }
+func (Vocabulary) Remade(target TargetEvidence) string      { return RemadeWords(target) }
+func (Vocabulary) Holds(concerns []model.Concern) []string  { return HoldLines(concerns) }
+func (Vocabulary) Unmet(unmet model.Unmet) string           { return UnmetWords(unmet) }
+func (Vocabulary) CIFailure(failure model.CIFailure) string { return CIFailureWords(failure) }
 
 // Checking is the branch's one check queued or running (branchstate).
 func (s BranchStatus) Checking() *model.Run { return s.Check().Checking() }
@@ -311,6 +315,11 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 		var err error
 		if edits, err = r.Edits(branch.ID); err != nil {
 			return err
+		}
+		if pr := branch.PullRequest; pr != nil && pr.Observed != nil && pr.Observed.Checks == model.ChecksFailing {
+			if status.CI, err = r.CIFailures(branch.ID, pr.Observed.Head); err != nil {
+				return err
+			}
 		}
 		for _, edit := range edits {
 			if edit.Release == nil {

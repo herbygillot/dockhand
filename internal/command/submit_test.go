@@ -527,6 +527,21 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.Equal(t, 3, term.ExitCode(err))
 	require.Contains(t, out, "✗ jq-update  #34901 MacPorts CI failing: macOS 26")
 	require.Contains(t, out, "open https://github.com/macports/macports-ports/pull/34901/checks")
+
+	// Its failed job's log is read, once, and the failure said by what made
+	// it, with the failed jobs run again as its Next (garage #35174, field
+	// testing, 2026-10-03).
+	g.Failed = map[string][]forge.CIJob{string(g.ForkHead("dockhand/jq-update")): {{ID: 11, Run: 7, Attempt: 1, Name: "macOS 26"}}}
+	g.Logs = map[int64]string{11: "DEBUG: Fetching https://mirror.sjtu.edu.cn/macports/distfiles/jq/jq-1.8.1.tar.gz failed: The requested URL returned error: 403\n" +
+		"Error: Failed to fetch jq-1.8.1.tar.gz: The requested URL returned error: 403\n"}
+	out, _, err = dockhand(t, "status", "--attention", "--refresh")
+	require.Equal(t, 3, term.ExitCode(err))
+	require.Contains(t, out, "  ✗ jq-update  #34901 MacPorts CI failed fetching jq-1.8.1.tar.gz\n               (mirror.sjtu.edu.cn answered 403) on macOS 26 (just now)\n               dockhand retry --ci --branch jq-update\n")
+	out, _, err = dockhand(t, "retry", "--ci", "--branch", "jq-update")
+	require.NoError(t, err)
+	require.Equal(t, "Asked GitHub to run #34901's failed CI again (1 workflow run); dockhand status --refresh reads how it went.\n", out)
+	require.Equal(t, []int64{7}, g.Rerun)
+	require.Equal(t, 1, g.LogsRead)
 }
 
 func TestCleanAfterTheMerge(t *testing.T) {

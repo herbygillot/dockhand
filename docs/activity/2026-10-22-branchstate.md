@@ -244,3 +244,48 @@ The output moves "Logs:", "Edit with:" and the uncertain release's ifs to
 "Next:" lines, one per step. The grep at the close: no "Kept:" composed in
 command, no `TrimPrefix` or `Cut` on an error's words in command (or below
 it), and author.go's three composers gone.
+
+## CI failures classified by cause, with Next offering the fix
+
+garage #35174's macos-15 job failed fetching jni-sys-macros-0.4.1.crate,
+mirror.sjtu.edu.cn answering 403 after static.crates.io timed out, where
+a check on the same commit passed, and status said "CI ✗". Its attempt-1
+log, read through the API, is the fixture. Placement as architecture
+answered:
+
+- **`buildlog.FetchFailed`** reads MacPorts' "Error: Failed to fetch
+  <file>: <reason>" and the "DEBUG: Fetching <url> failed" line before it
+  for the site; `FetchFailure.Words` says "fetching
+  jni-sys-macros-0.4.1.crate (mirror.sjtu.edu.cn answered 403)". An
+  exception to decision 32, as the "Command failed:" reading is: changed
+  wording leaves the failure unclassified, and nothing is judged by it.
+- **The forge contract** gains `FailedJobs(repository, head)`,
+  `JobLog(repository, job)` and `RerunFailed(repository, run)`
+  (`forge.CIJob`), implemented in forge/github (ci.go) on the documented
+  endpoints only: a head's workflow runs, a run's jobs, a job's log link
+  (GitHub's line timestamps stripped), and re-running a run's failed jobs.
+  A log gone or withheld is `forge.ErrNotFound`; a re-run without write
+  access `forge.ErrRejected`. The fake keeps `Failed`, `Logs`, `LogsRead`,
+  `Rerun`, `RerunErr`.
+- **Schema 37**, `ci_failures`: one row per job's attempt, keyed by
+  branch, job and attempt, with the head, run, check name, cause (`fetch`
+  or `unclassified`), file, URL, status, reason, and when it was read;
+  never the log. `model.CIFailure` validates it; the store's `AddCIFailure`
+  and `CIFailures(branch, head)`.
+- **The engine's refresh** (`classifyCI`, engine/cifailure.go) reads, for
+  an open pull request whose checks fail, each failed job not yet
+  classified, once: a log gone is unclassified, with why, and not asked
+  again; a network or allowance failure is asked at the next refresh.
+  `BranchStatus.CI` carries the head's rows to branchstate.
+- **branchstate's CI row** says each check's latest classified failure,
+  "#35174 MacPorts CI failed fetching … on macos-15", by the vocabulary's
+  `CIFailure` (`engine.CIFailureWords`), and its Next is `VerbRerunCI`
+  where every failed check's latest failure is a fetch; otherwise the
+  checks' page, as before. `LatestCI` keeps each check's latest attempt.
+- **`engine.RerunCI`** asks GitHub to re-run each failed run at the head;
+  without write access it's an `Auth` refusal whose step is to ask a
+  maintainer, or push, which runs CI anew.
+- **The command**, provisionally `dockhand retry --ci -b <branch>`, as
+  architecture recommended: the verb's spelling is Herby's call, asked
+  through the coordinator, and it's spelled in one place (renderNext and
+  retry's flag).

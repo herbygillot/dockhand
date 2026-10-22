@@ -81,6 +81,15 @@ type GitHub struct {
 	Status   forge.PullRequestStatus
 	// Dockhand is dockhand's own repository as GitHub has it.
 	Dockhand Dockhand
+	// Failed are a head's failed CI jobs, by head, and Logs each job's
+	// log, by job; a job with none is forge.ErrNotFound. LogsRead counts
+	// the logs asked for. Rerun are the runs whose failed jobs were run
+	// again, and RerunErr why running them again fails.
+	Failed   map[string][]forge.CIJob
+	Logs     map[int64]string
+	LogsRead int
+	Rerun    []int64
+	RerunErr error
 }
 
 // New is GitHub with MacPorts at upstream and the person's fork at fork.
@@ -311,6 +320,27 @@ func (g *GitHub) Inspect(_ context.Context, ref forge.PullRequestRef) (forge.Pul
 	status := g.Status
 	status.Review = "none"
 	return status, nil
+}
+
+func (g *GitHub) FailedJobs(_ context.Context, _, head string) ([]forge.CIJob, error) {
+	return g.Failed[head], nil
+}
+
+func (g *GitHub) JobLog(_ context.Context, _ string, job int64) ([]byte, error) {
+	g.LogsRead++
+	log, ok := g.Logs[job]
+	if !ok {
+		return nil, forge.ErrNotFound
+	}
+	return []byte(log), nil
+}
+
+func (g *GitHub) RerunFailed(_ context.Context, _ string, run int64) error {
+	if g.RerunErr != nil {
+		return g.RerunErr
+	}
+	g.Rerun = append(g.Rerun, run)
+	return nil
 }
 
 // ForkHead is the commit the fork's branch is at; empty where the fork

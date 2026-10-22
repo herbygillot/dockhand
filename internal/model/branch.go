@@ -99,6 +99,53 @@ type PullRequestObservation struct {
 	At   time.Time
 }
 
+// CIFailure is one of a pull request's failed CI jobs, classified once
+// from its log: the head it ran at, its run, attempt, and job, its check's
+// name, and what made it fail, where a reading found it (schema 37).
+type CIFailure struct {
+	Branch BranchID
+	Head   ObjectID
+	Run    int64
+	// Attempt is the run's attempt the job was; a re-run is another.
+	Attempt int
+	Job     int64
+	Check   string
+	Cause   CICause
+	// File, URL, and Status are the archive a fetch failed, the last site
+	// tried, and the HTTP status it answered (0 for none), for CIFetch;
+	// Reason is the site's reason, or, for CIUnclassified, why the log
+	// said nothing a reading knows.
+	File, URL string
+	Status    int
+	Reason    string
+	At        time.Time
+}
+
+// CICause is what made a CI job fail, as its log was read.
+type CICause string
+
+const (
+	// CIFetch is an archive MacPorts' fetch couldn't get, which another
+	// run, its mirrors answering, may get.
+	CIFetch CICause = "fetch"
+	// CIUnclassified is a failure no reading named: the log was gone,
+	// withheld, or held nothing a reading knows.
+	CIUnclassified CICause = "unclassified"
+)
+
+// Validate checks that a CI failure says which job, and what it was.
+func (f CIFailure) Validate() error {
+	switch {
+	case f.Branch == "" || f.Head == "" || f.Run <= 0 || f.Job <= 0 || f.Attempt <= 0 || f.At.IsZero():
+		return invalid("CI failure of job %d is incomplete", f.Job)
+	case f.Cause != CIFetch && f.Cause != CIUnclassified:
+		return invalid("CI failure of job %d has an unknown cause %q", f.Job, f.Cause)
+	case f.Cause == CIFetch && f.File == "":
+		return invalid("CI failure of job %d fetched no archive it names", f.Job)
+	}
+	return nil
+}
+
 // PullRequestState is a pull request's state as last observed.
 type PullRequestState string
 

@@ -193,3 +193,37 @@ func TestBetweenIsOneStepsLines(t *testing.T) {
 	_, ok = Between(log, 9, 0)
 	require.False(t, ok)
 }
+
+// garage's CI log on macos-15, as GitHub gives a job's log without its
+// timestamps, trimmed: the archive MacPorts couldn't fetch, the site that
+// refused it last, and the port's failure that follows (field testing,
+// 2026-10-03).
+const garageFetch = `Attempting to fetch https://distfiles.macports.org/garage/jni-sys-macros-0.4.1.crate
+Attempting to fetch https://static.crates.io/crates/jni-sys-macros/jni-sys-macros-0.4.1.crate
+DEBUG: Fetching https://static.crates.io/crates/jni-sys-macros/jni-sys-macros-0.4.1.crate failed: Failed to connect to static.crates.io port 443 after 30007 ms: Timeout was reached
+Attempting to fetch https://mirror.sjtu.edu.cn/macports/distfiles/garage/jni-sys-macros-0.4.1.crate
+DEBUG: Fetching https://distfiles.macports.org/garage/wasm-bindgen-futures-0.4.68.crate failed: The requested URL returned error: 404
+DEBUG: Fetching https://mirror.sjtu.edu.cn/macports/distfiles/garage/jni-sys-macros-0.4.1.crate failed: The requested URL returned error: 403
+Error: Failed to fetch jni-sys-macros-0.4.1.crate: The requested URL returned error: 403
+DEBUG: Failed to fetch zerovec-0.11.6.crate: Transfer cancelled
+Error: Failed to fetch garage: Failed to fetch distfiles
+Error: Processing of port garage failed
+`
+
+func TestAFetchFailureNamesItsArchiveAndSite(t *testing.T) {
+	t.Parallel()
+	failure, ok := FetchFailed(strings.NewReader(garageFetch))
+	require.True(t, ok)
+	require.Equal(t, FetchFailure{File: "jni-sys-macros-0.4.1.crate", Reason: "The requested URL returned error: 403",
+		URL: "https://mirror.sjtu.edu.cn/macports/distfiles/garage/jni-sys-macros-0.4.1.crate", Status: 403, Number: 7}, failure)
+	require.Equal(t, "fetching jni-sys-macros-0.4.1.crate (mirror.sjtu.edu.cn answered 403)", failure.Words())
+
+	timedOut := FetchFailure{File: "a.crate", Reason: "Timeout was reached", URL: "https://static.crates.io/a.crate"}
+	require.Equal(t, "fetching a.crate (static.crates.io: Timeout was reached)", timedOut.Words())
+	require.Equal(t, "fetching a.crate (Timeout was reached)", FetchFailure{File: "a.crate", Reason: "Timeout was reached"}.Words())
+
+	_, ok = FetchFailed(strings.NewReader("Error: Failed to fetch garage: Failed to fetch distfiles\n"))
+	require.False(t, ok, "the port's failure alone names no archive")
+	_, ok = FetchFailed(strings.NewReader("main.c:1:2: error: x\n"))
+	require.False(t, ok)
+}

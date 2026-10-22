@@ -37,6 +37,14 @@ type Forge interface {
 	// what an update asks of every release's repository, where it found
 	// by type assertion whether a repository could say (C3).
 	Describe(ctx context.Context, instance, name string) (forge.Description, error)
+	// FailedJobs are a head's CI jobs that failed, of each run's latest
+	// attempt; JobLog a job's log, forge.ErrNotFound where the forge no
+	// longer keeps it or won't give it; and RerunFailed runs a run's
+	// failed jobs again, as the person, forge.ErrRejected without the
+	// access it needs.
+	FailedJobs(ctx context.Context, repository, head string) ([]forge.CIJob, error)
+	JobLog(ctx context.Context, repository string, job int64) ([]byte, error)
+	RerunFailed(ctx context.Context, repository string, run int64) error
 }
 
 // GitHubCLI is the GitHub CLI, which acts on GitHub as its own app. An

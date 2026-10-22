@@ -380,3 +380,38 @@ func TestARevisionsAssessmentsAreReadByItsKey(t *testing.T) {
 		return nil
 	}))
 }
+
+// A pull request's failed CI job is kept classified, once a job's attempt,
+// by the head it ran at; another head's are its own (schema 37).
+func TestCIFailuresAreKeptByHead(t *testing.T) {
+	f := open(t)
+	b := f.branch("br_1", "dockhand/garage-4k2p")
+	fetch := model.CIFailure{Branch: b.ID, Head: "abc", Run: 37127451783, Attempt: 1, Job: 111215552774, Check: "macos-15", Cause: model.CIFetch,
+		File: "jni-sys-macros-0.4.1.crate", URL: "https://mirror.sjtu.edu.cn/macports/distfiles/garage/jni-sys-macros-0.4.1.crate", Status: 403, Reason: "The requested URL returned error: 403", At: at}
+	unread := model.CIFailure{Branch: b.ID, Head: "abc", Run: 37127451783, Attempt: 1, Job: 111215552870, Check: "macos-14", Cause: model.CIUnclassified, Reason: "its log is gone", At: at}
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddBranch(b); err != nil {
+			return err
+		}
+		for _, failure := range []model.CIFailure{fetch, unread, fetch} {
+			if err := tx.AddCIFailure(failure); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
+		bad := fetch
+		bad.File = ""
+		return tx.AddCIFailure(bad)
+	}), model.ErrInvalid, "a fetch names its archive")
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		kept, err := tx.CIFailures(b.ID, "abc")
+		require.NoError(t, err)
+		require.Equal(t, []model.CIFailure{unread, fetch}, kept)
+		other, err := tx.CIFailures(b.ID, "def")
+		require.NoError(t, err)
+		require.Empty(t, other)
+		return nil
+	}))
+}

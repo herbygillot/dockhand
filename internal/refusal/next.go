@@ -20,10 +20,13 @@ const (
 	// VerbOpenChecks opens a pull request's CI checks in the browser, its
 	// Args the repository and the number.
 	VerbOpenChecks Verb = "open-checks"
+	// VerbRerunCI runs a branch's pull request's failed CI jobs again,
+	// through the person's login; the command line spells it.
+	VerbRerunCI Verb = "rerun-ci"
 )
 
 // Verbs are every verb a Next names, for the command line to render each.
-var Verbs = []Verb{VerbStatus, VerbRefresh, VerbAdopt, VerbWait, VerbSubmit, VerbEdit, VerbArchive, VerbCheck, VerbLogs, VerbTidy, VerbSetup, VerbOpenChecks}
+var Verbs = []Verb{VerbStatus, VerbRefresh, VerbAdopt, VerbWait, VerbSubmit, VerbEdit, VerbArchive, VerbCheck, VerbLogs, VerbTidy, VerbSetup, VerbOpenChecks, VerbRerunCI}
 
 // After is what must change before an action refused can be asked again
 // as it was: a person's look at what holds it, a check finishing, or a

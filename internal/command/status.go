@@ -379,6 +379,8 @@ func renderNext(next branchstate.Next, reason branchstate.Reason) string {
 		line = "dockhand " + string(next.Verb) + args
 	case refusal.VerbSetup:
 		return "dockhand setup" + args
+	case branchstate.VerbRerunCI:
+		return "dockhand retry --ci --branch " + next.Branch
 	case branchstate.VerbOpenChecks:
 		number, _ := strconv.Atoi(next.Args[1])
 		return "open " + github.PullRequestChecksURL(next.Args[0], number)

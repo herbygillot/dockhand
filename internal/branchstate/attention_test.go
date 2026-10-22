@@ -17,6 +17,7 @@ func (words) Revision(model.Revision) string         { return "snapshot 1" }
 func (words) Ago(time.Time) string                   { return "1 hour ago" }
 func (words) Remade(evidence.TargetEvidence) string  { return "the image changed" }
 func (words) Unmet(u model.Unmet) string             { return "needs " + string(u.Needs) }
+func (words) CIFailure(f model.CIFailure) string     { return "fetching " + f.File + " on " + f.Check }
 func (words) Holds(c []model.Concern) []string {
 	var lines []string
 	for _, concern := range c {
@@ -81,4 +82,30 @@ func TestAnUncheckedTargetsBlockSaysWhere(t *testing.T) {
 		{Environment: model.Environment{Provider: "macOS 13"}, PlannedIn: "check-4"},
 	}}
 	require.Equal(t, "ufraw has changed, but these files haven't been built on macOS 26; macOS 13, which check-4 planned and stopped before. Run dockhand check, or share the branch with --draft", block.Words(words{}))
+}
+
+// A pull request whose CI failed fetching an archive says so, and runs
+// the failed jobs again as its Next; its check's latest attempt alone is
+// said. One any of whose failures is another kind is looked at where CI
+// shows it (garage #35174, field testing, 2026-10-03).
+func TestFailingCISaysWhyAndWhetherAnotherRunMayPass(t *testing.T) {
+	pr := &model.PullRequest{Repository: "macports/macports-ports", Number: 35174,
+		Observed: &model.PullRequestObservation{State: model.PullRequestOpen, Review: model.ReviewNone, Checks: model.ChecksFailing, Failing: []string{"macos-15"}, Head: "abc"}}
+	first := model.CIFailure{Check: "macos-15", Run: 7, Attempt: 1, Job: 1, Cause: model.CIFetch, File: "a.crate"}
+	again := model.CIFailure{Check: "macos-15", Run: 7, Attempt: 2, Job: 2, Cause: model.CIFetch, File: "jni-sys-macros-0.4.1.crate"}
+	branch := Branch{Record: model.Branch{Name: "dockhand/garage-2.4.1", State: model.BranchOpen, PullRequest: pr}, Failing: []string{"macos-15"}, CI: []model.CIFailure{again, first}}
+	rows := Attend(Facts{Branch: branch})
+	require.Len(t, rows, 1)
+	require.Equal(t, CIFailing, rows[0].Reason)
+	require.Equal(t, Next{Verb: VerbRerunCI, Branch: "garage-2.4.1"}, rows[0].Next)
+	require.Equal(t, "#35174 MacPorts CI failed fetching jni-sys-macros-0.4.1.crate on macos-15 (1 hour ago)", rows[0].Words(words{}))
+
+	branch.CI = append(branch.CI, model.CIFailure{Check: "macos-14", Run: 7, Attempt: 1, Job: 3, Cause: model.CIUnclassified})
+	rows = Attend(Facts{Branch: branch})
+	require.Equal(t, VerbOpenChecks, rows[0].Next.Verb, "one failure nobody read the cause of is looked at")
+	require.Equal(t, "#35174 MacPorts CI failed fetching jni-sys-macros-0.4.1.crate on macos-15 (1 hour ago)", rows[0].Words(words{}))
+
+	branch.CI = nil
+	rows = Attend(Facts{Branch: branch})
+	require.Equal(t, "#35174 MacPorts CI failing: macos-15 (1 hour ago)", rows[0].Words(words{}), "none classified, it's as it was")
 }

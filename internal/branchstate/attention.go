@@ -2,6 +2,7 @@ package branchstate
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -64,6 +65,7 @@ const (
 	VerbLogs       = refusal.VerbLogs
 	VerbTidy       = refusal.VerbTidy
 	VerbOpenChecks = refusal.VerbOpenChecks
+	VerbRerunCI    = refusal.VerbRerunCI
 )
 
 // Branch is what's recorded of a branch beside its checks, as attention
@@ -95,6 +97,9 @@ type Branch struct {
 	// Failing the CI checks of it that fail.
 	OthersPushed bool
 	Failing      []string
+	// CI are its failed CI jobs at the pull request's head, each as its
+	// log was classified.
+	CI []model.CIFailure
 	// Ports are the ports its files change, in order.
 	Ports []string
 	// CheckOn is what a check that builds again where the latest one did
@@ -117,6 +122,8 @@ type Attention struct {
 	PullRequest *model.PullRequest
 	Detail      string
 	Ports       []string
+	// CI are the failed CI jobs it says, each check's latest.
+	CI []model.CIFailure
 	// Revision is the latest check's revision, and Holds what holds it,
 	// where the reason says them.
 	Revision *model.Revision
@@ -138,6 +145,10 @@ type Vocabulary interface {
 	Remade(evidence.TargetEvidence) string
 	Holds([]model.Concern) []string
 	Unmet(model.Unmet) string
+	// CIFailure is a classified CI failure, as "fetching
+	// jni-sys-macros-0.4.1.crate (mirror.sjtu.edu.cn answered 403) on
+	// macos-15".
+	CIFailure(model.CIFailure) string
 }
 
 // Attend is what a branch needs, at most one row: from its pull request's
@@ -321,8 +332,17 @@ func pullRequestAttention(facts Facts, row func(Kind, Reason, Next, func(*Attent
 	case pr.Observed.Review == model.ReviewChangesRequested:
 		return row(NeedsYou, ChangesRequested, look, with)
 	case pr.Observed.Checks == model.ChecksFailing:
-		return row(Failed, CIFailing, Next{Verb: VerbOpenChecks, Args: []string{pr.Repository, fmt.Sprint(pr.Number)}}, func(a *Attention) {
-			a.PullRequest, a.Ports = pr, b.Failing
+		// A failure every failed job of which was a fetch, as a mirror's
+		// 403, is one another run may get past: its Next runs them again
+		// (garage #35174, field testing, 2026-10-03). Any other is looked
+		// at where CI shows it.
+		next := Next{Verb: VerbOpenChecks, Args: []string{pr.Repository, fmt.Sprint(pr.Number)}}
+		failures := LatestCI(b.CI)
+		if len(failures) > 0 && !slices.ContainsFunc(failures, func(f model.CIFailure) bool { return f.Cause != model.CIFetch }) {
+			next = Next{Verb: VerbRerunCI}
+		}
+		return row(Failed, CIFailing, next, func(a *Attention) {
+			a.PullRequest, a.Ports, a.CI = pr, b.Failing, failures
 		})
 	}
 	return nil
@@ -355,6 +375,15 @@ func (a Attention) Words(v Vocabulary) string {
 		}
 		return fmt.Sprintf("#%d changes requested%s", pr.Number, age(at))
 	case CIFailing:
+		var classified []string
+		for _, failure := range a.CI {
+			if failure.Cause != model.CIUnclassified {
+				classified = append(classified, v.CIFailure(failure))
+			}
+		}
+		if len(classified) > 0 {
+			return fmt.Sprintf("#%d MacPorts CI failed %s%s", pr.Number, strings.Join(classified, "; "), age(pr.Observed.At))
+		}
 		return fmt.Sprintf("#%d MacPorts CI failing: %s%s", pr.Number, strings.Join(a.Ports, ", "), age(pr.Observed.At))
 	case OpenedByServe:
 		return fmt.Sprintf("#%d opened by serve, without a person's review", pr.Number)
@@ -407,4 +436,25 @@ func (a Attention) Words(v Vocabulary) string {
 		return fmt.Sprintf("passed; #%d has not been updated with these changes", pr.Number)
 	}
 	return string(a.Reason)
+}
+
+// LatestCI are a head's CI failures, each check's latest attempt alone: a
+// job run again and failed again is said once, as it last failed.
+func LatestCI(failures []model.CIFailure) []model.CIFailure {
+	latest := map[string]model.CIFailure{}
+	var order []string
+	for _, f := range failures {
+		kept, ok := latest[f.Check]
+		if !ok {
+			order = append(order, f.Check)
+		}
+		if !ok || f.Run > kept.Run || f.Run == kept.Run && f.Attempt > kept.Attempt {
+			latest[f.Check] = f
+		}
+	}
+	var kept []model.CIFailure
+	for _, check := range order {
+		kept = append(kept, latest[check])
+	}
+	return kept
 }

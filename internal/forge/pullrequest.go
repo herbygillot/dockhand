@@ -105,6 +105,15 @@ func (s PullRequestStatus) Summary() string {
 	return mergeable + "; review: " + s.Review + "; " + checks
 }
 
+// CIJob is one of a head's CI jobs that failed, as the forge runs them:
+// the job, the run it's of, which attempt of the run it was, and its name,
+// as its check is named.
+type CIJob struct {
+	ID, Run int64
+	Attempt int
+	Name    string
+}
+
 // PullRequestContent is what a pull request should hold: its head commit,
 // title, and description.
 type PullRequestContent struct {
