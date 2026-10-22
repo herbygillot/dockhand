@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 
@@ -93,6 +94,11 @@ type SubmitPlan struct {
 	Findings []commitrules.Finding
 	// LeftOut are uncommitted files --head leaves out.
 	LeftOut []string
+	// ChangedPatches are the patches the branch changed under their own
+	// names, which the base had: a notice, since the upstream assessment
+	// reads the base's source for them and says nothing of the patch, and
+	// a check applies it (v0.4.0's known issues).
+	ChangedPatches []string
 	// ModifiedBuilds are the commits whose Generated-By names a dockhand
 	// built from uncommitted source, which nobody else can find: shown,
 	// so they can be tidied again with a build of a pushed commit.
@@ -360,6 +366,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		return plan, err
 	}
 	plan.Findings = append(plan.Findings, portfiles...)
+	plan.ChangedPatches = changedPatches(ctx, worktree, trees[string(branch.Base)], changed)
 	// What create guessed and marked unconfirmed is a person's to confirm
 	// before MacPorts sees it: serie's preview said ready with six marks
 	// left, nomaintainer among them (the rc6 full stage, B8).
@@ -1271,4 +1278,21 @@ func (u *Uncommitted) Error() string {
 		return fmt.Sprintf("these edits are not committed: %s. Commit them with dockhand tidy, or submit only what is committed with --head", listPaths(u.Paths))
 	}
 	return fmt.Sprintf("%s has no commits above master yet; commit your edits with dockhand tidy", u.Branch)
+}
+
+// changedPatches are the changed paths that are patches in a port's files
+// directory, as MacPorts' patchfiles name them, that the base has too:
+// changed under their own names.
+func changedPatches(ctx context.Context, worktree *git.Repository, base string, changed []string) []string {
+	var patches []string
+	for _, file := range changed {
+		directory, name := path.Split(file)
+		if !strings.HasSuffix(directory, "/files/") || !(strings.HasPrefix(name, "patch") || strings.HasSuffix(name, ".diff") || strings.HasSuffix(name, ".patch")) {
+			continue
+		}
+		if _, _, err := worktree.File(ctx, base, file); err == nil {
+			patches = append(patches, file)
+		}
+	}
+	return patches
 }

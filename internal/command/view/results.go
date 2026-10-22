@@ -320,17 +320,19 @@ type submitJSON struct {
 	// as; LoginSource where its token comes from, as auth status named it;
 	// ForkOwner the account that owns where it pushes, another's under a
 	// sandbox or --remote.
-	Account     string         `json:"account"`
-	LoginSource string         `json:"login_source"`
-	ForkOwner   string         `json:"fork_owner"`
-	To          string         `json:"to"`
-	Push        string         `json:"push"`
-	Checks      string         `json:"checks"`
-	Findings    []findingJSON  `json:"findings"`
-	Blocking    []string       `json:"blocking"`
-	LeftOut     []string       `json:"left_out"`
-	Body        string         `json:"body"`
-	PullRequest *SubmittedJSON `json:"pull_request"`
+	Account     string        `json:"account"`
+	LoginSource string        `json:"login_source"`
+	ForkOwner   string        `json:"fork_owner"`
+	To          string        `json:"to"`
+	Push        string        `json:"push"`
+	Checks      string        `json:"checks"`
+	Findings    []findingJSON `json:"findings"`
+	Blocking    []string      `json:"blocking"`
+	LeftOut     []string      `json:"left_out"`
+	// ChangedPatches are the patches changed under their own names.
+	ChangedPatches []string       `json:"changed_patches"`
+	Body           string         `json:"body"`
+	PullRequest    *SubmittedJSON `json:"pull_request"`
 	// Upstream is what comparing the upstream archives found for each of
 	// the branch's updates that compared them.
 	Upstream []portUpstreamJSON `json:"upstream"`
@@ -417,7 +419,7 @@ func SubmitView(plan engine.SubmitPlan) submitJSON {
 	owner, _ := plan.ForkOwner()
 	viewed := submitJSON{Branch: plan.Branch.ShortName(), Title: plan.Title, Commit: plan.Commit, Commits: len(plan.Commits), From: plan.Head(), To: plan.Repository + ":" + engine.UpstreamBranch,
 		Account: plan.Login.Account, LoginSource: plan.Login.Source, ForkOwner: owner,
-		Push: PushWords(plan), Checks: CheckWords(plan), Findings: findingsView(plan.Findings), Blocking: NonNil(plan.Blocking), LeftOut: NonNil(plan.LeftOut), Body: plan.Body,
+		Push: PushWords(plan), Checks: CheckWords(plan), Findings: findingsView(plan.Findings), Blocking: NonNil(plan.Blocking), LeftOut: NonNil(plan.LeftOut), ChangedPatches: NonNil(plan.ChangedPatches), Body: plan.Body,
 		Upstream: []portUpstreamJSON{}, ModifiedBuilds: NonNil(plan.ModifiedBuilds), UnfoundBuilds: []unfoundBuildJSON{}, BuildsProblem: plan.BuildsProblem}
 	for _, found := range plan.Upstream {
 		viewed.Upstream = append(viewed.Upstream, portUpstreamJSON{Port: found.Port, upstreamJSON: UpstreamView(found.Comparison)})

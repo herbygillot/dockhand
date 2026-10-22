@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -539,7 +540,7 @@ func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
 // server failing, upstream's or the mirror's where upstream refused, is
 // tried again when it's next collected, and finishes;
 // one refused, as a 404 refuses, stands for its files, and isn't fetched
-// again.
+// again until a day has passed.
 func TestAnAssessmentStoppedByTheNetworkIsTriedAgain(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -571,6 +572,13 @@ func TestAnAssessmentStoppedByTheNetworkIsTriedAgain(t *testing.T) {
 		} else {
 			require.Contains(t, assessments[0].Comparison.Problem, "archives couldn't be fetched", "a refusal stands for its files")
 			require.Zero(t, p.fetches.Load())
+			// A day later it's fetched again, and finishes, the archive
+			// served again (v0.4.0's known issues).
+			later := time.Now().Add(refusedAgainAfter + time.Minute)
+			e.options.Now = func() time.Time { return later }
+			assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
+			require.NoError(t, err)
+			require.Empty(t, assessments[0].Comparison.Problem, "fetched again a day later, and finished")
 		}
 	}
 }

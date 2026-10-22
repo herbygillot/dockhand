@@ -27,3 +27,32 @@ row says it's fixed on main.
   regenerates them". The rule's own test reads it; the base's evaluation
   the refresh is given (`StealthRequest.Base`) says the old version and
   list.
+
+## A refused fetch is tried again a day later
+
+- A revision's assessment recorded as unable to compare because a server
+  refused an archive, as a 404 does (`refusal.UpstreamMissing`), is made
+  again at the first look a day after it was recorded
+  (`engine.lookAgain`, `refusedAgainAfter`), and holds until then, where it
+  held until a file was edited; a transient problem is made again at once,
+  as before.
+
+## A patch changed under its own name is said
+
+- The submit plan names each patch the branch changed under its own name,
+  one the base had, in a port's files directory (`SubmitPlan.ChangedPatches`,
+  `changedPatches`): "Patches  textproc/jq/files/patch-docs.diff changed;
+  dockhand diff shows it", a notice holding nothing, since the upstream
+  assessment reads the base's source for it and a check applies it.
+  `submit --json` gives `changed_patches`.
+
+## create exits for a look where a draft has no checksums
+
+- A new port whose checksums couldn't be made says the whole problem, the
+  rows a Go module before go 1.17 needs by hand with their locks and `port
+  -v checksum` as the way to their checksums, where it said its first line,
+  and exits 3 with "Next: resolve its checksums as said above, then
+  dockhand checksums <port>", where it exited 0.
+
+The README marks each of the five rows fixed on `main`; the others stay,
+as prioritization's note says.

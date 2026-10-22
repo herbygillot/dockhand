@@ -1102,3 +1102,29 @@ func TestASubmissionToAnotherAccountsForkIsSaid(t *testing.T) {
 	_, another := plan.ForkOwner()
 	require.False(t, another, "GitHub's logins are the same in any case")
 }
+
+// A patch the branch changes under its own name is named in the
+// submission's plan, a notice: the upstream assessment reads the base's
+// source for it (v0.4.0's known issues).
+func TestTheSubmitPlanNamesAPatchChangedUnderItsName(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Upstream, "textproc/jq/files"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/files/patch-docs.diff"), []byte("--- a\n+++ b\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "add", ".")
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "jq: add a patch")
+	cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-patch", "--port", "jq")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-patch")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/files/patch-docs.diff"), []byte("--- a\n+++ b\n@@ -1 +1 @@\n"), 0o644))
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: fix the docs patch")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "  Patches  textproc/jq/files/patch-docs.diff changed; dockhand diff shows it\n")
+	planned, err := cmdtest.JSONOf(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, []any{"textproc/jq/files/patch-docs.diff"}, planned.Result["changed_patches"])
+}

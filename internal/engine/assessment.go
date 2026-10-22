@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	archivefile "github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -192,9 +193,12 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 			if !recordedChange(records, directory, port.Name) {
 				continue
 			}
-			// One recorded incomplete for what another try may not meet, a
-			// network's failure or a forge's rate limit, is tried again.
-			if a, ok := have(port.Name); ok && !refusal.Kind(a.Comparison.ProblemKind).Transient() {
+			// One recorded incomplete for what another try may meet, a
+			// network's failure or a forge's rate limit, is tried again;
+			// so is an archive a server refused, as a 404 does, once a day
+			// has passed, since it may be served again (v0.4.0's known
+			// issues: it held until a file was edited).
+			if a, ok := have(port.Name); ok && !e.lookAgain(a) {
 				// Said, since whether one was made again or reused wasn't
 				// (the rust and cargo run).
 				progress.VerboseReport(ctx, "%s: the assessment recorded for these files under policy %d stands", port.Name, a.Policy)
@@ -206,6 +210,18 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 		}
 	}
 	return found, made, nil
+}
+
+// refusedAgainAfter is how long an archive a server refused is held on
+// before an assessment fetches it again.
+const refusedAgainAfter = 24 * time.Hour
+
+// lookAgain reports whether a recorded assessment is made again rather
+// than reused: one that couldn't compare for what another try may meet
+// at once, or for a server's refusal a day old.
+func (e *Engine) lookAgain(a model.Assessment) bool {
+	kind := refusal.Kind(a.Comparison.ProblemKind)
+	return kind.Transient() || kind == refusal.UpstreamMissing && e.now().Sub(a.At) >= refusedAgainAfter
 }
 
 // binaryPackage starts what reading a revision's archives says of one

@@ -59,6 +59,15 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 	if len(plan.LeftOut) > 0 {
 		fmt.Fprintf(out, "  Left out %s (not committed)\n", strings.Join(plan.LeftOut, ", "))
 	}
+	// A patch changed under its own name is said, a notice: the upstream
+	// assessment reads the base's source for it, and a check applies it.
+	for i, patch := range plan.ChangedPatches {
+		label := "           "
+		if i == 0 {
+			label = "  Patches  "
+		}
+		fmt.Fprintf(out, "%s%s changed; dockhand diff shows it\n", label, patch)
+	}
 	for _, finding := range plan.Findings {
 		fmt.Fprintf(out, "  %s\n", finding)
 	}

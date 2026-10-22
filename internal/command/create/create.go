@@ -157,7 +157,10 @@ its go-get answer.`,
 			}
 			switch {
 			case created.ChecksumsProblem != "":
-				fmt.Fprintf(out, "  checksums: not generated: %s\n    Resolve this issue, then run dockhand checksums %s.\n", prose.FirstLine(created.ChecksumsProblem), created.Port)
+				// Said whole, the rows a Go module before 1.17 needs by
+				// hand with it, where the first line was (v0.4.0's known
+				// issues).
+				fmt.Fprintf(out, "  checksums: not generated: %s\n", strings.ReplaceAll(strings.TrimSpace(created.ChecksumsProblem), "\n", "; "))
 			case created.Checksums != nil && created.Checksums.Distfiles > 0:
 				what := prose.Plural(created.Checksums.Distfiles, "distfile")
 				if created.Crates > 0 {
@@ -192,6 +195,12 @@ its go-get answer.`,
 				fmt.Fprintf(out, "  maintainers: nomaintainer (no maintainer configured). %s\n", engine.MaintainerWords(e.SuggestMaintainer(ctx, branch.Base), e.ConfigFile))
 			}
 			view.WritePlainHTTP(out, created.PlainHTTP)
+			// A draft with no checksums isn't done: it exits 3, for a look,
+			// where it exited 0 (v0.4.0's known issues).
+			if created.ChecksumsProblem != "" {
+				fmt.Fprintln(out, "Next: resolve its checksums as said above, then dockhand checksums "+created.Port)
+				return &term.ExitError{Code: term.ExitAttention}
+			}
 			fmt.Fprintln(out, "Next: "+branchflags.NextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))
 			return nil
 		},

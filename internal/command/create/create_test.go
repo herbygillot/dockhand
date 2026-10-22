@@ -2,6 +2,7 @@ package create
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,6 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -272,4 +274,28 @@ func TestCreateTakesThePythonPortGroupsDefault(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(w.Home, "Source", "macports-branches", branch, "textproc/py-tool/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "python.versions     314\n")
+}
+
+// refusingChecksums stands in for MacPorts refusing a new port's
+// checksums, as for a Go module before go 1.17 whose go.sum has modules
+// its go.mod doesn't require.
+type refusingChecksums struct{ checksummer }
+
+func (refusingChecksums) Prepare(context.Context, editprep.Request) (editprep.Result, error) {
+	return editprep.Result{}, errors.New("dependency: go.mod says 1.15, before 1.17; go.sum has the source of github.com/kr/text too, which go.vendors needs by hand: add github.com/kr/text lock v0.1.0, as go.sum pins it, with the checksums port -v checksum reports for its archive")
+}
+
+// A draft whose checksums couldn't be made isn't done: create says what
+// to add, and exits 3, where it exited 0 (v0.4.0's known issues).
+func TestCreateExitsForALookWhereADraftHasNoChecksums(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).ProjectReader = riftProject{}
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return refusingChecksums{checksummer{repo: e.Repo}} }
+	t.Cleanup(func() { cmdtest.Stands(t).Preparer = nil })
+	out, _, err := cmdtest.Dockhand(t, "create", "https://github.com/rift-dev/rift", "--new", "--category", "textproc")
+	require.Equal(t, term.ExitAttention, term.ExitCode(err), out)
+	require.Contains(t, cmdtest.Flat(out), "checksums: not generated: dependency: go.mod says 1.15, before 1.17; go.sum has the source of github.com/kr/text too, which go.vendors needs by hand: add github.com/kr/text lock v0.1.0")
+	require.Contains(t, out, "Next: resolve its checksums as said above, then dockhand checksums rift\n")
 }
