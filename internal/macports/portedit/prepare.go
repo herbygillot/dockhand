@@ -106,6 +106,10 @@ type Result struct {
 	// Regenerated are the dependency blocks the update wrote again, each
 	// with how many entries it has, and how many aren't as they were.
 	Regenerated []Regenerated `json:",omitempty"`
+	// ManifestHook is why a regenerated block, under a hook that edits
+	// the manifest it's generated from, wants a look: what the hook does
+	// to it couldn't be checked (R3-20). Empty otherwise.
+	ManifestHook string `json:",omitempty"`
 	// Pairs are each archive the update replaced beside the one that
 	// replaces it, in every context that fetches them, fetched only when
 	// KeepArchives asked; PreviousProblem is why the replaced ones could

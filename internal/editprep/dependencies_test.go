@@ -71,7 +71,7 @@ func dependencyHelper(t *testing.T, body string) string {
 func TestGoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)
-	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "patched-curated", "local-patch", "unsupported-context", "moved", "collateral"} {
+	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "patched-curated", "local-patch", "unsupported-context", "moved", "collateral", "patched-moved"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
@@ -81,7 +81,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 			}
 			// The module moved since the current version, as pomo's did
 			// from GitHub to Codeberg (field testing, 2026-10-02).
-			if scenario == "moved" {
+			if scenario == "moved" || scenario == "patched-moved" {
 				old = strings.Replace(old, "github.com/owner/fixture", "github.com/elsewhere/fixture", 1)
 			}
 			before := manifestArchive(t, "go.mod", old, "1.0")
@@ -111,7 +111,10 @@ func TestGoDependencyPreparation(t *testing.T) {
 			// exactly what the current version's lock gives, and holds
 			// where it isn't, as one the hook may have shaped (a user's
 			// report, editors/fresh's post-patch Cargo.toml edit).
-			if scenario == "patched" || scenario == "patched-curated" {
+			// A block under such a hook whose module moved can't be shown to
+			// be what the lock gives: it's regenerated, and said for a look,
+			// where it refused (R3-20).
+			if scenario == "patched" || scenario == "patched-curated" || scenario == "patched-moved" {
 				extra += "post-patch { reinplace s/foo/bar/ ${worksrcpath}/go.mod }\n"
 			}
 			if scenario == "local-patch" {
@@ -186,11 +189,16 @@ func TestGoDependencyPreparation(t *testing.T) {
 				require.ErrorContains(t, err, "preserve these overrides")
 			case "collateral":
 				require.ErrorContains(t, err, "fixture-child.notes changed")
+			case "patched-moved":
+				require.NoError(t, err)
+				require.Contains(t, result.ManifestHook, "post-patch edits a dependency manifest, and the Portfile's go.vendors couldn't be checked against the current version's lock")
+				require.Contains(t, string(result.Files[0].After), "example.com/new/v2")
 			case "patched-curated":
 				require.ErrorContains(t, err, "post-patch edits a dependency manifest, and the Portfile's go.vendors isn't exactly what the current version's lock gives")
 				require.ErrorContains(t, err, "regenerating go.vendors with go2port")
 			default:
 				require.NoError(t, err)
+				require.Empty(t, result.ManifestHook)
 				require.NotEmpty(t, result.PreparedTree)
 				require.Equal(t, request.Source, result.Base)
 				require.Len(t, result.Files, 1)

@@ -429,7 +429,7 @@ const majorRule = "major-version"
 func HoldRules() []string {
 	rules := slices.Concat(assess.Rules(), commitrules.ErrorCodes(), []string{majorRule, darwinFloorRule, deploymentTargetRule,
 		"source-moved", "tag-moved", "release-moved", "assessment-moved", "open", "search-failed",
-		upstreamMovedRule, upstreamTransferredRule, mirrorConflictRule})
+		upstreamMovedRule, upstreamTransferredRule, mirrorConflictRule, manifestHookRule})
 	slices.Sort(rules)
 	return slices.Compact(rules)
 }

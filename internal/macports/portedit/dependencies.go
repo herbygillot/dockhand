@@ -297,8 +297,15 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 			return Result{}, err
 		}
 	}
+	// A hook that edits the manifest is predicted to leave the block as
+	// the lock gives it, which the current version's block shows where it's
+	// exactly that. Where it can't be shown, the block empty or its module
+	// moved, the block is regenerated and that's a finding for a look,
+	// where it refused (R3-20); a block that differs from the lock refuses
+	// below, as one the hook may have shaped by hand.
+	hookUnchecked := ""
 	if input.manifestHook != "" && (unchecked != "" || plan.Empty()) {
-		return Result{}, manifestHookRefusal(input.manifestHook, plan.Kind, plan.Kind)
+		hookUnchecked = fmt.Sprintf("%s edits a dependency manifest, and the Portfile's %s couldn't be checked against the current version's lock, so whether the hook shapes it isn't known; read the regenerated %s against what the hook changes before submitting", input.manifestHook, plan.Kind, plan.Kind)
 	}
 	// A registry crate the Portfile pins at another version than the lock
 	// is an override, kept until the new lock moves past it; any other
@@ -493,6 +500,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	result.report(final)
 	result.Crates = gitDownloads
 	result.Regenerated = regenerated
+	result.ManifestHook = hookUnchecked
 	switch {
 	case kept && previousProblem != nil:
 		result.previousFailed(previousProblem)

@@ -468,6 +468,15 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			}
 		}
 	}
+	// A block regenerated under a hook that edits its manifest, whose
+	// effect on it couldn't be checked, holds for a look with what the
+	// comparison found, where it refused (R3-20).
+	if result.ManifestHook != "" && !followOnly {
+		if update.Upstream == nil {
+			update.Upstream = &model.UpstreamComparison{}
+		}
+		update.Upstream.Changes = append(update.Upstream.Changes, model.UpstreamChange{Kind: "manifest", Rule: manifestHookRule, Hold: true, Class: model.Introduced, Message: result.ManifestHook})
+	}
 	if request.Action == model.EditChecksums {
 		update.ChecksumsLeft, update.Differing = result.Left, result.Differing
 		for _, conflict := range result.MirrorConflicts {
@@ -1107,6 +1116,11 @@ const upstreamMovedRule = "upstream-moved"
 // mirrorConflictRule is the finding that MacPorts' mirror already holds
 // another file of an archive's name under a shared dist_subdir.
 const mirrorConflictRule = "mirror-conflict"
+
+// manifestHookRule is the finding that a dependency block was regenerated
+// under a hook that edits the manifest it's generated from, where whether
+// the hook shapes it couldn't be checked (R3-20).
+const manifestHookRule = "manifest-hook"
 
 // mirrorConflictWords says a mirror conflict and its fix.
 func mirrorConflictWords(conflict editprep.MirrorConflict) string {

@@ -52,3 +52,9 @@ This is looser than before for options. A version-conditional `patchfiles` or `l
 The last two have no answer yet. `ReleaseScope` is now `Scope` plus the refusal of any unanswered finding, with each finding's `String` the sentence it refused with before. The members are visited in name order, so the refusal for a family is the same on every run.
 
 `followsObsolete` stays. Which finding a moved obsolete stub raises, none, is a judgment about the stub, not something an edit predicts. portedit's `followObsolete` writes a stub's own literal, and the version step's prediction now takes what that write moves as the version's.
+
+## Step 4: the manifest hook is a prediction, and an unchecked one a finding (R3-20)
+
+A patch hook that edits a dependency manifest, as editors/fresh's post-patch edits Cargo.toml, is predicted to leave the dependency block as the lock gives it. The current version's block shows that where it's exactly what the current lock gives, and then the update goes on, as before. Where the block differs from the lock, the hook may have shaped it by hand, and the update is still refused, as an override is.
+
+The one change is where the prediction can't be shown: the block is empty, or its module moved since. That refused before. Now the block is regenerated and the result carries `ManifestHook`, which the engine adds to the update's upstream comparison as a held `manifest-hook` change. A person's update shows it, and an unattended one waits for a look (D4). `manifest-hook` joins `HoldRules`, so `holds.allow` can name it. The new `patched-moved` case of `TestGoDependencyPreparation` pins it.
