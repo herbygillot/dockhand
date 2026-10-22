@@ -175,6 +175,7 @@ const (
 	ProviderUnresolved  = "python-provider-unresolved"
 	ProviderRemoved     = "python-provider-removed"
 	GoToolchainRule     = "go-toolchain"
+	GoModuleMoved       = "go-module-moved"
 	RequiresPythonRule  = "python-requires"
 	PythonPinBehind     = "python-pin-behind"
 	PatchRejected       = "patch-rejected"
@@ -190,7 +191,7 @@ const (
 func Rules() []string {
 	return []string{LicenseChanged, LicenseYears, LicenseMoved, BuildFileChanged, BuildFileVersion, BuildFileOptions, DependencyAdded, DependencyDropped,
 		DependencyMoved, DependenciesCounted, NativeLibrary, NativeLibraryLeft, Unread, LayoutAmbiguous, RequirementUnmet, RequirementUnknown,
-		ProviderUnresolved, ProviderRemoved, GoToolchainRule, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, SourceRemoved,
+		ProviderUnresolved, ProviderRemoved, GoToolchainRule, GoModuleMoved, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, SourceRemoved,
 		SourceUncertain, WorksrcPathGone, GitHubTarball}
 }
 
@@ -241,6 +242,9 @@ func Assess(input Input) model.UpstreamComparison {
 		a.add(found)
 	}
 	if found, ok := a.toolchain(); ok {
+		a.add(found)
+	}
+	if found, ok := a.moduleMoved(); ok {
 		a.add(found)
 	}
 	if found, ok := a.requiresPython(); ok {

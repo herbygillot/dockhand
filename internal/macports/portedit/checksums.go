@@ -34,6 +34,9 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 	if err != nil {
 		return Result{Base: request.Source, Target: input.target}, err
 	}
+	if err := staleVendored(request, input, plan); err != nil {
+		return Result{Base: request.Source, Target: input.target}, err
+	}
 	var result Result
 	if plan != nil {
 		result, err = s.refreshVendoredChecksums(ctx, request, input, plan)
@@ -44,6 +47,25 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 		return result, err
 	}
 	return result, s.stealthUpdate(ctx, request, input, &result)
+}
+
+// staleVendored refuses a checksum refresh of a port whose version was
+// edited by hand since its base while its crates or Go modules are still
+// the base's: they're the old version's, which the refresh doesn't touch,
+// and nothing said so (v0.4.0's known issues). It changes nothing, and
+// says the way on.
+func staleVendored(request Request, input *sourceInput, plan *depblock.Plan) error {
+	asked := request.Stealth
+	if plan == nil || asked == nil || asked.Base == nil || !slices.Contains(asked.Changed, input.target.Portfile) {
+		return nil
+	}
+	base := asked.Base
+	if base.Version == input.info.Version || base.Options[plan.Kind] != input.info.Options[plan.Kind] {
+		return nil
+	}
+	name := input.target.Name
+	return refusal.New(refusal.Unsupported, "%s's version was edited from %s to %s, and its %s are still %s's, which checksums doesn't refresh; nothing was changed. Undo the version edit, then dockhand update %s %s regenerates them",
+		name, base.Version, input.info.Version, plan.Kind, base.Version, name, input.info.Version)
 }
 
 // vendoredSources are a port's crates or Go modules, as its Portfile

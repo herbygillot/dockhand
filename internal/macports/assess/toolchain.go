@@ -158,3 +158,41 @@ func goRequired(pairs []Pair, side func(Pair) project.Reading) (string, bool) {
 	}
 	return "", false
 }
+
+// moduleMoved is a Go module whose go.mod names another module path in the
+// new version than in the old: pomo moved from GitHub to Codeberg, and its
+// update was planned without saying so (v0.4.0's known issues). It holds
+// for a look, naming both, and the Portfile's go.package where it's still
+// the old path, since the port then fetches and builds from where the
+// module no longer is.
+func (a *assessment) moduleMoved() (model.UpstreamChange, bool) {
+	was, ok := goModulePath(a.input.Pairs, before)
+	if !ok {
+		return model.UpstreamChange{}, false
+	}
+	now, ok := goModulePath(a.input.Pairs, after)
+	if !ok || now == was {
+		return model.UpstreamChange{}, false
+	}
+	message := fmt.Sprintf("upstream: go.mod's module moved from %s to %s", was, now)
+	if a.input.Port.Options["go.package"] == was {
+		message += "; the Portfile's go.package names the old path"
+	}
+	return model.UpstreamChange{Kind: "module", Path: "go.mod", Rule: GoModuleMoved, Subject: now, Class: model.Introduced, Hold: true, Message: message}, true
+}
+
+// goModulePath is the module a version's go.mod declares, from the
+// archives read; false where none holds one it could read.
+func goModulePath(pairs []Pair, side func(Pair) project.Reading) (string, bool) {
+	for _, pair := range pairs {
+		for name, file := range side(pair).Files {
+			if path.Base(name) != "go.mod" || file.Truncated {
+				continue
+			}
+			if module, err := project.ReadGoModLax(file.Data); err == nil && module.Path != "" {
+				return module.Path, true
+			}
+		}
+	}
+	return "", false
+}

@@ -117,3 +117,21 @@ func TestAMinimumRaisedFromTheBasesIsSaid(t *testing.T) {
 	input.Base = goPort("1.27.1")
 	require.Contains(t, messages(Assess(input).Changes), "· upstream: go.mod requires Go 1.27.1, which go.toolchain_min 1.27.1 already gates on")
 }
+
+// A go.mod whose module moves is said, and holds for a look, naming both
+// paths, and go.package where it's still the old one: pomo moved from
+// GitHub to Codeberg (v0.4.0's known issues).
+func TestAGoModuleThatMovedIsSaid(t *testing.T) {
+	moved := func(was, now string) []Pair {
+		return []Pair{{Before: read(t, "pkg-1", map[string]string{"go.mod": "module " + was + "\n\ngo 1.26\n"}, project.Spec{}),
+			After: read(t, "pkg-2", map[string]string{"go.mod": "module " + now + "\n\ngo 1.26\n"}, project.Spec{})}}
+	}
+	port := goPort("1.26")
+	port.Options["go.package"] = "github.com/kevinschoon/pomo"
+	changes := Assess(Input{Port: port, Base: port, Pairs: moved("github.com/kevinschoon/pomo", "codeberg.org/kevinschoon/pomo")}).Changes
+	require.Contains(t, changes, model.UpstreamChange{Kind: "module", Path: "go.mod", Rule: GoModuleMoved, Subject: "codeberg.org/kevinschoon/pomo", Class: model.Introduced, Hold: true,
+		Message: "upstream: go.mod's module moved from github.com/kevinschoon/pomo to codeberg.org/kevinschoon/pomo; the Portfile's go.package names the old path"})
+	for _, change := range Assess(Input{Port: port, Base: port, Pairs: moved("github.com/kevinschoon/pomo", "github.com/kevinschoon/pomo")}).Changes {
+		require.NotEqual(t, GoModuleMoved, change.Rule, "the same module")
+	}
+}

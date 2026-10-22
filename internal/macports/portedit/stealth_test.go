@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -162,4 +163,23 @@ dist_subdir ${name}/${version}_${revision}
 	require.Contains(t, string(result.Files[0].After), "dist_subdir ${name}/${version}_${revision}\n")
 	require.Contains(t, string(result.Files[0].After), "version 1.2.4")
 	require.Equal(t, "fixture/1.2.4_0", result.Prepared.Ports["fixture"].Options["dist_subdir"], "the new version's own directory")
+}
+
+// A refresh of a port whose version was edited by hand since its base,
+// and whose crates are still the base's, changes nothing and says how to
+// go on: undo the edit, and update regenerates them (v0.4.0's known
+// issues). Crates edited with it, or a version as the base's, refresh.
+func TestARefreshOfAHandEditedVersionWithTheOldCratesIsRefused(t *testing.T) {
+	t.Parallel()
+	input := &sourceInput{target: model.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"},
+		info: macports.PortInfo{Name: "fixture", Version: "1.2.4", Options: map[string]string{depblock.Cargo: "serde 1.0.0 aaaa"}}}
+	plan := &depblock.Plan{Kind: depblock.Cargo}
+	asked := func(version, crates string) Request {
+		return Request{Stealth: &StealthRequest{Changed: []string{"devel/fixture/Portfile"}, Base: &macports.PortInfo{Name: "fixture", Version: version, Options: map[string]string{depblock.Cargo: crates}}}}
+	}
+	err := staleVendored(asked("1.2.3", "serde 1.0.0 aaaa"), input, plan)
+	require.EqualError(t, err, "fixture's version was edited from 1.2.3 to 1.2.4, and its cargo.crates are still 1.2.3's, which checksums doesn't refresh; nothing was changed. Undo the version edit, then dockhand update fixture 1.2.4 regenerates them")
+	require.NoError(t, staleVendored(asked("1.2.3", "serde 0.9.0 bbbb"), input, plan), "the crates were edited too")
+	require.NoError(t, staleVendored(asked("1.2.4", "serde 1.0.0 aaaa"), input, plan), "the version is the base's")
+	require.NoError(t, staleVendored(asked("1.2.3", "serde 1.0.0 aaaa"), input, nil), "no crates")
 }
