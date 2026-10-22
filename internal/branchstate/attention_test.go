@@ -63,7 +63,7 @@ func TestSubmitReadiness(t *testing.T) {
 	branch := Branch{Record: model.Branch{Name: "dockhand/jq-1.8.2", State: model.BranchOpen}, Commits: 1}
 	ready := Facts{Branch: branch, Check: Check{Latest: passed, Current: true, Evidence: &evidence.Evidence{}}}
 	require.Equal(t, SubmitReady, SubmitReadiness(ready))
-	require.False(t, Evaluate(ready, ActionSubmit, Mode{Answered: Asked}).Refused)
+	require.False(t, Evaluate(ready, ActionSubmit, Mode{Answered: model.AnsweredAsked}).Refused)
 	older := ready
 	older.Check.Current = false
 	require.Equal(t, NotReady, SubmitReadiness(older))

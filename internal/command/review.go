@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -166,7 +167,7 @@ func decideTidy(ctx context.Context, e *engine.Engine, streams term.Streams, pro
 		if yes {
 			answered = model.AnsweredYes
 		}
-		if err := proposal.AppliesUnasked(answered, explicit); err != nil {
+		if err := proposal.Gate().AppliesUnasked(branchstate.Mode{Answered: answered}, explicit); err != nil {
 			return false, err
 		}
 		return true, applyTidy(ctx, e, streams, proposal)

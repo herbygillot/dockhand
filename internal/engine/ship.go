@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -44,7 +45,10 @@ type shipOptions struct {
 // answered --yes, which skips the question and approves nothing shown
 // after it; the command's ship reads model.Answered the same way (Codex's
 // review of 832f059e, high 1).
-func (o shipOptions) Unattended() bool { return o.Answered != model.AnsweredAsked }
+func (o shipOptions) Unattended() bool { return o.mode().Unattended() }
+
+// mode is how ship was asked, as the verdict reads it.
+func (o shipOptions) mode() branchstate.Mode { return branchstate.Mode{Answered: o.Answered} }
 
 // commitUnasked is whether ship may commit tidy's plan, and why not: a
 // plan that isn't dockhand's own edits needs a look (HeldForLook), and
@@ -54,11 +58,7 @@ func (o shipOptions) Unattended() bool { return o.Answered != model.AnsweredAske
 // one judgment of it on serve's path (the architecture review of 5897a82,
 // R3-1). Layer 1's readiness replaces it.
 func commitUnasked(options shipOptions, tidy TidyPlan) error {
-	answered := options.Answered
-	if options.Unattended() {
-		answered = model.AnsweredNobody
-	}
-	return tidy.HeldForLook(answered)
+	return tidy.Gate().CommitUnasked(options.mode())
 }
 
 // ship moves one target through ship's stages on serve's preparation path:

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -328,7 +329,7 @@ func (e *Engine) ArchiveBranch(ctx context.Context, request ArchiveRequest) (Arc
 		// Nobody is asked here: only what may apply unasked is committed
 		// (AppliesUnasked, the one spelling of it; the architecture review
 		// of 5897a82, R3-9).
-		if plan.AppliesUnasked(model.AnsweredNobody, false) != nil {
+		if plan.Gate().AppliesUnasked(branchstate.Mode{Answered: model.AnsweredNobody}, false) != nil {
 			return Archived{Branch: request.Branch, NeedsWords: true}, nil
 		}
 		if _, err := e.ApplyTidy(ctx, plan); err != nil {

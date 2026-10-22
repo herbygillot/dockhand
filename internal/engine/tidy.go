@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/history"
@@ -118,56 +119,22 @@ type TidyPlan struct {
 	Taken, LeftOut, Ignored []string
 }
 
-// Unambiguous reports whether the plan may be applied without review:
-// every commit is one port directory's edits, exactly as dockhand's
-// authoring commands wrote them, under the subject they wrote.
-func (p TidyPlan) Unambiguous() bool {
-	if p.Keep || len(p.Groups) == 0 {
-		return false
-	}
+// Gate is the plan as the verdict on committing it reads it
+// (branchstate.Plan), where the plan judged itself.
+func (p TidyPlan) Gate() branchstate.Plan {
+	gate := branchstate.Plan{Branch: p.Branch.ShortName(), Keep: p.Keep}
 	for _, g := range p.Groups {
-		if !g.FromEdits && !g.Created || g.Directory == "" || len(g.Notes) > 0 || len(g.Blocking) > 0 {
-			return false
-		}
+		gate.Groups = append(gate.Groups, branchstate.Group{Directory: g.Directory, FromEdits: g.FromEdits, Created: g.Created, Notes: g.Notes, Blocking: g.Blocking})
 	}
-	return true
+	return gate
 }
 
-// HeldForLook is a plan's hold before ship commits it, as serve's ship and
-// the command's say it: the way on is tidy, on a terminal, never --yes,
-// which approves no plan it hasn't shown. nil where the plan applies
-// unasked; where nobody looks, answered is AnsweredNobody.
-func (p TidyPlan) HeldForLook(answered model.Answered) error {
-	if p.AppliesUnasked(answered, false) != nil {
-		return fmt.Errorf("review the commit plan before committing: run dockhand tidy --branch %s", p.Branch.ShortName())
-	}
-	return nil
-}
-
-// AppliesUnasked says whether the plan may be applied with nobody
-// reviewing it on a terminal, and why not: one made only of dockhand's own
-// edits (Unambiguous) where nobody was there to ask, any the person
-// answered for with --yes or by giving the plan itself (explicit), and
-// none while something blocks it. It's ship's "commit if unambiguous" and
-// tidy's alike (the command package split's 7b row 6).
-func (p TidyPlan) AppliesUnasked(answered model.Answered, explicit bool) error {
-	if !explicit && answered != model.AnsweredYes && !p.Unambiguous() {
-		return errors.New("review this plan in an interactive terminal before applying it, or approve the displayed plan with --yes. To combine the changes into one commit, use --squash --message \"port: what changed\"")
-	}
-	if blocking := p.Blocking(); len(blocking) > 0 {
-		return fmt.Errorf("nothing was applied: %s", strings.Join(blocking, "; "))
-	}
-	return nil
-}
+// Unambiguous reports whether the plan may be applied without review
+// (branchstate.Plan.Unambiguous).
+func (p TidyPlan) Unambiguous() bool { return p.Gate().Unambiguous() }
 
 // Blocking lists what must be settled before the plan can be applied.
-func (p TidyPlan) Blocking() []string {
-	var all []string
-	for _, g := range p.Groups {
-		all = append(all, g.Blocking...)
-	}
-	return all
-}
+func (p TidyPlan) Blocking() []string { return p.Gate().Blocking() }
 
 // PlanTidy proposes the commits a branch should have: one per port
 // directory by default, with the subject dockhand's authoring commands

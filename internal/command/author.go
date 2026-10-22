@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
@@ -336,7 +337,7 @@ func tidyBranch(ctx context.Context, e *engine.Engine, streams term.Streams, bra
 		// hold names tidy, as serve's does, where tidy's own refusal
 		// offered --yes, which ship's --yes isn't.
 		if !streams.Terminal() {
-			if err := proposal.HeldForLook(model.AnsweredNobody); err != nil {
+			if err := proposal.Gate().CommitUnasked(branchstate.Mode{Answered: model.AnsweredNobody}); err != nil {
 				return branch, false, fmt.Errorf("%w; %s", err, undone)
 			}
 		}

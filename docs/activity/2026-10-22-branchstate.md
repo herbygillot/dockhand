@@ -78,3 +78,14 @@ The publication rule is branchstate's, with the acceptances it reads, moved from
 The engine keeps aliases for `AcceptedFailure` and its kinds, and its `StandingAccepted` method reads the store and calls branchstate. The engine's tests read the rule through test-side wrappers that word the blocks as submit does. Every test passes unchanged, which shows the words didn't move.
 
 `submit --json` gains `blocks`, each with its kind, its port, and its words. Still to come: the remaining sites' conditions (a merge commit, a missing title) are simple reads of facts the engine gathers as it plans. They move to an `Evaluate(submit)` over gathered facts with step 5, which settles one gate for ship and serve.
+
+## Step 5a: consent read once, and tidy's gate in branchstate
+
+How a step was answered was read in three places (R3-9):
+- `shipOptions.Unattended`;
+- `shipAll`'s own `answered != AnsweredAsked`;
+- `tidyBranch`'s terminal test, which turned the answer into `HeldForLook`.
+
+`branchstate.Mode` now carries `model.Answered`, where step 1 had a copy of its own, and `Mode.Unattended()` is the one reading of consent. Ship, both the engine's and the command's, reads it.
+
+The plan's gate moves too. `TidyPlan.Gate()` gives the plan as `branchstate.Plan`. `Unambiguous`, `Blocking`, and `AppliesUnasked(mode, explicit)` are branchstate's, and `CommitUnasked(mode)` is the gate ship and serve commit through: dockhand's own edits only, where nobody looks. It replaces `TidyPlan.HeldForLook`, which reconverted the answer itself. tidy's command, verbs, and ship call it. The interactive review stays the command's: it asks, and it doesn't judge.

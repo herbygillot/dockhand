@@ -9,6 +9,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -221,11 +222,11 @@ func TestSetSubjectSettlesTheMissingSubject(t *testing.T) {
 // blocks it (ship's "commit if unambiguous").
 func TestAPlanAppliesUnasked(t *testing.T) {
 	own := TidyPlan{Groups: []TidyGroup{{Directory: "textproc/jq", FromEdits: true, Message: "jq: update to 1.8.1\n"}}}
-	require.NoError(t, own.AppliesUnasked(model.AnsweredNobody, false))
+	require.NoError(t, own.Gate().AppliesUnasked(branchstate.Mode{Answered: model.AnsweredNobody}, false))
 	hand := TidyPlan{Groups: []TidyGroup{{Directory: "textproc/jq", Message: "jq: fix\n"}}}
-	require.ErrorContains(t, hand.AppliesUnasked(model.AnsweredNobody, false), "review this plan in an interactive terminal")
-	require.NoError(t, hand.AppliesUnasked(model.AnsweredYes, false))
-	require.NoError(t, hand.AppliesUnasked(model.AnsweredNobody, true), "a plan the person gave")
+	require.ErrorContains(t, hand.Gate().AppliesUnasked(branchstate.Mode{Answered: model.AnsweredNobody}, false), "review this plan in an interactive terminal")
+	require.NoError(t, hand.Gate().AppliesUnasked(branchstate.Mode{Answered: model.AnsweredYes}, false))
+	require.NoError(t, hand.Gate().AppliesUnasked(branchstate.Mode{Answered: model.AnsweredNobody}, true), "a plan the person gave")
 	hand.Groups[0].needsSubject("commit 1 needs a subject")
-	require.ErrorContains(t, hand.AppliesUnasked(model.AnsweredYes, false), "nothing was applied: commit 1 needs a subject")
+	require.ErrorContains(t, hand.Gate().AppliesUnasked(branchstate.Mode{Answered: model.AnsweredYes}, false), "nothing was applied: commit 1 needs a subject")
 }

@@ -32,14 +32,14 @@ var contractCases = func() []struct {
 		mode   Mode
 	}
 	return []c{
-		{"submit, gone", Facts{Branch: Branch{Record: open, Missing: true, Commits: 1}, Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: Asked}},
-		{"submit, pushed", Facts{Branch: Branch{Record: open, Commits: 1, Pushed: true}, Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: Asked}},
-		{"submit, nothing committed", Facts{Branch: branch(0, "Portfile"), Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: Asked}},
-		{"submit, edited", Facts{Branch: branch(1, "Portfile"), Check: Check{Latest: passed, Current: true, Evidence: stands}}, ActionSubmit, Mode{Answered: Asked}},
-		{"submit, checking", Facts{Branch: branch(1), Check: Check{Latest: passed, Active: []model.Run{{Number: 4, State: model.RunRunning}}}}, ActionSubmit, Mode{Answered: Nobody}},
-		{"submit, stopped", Facts{Branch: branch(1), Check: Check{Latest: passed, Stopped: &model.Run{Number: 4}}}, ActionSubmit, Mode{Answered: Nobody}},
-		{"submit, failed", Facts{Branch: branch(1), Check: Check{Latest: failed, Current: true}}, ActionSubmit, Mode{Answered: Asked}},
-		{"submit, other files", Facts{Branch: branch(1), Check: Check{Latest: passed}}, ActionSubmit, Mode{Answered: Asked}},
+		{"submit, gone", Facts{Branch: Branch{Record: open, Missing: true, Commits: 1}, Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
+		{"submit, pushed", Facts{Branch: Branch{Record: open, Commits: 1, Pushed: true}, Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
+		{"submit, nothing committed", Facts{Branch: branch(0, "Portfile"), Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
+		{"submit, edited", Facts{Branch: branch(1, "Portfile"), Check: Check{Latest: passed, Current: true, Evidence: stands}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
+		{"submit, checking", Facts{Branch: branch(1), Check: Check{Latest: passed, Active: []model.Run{{Number: 4, State: model.RunRunning}}}}, ActionSubmit, Mode{Answered: model.AnsweredNobody}},
+		{"submit, stopped", Facts{Branch: branch(1), Check: Check{Latest: passed, Stopped: &model.Run{Number: 4}}}, ActionSubmit, Mode{Answered: model.AnsweredNobody}},
+		{"submit, failed", Facts{Branch: branch(1), Check: Check{Latest: failed, Current: true}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
+		{"submit, other files", Facts{Branch: branch(1), Check: Check{Latest: passed}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
 	}
 }()
 

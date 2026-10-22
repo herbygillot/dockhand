@@ -1,5 +1,7 @@
 package branchstate
 
+import "github.com/herbygillot/dockhand/internal/model"
+
 // Facts are what's recorded of a branch, or already read of the world,
 // that the verdict reads, gathered by the engine. Each step of part 4
 // brings more of them, as it brings the judgment that reads them.
@@ -22,20 +24,15 @@ const (
 // the record and its words, never a second reading of consent
 // (architecture's note on R3-36).
 type Mode struct {
-	Answered Answered
+	Answered model.Answered
 }
 
-// Answered is who answers an action's questions.
-type Answered string
-
-const (
-	// Asked is a person at a terminal, asked.
-	Asked Answered = "asked"
-	// Yes is a person's --yes, given ahead.
-	Yes Answered = "yes"
-	// Nobody is no one: a script, or serve.
-	Nobody Answered = "nobody"
-)
+// Unattended reports whether nobody looks over what the action does before
+// it goes on: no person was there to ask, as for serve or a script, or one
+// answered --yes, which skips the question and approves nothing shown
+// after it (Codex's review of 832f059e, high 1). It's the one reading of
+// consent, which ship's two and tidy's terminal tests each made (R3-9).
+func (m Mode) Unattended() bool { return m.Answered != model.AnsweredAsked }
 
 // Verdict is the one judgment of a branch's state for an action: its
 // checks' standing, whether the action is refused, and what moves it on.

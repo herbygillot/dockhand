@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -266,7 +267,7 @@ func writeSubmitRow(ctx context.Context, e *engine.Engine, out io.Writer, indent
 // side where it leads, and a rerun follows a check still queued or
 // running for the same files rather than starting another.
 func shipAll(ctx context.Context, s *settings, streams term.Streams, whole *batchJSON, targets []shipTarget, stage engine.ShipStage, answered model.Answered, version versionUpdate) error {
-	unattended := answered != model.AnsweredAsked
+	unattended := branchstate.Mode{Answered: answered}.Unattended()
 	if unattended {
 		streams = streams.Unattended()
 	}
