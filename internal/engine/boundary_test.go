@@ -26,6 +26,7 @@ var engineImports = map[string]string{
 	"internal/reuse":                  "what each target's build read, for reuse",
 	"internal/planning":               "what a check builds, where, and in what order, from the ports it evaluates",
 	"internal/evidence":               "what recorded checks establish about a tree, from the records the engine loads",
+	"internal/branchstate":            "the one verdict on a branch's state, from the facts the engine gathers",
 	"internal/progress":               "what the work reports as a check builds, which its run keeps for whoever follows it",
 	"internal/prose":                  "counts and sizes worded as everywhere else",
 	"internal/registry":               "where a project named in a registry keeps its source, for create",
