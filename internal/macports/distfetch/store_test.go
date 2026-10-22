@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,7 +68,7 @@ func TestEveryMirrorsHTMLPageIsAReleaseNotThereYet(t *testing.T) {
 	require.ErrorAs(t, err, &behind)
 	require.ErrorIs(t, err, errHTMLPage)
 	require.ErrorContains(t, err, "every one of its 2 sites sent an HTML page")
-	require.True(t, fetch.Transient(err), "another try later may find it")
+	require.True(t, refusal.Transient(err), "another try later may find it")
 
 	_, err = client.Store("").FetchFirst(t.Context(), info, "libpng-1.6.50.tar.xz", []string{server.URL + "/a/libpng-1.6.50.tar.xz"})
 	require.False(t, errors.As(err, &behind), "one site's page is that site's")

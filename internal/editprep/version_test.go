@@ -402,7 +402,7 @@ func TestAnUpdateComparesWithTheArchiveMacPortsShipped(t *testing.T) {
 			require.Equal(t, next, string(fileBytes(t, result.Downloads[0].Path)))
 			if test.problem != "" {
 				require.Contains(t, result.PreviousProblem, test.problem)
-				require.Equal(t, test.transient, result.PreviousTransient, result.PreviousProblem)
+				require.Equal(t, test.transient, result.PreviousKind.Transient(), result.PreviousProblem)
 				require.Empty(t, result.Pairs)
 				return
 			}

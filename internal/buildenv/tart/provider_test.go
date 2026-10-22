@@ -26,6 +26,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 )
@@ -544,7 +545,7 @@ func TestKeptArchivesGoToTheGuestSigned(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(kept, []byte("libharbor's archive, changed"), 0o644))
 	mac, build, _, err = run(install)
-	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+	require.Equal(t, refusal.Infrastructure, refusal.KindOf(err))
 	require.ErrorContains(t, err, "isn't the "+install.Digest+" it was kept as")
 	require.Empty(t, build.results)
 	require.Empty(t, mac.guest.uploaded, "the guest program isn't started")
@@ -603,7 +604,7 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 			}
 			build := &fakeBuild{}
 			err := testProvider(test.mac).Execute(t.Context(), tartJob(t, 1), build)
-			require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+			require.Equal(t, refusal.Infrastructure, refusal.KindOf(err))
 			require.ErrorContains(t, err, test.want)
 			require.Len(t, build.results, 1, "what the guest finished stays recorded")
 			require.Contains(t, test.mac.events, "delete dockhand-check-run-7-tahoe-1")
@@ -612,7 +613,7 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	mac := newMac(guestResults{State: "running"})
 	close(mac.run.done)
 	err := testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
-	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+	require.Equal(t, refusal.Infrastructure, refusal.KindOf(err))
 	require.ErrorContains(t, err, "the VM stopped")
 
 	// A VM whose tart run ends before it takes an address is said at
@@ -622,7 +623,7 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	close(mac.run.done)
 	start := time.Now()
 	err = testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
-	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+	require.Equal(t, refusal.Infrastructure, refusal.KindOf(err))
 	require.ErrorContains(t, err, "tart run exited before dockhand-check-run-7-tahoe-1 received an IP address: it crashed")
 	require.Less(t, time.Since(start), 30*time.Second)
 
@@ -633,7 +634,7 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	failed := guestResult{ID: "libharbor", Outcome: "failed", Phase: "install", Log: "target-1.log", Transient: reset}
 	build := &fakeBuild{}
 	err = testProvider(newMac(guestResults{State: "finished", Targets: []guestResult{failed}})).Execute(t.Context(), tartJob(t, 1), build)
-	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+	require.Equal(t, refusal.Infrastructure, refusal.KindOf(err))
 	require.ErrorContains(t, err, "libharbor's build met a network fault upstream: "+reset)
 	require.Len(t, build.results, 1, "the failure stays recorded")
 }
@@ -666,7 +667,7 @@ func TestTheTargetALostGuestWasBuildingIsInterrupted(t *testing.T) {
 			}
 			build := &fakeBuild{}
 			err := testProvider(test.mac).Execute(t.Context(), tartJob(t, 1), build)
-			require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+			require.Equal(t, refusal.Infrastructure, refusal.KindOf(err))
 			require.Equal(t, model.OutcomePassed, build.results[0].Outcome, "what the guest finished stays recorded")
 			// The partial log of what it was building is fetched where the
 			// guest still answers (the exiv2 field notes, 2026-10-19), by
@@ -703,7 +704,7 @@ func TestResultsDockhandCantReadAreItsOwnFault(t *testing.T) {
 			}
 			err := testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
 			require.ErrorIs(t, err, buildenv.ErrDockhandFault)
-			require.NotErrorIs(t, err, buildenv.ErrInfrastructure)
+			require.NotEqual(t, refusal.Infrastructure, refusal.KindOf(err))
 			require.ErrorContains(t, err, test.want)
 			require.Contains(t, mac.events, "delete dockhand-check-run-7-tahoe-1")
 		})
@@ -733,7 +734,7 @@ func TestTheCloneIsNamedBeforeItIsMade(t *testing.T) {
 	mac.cloneErr = errors.New("tart clone failed")
 	build := &fakeBuild{}
 	err := testProvider(mac).Execute(t.Context(), tartJob(t, 1), build)
-	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+	require.Equal(t, refusal.Infrastructure, refusal.KindOf(err))
 	require.Equal(t, []string{"dockhand-check-run-7-tahoe-1"}, build.refs)
 }
 

@@ -24,6 +24,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/project"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -557,7 +558,7 @@ func TestAnAssessmentStoppedByTheNetworkIsTriedAgain(t *testing.T) {
 		assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 		require.NoError(t, err)
 		require.Contains(t, assessments[0].Comparison.Problem, "archives couldn't be fetched", test.status)
-		require.Equal(t, test.again, assessments[0].Comparison.Transient, test.status)
+		require.Equal(t, test.again, refusal.Kind(assessments[0].Comparison.ProblemKind).Transient(), test.status)
 		require.NotEmpty(t, holds(assessments[0]), "what couldn't be checked holds (D4)")
 
 		p.refusing.Store(0)
@@ -566,7 +567,7 @@ func TestAnAssessmentStoppedByTheNetworkIsTriedAgain(t *testing.T) {
 		require.NoError(t, err)
 		if test.again {
 			require.Empty(t, assessments[0].Comparison.Problem, "tried again, and finished")
-			require.False(t, assessments[0].Comparison.Transient)
+			require.False(t, refusal.Kind(assessments[0].Comparison.ProblemKind).Transient())
 		} else {
 			require.Contains(t, assessments[0].Comparison.Problem, "archives couldn't be fetched", "a refusal stands for its files")
 			require.Zero(t, p.fetches.Load())

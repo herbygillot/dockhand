@@ -31,6 +31,7 @@ var engineImports = map[string]string{
 	"internal/prose":                  "counts and sizes worded as everywhere else",
 	"internal/registry":               "where a project named in a registry keeps its source, for create",
 	"internal/buildlog":               "what a failed build's log most likely says made it fail",
+	"internal/refusal":                "why something didn't go, of its kind, with what moves it on",
 	"golang.org/x/sync/errgroup":      "a check's environments building together, and a port's URLs asked over HTTPS together",
 	"github.com/BurntSushi/toml":      "a saved tidy plan, a file a person edits",
 	"internal/macos":                  "macOS releases, for environments and their words",

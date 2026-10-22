@@ -40,6 +40,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 )
@@ -685,7 +686,7 @@ type guestPort struct {
 func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) (err error) {
 	m, err := p.vms()
 	if err != nil {
-		return fmt.Errorf("%w: %w", buildenv.ErrInfrastructure, err)
+		return buildenv.Infrastructure("%w", err)
 	}
 	release, err := tartvm.ReleaseForPlatform(job.Environment.Platform)
 	if err != nil {
@@ -845,9 +846,9 @@ func (p *Provider) trouble(ctx context.Context, doing string, err error) error {
 	if errors.Is(err, guestssh.ErrRefused) {
 		// A guest that refuses dockhand refuses it again: the image's keys
 		// or password are another's, which another attempt won't change.
-		return fmt.Errorf("%w: %w: %s: %w", buildenv.ErrInfrastructure, buildenv.ErrNeedsAttention, doing, err)
+		return buildenv.Infrastructure("%w: %s: %w", buildenv.ErrNeedsAttention, doing, err)
 	}
-	return fmt.Errorf("%w: %s: %w", buildenv.ErrInfrastructure, doing, err)
+	return buildenv.Infrastructure("%s: %w", doing, err)
 }
 
 // sweep stops and deletes the clones earlier attempts of this run and
@@ -890,10 +891,10 @@ func (p *Provider) start(ctx context.Context, m machine, build buildenv.Build, i
 		return false, nil, err
 	}
 	if err := m.Clone(ctx, image, vm); err != nil {
-		return false, nil, fmt.Errorf("%w: cloning %s: %w", buildenv.ErrInfrastructure, image, err)
+		return false, nil, buildenv.Infrastructure("cloning %s: %w", image, err)
 	}
 	if started, err = m.Start(vm); err != nil {
-		return true, nil, fmt.Errorf("%w: starting %s: %w", buildenv.ErrInfrastructure, vm, err)
+		return true, nil, buildenv.Infrastructure("starting %s: %w", vm, err)
 	}
 	// The next start counts this VM once Tart lists it, which takes a
 	// moment; it waits that long at most.
@@ -1121,7 +1122,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-started.Done():
-			return interrupted(job, build, building, fmt.Errorf("%w: the VM stopped: %v", buildenv.ErrInfrastructure, started.Err()), nil)
+			return interrupted(job, build, building, buildenv.Infrastructure("the VM stopped: %v", started.Err()), nil)
 		case <-time.After(p.poll()):
 		}
 		results, err := p.read(ctx, g)
@@ -1130,7 +1131,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 				return ctx.Err()
 			}
 			if failures++; time.Duration(failures)*p.poll() >= time.Minute {
-				return lost(fmt.Errorf("%w: reading the guest's results: %w", buildenv.ErrInfrastructure, err))
+				return lost(buildenv.Infrastructure("reading the guest's results: %w", err))
 			}
 			continue
 		}
@@ -1144,7 +1145,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 		case "error":
 			return errors.New("the guest's results were lost, as a failpoint asked")
 		case "infrastructure":
-			return lost(fmt.Errorf("%w: the guest stopped answering, as a failpoint asked", buildenv.ErrInfrastructure))
+			return lost(buildenv.Infrastructure("the guest stopped answering, as a failpoint asked"))
 		}
 		if results.Protocol != Protocol {
 			return fmt.Errorf("%w: the guest program wrote protocol %d results; this dockhand reads %d", buildenv.ErrDockhandFault, results.Protocol, Protocol)
@@ -1172,12 +1173,12 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 			// proxy.golang.org's stream reset, field testing at 23c5e2aa).
 			for _, target := range results.Targets {
 				if target.Outcome == string(model.OutcomeFailed) && target.Transient != "" {
-					return fmt.Errorf("%w: %s's build met a network fault upstream: %s", buildenv.ErrInfrastructure, target.ID, target.Transient)
+					return buildenv.Infrastructure("%s's build met a network fault upstream: %s", target.ID, target.Transient)
 				}
 			}
 			return nil
 		case "errored":
-			return lost(fmt.Errorf("%w: the guest: %s", buildenv.ErrInfrastructure, results.Detail))
+			return lost(buildenv.Infrastructure("the guest: %s", results.Detail))
 		}
 		if gone, err := stopped(ctx, g); err == nil && gone {
 			// It may have written its last results after the read above.
@@ -1188,7 +1189,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 				building = last.Building
 			}
 			log, _ := g.Read(ctx, guestRoot+"/runner.log", true)
-			return lost(fmt.Errorf("%w: the guest program stopped before it finished: %s", buildenv.ErrInfrastructure, strings.TrimSpace(tail(string(log), 400))))
+			return lost(buildenv.Infrastructure("the guest program stopped before it finished: %s", strings.TrimSpace(tail(string(log), 400))))
 		}
 	}
 }
@@ -1230,7 +1231,12 @@ func interrupted(job buildenv.Job, build buildenv.Build, building string, cause 
 	if i < 0 {
 		return cause
 	}
-	detail := strings.TrimPrefix(cause.Error(), buildenv.ErrInfrastructure.Error()+": ")
+	// What the environment's trouble was, without the refusal's own
+	// words around it.
+	detail := cause.Error()
+	if r := refusal.Of(cause); r != nil && errors.Unwrap(r) != nil {
+		detail = errors.Unwrap(r).Error()
+	}
 	result := model.TargetResult{Target: job.Targets[i].ID, Outcome: model.OutcomeInterrupted, Detail: detail}
 	if fetch != nil {
 		// The guest names each target's log by its target.

@@ -10,11 +10,13 @@ package buildenv
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // Provider builds a plan's targets in one environment.
@@ -52,14 +54,20 @@ const DefaultTestTimeout = 30 * time.Minute
 // that long would meet there too (D16).
 const DefaultBuildTimeout = 6 * time.Hour
 
-// ErrInfrastructure marks trouble with a provider's environment rather
-// than with what it built: a VM that would not start, a script that wrote
-// no result. The runner tries such an execution again, up to
-// model.MaxAttempts; it never repeats a verdict.
-var ErrInfrastructure = errors.New("provider infrastructure failed")
+// Infrastructure is trouble with a provider's environment rather than
+// with what it built, a VM that would not start, a script that wrote no
+// result: a refusal of kind refusal.Infrastructure, which the runner tries
+// again, up to model.MaxAttempts, as it does every refusal another try may
+// meet (refusal.Transient); it never repeats a verdict. It wraps what it's
+// made of, so ErrNeedsAttention inside it is still found, where
+// ErrInfrastructure was a sentinel of its own (R3-6).
+func Infrastructure(format string, args ...any) error {
+	cause := fmt.Errorf(format, args...)
+	return refusal.Wrap(refusal.Infrastructure, cause, "provider infrastructure failed: %s", cause)
+}
 
-// ErrNeedsAttention marks trouble another attempt won't fix, beside
-// ErrInfrastructure: a guest that refuses dockhand's login refuses it
+// ErrNeedsAttention marks trouble another attempt won't fix, inside
+// Infrastructure: a guest that refuses dockhand's login refuses it
 // again. The runner tries such an execution no more, and says why, where
 // it had spent every attempt on it.
 var ErrNeedsAttention = errors.New("another attempt won't fix it")

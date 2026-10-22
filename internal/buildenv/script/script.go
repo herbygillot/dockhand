@@ -142,12 +142,12 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if request.Commit == request.Base {
 		parent, err := p.Repo.Resolve(ctx, request.Base+"^")
 		if err != nil {
-			return fmt.Errorf("%w: bundling the base: %w", buildenv.ErrInfrastructure, err)
+			return buildenv.Infrastructure("bundling the base: %w", err)
 		}
 		exclude = parent
 	}
 	if err := p.Repo.Bundle(ctx, request.Bundle, request.Ref, request.Commit, exclude); err != nil {
-		return fmt.Errorf("%w: bundling the revision: %w", buildenv.ErrInfrastructure, err)
+		return buildenv.Infrastructure("bundling the revision: %w", err)
 	}
 	requestPath := filepath.Join(job.Directory, "request.json")
 	data, err := json.MarshalIndent(request, "", "  ")
@@ -186,17 +186,17 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 
 	data, err = os.ReadFile(request.Result)
 	if errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("%w: %s wrote no result file (%v); see %s", buildenv.ErrInfrastructure, p.Label, runErr, logPath)
+		return buildenv.Infrastructure("%s wrote no result file (%v); see %s", p.Label, runErr, logPath)
 	}
 	if err != nil {
 		return err
 	}
 	var result Result
 	if err := json.Unmarshal(data, &result); err != nil {
-		return fmt.Errorf("%w: %s wrote an unreadable result file, %s: %w", buildenv.ErrInfrastructure, p.Label, request.Result, err)
+		return buildenv.Infrastructure("%s wrote an unreadable result file, %s: %w", p.Label, request.Result, err)
 	}
 	if result.Version != Version {
-		return fmt.Errorf("%w: %s wrote a version %d result file, %s; dockhand reads version %d", buildenv.ErrInfrastructure, p.Label, result.Version, request.Result, Version)
+		return buildenv.Infrastructure("%s wrote a version %d result file, %s; dockhand reads version %d", p.Label, result.Version, request.Result, Version)
 	}
 	if result.Reference != "" {
 		if err := build.Refer(result.Reference); err != nil {
@@ -226,13 +226,13 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		}
 		recorded, err := convert(target.ID, got, logPath)
 		if err != nil {
-			return fmt.Errorf("%w: %s: %w", buildenv.ErrInfrastructure, p.Label, err)
+			return buildenv.Infrastructure("%s: %w", p.Label, err)
 		}
 		// What a Git fetch checked out is the script's to say; the engine
 		// judges it by the commit the request named.
 		if got.Fetched != "" {
 			if !git.ValidObjectID(got.Fetched) {
-				return fmt.Errorf("%w: %s: %s fetched %q, which isn't a commit", buildenv.ErrInfrastructure, p.Label, target.ID, got.Fetched)
+				return buildenv.Infrastructure("%s: %s fetched %q, which isn't a commit", p.Label, target.ID, got.Fetched)
 			}
 			build.Fetched(target.ID, got.Fetched)
 		}

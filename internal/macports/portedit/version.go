@@ -7,12 +7,12 @@ import (
 	"os"
 	"slices"
 
-	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
@@ -203,7 +203,7 @@ func pairArchives(ctx context.Context, store *distfetch.Store, pairs []archivePa
 // nil.
 func (r *Result) previousFailed(err error) {
 	if err != nil {
-		r.PreviousProblem, r.PreviousTransient = err.Error(), fetch.Transient(err)
+		r.PreviousProblem, r.PreviousKind = err.Error(), refusal.KindOf(err)
 	}
 }
 

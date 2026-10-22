@@ -133,3 +133,24 @@ Next in this item:
 - one Transient, with the retry rule reading `refusal.Transient` alone and the five shapes deleted (R3-6);
 - the producers below the engine filling kinds and Nexts (R3-31);
 - the command's string surgery and "Kept:" composers gone (R3-38).
+
+## R3-6: one reading of a failure another try may meet
+
+Five shapes said "worth trying again": `buildenv.ErrInfrastructure`,
+`fetch.Transient`, distfetch's mirrors behind, GitHub's rate limit, and the
+`Transient` bool an upstream comparison stored. Each is now a refusal of its
+kind, and `refusal.Transient` is the one reading.
+
+- `refusal` gains `Infrastructure` and `Limited` kinds, both transient.
+  `refusal.Transient` reads only refusals (and joins of them); the
+  method-based fallback is gone.
+- `buildenv.Infrastructure(format, ...)` replaces `ErrInfrastructure`; the
+  script, GitHub Actions and Tart providers call it.
+- `fetch.Open` wraps a transport failure, a 429 and a 5xx as `Network`;
+  `fetch.Transient` is deleted.
+- GitHub's rate limit is `Limited`, and a `net.Error` there `Network`.
+- distfetch's "mirrors haven't caught up" is `UpstreamNotYet`.
+- The engine's retry rule is `case refusal.Transient(err)`.
+- `model.UpstreamComparison` stores `problem_kind` in place of
+  `transient`; a recorded `"transient": true` reads as `network`.
+  `portedit`'s `PreviousKind` carries the kind through preparation.

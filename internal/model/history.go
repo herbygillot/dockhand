@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -67,15 +68,36 @@ type UpstreamComparison struct {
 	// Coverage says what the assessment read, and what it set apart and
 	// why; none in a comparison recorded before it did.
 	Coverage []Coverage `json:"coverage,omitempty"`
-	// Transient is a Problem another try may not meet, a network's
-	// failure or a forge's rate limit, which collecting the assessment
-	// again tries; a refusal, as a 404, or a port that doesn't evaluate,
-	// stands for its files.
-	Transient bool `json:"transient,omitempty"`
+	// ProblemKind is the Problem's kind (refusal.Kind), which says whether
+	// another try may meet it, a network's failure or a forge's rate
+	// limit, which collecting the assessment again tries; a refusal, as a
+	// 404, or a port that doesn't evaluate, stands for its files. It's
+	// where a Transient flag was (R3-6); one recorded with that flag reads
+	// as the network's.
+	ProblemKind string `json:"problem_kind,omitempty"`
 	// Commit is the commit a Git-fetched port's source was read at, as
 	// its git.branch named it when it was assessed; empty for one read
 	// from archives, and for one assessed before it was kept.
 	Commit string `json:"commit,omitempty"`
+}
+
+// UnmarshalJSON reads a comparison as recorded, one recorded with the
+// Transient flag that ProblemKind replaced as the network's, which another
+// try may meet.
+func (c *UpstreamComparison) UnmarshalJSON(data []byte) error {
+	type recorded UpstreamComparison
+	var read struct {
+		recorded
+		Transient bool `json:"transient"`
+	}
+	if err := json.Unmarshal(data, &read); err != nil {
+		return err
+	}
+	*c = UpstreamComparison(read.recorded)
+	if read.Transient && c.ProblemKind == "" {
+		c.ProblemKind = "network"
+	}
+	return nil
 }
 
 // Held reports whether the comparison holds the update for a person's

@@ -25,6 +25,13 @@ const (
 	// that failed it: another try may meet it. Its producer gives no
 	// Next; trying again is the remedy.
 	Network Kind = "network"
+	// Infrastructure is a build environment that failed, a VM or a runner,
+	// rather than what it built: another try, in a fresh one, may meet it.
+	// No Next; the retry rule tries again.
+	Infrastructure Kind = "infrastructure"
+	// Limited is a service's allowance spent, as GitHub's rate limit:
+	// another try once it resets may meet it. No Next.
+	Limited Kind = "limited"
 	// UpstreamNotYet is an archive or a release a service doesn't serve
 	// yet, as mirrors behind a new release: another try, later, may meet
 	// it. No Next.
@@ -57,7 +64,9 @@ const (
 )
 
 // Transient reports whether another try may meet a refusal of the kind.
-func (k Kind) Transient() bool { return k == Network || k == UpstreamNotYet }
+func (k Kind) Transient() bool {
+	return k == Network || k == Infrastructure || k == Limited || k == UpstreamNotYet
+}
 
 // Exit is the kind's exit code, the one table of them: a check failed 2,
 // waiting for a look 3, interrupted 130, and every other refusal 1.
@@ -153,18 +162,16 @@ func KindOf(err error) Kind {
 }
 
 // Transient reports whether another try may meet an error: one that is,
-// or wraps, a refusal of a transient kind, or that says it is
-// (a Transient() bool method), as the store of a whole run joined says.
+// or wraps, a refusal of a transient kind, or joins one, as upstream's and
+// a mirror's failures are joined. It's the one reading of it, which the
+// retry rule and collecting an assessment again read (R3-6, where it had
+// five shapes).
 func Transient(err error) bool {
 	if err == nil {
 		return false
 	}
 	if r := Of(err); r != nil {
 		return r.kind.Transient()
-	}
-	var says interface{ Transient() bool }
-	if errors.As(err, &says) {
-		return says.Transient()
 	}
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {
 		for _, e := range joined.Unwrap() {

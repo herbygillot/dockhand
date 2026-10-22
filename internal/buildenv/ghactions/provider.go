@@ -154,12 +154,12 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	}
 	fork, err := p.Fork(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: %w", buildenv.ErrInfrastructure, err)
+		return buildenv.Infrastructure("%w", err)
 	}
 	branch := BranchPrefix + job.Commit[:12]
 	head, err := p.Repo.RemoteHead(ctx, fork.PushURL, branch)
 	if err != nil {
-		return fmt.Errorf("%w: reading %s on %s: %w", buildenv.ErrInfrastructure, branch, fork.Repository, err)
+		return buildenv.Infrastructure("reading %s on %s: %w", branch, fork.Repository, err)
 	}
 	// GitHub keeps listing a branch's runs once the branch is gone, so a
 	// run of the commit from before the push, an earlier check's whose
@@ -169,14 +169,14 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if head != (git.RefValue{Exists: true, Object: job.Commit}) {
 		earlier, err := p.API.Runs(ctx, fork.Repository, branch, job.Commit)
 		if err != nil {
-			return fmt.Errorf("%w: finding the workflow's earlier runs: %w", buildenv.ErrInfrastructure, err)
+			return buildenv.Infrastructure("finding the workflow's earlier runs: %w", err)
 		}
 		for _, r := range earlier {
 			before = max(before, r.ID)
 		}
 		build.Progress(fmt.Sprintf("pushing to %s on %s", branch, fork.Repository))
 		if err := p.Repo.Push(ctx, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head}); err != nil {
-			return fmt.Errorf("%w: pushing to %s: %w", buildenv.ErrInfrastructure, fork.Repository, err)
+			return buildenv.Infrastructure("pushing to %s: %w", fork.Repository, err)
 		}
 	}
 
@@ -185,7 +185,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	for waited := time.Duration(0); ; waited += poll {
 		runs, err := p.API.Runs(ctx, fork.Repository, branch, job.Commit)
 		if err != nil {
-			return fmt.Errorf("%w: finding the workflow's run: %w", buildenv.ErrInfrastructure, err)
+			return buildenv.Infrastructure("finding the workflow's run: %w", err)
 		}
 		runs = slices.DeleteFunc(runs, func(r Run) bool { return r.ID <= before })
 		if len(runs) > 0 {
@@ -193,8 +193,8 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			break
 		}
 		if waited >= appear {
-			return fmt.Errorf("%w: GitHub did not start %s on branch %s within %s; check that Actions are enabled for your fork: https://github.com/%s/actions",
-				buildenv.ErrInfrastructure, Workflow, branch, appear, fork.Repository)
+			return buildenv.Infrastructure("GitHub did not start %s on branch %s within %s; check that Actions are enabled for your fork: https://github.com/%s/actions",
+				Workflow, branch, appear, fork.Repository)
 		}
 		if err := p.sleep(ctx, poll); err != nil {
 			return err
@@ -225,7 +225,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if run.Status == "completed" && stoppedShort(run.Conclusion) {
 		jobs, err := p.API.Jobs(ctx, fork.Repository, run.ID, run.Attempt)
 		if err != nil {
-			return fmt.Errorf("%w: listing %s's jobs: %w", buildenv.ErrInfrastructure, run.URL, err)
+			return buildenv.Infrastructure("listing %s's jobs: %w", run.URL, err)
 		}
 		if slices.ContainsFunc(jobs, func(j RunnerJob) bool { return ranFor(j, bound) }) {
 			ended = fmt.Sprintf("the run built for its %s bound (providers.github.build_timeout), and was ended", bound)
@@ -237,7 +237,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if ended == "" && run.Status == "completed" && (stoppedShort(run.Conclusion) || job.Execution.Attempt > 1 && run.Conclusion != "success") {
 		build.Progress(fmt.Sprintf("running %s's unsuccessful jobs again", run.URL))
 		if err := p.API.Rerun(ctx, fork.Repository, run.ID); err != nil {
-			return fmt.Errorf("%w: running %s again: %w", buildenv.ErrInfrastructure, run.URL, err)
+			return buildenv.Infrastructure("running %s again: %w", run.URL, err)
 		}
 		previous := run.Attempt
 		for run.Attempt == previous {
@@ -245,7 +245,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 				return err
 			}
 			if run, err = p.API.Run(ctx, fork.Repository, run.ID); err != nil {
-				return fmt.Errorf("%w: %w", buildenv.ErrInfrastructure, err)
+				return buildenv.Infrastructure("%w", err)
 			}
 		}
 	}
@@ -259,11 +259,11 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			ended = fmt.Sprintf("the run exceeded the %s build timeout (providers.github.build_timeout) and was cancelled", bound)
 			build.Progress(fmt.Sprintf("%s built past its %s bound; cancelling it", run.URL, bound))
 			if err := p.API.Cancel(ctx, fork.Repository, run.ID); err != nil {
-				return fmt.Errorf("%w: cancelling %s, which built past its %s bound: %w", buildenv.ErrInfrastructure, run.URL, bound, err)
+				return buildenv.Infrastructure("cancelling %s, which built past its %s bound: %w", run.URL, bound, err)
 			}
 		}
 		if ended != "" && cancelling >= cancelWait {
-			return fmt.Errorf("%w: GitHub did not stop %s within %s of the cancellation request", buildenv.ErrInfrastructure, run.URL, cancelWait)
+			return buildenv.Infrastructure("GitHub did not stop %s within %s of the cancellation request", run.URL, cancelWait)
 		}
 		if err := p.sleep(ctx, poll); err != nil {
 			return err
@@ -275,7 +275,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			building += poll
 		}
 		if run, err = p.API.Run(ctx, fork.Repository, run.ID); err != nil {
-			return fmt.Errorf("%w: %w", buildenv.ErrInfrastructure, err)
+			return buildenv.Infrastructure("%w", err)
 		}
 	}
 	build.Progress(fmt.Sprintf("%s: %s; reading the logs", run.URL, run.Conclusion))
@@ -315,7 +315,7 @@ const cancelWait = 10 * time.Minute
 func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Build, repository string, run Run, ended string) error {
 	jobs, err := p.API.Jobs(ctx, repository, run.ID, run.Attempt)
 	if err != nil {
-		return fmt.Errorf("%w: listing %s's jobs: %w", buildenv.ErrInfrastructure, run.URL, err)
+		return buildenv.Infrastructure("listing %s's jobs: %w", run.URL, err)
 	}
 	if err := observe(build, jobs); err != nil {
 		return err
@@ -327,7 +327,7 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		}
 		log, err := p.API.JobLog(ctx, repository, j.ID)
 		if err != nil {
-			return fmt.Errorf("%w: reading %s's log: %w", buildenv.ErrInfrastructure, j.Name, err)
+			return buildenv.Infrastructure("reading %s's log: %w", j.Name, err)
 		}
 		path := filepath.Join(job.Directory, logName(j.Name))
 		if err := atomicfile.Write(path, log, 0o644); err != nil {
@@ -372,7 +372,7 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		build.Progress(fmt.Sprintf("the workflow did not build %s; it builds only the ports a commit changes", strings.Join(unbuilt, ", ")))
 	}
 	if recorded == 0 && run.Conclusion != "success" {
-		return fmt.Errorf("%w: %s ended %s without building a port; see %s", buildenv.ErrInfrastructure, run.URL, run.Conclusion, job.Directory)
+		return buildenv.Infrastructure("%s ended %s without building a port; see %s", run.URL, run.Conclusion, job.Directory)
 	}
 	return nil
 }

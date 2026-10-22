@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // RateLimitError says a refusal of go-github's own, from GitHub's rate
@@ -23,6 +25,12 @@ import (
 // refuses with one already (rateLimited); what reaches here is a refusal
 // it couldn't read from GitHub's headers, as a secondary limit's 403 that
 // names no wait.
+// limited is a rate limit as a refusal of kind refusal.Limited, which
+// another try once it resets may meet, the forge's error inside it.
+func limited(limit *forge.RateLimitError) error {
+	return refusal.Wrap(refusal.Limited, limit, "%s", limit)
+}
+
 func RateLimitError(err error) error {
 	var known *forge.RateLimitError
 	if errors.As(err, &known) {
@@ -32,7 +40,7 @@ func RateLimitError(err error) error {
 	var primary *gh.RateLimitError
 	if errors.As(err, &primary) {
 		at := primary.Rate.Reset.Time
-		return &forge.RateLimitError{RetryAt: at, Err: fmt.Errorf("%s: %w", limitWords(primaryLimit, "", at, now), err)}
+		return limited(&forge.RateLimitError{RetryAt: at, Err: fmt.Errorf("%s: %w", limitWords(primaryLimit, "", at, now), err)})
 	}
 	var secondary *gh.AbuseRateLimitError
 	if errors.As(err, &secondary) {
@@ -41,7 +49,13 @@ func RateLimitError(err error) error {
 			delay = *secondary.RetryAfter
 		}
 		at := now.Add(delay)
-		return &forge.RateLimitError{RetryAt: at, Err: fmt.Errorf("%s: %w", limitWords(secondaryLimit, "", at, now), err)}
+		return limited(&forge.RateLimitError{RetryAt: at, Err: fmt.Errorf("%s: %w", limitWords(secondaryLimit, "", at, now), err)})
+	}
+	// GitHub not reached, the network's failure, is one another try may
+	// meet, as fetch says of any address (refusal.Network).
+	var unreached net.Error
+	if errors.As(err, &unreached) {
+		return refusal.Wrap(refusal.Network, err, "%s", err)
 	}
 	return err
 }
@@ -295,7 +309,7 @@ func (l *rateLimits) refusal(kind limitKind, until time.Time) error {
 	if kind == primaryLimit && l.who == "for requests without a login" {
 		words += "; dockhand setup github raises it"
 	}
-	return &forge.RateLimitError{RetryAt: until, Err: errors.New(words)}
+	return limited(&forge.RateLimitError{RetryAt: until, Err: errors.New(words)})
 }
 
 // limitWords says when a limit lifts, as "GitHub's rate limit for your

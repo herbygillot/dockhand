@@ -25,6 +25,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/project"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -887,7 +888,8 @@ func (e *Engine) assessUpstream(ctx context.Context, result editprep.Result, ver
 	// fetches nothing. Either is said, never left silent: semgrep's
 	// update compared nothing and said nothing (field testing, 2026-10-02).
 	var read []model.Coverage
-	again, viaGit := false, false
+	var kind refusal.Kind
+	viaGit := false
 	switch {
 	case !compare:
 	case result.PreviousProblem != "":
@@ -896,10 +898,10 @@ func (e *Engine) assessUpstream(ctx context.Context, result editprep.Result, ver
 		// than hold on a stale reason until a file is edited (the
 		// architecture review's L2b).
 		problem = "the current version's archives could not be fetched: " + result.PreviousProblem
-		again = result.PreviousTransient
+		kind = result.PreviousKind
 	case len(result.Downloads) == 0 && input.Port.GitFetched():
 		viaGit = true
-		input.Pairs, read, problem, again = e.readCommits(ctx, [2]macports.PortInfo{input.Base, input.Port}, true)
+		input.Pairs, read, problem, kind = e.readCommits(ctx, [2]macports.PortInfo{input.Base, input.Port}, true)
 	case len(result.Downloads) == 0:
 		read = []model.Coverage{{Path: path.Dir(result.Target.Portfile), Relevance: "unknown", Treatment: "inspected", Policy: notCompared, Reason: result.Target.Name + " fetches no upstream source, so there's nothing to compare"}}
 	default:
@@ -940,7 +942,10 @@ func (e *Engine) assessUpstream(ctx context.Context, result editprep.Result, ver
 			portdir: path.Dir(result.Target.Portfile), fetched: fetched, checked: result.Patches})
 	}
 	comparison := e.collect(ctx, input, trees, result.Target.Portfile, problem == "")
-	comparison.Problem, comparison.Transient = problem, again && problem != ""
+	comparison.Problem = problem
+	if problem != "" {
+		comparison.ProblemKind = string(kind)
+	}
 	if viaGit && problem == "" && len(input.Pairs) == 1 {
 		comparison.Commit = input.Pairs[0].Archive
 	}

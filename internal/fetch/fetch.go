@@ -4,10 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"io"
-	"net"
 	"net/http"
-	"slices"
 	"strings"
 )
 
@@ -73,13 +72,20 @@ func Open(client *http.Client, request *http.Request, limit int64) (*http.Respon
 	}
 	response, err := redirecting(client).Do(request)
 	if err != nil {
-		return nil, err
+		// The network's failure, a timeout among them, is one another try
+		// may meet (refusal.Network).
+		return nil, refusal.Wrap(refusal.Network, err, "%s", err)
 	}
 	if response.StatusCode != http.StatusOK {
 		failure := &StatusError{Status: response.StatusCode, URL: response.Request.URL.Redacted(), Reason: reasonFrom(response)}
 		response.Body.Close()
 		if requested := request.URL.Redacted(); requested != failure.URL {
 			failure.Requested = requested
+		}
+		// A server busy or failing, 429 or 500 and above, is one another
+		// try may meet; a refusal, as a 404 is, says what the server has.
+		if failure.Status == http.StatusTooManyRequests || failure.Status >= http.StatusInternalServerError {
+			return nil, refusal.Wrap(refusal.Network, failure, "%s", failure)
 		}
 		return nil, failure
 	}
@@ -181,31 +187,4 @@ func (b *boundedBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
 	b.remaining -= int64(n)
 	return n, err
-}
-
-// Transient reports a failure another try may not meet: the network's, a
-// timeout, or a server that was busy or failing (429, or 500 and above). A
-// refusal, as a 404 is, says what the server has, and isn't one. Of
-// failures joined, as upstream's and a mirror's are, any one that is makes
-// it one.
-func Transient(err error) bool {
-	switch failure := err.(type) {
-	case nil:
-		return false
-	case interface{ Transient() bool }:
-		// A failure that says it is one, as every mirror behind a new
-		// release is (distfetch.MirrorsBehind).
-		if failure.Transient() {
-			return true
-		}
-		return Transient(errors.Unwrap(err))
-	case *StatusError:
-		return failure.Status == http.StatusTooManyRequests || failure.Status >= http.StatusInternalServerError
-	case net.Error:
-		// A timeout is one: context.DeadlineExceeded is a net.Error too.
-		return true
-	case interface{ Unwrap() []error }:
-		return slices.ContainsFunc(failure.Unwrap(), Transient)
-	}
-	return Transient(errors.Unwrap(err))
 }

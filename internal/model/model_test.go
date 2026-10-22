@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -423,4 +424,15 @@ func TestFinishedRunsEndedWithResults(t *testing.T) {
 	for _, state := range []RunState{RunQueued, RunRunning, RunCanceled} {
 		require.False(t, state.Finished(), state)
 	}
+}
+
+// A comparison recorded with the Transient flag ProblemKind replaced
+// reads as the network's, which another try may meet (R3-6).
+func TestAComparisonsTransientFlagReadsAsTheNetworks(t *testing.T) {
+	var c UpstreamComparison
+	require.NoError(t, json.Unmarshal([]byte(`{"changes":[],"problem":"a mirror failed","transient":true}`), &c))
+	require.Equal(t, "network", c.ProblemKind)
+	require.Equal(t, "a mirror failed", c.Problem)
+	require.NoError(t, json.Unmarshal([]byte(`{"changes":[],"problem":"404","problem_kind":"upstream-missing"}`), &c))
+	require.Equal(t, "upstream-missing", c.ProblemKind)
 }

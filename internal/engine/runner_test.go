@@ -93,13 +93,13 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 	p.failures--
 	p.mu.Unlock()
 	if failing && p.refused {
-		return fmt.Errorf("%w: %w: reaching the VM: the guest refused SSH", buildenv.ErrInfrastructure, buildenv.ErrNeedsAttention)
+		return buildenv.Infrastructure("%w: reaching the VM: the guest refused SSH", buildenv.ErrNeedsAttention)
 	}
 	if failing && p.fault != nil {
 		return p.fault
 	}
 	if failing && !p.partial && p.interrupts == "" {
-		return fmt.Errorf("%w: the VM did not start", buildenv.ErrInfrastructure)
+		return buildenv.Infrastructure("the VM did not start")
 	}
 	if p.says != "" {
 		progress.Report(ctx, "%s", p.says)
@@ -120,7 +120,7 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 			if err := build.Record(model.TargetResult{Target: target.ID, Outcome: model.OutcomeInterrupted, Detail: "the VM stopped"}); err != nil {
 				return err
 			}
-			return fmt.Errorf("%w: the VM stopped", buildenv.ErrInfrastructure)
+			return buildenv.Infrastructure("the VM stopped")
 		}
 		outcome, ok := p.outcomes[target.ID]
 		if !ok {
@@ -170,7 +170,7 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 			}
 		}
 		if failing && p.partial && i == 0 {
-			return fmt.Errorf("%w: the VM stopped answering", buildenv.ErrInfrastructure)
+			return buildenv.Infrastructure("the VM stopped answering")
 		}
 	}
 	return nil
@@ -413,7 +413,7 @@ func TestOnlyWhatAnotherAttemptCouldFixIsTriedAgain(t *testing.T) {
 		attempts int
 		detail   string
 	}{
-		{"infrastructure", fmt.Errorf("%w: the VM stopped", buildenv.ErrInfrastructure), model.MaxAttempts, "failed 3 times for reasons of its own"},
+		{"infrastructure", buildenv.Infrastructure("the VM stopped"), model.MaxAttempts, "failed 3 times for reasons of its own"},
 		{"unclassified", errors.New("release 30 isn't one this dockhand knows"), 1,
 			"dockhand: command macOS 26 (Tahoe) arm64: release 30 isn't one this dockhand knows; the provider didn't mark it as trouble another attempt could clear, so none was made"},
 		{"dockhand's own", fmt.Errorf("%w: the guest reported %q, which this job didn't ask for", buildenv.ErrDockhandFault, "fd"), 1,

@@ -12,8 +12,6 @@ import (
 	"strings"
 
 	archivefile "github.com/herbygillot/dockhand/internal/archive"
-	"github.com/herbygillot/dockhand/internal/fetch"
-	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
@@ -23,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/project"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -195,7 +194,7 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 			}
 			// One recorded incomplete for what another try may not meet, a
 			// network's failure or a forge's rate limit, is tried again.
-			if a, ok := have(port.Name); ok && !a.Comparison.Transient {
+			if a, ok := have(port.Name); ok && !refusal.Kind(a.Comparison.ProblemKind).Transient() {
 				// Said, since whether one was made again or reused wasn't
 				// (the rust and cargo run).
 				progress.VerboseReport(ctx, "%s: the assessment recorded for these files under policy %d stands", port.Name, a.Policy)
@@ -228,8 +227,9 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 	var infos [2]macports.PortInfo
 	var plans [2][]macports.Distfile
 	problem := ""
-	// again is a problem another try may not meet.
-	again := false
+	// kind is the problem's kind, which says whether another try may meet
+	// it.
+	var kind refusal.Kind
 	fetches := true
 	for side, source := range sources {
 		if side == 0 && !hadBase {
@@ -260,7 +260,7 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 		coverage = append(coverage, model.Coverage{Path: directory, Relevance: "unknown", Treatment: "inspected", Policy: sourceUnchanged,
 			Reason: name + "'s source is the base's, so there's nothing upstream to compare"})
 	case infos[1].GitFetched():
-		input.Pairs, coverage, problem, again = e.readCommits(ctx, infos, hadBase)
+		input.Pairs, coverage, problem, kind = e.readCommits(ctx, infos, hadBase)
 	case !fetches:
 		reason := name + " fetches no upstream source, so there's nothing to compare"
 		// A python stub over its subports fetches nothing itself, and
@@ -279,7 +279,7 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 		}
 		defer os.RemoveAll(scratchDirectory)
 		var fetched map[string]string
-		input.Pairs, input.Unpaired, fetched, problem, again = e.readPlans(ctx, infos, plans, hadBase, scratchDirectory)
+		input.Pairs, input.Unpaired, fetched, problem, kind = e.readPlans(ctx, infos, plans, hadBase, scratchDirectory)
 		// A port that fetches a binary, as 1password-cli's installer
 		// package, has no source to compare, which is said and holds
 		// nothing, as for a port that fetches none (field testing's batch
@@ -294,7 +294,10 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 		}
 	}
 	comparison := e.collect(ctx, input, sources, directory+"/Portfile", problem == "")
-	comparison.Problem, comparison.Transient = problem, again && problem != ""
+	comparison.Problem = problem
+	if problem != "" {
+		comparison.ProblemKind = string(kind)
+	}
 	if infos[1].GitFetched() && problem == "" && len(input.Pairs) == 1 {
 		// What a Git-fetched port's assessment read is the commit its
 		// git.branch named then, which a later check may not build.
@@ -465,14 +468,14 @@ func (e *Engine) patchesFor(ctx context.Context, request patchRequest) []assess.
 // moved since names another commit, and the coverage says that too. A
 // reading of a commit is kept by the commit, so an assessment made again
 // asks the forge for nothing.
-func (e *Engine) readCommits(ctx context.Context, infos [2]macports.PortInfo, hadBase bool) ([]assess.Pair, []model.Coverage, string, bool) {
+func (e *Engine) readCommits(ctx context.Context, infos [2]macports.PortInfo, hadBase bool) ([]assess.Pair, []model.Coverage, string, refusal.Kind) {
 	archiver, err := e.sourceArchiver()
 	if err != nil {
-		return nil, nil, err.Error(), false
+		return nil, nil, err.Error(), ""
 	}
 	directory, err := scratch.Dir("assess-")
 	if err != nil {
-		return nil, nil, err.Error(), false
+		return nil, nil, err.Error(), ""
 	}
 	defer os.RemoveAll(directory)
 	readings := [2]project.Reading{{Layout: project.Enclosed, Files: map[string]project.File{}}}
@@ -487,16 +490,16 @@ func (e *Engine) readCommits(ctx context.Context, infos [2]macports.PortInfo, ha
 		}
 		declared, _, err := info.GitSource()
 		if err != nil {
-			return nil, nil, fmt.Sprintf("%s Git source couldn't be read: %v", which, err), false
+			return nil, nil, fmt.Sprintf("%s Git source couldn't be read: %v", which, err), ""
 		}
 		resolved := e.resolveGit(ctx, declared)
 		switch {
 		case resolved.Unresolved != "":
 			// Its refs couldn't be read, or a tag isn't there yet, which
 			// another try may not meet, and reading refs again is cheap.
-			return nil, nil, fmt.Sprintf("%s git.branch couldn't be resolved: %s", which, resolved.Unresolved), true
+			return nil, nil, fmt.Sprintf("%s git.branch couldn't be resolved: %s", which, resolved.Unresolved), refusal.Failed
 		case resolved.Commit == "":
-			return nil, nil, fmt.Sprintf("%s git.branch is an abbreviated commit, %s, which only a clone expands", which, resolved.Abbreviation), false
+			return nil, nil, fmt.Sprintf("%s git.branch is an abbreviated commit, %s, which only a clone expands", which, resolved.Abbreviation), ""
 		}
 		commits[side] = string(resolved.Commit)
 		spec := info.ReadingSpec()
@@ -507,10 +510,10 @@ func (e *Engine) readCommits(ctx context.Context, infos [2]macports.PortInfo, ha
 		}
 		path, err := archiver.SourceArchive(ctx, info, commits[side], directory)
 		if err != nil {
-			return nil, nil, fmt.Sprintf("%s commit %s couldn't be fetched from its forge: %v", which, commits[side], err), transient(err)
+			return nil, nil, fmt.Sprintf("%s commit %s couldn't be fetched from its forge: %v", which, commits[side], err), refusal.KindOf(err)
 		}
 		if readings[side], err = e.readings().Read(ctx, path, key, spec); err != nil {
-			return nil, nil, fmt.Sprintf("reading %s commit %s: %v", which, commits[side], err), false
+			return nil, nil, fmt.Sprintf("reading %s commit %s: %v", which, commits[side], err), ""
 		}
 	}
 	reason := "read from the forge's archive of each commit, submodules left out"
@@ -518,7 +521,7 @@ func (e *Engine) readCommits(ctx context.Context, infos [2]macports.PortInfo, ha
 		reason += "; the base's git.branch as it names a commit now"
 	}
 	coverage := []model.Coverage{{Path: commits[1], Relevance: "unknown", Treatment: "inspected", Reason: reason}}
-	return []assess.Pair{{Archive: commits[1], Before: readings[0], After: readings[1]}}, coverage, "", false
+	return []assess.Pair{{Archive: commits[1], Before: readings[0], After: readings[1]}}, coverage, "", ""
 }
 
 // mirror is MacPorts' distfiles mirror, where an archive upstream no
@@ -529,13 +532,6 @@ func (e *Engine) mirror() string {
 		return e.ArchiveMirror
 	}
 	return distfetch.MacPortsMirror
-}
-
-// transient reports a failure another try may not meet, as HTTP and the
-// network say (fetch.Transient), and a forge's rate limit.
-func transient(err error) bool {
-	var limited *forge.RateLimitError
-	return fetch.Transient(err) || errors.As(err, &limited)
 }
 
 // commitKey is what a reading of a commit is kept by: a digest of the
@@ -584,7 +580,7 @@ func (e *Engine) readDistfile(ctx context.Context, info macports.PortInfo, name,
 // the rest are fetched as the Portfile's checksums declare them, and
 // kept, in directory, the caller's, which the revision's fetched are
 // returned by name from. What couldn't be fetched or read is the problem.
-func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plans [2][]macports.Distfile, hadBase bool, directory string) ([]assess.Pair, []macports.SourceMatch, map[string]string, string, bool) {
+func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plans [2][]macports.Distfile, hadBase bool, directory string) ([]assess.Pair, []macports.SourceMatch, map[string]string, string, refusal.Kind) {
 	type side struct {
 		info     macports.PortInfo
 		plan     []macports.Distfile
@@ -647,7 +643,7 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 		}
 		into, err := os.MkdirTemp(directory, "")
 		if err != nil {
-			return nil, nil, nil, err.Error(), false
+			return nil, nil, nil, err.Error(), ""
 		}
 		fetched, err := treequery.FetchPlanned(ctx, distfetch.Client{Mirror: e.mirror()}.Store(into), s.info, missing)
 		if err != nil {
@@ -655,15 +651,15 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 			if i == 0 {
 				which = "the base's"
 			}
-			return nil, nil, nil, fmt.Sprintf("%s archives couldn't be fetched: %v", which, err), transient(err)
+			return nil, nil, nil, fmt.Sprintf("%s archives couldn't be fetched: %v", which, err), refusal.KindOf(err)
 		}
 		for _, archive := range fetched {
 			reading, err := e.readDistfile(ctx, s.info, archive.Name, archive.Path, archive.Sum.SHA256, s.spec)
 			if errors.Is(err, archivefile.ErrBinary) {
-				return nil, nil, nil, binaryPackage + archive.Name + ", which is a binary package, with no source to compare", false
+				return nil, nil, nil, binaryPackage + archive.Name + ", which is a binary package, with no source to compare", ""
 			}
 			if err != nil {
-				return nil, nil, nil, fmt.Sprintf("reading %s: %v", archive.Name, err), false
+				return nil, nil, nil, fmt.Sprintf("reading %s: %v", archive.Name, err), ""
 			}
 			s.readings[archive.Name] = reading
 			if i == 1 && s.info.Extracts(archive.Name) {
@@ -683,7 +679,7 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 			unpaired = append(unpaired, match)
 		}
 	}
-	return pairs, unpaired, fetchedNow, "", false
+	return pairs, unpaired, fetchedNow, "", ""
 }
 
 // notCompared is the coverage policy of a port that fetches no upstream

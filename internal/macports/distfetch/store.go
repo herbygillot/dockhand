@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // Store fetches source archives through its client. With a directory it
@@ -64,7 +65,10 @@ func (s *Store) FetchFirst(ctx context.Context, info macports.PortInfo, name str
 		}
 	}
 	if pages > 1 && pages == len(locations) {
-		return Download{}, &MirrorsBehind{Sites: pages, Err: err}
+		// Every mirror behind a new release: another try later may find
+		// the archive (refusal.UpstreamNotYet).
+		behind := &MirrorsBehind{Sites: pages, Err: err}
+		return Download{}, refusal.Wrap(refusal.UpstreamNotYet, behind, "%s", behind)
 	}
 	return Download{}, err
 }
@@ -82,6 +86,3 @@ func (m *MirrorsBehind) Error() string {
 }
 
 func (m *MirrorsBehind) Unwrap() error { return m.Err }
-
-// Transient says another try later may find the archive (fetch.Transient).
-func (m *MirrorsBehind) Transient() bool { return true }

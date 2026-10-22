@@ -26,6 +26,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -186,7 +187,10 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 	if r.KeepArchives != "" && p.previous != "" {
 		next := distfetch.Download{Path: writeTarball(p.t, r.KeepArchives, "new", map[string]string{"LICENSE": "MIT\n"})}
 		next.Name = "new.tar.gz"
-		result.Downloads, result.PreviousProblem, result.PreviousTransient = []distfetch.Download{next}, p.previous, p.previousTransient
+		result.Downloads, result.PreviousProblem = []distfetch.Download{next}, p.previous
+		if p.previousTransient {
+			result.PreviousKind = refusal.Network
+		}
 	} else if r.KeepArchives != "" && p.upstream[1] != nil {
 		next := distfetch.Download{Path: writeTarball(p.t, r.KeepArchives, "new", p.upstream[1])}
 		next.Name = "new.tar.gz"
@@ -444,7 +448,7 @@ func TestAnUpdateWhosePreviousArchivesWereRateLimitedIsTriedAgain(t *testing.T) 
 		update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-update"}, Action: model.EditUpdate, Port: "jq", CompareUpstream: true})
 		require.NoError(t, err)
 		require.Equal(t, "the current version's archives could not be fetched: HTTP 429 from upstream", update.Upstream.Problem)
-		require.Equal(t, transient, update.Upstream.Transient)
+		require.Equal(t, transient, refusal.Kind(update.Upstream.ProblemKind).Transient())
 		require.True(t, update.Upstream.Held(), "what couldn't be compared holds meanwhile (D4)")
 	}
 }

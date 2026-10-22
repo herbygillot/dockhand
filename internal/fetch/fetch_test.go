@@ -5,15 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 func TestLimitsKnownAndStreamingBodies(t *testing.T) {
@@ -167,18 +167,29 @@ func TestAskingAURLFollowsRedirectsAsFetchingDoes(t *testing.T) {
 	require.ErrorContains(t, Ask(t.Context(), client, "ftp://example.invalid/").Err, "unsupported URL")
 }
 
-// A failure another try may not meet is the network's, a timeout, or a
-// busy or failing server's; a refusal, as a 404, isn't.
+// A failure another try may meet is the network's, or a busy or failing
+// server's, which Open gives as a refusal of kind refusal.Network; a
+// refusal, as a 404, isn't one, and is said as the server's status.
 func TestAFailureWorthTryingAgain(t *testing.T) {
-	for err, again := range map[error]bool{
-		&StatusError{Status: 503}: true, &StatusError{Status: 429}: true, &StatusError{Status: 404}: false, &StatusError{Status: 403}: false,
-		&url.Error{Op: "Get", URL: "https://example.org", Err: &net.DNSError{Err: "no such host", Name: "example.org"}}: true,
-		fmt.Errorf("fetching: %w", context.DeadlineExceeded):                                                            true,
-		errors.New("the server sent html"):                                                                              false,
-		errors.Join(errors.New("upstream"), &StatusError{Status: 502}):                                                  true,
-	} {
-		require.Equal(t, again, Transient(err), err.Error())
+	t.Parallel()
+	status := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
+	open := func() error {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/a.tar.gz", nil)
+		require.NoError(t, err)
+		_, err = Open(server.Client(), req, 10)
+		return err
 	}
+	for code, again := range map[int]bool{503: true, 429: true, 502: true, 404: false, 403: false} {
+		status = code
+		err := open()
+		require.Equal(t, again, refusal.Transient(err), "HTTP %d", code)
+		var failure *StatusError
+		require.ErrorAs(t, err, &failure, "the status is still read")
+		require.Equal(t, code, failure.Status)
+	}
+	server.Close()
+	require.True(t, refusal.Transient(open()), "a server not reached")
 }
 
 // A redirect is followed with no Referer, as curl and MacPorts' fetch

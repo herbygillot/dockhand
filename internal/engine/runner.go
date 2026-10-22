@@ -24,6 +24,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/reuse"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -658,9 +659,10 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			fault := strings.TrimPrefix(err.Error(), buildenv.ErrDockhandFault.Error()+": ")
 			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", DescribeEnvironment(environment), fault))
 			return nil
-		case errors.Is(err, buildenv.ErrInfrastructure):
-			// Infrastructure trouble, a VM or a runner that failed, is
-			// tried again.
+		case refusal.Transient(err):
+			// What another try may meet, a VM or a runner that failed, or
+			// the network upstream, is tried again: the one reading of it
+			// (refusal.Transient, R3-6).
 			d.emit(ctx, model.EventExecutionRetry, fmt.Sprintf("%s: %v", DescribeEnvironment(environment), err))
 			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
 				return err
