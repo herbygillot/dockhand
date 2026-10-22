@@ -12,3 +12,11 @@ finding 26 asked for rather than a struct threaded through every call.
 engine's life, as both are Git objects, which don't change, and hands each
 reader a copy. `revisionChanges`, `revisionAssessments`, and `PlanCheck`
 read it.
+
+Status, the baseline's narrowing (`readsChanged`), submit's plan, and
+diff read it too, where each made the same prologue.
+
+Not absorbed: `movedSources` and status's source-moved check read the
+network, whether a Git source moved since the check was planned, which no
+analysis of a revision's files can hold, and a cached one would go stale;
+they stay where they are, beside the evidence they read.

@@ -48,15 +48,12 @@ func (e *Engine) Diff(ctx context.Context, branch model.Branch, paths []string) 
 	if status.Missing {
 		return diff, fmt.Errorf("the Git branch %s is gone", branch.Name)
 	}
-	trees, err := e.Repo.CommitTrees(ctx, []string{string(branch.Base)})
+	analysis, err := e.analyze(ctx, branch.Base, model.ObjectID(status.Tree))
 	if err != nil {
 		return diff, err
 	}
-	diff.BaseTree = trees[string(branch.Base)]
-	changed, err := e.Repo.ChangedPaths(ctx, diff.BaseTree, status.Tree)
-	if err != nil {
-		return diff, err
-	}
+	diff.BaseTree = string(analysis.BaseTree)
+	changed := analysis.Paths
 	for _, directory := range status.Scope.Ports {
 		port := PortDiff{Directory: directory}
 		if port.Kind, err = e.targetKind(ctx, diff.BaseTree, status.Tree, directory, changed); err != nil {

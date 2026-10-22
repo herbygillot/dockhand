@@ -320,10 +320,11 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 			plan.ModifiedBuilds = append(plan.ModifiedBuilds, commit.ID)
 		}
 	}
-	changed, err := worktree.ChangedPaths(ctx, trees[string(branch.Base)], plan.Tree)
+	analysis, err := e.analyze(ctx, branch.Base, model.ObjectID(plan.Tree))
 	if err != nil {
 		return plan, err
 	}
+	changed := analysis.Paths
 	// The ports are the subports the revision's change records say it
 	// changes: terraform-1.16, where the directory is terraform's.
 	records, err := e.revisionChanges(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree), true)

@@ -181,13 +181,13 @@ func (e *Engine) readFiles(ctx context.Context, status *BranchStatus) ([]string,
 			}
 		}
 	}
-	changed, err := e.Repo.ChangedPaths(ctx, trees[string(branch.Base)], status.Tree)
+	analysis, err := e.analyze(ctx, branch.Base, model.ObjectID(status.Tree))
 	if err != nil {
 		return nil, nil, err
 	}
-	status.Scope = macports.ScopeOf(changed)
+	status.Scope = analysis.Scope
 	status.Changes, err = e.revisionChanges(ctx, branch.ID, branch.Base, model.ObjectID(status.Tree), false)
-	return changed, worktree, err
+	return analysis.Paths, worktree, err
 }
 
 // BranchPort is the one port a branch is about (OnlyPort), for a command

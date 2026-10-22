@@ -224,16 +224,12 @@ func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) (Baselin
 // against the change, and keeps its offer. Where the closure can't be
 // read, a port is kept.
 func (e *Engine) readsChanged(ctx context.Context, checked model.Revision, evidence Evidence, ports []string) ([]string, error) {
-	trees, err := e.Repo.CommitTrees(ctx, []string{string(checked.Source.Base)})
-	if err != nil {
-		return nil, err
-	}
-	changed, err := e.Repo.ChangedPaths(ctx, trees[string(checked.Source.Base)], string(checked.Source.Tree))
+	analysis, err := e.analyze(ctx, checked.Source.Base, checked.Source.Tree)
 	if err != nil {
 		return nil, err
 	}
 	var directories []string
-	for _, path := range changed {
+	for _, path := range analysis.Paths {
 		if path == macports.ResourcesDirectory || strings.HasPrefix(path, macports.ResourcesDirectory+"/") {
 			return ports, nil
 		}
