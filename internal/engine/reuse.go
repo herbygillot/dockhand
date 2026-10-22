@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/reuse"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -149,7 +150,69 @@ func (d *driver) reusable(ctx context.Context, identity string, targets []reuse.
 		_, kept, err := d.e.keptArchive(ctx, c.Result.Archive)
 		return err == nil && kept
 	}
-	return reuse.Choose(targets, identity, trees, d.plan.Tests.Stands, available), nil
+	return reuse.Choose(targets, identity, trees, d.blocks(ctx), d.plan.Tests.Stands, available), nil
+}
+
+// blocks reads, of a port directory whose tree differs from the one a
+// build read, which subports' literal blocks alone hold the difference
+// (reuse.Blocks, portfile.BlockChanges): every entry but the Portfile the
+// same object, and the Portfile's lines that differ each inside some
+// subport's block, both versions read from their trees, so nothing is
+// recorded or migrated for it. Anything it can't read says nothing, and
+// the build reuses nothing, as before. Each pair of trees is read once.
+func (d *driver) blocks(ctx context.Context) reuse.Blocks {
+	type pair struct{ then, now model.ObjectID }
+	type answer struct {
+		subports []string
+		ok       bool
+	}
+	read := map[pair]answer{}
+	return func(_ string, then, now model.ObjectID) ([]string, bool) {
+		key := pair{then, now}
+		if a, ok := read[key]; ok {
+			return a.subports, a.ok
+		}
+		subports, ok := d.subportEdits(ctx, then, now)
+		read[key] = answer{subports, ok}
+		return subports, ok
+	}
+}
+
+// subportEdits are the subports whose blocks alone hold how one port
+// directory's tree differs from another's (blocks).
+func (d *driver) subportEdits(ctx context.Context, then, now model.ObjectID) ([]string, bool) {
+	before, err := d.e.Repo.ReadTree(ctx, string(then))
+	if err != nil {
+		return nil, false
+	}
+	after, err := d.e.Repo.ReadTree(ctx, string(now))
+	if err != nil || len(before) != len(after) {
+		return nil, false
+	}
+	found := false
+	for i := range before {
+		switch {
+		case before[i].Name != after[i].Name || before[i].Mode != after[i].Mode:
+			return nil, false
+		case before[i].Name == "Portfile":
+			found = true
+		case before[i].Object != after[i].Object:
+			return nil, false
+		}
+	}
+	if !found {
+		return nil, false
+	}
+	var texts [2][]byte
+	for i, tree := range []model.ObjectID{then, now} {
+		files, err := d.e.Repo.ReadFiles(ctx, string(tree), []string{"Portfile"})
+		if err != nil || files["Portfile"] == nil {
+			return nil, false
+		}
+		texts[i] = files["Portfile"]
+	}
+	subports, all := portfile.BlockChanges(texts[0], texts[1])
+	return subports, !all
 }
 
 // installs are the kept archives the guest installs targets it doesn't

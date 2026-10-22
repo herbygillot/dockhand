@@ -29,3 +29,30 @@ printed 25 Excluded lines.
   - "platforms … exclude this release"
   - "known_fail here, as the Portfile says"
   - "check-N didn't fail there" and "check-N didn't build there"
+
+## A subport's result stands across an edit inside another subport's block
+
+Note 2. Any edit to terraform's Portfile changed the directory's tree for
+every subport, so each patch bump of terraform-1.16 built its 18 siblings
+again, though none runs a line that changed: MacPorts runs a `subport X
+{ … }` block's body only when evaluating X.
+
+- **`portfile.BlockChanges(before, after)`** gives the subports whose
+  literal blocks hold every changed line, with `UnseenChanges`'
+  attribution applied to every change. A block nested in an `if` counts.
+  It returns all where a change is outside every block or a version
+  doesn't parse.
+- **`reuse.Current`** takes a `reuse.Blocks` reading. Where a directory's
+  tree differs from the one the build read, the result stands only if the
+  difference is in other subports' blocks than the target's. An active
+  port's directory is held to the same rule, by its name. `_resources`
+  still compares by tree. A nil reading compares trees alone, as before.
+- **The engine's reading** (`driver.blocks`, `subportEdits`) reads both
+  directory trees. Every entry but the Portfile must be the same object,
+  and the Portfile is read from each tree, so nothing is recorded or
+  migrated. Anything unreadable reuses nothing. Each pair of trees is
+  read once per environment's choice.
+
+The replay field testing offered is what shows it done: master's
+terraform checked, then the branch, building terraform-1.16 alone and
+reading its siblings as reused.

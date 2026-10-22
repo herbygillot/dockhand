@@ -66,11 +66,11 @@ type Choice struct {
 // dependents upstream's archive of the port as master has it, or build it
 // unrecorded. A target that builds for that reason takes what it needs in
 // turn.
-func Choose(targets []Target, identity string, trees map[string]model.ObjectID, stands func(model.TargetResult) bool, available func(Candidate) bool) Choice {
+func Choose(targets []Target, identity string, trees map[string]model.ObjectID, blocks Blocks, stands func(model.TargetResult) bool, available func(Candidate) bool) Choice {
 	choice := Choice{Reused: map[model.TargetID]Candidate{}}
 	for _, target := range targets {
 		for _, c := range target.Earlier {
-			if stands(c.Result) && Current(c.Inputs, identity, target.PlanTarget, target.Git, trees) && !target.TagMoved(c) {
+			if stands(c.Result) && Current(c.Inputs, identity, target.PlanTarget, target.Git, trees, blocks) && !target.TagMoved(c) {
 				choice.Reused[target.ID] = c
 				break
 			}

@@ -54,6 +54,59 @@ func UnseenChanges(before, after []byte) (subports []string, all bool) {
 	return subports, false
 }
 
+// BlockChanges says which subports' literal blocks hold every line two
+// versions of a Portfile differ in: MacPorts runs a `subport X { … }`
+// block's body only when evaluating X, so a change there is X's alone.
+// all is a change anywhere else, outside every subport's block, which is
+// every subport's, or a version that doesn't parse, of which nothing can
+// be said. It's the attribution UnseenChanges makes, for every change
+// rather than the platform's: terraform-1.16's patch bump, inside its own
+// block, reaches none of its 18 siblings (field testing's terraform
+// replay, 2026-10-22).
+func BlockChanges(before, after []byte) (subports []string, all bool) {
+	changed := changedLines(before, after)
+	for i, src := range [2][]byte{before, after} {
+		script, errs := syntax.Parse(src)
+		if len(errs) > 0 {
+			return nil, true
+		}
+		var blocks []unseenRegion
+		subportBlocks(src, script, &blocks)
+		for _, line := range changed[i] {
+			j := slices.IndexFunc(blocks, func(b unseenRegion) bool { return b.span.Start <= line.Start && line.End <= b.span.End })
+			if j < 0 {
+				return nil, true
+			}
+			if !slices.Contains(subports, blocks[j].subport) {
+				subports = append(subports, blocks[j].subport)
+			}
+		}
+	}
+	slices.Sort(subports)
+	return subports, false
+}
+
+// subportBlocks are a script's `subport X { … }` commands with literal
+// names, wherever they are, as MacPorts would run them; a block inside
+// another is the outer's, which runs it.
+func subportBlocks(src []byte, script *syntax.Script, blocks *[]unseenRegion) {
+	for _, item := range script.Items {
+		cmd, ok := item.(syntax.Command)
+		if !ok {
+			continue
+		}
+		if name, _ := cmd.Name(src); name == "subport" && len(cmd.Words) == 3 {
+			if literal, ok := cmd.Words[1].Literal(src); ok {
+				*blocks = append(*blocks, unseenRegion{span: cmd.Span, subport: literal})
+				continue
+			}
+		}
+		for _, body := range bodies(src, cmd) {
+			subportBlocks(src, body, blocks)
+		}
+	}
+}
+
 // unseenRegion is a command whose bodies run only on some platforms, and
 // the subport whose literal block holds it, or "" outside any.
 type unseenRegion struct {

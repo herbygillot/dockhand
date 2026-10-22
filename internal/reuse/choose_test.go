@@ -42,34 +42,34 @@ func TestTargetsReuseWhatStandsAndBuildWhatTheBuiltOnesNeed(t *testing.T) {
 		return slices.Sorted(maps.Keys(choice.Reused))
 	}
 
-	require.Equal(t, []model.TargetID{"cli", "lib", "tools", "viewer"}, reused(Choose(targets(), "origin a", now, stands, none)), "nothing changed")
-	require.Empty(t, reused(Choose(targets(), "origin b", now, stands, none)), "the environment was made again")
-	require.Empty(t, reused(Choose(targets(), "origin a", now, func(model.TargetResult) bool { return false }, none)), "the check's policy lets none stand")
+	require.Equal(t, []model.TargetID{"cli", "lib", "tools", "viewer"}, reused(Choose(targets(), "origin a", now, nil, stands, none)), "nothing changed")
+	require.Empty(t, reused(Choose(targets(), "origin b", now, nil, stands, none)), "the environment was made again")
+	require.Empty(t, reused(Choose(targets(), "origin a", now, nil, func(model.TargetResult) bool { return false }, none)), "the check's policy lets none stand")
 
 	changed := maps.Clone(now)
 	changed["graphics/viewer"] = "9"
-	require.Equal(t, []model.TargetID{"cli", "lib", "tools"}, reused(Choose(targets(), "origin a", changed, stands, none)), "viewer changed, and needs none of the others")
+	require.Equal(t, []model.TargetID{"cli", "lib", "tools"}, reused(Choose(targets(), "origin a", changed, nil, stands, none)), "viewer changed, and needs none of the others")
 
 	changed = maps.Clone(now)
 	changed["devel/cli"] = "9"
-	require.Equal(t, []model.TargetID{"tools", "viewer"}, reused(Choose(targets(), "origin a", changed, stands, none)), "cli builds, and takes lib, which the plan says it needs")
-	kept := Choose(targets(), "origin a", changed, stands, func(Candidate) bool { return true })
+	require.Equal(t, []model.TargetID{"tools", "viewer"}, reused(Choose(targets(), "origin a", changed, nil, stands, none)), "cli builds, and takes lib, which the plan says it needs")
+	kept := Choose(targets(), "origin a", changed, nil, stands, func(Candidate) bool { return true })
 	require.Equal(t, []model.TargetID{"lib", "tools", "viewer"}, reused(kept), "with lib's archive kept, lib is reused")
 	require.Equal(t, []model.TargetID{"lib"}, kept.Installs, "and the guest installs it for cli")
 
 	changed = maps.Clone(now)
 	changed["graphics/tools"] = "9"
-	require.Equal(t, []model.TargetID{"cli", "viewer"}, reused(Choose(targets(), "origin a", changed, stands, none)), "tools builds, and takes lib, active as it last built")
-	require.Equal(t, []model.TargetID{"lib"}, Choose(targets(), "origin a", changed, stands, func(Candidate) bool { return true }).Installs, "or installs it, kept")
+	require.Equal(t, []model.TargetID{"cli", "viewer"}, reused(Choose(targets(), "origin a", changed, nil, stands, none)), "tools builds, and takes lib, active as it last built")
+	require.Equal(t, []model.TargetID{"lib"}, Choose(targets(), "origin a", changed, nil, stands, func(Candidate) bool { return true }).Installs, "or installs it, kept")
 
 	// What one taken target needs is taken too.
 	chain := targets()
 	chain[2].DependsOn = []model.TargetID{"cli"}
 	changed = maps.Clone(now)
 	changed["graphics/viewer"] = "9"
-	require.Equal(t, []model.TargetID{"tools"}, reused(Choose(chain, "origin a", changed, stands, none)), "viewer takes cli, and cli takes lib")
+	require.Equal(t, []model.TargetID{"tools"}, reused(Choose(chain, "origin a", changed, nil, stands, none)), "viewer takes cli, and cli takes lib")
 	onlyCli := func(c Candidate) bool { return c.Result.Target == "cli" }
-	installed := Choose(chain, "origin a", changed, stands, onlyCli)
+	installed := Choose(chain, "origin a", changed, nil, stands, onlyCli)
 	require.Equal(t, []model.TargetID{"cli", "lib", "tools"}, reused(installed), "cli, installed, takes nothing with it")
 	require.Equal(t, []model.TargetID{"cli"}, installed.Installs)
 
@@ -80,7 +80,7 @@ func TestTargetsReuseWhatStandsAndBuildWhatTheBuiltOnesNeed(t *testing.T) {
 	stale.Inputs.Tree = "8"
 	newest := targets()
 	newest[0].Earlier = []Candidate{stale, older}
-	require.Equal(t, model.ExecutionID("tart_0"), Choose(newest, "origin a", now, stands, none).Reused["lib"].Result.Execution, "the newest doesn't read what lib would now")
+	require.Equal(t, model.ExecutionID("tart_0"), Choose(newest, "origin a", now, nil, stands, none).Reused["lib"].Result.Execution, "the newest doesn't read what lib would now")
 }
 
 // A moved tag doesn't let earlier build evidence stand for the commit it
@@ -123,19 +123,19 @@ func TestAMovedTagRebuildsWhatWasBuiltAgainstIt(t *testing.T) {
 	reused := func(choice Choice) []model.TargetID { return slices.Sorted(maps.Keys(choice.Reused)) }
 	fromA := built("lib", "devel/lib", "sha256:lib-a", a)
 
-	require.Equal(t, []model.TargetID{"app", "cli", "lib", "tools", "viewer"}, reused(Choose(targets(a, fromA), "origin a", now, stands, kept)), "the tag names the commit it did")
-	require.Equal(t, []model.TargetID{"viewer"}, reused(Choose(targets(b, fromA), "origin a", now, stands, kept)),
+	require.Equal(t, []model.TargetID{"app", "cli", "lib", "tools", "viewer"}, reused(Choose(targets(a, fromA), "origin a", now, nil, stands, kept)), "the tag names the commit it did")
+	require.Equal(t, []model.TargetID{"viewer"}, reused(Choose(targets(b, fromA), "origin a", now, nil, stands, kept)),
 		"moved: lib builds from its new commit, cli and tools were built against the old one, and app against that cli")
 
 	fromB := built("lib", "devel/lib", "sha256:lib-b", b)
-	require.Equal(t, []model.TargetID{"lib", "viewer"}, reused(Choose(targets(b, fromB, fromA), "origin a", now, stands, kept)),
+	require.Equal(t, []model.TargetID{"lib", "viewer"}, reused(Choose(targets(b, fromB, fromA), "origin a", now, nil, stands, kept)),
 		"lib reuses its build of the new commit; cli and tools were built against the old one's")
 	againstB := targets(b, fromB, fromA)
 	againstB[1].Earlier = []Candidate{built("cli", "devel/cli", "sha256:cli", "", libFrom("sha256:lib-b"))}
-	require.Equal(t, []model.TargetID{"app", "cli", "lib", "viewer"}, reused(Choose(againstB, "origin a", now, stands, kept)), "cli was built against the new commit's build")
+	require.Equal(t, []model.TargetID{"app", "cli", "lib", "viewer"}, reused(Choose(againstB, "origin a", now, nil, stands, kept)), "cli was built against the new commit's build")
 
 	unrecorded := built("lib", "devel/lib", "sha256:lib-a", "")
-	require.Equal(t, []model.TargetID{"viewer"}, reused(Choose(targets(a, unrecorded), "origin a", now, stands, kept)),
+	require.Equal(t, []model.TargetID{"viewer"}, reused(Choose(targets(a, unrecorded), "origin a", now, nil, stands, kept)),
 		"a build that recorded no commit, as every one before batch 20, stands for no Git-fetched target, nor for what was built against it")
 }
 
@@ -189,14 +189,14 @@ func TestATargetDoesntReuseABuildPastAMovedTag(t *testing.T) {
 	}
 	stands := func(model.TargetResult) bool { return true }
 	none := func(Candidate) bool { return false }
-	require.Contains(t, Choose(target(tag("1d15bc8"), tag("1d15bc8")), "origin a", now, stands, none).Reused, model.TargetID("lib"), "the tag names what was built")
-	require.Empty(t, Choose(target(tag("d4c0fdb"), tag("1d15bc8")), "origin a", now, stands, none).Reused, "the tag moved")
+	require.Contains(t, Choose(target(tag("1d15bc8"), tag("1d15bc8")), "origin a", now, nil, stands, none).Reused, model.TargetID("lib"), "the tag names what was built")
+	require.Empty(t, Choose(target(tag("d4c0fdb"), tag("1d15bc8")), "origin a", now, nil, stands, none).Reused, "the tag moved")
 	require.True(t, target(tag("d4c0fdb"), tag("1d15bc8"))[0].TagMoved(target(nil, tag("1d15bc8"))[0].Earlier[0]))
 	for name, pair := range map[string][2]*model.GitSource{
 		"no tag recorded then": {tag("d4c0fdb"), nil},
 		"no tag now":           {nil, tag("1d15bc8")},
 		"unread now":           {tag(""), tag("1d15bc8")},
 	} {
-		require.Contains(t, Choose(target(pair[0], pair[1]), "origin a", now, stands, none).Reused, model.TargetID("lib"), name)
+		require.Contains(t, Choose(target(pair[0], pair[1]), "origin a", now, nil, stands, none).Reused, model.TargetID("lib"), name)
 	}
 }
