@@ -104,7 +104,7 @@ type Engine struct {
 	Forge Forge
 	// GitHub is the process's one GitHub runtime, which the forge,
 	// discovery, the source archiver, and project inspection share; the
-	// system keychain's login when nil (github.NewRuntime).
+	// runtime with no login when nil, which compose never leaves it.
 	GitHub *github.Runtime
 	// GitHubCLI marks a draft ready where an organization refuses the
 	// forge's app; none when nil.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -85,6 +86,9 @@ func (f fixture) open(t *testing.T) *Engine {
 	require.NoError(t, err)
 	t.Cleanup(func() { e.Close() })
 	e.HTTPS = testsupport.HTTPSAnswers{} // no test asks the network
+	// Nor GitHub: a forge that knows of no pull requests, unless the test
+	// gives its own (withFork).
+	e.Forge = forgetest.New("", "")
 	return e
 }
 

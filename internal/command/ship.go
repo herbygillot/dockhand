@@ -519,36 +519,24 @@ func queueHead(ctx context.Context, s *settings, e *engine.Engine, streams term.
 	// Checks that passed for these files stand for this one only where
 	// they built everywhere it builds, with tests as strict: a pass of
 	// minmax didn't stand for --build all, nor declared tests for --tests
-	// required (Codex's review of 832f059e, medium 4).
-	if passed, ok, err := e.Covered(ctx, branch.ID, proposal.Capture.Revision.Source.Tree, proposal.Plan); err != nil {
-		return nil, err
-	} else if ok {
-		fmt.Fprintf(streams.Out, "%s: %s passed for this commit already; nothing to check.\n", branch.ShortName(), passed.Name())
+	// required (Codex's review of 832f059e, medium 4). A check of these
+	// files still to finish is followed where it would stand for this one.
+	queued, err := e.QueueCheck(ctx, engine.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: model.OriginPerson, Covered: true, Beside: engine.BesideFollow})
+	if queued.Passed != nil {
+		fmt.Fprintf(streams.Out, "%s: %s passed for this commit already; nothing to check.\n", branch.ShortName(), queued.Passed.Name())
 		return nil, nil
 	}
 	fmt.Fprintf(streams.Out, "\n%s · checking %s%s\n", branch.ShortName(), engine.Describe(proposal.Capture.Revision), then)
 	writePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.Remedy)
 	writePushes(streams.Out, proposal.Plan)
-	if !proposal.Plan.Runnable() {
-		return nil, errors.New("nothing was checked: " + unrunnable(proposal.Plan))
-	}
-	run, err := e.Enqueue(ctx, branch, proposal.Plan, model.OriginPerson)
-	// A check of these files still to finish is followed where it would
-	// stand for this one, and otherwise said, since a branch has one check
-	// at a time.
-	if active := new(engine.ActiveRunError); errors.As(err, &active) && active.SameRevision {
-		running, planErr := e.Plan(ctx, active.Run.Plan)
-		if planErr != nil {
-			return nil, planErr
-		}
-		if !engine.PlanCovers(running, proposal.Plan) {
-			return nil, fmt.Errorf("%s is %s for these files, but does not cover the required environments or test policy. Run dockhand cancel %s, then ship again, or wait for it to finish and ship again", active.Run.Name(), active.Run.State, active.Run.Name())
-		}
-		fmt.Fprintf(streams.Out, "%s is already %s for these files; following it.\n", active.Run.Name(), active.Run.State)
-		return &active.Run, nil
+	if unrunnable := new(engine.UnrunnableError); errors.As(err, &unrunnable) {
+		return nil, fmt.Errorf("nothing was checked: %w", err)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &run, nil
+	if queued.Followed {
+		fmt.Fprintf(streams.Out, "%s is already %s for these files; following it.\n", queued.Run.Name(), queued.Run.State)
+	}
+	return &queued.Run, nil
 }

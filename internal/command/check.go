@@ -134,8 +134,8 @@ true, it runs that baseline by itself.`,
 			writePushes(out, proposed)
 			revision, planned := revisionView(capture.Revision), planView(proposed)
 			streams.Emit(checkJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []targetJSON{}})
-			if !proposed.Runnable() {
-				return errors.New("nothing was checked: " + unrunnable(proposed))
+			if err := engine.Runnable(proposed); err != nil {
+				return fmt.Errorf("nothing was checked: %w", err)
 			}
 			if plan {
 				// Reuse is chosen when the check runs, from what each earlier
@@ -151,14 +151,22 @@ true, it runs that baseline by itself.`,
 			if err := confirmVariantBuilds(streams, proposed, yes); err != nil {
 				return err
 			}
-			replaced, err := replaceActive(ctx, e, streams, branch, capture.Revision, replace)
-			if err != nil {
-				return err
+			beside := engine.BesideRefuse
+			if replace {
+				beside = engine.BesideReplace
 			}
-			run, err := e.Enqueue(ctx, branch, proposed, model.OriginPerson)
+			queued, err := e.QueueCheck(ctx, engine.QueueRequest{Branch: branch, Revision: capture.Revision, Plan: proposed, Origin: model.OriginPerson, Beside: beside,
+				// A script that asked for a new check replaces a running one;
+				// a person is asked.
+				Stop: func(run model.Run) (bool, error) {
+					ok, _, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? stop %s, which is running? [y/N] ", run.Name()), Nobody: term.Answer(true)})
+					return ok, err
+				}})
+			replaced := sayReplaced(streams.Out, queued)
 			if err != nil {
-				return err
+				return besideWords(err, capture.Revision)
 			}
+			run := queued.Run
 			if len(replaced) > 0 {
 				fmt.Fprintf(streams.Out, "%s replaces %s.\n", run.Name(), strings.Join(replaced, ", "))
 			}
@@ -266,14 +274,6 @@ func writePushes(out io.Writer, plan model.Plan) {
 	if slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == buildenv.GitHub }) {
 		fmt.Fprintf(out, "Pushes      this revision to a %s branch in your fork for the MacPorts workflow; removes that branch after reading the run's results\n", ghactions.BranchPrefix)
 	}
-}
-
-// unrunnable says why a plan can't be checked.
-func unrunnable(plan model.Plan) string {
-	if len(plan.Unresolved) > 0 {
-		return "the plan is unresolved"
-	}
-	return "none of the planned ports can build in the selected environments; see Not built"
 }
 
 // writePlan shows a plan, with remedy saying how to give an environment
@@ -881,61 +881,38 @@ func baselineWords(base, branch model.TargetResult, check string) string {
 	return fmt.Sprintf("✗ fails at the base too, at %s. Both results are kept; the cause isn't established.", base.Phase)
 }
 
-// replaceActive refuses a second check of a branch while one is queued or
-// running, unless replace says to stop it (decision 29). A running check is
-// stopped only after asking, on a terminal; without one, --replace is the
-// consent. Finished results are kept. It returns the runs it stopped.
-func replaceActive(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, revision model.Revision, replace bool) ([]string, error) {
-	judging, observer, end, err := e.Observing(ctx)
-	if err != nil {
-		return nil, err
+// besideWords says how to go on from a check refused beside the branch's
+// one queued or running (engine.BesideRefuse): wait resumes one stopped,
+// and --replace checks again, keeping what it finished.
+func besideWords(err error, revision model.Revision) error {
+	active := new(engine.ActiveRunError)
+	if !errors.As(err, &active) {
+		return err
 	}
-	active, runs, err := e.ActiveCheck(judging, observer, branch, revision)
-	end()
-	if err != nil || active == nil {
-		return nil, err
+	switch {
+	case active.SameRevision && active.Stopped:
+		// Stopped, not running: wait resumes it, where "already running"
+		// sent a person to follow a run nothing was running (field
+		// testing's rust check, 2026-10-15).
+		return fmt.Errorf("%v, or --replace checks again, keeping what it finished", active)
+	case active.SameRevision:
+		return active
 	}
-	if !replace {
-		switch {
-		case active.SameRevision && active.Stopped:
-			// Stopped, not running: wait resumes it, where "already
-			// running" sent a person to follow a run nothing was running
-			// (field testing's rust check, 2026-10-15).
-			return nil, fmt.Errorf("%v, or --replace checks again, keeping what it finished", active)
-		case active.SameRevision:
-			return nil, active
-		}
-		return nil, fmt.Errorf("%s is %s for %s; --replace stops it, keeping what it finished, and checks %s instead", active.Run.Name(), active.Run.State, engine.Describe(active.Checking), engine.Describe(revision))
-	}
-	for _, run := range runs {
-		if run.State != model.RunRunning {
-			continue
-		}
-		// A script that asked for a new check replaces it.
-		ok, _, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? stop %s, which is running? [y/N] ", run.Name()), Nobody: term.Answer(true)})
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, fmt.Errorf("%s keeps running; nothing new was queued", run.Name())
-		}
-	}
-	session, err := e.Session(ctx, model.SessionForeground)
-	if err != nil {
-		return nil, err
-	}
-	defer session.End(context.WithoutCancel(ctx))
-	replaced, err := e.Replace(ctx, session, runs)
+	return fmt.Errorf("%s is %s for %s; --replace stops it, keeping what it finished, and checks %s instead", active.Run.Name(), active.Run.State, engine.Describe(active.Checking), engine.Describe(revision))
+}
+
+// sayReplaced says each run a new check stopped, and returns their names.
+func sayReplaced(out io.Writer, queued engine.Queued) []string {
 	var stopped []string
-	for i, run := range replaced {
+	for i, run := range queued.Replaced {
 		if run.State == model.RunCanceled {
-			fmt.Fprintln(streams.Out, stopWords(run, runs[i].State == model.RunQueued))
+			fmt.Fprintln(out, stopWords(run, queued.Was[i].State == model.RunQueued))
 		} else {
-			fmt.Fprintf(streams.Out, "%s: stop requested; the process running it stops it at its next step.\n", run.Name())
+			fmt.Fprintf(out, "%s: stop requested; the process running it stops it at its next step.\n", run.Name())
 		}
 		stopped = append(stopped, run.Name())
 	}
-	return stopped, err
+	return stopped
 }
 
 // writeVariants says what --variants builds: the one port with its

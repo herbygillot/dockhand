@@ -15,6 +15,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -238,7 +239,7 @@ func TestThePlanSaysWhatWontBeBuilt(t *testing.T) {
 		"Not built   harbor-cli on tart macOS 26 (Tahoe) arm64 with the Command Line Tools: needs Xcode, through libharbor\n"+
 		"            make an Xcode image\n")
 	require.False(t, plan.Runnable())
-	require.Equal(t, "none of the planned ports can build in the selected environments; see Not built", unrunnable(plan))
+	require.Equal(t, "none of the planned ports can build in the selected environments; see Not built", engine.Runnable(plan).Error())
 }
 
 // A missing Xcode is downloaded with xcodes when the person at the

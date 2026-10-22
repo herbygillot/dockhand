@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -111,15 +112,15 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 		done.Problem = err.Error()
 		return done
 	}
-	if !proposal.Plan.Runnable() {
+	queued, err := e.QueueCheck(ctx, QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: options.Origin})
+	if unrunnable := new(UnrunnableError); errors.As(err, &unrunnable) {
 		done.Problem = "its check can't be planned: " + unresolvedWords(proposal.Plan)
 		return done
 	}
-	run, err := e.Enqueue(ctx, branch, proposal.Plan, options.Origin)
 	if err != nil {
 		done.Problem = err.Error()
 		return done
 	}
-	done.Run = &run
+	done.Run = &queued.Run
 	return done
 }

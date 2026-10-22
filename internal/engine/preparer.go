@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/herbygillot/dockhand/internal/credential/keychain"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/fetch"
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
@@ -42,13 +41,13 @@ func (e *Engine) preparer() (Preparer, error) {
 }
 
 // github is GitHub as the person's login reaches it, through the
-// process's one runtime (GitHub), the system keychain's where none was
+// process's one runtime (GitHub), one with no login where none was
 // given: one forge client, made once, which the forge, discovery, and
 // create's project inspection share, where each made its own.
 func (e *Engine) github() *forgegithub.Client {
 	e.githubOnce.Do(func() {
 		if e.GitHub == nil {
-			e.GitHub = github.NewRuntime(github.Signin{Store: keychain.Store{}})
+			e.GitHub = github.NewRuntime(github.Signin{})
 		}
 		e.githubClient = &forgegithub.Client{Client: e.GitHub.Client, Git: e.options.git()}
 	})

@@ -45,7 +45,7 @@ type GitHubCLI interface {
 }
 
 // forge is the engine's Forge: the one it was given, or GitHub with the
-// login from the system keychain (or GH_TOKEN), assembled on first use.
+// login compose gave the runtime, assembled on first use.
 func (e *Engine) forge() Forge {
 	e.lazy.Lock()
 	defer e.lazy.Unlock()

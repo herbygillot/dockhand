@@ -53,7 +53,6 @@ var engineImports = map[string]string{
 	"internal/forge/github":           "GitHub as a forge",
 	"internal/forge/gitlab":           "GitLab as a forge, for releases",
 	"internal/github":                 "GitHub's client, which the forge and create use",
-	"internal/credential/keychain":    "the GitHub login, where the forge needs it",
 	// MacPorts itself: evaluating Portfiles, and what MacPorts asks.
 	"internal/macports":             "ports as MacPorts evaluates them",
 	"internal/macports/eval":        "MacPorts' evaluator",
