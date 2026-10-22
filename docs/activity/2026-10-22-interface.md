@@ -147,3 +147,29 @@ mark's column (`view.Unmarked`).
   from the `engine.Submitted` that `submit.Apply` now returns).
 - Tests that read a stage's full report run ship with `-v`; the others
   read the lines.
+
+### The check's progress, and a batch's rows
+
+- **A stage's check progress is -v's** (`term.Streams.Held`): in ship's
+  check stage, the journal's attempt, provider-step, and per-port lines
+  aren't printed; on a terminal the latest is the line redrawn, and so is
+  "check-1 runs here; Ctrl-C stops it and keeps what finished". A check
+  run alone, `dockhand check`, prints them as before; item 4's grammar
+  takes check's own output.
+- **The checked line says where it passed** (`view.PassedOn`): "✓ checked
+  passed on macOS 15 and macOS 26", the check's environments by their
+  headings.
+- **A batch is a row a change** at the default level: a cell a stage, the
+  pull request's number for the submission, `!` or `✗` where it stopped,
+  then "Needs you" with why each stopped, where those were standard
+  error's lines:
+
+  ```
+    jq  ✓ ✓ ✓ #34901
+    yq  ✓ ✓ ✓ !
+  Needs you
+    yq  yq-1.8.1 passed its check and waits for your look, …
+  ```
+
+  `ship --mine` and bump's batches read the same. With `-v`, each stage's
+  report, as before.

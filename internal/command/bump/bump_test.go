@@ -29,7 +29,7 @@ func TestBumpGoesFromUpdateToPullRequestAskingNothing(t *testing.T) {
 	require.NotRegexp(t, `\[y/N\]|\[Y/n\]|Apply \[a\]`, errs, "bump asks nothing, even on a terminal")
 	require.Contains(t, out, "jq 1.7.1 → 1.8.1 (GitHub tag jq-1.8.1), on branch jq-1.8.1\n")
 	require.Contains(t, out, "jq 1.7.1 → 1.8.1")
-	require.Contains(t, out, "✓ checked    check-1 passed")
+	require.Contains(t, out, "✓ checked    passed on command")
 	require.Contains(t, out, "✓ submitted  opened #34901")
 	require.Len(t, g.PRs, 1)
 	require.Contains(t, g.PRs[34901].Body, "- [ ] tested basic functionality of all binary files?", "only a person can say that")

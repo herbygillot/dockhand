@@ -706,7 +706,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	g.Others = nil
 	out, _, err = cmdtest.Dockhand(t, "ship", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "  ✓ checked    check-3 passed\n")
+	require.Contains(t, out, "  ✓ checked    passed on command\n")
 	require.NotContains(t, out, "Next: ", "ship submits; it doesn't send you to submit")
 	require.Contains(t, out, "  ✓ submitted  pushed to #34901  ")
 	require.Equal(t, testsupport.Git(t, dir, "rev-parse", "HEAD"), testsupport.Git(t, g.Fork, "rev-parse", "dockhand/jq-update"))

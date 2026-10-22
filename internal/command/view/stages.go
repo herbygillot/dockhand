@@ -5,6 +5,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // StageLine is a stage's one line at the default level, under its
@@ -22,4 +23,17 @@ func UpdateHeading(named string, update engine.Update, branch model.Branch) stri
 		source = " (" + engine.ReleaseSource(*update.Release) + ")"
 	}
 	return fmt.Sprintf("%s %s → %s%s, on branch %s", named, update.Before, update.After, source, branch.ShortName())
+}
+
+// PassedOn says where a check that passed built, by the environments'
+// headings: "passed on macOS 15 and macOS 26".
+func PassedOn(checked engine.Evidence) string {
+	var on []string
+	for _, i := range checked.Checked() {
+		on = append(on, engine.EnvironmentHeading(checked.Plan.Environments[i], checked.Plan.Environments))
+	}
+	if len(on) == 0 {
+		return "passed"
+	}
+	return "passed on " + prose.And(on)
 }

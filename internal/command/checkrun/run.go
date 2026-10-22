@@ -60,6 +60,13 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 		return nil
 	}
 	return Follow(ctx, e, session, run, streams, places, func(lead engine.Lead) {
+		if streams.Held() {
+			// A stage's notice is its redrawn line's (term.Streams.Held).
+			if streams.ErrTerminal() && lead.Here() {
+				streams.Status().Show(fmt.Sprintf("⋯ %s runs here; Ctrl-C stops it and keeps what finished", run.Name()))
+			}
+			return
+		}
 		if lead.Here() {
 			fmt.Fprintf(streams.Err, "%s runs here, since no dockhand serve is running. Ctrl-C stops it and keeps what finished.\n", run.Name())
 			return
@@ -73,6 +80,10 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 // outcome.
 func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, places config.Places, before func(engine.Lead)) error {
 	journal := &journal{e: e, run: run.ID, out: streams.Err}
+	if streams.Held() {
+		journal.held, journal.live = true, streams.ErrTerminal()
+		journal.status = streams.Status()
+	}
 	watching, stop := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
@@ -111,6 +122,10 @@ type journal struct {
 	run  model.RunID
 	out  io.Writer
 	last int64
+	// held is a stage's journal, its report held back: its progress is
+	// -v's, and the latest is the redrawn line where it's live.
+	held, live bool
+	status     *term.StatusLine
 }
 
 func (j *journal) show(ctx context.Context) {
@@ -119,7 +134,12 @@ func (j *journal) show(ctx context.Context) {
 		j.last = event.Sequence
 		switch event.Kind {
 		case model.EventProgress, model.EventTargetResult, model.EventExecutionRetry, model.EventExecutionState:
-			fmt.Fprintf(j.out, "  %s\n", event.Message)
+			switch {
+			case j.live:
+				j.status.Show("⋯ " + event.Message)
+			case !j.held:
+				fmt.Fprintf(j.out, "  %s\n", event.Message)
+			}
 		case model.EventArchiveAltered, model.EventArchiveGone:
 			// A kept archive found altered, or gone, is marked, where it
 			// was in the journal alone (the rc8 full stage's D-T1).

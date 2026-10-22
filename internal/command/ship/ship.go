@@ -145,6 +145,9 @@ type shipTarget struct {
 	// the update takes rather than asking upstream again.
 	Version string
 	Release *model.Release
+	// row is the change's row in a batch's table, where the batch says one
+	// (batchRows).
+	row *shipRow
 }
 
 func (t shipTarget) Name() string {
@@ -281,6 +284,7 @@ func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 		streams = streams.Unattended()
 	}
 	var failed []string
+	rows := batchRows(streams, targets)
 	stopped := func(target shipTarget, err error) error {
 		if len(targets) == 1 {
 			// One change refused is the command's error alone, as a
@@ -290,8 +294,12 @@ func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 		// In a batch, each change that stopped is in the result with why,
 		// where only the error said it (the rc1 full stage, S2).
 		streams.Emit([]view.SkippedJSON{{Port: target.Name(), Reason: err.Error()}})
-		fmt.Fprintf(streams.Err, "%s: %v\n", target.Name(), view.SayNext(err))
 		failed = append(failed, target.Name())
+		if target.row != nil {
+			target.row.stopped(err)
+			return nil
+		}
+		fmt.Fprintf(streams.Err, "%s: %v\n", target.Name(), view.SayNext(err))
 		return nil
 	}
 	var carried []carried
@@ -315,7 +323,67 @@ func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 			}
 		}
 	}
+	writeRows(streams, rows)
 	return view.BatchExit(failed, len(targets), "shipped")
+}
+
+// shipRow is a change's row in a batch's table at the default level: a
+// cell a stage, and why it stopped, where it did (part 5, item 3: ship
+// --mine's row a port, then "Needs you").
+type shipRow struct {
+	name  string
+	cells []string
+	// why is what stopped it, which "Needs you" says.
+	why error
+}
+
+// stopped marks the stage the change stopped at: what wants a look, or
+// what failed.
+func (r *shipRow) stopped(err error) {
+	r.why = err
+	mark := view.Broken
+	if refusal.KindOf(err) == refusal.Attention || term.ExitCode(err) == term.ExitAttention {
+		mark = view.Look
+	}
+	r.cells = append(r.cells, mark)
+}
+
+// batchRows are a batch's rows, one a change, where its stages are cells
+// of one table: several changes, at the default level, and no --json.
+func batchRows(streams term.Streams, targets []shipTarget) []*shipRow {
+	if len(targets) < 2 || streams.Verbose() > 0 || streams.JSON() {
+		return nil
+	}
+	var rows []*shipRow
+	for i := range targets {
+		row := &shipRow{name: targets[i].Name()}
+		targets[i].row = row
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// writeRows says a batch's table, and under "Needs you" each change that
+// stopped, with why.
+func writeRows(streams term.Streams, rows []*shipRow) {
+	width := 0
+	for _, row := range rows {
+		width = max(width, len(row.name))
+	}
+	var stopped []*shipRow
+	for _, row := range rows {
+		fmt.Fprintf(streams.Out, "  %-*s  %s\n", width, row.name, strings.Join(row.cells, " "))
+		if row.why != nil {
+			stopped = append(stopped, row)
+		}
+	}
+	if len(stopped) == 0 {
+		return
+	}
+	fmt.Fprintln(streams.Out, "Needs you")
+	for _, row := range stopped {
+		fmt.Fprintf(streams.Out, "  %-*s  %v\n", width, row.name, view.SayNext(row.why))
+	}
 }
 
 // carried is a change ship carried as far as its check: the check queued,
@@ -334,10 +402,18 @@ type carried struct {
 // heading, said with the first (term.Staged).
 type stageLines struct {
 	heading string
+	// row is the batch's row the stages are cells of, instead.
+	row *shipRow
 }
 
-// done says a stage that went through.
-func (l *stageLines) done(at *term.Stage, name, words string) {
+// done says a stage that went through: a line, or in a batch's row, its
+// cell, a mark or what the person would follow up, "#34901".
+func (l *stageLines) done(at *term.Stage, name, words, cell string) {
+	if l.row != nil {
+		l.row.cells = append(l.row.cells, cmp.Or(cell, view.Done))
+		at.Drop()
+		return
+	}
 	text := view.StageLine(view.Done, name, words)
 	if l.heading != "" {
 		text, l.heading = l.heading+"\n"+text, ""
@@ -355,7 +431,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 	// Each stage is a line at the default level, under the change's
 	// heading, said with its first; the stage that holds or fails says its
 	// report (term.Staged).
-	lines := &stageLines{heading: target.Name()}
+	lines := &stageLines{heading: target.Name(), row: target.row}
 	if target.Port != "" {
 		if stage != engine.ShipCommit {
 			// Where to check is settled before anything is edited.
@@ -385,7 +461,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		target.Branch = &updated
 		if update.Applied {
 			lines.heading = view.UpdateHeading(target.Port, update, updated)
-			lines.done(edit, "edited", strings.Join(update.Files, ", "))
+			lines.done(edit, "edited", strings.Join(update.Files, ", "), "")
 		} else {
 			lines.heading = updated.ShortName()
 		}
@@ -402,7 +478,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		commit.Say()
 		return nil, err
 	}
-	lines.done(commit, "committed", strings.Join(tidied.Subjects, "; "))
+	lines.done(commit, "committed", strings.Join(tidied.Subjects, "; "), "")
 	if stage == engine.ShipCommit {
 		return nil, nil
 	}
@@ -410,7 +486,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 	place := engine.WhereRequest{On: linked.On, Build: linked.Build, Unattended: linked.Unattended}
 	queues, queued := streams.Staged("queueing " + branch.ShortName() + "'s check")
 	done := &carried{target: target, lines: lines, queued: queued}
-	if batch {
+	if batch && target.row == nil {
 		// A batch's checks are seen through after every change is queued,
 		// so each says its own heading again.
 		done.lines = &stageLines{heading: branch.ShortName()}
@@ -454,7 +530,11 @@ func finishCarried(ctx context.Context, s *settings.Settings, streams term.Strea
 			done.queued.Say()
 			check.Say()
 		} else {
-			done.lines.done(check, "checked", done.run.Name()+" passed")
+			words := "passed"
+			if checkedBy, err := e.RunEvidence(ctx, done.run.ID); err == nil {
+				words = view.PassedOn(checkedBy)
+			}
+			done.lines.done(check, "checked", words, "")
 		}
 		draft := done.submit != nil && branchstate.SubmitsDespiteCheck(done.submit.request.Draft)
 		// The check's outcome, failed, waiting for a look, or stopped, is
@@ -472,7 +552,7 @@ func finishCarried(ctx context.Context, s *settings.Settings, streams term.Strea
 		return checked
 	}
 	if done.run == nil {
-		done.lines.done(done.queued, "checked", "passed for this commit already")
+		done.lines.done(done.queued, "checked", "passed for this commit already", "")
 	}
 	submits, submission := streams.Staged("submitting " + done.target.Name())
 	submitted, err := submitPassed(ctx, s, e, submits, *done.submit)
@@ -480,7 +560,7 @@ func finishCarried(ctx context.Context, s *settings.Settings, streams term.Strea
 		submission.Say()
 		return err
 	}
-	done.lines.done(submission, "submitted", submit.StageWords(submitted, done.submit.request.Draft))
+	done.lines.done(submission, "submitted", submit.StageWords(submitted, done.submit.request.Draft), fmt.Sprintf("#%d", submitted.PullRequest.Ref.Number))
 	return checked
 }
 

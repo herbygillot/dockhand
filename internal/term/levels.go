@@ -45,6 +45,14 @@ func (s Streams) Staged(under string) (Streams, *Stage) {
 	return s, stage
 }
 
+// Held reports whether the streams are a stage's whose report is held
+// back (Staged): its progress, record IDs and provider steps, is -v's
+// then, and on a terminal the line redrawn says the latest.
+func (s Streams) Held() bool {
+	_, held := s.Out.(*stageWriter)
+	return held
+}
+
 // Stage is a stage's report held back (Staged).
 type Stage struct {
 	held   *stageWriter
@@ -70,6 +78,16 @@ func (st *Stage) Done(format string, args ...any) {
 	st.status.Clear()
 	st.held.buf.Reset()
 	fmt.Fprintf(st.held.to, format+"\n", args...)
+}
+
+// Drop drops a stage's report held back, said elsewhere in a line of
+// its own, as a batch's row says it.
+func (st *Stage) Drop() {
+	if st.held == nil {
+		return
+	}
+	st.status.Clear()
+	st.held.buf.Reset()
 }
 
 // stageWriter holds what a stage writes until it's said; once said, as a

@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -51,7 +52,7 @@ func TestShipCarriesAPortToItsPullRequest(t *testing.T) {
 	require.NotContains(t, out, "Proposed commit", "the commit is a line, asking nothing")
 	require.NotContains(t, out, "Next: review it")
 	require.Contains(t, out, "checking commit ")
-	require.Contains(t, out, "  ✓ checked    check-1 passed\n  ✓ submitted  opened #34901  https://github.com/macports/macports-ports/pull/34901\n")
+	require.Contains(t, out, "  ✓ checked    passed on command\n  ✓ submitted  opened #34901  https://github.com/macports/macports-ports/pull/34901\n")
 	require.Len(t, g.PRs, 1)
 
 	out, _, err = cmdtest.Dockhand(t, "ship", "jq", "--to", "check")
@@ -138,10 +139,10 @@ func TestShipMineAndPassing(t *testing.T) {
 	require.Contains(t, out, "  jq-1.8.1  its branch, where it stands, to commit\n")
 }
 
-// A batch queues every change's check before it sees any through, and
-// submits each as its check passes (decision 4).
-func TestShipQueuesABatchsChecksFirst(t *testing.T) {
-	t.Parallel()
+// twoPortWorld is a world of jq and yq, each with a newer release, built
+// by one script that passes both.
+func twoPortWorld(t *testing.T) *forgetest.GitHub {
+	t.Helper()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
 	require.NoError(t, os.MkdirAll(filepath.Join(w.Upstream, "textproc/yq"), 0o755))
@@ -157,6 +158,29 @@ JSON
 `), 0o755))
 	g := cmdtest.WithGitHub(t, w)
 	g.Others = nil
+
+	return g
+}
+
+// A batch at the default level is a row a change, a cell a stage, then
+// what needs you (part 5, item 3).
+func TestShipBatchIsARowAChange(t *testing.T) {
+	t.Parallel()
+	g := twoPortWorld(t)
+	var out, errs bytes.Buffer
+	err := cmdtest.RunFor(t, t.Context(), []string{"ship", "jq", "yq", "--yes"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+	require.Equal(t, 3, term.ExitCode(err), out.String())
+	require.Contains(t, out.String(), "  jq  ✓ ✓ ✓ #34901\n  yq  ✓ ✓ ✓ !\nNeeds you\n  yq  yq-1.8.1 passed its check and waits for your look")
+	require.NotContains(t, out.String(), "checking commit ")
+	require.NotContains(t, errs.String(), "yq: ", "said under Needs you")
+	require.Len(t, g.PRs, 1)
+}
+
+// A batch queues every change's check before it sees any through, and
+// submits each as its check passes (decision 4).
+func TestShipQueuesABatchsChecksFirst(t *testing.T) {
+	t.Parallel()
+	g := twoPortWorld(t)
 
 	// The bumper stands in jq's release for any port, so yq's commit is
 	// held by the commit rules: one change held, and the rest goes on.
