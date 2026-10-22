@@ -156,6 +156,36 @@ func TestASiblingFetchingItsOwnSourceIsSaidOnce(t *testing.T) {
 		"fidelity: evaluation does not match the intended change: rust-src, another port of the same Portfile, moves with rust's release; --shared-release moves both, and --plan shows what that changes first")
 }
 
+// What partitioning a release finds of a sibling is a finding of a kind,
+// each said as the refusal was: a sibling moving, which shared
+// authorization answers, and one of its own version or source, which
+// nothing answers yet.
+func TestAScopeFindsEachSiblingByKind(t *testing.T) {
+	before := snapshot(map[string]macports.PortInfo{
+		"rust":     {Name: "rust", Version: "1.98.1", Options: map[string]string{"distfiles": "rustc-1.98.1-src.tar.gz", "checksums": "sha256 aaaa"}},
+		"rust-src": {Name: "rust-src", Version: "1.98.1", Options: map[string]string{"distfiles": "rust-src-1.98.1.tar.gz", "checksums": "sha256 bbbb"}},
+		"rust-doc": {Name: "rust-doc", Version: "1.98.1", Options: map[string]string{"distfiles": "rustc-1.98.1-src.tar.gz", "checksums": "sha256 aaaa"}},
+	})
+	after := snapshot(map[string]macports.PortInfo{
+		"rust":     {Name: "rust", Version: "1.99.0", Options: map[string]string{"distfiles": "rustc-1.99.0-src.tar.gz", "checksums": "sha256 cccc"}},
+		"rust-src": {Name: "rust-src", Version: "1.99.0", Options: map[string]string{"distfiles": "rust-src-1.99.0.tar.gz", "checksums": "sha256 dddd"}},
+		"rust-doc": {Name: "rust-doc", Version: "1.99.1", Options: map[string]string{"distfiles": "rustc-1.99.0-src.tar.gz", "checksums": "sha256 cccc"}},
+	})
+	scope, findings, err := Scope(before, after, "rust")
+	require.NoError(t, err)
+	require.Len(t, scope.Affected, 3)
+	require.Equal(t, []ScopeFinding{
+		{Kind: SiblingMoves, Port: "rust-doc", Selected: "rust"},
+		{Kind: SiblingOwnVersion, Port: "rust-doc", Selected: "rust"},
+		{Kind: SiblingMoves, Port: "rust-src", Selected: "rust"},
+		{Kind: SiblingOwnSource, Port: "rust-src", Field: "distfiles", Selected: "rust"},
+	}, findings)
+	require.True(t, findings[0].AnsweredBy(true))
+	require.False(t, findings[0].AnsweredBy(false))
+	require.False(t, findings[1].AnsweredBy(true))
+	require.False(t, findings[3].AnsweredBy(true))
+}
+
 // A path below the source directory is the same path in two evaluations,
 // whatever directory MacPorts builds each in and whatever the version
 // names the source directory: qemu's configure.cmd, ${worksrcpath}/

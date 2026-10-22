@@ -41,3 +41,14 @@ Dependencies are the exception, and stay as before. A Portfile that adds `depend
 This is looser than before for options. A version-conditional `patchfiles` or `license`, or a path the Portfile derives from the version, now follows it. The change record still lists every field that moved. No port refused before is refused now: dependencies were never among the followers.
 
 `belowSource` stays in `differences`. It normalizes where a port was evaluated, the build directory's hash, which every comparison of two evaluations needs, not the version.
+
+## Step 3: the scope's judgments are findings
+
+`fidelity.Scope` returns the release's partition into affected and protected members, plus a typed `ScopeFinding` for each sibling that moves. Each finding has one of three kinds:
+- `SiblingMoves`: the sibling moves with the selected port's release. Shared authorization, `--shared-release`, answers it.
+- `SiblingOwnVersion`: the sibling moves to a version of its own.
+- `SiblingOwnSource`: the sibling fetches a source of its own, naming the field (git.branch, distfiles, master_sites, or checksums) that differs.
+
+The last two have no answer yet. `ReleaseScope` is now `Scope` plus the refusal of any unanswered finding, with each finding's `String` the sentence it refused with before. The members are visited in name order, so the refusal for a family is the same on every run.
+
+`followsObsolete` stays. Which finding a moved obsolete stub raises, none, is a judgment about the stub, not something an edit predicts. portedit's `followObsolete` writes a stub's own literal, and the version step's prediction now takes what that write moves as the version's.

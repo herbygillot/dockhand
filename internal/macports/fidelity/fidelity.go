@@ -338,17 +338,84 @@ func Checksums(before, after macports.Snapshot, selected, checksums string) Repo
 }
 
 // ReleaseScope partitions sibling ports into those a release changes and those
-// it must protect, refusing independent releases and unauthorized siblings.
+// it must protect, and refuses what no answer takes (Findings): a sibling
+// that moves without shared authorization, one that keeps a version of its
+// own, or one that fetches a source of its own.
 func ReleaseScope(before, after macports.Snapshot, selected string, authorized bool) (*macports.ReleaseScope, error) {
+	scope, findings, err := Scope(before, after, selected)
+	if err != nil {
+		return nil, err
+	}
+	for _, finding := range findings {
+		if !finding.AnsweredBy(authorized) {
+			return nil, fmt.Errorf("%w: %s", ErrMismatch, finding)
+		}
+	}
+	return scope, nil
+}
+
+// ScopeKind is the kind of what partitioning a release found of a sibling.
+type ScopeKind string
+
+const (
+	// SiblingMoves is a sibling that moves with the selected port's
+	// release, which --shared-release, the person's decision, answers.
+	SiblingMoves ScopeKind = "sibling-moves"
+	// SiblingOwnVersion is a sibling that moves to a version of its own,
+	// which updating the selected port can't take.
+	SiblingOwnVersion ScopeKind = "sibling-own-version"
+	// SiblingOwnSource is a sibling at the release's version that fetches
+	// a source of its own, as xapian-core's bindings do.
+	SiblingOwnSource ScopeKind = "sibling-own-source"
+)
+
+// ScopeFinding is what partitioning a release found of one sibling: a
+// finding with a kind, where it was a sentence that refused (strict
+// fidelity, architecture's point 4).
+type ScopeFinding struct {
+	Kind ScopeKind
+	Port string
+	// Field is what a sibling of its own source differs from the selected
+	// port's in: git.branch, distfiles, master_sites, or checksums.
+	Field    string
+	Selected string
+}
+
+// String is the finding as a person reads it: what they see of the
+// Portfile, not how the release is prepared, where "rust-src has
+// independent distfiles; shared-source preparation is required" said
+// neither what nor why (the rust and cargo run).
+func (f ScopeFinding) String() string {
+	switch f.Kind {
+	case SiblingMoves:
+		return fmt.Sprintf("%s, another port of the same Portfile, moves with %s's release; --shared-release moves both, and --plan shows what that changes first", f.Port, f.Selected)
+	case SiblingOwnVersion:
+		return fmt.Sprintf("%s, another port of the same Portfile, keeps a version of its own, which updating %s doesn't move", f.Port, f.Selected)
+	}
+	return fmt.Sprintf("%s, another port of the same Portfile, fetches its own source (its %s differ from %s's), which updating %s doesn't move", f.Port, f.Field, f.Selected, f.Selected)
+}
+
+// AnsweredBy reports whether a finding is answered: a sibling moving, by
+// shared authorization; neither of the others, by anything yet.
+func (f ScopeFinding) AnsweredBy(shared bool) bool { return f.Kind == SiblingMoves && shared }
+
+// Scope partitions sibling ports into those a release changes and those it
+// must protect, with what it found of each that moves: whether it moves
+// with the release, keeps a version of its own, or fetches a source of its
+// own. An obsolete follower, which builds nothing and is replaced by the
+// selected port, moves with it and asks no answer.
+func Scope(before, after macports.Snapshot, selected string) (*macports.ReleaseScope, []ScopeFinding, error) {
 	scope := &macports.ReleaseScope{}
+	var findings []ScopeFinding
 	oldRoot, nextRoot := before.Ports[selected], after.Ports[selected]
 	if len(before.Ports) != len(after.Ports) {
-		return nil, fmt.Errorf("%w: release changes the port set", ErrMismatch)
+		return nil, nil, fmt.Errorf("%w: release changes the port set", ErrMismatch)
 	}
-	for name, old := range before.Ports {
+	for _, name := range slices.Sorted(maps.Keys(before.Ports)) {
+		old := before.Ports[name]
 		next, ok := after.Ports[name]
 		if !ok {
-			return nil, fmt.Errorf("%w: sibling disappeared", ErrMismatch)
+			return nil, nil, fmt.Errorf("%w: sibling disappeared", ErrMismatch)
 		}
 		target := before.Target
 		target.Name = name
@@ -358,11 +425,11 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 		}
 		needsXcode, err := next.Bool("use_xcode")
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		metadataOnly, err := next.MetadataOnly()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		member := macports.ReleaseMember{Target: target, Before: macports.ReleaseStateOf(old), After: macports.ReleaseStateOf(next), NeedsXcode: needsXcode, MetadataOnly: metadataOnly}
 		if old.Version == next.Version {
@@ -370,23 +437,21 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 			continue
 		}
 		member.Follower = followsObsolete(name, selected, old, next, oldRoot, nextRoot)
-		if member.NeedsAuthorization(selected) && !authorized {
-			return nil, fmt.Errorf("%w: %s, another port of the same Portfile, moves with %s's release; --shared-release moves both, and --plan shows what that changes first", ErrMismatch, name, selected)
+		if member.NeedsAuthorization(selected) {
+			findings = append(findings, ScopeFinding{Kind: SiblingMoves, Port: name, Selected: selected})
 		}
-		// Said as what the person sees of the Portfile, not as how the
-		// release is prepared: "rust-src has independent distfiles;
-		// shared-source preparation is required" said neither what nor
-		// why (the rust and cargo run).
-		if old.Version != oldRoot.Version || next.Version != nextRoot.Version {
-			return nil, fmt.Errorf("%w: %s, another port of the same Portfile, keeps a version of its own, which updating %s doesn't move", ErrMismatch, name, selected)
-		}
-		// A shared input must describe the same source, not just coincident
-		// versions. A member with no source, one that builds nothing or
-		// fetches nothing, as libgcc14 beside gcc14, has none to get wrong.
-		if !member.MetadataOnly && !fetchesNothing(old, next) {
+		switch {
+		case old.Version != oldRoot.Version || next.Version != nextRoot.Version:
+			findings = append(findings, ScopeFinding{Kind: SiblingOwnVersion, Port: name, Selected: selected})
+		// A shared input must describe the same source, not just
+		// coincident versions. A member with no source, one that builds
+		// nothing or fetches nothing, as libgcc14 beside gcc14, has none
+		// to get wrong.
+		case !member.MetadataOnly && !fetchesNothing(old, next):
 			for _, key := range []string{"git.branch", "distfiles", "master_sites", "checksums"} {
 				if old.Options[key] != oldRoot.Options[key] || next.Options[key] != nextRoot.Options[key] {
-					return nil, fmt.Errorf("%w: %s, another port of the same Portfile, fetches its own source (its %s differ from %s's), which updating %s doesn't move", ErrMismatch, name, key, selected, selected)
+					findings = append(findings, ScopeFinding{Kind: SiblingOwnSource, Port: name, Field: key, Selected: selected})
+					break
 				}
 			}
 		}
@@ -394,7 +459,7 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 	}
 	slices.SortFunc(scope.Affected, func(a, b macports.ReleaseMember) int { return model.CompareTargets(a.Target, b.Target) })
 	slices.SortFunc(scope.Protected, func(a, b macports.ReleaseMember) int { return model.CompareTargets(a.Target, b.Target) })
-	return scope, nil
+	return scope, findings, nil
 }
 
 // fetchesNothing reports a port with nothing to download, before the
