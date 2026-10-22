@@ -219,6 +219,32 @@ func (s BranchStatus) Check() branchstate.Check {
 	return branchstate.Check{Latest: s.Latest, Current: s.Current, Active: s.Active, Stopped: s.Stopped, Evidence: s.Evidence}
 }
 
+// Facts are what's recorded of the branch, as the verdict reads it
+// (branchstate.Facts).
+func (s BranchStatus) Facts() branchstate.Facts {
+	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Edited: s.Edited,
+		Held: s.Held, Moved: s.Moved, NotAssessed: s.Assessment == AssessmentPending, NoFork: s.NoFork, Pushed: s.Pushed(), OthersPushed: s.SomeoneElsePushed(),
+		Failing: s.Failing(), Ports: s.Scope.PortNames()}
+	if s.Evidence != nil {
+		if on, ok := OnValues(s.Evidence.Plan.Environments); ok {
+			b.CheckOn = on
+		}
+	}
+	return branchstate.Facts{Branch: b, Check: s.Check()}
+}
+
+// Vocabulary words what branchstate's sentences name, as the engine words
+// each (branchstate.Vocabulary).
+type Vocabulary struct{}
+
+func (Vocabulary) Environment(environment model.Environment) string {
+	return DescribeEnvironment(environment)
+}
+func (Vocabulary) Revision(revision model.Revision) string { return Describe(revision) }
+func (Vocabulary) Ago(at time.Time) string                 { return Ago(at) }
+func (Vocabulary) Remade(target TargetEvidence) string     { return RemadeWords(target) }
+func (Vocabulary) Holds(concerns []model.Concern) []string { return HoldLines(concerns) }
+
 // Checking is the branch's one check queued or running (branchstate).
 func (s BranchStatus) Checking() *model.Run { return s.Check().Checking() }
 

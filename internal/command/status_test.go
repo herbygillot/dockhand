@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -528,4 +529,17 @@ func TestAttentionRowsWrapWithTheirCommandBelow(t *testing.T) {
 		"                 dockhand logs check-482 gnome-voice\n"+
 		"  "+attentionNeedsYou.mark()+" jq           snapshot 1 passed\n"+
 		"                 dockhand tidy --branch jq\n", out.String())
+}
+
+// Every verb a verdict's Next can name renders as a command line, so a
+// new kind can't render as nothing (architecture, 2026-10-22).
+func TestEveryNextVerbRenders(t *testing.T) {
+	t.Parallel()
+	for _, verb := range branchstate.Verbs {
+		next := branchstate.Next{Verb: verb, Branch: "jq-1.8.2", Args: []string{"macports/macports-ports", "35001"}}
+		line := renderNext(next, "")
+		require.True(t, strings.HasPrefix(line, "dockhand ") || strings.HasPrefix(line, "open "), "%s renders as %q", verb, line)
+	}
+	require.Equal(t, "fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-1.8.2",
+		renderNext(branchstate.Next{Verb: branchstate.VerbSubmit, Branch: "jq-1.8.2", After: branchstate.AfterFork}, ""))
 }

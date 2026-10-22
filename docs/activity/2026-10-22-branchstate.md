@@ -23,3 +23,21 @@ Architecture's answer settles how they become one:
 `CheckStanding` and the active-check predicate (R3-2) move to `branchstate.Check.Standing` and `Check.Checking`. That's the one definition of the branch's checks, apart from baselines and runs asked to stop. `BranchStatus.Check()` gathers the facts, and its `CheckStanding()` and `Checking()` delegate to it. The command renders `branchstate.Standing` and imports branchstate, named in its boundary test. branchstate's own boundary test allows model and evidence alone.
 
 `Verdict`, `Facts`, `Action`, `Mode` (`Answered`: asked, yes, or nobody), and the typed `Next` with `After` land with `Evaluate`, which says the standing so far. So does the contract test `TestARefusalsNextAdvances`, over a table of cases that's empty now; each step adds the refusals it brings.
+
+## Step 2: attention and Next on the check's standing
+
+status's `attentionFor` judged and worded every row in one function of the command, with `pullRequestAttention` and `submitNext` beside it. It's now `branchstate.Attend(facts)`. That returns at most one typed `Attention`:
+- its `Kind` (failed, needs_you, or ready);
+- one of 22 `Reason`s;
+- the data its words need;
+- a typed `Next`.
+
+`Attention.Words(vocabulary)` holds each reason's sentence. The nouns are worded by their owners through `branchstate.Vocabulary`, which `engine.Vocabulary` implements with `DescribeEnvironment`, `Describe`, `Ago`, `RemadeWords`, and `HoldLines`, so branchstate imports none of them. `BranchStatus.Facts()` gathers the facts.
+
+The command is now a call plus rendering:
+- `attentionFor` maps each row's kind, words, and `renderNext(next)`. `renderNext` is the one place a Next becomes a command line. Every status test passes on it, its lines unchanged.
+- `TestEveryNextVerbRenders` holds every verb in `branchstate.Verbs` to rendering as one.
+
+Attend reads the check's standing (`Check.Standing`) where status re-derived it from the runs beside it. That settles the two disagreements the map found, which `TestAttentionReadsTheChecksStanding` pins:
+- a baseline running beside a passed check hid status's row; it no longer does;
+- a failed extra (from --also, or a revision-only port) read "passed; waiting for you to submit" while submit refused it. It now asks to be accepted, "submit --accept <port>".

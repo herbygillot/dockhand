@@ -346,173 +346,46 @@ func judgedStatus(ctx context.Context, e *engine.Engine, branch model.Branch) (e
 }
 
 func attentionFor(s engine.BranchStatus) []attention {
-	name := s.Branch.ShortName()
-	row := func(kind attentionKind, what, next string) []attention {
-		return []attention{{kind: kind, branch: name, what: what, next: next}}
+	var rows []attention
+	for _, a := range branchstate.Attend(s.Facts()) {
+		rows = append(rows, attention{kind: attentionKind(a.Kind), branch: a.Branch, what: a.Words(engine.Vocabulary{}), next: renderNext(a.Next, a.Reason)})
 	}
-	if s.Cleaned() {
-		return nil
-	}
-	if s.Missing && s.Branch.PullRequest != nil {
-		// Status never reads the network, so it can't know the pull
-		// request merged: a branch cleaned by hand after its merge read as
-		// trouble, adopt suggested, until --refresh (the sand-runner
-		// session, batch 31).
-		return row(attentionNeedsYou, fmt.Sprintf("its Git branch is gone, and its pull request, #%d, may have merged", s.Branch.PullRequest.Number), "dockhand status --refresh reads it; dockhand adopt <new name>, if you renamed the branch")
-	}
-	if s.Missing {
-		return row(attentionNeedsYou, "its Git branch is gone", "dockhand adopt <new name>, if you renamed it")
-	}
-	if run := s.Stopped; run != nil {
-		return row(attentionNeedsYou, run.Name()+" stopped: the process running it ended; dockhand wait "+run.Name()+" resumes it, and dockhand cancel "+run.Name()+" ends it", "dockhand wait "+run.Name())
-	}
-	if rows := pullRequestAttention(s); len(rows) > 0 {
-		return rows
-	}
-	if pr := s.Branch.PullRequest; pr != nil && s.Branch.Origin == model.OriginServe && (pr.Observed == nil || pr.Observed.State == model.PullRequestOpen) {
-		return row(attentionReady, fmt.Sprintf("#%d opened by serve, without a person's review", pr.Number), "dockhand status "+name)
-	}
-	// A branch set aside asks nothing of its checks.
-	if s.Branch.State == model.BranchArchived {
-		return nil
-	}
-	// Work that landed on master by another route asks nothing more of
-	// checks, only to be set aside (cleaning up duckdb-cxx14, finding 1).
-	if s.OnMaster != "" && s.Branch.PullRequest == nil {
-		return row(attentionReady, "its changes are on master already, as of "+s.OnMaster.Short(), "dockhand archive "+name)
-	}
-	if s.Latest == nil || !s.Current || len(s.Active) > 0 {
-		// A check of other files, however it ended, is asked again, as
-		// submit refuses for these files' missing check: one that failed
-		// before the files changed was said nothing of (the direction
-		// synthesis's second contradiction, a stale check).
-		if s.Latest != nil && !s.Current && s.Latest.State.Finished() && len(s.Active) == 0 {
-			ended := string(s.Latest.State)
-			if s.Latest.State == model.RunAttention {
-				ended = "needed attention"
-			}
-			return row(attentionNeedsYou, engine.Describe(*s.LatestRevision)+" "+ended+"; the files have changed since", "dockhand check --branch "+name)
-		}
-		return nil
-	}
-	run := *s.Latest
-	if s.Evidence == nil {
-		return nil
-	}
-	switch run.State {
-	case model.RunFailed:
-		for _, target := range s.Evidence.Failed() {
-			for i, result := range target.Outcomes {
-				if result.Outcome == model.OutcomeFailed && result.Phase == model.PhaseDependencies {
-					// The dependency is named beside it, as MacPorts says it.
-					return row(attentionFailed, fmt.Sprintf("%s: a dependency failed on %s (%s): %s", target.Target.Target.Name, engine.DescribeEnvironment(s.Evidence.Plan.Environments[i]), run.Name(), result.Detail),
-						fmt.Sprintf("dockhand logs %s %s", run.Name(), target.Target.Target.Name))
-				}
-				if result.Outcome == model.OutcomeFailed {
-					return row(attentionFailed, fmt.Sprintf("%s failed at %s on %s (%s)", target.Target.Target.Name, result.Phase, engine.DescribeEnvironment(s.Evidence.Plan.Environments[i]), run.Name()),
-						fmt.Sprintf("dockhand logs %s %s", run.Name(), target.Target.Target.Name))
-				}
-			}
-		}
-		return row(attentionFailed, run.Name()+" failed: "+run.Detail, "dockhand logs "+run.Name())
-	case model.RunAttention:
-		return row(attentionNeedsYou, run.Name()+" needs attention: "+run.Detail, "dockhand logs "+run.Name())
-	case model.RunPassed:
-		var unchecked, remade []string
-		var why string
-		for _, target := range s.Evidence.Missing() {
-			switch {
-			case len(target.Remade()) > 0:
-				remade = append(remade, target.Target.Target.Name)
-				why = engine.RemadeWords(target)
-			default:
-				unchecked = append(unchecked, target.Target.Target.Name)
-			}
-		}
-		// A check that builds them again builds where this one did, which
-		// check.on may not name: what still stands is reused, and the rest
-		// built (the hugo exercise's re-checks after the guest fix).
-		again := "dockhand check --branch " + name
-		if on, ok := engine.OnValues(s.Evidence.Plan.Environments); ok && len(on) > 0 {
-			again += " --on " + strings.Join(on, " --on ")
-		}
-		switch {
-		case len(remade) > 0:
-			return row(attentionNeedsYou, fmt.Sprintf("%s passed, but since then %s; %s must be built there again", run.Name(), why, strings.Join(remade, ", ")), again)
-		case len(unchecked) > 0:
-			return row(attentionNeedsYou, fmt.Sprintf("%s passed, but no check of these files built %s", run.Name(), strings.Join(unchecked, ", ")), again)
-		case len(s.Edited) > 0:
-			return row(attentionReady, engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
-		case s.Branch.PullRequest == nil && len(s.Held) > 0:
-			// Paused where serve prepared it, as serve holds it; a person's
-			// own submission shows it and goes on, as submit does (the
-			// direction synthesis's third contradiction: status said a
-			// person's branch was paused that submit would send).
-			lines := engine.HoldLines(s.Held)
-			first := lines[0]
-			if len(lines) > 1 {
-				first += fmt.Sprintf(" (and %d more: dockhand status %s)", len(lines)-1, name)
-			}
-			what := "passed; " + first + "; submit shows it for your look"
-			if s.Branch.Origin == model.OriginServe {
-				what = "passed; submission paused for review: " + first
-			}
-			return row(attentionNeedsYou, what, submitNext(s, name))
-		case s.Branch.PullRequest == nil && len(s.Moved) > 0:
-			// The check built another source than the update chose: serve
-			// waits for a look, and a person's submission shows it.
-			what := "passed; " + s.Moved[0].Detail
-			if s.Branch.Origin == model.OriginServe {
-				what = "passed; submission paused for review: " + s.Moved[0].Detail
-			}
-			return row(attentionNeedsYou, what, submitNext(s, name))
-		case s.Branch.PullRequest == nil && s.Assessment == engine.AssessmentPending:
-			// Status collects nothing; submitting assesses what isn't yet.
-			return row(attentionReady, "passed; what upstream's change means isn't assessed yet, which submitting does", submitNext(s, name))
-		case s.Branch.PullRequest == nil:
-			return row(attentionReady, "passed; waiting for you to submit", submitNext(s, name))
-		case !s.Pushed():
-			return row(attentionReady, fmt.Sprintf("passed; #%d has not been updated with these changes", s.Branch.PullRequest.Number), submitNext(s, name))
-		}
-	}
-	return nil
+	return rows
 }
 
-// pullRequestAttention is what the forge's last reading asks of you:
-// someone else's push, requested changes, or failing CI.
-func pullRequestAttention(s engine.BranchStatus) []attention {
-	pr := s.Branch.PullRequest
-	if pr == nil || pr.Observed == nil || pr.Observed.State != model.PullRequestOpen {
-		return nil
+// renderNext is a Next as the command line it names: the one place a
+// verdict's next step becomes words (architecture, 2026-10-22). reason
+// adds the words a row's own next carries, as a submit after someone
+// else's push showing the comparison.
+func renderNext(next branchstate.Next, reason branchstate.Reason) string {
+	branch := " --branch " + next.Branch
+	args := ""
+	if len(next.Args) > 0 {
+		args = " " + strings.Join(next.Args, " ")
 	}
-	name, age := s.Branch.ShortName(), " ("+engine.Ago(pr.Observed.At)+")"
-	next := "dockhand status " + name
-	if ports := s.Scope.PortNames(); len(ports) > 0 {
-		next = "dockhand edit " + ports[0]
+	var line string
+	switch next.Verb {
+	case branchstate.VerbRefresh:
+		return "dockhand status --refresh reads it; dockhand adopt <new name>, if you renamed the branch"
+	case branchstate.VerbAdopt:
+		return "dockhand adopt <new name>, if you renamed it"
+	case branchstate.VerbStatus, branchstate.VerbArchive:
+		line = "dockhand " + string(next.Verb) + " " + next.Branch
+	case branchstate.VerbWait, branchstate.VerbLogs, branchstate.VerbEdit:
+		line = "dockhand " + string(next.Verb) + args
+	case branchstate.VerbOpenChecks:
+		number, _ := strconv.Atoi(next.Args[1])
+		return "open " + github.PullRequestChecksURL(next.Args[0], number)
+	default:
+		line = "dockhand " + string(next.Verb) + branch + args
 	}
-	switch {
-	case s.SomeoneElsePushed():
-		return []attention{{kind: attentionNeedsYou, branch: name, what: fmt.Sprintf("someone else pushed to #%d%s", pr.Number, age), next: "dockhand submit --branch " + name + " (it shows the comparison)"}}
-	case pr.Observed.Review == model.ReviewChangesRequested:
-		if !pr.Observed.ReviewedAt.IsZero() {
-			age = " (" + engine.Ago(pr.Observed.ReviewedAt) + ")"
-		}
-		return []attention{{kind: attentionNeedsYou, branch: name, what: fmt.Sprintf("#%d changes requested%s", pr.Number, age), next: next}}
-	case pr.Observed.Checks == model.ChecksFailing:
-		return []attention{{kind: attentionFailed, branch: name, what: fmt.Sprintf("#%d MacPorts CI failing: %s%s", pr.Number, strings.Join(s.Failing(), ", "), age),
-			next: "open " + github.PullRequestChecksURL(pr.Repository, pr.Number)}}
+	if next.After == branchstate.AfterFork {
+		line = "fork macports/macports-ports on GitHub and add it as a Git remote, then " + line
 	}
-	return nil
-}
-
-// submitNext is the submit a branch is ready for, with the fork it needs
-// first where no remote pushes to one: a Next: line names only what
-// would take the branch (the M1's rerun, D-S6).
-func submitNext(s engine.BranchStatus, name string) string {
-	if s.NoFork {
-		return "fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch " + name
+	if reason == branchstate.SomeoneElsePushed {
+		line += " (it shows the comparison)"
 	}
-	return "dockhand submit --branch " + name
+	return line
 }
 
 // writeAttention writes the rows, each one's message wrapped at width

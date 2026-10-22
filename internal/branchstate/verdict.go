@@ -4,7 +4,8 @@ package branchstate
 // that the verdict reads, gathered by the engine. Each step of part 4
 // brings more of them, as it brings the judgment that reads them.
 type Facts struct {
-	Check Check
+	Branch Branch
+	Check  Check
 }
 
 // Action is what's asked of a branch.

@@ -16,6 +16,9 @@ const (
 	AfterCheck After = "check"
 	// AfterEdit is a person's edit of the branch's files.
 	AfterEdit After = "edit"
+	// AfterFork is a fork of MacPorts' repository on GitHub, added as a
+	// Git remote, which a submission pushes to.
+	AfterFork After = "fork"
 )
 
 // Next is what moves a branch on: a command, the branch it's for, and its
