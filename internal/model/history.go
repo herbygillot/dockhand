@@ -280,19 +280,49 @@ func (c Checkpoint) Validate() error {
 	return nil
 }
 
-// Acceptance acknowledges a failed revision-only target, or a failed extra,
-// for one exact commit (Design v3 §3's publication rule).
-type Acceptance struct {
-	Branch BranchID
-	Commit ObjectID
-	Port   string
-	At     time.Time
+// Decision is a person's answer to a finding, which a later command reads
+// in place of asking again (the direction synthesis's decision record):
+// the finding it answers, by its kind and subject, the evidence it rests
+// on, and the answer. It lapses when its evidence changes, since it's read
+// only for that evidence: an acceptance of a port's failure at one commit
+// says nothing of the next (Design v3 §3's publication rule).
+type Decision struct {
+	// Branch is the branch it was made on; empty for a standing decision,
+	// which answers its finding on any branch while its evidence holds.
+	Branch  BranchID
+	Finding FindingKind
+	// Subject is what the finding is about: the port whose failure is
+	// accepted.
+	Subject string
+	// Evidence is what it rests on: the commit a failure was accepted at.
+	Evidence string
+	Answer   DecisionAnswer
+	At       time.Time
 }
 
-// Validate checks the rules every stored acceptance keeps.
-func (a Acceptance) Validate() error {
-	if a.Branch == "" || a.Commit == "" || a.Port == "" || a.At.IsZero() {
-		return invalid("acceptance of %q is incomplete", a.Port)
+// FindingKind is the kind of finding a decision answers.
+type FindingKind string
+
+// FindingFailure is a port's failure in a check: a failed revision-only
+// target or extra, or a changed port whose base fails it alike.
+const FindingFailure FindingKind = "failure"
+
+// DecisionAnswer is how a person answered a finding.
+type DecisionAnswer string
+
+// Accepted takes a finding as it is: a failure that isn't the branch's
+// doing, submitted with the failure disclosed.
+const Accepted DecisionAnswer = "accepted"
+
+// Validate checks the rules every stored decision keeps.
+func (d Decision) Validate() error {
+	switch {
+	case d.Subject == "" || d.Evidence == "" || d.At.IsZero():
+		return invalid("decision on %q is incomplete", d.Subject)
+	case d.Finding != FindingFailure:
+		return invalid("decision on %s answers an unknown kind of finding %q", d.Subject, d.Finding)
+	case d.Answer != Accepted:
+		return invalid("decision on %s has an unknown answer %q", d.Subject, d.Answer)
 	}
 	return nil
 }

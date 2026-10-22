@@ -235,7 +235,7 @@ func (t *tx) PruneAssessments(before time.Time) (int, error) {
 }
 
 // ForgetBranch forgets an archived branch (clean --delete): its events,
-// edits, acceptances, and checkpoints go, and what it recorded of its
+// edits, decisions, and checkpoints go, and what it recorded of its
 // checks goes as history does (pruneBranchHistory), its latest check too,
 // keeping only what reuse may still choose or another result names; its
 // record stays, marked forgotten at, which no read of branches returns,
@@ -251,7 +251,7 @@ func (t *tx) ForgetBranch(id model.BranchID, at time.Time) (store.Pruned, error)
 	if branch.State != model.BranchArchived || !branch.ForgottenAt.IsZero() {
 		return store.Pruned{}, fmt.Errorf("%w: only an archived branch is forgotten, and once", store.ErrConflict)
 	}
-	for _, table := range []string{"events", "edits", "acceptances", "checkpoints"} {
+	for _, table := range []string{"events", "edits", "decisions", "checkpoints"} {
 		if _, err := t.conn.ExecContext(t.ctx, "DELETE FROM "+table+" WHERE repository_id=? AND branch_id=?", t.repo, id); err != nil {
 			return store.Pruned{}, storageError(err)
 		}

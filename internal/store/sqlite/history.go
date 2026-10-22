@@ -146,32 +146,38 @@ func (t *tx) MarkRestored(c model.Checkpoint) error {
 		millis(*c.RestoredAt), t.repo, c.Number)
 }
 
-func (t *tx) AddAcceptance(a model.Acceptance) error {
-	if err := a.Validate(); err != nil {
+func (t *tx) AddDecision(d model.Decision) error {
+	if err := d.Validate(); err != nil {
 		return err
 	}
-	_, err := t.exec("INSERT INTO acceptances(repository_id, branch_id, commit_id, port, at) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",
-		t.repo, a.Branch, a.Commit, a.Port, millis(a.At))
+	// A standing decision is no branch's, which the column says as null.
+	var branch any
+	if d.Branch != "" {
+		branch = d.Branch
+	}
+	_, err := t.exec("INSERT INTO decisions(repository_id, branch_id, finding, subject, evidence, answer, at) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+		t.repo, branch, d.Finding, d.Subject, d.Evidence, d.Answer, millis(d.At))
 	return err
 }
 
-func (t *tx) Acceptances(branch model.BranchID, commit model.ObjectID) ([]model.Acceptance, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT branch_id, commit_id, port, at FROM acceptances WHERE repository_id=? AND branch_id=? AND commit_id=? ORDER BY port", t.repo, branch, commit)
+func (t *tx) Decisions(branch model.BranchID, finding model.FindingKind, evidence string) ([]model.Decision, error) {
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT ifnull(branch_id, ''), finding, subject, evidence, answer, at FROM decisions WHERE repository_id=? AND branch_id=? AND finding=? AND evidence=? ORDER BY subject",
+		t.repo, branch, finding, evidence)
 	if err != nil {
 		return nil, storageError(err)
 	}
 	defer rows.Close()
-	var accepted []model.Acceptance
+	var decisions []model.Decision
 	for rows.Next() {
-		var a model.Acceptance
+		var d model.Decision
 		var at int64
-		if err := rows.Scan(&a.Branch, &a.Commit, &a.Port, &at); err != nil {
+		if err := rows.Scan(&d.Branch, &d.Finding, &d.Subject, &d.Evidence, &d.Answer, &at); err != nil {
 			return nil, storageError(err)
 		}
-		a.At = fromMillis(at)
-		accepted = append(accepted, a)
+		d.At = fromMillis(at)
+		decisions = append(decisions, d)
 	}
-	return accepted, storageError(rows.Err())
+	return decisions, storageError(rows.Err())
 }
 
 func (t *tx) AddReview(r model.Review) error {

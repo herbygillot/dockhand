@@ -198,8 +198,9 @@ type Reader interface {
 	Checkpoint(number int) (model.Checkpoint, error)
 	// Checkpoints lists a branch's checkpoints, oldest first.
 	Checkpoints(branch model.BranchID) ([]model.Checkpoint, error)
-	// Acceptances lists what was accepted for one commit of a branch.
-	Acceptances(branch model.BranchID, commit model.ObjectID) ([]model.Acceptance, error)
+	// Decisions lists a branch's decisions on a kind of finding that rest
+	// on one piece of evidence, by subject.
+	Decisions(branch model.BranchID, finding model.FindingKind, evidence string) ([]model.Decision, error)
 	// LastReview is the newest review of a pull request; ErrNotFound when
 	// there is none.
 	LastReview(repository string, number int) (model.Review, error)
@@ -305,8 +306,8 @@ type Tx interface {
 	SettleCheckpoint(checkpoint model.Checkpoint) error
 	// MarkRestored records an applied checkpoint's restore, once.
 	MarkRestored(checkpoint model.Checkpoint) error
-	// AddAcceptance records an acceptance; repeating one changes nothing.
-	AddAcceptance(acceptance model.Acceptance) error
+	// AddDecision records a decision; repeating one changes nothing.
+	AddDecision(decision model.Decision) error
 	// AddReview records a review of a pull request.
 	AddReview(review model.Review) error
 }

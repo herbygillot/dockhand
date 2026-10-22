@@ -365,9 +365,9 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	var accepted []string
 	var edits []model.Edit
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		list, err := r.Acceptances(branch.ID, model.ObjectID(head))
-		for _, a := range list {
-			accepted = append(accepted, a.Port)
+		list, err := r.Decisions(branch.ID, model.FindingFailure, head)
+		for _, d := range list {
+			accepted = append(accepted, d.Subject)
 		}
 		if err != nil {
 			return err
@@ -870,7 +870,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 			return err
 		}
 		for _, port := range plan.Request.Accept {
-			if err := tx.AddAcceptance(model.Acceptance{Branch: branch.ID, Commit: model.ObjectID(plan.Commit), Port: port, At: e.now()}); err != nil {
+			if err := tx.AddDecision(model.Decision{Branch: branch.ID, Finding: model.FindingFailure, Subject: port, Evidence: plan.Commit, Answer: model.Accepted, At: e.now()}); err != nil {
 				return err
 			}
 		}

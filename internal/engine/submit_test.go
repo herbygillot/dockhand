@@ -374,7 +374,7 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
-		accepted, err := r.Acceptances(branch.ID, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")))
+		accepted, err := r.Decisions(branch.ID, model.FindingFailure, testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 		require.NoError(t, err)
 		require.Len(t, accepted, 1)
 		return nil

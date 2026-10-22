@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,7 +43,7 @@ func TestASchemaOneDatabaseIsUpgraded(t *testing.T) {
 	require.Equal(t, schemaVersion, version)
 }
 
-func TestEditsCheckpointsAndAcceptances(t *testing.T) {
+func TestEditsCheckpointsAndDecisions(t *testing.T) {
 	f := open(t)
 	b := f.branch("br_1", "dockhand/jq-4k2p")
 	b.PullRequest = &model.PullRequest{Repository: "macports/macports-ports", Number: 34901, Head: "ada/macports-ports:dockhand/jq-4k2p", Pushed: "abc", Body: "body", Draft: true,
@@ -91,13 +92,18 @@ func TestEditsCheckpointsAndAcceptances(t *testing.T) {
 		return tx.AddCheckpoint(model.Checkpoint{Number: 4, Kind: model.CheckpointTidy, State: model.CheckpointPrepared, Branch: b.ID, Before: "rebased", After: "tidied", BaseBefore: "m2", BaseAfter: "m3", At: at})
 	}), model.ErrInvalid, "a tidy doesn't move the base")
 
-	accepted := model.Acceptance{Branch: b.ID, Commit: "c1", Port: "harbor-cli", At: at}
+	accepted := model.Decision{Branch: b.ID, Finding: model.FindingFailure, Subject: "harbor-cli", Evidence: "c1", Answer: model.Accepted, At: at}
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
-		if err := tx.AddAcceptance(accepted); err != nil {
+		if err := tx.AddDecision(accepted); err != nil {
 			return err
 		}
-		return tx.AddAcceptance(accepted)
-	}))
+		return tx.AddDecision(accepted)
+	}), "repeating a decision changes nothing")
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
+		bad := accepted
+		bad.Answer = "maybe"
+		return tx.AddDecision(bad)
+	}), model.ErrInvalid)
 
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
 		got, err := r.Branch(b.ID)
@@ -116,12 +122,12 @@ func TestEditsCheckpointsAndAcceptances(t *testing.T) {
 		require.Equal(t, "rebase-2", all[1].Name())
 		require.Equal(t, []model.CheckpointState{model.CheckpointApplied, model.CheckpointApplied, model.CheckpointAbandoned}, []model.CheckpointState{all[0].State, all[1].State, all[2].State})
 		require.Equal(t, [2]model.ObjectID{"m1", "m2"}, [2]model.ObjectID{all[1].BaseBefore, all[1].BaseAfter}, "a checkpoint keeps the base before and after")
-		list, err := r.Acceptances(b.ID, "c1")
+		list, err := r.Decisions(b.ID, model.FindingFailure, "c1")
 		require.NoError(t, err)
-		require.Equal(t, []model.Acceptance{accepted}, list)
-		none, err := r.Acceptances(b.ID, "c2")
+		require.Equal(t, []model.Decision{accepted}, list)
+		none, err := r.Decisions(b.ID, model.FindingFailure, "c2")
 		require.NoError(t, err)
-		require.Empty(t, none, "an acceptance holds for its commit only")
+		require.Empty(t, none, "a decision holds for its evidence only")
 		return nil
 	}))
 }
@@ -154,6 +160,35 @@ func TestUpgradingKeepsRecordedEdits(t *testing.T) {
 		checkpoint, err := r.Checkpoint(1)
 		require.NoError(t, err)
 		require.Equal(t, "tidy-1", checkpoint.Name(), "older checkpoints were tidy's")
+		return nil
+	}))
+}
+
+// Schema 35 moves each acceptance into the decision record unchanged in
+// meaning: a port's failure accepted at a commit.
+func TestUpgradingKeepsAcceptancesAsDecisions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dockhand.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	require.NoError(t, err)
+	_, err = db.Exec(strings.Join(schemas[:34], "") + fmt.Sprintf("PRAGMA application_id=%d; PRAGMA user_version=34;", applicationID))
+	require.NoError(t, err)
+	for _, statement := range []string{
+		"INSERT INTO repositories VALUES('repo_1', '/src/macports-ports/.git', 0)",
+		"INSERT INTO branches(repository_id, id, name, base, worktree, managed, title, state, created_at) VALUES('repo_1','br_1','dockhand/jq-4k2p','base','/w',1,'','open',1)",
+		"INSERT INTO acceptances VALUES('repo_1','br_1','c1','harbor-cli',1)",
+	} {
+		_, err = db.Exec(statement)
+		require.NoError(t, err, statement)
+	}
+	require.NoError(t, db.Close())
+
+	s, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer s.Close()
+	require.NoError(t, s.View(t.Context(), "repo_1", func(r store.Reader) error {
+		decisions, err := r.Decisions("br_1", model.FindingFailure, "c1")
+		require.NoError(t, err)
+		require.Equal(t, []model.Decision{{Branch: "br_1", Finding: model.FindingFailure, Subject: "harbor-cli", Evidence: "c1", Answer: model.Accepted, At: fromMillis(1)}}, decisions)
 		return nil
 	}))
 }
