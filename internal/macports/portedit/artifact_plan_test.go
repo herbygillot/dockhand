@@ -383,3 +383,27 @@ subport py312-fixture {}
 		require.Contains(t, result.Prepared.Ports[name].Options["checksums"], fmt.Sprintf("%x", sha256.Sum256([]byte(body))), name)
 	}
 }
+
+// An update whose new version fetches nothing in place of an archive the
+// current one fetches is refused, as any change of the archives' shape
+// is, so the archive no longer fetched is met only where a person changed
+// the Portfile, whose revision's assessment says it and holds (L2a).
+func TestAnUpdateThatDropsAnArchiveIsRefused(t *testing.T) {
+	t.Parallel()
+	declared := func(path string) string {
+		body := "archive bytes for " + path
+		return fmt.Sprintf("sha256 %x size %d", sha256.Sum256([]byte(body)), len(body))
+	}
+	s, r, _ := archiveFixture(t, `version 1.2.3
+master_sites @SITE@/${version}
+distfiles source-${version}.tar.gz
+checksums source-${version}.tar.gz `+declared("/1.2.3/source-1.2.3.tar.gz")+`
+if {${version} eq "1.2.3"} {
+ distfiles-append vendored-0.3.crate
+ checksums-append vendored-0.3.crate `+declared("/1.2.3/vendored-0.3.crate")+`
+}
+`)
+	_, err := s.Prepare(t.Context(), r)
+	require.ErrorIs(t, err, ErrFidelity)
+	require.ErrorContains(t, err, "candidate changed archive/checksum structure")
+}
