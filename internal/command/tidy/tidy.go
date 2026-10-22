@@ -350,3 +350,42 @@ func restoreCheckpoint(ctx context.Context, e *engine.Engine, streams term.Strea
 	fmt.Fprintf(streams.Out, "Restored %s to its history and files before %s (%s), on master %s again.\n", branch.Name, checkpoint.Name(), checkpoint.Before.Short(), branch.Base.Short())
 	return nil
 }
+
+// Stage commits a branch's edits as tidy would plan them, previewed as
+// tidy previews them, where it has any, and returns the branch as it is
+// after; applied is false where the person declined, which undone says.
+// An unambiguous plan applies without asking (Decide). It's the tidy
+// stage ship and submit each take (Design v3 §3's chaining).
+func Stage(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, undone string) (model.Branch, bool, error) {
+	out := streams.Out
+	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
+	if err != nil {
+		return branch, false, err
+	}
+	if !proposal.Keep {
+		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), view.DescribeWork(proposal))
+		streams.Emit(view.TidyView(proposal))
+		view.WriteTidyPlan(out, proposal, false)
+		// A plan of dockhand's own edits is applied unasked; one with the
+		// person's is reviewed on a terminal, and held where nobody looks,
+		// --yes or no terminal: --yes skips ship's question, and approves no
+		// plan it hasn't shown (Codex's review of 832f059e, high 1). The
+		// hold names tidy, as serve's does, where tidy's own refusal
+		// offered --yes, which ship's --yes isn't.
+		if !streams.Terminal() {
+			if err := proposal.Gate().CommitUnasked(branchstate.Mode{Answered: model.AnsweredNobody}); err != nil {
+				return branch, false, fmt.Errorf("%w; %s", err, undone)
+			}
+		}
+		applied, err := Decide(ctx, e, streams, proposal, false, proposal.Unambiguous(), "")
+		if err != nil {
+			return branch, false, fmt.Errorf("%w; %s", err, undone)
+		}
+		if !applied {
+			fmt.Fprintf(out, "%s.\n", prose.Sentence(undone))
+			return branch, false, nil
+		}
+	}
+	branch, err = e.Resolve(ctx, branch.ShortName())
+	return branch, err == nil, err
+}

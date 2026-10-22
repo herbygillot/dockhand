@@ -38,10 +38,20 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
-	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check")
-	require.ErrorContains(t, err, "these edits are not committed: textproc/jq/Portfile. Commit them with dockhand tidy")
-	_, _, err = cmdtest.Dockhand(t, "tidy")
+	// Edits not committed are committed first, as tidy would, then
+	// submitted, where submit refused and named tidy (Design v3 §3's
+	// chaining); --plan shows the commits and makes none.
+	planned, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
+	require.Contains(t, planned, "jq-update · commits first, edits not yet committed\n")
+	require.Contains(t, planned, "  1  jq: update to 1.8.1\n")
+	require.Contains(t, planned, "Nothing was committed or submitted (--plan).")
+	require.NotEmpty(t, testsupport.Git(t, dir, "status", "--porcelain"), "nothing committed")
+	committed, _, err := cmdtest.Dockhand(t, "submit", "--no-check")
+	require.ErrorContains(t, err, "nothing was submitted: without a terminal, --yes submits exactly what is shown")
+	require.Contains(t, committed, "Created 1 commit.")
+	require.Contains(t, committed, "jq-update · ready to submit\n")
+	require.Equal(t, "jq: update to 1.8.1", strings.TrimSpace(testsupport.Git(t, dir, "log", "-1", "--format=%s")))
 
 	out, _, err := cmdtest.Dockhand(t, "submit")
 	require.ErrorContains(t, err, "nothing was submitted")

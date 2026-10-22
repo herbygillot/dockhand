@@ -325,14 +325,14 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 			return plan, err
 		}
 		if !request.Head {
-			return plan, fmt.Errorf("these edits are not committed: %s. Commit them with dockhand tidy, or submit only what is committed with --head", listPaths(plan.LeftOut))
+			return plan, &Uncommitted{Paths: plan.LeftOut}
 		}
 	}
 	if plan.Commits, err = worktree.History(ctx, string(branch.Base), head); err != nil {
 		return plan, err
 	}
 	if len(plan.Commits) == 0 {
-		return plan, fmt.Errorf("%s has no commits above master yet; commit your edits with dockhand tidy", branch.Name)
+		return plan, &Uncommitted{Branch: branch.Name}
 	}
 	for _, commit := range plan.Commits {
 		if commitmsg.ModifiedBuild(commit.Message) {
@@ -1254,4 +1254,21 @@ func (p SubmitPlan) Push() PushKind {
 		return PushAdds
 	}
 	return PushCreates
+}
+
+// Uncommitted is a submission of a branch whose edits aren't committed,
+// Paths, or that has no commits above master yet. submit commits them as
+// tidy would, previewed as tidy previews them, and submits those commits
+// (Design v3 §3's chaining, where it refused and named tidy); a submission
+// of the committed head alone takes --head.
+type Uncommitted struct {
+	Branch string
+	Paths  []string
+}
+
+func (u *Uncommitted) Error() string {
+	if len(u.Paths) > 0 {
+		return fmt.Sprintf("these edits are not committed: %s. Commit them with dockhand tidy, or submit only what is committed with --head", listPaths(u.Paths))
+	}
+	return fmt.Sprintf("%s has no commits above master yet; commit your edits with dockhand tidy", u.Branch)
 }

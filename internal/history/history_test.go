@@ -2,6 +2,7 @@ package history_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -104,4 +105,43 @@ func TestAChangeTheBranchNeverHeldIsAbandoned(t *testing.T) {
 	w.settled(t)
 	require.Equal(t, model.CheckpointAbandoned, w.state(t, checkpoint.Number))
 	require.Empty(t, testsupport.Git(t, w.root, "for-each-ref", checkpoint.Ref()), "its ref is gone")
+}
+
+// Make makes a change a checkpoint keeps: prepared before it moves,
+// abandoned where the move fails, and settled as applied with its message
+// after, the checkpoint's state applied once it moved, an error after the
+// move leaving it for the next lock to settle (the code-organization
+// review's finding 26).
+func TestMakeKeepsAChangeInACheckpoint(t *testing.T) {
+	w := newWorld(t)
+	read := func(number int) model.Checkpoint {
+		t.Helper()
+		checkpoint, ok := w.transitions.Read(t.Context(), number)
+		require.True(t, ok)
+		return checkpoint
+	}
+	checkpoint := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Before: model.ObjectID(w.head), After: model.ObjectID(w.base),
+		BaseBefore: model.ObjectID(w.base), BaseAfter: model.ObjectID(w.base), At: at}
+	moved := errors.New("the refs moved meanwhile")
+	err := w.transitions.Make(t.Context(), &checkpoint, history.Change{Move: func(context.Context) error { return moved }})
+	require.ErrorIs(t, err, moved)
+	require.Equal(t, model.CheckpointAbandoned, read(checkpoint.Number).State)
+	require.NotEqual(t, model.CheckpointApplied, checkpoint.State)
+
+	again := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Before: model.ObjectID(w.head), After: model.ObjectID(w.head),
+		BaseBefore: model.ObjectID(w.base), BaseAfter: model.ObjectID(w.base), At: at}
+	require.NoError(t, w.transitions.Make(t.Context(), &again, history.Change{Move: func(context.Context) error { return nil },
+		After: func(context.Context) (string, error) { return "tidied 1 commit into 1 commit", nil }}))
+	require.Equal(t, model.CheckpointApplied, again.State)
+	require.Equal(t, model.CheckpointApplied, read(again.Number).State)
+	require.Greater(t, again.Number, checkpoint.Number)
+
+	third := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Before: model.ObjectID(w.base), After: model.ObjectID(w.head),
+		BaseBefore: model.ObjectID(w.base), BaseAfter: model.ObjectID(w.base), At: at}
+	stuck := errors.New("the staging area couldn't be reset")
+	err = w.transitions.Make(t.Context(), &third, history.Change{Move: func(context.Context) error { return nil },
+		After: func(context.Context) (string, error) { return "", stuck }})
+	require.ErrorIs(t, err, stuck)
+	require.Equal(t, model.CheckpointApplied, third.State, "it moved")
+	require.Equal(t, model.CheckpointPrepared, read(third.Number).State, "the next lock settles it")
 }

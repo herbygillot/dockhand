@@ -21,7 +21,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/term"
 )
@@ -365,7 +364,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		return nil, err
 	}
 	defer e.Close()
-	branch, applied, err := tidyBranch(ctx, e, streams, branch, "nothing was checked or submitted")
+	branch, applied, err := tidy.Stage(ctx, e, streams, branch, "nothing was checked or submitted")
 	if err != nil || !applied || stage == engine.ShipCommit {
 		return nil, err
 	}
@@ -558,42 +557,4 @@ func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, stre
 		fmt.Fprintf(streams.Out, "%s is already %s for these files; following it.\n", queued.Run.Name(), queued.Run.State)
 	}
 	return &queued.Run, nil
-}
-
-// tidyBranch commits a branch's edits as tidy would plan them, previewed
-// as tidy previews them, where it has any, and returns the branch as it is
-// after; applied is false where the person declined, which undone says.
-// yes applies an unambiguous plan without asking (decideTidy).
-func tidyBranch(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, undone string) (model.Branch, bool, error) {
-	out := streams.Out
-	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
-	if err != nil {
-		return branch, false, err
-	}
-	if !proposal.Keep {
-		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), view.DescribeWork(proposal))
-		streams.Emit(view.TidyView(proposal))
-		view.WriteTidyPlan(out, proposal, false)
-		// A plan of dockhand's own edits is applied unasked; one with the
-		// person's is reviewed on a terminal, and held where nobody looks,
-		// --yes or no terminal: --yes skips ship's question, and approves no
-		// plan it hasn't shown (Codex's review of 832f059e, high 1). The
-		// hold names tidy, as serve's does, where tidy's own refusal
-		// offered --yes, which ship's --yes isn't.
-		if !streams.Terminal() {
-			if err := proposal.Gate().CommitUnasked(branchstate.Mode{Answered: model.AnsweredNobody}); err != nil {
-				return branch, false, fmt.Errorf("%w; %s", err, undone)
-			}
-		}
-		applied, err := tidy.Decide(ctx, e, streams, proposal, false, proposal.Unambiguous(), "")
-		if err != nil {
-			return branch, false, fmt.Errorf("%w; %s", err, undone)
-		}
-		if !applied {
-			fmt.Fprintf(out, "%s.\n", prose.Sentence(undone))
-			return branch, false, nil
-		}
-	}
-	branch, err = e.Resolve(ctx, branch.ShortName())
-	return branch, err == nil, err
 }

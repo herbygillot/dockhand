@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
+	"github.com/herbygillot/dockhand/internal/command/tidy"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -76,6 +77,21 @@ kept.
 				return err
 			}
 			plan, err := e.PlanSubmit(ctx, request)
+			// Edits not committed are committed as tidy would, shown as tidy
+			// shows them, and then submitted, where submit refused and named
+			// tidy (Design v3 §3's chaining); --head submits the committed
+			// head alone, as before.
+			if uncommitted := new(engine.Uncommitted); errors.As(err, &uncommitted) {
+				if preview {
+					return previewTidy(ctx, e, streams, request.Branch)
+				}
+				branch, applied, tidyErr := tidy.Stage(ctx, e, streams, request.Branch, "nothing was submitted")
+				if tidyErr != nil || !applied {
+					return tidyErr
+				}
+				request.Branch = branch
+				plan, err = e.PlanSubmit(ctx, request)
+			}
 			if err != nil {
 				return err
 			}
@@ -290,5 +306,21 @@ func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan eng
 		result.PullRequest.ChangesRequestedBy[i].Rerequested = slices.Contains(asked, requested.Login)
 	}
 	fmt.Fprintf(streams.Out, "Asked %s to review again.\n", who)
+	return nil
+}
+
+// previewTidy is submit --plan of a branch whose edits aren't committed:
+// the commits submit would make first, as tidy previews them, and that
+// the submission's preview follows once they're made, since it's of their
+// commit.
+func previewTidy(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch) error {
+	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(streams.Out, "%s · commits first, %s\n", branch.ShortName(), view.DescribeWork(proposal))
+	streams.Emit(view.TidyView(proposal))
+	view.WriteTidyPlan(streams.Out, proposal, false)
+	fmt.Fprintln(streams.Out, "Nothing was committed or submitted (--plan). dockhand submit makes these commits, then shows what it submits.")
 	return nil
 }

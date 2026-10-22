@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
-	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/history"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -899,37 +898,32 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	// together, and the checkpoint is settled after.
 	checkpoint := model.Checkpoint{Kind: model.CheckpointTidy, Branch: plan.Branch.ID, Before: model.ObjectID(plan.Head), After: model.ObjectID(parent),
 		BaseBefore: model.ObjectID(plan.Base), BaseAfter: model.ObjectID(plan.Base), Index: model.ObjectID(index), At: e.now()}
-	if err := e.history().Prepare(ctx, &checkpoint); err != nil {
-		return TidyResult{}, err
-	}
-	failpoint.Hit("tidy.prepared")
-	if err := e.history().Step("prepared"); err != nil {
-		return TidyResult{}, err
-	}
-	if err := worktree.UpdateRefs(ctx, []git.RefChange{
-		{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: plan.Head}},
-		{Name: checkpoint.IndexRef(), Desired: git.RefValue{Exists: true, Object: keptIndex}},
-		{Name: "refs/heads/" + plan.Branch.Name, Expected: git.RefValue{Exists: true, Object: plan.Head}, Desired: git.RefValue{Exists: true, Object: parent}},
-	}); err != nil {
-		return TidyResult{}, errors.Join(fmt.Errorf("%w; nothing was changed: %w", ErrStalePlan, err), e.history().Settle(ctx, checkpoint, model.CheckpointAbandoned, ""))
-	}
-	checkpoint.State = model.CheckpointApplied
-	result.Checkpoint = checkpoint
-	if err := e.history().Step("moved"); err != nil {
+	err = e.history().Make(ctx, &checkpoint, history.Change{Failpoint: "tidy.prepared", Made: "the commits are made",
+		Move: func(ctx context.Context) error {
+			if err := worktree.UpdateRefs(ctx, []git.RefChange{
+				{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: plan.Head}},
+				{Name: checkpoint.IndexRef(), Desired: git.RefValue{Exists: true, Object: keptIndex}},
+				{Name: "refs/heads/" + plan.Branch.Name, Expected: git.RefValue{Exists: true, Object: plan.Head}, Desired: git.RefValue{Exists: true, Object: parent}},
+			}); err != nil {
+				return fmt.Errorf("%w; nothing was changed: %w", ErrStalePlan, err)
+			}
+			return nil
+		},
+		After: func(ctx context.Context) (string, error) {
+			if err := worktree.ResetIndex(ctx); err != nil {
+				return "", fmt.Errorf("commits were created, but the staging area could not be reset: %w; run git reset to align it with the new commits", err)
+			}
+			// A narrowing that fails leaves the worktree as wide as it was.
+			if narrowed, err := e.narrow(ctx, worktree, plan.Branch, plan.Base, plan.Final); err == nil {
+				result.Narrowed = narrowed
+			}
+			return fmt.Sprintf("tidied %s into %s (checkpoint %s)", prose.Plural(len(plan.History), "commit"), prose.Plural(len(result.Commits), "commit"), checkpoint.Name()), nil
+		}})
+	if checkpoint.State == model.CheckpointApplied {
+		result.Checkpoint = checkpoint
 		return result, err
 	}
-	if err := worktree.ResetIndex(ctx); err != nil {
-		return result, fmt.Errorf("commits were created, but the staging area could not be reset: %w; run git reset to align it with the new commits", err)
-	}
-	// A narrowing that fails leaves the worktree as wide as it was.
-	if narrowed, err := e.narrow(ctx, worktree, plan.Branch, plan.Base, plan.Final); err == nil {
-		result.Narrowed = narrowed
-	}
-	message := fmt.Sprintf("tidied %s into %s (checkpoint %s)", prose.Plural(len(plan.History), "commit"), prose.Plural(len(result.Commits), "commit"), checkpoint.Name())
-	if err := e.history().Settle(ctx, checkpoint, model.CheckpointApplied, message); err != nil {
-		return result, history.Unfinished("the commits are made", err)
-	}
-	return result, nil
+	return TidyResult{}, err
 }
 
 // narrow leaves out of a worktree dockhand made the directories the branch

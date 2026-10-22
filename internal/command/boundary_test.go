@@ -63,7 +63,9 @@ var layers = map[string]bool{"view": true, "checkrun": true, "host": true, "sett
 // front; nothing else reaches across (architecture's answer, 2026-10-22).
 // update --mine is ship's edit stage over your outdated ports, outdated's
 // Batch.
-var verbImports = map[string][]string{"ship": {"author", "tidy", "submit", "outdated"}, "bump": {"ship", "author"}, "author": {"outdated"}}
+// submit commits what isn't committed first, as tidy's stage, Design v3
+// §3's chaining.
+var verbImports = map[string][]string{"ship": {"author", "tidy", "submit", "outdated"}, "bump": {"ship", "author"}, "author": {"outdated"}, "submit": {"tidy"}}
 
 // The command layer parses, finds context, prompts, and renders; the
 // engine decides (doc.go). It imports nothing past its layer, and it

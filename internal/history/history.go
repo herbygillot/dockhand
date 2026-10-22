@@ -18,9 +18,11 @@ package history
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -57,6 +59,58 @@ func (h *Transitions) Step(step string) error {
 		return nil
 	}
 	return h.StopAt(step)
+}
+
+// Change is a change of a branch's history that a checkpoint keeps, as
+// Make makes it.
+type Change struct {
+	// Failpoint is the acceptance harness's kill step once the checkpoint
+	// is prepared, "tidy.prepared".
+	Failpoint string
+	// Move makes the change, the refs and the checkout; where it fails, it
+	// has undone what it did itself, and the checkpoint is abandoned.
+	Move func(context.Context) error
+	// After is what follows the move and can't undo it, with the event's
+	// message; an error from it leaves the checkpoint for the next lock
+	// to settle (settle).
+	After func(context.Context) (string, error)
+	// Made says what's done once it moved, for a settle that fails ("the
+	// commits are made").
+	Made string
+}
+
+// Make makes a change a checkpoint keeps, as tidy and rebase each wrote it
+// out (the code-organization review's finding 26): the checkpoint
+// recorded as prepared before anything moves, the change, the checkpoint
+// abandoned where the change fails, and settled as applied, with its
+// event, after. checkpoint's State is applied once the change has moved,
+// whatever follows.
+func (h *Transitions) Make(ctx context.Context, checkpoint *model.Checkpoint, change Change) error {
+	if err := h.Prepare(ctx, checkpoint); err != nil {
+		return err
+	}
+	failpoint.Hit(change.Failpoint)
+	if err := h.Step("prepared"); err != nil {
+		return err
+	}
+	if err := change.Move(ctx); err != nil {
+		return errors.Join(err, h.Settle(ctx, *checkpoint, model.CheckpointAbandoned, ""))
+	}
+	checkpoint.State = model.CheckpointApplied
+	if err := h.Step("moved"); err != nil {
+		return err
+	}
+	message := ""
+	if change.After != nil {
+		var err error
+		if message, err = change.After(ctx); err != nil {
+			return err
+		}
+	}
+	if err := h.Settle(ctx, *checkpoint, model.CheckpointApplied, message); err != nil {
+		return Unfinished(change.Made, err)
+	}
+	return nil
 }
 
 // Prepare records a checkpoint as prepared, before the change it

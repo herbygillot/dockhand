@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
-	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/history"
@@ -222,30 +221,24 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 	// old history reachable before the branch leaves it, and the checkout
 	// moves with the branch, as git reset --keep moves them.
 	checkpoint := model.Checkpoint{Kind: model.CheckpointRebase, Branch: current.ID, Before: model.ObjectID(head), After: model.ObjectID(rebased), BaseBefore: current.Base, BaseAfter: master, At: e.now()}
-	if err := e.history().Prepare(ctx, &checkpoint); err != nil {
-		return Rebased{}, err
-	}
-	failpoint.Hit("rebase.prepared")
-	if err := e.history().Step("prepared"); err != nil {
-		return Rebased{}, err
-	}
-	kept := git.RefChange{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: head}}
-	if err := worktree.UpdateRefs(ctx, []git.RefChange{kept}); err != nil {
-		return Rebased{}, errors.Join(err, e.history().Settle(ctx, checkpoint, model.CheckpointAbandoned, ""))
-	}
-	if err := worktree.MoveCheckout(ctx, head, rebased); err != nil {
-		undone := worktree.UpdateRefs(context.WithoutCancel(ctx), []git.RefChange{{Name: kept.Name, Expected: kept.Desired}})
-		return Rebased{}, errors.Join(fmt.Errorf("%s is as it was: %w", current.ShortName(), err), undone, e.history().Settle(ctx, checkpoint, model.CheckpointAbandoned, ""))
-	}
-	checkpoint.State = model.CheckpointApplied
-	result.Checkpoint = &checkpoint
-	if err := e.history().Step("moved"); err != nil {
+	err = e.history().Make(ctx, &checkpoint, history.Change{Failpoint: "rebase.prepared", Made: "the rebase is done",
+		// The kept ref is undone with the checkout where it can't move.
+		Move: func(ctx context.Context) error {
+			kept := git.RefChange{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: head}}
+			if err := worktree.UpdateRefs(ctx, []git.RefChange{kept}); err != nil {
+				return err
+			}
+			if err := worktree.MoveCheckout(ctx, head, rebased); err != nil {
+				undone := worktree.UpdateRefs(context.WithoutCancel(ctx), []git.RefChange{{Name: kept.Name, Expected: kept.Desired}})
+				return errors.Join(fmt.Errorf("%s is as it was: %w", current.ShortName(), err), undone)
+			}
+			return nil
+		}})
+	if checkpoint.State == model.CheckpointApplied {
+		result.Checkpoint = &checkpoint
 		return result, err
 	}
-	if err := e.history().Settle(ctx, checkpoint, model.CheckpointApplied, ""); err != nil {
-		return result, history.Unfinished("the rebase is done", err)
-	}
-	return result, nil
+	return Rebased{}, err
 }
 
 // Archive hides a branch from status without touching its files, its Git
