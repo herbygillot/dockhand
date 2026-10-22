@@ -394,7 +394,11 @@ func TestOutsideTheProfileOnlyWhatAChecksPlannedIsRequired(t *testing.T) {
 			require.False(t, te.Missing(), "%s is asked nothing more", te.Target.ID)
 		}
 	}
-	require.True(t, judged.Targets[slices.IndexFunc(judged.Targets, func(te TargetEvidence) bool { return te.Target.ID == "gthumb" })].Missing())
+	gthumbs := judged.Targets[slices.IndexFunc(judged.Targets, func(te TargetEvidence) bool { return te.Target.ID == "gthumb" })]
+	require.True(t, gthumbs.Missing())
+	// The check that planned it there is named, which asks for it there
+	// (the exiv2 session's note 7).
+	require.Equal(t, "check-2", gthumbs.Outcomes[1].PlannedIn)
 	require.Equal(t, "—", func() string {
 		c := judged.Targets[0].Outcomes[1]
 		if c.Kind == CellExcluded && c.Exclusion.Span {

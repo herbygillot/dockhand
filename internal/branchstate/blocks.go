@@ -69,8 +69,12 @@ type Block struct {
 	// Baselines the baselines that fail a port alike, for
 	// BlockFailsAtBase; Planned the target not accepted, for
 	// BlockNotAccepted.
-	Unmet     model.Unmet
-	Target    *evidence.TargetEvidence
+	Unmet  model.Unmet
+	Target *evidence.TargetEvidence
+	// Unbuilt are where a changed target wasn't built, for
+	// BlockUnchecked, each with the check that planned it there where
+	// that's why it's asked for.
+	Unbuilt   []Place
 	Baselines []string
 	Planned   model.PlanTarget
 	// Path and Marks are a Portfile and the guesses it still marks, for
@@ -120,7 +124,21 @@ func (b Block) Words(v Vocabulary) string {
 	case BlockRemade:
 		return fmt.Sprintf("%s: the previous check is no longer valid because %s. Run dockhand check to rebuild in the affected environments, or share the branch with --draft", b.Port, v.Remade(*b.Target))
 	case BlockUnchecked:
-		return fmt.Sprintf("%s has changed, but these files have not been checked in every required environment. Run dockhand check, or share the branch with --draft", b.Port)
+		if len(b.Unbuilt) == 0 {
+			return fmt.Sprintf("%s has changed, but these files have not been checked in every required environment. Run dockhand check, or share the branch with --draft", b.Port)
+		}
+		// Each place it wasn't built, and, outside build.default's
+		// profile, the check that planned it there, where the block said
+		// only "every required environment" (the exiv2 session's note 7).
+		var places []string
+		for _, u := range b.Unbuilt {
+			place := v.Environment(u.Environment)
+			if u.PlannedIn != "" {
+				place += ", which " + u.PlannedIn + " planned and stopped before"
+			}
+			places = append(places, place)
+		}
+		return fmt.Sprintf("%s has changed, but these files haven't been built on %s. Run dockhand check, or share the branch with --draft", b.Port, strings.Join(places, "; "))
 	case BlockFailsAtBase:
 		return fmt.Sprintf("%s failed in %s and has the same failure at the base (%s). Use --accept %s to submit with this existing failure disclosed, fix the failure, or share the branch with --draft", b.Port, b.Run, strings.Join(b.Baselines, ", "), b.Port)
 	case BlockFailed:
@@ -141,6 +159,25 @@ func (b Block) Words(v Vocabulary) string {
 		return "the pull request needs a title, since the branch changes several ports: give one with --title"
 	}
 	return string(b.Kind)
+}
+
+// Place is an environment a changed target wasn't built in, and the
+// check that planned it there, where outside build.default's profile
+// that's why it's asked for.
+type Place struct {
+	Environment model.Environment
+	PlannedIn   string
+}
+
+// unbuilt are where a target wasn't built, as its cells say.
+func unbuilt(target evidence.TargetEvidence) []Place {
+	var where []Place
+	for _, cell := range target.Outcomes {
+		if cell.Kind == evidence.CellNotRun {
+			where = append(where, Place{Environment: cell.Environment, PlannedIn: cell.PlannedIn})
+		}
+	}
+	return where
 }
 
 // kindWords is how a target not accepted is named: an extra, a revision

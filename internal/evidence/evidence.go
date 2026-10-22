@@ -95,6 +95,10 @@ type Cell struct {
 	// NotReusable is why no later check can reuse a passed result, where
 	// what its build read wasn't recorded (model.TargetInputs).
 	NotReusable string
+	// PlannedIn is the check that planned a target not run in an
+	// environment outside build.default's profile, which asks for it there
+	// only because that check did; empty in the profile's own.
+	PlannedIn string
 }
 
 // recorded is a result recorded in an environment, as a cell: one that
@@ -364,13 +368,13 @@ func Judge(primary Check, plan model.Plan, earlier []Check, now Identities, requ
 // and a target a check planned there and didn't reach, as when it
 // stopped, is still asked for.
 func (e *Evidence) outsideProfile(required []model.Environment, checks []Check) {
-	planned := func(environment model.Environment, id model.TargetID) bool {
+	planned := func(environment model.Environment, id model.TargetID) string {
 		for _, check := range checks {
 			if build, ok := check.Plan.In(environment); ok && build.Builds(id) {
-				return true
+				return check.Run.Name()
 			}
 		}
-		return false
+		return ""
 	}
 	for i, environment := range e.Plan.Environments {
 		if slices.ContainsFunc(required, func(r model.Environment) bool { return Covers(r, environment) }) {
@@ -378,7 +382,12 @@ func (e *Evidence) outsideProfile(required []model.Environment, checks []Check) 
 		}
 		for t := range e.Targets {
 			cell := &e.Targets[t].Outcomes[i]
-			if cell.Kind != CellNotRun || planned(environment, e.Targets[t].Target.ID) {
+			if cell.Kind != CellNotRun {
+				continue
+			}
+			// Asked for there only because a check planned it: that check
+			// is named, as the block says where (the exiv2 session's note 7).
+			if cell.PlannedIn = planned(environment, e.Targets[t].Target.ID); cell.PlannedIn != "" {
 				continue
 			}
 			skipped := noResult(CellExcluded, environment, e.Targets[t].Target.ID)

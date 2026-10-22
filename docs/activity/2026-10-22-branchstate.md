@@ -107,3 +107,11 @@ What lets a submission go was held in three places:
 Ship's `submitPassed` now asks the engine and words the refusal as ship says it, with the same ExitAttention and words as before. Its `Once it's fine:` line is `renderNext`'s. The draft rule after a failed check is `branchstate.SubmitsDespiteCheck`.
 
 The engine's tests call `ApplySubmit` with `AnsweredAsked`. Every test passes unchanged otherwise.
+
+## An unchecked target's block says where
+
+This was the exiv2 session's note 7, the part c66c9394 left undone. submit's block for a changed target with no result where it's required said only that "these files have not been checked in every required environment". It now names each place: "ufraw has changed, but these files haven't been built on macOS 26; macOS 13, which check-4 planned and stopped before."
+
+- The block carries its `Unbuilt` places (`branchstate.Place`), read from the target's not-run cells.
+- Outside build.default's profile, a target is asked for only because a check planned it there. The evidence now keeps that check on the cell: `Cell.PlannedIn`, set where `outsideProfile` finds a check that planned the target, which `evidence.Plan`'s merge had lost.
+- Tests: `TestOutsideTheProfileOnlyWhatAChecksPlannedIsRequired` checks the cell's check, and `TestAnUncheckedTargetsBlockSaysWhere` the words. Two engine tests now read the named environment.

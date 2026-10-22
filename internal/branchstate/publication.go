@@ -63,7 +63,7 @@ func PublicationBlocks(ev evidence.Evidence, accepted []string, atBase map[strin
 			t := target
 			blocks = append(blocks, Block{Kind: BlockRemade, Port: name, Target: &t})
 		case target.Missing():
-			blocks = append(blocks, Block{Kind: BlockUnchecked, Port: name})
+			blocks = append(blocks, Block{Kind: BlockUnchecked, Port: name, Unbuilt: unbuilt(target)})
 		case standing[name].Kind != "":
 			// Its every failure is a dependency's accepted standing.
 		case !target.Acceptable() && len(atBase[name]) > 0 && !slices.Contains(accepted, name):

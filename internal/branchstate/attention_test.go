@@ -71,3 +71,14 @@ func TestSubmitReadiness(t *testing.T) {
 	pushed.Branch.Pushed = true
 	require.Equal(t, NotCandidate, SubmitReadiness(pushed))
 }
+
+// An unchecked target's block says where it wasn't built, and, outside
+// build.default's profile, the check that planned it there, where it
+// said only "every required environment" (the exiv2 session's note 7).
+func TestAnUncheckedTargetsBlockSaysWhere(t *testing.T) {
+	block := Block{Kind: BlockUnchecked, Port: "ufraw", Unbuilt: []Place{
+		{Environment: model.Environment{Provider: "macOS 26"}},
+		{Environment: model.Environment{Provider: "macOS 13"}, PlannedIn: "check-4"},
+	}}
+	require.Equal(t, "ufraw has changed, but these files haven't been built on macOS 26; macOS 13, which check-4 planned and stopped before. Run dockhand check, or share the branch with --draft", block.Words(words{}))
+}

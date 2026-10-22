@@ -61,7 +61,7 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 	submission, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
 	require.NoError(t, err)
 	require.Len(t, submission.Blocking, 1)
-	require.Contains(t, submission.Blocking[0], "libharbor has changed, but these files have not been checked")
+	require.Contains(t, submission.Blocking[0], "libharbor has changed, but these files haven't been built on command macOS 26 (Tahoe) arm64", "naming where")
 	require.Contains(t, submission.Body, "| libharbor | · not run |", "the pull request shows what wasn't built")
 	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update", Accept: []string{"libharbor"}})
 	require.ErrorContains(t, err, "--accept libharbor: no check of these files built it")
@@ -135,7 +135,7 @@ func TestEachEnvironmentTakesItsNewestCheck(t *testing.T) {
 	submission, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
 	require.NoError(t, err)
 	require.Len(t, submission.Blocking, 2)
-	require.Contains(t, submission.Blocking[0], "has changed, but these files have not been checked in every required environment")
+	require.Contains(t, submission.Blocking[0], "has changed, but these files haven't been built on github", "naming where")
 	require.Empty(t, submission.Evidence.Problem)
 	// submit --check runs the check that's still needed, rather than
 	// refusing for the earlier check's gap (field testing, grafana 13.2.4).
