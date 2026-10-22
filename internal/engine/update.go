@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"math/rand/v2"
 	"os"
 	"path"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -20,7 +18,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
-	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
@@ -433,57 +430,14 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	failpoint.Hit("update.prepared")
 	update := describe(branch, request.Port, result)
 	update.Base = base
+	followOnly, err := e.followMoves(ctx, request, worktree, captured, &update, &result)
+	if err != nil {
+		return Update{}, err
+	}
 	// A version update or a checksum refresh is where the port's URLs are
 	// looked at, so its plain-HTTP ones are said there, beside the edit. A
 	// port with nothing to change is said to be current without waiting on
 	// its hosts.
-	if request.Action == model.EditUpdate && len(result.Files) > 0 && update.Release != nil {
-		update.Renamed = e.renamed(ctx, *update.Release)
-		if update.Renamed != "" && request.FollowMoves {
-			for i, file := range result.Files {
-				if path.Base(file.Path) != "Portfile" || file.Delete {
-					continue
-				}
-				moved, n, err := portfile.MoveGitHub(file.After, update.Release.Repository, update.Renamed)
-				if err != nil {
-					return Update{}, fmt.Errorf("%s: --follow-moves: %w", request.Port, err)
-				}
-				if n > 0 {
-					result.Files[i].After, update.Followed = moved, update.Renamed
-				}
-			}
-		}
-	}
-	// A port already at its release, on a branch an update moved before
-	// --follow-moves was asked, still follows the move: duckdb's branch at
-	// 2.0.0 kept github.setup cwida duckdb, and the command changed nothing
-	// (field testing, 2026-10-21).
-	// It compares no archives: the version's are those compared already.
-	followOnly := false
-	if request.Action == model.EditUpdate && request.FollowMoves && len(result.Files) == 0 && update.Release != nil && result.Target.Portfile != "" {
-		if renamed := e.renamed(ctx, *update.Release); renamed != "" {
-			file, text, err := worktree.File(ctx, captured, result.Target.Portfile)
-			if err != nil {
-				return Update{}, err
-			}
-			moved, n, err := portfile.MoveGitHub(text, update.Release.Repository, renamed)
-			if err != nil {
-				return Update{}, fmt.Errorf("%s: --follow-moves: %w", request.Port, err)
-			}
-			if file.Exists && n > 0 {
-				result.Files = []git.FileEdit{{Path: result.Target.Portfile, Before: file, After: moved, Mode: file.Mode}}
-				prepared, err := worktree.EditTree(ctx, captured, result.Files)
-				if err != nil {
-					return Update{}, err
-				}
-				result.PreparedTree = model.ObjectID(prepared)
-				update.Renamed, update.Followed = renamed, renamed
-				update.Files = []string{result.Target.Portfile}
-				update.Subject = update.Port + ": follow the move to " + renamed
-				followOnly = true
-			}
-		}
-	}
 	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && len(result.Files) > 0 {
 		if info, ok := result.PortAfter(update.Port); ok {
 			update.PlainHTTP = e.plainHTTP(ctx, info, request.answered)
@@ -581,53 +535,9 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	case model.EditRevbump:
 		change = fmt.Sprintf("revision %d → %d", update.Before.Revision, update.After.Revision)
 	}
-	// Where the branch was as its base before the edit, as a new one is,
-	// the update's own comparison is the assessment of the files it
-	// leaves: its before is the base and its after the revision, and it
-	// compared them in every context that fetches them (the assessment
-	// design, D), or couldn't, which it says. A Git-fetched port's update
-	// compared no archives, and records none, so its assessment is made
-	// when it's collected.
-	trees, err := worktree.CommitTrees(ctx, []string{string(base)})
+	applied, primed, record, err := e.editFindings(ctx, worktree, branch, base, captured, edit, update, result, compare)
 	if err != nil {
 		return update, err
-	}
-	atBase := trees[string(base)] == captured
-	_, applied, err := worktree.WorkingTree(ctx)
-	if err != nil {
-		return update, err
-	}
-	var primed *model.Assessment
-	if after, _ := result.PortAfter(update.Port); compare && update.Upstream != nil && !after.GitFetched() && atBase {
-		primed = &model.Assessment{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Port: update.Port, Directory: edit.Directory,
-			Comparison: *update.Upstream, Policy: assess.Policy, At: edit.At}
-	}
-	// Where the branch was as its base, the edit's own evaluations, before
-	// and after, are the change record of the files it leaves, as its
-	// comparison is their assessment; elsewhere the record is made below,
-	// from the base.
-	var record *model.ChangeRecord
-	if len(result.Fidelity) > 0 && atBase && (branch.PullRequest == nil || !branch.PullRequest.Adopted) {
-		before, after := result.Fidelity[0].Before, result.Fidelity[len(result.Fidelity)-1].After
-		// The same record the family evaluation makes, through the same
-		// producer, the Portfile's texts with it, so what the edit changed
-		// in a block this Mac doesn't evaluate is said as a record made
-		// from the base says it (batch 76; the architecture re-synthesis,
-		// L2c).
-		name := edit.Directory + "/Portfile"
-		baseFile, baseText, baseErr := worktree.File(ctx, trees[string(base)], name)
-		appliedFile, appliedText, appliedErr := worktree.File(ctx, applied, name)
-		if before.Platform == after.Platform && baseErr == nil && appliedErr == nil {
-			if !baseFile.Exists {
-				baseText = nil
-			}
-			if !appliedFile.Exists {
-				appliedText = nil
-			}
-			made := changeRecord(model.ChangeRecord{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Directory: edit.Directory, At: edit.At},
-				[2]*macports.Snapshot{&before, &after}, [2][]byte{baseText, appliedText}, "")
-			record = &made
-		}
 	}
 	// The files are written; a record that landed though its commit's
 	// outcome is unknown stands, where saying the update failed would
@@ -659,6 +569,122 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		progress.VerboseReport(ctx, "%s: what this revision changes wasn't recorded: %v", edit.Directory, err)
 	}
 	return update, nil
+}
+
+// followMoves notes a GitHub repository that answers by another name, and
+// where --follow-moves asks, follows it in the Portfile the update
+// edits. A port already at its release, on a branch an update moved
+// before --follow-moves was asked, still follows the move: duckdb's
+// branch at 2.0.0 kept github.setup cwida duckdb, and the command changed
+// nothing (field testing, 2026-10-21). That edit is the move alone, and
+// it says so: it compares no archives, since the version's are those
+// compared already.
+func (e *Engine) followMoves(ctx context.Context, request UpdateRequest, worktree *git.Repository, captured string, update *Update, result *editprep.Result) (followOnly bool, err error) {
+	if request.Action != model.EditUpdate || update.Release == nil {
+		return false, nil
+	}
+	if len(result.Files) > 0 {
+		update.Renamed = e.renamed(ctx, *update.Release)
+		if update.Renamed == "" || !request.FollowMoves {
+			return false, nil
+		}
+		for i, file := range result.Files {
+			if path.Base(file.Path) != "Portfile" || file.Delete {
+				continue
+			}
+			moved, n, err := portfile.MoveGitHub(file.After, update.Release.Repository, update.Renamed)
+			if err != nil {
+				return false, fmt.Errorf("%s: --follow-moves: %w", request.Port, err)
+			}
+			if n > 0 {
+				result.Files[i].After, update.Followed = moved, update.Renamed
+			}
+		}
+		return false, nil
+	}
+	if !request.FollowMoves || result.Target.Portfile == "" {
+		return false, nil
+	}
+	renamed := e.renamed(ctx, *update.Release)
+	if renamed == "" {
+		return false, nil
+	}
+	file, text, err := worktree.File(ctx, captured, result.Target.Portfile)
+	if err != nil {
+		return false, err
+	}
+	moved, n, err := portfile.MoveGitHub(text, update.Release.Repository, renamed)
+	if err != nil {
+		return false, fmt.Errorf("%s: --follow-moves: %w", request.Port, err)
+	}
+	if !file.Exists || n == 0 {
+		return false, nil
+	}
+	result.Files = []git.FileEdit{{Path: result.Target.Portfile, Before: file, After: moved, Mode: file.Mode}}
+	prepared, err := worktree.EditTree(ctx, captured, result.Files)
+	if err != nil {
+		return false, err
+	}
+	result.PreparedTree = model.ObjectID(prepared)
+	update.Renamed, update.Followed = renamed, renamed
+	update.Files = []string{result.Target.Portfile}
+	update.Subject = update.Port + ": follow the move to " + renamed
+	return true, nil
+}
+
+// editFindings are what the edit's own work says of the files it leaves,
+// where the branch was as its base before the edit, as a new one is: its
+// comparison their assessment, and its evaluations their change record.
+// Elsewhere both are made from the base when they're read for. applied is
+// the tree of the files the edit leaves.
+func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, branch model.Branch, base model.ObjectID, captured string, edit model.Edit, update Update, result editprep.Result, compare bool) (applied string, primed *model.Assessment, record *model.ChangeRecord, err error) {
+	// Where the branch was as its base before the edit, as a new one is,
+	// the update's own comparison is the assessment of the files it
+	// leaves: its before is the base and its after the revision, and it
+	// compared them in every context that fetches them (the assessment
+	// design, D), or couldn't, which it says. A Git-fetched port's update
+	// compared no archives, and records none, so its assessment is made
+	// when it's collected.
+	trees, err := worktree.CommitTrees(ctx, []string{string(base)})
+	if err != nil {
+		return "", nil, nil, err
+	}
+	atBase := trees[string(base)] == captured
+	_, applied, err = worktree.WorkingTree(ctx)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	if after, _ := result.PortAfter(update.Port); compare && update.Upstream != nil && !after.GitFetched() && atBase {
+		primed = &model.Assessment{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Port: update.Port, Directory: edit.Directory,
+			Comparison: *update.Upstream, Policy: assess.Policy, At: edit.At}
+	}
+	// Where the branch was as its base, the edit's own evaluations, before
+	// and after, are the change record of the files it leaves, as its
+	// comparison is their assessment; elsewhere update makes the record
+	// from the base, once the edit is recorded.
+	if len(result.Fidelity) > 0 && atBase && (branch.PullRequest == nil || !branch.PullRequest.Adopted) {
+		before, after := result.Fidelity[0].Before, result.Fidelity[len(result.Fidelity)-1].After
+		// The same record the family evaluation makes, through the same
+		// producer, the Portfile's texts with it, so what the edit changed
+		// in a block this Mac doesn't evaluate is said as a record made
+		// from the base says it (batch 76; the architecture re-synthesis,
+		// L2c).
+		name := edit.Directory + "/Portfile"
+		baseFile, baseText, baseErr := worktree.File(ctx, trees[string(base)], name)
+		appliedFile, appliedText, appliedErr := worktree.File(ctx, applied, name)
+		if before.Platform == after.Platform && baseErr == nil && appliedErr == nil {
+			if !baseFile.Exists {
+				baseText = nil
+			}
+			if !appliedFile.Exists {
+				appliedText = nil
+			}
+			made := changeRecord(model.ChangeRecord{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Directory: edit.Directory, At: edit.At},
+				[2]*macports.Snapshot{&before, &after}, [2][]byte{baseText, appliedText}, "")
+			record = &made
+		}
+	}
+	return applied, primed, record, nil
 }
 
 // updateSource is what an update is prepared from: the branch's working
@@ -806,40 +832,6 @@ func describe(branch model.Branch, selector string, result editprep.Result) Upda
 	return update
 }
 
-// worktree opens the branch's checkout, which must have the branch checked
-// out, checking it out again where clean removed it, for work on the
-// branch.
-func (e *Engine) worktree(ctx context.Context, branch model.Branch) (*git.Repository, error) {
-	if branch.Worktree == "" {
-		var err error
-		if branch, err = e.placeWorktree(ctx, branch); err != nil {
-			return nil, err
-		}
-	}
-	if err := e.checkOutAgain(ctx, branch); err != nil {
-		return nil, err
-	}
-	return e.openWorktree(ctx, branch)
-}
-
-// openWorktree opens the branch's checkout as it is, which must have the
-// branch checked out. One that's gone isn't made again, as worktree makes
-// it, so what only reads a branch, as status does, changes nothing.
-func (e *Engine) openWorktree(ctx context.Context, branch model.Branch) (*git.Repository, error) {
-	if branch.Worktree == "" || !exists(branch.Worktree) {
-		return nil, fmt.Errorf("%s has no worktree here", branch.Name)
-	}
-	worktree, err := git.Open(ctx, branch.Worktree, e.options.git())
-	if err != nil {
-		return nil, err
-	}
-	current, err := worktree.CurrentBranch(ctx)
-	if err != nil || current != branch.Name {
-		return nil, fmt.Errorf("%s is not checked out in %s any more; switch back with git switch %s", branch.Name, branch.Worktree, branch.Name)
-	}
-	return worktree, nil
-}
-
 // expandFor adds the directories of the ports the files belong to to a
 // sparse worktree's cone, so the edited files are there to write.
 func expandFor(ctx context.Context, worktree *git.Repository, files []string) error {
@@ -859,299 +851,6 @@ func expandFor(ctx context.Context, worktree *git.Repository, files []string) er
 		}
 	}
 	return worktree.ExpandSparse(ctx, missing...)
-}
-
-// BranchesChanging lists the open branches whose commits or working files
-// change a port: update commits nothing, so a branch it edited changes the
-// port before tidy commits it. Where a branch's files as they stand have a
-// change record for a directory, the record says which of its subports
-// they change, so a branch updating terraform-1.16 changes that subport
-// and not terraform-1.17; a directory without one changes the port its
-// name is, as its text says.
-func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Branch, error) {
-	found, err := e.PortBranches(ctx, port)
-	branches := make([]model.Branch, 0, len(found))
-	for _, f := range found {
-		branches = append(branches, f.Branch)
-	}
-	return branches, err
-}
-
-// PortBranch is an open branch that changes a port, and whether its
-// change record says it changes only the port's revision, as a branch of
-// --revbump-dependents does.
-type PortBranch struct {
-	Branch       model.Branch
-	RevisionOnly bool
-}
-
-// PortBranches are the open branches that change a port, as
-// BranchesChanging finds them, those that change more than its revision
-// first (the command-line UX review's §1, revised): `-p jq` means jq's
-// own update before the rebuild of jq a library's branch carries.
-func (e *Engine) PortBranches(ctx context.Context, port string) ([]PortBranch, error) {
-	open, err := e.OpenBranches(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var substantive, revisionOnly []PortBranch
-	for _, branch := range open {
-		head, _, err := e.Repo.Branch(ctx, branch.Name)
-		if errors.Is(err, git.ErrBranchMissing) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		paths, err := e.Repo.ChangedPaths(ctx, string(branch.Base), head)
-		if err != nil {
-			return nil, err
-		}
-		edited, err := e.workingEdits(ctx, branch)
-		if err != nil {
-			return nil, err
-		}
-		changes, onlyRevision, err := e.branchChanges(ctx, branch, head, macports.ScopeOf(append(paths, edited...)).Ports, port)
-		switch {
-		case err != nil:
-			return nil, err
-		// A branch started for the port is the port's before it changes
-		// it (the command-line UX second look's §1).
-		case !changes && slices.Contains(branch.Ports, port):
-			substantive = append(substantive, PortBranch{Branch: branch})
-		case changes && onlyRevision:
-			revisionOnly = append(revisionOnly, PortBranch{Branch: branch, RevisionOnly: true})
-		case changes:
-			substantive = append(substantive, PortBranch{Branch: branch})
-		}
-	}
-	return append(substantive, revisionOnly...), nil
-}
-
-// branchChanges says whether a branch whose files change these directories
-// changes a port, and whether only its revision: by the change record of
-// its files as they stand, where one says, and else by a directory's
-// name. The branch's files are read for their tree only where a record
-// might name the port, so a branch nothing of which could is passed over
-// cheaply.
-func (e *Engine) branchChanges(ctx context.Context, branch model.Branch, head string, directories []string, port string) (changes, revisionOnly bool, err error) {
-	var recorded []model.ChangeRecord
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		var err error
-		recorded, err = r.ChangeRecords(store.AssessmentFilter{Branch: branch.ID})
-		return err
-	}); err != nil {
-		return false, false, err
-	}
-	candidates := false
-	for _, directory := range directories {
-		named := path.Base(directory) == port
-		for _, record := range recorded {
-			if record.Directory == directory && slices.ContainsFunc(record.Ports, func(p model.SubportChange) bool { return p.Port == port }) {
-				named = true
-			}
-		}
-		candidates = candidates || named
-	}
-	if !candidates {
-		return false, false, nil
-	}
-	tree, err := e.branchTree(ctx, branch, head)
-	if err != nil {
-		return false, false, err
-	}
-	records := map[string]model.ChangeRecord{}
-	for _, record := range recorded {
-		if _, ok := records[record.Directory]; !ok && record.Tree == tree && record.Base == branch.Base && record.Policy == fidelity.ChangePolicy {
-			records[record.Directory] = record
-		}
-	}
-	for _, directory := range directories {
-		if changed, ok := changedSubports(records, directory); ok {
-			if slices.Contains(changed, port) {
-				return true, records[directory].RevisionOnly(port), nil
-			}
-			continue
-		}
-		if path.Base(directory) == port {
-			return true, false, nil
-		}
-	}
-	return false, false, nil
-}
-
-// renameForVersion renames a branch named for the version an update moved
-// it from, jq-1.8.1, for the one it moves to, jq-1.8.2, while no pull
-// request has it: after one does, its name is the pull request's head,
-// and stays (design v3, §3). The worktree stays where it is, since a
-// person may be in it; its Git branch and record follow. It says the old
-// name, or nothing where the branch keeps its name.
-func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, port, from, to string) (string, error) {
-	if branch.PullRequest != nil || from == "" || from == to || branch.ShortName() != refSafe(port+"-"+from) {
-		return "", nil
-	}
-	name, err := e.NameFor(ctx, port, to)
-	if err != nil {
-		return "", err
-	}
-	old := branch.ShortName()
-	if err := e.Repo.RenameBranch(ctx, branch.Name, BranchName(name)); err != nil {
-		return "", err
-	}
-	branch.Name = BranchName(name)
-	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
-		if err := tx.UpdateBranch(*branch); err != nil {
-			return err
-		}
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchRename, Level: model.LevelInfo,
-			Message: fmt.Sprintf("renamed %s to %s, for the version it now moves to", old, name)})
-		return err
-	}, branchRecorded(branch.ID))
-	return old, err
-}
-
-// branchTree is a branch's files as they stand: its worktree's, edits and
-// all, where it's checked out there, else its head's.
-func (e *Engine) branchTree(ctx context.Context, branch model.Branch, head string) (model.ObjectID, error) {
-	if branch.Worktree != "" && exists(branch.Worktree) {
-		worktree, err := git.Open(ctx, branch.Worktree, e.options.git())
-		if err != nil {
-			return "", err
-		}
-		if current, err := worktree.CurrentBranch(ctx); err == nil && current == branch.Name {
-			_, tree, err := worktree.WorkingTree(ctx)
-			return model.ObjectID(tree), err
-		}
-	}
-	trees, err := e.Repo.CommitTrees(ctx, []string{head})
-	if err != nil {
-		return "", err
-	}
-	return model.ObjectID(trees[head]), nil
-}
-
-// ChangesHere reports whether what's checked out where the engine was
-// opened changes a port: in the commits since it left master, as fetched
-// now, or in files edited or added and not committed. Work planned on
-// master would leave those out. It's for a checkout dockhand doesn't
-// track, a branch a person made with Git or master itself; a tracked
-// branch's changes are BranchesChanging's.
-func (e *Engine) ChangesHere(ctx context.Context, port string) (bool, error) {
-	master, err := e.fetchMaster(ctx)
-	if err != nil {
-		return false, err
-	}
-	head, err := e.Repo.Resolve(ctx, "HEAD")
-	if err != nil {
-		return false, err
-	}
-	left, err := e.Repo.MergeBase(ctx, head, string(master))
-	if err != nil {
-		return false, err
-	}
-	paths, err := e.Repo.ChangedPaths(ctx, left, head)
-	if err != nil {
-		return false, err
-	}
-	edited, err := e.Repo.TrackedChanges(ctx)
-	if err != nil {
-		return false, err
-	}
-	added, err := e.Repo.Untracked(ctx)
-	if err != nil {
-		return false, err
-	}
-	return slices.Contains(macports.ScopeOf(slices.Concat(paths, edited, added)).PortNames(), port), nil
-}
-
-// workingEdits are the tracked files edited in a branch's worktree and not
-// yet committed; none where it isn't checked out, which it leaves as it
-// is.
-func (e *Engine) workingEdits(ctx context.Context, branch model.Branch) ([]string, error) {
-	if branch.Worktree == "" || !exists(branch.Worktree) {
-		return nil, nil
-	}
-	worktree, err := git.Open(ctx, branch.Worktree, e.options.git())
-	if err != nil {
-		return nil, err
-	}
-	if current, err := worktree.CurrentBranch(ctx); err != nil || current != branch.Name {
-		return nil, nil
-	}
-	return worktree.TrackedChanges(ctx)
-}
-
-// FreeName is a name for a new branch for work on a port, per decision 37:
-// <port>-<short ID>, such as jq-4k2p, which no branch, tracked or not, and
-// no worktree directory already uses. It holds no verb or version: it's
-// for work, such as an edit, that says nothing more specific. NameFor
-// names a branch for what it does.
-func (e *Engine) FreeName(ctx context.Context, port string) (string, error) {
-	return e.NameFor(ctx, port, "")
-}
-
-// NameFor is a name for a new branch that says what it does, the person's
-// decision of 2026-10-02 (the command-line UX review's §1, revised):
-// <port>-<what>, such as jq-1.8.1 for an update, gdal-rebuild, or
-// mods-new, with decision 37's short ID added only where that name is
-// taken, as jq-1.8.1-4k2p; with nothing to say, <port>-<short ID>. Taken
-// means it exists now: a tracked branch that isn't merged, a Git branch,
-// or a worktree directory, so a merged and cleaned branch's name is free
-// again. What Git refuses in a ref becomes -.
-func (e *Engine) NameFor(ctx context.Context, port, what string) (string, error) {
-	base := port
-	if what != "" {
-		base = refSafe(port + "-" + what)
-		if free, err := e.nameFree(ctx, base); err != nil || free {
-			return base, err
-		}
-	}
-	for range 20 {
-		name := base + "-" + shortID()
-		free, err := e.nameFree(ctx, name)
-		if err != nil {
-			return "", err
-		}
-		if free {
-			return name, nil
-		}
-	}
-	return "", fmt.Errorf("no free branch name for %s; name one with dockhand start <name>", port)
-}
-
-// nameFree says whether no branch, tracked or Git's, and no worktree
-// directory has a name.
-func (e *Engine) nameFree(ctx context.Context, name string) (bool, error) {
-	if _, err := e.Resolve(ctx, name); err == nil {
-		return false, nil
-	} else if !errors.Is(err, ErrNoBranch) {
-		return false, err
-	}
-	if _, _, err := e.Repo.Branch(ctx, BranchName(name)); err == nil {
-		return false, nil
-	} else if !errors.Is(err, git.ErrBranchMissing) {
-		return false, err
-	}
-	return !exists(e.worktreeDirectory(BranchName(name))), nil
-}
-
-// refUnsafe is what Git refuses in a ref's name (git-check-ref-format):
-// control characters, space, ~ ^ : ? * [ \, and a run of dots.
-var refUnsafe = regexp.MustCompile(`[\x00-\x20\x7f~^:?*\[\\]+|\.\.+`)
-
-// refSafe is a name with what Git refuses in a ref written -.
-func refSafe(name string) string {
-	return strings.Trim(refUnsafe.ReplaceAllString(name, "-"), "-./")
-}
-
-// shortID is four random lowercase letters and digits.
-func shortID() string {
-	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
-	id := make([]byte, 4)
-	for i := range id {
-		id[i] = alphabet[rand.IntN(len(alphabet))]
-	}
-	return string(id)
 }
 
 // assessUpstream assesses what upstream's change means for the port an
