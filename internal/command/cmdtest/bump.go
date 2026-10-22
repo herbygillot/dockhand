@@ -94,3 +94,13 @@ func Versioned(t *testing.T, w World) {
 	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n"), 0o644))
 	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: 1.7.1")
 }
+
+// unfetchedPrevious is the bumper, where the current version's archives
+// couldn't be fetched to compare with the new one's.
+type UnfetchedPrevious struct{ Bumper }
+
+func (b UnfetchedPrevious) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
+	result, err := b.Bumper.Prepare(ctx, r)
+	result.PreviousProblem = "HTTP 404"
+	return result, err
+}

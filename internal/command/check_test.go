@@ -197,8 +197,8 @@ func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
 	passed := model.TargetResult{Outcome: model.OutcomePassed}
 	failed := model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}
 	evidence := engine.Evidence{Plan: model.Plan{Environments: []model.Environment{tahoe, sequoia}, Targets: targets}, Targets: []engine.TargetEvidence{
-		{Target: targets[0], Outcomes: cells([]model.TargetResult{passed, passed})},
-		{Target: targets[1], Outcomes: cells([]model.TargetResult{passed, failed})},
+		{Target: targets[0], Outcomes: cmdtest.Cells([]model.TargetResult{passed, passed})},
+		{Target: targets[1], Outcomes: cmdtest.Cells([]model.TargetResult{passed, failed})},
 	}}
 	var out bytes.Buffer
 	view.WriteResults(&out, "  ", evidence, false)
@@ -208,7 +208,7 @@ func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
 
 	evidence.Plan.Environments = []model.Environment{tahoe}
 	evidence.Targets = evidence.Targets[:1]
-	evidence.Targets[0].Outcomes = cells([]model.TargetResult{passed})
+	evidence.Targets[0].Outcomes = cmdtest.Cells([]model.TargetResult{passed})
 	out.Reset()
 	view.WriteResults(&out, "  ", evidence, false)
 	require.Equal(t, "  flatbuffers  ✓\n", out.String())
@@ -229,7 +229,7 @@ func TestACheckReportsTheReleasesItPlanned(t *testing.T) {
 	targets := []model.PlanTarget{{ID: "exiv2", Target: model.Target{Name: "exiv2"}}}
 	// 26 is the evidence's, as evidence.Plan adds it, for submit to say.
 	plan := model.Plan{Environments: []model.Environment{monterey, next, tahoe}, Builds: []model.EnvironmentPlan{{Environment: monterey}, {Environment: next}}, Targets: targets}
-	e := engine.Evidence{Plan: plan, Targets: []engine.TargetEvidence{{Target: targets[0], Outcomes: cells([]model.TargetResult{{Outcome: model.OutcomePassed}, {Outcome: model.OutcomePassed}, {Outcome: model.OutcomeNotRun}})}}}
+	e := engine.Evidence{Plan: plan, Targets: []engine.TargetEvidence{{Target: targets[0], Outcomes: cmdtest.Cells([]model.TargetResult{{Outcome: model.OutcomePassed}, {Outcome: model.OutcomePassed}, {Outcome: model.OutcomeNotRun}})}}}
 	var out bytes.Buffer
 	view.WriteResults(&out, "  ", e, false)
 	require.Equal(t, "  PORT    macOS 12   Darwin 26\n  exiv2   ✓          ✓\n", out.String())
@@ -304,15 +304,15 @@ func TestBaselineResultsShowWhereItRebuilt(t *testing.T) {
 	failed := model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}
 	notRun := model.TargetResult{Outcome: model.OutcomeNotRun}
 	branch := engine.Evidence{Run: model.Run{Number: 4}, Plan: model.Plan{Environments: []model.Environment{tahoe, sequoia}}, Targets: []engine.TargetEvidence{
-		{Target: jq, Outcomes: cells([]model.TargetResult{passed, failed})},
-		{Target: gone, Outcomes: cells([]model.TargetResult{failed, passed})},
+		{Target: jq, Outcomes: cmdtest.Cells([]model.TargetResult{passed, failed})},
+		{Target: gone, Outcomes: cmdtest.Cells([]model.TargetResult{failed, passed})},
 	}}
 	base := engine.Evidence{Plan: model.Plan{Environments: []model.Environment{tahoe, sequoia}, Builds: []model.EnvironmentPlan{
 		{Environment: tahoe, Exclusions: []model.Exclusion{{Target: jq.Target, Reason: "check-4 didn't fail there"}, {Target: gone.Target, Reason: "replaced by other"}}},
 		{Environment: sequoia, Order: []model.TargetID{"jq"}, Exclusions: []model.Exclusion{{Target: gone.Target, Reason: "check-4 didn't fail there"}}},
 	}}, Targets: []engine.TargetEvidence{
-		{Target: jq, Outcomes: cells([]model.TargetResult{notRun, failed})},
-		{Target: gone, Outcomes: cells([]model.TargetResult{notRun, notRun})},
+		{Target: jq, Outcomes: cmdtest.Cells([]model.TargetResult{notRun, failed})},
+		{Target: gone, Outcomes: cmdtest.Cells([]model.TargetResult{notRun, notRun})},
 	}}
 	var out bytes.Buffer
 	checkrun.WriteBaselineResults(&out, base, branch, "1a2b3c4")
@@ -376,20 +376,6 @@ func TestAPlanRequiringTestsNamesWhatDeclaresNone(t *testing.T) {
 	out.Reset()
 	view.WritePlan(&out, plan, nil, nil, nil)
 	require.NotContains(t, out.String(), "No tests")
-}
-
-// cells are hand-built results as the evidence's cells: recorded, but for
-// a result not run, whose cell is of that kind.
-func cells(results []model.TargetResult) []engine.Cell {
-	var cells []engine.Cell
-	for _, result := range results {
-		kind := engine.CellRecorded
-		if result.Outcome == model.OutcomeNotRun {
-			kind = engine.CellNotRun
-		}
-		cells = append(cells, engine.Cell{TargetResult: result, Kind: kind})
-	}
-	return cells
 }
 
 // A --variants plan says what it builds, and --variants each asks before

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
@@ -43,4 +44,18 @@ func (OnePort) Ports(_ context.Context, _ model.Source, directory string, _ mode
 
 func (OnePort) Directory(context.Context, model.Source, string) (string, error) {
 	return "", errors.New("no such port")
+}
+
+// cells are hand-built results as the evidence's cells: recorded, but for
+// a result not run, whose cell is of that kind.
+func Cells(results []model.TargetResult) []engine.Cell {
+	var cells []engine.Cell
+	for _, result := range results {
+		kind := engine.CellRecorded
+		if result.Outcome == model.OutcomeNotRun {
+			kind = engine.CellNotRun
+		}
+		cells = append(cells, engine.Cell{TargetResult: result, Kind: kind})
+	}
+	return cells
 }

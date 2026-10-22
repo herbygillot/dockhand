@@ -2,7 +2,6 @@ package command
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/command/view"
-	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -189,23 +187,15 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	require.Equal(t, "--json isn't available for dockhand serve yet; its output is text only", *notJSON.Error)
 }
 
-// unfetchedPrevious is the bumper, where the current version's archives
-// couldn't be fetched to compare with the new one's.
-type unfetchedPrevious struct{ cmdtest.Bumper }
-
-func (b unfetchedPrevious) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
-	result, err := b.Bumper.Prepare(ctx, r)
-	result.PreviousProblem = "HTTP 404"
-	return result, err
-}
-
 // update --json carries what comparing the upstream archives found, as
 // update prints it. (The architecture review of 2026-09-27, finding 6.)
 func TestUpdateJSONCarriesTheUpstreamComparison(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
-	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{cmdtest.Bumper{Repo: e.Repo}} }
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer {
+		return cmdtest.UnfetchedPrevious{Bumper: cmdtest.Bumper{Repo: e.Repo}}
+	}
 	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
 	cmdtest.Setenv(t, "MACPORTS_TREE", cmdtest.Dig(t, started.Result, "branch", "worktree").(string))
@@ -222,7 +212,9 @@ func TestAnUpdatesPlanSaysWhatUpstreamChanged(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
-	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{cmdtest.Bumper{Repo: e.Repo}} }
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer {
+		return cmdtest.UnfetchedPrevious{Bumper: cmdtest.Bumper{Repo: e.Repo}}
+	}
 	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
 	cmdtest.Setenv(t, "MACPORTS_TREE", cmdtest.Dig(t, started.Result, "branch", "worktree").(string))

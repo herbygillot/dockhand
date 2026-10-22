@@ -22,6 +22,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/setup"
 	"github.com/herbygillot/dockhand/internal/command/shell"
+	"github.com/herbygillot/dockhand/internal/command/submit"
+	"github.com/herbygillot/dockhand/internal/command/tidy"
 	"github.com/herbygillot/dockhand/internal/command/understand"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/compose"
@@ -211,9 +213,9 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	}
 	root.AddGroup(&cobra.Group{ID: "review", Title: "Prepare for review:"})
 	for _, command := range []*cobra.Command{
-		tidyCommand(shared, streams),
-		submitCommand(shared, streams),
-		rebaseCommand(shared, streams),
+		tidy.Command(shared, streams),
+		submit.Command(shared, streams),
+		tidy.RebaseCommand(shared, streams),
 		reviewCommand(shared, streams),
 	} {
 		command.GroupID = "review"
@@ -230,7 +232,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	}
 	root.AddGroup(&cobra.Group{ID: "occasional", Title: "Occasional:"})
 	for _, command := range []*cobra.Command{
-		undoCommand(shared, streams),
+		tidy.UndoCommand(shared, streams),
 		clean.ArchiveCommand(shared, streams),
 		clean.Command(shared, streams),
 		explain.Command(streams),

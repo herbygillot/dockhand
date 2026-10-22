@@ -1,4 +1,4 @@
-package command
+package submit
 
 import (
 	"bytes"
@@ -109,7 +109,9 @@ func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
-	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{cmdtest.Bumper{Repo: e.Repo}} }
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer {
+		return cmdtest.UnfetchedPrevious{Bumper: cmdtest.Bumper{Repo: e.Repo}}
+	}
 	cmdtest.WithGitHub(t, w)
 	started, err := cmdtest.JSONOf(t, "start", "jq-update")
 	require.NoError(t, err)
@@ -138,7 +140,7 @@ func TestTheSubmitPreviewGivesEachUpstreamFindingALine(t *testing.T) {
 	dropped := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod drops golang.org/x/net"}
 	preview := func(upstream ...engine.PortComparison) string {
 		var out bytes.Buffer
-		writeSubmitPlan(&out, engine.SubmitPlan{Branch: model.Branch{Name: "dockhand/jq-update"}, Upstream: upstream})
+		view.WriteSubmitPlan(&out, engine.SubmitPlan{Branch: model.Branch{Name: "dockhand/jq-update"}, Upstream: upstream})
 		return out.String()
 	}
 
@@ -166,13 +168,13 @@ func TestUpstreamIsSaidOnceUnderItsHeading(t *testing.T) {
 	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}
 	dropped := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod drops golang.org/x/net"}
 	var update bytes.Buffer
-	writeUpstream(&update, &model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}})
+	view.WriteUpstream(&update, &model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}})
 	require.Equal(t, "Upstream changes:\n  ! LICENSE changed\n  · go.mod drops golang.org/x/net\n  (! holds bump's and serve's submission for your look; · holds nothing)\n", update.String(), "a list with a mark that holds says what the marks mean (the chezmoi run)")
 	update.Reset()
-	writeUpstream(&update, &model.UpstreamComparison{Changes: []model.UpstreamChange{dropped}})
+	view.WriteUpstream(&update, &model.UpstreamComparison{Changes: []model.UpstreamChange{dropped}})
 	require.Equal(t, "Upstream changes:\n  · go.mod drops golang.org/x/net\n", update.String(), "one without needs no legend")
 	plan := engine.SubmitPlan{Upstream: []engine.PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}}}}}
-	require.Equal(t, []string{"! LICENSE changed", "· go.mod drops golang.org/x/net"}, upstreamLines(plan), "every list of them has a heading now, --passing's too")
+	require.Equal(t, []string{"! LICENSE changed", "· go.mod drops golang.org/x/net"}, view.UpstreamLines(plan), "every list of them has a heading now, --passing's too")
 }
 
 // A commit whose Generated-By names a dockhand built from uncommitted
@@ -263,9 +265,9 @@ func TestAnUnfoundBuildIsSaidOnceForItsCommits(t *testing.T) {
 	t.Parallel()
 	commits := []string{strings.Repeat("a", 40), strings.Repeat("b", 40)}
 	require.Equal(t, "commits aaaaaaa, bbbbbbb name dockhand v0.3.0 in Generated-By, built at a tag dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there",
-		unfoundBuildWords(engine.UnfoundBuild{Build: "v0.3.0", Commits: commits, Source: buildinfo.Source{Release: "v0.3.0"}}))
+		view.UnfoundBuildWords(engine.UnfoundBuild{Build: "v0.3.0", Commits: commits, Source: buildinfo.Source{Release: "v0.3.0"}}))
 	require.Equal(t, "commit aaaaaaa's Generated-By names dockhand devel, which recorded no commit, so nobody can find what it was built from",
-		unfoundBuildWords(engine.UnfoundBuild{Build: "devel", Commits: commits[:1]}))
+		view.UnfoundBuildWords(engine.UnfoundBuild{Build: "devel", Commits: commits[:1]}))
 }
 
 // A tidy whose commits name a dockhand built from uncommitted source says
@@ -276,8 +278,8 @@ func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
 		return engine.TidyPlan{Groups: []engine.TidyGroup{{Message: "jq: update to 1.8.1\n\nGenerated-By: Dockhand " + tag + " (https://github.com/herbygillot/dockhand)"}}}
 	}
 	require.Equal(t, "! Generated-By names this dockhand, built from uncommitted source, which nobody else can find. Before submitting, tidy again with a build of a pushed commit: dockhand undo tidy-3, then dockhand tidy.",
-		modifiedBuildWarning(plan("devel+1a2b3c4d5e6f.modified"), "tidy-3"))
-	require.Empty(t, modifiedBuildWarning(plan("devel+1a2b3c4d5e6f"), "tidy-3"))
+		view.ModifiedBuildWarning(plan("devel+1a2b3c4d5e6f.modified"), "tidy-3"))
+	require.Empty(t, view.ModifiedBuildWarning(plan("devel+1a2b3c4d5e6f"), "tidy-3"))
 }
 
 // Someone else's pull request keeps its title and description, whatever
@@ -285,10 +287,10 @@ func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
 func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
 	t.Parallel()
 	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}}, Theirs: true, Sections: engine.DescriptionSections{Types: engine.SectionRefreshed}}
-	require.Equal(t, "updates #34905; its title and description are theirs, and stay as they are", pullRequestWords(plan))
+	require.Equal(t, "updates #34905; its title and description are theirs, and stay as they are", view.PullRequestWords(plan))
 	plan.Theirs = false
 	plan.BodyKept = true
-	require.Equal(t, "updates #34905; refreshes its Type(s); the rest of its description is yours", pullRequestWords(plan), "types a person names, on a description they edited")
+	require.Equal(t, "updates #34905; refreshes its Type(s); the rest of its description is yours", view.PullRequestWords(plan), "types a person names, on a description they edited")
 }
 
 // A commit's body written after the pull request opened reaches its
@@ -362,9 +364,9 @@ func TestTheRefreshedPartsAreNamed(t *testing.T) {
 	t.Parallel()
 	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}},
 		Sections: engine.DescriptionSections{Description: engine.SectionRefreshed, Types: engine.SectionRefreshed, TestedOn: engine.SectionRefreshed}}
-	require.Equal(t, "updates #34905; refreshes its Description section, its Type(s) and its description from Tested on down", pullRequestWords(plan))
+	require.Equal(t, "updates #34905; refreshes its Description section, its Type(s) and its description from Tested on down", view.PullRequestWords(plan))
 	plan.Sections.Types = engine.SectionCurrent
-	require.Equal(t, "updates #34905; refreshes its Description section and its description from Tested on down", pullRequestWords(plan))
+	require.Equal(t, "updates #34905; refreshes its Description section and its description from Tested on down", view.PullRequestWords(plan))
 }
 
 // submit --note gives a person's note under the description's
@@ -601,7 +603,9 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
-	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{cmdtest.Bumper{Repo: e.Repo}} }
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer {
+		return cmdtest.UnfetchedPrevious{Bumper: cmdtest.Bumper{Repo: e.Repo}}
+	}
 	g := cmdtest.WithGitHub(t, w)
 	cmdtest.WithScript(t, w, "failed")
 	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
@@ -925,7 +929,7 @@ func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 			{Environment: monterey, Exclusions: []model.Exclusion{{Target: target.Target, Reason: "known_fail"}}},
 			{Environment: tahoe, Order: []model.TargetID{target.ID}},
 		}},
-		Targets:    []engine.TargetEvidence{{Target: target, Passed: true, Outcomes: cells([]model.TargetResult{{Outcome: model.OutcomeNotRun}, {Execution: "tart_b", Outcome: model.OutcomePassed}})}},
+		Targets:    []engine.TargetEvidence{{Target: target, Passed: true, Outcomes: cmdtest.Cells([]model.TargetResult{{Outcome: model.OutcomeNotRun}, {Execution: "tart_b", Outcome: model.OutcomePassed}})}},
 		Executions: map[model.ExecutionID]model.GuestExecution{"tart_b": {ID: "tart_b", Run: "run_21"}},
 	}
 	require.Equal(t, "passed on "+engine.DescribeEnvironment(tahoe)+" for this commit's files (check-21); nothing built on "+engine.DescribeEnvironment(monterey)+", where every port's Portfile excludes it",
@@ -938,7 +942,7 @@ func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 
 	// An accepted failure says so, and why (field testing, #35662).
 	failed := &engine.Evidence{Run: model.Run{ID: "run_21", Number: 21}, Plan: model.Plan{Environments: []model.Environment{tahoe}},
-		Targets: []engine.TargetEvidence{{Target: target, Outcomes: cells([]model.TargetResult{{Execution: "tart_b", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}})}}}
+		Targets: []engine.TargetEvidence{{Target: target, Outcomes: cmdtest.Cells([]model.TargetResult{{Execution: "tart_b", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}})}}}
 	failed.Targets[0].Outcomes[0].Environment = tahoe
 	require.Equal(t, "check-21: beekeeper-studio did not pass on "+engine.DescribeEnvironment(tahoe)+", accepted: fails at the base too (check-22)",
 		view.CheckWords(engine.SubmitPlan{Evidence: failed, Accepted: map[string]engine.AcceptedFailure{"beekeeper-studio": {Kind: engine.AcceptedAtBase, Baselines: []string{"check-22"}}}}))
@@ -956,7 +960,7 @@ func TestTheReadyStepIsPreviewed(t *testing.T) {
 	t.Parallel()
 	draft := engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 34901, Draft: true}},
 		Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34901}}}}
-	require.True(t, strings.HasPrefix(pullRequestWords(draft), "updates #34901, a draft: dockhand submit --ready marks it ready for review"), pullRequestWords(draft))
+	require.True(t, strings.HasPrefix(view.PullRequestWords(draft), "updates #34901, a draft: dockhand submit --ready marks it ready for review"), view.PullRequestWords(draft))
 	for _, test := range []struct {
 		plan  engine.SubmitPlan
 		ready bool
@@ -1070,12 +1074,12 @@ func TestASubmissionToAnotherAccountsForkIsSaid(t *testing.T) {
 	plan := engine.SubmitPlan{HeadRepository: "herbyg-test/macports-ports", Repository: "herbyg-test/macports-ports",
 		Login: forge.Login{Account: "herbygillot", Source: "Dockhand macOS Keychain", From: "dockhand's login in the Keychain"}}
 	var out bytes.Buffer
-	writeSubmitPlan(&out, plan)
+	view.WriteSubmitPlan(&out, plan)
 	require.Contains(t, out.String(), "  As       herbygillot, from dockhand's login in the Keychain\n"+
 		"           ! herbyg-test/macports-ports belongs to herbyg-test; you will push and create or update the pull request as herbygillot\n")
 	plan.Theirs = true
 	out.Reset()
-	writeSubmitPlan(&out, plan)
+	view.WriteSubmitPlan(&out, plan)
 	require.NotContains(t, out.String(), "is herbyg-test's")
 	plan.Theirs, plan.HeadRepository = false, "HerbyGillot/macports-ports"
 	_, another := plan.ForkOwner()

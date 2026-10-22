@@ -173,3 +173,10 @@ line without importing the root.
 - **setup**: auth.go, providers.go, setup.go, and work.go, which hold
   setup and its github and tart subcommands, adopt, path, and start
   (`Command`, `AdoptCommand`, `PathCommand`, `StartCommand`).
+- **tidy, with undo and rebase** (`Command`, `UndoCommand`,
+  `RebaseCommand`, and `Decide`, ship's tidy stage). Its writers
+  (`WriteTidyPlan`, `DescribeWork`, `ModifiedBuildWarning`) are view's.
+- **submit** (`Command`, and `Apply` and `AskTested`, ship's stages). Its
+  plan's writers (`WriteSubmitPlan`, `PullRequestWords`, `UpstreamLines`,
+  and their words) are view's, and so is author's `WriteUpstream`. The
+  tests' `UnfetchedPrevious` and `Cells` are cmdtest's.

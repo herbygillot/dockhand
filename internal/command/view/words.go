@@ -212,3 +212,40 @@ func BatchExit(failed []string, total int, done string) error {
 	}
 	return nil
 }
+
+// writeUpstream reports what comparing the upstream archives found.
+func WriteUpstream(out io.Writer, comparison *model.UpstreamComparison) {
+	switch {
+	case comparison == nil:
+	case comparison.Problem != "":
+		// What couldn't be checked holds as a finding does (D4), so it is
+		// marked as one.
+		fmt.Fprintf(out, "! Upstream archives not compared: %s\n", comparison.Problem)
+		fmt.Fprintln(out, HoldLegend)
+	case engine.NothingCompared(*comparison):
+		fmt.Fprintf(out, "Upstream not compared: %s.\n", engine.CoverageWords(*comparison))
+	case len(comparison.Changes) == 0:
+		fmt.Fprintln(out, "Upstream source compared: no license, build file, or dependency changes.")
+		if words := engine.CoverageWords(*comparison); words != "" {
+			fmt.Fprintf(out, "  · %s\n", words)
+		}
+	default:
+		fmt.Fprintln(out, "Upstream changes:")
+		for _, change := range comparison.Changes {
+			fmt.Fprintf(out, "  %s\n", UpstreamWords(engine.UnderUpstream(change)))
+		}
+		if words := engine.CoverageWords(*comparison); words != "" {
+			fmt.Fprintf(out, "  · %s\n", words)
+		}
+		if comparison.Held() {
+			fmt.Fprintln(out, "  "+HoldLegend)
+		}
+	}
+}
+
+func UpstreamWords(change model.UpstreamChange) string {
+	if change.Hold {
+		return "! " + change.Message
+	}
+	return "· " + change.Message
+}

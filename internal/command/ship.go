@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
 	"github.com/herbygillot/dockhand/internal/command/outdated"
 	"github.com/herbygillot/dockhand/internal/command/settings"
+	"github.com/herbygillot/dockhand/internal/command/submit"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -254,10 +255,10 @@ func writeSubmitRow(ctx context.Context, e *engine.Engine, out io.Writer, indent
 		fmt.Fprintf(out, "%s✗ %v\n", indent, err)
 		return
 	}
-	fmt.Fprintf(out, "%s%s · %s · %s\n", indent, plan.Title, view.CheckWords(plan), pullRequestWords(plan))
+	fmt.Fprintf(out, "%s%s · %s · %s\n", indent, plan.Title, view.CheckWords(plan), view.PullRequestWords(plan))
 	// Under a label of their own, the lines need no "upstream:" each (the
 	// ov run's finding 5).
-	if lines := upstreamLines(plan); len(lines) > 0 {
+	if lines := view.UpstreamLines(plan); len(lines) > 0 {
 		fmt.Fprintf(out, "%sUpstream %s\n", indent, strings.Join(lines, "\n"+indent+"         "))
 	}
 	for _, blocking := range plan.Blocking {
@@ -436,12 +437,12 @@ func prepareSubmit(ctx context.Context, s *settings.Settings, e *engine.Engine, 
 		return pendingSubmit{}, nil, err
 	}
 	streams.Emit(view.SubmitView(plan))
-	writeSubmitPlan(streams.Out, plan)
+	view.WriteSubmitPlan(streams.Out, plan)
 	if len(plan.Blocking) > 0 {
 		return pendingSubmit{}, nil, errors.New("nothing was checked or submitted")
 	}
 	if streams.Terminal() {
-		if err := askTested(streams, &plan); err != nil {
+		if err := submit.AskTested(streams, &plan); err != nil {
 			return pendingSubmit{}, nil, err
 		}
 		request.TestedBinaries, request.TestedVariants = plan.Request.TestedBinaries, plan.Request.TestedVariants
@@ -475,7 +476,7 @@ func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, s
 	}
 	streams.Emit(view.SubmitView(plan))
 	fmt.Fprintln(streams.Out)
-	err = applySubmit(ctx, e, streams, plan, s.File.Submit.RerequestReview, pending.answered)
+	err = submit.Apply(ctx, e, streams, plan, s.File.Submit.RerequestReview, pending.answered)
 	// The gate is the engine's (branchstate.Publish); ship words what it
 	// refused as ship says it.
 	refused := refusal.Of(err)
@@ -483,7 +484,7 @@ func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, s
 	case refused == nil:
 		return err
 	case len(plan.Blocks) > 0:
-		writeSubmitPlan(streams.Out, plan)
+		view.WriteSubmitPlan(streams.Out, plan)
 		return errors.New("nothing was submitted")
 	case refused.Kind() == refusal.Attention:
 		held := engine.HoldLines(plan.Held())

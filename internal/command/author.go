@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/outdated"
 	"github.com/herbygillot/dockhand/internal/command/settings"
+	"github.com/herbygillot/dockhand/internal/command/tidy"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -289,9 +290,9 @@ func tidyBranch(ctx context.Context, e *engine.Engine, streams term.Streams, bra
 		return branch, false, err
 	}
 	if !proposal.Keep {
-		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), describeWork(proposal))
+		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), view.DescribeWork(proposal))
 		streams.Emit(view.TidyView(proposal))
-		writeTidyPlan(out, proposal, false)
+		view.WriteTidyPlan(out, proposal, false)
 		// A plan of dockhand's own edits is applied unasked; one with the
 		// person's is reviewed on a terminal, and held where nobody looks,
 		// --yes or no terminal: --yes skips ship's question, and approves no
@@ -303,7 +304,7 @@ func tidyBranch(ctx context.Context, e *engine.Engine, streams term.Streams, bra
 				return branch, false, fmt.Errorf("%w; %s", err, undone)
 			}
 		}
-		applied, err := decideTidy(ctx, e, streams, proposal, false, proposal.Unambiguous(), "")
+		applied, err := tidy.Decide(ctx, e, streams, proposal, false, proposal.Unambiguous(), "")
 		if err != nil {
 			return branch, false, fmt.Errorf("%w; %s", err, undone)
 		}
@@ -485,7 +486,7 @@ func author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 			fmt.Fprintln(out, "Removes "+distSubdirRemoved)
 		}
 		// What a reviewer would ask about is part of the look before.
-		writeUpstream(out, update.Upstream)
+		view.WriteUpstream(out, update.Upstream)
 		writePatches(out, update)
 		writeOthers(out, update)
 		view.WritePlainHTTP(out, update.PlainHTTP)
@@ -587,7 +588,7 @@ func author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	if update.DistSubdirRemoved {
 		fmt.Fprintln(out, "Removed "+distSubdirRemoved)
 	}
-	writeUpstream(out, update.Upstream)
+	view.WriteUpstream(out, update.Upstream)
 	writePatches(out, update)
 	writeOthers(out, update)
 	view.WritePlainHTTP(out, update.PlainHTTP)
@@ -740,36 +741,6 @@ func writePatches(out io.Writer, update engine.Update) {
 	}
 }
 
-// writeUpstream reports what comparing the upstream archives found.
-func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
-	switch {
-	case comparison == nil:
-	case comparison.Problem != "":
-		// What couldn't be checked holds as a finding does (D4), so it is
-		// marked as one.
-		fmt.Fprintf(out, "! Upstream archives not compared: %s\n", comparison.Problem)
-		fmt.Fprintln(out, view.HoldLegend)
-	case engine.NothingCompared(*comparison):
-		fmt.Fprintf(out, "Upstream not compared: %s.\n", engine.CoverageWords(*comparison))
-	case len(comparison.Changes) == 0:
-		fmt.Fprintln(out, "Upstream source compared: no license, build file, or dependency changes.")
-		if words := engine.CoverageWords(*comparison); words != "" {
-			fmt.Fprintf(out, "  · %s\n", words)
-		}
-	default:
-		fmt.Fprintln(out, "Upstream changes:")
-		for _, change := range comparison.Changes {
-			fmt.Fprintf(out, "  %s\n", upstreamWords(engine.UnderUpstream(change)))
-		}
-		if words := engine.CoverageWords(*comparison); words != "" {
-			fmt.Fprintf(out, "  · %s\n", words)
-		}
-		if comparison.Held() {
-			fmt.Fprintln(out, "  "+view.HoldLegend)
-		}
-	}
-}
-
 func writeOthers(out io.Writer, update engine.Update) {
 	if update.OthersProblem != "" {
 		fmt.Fprintf(out, "Couldn't look for other open pull requests for %s: %s\n", update.Port, update.OthersProblem)
@@ -778,13 +749,6 @@ func writeOthers(out io.Writer, update engine.Update) {
 	for _, pr := range update.Others {
 		fmt.Fprintf(out, "Also open for %s: #%d %s\n", update.Port, pr.Number, pr.Title)
 	}
-}
-
-func upstreamWords(change model.UpstreamChange) string {
-	if change.Hold {
-		return "! " + change.Message
-	}
-	return "· " + change.Message
 }
 
 // matchWords says that every archive a checksum refresh compared matches

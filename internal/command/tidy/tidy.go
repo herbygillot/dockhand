@@ -1,12 +1,10 @@
-package command
+package tidy
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -21,7 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func tidyCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	var message, author, group, saveTo, apply string
 	var squash, plan, yes bool
@@ -79,7 +77,7 @@ commits, and its files are as they were when it was saved.`,
 			}
 			streams.Emit(view.TidyView(proposal))
 			out := streams.Out
-			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), describeWork(proposal))
+			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), view.DescribeWork(proposal))
 			if proposal.Keep && len(proposal.Warnings) > 0 {
 				// What the rules warn of is said, as submit says it, with
 				// the plan to rewrite a message in (the rust and cargo run).
@@ -91,7 +89,7 @@ commits, and its files are as they were when it was saved.`,
 				for _, warning := range proposal.Warnings {
 					fmt.Fprintf(out, "  %s\n", warning)
 				}
-				writeFindings(out, proposal)
+				view.WriteFindings(out, proposal)
 				if !plan || saveTo == "" {
 					fmt.Fprintln(out, "To rewrite a message: dockhand tidy --plan --out tidy.toml, edit it there, then dockhand tidy --apply tidy.toml")
 					return nil
@@ -115,10 +113,10 @@ commits, and its files are as they were when it was saved.`,
 				} else {
 					fmt.Fprintln(out, "The commits already follow MacPorts' rules, and nothing is uncommitted; nothing to tidy.")
 				}
-				writeFindings(out, proposal)
+				view.WriteFindings(out, proposal)
 				return nil
 			}
-			writeTidyPlan(out, proposal, false)
+			view.WriteTidyPlan(out, proposal, false)
 			if plan {
 				if saveTo == "" {
 					return nil
@@ -135,7 +133,7 @@ commits, and its files are as they were when it was saved.`,
 			}
 			// A squash with its message given, or a grouping chosen, is the
 			// person's own explicit plan, so it needs no review.
-			_, err = decideTidy(ctx, e, streams, proposal, squash && message != "" || group != "", yes, author)
+			_, err = Decide(ctx, e, streams, proposal, squash && message != "" || group != "", yes, author)
 			return err
 		},
 	}
@@ -160,7 +158,7 @@ commits, and its files are as they were when it was saved.`,
 // explicit plan, the person's own, applies as given; without a terminal,
 // or with --yes, a plan made only of dockhand's own edits applies too,
 // and anything else needs review. It reports whether the plan applied.
-func decideTidy(ctx context.Context, e *engine.Engine, streams term.Streams, proposal engine.TidyPlan, explicit, yes bool, author string) (bool, error) {
+func Decide(ctx context.Context, e *engine.Engine, streams term.Streams, proposal engine.TidyPlan, explicit, yes bool, author string) (bool, error) {
 	out := streams.Out
 	// --yes applies the plan as shown, whosever its edits are, as --yes
 	// does elsewhere: a hand edit's plan tidy proposed itself had no way
@@ -198,12 +196,12 @@ func decideTidy(ctx context.Context, e *engine.Engine, streams term.Streams, pro
 				continue
 			}
 			proposal = regrouped
-			writeTidyPlan(out, proposal, false)
+			view.WriteTidyPlan(out, proposal, false)
 		case "e":
 			if err := editSubjects(streams, &proposal); err != nil {
 				return false, err
 			}
-			writeTidyPlan(out, proposal, false)
+			view.WriteTidyPlan(out, proposal, false)
 		case "a":
 			if blocking := proposal.Blocking(); len(blocking) > 0 {
 				fmt.Fprintf(streams.Err, "Can't apply this plan: %s\n", strings.Join(blocking, "; "))
@@ -214,116 +212,6 @@ func decideTidy(ctx context.Context, e *engine.Engine, streams term.Streams, pro
 			fmt.Fprintln(out, "Nothing changed.")
 			return false, nil
 		}
-	}
-}
-
-func describeWork(plan engine.TidyPlan) string {
-	work := prose.Plural(len(plan.History), "commit")
-	uncommitted := false
-	for _, group := range plan.Groups {
-		uncommitted = uncommitted || group.Working
-	}
-	switch {
-	case uncommitted && len(plan.History) == 0:
-		return "edits not yet committed"
-	case uncommitted:
-		return work + " and edits not yet committed"
-	}
-	return work
-}
-
-// writeTidyPlan lists a tidy plan's commits: as proposed, with what each
-// combines, keeps, and notes; or, saved, what applying it writes, each
-// commit's whole message as it may have been edited, with its author.
-func writeTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
-	title := map[bool]string{false: "Proposed commit", true: "Commit to write"}[saved]
-	if len(plan.Groups) > 1 {
-		title = map[bool]string{false: "Proposed series", true: "Commits to write"}[saved]
-	}
-	fmt.Fprintf(out, "\n%s\n", title)
-	for i, group := range plan.Groups {
-		subject, body, _ := strings.Cut(strings.TrimSpace(group.Message), "\n")
-		if !saved {
-			// A proposal's first line is its subject, empty or not.
-			subject = group.Subject()
-		}
-		if subject == "" {
-			subject = "(needs a subject)"
-		}
-		fmt.Fprintf(out, "  %d  %s\n", i+1, subject)
-		if len(group.Combines) > 0 && !saved {
-			var subjects []string
-			for _, commit := range group.Combines {
-				subjects = append(subjects, strconv.Quote(commit.Subject()))
-			}
-			fmt.Fprintf(out, "       combines %s\n", strings.Join(subjects, ", "))
-		}
-		if group.Working {
-			fmt.Fprintln(out, "       includes edits not yet committed")
-		}
-		if group.Created && !saved {
-			fmt.Fprintln(out, "       new port from dockhand create, including your later edits")
-		}
-		fmt.Fprintf(out, "       files: %s\n", strings.Join(group.Paths, ", "))
-		if !saved {
-			if _, rest, ok := strings.Cut(strings.TrimSpace(group.Message), "\n\n"); ok {
-				for _, line := range strings.Split(rest, "\n") {
-					if strings.HasPrefix(line, "Closes:") || strings.HasPrefix(line, "See:") {
-						fmt.Fprintf(out, "       keeps: %s\n", line)
-					}
-				}
-			}
-		}
-		if group.Author.Name != "" && (saved || len(group.Combines) > 0) {
-			fmt.Fprintf(out, "       author: %s <%s>\n", group.Author.Name, group.Author.Email)
-		}
-		if body = strings.TrimSpace(body); body != "" && saved {
-			fmt.Fprintln(out, "       body:")
-			for _, line := range strings.Split(body, "\n") {
-				if strings.TrimSpace(line) == "" {
-					fmt.Fprintln(out)
-					continue
-				}
-				fmt.Fprintf(out, "         %s\n", line)
-			}
-		}
-		if !saved {
-			for _, note := range group.Notes {
-				fmt.Fprintf(out, "       · %s\n", note)
-			}
-		}
-		for _, blocking := range group.Blocking {
-			fmt.Fprintf(out, "       ✗ %s\n", blocking)
-		}
-	}
-	if builds := plan.OlderBuilds(); len(builds) > 0 && !saved {
-		fmt.Fprintf(out, "  · the branch's commits name an older dockhand in Generated-By, %s: a commit tidy leaves as it is keeps it, and one it writes names this build\n", strings.Join(builds, ", "))
-	}
-	writeFindings(out, plan)
-	fmt.Fprintln(out)
-}
-
-func writeFindings(out io.Writer, plan engine.TidyPlan) {
-	writeUntracked(out, plan)
-	if len(plan.Findings) == 0 {
-		return
-	}
-	fmt.Fprintln(out, "File issues to resolve separately (tidy only changes commits):")
-	for _, finding := range plan.Findings {
-		fmt.Fprintf(out, "  %s\n", finding)
-	}
-}
-
-// writeUntracked says the untracked files a plan takes in and leaves out.
-func writeUntracked(out io.Writer, plan engine.TidyPlan) {
-	if len(plan.Taken) > 0 {
-		fmt.Fprintf(out, "Taken in, untracked, since patchfiles names them: %s\n", strings.Join(plan.Taken, ", "))
-	}
-	if len(plan.LeftOut) > 0 {
-		fmt.Fprintf(out, "Left out, since Git doesn't track them (git add one to commit it): %s\n", strings.Join(plan.LeftOut, ", "))
-	}
-	for _, path := range plan.Ignored {
-		fmt.Fprintf(out, "Left out, though patchfiles names it, since Git ignores it as git add would: %s; git check-ignore -v %s names the rule\n", path, path)
 	}
 }
 
@@ -356,7 +244,7 @@ func applySaved(ctx context.Context, e *engine.Engine, streams term.Streams, fil
 	}
 	streams.Emit(view.TidyView(proposal))
 	fmt.Fprintf(streams.Out, "%s · the plan saved in %s\n", proposal.Branch.ShortName(), file)
-	writeTidyPlan(streams.Out, proposal, true)
+	view.WriteTidyPlan(streams.Out, proposal, true)
 	if blocking := proposal.Blocking(); len(blocking) > 0 {
 		return fmt.Errorf("the plan can't be applied yet: %s", strings.Join(blocking, "; "))
 	}
@@ -384,7 +272,7 @@ func applyTidy(ctx context.Context, e *engine.Engine, streams term.Streams, plan
 	if len(result.Narrowed) > 0 {
 		fmt.Fprintf(streams.Out, "Removed %s from the sparse checkout; the branch has no changes there.\n", strings.Join(result.Narrowed, ", "))
 	}
-	if warning := modifiedBuildWarning(plan, name); warning != "" {
+	if warning := view.ModifiedBuildWarning(plan, name); warning != "" {
 		fmt.Fprintln(streams.Err, warning)
 	}
 	switch {
@@ -398,20 +286,10 @@ func applyTidy(ctx context.Context, e *engine.Engine, streams term.Streams, plan
 	return nil
 }
 
-// modifiedBuildWarning says, for a tidy whose commits name a dockhand
-// built from uncommitted source, how to name one anybody can find before
-// they're submitted.
-func modifiedBuildWarning(plan engine.TidyPlan, checkpoint string) string {
-	if !plan.ModifiedBuild() {
-		return ""
-	}
-	return fmt.Sprintf("! Generated-By names this dockhand, built from uncommitted source, which nobody else can find. Before submitting, tidy again with a build of a pushed commit: dockhand undo %s, then dockhand tidy.", checkpoint)
-}
-
 // undoCommand puts back what a tidy or rebase replaced: the branch's
 // latest, or the checkpoint named (the command-line UX review's smaller
 // items: git restore restores files, and dockhand's restores history).
-func undoCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func UndoCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use: "undo [<checkpoint>]",
