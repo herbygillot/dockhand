@@ -149,11 +149,15 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	live := filepath.Join(w.home, ".dockhand", "logs", "check-2", "command-1", "jq.log")
 	require.NoError(t, os.MkdirAll(filepath.Dir(live), 0o755))
 	require.NoError(t, os.WriteFile(live, []byte("--->  Building jq\n"), 0o644))
-	ctx, stop := context.WithTimeout(t.Context(), 1500*time.Millisecond)
-	var followed, followedErrs bytes.Buffer
-	err = runFor(t, ctx, []string{"logs", "check-2", "jq", "--follow"}, term.Streams{In: strings.NewReader(""), Out: &followed, Err: &followedErrs})
+	// Following ends when its output has come, or after a generous
+	// while, not after a second and a half of wall clock, which a busy Mac
+	// spent opening the engine before the first read.
+	ctx, stop := context.WithTimeout(t.Context(), 30*time.Second)
+	var followedErrs bytes.Buffer
+	followed := &cancelOn{want: "--->  Building jq\n", cancel: stop}
+	err = runFor(t, ctx, []string{"logs", "check-2", "jq", "--follow"}, term.Streams{In: strings.NewReader(""), Out: followed, Err: &followedErrs})
 	stop()
-	require.ErrorIs(t, err, context.DeadlineExceeded, followedErrs.String())
+	require.ErrorIs(t, err, context.Canceled, followedErrs.String())
 	require.Equal(t, "--->  Building jq\n", followed.String())
 	_, _, err = dockhand(t, "logs", "check-2", "--follow")
 	require.ErrorContains(t, err, "--follow follows one port's log: name it")
@@ -542,4 +546,19 @@ func TestEveryNextVerbRenders(t *testing.T) {
 	}
 	require.Equal(t, "fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-1.8.2",
 		renderNext(branchstate.Next{Verb: branchstate.VerbSubmit, Branch: "jq-1.8.2", After: branchstate.AfterFork}, ""))
+}
+
+// cancelOn is a writer that cancels once what's written holds want.
+type cancelOn struct {
+	bytes.Buffer
+	want   string
+	cancel context.CancelFunc
+}
+
+func (c *cancelOn) Write(p []byte) (int, error) {
+	n, err := c.Buffer.Write(p)
+	if strings.Contains(c.String(), c.want) {
+		c.cancel()
+	}
+	return n, err
 }
