@@ -113,3 +113,24 @@ jobs:
           ./dockhand start intel-check
           if ./dockhand check -b intel-check --plan 2>"$RUNNER_TEMP/check.err"; then echo "a check planned with nowhere to build" >&2; exit 1; fi
           grep -q -- '--on github' "$RUNNER_TEMP/check.err"
+
+  # The binaries for macOS 10.13 to 11 (tools/legacymacos): the patch still
+  # applies to this Go's crypto/x509, and nothing either binary imports is
+  # missing there. A build with cgo off doesn't depend on its host, which
+  # Linux proves, and Linux runners are the cheap ones.
+  legacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Build for macOS 10.13 to 11
+        run: make build-legacy

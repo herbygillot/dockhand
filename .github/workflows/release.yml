@@ -1,0 +1,75 @@
+name: Release
+
+# The binaries for macOS 10.13 to 11 (tools/legacymacos), experimental, as
+# assets of a GitHub release: each published release's, a prerelease's
+# included, or a named tag's when run by hand, as for a tag from before
+# this workflow. The tag's source is built with this workflow's commit's
+# patch and check; a newer macOS builds the release from source or installs
+# MacPorts' dockhand port. Where the patch no longer applies or the check
+# fails, the job fails and the release has none: the assets stop at the
+# last release that passed.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release's tag, as v0.4.0
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  legacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+    steps:
+      - name: Check out the patch and check
+        uses: actions/checkout@v7
+        with:
+          path: tooling
+
+      - name: Check out the release's tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          path: source
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: source/go.mod
+          cache-dependency-path: source/go.sum
+
+      # The tag's own version and commit, as any build of it says them, so
+      # a commit's Generated-By names the release; buildinfo.Variant, and
+      # the archives' names, say legacy.
+      - name: Build for macOS 10.13 to 11
+        working-directory: source
+        env:
+          GOFLAGS: -mod=vendor
+        run: GO_LDFLAGS="-X github.com/herbygillot/dockhand/internal/buildinfo.Version=$TAG" ../tooling/tools/legacymacos/build.sh ../dist
+
+      # Each binary goes in an archive named for the release, as dockhand,
+      # so it keeps its mode. The checksums cover the archives.
+      - name: Attach to the release
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          for arch in amd64 arm64; do
+            dir="dockhand-$TAG-legacy-macos10.13-$arch"
+            mkdir "$dir"
+            mv "dockhand-legacy-darwin-$arch" "$dir/dockhand"
+            tar -czf "$dir.tar.gz" "$dir"
+          done
+          sha256sum dockhand-*.tar.gz >"dockhand-$TAG-legacy-macos10.13-sha256.txt"
+          gh release upload "$TAG" dockhand-*.tar.gz "dockhand-$TAG-legacy-macos10.13-sha256.txt" --clobber

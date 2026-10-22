@@ -21,6 +21,8 @@ type Info struct {
 	// show of it.
 	FullRevision string
 	Modified     bool
+	// Variant is the kind of build Variant names, as "legacy".
+	Variant string
 }
 
 // Version is the version a packager names at link time when no version
@@ -32,10 +34,18 @@ type Info struct {
 // checkout is never mislabeled by a stale build variable.
 var Version string
 
+// Variant names, at link time, a build made other than the usual way, which
+// String says after the version: "legacy" for tools/legacymacos's builds
+// for macOS 10.13 to 11. Tag leaves it out, so a commit's Generated-By names
+// the release's code as any build of it does.
+var Variant string
+
 // Current reads the embedded build information.
 func Current() Info {
 	info, ok := debug.ReadBuildInfo()
-	return current(info, ok, Version)
+	build := current(info, ok, Version)
+	build.Variant = strings.TrimSpace(Variant)
+	return build
 }
 
 func current(info *debug.BuildInfo, ok bool, named string) Info {
@@ -67,7 +77,8 @@ func current(info *debug.BuildInfo, ok bool, named string) Info {
 }
 
 // String is the form `dockhand --version` prints: "v0.3.0 (1a2b3c4d5e6f)"
-// or "devel (1a2b3c4d5e6f, modified)". A version that already ends in its own
+// or "devel (1a2b3c4d5e6f, modified)", and a variant after it, "v0.3.0
+// (1a2b3c4d5e6f) legacy". A version that already ends in its own
 // revision, which a pseudo-version does, does not repeat it.
 func (i Info) String() string {
 	text := i.Version
@@ -80,6 +91,9 @@ func (i Info) String() string {
 		text += ")"
 	case i.Modified:
 		text += " (modified)"
+	}
+	if i.Variant != "" {
+		text += " " + i.Variant
 	}
 	return strings.TrimSpace(text)
 }

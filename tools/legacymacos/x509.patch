@@ -1,0 +1,63 @@
+--- a/src/crypto/x509/internal/macos/security.go
++++ b/src/crypto/x509/internal/macos/security.go
+@@ -135,13 +135,21 @@
+ }
+ func x509_SecCertificateCopyData_trampoline()
+ 
+-//go:cgo_import_dynamic x509_SecTrustCopyCertificateChain SecTrustCopyCertificateChain "/System/Library/Frameworks/Security.framework/Versions/A/Security"
++//go:cgo_import_dynamic x509_SecTrustGetCertificateCount SecTrustGetCertificateCount "/System/Library/Frameworks/Security.framework/Versions/A/Security"
+ 
+-func SecTrustCopyCertificateChain(trustObj CFRef) (CFRef, error) {
+-	ret := syscall(abi.FuncPCABI0(x509_SecTrustCopyCertificateChain_trampoline), uintptr(trustObj), 0, 0, 0, 0, 0)
++func SecTrustGetCertificateCount(trustObj CFRef) int {
++	ret := syscall(abi.FuncPCABI0(x509_SecTrustGetCertificateCount_trampoline), uintptr(trustObj), 0, 0, 0, 0, 0)
++	return int(ret)
++}
++func x509_SecTrustGetCertificateCount_trampoline()
++
++//go:cgo_import_dynamic x509_SecTrustGetCertificateAtIndex SecTrustGetCertificateAtIndex "/System/Library/Frameworks/Security.framework/Versions/A/Security"
++
++func SecTrustGetCertificateAtIndex(trustObj CFRef, i int) (CFRef, error) {
++	ret := syscall(abi.FuncPCABI0(x509_SecTrustGetCertificateAtIndex_trampoline), uintptr(trustObj), uintptr(i), 0, 0, 0, 0)
+ 	if ret == 0 {
+-		return 0, OSStatus{"SecTrustCopyCertificateChain", int32(ret)}
++		return 0, OSStatus{"SecTrustGetCertificateAtIndex", int32(ret)}
+ 	}
+ 	return CFRef(ret), nil
+ }
+-func x509_SecTrustCopyCertificateChain_trampoline()
++func x509_SecTrustGetCertificateAtIndex_trampoline()
+--- a/src/crypto/x509/internal/macos/security.s
++++ b/src/crypto/x509/internal/macos/security.s
+@@ -23,5 +23,7 @@
+ 	JMP x509_SecTrustEvaluateWithError(SB)
+ TEXT ·x509_SecCertificateCopyData_trampoline(SB),NOSPLIT,$0-0
+ 	JMP x509_SecCertificateCopyData(SB)
+-TEXT ·x509_SecTrustCopyCertificateChain_trampoline(SB),NOSPLIT,$0-0
+-	JMP x509_SecTrustCopyCertificateChain(SB)
++TEXT ·x509_SecTrustGetCertificateCount_trampoline(SB),NOSPLIT,$0-0
++	JMP x509_SecTrustGetCertificateCount(SB)
++TEXT ·x509_SecTrustGetCertificateAtIndex_trampoline(SB),NOSPLIT,$0-0
++	JMP x509_SecTrustGetCertificateAtIndex(SB)
+--- a/src/crypto/x509/root_darwin.go
++++ b/src/crypto/x509/root_darwin.go
+@@ -76,13 +76,12 @@
+ 	}
+ 
+ 	chain := [][]*Certificate{{}}
+-	chainRef, err := macos.SecTrustCopyCertificateChain(trustObj)
+-	if err != nil {
+-		return nil, err
+-	}
+-	defer macos.CFRelease(chainRef)
+-	for i := 0; i < macos.CFArrayGetCount(chainRef); i++ {
+-		certRef := macos.CFArrayGetValueAtIndex(chainRef, i)
++	numCerts := macos.SecTrustGetCertificateCount(trustObj)
++	for i := 0; i < numCerts; i++ {
++		certRef, err := macos.SecTrustGetCertificateAtIndex(trustObj, i)
++		if err != nil {
++			return nil, err
++		}
+ 		cert, err := exportCertificate(certRef)
+ 		if err != nil {
+ 			return nil, err

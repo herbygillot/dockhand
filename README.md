@@ -34,7 +34,7 @@ For local VM builds, install [Tart](https://tart.run) on an Apple silicon Mac:
 sudo port install tart
 ```
 
-An Intel Mac can prepare changes and check them through GitHub Actions instead. Some Go and Rust ports also need the MacPorts `go2port` or `cargo2port` helper to regenerate their dependency lists.
+An Intel Mac can prepare changes and check them through GitHub Actions instead. On macOS 10.13 to 11, where a normal build doesn't load, try the release's experimental `legacy-macos10.13` binary, for amd64 or arm64; see [tools/legacymacos](tools/legacymacos/README.md). Some Go and Rust ports also need the MacPorts `go2port` or `cargo2port` helper to regenerate their dependency lists.
 
 <details>
 <summary>Build Dockhand from source</summary>

@@ -19,10 +19,17 @@ ifneq ($(strip $(VERSION)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.Version=$(strip $(VERSION))
 endif
 
-.PHONY: build test test-race vet lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest clean
+.PHONY: build build-legacy test test-race vet lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest clean
 
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
+
+# Binaries for macOS 10.13 to 11, amd64 and arm64, in LEGACY_DIR: this Go
+# with crypto/x509's calls from before macOS 12, each binary's imports
+# checked against what those releases export (tools/legacymacos).
+LEGACY_DIR ?= dist
+build-legacy:
+	GO="$(GO)" GO_LDFLAGS="$(strip $(GO_LDFLAGS))" tools/legacymacos/build.sh "$(LEGACY_DIR)"
 
 # The engine and command packages take minutes alone, and past go test's
 # ten-minute default on a loaded Mac; the bound is room, not a target.
