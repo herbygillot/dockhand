@@ -1,6 +1,7 @@
 package tart
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -1047,4 +1048,42 @@ func TestShellStartsAKeptCloneAndStopsItAfter(t *testing.T) {
 	shell := mac.guest.attached[0]
 	require.False(t, shell.terminal)
 	require.Equal(t, []string{guestRoot + "/ports/devel/libharbor", "otool", "-L", "harbor"}, shell.args[4:])
+}
+
+// shell --test puts the port's directory, as it is now, where the check
+// staged it, and runs its test phase alone again on the build, with the
+// check's variants.
+func TestShellTestRestagesThePortAndRunsItsTestPhase(t *testing.T) {
+	t.Parallel()
+	mac := newMac()
+	p := testProvider(mac)
+	p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
+	require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
+	clone := clonePrefix("run-1", "tahoe") + "-1"
+	require.NoError(t, p.keepClone(clone, "dockhand-base-tahoe"))
+	port := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(port, "files"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(port, "Portfile"), []byte("name libharbor\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(port, "files", "patch-tests.diff"), []byte("--- a\n"), 0o644))
+
+	code, err := p.Shell(t.Context(), buildenv.ShellJob{Ref: clone, Portfile: "devel/libharbor/Portfile", Test: port, Variants: "+docs -tests", Output: io.Discard})
+	require.NoError(t, err)
+	require.Equal(t, 3, code)
+	staged := guestRoot + "/ports/devel/libharbor"
+	archive := mac.guest.uploads[guestRoot+"/shell-port.tar"]
+	var names []string
+	reader := tar.NewReader(bytes.NewReader(archive))
+	for {
+		header, err := reader.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		names = append(names, header.Name)
+	}
+	require.ElementsMatch(t, []string{"Portfile", "files", "files/patch-tests.diff"}, names)
+	require.True(t, slices.ContainsFunc(mac.guest.commands, func(command []string) bool {
+		return slices.Contains(command, staged) && slices.Contains(command, guestRoot+"/shell-port.tar")
+	}), "the staged directory is replaced")
+	require.Equal(t, []string{staged, "/usr/bin/sudo", "/opt/local/bin/port", "-o", "-N", "-D", staged, "test", "+docs", "-tests"}, mac.guest.attached[0].args[4:])
 }

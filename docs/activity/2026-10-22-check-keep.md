@@ -48,3 +48,14 @@ shell there; without a terminal it refuses with no command.
   command's.
 
 Left of the kept guest: `shell --test`.
+
+## shell --test
+
+`shell check-N --test` copies the port's directory, as it is in the
+branch's worktree now, over the one the check staged in the clone
+(`ShellJob.Test`: packed as a tar, uploaded, and unpacked by root in
+place of the staged directory), and runs `sudo port -o -N -D <staged>
+test` with the check's variants, `port -o` keeping the build though the
+Portfile changed. It says first that only the test phase runs again, that
+an edit outside it doesn't apply, and that the run is no check's result:
+nothing is recorded. It takes no command beside it.

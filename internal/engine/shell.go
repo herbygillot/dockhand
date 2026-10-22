@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -18,10 +19,14 @@ import (
 // shell where it's empty, with Input and Output its streams, on a terminal
 // where Terminal.
 type ShellRequest struct {
-	Run      model.Run
-	Release  string
-	Port     string
-	Command  []string
+	Run     model.Run
+	Release string
+	Port    string
+	Command []string
+	// Test copies the port's directory, as it is in the branch's worktree
+	// now, over the one the check staged, and runs its test phase alone
+	// again, on the build as it stands: never a result or evidence.
+	Test     bool
 	Input    io.Reader
 	Output   io.Writer
 	Terminal bool
@@ -80,16 +85,27 @@ func (e *Engine) Shell(ctx context.Context, request ShellRequest) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	portfile := ""
-	for _, target := range plan.Targets {
+	var chosen *model.PlanTarget
+	for i, target := range plan.Targets {
 		named := request.Port == target.Target.Name || (target.Target.Subport != "" && request.Port == target.Target.Subport)
 		if named || (request.Port == "" && target.Role == model.Changed) {
-			portfile = target.Target.Portfile
+			chosen = &plan.Targets[i]
 			break
 		}
 	}
-	if portfile == "" {
+	if chosen == nil {
 		return -1, fmt.Errorf("%s didn't build %s", name, request.Port)
 	}
-	return provider.Shell(ctx, buildenv.ShellJob{Ref: clone.Ref, Portfile: portfile, Command: request.Command, Input: request.Input, Output: request.Output, Terminal: request.Terminal})
+	job := buildenv.ShellJob{Ref: clone.Ref, Portfile: chosen.Target.Portfile, Command: request.Command, Input: request.Input, Output: request.Output, Terminal: request.Terminal}
+	if request.Test {
+		branch, err := e.Branch(ctx, request.Run.Branch)
+		if err != nil {
+			return -1, err
+		}
+		if branch.Worktree == "" {
+			return -1, fmt.Errorf("%s has no worktree to take the port from", branch.ShortName())
+		}
+		job.Test, job.Variants = filepath.Join(branch.Worktree, filepath.Dir(chosen.Target.Portfile)), chosen.Target.VariantSpec()
+	}
+	return provider.Shell(ctx, job)
 }

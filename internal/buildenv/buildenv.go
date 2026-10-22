@@ -301,9 +301,14 @@ type ShellProvider interface {
 type ShellJob struct {
 	Ref, Portfile string
 	Command       []string
-	Input         io.Reader
-	Output        io.Writer
-	Terminal      bool
+	// Test, where it's set, is the port's directory as it is now, which
+	// replaces the staged one, and the test phase alone runs again, on
+	// the build as it stands (port -o), with Variants: the command then.
+	Test     string
+	Variants string
+	Input    io.Reader
+	Output   io.Writer
+	Terminal bool
 }
 
 // Fork is your fork of MacPorts' repository, and the Git remote that

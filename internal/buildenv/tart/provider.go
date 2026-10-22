@@ -10,12 +10,15 @@
 package tart
 
 import (
+	"archive/tar"
 	"cmp"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"path"
@@ -408,6 +411,69 @@ func (p *Provider) home() (string, error) {
 	return client.Home, err
 }
 
+// restage replaces the guest's staged port directory with the branch's,
+// directory, as it is now.
+func (p *Provider) restage(ctx context.Context, g guest, directory, staged string) error {
+	archive, err := os.CreateTemp("", "dockhand-port-*.tar")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(archive.Name())
+	err = tarDirectory(archive, directory)
+	if closeErr := archive.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return fmt.Errorf("packing %s: %w", directory, err)
+	}
+	upload := guestRoot + "/shell-port.tar"
+	if err := g.Upload(ctx, archive.Name(), upload, true); err != nil {
+		return err
+	}
+	if output, err := g.Command(ctx, nil, "/usr/bin/sudo", "/bin/sh", "-c", `rm -rf "$1" && mkdir -p "$1" && tar -xf "$2" -C "$1" && rm -f "$2"`, "dockhand", staged, upload); err != nil {
+		return fmt.Errorf("putting the port in place: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+// tarDirectory writes directory's regular files and folders to out as a
+// tar archive, named from it.
+func tarDirectory(out io.Writer, directory string) error {
+	writer := tar.NewWriter(out)
+	err := filepath.WalkDir(directory, func(file string, entry fs.DirEntry, err error) error {
+		if err != nil || file == directory {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil || !(info.Mode().IsRegular() || info.IsDir()) {
+			return err
+		}
+		header, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(directory, file)
+		if err != nil {
+			return err
+		}
+		header.Name = filepath.ToSlash(relative)
+		if err := writer.WriteHeader(header); err != nil || info.IsDir() {
+			return err
+		}
+		data, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+		defer data.Close()
+		_, err = io.Copy(writer, data)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	return writer.Close()
+}
+
 // keepClone marks a check's clone as kept, which is then left for dockhand
 // shell, and for clean or the branch's next check to remove.
 func (p *Provider) keepClone(vm, image string) error {
@@ -451,6 +517,13 @@ func (p *Provider) Shell(ctx context.Context, job buildenv.ShellJob) (int, error
 	}
 	staged := path.Join(guestRoot, "ports", path.Dir(job.Portfile))
 	command := job.Command
+	if job.Test != "" {
+		if err := p.restage(ctx, g, job.Test, staged); err != nil {
+			return -1, err
+		}
+		command = []string{"/usr/bin/sudo", p.prefix() + "/bin/port", "-o", "-N", "-D", staged, "test"}
+		command = append(command, strings.Fields(job.Variants)...)
+	}
 	if len(command) == 0 {
 		command = []string{"/bin/zsh", "-l"}
 	}
