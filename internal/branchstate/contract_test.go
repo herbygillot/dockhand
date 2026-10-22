@@ -4,17 +4,44 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/evidence"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // contractCases are the facts and actions the Next contract is held to,
 // one for each refusal Evaluate makes; each step of part 4 adds those its
 // judgment brings.
-var contractCases = []struct {
+var contractCases = func() []struct {
 	name   string
 	facts  Facts
 	action Action
 	mode   Mode
-}{}
+} {
+	open := model.Branch{Name: "dockhand/jq-1.8.2", State: model.BranchOpen}
+	passed := &model.Run{Number: 3, State: model.RunPassed}
+	failed := &model.Run{Number: 3, State: model.RunFailed}
+	branch := func(commits int, edited ...string) Branch {
+		return Branch{Record: open, Commits: commits, Edited: edited}
+	}
+	stands := &evidence.Evidence{}
+	type c = struct {
+		name   string
+		facts  Facts
+		action Action
+		mode   Mode
+	}
+	return []c{
+		{"submit, gone", Facts{Branch: Branch{Record: open, Missing: true, Commits: 1}, Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: Asked}},
+		{"submit, pushed", Facts{Branch: Branch{Record: open, Commits: 1, Pushed: true}, Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: Asked}},
+		{"submit, nothing committed", Facts{Branch: branch(0, "Portfile"), Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: Asked}},
+		{"submit, edited", Facts{Branch: branch(1, "Portfile"), Check: Check{Latest: passed, Current: true, Evidence: stands}}, ActionSubmit, Mode{Answered: Asked}},
+		{"submit, checking", Facts{Branch: branch(1), Check: Check{Latest: passed, Active: []model.Run{{Number: 4, State: model.RunRunning}}}}, ActionSubmit, Mode{Answered: Nobody}},
+		{"submit, stopped", Facts{Branch: branch(1), Check: Check{Latest: passed, Stopped: &model.Run{Number: 4}}}, ActionSubmit, Mode{Answered: Nobody}},
+		{"submit, failed", Facts{Branch: branch(1), Check: Check{Latest: failed, Current: true}}, ActionSubmit, Mode{Answered: Asked}},
+		{"submit, other files", Facts{Branch: branch(1), Check: Check{Latest: passed}}, ActionSubmit, Mode{Answered: Asked}},
+	}
+}()
 
 // A refusal's Next moves the branch on: another verb, or the same once
 // something named has changed, never the refused action asked again with
@@ -22,9 +49,7 @@ var contractCases = []struct {
 func TestARefusalsNextAdvances(t *testing.T) {
 	for _, c := range contractCases {
 		verdict := Evaluate(c.facts, c.action, c.mode)
-		if !verdict.Refused {
-			continue
-		}
+		require.True(t, verdict.Refused, "%s: each case is a refusal", c.name)
 		require.NotNil(t, verdict.Next, "%s: a refusal says what moves it on", c.name)
 		require.True(t, verdict.Next.Advances(c.action), "%s: %+v asks %s again with nothing to wait for", c.name, *verdict.Next, c.action)
 	}

@@ -49,5 +49,12 @@ type Verdict struct {
 
 // Evaluate is the verdict on a branch's state for an action asked one way.
 func Evaluate(facts Facts, action Action, mode Mode) Verdict {
-	return Verdict{Standing: facts.Check.Standing()}
+	if action == ActionSubmit {
+		return submitVerdict(facts)
+	}
+	verdict := Verdict{Standing: facts.Check.Standing()}
+	if rows := Attend(facts); len(rows) > 0 {
+		verdict.Next = &rows[0].Next
+	}
+	return verdict
 }

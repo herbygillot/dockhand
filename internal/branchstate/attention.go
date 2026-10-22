@@ -82,8 +82,10 @@ type Branch struct {
 	OnMaster model.ObjectID
 	// Revision is the latest check's revision.
 	Revision *model.Revision
-	// Edited are the branch's files edited and not committed.
-	Edited []string
+	// Commits are how many commits the branch has beyond its base, and
+	// Edited its files edited and not committed.
+	Commits int
+	Edited  []string
 	// Held are what holds its submission, from its recorded assessments;
 	// Moved the Git sources whose tag moved before its check.
 	Held, Moved []model.Concern

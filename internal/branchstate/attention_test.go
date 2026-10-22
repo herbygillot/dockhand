@@ -53,3 +53,20 @@ func TestAttentionReadsTheChecksStanding(t *testing.T) {
 	facts.Check.Active = append(facts.Check.Active, model.Run{Number: 5, State: model.RunQueued})
 	require.Empty(t, Attend(facts))
 }
+
+// A branch whose committed files' checks passed, with nothing edited since,
+// is ready to submit; one checked otherwise isn't; one with nothing to
+// submit by its checks isn't a candidate (PassingBranches' definition).
+func TestSubmitReadiness(t *testing.T) {
+	passed := &model.Run{Number: 3, State: model.RunPassed}
+	branch := Branch{Record: model.Branch{Name: "dockhand/jq-1.8.2", State: model.BranchOpen}, Commits: 1}
+	ready := Facts{Branch: branch, Check: Check{Latest: passed, Current: true, Evidence: &evidence.Evidence{}}}
+	require.Equal(t, SubmitReady, SubmitReadiness(ready))
+	require.False(t, Evaluate(ready, ActionSubmit, Mode{Answered: Asked}).Refused)
+	older := ready
+	older.Check.Current = false
+	require.Equal(t, NotReady, SubmitReadiness(older))
+	pushed := ready
+	pushed.Branch.Pushed = true
+	require.Equal(t, NotCandidate, SubmitReadiness(pushed))
+}

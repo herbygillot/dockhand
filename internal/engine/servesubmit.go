@@ -40,11 +40,9 @@ type Passing struct {
 	Others int
 }
 
-// PassingBranches is the one definition of a branch that passed and is
-// ready to submit, for ship --passing and for serve: it has commits and
-// a finished check, its pull request doesn't already have its head, and
-// the checks of exactly its committed files built every changed target
-// and passed, whatever --only narrowed.
+// PassingBranches are the branches that passed and are ready to submit,
+// for ship --passing and for serve, by branchstate's one definition
+// (SubmitReadiness).
 func (e *Engine) PassingBranches(ctx context.Context) (Passing, error) {
 	statuses, err := e.Status(ctx)
 	if err != nil {
@@ -52,11 +50,10 @@ func (e *Engine) PassingBranches(ctx context.Context) (Passing, error) {
 	}
 	var passing Passing
 	for _, status := range statuses {
-		switch {
-		case status.Missing || status.Commits == 0 || status.Latest == nil || status.Pushed():
-		case status.CheckStanding() == branchstate.CheckPassed && len(status.Edited) == 0 && status.Evidence != nil:
+		switch branchstate.SubmitReadiness(status.Facts()) {
+		case branchstate.SubmitReady:
 			passing.Ready = append(passing.Ready, status)
-		default:
+		case branchstate.NotReady:
 			passing.Others++
 		}
 	}

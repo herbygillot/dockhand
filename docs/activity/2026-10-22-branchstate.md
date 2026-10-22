@@ -41,3 +41,18 @@ The command is now a call plus rendering:
 Attend reads the check's standing (`Check.Standing`) where status re-derived it from the runs beside it. That settles the two disagreements the map found, which `TestAttentionReadsTheChecksStanding` pins:
 - a baseline running beside a passed check hid status's row; it no longer does;
 - a failed extra (from --also, or a revision-only port) read "passed; waiting for you to submit" while submit refused it. It now asks to be accepted, "submit --accept <port>".
+
+## Step 3: serve's passing branches from the one definition
+
+`PassingBranches` defined a branch that passed and is ready to submit inline, for serve and for `ship --passing`. That definition is now `branchstate.SubmitReadiness(facts)`, which says a branch is not a candidate, ready, or not ready. `PassingBranches` and, through it, `serveCandidates` call it. `Branch.Commits` joins the facts.
+
+`Evaluate(facts, ActionSubmit, mode)` refuses a branch that isn't ready, and its Next follows from the record and the check's standing:
+- adopt, for a branch gone;
+- status, for one already pushed;
+- tidy, for nothing committed or files edited;
+- wait, after the check finishes, for one checking;
+- wait, for one stopped;
+- logs, for one failed;
+- check, otherwise.
+
+The contract table now holds these eight refusals, and every one's Next advances. Submit's own blocks are step 4.

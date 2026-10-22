@@ -222,7 +222,7 @@ func (s BranchStatus) Check() branchstate.Check {
 // Facts are what's recorded of the branch, as the verdict reads it
 // (branchstate.Facts).
 func (s BranchStatus) Facts() branchstate.Facts {
-	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Edited: s.Edited,
+	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Commits: s.Commits, Edited: s.Edited,
 		Held: s.Held, Moved: s.Moved, NotAssessed: s.Assessment == AssessmentPending, NoFork: s.NoFork, Pushed: s.Pushed(), OthersPushed: s.SomeoneElsePushed(),
 		Failing: s.Failing(), Ports: s.Scope.PortNames()}
 	if s.Evidence != nil {
