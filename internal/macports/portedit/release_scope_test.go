@@ -56,7 +56,7 @@ if {${subport} eq "fixture"} {distfiles; fetch {}; use_configure no; build {}}
 	}
 }
 
-func TestSharedReleaseRefusesUnprovableChecksumOwners(t *testing.T) {
+func TestASharedReleaseWritesEachMembersOwnChecksumsBlock(t *testing.T) {
 	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 0
@@ -72,11 +72,50 @@ if {${subport} eq "fixture-b"} {
 	r.Selection = macports.Selection{Selector: "devel/fixture/Portfile", Subport: "fixture-a"}
 	r.SharedRelease = true
 	// Each subport's checksums are located, by the frame's line, and
-	// fixture-b's are its own, which a shared release can't prove it moves
-	// alike: refused, before anything is fetched.
-	_, err := s.Prepare(t.Context(), r)
+	// fixture-b's are its own: its archive is fetched for it, and its block
+	// written, where a shared release refused it as unprovable.
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.NotEmpty(t, *requests)
+	require.NotContains(t, string(result.Files[0].After), "sha256 aaaa")
+	require.Equal(t, 2, strings.Count(string(result.Files[0].After), "checksums sha256 "), "both blocks written")
+}
+
+// A Portfile whose subports each fetch an archive of their own at the one
+// version, as xapian-core's bindings and omega do, is updated whole: each
+// member's archive fetched at the new version and each checksums block
+// written, with --shared-release, which a main port's update implies
+// (field testing at 6dd7745c: xapian-core was refused, and updated by
+// hand). Without it, a named subport is refused before anything is
+// fetched.
+func TestASharedReleaseFetchesEachMembersOwnArchive(t *testing.T) {
+	t.Parallel()
+	const portfile = `version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+distname fixture-core-${version}
+checksums sha256 aaaa size 2
+subport fixture-omega {
+ distname fixture-omega-${version}
+ checksums sha256 bbbb size 3
+}
+`
+	s, r, requests := archiveFixture(t, portfile)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"/1.2.4/fixture-core-1.2.4.tar.gz", "/1.2.4/fixture-omega-1.2.4.tar.gz"}, *requests)
+	require.Len(t, result.Downloads, 2)
+	after := string(result.Files[0].After)
+	require.NotContains(t, after, "sha256 aaaa")
+	require.NotContains(t, after, "sha256 bbbb")
+	require.Contains(t, after, "version 1.2.4")
+	require.Len(t, result.Scope.Affected, 2)
+
+	s, r, requests = archiveFixture(t, portfile)
+	r.Selection = macports.Selection{Selector: "devel/fixture/Portfile", Subport: "fixture-omega"}
+	_, err = s.Prepare(t.Context(), r)
 	require.ErrorIs(t, err, ErrFidelity)
-	require.ErrorContains(t, err, "fixture-b has independently owned source/checksum declarations")
+	require.ErrorContains(t, err, "--shared-release moves both")
 	require.Empty(t, *requests)
 }
 

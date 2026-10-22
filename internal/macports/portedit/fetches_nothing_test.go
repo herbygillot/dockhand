@@ -47,8 +47,8 @@ func TestAPortWhoseVersionIsMacPortsOwnTakesAVersionNamed(t *testing.T) {
 }
 
 // A subport that fetches nothing moves with its sibling's release, and
-// owns none of its archives; selected itself, it doesn't move the sibling
-// that fetches them.
+// owns none of its archives; selected itself, with --shared-release, the
+// sibling's archives are the update's to fetch, as any member's own are.
 func TestAFamilyMemberThatFetchesNothing(t *testing.T) {
 	t.Parallel()
 	family := `version 1.2.3
@@ -67,9 +67,10 @@ subport fixture-select {
 	s, r, _ = archiveFixture(t, family)
 	r.SharedRelease = true
 	r.Selection.Subport = "fixture-select"
-	_, err = s.Prepare(t.Context(), r)
-	require.ErrorIs(t, err, ErrFidelity)
-	require.ErrorContains(t, err, "fixture, another port of the same Portfile, fetches its own source (its distfiles differ from fixture-select's), which updating fixture-select doesn't move")
+	result, err = s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Len(t, result.Downloads, 1)
+	require.NotContains(t, string(result.Files[0].After), "sha256 aaaa")
 }
 
 // A port that fetches nothing is covered: its assessment finds its version

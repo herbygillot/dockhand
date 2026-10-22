@@ -395,9 +395,14 @@ func (f ScopeFinding) String() string {
 	return fmt.Sprintf("%s, another port of the same Portfile, fetches its own source (its %s differ from %s's), which updating %s doesn't move", f.Port, f.Field, f.Selected, f.Selected)
 }
 
-// AnsweredBy reports whether a finding is answered: a sibling moving, by
-// shared authorization; neither of the others, by anything yet.
-func (f ScopeFinding) AnsweredBy(shared bool) bool { return f.Kind == SiblingMoves && shared }
+// AnsweredBy reports whether a finding is answered: a sibling moving, or
+// one that fetches archives of its own at the release's version, which
+// the update fetches and whose checksums it writes, as xapian-core's
+// bindings', by shared authorization; one of its own Git source or its
+// own version, by nothing yet.
+func (f ScopeFinding) AnsweredBy(shared bool) bool {
+	return shared && (f.Kind == SiblingMoves || f.Kind == SiblingOwnSource && f.Field != "git.branch")
+}
 
 // Scope partitions sibling ports into those a release changes and those it
 // must protect, with what it found of each that moves: whether it moves
@@ -536,11 +541,28 @@ func ScopedChecksums(scope *macports.ReleaseScope, before, after macports.Snapsh
 	if scope == nil {
 		return Checksums(before, after, selected, checksums)
 	}
+	return ScopedChecksumsOf(scope, before, after, map[string]string{selected: checksums})
+}
+
+// ScopedChecksumsOf predicts the checksums each member that owns some
+// writes, by port, and every affected member that shares a writer's
+// checksums before taking them with it; nothing else moves. A release whose
+// members each fetch their own archives, as xapian-core's, names each.
+func ScopedChecksumsOf(scope *macports.ReleaseScope, before, after macports.Snapshot, wanted map[string]string) Report {
 	prediction := Predict(before)
 	for _, member := range scope.Affected {
 		name := member.Target.Name
 		info := before.Ports[name]
-		if info.Version != member.After.Version || info.Options["checksums"] != before.Ports[selected].Options["checksums"] {
+		checksums, writes := wanted[name]
+		if !writes {
+			for _, owner := range slices.Sorted(maps.Keys(wanted)) {
+				if info.Version == member.After.Version && info.Options["checksums"] == before.Ports[owner].Options["checksums"] {
+					checksums, writes = wanted[owner], true
+					break
+				}
+			}
+		}
+		if !writes || info.Version != member.After.Version {
 			continue
 		}
 		port := prediction.Port(name)

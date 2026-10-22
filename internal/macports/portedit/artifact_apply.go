@@ -73,10 +73,28 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 	if err != nil {
 		return result, err
 	}
+	// Each context is checked once, every member that writes its own
+	// checksums there predicted with them.
+	type contextKey struct {
+		profile model.Platform
+		variant string
+	}
+	wanted := map[contextKey]map[string]string{}
+	for _, frame := range plan.observed.contexts {
+		key := contextKey{frame.profile, frame.variant}
+		if wanted[key] == nil {
+			wanted[key] = map[string]string{}
+		}
+		wanted[key][frame.port] = strings.Join(wantedChecksums(frame.binding, updates), " ")
+	}
+	checked := map[contextKey]bool{}
 	for i, frame := range plan.observed.contexts {
-		final := finals[i]
-		checksums := strings.Join(wantedChecksums(frame.binding, updates), " ")
-		finalFidelity := fidelity.ScopedChecksums(input.scope, frame.after, final.Snapshot, input.target.Name, checksums)
+		key := contextKey{frame.profile, frame.variant}
+		if checked[key] {
+			continue
+		}
+		checked[key] = true
+		finalFidelity := scopedChecksums(input, frame.after, finals[i].Snapshot, wanted[key])
 		if len(finalFidelity.UnexpectedChanges) > 0 {
 			return result, fmt.Errorf("%w: final context %+v: %s", ErrFidelity, frame.profile, strings.Join(finalFidelity.UnexpectedChanges, "; "))
 		}
@@ -95,7 +113,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 			break
 		}
 	}
-	report := fidelity.ScopedChecksums(input.scope, native.after, final, input.target.Name, strings.Join(wantedChecksums(native.binding, updates), " "))
+	report := scopedChecksums(input, native.after, final, wanted[contextKey{native.profile, native.variant}])
 	if err := result.commitEdit(input, request, evaluated.edit, report, plan.subject); err != nil {
 		return result, err
 	}
@@ -106,6 +124,16 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		}
 	}
 	return result, nil
+}
+
+// scopedChecksums is the checksums step's prediction, observed: each
+// member's own checksums where it writes some, the target's alone where
+// the update has no release scope.
+func scopedChecksums(input *sourceInput, before, after macports.Snapshot, wanted map[string]string) fidelity.Report {
+	if input.scope == nil {
+		return fidelity.Checksums(before, after, input.target.Name, wanted[input.target.Name])
+	}
+	return fidelity.ScopedChecksumsOf(input.scope, before, after, wanted)
 }
 
 // MirrorConflict is an archive MacPorts' mirror already holds another file

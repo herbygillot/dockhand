@@ -1,6 +1,7 @@
 package fidelity
 
 import (
+	"maps"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -147,9 +148,16 @@ func TestASiblingFetchingItsOwnSourceIsSaidOnce(t *testing.T) {
 		"rust":     {Name: "rust", Version: "1.99.0", Options: map[string]string{"distfiles": "rustc-1.99.0-src.tar.gz", "checksums": "sha256 cccc"}},
 		"rust-src": {Name: "rust-src", Version: "1.99.0", Options: map[string]string{"distfiles": "rust-src-1.99.0.tar.gz", "checksums": "sha256 dddd"}},
 	})
-	err := ScopedVersion(true, before, after, "rust", model.Release{Version: "1.99.0"}, "sha256 cccc").Err()
-	require.ErrorIs(t, err, ErrMismatch)
-	require.EqualError(t, err, "fidelity: evaluation does not match the intended change: rust-src, another port of the same Portfile, fetches its own source (its distfiles differ from rust's), which updating rust doesn't move")
+	// With --shared-release, its own archives are the update's to fetch,
+	// and its checksums to write, as xapian-core's bindings' are.
+	require.Empty(t, ScopedVersion(true, before, after, "rust", model.Release{Version: "1.99.0"}, "sha256 cccc").UnexpectedChanges)
+	git := after
+	git.Ports = maps.Clone(after.Ports)
+	src := git.Ports["rust-src"]
+	src.Options = map[string]string{"git.branch": "other", "distfiles": "rust-src-1.99.0.tar.gz", "checksums": "sha256 dddd"}
+	git.Ports["rust-src"] = src
+	require.EqualError(t, ScopedVersion(true, before, git, "rust", model.Release{Version: "1.99.0"}, "sha256 cccc").Err(),
+		"fidelity: evaluation does not match the intended change: rust-src, another port of the same Portfile, fetches its own source (its git.branch differ from rust's), which updating rust doesn't move", "one of its own Git source isn't, yet")
 	// Without --shared-release, a sibling moving with the release names the
 	// flag that moves both, where it named an assess command v3 hasn't.
 	require.EqualError(t, ScopedVersion(false, before, after, "rust", model.Release{Version: "1.99.0"}, "sha256 cccc").Err(),
@@ -183,7 +191,8 @@ func TestAScopeFindsEachSiblingByKind(t *testing.T) {
 	require.True(t, findings[0].AnsweredBy(true))
 	require.False(t, findings[0].AnsweredBy(false))
 	require.False(t, findings[1].AnsweredBy(true))
-	require.False(t, findings[3].AnsweredBy(true))
+	require.True(t, findings[3].AnsweredBy(true), "its own archives, at the release's version, are the update's to fetch")
+	require.False(t, ScopeFinding{Kind: SiblingOwnSource, Port: "rust-src", Field: "git.branch"}.AnsweredBy(true))
 }
 
 // A path below the source directory is the same path in two evaluations,

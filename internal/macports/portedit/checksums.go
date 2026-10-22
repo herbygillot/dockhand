@@ -177,7 +177,9 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 		if err != nil {
 			return fmt.Errorf("context %+v: %w", profile, err)
 		}
-		if err := s.checkSharedArchiveOwners(ctx, input, input.data, observed, binding); err != nil {
+		// A sibling with archives of its own keeps them: a refresh is the
+		// target's checksums.
+		if _, err := s.sharedArchiveOwners(ctx, input, input.data, observed, binding); err != nil {
 			return err
 		}
 		info := observed.Snapshot.Ports[input.target.Name]
@@ -186,7 +188,7 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 			coverage.cover(artifact)
 			coverage.download(artifact, info)
 		}
-		plan.contexts = append(plan.contexts, archiveContext{profile: profile, variant: variant, session: session, before: observed.Snapshot, after: observed.Snapshot, binding: binding})
+		plan.contexts = append(plan.contexts, archiveContext{port: input.target.Name, profile: profile, variant: variant, session: session, before: observed.Snapshot, after: observed.Snapshot, binding: binding})
 		return nil
 	}
 	for i, profile := range profiles {

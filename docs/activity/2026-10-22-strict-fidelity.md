@@ -58,3 +58,20 @@ The last two have no answer yet. `ReleaseScope` is now `Scope` plus the refusal 
 A patch hook that edits a dependency manifest, as editors/fresh's post-patch edits Cargo.toml, is predicted to leave the dependency block as the lock gives it. The current version's block shows that where it's exactly what the current lock gives, and then the update goes on, as before. Where the block differs from the lock, the hook may have shaped it by hand, and the update is still refused, as an override is.
 
 The one change is where the prediction can't be shown: the block is empty, or its module moved since. That refused before. Now the block is regenerated and the result carries `ManifestHook`, which the engine adds to the update's upstream comparison as a held `manifest-hook` change. A person's update shows it, and an unattended one waits for a look (D4). `manifest-hook` joins `HoldRules`, so `holds.allow` can name it. The new `patched-moved` case of `TestGoDependencyPreparation` pins it.
+
+## Step 5: a sibling's own archives are the update's (xapian-core)
+
+xapian-core was refused because xapian-bindings-ruby31, of the same Portfile, fetches its own distfile. Core, omega, and the bindings share one `version` and one master site, and each has its own checksums block. The update by hand fetched each archive at the new version and wrote each block. With `--shared-release` (which a main port's update implies), dockhand now does the same:
+- **The scope.** `ScopeFinding.AnsweredBy` takes `SiblingOwnSource` under shared authorization, where the field that differs is distfiles, master_sites, or checksums. A sibling of its own Git source is still refused.
+- **The plan.** `sharedArchiveOwners` replaces `checkSharedArchiveOwners`. A member none of whose checksum declarations are the target's is an owner. `planObservedArchives` plans each owner in every profile as it plans the target, through the same `observeContext`, now taking the member and recording it as `archiveContext.port`, and the same coverage, protected, changed, and paired sets. A member that shares some of the target's archives but not all is still refused.
+- **The check.** `fidelity.ScopedChecksumsOf` predicts each owner's own checksums by port, and a member that shared an owner's checksums takes them with it. The apply step checks each context once, with every owner in it.
+- **A checksum refresh** is the target's alone, so an owner's archives are left as they are.
+
+Tests:
+- `TestASharedReleaseFetchesEachMembersOwnArchive` has the xapian shape. Both archives are fetched, both blocks written, and a named subport without the flag is refused before any fetch.
+- `TestSharedReleaseRefusesUnprovableChecksumOwners` becomes `TestASharedReleaseWritesEachMembersOwnChecksumsBlock`: a subport with its own block for the same archive gets its block written.
+- In `TestAFamilyMemberThatFetchesNothing`, the select subport's update with the flag now moves its sibling's archive too.
+
+`--shared-release` is the decision that answers `SiblingMoves` and, now, `SiblingOwnSource`. Each update makes it, and `Result.Scope` records which members moved, so no stored decision is needed: a checksum refresh doesn't ask for it again.
+
+I ran a plan on the real tree at master 97ece80, with a scratch build and database: `update xapian-core --plan` says xapian-core is already at 1.4.32. The tree's Portfile has this shape, with one checksums block shared by every binding subport, which plans as one owner's archive written once. Proving it on a real release waits for xapian's next one, so that check goes to field testing.

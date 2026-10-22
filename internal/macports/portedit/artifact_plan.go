@@ -20,6 +20,10 @@ import (
 )
 
 type archiveContext struct {
+	// port is the member of the release whose archives the context binds:
+	// the target, or a sibling that fetches its own at the release's
+	// version, as xapian-core's bindings do.
+	port    string
 	profile model.Platform
 	// variant is the variant asked for in a variant's context, observed
 	// with session; empty for a profile's, observed as the input's.
@@ -116,12 +120,16 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	}
 	// observeContext checks one context's baseline and candidate, and plans
 	// what it fetches: a profile's, or a variant's on this Mac.
-	observeContext := func(profile model.Platform, variant string, session *observe.Session, before, after macports.Observation) error {
-		old, next := before.Snapshot.Ports[input.target.Name], after.Snapshot.Ports[input.target.Name]
+	// owners are the siblings that fetch their own archives at the
+	// release's version, each planned as the target is, its own archives
+	// fetched and its own checksums written.
+	var owners []model.Target
+	observeContext := func(member *sourceInput, profile model.Platform, variant string, session *observe.Session, before, after macports.Observation) error {
+		old, next := before.Snapshot.Ports[member.target.Name], after.Snapshot.Ports[member.target.Name]
 		if obsoleteIn(old) && obsoleteIn(next) {
 			// The port is an obsolete follower in this context, with no
 			// archive of its own; the context adds no requirement.
-			progress.VerboseReport(ctx, "%s is obsolete on %s %s %s; no archive to cover there", input.target.Name, profile.OS, profile.Version, profile.Architecture)
+			progress.VerboseReport(ctx, "%s is obsolete on %s %s %s; no archive to cover there", member.target.Name, profile.OS, profile.Version, profile.Architecture)
 			return nil
 		}
 		affected := old.Version != next.Version
@@ -136,32 +144,40 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				return fmt.Errorf("protected context %+v: %w", profile, err)
 			}
 		} else {
-			report := fidelity.ScopedVersion(request.SharedRelease, before.Snapshot, after.Snapshot, input.target.Name, *request.Release, next.Options["checksums"])
+			report := fidelity.ScopedVersion(request.SharedRelease, before.Snapshot, after.Snapshot, member.target.Name, *request.Release, next.Options["checksums"])
 			if len(report.UnexpectedChanges) > 0 {
 				return fmt.Errorf("%w: context %+v: %s", ErrFidelity, profile, strings.Join(report.UnexpectedChanges, "; "))
 			}
 		}
 		// A context where the port fetches nothing, before and after,
 		// adds no archive to plan.
-		oldBinding, err := s.bindArchives(ctx, input, input.data, before)
+		oldBinding, err := s.bindArchives(ctx, member, input.data, before)
 		hadNothing := errors.Is(err, errFetchesNothing)
 		if err != nil && !hadNothing {
 			return fmt.Errorf("baseline %+v: %w", profile, err)
 		}
-		binding, err := s.bindArchives(ctx, input, contents, after)
+		binding, err := s.bindArchives(ctx, member, contents, after)
 		nothing := errors.Is(err, errFetchesNothing)
 		if err != nil && !nothing {
 			return fmt.Errorf("candidate %+v: %w", profile, err)
 		}
 		if hadNothing != nothing {
-			return fmt.Errorf("%w: candidate changed whether %s fetches anything on %+v", ErrFidelity, input.target.Name, profile)
+			return fmt.Errorf("%w: candidate changed whether %s fetches anything on %+v", ErrFidelity, member.target.Name, profile)
 		}
 		fetches = fetches || !nothing
-		if err := s.checkSharedArchiveOwners(ctx, input, input.data, before, oldBinding); err != nil {
-			return err
-		}
-		if err := s.checkSharedArchiveOwners(ctx, input, contents, after, binding); err != nil {
-			return err
+		if member == input {
+			if _, err := s.sharedArchiveOwners(ctx, input, input.data, before, oldBinding); err != nil {
+				return err
+			}
+			found, err := s.sharedArchiveOwners(ctx, input, contents, after, binding)
+			if err != nil {
+				return err
+			}
+			for _, owner := range found {
+				if !slices.ContainsFunc(owners, func(t model.Target) bool { return t.Name == owner.Name }) {
+					owners = append(owners, owner)
+				}
+			}
 		}
 		if len(oldBinding.Groups) != len(binding.Groups) || len(oldBinding.Artifacts) != len(binding.Artifacts) {
 			return fmt.Errorf("%w: candidate changed archive/checksum structure", ErrFidelity)
@@ -213,12 +229,12 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				plan.pairs = append(plan.pairs, archivePair{previous: previous, info: old, port: next, next: artifact.Name})
 			}
 		}
-		plan.contexts = append(plan.contexts, archiveContext{profile: profile, variant: variant, session: session, before: before.Snapshot, after: after.Snapshot, binding: binding, affected: affected})
+		plan.contexts = append(plan.contexts, archiveContext{port: member.target.Name, profile: profile, variant: variant, session: session, before: before.Snapshot, after: after.Snapshot, binding: binding, affected: affected})
 		return nil
 	}
 	for i, profile := range profiles {
 		progress.DebugReport(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
-		if err := observeContext(profile, "", input.observe, befores[i], afters[i]); err != nil {
+		if err := observeContext(input, profile, "", input.observe, befores[i], afters[i]); err != nil {
 			return nil, err
 		}
 	}
@@ -239,8 +255,19 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		if err != nil {
 			return nil, fmt.Errorf("%w: +%s declares archives of its own, and couldn't be observed with the new version: %v", ErrUnsupported, variant, err)
 		}
-		if err := observeContext(input.before.Platform, variant, session, before[0], after[0]); err != nil {
+		if err := observeContext(input, input.before.Platform, variant, session, before[0], after[0]); err != nil {
 			return nil, fmt.Errorf("+%s: %w", variant, err)
+		}
+	}
+	// Each sibling of its own source is planned in every profile as the
+	// target was, its archives and checksums its own (part 3's strict
+	// fidelity: xapian-core).
+	for _, owner := range owners {
+		member := input.forMember(owner)
+		for i, profile := range profiles {
+			if err := observeContext(member, profile, "", input.observe, befores[i], afters[i]); err != nil {
+				return nil, fmt.Errorf("%s: %w", owner.Name, err)
+			}
 		}
 	}
 	if ids := coverage.uncovered(); len(ids) > 0 {
