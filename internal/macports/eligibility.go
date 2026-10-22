@@ -42,9 +42,9 @@ func (e Eligibility) Reason() string {
 	case ExcludedReplaced:
 		return "replaced by " + e.Detail
 	case ExcludedPlatforms:
-		return "its platforms, " + e.Detail + ", exclude this release"
+		return "platforms " + e.Detail + " exclude this release"
 	case ExcludedKnownFail:
-		return "the Portfile marks it known_fail here"
+		return "known_fail here, as the Portfile says"
 	case ExcludedArchs:
 		return "supported_archs " + e.Detail + " only"
 	}

@@ -932,7 +932,7 @@ func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 		view.CheckWords(engine.SubmitPlan{Evidence: evidence}))
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	evidence.Plan.Environments = append(evidence.Plan.Environments, sequoia)
-	evidence.Plan.Builds = append(evidence.Plan.Builds, model.EnvironmentPlan{Environment: sequoia, Exclusions: []model.Exclusion{{Target: target.Target, Reason: "minmax builds it on its oldest and newest releases", Span: true}}})
+	evidence.Plan.Builds = append(evidence.Plan.Builds, model.EnvironmentPlan{Environment: sequoia, Exclusions: []model.Exclusion{{Target: target.Target, Reason: "minmax builds each port on its oldest and newest releases", Span: true}}})
 	evidence.Targets[0].Outcomes = append(evidence.Targets[0].Outcomes, evidence.Targets[0].Outcomes[0])
 	require.NotContains(t, view.CheckWords(engine.SubmitPlan{Evidence: evidence}), engine.DescribeEnvironment(sequoia), "minmax's choice isn't the ports' exclusion")
 

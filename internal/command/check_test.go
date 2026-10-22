@@ -114,7 +114,7 @@ func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
 		Targets:      []model.PlanTarget{{ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}},
 		Omitted:      []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Kind: model.Substantive, Role: model.Changed}},
 		Tests:        model.TestsDeclared,
-	}, nil, nil)
+	}, nil, nil, nil)
 	require.Contains(t, out.String(), "Changed     jq\nLeft out    libharbor, by --only; submit still needs them checked\n")
 }
 
@@ -138,7 +138,7 @@ func TestCheckPlanSaysWhatAGitFetchMustCheckOut(t *testing.T) {
 			{Environment: intel, Order: []model.TargetID{"libharbor", "harbor-cli"}, Git: map[model.TargetID]model.GitSource{"libharbor": tag}},
 		}}
 	var out bytes.Buffer
-	view.WritePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil, nil)
 	require.Contains(t, out.String(), "Git         libharbor: git.branch v4 names 1a2b3c4 now, which its build must fetch\n"+
 		"            harbor-cli: which commit git.branch v2 names isn't known (its refs couldn't be read: timed out); its build records what it fetches, and stands for no later check\n")
 
@@ -176,7 +176,7 @@ func TestCheckPlanShowsTheGitSourcesOfWhatOnlyLeftOut(t *testing.T) {
 		Builds: []model.EnvironmentPlan{{Environment: arm, Order: []model.TargetID{"harbor-cli"},
 			Git: map[model.TargetID]model.GitSource{"harbor-cli": cli, "libharbor": tag, "harbor-viewer": viewer}}}}
 	var out bytes.Buffer
-	view.WritePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil, nil)
 	require.Contains(t, out.String(), "Git         harbor-cli: git.branch v2 names 9f8e7d6 now, which its build must fetch\n"+
 		"            libharbor (left out): git.branch v4 names 1a2b3c4 now, which an earlier check's build of it must have fetched to stand\n"+
 		"            harbor-viewer (left out): which commit git.branch v1 names isn't known (the repository has no branch or tag v1); no earlier check's result of it stands\n")
@@ -255,7 +255,7 @@ func TestCheckPlanShowsEachEnvironmentsOrder(t *testing.T) {
 				Exclusions: []model.Exclusion{old}},
 		}}
 	var out bytes.Buffer
-	view.WritePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil, nil)
 	require.Contains(t, out.String(), "Order       on tart macOS 26 (Tahoe) arm64: harbor-cli → libharbor\n"+
 		"            on tart macOS 26 (Tahoe) x86_64: libharbor → harbor-cli → harbor-intel\n"+
 		"Excluded    harbor-cli-old: replaced by harbor-cli\n"+
@@ -264,7 +264,7 @@ func TestCheckPlanShowsEachEnvironmentsOrder(t *testing.T) {
 	plan.Builds[0].Order, plan.Builds[0].Dependencies = []model.TargetID{"libharbor", "harbor-cli"}, map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}}
 	plan.Targets = []model.PlanTarget{target("libharbor"), target("harbor-cli"), target("harbor-intel")}
 	out.Reset()
-	view.WritePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil, nil)
 	require.Contains(t, out.String(), "Order       libharbor → harbor-cli → harbor-intel\n", "where they agree, one line")
 }
 
@@ -308,8 +308,8 @@ func TestBaselineResultsShowWhereItRebuilt(t *testing.T) {
 		{Target: gone, Outcomes: cells([]model.TargetResult{failed, passed})},
 	}}
 	base := engine.Evidence{Plan: model.Plan{Environments: []model.Environment{tahoe, sequoia}, Builds: []model.EnvironmentPlan{
-		{Environment: tahoe, Exclusions: []model.Exclusion{{Target: jq.Target, Reason: "check-4 didn't fail it there"}, {Target: gone.Target, Reason: "replaced by other"}}},
-		{Environment: sequoia, Order: []model.TargetID{"jq"}, Exclusions: []model.Exclusion{{Target: gone.Target, Reason: "check-4 didn't fail it there"}}},
+		{Environment: tahoe, Exclusions: []model.Exclusion{{Target: jq.Target, Reason: "check-4 didn't fail there"}, {Target: gone.Target, Reason: "replaced by other"}}},
+		{Environment: sequoia, Order: []model.TargetID{"jq"}, Exclusions: []model.Exclusion{{Target: gone.Target, Reason: "check-4 didn't fail there"}}},
 	}}, Targets: []engine.TargetEvidence{
 		{Target: jq, Outcomes: cells([]model.TargetResult{notRun, failed})},
 		{Target: gone, Outcomes: cells([]model.TargetResult{notRun, notRun})},
@@ -365,16 +365,16 @@ func TestAPlanRequiringTestsNamesWhatDeclaresNone(t *testing.T) {
 		Targets: []model.PlanTarget{{ID: "ov", Target: model.Target{Name: "ov"}, Kind: model.Substantive, Role: model.Changed}, {ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}},
 		Builds:  []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"ov", "jq"}, Untested: []model.TargetID{"ov"}}}}
 	var out bytes.Buffer
-	view.WritePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil, nil)
 	require.Contains(t, out.String(), "Tests       jq, which must pass\nNo tests    ov declares no tests; --tests required adds no test requirement for this port\n", "which do is said beside which don't")
 	plan.Builds[0].Untested = []model.TargetID{"ov", "jq"}
 	out.Reset()
-	view.WritePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil, nil)
 	require.Contains(t, out.String(), "No tests    ov, jq declare no tests; --tests required adds no test requirement for these ports\n")
 	require.NotContains(t, out.String(), "Tests       ")
 	plan.Tests = model.TestsDeclared
 	out.Reset()
-	view.WritePlan(&out, plan, nil, nil)
+	view.WritePlan(&out, plan, nil, nil, nil)
 	require.NotContains(t, out.String(), "No tests")
 }
 

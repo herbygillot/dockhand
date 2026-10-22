@@ -198,3 +198,36 @@ func changeRecord(record model.ChangeRecord, sides [2]*macports.Snapshot, texts 
 	record.Unseen, record.AllUnseen = portfile.UnseenChanges(texts[0], texts[1])
 	return record
 }
+
+// PlanSiblings are a plan's changed targets that their directory's change
+// record finds unchanged: built because a check builds every subport of a
+// changed Portfile, as MacPorts' CI does, not because the revision changed
+// them, as terraform-1.16's 18 siblings (field testing's terraform replay,
+// 2026-10-22). None for a directory no record narrows, which keeps its
+// text scope (changedSubports), or where the plan's revision can't be read.
+func (e *Engine) PlanSiblings(ctx context.Context, plan model.Plan) map[model.TargetID]bool {
+	revision, err := e.Revision(ctx, plan.Revision)
+	if err != nil || revision.Branch == "" {
+		return nil
+	}
+	records, err := e.revisionChanges(ctx, revision.Branch, revision.Source.Base, revision.Source.Tree, false)
+	if err != nil {
+		return nil
+	}
+	return planSiblings(plan, records)
+}
+
+// planSiblings are the plan's changed targets their directories' records
+// find unchanged (PlanSiblings).
+func planSiblings(plan model.Plan, records map[string]model.ChangeRecord) map[model.TargetID]bool {
+	siblings := map[model.TargetID]bool{}
+	for _, target := range plan.Targets {
+		if target.Role != model.Changed {
+			continue
+		}
+		if changed, ok := changedSubports(records, target.Directory); ok && !slices.Contains(changed, target.Target.Name) {
+			siblings[target.ID] = true
+		}
+	}
+	return siblings
+}

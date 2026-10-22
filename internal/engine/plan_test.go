@@ -462,7 +462,7 @@ func TestAPlanKeepsAnUnreadEligibilityApart(t *testing.T) {
 	require.NoError(t, err)
 	exclusion, excluded := plan.ExclusionIn(tahoeArm, "harbor-cli")
 	require.True(t, excluded)
-	require.Equal(t, "its platforms, {darwin >= 26}, exclude this release", exclusion.Reason)
+	require.Equal(t, "platforms {darwin >= 26} exclude this release", exclusion.Reason)
 }
 
 // harborVariants gives libharbor variants: +tests declares its tests, and

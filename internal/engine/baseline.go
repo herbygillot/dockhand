@@ -389,9 +389,9 @@ func rebuildWhere(evidence Evidence, id model.TargetID) planning.Limited {
 		}
 	}
 	if len(failed) > 0 {
-		return planning.Limited{Environments: failed, Elsewhere: evidence.Run.Name() + " didn't fail it there"}
+		return planning.Limited{Environments: failed, Elsewhere: evidence.Run.Name() + " didn't fail there"}
 	}
-	return planning.Limited{Environments: built, Elsewhere: evidence.Run.Name() + " didn't build it there"}
+	return planning.Limited{Environments: built, Elsewhere: evidence.Run.Name() + " didn't build there"}
 }
 
 // latestCheck is a branch's newest finished check, not a baseline: the

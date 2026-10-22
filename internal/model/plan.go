@@ -391,30 +391,48 @@ func (p Plan) SameOrder() bool {
 	return true
 }
 
-// GroupedExclusion is a port a plan doesn't build, for one reason, and the
-// environments that leave it out for it.
+// GroupedExclusion is ports a plan doesn't build, for one reason, and the
+// environments that leave each of them out for it.
 type GroupedExclusion struct {
-	Target       TargetID
+	Targets      []TargetID
 	Reason       string
 	Environments []Environment
 }
 
-// GroupedExclusions are the plan's exclusions grouped by port and reason,
-// in the order the environments first say them; one every environment
-// says has them all (Everywhere).
+// GroupedExclusions are the plan's exclusions grouped by reason and the
+// environments that say it, across ports, in the order they're first said:
+// terraform's 19 subports minmax leaves out of the same four releases are
+// one, where a line a port said 25 (field testing's terraform replay,
+// 2026-10-22). One every environment says has them all (Everywhere).
 func (p Plan) GroupedExclusions() []GroupedExclusion {
-	var all []GroupedExclusion
+	type byPort struct {
+		target       TargetID
+		reason       string
+		environments []Environment
+	}
+	var each []byPort
 	for _, planned := range p.Builds {
 		for _, exclusion := range planned.Exclusions {
-			i := slices.IndexFunc(all, func(x GroupedExclusion) bool {
-				return x.Target == exclusion.Target.ID() && x.Reason == exclusion.Reason
+			i := slices.IndexFunc(each, func(x byPort) bool {
+				return x.target == exclusion.Target.ID() && x.reason == exclusion.Reason
 			})
 			if i < 0 {
-				all = append(all, GroupedExclusion{Target: exclusion.Target.ID(), Reason: exclusion.Reason})
-				i = len(all) - 1
+				each = append(each, byPort{target: exclusion.Target.ID(), reason: exclusion.Reason})
+				i = len(each) - 1
 			}
-			all[i].Environments = append(all[i].Environments, planned.Environment)
+			each[i].environments = append(each[i].environments, planned.Environment)
 		}
+	}
+	var all []GroupedExclusion
+	for _, x := range each {
+		i := slices.IndexFunc(all, func(g GroupedExclusion) bool {
+			return g.Reason == x.reason && slices.Equal(g.Environments, x.environments)
+		})
+		if i < 0 {
+			all = append(all, GroupedExclusion{Reason: x.reason, Environments: x.environments})
+			i = len(all) - 1
+		}
+		all[i].Targets = append(all[i].Targets, x.target)
 	}
 	return all
 }

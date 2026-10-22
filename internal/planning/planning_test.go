@@ -55,12 +55,12 @@ func TestAPlanIsDecidedPhaseByPhase(t *testing.T) {
 				"harbor-extra":  {NeedsXcode: true, Untested: true},
 			},
 		},
-		Where: map[model.TargetID]Limited{"harbor-extra": {Environments: []model.Environment{intel}, Elsewhere: "check-1 didn't fail it there"}},
+		Where: map[model.TargetID]Limited{"harbor-extra": {Environments: []model.Environment{intel}, Elsewhere: "check-1 didn't fail there"}},
 	}
 
 	reasons := Exclusions(input)
 	require.Equal(t, []map[model.TargetID]Excluded{
-		{"harbor-legacy": {Reason: "the Portfile marks it known_fail here"}, "harbor-extra": {Reason: "check-1 didn't fail it there"}},
+		{"harbor-legacy": {Reason: "known_fail here, as the Portfile says"}, "harbor-extra": {Reason: "check-1 didn't fail there"}},
 		{"harbor-viewer": {Reason: "not defined there"}, "harbor-legacy": {Reason: "supported_archs arm64 only"}},
 	}, reasons)
 	built := Built(input.Candidates, reasons)
@@ -80,7 +80,7 @@ func TestAPlanIsDecidedPhaseByPhase(t *testing.T) {
 	require.Equal(t, []model.TargetID{"harbor-extra"}, decision.Builds[1].NeedsXcode)
 	require.Equal(t, []model.TargetID{"harbor-extra"}, decision.Builds[1].Untested)
 	require.Equal(t, []model.Unmet{{Target: "harbor-extra", Environment: intel, Needs: model.RequiresXcode}}, decision.Builds[1].Unmet)
-	require.Equal(t, []model.Exclusion{{Target: model.Target{Name: "harbor-legacy"}, Reason: "the Portfile marks it known_fail here"}, {Target: model.Target{Name: "harbor-extra"}, Reason: "check-1 didn't fail it there"}},
+	require.Equal(t, []model.Exclusion{{Target: model.Target{Name: "harbor-legacy"}, Reason: "known_fail here, as the Portfile says"}, {Target: model.Target{Name: "harbor-extra"}, Reason: "check-1 didn't fail there"}},
 		decision.Builds[0].Exclusions)
 	require.Equal(t, []model.TargetID{"harbor-tools", "harbor-extra", "libharbor", "harbor-cli", "harbor-viewer"}, ids(decision.Targets),
 		"the first environment's order, and what the second adds right after what precedes it there")
@@ -301,7 +301,7 @@ func TestSpanBuildsEachPortOnItsOldestAndNewest(t *testing.T) {
 		Releases: []string{"macOS 12", "macOS 13", "macOS 14", "macOS 26"},
 	}
 	reasons := Exclusions(input)
-	require.Equal(t, "minmax builds it on its oldest and newest releases, macOS 12 and 26", reasons[1]["harbor-cli"].Reason)
+	require.Equal(t, "minmax builds each port on its oldest and newest releases, macOS 12 and 26", reasons[1]["harbor-cli"].Reason)
 	require.True(t, reasons[1]["harbor-cli"].Span, "marked where it's made (the architecture review of 5897a82, R3-15)")
 	require.False(t, reasons[1]["harbor-new"].Span, "a port's own reason isn't minmax's")
 	require.NotContains(t, reasons[1]["harbor-new"].Reason, "minmax", "harbor-new keeps its own reason where it isn't supported")
@@ -310,7 +310,7 @@ func TestSpanBuildsEachPortOnItsOldestAndNewest(t *testing.T) {
 	require.NotEmpty(t, reasons[2]["harbor-cli"].Reason, "macOS 14 is neither of harbor-cli's ends")
 	require.Empty(t, reasons[0]["harbor-cli"].Reason)
 	require.Empty(t, reasons[3]["harbor-cli"].Reason)
-	require.Equal(t, "minmax builds it on its oldest and newest releases, macOS 12 and 26", reasons[1]["libharbor"].Reason)
+	require.Equal(t, "minmax builds each port on its oldest and newest releases, macOS 12 and 26", reasons[1]["libharbor"].Reason)
 
 	// Its exclusions are marked as its, a port's own reason not.
 	decision, err := Decide(input)

@@ -298,8 +298,8 @@ func TestRequiredEnvironmentsKeepWhatD17Accepted(t *testing.T) {
 // every port was excluded from, by a minmax profile's choice or by the
 // port's own platforms, leaves it (the person's word, 2026-10-16).
 func TestATableLeavesOutWhatNothingWasBuiltOn(t *testing.T) {
-	spanned := Cell{Kind: CellExcluded, Exclusion: model.Exclusion{Reason: "minmax builds it on its oldest and newest releases, macOS 12 and 27", Span: true}}
-	platforms := Cell{Kind: CellExcluded, Exclusion: model.Exclusion{Reason: "its platforms, {macosx >= 24}, exclude this release"}}
+	spanned := Cell{Kind: CellExcluded, Exclusion: model.Exclusion{Reason: "minmax builds each port on its oldest and newest releases, macOS 12 and 27", Span: true}}
+	platforms := Cell{Kind: CellExcluded, Exclusion: model.Exclusion{Reason: "platforms {macosx >= 24} exclude this release"}}
 	built := Cell{Kind: CellRecorded}
 	e := Evidence{Plan: model.Plan{Environments: make([]model.Environment, 5)}, Targets: []TargetEvidence{
 		{Outcomes: []Cell{built, spanned, platforms, platforms, built}},

@@ -291,7 +291,7 @@ func span(input Input, reasons []map[model.TargetID]Excluded) {
 				continue
 			}
 			end := ends[c.ID]
-			reasons[e][c.ID] = Excluded{Reason: fmt.Sprintf("minmax builds it on its oldest and newest releases, %s and %s", input.releaseName(end[0]), strings.TrimPrefix(input.releaseName(end[1]), "macOS ")), Span: true}
+			reasons[e][c.ID] = Excluded{Reason: fmt.Sprintf("minmax builds each port on its oldest and newest releases, %s and %s", input.releaseName(end[0]), strings.TrimPrefix(input.releaseName(end[1]), "macOS ")), Span: true}
 		}
 	}
 }

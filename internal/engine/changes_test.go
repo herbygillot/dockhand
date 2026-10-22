@@ -111,6 +111,13 @@ func TestARecordKeepsTheSubportsItCantSee(t *testing.T) {
 	ports, notes := recordedPorts([]string{"devel/zdemo"}, records)
 	require.Equal(t, []string{"zdemo-devel", "zdemo-legacy"}, ports)
 	require.Equal(t, "changed where this Mac's evaluation doesn't look", notes["zdemo-legacy"])
+	// A plan's changed targets the record finds unchanged are siblings,
+	// built as CI builds every subport; the rest are changed.
+	target := func(name string) model.PlanTarget {
+		return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Directory: "devel/zdemo", Kind: model.Substantive, Role: model.Changed}
+	}
+	plan := model.Plan{Targets: []model.PlanTarget{target("zdemo"), target("zdemo-devel"), target("zdemo-legacy")}}
+	require.Equal(t, map[model.TargetID]bool{"zdemo": true}, planSiblings(plan, records))
 
 	everywhere := zdemo("0", "2.1") + "if {${os.major} < 20} {\n    depends_build-append port:cctools\n}\n"
 	tree = editTree(t, e, base, map[string]string{"devel/zdemo/Portfile": everywhere})

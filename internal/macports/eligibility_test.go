@@ -26,10 +26,10 @@ func TestEligibilityReadsOptionsAsMacPortsDoes(t *testing.T) {
 	}{
 		{"eligible", port(map[string]string{"dockhand.known_fail": "0", "supported_archs": "arm64 x86_64"}, nil), Eligibility{}, ""},
 		{"replaced", port(map[string]string{"replaced_by": "demo2"}, nil), Eligibility{Excluded: ExcludedReplaced, Detail: "demo2"}, "replaced by demo2"},
-		{"known to fail, as MacPorts tests it", port(map[string]string{"dockhand.known_fail": "1", "dockhand.platforms_compatible": "1"}, nil), Eligibility{Excluded: ExcludedKnownFail}, "the Portfile marks it known_fail here"},
-		{"known_fail on, read as Tcl reads it", port(map[string]string{"known_fail": "on"}, nil), Eligibility{Excluded: ExcludedKnownFail}, "the Portfile marks it known_fail here"},
+		{"known to fail, as MacPorts tests it", port(map[string]string{"dockhand.known_fail": "1", "dockhand.platforms_compatible": "1"}, nil), Eligibility{Excluded: ExcludedKnownFail}, "known_fail here, as the Portfile says"},
+		{"known_fail on, read as Tcl reads it", port(map[string]string{"known_fail": "on"}, nil), Eligibility{Excluded: ExcludedKnownFail}, "known_fail here, as the Portfile says"},
 		{"excluded by platforms, which MacPorts marks known to fail", port(map[string]string{"dockhand.known_fail": "1", "dockhand.platforms_compatible": "0", "platforms": "{darwin >= 23}"}, nil),
-			Eligibility{Excluded: ExcludedPlatforms, Detail: "{darwin >= 23}"}, "its platforms, {darwin >= 23}, exclude this release"},
+			Eligibility{Excluded: ExcludedPlatforms, Detail: "{darwin >= 23}"}, "platforms {darwin >= 23} exclude this release"},
 		{"a Tcl list of architectures", port(map[string]string{"dockhand.known_fail": "0", "supported_archs": "{arm64}"}, nil), Eligibility{}, ""},
 		{"another architecture only", port(map[string]string{"dockhand.known_fail": "0", "supported_archs": "x86_64"}, nil), Eligibility{Excluded: ExcludedArchs, Detail: "x86_64"}, "supported_archs x86_64 only"},
 		{"noarch", port(map[string]string{"dockhand.known_fail": "0", "supported_archs": "noarch"}, nil), Eligibility{}, ""},

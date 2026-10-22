@@ -130,7 +130,7 @@ func TestABaselineTakesPortsThatFailedWhileBuilding(t *testing.T) {
 	worthy, skipped := BaselineWorthy(evidence)
 	require.Equal(t, []string{"installs", "tests", "both", "advisory", "dependency"}, worthy, "tests that failed where they only report are worth one too (the libuv run's finding 5)")
 	require.Equal(t, []string{"lints", "fetches"}, skipped)
-	require.Equal(t, planning.Limited{Environments: []model.Environment{tahoeX86}, Elsewhere: evidence.Run.Name() + " didn't fail it there"}, rebuildWhere(evidence, "advisory"), "rebuilt where its tests failed")
+	require.Equal(t, planning.Limited{Environments: []model.Environment{tahoeX86}, Elsewhere: evidence.Run.Name() + " didn't fail there"}, rebuildWhere(evidence, "advisory"), "rebuilt where its tests failed")
 }
 
 // A failed check points to a baseline of what it could explain, and only
@@ -225,7 +225,7 @@ func TestABaselineRebuildsAPortOnlyWhereItFailed(t *testing.T) {
 	armPlan, _ := baseline.Plan.In(tahoeArm)
 	x86Plan, _ := baseline.Plan.In(tahoeX86)
 	require.Empty(t, armPlan.Order)
-	require.Equal(t, []model.Exclusion{{Target: model.Target{Name: "jq", Portfile: "textproc/jq/Portfile"}, Reason: checked.Name() + " didn't fail it there"}}, armPlan.Exclusions)
+	require.Equal(t, []model.Exclusion{{Target: model.Target{Name: "jq", Portfile: "textproc/jq/Portfile"}, Reason: checked.Name() + " didn't fail there"}}, armPlan.Exclusions)
 	require.Equal(t, []model.TargetID{"jq"}, x86Plan.Order)
 
 	named, err := e.PlanBaseline(t.Context(), branch, []string{"libharbor"})

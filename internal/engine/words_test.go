@@ -39,8 +39,8 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 	// which for a cell an earlier check filled isn't the one that found it.
 	require.Equal(t, "— excluded", targetWords(model.Plan{}, noResult(CellExcluded, command, "jq"), "", AcceptedFailure{}))
 	knownFail := noResult(CellExcluded, command, "jq")
-	knownFail.Exclusion = model.Exclusion{Reason: "the Portfile marks it known_fail here"}
-	require.Equal(t, "— not built: the Portfile marks it known_fail here", targetWords(model.Plan{}, knownFail, "", AcceptedFailure{}), "why the plan left it out")
+	knownFail.Exclusion = model.Exclusion{Reason: "known_fail here, as the Portfile says"}
+	require.Equal(t, "— not built: known_fail here, as the Portfile says", targetWords(model.Plan{}, knownFail, "", AcceptedFailure{}), "why the plan left it out")
 	unmet := Cell{TargetResult: model.TargetResult{Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: command, Unmet: model.Unmet{Target: "jq", Environment: command, Needs: model.RequiresXcode}}
 	require.Equal(t, "· not built: "+UnmetWords(unmet.Unmet), targetWords(model.Plan{}, unmet, "", AcceptedFailure{}))
 }

@@ -592,7 +592,7 @@ func TestTheEvaluatorSaysWhyAPortIsKnownToFail(t *testing.T) {
 	old := observe("newer", "21")
 	eligibility, err := macports.BuildEligibility(old, model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"})
 	require.NoError(t, err)
-	require.Equal(t, "its platforms, {darwin >= 23}, exclude this release", eligibility.Reason())
+	require.Equal(t, "platforms {darwin >= 23} exclude this release", eligibility.Reason())
 	current := observe("newer", "25")
 	eligibility, err = macports.BuildEligibility(current, model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"})
 	require.NoError(t, err)

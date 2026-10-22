@@ -27,15 +27,17 @@ func WritePushes(out io.Writer, plan model.Plan) {
 
 // WritePlan shows a plan, with remedy saying how to give an environment
 // what a target it can't build needs.
-func WritePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model.Unmet) string) {
-	var changed, extra []string
+func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[model.TargetID]bool, remedy func(model.Unmet) string) {
+	var changed, built, extra []string
 	for _, target := range plan.Targets {
 		name := string(target.ID)
-		switch target.Role {
-		case model.Also:
+		switch {
+		case target.Role == model.Also:
 			extra = append(extra, name)
-		case model.Prerequisite:
+		case target.Role == model.Prerequisite:
 			changed = append(changed, name+" (needed by --only)")
+		case siblings[target.ID]:
+			built = append(built, name)
 		default:
 			if target.Kind == model.RevisionOnly {
 				name += " (revision only)"
@@ -45,6 +47,13 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 	}
 	if len(changed) > 0 {
 		fmt.Fprintf(out, "Changed     %s\n", prose.Few(changed, listShown, "port"))
+	}
+	// The subports a change record finds unchanged are built too, since a
+	// check builds every subport of a changed Portfile as MacPorts' CI
+	// does, and said as that, where "Changed 19 ports" read as the change
+	// being that broad (field testing's terraform replay, 2026-10-22).
+	if len(built) > 0 {
+		fmt.Fprintf(out, "Siblings    %s, built as MacPorts' CI builds every subport of a changed Portfile; --only narrows\n", prose.Few(built, listShown, "port"))
 	}
 	if len(extra) > 0 {
 		fmt.Fprintf(out, "Also        %s\n", prose.Few(extra, listShown, "port"))
@@ -178,20 +187,25 @@ func writeOrder(out io.Writer, plan model.Plan) {
 	}
 }
 
-// writeExclusions shows what the plan doesn't build where, and why: once
-// for a port every environment excludes for the same reason, and with the
-// environments where only some do.
+// writeExclusions shows what the plan doesn't build where, and why: a
+// line a reason and the environments that say it, its ports named as the
+// Changed line names them, and the environments where only some do.
 func writeExclusions(out io.Writer, plan model.Plan) {
 	for _, x := range plan.GroupedExclusions() {
+		var ports []string
+		for _, target := range x.Targets {
+			ports = append(ports, string(target))
+		}
+		named := prose.Few(ports, listShown, "port")
 		if x.Everywhere(plan) {
-			fmt.Fprintf(out, "Excluded    %s: %s\n", x.Target, x.Reason)
+			fmt.Fprintf(out, "Excluded    %s: %s\n", named, x.Reason)
 			continue
 		}
 		var where []string
 		for _, environment := range x.Environments {
 			where = append(where, engine.DescribeEnvironment(environment))
 		}
-		fmt.Fprintf(out, "Excluded    %s on %s: %s\n", x.Target, strings.Join(where, "; "), x.Reason)
+		fmt.Fprintf(out, "Excluded    %s on %s: %s\n", named, strings.Join(where, "; "), x.Reason)
 	}
 }
 

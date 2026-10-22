@@ -362,7 +362,7 @@ func TestAPortBlockedOnlyByAcceptedFailuresIsAccepted(t *testing.T) {
 			result.Phase = model.PhaseInstall
 		}
 		skipped := noResult(CellExcluded, sequoia, model.TargetID(name))
-		skipped.Exclusion = model.Exclusion{Reason: "minmax builds it on its oldest and newest releases", Span: true}
+		skipped.Exclusion = model.Exclusion{Reason: "minmax builds each port on its oldest and newest releases", Span: true}
 		return TargetEvidence{Target: model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Kind: model.Substantive, Role: model.Changed},
 			Outcomes: []Cell{recorded(monterey, result), skipped, recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomePassed})}}
 	}
