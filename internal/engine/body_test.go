@@ -174,7 +174,7 @@ func TestAnExcludedEnvironmentIsNotCalledTested(t *testing.T) {
 	require.Contains(t, table, " macOS 26 |\n| --- | --- |\n| beekeeper-studio | ✓ |", "macOS 12's column is left out")
 	require.NotContains(t, table, "excluded")
 	evidence.Targets[0].Outcomes[0].Exclusion = model.Exclusion{Target: target.Target, Reason: "the Portfile marks it known_fail here"}
-	require.Equal(t, "— not built: the Portfile marks it known_fail here", EvidenceWords(evidence, evidence.Targets[0], 0, ""), "a cell shown still says the plan's reason, where it has it")
+	require.Equal(t, "— not built: the Portfile marks it known_fail here", EvidenceWords(evidence, evidence.Targets[0], 0, AcceptedFailure{}), "a cell shown still says the plan's reason, where it has it")
 }
 
 // A --variants each check that passed ticks the template's variants item

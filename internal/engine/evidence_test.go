@@ -314,7 +314,7 @@ func TestWhatEvidenceSaysReadsInWords(t *testing.T) {
 	needsXcode := TargetEvidence{Target: model.PlanTarget{ID: "harbor-tools", Target: model.Target{Name: "harbor-tools"}, Role: model.Changed}, Unchecked: true,
 		Outcomes: []Cell{{TargetResult: model.TargetResult{Target: "harbor-tools", Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: tools, Unmet: unmet}}}
 	evidence := Evidence{Run: model.Run{ID: "run_2", Number: 2}, Plan: model.Plan{Environments: []model.Environment{tools}}, Targets: []TargetEvidence{needsXcode}}
-	require.Equal(t, "· not built: needs Xcode", EvidenceWords(evidence, needsXcode, 0, ""))
+	require.Equal(t, "· not built: needs Xcode", EvidenceWords(evidence, needsXcode, 0, AcceptedFailure{}))
 	require.Equal(t, []string{"harbor-tools needs Xcode, which " + DescribeEnvironment(tools) + " hasn't; a check with Xcode there builds it, or share the branch as a draft (--draft)"},
 		publicationProblems(evidence, nil, nil))
 
@@ -378,7 +378,8 @@ func TestAPortBlockedOnlyByAcceptedFailuresIsAccepted(t *testing.T) {
 	// Each says why, the stub too, as its cell reads (field testing,
 	// #35662: it read as an unexplained failure).
 	reasons := acceptedReasons(evidence, []string{"py313-tool", "py314-tool"}, atBase)
-	require.Equal(t, map[string]string{"py313-tool": "fails at the base too (check-2)", "py314-tool": "fails at the base too (check-2)", "py-tool": "blocked only by accepted failures"}, reasons)
+	atCheck2 := AcceptedFailure{Kind: AcceptedAtBase, Baselines: []string{"check-2"}}
+	require.Equal(t, map[string]AcceptedFailure{"py313-tool": atCheck2, "py314-tool": atCheck2, "py-tool": {Kind: AcceptedBlocked}}, reasons)
 	require.Equal(t, "✗ blocked only by accepted failures", EvidenceWords(evidence, evidence.Targets[2], 0, reasons["py-tool"]))
 	require.Equal(t, "✗ failed at install, accepted: fails at the base too (check-2)", EvidenceWords(evidence, evidence.Targets[0], 0, reasons["py313-tool"]))
 	problems := publicationProblems(evidence, []string{"py313-tool"}, atBase)

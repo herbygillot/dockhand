@@ -933,7 +933,7 @@ func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 		Targets: []engine.TargetEvidence{{Target: target, Outcomes: cells([]model.TargetResult{{Execution: "tart_b", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}})}}}
 	failed.Targets[0].Outcomes[0].Environment = tahoe
 	require.Equal(t, "check-21: beekeeper-studio did not pass on "+engine.DescribeEnvironment(tahoe)+", accepted: fails at the base too (check-22)",
-		checkWords(engine.SubmitPlan{Evidence: failed, Accepted: map[string]string{"beekeeper-studio": "fails at the base too (check-22)"}}))
+		checkWords(engine.SubmitPlan{Evidence: failed, Accepted: map[string]engine.AcceptedFailure{"beekeeper-studio": {Kind: engine.AcceptedAtBase, Baselines: []string{"check-22"}}}}))
 }
 
 // restricted is GitHub's refusal of an app an organization hasn't

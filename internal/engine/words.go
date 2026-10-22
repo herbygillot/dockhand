@@ -21,7 +21,7 @@ import (
 // Reading says how the tests counted, "advisory" when empty
 // (Evidence.testsReading). Accepted is why submit --accept acknowledged a
 // failure, where it did.
-func targetWords(plan model.Plan, result Cell, reading string, accepted string) string {
+func targetWords(plan model.Plan, result Cell, reading string, accepted AcceptedFailure) string {
 	if reading == "" {
 		reading = "advisory"
 	}
@@ -74,7 +74,7 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted string) 
 		// Blocked only by accepted failures is said so: py-textual-
 		// fastdatatable's stub read as an unexplained failure beside its
 		// five accepted subports (field testing, #35662).
-		if accepted == acceptedBlocked {
+		if accepted.Kind == AcceptedBlocked {
 			return "✗ blocked only by accepted failures"
 		}
 		words = "✗ blocked by a failed changed dependency"
@@ -83,19 +83,26 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted string) 
 	default:
 		return "· " + string(result.Outcome)
 	}
-	if accepted != "" {
-		words += ", accepted: " + accepted
+	if accepted.Kind != "" {
+		words += ", accepted: " + accepted.Words()
 	}
 	return words
 }
 
-// acceptedUnestablished is why an extra's or a revision bump's failure was
-// accepted where nothing showed whose it was.
-const acceptedUnestablished = "cause not established"
-
-// acceptedBlocked is why a port blocked only by accepted failures is
-// accepted with them.
-const acceptedBlocked = "blocked only by accepted failures"
+// Words are why a failure was accepted, as a cell and the preview say it:
+// "fails at the base too (check-394)", "cause not established", or
+// "blocked only by accepted failures"; empty where it wasn't accepted.
+func (a AcceptedFailure) Words() string {
+	switch a.Kind {
+	case AcceptedAtBase:
+		return "fails at the base too (" + strings.Join(a.Baselines, ", ") + ")"
+	case AcceptedUnestablished:
+		return "cause not established"
+	case AcceptedBlocked:
+		return "blocked only by accepted failures"
+	}
+	return ""
+}
 
 // refWords names a Git source's ref as a Portfile gives it: "git.branch
 // v1.2", or its repository's default branch where it names none.

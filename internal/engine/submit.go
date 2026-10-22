@@ -134,7 +134,7 @@ type SubmitPlan struct {
 	// as the pull request's table and the preview's Checks line say it:
 	// its baseline failing alike, the cause not established, or blocked
 	// only by accepted failures.
-	Accepted map[string]string
+	Accepted map[string]AcceptedFailure
 	// UncoveredCI are the releases MacPorts' CI builds on that the check
 	// built on none of, which the preview and the pull request say.
 	UncoveredCI []string

@@ -466,6 +466,21 @@ func TestSubmitJSONListsItsConcerns(t *testing.T) {
 	require.Equal(t, []concernJSON{}, submitView(engine.SubmitPlan{}).Concerns, "an empty list, never null")
 }
 
+// submit --json gives each accepted failure's reason as a kind, beside its
+// words, where the words alone said it (R3-30).
+func TestSubmitJSONSaysWhyEachFailureIsAccepted(t *testing.T) {
+	t.Parallel()
+	plan := engine.SubmitPlan{Accepted: map[string]engine.AcceptedFailure{
+		"py313-tool": {Kind: engine.AcceptedAtBase, Baselines: []string{"check-2"}},
+		"py-tool":    {Kind: engine.AcceptedBlocked},
+	}}
+	require.Equal(t, []acceptedJSON{
+		{Port: "py-tool", Kind: "blocked-by-accepted", Words: "blocked only by accepted failures"},
+		{Port: "py313-tool", Kind: "at-base", Baselines: []string{"check-2"}, Words: "fails at the base too (check-2)"},
+	}, submitView(plan).Accepted)
+	require.Nil(t, submitView(engine.SubmitPlan{}).Accepted, "absent where nothing is accepted")
+}
+
 // One long message sets no other row's width: each wraps at the terminal's
 // width beside its branch, its command on the line below (the gnome-voice
 // session's notes: commands ended near column 400).

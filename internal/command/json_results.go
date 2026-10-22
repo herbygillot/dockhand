@@ -4,6 +4,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
+	"maps"
 	"reflect"
 	"slices"
 )
@@ -350,6 +351,10 @@ type submitJSON struct {
 	// ahead. A Git-fetched port whose tag moved, release-moved or
 	// source-moved, was said only in text (batch 32).
 	Concerns []concernJSON `json:"concerns"`
+	// Accepted are the failed ports the submission accepts, each with the
+	// kind of reason, and the baselines that fail it alike where that's
+	// the reason (R3-30).
+	Accepted []acceptedJSON `json:"accepted,omitempty"`
 	// Check is the check ship ran before submitting, as far as it went.
 	Check *checkJSON `json:"check,omitempty"`
 }
@@ -416,7 +421,19 @@ func submitView(plan engine.SubmitPlan) submitJSON {
 		view.UnfoundBuilds = append(view.UnfoundBuilds, unfoundBuildJSON{Build: build.Build, Commits: build.Commits, Commit: build.Source.Commit, Release: build.Source.Release})
 	}
 	view.Concerns = concernsView(plan.Concerns())
+	for _, port := range slices.Sorted(maps.Keys(plan.Accepted)) {
+		why := plan.Accepted[port]
+		view.Accepted = append(view.Accepted, acceptedJSON{Port: port, Kind: string(why.Kind), Baselines: why.Baselines, Words: why.Words()})
+	}
 	return view
+}
+
+type acceptedJSON struct {
+	Port string `json:"port"`
+	// Kind is at-base, cause-not-established, or blocked-by-accepted.
+	Kind      string   `json:"kind"`
+	Baselines []string `json:"baselines,omitempty"`
+	Words     string   `json:"words"`
 }
 
 type cleanStepJSON struct {

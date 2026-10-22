@@ -15,34 +15,34 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 	command := model.Environment{Provider: "command"}
 	for _, c := range []struct {
 		result   model.TargetResult
-		accepted string
+		accepted AcceptedFailure
 		words    string
 	}{
-		{model.TargetResult{Outcome: model.OutcomePassed}, "", "✓"},
-		{model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsPassed}, "", "✓ tests passed"},
-		{model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed}, "", "✓ build passed; tests failed (advisory)"},
-		{model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut}, "", "✓ build passed; tests timed out (advisory)"},
-		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseTest, Tests: model.TestsTimedOut}, "", "✗ failed at test: tests timed out"},
-		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, "", "✗ failed at install"},
-		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseDependencies, Detail: "Failed to build qt5-qtwebengine: command execution failed"}, "", "✗ a dependency failed"},
-		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, acceptedUnestablished, "✗ failed at install, accepted: cause not established"},
-		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, "fails at the base too (check-394)", "✗ failed at install, accepted: fails at the base too (check-394)"},
-		{model.TargetResult{Outcome: model.OutcomeBlocked}, "", "✗ blocked by a failed changed dependency"},
-		{model.TargetResult{Outcome: model.OutcomeNotRun}, "", "· not run"},
-		{model.TargetResult{Outcome: model.OutcomeInterrupted}, "", "· interrupted"},
+		{model.TargetResult{Outcome: model.OutcomePassed}, AcceptedFailure{}, "✓"},
+		{model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsPassed}, AcceptedFailure{}, "✓ tests passed"},
+		{model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed}, AcceptedFailure{}, "✓ build passed; tests failed (advisory)"},
+		{model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut}, AcceptedFailure{}, "✓ build passed; tests timed out (advisory)"},
+		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseTest, Tests: model.TestsTimedOut}, AcceptedFailure{}, "✗ failed at test: tests timed out"},
+		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, AcceptedFailure{}, "✗ failed at install"},
+		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseDependencies, Detail: "Failed to build qt5-qtwebengine: command execution failed"}, AcceptedFailure{}, "✗ a dependency failed"},
+		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, AcceptedFailure{Kind: AcceptedUnestablished}, "✗ failed at install, accepted: cause not established"},
+		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: "install"}, AcceptedFailure{Kind: AcceptedAtBase, Baselines: []string{"check-394"}}, "✗ failed at install, accepted: fails at the base too (check-394)"},
+		{model.TargetResult{Outcome: model.OutcomeBlocked}, AcceptedFailure{}, "✗ blocked by a failed changed dependency"},
+		{model.TargetResult{Outcome: model.OutcomeNotRun}, AcceptedFailure{}, "· not run"},
+		{model.TargetResult{Outcome: model.OutcomeInterrupted}, AcceptedFailure{}, "· interrupted"},
 	} {
 		require.Equal(t, c.words, targetWords(model.Plan{}, recorded(command, c.result), "", c.accepted))
 	}
 	require.Equal(t, "✓ build passed; tests failed (not counted, --tests skip)",
-		targetWords(model.Plan{}, recorded(command, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed}), "not counted, --tests skip", ""))
+		targetWords(model.Plan{}, recorded(command, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed}), "not counted, --tests skip", AcceptedFailure{}))
 	// An excluded or unmet cell reads by its kind, not by asking the plan,
 	// which for a cell an earlier check filled isn't the one that found it.
-	require.Equal(t, "— excluded", targetWords(model.Plan{}, noResult(CellExcluded, command, "jq"), "", ""))
+	require.Equal(t, "— excluded", targetWords(model.Plan{}, noResult(CellExcluded, command, "jq"), "", AcceptedFailure{}))
 	knownFail := noResult(CellExcluded, command, "jq")
 	knownFail.Exclusion = model.Exclusion{Reason: "the Portfile marks it known_fail here"}
-	require.Equal(t, "— not built: the Portfile marks it known_fail here", targetWords(model.Plan{}, knownFail, "", ""), "why the plan left it out")
+	require.Equal(t, "— not built: the Portfile marks it known_fail here", targetWords(model.Plan{}, knownFail, "", AcceptedFailure{}), "why the plan left it out")
 	unmet := Cell{TargetResult: model.TargetResult{Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: command, Unmet: model.Unmet{Target: "jq", Environment: command, Needs: model.RequiresXcode}}
-	require.Equal(t, "· not built: "+UnmetWords(unmet.Unmet), targetWords(model.Plan{}, unmet, "", ""))
+	require.Equal(t, "· not built: "+UnmetWords(unmet.Unmet), targetWords(model.Plan{}, unmet, "", AcceptedFailure{}))
 }
 
 // An unmet minimum Xcode says what the environment has, where the plan

@@ -39,7 +39,7 @@ type bodyFacts struct {
 	NoCheck  bool
 	// Accepted are the failed ports accepted, each with why
 	// (SubmitPlan.Accepted).
-	Accepted map[string]string
+	Accepted map[string]AcceptedFailure
 	Types    []string
 	// Updated is true when dockhand wrote every commit and one is an
 	// update it made: a new release, which the template calls an
@@ -100,7 +100,7 @@ func (facts bodyFacts) description() prdescription.Facts {
 			row := prdescription.Row{Port: string(target.Target.ID)}
 			for _, i := range shown {
 				result := target.Outcomes[i]
-				row.Cells = append(row.Cells, prdescription.Cell{Words: EvidenceWords(*evidence, target, i, acceptedWords(facts, target.Target.Target.Name)), Reason: result.Reason()})
+				row.Cells = append(row.Cells, prdescription.Cell{Words: EvidenceWords(*evidence, target, i, acceptedFor(facts, target.Target.Target.Name)), Reason: result.Reason()})
 			}
 			described.TestedOn.Rows = append(described.TestedOn.Rows, row)
 		}
@@ -163,7 +163,7 @@ func dockhandUpdate(commits []git.HistoryCommit, edits []model.Edit) bool {
 }
 
 // allBuilt reports whether every target passed or was accepted.
-func allBuilt(evidence Evidence, accepted map[string]string) bool {
+func allBuilt(evidence Evidence, accepted map[string]AcceptedFailure) bool {
 	for _, target := range evidence.Failed() {
 		if _, ok := accepted[target.Target.Target.Name]; !ok {
 			return false
@@ -198,8 +198,8 @@ func testsPassed(evidence Evidence) bool {
 	return true
 }
 
-// acceptedWords is why a port's failure was accepted, as its cells say it
-// (SubmitPlan.Accepted); empty where it wasn't accepted.
-func acceptedWords(facts bodyFacts, port string) string {
+// acceptedFor is why a port's failure was accepted, as its cells say it
+// (SubmitPlan.Accepted); the zero value where it wasn't accepted.
+func acceptedFor(facts bodyFacts, port string) AcceptedFailure {
 	return facts.Accepted[port]
 }

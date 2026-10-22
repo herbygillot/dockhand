@@ -55,7 +55,7 @@ func RemadeWords(target TargetEvidence) string {
 // earlier one whose policy differs from this evidence's own, it is named,
 // "tests failed (advisory, check-3)", so a later check with --tests
 // required never makes an earlier advisory result read as required.
-func EvidenceWords(evidence Evidence, target TargetEvidence, environment int, accepted string) string {
+func EvidenceWords(evidence Evidence, target TargetEvidence, environment int, accepted AcceptedFailure) string {
 	result := target.Outcomes[environment]
 	return targetWords(evidence.Plan, result, evidence.TestsReading(result.TargetResult), accepted)
 }
@@ -307,23 +307,47 @@ func publicationProblems(evidence Evidence, accepted []string, atBase map[string
 	return problems
 }
 
-// acceptedReasons are the failed ports accepted, each with why: its
-// baseline failing alike, the cause not established for an extra or a
-// revision bump, or blocked only by accepted failures.
-func acceptedReasons(evidence Evidence, accepted []string, atBase map[string][]string) map[string]string {
-	reasons := map[string]string{}
+// AcceptedFailure is why a failed port's failure is accepted, a kind
+// where a sentence doubled as one (R3-30): its baseline failing alike,
+// with the baselines that did, the cause not established for an extra or
+// a revision bump, or blocked only by accepted failures. The zero value
+// accepts nothing.
+type AcceptedFailure struct {
+	Kind AcceptedKind
+	// Baselines are the baselines that fail it alike, for AcceptedAtBase.
+	Baselines []string
+}
+
+// AcceptedKind is the kind of reason a failure was accepted for.
+type AcceptedKind string
+
+const (
+	// AcceptedAtBase is a failure the base has too: a finished baseline
+	// reproduces it, in the same environment and at the same phase.
+	AcceptedAtBase AcceptedKind = "at-base"
+	// AcceptedUnestablished is an extra's or a revision bump's failure
+	// accepted where nothing showed whose it was.
+	AcceptedUnestablished AcceptedKind = "cause-not-established"
+	// AcceptedBlocked is a port blocked only by accepted failures,
+	// accepted with them.
+	AcceptedBlocked AcceptedKind = "blocked-by-accepted"
+)
+
+// acceptedReasons are the failed ports accepted, each with why.
+func acceptedReasons(evidence Evidence, accepted []string, atBase map[string][]string) map[string]AcceptedFailure {
+	reasons := map[string]AcceptedFailure{}
 	for _, target := range evidence.Failed() {
 		name := target.Target.Target.Name
 		switch {
 		case !slices.Contains(accepted, name):
 		case len(atBase[name]) > 0:
-			reasons[name] = "fails at the base too (" + strings.Join(atBase[name], ", ") + ")"
+			reasons[name] = AcceptedFailure{Kind: AcceptedAtBase, Baselines: atBase[name]}
 		default:
-			reasons[name] = acceptedUnestablished
+			reasons[name] = AcceptedFailure{Kind: AcceptedUnestablished}
 		}
 	}
 	for _, name := range blockedByAccepted(evidence, accepted) {
-		reasons[name] = acceptedBlocked
+		reasons[name] = AcceptedFailure{Kind: AcceptedBlocked}
 	}
 	return reasons
 }

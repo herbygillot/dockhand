@@ -418,7 +418,7 @@ func checkWords(plan engine.SubmitPlan) string {
 		// pass" with no word of it (field testing, #35662).
 		accepted := ""
 		if why, ok := plan.Accepted[name]; ok {
-			accepted = ", accepted: " + why
+			accepted = ", accepted: " + why.Words()
 		}
 		if len(failedOn) > 0 {
 			said = append(said, fmt.Sprintf("%s did not pass on %s%s", name, strings.Join(failedOn, ", "), accepted))
