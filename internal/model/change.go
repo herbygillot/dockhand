@@ -5,6 +5,15 @@ import (
 	"time"
 )
 
+// EvaluatedUnder is the evaluator's runtime a record was made under:
+// MacPorts Base's version and Tcl's, the platform the interpreter
+// described to the Portfile, and the host's where that was a model.
+type EvaluatedUnder struct {
+	BaseVersion, TclVersion string `json:",omitempty"`
+	Platform                Platform
+	Host                    Platform `json:",omitzero"`
+}
+
 // ChangeRecord is what a revision changed in one port directory, against
 // the revision's base, as MacPorts evaluates both (the evaluated-change
 // model's step 1): per subport, the evaluated fields that moved, from
@@ -20,6 +29,11 @@ type ChangeRecord struct {
 	Directory string
 	// Platform is the context both sides were evaluated in: this Mac's.
 	Platform Platform
+	// Runtime is what both sides were evaluated under, as provenance
+	// (CX-6): the MacPorts Base and Tcl, and the platform modelled where
+	// it isn't the host's. Zero for a record made before it was kept;
+	// the record's JSON is kept whole, so nothing migrates.
+	Runtime EvaluatedUnder
 	// Ports are the directory's subports at the base and the revision,
 	// main port first, each with what moved.
 	Ports []SubportChange

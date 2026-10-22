@@ -263,7 +263,9 @@ func TestAChangeRecordIsTheRevisions(t *testing.T) {
 			{Port: "terraform-1.17", Kind: model.SubportAdded},
 			{Port: "terraform-1.16", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "version", From: "1.16.0", To: "1.16.1"}}},
 			{Port: "terraform-1.15", Kind: model.SubportUnchanged},
-		}, Policy: 1, At: at}
+		}, Policy: 1, At: at,
+		// The runtime it was evaluated under reads back with it (CX-6).
+		Runtime: model.EvaluatedUnder{BaseVersion: "2.12.7", TclVersion: "8.6.17", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}}
 	again := first
 	again.Ports, again.At = first.Ports[2:], at.Add(time.Minute)
 	other := first

@@ -610,7 +610,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	if len(result.Fidelity) > 0 && atBase && (branch.PullRequest == nil || !branch.PullRequest.Adopted) {
 		before, after := result.Fidelity[0].Before, result.Fidelity[len(result.Fidelity)-1].After
 		if before.Platform == after.Platform {
-			record = &model.ChangeRecord{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Directory: edit.Directory, Platform: after.Platform,
+			record = &model.ChangeRecord{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Directory: edit.Directory, Platform: after.Platform, Runtime: after.Runtime.Provenance(),
 				Ports: fidelity.SubportChanges(edit.Directory, &before, &after), Policy: fidelity.ChangePolicy, At: edit.At}
 			// What the edit changed in a block this Mac doesn't evaluate is
 			// said, as a record made from the base says it (batch 76):

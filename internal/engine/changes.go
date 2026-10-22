@@ -100,7 +100,7 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 				break
 			}
 			sides[i] = &snapshot
-			record.Platform = snapshot.Platform
+			record.Platform, record.Runtime = snapshot.Platform, snapshot.Runtime.Provenance()
 		}
 		if record.Problem == "" {
 			record.Ports = fidelity.SubportChanges(directory, sides[0], sides[1])

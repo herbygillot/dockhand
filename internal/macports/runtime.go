@@ -19,6 +19,11 @@ type Runtime struct {
 	SourceReviewed bool
 }
 
+// Provenance is the runtime as a record keeps it (model.EvaluatedUnder).
+func (r Runtime) Provenance() model.EvaluatedUnder {
+	return model.EvaluatedUnder{BaseVersion: r.BaseVersion, TclVersion: r.TclVersion, Platform: r.Platform, Host: r.Host}
+}
+
 // Modeled reports whether every context of this runtime is a model: MacPorts
 // runs on a host that is not the platform it describes, so what a Portfile
 // reads from the host is not what a Mac would answer, and nothing it builds
