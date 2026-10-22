@@ -648,7 +648,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	err = cmdtest.RunFor(t, t.Context(), []string{"ship", "--passing"}, term.Streams{In: strings.NewReader("y\ny\nn\n"), Out: &stdout, Err: &stderr}.AsTerminal())
 	require.NoError(t, err)
 	require.Contains(t, stderr.String(), "? Ship it? [y/N] ")
-	require.Contains(t, stdout.String(), "Opened #34901")
+	require.Contains(t, stdout.String(), "✓ submitted  opened #34901")
 	require.Contains(t, g.PRs[34901].Body, "- [x] tested basic functionality of all binary files?")
 	require.Contains(t, g.PRs[34901].Body, "- [ ] checked that the Portfile's most important [variants]")
 
@@ -706,9 +706,9 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	g.Others = nil
 	out, _, err = cmdtest.Dockhand(t, "ship", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "Passed for commit ")
+	require.Contains(t, out, "  ✓ checked    check-3 passed\n")
 	require.NotContains(t, out, "Next: ", "ship submits; it doesn't send you to submit")
-	require.Contains(t, out, "Updated #34901: pushed up to ")
+	require.Contains(t, out, "  ✓ submitted  pushed to #34901  ")
 	require.Equal(t, testsupport.Git(t, dir, "rev-parse", "HEAD"), testsupport.Git(t, g.Fork, "rev-parse", "dockhand/jq-update"))
 }
 
@@ -878,7 +878,7 @@ func TestShipKeepsToOneCheckAndItsCommit(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "check", "--head", "--enqueue")
 	require.NoError(t, err)
 	g.Others = nil
-	out, _, err := cmdtest.Dockhand(t, "ship", "--yes")
+	out, _, err := cmdtest.Dockhand(t, "ship", "--yes", "-v")
 	require.NoError(t, err)
 	require.Contains(t, out, "check-1 is already queued for these files; following it.\n")
 	require.NotContains(t, out, "check-2", "no second check")

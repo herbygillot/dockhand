@@ -324,6 +324,25 @@ type carried struct {
 	target shipTarget
 	run    *model.Run
 	submit *pendingSubmit
+	// lines are the change's stage lines; queued is its check's queueing,
+	// the report held back, said where the check doesn't pass.
+	lines  *stageLines
+	queued *term.Stage
+}
+
+// stageLines are a change's line a stage at the default level, under its
+// heading, said with the first (term.Staged).
+type stageLines struct {
+	heading string
+}
+
+// done says a stage that went through.
+func (l *stageLines) done(at *term.Stage, name, words string) {
+	text := view.StageLine(view.Done, name, words)
+	if l.heading != "" {
+		text, l.heading = l.heading+"\n"+text, ""
+	}
+	at.Done("%s", text)
 }
 
 // shipOne carries one change to its check: a port's update, from master or
@@ -333,7 +352,10 @@ type carried struct {
 func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, target shipTarget, stage engine.ShipStage, unattended, batch bool, version author.VersionUpdate) (*carried, error) {
 	linked := version.Linked
 	linked.Unattended, linked.GoesOn = unattended, true
-	var branch model.Branch
+	// Each stage is a line at the default level, under the change's
+	// heading, said with its first; the stage that holds or fails says its
+	// report (term.Staged).
+	lines := &stageLines{heading: target.Name()}
 	if target.Port != "" {
 		if stage != engine.ShipCommit {
 			// Where to check is settled before anything is edited.
@@ -352,40 +374,68 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		if target.Branch != nil {
 			where = branchflags.BranchChoice{Branch: target.Branch.ShortName()}
 		}
-		updated, update, err := author.Author(ctx, s, streams, where, "update", request, linked)
+		edits, edit := streams.Staged("editing " + target.Port)
+		updated, update, err := author.Author(ctx, s, edits, where, "update", request, linked)
+		if err != nil || !update.Applied {
+			edit.Say()
+		}
 		if err != nil || target.Branch == nil && !update.Applied {
 			return nil, err
 		}
 		target.Branch = &updated
+		if update.Applied {
+			lines.heading = view.UpdateHeading(target.Port, update, updated)
+			lines.done(edit, "edited", strings.Join(update.Files, ", "))
+		} else {
+			lines.heading = updated.ShortName()
+		}
 	}
-	branch = *target.Branch
+	branch := *target.Branch
 	e, err := s.Open(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer e.Close()
-	branch, applied, err := tidyrun.Stage(ctx, e, streams, branch, "nothing was checked or submitted")
-	if err != nil || !applied || stage == engine.ShipCommit {
+	commits, commit := streams.Staged("committing " + branch.ShortName())
+	tidied, err := tidyrun.Stage(ctx, e, commits, branch, "nothing was checked or submitted")
+	if err != nil || !tidied.Applied {
+		commit.Say()
 		return nil, err
 	}
+	lines.done(commit, "committed", strings.Join(tidied.Subjects, "; "))
+	if stage == engine.ShipCommit {
+		return nil, nil
+	}
+	branch = tidied.Branch
 	place := engine.WhereRequest{On: linked.On, Build: linked.Build, Unattended: linked.Unattended}
+	queues, queued := streams.Staged("queueing " + branch.ShortName() + "'s check")
+	done := &carried{target: target, lines: lines, queued: queued}
+	if batch {
+		// A batch's checks are seen through after every change is queued,
+		// so each says its own heading again.
+		done.lines = &stageLines{heading: branch.ShortName()}
+	}
 	if stage == engine.ShipCheck {
-		run, err := checkHead(ctx, s, e, streams, branch, place, linked.Tests)
+		run, err := checkHead(ctx, s, e, queues, branch, place, linked.Tests)
 		if err != nil || run == nil {
+			queued.Say()
 			return nil, err
 		}
-		return &carried{target: target, run: run}, nil
+		done.run = run
+		return done, nil
 	}
-	fmt.Fprintln(streams.Out)
+	fmt.Fprintln(queues.Out)
 	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.TestedBinaries, TestedVariants: linked.TestedVariants, Title: linked.Title, SkipNotification: linked.SkipNotification, Types: linked.Types, Draft: linked.Draft}
 	if linked.NoteSet {
 		request.Note = &linked.Note
 	}
-	pending, run, err := prepareSubmit(ctx, s, e, streams, request, place, linked.Tests)
+	pending, run, err := prepareSubmit(ctx, s, e, queues, request, place, linked.Tests)
 	if err != nil {
+		queued.Say()
 		return nil, err
 	}
-	return &carried{target: target, run: run, submit: &pending}, nil
+	done.run, done.submit = run, &pending
+	return done, nil
 }
 
 // finishCarried sees a change's check through, run here where no serve
@@ -398,7 +448,14 @@ func finishCarried(ctx context.Context, s *settings.Settings, streams term.Strea
 	defer e.Close()
 	var checked error
 	if done.run != nil {
-		checked = checkrun.RunQueued(ctx, e, *done.run, streams, false, s.Places(), s.Drain)
+		checks, check := streams.Staged("checking " + done.target.Name())
+		checked = checkrun.RunQueued(ctx, e, *done.run, checks, false, s.Places(), s.Drain)
+		if checked != nil {
+			done.queued.Say()
+			check.Say()
+		} else {
+			done.lines.done(check, "checked", done.run.Name()+" passed")
+		}
 		draft := done.submit != nil && branchstate.SubmitsDespiteCheck(done.submit.request.Draft)
 		// The check's outcome, failed, waiting for a look, or stopped, is
 		// what a draft submits despite; a failure to check isn't (R3-38:
@@ -414,9 +471,16 @@ func finishCarried(ctx context.Context, s *settings.Settings, streams term.Strea
 	if done.submit == nil {
 		return checked
 	}
-	if err := submitPassed(ctx, s, e, streams, *done.submit); err != nil {
+	if done.run == nil {
+		done.lines.done(done.queued, "checked", "passed for this commit already")
+	}
+	submits, submission := streams.Staged("submitting " + done.target.Name())
+	submitted, err := submitPassed(ctx, s, e, submits, *done.submit)
+	if err != nil {
+		submission.Say()
 		return err
 	}
+	done.lines.done(submission, "submitted", submit.StageWords(submitted, done.submit.request.Draft))
 	return checked
 }
 
@@ -471,32 +535,32 @@ func prepareSubmit(ctx context.Context, s *settings.Settings, e *engine.Engine, 
 // submitPassed submits a pending submission once its check passed:
 // exactly the commit it was bound to, and, where nobody looks, only what
 // holds nothing.
-func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, pending pendingSubmit) error {
+func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, pending pendingSubmit) (engine.Submitted, error) {
 	plan, err := e.PlanSubmit(ctx, pending.request)
 	if err != nil {
-		return err
+		return engine.Submitted{}, err
 	}
 	streams.Emit(view.SubmitView(plan))
 	fmt.Fprintln(streams.Out)
-	err = submit.Apply(ctx, e, streams, plan, s.File.Submit.RerequestReview, pending.answered)
+	submitted, err := submit.Apply(ctx, e, streams, plan, s.File.Submit.RerequestReview, pending.answered)
 	// The gate is the engine's (branchstate.Publish); ship words what it
 	// refused as ship says it.
 	refused := refusal.Of(err)
 	switch {
 	case refused == nil:
-		return err
+		return submitted, err
 	case len(plan.Blocks) > 0:
 		view.WriteSubmitPlan(streams.Out, plan)
-		return errors.New("nothing was submitted")
+		return submitted, errors.New("nothing was submitted")
 	case refused.Kind() == refusal.Attention:
 		held := engine.HoldLines(plan.Held())
 		viewed := view.SubmitView(plan)
 		viewed.Held = held
 		streams.Emit(viewed)
 		name := plan.Branch.ShortName()
-		return term.Exitf(term.ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: %s", name, strings.Join(held, "; "), strings.Join(view.RenderSteps(refused.Next), "; then "))
+		return submitted, term.Exitf(term.ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: %s", name, strings.Join(held, "; "), strings.Join(view.RenderSteps(refused.Next), "; then "))
 	}
-	return err
+	return submitted, err
 }
 
 // whereReady settles where a change's check builds before anything is

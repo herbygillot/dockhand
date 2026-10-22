@@ -85,11 +85,11 @@ kept.
 				if preview {
 					return previewTidy(ctx, e, streams, request.Branch)
 				}
-				branch, applied, tidyErr := tidyrun.Stage(ctx, e, streams, request.Branch, "nothing was submitted")
-				if tidyErr != nil || !applied {
+				tidied, tidyErr := tidyrun.Stage(ctx, e, streams, request.Branch, "nothing was submitted")
+				if tidyErr != nil || !tidied.Applied {
 					return tidyErr
 				}
-				request.Branch = branch
+				request.Branch = tidied.Branch
 				plan, err = e.PlanSubmit(ctx, request)
 			}
 			if err != nil {
@@ -218,7 +218,7 @@ func writeDescription(out io.Writer, plan engine.SubmitPlan) {
 // when --ready asked.
 func finishSubmit(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.SubmitPlan, ready bool, rerequest string) error {
 	// A person's own submission: what holds it is shown, and it goes on.
-	if err := Apply(ctx, e, streams, plan, rerequest, model.AnsweredAsked); err != nil {
+	if _, err := Apply(ctx, e, streams, plan, rerequest, model.AnsweredAsked); err != nil {
 		return err
 	}
 	if !ready {
@@ -256,11 +256,32 @@ func updatedWords(edited engine.SubmitEdits, number int) string {
 // as rerequest says: ask (the default), always, or never. Its JSON names
 // them, and whether each was asked (the rc8 full stage's B4), however it
 // ends once the submission is made.
-func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.SubmitPlan, rerequest string, answered model.Answered) error {
+func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.SubmitPlan, rerequest string, answered model.Answered) (engine.Submitted, error) {
 	submitted, err := e.ApplySubmit(ctx, plan, answered)
 	if err != nil {
-		return err
+		return submitted, err
 	}
+	return submitted, followUp(ctx, e, streams, plan, submitted, rerequest)
+}
+
+// StageWords are a submission as ship's stage line says it: the pull
+// request it opened, or what it changed on one.
+func StageWords(submitted engine.Submitted, draft bool) string {
+	pr := submitted.PullRequest.Ref
+	switch {
+	case submitted.Created && draft:
+		return fmt.Sprintf("opened draft #%d  %s", pr.Number, pr.URL)
+	case submitted.Created:
+		return fmt.Sprintf("opened #%d  %s", pr.Number, pr.URL)
+	case submitted.Pushed:
+		return fmt.Sprintf("pushed to #%d  %s", pr.Number, pr.URL)
+	}
+	return fmt.Sprintf("%s  %s", updatedWords(submitted.Edited, pr.Number), pr.URL)
+}
+
+// followUp reports a submission made, and asks its reviewers to review
+// again as rerequest says.
+func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.SubmitPlan, submitted engine.Submitted, rerequest string) error {
 	pr := submitted.PullRequest
 	result := view.SubmitView(plan)
 	result.PullRequest = &view.SubmittedJSON{Number: pr.Ref.Number, URL: pr.Ref.URL, Created: submitted.Created, Pushed: submitted.Pushed, Draft: plan.Request.Draft,

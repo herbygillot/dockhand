@@ -151,7 +151,7 @@ func TestShipSettlesWhereBeforeTheEdit(t *testing.T) {
 	require.NoError(t, err, errs.String())
 	require.NotContains(t, errs.String(), "Apply [a]")
 	require.NotContains(t, errs.String(), "Did you test", "the flag answered the template's questions")
-	require.Contains(t, out.String(), "Opened #34901")
+	require.Contains(t, out.String(), "opened #34901")
 	require.Len(t, g.PRs, 1)
 	require.Contains(t, g.PRs[34901].Body, "- [x] tested basic functionality of all binary files?")
 	require.Contains(t, g.PRs[34901].Body, "- [ ] checked that the Portfile's most important [variants]")

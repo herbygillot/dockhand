@@ -127,16 +127,26 @@ func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan eng
 	return nil
 }
 
+// Tidied is a branch after its tidy stage: as it is now, whether it went
+// on, false where the person declined, and the subjects it's committed
+// with, as the plan proposed them.
+type Tidied struct {
+	Branch   model.Branch
+	Applied  bool
+	Subjects []string
+}
+
 // Stage commits a branch's edits as tidy would plan them, previewed as
 // tidy previews them, where it has any, and returns the branch as it is
-// after; applied is false where the person declined, which undone says.
+// after; it didn't go on where the person declined, which undone says.
 // An unambiguous plan applies without asking (Decide). It's the tidy
 // stage ship and submit each take (Design v3 §3's chaining).
-func Stage(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, undone string) (model.Branch, bool, error) {
+func Stage(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, undone string) (Tidied, error) {
 	out := streams.Out
+	tidied := Tidied{Branch: branch}
 	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
 	if err != nil {
-		return branch, false, err
+		return tidied, err
 	}
 	if !proposal.Keep {
 		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), view.DescribeWork(proposal))
@@ -150,18 +160,19 @@ func Stage(ctx context.Context, e *engine.Engine, streams term.Streams, branch m
 		// offered --yes, which ship's --yes isn't.
 		if !streams.Terminal() {
 			if err := proposal.Gate().CommitUnasked(branchstate.Mode{Answered: model.AnsweredNobody}); err != nil {
-				return branch, false, fmt.Errorf("%w; %s", err, undone)
+				return tidied, fmt.Errorf("%w; %s", err, undone)
 			}
 		}
 		applied, err := Decide(ctx, e, streams, proposal, false, proposal.Unambiguous(), "")
 		if err != nil {
-			return branch, false, fmt.Errorf("%w; %s", err, undone)
+			return tidied, fmt.Errorf("%w; %s", err, undone)
 		}
 		if !applied {
 			fmt.Fprintf(out, "%s.\n", prose.Sentence(undone))
-			return branch, false, nil
+			return tidied, nil
 		}
 	}
-	branch, err = e.Resolve(ctx, branch.ShortName())
-	return branch, err == nil, err
+	tidied.Branch, err = e.Resolve(ctx, branch.ShortName())
+	tidied.Applied, tidied.Subjects = err == nil, proposal.Subjects()
+	return tidied, err
 }

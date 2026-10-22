@@ -149,6 +149,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		// What the work reports as it goes goes to standard error (Design
 		// v3 §12): what a person needs to follow it, and with -v and -vv,
 		// the work behind the scenes and every step.
+		streams.SetVerbosity(verbosity)
 		threshold := progress.Level(min(verbosity, int(progress.Debug)))
 		// A report about a part of the work, as one environment of a check,
 		// is indented under the command's own, as the run's lines are: the

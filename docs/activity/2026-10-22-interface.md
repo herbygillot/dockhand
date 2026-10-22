@@ -111,3 +111,39 @@ mark's column (`view.Unmarked`).
   grammar takes it, with setup's rows. Cutting a table's widest cell with
   `…` on a terminal lands there too, with the tables it reworks.
 - Three tests that read status's wrap at 80 read it at 100.
+
+## Item 3: levels and the stage lines
+
+### ship's line a stage
+
+- **-v reaches the streams** (`term.Streams.SetVerbosity`, `Verbose`),
+  which the root sets from its count before anything runs.
+- **A stage's report is held back** at the default level
+  (`term.Streams.Staged`): what the stage writes to standard output waits,
+  and is said where the stage held or failed (`Stage.Say`) or asks a
+  question on a terminal (`Ask` says it first, and what follows is
+  written as it comes); a stage that went through says its one line
+  (`Stage.Done`) and drops the report, which is `-v`'s. With `-v`, or
+  `--json`, nothing is held. On a terminal, the stage under way is the
+  line redrawn on standard error ("⋯ checking jq").
+- **ship's stages are lines** under the change's heading:
+
+  ```
+  jq 1.7.1 → 1.8.1 (GitHub tag jq-1.8.1), on branch jq-1.8.1
+    ✓ edited     textproc/jq/Portfile
+    ✓ committed  jq: update to 1.8.1
+    ✓ checked    check-1 passed
+    ✓ submitted  opened #34901  https://github.com/macports/macports-ports/pull/34901
+  ```
+
+  A clean `ship jq --yes` was about 45 lines. A batch's checks are seen
+  through after every change is queued, so each says its branch again
+  over its check's lines. The check's queueing is held with the check, and
+  said where the check doesn't pass. bump is ship's, so it reads the same.
+- **What the lines are made of**: `view.StageLine` and
+  `view.UpdateHeading`; the committed subjects are the tidy plan's
+  (`engine.TidyPlan.Subjects`, which `tidyrun.Stage` returns in its
+  `Tidied`), and the submission's words are submit's (`submit.StageWords`,
+  from the `engine.Submitted` that `submit.Apply` now returns).
+- Tests that read a stage's full report run ship with `-v`; the others
+  read the lines.

@@ -43,13 +43,15 @@ func TestShipCarriesAPortToItsPullRequest(t *testing.T) {
 	require.Contains(t, out, "Nothing was shipped.")
 	require.Empty(t, g.PRs)
 
+	// A line a stage, and a stage's report where it asks: here, what was
+	// tested, before the check queued (part 5, item 3).
 	out, errs, err = shipAnswering(t, "y\nn\nn\n", "jq")
 	require.NoError(t, err, errs)
-	require.Contains(t, out, "jq: 1.7.1 → 1.8.1")
-	require.Regexp(t, `jq: 1.7.1 → 1.8.1 .*\n(.*\n)*\njq-1\.8\.1 · tidying edits not yet committed\n\nProposed commit\n`, out)
+	require.Contains(t, out, "jq 1.7.1 → 1.8.1 (GitHub tag jq-1.8.1), on branch jq-1.8.1\n  ✓ edited     textproc/jq/Portfile\n  ✓ committed  jq: update to 1.8.1\n")
+	require.NotContains(t, out, "Proposed commit", "the commit is a line, asking nothing")
 	require.NotContains(t, out, "Next: review it")
 	require.Contains(t, out, "checking commit ")
-	require.Contains(t, out, "Opened #34901")
+	require.Contains(t, out, "  ✓ checked    check-1 passed\n  ✓ submitted  opened #34901  https://github.com/macports/macports-ports/pull/34901\n")
 	require.Len(t, g.PRs, 1)
 
 	out, _, err = cmdtest.Dockhand(t, "ship", "jq", "--to", "check")
@@ -71,9 +73,12 @@ func TestShipStopsWhereToSays(t *testing.T) {
 
 	_, _, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "review")
 	require.EqualError(t, err, "--to review: commit, check, or submit")
-	out, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "commit")
+	// -v says each stage's report.
+	out, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "commit", "-v")
 	require.NoError(t, err, errs)
 	require.Contains(t, out, "jq: 1.7.1 → 1.8.1")
+	require.Contains(t, out, "jq-1.8.1 · tidying edits not yet committed\n")
+	require.NotContains(t, out, "✓ edited")
 	require.NotContains(t, out, "checking commit ")
 	require.Empty(t, g.PRs)
 	_, _, err = cmdtest.Dockhand(t, "ship", "jq", "-b", "jq-1.8.1")
@@ -125,7 +130,7 @@ func TestShipMineAndPassing(t *testing.T) {
 	require.Equal(t, []string{"@ada"}, reader.Asked[0].Maintainers)
 	require.Contains(t, out, "  lost: left as it is: no forge could be found for it\n")
 	require.Contains(t, out, "  jq  a version update from master, to check\n")
-	require.Contains(t, out, "jq: 1.7.1 → 1.8.1")
+	require.Contains(t, out, "jq 1.7.1 → 1.8.1")
 	require.Empty(t, g.PRs)
 
 	out, errs, err = cmdtest.Dockhand(t, "ship", "--passing", "--to", "commit")
@@ -156,7 +161,7 @@ JSON
 	// The bumper stands in jq's release for any port, so yq's commit is
 	// held by the commit rules: one change held, and the rest goes on.
 	var both bytes.Buffer
-	err := cmdtest.RunFor(t, t.Context(), []string{"ship", "jq", "yq", "--yes"}, term.Streams{In: strings.NewReader(""), Out: &both, Err: &both})
+	err := cmdtest.RunFor(t, t.Context(), []string{"ship", "jq", "yq", "--yes", "-v"}, term.Streams{In: strings.NewReader(""), Out: &both, Err: &both})
 	out := both.String()
 	require.Equal(t, 3, term.ExitCode(err), out)
 	require.EqualError(t, err, "yq-1.8.1 stopped; the rest went on")
@@ -242,7 +247,7 @@ func TestShipChecksAgainWhereAPassAskedLess(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "check", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "passed for this commit already; nothing to check", "the same ask stands")
-	out, _, err = cmdtest.Dockhand(t, "ship", "jq", "--to", "check", "--yes", "--tests", "required")
+	out, _, err = cmdtest.Dockhand(t, "ship", "jq", "--to", "check", "--yes", "--tests", "required", "-v")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-1.8.1 · checking commit ", "required tests weren't what passed")
 	require.NotContains(t, out, "nothing to check")

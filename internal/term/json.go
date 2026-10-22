@@ -21,6 +21,8 @@ type outputMode struct {
 	// stdout is standard output as the command line was given it, which
 	// the envelope goes to.
 	stdout io.Writer
+	// verbose is -v's count (SetVerbosity).
+	verbose int
 }
 
 // A Gatherer is a command's result that the steps it goes on to report

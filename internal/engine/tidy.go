@@ -117,6 +117,22 @@ type TidyPlan struct {
 	Taken, LeftOut, Ignored []string
 }
 
+// Subjects are the subjects the branch is committed with once the plan
+// is applied: its commits' where it keeps them, else its groups'.
+func (p TidyPlan) Subjects() []string {
+	var subjects []string
+	if p.Keep {
+		for _, commit := range p.History {
+			subjects = append(subjects, commit.Subject())
+		}
+		return subjects
+	}
+	for _, group := range p.Groups {
+		subjects = append(subjects, group.Subject())
+	}
+	return subjects
+}
+
 // Gate is the plan as the verdict on committing it reads it
 // (branchstate.Plan), where the plan judged itself.
 func (p TidyPlan) Gate() branchstate.Plan {

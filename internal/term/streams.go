@@ -90,27 +90,14 @@ func (s Streams) onTerminal(stream any) bool {
 	if s.interactive {
 		return true
 	}
-	if w, ok := stream.(*switchWriter); ok {
-		stream = w.w
-	}
-	if w, ok := stream.(*markWriter); ok {
-		stream = w.w
-	}
-	file, ok := stream.(*os.File)
+	file, ok := underlying(stream).(*os.File)
 	return ok && isTerminal(file.Fd())
 }
 
 // Width is the output terminal's columns, for text to wrap at; off a
 // terminal, COLUMNS where it's set (Display), else 100.
 func (s Streams) Width() int {
-	stream := s.Out
-	if w, ok := stream.(*switchWriter); ok {
-		stream = w.w
-	}
-	if w, ok := stream.(*markWriter); ok {
-		stream = w.w
-	}
-	if file, ok := stream.(*os.File); ok {
+	if file, ok := underlying(s.Out).(*os.File); ok {
 		if columns := terminalWidth(file.Fd()); columns > 0 {
 			return columns
 		}
@@ -132,6 +119,11 @@ func (s Streams) Unattended() Streams {
 // Ask puts a question on standard error and reads one line. Input that
 // ends without an answer is an empty answer, which takes the default.
 func (s Streams) Ask(question string) (string, error) {
+	// A stage's report held back is said before its question, which the
+	// person answers from it (Staged).
+	if held, ok := s.Out.(*stageWriter); ok {
+		held.Flush()
+	}
 	fmt.Fprint(s.Err, question)
 	line, err := s.ReadLine()
 	if err != nil && !errors.Is(err, io.EOF) {
@@ -147,4 +139,21 @@ func (s Streams) ReadLine() (string, error) {
 		lines = bufio.NewReader(s.In)
 	}
 	return lines.ReadString('\n')
+}
+
+// underlying is the stream beneath the writers the streams wrap it in:
+// --json's switch, the marks' colour, and a stage's report held back.
+func underlying(stream any) any {
+	for {
+		switch w := stream.(type) {
+		case *switchWriter:
+			stream = w.w
+		case *markWriter:
+			stream = w.w
+		case *stageWriter:
+			stream = w.to
+		default:
+			return stream
+		}
+	}
 }
