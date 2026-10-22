@@ -168,6 +168,14 @@ type Branch struct {
 	// cleanup times what it keeps of its checks from (D6); zero while it's
 	// open. The store records the moment it leaves open where it's zero.
 	EndedAt time.Time
+	// CleanKept says what clean kept of the branch, as "fork branch kept:
+	// moved after merge", which status --all says; empty where it kept
+	// nothing, or hasn't cleaned it.
+	CleanKept string
+	// ForgottenAt is when clean --delete forgot the archived branch, which
+	// nothing then reads as a branch: its record stays only for what
+	// other branches' results name of its checks. Zero for one remembered.
+	ForgottenAt time.Time
 }
 
 // Validate checks the rules every stored branch keeps.

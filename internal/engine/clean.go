@@ -469,8 +469,37 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 				return plans, err
 			}
 		}
+		// What it kept is said where status --all lists the branch, as
+		// "fork branch kept: it moved while clean ran".
+		if err := e.keepCleanWords(ctx, plan); err != nil {
+			return plans, err
+		}
 	}
 	return plans, nil
+}
+
+// cleanKindWords say what a step of clean is, for what clean kept.
+var cleanKindWords = map[CleanKind]string{CleanWorktree: "worktree", CleanBranchRef: "Git branch", CleanFork: "fork branch", CleanCheck: "check branch"}
+
+// keepCleanWords records on the branch what clean kept of it, and why
+// (model.Branch.CleanKept), or nothing where it kept nothing.
+func (e *Engine) keepCleanWords(ctx context.Context, plan *CleanBranch) error {
+	var kept []string
+	for _, step := range plan.Steps {
+		if step.Kept != "" {
+			kept = append(kept, cleanKindWords[step.Kind]+" kept: "+step.Kept)
+		}
+	}
+	words := strings.Join(kept, "; ")
+	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		branch, err := tx.Branch(plan.Branch.ID)
+		if err != nil || branch.CleanKept == words {
+			return err
+		}
+		branch.CleanKept = words
+		plan.Branch.CleanKept = words
+		return tx.UpdateBranch(branch)
+	})
 }
 
 // dropRefs removes the refs dockhand kept for a merged branch: its

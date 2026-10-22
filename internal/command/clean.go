@@ -35,7 +35,7 @@ func cleanStates(merged, closed bool) []model.BranchState {
 }
 
 func cleanCommand(s *settings, streams term.Streams) *cobra.Command {
-	var merged, closed, yes, automatic bool
+	var merged, closed, yes, automatic, forget bool
 	cmd := &cobra.Command{
 		Use:   "clean [branch...] [--merged] [--closed]",
 		Short: "Remove what merged branches leave behind",
@@ -68,7 +68,12 @@ left, and no branch from before v3. An open branch has nothing to clean.
 
 It shows what it would remove first; on a terminal it asks, and a script
 passes --yes. archive hides a branch; clean removes a merged one's files;
-cancel stops a check. None means another.`,
+cancel stops a check. None means another.
+
+--delete forgets archived branches named: it deletes each one's Git branch,
+unmerged commits included, which it lists first, and its worktree, and
+forgets its record, keeping of its checks only what another branch's
+results were reused from. It asks, and without a terminal needs --yes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -81,6 +86,9 @@ cancel stops a check. None means another.`,
 					return errors.New("--automatic cleans what's due, not branches named")
 				}
 				return cleanAutomatically(ctx, e, streams, s.file)
+			}
+			if forget {
+				return forgetBranches(ctx, e, streams, args, yes)
 			}
 			// Which branches merged is their pull requests' to say, read
 			// now: two merged a minute before were left out, unsaid, until
@@ -152,6 +160,7 @@ cancel stops a check. None means another.`,
 	cmd.Flags().BoolVar(&merged, "merged", true, "merged branches: their worktree, local branch, and fork branch")
 	cmd.Flags().BoolVar(&closed, "closed", false, "also branches whose pull request closed unmerged: their worktree only")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
+	cmd.Flags().BoolVar(&forget, "delete", false, "forget the archived branches named: their Git branch, worktree, and record")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
 	_ = cmd.Flags().MarkHidden("automatic")
 	supportsJSON(cmd)
@@ -304,4 +313,58 @@ func writeCleanDone(out io.Writer, plans []engine.CleanBranch, places config.Pla
 			fmt.Fprintln(out, line)
 		}
 	}
+}
+
+// forgetBranches is clean --delete: the archived branches named, each said
+// with what goes, its unmerged commits listed, then forgotten once asked.
+func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams, names []string, yes bool) error {
+	if len(names) == 0 {
+		return errors.New("--delete forgets archived branches named; name each")
+	}
+	var plans []engine.ForgetPlan
+	for _, name := range names {
+		branch, err := e.ResolveRecord(ctx, name)
+		if err != nil {
+			return err
+		}
+		plan, err := e.PlanForget(ctx, branch)
+		if err != nil {
+			return err
+		}
+		plans = append(plans, plan)
+	}
+	out := streams.Out
+	for _, plan := range plans {
+		fmt.Fprintf(out, "%s · archived\n", plan.Branch.ShortName())
+		if plan.Worktree != "" {
+			fmt.Fprintf(out, "  worktree %s\n", plan.Worktree)
+		}
+		if plan.Head != "" {
+			fmt.Fprintf(out, "  branch %s at %s\n", plan.Branch.Name, model.ObjectID(plan.Head).Short())
+		}
+		if len(plan.Unmerged) > 0 {
+			fmt.Fprintf(out, "  ! %s master doesn't have, deleted with it:\n", prose.Plural(len(plan.Unmerged), "commit"))
+			for _, commit := range plan.Unmerged {
+				fmt.Fprintf(out, "    %s %s\n", model.ObjectID(commit.ID).Short(), commit.Subject)
+			}
+		}
+		fmt.Fprintln(out, "  its record, but for what other branches' results reused of its checks")
+	}
+	ok, _, err := streams.Decide(yes, term.Decision{Question: fmt.Sprintf("? Forget %s? [y/N] ", prose.Plural(len(plans), "branch")), Undone: "nothing was forgotten", ByYes: "--yes forgets these"})
+	if err != nil || !ok {
+		if err == nil {
+			fmt.Fprintln(out, "Nothing was forgotten.")
+		}
+		return err
+	}
+	var forgotten []string
+	for _, plan := range plans {
+		if _, err := e.Forget(ctx, plan); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "Forgot %s.\n", plan.Branch.ShortName())
+		forgotten = append(forgotten, plan.Branch.ShortName())
+	}
+	streams.Emit(map[string]any{"forgotten": forgotten})
+	return nil
 }

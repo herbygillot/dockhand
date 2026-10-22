@@ -261,6 +261,10 @@ type Tx interface {
 	// result names. Each call is a chunk, so a large backlog commits a
 	// chunk at a time.
 	PruneHistory(before time.Time, after model.BranchID, limit int) (Pruned, model.BranchID, error)
+	// ForgetBranch forgets an archived branch, keeping of its checks only
+	// what reuse may choose or another result names, and its record,
+	// marked forgotten, which no list of branches returns.
+	ForgetBranch(id model.BranchID, at time.Time) (Pruned, error)
 	// PruneAssessments removes the assessments and change records of trees
 	// an open branch moved past before a time, and says how many.
 	PruneAssessments(before time.Time) (int, error)

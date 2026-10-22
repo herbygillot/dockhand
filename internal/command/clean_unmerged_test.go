@@ -131,3 +131,42 @@ func TestArchiveAsksCommitOrDiscard(t *testing.T) {
 	_, _, err = dockhand(t, "clean", "--legacy")
 	require.ErrorContains(t, err, "unknown flag: --legacy", "bridge 1 is gone")
 }
+
+// clean --delete forgets an archived branch: its Git branch, with the
+// commits master lacks listed first, and its record, which status --all no
+// longer lists, so its name starts a branch again (roadmap item 8).
+func TestCleanDeleteForgetsAnArchivedBranch(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
+	setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1")
+	setenv(t, "MACPORTS_TREE", w.clone)
+
+	_, _, err = dockhand(t, "clean", "--delete", "--yes", "jq-update")
+	require.ErrorContains(t, err, "jq-update is open; clean --delete forgets an archived branch")
+	_, _, err = dockhand(t, "archive", "jq-update")
+	require.NoError(t, err)
+
+	_, _, err = dockhand(t, "clean", "--delete", "jq-update")
+	require.ErrorContains(t, err, "nothing was forgotten: without a terminal, --yes forgets these")
+	out, _, err := dockhand(t, "clean", "--delete", "--yes", "jq-update")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · archived\n  branch dockhand/jq-update at ")
+	require.Contains(t, out, "  ! 1 commit master doesn't have, deleted with it:\n")
+	require.Contains(t, out, " jq: update to 1.8.1\n")
+	require.Contains(t, out, "Forgot jq-update.\n")
+	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/jq-update"))
+
+	listed, _, err := dockhand(t, "status", "--all")
+	require.NoError(t, err)
+	require.NotContains(t, listed, "jq-update")
+	_, _, err = dockhand(t, "start", "jq-update")
+	require.NoError(t, err, "its name starts a branch again")
+}

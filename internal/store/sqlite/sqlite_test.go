@@ -1461,11 +1461,11 @@ func TestADamagedDatabaseIsSaidPlainly(t *testing.T) {
 func TestAMigrationWaitsForTheProcessesOnTheOlderSchema(t *testing.T) {
 	now := time.Now().UnixMilli()
 	sessions := fmt.Sprintf(`
-INSERT INTO sessions VALUES('repo_1','ses_check','foreground',101,'p','v0.3.1',%[1]d,%[1]d,NULL);
-INSERT INTO sessions VALUES('repo_1','ses_serve','serve',102,'p','v0.3.1',%[1]d,%[1]d,NULL);
-INSERT INTO sessions VALUES('repo_1','ses_watch','observer',103,'p','v0.3.1',%[1]d,%[1]d,NULL);
-INSERT INTO sessions VALUES('repo_1','ses_ended','foreground',104,'p','v0.3.0',%[1]d,%[1]d,%[1]d);
-INSERT INTO sessions VALUES('repo_1','ses_stale','foreground',105,'p','v0.3.0',%[2]d,%[2]d,NULL);
+INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_check','foreground',101,'p','v0.3.1',%[1]d,%[1]d,NULL);
+INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_serve','serve',102,'p','v0.3.1',%[1]d,%[1]d,NULL);
+INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_watch','observer',103,'p','v0.3.1',%[1]d,%[1]d,NULL);
+INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_ended','foreground',104,'p','v0.3.0',%[1]d,%[1]d,%[1]d);
+INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_stale','foreground',105,'p','v0.3.0',%[2]d,%[2]d,NULL);
 `, now, now-int64(time.Hour/time.Millisecond))
 	path := schemaAt(t, schemaVersion-1, schema23Records+sessions)
 	// The engine gives coord's window; with none, the stale one counts too.
@@ -1565,4 +1565,80 @@ func runIDs(runs []model.Run) []model.RunID {
 		ids = append(ids, run.ID)
 	}
 	return ids
+}
+
+// Forgetting an archived branch keeps of its checks only what another
+// branch's result names, hides it from every list of branches, frees its
+// name, and leaves no foreign key dangling (roadmap item 8).
+func TestAForgottenBranchKeepsOnlyWhatOthersName(t *testing.T) {
+	f := open(t)
+	a, r, p := f.seed(t)
+	other := f.branch("br_2", "dockhand/harbor-2")
+	otherRevision := model.Revision{ID: "rev_2", Branch: other.ID, Kind: model.RevisionSnapshot, Snapshot: 1, Source: model.Source{Tree: "tree2", Base: "base"}, Head: "head2", CreatedAt: at}
+	otherPlan := p
+	otherPlan.ID, otherPlan.Revision = "plan_2", otherRevision.ID
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddBranch(other); err != nil {
+			return err
+		}
+		if err := tx.AddRevision(otherRevision); err != nil {
+			return err
+		}
+		return tx.AddPlan(otherPlan)
+	}))
+	named, unnamed := f.run(t, a, r, p), f.run(t, a, r, p)
+	reusing := f.run(t, other, otherRevision, otherPlan)
+	built := model.GuestExecution{ID: "ex_built", Run: named.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}
+	lone := model.GuestExecution{ID: "ex_lone", Run: unnamed.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}
+	theirs := model.GuestExecution{ID: "ex_theirs", Run: reusing.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		for _, execution := range []model.GuestExecution{built, lone, theirs} {
+			if err := tx.AddExecution(execution); err != nil {
+				return err
+			}
+		}
+		if err := tx.RecordResult(model.TargetResult{Execution: built.ID, Target: "libharbor", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, Tests: model.TestsNone, RecordedAt: at}); err != nil {
+			return err
+		}
+		if err := tx.RecordResult(model.TargetResult{Execution: lone.ID, Target: "libharbor", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, Tests: model.TestsNone, RecordedAt: at}); err != nil {
+			return err
+		}
+		return tx.RecordResult(model.TargetResult{Execution: theirs.ID, Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsNone, ReusedFrom: built.ID, RecordedAt: at})
+	}))
+	a.State, a.EndedAt = model.BranchArchived, at
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(a) }))
+
+	open := a
+	open.ID = "br_3"
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		_, err := tx.ForgetBranch(other.ID, at)
+		require.ErrorIs(t, err, store.ErrConflict, "only an archived branch is forgotten")
+		pruned, err := tx.ForgetBranch(a.ID, at.Add(time.Hour))
+		require.Equal(t, 1, pruned.Executions, "ex_lone; ex_built is another's result's origin")
+		require.Equal(t, 1, pruned.Runs)
+		return err
+	}))
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+		branches, err := rd.Branches(store.BranchFilter{})
+		require.NoError(t, err)
+		require.Len(t, branches, 1)
+		require.Equal(t, other.ID, branches[0].ID)
+		_, err = rd.BranchNamed(a.Name)
+		require.ErrorIs(t, err, store.ErrNotFound)
+		forgotten, err := rd.Branch(a.ID)
+		require.NoError(t, err)
+		require.Equal(t, at.Add(time.Hour), forgotten.ForgottenAt)
+		check, err := rd.Check(reusing.ID)
+		require.NoError(t, err)
+		require.Equal(t, built.ID, check.Origins[built.ID].Execution.ID, "the origin another result names stays")
+		return nil
+	}))
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		_, err := tx.ForgetBranch(a.ID, at)
+		require.ErrorIs(t, err, store.ErrConflict, "once")
+		return tx.AddBranch(open)
+	}), "its name is free")
+	var violations int
+	require.NoError(t, f.db(t).QueryRow("SELECT count(*) FROM pragma_foreign_key_check").Scan(&violations))
+	require.Zero(t, violations)
 }

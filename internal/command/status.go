@@ -519,6 +519,8 @@ func writeAttention(out io.Writer, rows []attention, width int) {
 
 func workWords(s engine.BranchStatus) string {
 	switch {
+	case s.Cleaned() && s.Branch.CleanKept != "":
+		return "cleaned, " + s.Branch.CleanKept
 	case s.Cleaned():
 		return "cleaned"
 	case s.Missing:
@@ -671,6 +673,9 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places con
 		// What its Git branch changed, and what checked it, went with it:
 		// its pull request says what became of the work.
 		fmt.Fprintln(out, "  Work     cleaned after its merge")
+		if branch.CleanKept != "" {
+			fmt.Fprintf(out, "  Kept     %s\n", branch.CleanKept)
+		}
 	} else {
 		ports := portWords(status)
 		switch included := status.IncludedPorts(); {

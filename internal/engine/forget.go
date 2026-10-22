@@ -1,0 +1,80 @@
+package engine
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
+)
+
+// ForgetPlan is what forgetting an archived branch removes (clean
+// --delete): its worktree, where one is left; its Git branch at Head,
+// where it has one, with the commits on it the master last fetched lacks,
+// Unmerged, which go with it; and its record, but for what other
+// branches' results name of its checks.
+type ForgetPlan struct {
+	Branch   model.Branch
+	Worktree string
+	Head     string
+	Unmerged []git.CherryCommit
+}
+
+// PlanForget is what forgetting branch would remove; only an archived
+// branch is forgotten.
+func (e *Engine) PlanForget(ctx context.Context, branch model.Branch) (ForgetPlan, error) {
+	plan := ForgetPlan{Branch: branch}
+	if branch.State != model.BranchArchived {
+		return plan, fmt.Errorf("%s is %s; clean --delete forgets an archived branch, which dockhand archive sets aside", branch.ShortName(), branch.State)
+	}
+	if branch.Worktree != "" && exists(branch.Worktree) {
+		plan.Worktree = branch.Worktree
+	}
+	head, _, err := e.Repo.Branch(ctx, branch.Name)
+	switch {
+	case errors.Is(err, git.ErrBranchMissing):
+		return plan, nil
+	case err != nil:
+		return plan, err
+	}
+	plan.Head = head
+	// Commits whose change master has under another commit, as a rebase
+	// merges them, aren't lost with the branch.
+	if master, ok := e.lastMaster(ctx); ok {
+		commits, err := e.Repo.Cherry(ctx, string(master), head)
+		if err != nil {
+			return plan, err
+		}
+		for _, commit := range commits {
+			if !commit.Equivalent {
+				plan.Unmerged = append(plan.Unmerged, commit)
+			}
+		}
+	}
+	return plan, nil
+}
+
+// Forget removes what plan says, worktree, Git branch, then record, the
+// Git branch only while it's still at the commit planned, so one someone
+// moved since stays, and the record isn't forgotten.
+func (e *Engine) Forget(ctx context.Context, plan ForgetPlan) (store.Pruned, error) {
+	if plan.Worktree != "" {
+		if err := e.Repo.RemoveWorktree(ctx, plan.Worktree); err != nil {
+			return store.Pruned{}, fmt.Errorf("removing %s's worktree: %w", plan.Branch.ShortName(), err)
+		}
+	}
+	if plan.Head != "" {
+		if err := e.Repo.DeleteBranch(ctx, plan.Branch.Name, plan.Head); err != nil {
+			return store.Pruned{}, fmt.Errorf("deleting %s: %w", plan.Branch.Name, err)
+		}
+	}
+	var pruned store.Pruned
+	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		var err error
+		pruned, err = tx.ForgetBranch(plan.Branch.ID, e.now())
+		return err
+	})
+	return pruned, err
+}

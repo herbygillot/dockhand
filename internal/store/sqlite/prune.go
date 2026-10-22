@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -231,4 +232,50 @@ func (t *tx) PruneAssessments(before time.Time) (int, error) {
 		total += int(n)
 	}
 	return total, nil
+}
+
+// ForgetBranch forgets an archived branch (clean --delete): its events,
+// edits, acceptances, and checkpoints go, and what it recorded of its
+// checks goes as history does (pruneBranchHistory), its latest check too,
+// keeping only what reuse may still choose or another result names; its
+// record stays, marked forgotten at, which no read of branches returns,
+// and its name and pull request are free.
+func (t *tx) ForgetBranch(id model.BranchID, at time.Time) (store.Pruned, error) {
+	if err := t.write(); err != nil {
+		return store.Pruned{}, err
+	}
+	branch, err := t.Branch(id)
+	if err != nil {
+		return store.Pruned{}, err
+	}
+	if branch.State != model.BranchArchived || !branch.ForgottenAt.IsZero() {
+		return store.Pruned{}, fmt.Errorf("%w: only an archived branch is forgotten, and once", store.ErrConflict)
+	}
+	for _, table := range []string{"events", "edits", "acceptances", "checkpoints"} {
+		if _, err := t.conn.ExecContext(t.ctx, "DELETE FROM "+table+" WHERE repository_id=? AND branch_id=?", t.repo, id); err != nil {
+			return store.Pruned{}, storageError(err)
+		}
+	}
+	pruned, err := t.pruneBranchHistory([]string{string(id)})
+	if err != nil {
+		return pruned, err
+	}
+	// History keeps a branch's latest check, which a forgotten branch
+	// doesn't need; then the plans and revisions it held go too.
+	steps := pruneBranchSteps(1)
+	latest := pruneStep{"DELETE FROM runs AS u WHERE u.repository_id=? AND u.branch_id=? " +
+		"AND NOT EXISTS (SELECT 1 FROM executions e WHERE e.repository_id=u.repository_id AND e.run_id=u.id)", "rb"}
+	counts := []*int{&pruned.Runs, &pruned.Plans, &pruned.Revisions}
+	for i, step := range []pruneStep{latest, steps[3], steps[4]} {
+		result, err := t.conn.ExecContext(t.ctx, step.query, step.args(t.repo, []string{string(id)})...)
+		if err != nil {
+			return pruned, storageError(err)
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return pruned, storageError(err)
+		}
+		*counts[i] += int(n)
+	}
+	return pruned, t.update("branch "+string(id), "UPDATE branches SET forgotten_at=? WHERE repository_id=? AND id=?", millis(at), t.repo, id)
 }
