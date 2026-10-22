@@ -2,6 +2,8 @@
 # C3: cargo.update yes (D19), on doge and idevice_pair, which declare it:
 # one whose archive ships a Cargo.lock works, with a notice; one whose
 # doesn't is refused; neither plan adds or removes the cargo.update line.
+# doge ships its Cargo.lock, so it plans: v0.4.0 planned it, and
+# v0.5.0-rc1's refusal, "[doge.dist_subdir changed]", passed unnoticed.
 . "${ROW_LIB:?}/plan.sh"
 act() {
 	C3_DOGE=$(plan_update doge)
@@ -14,6 +16,10 @@ assert() {
 		[ "$port" = idevice_pair ] && file=$C3_PAIR
 		if ! plan_ok "$file"; then
 			row_fail "$port's plan exited $(cat "$file.exit"): $(jq -r '.error // empty' "$file")"
+			return
+		fi
+		if [ "$port" = doge ] && [ "$(cat "$file.exit")" != 0 ]; then
+			row_fail "doge, whose archive ships its Cargo.lock, was refused, where v0.4.0 planned it: $(jq -r '.error // empty' "$file")"
 			return
 		fi
 		if plan_words "$port" | grep -qE '^[-+][[:space:]]*cargo\.update'; then

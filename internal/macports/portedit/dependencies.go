@@ -489,6 +489,17 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 				delete(port.Options, block)
 			}
 		}
+		// The Cargo PortGroup keeps a port's archives with its crates,
+		// dist_subdir cargo-crates, where it lists any, which the version
+		// step, evaluating the Portfile with its crates set aside
+		// (dependencyBase), read as the port's own name: every Rust update
+		// that lists its crates refused, "[dust.dist_subdir changed]"
+		// (v0.5.0-rc1's quick stage). Where the crates are, it's theirs.
+		if crates := next.Options[depblock.Cargo] + next.Options[depblock.CargoGit]; strings.TrimSpace(crates) != "" {
+			if value, ok := next.Options["dist_subdir"]; ok {
+				port.Options["dist_subdir"] = value
+			}
+		}
 		prediction.Ports[name] = port
 	}
 	final := prediction.Observe(family, after)

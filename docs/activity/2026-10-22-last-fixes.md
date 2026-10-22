@@ -56,3 +56,24 @@ row says it's fixed on main.
 
 The README marks each of the five rows fixed on `main`; the others stay,
 as prioritization's note says.
+
+## v0.5.0-rc1's Rust regression
+
+- **Every Rust update that lists its crates refused**, "[dust.dist_subdir
+  changed]" (Prime-time's quick stage on rc1, rows B3, C2, and C3: dust,
+  pgdog, and doge, which v0.4.0 planned). The Cargo PortGroup sets
+  `dist_subdir` to cargo-crates where a port lists crates, and to its name
+  otherwise; the version step evaluates the Portfile with its crates set
+  aside, so its prediction read the port's name, and strict fidelity's
+  crate step (part 3, item 3) took that prediction whole, finding the
+  evaluated cargo-crates unexpected. The crate step now takes `dist_subdir`
+  from the evaluation where the port lists crates, with the blocks and the
+  fields the PortGroups fetch for them (portedit/dependencies.go).
+- `TestCargoDependencyPreparation`'s new `crates-dist-subdir` scenario has
+  cargo_fetch's own default; it failed with the regression and passes with
+  the fix. dust, pgdog, and doge plan again from main in a scratch clone at
+  the quick stage's pin, 026b3878.
+- **The harness gap**: rows C2 and C3 graded the refusal as refused well.
+  C2 now fails a refusal that names no crate or pin, and C3 fails where
+  doge, whose archive ships its Cargo.lock, is refused, since v0.4.0
+  planned both.

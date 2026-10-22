@@ -336,7 +336,7 @@ func TestAnUnprunedGoModuleKeepsWhatGoVendorsKeeps(t *testing.T) {
 func TestCargoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("b", 64)
-	for _, scenario := range []string{"success", "auxiliary", "added", "removed", "missing", "failed", "partial", "shared", "shared-unauthorized", "cargo-update", "cargo-update-unlocked"} {
+	for _, scenario := range []string{"success", "auxiliary", "added", "removed", "missing", "failed", "partial", "shared", "shared-unauthorized", "cargo-update", "cargo-update-unlocked", "crates-dist-subdir"} {
 		t.Run(scenario, func(t *testing.T) {
 			lock := func(name string) string {
 				result := "version = 4\n[[package]]\nname = \"fixture\"\nversion = \"1.0.0\"\n"
@@ -387,6 +387,14 @@ extract.rename no
 			}
 			if strings.HasPrefix(scenario, "cargo-update") {
 				extra += "cargo.update yes\n"
+			}
+			if scenario == "crates-dist-subdir" {
+				// cargo_fetch-1.0's own default: the port's archives go in
+				// the crates' directory where it lists any, which the
+				// version step, reading the Portfile with its crates set
+				// aside, sees as the port's own name (v0.5.0-rc1's dust:
+				// "[dust.dist_subdir changed]").
+				extra += "default dist_subdir {[expr {[llength ${cargo.crates}] > 0 ? \"cargo-crates\" : ${name}}]}\n"
 			}
 			if strings.HasPrefix(scenario, "shared") {
 				// A buildable subport sharing the version, the checksums, and
@@ -454,6 +462,9 @@ extract.rename no
 					// Taken, said, and the option left as it was (D19).
 					require.Contains(t, result.Regenerated[0].Notices, "cargo.update is on; MacPorts re-resolves offline against these crates.")
 					require.Contains(t, string(result.Files[0].After), "cargo.update yes\n")
+				}
+				if scenario == "crates-dist-subdir" {
+					require.Equal(t, "cargo-crates", result.Prepared.Ports["fixture"].Options["dist_subdir"], "the crates' directory, as MacPorts evaluates the update")
 				}
 				if scenario == "shared" {
 					require.NotNil(t, result.Scope)
