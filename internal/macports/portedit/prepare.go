@@ -114,9 +114,9 @@ type Result struct {
 	// Pairs are each archive the update replaced beside the one that
 	// replaces it, in every context that fetches them, fetched only when
 	// KeepArchives asked; PreviousProblem is why the replaced ones could
-	// not be, and PreviousKind its kind, which says whether another try may fetch them, as
-	// HTTP and the network say (fetch.Transient): a mirror's outage or a
-	// rate limit.
+	// not be, and PreviousKind its kind, which says whether another try
+	// may fetch them, as HTTP and the network say (refusal.Transient): a
+	// mirror's outage or a rate limit.
 	Pairs           []ArchivePair `json:"-"`
 	PreviousProblem string        `json:",omitempty"`
 	PreviousKind    refusal.Kind  `json:",omitempty"`

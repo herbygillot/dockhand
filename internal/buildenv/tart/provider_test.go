@@ -634,7 +634,7 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	failed := guestResult{ID: "libharbor", Outcome: "failed", Phase: "install", Log: "target-1.log", Transient: reset}
 	build := &fakeBuild{}
 	err = testProvider(newMac(guestResults{State: "finished", Targets: []guestResult{failed}})).Execute(t.Context(), tartJob(t, 1), build)
-	require.Equal(t, refusal.Infrastructure, refusal.KindOf(err))
+	require.Equal(t, refusal.Network, refusal.KindOf(err))
 	require.ErrorContains(t, err, "libharbor's build met a network fault upstream: "+reset)
 	require.Len(t, build.results, 1, "the failure stays recorded")
 }

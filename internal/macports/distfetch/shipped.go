@@ -54,7 +54,7 @@ func (s *Store) Shipped(ctx context.Context, info macports.PortInfo, plan []macp
 		}
 		// What went wrong upstream and at the mirror is kept beneath the
 		// words, for a caller that asks what kind of failure it was, such
-		// as one another try may not meet (fetch.Transient).
+		// as one another try may not meet (refusal.Transient).
 		var upstream error
 		if len(file.URLs) > 0 {
 			download, err := s.FetchFirst(ctx, info, file.Name, file.URLs)

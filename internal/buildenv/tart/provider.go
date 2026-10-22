@@ -1176,7 +1176,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 			// proxy.golang.org's stream reset, field testing at 23c5e2aa).
 			for _, target := range results.Targets {
 				if target.Outcome == string(model.OutcomeFailed) && target.Transient != "" {
-					return buildenv.Infrastructure("%s's build met a network fault upstream: %s", target.ID, target.Transient)
+					return refusal.New(refusal.Network, "%s's build met a network fault upstream: %s", target.ID, target.Transient)
 				}
 			}
 			return nil
