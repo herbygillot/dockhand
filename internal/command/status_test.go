@@ -355,6 +355,23 @@ func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
 	require.Equal(t, "dockhand check --branch jq-update --on tart:12,26 --on github", rows[0].next)
 }
 
+// A passed branch an upstream finding holds says it as submit would treat
+// it: paused where serve prepared it, and for a person's own branch, said
+// for submit to show, since a person's submission goes on (the direction
+// synthesis's third contradiction).
+func TestStatusSaysAHoldAsSubmitTreatsIt(t *testing.T) {
+	t.Parallel()
+	latest := model.Run{Number: 7, State: model.RunPassed}
+	held := model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "license-changed", Path: "COPYING", Class: model.Introduced, Detail: "upstream's COPYING changed"}
+	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/jq-1.8.2", State: model.BranchOpen}, Head: "c0ffee", Commits: 1, Latest: &latest, Current: true,
+		LatestRevision: &model.Revision{Kind: model.RevisionCommit},
+		Evidence:       &engine.Evidence{Targets: []engine.TargetEvidence{{Target: model.PlanTarget{Target: model.Target{Name: "jq"}, Role: model.Changed}, Passed: true}}},
+		Held:           []model.Concern{held}}
+	require.Equal(t, "passed; upstream's COPYING changed; submit shows it for your look", attentionFor(status)[0].what)
+	status.Branch.Origin = model.OriginServe
+	require.Equal(t, "passed; submission paused for review: upstream's COPYING changed", attentionFor(status)[0].what)
+}
+
 // A passed branch whose update chose a release whose tag named another
 // commit then than when its check planned it says so, as submit does
 // (release-moved): held for a look where serve prepared it, and said for
@@ -427,6 +444,14 @@ func TestAnArchivedBranchAsksNothingOfItsChecks(t *testing.T) {
 	rows := attentionFor(status)
 	require.Len(t, rows, 1, "an open branch is asked")
 	require.Equal(t, "snapshot 1 passed; the files have changed since", rows[0].what)
+	// However it ended, as submit refuses for these files' missing check.
+	latest.State = model.RunFailed
+	require.Equal(t, "snapshot 1 failed; the files have changed since", attentionFor(status)[0].what)
+	latest.State = model.RunAttention
+	require.Equal(t, "snapshot 1 needed attention; the files have changed since", attentionFor(status)[0].what)
+	latest.State = model.RunCanceled
+	require.Empty(t, attentionFor(status), "a canceled check found nothing")
+	latest.State = model.RunPassed
 	status.Branch.State = model.BranchArchived
 	require.Empty(t, attentionFor(status))
 

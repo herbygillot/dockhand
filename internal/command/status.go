@@ -381,8 +381,16 @@ func attentionFor(s engine.BranchStatus) []attention {
 		return row(attentionReady, "its changes are on master already, as of "+s.OnMaster.Short(), "dockhand archive "+name)
 	}
 	if s.Latest == nil || !s.Current || len(s.Active) > 0 {
-		if s.Latest != nil && !s.Current && s.Latest.State == model.RunPassed && len(s.Active) == 0 {
-			return row(attentionNeedsYou, engine.Describe(*s.LatestRevision)+" passed; the files have changed since", "dockhand check --branch "+name)
+		// A check of other files, however it ended, is asked again, as
+		// submit refuses for these files' missing check: one that failed
+		// before the files changed was said nothing of (the direction
+		// synthesis's second contradiction, a stale check).
+		if s.Latest != nil && !s.Current && s.Latest.State.Finished() && len(s.Active) == 0 {
+			ended := string(s.Latest.State)
+			if s.Latest.State == model.RunAttention {
+				ended = "needed attention"
+			}
+			return row(attentionNeedsYou, engine.Describe(*s.LatestRevision)+" "+ended+"; the files have changed since", "dockhand check --branch "+name)
 		}
 		return nil
 	}
@@ -435,7 +443,15 @@ func attentionFor(s engine.BranchStatus) []attention {
 		case len(s.Edited) > 0:
 			return row(attentionReady, engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
 		case s.Branch.PullRequest == nil && len(s.Held) > 0:
-			return row(attentionNeedsYou, "passed; submission paused for review: "+engine.HoldLines(s.Held)[0], submitNext(s, name))
+			// Paused where serve prepared it, as serve holds it; a person's
+			// own submission shows it and goes on, as submit does (the
+			// direction synthesis's third contradiction: status said a
+			// person's branch was paused that submit would send).
+			what := "passed; " + engine.HoldLines(s.Held)[0] + "; submit shows it for your look"
+			if s.Branch.Origin == model.OriginServe {
+				what = "passed; submission paused for review: " + engine.HoldLines(s.Held)[0]
+			}
+			return row(attentionNeedsYou, what, submitNext(s, name))
 		case s.Branch.PullRequest == nil && len(s.Moved) > 0:
 			// The check built another source than the update chose: serve
 			// waits for a look, and a person's submission shows it.
