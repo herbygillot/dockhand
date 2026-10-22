@@ -282,6 +282,9 @@ type Leftover struct {
 	Provider string
 	Ref      string
 	What     string
+	// KeptAt is when a check asked to keep it (model.Plan.Keep) kept it,
+	// for dockhand shell; zero for one left by a process that died.
+	KeptAt time.Time
 }
 
 // Fork is your fork of MacPorts' repository, and the Git remote that

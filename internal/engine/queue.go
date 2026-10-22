@@ -3,8 +3,12 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 )
 
 // Beside is what queuing a check does where the branch has one queued or
@@ -99,7 +103,40 @@ func (e *Engine) QueueCheck(ctx context.Context, request QueueRequest) (Queued, 
 		return queued, err
 	}
 	queued.Run, err = e.Enqueue(ctx, request.Branch, request.Plan, request.Origin)
-	return queued, err
+	if err != nil {
+		return queued, err
+	}
+	// The branch's new check replaces the clones its earlier ones kept for
+	// dockhand shell; one that can't be removed is clean's to find.
+	if err := e.forgetKept(ctx, request.Branch.ID); err != nil {
+		progress.Report(ctx, "removing the clones %s's earlier checks kept: %v", request.Branch.ShortName(), err)
+	}
+	return queued, nil
+}
+
+// forgetKept removes the clones the branch's checks kept for dockhand
+// shell (model.Plan.Keep).
+func (e *Engine) forgetKept(ctx context.Context, branch model.BranchID) error {
+	if !slices.ContainsFunc(slices.Collect(maps.Values(e.Providers)), func(provider buildenv.Provider) bool {
+		_, ok := provider.(buildenv.LeftoverProvider)
+		return ok
+	}) {
+		return nil
+	}
+	session, err := e.Session(ctx, model.SessionForeground)
+	if err != nil {
+		return err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	leftovers, err := e.PlanLeftovers(ctx, session)
+	if err != nil {
+		return err
+	}
+	leftovers = slices.DeleteFunc(leftovers, func(leftover Leftover) bool {
+		return leftover.KeptAt.IsZero() || leftover.Run == nil || leftover.Run.Branch != branch
+	})
+	_, err = e.RemoveLeftovers(ctx, session, leftovers)
+	return err
 }
 
 // beside meets the check queued or running for the branch, where there's

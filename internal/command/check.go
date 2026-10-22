@@ -28,7 +28,7 @@ import (
 func checkCommand(s *settings, streams term.Streams) *cobra.Command {
 	var where branchFlags
 	var tests, variants, build string
-	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, yes bool
+	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, keep, yes bool
 	var include, only, also, on []string
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -102,7 +102,7 @@ true, it runs that baseline by itself.`,
 				return err
 			}
 			proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: mode, Named: where.explicit(), Include: include, Plan: plan}, Where: place,
-				Tests: model.TestPolicy(tests), Only: only, Also: also, Fresh: fresh, Variants: chosen, EachVariant: each})
+				Tests: model.TestPolicy(tests), Only: only, Also: also, Fresh: fresh, Keep: keep, Variants: chosen, EachVariant: each})
 			if err != nil {
 				return err
 			}
@@ -211,9 +211,11 @@ true, it runs that baseline by itself.`,
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
 	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the master it started from")
 	cmd.Flags().BoolVar(&fresh, "fresh", false, "build every port, reusing no earlier build's result")
+	cmd.Flags().BoolVar(&keep, "keep", false, "keep each Tart environment's clone, stopped, where its guest finishes, for dockhand shell")
 	cmd.Flags().StringVar(&variants, "variants", "", "build the one port checked with these variants, +name -name, or each: its defaults, then each variant it declares")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --variants each, make its builds without asking")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
+	cmd.MarkFlagsMutuallyExclusive("baseline", "keep")
 	cmd.MarkFlagsMutuallyExclusive("build", "on")
 	cmd.MarkFlagsMutuallyExclusive("head", "staged", "working-tree")
 	supportsJSON(cmd)
@@ -276,6 +278,9 @@ func captureMode(head, staged, workingTree bool) engine.CaptureMode {
 func writePushes(out io.Writer, plan model.Plan) {
 	if slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == buildenv.GitHub }) {
 		fmt.Fprintf(out, "Pushes      this revision to a %s branch in your fork for the MacPorts workflow; removes that branch after reading the run's results\n", ghactions.BranchPrefix)
+	}
+	if plan.Keep {
+		fmt.Fprintln(out, "Keeps       each Tart environment's clone, stopped, where its guest finishes, for dockhand shell; clean or the branch's next check removes it")
 	}
 }
 

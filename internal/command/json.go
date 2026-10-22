@@ -112,11 +112,12 @@ type planJSON struct {
 	// Profile is the build profile that named them, empty where --on did.
 	Profile string `json:"profile,omitempty"`
 	Tests   string `json:"tests"`
-	// Only, Also, and Fresh are what the person asked: --only's changed
-	// ports, --also's unchanged ones, and --fresh.
+	// Only, Also, Fresh, and Keep are what the person asked: --only's
+	// changed ports, --also's unchanged ones, --fresh, and --keep.
 	Only  []string `json:"only"`
 	Also  []string `json:"also"`
 	Fresh bool     `json:"fresh"`
+	Keep  bool     `json:"keep"`
 	// Variants are --variants', as MacPorts writes them; EachVariant is
 	// --variants each.
 	Variants    string `json:"variants,omitempty"`
@@ -189,7 +190,7 @@ type exclusionJSON struct {
 }
 
 func planView(plan model.Plan) planJSON {
-	view := planJSON{ID: string(plan.ID), Profile: plan.Profile, Tests: string(plan.Tests), Environments: []environmentJSON{}, Only: append([]string{}, plan.Only...), Also: append([]string{}, plan.Also...), Fresh: plan.Fresh,
+	view := planJSON{ID: string(plan.ID), Profile: plan.Profile, Tests: string(plan.Tests), Environments: []environmentJSON{}, Only: append([]string{}, plan.Only...), Also: append([]string{}, plan.Also...), Fresh: plan.Fresh, Keep: plan.Keep,
 		Variants: plan.Variants, EachVariant: plan.EachVariant, Targets: []targetJSON{}, Omitted: []targetJSON{}, Exclusions: []exclusionJSON{}, Unmet: []unmetJSON{}, Unresolved: []exclusionJSON{}}
 	for _, environment := range plan.Environments {
 		view.Environments = append(view.Environments, environmentView(environment))

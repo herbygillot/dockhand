@@ -68,6 +68,17 @@ func (r CleanupReport) Removed() int {
 // result names. Open branches, and work of anyone's own, are never
 // touched.
 func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time.Duration) (CleanupReport, error) {
+	return e.cleanup(ctx, session, after, true)
+}
+
+// KeptFor is how long automatic cleanup spares a clone a check kept for
+// dockhand shell, unless space is low; clean and the branch's next check
+// remove it any time.
+const KeptFor = 24 * time.Hour
+
+// cleanup is Cleanup, sparing what checks kept (KeptFor) where spareKept,
+// as it does but where space is low.
+func (e *Engine) cleanup(ctx context.Context, session *coord.Session, after time.Duration, spareKept bool) (CleanupReport, error) {
 	var report CleanupReport
 	plans, err := e.PlanClean(ctx)
 	if err != nil {
@@ -82,7 +93,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	if report.Branches, err = e.ApplyClean(ctx, removable); err != nil {
 		return report, err
 	}
-	leftovers, err := e.PlanLeftovers(ctx, session)
+	leftovers, err := e.planLeftovers(ctx, session, spareKept)
 	if err != nil {
 		return report, err
 	}
@@ -311,7 +322,7 @@ func (e *Engine) CleanupIfDue(ctx context.Context, session *coord.Session, every
 		return CleanupReport{}, false, err
 	}
 	starting(why)
-	report, err = e.Cleanup(ctx, session, after)
+	report, err = e.cleanup(ctx, session, after, !why.LowSpace)
 	return report, true, err
 }
 

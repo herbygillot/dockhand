@@ -40,9 +40,10 @@ type CheckRequest struct {
 	Where   Where
 	// Tests are the tests asked; check.tests where empty (Options.Tests).
 	Tests model.TestPolicy
-	// Only, Also, Fresh, Variants, and EachVariant are PlanRequest's.
+	// Only, Also, Fresh, Keep, Variants, and EachVariant are
+	// PlanRequest's.
 	Only, Also  []string
-	Fresh       bool
+	Fresh, Keep bool
 	Variants    map[string]bool
 	EachVariant bool
 }
@@ -65,7 +66,7 @@ func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Propos
 	}
 	where := request.Where
 	plan, err := e.PlanCheck(ctx, PlanRequest{Revision: capture.Revision, Environments: where.Environments, Span: where.Span, Profile: where.Profile,
-		Only: request.Only, Also: request.Also, Tests: cmp.Or(request.Tests, e.options.Tests), Fresh: request.Fresh, Variants: request.Variants, EachVariant: request.EachVariant})
+		Only: request.Only, Also: request.Also, Tests: cmp.Or(request.Tests, e.options.Tests), Fresh: request.Fresh, Keep: request.Keep, Variants: request.Variants, EachVariant: request.EachVariant})
 	if err != nil {
 		return Proposal{Capture: capture, Plan: plan}, err
 	}
@@ -126,6 +127,9 @@ type PlanRequest struct {
 	Tests model.TestPolicy
 	// Fresh builds every target, reusing no earlier build's result.
 	Fresh bool
+	// Keep keeps each environment's clone where its guest finished
+	// (model.Plan.Keep).
+	Keep bool
 	// Span builds each port only on its oldest and newest release of the
 	// environments, a minmax profile's (Where.Span), and Profile is the
 	// profile that named them, which the plan keeps.
@@ -160,7 +164,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	if request.Tests != "" && !request.Tests.Valid() {
 		return model.Plan{}, fmt.Errorf("--tests %q is not declared, required, or skip", request.Tests)
 	}
-	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Profile: request.Profile, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh,
+	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Profile: request.Profile, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh, Keep: request.Keep,
 		Variants: model.Target{Variants: request.Variants}.VariantSpec(), EachVariant: request.EachVariant, CreatedAt: e.now()}
 	if len(request.Variants) > 0 && request.EachVariant {
 		return plan, errors.New("--variants each builds every variant; it takes no others")

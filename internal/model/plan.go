@@ -264,6 +264,10 @@ type Plan struct {
 	// Fresh builds every target, reusing no earlier build's result
 	// (decision 28).
 	Fresh bool `json:",omitempty"`
+	// Keep keeps each environment's clone, stopped, where its guest
+	// finished, whether its targets passed or failed, for dockhand shell:
+	// a check a person runs, never serve's or ship's.
+	Keep bool `json:",omitempty"`
 	// Variants are the variants --variants built its one port with, as
 	// MacPorts writes them, in place of its defaults; EachVariant is
 	// --variants each, which built it with its defaults and then with

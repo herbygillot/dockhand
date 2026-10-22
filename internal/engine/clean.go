@@ -529,7 +529,16 @@ type Leftover struct {
 // made it and no live process drives that check: any later attempt makes
 // its own. One whose check is running is kept, and so is one no check of
 // this checkout made, since another checkout's database may be using it.
+//
+// A clone a check kept for dockhand shell is removed too: clean is the
+// person's asking.
 func (e *Engine) PlanLeftovers(ctx context.Context, session *coord.Session) ([]Leftover, error) {
+	return e.planLeftovers(ctx, session, false)
+}
+
+// planLeftovers is PlanLeftovers, keeping what a check kept for dockhand
+// shell less than KeptFor ago where spareKept, as automatic cleanup does.
+func (e *Engine) planLeftovers(ctx context.Context, session *coord.Session, spareKept bool) ([]Leftover, error) {
 	var all []Leftover
 	for _, name := range slices.Sorted(maps.Keys(e.Providers)) {
 		provider, ok := e.Providers[name].(buildenv.LeftoverProvider)
@@ -545,6 +554,9 @@ func (e *Engine) PlanLeftovers(ctx context.Context, session *coord.Session) ([]L
 			leftover := Leftover{Leftover: reported}
 			if err := e.judgeLeftover(ctx, session, &leftover); err != nil {
 				return all, err
+			}
+			if until := reported.KeptAt.Add(KeptFor); spareKept && leftover.Kept == "" && !reported.KeptAt.IsZero() && e.now().Before(until) {
+				leftover.Kept = "kept for dockhand shell until " + until.Local().Format("Jan 2 15:04")
 			}
 			all = append(all, leftover)
 		}

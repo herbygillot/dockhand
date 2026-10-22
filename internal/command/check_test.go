@@ -74,6 +74,11 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.ErrorContains(t, err, "Tart isn't installed here")
 	// Build profiles name where, --on explicit environments, never both;
 	// --on ci went with check.on (the person's design, 2026-10-13).
+	out, _, err = dockhand(t, "check", "--plan", "--keep")
+	require.NoError(t, err)
+	require.Contains(t, out, "Keeps       each Tart environment's clone, stopped, where its guest finishes, for dockhand shell; clean or the branch's next check removes it\n")
+	_, _, err = dockhand(t, "check", "--baseline", "--keep")
+	require.ErrorContains(t, err, "none of the others can be")
 	_, _, err = dockhand(t, "check", "--plan", "--build", "minmax")
 	require.ErrorContains(t, err, "build profile minmax requires Tart, which is not installed")
 	_, _, err = dockhand(t, "check", "--plan", "--build", "nosuch")

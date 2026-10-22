@@ -388,13 +388,34 @@ func (p *Provider) Leftovers(ctx context.Context) ([]buildenv.Leftover, error) {
 	if err != nil {
 		return nil, err
 	}
+	home, _ := p.home()
 	var clones []buildenv.Leftover
 	for _, name := range images {
 		if strings.HasPrefix(name, clonePrefixAll) {
-			clones = append(clones, buildenv.Leftover{Ref: name, What: "Tart clone " + name})
+			leftover := buildenv.Leftover{Ref: name, What: "Tart clone " + name}
+			if at, kept := tartvm.KeptAt(home, name); kept && home != "" {
+				leftover.KeptAt, leftover.What = at, "kept Tart clone "+name
+			}
+			clones = append(clones, leftover)
 		}
 	}
 	return clones, nil
+}
+
+// home is dockhand's Tart home, resolved.
+func (p *Provider) home() (string, error) {
+	client, err := p.Tart.Resolve()
+	return client.Home, err
+}
+
+// keepClone marks a check's clone as kept, which is then left for dockhand
+// shell, and for clean or the branch's next check to remove.
+func (p *Provider) keepClone(vm string) error {
+	home, err := p.home()
+	if err != nil {
+		return err
+	}
+	return tartvm.KeepClone(home, vm)
 }
 
 // RemoveLeftover stops and deletes one check clone. Any other name is
@@ -410,7 +431,13 @@ func (p *Provider) RemoveLeftover(ctx context.Context, ref string) error {
 	if err := m.Stop(ctx, ref); err != nil {
 		return err
 	}
-	return m.Delete(ctx, ref)
+	if err := m.Delete(ctx, ref); err != nil {
+		return err
+	}
+	if home, err := p.home(); err == nil {
+		return tartvm.ForgetClone(home, ref)
+	}
+	return nil
 }
 
 // guestInput is the guest program's input.
@@ -605,6 +632,16 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	cloned, started, err := p.start(ctx, m, build, image, vm)
 	if cloned {
 		defer func() {
+			// A check asked to keep its clone keeps it, stopped, where the
+			// guest finished, its targets passed or failed: never after
+			// trouble, where the guest didn't (model.Plan.Keep).
+			if job.Plan.Keep && err == nil {
+				keepErr := p.keepClone(vm)
+				if keepErr == nil {
+					return
+				}
+				build.Progress("keeping " + vm + ": " + keepErr.Error())
+			}
 			if deleteErr := m.Delete(cleanup, vm); deleteErr != nil && err == nil {
 				build.Progress("deleting " + vm + ": " + deleteErr.Error())
 			}
