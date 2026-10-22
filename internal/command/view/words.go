@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -165,4 +166,36 @@ func ExperimentalWords(number int, author string) string {
 		whose = "@" + author + "'s"
 	}
 	return fmt.Sprintf("Experimental: this command evaluates pull request #%d using %s Portfiles with MacPorts on this Mac. Read any Portfiles you do not trust before running it; isolated evaluation is not yet available.", number, whose)
+}
+
+// serveWords are serve's state as a line: "serve: running (pid 34857) ·
+// queue: 1 run".
+func ServeWords(s engine.ServeState) string {
+	line := "serve: not running"
+	if s.Running {
+		line = fmt.Sprintf("serve: running (pid %d)", s.PID)
+		// A serve on another build than this command's is said.
+		if build, upgraded := s.Upgraded(); upgraded {
+			line += fmt.Sprintf(" · running dockhand %s; this command is %s", build, buildinfo.Current())
+		}
+		// A serve not acting on GitHub, as its login stands, says why.
+		if s.NotActing != "" {
+			line += " · not acting on GitHub: " + s.NotActing
+		}
+		// One that couldn't read its login says so, where it said nothing
+		// and kept its state (the rc8 full stage's D-C3).
+		if s.LoginProblem != "" {
+			line += " · couldn't read its GitHub login: " + s.LoginProblem
+		}
+		if s.OpensPullRequests {
+			line += " · opens PRs for passing updates"
+		}
+	}
+	switch {
+	case s.Queue == 0:
+		return line + " · queue: empty"
+	case s.Stopped > 0:
+		return line + fmt.Sprintf(" · queue: %s, %d stopped", prose.Plural(s.Queue, "run"), s.Stopped)
+	}
+	return line + " · queue: " + prose.Plural(s.Queue, "run")
 }

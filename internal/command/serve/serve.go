@@ -1,4 +1,4 @@
-package command
+package serve
 
 import (
 	"cmp"
@@ -22,7 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func serveCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var drain, install, uninstall, noNotify bool
 	var shipTo string
 	cmd := &cobra.Command{

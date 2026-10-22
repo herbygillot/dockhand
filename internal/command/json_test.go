@@ -301,14 +301,14 @@ func TestUpstreamJSONWordsChangesUnderItsKey(t *testing.T) {
 // with what has stopped (the hugo exercise's certigo run, finding 6).
 func TestServesStateIsFieldsAndItsLine(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "serve: not running · queue: empty", serveWords(engine.ServeState{}))
+	require.Equal(t, "serve: not running · queue: empty", view.ServeWords(engine.ServeState{}))
 	running := engine.ServeState{Running: true, PID: 34857, OpensPullRequests: true, Queue: 2, Stopped: 1}
-	require.Equal(t, "serve: running (pid 34857) · opens PRs for passing updates · queue: 2 runs, 1 stopped", serveWords(running))
+	require.Equal(t, "serve: running (pid 34857) · opens PRs for passing updates · queue: 2 runs, 1 stopped", view.ServeWords(running))
 	data, err := json.Marshal(view.ServeView(running))
 	require.NoError(t, err)
 	require.JSONEq(t, `{"running": true, "pid": 34857, "opens_pull_requests": true, "queue": 2, "stopped": 1}`, string(data))
 	running.OpensPullRequests, running.Stopped = false, 0
-	require.Equal(t, "serve: running (pid 34857) · queue: 2 runs", serveWords(running))
+	require.Equal(t, "serve: running (pid 34857) · queue: 2 runs", view.ServeWords(running))
 	data, err = json.Marshal(view.ServeView(running))
 	require.NoError(t, err)
 	require.JSONEq(t, `{"running": true, "pid": 34857, "queue": 2, "stopped": 0}`, string(data))

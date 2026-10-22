@@ -1,4 +1,4 @@
-package command
+package serve
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -137,9 +138,9 @@ func TestServeStopsWhenUninstalled(t *testing.T) {
 // status says when serve runs another build than its own.
 func TestStatusSaysServesOtherBuild(t *testing.T) {
 	t.Parallel()
-	line := serveWords(engine.ServeState{Running: true, PID: 7, Build: "v0.3.0-rc3"})
+	line := view.ServeWords(engine.ServeState{Running: true, PID: 7, Build: "v0.3.0-rc3"})
 	require.Contains(t, line, "serve: running (pid 7) · running dockhand v0.3.0-rc3; this command is ")
-	require.Equal(t, "serve: running (pid 7) · queue: empty", serveWords(engine.ServeState{Running: true, PID: 7}), "a serve that didn't say runs as this does")
+	require.Equal(t, "serve: running (pid 7) · queue: empty", view.ServeWords(engine.ServeState{Running: true, PID: 7}), "a serve that didn't say runs as this does")
 }
 
 // withLaunchd stands launchctl in for serve's agent: launchd loads the
@@ -263,7 +264,7 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 	out = serveFor("jq-update: cleaned up after the merge: removed worktree ")
 	require.Contains(t, out, ", branch dockhand/jq-update, ada/macports-ports:dockhand/jq-update\n")
 	require.NoDirExists(t, dir)
-	require.FileExists(t, cleanupStamp(t, w.Home))
+	require.FileExists(t, cmdtest.CleanupStamp(t, w.Home))
 
 	out = serveFor("serve: leading")
 	require.NotContains(t, out, "cleaned up", "once a day")
@@ -423,7 +424,7 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 	require.Equal(t, 1, strings.Count(out, "serve: GitHub rejected the credentials. GitHub writes are paused; run dockhand setup github to sign in again\n"), out)
 	require.Contains(t, out, "serve: logged in again as ada; acting on GitHub again\n")
 
-	require.Equal(t, "serve: running (pid 7) · not acting on GitHub: no GitHub login · queue: empty", serveWords(engine.ServeState{Running: true, PID: 7, NotActing: "no GitHub login"}))
+	require.Equal(t, "serve: running (pid 7) · not acting on GitHub: no GitHub login · queue: empty", view.ServeWords(engine.ServeState{Running: true, PID: 7, NotActing: "no GitHub login"}))
 }
 
 // A login revoked, then one serve can't read for a while, as a Keychain
@@ -467,5 +468,5 @@ func TestServeSaysALoginItCantRead(t *testing.T) {
 	require.Contains(t, out, "serve: logged in again as ada; acting on GitHub again\n")
 
 	require.Equal(t, "serve: running (pid 7) · not acting on GitHub: GitHub rejected the login; dockhand setup github · couldn't read its GitHub login: the keychain won't answer · queue: empty",
-		serveWords(engine.ServeState{Running: true, PID: 7, NotActing: "GitHub rejected the login; dockhand setup github", LoginProblem: "the keychain won't answer"}))
+		view.ServeWords(engine.ServeState{Running: true, PID: 7, NotActing: "GitHub rejected the login; dockhand setup github", LoginProblem: "the keychain won't answer"}))
 }

@@ -133,3 +133,18 @@ engine-boundary list, since it reaches what the tests do.
 
 The exported names' doc comments were renamed with them, across the new
 packages.
+
+## Step 5: the verbs, smallest first
+
+Each verb is a package under internal/command with a `Command`
+constructor, which the root registers. Its tests move with it, white-box
+in the verb's own package, and a `main_test.go` external file hands
+cmdtest.Main the root's RunWith. The internal and external test files
+compile into one binary, so the white-box tests run the same command
+line without importing the root.
+
+- **explain, shell, config, serve.** `serveWords`, status's sentence for
+  serve's state that serve's tests read too, is `view.ServeWords`.
+  clean's test helper `cleanupStamp` is `cmdtest.CleanupStamp`. config
+  imports internal/config under its own name, since a package's name
+  isn't in its scope; the root imports `command/config`.

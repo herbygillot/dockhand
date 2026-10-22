@@ -12,8 +12,12 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/config"
+	"github.com/herbygillot/dockhand/internal/command/explain"
 	"github.com/herbygillot/dockhand/internal/command/host"
+	"github.com/herbygillot/dockhand/internal/command/serve"
 	"github.com/herbygillot/dockhand/internal/command/settings"
+	"github.com/herbygillot/dockhand/internal/command/shell"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -194,7 +198,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	for _, command := range []*cobra.Command{
 		checkCommand(shared, streams),
 		logsCommand(shared, streams),
-		shellCommand(shared, streams),
+		shell.Command(shared, streams),
 		retryCommand(shared, streams),
 	} {
 		command.GroupID = "check"
@@ -214,7 +218,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	for _, command := range []*cobra.Command{
 		waitCommand(shared, streams),
 		cancelCommand(shared, streams),
-		serveCommand(shared, streams),
+		serve.Command(shared, streams),
 	} {
 		command.GroupID = "queue"
 		root.AddCommand(command)
@@ -224,8 +228,8 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		undoCommand(shared, streams),
 		archiveCommand(shared, streams),
 		cleanCommand(shared, streams),
-		explainCommand(streams),
-		configCommand(shared, streams),
+		explain.Command(streams),
+		config.Command(shared, streams),
 	} {
 		command.GroupID = "occasional"
 		root.AddCommand(command)

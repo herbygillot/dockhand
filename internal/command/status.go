@@ -14,7 +14,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
@@ -201,7 +200,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 				result.Branches = append(result.Branches, view.BranchView(status))
 			}
 			viewed := view.ServeView(serve)
-			result.Serve, result.ServeState = serveWords(serve), &viewed
+			result.Serve, result.ServeState = view.ServeWords(serve), &viewed
 			result.Queue = view.QueueView(queue)
 			result.Processes = view.ProcessesView(processes)
 		}
@@ -261,7 +260,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 	}
 	view.WriteQueue(out, queue)
 	writeProcesses(out, processes)
-	fmt.Fprintf(out, "\n%s\n", serveWords(serve))
+	fmt.Fprintf(out, "\n%s\n", view.ServeWords(serve))
 	return nil
 }
 
@@ -407,38 +406,6 @@ func readServe(ctx context.Context, e *engine.Engine) (engine.ServeState, error)
 	}
 	defer end()
 	return e.ServeState(ctx, session)
-}
-
-// serveWords are serve's state as a line: "serve: running (pid 34857) ·
-// queue: 1 run".
-func serveWords(s engine.ServeState) string {
-	line := "serve: not running"
-	if s.Running {
-		line = fmt.Sprintf("serve: running (pid %d)", s.PID)
-		// A serve on another build than this command's is said.
-		if build, upgraded := s.Upgraded(); upgraded {
-			line += fmt.Sprintf(" · running dockhand %s; this command is %s", build, buildinfo.Current())
-		}
-		// A serve not acting on GitHub, as its login stands, says why.
-		if s.NotActing != "" {
-			line += " · not acting on GitHub: " + s.NotActing
-		}
-		// One that couldn't read its login says so, where it said nothing
-		// and kept its state (the rc8 full stage's D-C3).
-		if s.LoginProblem != "" {
-			line += " · couldn't read its GitHub login: " + s.LoginProblem
-		}
-		if s.OpensPullRequests {
-			line += " · opens PRs for passing updates"
-		}
-	}
-	switch {
-	case s.Queue == 0:
-		return line + " · queue: empty"
-	case s.Stopped > 0:
-		return line + fmt.Sprintf(" · queue: %s, %d stopped", prose.Plural(s.Queue, "run"), s.Stopped)
-	}
-	return line + " · queue: " + prose.Plural(s.Queue, "run")
 }
 
 func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places config.Places, branch model.Branch) error {

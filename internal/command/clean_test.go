@@ -42,19 +42,9 @@ func TestACommandStartsCleanupWhenItIsDue(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, started, 1, "not again the same day")
 
-	require.NoError(t, os.Remove(cleanupStamp(t, w.Home)))
+	require.NoError(t, os.Remove(cmdtest.CleanupStamp(t, w.Home)))
 	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[cleanup]\nautomatic = false\n"), 0o644))
 	_, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Len(t, started, 1, "turned off")
-}
-
-// cleanupStamp is the one checkout's cleanup stamp, kept for it beside the
-// database.
-func cleanupStamp(t *testing.T, home string) string {
-	t.Helper()
-	stamps, err := filepath.Glob(filepath.Join(home, ".dockhand", "serve", "*", "cleanup.stamp"))
-	require.NoError(t, err)
-	require.Len(t, stamps, 1)
-	return stamps[0]
 }

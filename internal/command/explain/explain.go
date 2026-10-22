@@ -1,4 +1,4 @@
-package command
+package explain
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func explainCommand(streams term.Streams) *cobra.Command {
+func Command(streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "explain [code]",
 		Short: "Say what a commit rule asks, and where MacPorts asks it",

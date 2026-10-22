@@ -62,3 +62,13 @@ func Dockhand(t *testing.T, args ...string) (string, string, error) {
 	err := RunFor(t, t.Context(), args, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	return out.String(), errs.String(), err
 }
+
+// cleanupStamp is the one checkout's cleanup stamp, kept for it beside the
+// database.
+func CleanupStamp(t *testing.T, home string) string {
+	t.Helper()
+	stamps, err := filepath.Glob(filepath.Join(home, ".dockhand", "serve", "*", "cleanup.stamp"))
+	require.NoError(t, err)
+	require.Len(t, stamps, 1)
+	return stamps[0]
+}

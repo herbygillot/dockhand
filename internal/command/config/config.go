@@ -1,4 +1,4 @@
-package command
+package config
 
 import (
 	"cmp"
@@ -24,7 +24,7 @@ type configSetting struct {
 	Source string `json:"source"`
 }
 
-func configCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show the settings in effect, and where each comes from",

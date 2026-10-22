@@ -1,4 +1,4 @@
-package command
+package shell
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func shellCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var on, port string
 	var test bool
 	cmd := &cobra.Command{

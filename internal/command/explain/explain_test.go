@@ -1,4 +1,4 @@
-package command
+package explain_test
 
 import (
 	"testing"
