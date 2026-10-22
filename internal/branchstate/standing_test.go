@@ -1,4 +1,4 @@
-package engine
+package branchstate
 
 import (
 	"testing"
@@ -6,23 +6,24 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // One verdict of a branch's checks, which status words and serve's passing
 // branches read (the command package review's concept 2).
-func TestCheckStanding(t *testing.T) {
+func TestStanding(t *testing.T) {
 	run := func(state model.RunState) *model.Run { return &model.Run{Number: 1, State: state} }
-	for want, status := range map[CheckStanding]BranchStatus{
+	for want, status := range map[Standing]Check{
 		NotChecked:     {},
 		Checking:       {Active: []model.Run{*run(model.RunRunning)}, Latest: run(model.RunPassed), Current: true},
 		CheckStopped:   {Active: []model.Run{*run(model.RunRunning)}, Stopped: run(model.RunRunning)},
-		CheckPassed:    {Latest: run(model.RunPassed), Current: true, Evidence: &Evidence{}},
+		CheckPassed:    {Latest: run(model.RunPassed), Current: true, Evidence: &evidence.Evidence{}},
 		CheckedOlder:   {Latest: run(model.RunPassed)},
 		CheckFailed:    {Latest: run(model.RunFailed), Current: true},
 		CheckAttention: {Latest: run(model.RunAttention), Current: true},
 	} {
-		require.Equal(t, want, status.CheckStanding(), "%d", want)
+		require.Equal(t, want, status.Standing(), "%d", want)
 	}
 }
 
@@ -37,15 +38,15 @@ func TestABaselineOrAStoppingRunLeavesTheBranchsStanding(t *testing.T) {
 	check := model.Run{Number: 4, State: model.RunQueued}
 	for name, tc := range map[string]struct {
 		active []model.Run
-		want   CheckStanding
+		want   Standing
 		run    int
 	}{
 		"baseline":           {[]model.Run{baseline}, CheckPassed, 0},
 		"asked to stop":      {[]model.Run{stopping}, CheckPassed, 0},
 		"a check beside one": {[]model.Run{check, baseline}, Checking, 4},
 	} {
-		status := BranchStatus{Active: tc.active, Latest: passed, Current: true, Evidence: &Evidence{}}
-		require.Equal(t, tc.want, status.CheckStanding(), name)
+		status := Check{Active: tc.active, Latest: passed, Current: true, Evidence: &evidence.Evidence{}}
+		require.Equal(t, tc.want, status.Standing(), name)
 		if tc.run == 0 {
 			require.Nil(t, status.Checking(), name)
 		} else {

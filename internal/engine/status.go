@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -212,72 +213,17 @@ func (s BranchStatus) Cleaned() bool {
 	return s.Missing && s.Branch.State != model.BranchOpen
 }
 
-// CheckStanding is what a branch's checks establish of its files as they
-// are now: the one verdict status words, serve's passing branches read,
-// and submit's blocking reasons spell out target by target (the command
-// package review's concept 2, where three places judged it apart). It's
-// judged against build.default's environments, which the evidence
-// requires; a check's own profile, as ship's evidence, comes with ship.
-type CheckStanding int
-
-const (
-	// NotChecked is a branch no finished check has looked at.
-	NotChecked CheckStanding = iota
-	// Checking is a check queued or running.
-	Checking
-	// CheckStopped is a check whose process ended before it finished.
-	CheckStopped
-	// CheckPassed is the latest check's pass of the files as they are
-	// now, every result it needs standing.
-	CheckPassed
-	// CheckIncomplete is a pass that no longer stands everywhere it's
-	// required, as after an environment changed, or one never built.
-	CheckIncomplete
-	// CheckedOlder is a pass of other files than these.
-	CheckedOlder
-	// CheckFailed is a check that failed.
-	CheckFailed
-	// CheckAttention is a check that ended needing a person's look.
-	CheckAttention
-)
-
-// Checking is the branch's one check queued or running (Run.BranchCheck),
-// nil while there's none, whatever baseline or stopping run is active: a
-// baseline of a passed check left the branch Checking, and serve waiting
-// on it, where ActiveCheck said there was none.
-func (s BranchStatus) Checking() *model.Run {
-	for i := len(s.Active) - 1; i >= 0; i-- {
-		if s.Active[i].BranchCheck() {
-			return &s.Active[i]
-		}
-	}
-	return nil
+// Check is what's recorded of the branch's checks, as the verdict reads
+// it (branchstate.Check).
+func (s BranchStatus) Check() branchstate.Check {
+	return branchstate.Check{Latest: s.Latest, Current: s.Current, Active: s.Active, Stopped: s.Stopped, Evidence: s.Evidence}
 }
 
-// CheckStanding judges the branch's checks.
-func (s BranchStatus) CheckStanding() CheckStanding {
-	switch {
-	case s.Stopped != nil:
-		return CheckStopped
-	case s.Checking() != nil:
-		return Checking
-	case s.Latest == nil:
-		return NotChecked
-	}
-	switch s.Latest.State {
-	case model.RunPassed:
-		switch {
-		case s.Evidence != nil && len(s.Evidence.Failed()) > 0:
-			return CheckIncomplete
-		case !s.Current:
-			return CheckedOlder
-		}
-		return CheckPassed
-	case model.RunFailed:
-		return CheckFailed
-	}
-	return CheckAttention
-}
+// Checking is the branch's one check queued or running (branchstate).
+func (s BranchStatus) Checking() *model.Run { return s.Check().Checking() }
+
+// CheckStanding judges the branch's checks (branchstate.Check.Standing).
+func (s BranchStatus) CheckStanding() branchstate.Standing { return s.Check().Standing() }
 
 // Pushed reports whether the pull request has the branch's head.
 func (s BranchStatus) Pushed() bool {

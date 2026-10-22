@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -564,14 +565,14 @@ func checkState(s engine.BranchStatus) string {
 		suffix = ", for older work"
 	}
 	switch s.CheckStanding() {
-	case engine.CheckStopped:
+	case branchstate.CheckStopped:
 		return fmt.Sprintf("stopped (%s)", s.Stopped.Name())
-	case engine.Checking:
+	case branchstate.Checking:
 		run := *s.Checking()
 		return fmt.Sprintf("%s (%s)", run.State, run.Name())
-	case engine.NotChecked:
+	case branchstate.NotChecked:
 		return "—"
-	case engine.CheckIncomplete:
+	case branchstate.CheckIncomplete:
 		// A passed check whose results no longer all stand, as after its
 		// environment changed, isn't a pass for the branch now. An archived
 		// branch asks nothing of its checks, as its attention doesn't, so
@@ -581,9 +582,9 @@ func checkState(s engine.BranchStatus) string {
 			return fmt.Sprintf("passed (%s)", s.Latest.Name())
 		}
 		return "passed, but needs another check"
-	case engine.CheckedOlder:
+	case branchstate.CheckedOlder:
 		return "passed for older work"
-	case engine.CheckPassed:
+	case branchstate.CheckPassed:
 		// Untracked files a check took in with --include are compared as
 		// it had them, and said: they're in no commit yet.
 		if len(s.Included) > 0 {
@@ -595,7 +596,7 @@ func checkState(s engine.BranchStatus) string {
 			return "passed for this commit"
 		}
 		return "passed for " + engine.Describe(*s.LatestRevision)
-	case engine.CheckFailed:
+	case branchstate.CheckFailed:
 		if s.Evidence == nil {
 			return fmt.Sprintf("failed (%s)", s.Latest.Name())
 		}

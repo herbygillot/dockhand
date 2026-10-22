@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
@@ -53,7 +54,7 @@ func (e *Engine) PassingBranches(ctx context.Context) (Passing, error) {
 	for _, status := range statuses {
 		switch {
 		case status.Missing || status.Commits == 0 || status.Latest == nil || status.Pushed():
-		case status.CheckStanding() == CheckPassed && len(status.Edited) == 0 && status.Evidence != nil:
+		case status.CheckStanding() == branchstate.CheckPassed && len(status.Edited) == 0 && status.Evidence != nil:
 			passing.Ready = append(passing.Ready, status)
 		default:
 			passing.Others++

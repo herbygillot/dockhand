@@ -15,16 +15,19 @@ import (
 // commandImports are the packages beyond the standard library the command
 // layer may import (doc.go), each with why.
 var commandImports = map[string]string{
-	"internal/engine":    "does the work",
-	"internal/model":     "the records the engine returns",
-	"internal/config":    "the person's settings, turned into the engine's options",
-	"internal/coord":     "the command's own session, and who leads",
-	"internal/buildinfo": "the command's own version",
-	"internal/progress":  "the reporter each command installs, printing what the work reports to standard error",
-	"internal/prose":     "counts and sizes worded as everywhere else",
-	"internal/macos":     "the launchd job serve installs, written as dockhand writes every one",
-	"internal/store":     "filter types for engine queries; records are read and written through the engine",
-	"internal/scratch":   "the edit buffer an editor opens, in the process's run root",
+	"internal/engine": "does the work",
+	// The verdict on a branch's state, whose kinds and Next the command
+	// renders (v0.5.0 part 4).
+	"internal/branchstate": "the verdict on a branch's state, rendered",
+	"internal/model":       "the records the engine returns",
+	"internal/config":      "the person's settings, turned into the engine's options",
+	"internal/coord":       "the command's own session, and who leads",
+	"internal/buildinfo":   "the command's own version",
+	"internal/progress":    "the reporter each command installs, printing what the work reports to standard error",
+	"internal/prose":       "counts and sizes worded as everywhere else",
+	"internal/macos":       "the launchd job serve installs, written as dockhand writes every one",
+	"internal/store":       "filter types for engine queries; records are read and written through the engine",
+	"internal/scratch":     "the edit buffer an editor opens, in the process's run root",
 	// Vocabulary the engine's results carry beyond model's: a checksum,
 	// and a commit-rule finding, whose explanations explain prints.
 	"internal/macports/portfile":    "vocabulary in engine results",
