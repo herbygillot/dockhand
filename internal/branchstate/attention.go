@@ -141,6 +141,7 @@ type Vocabulary interface {
 	Ago(time.Time) string
 	Remade(evidence.TargetEvidence) string
 	Holds([]model.Concern) []string
+	Unmet(model.Unmet) string
 }
 
 // Attend is what a branch needs, at most one row: from its pull request's

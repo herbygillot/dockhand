@@ -56,3 +56,25 @@ Attend reads the check's standing (`Check.Standing`) where status re-derived it 
 - check, otherwise.
 
 The contract table now holds these eight refusals, and every one's Next advances. Submit's own blocks are step 4.
+
+## Step 4: submit's blocks are typed, and the publication rule is branchstate's
+
+submit appended a sentence at each of its blocking sites. Each now records a `branchstate.Block` of one of 15 kinds, through `SubmitPlan.block`:
+- unconfirmed guesses, a merge commit;
+- a check pending, a check of other files, no check;
+- an unmet target, a remade target, an unchecked target;
+- a failure the base shares, a failure, a failure not accepted;
+- someone else's push, maintainers not allowed to edit, no write access;
+- no title.
+
+The block's words are `Block.Words`, the sentences submit said, word for word, and `Blocking` keeps them. The data each sentence names rides on the block, and the nouns go through the vocabulary, which gains `Unmet`.
+
+The publication rule is branchstate's, with the acceptances it reads, moved from engine/evidence.go:
+- `PublicationBlocks`, where `publicationProblems` built sentences;
+- `AcceptanceProblem`, `AcceptedReasons`, and `BlockedByAccepted`;
+- `EnvironmentFailures` and `StandingAccepted`;
+- `AcceptedFailure` with its kinds and words.
+
+The engine keeps aliases for `AcceptedFailure` and its kinds, and its `StandingAccepted` method reads the store and calls branchstate. The engine's tests read the rule through test-side wrappers that word the blocks as submit does. Every test passes unchanged, which shows the words didn't move.
+
+`submit --json` gains `blocks`, each with its kind, its port, and its words. Still to come: the remaining sites' conditions (a merge commit, a missing title) are simple reads of facts the engine gathers as it plans. They move to an `Evaluate(submit)` over gathered facts with step 5, which settles one gate for ship and serve.

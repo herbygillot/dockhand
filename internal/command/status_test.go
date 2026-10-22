@@ -562,3 +562,14 @@ func (c *cancelOn) Write(p []byte) (int, error) {
 	}
 	return n, err
 }
+
+// submit --json gives each block's kind beside its words, where blocking
+// listed sentences alone.
+func TestSubmitJSONGivesEachBlocksKind(t *testing.T) {
+	t.Parallel()
+	plan := engine.SubmitPlan{Blocks: []branchstate.Block{{Kind: branchstate.BlockNoTitle}, {Kind: branchstate.BlockFailed, Port: "jq", Run: "check-2"}}}
+	require.Equal(t, []blockJSON{
+		{Kind: "no-title", Words: "the pull request needs a title, since the branch changes several ports: give one with --title"},
+		{Kind: "failed", Port: "jq", Words: "jq did not pass in check-2; fix it, or share it as a draft (--draft); dockhand check --baseline sees whether master fails it the same way"},
+	}, submitView(plan).Blocks)
+}

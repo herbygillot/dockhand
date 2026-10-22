@@ -351,6 +351,10 @@ type submitJSON struct {
 	// ahead. A Git-fetched port whose tag moved, release-moved or
 	// source-moved, was said only in text (batch 32).
 	Concerns []concernJSON `json:"concerns"`
+	// Blocks are what stops the submission, each of its kind, with the
+	// port it's about where it's about one, and its words, which blocking
+	// lists alone.
+	Blocks []blockJSON `json:"blocks,omitempty"`
 	// Accepted are the failed ports the submission accepts, each with the
 	// kind of reason, and the baselines that fail it alike where that's
 	// the reason (R3-30).
@@ -421,6 +425,9 @@ func submitView(plan engine.SubmitPlan) submitJSON {
 		view.UnfoundBuilds = append(view.UnfoundBuilds, unfoundBuildJSON{Build: build.Build, Commits: build.Commits, Commit: build.Source.Commit, Release: build.Source.Release})
 	}
 	view.Concerns = concernsView(plan.Concerns())
+	for _, block := range plan.Blocks {
+		view.Blocks = append(view.Blocks, blockJSON{Kind: string(block.Kind), Port: block.Port, Words: block.Words(engine.Vocabulary{})})
+	}
 	for _, port := range slices.Sorted(maps.Keys(plan.Accepted)) {
 		why := plan.Accepted[port]
 		accepted := acceptedJSON{Port: port, Kind: string(why.Kind), Baselines: why.Baselines, Words: why.Words()}
@@ -430,6 +437,12 @@ func submitView(plan engine.SubmitPlan) submitJSON {
 		view.Accepted = append(view.Accepted, accepted)
 	}
 	return view
+}
+
+type blockJSON struct {
+	Kind  string `json:"kind"`
+	Port  string `json:"port,omitempty"`
+	Words string `json:"words"`
 }
 
 type acceptedJSON struct {

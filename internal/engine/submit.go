@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -20,7 +21,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -139,6 +139,9 @@ type SubmitPlan struct {
 	// its baseline failing alike, the cause not established, or blocked
 	// only by accepted failures.
 	Accepted map[string]AcceptedFailure
+	// Blocks are what stops the submission, each of its kind
+	// (branchstate.Block), whose words Blocking says.
+	Blocks []branchstate.Block
 	// Standing are the standing decisions --standing asks for, which the
 	// submission records; StandingAccepted the failed ports a standing
 	// decision accepts, recorded or asked for.
@@ -362,13 +365,13 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		}
 		if _, text, err := worktree.File(ctx, plan.Tree, path); err == nil {
 			if marked := portcreate.Marked(text); len(marked) > 0 {
-				plan.Blocking = append(plan.Blocking, fmt.Sprintf("%s still marks %s unconfirmed (%s): confirm each, remove its %q line, and tidy", path, prose.Plural(len(marked), "guess"), strings.Join(marked, ", "), portcreate.Unconfirmed))
+				plan.block(branchstate.Block{Kind: branchstate.BlockUnconfirmed, Path: path, Marks: marked, Mark: portcreate.Unconfirmed})
 			}
 		}
 	}
 	for _, commit := range plan.Commits {
 		if commit.Merge() {
-			plan.Blocking = append(plan.Blocking, fmt.Sprintf("commit %s is a merge; MacPorts asks for a rebase instead", model.ObjectID(commit.ID).Short()))
+			plan.block(branchstate.Block{Kind: branchstate.BlockMerge, Commit: model.ObjectID(commit.ID)})
 		}
 	}
 
@@ -483,7 +486,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 		}
 		if len(pending) > 0 {
 			run := pending[0]
-			plan.Blocking = append(plan.Blocking, fmt.Sprintf("%s checks this commit’s files and is %s. Run dockhand wait %s, then submit; or use --draft to submit now", run.Name(), run.State, run.Name()))
+			plan.block(branchstate.Block{Kind: branchstate.BlockCheckPending, Run: run.Name(), State: run.State})
 			return nil
 		}
 		// A check passed of other files, as before a rebase, is reused
@@ -491,10 +494,10 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 		// is said so, since a rebase's refusal read as a whole build again
 		// (the rc6 full stage, B5).
 		if len(passed) > 0 {
-			plan.Blocking = append(plan.Blocking, fmt.Sprintf("no completed check covers this commit’s files. Run dockhand check; it reuses eligible builds from %s and builds only what changed. Alternatively, use --draft or --no-check; --no-check is disclosed in the pull request", passed[0].Name()))
+			plan.block(branchstate.Block{Kind: branchstate.BlockCheckOfOtherFiles, Run: passed[0].Name()})
 			return nil
 		}
-		plan.Blocking = append(plan.Blocking, "no check has finished for this commit's files; run dockhand check first, submit a draft with --draft, or submit without a check with --no-check, which the pull request states")
+		plan.block(branchstate.Block{Kind: branchstate.BlockNoCheck})
 		return nil
 	}
 	// ship runs the check these files still need, where an
@@ -527,7 +530,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 	if request.Standing && len(request.Accept) == 0 {
 		return errors.New("--standing takes the ports --accept names: dockhand submit --accept <port> --standing")
 	}
-	if err := acceptanceProblem(evidence, request.Accept, plan.AtBase, request.Standing); err != nil {
+	if err := branchstate.AcceptanceProblem(evidence, request.Accept, plan.AtBase, request.Standing); err != nil {
 		return err
 	}
 	// The standing decisions asked for count here, as those recorded do,
@@ -535,7 +538,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 	if request.Standing {
 		for _, port := range request.Accept {
 			i := slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == port && t.Failing() })
-			failures, _ := environmentFailures(evidence, evidence.Targets[i])
+			failures, _ := branchstate.EnvironmentFailures(evidence, evidence.Targets[i])
 			for _, failure := range failures {
 				if !slices.ContainsFunc(plan.Standing, func(d model.Decision) bool {
 					return d.Subject == failure.Decision.Subject && d.Evidence == failure.Decision.Evidence
@@ -546,10 +549,12 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 		}
 		standing = append(slices.Clone(standing), plan.Standing...)
 	}
-	plan.StandingAccepted = standingAccepted(evidence, standing)
-	plan.Accepted = acceptedReasons(evidence, slices.Concat(accepted, request.Accept), plan.AtBase, plan.StandingAccepted)
+	plan.StandingAccepted = branchstate.StandingAccepted(evidence, standing)
+	plan.Accepted = branchstate.AcceptedReasons(evidence, slices.Concat(accepted, request.Accept), plan.AtBase, plan.StandingAccepted)
 	if !request.Draft {
-		plan.Blocking = append(plan.Blocking, publicationProblems(evidence, slices.Concat(accepted, request.Accept), plan.AtBase, plan.StandingAccepted)...)
+		for _, block := range branchstate.PublicationBlocks(evidence, slices.Concat(accepted, request.Accept), plan.AtBase, plan.StandingAccepted) {
+			plan.block(block)
+		}
 	}
 	return nil
 }
@@ -636,8 +641,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	}
 	if last := plan.Branch.PullRequest; last != nil && last.Pushed != "" && pr.RemoteHead != last.Pushed && string(pr.RemoteHead) != plan.Commit && !builtOn {
 		plan.OthersPushed = pr.RemoteHead
-		plan.Blocking = append(plan.Blocking, fmt.Sprintf("someone else pushed to #%d: it is at %s, and dockhand last pushed %s. Fetch it (git fetch %s %s) and compare; a commit built on it, as one made after git reset --hard %s, submits, and nothing will be pushed over it",
-			pr.Ref.Number, pr.RemoteHead.Short(), last.Pushed.Short(), remoteName, plan.RemoteBranch(), pr.RemoteHead.Short()))
+		plan.block(branchstate.Block{Kind: branchstate.BlockOthersPushed, Pushed: &branchstate.Push{Number: pr.Ref.Number, At: pr.RemoteHead, Last: last.Pushed, Remote: remoteName, Branch: plan.RemoteBranch()}})
 	}
 	return nil
 }
@@ -678,7 +682,7 @@ func (e *Engine) theirRemote(ctx context.Context, remotes []git.Remote, reposito
 // to MacPorts' repository. Otherwise the plan says what stands in the way.
 func (e *Engine) mayPushTheirs(ctx context.Context, plan *SubmitPlan, login string, pr forge.PullRequest) error {
 	if !pr.MaintainerCanModify {
-		plan.Blocking = append(plan.Blocking, fmt.Sprintf("@%s's #%d doesn't let maintainers push to %s; suggest your changes in a review (dockhand review %d), or ask them to allow edits", pr.Author, pr.Ref.Number, plan.Head(), pr.Ref.Number))
+		plan.block(branchstate.Block{Kind: branchstate.BlockMaintainerEdits, Pushed: &branchstate.Push{Number: pr.Ref.Number, Author: pr.Author, Head: plan.Head()}})
 		return nil
 	}
 	permission, err := e.forge().Permission(ctx, e.PullRequestRepository(), login)
@@ -686,7 +690,7 @@ func (e *Engine) mayPushTheirs(ctx context.Context, plan *SubmitPlan, login stri
 		return fmt.Errorf("reading your access to %s: %w", e.PullRequestRepository(), err)
 	}
 	if !slices.Contains([]string{"admin", "maintain", "write"}, permission) {
-		plan.Blocking = append(plan.Blocking, fmt.Sprintf("pushing to @%s's %s needs write access to %s, and you have %s; suggest your changes in a review (dockhand review %d)", pr.Author, plan.Head(), e.PullRequestRepository(), permission, pr.Ref.Number))
+		plan.block(branchstate.Block{Kind: branchstate.BlockNoWriteAccess, Pushed: &branchstate.Push{Number: pr.Ref.Number, Author: pr.Author, Head: plan.Head(), Repository: e.PullRequestRepository(), Permission: permission}})
 	}
 	return nil
 }
@@ -715,7 +719,7 @@ func (e *Engine) title(plan *SubmitPlan) {
 		plan.Title = updateWithRebuilds(plan.Commits)
 	}
 	if plan.Title == "" {
-		plan.Blocking = append(plan.Blocking, "the pull request needs a title, since the branch changes several ports: give one with --title")
+		plan.block(branchstate.Block{Kind: branchstate.BlockNoTitle})
 	}
 }
 
@@ -1195,4 +1199,10 @@ func (e *Engine) coversAsked(ctx context.Context, branch model.Branch, evidence 
 	}
 	_, covered, err := e.Covered(ctx, branch.ID, model.ObjectID(revision.Source.Tree), want)
 	return covered, err
+}
+
+// block records what stops the submission, of its kind and in its words.
+func (p *SubmitPlan) block(b branchstate.Block) {
+	p.Blocks = append(p.Blocks, b)
+	p.Blocking = append(p.Blocking, b.Words(Vocabulary{}))
 }

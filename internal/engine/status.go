@@ -244,6 +244,7 @@ func (Vocabulary) Revision(revision model.Revision) string { return Describe(rev
 func (Vocabulary) Ago(at time.Time) string                 { return Ago(at) }
 func (Vocabulary) Remade(target TargetEvidence) string     { return RemadeWords(target) }
 func (Vocabulary) Holds(concerns []model.Concern) []string { return HoldLines(concerns) }
+func (Vocabulary) Unmet(unmet model.Unmet) string          { return UnmetWords(unmet) }
 
 // Checking is the branch's one check queued or running (branchstate).
 func (s BranchStatus) Checking() *model.Run { return s.Check().Checking() }

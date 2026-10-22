@@ -89,27 +89,6 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted Accepted
 	return words
 }
 
-// Words are why a failure was accepted, as a cell and the preview say it:
-// "fails at the base too (check-394)", "cause not established", or
-// "blocked only by accepted failures"; empty where it wasn't accepted.
-func (a AcceptedFailure) Words() string {
-	switch a.Kind {
-	case AcceptedAtBase:
-		return "fails at the base too (" + strings.Join(a.Baselines, ", ") + ")"
-	case AcceptedUnestablished:
-		return "cause not established"
-	case AcceptedBlocked:
-		return "blocked only by accepted failures"
-	case AcceptedStanding:
-		var failing []string
-		for _, dependency := range a.Dependencies {
-			failing = append(failing, dependency.Name+" "+dependency.Version)
-		}
-		return "standing: " + prose.And(failing) + " fails on this image"
-	}
-	return ""
-}
-
 // refWords names a Git source's ref as a Portfile gives it: "git.branch
 // v1.2", or its repository's default branch where it names none.
 func refWords(ref string) string {

@@ -16,6 +16,7 @@ func (words) Environment(e model.Environment) string { return e.Provider }
 func (words) Revision(model.Revision) string         { return "snapshot 1" }
 func (words) Ago(time.Time) string                   { return "1 hour ago" }
 func (words) Remade(evidence.TargetEvidence) string  { return "the image changed" }
+func (words) Unmet(u model.Unmet) string             { return "needs " + string(u.Needs) }
 func (words) Holds(c []model.Concern) []string {
 	var lines []string
 	for _, concern := range c {
