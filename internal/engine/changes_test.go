@@ -309,3 +309,27 @@ func TestARaisedFloorHolds(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{darwinFloorRule, deploymentTargetRule}, rules)
 }
+
+// A plan of a new commit's files, whose change record isn't made yet,
+// names the subports its record finds unchanged as siblings, the record
+// made to say so: check --plan on terraform's new commit said "Changed 19
+// ports" still (field testing's terraform replay, rerun on 1f445dc7).
+func TestAPlanOfNewFilesNamesItsSiblings(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	f.options.Tclsh = testsupport.MacPortsTclsh(t)
+	write(t, f.upstream, map[string]string{"devel/zdemo/Portfile": zdemo("0", "2.0")})
+	testsupport.Git(t, f.upstream, "add", ".")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "zdemo: new port")
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "devel"})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"devel/zdemo/Portfile": zdemo("0", "2.1")})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	target := func(name string) model.PlanTarget {
+		return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Directory: "devel/zdemo", Kind: model.Substantive, Role: model.Changed}
+	}
+	plan := model.Plan{Revision: capture.Revision.ID, Targets: []model.PlanTarget{target("zdemo"), target("zdemo-devel"), target("zdemo-legacy")}}
+	require.Equal(t, map[model.TargetID]bool{"zdemo": true, "zdemo-legacy": true}, e.PlanSiblings(t.Context(), plan))
+}

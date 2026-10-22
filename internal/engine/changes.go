@@ -205,12 +205,15 @@ func changeRecord(record model.ChangeRecord, sides [2]*macports.Snapshot, texts 
 // them, as terraform-1.16's 18 siblings (field testing's terraform replay,
 // 2026-10-22). None for a directory no record narrows, which keeps its
 // text scope (changedSubports), or where the plan's revision can't be read.
+// The records are made where they aren't yet, as a plan of a new commit's
+// files has none: reading only what was recorded, check --plan on one
+// said "Changed 19 ports" still (the replay's rerun on 1f445dc7).
 func (e *Engine) PlanSiblings(ctx context.Context, plan model.Plan) map[model.TargetID]bool {
 	revision, err := e.Revision(ctx, plan.Revision)
 	if err != nil || revision.Branch == "" {
 		return nil
 	}
-	records, err := e.revisionChanges(ctx, revision.Branch, revision.Source.Base, revision.Source.Tree, false)
+	records, err := e.revisionChanges(ctx, revision.Branch, revision.Source.Base, revision.Source.Tree, true)
 	if err != nil {
 		return nil
 	}

@@ -56,3 +56,26 @@ again, though none runs a line that changed: MacPorts runs a `subport X
 The replay field testing offered is what shows it done: master's
 terraform checked, then the branch, building terraform-1.16 alone and
 reading its siblings as reused.
+
+## The replay's rerun on 1f445dc7
+
+Field testing replayed it on a DB copy: commit e083c13 changed only
+`revision 0→1` inside `subport terraform-1.16 {`, checked as check-553
+with `--build minmax`. 17 siblings reused check-549, and the exclusions
+were 3 lines where they had been 25. It found two things.
+
+- **The Siblings line didn't show** on `check --plan` of e083c13.
+  `PlanSiblings` read only the recorded change records, and a new
+  commit's files have none until a check or a submission makes them. It
+  makes them now (`revisionChanges` collecting, as submit's does).
+  `TestAPlanOfNewFilesNamesItsSiblings` plans a fresh capture, and it
+  fails with the records only read.
+- **terraform_select built on both releases.** That's the reuse rule
+  working, not this change missing it. terraform-1.16, which built, has
+  `depends_run port:terraform_select`. A reused target that a building
+  one needs is installed from its kept archive, or else built
+  (reuse.Choose, `Needs` and `available`). check-549 kept no archive of
+  it, so it built beside terraform-1.16: the log's "building
+  terraform_select (1 of 2)". Its block is `subport terraform_select {}`,
+  and BlockChanges reads the edit as terraform-1.16's alone. A check
+  whose earlier build kept select's archive would install it instead.
