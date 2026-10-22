@@ -865,32 +865,6 @@ func TestAnUpdateSaysANewMajorVersion(t *testing.T) {
 	require.False(t, describe(model.Branch{}, "semgrep", result("1.178.0", "1.179.0")).CrossesMajor)
 }
 
-// renamedRepository is a GitHub repository answering by another name, as
-// a renamed one does through GitHub's redirect.
-type renamedRepository struct {
-	forge.Repository
-	name, now string
-}
-
-func (r renamedRepository) Name() string { return r.name }
-func (r renamedRepository) Describe(context.Context) (forge.Description, error) {
-	return forge.Description{Name: r.now}, nil
-}
-
-// renamingForge answers each repository by the name it has now.
-type renamingForge struct {
-	*forgetest.GitHub
-	now map[string]string
-}
-
-func (f renamingForge) Repository(_, name string) (forge.Repository, error) {
-	now := f.now[name]
-	if now == "" {
-		now = name
-	}
-	return renamedRepository{name: name, now: now}, nil
-}
-
 // An update's release from a repository GitHub now names otherwise says
 // so: returntocorp/semgrep answered as semgrep/semgrep by a redirect
 // discovery followed unsaid (field testing, 2026-10-02).
@@ -898,7 +872,9 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
-	e.Forge = renamingForge{GitHub: forgetest.New("", ""), now: map[string]string{"returntocorp/semgrep": "semgrep/semgrep"}}
+	renaming := forgetest.New("", "")
+	renaming.Renamed = map[string]string{"returntocorp/semgrep": "semgrep/semgrep"}
+	e.Forge = renaming
 	require.Equal(t, "semgrep/semgrep", e.renamed(t.Context(), model.Release{Forge: forge.GitHub, Repository: "returntocorp/semgrep"}))
 	require.Empty(t, e.renamed(t.Context(), model.Release{Forge: forge.GitHub, Repository: "jqlang/jq"}))
 	require.Empty(t, e.renamed(t.Context(), model.Release{Forge: forge.GitLab, Repository: "returntocorp/semgrep"}))

@@ -32,3 +32,12 @@ fills each field; MacPorts' own reader is made by the engine on first
 use, as before, since it reads the tree; compose fills what a test gives.
 The forge's `renamed()` assertion is next, then `throughUnchanged`'s move
 to `planning`.
+
+## The forge's description, asked
+
+Rename detection found by type assertion whether a forge's repository
+could describe itself (`forge.DescribedRepository`), and with a forge
+whose couldn't, found no rename, unsaid. `engine.Forge` now has
+`Describe(ctx, instance, name)`, which the GitHub client answers through
+its repository and forgetest by `Renamed`; `renamed()` and create's
+project inspection ask it, and `DescribedRepository` is gone.

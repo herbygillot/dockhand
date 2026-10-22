@@ -32,6 +32,11 @@ type Forge interface {
 	// Repository binds a repository for reading, such as dockhand's own,
 	// asked whether it has the builds a branch's commits name.
 	Repository(instance, name string) (forge.Repository, error)
+	// Describe reads a repository's description, under the name it
+	// answers by now, which a renamed one's differs from the name asked:
+	// what an update asks of every release's repository, where it found
+	// by type assertion whether a repository could say (C3).
+	Describe(ctx context.Context, instance, name string) (forge.Description, error)
 }
 
 // GitHubCLI is the GitHub CLI, which acts on GitHub as its own app. An

@@ -109,8 +109,3 @@ type Description struct {
 	Homepage    string
 	License     string
 }
-
-// DescribedRepository reports a repository's description.
-type DescribedRepository interface {
-	Describe(context.Context) (Description, error)
-}

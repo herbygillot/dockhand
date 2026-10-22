@@ -31,6 +31,9 @@ type GitHub struct {
 	// Upstream and Fork are the local repositories MacPorts' and the
 	// person's fork stand for.
 	Upstream, Fork string
+	// Renamed are the repositories that answer by another name now, by
+	// the name asked (Describe).
+	Renamed map[string]string
 	// ForkParent is the fork's parent as GitHub reports it; MacPorts'
 	// where empty. Another names a fork of something else.
 	ForkParent string
@@ -116,6 +119,15 @@ func (d *Dockhand) HasCommit(_ context.Context, commit string) (bool, error) {
 		return false, d.Err
 	}
 	return slices.ContainsFunc(d.Commits, func(c string) bool { return strings.HasPrefix(c, commit) }), nil
+}
+
+// Describe says each repository answers by the name it's asked by, but
+// those Renamed names otherwise.
+func (g *GitHub) Describe(_ context.Context, _, name string) (forge.Description, error) {
+	if now, ok := g.Renamed[name]; ok {
+		return forge.Description{Name: now}, nil
+	}
+	return forge.Description{Name: name}, nil
 }
 
 func (g *GitHub) Repository(_, name string) (forge.Repository, error) {

@@ -503,16 +503,14 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 	}
 	owner, project, _ := strings.Cut(repository.Name(), "/")
 	found := Project{Owner: owner, Name: project, Files: map[string][]byte{}}
-	if described, ok := repository.(forge.DescribedRepository); ok {
-		description, err := described.Describe(ctx)
-		if err != nil {
-			return Project{}, err
-		}
-		if description.Name != "" && !strings.EqualFold(description.Name, repository.Name()) {
-			return Project{}, fmt.Errorf("github: %s answered for %s", repository.Name(), description.Name)
-		}
-		found.Description, found.Homepage, found.License = description.Description, description.Homepage, description.License
+	description, err := g.client.Describe(ctx, "https://github.com", name)
+	if err != nil {
+		return Project{}, err
 	}
+	if description.Name != "" && !strings.EqualFold(description.Name, repository.Name()) {
+		return Project{}, fmt.Errorf("github: %s answered for %s", repository.Name(), description.Name)
+	}
+	found.Description, found.Homepage, found.License = description.Description, description.Homepage, description.License
 	releases, ok := repository.(forge.ReleaseRepository)
 	if !ok {
 		return Project{}, errors.New("create reads releases from GitHub, and this client can't")

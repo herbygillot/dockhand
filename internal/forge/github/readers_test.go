@@ -51,7 +51,7 @@ func TestGitHubsCommitTimeAndDescription(t *testing.T) {
 	_, err = commits.CommitTime(t.Context(), "main")
 	require.ErrorContains(t, err, "invalid commit")
 
-	described, err := repository.(forge.DescribedRepository).Describe(t.Context())
+	described, err := client.Describe(t.Context(), "https://github.com", "owner/project")
 	require.NoError(t, err)
 	require.Equal(t, forge.Description{Name: "owner/project-renamed", Description: "a project", Homepage: "https://project.example", License: "MIT"}, described)
 }

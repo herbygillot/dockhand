@@ -1422,15 +1422,7 @@ func (e *Engine) renamed(ctx context.Context, release model.Release) string {
 	if release.Forge != forge.GitHub || release.Repository == "" {
 		return ""
 	}
-	repository, err := e.forge().Repository("https://github.com", release.Repository)
-	if err != nil {
-		return ""
-	}
-	described, ok := repository.(forge.DescribedRepository)
-	if !ok {
-		return ""
-	}
-	description, err := described.Describe(ctx)
+	description, err := e.forge().Describe(ctx, "https://github.com", release.Repository)
 	if err != nil || description.Name == "" || strings.EqualFold(description.Name, release.Repository) {
 		return ""
 	}
