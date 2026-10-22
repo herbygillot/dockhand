@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -80,7 +81,7 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 	args := line.Args
 	var shared settings.Settings
 	shared.Deps, shared.Host, shared.Env, shared.Dir, shared.Command = dependencies, mac, line.Env, line.Dir, Run
-	streams = term.Begin(streams, args)
+	streams = term.Begin(streams.WithDisplay(display(line.Env)), args)
 	shared.Streams = streams
 	root := newRoot(&shared, streams)
 	// Cobra reads os.Args for nil arguments; Run's are only those given,
@@ -278,4 +279,23 @@ func unknownCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 	return errors.New(message)
+}
+
+// display is how the command line's environment asks its text be shown:
+// NO_COLOR, set and not empty, leaves the marks uncoloured, and COLUMNS is
+// the width text wraps at off a terminal (term.Display).
+func display(env []string) term.Display {
+	var d term.Display
+	for _, entry := range env {
+		name, value, _ := strings.Cut(entry, "=")
+		switch name {
+		case "NO_COLOR":
+			d.NoColour = value != ""
+		case "COLUMNS":
+			if columns, err := strconv.Atoi(value); err == nil && columns > 0 {
+				d.Columns = columns
+			}
+		}
+	}
+	return d
 }

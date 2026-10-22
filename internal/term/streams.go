@@ -24,6 +24,8 @@ type Streams struct {
 	// status is standard error's one redrawn line, which progress reports
 	// print around.
 	status *StatusLine
+	// display is how the text is shown (WithDisplay).
+	display Display
 }
 
 // AsTerminal are the streams as a terminal's, where a test stands one in:
@@ -41,7 +43,11 @@ func Begin(streams Streams, args []string) Streams {
 		streams.lines = bufio.NewReader(streams.In)
 	}
 	streams.mode = &outputMode{json: asksForJSON(args), stdout: streams.Out}
-	streams.Out = &switchWriter{w: streams.Out}
+	out := streams.Out
+	if streams.colourMarks() {
+		out = &markWriter{w: out}
+	}
+	streams.Out = &switchWriter{w: out}
 	if streams.status == nil {
 		streams.status = &StatusLine{w: streams.Err}
 	}
@@ -87,14 +93,21 @@ func (s Streams) onTerminal(stream any) bool {
 	if w, ok := stream.(*switchWriter); ok {
 		stream = w.w
 	}
+	if w, ok := stream.(*markWriter); ok {
+		stream = w.w
+	}
 	file, ok := stream.(*os.File)
 	return ok && isTerminal(file.Fd())
 }
 
-// Width is the output terminal's columns, for text to wrap at, else 80.
+// Width is the output terminal's columns, for text to wrap at; off a
+// terminal, COLUMNS where it's set (Display), else 100.
 func (s Streams) Width() int {
 	stream := s.Out
 	if w, ok := stream.(*switchWriter); ok {
+		stream = w.w
+	}
+	if w, ok := stream.(*markWriter); ok {
 		stream = w.w
 	}
 	if file, ok := stream.(*os.File); ok {
@@ -102,7 +115,10 @@ func (s Streams) Width() int {
 			return columns
 		}
 	}
-	return 80
+	if s.display.Columns > 0 {
+		return s.display.Columns
+	}
+	return defaultColumns
 }
 
 // Unattended are the streams of a command that asks nothing, whatever its

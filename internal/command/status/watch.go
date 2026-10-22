@@ -30,6 +30,9 @@ func statusWatch(ctx context.Context, e *engine.Engine, streams term.Streams, pl
 		return err
 	}
 	defer end()
+	if plain {
+		streams = streams.Plain()
+	}
 	if plain || !streams.Terminal() || !streams.OutTerminal() {
 		err = watchPlain(ctx, e, streams, timings, places)
 	} else {

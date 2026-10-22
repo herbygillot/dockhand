@@ -91,3 +91,23 @@ mark's column (`view.Unmarked`).
   tidy's note on older builds. These are now `✓`, `!`, or unmarked by what
   they say.
 - Acceptance row B9 reads setup's "! not set up" line.
+
+### Colour, and the width
+
+- **Colour on the marks alone** (the person's "Marks only"): on a real
+  terminal, standard output's `✗` is red, its `!` yellow where it's a
+  mark (first on its line, or after a table cell's two spaces, before a
+  space), and its `✓` green; nothing else is coloured (`term.markWriter`,
+  which Begin wraps the output in). `NO_COLOR`, set and not empty, turns
+  it off, and so do `--json`, a pipe, a test's stand-in terminal, and
+  status --watch's `--plain` (`Streams.Plain`).
+- **The width off a terminal** is `COLUMNS` where it's set, else 100,
+  where it was 80. Nothing is cut, since field testing reads dockhand
+  through a pipe. The root reads `NO_COLOR` and `COLUMNS` from its
+  invocation's environment (`term.Display`), since nothing below compose
+  reads the environment.
+- **One prose writer**, `Streams.Hanging(first, text)`, wraps at the
+  width with a hanging indent, as status's attention list does. Item 4's
+  grammar takes it, with setup's rows. Cutting a table's widest cell with
+  `…` on a terminal lands there too, with the tables it reworks.
+- Three tests that read status's wrap at 80 read it at 100.

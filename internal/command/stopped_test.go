@@ -44,7 +44,7 @@ func TestAKilledCheckReadsAsStopped(t *testing.T) {
 	require.Contains(t, out, "Next: dockhand wait check-1\n")
 	out, _, err = cmdtest.Dockhand(t, "status", "--all")
 	require.NoError(t, err)
-	require.Contains(t, out, "check-1 stopped: the process running it ended; dockhand wait\n               check-1 resumes it, and dockhand cancel check-1 ends it\n")
+	require.Contains(t, out, "check-1 stopped: the process running it ended; dockhand wait check-1 resumes it, and\n               dockhand cancel check-1 ends it\n")
 	require.Contains(t, out, "dockhand wait check-1")
 	require.Contains(t, out, "stopped (check-1)")
 	require.Contains(t, out, "serve: not running · queue: 1 run, 1 stopped\n")

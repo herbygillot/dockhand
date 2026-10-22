@@ -538,7 +538,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 		"Error: Failed to fetch jq-1.8.1.tar.gz: The requested URL returned error: 403\n"}
 	out, _, err = cmdtest.Dockhand(t, "status", "--attention", "--refresh")
 	require.Equal(t, 3, term.ExitCode(err))
-	require.Contains(t, out, "  ✗ jq-update  #34901 MacPorts CI failed fetching jq-1.8.1.tar.gz\n               (mirror.sjtu.edu.cn answered 403) on macOS 26 (just now)\n               dockhand retry --ci --branch jq-update\n")
+	require.Contains(t, out, "  ✗ jq-update  #34901 MacPorts CI failed fetching jq-1.8.1.tar.gz (mirror.sjtu.edu.cn answered 403)\n               on macOS 26 (just now)\n               dockhand retry --ci --branch jq-update\n")
 	out, _, err = cmdtest.Dockhand(t, "retry", "--ci", "--branch", "jq-update")
 	require.NoError(t, err)
 	require.Equal(t, "Asked GitHub to run #34901's failed CI again (1 workflow run); dockhand status --refresh reads how it went.\n", out)
@@ -1019,7 +1019,7 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	testsupport.Git(t, w.Clone, "branch", "-D", "dockhand/jq-update")
 	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
-	require.Contains(t, out, "its Git branch is gone, and its pull request, #34901, may have\n               merged\n")
+	require.Contains(t, out, "its Git branch is gone, and its pull request, #34901, may have merged\n")
 	require.Contains(t, out, "dockhand status --refresh reads it")
 
 	g.PRs[34901].State = forge.PullRequestMerged
