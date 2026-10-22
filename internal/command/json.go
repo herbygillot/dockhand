@@ -2,7 +2,6 @@ package command
 
 import (
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -599,7 +598,7 @@ func diffView(diff engine.BranchDiff, patch bool) diffJSON {
 	view := diffJSON{Branch: diff.Status.Branch.ShortName(), Base: string(diff.Status.Branch.Base), Edited: nonNil(diff.Status.Edited), Other: nonNil(diff.Other), Files: nonNil(diff.Files)}
 	view.Ports = []portChangeJSON{}
 	for _, port := range diff.Ports {
-		view.Ports = append(view.Ports, portChangeJSON{Directory: port.Directory, Change: strings.ReplaceAll(portChangeWords(port), " ", "_")})
+		view.Ports = append(view.Ports, portChangeJSON{Directory: port.Directory, Change: string(port.Change())})
 	}
 	if patch {
 		view.Patch = string(diff.Patch)

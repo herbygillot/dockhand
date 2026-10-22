@@ -83,7 +83,7 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
-			err = e.Serve(ctx, session, s.host.serveOptions(e, s.file, streams.Out, drain, cmp.Or(shipTo, s.file.Serve.Stage()), s.file.Serve.Notifies() && !noNotify))
+			err = e.Serve(ctx, session, serveOptions(s.host, e, s.file, streams.Out, drain, cmp.Or(shipTo, s.file.Serve.Stage()), s.file.Serve.Notifies() && !noNotify))
 			// Being stopped is how serve ends, not a failure.
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 				fmt.Fprintln(streams.Out, "serve: stopped")
@@ -105,7 +105,7 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 // its lines going to out and its notices to macOS notifications when
 // notify, serve.notify less --no-notify, allows; shipTo is serve.ship_to,
 // or --ship-to.
-func (h *host) serveOptions(e *engine.Engine, file config.File, out io.Writer, drain bool, shipTo string, notify bool) engine.ServeOptions {
+func serveOptions(h *host, e *engine.Engine, file config.File, out io.Writer, drain bool, shipTo string, notify bool) engine.ServeOptions {
 	capacity := map[string]int{}
 	for name := range e.Providers {
 		capacity[name] = file.Capacity(name)

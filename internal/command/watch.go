@@ -18,8 +18,10 @@ import (
 )
 
 // statusWatch is status --watch: status kept current as serve works, a
-// view redrawn on a terminal, else events as lines; it only observes.
-func statusWatch(ctx context.Context, e *engine.Engine, streams term.Streams, plain bool, timings timings, places config.Places) error {
+// view redrawn on a terminal, else events as lines; it only observes. A
+// command typed at its prompt runs through command, the whole command
+// line's, which the watch is given rather than reaching back to.
+func statusWatch(ctx context.Context, e *engine.Engine, streams term.Streams, plain bool, timings timings, places config.Places, command func(context.Context, []string, term.Streams) error) error {
 	// One observer for the whole watch, however often it redraws.
 	ctx, _, end, err := e.Observing(ctx)
 	if err != nil {
@@ -29,7 +31,7 @@ func statusWatch(ctx context.Context, e *engine.Engine, streams term.Streams, pl
 	if plain || !streams.Terminal() || !streams.OutTerminal() {
 		err = watchPlain(ctx, e, streams, timings, places)
 	} else {
-		err = watchLive(ctx, e, streams, timings, places)
+		err = watchLive(ctx, e, streams, timings, places, command)
 	}
 	// Being stopped is how a watch ends.
 	if ctx.Err() != nil && (err == nil || errors.Is(err, ctx.Err())) {
@@ -130,7 +132,7 @@ const (
 // watchLive redraws status on a terminal as what it shows changes, and
 // runs the commands typed at it. A check's progress isn't redrawn for: it
 // redrew every branch's status each second of every check (SQL-O6).
-func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timings timings, places config.Places) error {
+func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timings timings, places config.Places, command func(context.Context, []string, term.Streams) error) error {
 	fmt.Fprint(streams.Out, enterView)
 	defer fmt.Fprint(streams.Out, leaveView)
 	cursor := &journalCursor{e: e}
@@ -196,7 +198,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timi
 				draw()
 			default:
 				fmt.Fprintf(streams.Out, "%s$ dockhand %s\n", clearView, strings.Join(args, " "))
-				if err := Run(ctx, args, streams); err != nil {
+				if err := command(ctx, args, streams); err != nil {
 					fmt.Fprintf(streams.Err, "dockhand: %v\n", err)
 				}
 				fmt.Fprint(streams.Out, "\nPress Enter to return to status. ")

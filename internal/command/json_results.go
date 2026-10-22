@@ -113,7 +113,7 @@ type upstreamJSON struct {
 func upstreamView(comparison model.UpstreamComparison) upstreamJSON {
 	view := upstreamJSON{Changes: []upstreamChangeJSON{}, Problem: comparison.Problem, Held: comparison.Held(), Coverage: comparison.Coverage}
 	for _, change := range comparison.Changes {
-		view.Changes = append(view.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: underUpstream(change).Message, Hold: change.Hold,
+		view.Changes = append(view.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: engine.UnderUpstream(change).Message, Hold: change.Hold,
 			Rule: change.Rule, Subject: change.Subject, Class: string(change.Class), Source: change.Source})
 	}
 	return view

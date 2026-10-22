@@ -305,3 +305,14 @@ func TestTheUpdateIsCommittedBeforeTheRebuildsForIt(t *testing.T) {
 	require.Equal(t, "textproc/jq", plan.Groups[0].Directory, "the update first")
 	require.Equal(t, "aaa: rebuild for jq 1.8.1", plan.Groups[1].Subject())
 }
+
+// How a branch changes a port is read once: a new port, one removed, its
+// revision alone, or changed (part 4, item 2, where diff's words and
+// impact's test of them each read it).
+func TestAPortsChangeIsReadOnce(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, PortAdded, PortDiff{Added: true}.Change())
+	require.Equal(t, PortRemoved, PortDiff{Deleted: true}.Change())
+	require.Equal(t, PortRevisionOnly, PortDiff{Kind: model.RevisionOnly}.Change())
+	require.Equal(t, PortChanged, PortDiff{Kind: model.Substantive}.Change())
+}

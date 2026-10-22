@@ -198,15 +198,7 @@ func writeDiffSummary(out io.Writer, diff engine.BranchDiff) {
 }
 
 func portChangeWords(port engine.PortDiff) string {
-	switch {
-	case port.Added:
-		return "new port"
-	case port.Deleted:
-		return "removed"
-	case port.Kind == model.RevisionOnly:
-		return "revision only"
-	}
-	return "changed"
+	return strings.ReplaceAll(string(port.Change()), "_", " ")
 }
 
 func impactCommand(s *settings, streams term.Streams) *cobra.Command {
@@ -254,8 +246,8 @@ func writeImpact(out io.Writer, impact engine.Impact, in string) {
 		if also := engine.AlsoDefined(port.Directory, impact.Defined); len(also) > 0 {
 			words += " and " + strings.Join(also, ", ")
 		}
-		if kind := portChangeWords(port); kind != "changed" {
-			words += " (" + kind + ")"
+		if port.Change() != engine.PortChanged {
+			words += " (" + portChangeWords(port) + ")"
 		}
 		changed = append(changed, words)
 	}

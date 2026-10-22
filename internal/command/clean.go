@@ -192,7 +192,7 @@ func cleanAutomatically(ctx context.Context, e *engine.Engine, streams term.Stre
 // command's own work is done, when it is due (decision 36): a day since the
 // last, or free space short, which it says. The command doesn't wait for
 // it. serve cleans up itself, and clean is cleaning.
-func (s *settings) cleanupAfter(streams term.Streams, command string) {
+func cleanupAfter(s *settings, streams term.Streams, command string) {
 	e := s.opened
 	if e == nil || !s.file.Cleanup.On() || command == "clean" || command == "serve" {
 		return

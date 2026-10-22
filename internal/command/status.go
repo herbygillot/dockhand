@@ -74,7 +74,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 			}
 			defer e.Close()
 			if watch {
-				return statusWatch(cmd.Context(), e, streams, plain, s.host.timings, s.places())
+				return statusWatch(cmd.Context(), e, streams, plain, s.host.timings, s.places(), s.command)
 			}
 			if refresh {
 				// A read GitHub refused, as with a revoked login, is the

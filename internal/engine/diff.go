@@ -23,6 +23,32 @@ type PortDiff struct {
 	Added, Deleted bool
 }
 
+// PortChange is how a branch changes a port: a new port, one removed, its
+// revision alone, or changed.
+type PortChange string
+
+const (
+	PortAdded        PortChange = "new_port"
+	PortRemoved      PortChange = "removed"
+	PortRevisionOnly PortChange = "revision_only"
+	PortChanged      PortChange = "changed"
+)
+
+// Change is how the branch changes the port, the one reading of Added,
+// Deleted, and Kind, where diff's words and impact's test of them each
+// read it (part 4, item 2).
+func (p PortDiff) Change() PortChange {
+	switch {
+	case p.Added:
+		return PortAdded
+	case p.Deleted:
+		return PortRemoved
+	case p.Kind == model.RevisionOnly:
+		return PortRevisionOnly
+	}
+	return PortChanged
+}
+
 // BranchDiff is a branch's change from its base, as its files are now:
 // what check would capture and a pull request would show.
 type BranchDiff struct {

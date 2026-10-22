@@ -82,7 +82,7 @@ access. --markdown prints the text, for pasting.`,
 					}
 					return postReview(ctx, e, streams, report, body, true)
 				case "e":
-					edited, err := editText(ctx, s.editorCommand(), body)
+					edited, err := editText(ctx, editorCommand(s), body)
 					if err != nil {
 						fmt.Fprintln(streams.Err, err)
 						continue

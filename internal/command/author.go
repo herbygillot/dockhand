@@ -911,7 +911,7 @@ func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 	default:
 		fmt.Fprintln(out, "Upstream changes:")
 		for _, change := range comparison.Changes {
-			fmt.Fprintf(out, "  %s\n", upstreamWords(underUpstream(change)))
+			fmt.Fprintf(out, "  %s\n", upstreamWords(engine.UnderUpstream(change)))
 		}
 		if words := engine.CoverageWords(*comparison); words != "" {
 			fmt.Fprintf(out, "  · %s\n", words)
@@ -955,12 +955,6 @@ func writeOthers(out io.Writer, update engine.Update) {
 // holdLegend says what the marks of an upstream finding mean, beside any
 // list with one that holds (the chezmoi run).
 const holdLegend = "(! holds bump's and serve's submission for your look; · holds nothing)"
-
-// underUpstream is a change as words under an Upstream heading, which
-// already says whose it is (engine.UnderUpstream).
-func underUpstream(change model.UpstreamChange) model.UpstreamChange {
-	return engine.UnderUpstream(change)
-}
 
 func upstreamWords(change model.UpstreamChange) string {
 	if change.Hold {

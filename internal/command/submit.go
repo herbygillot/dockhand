@@ -108,7 +108,7 @@ kept.
 				case "p":
 					fmt.Fprintf(streams.Out, "\n%s\n\n%s\n", plan.Title, plan.Body)
 				case "e":
-					edited, err := editText(ctx, s.editorCommand(), plan.Body)
+					edited, err := editText(ctx, editorCommand(s), plan.Body)
 					if err != nil {
 						fmt.Fprintln(streams.Err, err)
 						continue
@@ -345,16 +345,14 @@ func comparisonLines(comparisons []engine.PortComparison) []string {
 }
 
 func pushWords(plan engine.SubmitPlan) string {
-	switch {
-	// What the blocker holds isn't said as what the push would do (the
-	// rc6 full stage, D-S1: "replaces the fork's branch at d2b5022 …").
-	case plan.OthersPushed != "":
+	switch plan.Push() {
+	case engine.PushOthersPushed:
 		return "won't push: someone else pushed " + plan.OthersPushed.Short()
-	case plan.RemoteHead.Exists && plan.RemoteHead.Object == plan.Commit:
+	case engine.PushNothingNew:
 		return "nothing new; the fork already has " + model.ObjectID(plan.Commit).Short()
-	case plan.Replaces:
+	case engine.PushReplaces:
 		return fmt.Sprintf("replaces the fork's branch at %s with %s, only if it is still there", model.ObjectID(plan.RemoteHead.Object).Short(), model.ObjectID(plan.Commit).Short())
-	case plan.RemoteHead.Exists:
+	case engine.PushAdds:
 		return fmt.Sprintf("adds to the fork's branch, up to %s", model.ObjectID(plan.Commit).Short())
 	}
 	return "creates the fork's branch at " + model.ObjectID(plan.Commit).Short()

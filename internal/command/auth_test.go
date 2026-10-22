@@ -119,7 +119,7 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	require.NotEmpty(t, report.Result.Git.Version)
 	require.Equal(t, "macports/macports-ports", report.Result.Upstream.Repository)
 	setenv(t, "GH_TOKEN", "secret-token")
-	_, said := testSettings(t).publishing(t.Context())
+	_, said := publishing(t.Context(), testSettings(t))
 	require.Equal(t, githubLoginJSON{Account: "ada", Source: "GH_TOKEN"}, said, "GH_TOKEN takes precedence, and doesn't renew")
 	setenv(t, "GH_TOKEN", "")
 	setenv(t, "PATH", emptyPath)
@@ -131,7 +131,7 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	out, _, err = dockhand(t, "setup", "github", "--logout")
 	require.NoError(t, err)
 	require.Equal(t, "No dockhand GitHub credentials are saved in the Keychain.\n", out)
-	line, said := testSettings(t).publishing(t.Context())
+	line, said := publishing(t.Context(), testSettings(t))
 	require.Equal(t, "· not set up: dockhand setup github, when you're ready to submit", line, "no login anywhere")
 	require.Equal(t, githubLoginJSON{Problem: "not set up"}, said)
 }
@@ -152,14 +152,14 @@ func TestALoginThatCantRenewIsSaid(t *testing.T) {
 	t.Parallel()
 	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	store[github.CredentialKey] = "gho_a_bare_token_from_an_earlier_dockhand"
-	line, _ := testSettings(t).publishing(t.Context())
+	line, _ := publishing(t.Context(), testSettings(t))
 	require.Equal(t, "! the saved GitHub login uses an older format; run dockhand setup github", line)
 	expired := login("secret-token", "ada")
 	expired.AccessExpiry, expired.RefreshExpiry = time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)
 	saved, err := expired.Encode()
 	require.NoError(t, err)
 	store[github.CredentialKey] = saved
-	line, said := testSettings(t).publishing(t.Context())
+	line, said := publishing(t.Context(), testSettings(t))
 	require.Equal(t, "! the GitHub login expired after six months of inactivity; run dockhand setup github", line)
 	require.Equal(t, githubLoginJSON{Problem: "the GitHub login expired after six months of inactivity"}, said)
 }

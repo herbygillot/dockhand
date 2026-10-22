@@ -173,7 +173,7 @@ true, it runs that baseline by itself.`,
 			if len(replaced) > 0 {
 				fmt.Fprintf(streams.Out, "%s replaces %s.\n", run.Name(), strings.Join(replaced, ", "))
 			}
-			err = runQueued(ctx, e, run, streams, enqueue, s)
+			err = runQueued(ctx, e, run, streams, enqueue, s.places(), s.drain)
 			// A check that passed says what moves the branch on now, as
 			// status would; one run for submit leaves that to submit.
 			if err == nil && !enqueue {
@@ -226,9 +226,9 @@ true, it runs that baseline by itself.`,
 
 // runQueued sees a queued run through (Design v3 §11): handed to serve and
 // followed when serve leads, otherwise run here; with enqueue, only
-// queued, saying whether anything will run it.
-func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, enqueue bool, s *settings) error {
-	places := s.places()
+// queued, saying whether anything will run it, by a background drain
+// that drain starts where nothing leads.
+func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, enqueue bool, places config.Places, drain func() (int, error)) error {
 	session, err := e.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return err
@@ -250,7 +250,7 @@ func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 		// Nothing leads, so a drain of its own runs it, outliving this
 		// command as automatic cleanup does: an agent's check outlived
 		// its tool's timeout, and a session's end killed one run here.
-		pid, err := s.host.startDrain(s.openedWith)
+		pid, err := drain()
 		if err != nil {
 			fmt.Fprintf(streams.Out, "%s queued, but a background drain couldn't start (%v). Start dockhand serve to run it.\n", run.Name(), err)
 			return nil
@@ -800,7 +800,7 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, br
 	if err != nil {
 		return err
 	}
-	return runQueued(ctx, e, run, streams, enqueue, s)
+	return runQueued(ctx, e, run, streams, enqueue, s.places(), s.drain)
 }
 
 // writeBaselineHeader says what a baseline builds, and what it leaves out.

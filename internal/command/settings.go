@@ -34,6 +34,9 @@ type settings struct {
 	// overAllowance is --over-allowance: a look goes on past what's left
 	// of the hour's GitHub allowance (allowLook).
 	overAllowance bool
+	// command runs a command line as the process does (Run), for one typed
+	// at status --watch's prompt.
+	command func(context.Context, []string, term.Streams) error
 	// deps are the stand-ins for what compose makes, which a test gives;
 	// the real ones where they're empty.
 	deps compose.Dependencies
@@ -123,3 +126,7 @@ func (s *settings) dependencies() compose.Dependencies {
 	}
 	return d
 }
+
+// drain starts a background drain of the queue, outliving the command,
+// with the options the command was opened with; its pid.
+func (s *settings) drain() (int, error) { return s.host.startDrain(s.openedWith) }

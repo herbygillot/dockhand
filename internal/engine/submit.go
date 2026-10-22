@@ -1224,3 +1224,34 @@ func (p *SubmitPlan) block(b branchstate.Block) {
 	p.Blocks = append(p.Blocks, b)
 	p.Blocking = append(p.Blocking, b.Words(Vocabulary{}))
 }
+
+// PushKind is what a submission's push would do to the fork's branch:
+// nothing, for someone else's push there, or nothing new; replace it, add
+// to it, or create it.
+type PushKind string
+
+const (
+	PushOthersPushed PushKind = "others-pushed"
+	PushNothingNew   PushKind = "nothing-new"
+	PushReplaces     PushKind = "replaces"
+	PushAdds         PushKind = "adds"
+	PushCreates      PushKind = "creates"
+)
+
+// Push is what the plan's push would do, the one reading of its remote
+// head, which submit's preview and its JSON word (part 4, item 2). What a
+// block holds isn't said as what the push would do (the rc6 full stage,
+// D-S1: "replaces the fork's branch at d2b5022 …").
+func (p SubmitPlan) Push() PushKind {
+	switch {
+	case p.OthersPushed != "":
+		return PushOthersPushed
+	case p.RemoteHead.Exists && p.RemoteHead.Object == p.Commit:
+		return PushNothingNew
+	case p.Replaces:
+		return PushReplaces
+	case p.RemoteHead.Exists:
+		return PushAdds
+	}
+	return PushCreates
+}

@@ -12,7 +12,7 @@ import (
 
 // githubLogin logs in to GitHub with the device flow and keeps the login
 // in the Keychain, as setup github and setup's offer do.
-func (s *settings) githubLogin(ctx context.Context, streams term.Streams, clientID string, noBrowser bool) error {
+func githubLogin(ctx context.Context, s *settings, streams term.Streams, clientID string, noBrowser bool) error {
 	login, err := github.Login(ctx, s.host.authFlow, s.host.authStore, clientID, func(authorization credential.DeviceAuthorization) error {
 		fmt.Fprintf(streams.Err, "Copy this one-time code: %s\n", authorization.UserCode)
 		if noBrowser {
@@ -38,7 +38,7 @@ func (s *settings) githubLogin(ctx context.Context, streams term.Streams, client
 
 // githubLogout removes dockhand's login from the Keychain, as setup github
 // --logout does.
-func (s *settings) githubLogout(ctx context.Context, streams term.Streams) error {
+func githubLogout(ctx context.Context, s *settings, streams term.Streams) error {
 	revoke, err := github.Logout(ctx, s.host.authStore)
 	switch {
 	case errors.Is(err, credential.ErrNotFound):

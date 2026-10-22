@@ -32,9 +32,9 @@ authorized until you revoke it on GitHub's page for it, which it names.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if logout {
-				return s.githubLogout(cmd.Context(), streams)
+				return githubLogout(cmd.Context(), s, streams)
 			}
-			return s.githubLogin(cmd.Context(), streams, clientID, noBrowser)
+			return githubLogin(cmd.Context(), s, streams, clientID, noBrowser)
 		},
 	}
 	cmd.Flags().StringVar(&clientID, "client-id", clientID, "the GitHub OAuth application's client ID (DOCKHAND_GITHUB_CLIENT_ID)")
@@ -58,7 +58,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams term
 			return written, err
 		}
 		if login {
-			if err := s.githubLogin(ctx, streams, cmp.Or(s.getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
+			if err := githubLogin(ctx, s, streams, cmp.Or(s.getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
 				fmt.Fprintf(streams.Err, "Not logged in: %v\n", err)
 			}
 		}
@@ -82,7 +82,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams term
 			fmt.Fprintf(streams.Out, "· maintainer: %s, for --mine, create, and serve's daily look\n", engine.MaintainerWords(suggestion, s.places().Tilde(configPath)))
 		}
 	}
-	if images := s.images(); images != nil {
+	if images := imagesOf(s); images != nil {
 		makeImage := false
 		if status, err := images.Status(ctx); err == nil && !status.HasHostImage() {
 			question := fmt.Sprintf("? Create a Tart image for this Mac’s macOS version? This downloads macOS and uses up to %s of disk space. [y/N] ", tart.SetupDisk)

@@ -66,7 +66,7 @@ type invocation struct {
 func run(ctx context.Context, line invocation, streams term.Streams, dependencies compose.Dependencies, host *host) error {
 	args := line.args
 	var settings settings
-	settings.deps, settings.host, settings.env, settings.dir = dependencies, host, line.env, line.dir
+	settings.deps, settings.host, settings.env, settings.dir, settings.command = dependencies, host, line.env, line.dir, Run
 	streams = term.Begin(streams, args)
 	settings.streams = streams
 	root := newRoot(&settings, streams)
@@ -78,7 +78,7 @@ func run(ctx context.Context, line invocation, streams term.Streams, dependencie
 	root.SetErr(streams.Err)
 	spend := github.StartSpend()
 	err := sayNext(root.ExecuteContext(ctx))
-	settings.cleanupAfter(streams, streams.Command())
+	cleanupAfter(&settings, streams, streams.Command())
 	// What the command spent of GitHub's hourly allowance, said with -v,
 	// in the envelope, and in the spend log.
 	requests := spend.Requests()

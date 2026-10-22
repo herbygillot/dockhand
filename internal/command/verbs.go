@@ -51,7 +51,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 			}
 			portfile := filepath.Join(branch.Worktree, filepath.FromSlash(directory), "Portfile")
 			streams.Emit(map[string]any{"branch": branchRef(branch), "started": started, "directory": directory, "portfile": portfile})
-			editor := s.editorCommand()
+			editor := editorCommand(s)
 			// --no-open only brings the port's files in, for an editor of
 			// the person's own, where EDITOR=true stood in for it (field
 			// testing's batch 13).
@@ -217,7 +217,7 @@ get past, as a mirror refusing an archive.`,
 				return err
 			}
 			fmt.Fprintf(streams.Out, "%s repeats %s: %s\n", run.Name(), previous.Name(), engine.Describe(revision))
-			return runQueued(ctx, e, run, streams, enqueue, s)
+			return runQueued(ctx, e, run, streams, enqueue, s.places(), s.drain)
 		},
 	}
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue it and return")
@@ -405,7 +405,7 @@ func commitOrDiscard(ctx context.Context, e *engine.Engine, streams term.Streams
 
 // editorCommand is the person's editor, $VISUAL or else $EDITOR, as a
 // shell command; empty where neither is set.
-func (s *settings) editorCommand() string {
+func editorCommand(s *settings) string {
 	return cmp.Or(s.getenv("VISUAL"), s.getenv("EDITOR"))
 }
 
