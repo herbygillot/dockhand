@@ -49,14 +49,43 @@ func (e *Engine) Leader(ctx context.Context, session *coord.Session) (*model.Ses
 	return session.Holder(ctx, coord.LeaderResource)
 }
 
-// SeeThrough sees a queued run to its end: driven here, where drive says
-// so, else followed as serve drives it. A serve that started meanwhile and
+// Lead is who sees a run through: the serve leading the queue, and the
+// process holding the run, which may be that serve or another's; driven
+// here where neither is.
+type Lead struct {
+	Serve, Holder *model.Session
+}
+
+// Here is a run nobody else sees through, which is driven here.
+func (l Lead) Here() bool { return l.Serve == nil && l.Holder == nil }
+
+// LeadOf is who sees the run through now.
+func (e *Engine) LeadOf(ctx context.Context, session *coord.Session, id model.RunID) (Lead, error) {
+	serve, err := e.Leader(ctx, session)
+	if err != nil {
+		return Lead{}, err
+	}
+	holder, err := session.Holder(ctx, RunResource(id))
+	return Lead{Serve: serve, Holder: holder}, err
+}
+
+// SeeThrough sees a queued run to its end: followed as the serve leading
+// the queue, or the process holding the run, drives it, else driven here,
+// decided from who leads as it starts, which before, where it's set, is
+// told first, for a command to say. A serve that started meanwhile and
 // took the run is followed instead, and returned as taker. The engine's
 // and the providers' reports are the work behind the scenes to a process
 // driving only to see its own run through (progress.Quiet). Where ctx ends
 // first, the run is as it was last read, with ctx's error.
-func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id model.RunID, drive bool) (run model.Run, taker *model.Session, err error) {
-	if drive {
+func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id model.RunID, before func(Lead)) (run model.Run, taker *model.Session, err error) {
+	lead, err := e.LeadOf(ctx, session, id)
+	if err != nil {
+		return model.Run{}, nil, err
+	}
+	if before != nil {
+		before(lead)
+	}
+	if lead.Here() {
 		run, err = e.Drive(progress.Quiet(ctx), session, id)
 		held := new(coord.HeldError)
 		if !errors.As(err, &held) {

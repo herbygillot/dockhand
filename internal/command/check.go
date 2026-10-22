@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -246,12 +247,14 @@ func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 	case enqueue:
 		fmt.Fprintf(streams.Out, "%s queued; serve (pid %d) runs it. dockhand wait %s follows it.\n", run.Name(), leader.PID, run.Name())
 		return nil
-	case leader != nil:
-		fmt.Fprintf(streams.Err, "%s handed to serve (pid %d); following it. Ctrl-C stops following, not the check.\n", run.Name(), leader.PID)
-		return follow(ctx, e, session, run, streams, false, places)
 	}
-	fmt.Fprintf(streams.Err, "%s runs here, since no dockhand serve is running. Ctrl-C stops it and keeps what finished.\n", run.Name())
-	return follow(ctx, e, session, run, streams, true, places)
+	return follow(ctx, e, session, run, streams, places, func(lead engine.Lead) {
+		if lead.Here() {
+			fmt.Fprintf(streams.Err, "%s runs here, since no dockhand serve is running. Ctrl-C stops it and keeps what finished.\n", run.Name())
+			return
+		}
+		fmt.Fprintf(streams.Err, "%s handed to serve (pid %d); following it. Ctrl-C stops following, not the check.\n", run.Name(), cmp.Or(lead.Serve, lead.Holder).PID)
+	})
 }
 
 // captureMode is the files check's flags ask for, or CaptureAuto where
@@ -446,9 +449,10 @@ func writeExclusions(out io.Writer, plan model.Plan) {
 	}
 }
 
-// follow shows a run's progress until it ends, driving it here when drive
-// is set, and reports its outcome.
-func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, drive bool, places config.Places) error {
+// follow shows a run's progress until it ends, driving it here where
+// nobody else sees it through, after before says who does, and reports its
+// outcome.
+func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, places config.Places, before func(engine.Lead)) error {
 	journal := &journal{e: e, run: run.ID, out: streams.Err}
 	watching, stop := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -465,7 +469,7 @@ func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 	}()
 	// A serve that started meanwhile may have taken the run; then it is
 	// followed instead, and said.
-	run, taker, err := e.SeeThrough(ctx, session, run.ID, drive)
+	run, taker, err := e.SeeThrough(ctx, session, run.ID, before)
 	if taker != nil {
 		fmt.Fprintf(streams.Err, "%s was taken by serve (pid %d); following it.\n", run.Name(), taker.PID)
 	}

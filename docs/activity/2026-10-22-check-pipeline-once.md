@@ -34,3 +34,12 @@ that knows of no pull requests unless the test gives its own.
 
 Left of the step: `SeeThrough` deciding drive or follow from the lead
 itself, and `Enqueue` returning the run it followed.
+
+## Who sees a run through
+
+`SeeThrough` decides itself whether a run is driven here or followed:
+`engine.LeadOf` reads the serve leading the queue and the process holding
+the run (`Lead`, `Here()`), and a run nobody else sees through is driven
+here. Its `before` callback is told who leads first, so check and wait
+each say it in their own words, where each read the lead and passed
+`drive`. check now follows a run another process holds too, as wait did.

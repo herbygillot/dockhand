@@ -17,7 +17,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/config"
-	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -100,20 +99,13 @@ the check runs here, as a foreground check would.`,
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
-			leader, err := session.Holder(ctx, coord.LeaderResource)
-			if err != nil {
-				return err
-			}
-			holder, err := session.Holder(ctx, engine.RunResource(run.ID))
-			if err != nil {
-				return err
-			}
-			if leader != nil || holder != nil {
+			return follow(ctx, e, session, run, streams, s.places(), func(lead engine.Lead) {
+				if lead.Here() {
+					fmt.Fprintf(streams.Err, "No dockhand serve is running, so %s will run here. Press Ctrl-C to stop it; completed results will be saved.\n", run.Name())
+					return
+				}
 				fmt.Fprintf(streams.Err, "Following %s. Press Ctrl-C to stop watching; the check will continue.\n", run.Name())
-				return follow(ctx, e, session, run, streams, false, s.places())
-			}
-			fmt.Fprintf(streams.Err, "No dockhand serve is running, so %s will run here. Press Ctrl-C to stop it; completed results will be saved.\n", run.Name())
-			return follow(ctx, e, session, run, streams, true, s.places())
+			})
 		},
 	}
 	where.register(cmd, s, "follow the latest check of")
