@@ -608,6 +608,23 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places con
 			}
 			fmt.Fprintf(out, "  %s! %s\n", label, line)
 		}
+		// What the latest check's builds link and don't declare, a notice
+		// (v0.5.0 part 6).
+		if status.Latest != nil {
+			if links, err := e.UndeclaredLinks(ctx, *status.Latest); err == nil {
+				for i, finding := range links {
+					label := "         "
+					if i == 0 {
+						label = "Links    "
+					}
+					mark := view.Look
+					if finding.Unread {
+						mark = view.Unmarked
+					}
+					fmt.Fprintf(out, "  %s%s %s\n", label, mark, view.LinkWords(finding))
+				}
+			}
+		}
 	}
 	pr := prWords(status)
 	if opened := status.Branch.PullRequest; opened != nil && opened.Observed == nil {

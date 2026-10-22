@@ -336,6 +336,12 @@ const (
 	// its subject the dependency, and its evidence the dependency's
 	// version on the image (EnvironmentEvidence).
 	FindingEnvironmentFailure FindingKind = "environment-failure"
+	// FindingUndeclaredLink is a port's build linking a library from a
+	// port it doesn't declare in depends_lib (v0.5.0 part 6), its subject
+	// "<port> links <port>" (evidence.LinkFinding.Subject). A notice: it
+	// holds nothing, and a decision may say why it's fine, as a bundled
+	// copy.
+	FindingUndeclaredLink FindingKind = "undeclared-link"
 )
 
 // EnvironmentEvidence is what a standing acceptance of a dependency's

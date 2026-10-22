@@ -177,6 +177,12 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 	}
 	fmt.Fprintln(out)
 	view.WriteResults(out, "  ", evidence, false)
+	// What its builds link and don't declare is a notice (v0.5.0 part 6);
+	// one that couldn't be gathered says nothing.
+	if links, err := e.UndeclaredLinks(ctx, run); err == nil && len(links) > 0 {
+		fmt.Fprintln(out)
+		view.WriteLinks(out, links)
+	}
 	revision, err := e.Revision(ctx, run.Revision)
 	if err != nil {
 		return err

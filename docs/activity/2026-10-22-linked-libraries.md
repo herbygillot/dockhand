@@ -94,3 +94,29 @@ declares, said as a finding, a notice first.
 - **Schema 39** adds `results.links`, JSON, NULL where unknown and an empty
   list where nothing links.
 - The script provider and GitHub Actions report none, unknown.
+
+## The finding
+
+- **The rule is evidence's** (`evidence.UndeclaredLinks(results,
+  declared)`, pure and table-tested): each passed result's links from a
+  port not among the target's declared names, a finding a port, counting
+  its libraries, the first named; a library no port provides is no port
+  to declare. A target none of whose passed builds' links were read is a
+  finding of its own, "couldn't read what its build links", never "links
+  nothing".
+- **A finding kind**, `model.FindingUndeclaredLink`, its subject "<port>
+  links <port>" (`LinkFinding.Subject`), for a decision to answer it later,
+  as "a bundled copy, fine". It holds nothing.
+- **The engine gathers** (`engine.UndeclaredLinks`, engine/links.go): the
+  check's passed results from providers that read links
+  (`buildenv.LinkReader`, Tart's), and each target's declared names: its
+  `depends_lib` as the check's revision evaluates it in the result's
+  environment, with itself and its Portfile's other subports. A port that
+  can't be evaluated is said unread rather than guessed at; a provider
+  that never reads links says nothing of them.
+- **It's said** in the check's report, under its results, and in a
+  branch's detail, on its Links row: "! harbor links libonig.5.dylib from
+  oniguruma (and 1 more of its libraries), which it doesn't declare in
+  depends_lib" (`view.LinkWords`).
+- What needs a Mac with a Tart image to see: a real build's links read in
+  a guest. The guest's part is tested with a stand-in otool and port.

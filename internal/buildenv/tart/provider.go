@@ -1309,6 +1309,10 @@ func (p *Provider) liveLog(ctx context.Context, g guest, job buildenv.Job, id mo
 	_ = g.Append(ctx, guestRoot+"/"+name, filepath.Join(job.Directory, name), true)
 }
 
+// ReadsLinks says the guest reads what a passed build's binaries link
+// (guest.tcl's links).
+func (p *Provider) ReadsLinks() bool { return true }
+
 func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build buildenv.Build, got guestResult) error {
 	var target buildenv.Target
 	found := false

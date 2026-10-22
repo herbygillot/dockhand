@@ -2,6 +2,8 @@ package view
 
 import (
 	"fmt"
+	"io"
+	"path"
 
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -46,4 +48,35 @@ func Where(places config.Places, dir string) string {
 		return ""
 	}
 	return " in " + places.Tilde(dir)
+}
+
+// LinkWords say a link finding (evidence.LinkFinding) as a notice, its
+// mark !, holding nothing: "harbor links libonig.5.dylib from oniguruma
+// (and 1 more of its libraries), which it doesn't declare in depends_lib";
+// or, where the links couldn't be read, so nothing is said of them.
+func LinkWords(finding engine.LinkFinding) string {
+	if finding.Unread {
+		return fmt.Sprintf("couldn't read what %s's build links, so whether it declares them isn't said", finding.Target)
+	}
+	more := ""
+	if finding.Libraries > 1 {
+		more = fmt.Sprintf(" (and %s of its libraries)", prose.Plural(finding.Libraries-1, "more"))
+	}
+	return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib", finding.Target, path.Base(finding.Library), finding.Port, more)
+}
+
+// WriteLinks says a check's link findings, each a notice under a heading;
+// nothing where it has none.
+func WriteLinks(out io.Writer, findings []engine.LinkFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "Links")
+	for _, finding := range findings {
+		mark := Look
+		if finding.Unread {
+			mark = Unmarked
+		}
+		fmt.Fprintf(out, "  %s %s\n", mark, LinkWords(finding))
+	}
 }

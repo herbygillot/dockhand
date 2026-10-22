@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -49,4 +50,16 @@ func TestAPlanNamesTheChangedSubportAndItsSiblings(t *testing.T) {
 	WritePlan(&out, plan, nil, nil, nil)
 	require.Contains(t, out.String(), "Changed     terraform-1.16, terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3\n", "with no record, as before")
 	require.NotContains(t, out.String(), "Siblings")
+}
+
+// A link finding is a notice, its mark !, and one that couldn't be read
+// says nothing of them, unmarked.
+func TestWriteLinks(t *testing.T) {
+	var out bytes.Buffer
+	WriteLinks(&out, []engine.LinkFinding{
+		{Target: "harbor", Port: "oniguruma", Library: "/opt/local/lib/libonig.5.dylib", Binary: "/opt/local/bin/harbor", Libraries: 2},
+		{Target: "harbor-cli", Unread: true},
+	})
+	require.Equal(t, "Links\n  ! harbor links libonig.5.dylib from oniguruma (and 1 more of its libraries), which it doesn't declare in depends_lib\n"+
+		"    couldn't read what harbor-cli's build links, so whether it declares them isn't said\n", out.String())
 }

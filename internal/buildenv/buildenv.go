@@ -162,6 +162,14 @@ type TargetReport struct {
 // target that was blocked or never built.
 func Reported(result model.TargetResult) TargetReport { return TargetReport{Result: result} }
 
+// LinkReader is a provider that reads what a passed build's binaries link
+// (TargetReport.Links), as Tart's guest does: where its results' links
+// are nil, they couldn't be read, where another provider's are nil
+// because it never reads them.
+type LinkReader interface {
+	ReadsLinks() bool
+}
+
 // Build is how a provider learns what to skip and records what happened.
 type Build interface {
 	// Blocked names a changed dependency of the target that did not pass,

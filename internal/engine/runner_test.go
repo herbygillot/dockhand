@@ -65,7 +65,11 @@ type scriptedProvider struct {
 	refused bool
 	// fault is each failing attempt's error, where one is given.
 	fault error
-	jobs  []buildenv.Job
+	// links are what each target's binaries link, for a provider that
+	// reads them (readsLinks).
+	links      map[model.TargetID][]model.Link
+	readsLinks bool
+	jobs       []buildenv.Job
 }
 
 // scriptedArchive is the archive a scripted build of a target makes: its
@@ -77,6 +81,8 @@ func scriptedArchive(target model.TargetID) (string, []byte, string) {
 }
 
 func (p *scriptedProvider) Name() string { return "command" }
+
+func (p *scriptedProvider) ReadsLinks() bool { return p.readsLinks }
 
 func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
 	var blocked []model.TargetID
@@ -145,7 +151,7 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 		if commit, ok := p.fetches[target.ID]; ok {
 			report.Fetched = commit
 		}
-		report.Result = result
+		report.Result, report.Links = result, p.links[target.ID]
 		if err := build.Record(report); err != nil {
 			return err
 		}
