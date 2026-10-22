@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -26,6 +27,14 @@ const (
 func (s RunState) Terminal() bool {
 	return s == RunPassed || s == RunFailed || s == RunAttention || s == RunCanceled
 }
+
+// Finished are the states of a run that ended with its results, as a
+// branch's evidence reads them: passed, failed, or stopped for a person,
+// and not canceled.
+var Finished = []RunState{RunPassed, RunFailed, RunAttention}
+
+// Finished reports a run that ended with its results (Finished).
+func (s RunState) Finished() bool { return slices.Contains(Finished, s) }
 
 // CanBecome reports whether a run in state s may move to next.
 func (s RunState) CanBecome(next RunState) bool {

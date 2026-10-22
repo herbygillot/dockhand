@@ -48,3 +48,10 @@ The roadmap's "absorbs … the single-file distfile" was written on 2026-10-13. 
   - `buildlog.Between` cuts the lines, and `model.Steps` lists the steps a build takes.
   - A build that recorded no steps, as the command provider's, or not the named step, says which steps it recorded.
   - With `--json`, the output is the build's view with `phase`, `from`, and the step's text.
+
+## The run recipes' remainder (code-organization finding 11)
+
+- **One way to find or record a revision.** `Capture` and a baseline's `baseRevision` each scanned the branch's revisions with a predicate of their own. Both now call `recordRevision`, which takes the newest revision recorded of the same files, kind, and commit, or records one. With `record` false, it records nothing and gives the revision an ID for a plan.
+  - The base revision's match is stricter than before: it is also keyed on the tree and its base. The worst a miss can do is record the base once more.
+- **One finished-run rule.** "Finished", meaning passed, failed, or stopped for attention, was spelled out three times. It's now `model.Finished` and `RunState.Finished()`, used by the latest-check read, the tree's checks, and status's latest.
+- The finding's `newRun` was already met by `queue`, and the run-name grammar by `engine.IsCheckName`.

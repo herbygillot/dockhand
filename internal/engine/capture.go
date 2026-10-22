@@ -213,46 +213,62 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 	} else {
 		revision.Kind = model.RevisionSnapshot
 	}
-	found := func(existing []model.Revision) bool {
+	capture.Revision, capture.Reused, err = e.recordRevision(ctx, revision, !request.Plan)
+	return capture, err
+}
+
+// recordRevision is a revision of a branch, recorded once: the one
+// recorded already of the same files, kind, and commit, the newest where
+// several are, else revision recorded now, with an ID and, for a snapshot,
+// its number. Capture and a baseline's base revision find it alike, where
+// each scanned for its own (code-organization finding 11). Where record is
+// false, as for a plan, nothing is recorded, and a revision not found
+// takes an ID of its own, as the plan made of it has.
+func (e *Engine) recordRevision(ctx context.Context, revision model.Revision, record bool) (model.Revision, bool, error) {
+	found := func(existing []model.Revision) (model.Revision, bool) {
 		for _, earlier := range slices.Backward(existing) {
 			if earlier.SameTree(revision) && earlier.Kind == revision.Kind && earlier.Source.Commit == revision.Source.Commit {
-				capture.Revision, capture.Reused = earlier, true
-				return true
+				return earlier, true
 			}
 		}
-		return false
+		return model.Revision{}, false
 	}
-	if request.Plan {
-		err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-			existing, err := r.Revisions(branch.ID)
-			if err == nil && !found(existing) {
-				// An ID of its own, as the plan made of it has, though
-				// neither is recorded.
-				revision.ID = model.RevisionID(store.NewID("rev"))
-				capture.Revision = revision
+	var reused bool
+	if !record {
+		err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+			existing, err := r.Revisions(revision.Branch)
+			if err != nil {
+				return err
 			}
-			return err
+			var earlier model.Revision
+			if earlier, reused = found(existing); reused {
+				revision = earlier
+			} else {
+				revision.ID = model.RevisionID(store.NewID("rev"))
+			}
+			return nil
 		})
-		return capture, err
+		return revision, reused, err
 	}
-	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		existing, err := tx.Revisions(branch.ID)
+	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		existing, err := tx.Revisions(revision.Branch)
 		if err != nil {
 			return err
 		}
-		if found(existing) {
+		var earlier model.Revision
+		if earlier, reused = found(existing); reused {
+			revision = earlier
 			return nil
 		}
 		revision.ID = model.RevisionID(store.NewID("rev"))
 		if revision.Kind == model.RevisionSnapshot {
-			if revision.Snapshot, err = tx.NextSnapshot(branch.ID); err != nil {
+			if revision.Snapshot, err = tx.NextSnapshot(revision.Branch); err != nil {
 				return err
 			}
 		}
-		capture.Revision = revision
 		return tx.AddRevision(revision)
 	})
-	return capture, err
+	return revision, reused, err
 }
 
 // CommitsAhead is how many commits a branch has beyond its base; none for

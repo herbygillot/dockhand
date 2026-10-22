@@ -357,7 +357,7 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 			switch {
 			case run.State == model.RunQueued || run.State == model.RunRunning:
 				status.Active = append(status.Active, run)
-			case run.State != model.RunCanceled && run.BaselineOf == "" && status.Latest == nil:
+			case run.State.Finished() && run.BaselineOf == "" && status.Latest == nil:
 				latest := run
 				status.Latest = &latest
 			}

@@ -205,7 +205,7 @@ func loadCheck(r store.Reader, run model.Run, sources bool) (evidence.Check, err
 // treeRuns lists a branch's finished checks of a tree, newest first. A
 // baseline is evidence about another run, never the branch's own check.
 func treeRuns(r store.Reader, branch model.BranchID, tree model.ObjectID) ([]model.Run, error) {
-	return runsOfTree(r, branch, tree, model.RunPassed, model.RunFailed, model.RunAttention)
+	return runsOfTree(r, branch, tree, model.Finished...)
 }
 
 // runsOfTree are a branch's checks of a tree in the given states, newest

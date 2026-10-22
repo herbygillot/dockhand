@@ -397,7 +397,7 @@ func rebuildWhere(evidence Evidence, id model.TargetID) planning.Limited {
 // latestCheck is a branch's newest finished check, not a baseline: the
 // one a baseline looks into.
 func latestCheck(r store.Reader, branch model.BranchID) (model.Run, bool, error) {
-	runs, err := r.Runs(store.RunFilter{Branch: branch, States: []model.RunState{model.RunPassed, model.RunFailed, model.RunAttention}, NoBaselines: true, Limit: 1})
+	runs, err := r.Runs(store.RunFilter{Branch: branch, States: model.Finished, NoBaselines: true, Limit: 1})
 	if err != nil || len(runs) == 0 {
 		return model.Run{}, false, err
 	}
@@ -484,37 +484,7 @@ func BaselineWorthy(evidence Evidence) (worthy, skipped []string) {
 func (e *Engine) baseRevision(ctx context.Context, branch model.Branch, base model.ObjectID, tree string, record bool) (model.Revision, error) {
 	revision := model.Revision{Branch: branch.ID, Kind: model.RevisionCommit, Head: base, CreatedAt: e.now(),
 		Source: model.Source{Commit: base, Tree: model.ObjectID(tree), Base: base}}
-	if !record {
-		// The base's revision where one is recorded; else one with an ID
-		// of its own, as the plan made of it has, though neither is
-		// recorded, as a check's plan captures.
-		err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-			existing, err := r.Revisions(branch.ID)
-			if i := slices.IndexFunc(existing, func(earlier model.Revision) bool {
-				return earlier.Kind == model.RevisionCommit && earlier.Source.Commit == base
-			}); err == nil && i >= 0 {
-				revision = existing[i]
-				return nil
-			}
-			revision.ID = model.RevisionID(store.NewID("rev"))
-			return err
-		})
-		return revision, err
-	}
-	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		existing, err := tx.Revisions(branch.ID)
-		if err != nil {
-			return err
-		}
-		for _, earlier := range existing {
-			if earlier.Kind == model.RevisionCommit && earlier.Source.Commit == base {
-				revision = earlier
-				return nil
-			}
-		}
-		revision.ID = model.RevisionID(store.NewID("rev"))
-		return tx.AddRevision(revision)
-	})
+	revision, _, err := e.recordRevision(ctx, revision, record)
 	return revision, err
 }
 

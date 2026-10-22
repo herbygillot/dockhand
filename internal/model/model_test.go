@@ -414,3 +414,13 @@ func TestAPullRequestsHeadHasItsParts(t *testing.T) {
 	require.Empty(t, repository)
 	require.Empty(t, branch)
 }
+
+// A finished run ended with its results; a canceled one ended without.
+func TestFinishedRunsEndedWithResults(t *testing.T) {
+	for _, state := range []RunState{RunPassed, RunFailed, RunAttention} {
+		require.True(t, state.Finished(), state)
+	}
+	for _, state := range []RunState{RunQueued, RunRunning, RunCanceled} {
+		require.False(t, state.Finished(), state)
+	}
+}
