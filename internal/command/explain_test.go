@@ -7,6 +7,7 @@ import (
 )
 
 func TestExplainQuotesTheSource(t *testing.T) {
+	t.Parallel()
 	out, _, err := dockhand(t, "explain")
 	require.NoError(t, err)
 	require.Contains(t, out, "follow-up              A commit that only corrects an earlier one in the branch,")

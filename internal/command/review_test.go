@@ -13,13 +13,14 @@ import (
 )
 
 func TestTidyAppliesDockhandsOwnEditsAndUndoPutsThemBack(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
@@ -45,6 +46,7 @@ func TestTidyAppliesDockhandsOwnEditsAndUndoPutsThemBack(t *testing.T) {
 }
 
 func TestTidyAsksAboutAPersonsCommits(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	withBumper(t)
 	testsupport.Git(t, w.clone, "switch", "-q", "-c", "update-jq")
@@ -78,6 +80,7 @@ func TestTidyAsksAboutAPersonsCommits(t *testing.T) {
 // applied where something does: qemu's hand edit had no way to be taken
 // without a terminal (field testing's seventh report, 2026-10-02).
 func TestTidyYesAppliesAPersonsPlanAsShown(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	withBumper(t)
 	testsupport.Git(t, w.clone, "switch", "-q", "-c", "update-jq")
@@ -101,6 +104,7 @@ func TestTidyYesAppliesAPersonsPlanAsShown(t *testing.T) {
 }
 
 func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	testsupport.Git(t, w.clone, "switch", "-q", "-c", "harbor")
 	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "_resources/port1.0/group/github-1.0.tcl"), []byte("# group, for harbor\n"), 0o644))
@@ -161,6 +165,7 @@ func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 // in: tidy said "nothing to tidy" where submit warned of a body line over
 // 72 characters, and saved no plan to fix it (the rust and cargo run).
 func TestTidySaysWhatTheRulesWarnOfAndSavesTheCommitsToRewrite(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	testsupport.Git(t, w.clone, "switch", "-q", "-c", "update-jq")
 	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\n# a\n"), 0o644))

@@ -35,13 +35,14 @@ func (jqAndDevel) PortsDefined(context.Context, model.Source, []string) (map[str
 }
 
 func TestDiffAndImpact(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	worktree := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", worktree)
+	setenv(t, "MACPORTS_TREE", worktree)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
@@ -52,7 +53,7 @@ func TestDiffAndImpact(t *testing.T) {
 	require.Contains(t, out, "--- a/textproc/jq/Portfile\n+++ b/textproc/jq/Portfile\n")
 	require.Contains(t, out, "-version 1.7.1\n+version 1.8.1\n")
 
-	t.Chdir(filepath.Join(worktree, "textproc", "jq"))
+	chdir(t, filepath.Join(worktree, "textproc", "jq"))
 	out, _, err = dockhand(t, "diff", "--stat", "Portfile")
 	require.NoError(t, err)
 	require.Contains(t, out, "\n\n  textproc/jq/Portfile\n", "a path is taken from where you are")
@@ -88,15 +89,16 @@ Next: dockhand check --also yq,jo (it builds them against the branch)
 // --pr, its pull request (the command-line UX review's §1, revised). A
 // flag beats where the command runs, and says so.
 func TestABranchIsNamedByItsNameItsPortOrItsPullRequest(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 
 	out, said, err := dockhand(t, "diff", "-p", "jq")
 	require.NoError(t, err)
@@ -120,7 +122,7 @@ func TestABranchIsNamedByItsNameItsPortOrItsPullRequest(t *testing.T) {
 
 	_, _, err = dockhand(t, "start", "elsewhere")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "elsewhere"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "elsewhere"))
 	_, said, err = dockhand(t, "diff", "-b", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, said, "jq-update (not elsewhere, checked out here)\n")

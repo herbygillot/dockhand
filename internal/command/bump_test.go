@@ -24,6 +24,7 @@ func bumpOn(t *testing.T, args ...string) (string, string, error) {
 }
 
 func TestBumpGoesFromUpdateToPullRequestAskingNothing(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -54,6 +55,7 @@ func TestBumpGoesFromUpdateToPullRequestAskingNothing(t *testing.T) {
 // bump passes submit's title, note, and [skip notification] on, so a
 // test's pull request can say it is one (the rc6 full stage, B2).
 func TestBumpPassesSubmitsWordsOn(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -74,6 +76,7 @@ func TestBumpPassesSubmitsWordsOn(t *testing.T) {
 
 // What would stop bump before the edit stops it with nothing changed.
 func TestBumpChangesNothingWhenItHasNothingToDo(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
 	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.8.1")
@@ -102,6 +105,7 @@ func TestBumpChangesNothingWhenItHasNothingToDo(t *testing.T) {
 // it went on to inside it, as far as it went. bump's can hold its
 // submission, and says why.
 func TestShipAndBumpReportTheSameJSON(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -110,7 +114,7 @@ func TestShipAndBumpReportTheSameJSON(t *testing.T) {
 	g.Others = nil
 
 	for _, command := range [][]string{{"ship", "jq", "--yes"}, {"bump", "jq"}} {
-		t.Setenv("MACPORTS_TREE", w.clone)
+		setenv(t, "MACPORTS_TREE", w.clone)
 		submitted, err := jsonOf(t, command...)
 		require.NoError(t, err, command)
 		require.Len(t, submitted.Result["changes"], 1, command)
@@ -146,6 +150,7 @@ func TestShipAndBumpReportTheSameJSON(t *testing.T) {
 // since one may have opened meanwhile (the update-workflow review's
 // efficiency item).
 func TestBumpHoldsWhatServeWould(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)

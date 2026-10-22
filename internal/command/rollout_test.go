@@ -16,10 +16,11 @@ import (
 // run commands meaning the branch's latest check, from anywhere (the
 // second look's §3).
 func TestTheSelectorReachesStatusPathArchiveAndRuns(t *testing.T) {
+	t.Parallel()
 	w := checkedBranch(t)
 	_, _, err := dockhand(t, "check")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 
 	out, _, err := dockhand(t, "status", "-p", "jq")
 	require.NoError(t, err)
@@ -59,11 +60,12 @@ func TestTheSelectorReachesStatusPathArchiveAndRuns(t *testing.T) {
 // A script is refused, naming the command (the command-line UX review's
 // §2).
 func TestCheckOffersToTrackAnUntrackedCheckout(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	withScript(t, w, "passed")
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	testsupport.Git(t, w.clone, "switch", "-q", "-c", "my-jq")
 	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n# mine\n"), 0o644))
 	testsupport.Git(t, w.clone, "commit", "-q", "-am", "jq: mine")
@@ -96,6 +98,7 @@ func TestCheckOffersToTrackAnUntrackedCheckout(t *testing.T) {
 // and an open branch's name says how to work in it (decided 2026-10-07;
 // the rc8 full stage's B10).
 func TestStartOffersAnArchivedBranchsName(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	_, _, err := dockhand(t, "start", "notes")
 	require.NoError(t, err)
@@ -124,6 +127,7 @@ func TestStartOffersAnArchivedBranchsName(t *testing.T) {
 // status goes on, where every status failed on the name's uniqueness (the
 // rc1 full stage, D-S5).
 func TestStatusFollowsARenameOntoAnArchivedBranchsName(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	_, _, err := dockhand(t, "start", "ds5-after")
 	require.NoError(t, err)
@@ -135,7 +139,7 @@ func TestStatusFollowsARenameOntoAnArchivedBranchsName(t *testing.T) {
 	dir := filepath.Join(w.home, "Source", "macports-branches", "ds5-before")
 	testsupport.Git(t, dir, "branch", "-m", "dockhand/ds5-before", "dockhand/ds5-after")
 
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	out, errs, err := dockhand(t, "status")
 	require.NoError(t, err, errs)
 	require.Contains(t, out, "Followed ds5-before, renamed by hand to ds5-after.\n")

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -71,14 +70,15 @@ func withAuth(t *testing.T, flow credential.DeviceFlow) memoryStore {
 	hosted(t).authAPI = func(signin github.Signin) *github.Client {
 		return &github.Client{HTTP: server.Client(), Config: github.Config{BaseURL: server.URL}, Credentials: github.SystemCredentials{Store: signin.Store, Key: github.CredentialKey, Override: signin.Token, CLI: signin.CLI}}
 	}
-	t.Setenv("GH_TOKEN", "")
-	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("PATH", t.TempDir())
+	setenv(t, "GH_TOKEN", "")
+	setenv(t, "GITHUB_TOKEN", "")
+	setenv(t, "PATH", t.TempDir())
 	return store
 }
 
 func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
-	path := os.Getenv("PATH")
+	t.Parallel()
+	path := getenv(t, "PATH")
 	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	var opened string
 	hosted(t).openBrowser = func(_ context.Context, url string) error { opened = url; return nil }
@@ -94,8 +94,8 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 
 	// The rest keeps the GitHub CLI out of reach, so a login it has on
 	// this machine can't stand in; setup needs git, though.
-	emptyPath := os.Getenv("PATH")
-	t.Setenv("PATH", path)
+	emptyPath := getenv(t, "PATH")
+	setenv(t, "PATH", path)
 	newWorld(t)
 	out, _, err = dockhand(t, "setup", "--yes")
 	require.NoError(t, err)
@@ -115,11 +115,11 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	require.NotEmpty(t, report.Result.Checkout)
 	require.NotEmpty(t, report.Result.Git.Version)
 	require.Equal(t, "macports/macports-ports", report.Result.Upstream.Repository)
-	t.Setenv("GH_TOKEN", "secret-token")
+	setenv(t, "GH_TOKEN", "secret-token")
 	_, said := testSettings(t).publishing(t.Context())
 	require.Equal(t, githubLoginJSON{Account: "ada", Source: "GH_TOKEN"}, said, "GH_TOKEN takes precedence, and doesn't renew")
-	t.Setenv("GH_TOKEN", "")
-	t.Setenv("PATH", emptyPath)
+	setenv(t, "GH_TOKEN", "")
+	setenv(t, "PATH", emptyPath)
 
 	out, _, err = dockhand(t, "setup", "github", "--logout")
 	require.NoError(t, err)
@@ -134,6 +134,7 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 }
 
 func TestAFailedLoginSavesNothing(t *testing.T) {
+	t.Parallel()
 	store := withAuth(t, deviceFlow{err: errors.New("the code expired")})
 	_, errs, err := dockhand(t, "setup", "github", "--no-browser")
 	require.ErrorContains(t, err, "the code expired")
@@ -145,6 +146,7 @@ func TestAFailedLoginSavesNothing(t *testing.T) {
 // the setup line, and a device flow naming an address that isn't https is
 // opened nowhere (the auth flow review's plan, step 4).
 func TestALoginThatCantRenewIsSaid(t *testing.T) {
+	t.Parallel()
 	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	store[github.CredentialKey] = "gho_a_bare_token_from_an_earlier_dockhand"
 	line, _ := testSettings(t).publishing(t.Context())
@@ -160,6 +162,7 @@ func TestALoginThatCantRenewIsSaid(t *testing.T) {
 }
 
 func TestADeviceFlowAddressThatIsntHTTPSIsntOpened(t *testing.T) {
+	t.Parallel()
 	withAuth(t, plainFlow{})
 	opened := ""
 	hosted(t).openBrowser = func(_ context.Context, url string) error { opened = url; return nil }

@@ -12,6 +12,7 @@ import (
 
 // Outside a ports checkout, dockhand alone says how to begin.
 func TestBareDockhandSaysHowToStart(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	err := runFor(t, t.Context(), nil, Streams{In: strings.NewReader(""), Out: &out, Err: &out})
 	require.NoError(t, err)
@@ -21,6 +22,7 @@ func TestBareDockhandSaysHowToStart(t *testing.T) {
 }
 
 func TestVersionNamesTheBuild(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	err := runFor(t, t.Context(), []string{"--version"}, Streams{In: strings.NewReader(""), Out: &out, Err: &out})
 	require.NoError(t, err)
@@ -28,6 +30,7 @@ func TestVersionNamesTheBuild(t *testing.T) {
 }
 
 func TestAnUnknownCommandIsRefused(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	err := runFor(t, t.Context(), []string{"bump", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &out})
 	require.Error(t, err)
@@ -36,6 +39,7 @@ func TestAnUnknownCommandIsRefused(t *testing.T) {
 // The main help opens with dockhand's logo, as earlier generations' did,
 // and the build's version on the line under it.
 func TestTheHelpOpensWithTheLogoAndTheVersion(t *testing.T) {
+	t.Parallel()
 	out, _, err := dockhand(t, "--help")
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(out, logo+" "+buildinfo.Current().String()+"\n\nAuthor, check, and submit changes to MacPorts ports.\n"), out)

@@ -22,6 +22,7 @@ import (
 // and refuses one whose command or flag doesn't exist (part 1's hygiene: v0.3.0's docs taught
 // auth login and providers setup tart after both had moved).
 func TestEveryNamedCommandExists(t *testing.T) {
+	t.Parallel()
 	root := rootForReference(t)
 	var problems []string
 	check := func(where, text string, code bool) {
@@ -379,6 +380,7 @@ var sentenceWords = map[string]bool{
 
 // What the reference test refuses, and what it reads as a sentence.
 func TestReferenceProblems(t *testing.T) {
+	t.Parallel()
 	root := rootForReference(t)
 	require.Equal(t, []string{"dockhand providers names no command", "dockhand check has no --frobnicate", "dockhand setup tart has no -q"},
 		referenceProblems(root, "dockhand providers setup tart\ndockhand check -b jq --frobnicate\ndockhand setup tart -q", true))
@@ -393,6 +395,7 @@ func TestReferenceProblems(t *testing.T) {
 // whole: v0.4.0's held update offered update --submit so, after --submit
 // had gone (the rc1 full stage).
 func TestBuiltStringsAreRead(t *testing.T) {
+	t.Parallel()
 	root := rootForReference(t)
 	files := token.NewFileSet()
 	file, err := parser.ParseFile(files, "held.go", `package command

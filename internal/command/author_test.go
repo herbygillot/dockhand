@@ -104,13 +104,14 @@ func versioned(t *testing.T, w world) {
 }
 
 func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 
 	out, _, err := dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
@@ -141,6 +142,7 @@ func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
 }
 
 func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -224,6 +226,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 // A plan in a branch named with --branch is planned there, though the
 // branch doesn't change the port yet.
 func TestAPlanInANamedBranchIsPlannedThere(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -242,6 +245,7 @@ func TestAPlanInANamedBranchIsPlannedThere(t *testing.T) {
 // with it is made on master. A Git branch dockhand doesn't track is
 // adopt's.
 func TestBNamesAnExistingBranchAndNewNamesANewOne(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -273,6 +277,7 @@ func TestBNamesAnExistingBranchAndNewNamesANewOne(t *testing.T) {
 // as master isn't: a plan is made on master, saying why, and an update
 // says how to start a branch, as on master (D7, decided 2026-09-29).
 func TestAnUntrackedBranchHereIsTheirsToAdopt(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -310,6 +315,7 @@ func TestAnUntrackedBranchHereIsTheirsToAdopt(t *testing.T) {
 // on master too, so it refuses them, and --new --plan plans without them
 // (D7).
 func TestAPlanOnMasterDoesntLeaveEditsOut(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -322,6 +328,7 @@ func TestAPlanOnMasterDoesntLeaveEditsOut(t *testing.T) {
 }
 
 func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	for _, port := range []string{"yq", "jo"} {
@@ -335,7 +342,7 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 
 	_, _, err = dockhand(t, "update", "jq", "--except", "yq")
 	require.ErrorContains(t, err, "add --revbump-dependents")
@@ -373,12 +380,13 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 // its JSON too. From the architecture review of 2026-09-27, which found the
 // chosen release's tag and upstream commit gone once update returned.
 func TestAnUpdatesReleaseIsKept(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
@@ -415,6 +423,7 @@ func (c chatty) Prepare(ctx context.Context, r editprep.Request) (editprep.Resul
 // what a person needs to follow it, and with -v, the work behind the
 // scenes too.
 func TestProgressGoesToStandardError(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return chatty{bumper{repo: e.Repo}} }
@@ -439,6 +448,7 @@ func TestProgressGoesToStandardError(t *testing.T) {
 // checksums, which refused the same way, and said a plan kept a branch it
 // never started (the git run's findings 1 to 4).
 func TestAnEditDockhandCantMakeSaysWhyAndWhatWorks(t *testing.T) {
+	t.Parallel()
 	unlocated := fmt.Errorf("baseline {OS:darwin Version:25 Architecture:arm64}: %w", &engine.Unlocated{Name: "git-htmldocs-2.56.0.tar.xz", Reason: fmt.Errorf("%w: no command written in the Portfile makes it, as an eval'd one isn't", engine.ErrUnsupported)})
 	branch := model.Branch{Name: "dockhand/git-ab12"}
 
@@ -472,6 +482,7 @@ Edit with: dockhand edit git`)
 // and stops for none: libuv 1.53.0 was planned without a word of #34620
 // (the libuv run's finding 1). What couldn't be looked for is said.
 func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -493,7 +504,7 @@ func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
 	dir := filepath.Join(w.home, "Source", "macports-branches")
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(dir, entries[0].Name()))
+	setenv(t, "MACPORTS_TREE", filepath.Join(dir, entries[0].Name()))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, entries[0].Name(), "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n"), 0o644))
 	again, _, err := dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
@@ -516,6 +527,7 @@ func (b uncertainBumper) ResolveRelease(ctx context.Context, r editprep.Request)
 // takes what was set aside, which then goes ahead (the update-workflow
 // review's finding 6).
 func TestAnUncertainNewestReleaseIsNamedNotChosen(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return uncertainBumper{bumper{repo: e.Repo}} }
@@ -551,6 +563,7 @@ func (b regenerating) Prepare(ctx context.Context, r editprep.Request) (editprep
 // distfiles: hk's said "1 distfile" of 280 lines of crates (the gh, usql,
 // hk, and pgdog run's finding 4).
 func TestAnUpdateCountsTheCratesItWrote(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return regenerating{bumper{repo: e.Repo}} }
@@ -577,6 +590,7 @@ func (limitedBumper) ResolveRelease(context.Context, editprep.Request) (model.Re
 // that nothing changed, not the request it stopped (the rc6 full stage,
 // D-R4).
 func TestARateLimitedUpdateSaysSo(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return limitedBumper{bumper{repo: e.Repo}} }
@@ -609,6 +623,7 @@ func (b subportBumper) Prepare(ctx context.Context, r editprep.Request) (editpre
 // "py314-textual-fastdatatable: 0.19.0 → 0.19.3" (field testing at
 // 23c5e2aa).
 func TestAnUpdateNamesThePortAsAsked(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return subportBumper{bumper{repo: e.Repo}} }
@@ -622,12 +637,13 @@ func TestAnUpdateNamesThePortAsAsked(t *testing.T) {
 // branch command does (field testing at 23c5e2aa: "accepts 1 arg(s),
 // received 0"), and asks for one where the branch is about several.
 func TestChecksumsTakesTheBranchsPort(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-sums", "--port", "jq")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-sums"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-sums"))
 	out, _, err := dockhand(t, "checksums", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq")

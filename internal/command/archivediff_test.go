@@ -87,13 +87,14 @@ func writeSourceArchive(into, top string, files map[string]string) (treequery.Fe
 }
 
 func TestDiffArchiveShowsWhatChangedInside(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	stands(t).ArchiveFetcher = func(e *engine.Engine) engine.ArchiveFetcher { return sourceArchives{repo: e.Repo} }
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
@@ -118,13 +119,14 @@ func TestDiffArchiveShowsWhatChangedInside(t *testing.T) {
 // longer fetched, where by position it had been diffed with 1.8.1's source
 // (the architecture review's finding 2).
 func TestDiffArchivePairsWhatCorresponds(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	stands(t).ArchiveFetcher = func(e *engine.Engine) engine.ArchiveFetcher { return sourceArchives{repo: e.Repo, manual: true} }
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 

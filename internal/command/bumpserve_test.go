@@ -106,6 +106,7 @@ func tarball(directory, top string, files map[string]string) string {
 // architecture review's M3). Each case runs bump in one world and serve
 // --ship-to submit in another, from the same update.
 func TestBumpAndServeStopOnTheSameConditions(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		concerns concerned
@@ -175,9 +176,9 @@ func serveWith(t *testing.T, concerns concerned, search error) (bool, string) {
 	// prepared nothing (CI on the rc9 tag, 00:21 to 00:45 UTC).
 	morning := time.Date(2026, 10, 7, 8, 0, 0, 0, time.Local)
 	hosted(t).now = func() time.Time { return morning }
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	hosted(t).notify = func(string, string) error { return nil }
-	config := filepath.Join(os.Getenv("HOME"), ".dockhand", "config.toml")
+	config := filepath.Join(getenv(t, "HOME"), ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada}\"\n"), append(data, []byte("\n[serve]\nship_to = \"check\"\n")...)...), 0o644))

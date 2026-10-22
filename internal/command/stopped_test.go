@@ -15,6 +15,7 @@ import (
 // nothing settled it. status and queue say it stopped, and how to resume
 // it or end it, rather than that it runs; dockhand wait resumes it.
 func TestAKilledCheckReadsAsStopped(t *testing.T) {
+	t.Parallel()
 	checkedBranch(t)
 	_, _, err := dockhand(t, "check", "-d")
 	require.NoError(t, err)

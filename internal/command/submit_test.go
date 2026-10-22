@@ -33,6 +33,7 @@ func withGitHub(t *testing.T, w world) *forgetest.GitHub {
 }
 
 func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -40,7 +41,7 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
@@ -78,11 +79,11 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 
 	// The acceptance test's sandbox takes the pull requests within itself,
 	// and the preview says it isn't MacPorts'.
-	t.Setenv("DOCKHAND_PULL_REQUESTS", "ada/macports-ports")
+	setenv(t, "DOCKHAND_PULL_REQUESTS", "ada/macports-ports")
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "  To       ada/macports-ports:master\n           a sandbox, not macports/macports-ports, as DOCKHAND_PULL_REQUESTS says\n")
-	t.Setenv("DOCKHAND_PULL_REQUESTS", "")
+	setenv(t, "DOCKHAND_PULL_REQUESTS", "")
 	// The JSON names the account, where its token comes from, and whose
 	// the fork is (the rc9 full stage's D-C4).
 	named, err := jsonOf(t, "submit", "--no-check", "--plan")
@@ -112,13 +113,14 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 // did and ship --passing does, and its JSON carries it: a person's own
 // submission shows it, and isn't held for it (D4).
 func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
 	withGitHub(t, w)
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -138,6 +140,7 @@ func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
 // updated several; an update whose archives showed nothing to look at
 // says so.
 func TestTheSubmitPreviewGivesEachUpstreamFindingALine(t *testing.T) {
+	t.Parallel()
 	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}
 	dropped := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod drops golang.org/x/net"}
 	preview := func(upstream ...engine.PortComparison) string {
@@ -166,6 +169,7 @@ func TestTheSubmitPreviewGivesEachUpstreamFindingALine(t *testing.T) {
 // no heading says whose it is it would keep the word, and every list of
 // them has one, --passing's included (the ov run's finding 5).
 func TestUpstreamIsSaidOnceUnderItsHeading(t *testing.T) {
+	t.Parallel()
 	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}
 	dropped := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod drops golang.org/x/net"}
 	var update bytes.Buffer
@@ -182,6 +186,7 @@ func TestUpstreamIsSaidOnceUnderItsHeading(t *testing.T) {
 // source is shown before it's submitted, since nobody else can find that
 // build; the preview's JSON lists it. One naming a committed build isn't.
 func TestSubmitShowsACommitNamingAModifiedBuild(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -189,7 +194,7 @@ func TestSubmitShowsACommitNamingAModifiedBuild(t *testing.T) {
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := dig(t, started.Result, "branch", "worktree").(string)
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	trailer := "\n\nGenerated-By: Dockhand v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480%s (https://github.com/herbygillot/dockhand)"
@@ -214,6 +219,7 @@ func TestSubmitShowsACommitNamingAModifiedBuild(t *testing.T) {
 // beside modified_builds. Where GitHub can't be asked, that's said once.
 // Neither stops the submission.
 func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -221,7 +227,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := dig(t, started.Result, "branch", "worktree").(string)
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	unpushed := "v0.0.0-20260924.0.0.20260928190000-14320eb7c0de"
@@ -261,6 +267,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 // A build several commits name is said once, naming each; one built at a
 // release's tag says the tag, and one that recorded no commit says so.
 func TestAnUnfoundBuildIsSaidOnceForItsCommits(t *testing.T) {
+	t.Parallel()
 	commits := []string{strings.Repeat("a", 40), strings.Repeat("b", 40)}
 	require.Equal(t, "commits aaaaaaa, bbbbbbb name dockhand v0.3.0 in Generated-By, built at a tag dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there",
 		unfoundBuildWords(engine.UnfoundBuild{Build: "v0.3.0", Commits: commits, Source: buildinfo.Source{Release: "v0.3.0"}}))
@@ -271,6 +278,7 @@ func TestAnUnfoundBuildIsSaidOnceForItsCommits(t *testing.T) {
 // A tidy whose commits name a dockhand built from uncommitted source says
 // so as it writes them, with how to name one anybody can find.
 func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
+	t.Parallel()
 	plan := func(tag string) engine.TidyPlan {
 		return engine.TidyPlan{Groups: []engine.TidyGroup{{Message: "jq: update to 1.8.1\n\nGenerated-By: Dockhand " + tag + " (https://github.com/herbygillot/dockhand)"}}}
 	}
@@ -282,6 +290,7 @@ func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
 // Someone else's pull request keeps its title and description, whatever
 // submit would write, and the preview says so.
 func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
+	t.Parallel()
 	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}}, Theirs: true, Sections: engine.DescriptionSections{Types: engine.SectionRefreshed}}
 	require.Equal(t, "updates #34905; its title and description are theirs, and stay as they are", pullRequestWords(plan))
 	plan.Theirs = false
@@ -293,6 +302,7 @@ func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
 // Description while that is still dockhand's, and the preview says so
 // (the hugo exercise's re-submitting sshuttle, finding 3).
 func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -300,7 +310,7 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -356,6 +366,7 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 
 // Every part refreshed is named, in the description's order.
 func TestTheRefreshedPartsAreNamed(t *testing.T) {
+	t.Parallel()
 	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}},
 		Sections: engine.DescriptionSections{Description: engine.SectionRefreshed, Types: engine.SectionRefreshed, TestedOn: engine.SectionRefreshed}}
 	require.Equal(t, "updates #34905; refreshes its Description section, its Type(s) and its description from Tested on down", pullRequestWords(plan))
@@ -372,13 +383,14 @@ func TestTheRefreshedPartsAreNamed(t *testing.T) {
 // person had no way to say in it why rust's tests failed (the rust run,
 // #35084).
 func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	g := withGitHub(t, w)
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -427,13 +439,14 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 // Submitting to a pull request with nothing to push says what it changed:
 // the title, the description, or nothing at all.
 func TestSubmitSaysWhatItUpdated(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	withGitHub(t, w)
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -456,13 +469,14 @@ func TestSubmitSaysWhatItUpdated(t *testing.T) {
 }
 
 func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	g := withGitHub(t, w)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -484,17 +498,17 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.Contains(t, out, "  PR       #34901\n", "read now")
 
 	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, Checks: forge.CheckSummary{Total: 2, Passed: 2}}
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	out, errs, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 	require.Contains(t, errs, "jq-update: #34901: changes requested\n")
 	require.Contains(t, out, "Needs you\n  ! jq-update  #34901 changes requested (just now)\n               dockhand edit jq\n")
 	require.Contains(t, out, "#34901 changes requested, CI ✓")
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	out, _, err = dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  PR       #34901 changes requested, CI ✓\n", "once read, it says what it read")
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 
 	// serve reads them by itself.
 	g.Status = forge.PullRequestStatus{Review: "none", Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
@@ -515,6 +529,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 }
 
 func TestCleanAfterTheMerge(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -522,7 +537,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -530,7 +545,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	g.PRs[34901].State = forge.PullRequestMerged
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	_, errs, err := dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 	require.Contains(t, errs, "jq-update: #34901 is merged")
@@ -575,6 +590,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 }
 
 func TestShipPassingAndSubmitReady(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
@@ -583,7 +599,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -677,6 +693,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 }
 
 func TestSubmitAsksTheReviewersBack(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -684,7 +701,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -772,6 +789,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 }
 
 func TestAdoptRecognizesARenamedBranch(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -779,7 +797,7 @@ func TestAdoptRecognizesARenamedBranch(t *testing.T) {
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -788,7 +806,7 @@ func TestAdoptRecognizesARenamedBranch(t *testing.T) {
 	require.NoError(t, err)
 
 	testsupport.Git(t, dir, "branch", "-m", "jq-1.8")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	out, _, err := dockhand(t, "adopt")
 	require.NoError(t, err)
 	require.Equal(t, "Recognized jq-1.8 as a Git rename of dockhand/jq-update; retained its record, checks, and history.\nPull request #34901 keeps its original source branch; submit will continue pushing to ada/macports-ports:dockhand/jq-update.\n", out)
@@ -800,6 +818,7 @@ func TestAdoptRecognizesARenamedBranch(t *testing.T) {
 // status follows a branch renamed with Git without being asked, and says
 // so once (the person's ruling on the M1's quick stage, D-S5).
 func TestStatusFollowsARenamedBranch(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	_, _, err := dockhand(t, "start", "jq-update")
@@ -821,6 +840,7 @@ func TestStatusFollowsARenamedBranch(t *testing.T) {
 // resumes (decision 4). And it submits exactly the commit it checked: a
 // branch that moved while its check ran is not submitted.
 func TestShipKeepsToOneCheckAndItsCommit(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -829,7 +849,7 @@ func TestShipKeepsToOneCheckAndItsCommit(t *testing.T) {
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -856,7 +876,7 @@ cat > "$(dirname "$1")/result.json" <<JSON
 {"version": 1, "targets": [{"id": "jq", "outcome": "passed"}]}
 JSON
 `), 0o755))
-	t.Setenv("MOVE_IN", dir)
+	setenv(t, "MOVE_IN", dir)
 	_, _, err = dockhand(t, "ship", "--yes")
 	require.Error(t, err)
 	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was checked; nothing was submitted, since ship binds [0-9a-f]{7}$`, err.Error())
@@ -867,6 +887,7 @@ JSON
 // The description is edited in the process's run root, so a process that
 // dies with the editor open leaves the buffer to the next one's sweep.
 func TestTheDescriptionIsEditedInTheRunRoot(t *testing.T) {
+	t.Parallel()
 	record := filepath.Join(t.TempDir(), "path")
 	editor := `edit() { printf '%s' "$1" > '` + record + `'; printf 'edited' > "$1"; }; edit`
 	text, err := editText(t.Context(), editor, "draft")
@@ -885,6 +906,7 @@ func TestTheDescriptionIsEditedInTheRunRoot(t *testing.T) {
 // (the beekeeper-studio run's finding 4); where the profile chose not to
 // build, as minmax does, it says nothing (field testing at 9c5919dd).
 func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
+	t.Parallel()
 	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	target := model.PlanTarget{ID: "beekeeper-studio", Target: model.Target{Name: "beekeeper-studio"}}
@@ -922,6 +944,7 @@ func (restricted) Is(target error) bool { return target == forge.ErrAppRestricte
 // A draft's preview names the command that marks it ready, and --ready's
 // preview says what it would do in each case.
 func TestTheReadyStepIsPreviewed(t *testing.T) {
+	t.Parallel()
 	draft := engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 34901, Draft: true}},
 		Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34901}}}}
 	require.True(t, strings.HasPrefix(pullRequestWords(draft), "updates #34901, a draft: dockhand submit --ready marks it ready for review"), pullRequestWords(draft))
@@ -949,6 +972,7 @@ func TestTheReadyStepIsPreviewed(t *testing.T) {
 // status has read the merge, says its pull request may have merged, where
 // it suggested adopt as if something were wrong.
 func TestCleanNamesOneBranch(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -956,14 +980,14 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "start", "other-work")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "archive", "other-work", "--keep-worktree")
@@ -1012,6 +1036,7 @@ func TestThePushLineSaysItWontPushOverAnotherPush(t *testing.T) {
 // said it "did not pass on" 12 and 26 alike (field testing, grafana
 // 13.2.4).
 func TestCheckWordsSayWhatWasntBuilt(t *testing.T) {
+	t.Parallel()
 	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	grafana := model.PlanTarget{Target: model.Target{Name: "grafana"}}
@@ -1032,6 +1057,7 @@ func TestCheckWordsSayWhatWasntBuilt(t *testing.T) {
 // full stage's D-C4); someone else's pull request, pushed to as theirs,
 // doesn't.
 func TestASubmissionToAnotherAccountsForkIsSaid(t *testing.T) {
+	t.Parallel()
 	plan := engine.SubmitPlan{HeadRepository: "herbyg-test/macports-ports", Repository: "herbyg-test/macports-ports",
 		Login: forge.Login{Account: "herbygillot", Source: "Dockhand macOS Keychain", From: "dockhand's login in the Keychain"}}
 	var out bytes.Buffer

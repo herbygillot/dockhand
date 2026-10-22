@@ -15,6 +15,7 @@ import (
 // --automatic is that pass, and the next command the same day starts none.
 // cleanup.automatic = false starts none at all.
 func TestACommandStartsCleanupWhenItIsDue(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	var started []engine.Options
 	hosted(t).startCleanup = func(options engine.Options) error {

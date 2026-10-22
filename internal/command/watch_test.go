@@ -16,6 +16,7 @@ func fastWatch(t *testing.T) {
 }
 
 func TestWatchPrintsEventsAsLinesWithoutATerminal(t *testing.T) {
+	t.Parallel()
 	checkedBranch(t)
 	fastWatch(t)
 	ctx, stop := context.WithCancel(t.Context())
@@ -36,6 +37,7 @@ func TestWatchPrintsEventsAsLinesWithoutATerminal(t *testing.T) {
 }
 
 func TestWatchRedrawsAndRunsWhatIsTyped(t *testing.T) {
+	t.Parallel()
 	checkedBranch(t)
 	fastWatch(t)
 	_, _, err := dockhand(t, "check")

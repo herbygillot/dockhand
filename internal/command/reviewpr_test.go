@@ -17,6 +17,7 @@ import (
 )
 
 func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	g := withGitHub(t, w)
 	testsupport.Git(t, w.upstream, "switch", "-q", "-c", "contrib")
@@ -53,6 +54,7 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 }
 
 func TestAdoptSomeonesPullRequest(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	g := withGitHub(t, w)
 	testsupport.Git(t, w.upstream, "switch", "-q", "-c", "contrib")
@@ -78,6 +80,7 @@ func TestAdoptSomeonesPullRequest(t *testing.T) {
 // A review's terminal output says what the assessment found, marked as
 // update marks it, and the dependents, or why either wasn't read.
 func TestAReviewSaysTheAssessmentAndTheDependents(t *testing.T) {
+	t.Parallel()
 	report := engine.ReviewReport{Ref: forge.PullRequestRef{Number: 34620}, Title: "libuv: update to 1.52.1", Login: "you", Permission: "none",
 		Head: strings.Repeat("b", 40), Base: strings.Repeat("a", 40), Ports: []string{"libuv"},
 		Upstream: []engine.PortComparison{{Port: "libuv", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{

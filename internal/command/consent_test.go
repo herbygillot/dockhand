@@ -14,6 +14,7 @@ import (
 // in one sentence, exit 1, or answered where a safe way on is given; each
 // says how it was answered.
 func TestADecisionSaysHowItWasAnswered(t *testing.T) {
+	t.Parallel()
 	d := decision{question: "? Remove 2 items? [y/N] ", undone: "nothing was removed", byYes: "--yes removes these"}
 	script := Streams{In: strings.NewReader(""), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}
 

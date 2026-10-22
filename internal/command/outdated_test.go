@@ -56,6 +56,7 @@ func withOutdated(t *testing.T) *jqIsOutdated {
 // A report where nothing is newer says so in words that fit its count: a
 // port named alone by its name, and several as none of them.
 func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
+	t.Parallel()
 	current := func(name string) engine.OutdatedPort {
 		return engine.OutdatedPort{Port: name, Current: "1.8.2", Newest: "1.8.2"}
 	}
@@ -120,6 +121,7 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 }
 
 func TestOutdatedThenUpdateMine(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -128,10 +130,10 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 
 	_, _, err := dockhand(t, "outdated", "--mine")
 	require.ErrorContains(t, err, `--mine needs to know who you are, as your ports' maintainers lines name you: set maintainer to you as a Portfile's maintainers line writes you, such as "@you" for your GitHub login, or "{example.org:you @you}" with your email too, in `+filepath.Join(w.home, ".dockhand", "config.toml"))
-	t.Setenv("DOCKHAND_CONFIG", filepath.Join(w.home, "elsewhere.toml"))
+	setenv(t, "DOCKHAND_CONFIG", filepath.Join(w.home, "elsewhere.toml"))
 	_, _, err = dockhand(t, "outdated", "--mine")
 	require.ErrorContains(t, err, `in `+filepath.Join(w.home, "elsewhere.toml"), "the file read, not the default (the dogfood run with 251a1264)")
-	t.Setenv("DOCKHAND_CONFIG", "")
+	setenv(t, "DOCKHAND_CONFIG", "")
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
@@ -183,6 +185,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 // uncertain, and counts it for a look; outdated's JSON lists what was set
 // aside (the update-workflow review's finding 6).
 func TestUpdateMineLeavesAnUncertainPortForALook(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -212,6 +215,7 @@ func TestUpdateMineLeavesAnUncertainPortForALook(t *testing.T) {
 // At a terminal, outdated shows how many ports are looked up on a line it
 // redraws, and clears it once they all are; elsewhere it shows nothing.
 func TestOutdatedShowsItsProgressAtATerminal(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	reader := withOutdated(t)
@@ -243,6 +247,7 @@ func (c cutShort) Outdated(_ context.Context, _ model.ObjectID, request engine.O
 // and says how far it got; update --mine and ship --mine then start
 // nothing.
 func TestAnInterruptedLookPrintsWhatItFound(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -262,6 +267,7 @@ func TestAnInterruptedLookPrintsWhatItFound(t *testing.T) {
 
 // A line printed while the count shows clears it, and draws it again after.
 func TestAReportPrintsAroundTheCount(t *testing.T) {
+	t.Parallel()
 	var err bytes.Buffer
 	line := &statusLine{w: &err}
 	line.show("Looking up each port's newest release: 1 of 2")
@@ -273,6 +279,7 @@ func TestAReportPrintsAroundTheCount(t *testing.T) {
 // What a batch leaves is counted by what the look found of each, naming
 // outdated, which says each.
 func TestABatchCountsWhatItLeaves(t *testing.T) {
+	t.Parallel()
 	report := engine.OutdatedReport{Ports: []engine.OutdatedPort{
 		{Port: "pgdog", Current: "0.1.53", Newest: "0.1.60", Outdated: true},
 		{Port: "pomo", Current: "0.8.1", Newest: "0.8.1"},
@@ -288,6 +295,7 @@ func TestABatchCountsWhatItLeaves(t *testing.T) {
 // A batch's exit says whether anything worked: 1 where none could be
 // done, 3 where some need a look, and 0 where all were.
 func TestABatchsExitSaysWhetherAnythingWorked(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, 1, ExitCode(batchExit([]string{"jq"}, 1, "shipped")), "none could be done")
 	require.Equal(t, 3, ExitCode(batchExit([]string{"jq"}, 2, "shipped")), "some need a look")
 	require.NoError(t, batchExit(nil, 2, "shipped"), "all were done")
@@ -297,6 +305,7 @@ func TestABatchsExitSaysWhetherAnythingWorked(t *testing.T) {
 // hourly allowance; a small one says nothing (the M1's run at 1da4fdbf:
 // 835 ports cost 2,166 requests).
 func TestALargeLookSaysItsCost(t *testing.T) {
+	t.Parallel()
 	var said []string
 	l := &lookups{say: func(line string) { said = append(said, line) }}
 	l.progress(0, 2)
@@ -310,6 +319,7 @@ func TestALargeLookSaysItsCost(t *testing.T) {
 // again now and then, not each port, and not once every port is looked up
 // (field testing at c9ad2112: two ports, 13 minutes, nothing said).
 func TestALookOffATerminalSaysItsCountAsItGoes(t *testing.T) {
+	t.Parallel()
 	var said []string
 	l := &lookups{say: func(line string) { said = append(said, line) }, first: time.Minute, every: time.Hour, started: time.Now()}
 	l.progress(1, 3)
@@ -326,6 +336,7 @@ func TestALookOffATerminalSaysItsCountAsItGoes(t *testing.T) {
 // --over-allowance says to go on; one within it, or where GitHub can't be
 // asked, goes on as it did (field testing at 6dd7745c).
 func TestALookPastTheAllowanceAsksFirst(t *testing.T) {
+	t.Parallel()
 	reset := time.Date(2026, 10, 21, 15, 4, 0, 0, time.Local)
 	left := func(remaining int) func(context.Context) (github.Allowance, error) {
 		return func(context.Context) (github.Allowance, error) {

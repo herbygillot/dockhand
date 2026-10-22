@@ -52,12 +52,13 @@ JSON
 }
 
 func TestCheckRunsHereWithoutServe(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
@@ -118,6 +119,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 // A narrowed plan says what --only left out, and that submit still needs
 // it checked (Design v3 §7).
 func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	writePlan(&out, model.Plan{
 		Environments: []model.Environment{{Provider: "command"}},
@@ -132,6 +134,7 @@ func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
 // its tag names as the check is planned, once where its environments
 // agree, or why that isn't known (batch 20).
 func TestCheckPlanSaysWhatAGitFetchMustCheckOut(t *testing.T) {
+	t.Parallel()
 	arm := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	intel := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}}
 	target := func(name string) model.PlanTarget {
@@ -170,6 +173,7 @@ func TestCheckPlanSaysWhatAGitFetchMustCheckOut(t *testing.T) {
 // the check doesn't build it, but an earlier check's result of it stands
 // only where it fetched that commit.
 func TestCheckPlanShowsTheGitSourcesOfWhatOnlyLeftOut(t *testing.T) {
+	t.Parallel()
 	arm := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	target := func(name string) model.PlanTarget {
 		return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Kind: model.Substantive, Role: model.Changed}
@@ -198,6 +202,7 @@ func TestCheckPlanShowsTheGitSourcesOfWhatOnlyLeftOut(t *testing.T) {
 // by its release; on one, a line each, the environment named only where
 // asked.
 func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
+	t.Parallel()
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
 	targets := []model.PlanTarget{{ID: "flatbuffers", Target: model.Target{Name: "flatbuffers"}}, {ID: "libsigmf", Target: model.Target{Name: "libsigmf"}}}
@@ -229,6 +234,7 @@ func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
 // and which releases nothing covered is submit's to say (field testing's
 // exiv2, 2026-10-20).
 func TestACheckReportsTheReleasesItPlanned(t *testing.T) {
+	t.Parallel()
 	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	next := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}}
@@ -245,6 +251,7 @@ func TestACheckReportsTheReleasesItPlanned(t *testing.T) {
 // a port excluded everywhere for one reason shows once, and one excluded
 // in some environments names them.
 func TestCheckPlanShowsEachEnvironmentsOrder(t *testing.T) {
+	t.Parallel()
 	arm := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	intel := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}}
 	target := func(name string) model.PlanTarget {
@@ -280,6 +287,7 @@ func TestCheckPlanShowsEachEnvironmentsOrder(t *testing.T) {
 // says what the tests did at the base, not only that the port built: uvw's
 // failed there too, and uvw2's passed (the libuv run's finding 5).
 func TestABaselineSaysWhatTheTestsDidAtTheBase(t *testing.T) {
+	t.Parallel()
 	built := func(tests model.TestOutcome) model.TargetResult {
 		return model.TargetResult{Outcome: model.OutcomePassed, Tests: tests}
 	}
@@ -299,6 +307,7 @@ func TestABaselineSaysWhatTheTestsDidAtTheBase(t *testing.T) {
 }
 
 func TestBaselineResultsShowWhereItRebuilt(t *testing.T) {
+	t.Parallel()
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
 	jq := model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}
@@ -327,13 +336,14 @@ func TestBaselineResultsShowWhereItRebuilt(t *testing.T) {
 
 // A misspelled --tests is refused before anything is captured or planned.
 func TestCheckRefusesAnUnknownTestPolicyAtOnce(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	withScript(t, w, "passed")
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
@@ -348,6 +358,7 @@ func TestCheckRefusesAnUnknownTestPolicyAtOnce(t *testing.T) {
 // cancelled before it started, and one that recorded nothing finished
 // nothing (the hugo exercise's certigo run, finding 5).
 func TestAStoppedCheckSaysWhatItLeft(t *testing.T) {
+	t.Parallel()
 	run := model.Run{ID: "run_2", Number: 2}
 	require.Equal(t, "Canceled check-2 before it started.", stopWords(run, true))
 	require.Equal(t, "Stopped check-2; what it finished is kept.", stopWords(run, false))
@@ -360,6 +371,7 @@ func TestAStoppedCheckSaysWhatItLeft(t *testing.T) {
 // under any policy, and beside them those that do; a plan that doesn't
 // require them needn't.
 func TestAPlanRequiringTestsNamesWhatDeclaresNone(t *testing.T) {
+	t.Parallel()
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	plan := model.Plan{Tests: model.TestsRequired, Environments: []model.Environment{tahoe},
 		Targets: []model.PlanTarget{{ID: "ov", Target: model.Target{Name: "ov"}, Kind: model.Substantive, Role: model.Changed}, {ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}},
@@ -396,6 +408,7 @@ func cells(results []model.TargetResult) []engine.Cell {
 // more builds than it would make unasked: on a terminal, a question;
 // without one, --yes (item 8).
 func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
+	t.Parallel()
 	arm := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	jq := model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed}
 	plan := model.Plan{Environments: []model.Environment{arm}, EachVariant: true, Targets: []model.PlanTarget{jq}}
@@ -435,9 +448,10 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 // where it has no commits, since its head is only its base; with commits
 // and edits beside them, which is meant is asked (the txt run's finding 2).
 func TestCheckingABranchWithNoCommitsTakesItsWorkingFiles(t *testing.T) {
+	t.Parallel()
 	w := checkedBranch(t)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	out, _, err := dockhand(t, "check", "--plan", "--branch", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · would capture the working files as a new snapshot\n")
@@ -452,13 +466,14 @@ func TestCheckingABranchWithNoCommitsTakesItsWorkingFiles(t *testing.T) {
 // check --include, names it in status, not "none yet" (Codex's feedback,
 // approved 2026-10-05).
 func TestStatusNamesAPortBuiltWithInclude(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withScript(t, w, "passed")
 	_, _, err := dockhand(t, "start", "vx")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "vx")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	out, _, err := dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Ports    none yet\n")
@@ -475,6 +490,7 @@ func TestStatusNamesAPortBuiltWithInclude(t *testing.T) {
 // with it, and says it, where it read "the files have changed since" and
 // asked for a check of the same files. Once the file changes, it doesn't.
 func TestStatusComparesTheFilesACheckIncluded(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -482,7 +498,7 @@ func TestStatusComparesTheFilesACheckIncluded(t *testing.T) {
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")

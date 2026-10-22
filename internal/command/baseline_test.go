@@ -31,13 +31,14 @@ JSON
 }
 
 func TestBaselineComparesWithTheBase(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	next := withOutcomeScript(t, w, "")
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 
@@ -103,13 +104,14 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 // check reports the check's result whatever follows it: a baseline
 // check.baseline runs is inside it, marked as that check's baseline.
 func TestCheckReportsItsBaselineInsideIt(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	next := withOutcomeScript(t, w, "[check]\nbaseline = true\n")
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 

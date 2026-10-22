@@ -21,13 +21,14 @@ import (
 // A check made before tidy, the order the design gives, checked the files
 // tidy then committed: status credits it to the commit, as submit does.
 func TestStatusCreditsACheckOfTheCommittedFilesToTheCommit(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	withScript(t, w, "passed")
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "check")
@@ -57,6 +58,7 @@ func TestStatusCreditsACheckOfTheCommittedFilesToTheCommit(t *testing.T) {
 }
 
 func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -70,13 +72,13 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	require.Contains(t, out, "BRANCH     PORTS  WORK         CHECKS  PR\njq-update  0      nothing yet  —       —\n")
 	require.Contains(t, out, "serve: not running · queue: empty")
 
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "check")
 	require.NoError(t, err)
 
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	out, _, err = dockhand(t)
 	require.NoError(t, err, "bare dockhand in a ports checkout is status")
 	require.Contains(t, out, "Needs you\n  · jq-update  snapshot 1 passed; commit it for review\n               dockhand tidy --branch jq-update\n")
@@ -87,7 +89,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	require.Equal(t, 3, ExitCode(err), "attention needed exits 3")
 	require.Equal(t, "  ! jq-update  snapshot 1 passed; the files have changed since\n               dockhand check --branch jq-update\n", out)
 
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "tidy")
 	require.ErrorContains(t, err, "review this plan in an interactive terminal", "the hand edit is not dockhand's")
 	_, _, err = dockhand(t, "tidy", "--squash", "--message", "jq: update to 1.8.1")
@@ -105,13 +107,14 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 }
 
 func TestQueueWaitCancelAndLogs(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	withScript(t, w, "passed")
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "logs")
@@ -211,7 +214,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	_, _, err = dockhand(t, "logs", "check-9")
 	require.ErrorContains(t, err, "there is no run check-9")
 
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "logs")
 	require.ErrorContains(t, err, "name a check, such as check-42, a provider run, or a branch with -b or -p; in a branch's worktree, logs shows the branch's latest check")
 	_, _, err = dockhand(t, "wait")
@@ -228,6 +231,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 // --json, the whole log comes with its steps and the line its own build
 // begins on.
 func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
+	t.Parallel()
 	own := "--->  Fetching distfiles for hugo\n--->  Verifying checksums for hugo\n--->  Building hugo\nError: Failed to build hugo\n"
 	data := []byte("--->  Deactivating zlib\n--->  Cleaning hugo\n--->  Verifying Portfile for hugo\n" + strings.Repeat("--->  a dependency's line\n", 46000) + own)
 	path := filepath.Join(t.TempDir(), "target-3.log")
@@ -278,6 +282,7 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 // check-65's libuv-devel failed its tests on macOS 15 and passed on 26, and
 // logs --port showed 26's (the hugo exercise).
 func TestLogsForAPortOpenWhereItFailed(t *testing.T) {
+	t.Parallel()
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	build := func(id string, environment model.Environment, result model.TargetResult) engine.ExecutionLogs {
@@ -312,6 +317,7 @@ func TestLogsForAPortOpenWhereItFailed(t *testing.T) {
 // A check that passed in an environment made again since says so, and
 // asks for another check rather than a submit.
 func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
+	t.Parallel()
 	arm := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	latest := model.Run{Number: 3, State: model.RunPassed}
 	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/jq-update"}, Latest: &latest, Current: true,
@@ -347,6 +353,7 @@ func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
 // Whether the tag names another commit now (source-moved) takes the
 // network, which status never reads.
 func TestStatusSaysAReleaseMovedBeforeItsCheck(t *testing.T) {
+	t.Parallel()
 	latest := model.Run{Number: 7, State: model.RunPassed}
 	detail := "libharbor's git.branch v4 named aaaaaaa when the update was prepared, then to bbbbbbb when check-7 was planned. The check used a different source from the update"
 	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/libharbor-4", State: model.BranchOpen}, Head: "c0ffee", Commits: 1, Latest: &latest, Current: true,
@@ -379,8 +386,9 @@ func TestStatusSaysAReleaseMovedBeforeItsCheck(t *testing.T) {
 // for serve's line on every render, and watch rendered every 30 seconds.
 // Each session is a row and two journal events.
 func TestStatusOpensOneObserverSession(t *testing.T) {
+	t.Parallel()
 	w := checkedBranch(t)
-	t.Setenv("MACPORTS_TREE", w.clone) // every branch, and serve's line
+	setenv(t, "MACPORTS_TREE", w.clone) // every branch, and serve's line
 	started := func() int {
 		t.Helper()
 		e, err := testSettings(t).open(t.Context())
@@ -403,6 +411,7 @@ func TestStatusOpensOneObserverSession(t *testing.T) {
 // files moved on from what passed isn't asked to be checked again, as
 // status --all asked of duckdb-cxx14 (the hugo exercise's review).
 func TestAnArchivedBranchAsksNothingOfItsChecks(t *testing.T) {
+	t.Parallel()
 	latest := model.Run{Number: 3, State: model.RunPassed}
 	revision := model.Revision{Kind: model.RevisionSnapshot, Snapshot: 1}
 	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/duckdb-cxx14", State: model.BranchOpen}, Latest: &latest, LatestRevision: &revision}
@@ -425,6 +434,7 @@ func TestAnArchivedBranchAsksNothingOfItsChecks(t *testing.T) {
 // duckdb-cxx14, finding 1); one with a pull request is its pull request's
 // to say.
 func TestStatusSaysABranchsWorkIsOnMasterAlready(t *testing.T) {
+	t.Parallel()
 	branch := model.Branch{Name: "dockhand/duckdb-cxx14", State: model.BranchOpen}
 	status := engine.BranchStatus{Branch: branch, OnMaster: model.ObjectID(strings.Repeat("e", 40))}
 	require.Equal(t, []attention{{kind: attentionReady, branch: "duckdb-cxx14", what: "its changes are on master already, as of eeeeeee", next: "dockhand archive duckdb-cxx14"}}, attentionFor(status))
@@ -437,6 +447,7 @@ func TestStatusSaysABranchsWorkIsOnMasterAlready(t *testing.T) {
 // submission too, where only its text and an unattended submission's held
 // said them (batch 22's leftover, batch 32).
 func TestSubmitJSONListsItsConcerns(t *testing.T) {
+	t.Parallel()
 	detail := "libharbor's git.branch v4 named aaaaaaa when the update was prepared, then to bbbbbbb when check-7 was planned. The check used a different source from the update"
 	plan := engine.SubmitPlan{Branch: model.Branch{Name: "dockhand/libharbor-4"},
 		Moved: []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Class: model.Introduced, Detail: detail}}}
@@ -450,6 +461,7 @@ func TestSubmitJSONListsItsConcerns(t *testing.T) {
 // width beside its branch, its command on the line below (the gnome-voice
 // session's notes: commands ended near column 400).
 func TestAttentionRowsWrapWithTheirCommandBelow(t *testing.T) {
+	t.Parallel()
 	var out strings.Builder
 	writeAttention(&out, []attention{
 		{kind: attentionFailed, branch: "gnome-voice", what: "check-482 failed: gnome-voice failed to build on macOS 26 at configure, and the log names the missing dependency", next: "dockhand logs check-482 gnome-voice"},

@@ -41,6 +41,7 @@ func shipAnswering(t *testing.T, answers string, args ...string) (string, string
 // asking once; run again, it resumes the branch, here already submitted
 // (the command-line UX second look's §6).
 func TestShipCarriesAPortToItsPullRequest(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -73,6 +74,7 @@ func TestShipCarriesAPortToItsPullRequest(t *testing.T) {
 
 // --to commit stops at the commit, and --to names a stage.
 func TestShipStopsWhereToSays(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -96,6 +98,7 @@ func TestShipStopsWhereToSays(t *testing.T) {
 // it, and a terminal asks which (the architecture review of 5897a82, R3-3:
 // ship had its own refusal, "Use dockhand ship -b <branch>").
 func TestShipChoosesAPortsBranchAsSelectDoes(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -118,6 +121,7 @@ func TestShipChoosesAPortsBranchAsSelectDoes(t *testing.T) {
 // at the release it found, and says what it leaves; --passing, the
 // branches whose checks passed and aren't submitted.
 func TestShipMineAndPassing(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -145,6 +149,7 @@ func TestShipMineAndPassing(t *testing.T) {
 // A batch queues every change's check before it sees any through, and
 // submits each as its check passes (decision 4).
 func TestShipQueuesABatchsChecksFirst(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	require.NoError(t, os.MkdirAll(filepath.Join(w.upstream, "textproc/yq"), 0o755))
@@ -178,6 +183,7 @@ JSON
 // --draft for the pull request, which bump lacked (the second look's §6).
 // A draft goes up whatever its check found.
 func TestShipTakesEachStagesFlags(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -203,6 +209,7 @@ func TestShipTakesEachStagesFlags(t *testing.T) {
 // engine's TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor and
 // TestShipHoldsWhatNobodyLooksOver).
 func TestShipWithYesHoldsWhatServeWould(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -235,6 +242,7 @@ func TestShipWithYesHoldsWhatServeWould(t *testing.T) {
 // as the check asks: ship --tests required after a pass with declared
 // tests checks again (Codex's review of 832f059e, medium 4).
 func TestShipChecksAgainWhereAPassAskedLess(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -256,6 +264,7 @@ func TestShipChecksAgainWhereAPassAskedLess(t *testing.T) {
 // ship's JSON says each change that stopped, with why, beside those it
 // carried on, where only the error said it (the rc1 full stage, S2).
 func TestShipsJSONSaysWhatStopped(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -280,6 +289,7 @@ func TestShipsJSONSaysWhatStopped(t *testing.T) {
 // left an empty branch for each such port (Codex's review, checked
 // against a268b6e5).
 func TestShipStartsNoBranchForAnEditItCantMakeUnattended(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).Preparer = func(*engine.Engine) engine.Preparer { return refuser{} }

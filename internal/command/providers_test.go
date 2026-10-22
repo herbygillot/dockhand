@@ -80,6 +80,7 @@ func onIntel(t *testing.T) {
 // An Intel Mac is told Tart isn't for it, and where its checks build,
 // rather than to install Tart (the Intel CI job, 2026-10-03).
 func TestAnIntelMacChecksOnGitHub(t *testing.T) {
+	t.Parallel()
 	onIntel(t)
 	out := providers(t)
 	require.Contains(t, out, "tart     · needs Apple silicon; checks here build on GitHub, with --on github\n")
@@ -88,6 +89,7 @@ func TestAnIntelMacChecksOnGitHub(t *testing.T) {
 }
 
 func TestProviderLinesWithoutTart(t *testing.T) {
+	t.Parallel()
 	out := providers(t)
 	require.Equal(t, "tart     · needs Tart: sudo port install tart, then dockhand setup tart\n"+
 		"github   · needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n", out)
@@ -97,6 +99,7 @@ func TestProviderLinesWithoutTart(t *testing.T) {
 }
 
 func TestProviderLinesShowTheImages(t *testing.T) {
+	t.Parallel()
 	images := &fakeImages{}
 	useImages(t, images)
 	images.status = tart.Status{Host: release(t, "tahoe")}
@@ -150,6 +153,7 @@ func TestProviderLinesShowTheImages(t *testing.T) {
 }
 
 func TestProviderLinesShowACommandProvider(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[providers.command]\nrun = \"~/bin/build-ports\"\nname = \"my build box\"\n"), 0o644))
@@ -158,6 +162,7 @@ func TestProviderLinesShowACommandProvider(t *testing.T) {
 }
 
 func TestSetupTart(t *testing.T) {
+	t.Parallel()
 	images := &fakeImages{result: tart.SetupResult{Image: "dockhand-base-sonoma", Release: release(t, "sonoma"),
 		MacPorts: tart.DefaultMacPorts, CommandLineTools: "16.2.0.0.1.1733547573"}}
 	useImages(t, images)
@@ -187,6 +192,7 @@ func TestSetupTart(t *testing.T) {
 }
 
 func TestSetupShowsTheProviders(t *testing.T) {
+	t.Parallel()
 	newWorld(t)
 	images := &fakeImages{status: tart.Status{Host: release(t, "tahoe")}}
 	useImages(t, images)
@@ -210,6 +216,7 @@ func TestSetupShowsTheProviders(t *testing.T) {
 // The plan says before a check what an environment can't build, what it
 // needs, and, once for the environment, what would give it that.
 func TestThePlanSaysWhatWontBeBuilt(t *testing.T) {
+	t.Parallel()
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
 	plan := model.Plan{Environments: []model.Environment{tahoe}, Tests: model.TestsDeclared,
 		Targets: []model.PlanTarget{
@@ -237,6 +244,7 @@ func TestThePlanSaysWhatWontBeBuilt(t *testing.T) {
 // terminal agrees, and setup runs again; without a terminal, or without
 // xcodes, setup says what to download and how xcodes would.
 func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
+	t.Parallel()
 	newWorld(t)
 	missing := &tart.MissingXcode{Release: release(t, "sonoma"), Version: "15.4", Path: "/Volumes/Xcodes", Folder: "/Volumes/Xcodes"}
 	images := &fakeImages{xcodes: true, errs: []error{missing}, result: tart.SetupResult{Image: "dockhand-xcode-sonoma", Release: release(t, "sonoma"),
@@ -295,6 +303,7 @@ func providers(t *testing.T) string {
 // An image whose MacPorts is older than this Mac's is said, with how to
 // make it again.
 func TestProviderLinesSayAnImageBehindThisMacsMacPorts(t *testing.T) {
+	t.Parallel()
 	images := &fakeImages{}
 	useImages(t, images)
 	tahoe := release(t, "tahoe")
@@ -313,6 +322,7 @@ func TestProviderLinesSayAnImageBehindThisMacsMacPorts(t *testing.T) {
 // its base image behind it is said once, with no rebuild (the person,
 // 2026-10-21 21:50Z: six rebuilds asked for that no check needed).
 func TestProviderLinesSayOnlyTheImagesChecksBuildIn(t *testing.T) {
+	t.Parallel()
 	images := &fakeImages{}
 	useImages(t, images)
 	var releases []macos.Release
@@ -341,6 +351,7 @@ func TestProviderLinesSayOnlyTheImagesChecksBuildIn(t *testing.T) {
 // older MacPorts, which --xcode leaves as it is (field testing,
 // 2026-10-16).
 func TestAnXcodeRebuildSaysItsBaseKeepsAnOlderMacPorts(t *testing.T) {
+	t.Parallel()
 	newWorld(t)
 	images := &fakeImages{}
 	useImages(t, images)

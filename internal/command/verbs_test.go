@@ -15,6 +15,7 @@ import (
 )
 
 func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -30,12 +31,12 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	_, _, err = dockhand(t, "start", "notes")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "notes")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	out, _, err = dockhand(t, "edit", "jq")
 	require.NoError(t, err, "without a terminal, edit prints the Portfile")
 	require.Equal(t, filepath.Join(dir, "textproc/jq/Portfile")+"\n", out)
 	require.FileExists(t, filepath.Join(dir, "textproc/jq/Portfile"), "the sparse worktree grew to hold it")
-	t.Setenv("EDITOR", "false")
+	setenv(t, "EDITOR", "false")
 	out, _, err = dockhand(t, "edit", "jq", "--no-open")
 	require.NoError(t, err, "--no-open runs no editor, failing or not")
 	require.Equal(t, filepath.Join(dir, "textproc/jq/Portfile")+"\n", out)
@@ -84,7 +85,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	out, _, err = dockhand(t, "archive")
 	require.NoError(t, err)
 	require.Contains(t, out, "Archived notes, and removed its worktree;")
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	out, _, err = dockhand(t, "status")
 	require.NoError(t, err)
 	require.NotContains(t, out, "notes ")
@@ -97,6 +98,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 // needn't run edit for the files; with no name, the branch is named for
 // the port, as an edit's is.
 func TestStartBringsItsPortsIn(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	out, _, err := dockhand(t, "start", "notes", "--port", "jq")
 	require.NoError(t, err)
@@ -112,13 +114,14 @@ func TestStartBringsItsPortsIn(t *testing.T) {
 // undo takes back the branch's latest tidy, its checkpoint found for it;
 // open opens a branch's pull request, and says one it hasn't.
 func TestUndoAndOpen(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -144,6 +147,7 @@ func TestUndoAndOpen(t *testing.T) {
 // port from the checkout works in it rather than starting a second beside
 // it (the command-line UX second look's §1).
 func TestABranchStartedForAPortIsThatPorts(t *testing.T) {
+	t.Parallel()
 	newWorld(t)
 	_, _, err := dockhand(t, "start", "notes", "--port", "jq")
 	require.NoError(t, err)
@@ -167,6 +171,7 @@ func TestABranchStartedForAPortIsThatPorts(t *testing.T) {
 // for a new one: "start another?" and "which one?" were two (the split's
 // 7d row 7). A script is told them, by exact name.
 func TestSeveralBranchesForAPortAreOneQuestion(t *testing.T) {
+	t.Parallel()
 	newWorld(t)
 	for _, name := range []string{"jq-one", "jq-two"} {
 		_, _, err := dockhand(t, "start", name, "--port", "jq")

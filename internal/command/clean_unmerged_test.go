@@ -19,19 +19,20 @@ import (
 // stays, saying why, unless --discard; and clean, naming it, takes the
 // worktree path checked out again.
 func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
 	require.NoError(t, err)
 	head := strings.TrimSpace(testsupport.Git(t, dir, "rev-parse", "HEAD"))
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 
 	// A worktree with edits of its own stays, and says why.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("mine\n"), 0o644))
@@ -83,6 +84,7 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 // --merged=false leaves them (the dogfood run with be3f3e06, whose clean
 // --archived left three merged branches, unsaid).
 func TestCleanAddsWhatItsFlagsName(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []model.BranchState{model.BranchMerged}, cleanStates(true, false))
 	require.Equal(t, []model.BranchState{model.BranchMerged, model.BranchClosed}, cleanStates(true, true))
 	require.Equal(t, []model.BranchState{model.BranchClosed}, cleanStates(false, true))
@@ -93,16 +95,17 @@ func TestCleanAddsWhatItsFlagsName(t *testing.T) {
 // them, where tidy's plan needs no words, or discard them, and then takes
 // the worktree; an open pull request is said, never closed.
 func TestArchiveAsksCommitOrDiscard(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 
 	var out, errs bytes.Buffer
 	err = runFor(t, t.Context(), []string{"archive", "jq-update"}, Streams{In: strings.NewReader("c\n"), Out: &out, Err: &errs, interactive: true})

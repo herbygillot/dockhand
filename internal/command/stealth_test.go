@@ -78,6 +78,7 @@ func (r rechecksummer) Prepare(ctx context.Context, request editprep.Request) (e
 }
 
 func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name                jq\nversion             1.7.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
 	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
@@ -92,13 +93,13 @@ func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 		"Changed: textproc/jq/Portfile\n"+
 		"Bumped the revision because the source changed. Use --no-revbump only if the change needs no rebuild.\n")
 	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
-	home, _ := os.UserHomeDir()
+	home := getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Equal(t, "name                jq\nversion             1.7.1\nrevision            1\nchecksums           sha256 "+newSHA+" size 7114508\ndist_subdir         ${name}/${version}_${revision}\n", string(data))
 
 	// A version edited by hand first is not a stealth update.
-	t.Setenv("MACPORTS_TREE", filepath.Join(home, dir[2:]))
+	setenv(t, "MACPORTS_TREE", filepath.Join(home, dir[2:]))
 	require.NoError(t, os.WriteFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"), []byte("name                jq\nversion             1.8.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
 	out, _, err = dockhand(t, "checksums", "jq")
 	require.NoError(t, err)
@@ -118,6 +119,7 @@ func (refuser) Prepare(context.Context, editprep.Request) (editprep.Result, erro
 }
 
 func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).Preparer = func(*engine.Engine) engine.Preparer { return refuser{} }
@@ -140,6 +142,7 @@ func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
 // ship settles where to check before it edits anything, and passes on
 // what was tested.
 func TestShipSettlesWhereBeforeTheEdit(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -165,6 +168,7 @@ func TestShipSettlesWhereBeforeTheEdit(t *testing.T) {
 }
 
 func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name                jq\nversion             1.7.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
 	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
@@ -176,7 +180,7 @@ func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {
 		"Changed: textproc/jq/Portfile\n"+
 		"Inspect the source change before deciding whether it needs a revision bump.\n")
 	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
-	home, _ := os.UserHomeDir()
+	home := getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "size 7114508\ndist_subdir         ${name}/${version}_1\n")
@@ -184,6 +188,7 @@ func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {
 }
 
 func TestANewVersionRemovesTheStealthDistSubdir(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\ndist_subdir         ${name}/${version}_${revision}\nrevision 1\n"), 0o644))
 	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
@@ -197,7 +202,7 @@ func TestANewVersionRemovesTheStealthDistSubdir(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "Removed dist_subdir: a stealth update set it for the old version, and every archive of the new version has a name of its own.\n")
 	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
-	home, _ := os.UserHomeDir()
+	home := getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 1.8.1\nrevision 1\n", string(data))

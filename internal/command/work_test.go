@@ -43,11 +43,11 @@ func newWorld(t *testing.T) world {
 	testsupport.Git(t, root, "clone", "-q", w.upstream, w.clone)
 	require.NoError(t, os.MkdirAll(w.home, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".gitconfig"), []byte("[user]\n\tname = Ada\n\temail = ada@example.org\n"), 0o644))
-	t.Setenv("HOME", w.home)
-	t.Setenv("DOCKHAND_UPSTREAM", w.upstream)
-	t.Setenv("DOCKHAND_DB", "")
-	t.Setenv("DOCKHAND_CONFIG", "")
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "HOME", w.home)
+	setenv(t, "DOCKHAND_UPSTREAM", w.upstream)
+	setenv(t, "DOCKHAND_DB", "")
+	setenv(t, "DOCKHAND_CONFIG", "")
+	setenv(t, "MACPORTS_TREE", w.clone)
 	return w
 }
 
@@ -65,6 +65,7 @@ func dockhand(t *testing.T, args ...string) (string, string, error) {
 }
 
 func TestSetupStartPathAndAdopt(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	out, _, err := dockhand(t, "setup", "--yes")
 	require.NoError(t, err)
@@ -109,6 +110,7 @@ func TestSetupStartPathAndAdopt(t *testing.T) {
 }
 
 func TestSetupRemembersAChosenWorktreesDirectory(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	testsupport.Git(t, w.clone, "remote", "add", "upstream", "https://github.com/macports/macports-ports.git")
 	out, _, err := dockhand(t, "setup", "--yes", "--worktrees", "~/work/branches")
@@ -125,12 +127,14 @@ func TestSetupRemembersAChosenWorktreesDirectory(t *testing.T) {
 }
 
 func TestCommandsRefuseADirectoryThatIsNotAPortsTree(t *testing.T) {
+	t.Parallel()
 	newWorld(t)
 	_, _, err := dockhand(t, "--tree", t.TempDir(), "start", "x")
 	require.ErrorContains(t, err, "not in a Git checkout")
 }
 
 func TestDevNullIsNotATerminal(t *testing.T) {
+	t.Parallel()
 	null, err := os.Open(os.DevNull)
 	require.NoError(t, err)
 	defer null.Close()
@@ -139,6 +143,7 @@ func TestDevNullIsNotATerminal(t *testing.T) {
 }
 
 func TestAnEndedInputTakesTheDefault(t *testing.T) {
+	t.Parallel()
 	answer, err := ask(Streams{In: strings.NewReader(""), Err: &bytes.Buffer{}}, "Keep? [Y/n] ")
 	require.NoError(t, err)
 	require.Empty(t, answer)
@@ -147,11 +152,12 @@ func TestAnEndedInputTakesTheDefault(t *testing.T) {
 // setup refuses a Git older than dockhand works with, before recording
 // anything, and says how to get a newer one.
 func TestSetupRefusesAnOldGit(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	old := filepath.Join(w.home, "bin", "git")
 	require.NoError(t, os.MkdirAll(filepath.Dir(old), 0o755))
 	require.NoError(t, os.WriteFile(old, []byte("#!/bin/sh\necho 'git version 2.39.5 (Apple Git-154)'\n"), 0o755))
-	t.Setenv("GIT_BIN", old)
+	setenv(t, "GIT_BIN", old)
 	_, _, err := dockhand(t, "setup", "--yes")
 	require.EqualError(t, err, "dockhand needs Git 2.40 or newer, and "+old+" is 2.39.5; install a newer one, such as with: sudo port install git, or name one with GIT_BIN")
 	require.NoFileExists(t, filepath.Join(w.home, ".dockhand", "dockhand.db"), "nothing was recorded")
@@ -162,16 +168,17 @@ func TestSetupRefusesAnOldGit(t *testing.T) {
 // there, as start's "cd" suggests; elsewhere, on the checkout named.
 // MACPORTS_TREE used to win, so the worktree's branch was never "here".
 func TestMacPortsTreeKeepsTheWorktreeYouAreIn(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	worktree := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Chdir(worktree)
+	chdir(t, worktree)
 	out, _, err := dockhand(t, "path")
 	require.NoError(t, err)
 	require.Equal(t, worktree+"\n", out)
-	t.Chdir(w.home)
+	chdir(t, w.home)
 	_, _, err = dockhand(t, "path")
 	require.ErrorContains(t, err, "this is your checkout's master, not one of dockhand's branches", "outside it, the checkout named, which has master out")
 	require.Equal(t, 1, strings.Count(err.Error(), "name one with"), "the advice said once: %v", err)
@@ -180,6 +187,7 @@ func TestMacPortsTreeKeepsTheWorktreeYouAreIn(t *testing.T) {
 // Where Tart is installed, the engine builds with it; the tests find no
 // Tart otherwise, so this ran nowhere (the test plan's step 3).
 func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
+	t.Parallel()
 	newWorld(t)
 	s := *testSettings(t)
 	e, err := s.open(t.Context())
@@ -201,6 +209,7 @@ func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
 // github part logs out, and v0.3.0's init, auth, and providers point
 // here.
 func TestSetupOffersWhatsMissing(t *testing.T) {
+	t.Parallel()
 	newWorld(t)
 	git, err := exec.LookPath("git")
 	require.NoError(t, err)
@@ -208,7 +217,7 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	// Git, and no Tart, so no image is offered.
 	bin := t.TempDir()
 	require.NoError(t, os.Symlink(git, filepath.Join(bin, "git")))
-	t.Setenv("PATH", bin)
+	setenv(t, "PATH", bin)
 	var out, errs bytes.Buffer
 	err = runFor(t, t.Context(), []string{"setup"}, Streams{In: strings.NewReader("\nn\n"), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err)
@@ -247,11 +256,12 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 // worktree was recorded (the exiv2 field notes). path alone still means
 // here.
 func TestABranchIsFoundFromOutsideTheTree(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", "")
-	t.Chdir(t.TempDir())
+	setenv(t, "MACPORTS_TREE", "")
+	chdir(t, t.TempDir())
 	out, _, err := dockhand(t, "path", "jq-update")
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(w.home, "Source", "macports-branches", "jq-update")+"\n", out)

@@ -51,6 +51,7 @@ const module = "github.com/herbygillot/dockhand/"
 // reads and writes records only through the engine, never with the
 // store's own transactions.
 func TestCommandTalksToTheEngine(t *testing.T) {
+	t.Parallel()
 	entries, err := os.ReadDir(".")
 	require.NoError(t, err)
 	files := token.NewFileSet()

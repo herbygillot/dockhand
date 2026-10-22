@@ -363,3 +363,21 @@ subprocess, forgetest, and the failpoints, which stay. Programs started
 outside the engine's reach (the Keychain's `security`, macOS
 notifications and launchctl, the editor) still inherit the process's
 environment, which is the invocation's in production.
+
+## command's tests, in parallel
+
+command's tests set nothing in the process. Each test's stand-ins
+(stands_test.go's `standing`) now carry its environment and directory
+too: `setenv(t, …)`, `getenv(t, …)`, and `chdir(t, …)` replace
+`t.Setenv`, `os.Getenv`, and `t.Chdir`, and `invocationFor` makes a
+command line from the process's environment with the test's over it. A
+subtest starts from a copy of its parent's stand-ins. serve's standby in
+TestACheckIsHandedToServe runs through `runFor`, and stealth's tests read
+the test's HOME, not the process's.
+
+Every top-level test in command, 214 of them, calls `t.Parallel()`
+(architecture's done criterion for X1). None is left out: the Keychain
+is the host's memory store in tests, launchctl and notifications are the
+host's stand-ins, and failpoints are the acceptance build's, which
+command's tests don't build. The package's tests took 289 seconds one
+at a time and take 81 together; `go test -race` finds no race.

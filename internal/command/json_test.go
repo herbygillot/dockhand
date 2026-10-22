@@ -61,6 +61,7 @@ func dig(t *testing.T, value any, path ...any) any {
 }
 
 func TestJSONEnvelopes(t *testing.T) {
+	t.Parallel()
 	w := checkedBranch(t)
 
 	planned, err := jsonOf(t, "check", "--plan")
@@ -156,6 +157,7 @@ func TestJSONEnvelopes(t *testing.T) {
 }
 
 func TestJSONForTheWholeLoop(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -165,7 +167,7 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
 	require.Equal(t, "dockhand/jq-update", dig(t, started.Result, "branch", "git_branch"))
-	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
 
 	planned, err := jsonOf(t, "update", "jq", "--plan")
 	require.NoError(t, err)
@@ -214,7 +216,7 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	// clean reads the pull request itself, with no status --refresh
 	// before it (field testing, 2026-10-02).
 	g.PRs[34901].State = forge.PullRequestMerged
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	preview, err := jsonOf(t, "clean")
 	require.Equal(t, ExitFailure, ExitCode(err), "a preview without --yes removes nothing, and refuses")
 	require.Equal(t, false, preview.Result["applied"])
@@ -242,12 +244,13 @@ func (b unfetchedPrevious) Prepare(ctx context.Context, r editprep.Request) (edi
 // update --json carries what comparing the upstream archives found, as
 // update prints it. (The architecture review of 2026-09-27, finding 6.)
 func TestUpdateJSONCarriesTheUpstreamComparison(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
 
 	updated, err := jsonOf(t, "update", "jq")
 	require.NoError(t, err)
@@ -258,12 +261,13 @@ func TestUpdateJSONCarriesTheUpstreamComparison(t *testing.T) {
 // A plan says what comparing the upstream archives found, as the update it
 // previews does: what a reviewer would ask about is part of the look.
 func TestAnUpdatesPlanSaysWhatUpstreamChanged(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
 	started, err := jsonOf(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
 	out, _, err := dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "Plan, nothing changed:")
@@ -274,6 +278,7 @@ func TestAnUpdatesPlanSaysWhatUpstreamChanged(t *testing.T) {
 // inside when it ran one: a failed check leaves the pull request out, and
 // a refusal before checking reports what blocks it.
 func TestShipReportsOneShape(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -284,7 +289,7 @@ func TestShipReportsOneShape(t *testing.T) {
 		t.Helper()
 		started, err := jsonOf(t, "start", name)
 		require.NoError(t, err)
-		t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+		setenv(t, "MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
 		_, _, err = dockhand(t, "update", "jq")
 		require.NoError(t, err)
 		_, _, err = dockhand(t, "tidy")
@@ -323,6 +328,7 @@ func TestShipReportsOneShape(t *testing.T) {
 // change is worded without "upstream", which the key already says (the
 // hugo exercise's certigo run, finding 3).
 func TestUpstreamJSONWordsChangesUnderItsKey(t *testing.T) {
+	t.Parallel()
 	view := upstreamView(model.UpstreamComparison{Changes: []model.UpstreamChange{
 		{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod adds golang.org/x/net v0.44.0", Hold: true},
 		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true},
@@ -336,6 +342,7 @@ func TestUpstreamJSONWordsChangesUnderItsKey(t *testing.T) {
 // runs, as which process, whether it opens pull requests, and the queue
 // with what has stopped (the hugo exercise's certigo run, finding 6).
 func TestServesStateIsFieldsAndItsLine(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "serve: not running · queue: empty", serveWords(engine.ServeState{}))
 	running := engine.ServeState{Running: true, PID: 34857, OpensPullRequests: true, Queue: 2, Stopped: 1}
 	require.Equal(t, "serve: running (pid 34857) · opens PRs for passing updates · queue: 2 runs, 1 stopped", serveWords(running))
@@ -352,6 +359,7 @@ func TestServesStateIsFieldsAndItsLine(t *testing.T) {
 // logs --json says what each environment was as its run began, as
 // evidence compares it later, and nothing where its provider can't say.
 func TestLogsSayWhatTheEnvironmentWas(t *testing.T) {
+	t.Parallel()
 	logs := engine.RunLogs{Executions: []engine.ExecutionLogs{
 		{Execution: model.GuestExecution{ID: "tart_1", Attempt: 1, State: model.ExecutionFinished, Identity: "source sha256:a; setup 3"}},
 		{Execution: model.GuestExecution{ID: "command_1", Attempt: 1, State: model.ExecutionFinished}},
@@ -367,6 +375,7 @@ func TestLogsSayWhatTheEnvironmentWas(t *testing.T) {
 // logs says, of a Git-fetched target's build, the commit it fetched and
 // the source it was to fetch, or that its provider didn't say (batch 20).
 func TestLogsSayWhatAGitFetchedBuildFetched(t *testing.T) {
+	t.Parallel()
 	commit := model.ObjectID("1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b")
 	source := model.GitSource{URL: "https://github.com/harbor/libharbor.git", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
 	logs := engine.RunLogs{Run: model.Run{Number: 3, State: model.RunPassed}, Executions: []engine.ExecutionLogs{
@@ -395,6 +404,7 @@ func TestLogsSayWhatAGitFetchedBuildFetched(t *testing.T) {
 // A plan's JSON carries what the person asked and what --only left out,
 // as its text does: the changed targets submission still requires.
 func TestAPlansJSONSaysWhatWasAskedAndLeftOut(t *testing.T) {
+	t.Parallel()
 	arm := model.Environment{Provider: "command"}
 	plan := model.Plan{ID: "p1", Environments: []model.Environment{arm}, Tests: model.TestsDeclared, Only: []string{"jq"}, Also: []string{"oniguruma"},
 		Targets: []model.PlanTarget{{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed},

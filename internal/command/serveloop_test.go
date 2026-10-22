@@ -17,6 +17,7 @@ import (
 )
 
 func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -27,7 +28,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	// neither calls current nor prepares.
 	withOutdated(t).uncertain = true
 	hosted(t).timings.servePoll = 20 * time.Millisecond
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
 	hosted(t).now = func() time.Time { return morning }
 	var mu sync.Mutex
@@ -71,7 +72,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	require.GreaterOrEqual(t, len(notes), 3, "prepared, passed, and opened")
 	mu.Unlock()
 
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	status, _, err := dockhand(t, "status")
 	require.NoError(t, err)
 	require.Regexp(t, `· jq-1\.8\.1\s+#34901 opened by serve, without a person's review`, status)
@@ -84,6 +85,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 }
 
 func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -92,7 +94,7 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	withScript(t, w, "passed")
 	withOutdated(t)
 	hosted(t).timings.servePoll = 20 * time.Millisecond
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
 	hosted(t).now = func() time.Time { return morning }
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
@@ -140,6 +142,7 @@ func (s stopsServe) Outdated(context.Context, model.ObjectID, engine.OutdatedReq
 // leads, rather than skipping the day: the look is stamped once it has
 // run.
 func TestServeLooksAgainAfterStoppingMidLook(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
@@ -147,7 +150,7 @@ func TestServeLooksAgainAfterStoppingMidLook(t *testing.T) {
 	g.Others = nil
 	withScript(t, w, "passed")
 	hosted(t).timings.servePoll = 20 * time.Millisecond
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
 	hosted(t).now = func() time.Time { return morning }
 	config := filepath.Join(w.home, ".dockhand", "config.toml")

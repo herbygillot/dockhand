@@ -51,13 +51,14 @@ func checkedBranch(t *testing.T) world {
 	hosted(t).timings.servePoll = 20 * time.Millisecond
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	return w
 }
 
 func TestServeDrainsTheQueue(t *testing.T) {
+	t.Parallel()
 	checkedBranch(t)
 	_, _, err := dockhand(t, "check", "-d")
 	require.NoError(t, err)
@@ -73,6 +74,7 @@ func TestServeDrainsTheQueue(t *testing.T) {
 }
 
 func TestACheckIsHandedToServe(t *testing.T) {
+	t.Parallel()
 	checkedBranch(t)
 	ctx, stop := context.WithCancel(t.Context())
 	var served syncBuffer
@@ -95,7 +97,7 @@ func TestACheckIsHandedToServe(t *testing.T) {
 	second, stopSecond := context.WithCancel(t.Context())
 	secondDone := make(chan error)
 	go func() {
-		secondDone <- Run(second, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &standby, Err: &standby})
+		secondDone <- runFor(t, second, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &standby, Err: &standby})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(standby.String(), "serve: standing by; another instance (pid ") }, settle, 10*time.Millisecond)
 	drained, _, err := dockhand(t, "serve", "--drain")
@@ -114,6 +116,7 @@ func TestACheckIsHandedToServe(t *testing.T) {
 // finishes what it runs and stops, saying why, so launchd starts the new
 // build; it had gone on running the old one (the rc3 full stage, A7).
 func TestServeStopsForAnUpgrade(t *testing.T) {
+	t.Parallel()
 	checkedBranch(t)
 	executable := filepath.Join(t.TempDir(), "dockhand")
 	require.NoError(t, os.WriteFile(executable, []byte("rc4"), 0o755))
@@ -141,6 +144,7 @@ func TestServeStopsForAnUpgrade(t *testing.T) {
 // as uninstalled, and stops, saying how to remove the agent (the rc6 full
 // stage, A8).
 func TestServeStopsWhenUninstalled(t *testing.T) {
+	t.Parallel()
 	checkedBranch(t)
 	executable := filepath.Join(t.TempDir(), "dockhand")
 	require.NoError(t, os.WriteFile(executable, []byte("rc6"), 0o755))
@@ -202,6 +206,7 @@ func withLaunchd(t *testing.T, printsUntilGone int) *[][]string {
 }
 
 func TestServeInstallsALaunchdAgent(t *testing.T) {
+	t.Parallel()
 	w := checkedBranch(t)
 	calls := withLaunchd(t, 2)
 	hosted(t).os = "linux"
@@ -244,16 +249,17 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 }
 
 func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
 	g := withGitHub(t, w)
 	hosted(t).timings.servePoll = 20 * time.Millisecond
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
@@ -261,7 +267,7 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	g.PRs[34901].State = forge.PullRequestMerged
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 
@@ -296,6 +302,7 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 }
 
 func TestServeRunsChecksUpToEachProvidersCapacity(t *testing.T) {
+	t.Parallel()
 	w := checkedBranch(t)
 	// The script holds each check until the go file appears, saying which
 	// ones started.
@@ -317,7 +324,7 @@ JSON
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "start", "jq-other")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-other"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-other"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "check", "-d")
@@ -354,7 +361,7 @@ JSON
 	}
 	_, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
 	serveUntil(1, func() {
@@ -367,6 +374,7 @@ JSON
 // serve.notify turns notifications on, the default, or off; --no-notify
 // turns them off for one run.
 func TestNotificationsCanBeTurnedOff(t *testing.T) {
+	t.Parallel()
 	e := &engine.Engine{Providers: map[string]buildenv.Provider{}}
 	require.NotNil(t, hosted(t).serveOptions(e, config.File{}, io.Discard, false, "list", true).Notify)
 	require.Nil(t, hosted(t).serveOptions(e, config.File{}, io.Discard, false, "list", false).Notify)
@@ -380,16 +388,17 @@ func TestNotificationsCanBeTurnedOff(t *testing.T) {
 // absolute, since launchd starts it in /. A token is never written, since
 // anyone on the Mac can read the agent's file; the install says so.
 func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
+	t.Parallel()
 	w := checkedBranch(t)
 	withLaunchd(t, 0)
 	hosted(t).os = "darwin"
 	git, err := exec.LookPath("git")
 	require.NoError(t, err)
-	t.Setenv("GIT_BIN", git)
+	setenv(t, "GIT_BIN", git)
 	require.NoError(t, os.MkdirAll(filepath.Join(w.home, "tart"), 0o755))
-	t.Chdir(w.home)
-	t.Setenv("TART_HOME", "tart")
-	t.Setenv("GH_TOKEN", "ghp_secret")
+	chdir(t, w.home)
+	setenv(t, "TART_HOME", "tart")
+	setenv(t, "GH_TOKEN", "ghp_secret")
 
 	out, _, err := dockhand(t, "serve", "--install", "--db", ".dockhand/dockhand.db")
 	require.NoError(t, err)
@@ -409,6 +418,7 @@ func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
 // it says so once, as with another account's, and says when its own comes
 // back; status says why it isn't acting (the rc6 full stage, D-C2).
 func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
+	t.Parallel()
 	checkedBranch(t)
 	var mu sync.Mutex
 	answers := []string{"ada", "", "", "bob", "revoked", "revoked", "ada"}
@@ -453,6 +463,7 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 // couldn't read it, where it kept its state in silence, and that it's
 // logged in again once it can (the rc8 full stage's D-C3).
 func TestServeSaysALoginItCantRead(t *testing.T) {
+	t.Parallel()
 	checkedBranch(t)
 	var mu sync.Mutex
 	answers := []string{"ada", "revoked", "unread", "unread", "ada"}

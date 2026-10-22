@@ -13,6 +13,7 @@ import (
 )
 
 func TestConfigShowsWhatIsInEffect(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	out, _, err := dockhand(t, "config")
 	require.NoError(t, err)
@@ -51,6 +52,7 @@ func TestConfigShowsWhatIsInEffect(t *testing.T) {
 // Every setting config shows has its default in config's table, apart
 // from each release's Xcode, which the facts table gives.
 func TestEverySettingHasItsDefaultInTheTable(t *testing.T) {
+	t.Parallel()
 	newWorld(t)
 	out, _, err := dockhand(t, "config")
 	require.NoError(t, err)

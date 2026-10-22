@@ -189,7 +189,7 @@ func githubBranch(t *testing.T) (*fakeActions, world) {
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	stands(t).PortReader = onePort{}
@@ -207,6 +207,7 @@ func checkBranches(t *testing.T, f *fakeActions) string {
 }
 
 func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
+	t.Parallel()
 	f, _ := githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": built("jq", true)}}
 	f.conclusion = []string{"success"}
@@ -245,6 +246,7 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 }
 
 func TestGitHubRunsAFailureNoPortExplainsAgain(t *testing.T) {
+	t.Parallel()
 	f, _ := githubBranch(t)
 	// The first attempt dies before listing a port; the rerun builds jq.
 	f.logs = []map[string]string{{"build (macos-14)": "2026-09-25T10:00:00.0Z ##[error]bootstrap failed\n"}, {"build (macos-14)": built("jq", false)}}
@@ -266,6 +268,7 @@ func TestGitHubRunsAFailureNoPortExplainsAgain(t *testing.T) {
 // A run that fails without naming a port on every attempt has its branch
 // removed once the last attempt has read it: no attempt runs it again.
 func TestTheLastAttemptOfAGitHubCheckRemovesItsBranch(t *testing.T) {
+	t.Parallel()
 	f, _ := githubBranch(t)
 	stuck := map[string]string{"build (macos-14)": "2026-09-25T10:00:00.0Z ##[error]bootstrap failed\n"}
 	f.logs = []map[string]string{stuck, stuck, stuck}
@@ -284,6 +287,7 @@ func TestTheLastAttemptOfAGitHubCheckRemovesItsBranch(t *testing.T) {
 // not the earlier one GitHub still lists for the branch. The earlier
 // check's logs stay readable: they were kept as the run was read.
 func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
+	t.Parallel()
 	f, _ := githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}}
 	f.conclusion = []string{"success"}
@@ -328,6 +332,7 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 // the next driver finds that run, rather than pushing again and starting
 // another, and removes the branch once it has read it.
 func TestAResumedGitHubCheckReadsTheRunItLeft(t *testing.T) {
+	t.Parallel()
 	f, _ := githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}, {"build (macos-14)": built("jq", false)}}
 	f.conclusion = []string{"success", "success"}
@@ -364,6 +369,7 @@ func TestAResumedGitHubCheckReadsTheRunItLeft(t *testing.T) {
 }
 
 func TestGitHubReadsAFailedPortsPhase(t *testing.T) {
+	t.Parallel()
 	f, _ := githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": "2026-09-25T10:00:01.0Z ##[group]Listing subports\n2026-09-25T10:00:01.1Z jq\n2026-09-25T10:00:01.2Z ##[endgroup]\n2026-09-25T10:04:00.0Z ##[error]Failed to install jq\n"}}
 	f.conclusion = []string{"failure"}
@@ -379,6 +385,7 @@ func TestGitHubReadsAFailedPortsPhase(t *testing.T) {
 // whichever GitHub lists them in; it says nothing of their Xcode, which
 // only their logs' text gives (the sshuttle run's finding 8).
 func TestTestedOnGivesTheGitHubRunnersReleases(t *testing.T) {
+	t.Parallel()
 	f, _ := githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": built("jq", false)}}
 	f.conclusion = []string{"success"}
@@ -394,6 +401,7 @@ func TestTestedOnGivesTheGitHubRunnersReleases(t *testing.T) {
 }
 
 func TestCancelingAGitHubCheckCancelsItsRun(t *testing.T) {
+	t.Parallel()
 	f, _ := githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}}
 	f.conclusion = []string{"success"}
@@ -419,6 +427,7 @@ func TestCancelingAGitHubCheckCancelsItsRun(t *testing.T) {
 // installing when it ended fails, said as timed out, where it read as
 // passed, an install marked only where it fails (D16).
 func TestAGitHubRunPastItsBoundIsCancelled(t *testing.T) {
+	t.Parallel()
 	f, w := githubBranch(t)
 	config, err := os.OpenFile(filepath.Join(w.home, ".dockhand", "config.toml"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	require.NoError(t, err)
@@ -444,6 +453,7 @@ func TestAGitHubRunPastItsBoundIsCancelled(t *testing.T) {
 // fail the check, and is left for clean, which removes it once the branch
 // is merged.
 func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
+	t.Parallel()
 	f, w := githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}}
 	f.conclusion = []string{"success"}
@@ -462,7 +472,7 @@ func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 	require.NoError(t, err)
 	g := stands(t).Forge(nil).(*forgetest.GitHub)
 	g.PRs[34901].State = forge.PullRequestMerged
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 
@@ -479,6 +489,7 @@ func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 // Tart. Under --tests skip the plan says the workflow's tests still run.
 // (The architecture review of 2026-09-27, finding 1.)
 func TestRequiredTestsFailACheckOnGitHub(t *testing.T) {
+	t.Parallel()
 	f, _ := githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": built("jq", true)}}
 	f.conclusion = []string{"success"}
@@ -494,6 +505,7 @@ func TestRequiredTestsFailACheckOnGitHub(t *testing.T) {
 // A GitHub runner's log without the workflow's headings is printed whole,
 // and said to be (D20).
 func TestAGitHubLogWithoutHeadingsIsPrintedWholeAndSaid(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	result := model.TargetResult{Target: "jq", Log: "build-macos-15.log", Builders: []model.BuilderResult{{Builder: "build (macos-15)"}}}
 	require.NoError(t, writePortLog(&out, testPlaces(t), result, []byte("a log\n"), false))

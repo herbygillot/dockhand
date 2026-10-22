@@ -59,6 +59,7 @@ func (c checksummer) Prepare(ctx context.Context, request editprep.Request) (edi
 }
 
 func TestCreateWritesANewPortFromItsProject(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).ProjectReader = riftProject{}
@@ -90,7 +91,7 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	require.Contains(t, string(data), "    anyhow  1.0.89  86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6\n")
 	require.Equal(t, "textproc/rift/Portfile", strings.TrimSpace(testsupport.Git(t, dir, "diff", "--cached", "--name-only")), "staged, so check includes it")
 
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "tidy")
 	require.NoError(t, err)
 	require.Equal(t, "rift: new port, version 0.4.2", strings.TrimSpace(testsupport.Git(t, dir, "log", "-1", "--format=%s")))
@@ -133,6 +134,7 @@ func (txtProject) Project(context.Context, string) (engine.Project, error) {
 // it chose, since it picks the directory (the txt run's findings 3, 4,
 // and 5).
 func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).ProjectReader = txtProject{}
@@ -159,7 +161,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	// moves it (the txt run's finding 1).
 	dir := filepath.Join(w.home, "Source", "macports-branches", branch)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "devel/txt/Portfile"), append(data, []byte("\n# settled by hand\n")...), 0o644))
-	t.Setenv("MACPORTS_TREE", dir)
+	setenv(t, "MACPORTS_TREE", dir)
 	out, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "editors")
 	require.NoError(t, err)
 	require.Contains(t, out, "Moved txt from devel/txt to editors/txt, preserving all files and your edits.\n")
@@ -181,7 +183,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	require.NotContains(t, testsupport.Git(t, dir, "log", "-1", "--format=%B"), "Generated-By")
 	_, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "games")
 	require.ErrorContains(t, err, "txt is this branch's new port, at editors/txt, and committed: dockhand edit txt edits it")
-	t.Setenv("MACPORTS_TREE", w.clone)
+	setenv(t, "MACPORTS_TREE", w.clone)
 
 	// Where https doesn't answer, the homepage is written as GitHub gives
 	// it, and said.
@@ -207,6 +209,7 @@ func (maintainedPort) Spellings(_ context.Context, _ model.Source, spelling stri
 // GitHub login write it, with the others named to choose from. It writes
 // no config (the flyctl run, macports/macports-ports#35069).
 func TestCreateSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).ProjectReader = txtProject{}
@@ -224,6 +227,7 @@ func TestCreateSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 // A port's plain-HTTP URLs are said with whether their https form answers,
 // and left as they are.
 func TestPlainHTTPURLsAreSaid(t *testing.T) {
+	t.Parallel()
 	var out strings.Builder
 	writePlainHTTP(&out, nil)
 	require.Empty(t, out.String())
@@ -253,6 +257,7 @@ func (pythonPorts) Ports(_ context.Context, _ model.Source, directory string, _ 
 // default, as MacPorts evaluates the new Portfile: create wrote 313 after
 // the PortGroup moved to 314 (the library survey, 2026-10-02).
 func TestCreateTakesThePythonPortGroupsDefault(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	versioned(t, w)
 	stands(t).ProjectReader = toolProject{}

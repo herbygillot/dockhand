@@ -59,6 +59,7 @@ func (p *leavingBuilder) RemoveLeftover(_ context.Context, ref string) error {
 // what a check of this checkout left once no process runs it, and keeps
 // what it can't vouch for.
 func TestCleanRemovesWhatChecksLeft(t *testing.T) {
+	t.Parallel()
 	checkedBranch(t)
 	builder := &leavingBuilder{}
 	stands(t).Leftovers = builder
