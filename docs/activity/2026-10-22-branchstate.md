@@ -115,3 +115,7 @@ This was the exiv2 session's note 7, the part c66c9394 left undone. submit's blo
 - The block carries its `Unbuilt` places (`branchstate.Place`), read from the target's not-run cells.
 - Outside build.default's profile, a target is asked for only because a check planned it there. The evidence now keeps that check on the cell: `Cell.PlannedIn`, set where `outsideProfile` finds a check that planned the target, which `evidence.Plan`'s merge had lost.
 - Tests: `TestOutsideTheProfileOnlyWhatAChecksPlannedIsRequired` checks the cell's check, and `TestAnUncheckedTargetsBlockSaysWhere` the words. Two engine tests now read the named environment.
+
+## R3-24: the two readings of a pull request share their precedence
+
+The REST inspection (forge/github/inspect.go) and the GraphQL reading (reading.go) each decided what a review's state and a check's outcome count as. They agreed only by being copied: a waiting first-time contributor's run is pending, and a request for changes holds over an approval. `precedence.go` now holds `review` and `check`, which both readings call. `TestBothReadingsCountAlike` holds the table in both spellings, REST's lowercase and GraphQL's uppercase. CI's classification by cause will read what these give.

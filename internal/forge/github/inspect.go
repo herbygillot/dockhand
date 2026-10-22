@@ -51,63 +51,24 @@ func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.P
 			delete(latest, review.GetUser().GetLogin())
 		}
 	}
+	var opinions []opinion
 	for login, state := range latest {
-		if state == "APPROVED" {
-			status.Approvals++
-		} else {
-			status.ChangesRequested++
-			status.ChangesRequestedBy = append(status.ChangesRequestedBy, login)
-		}
+		opinions = append(opinions, opinion{Login: login, State: state, At: submitted[login]})
 	}
-	slices.Sort(status.ChangesRequestedBy)
-	switch {
-	case status.ChangesRequested > 0:
-		status.Review = "changes-requested"
-	case status.Approvals > 0:
-		status.Review = "approved"
-	}
-	// When the review that sets it was made, which status says rather
-	// than when dockhand read it: a refresh made a nine-hour-old request
-	// for changes read "just now" (field testing, 2026-10-02).
-	for login, state := range latest {
-		if (state == "CHANGES_REQUESTED") == (status.Review == "changes-requested") && submitted[login].After(status.ReviewedAt) {
-			status.ReviewedAt = submitted[login].UTC()
-		}
-	}
+	review(&status, opinions)
 	head := row.Head.GetSHA()
 	for run, err := range client.Checks.ListCheckRunsForRefIter(ctx, owner, repo, head, nil) {
 		if err != nil {
 			return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
 		}
-		status.Checks.Total++
-		switch {
-		// A first-time contributor's workflow waits for a maintainer's
-		// approval, which GitHub says as action_required: waiting, not
-		// failed (the rc6 full stage's F1, which a sandbox can't show).
-		case run.GetStatus() != "completed", run.GetConclusion() == "action_required":
-			status.Checks.Pending++
-		case run.GetConclusion() == "success" || run.GetConclusion() == "neutral" || run.GetConclusion() == "skipped":
-			status.Checks.Passed++
-		default:
-			status.Checks.Failed++
-			status.Checks.Failing = append(status.Checks.Failing, run.GetName())
-		}
+		check(&status, true, run.GetName(), run.GetStatus(), run.GetConclusion())
 	}
 	combined, _, err := client.Repositories.GetCombinedStatus(ctx, owner, repo, head, nil)
 	if err != nil {
 		return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
 	}
 	for _, item := range combined.Statuses {
-		status.Checks.Total++
-		switch item.GetState() {
-		case "success":
-			status.Checks.Passed++
-		case "pending":
-			status.Checks.Pending++
-		default:
-			status.Checks.Failed++
-			status.Checks.Failing = append(status.Checks.Failing, item.GetContext())
-		}
+		check(&status, false, item.GetContext(), item.GetState(), "")
 	}
 	slices.Sort(status.Checks.Failing)
 	status.Checks.Failing = slices.Compact(status.Checks.Failing)

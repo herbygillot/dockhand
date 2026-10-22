@@ -142,60 +142,21 @@ func readingOf(ref forge.PullRequestRef, pr graphPullRequest) (forge.PullRequest
 	reading := forge.PullRequestReading{Ref: ref, Found: true, PullRequest: forge.PullRequest{Ref: ref, State: state, RemoteHead: model.ObjectID(pr.HeadRefOID)}}
 	status := forge.PullRequestStatus{Draft: pr.IsDraft, Mergeable: "unknown", Review: "none", ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	reading.Partial = pr.Reviews.TotalCount > len(pr.Reviews.Nodes)
-	for _, review := range pr.Reviews.Nodes {
-		if review.Author == nil {
-			continue
-		}
-		switch review.State {
-		case "APPROVED":
-			status.Approvals++
-		case "CHANGES_REQUESTED":
-			status.ChangesRequested++
-			status.ChangesRequestedBy = append(status.ChangesRequestedBy, review.Author.Login)
+	var opinions []opinion
+	for _, r := range pr.Reviews.Nodes {
+		if r.Author != nil {
+			opinions = append(opinions, opinion{Login: r.Author.Login, State: r.State, At: r.SubmittedAt})
 		}
 	}
-	slices.Sort(status.ChangesRequestedBy)
-	switch {
-	case status.ChangesRequested > 0:
-		status.Review = "changes-requested"
-	case status.Approvals > 0:
-		status.Review = "approved"
-	}
-	// When the review that sets it was made: the newest of those that set
-	// it, as Inspect has it.
-	for _, review := range pr.Reviews.Nodes {
-		if review.Author != nil && (review.State == "CHANGES_REQUESTED") == (status.Review == "changes-requested") && (review.State == "APPROVED" || review.State == "CHANGES_REQUESTED") && review.SubmittedAt.After(status.ReviewedAt) {
-			status.ReviewedAt = review.SubmittedAt.UTC()
-		}
-	}
+	review(&status, opinions)
 	if nodes := pr.Commits.Nodes; len(nodes) > 0 && nodes[0].Commit.Rollup != nil {
 		contexts := nodes[0].Commit.Rollup.Contexts
 		reading.Partial = reading.Partial || contexts.TotalCount > len(contexts.Nodes)
-		for _, check := range contexts.Nodes {
-			status.Checks.Total++
-			switch check.Type {
-			case "CheckRun":
-				switch {
-				// Waiting on a maintainer's approval, as a first-time
-				// contributor's workflow does, is pending, as Inspect has it.
-				case check.Status != "COMPLETED", check.Conclusion == "ACTION_REQUIRED":
-					status.Checks.Pending++
-				case check.Conclusion == "SUCCESS" || check.Conclusion == "NEUTRAL" || check.Conclusion == "SKIPPED":
-					status.Checks.Passed++
-				default:
-					status.Checks.Failed++
-					status.Checks.Failing = append(status.Checks.Failing, check.Name)
-				}
-			default:
-				switch check.State {
-				case "SUCCESS":
-					status.Checks.Passed++
-				case "PENDING", "EXPECTED":
-					status.Checks.Pending++
-				default:
-					status.Checks.Failed++
-					status.Checks.Failing = append(status.Checks.Failing, check.Context)
-				}
+		for _, c := range contexts.Nodes {
+			if c.Type == "CheckRun" {
+				check(&status, true, c.Name, c.Status, c.Conclusion)
+			} else {
+				check(&status, false, c.Context, c.State, "")
 			}
 		}
 	}
