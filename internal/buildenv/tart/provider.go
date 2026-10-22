@@ -410,12 +410,54 @@ func (p *Provider) home() (string, error) {
 
 // keepClone marks a check's clone as kept, which is then left for dockhand
 // shell, and for clean or the branch's next check to remove.
-func (p *Provider) keepClone(vm string) error {
+func (p *Provider) keepClone(vm, image string) error {
 	home, err := p.home()
 	if err != nil {
 		return err
 	}
-	return tartvm.KeepClone(home, vm)
+	return tartvm.KeepClone(home, vm, image)
+}
+
+// Shell starts a clone a check kept (keepClone), runs job's command in the
+// port's work directory, else its staged directory, streaming what it
+// says, and stops the clone again, returning the command's exit status.
+// Any clone but a kept one is refused.
+func (p *Provider) Shell(ctx context.Context, job buildenv.ShellJob) (int, error) {
+	home, err := p.home()
+	if err != nil {
+		return -1, err
+	}
+	image, kept := tartvm.KeptFrom(home, job.Ref)
+	if !kept || !strings.HasPrefix(job.Ref, clonePrefixAll) {
+		return -1, fmt.Errorf("%s isn't a clone a check kept; check --keep keeps one", job.Ref)
+	}
+	m, err := p.vms()
+	if err != nil {
+		return -1, err
+	}
+	started, err := m.Start(job.Ref)
+	if err != nil {
+		return -1, fmt.Errorf("starting %s: %w", job.Ref, err)
+	}
+	cleanup := context.WithoutCancel(ctx)
+	defer func() { _ = started.Stop(cleanup, time.Minute) }()
+	g, err := m.Reach(ctx, job.Ref, image)
+	if err != nil {
+		return -1, fmt.Errorf("reaching %s: %w", job.Ref, err)
+	}
+	defer g.Close(cleanup)
+	if err := guestssh.AwaitSSH(ctx, g, started, 4*time.Minute, 3*time.Second); err != nil {
+		return -1, fmt.Errorf("reaching %s: %w", job.Ref, err)
+	}
+	staged := path.Join(guestRoot, "ports", path.Dir(job.Portfile))
+	command := job.Command
+	if len(command) == 0 {
+		command = []string{"/bin/zsh", "-l"}
+	}
+	// The work directory is the port's as MacPorts places it, read in the
+	// guest; the staged directory where it's gone.
+	script := `work=$(` + p.prefix() + `/bin/port -q -D "$1" work 2>/dev/null); cd "${work:-$1}" 2>/dev/null || cd "$1"; shift; exec "$@"`
+	return g.Attach(ctx, job.Input, job.Output, job.Terminal, "", append([]string{"/bin/sh", "-c", script, "dockhand", staged}, command...)...)
 }
 
 // RemoveLeftover stops and deletes one check clone. Any other name is
@@ -636,7 +678,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			// guest finished, its targets passed or failed: never after
 			// trouble, where the guest didn't (model.Plan.Keep).
 			if job.Plan.Keep && err == nil {
-				keepErr := p.keepClone(vm)
+				keepErr := p.keepClone(vm, image)
 				if keepErr == nil {
 					return
 				}

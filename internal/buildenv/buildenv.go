@@ -10,6 +10,7 @@ package buildenv
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"time"
 
@@ -285,6 +286,24 @@ type Leftover struct {
 	// KeptAt is when a check asked to keep it (model.Plan.Keep) kept it,
 	// for dockhand shell; zero for one left by a process that died.
 	KeptAt time.Time
+}
+
+// ShellProvider starts a clone a check kept (Leftover.KeptAt) for a person
+// to look in: Ref is it, Portfile the port's, as the plan names it,
+// Command what to run in its work directory, a shell where it's empty,
+// and Input and Output its streams, on a terminal the guest gives it
+// where Terminal. It returns the command's exit status.
+type ShellProvider interface {
+	Shell(ctx context.Context, job ShellJob) (int, error)
+}
+
+// ShellJob is one command in a kept clone (ShellProvider).
+type ShellJob struct {
+	Ref, Portfile string
+	Command       []string
+	Input         io.Reader
+	Output        io.Writer
+	Terminal      bool
 }
 
 // Fork is your fork of MacPorts' repository, and the Git remote that

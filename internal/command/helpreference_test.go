@@ -325,6 +325,10 @@ func referenceProblems(root *cobra.Command, text string, code bool) []string {
 			continue
 		}
 		for _, word := range words[i:] {
+			// What follows -- is another program's, as shell runs it.
+			if word == "--" {
+				break
+			}
 			name, short := flagName(word)
 			switch {
 			case name != "" && cmd.Flags().Lookup(name) == nil && cmd.InheritedFlags().Lookup(name) == nil:

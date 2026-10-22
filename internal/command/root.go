@@ -198,6 +198,7 @@ func newRoot(settings *settings, streams term.Streams) *cobra.Command {
 	for _, command := range []*cobra.Command{
 		checkCommand(settings, streams),
 		logsCommand(settings, streams),
+		shellCommand(settings, streams),
 		retryCommand(settings, streams),
 	} {
 		command.GroupID = "check"

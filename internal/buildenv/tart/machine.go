@@ -50,6 +50,7 @@ type run interface {
 // guest is a running clone, reached over dockhand's SSH channel.
 type guest interface {
 	Command(ctx context.Context, input io.Reader, args ...string) ([]byte, error)
+	Attach(ctx context.Context, input io.Reader, output io.Writer, terminal bool, directory string, args ...string) (int, error)
 	Upload(ctx context.Context, local, path string, sudo bool) error
 	Read(ctx context.Context, path string, sudo bool) ([]byte, error)
 	Download(ctx context.Context, path, local string, sudo bool) error

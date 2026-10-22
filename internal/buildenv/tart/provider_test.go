@@ -1,11 +1,13 @@
 package tart
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -186,6 +188,23 @@ type fakeGuest struct {
 	commands [][]string
 	// appended are the logs followed, a name each time.
 	appended []string
+	// attached are the commands shell ran.
+	attached []attached
+}
+
+// attached is a command shell ran, and whether on a terminal.
+type attached struct {
+	args     []string
+	terminal bool
+}
+
+// Attach records the command a shell ran, says it, and exits 3.
+func (g *fakeGuest) Attach(_ context.Context, _ io.Reader, output io.Writer, terminal bool, _ string, args ...string) (int, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.attached = append(g.attached, attached{args: args, terminal: terminal})
+	fmt.Fprintln(output, "ran", args[len(args)-1])
+	return 3, nil
 }
 
 func (g *fakeGuest) Command(_ context.Context, _ io.Reader, args ...string) ([]byte, error) {
@@ -1001,4 +1020,31 @@ func TestTheBuildingTargetsLogIsCopiedAsItGrows(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(job.Directory, "libharbor.log"))
 	require.NoError(t, err)
 	require.Equal(t, "--->  Building libharbor\n", string(data), "copied once as it grew, then replaced whole")
+}
+
+// shell starts only a clone a check kept, reached by its image's keys,
+// runs the command in the port's work directory, else its staged one,
+// says what it says, and stops the clone again, with the command's exit.
+func TestShellStartsAKeptCloneAndStopsItAfter(t *testing.T) {
+	t.Parallel()
+	mac := newMac()
+	p := testProvider(mac)
+	p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
+	require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
+	clone := clonePrefix("run-1", "tahoe") + "-1"
+
+	_, err := p.Shell(t.Context(), buildenv.ShellJob{Ref: clone, Portfile: "devel/libharbor/Portfile"})
+	require.ErrorContains(t, err, "isn't a clone a check kept")
+
+	require.NoError(t, p.keepClone(clone, "dockhand-base-tahoe"))
+	var out bytes.Buffer
+	code, err := p.Shell(t.Context(), buildenv.ShellJob{Ref: clone, Portfile: "devel/libharbor/Portfile", Command: []string{"otool", "-L", "harbor"}, Output: &out})
+	require.NoError(t, err)
+	require.Equal(t, 3, code, "the command's exit")
+	require.Equal(t, "ran harbor\n", out.String())
+	require.Contains(t, mac.events, "reach "+clone+" as dockhand-base-tahoe")
+	require.True(t, mac.run.stopped, "stopped after")
+	shell := mac.guest.attached[0]
+	require.False(t, shell.terminal)
+	require.Equal(t, []string{guestRoot + "/ports/devel/libharbor", "otool", "-L", "harbor"}, shell.args[4:])
 }

@@ -513,8 +513,10 @@ func (e *Engine) dropRefs(ctx context.Context, branch model.Branch) error {
 // there, such as a Tart clone, and what clean does with it.
 type Leftover struct {
 	buildenv.Leftover
-	// Run is the check it was made for, when one of this checkout's.
-	Run *model.Run
+	// Run is the check it was made for, when one of this checkout's, and
+	// Execution the attempt that made it.
+	Run       *model.Run
+	Execution *model.GuestExecution
 	// Kept says why it stays; empty when it would be removed.
 	Kept string
 	// Done is true once it was removed.
@@ -570,8 +572,9 @@ func (e *Engine) judgeLeftover(ctx context.Context, session *coord.Session, left
 		if err != nil || len(executions) == 0 {
 			return err
 		}
-		run, err := r.Run(executions[len(executions)-1].Run)
-		leftover.Run = &run
+		execution := executions[len(executions)-1]
+		run, err := r.Run(execution.Run)
+		leftover.Run, leftover.Execution = &run, &execution
 		return err
 	})
 	if err != nil {

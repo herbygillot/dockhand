@@ -95,3 +95,42 @@ func TestAKeptCloneLastsUntilCleanOrTheNextCheck(t *testing.T) {
 	check()
 	require.NotContains(t, provider.left, again, "the branch's next check removes it")
 }
+
+// Shell starts the kept clone of the check, with the first port it
+// changed, and says when there's none to start.
+func TestShellStartsTheClonesACheckKept(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &shellingProvider{keepingProvider: keepingProvider{kept: map[string]time.Time{}}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+
+	_, err = e.Shell(t.Context(), ShellRequest{Run: run, Command: []string{"ls"}})
+	require.ErrorContains(t, err, run.Name()+" kept no clone; dockhand check --keep keeps each environment's")
+
+	provider.kept[provider.left[0]] = time.Now()
+	code, err := e.Shell(t.Context(), ShellRequest{Run: run, Command: []string{"ls"}})
+	require.NoError(t, err)
+	require.Equal(t, 7, code)
+	require.Equal(t, buildenv.ShellJob{Ref: provider.left[0], Portfile: provider.shells[0].Portfile, Command: []string{"ls"}}, provider.shells[0])
+	require.NotEmpty(t, provider.shells[0].Portfile)
+	_, err = e.Shell(t.Context(), ShellRequest{Run: run, Port: "nosuch"})
+	require.ErrorContains(t, err, "didn't build nosuch")
+	_, err = e.Shell(t.Context(), ShellRequest{Run: run, Release: "sequoia"})
+	require.ErrorContains(t, err, "kept no clone on sequoia")
+}
+
+// shellingProvider is keepingProvider whose kept clones take a shell,
+// which exits 7.
+type shellingProvider struct {
+	keepingProvider
+	shells []buildenv.ShellJob
+}
+
+func (p *shellingProvider) Shell(_ context.Context, job buildenv.ShellJob) (int, error) {
+	p.shells = append(p.shells, job)
+	return 7, nil
+}

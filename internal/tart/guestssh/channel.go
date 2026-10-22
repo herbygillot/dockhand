@@ -69,6 +69,37 @@ func (g *Guest) Command(ctx context.Context, input io.Reader, args ...string) ([
 	return g.run(ctx, input, g.Output, true, Quote(args...))
 }
 
+// Attach runs a command on the guest, its arguments quoted for the guest's
+// shell, in directory where it's given, with input and its output, both
+// streams, streamed; with terminal, on a terminal the guest gives it, as a
+// shell wants. It returns the command's exit status. A connection that
+// fails returns ErrTransport.
+func (g *Guest) Attach(ctx context.Context, input io.Reader, output io.Writer, terminal bool, directory string, args ...string) (int, error) {
+	arguments, environment, cleanup, err := g.invocation()
+	if err != nil {
+		return -1, err
+	}
+	defer cleanup()
+	if terminal {
+		arguments = append(arguments, "-tt")
+	}
+	command := Quote(args...)
+	if directory != "" {
+		command = "cd " + Quote(directory) + " && " + command
+	}
+	_, err = subprocess.Run(ctx, subprocess.Spec{Tool: "ssh", Command: "guest", Path: g.executable(), Args: append(arguments, g.Address, command), Env: environment, Stdin: input, Stdout: output, Combined: true, Limit: 1 << 16, Drain: true})
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return 0, nil
+	case errors.As(err, &exit) && exit.ExitCode() == 255:
+		return -1, fmt.Errorf("%w: %s: %v", ErrTransport, g.Address, err)
+	case errors.As(err, &exit):
+		return exit.ExitCode(), nil
+	}
+	return -1, err
+}
+
 // Script runs a shell script on the guest, with arguments $1 and on.
 func (g *Guest) Script(ctx context.Context, input io.Reader, script string, args ...string) ([]byte, error) {
 	return g.Command(ctx, input, append([]string{"/bin/sh", "-c", script, "dockhand"}, args...)...)

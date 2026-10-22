@@ -24,3 +24,27 @@ Roadmap part 1, item 7's kept guest (the person's "Add that as well.",
   next check removes it".
 
 Next: `dockhand shell check-N`, which starts a kept clone.
+
+## dockhand shell
+
+`dockhand shell check-N [--on <release>] [--port <port>] [-- <command>]`
+starts a clone the check kept, runs the command in the port's work
+directory (MacPorts' `port work`, in the guest), else its staged
+directory, streams what it says, exits with its code, and stops the
+clone, which stays kept. With no command, on a terminal, it opens a login
+shell there; without a terminal it refuses with no command.
+
+- `engine.Shell` finds the run's kept clone among the leftovers (which
+  now carry the `Execution` that made each), chooses by `--on` where it
+  kept several, saying the releases to choose from, and takes the first
+  port the check changed, or `--port`'s, from the plan.
+- `buildenv.ShellProvider`, the Tart provider's: it refuses anything but
+  a kept `dockhand-check-` clone, starts it, reaches it by the image the
+  kept mark now records, and runs the command through
+  `guestssh.Guest.Attach`, which streams both outputs, gives a terminal
+  with `-tt` where asked, and returns the command's exit status apart
+  from ssh's own 255.
+- The help-reference test reads no flags after `--`, which are the
+  command's.
+
+Left of the kept guest: `shell --test`.
