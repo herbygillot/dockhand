@@ -20,3 +20,7 @@ Not absorbed: `movedSources` and status's source-moved check read the
 network, whether a Git source moved since the check was planned, which no
 analysis of a revision's files can hold, and a cached one would go stale;
 they stay where they are, beside the evidence they read.
+
+## The comparison predicates leave words.go (R3-23)
+
+`SourceUnchanged`, `NothingCompared`, the `notCompared` and `sourceUnchanged` coverage policies they read, and `ComparisonLines` with `ComparisonLine` moved from words.go to assessment.go, beside the comparison that writes those policies. They're judgments about what a comparison found, and `ComparisonLine.Hold` is one, so they don't belong with the wording. `Grouped` and `UnderUpstream` stay in words.go, because they shape words.

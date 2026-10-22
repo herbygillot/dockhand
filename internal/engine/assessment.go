@@ -685,3 +685,65 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 	}
 	return pairs, unpaired, fetchedNow, "", false
 }
+
+// notCompared is the coverage policy of a port that fetches no upstream
+// source, which has nothing to compare; sourceUnchanged of one whose
+// source a change left as the base had it, a subport beside the one
+// changed.
+const (
+	notCompared     = "not-compared"
+	sourceUnchanged = "source-unchanged"
+)
+
+// SourceUnchanged reports a comparison of a port whose source the change
+// left as the base had it, which says nothing of upstream.
+func SourceUnchanged(comparison model.UpstreamComparison) bool {
+	return slices.ContainsFunc(comparison.Coverage, func(c model.Coverage) bool { return c.Policy == sourceUnchanged })
+}
+
+// NothingCompared reports a comparison of a port that fetches nothing,
+// which had no upstream source to compare, and says so in its coverage.
+func NothingCompared(comparison model.UpstreamComparison) bool {
+	return len(comparison.Changes) == 0 && comparison.Problem == "" &&
+		slices.ContainsFunc(comparison.Coverage, func(c model.Coverage) bool { return c.Policy == notCompared })
+}
+
+// ComparisonLine is one line of what comparing a branch's upstream
+// archives found, under an Upstream heading: whether it holds, the ports it
+// was found for, and its words.
+type ComparisonLine struct {
+	Hold  bool
+	Ports []string
+	Words string
+}
+
+// ComparisonLines are what the comparisons found, a line each, the same
+// finding of several ports once with each port named: a change a passing
+// build can't catch, archives that couldn't be compared, which hold, and
+// what was read and checked, so silence isn't taken for not looking (rust
+// 1.99.0, batch 23). Whether a line holds is its own field, where submit
+// sliced a "! " back off the words it had put on them.
+func ComparisonLines(comparisons []PortComparison) []ComparisonLine {
+	var lines []ComparisonLine
+	add := func(port string, hold bool, words string) {
+		for i := range lines {
+			if lines[i].Hold == hold && lines[i].Words == words {
+				lines[i].Ports = append(lines[i].Ports, port)
+				return
+			}
+		}
+		lines = append(lines, ComparisonLine{Hold: hold, Ports: []string{port}, Words: words})
+	}
+	for _, c := range Grouped(comparisons) {
+		if c.Comparison.Problem != "" {
+			add(c.Port, true, "archives not compared: "+c.Comparison.Problem)
+		}
+		for _, change := range c.Comparison.Changes {
+			add(c.Port, change.Hold, UnderUpstream(change).Message)
+		}
+		if words := CoverageWords(c.Comparison); words != "" {
+			add(c.Port, false, words)
+		}
+	}
+	return lines
+}
