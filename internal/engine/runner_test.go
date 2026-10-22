@@ -207,7 +207,7 @@ func outcomes(t *testing.T, e *Engine, run model.Run) map[string]model.Outcome {
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		plan, err := r.Plan(run.Plan)
 		require.NoError(t, err)
-		evidence, err := runEvidence(r, run, plan)
+		evidence, err := runEvidence(r, run)
 		require.NoError(t, err)
 		for _, target := range evidence.Targets {
 			for i, result := range target.Outcomes {
@@ -671,9 +671,7 @@ func TestAFailuresDetailSaysWhatItsLogShows(t *testing.T) {
 	require.NoError(t, err)
 	details := map[model.TargetID]string{}
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
-		plan, err := r.Plan(run.Plan)
-		require.NoError(t, err)
-		evidence, err := runEvidence(r, run, plan)
+		evidence, err := runEvidence(r, run)
 		require.NoError(t, err)
 		for _, target := range evidence.Targets {
 			details[target.Target.ID] = target.Outcomes[0].Detail

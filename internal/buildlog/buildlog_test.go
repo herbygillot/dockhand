@@ -176,3 +176,20 @@ func TestTheFailedTestsAreNamedFromTheLog(t *testing.T) {
 	require.Equal(t, []string{"bugfixes-test", "version test", "tests/basic.sh", "tests/hang.sh"}, FailedTests(strings.NewReader(log), 2), "from the test step, the dependency's left out")
 	require.Empty(t, FailedTests(strings.NewReader("100% tests passed, 0 tests failed out of 8\n"), 1))
 }
+
+// A step's lines are from where it began to the line before the next
+// began, or to the log's end; none where the log ends first.
+func TestBetweenIsOneStepsLines(t *testing.T) {
+	log := []byte("clean\nfetch 1\nfetch 2\ninstall\n")
+	fetch, ok := Between(log, 2, 4)
+	require.True(t, ok)
+	require.Equal(t, "fetch 1\nfetch 2\n", string(fetch))
+	rest, ok := Between(log, 4, 0)
+	require.True(t, ok)
+	require.Equal(t, "install\n", string(rest))
+	past, ok := Between(log, 2, 40)
+	require.True(t, ok)
+	require.Equal(t, "fetch 1\nfetch 2\ninstall\n", string(past), "a next step past the log's end is its end")
+	_, ok = Between(log, 9, 0)
+	require.False(t, ok)
+}

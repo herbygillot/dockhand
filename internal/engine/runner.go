@@ -705,7 +705,7 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 	var evidence Evidence
 	err := d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
 		var err error
-		evidence, err = runEvidence(r, d.run, d.plan)
+		evidence, err = runEvidence(r, d.run)
 		return err
 	})
 	if err != nil {
@@ -1099,11 +1099,7 @@ func (e *Engine) RunEvidence(ctx context.Context, id model.RunID) (Evidence, err
 		if err != nil {
 			return err
 		}
-		plan, err := r.Plan(run.Plan)
-		if err != nil {
-			return err
-		}
-		evidence, err = runEvidence(r, run, plan)
+		evidence, err = runEvidence(r, run)
 		return err
 	})
 	return evidence, err
@@ -1111,8 +1107,8 @@ func (e *Engine) RunEvidence(ctx context.Context, id model.RunID) (Evidence, err
 
 // runEvidence is what a run established for each target in each of its
 // environments, as its own record says (evidence.Of).
-func runEvidence(r store.Reader, run model.Run, plan model.Plan) (Evidence, error) {
-	check, err := loadCheckWith(r, run, plan, false)
+func runEvidence(r store.Reader, run model.Run) (Evidence, error) {
+	check, err := loadCheck(r, run, false)
 	if err != nil {
 		return Evidence{}, err
 	}

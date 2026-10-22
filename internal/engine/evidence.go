@@ -178,62 +178,26 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 	return judged, err
 }
 
-// loadCheck loads a finished check's record, as evidence reads it: its
-// plan, its executions and their results, the executions that built the
-// results it reused, with their checks, and, where sources asks, what its
-// results' builds read.
+// loadCheck loads a check's record, as evidence reads it, in the store's
+// one read of a check (the SQL study's O2): its plan, its executions and
+// their results, the executions that built the results it reused, with
+// their checks, and, where sources asks, what its results' builds read.
+// The run is the caller's, which a driver finishing it holds ahead of its
+// record.
 func loadCheck(r store.Reader, run model.Run, sources bool) (evidence.Check, error) {
-	plan, err := r.Plan(run.Plan)
+	record, err := r.Check(run.ID)
 	if err != nil {
 		return evidence.Check{}, err
 	}
-	return loadCheckWith(r, run, plan, sources)
-}
-
-// loadCheckWith is loadCheck with the check's plan already read.
-func loadCheckWith(r store.Reader, run model.Run, plan model.Plan, sources bool) (evidence.Check, error) {
-	check := evidence.Check{Run: run, Plan: plan, Results: map[model.ExecutionID][]model.TargetResult{}}
-	executions, err := r.Executions(run.ID)
-	if err != nil {
-		return evidence.Check{}, err
+	check := evidence.Check{Run: run, Plan: record.Plan, Executions: record.Executions, Results: record.Results}
+	for id, origin := range record.Origins {
+		if check.Origins == nil {
+			check.Origins = map[model.ExecutionID]evidence.Origin{}
+		}
+		check.Origins[id] = evidence.Origin{Execution: origin.Execution, Check: origin.Run.Name()}
 	}
-	check.Executions = executions
-	for _, execution := range executions {
-		results, err := r.Results(execution.ID)
-		if err != nil {
-			return evidence.Check{}, err
-		}
-		check.Results[execution.ID] = results
-		for _, result := range results {
-			if result.ReusedFrom != "" {
-				if _, ok := check.Origins[result.ReusedFrom]; !ok {
-					builder, err := r.Execution(result.ReusedFrom)
-					if err != nil {
-						return evidence.Check{}, err
-					}
-					builtIn, err := r.Run(builder.Run)
-					if err != nil {
-						return evidence.Check{}, err
-					}
-					if check.Origins == nil {
-						check.Origins = map[model.ExecutionID]evidence.Origin{}
-					}
-					check.Origins[result.ReusedFrom] = evidence.Origin{Execution: builder, Check: builtIn.Name()}
-				}
-			}
-			if sources && result.Inputs != "" {
-				if _, ok := check.Inputs[result.Inputs]; !ok {
-					inputs, err := r.Inputs(result.Inputs)
-					if err != nil {
-						return evidence.Check{}, err
-					}
-					if check.Inputs == nil {
-						check.Inputs = map[string]model.TargetInputs{}
-					}
-					check.Inputs[result.Inputs] = inputs
-				}
-			}
-		}
+	if sources && len(record.Inputs) > 0 {
+		check.Inputs = record.Inputs
 	}
 	return check, nil
 }

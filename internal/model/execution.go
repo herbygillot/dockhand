@@ -254,14 +254,11 @@ const (
 	StepTest         Step = Step(PhaseTest)
 )
 
+// Steps are the steps a build takes, in the order it takes them.
+var Steps = []Step{StepDeactivate, StepClean, StepLint, StepDependencies, StepFetch, StepChecksum, StepInstall, StepTest}
+
 // Valid reports one of the steps a build takes.
-func (s Step) Valid() bool {
-	switch s {
-	case StepDeactivate, StepClean, StepLint, StepDependencies, StepFetch, StepChecksum, StepInstall, StepTest:
-		return true
-	}
-	return false
-}
+func (s Step) Valid() bool { return slices.Contains(Steps, s) }
 
 // LogStep is where a step of a target's build begins in its log: the line
 // its output starts on, counting from 1.

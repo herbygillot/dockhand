@@ -38,3 +38,13 @@ The recording transaction stays in `update`.
 ## The single-file distfile: nothing left to absorb
 
 The roadmap's "absorbs … the single-file distfile" was written on 2026-10-13. Two days later, b495055a made that judgment once: `macports.PortInfo.Extracts` says which distfiles MacPorts extracts, and `engine.readDistfile` reads each distfile the way MacPorts treats it. Both update's `readPairs` and the assessment's `readPlans` use it. No second judgment remains to fold into the analysis, so this bullet changes no code.
+
+## Evidence and logs read a check in one read; logs --phase
+
+- **One read of a check.** Evidence's `loadCheck` now reads a check through `store.Reader.Check` (the SQL study's O2), the single read the driver has used since `ship`. Before, it read the executions, then each execution's results, then each origin, one query at a time. `loadCheckWith` is gone, and `runEvidence` takes only the run. `Engine.Logs` reads through the same call.
+- **`RunLogs.ForPort` (the command package review's row 10).** It picks which build's log of a port to open first: a failed build, then failed tests, then the latest. That choice moved from the command's `portLogs` to the engine, with `PortLog` as its type.
+- **`logs <check> <port> --phase <step>`.** It prints one step's lines from a target's log, from where the step began to where the next began.
+  - `RunLogs.StepLines` sets the bounds, the way `FailureLines` bounds a failed step: the next step is the port's own, or another target's in the same log. A step run twice is read as its last run.
+  - `buildlog.Between` cuts the lines, and `model.Steps` lists the steps a build takes.
+  - A build that recorded no steps, as the command provider's, or not the named step, says which steps it recorded.
+  - With `--json`, the output is the build's view with `phase`, `from`, and the step's text.

@@ -109,6 +109,21 @@ func From(log []byte, line int) ([]byte, bool) {
 	return log[start:], true
 }
 
+// Between is a log's lines from one of them to the line before to,
+// counting from 1, or to the log's end where to is 0, as one step of a
+// build is between where it began and where the next began; false where
+// the log ends before from.
+func Between(log []byte, from, to int) ([]byte, bool) {
+	rest, ok := From(log, from)
+	if !ok || to == 0 || to <= from {
+		return rest, ok
+	}
+	if after, cut := From(rest, to-from+1); cut {
+		return rest[:len(rest)-len(after)], true
+	}
+	return rest, true
+}
+
 // Last is a step's last lines in a log, at most n, from the line it began
 // on to the line before to, or to the log's end where to is 0: what a
 // failure that no reading explains printed last, as a person scrolling

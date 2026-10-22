@@ -653,6 +653,81 @@ func (l RunLogs) Building(port string) (phase string, ok bool) {
 	return strings.TrimSpace(phase), true
 }
 
+// PortLog is one build's log of a port: the provider run it was in, and
+// its result.
+type PortLog struct {
+	Execution model.GuestExecution
+	Result    model.TargetResult
+}
+
+// ForPort are a check's logs of a port, the one to show first, and the
+// others: where it failed, or its tests did, before where it passed, the
+// latest of those. check-65's libuv-devel failed its tests on macOS 15 and
+// passed on 26, and logs of the port showed 26's, the last (the hugo
+// exercise). It's false where no build of the port left a log.
+func (l RunLogs) ForPort(port string) (PortLog, []PortLog, bool) {
+	var all []PortLog
+	for _, execution := range l.Executions {
+		for _, result := range execution.Results {
+			if string(result.Target) == port && result.Log != "" {
+				all = append(all, PortLog{Execution: execution.Execution, Result: result})
+			}
+		}
+	}
+	if len(all) == 0 {
+		return PortLog{}, nil, false
+	}
+	rank := func(result model.TargetResult) int {
+		switch {
+		case result.Outcome == model.OutcomeFailed:
+			return 2
+		case result.Tests.Failed():
+			return 1
+		}
+		return 0
+	}
+	chosen := 0
+	for i, log := range all {
+		if rank(log.Result) >= rank(all[chosen].Result) {
+			chosen = i
+		}
+	}
+	return all[chosen], append(slices.Clone(all[:chosen]), all[chosen+1:]...), true
+}
+
+// StepLines are where a step of a port's build is in its log (the steps
+// its provider recorded, model.LogStep): the line it began on, and the
+// line the next began on, its own next step's, or another target's in the
+// same log, 0 where it ran to the log's end, as FailureLines bounds a
+// failed step. A step that ran more than once is its last run. It's false
+// where the build recorded no such step.
+func (l RunLogs) StepLines(log PortLog, step model.Step) (from, to int, ok bool) {
+	for _, recorded := range log.Result.Steps {
+		if recorded.Name == step {
+			from, ok = recorded.Line, true
+		}
+	}
+	if !ok {
+		return 0, 0, false
+	}
+	for _, execution := range l.Executions {
+		if execution.Execution.ID != log.Execution.ID {
+			continue
+		}
+		for _, result := range execution.Results {
+			if result.Log != log.Result.Log {
+				continue
+			}
+			for _, other := range result.Steps {
+				if other.Line > from && (to == 0 || other.Line < to) {
+					to = other.Line
+				}
+			}
+		}
+	}
+	return from, to, true
+}
+
 // ExecutionLogs are one execution's results and where its logs are.
 type ExecutionLogs struct {
 	Execution model.GuestExecution
@@ -675,10 +750,12 @@ type GitFetch struct {
 func (e *Engine) Logs(ctx context.Context, id model.RunID) (RunLogs, error) {
 	logs := RunLogs{}
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		var err error
-		if logs.Run, err = r.Run(id); err != nil {
+		// The check's records in one read (the SQL study's O2).
+		check, err := r.Check(id)
+		if err != nil {
 			return err
 		}
+		logs.Run = check.Run
 		if logs.Run.State == model.RunRunning {
 			event, found, err := r.LatestRunEvent(id, model.EventProgress)
 			if err != nil {
@@ -688,32 +765,17 @@ func (e *Engine) Logs(ctx context.Context, id model.RunID) (RunLogs, error) {
 				logs.Progress = event.Message
 			}
 		}
-		plan, err := r.Plan(logs.Run.Plan)
-		if err != nil {
-			return err
-		}
-		executions, err := r.Executions(id)
-		if err != nil {
-			return err
-		}
-		for _, execution := range executions {
-			results, err := r.Results(execution.ID)
-			if err != nil {
-				return err
-			}
+		for _, execution := range check.Executions {
+			results := check.Results[execution.ID]
 			entry := ExecutionLogs{Execution: execution, Results: results}
 			for _, result := range results {
-				source, git := plan.GitIn(execution.Environment, result.Target)
+				source, git := check.Plan.GitIn(execution.Environment, result.Target)
 				if !git || result.Outcome != model.OutcomePassed && result.Outcome != model.OutcomeFailed {
 					continue
 				}
 				fetch := GitFetch{Expected: source}
 				if result.Inputs != "" {
-					inputs, err := r.Inputs(result.Inputs)
-					if err != nil {
-						return err
-					}
-					fetch.Fetched = inputs.Fetched
+					fetch.Fetched = check.Inputs[result.Inputs].Fetched
 				}
 				if entry.Git == nil {
 					entry.Git = map[model.TargetID]GitFetch{}

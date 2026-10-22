@@ -166,7 +166,7 @@ branch, for its latest check from anywhere.`,
 }
 
 func logsCommand(s *settings, streams term.Streams) *cobra.Command {
-	var port string
+	var port, phase string
 	var full, follow bool
 	var where branchFlags
 	cmd := &cobra.Command{
@@ -185,8 +185,10 @@ semgrep prints it from the latest check of semgrep's branch. Where its
 provider recorded where each step of the build began, as Tart's does, it
 lists them with their lines first, and prints from the port's own build on,
 leaving out its dependencies' installs before it; --full prints the whole
-log. --follow prints a port's log as its build writes it, and the rest once
-the build ends, where its provider copies it as it grows, as Tart's does.`,
+log. --phase prints one step's lines alone, logs check-42 jq --phase fetch,
+from where it began to where the next began. --follow prints a port's log
+as its build writes it, and the rest once the build ends, where its provider
+copies it as it grows, as Tart's does.`,
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A port named as an argument (field testing, 2026-10-02: logs
@@ -211,6 +213,12 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 			}
 			if full && port == "" {
 				return errors.New("--full requires a port name, for example: dockhand logs check-42 jq --full")
+			}
+			if phase != "" && port == "" {
+				return errors.New("--phase requires a port name, for example: dockhand logs check-42 jq --phase fetch")
+			}
+			if phase != "" && !model.Step(phase).Valid() {
+				return fmt.Errorf("--phase takes one of the steps a build takes: %s", stepNames(model.Steps))
 			}
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -256,7 +264,7 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 				streams.Emit(logsView(logs))
 				return writeLogs(streams.Out, s.places(), logs, stoppedRun(ctx, e, logs.Run))
 			}
-			chosen, others, ok := portLogs(logs, port)
+			chosen, others, ok := logs.ForPort(port)
 			if !ok {
 				// A running target's log comes back when it ends; that it
 				// has none yet isn't a failure.
@@ -271,7 +279,7 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 				}
 				return fmt.Errorf("%s recorded no log for %s", run.Name(), port)
 			}
-			found := chosen.result
+			found := chosen.Result
 			data, err := buildlog.ReadFile(found.Log)
 			if errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("%s: the log for %s is missing: %s. Cleanup removes logs %s after their results stop counting or their branch ends", run.Name(), port, found.Log, engine.AgeWords(s.file.Cleanup.Age()))
@@ -280,20 +288,35 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 				return err
 			}
 			view := portLogView(run, found, data)
-			view.Execution = string(chosen.execution.ID)
+			view.Execution = string(chosen.Execution.ID)
 			for _, other := range others {
-				view.Elsewhere = append(view.Elsewhere, portLogElsewhereJSON{Execution: string(other.execution.ID), Environment: environmentView(other.execution.Environment), Outcome: string(other.result.Outcome), Tests: string(other.result.Tests)})
+				view.Elsewhere = append(view.Elsewhere, portLogElsewhereJSON{Execution: string(other.Execution.ID), Environment: environmentView(other.Execution.Environment), Outcome: string(other.Result.Outcome), Tests: string(other.Result.Tests)})
 			}
-			streams.Emit(view)
 			// Which build's log this is goes with the steps, or beside a log
-			// printed alone, so the log stays as it is: its environment,
-			// attempt, run, and path, and what ended an earlier attempt
-			// there, where exiv2's said none of it (the exiv2 field notes,
-			// 2026-10-19).
+			// printed alone or a step of it, so the log stays as it is: its
+			// environment, attempt, run, and path, and what ended an earlier
+			// attempt there, where exiv2's said none of it (the exiv2 field
+			// notes, 2026-10-19).
+			if phase != "" {
+				from, to, ok := logs.StepLines(chosen, model.Step(phase))
+				if !ok {
+					return phaseMissing(port, phase, found)
+				}
+				lines, ok := buildlog.Between(data, from, to)
+				if !ok {
+					return fmt.Errorf("%s's log ends before line %d, where its %s step was recorded to begin", port, from, phase)
+				}
+				view.Text, view.Phase, view.From = string(lines), phase, from
+				streams.Emit(view)
+				writePortLogHeading(streams.Err, s.places(), logs, port, chosen, others)
+				_, err := streams.Out.Write(lines)
+				return err
+			}
 			where := streams.Out
 			if full || len(found.Steps) == 0 {
 				where = streams.Err
 			}
+			streams.Emit(view)
 			writePortLogHeading(where, s.places(), logs, port, chosen, others)
 			return writePortLog(streams.Out, s.places(), found, data, full)
 		},
@@ -301,7 +324,8 @@ the build ends, where its provider copies it as it grows, as Tart's does.`,
 	where.register(cmd, s, "show the latest check of")
 	cmd.Flags().BoolVar(&full, "full", false, "with a port, print the whole log")
 	cmd.Flags().BoolVar(&follow, "follow", false, "with a port, print its log as its build writes it, until the build ends")
-	cmd.MarkFlagsMutuallyExclusive("full", "follow")
+	cmd.Flags().StringVar(&phase, "phase", "", "with a port, print one step of its build alone, such as fetch or install")
+	cmd.MarkFlagsMutuallyExclusive("full", "follow", "phase")
 	supportsJSON(cmd)
 	return cmd
 }
@@ -327,8 +351,8 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, 
 		if err != nil {
 			return err
 		}
-		if chosen, _, ok := portLogs(logs, port); ok {
-			data, err := buildlog.ReadFile(chosen.result.Log)
+		if chosen, _, ok := logs.ForPort(port); ok {
+			data, err := buildlog.ReadFile(chosen.Result.Log)
 			if err != nil {
 				return err
 			}
@@ -380,10 +404,10 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, 
 // and where its log is, .gz once compressed; what ended each earlier
 // attempt in that environment, which a retry's log doesn't say; and the
 // port's other builds, each with how to see its log.
-func writePortLogHeading(out io.Writer, places config.Places, logs engine.RunLogs, port string, chosen portLog, others []portLog) {
-	execution := chosen.execution
+func writePortLogHeading(out io.Writer, places config.Places, logs engine.RunLogs, port string, chosen engine.PortLog, others []engine.PortLog) {
+	execution := chosen.Execution
 	fmt.Fprintf(out, "%s's log on %s, attempt %d of %d, run %s: %s; %s\n", port, engine.DescribeEnvironment(execution.Environment), execution.Attempt, model.MaxAttempts, execution.ID,
-		portBuildWords(chosen.result), places.Tilde(buildlog.Where(chosen.result.Log)))
+		portBuildWords(chosen.Result), places.Tilde(buildlog.Where(chosen.Result.Log)))
 	for _, earlier := range logs.Executions {
 		if earlier.Execution.Environment == execution.Environment && earlier.Execution.Attempt < execution.Attempt {
 			ended := cmp.Or(earlier.Execution.Detail, string(earlier.Execution.State))
@@ -391,49 +415,33 @@ func writePortLogHeading(out io.Writer, places config.Places, logs engine.RunLog
 		}
 	}
 	for _, other := range others {
-		fmt.Fprintf(out, "  also on %s, attempt %d, run %s: %s; dockhand logs %s %s\n", engine.DescribeEnvironment(other.execution.Environment), other.execution.Attempt, other.execution.ID, portBuildWords(other.result), other.execution.ID, port)
+		fmt.Fprintf(out, "  also on %s, attempt %d, run %s: %s; dockhand logs %s %s\n", engine.DescribeEnvironment(other.Execution.Environment), other.Execution.Attempt, other.Execution.ID, portBuildWords(other.Result), other.Execution.ID, port)
 	}
 }
 
-// portLog is one build's log of a port: the provider run it was in, and
-// its result.
-type portLog struct {
-	execution model.GuestExecution
-	result    model.TargetResult
+// phaseMissing says a build recorded no step a --phase names: none at
+// all, where its provider records none, or not that one, with the ones it
+// recorded, as a build that failed at fetch records no install.
+func phaseMissing(port, phase string, result model.TargetResult) error {
+	if len(result.Steps) == 0 {
+		return fmt.Errorf("%s's build recorded no steps, so its %s step can't be picked out of its log; logs without --phase prints it whole", port, phase)
+	}
+	var names []string
+	for _, step := range result.Steps {
+		if !slices.Contains(names, string(step.Name)) {
+			names = append(names, string(step.Name))
+		}
+	}
+	return fmt.Errorf("%s's build recorded no %s step; it recorded %s", port, phase, prose.And(names))
 }
 
-// portLogs are a check's logs of a port, the one to show first, and the
-// others: where it failed, or its tests did, before where it passed, the
-// latest of those. check-65's libuv-devel failed its tests on macOS 15 and
-// passed on 26, and logs of the port showed 26's, the last (the hugo exercise).
-func portLogs(logs engine.RunLogs, port string) (portLog, []portLog, bool) {
-	var all []portLog
-	for _, execution := range logs.Executions {
-		for _, result := range execution.Results {
-			if string(result.Target) == port && result.Log != "" {
-				all = append(all, portLog{execution: execution.Execution, result: result})
-			}
-		}
+// stepNames lists steps by name.
+func stepNames(steps []model.Step) string {
+	names := make([]string, len(steps))
+	for i, step := range steps {
+		names[i] = string(step)
 	}
-	if len(all) == 0 {
-		return portLog{}, nil, false
-	}
-	rank := func(result model.TargetResult) int {
-		switch {
-		case result.Outcome == model.OutcomeFailed:
-			return 2
-		case result.Tests.Failed():
-			return 1
-		}
-		return 0
-	}
-	chosen := 0
-	for i, log := range all {
-		if rank(log.result) >= rank(all[chosen].result) {
-			chosen = i
-		}
-	}
-	return all[chosen], append(slices.Clone(all[:chosen]), all[chosen+1:]...), true
+	return strings.Join(names, ", ")
 }
 
 // portBuildWords say how a build of a port went, for choosing its log.
@@ -509,7 +517,7 @@ func latestLogging(ctx context.Context, e *engine.Engine, port string) (run mode
 	if err != nil {
 		return model.Run{}, false, ""
 	}
-	_, _, ok = portLogs(logs, port)
+	_, _, ok = logs.ForPort(port)
 	return run, ok, ""
 }
 

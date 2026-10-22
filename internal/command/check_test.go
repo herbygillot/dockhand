@@ -126,6 +126,15 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	_, logged, err := dockhand(t, "logs", "check-3", "jq")
 	require.NoError(t, err)
 	require.Regexp(t, `jq's log on command, attempt 1 of 3, run command_[a-z0-9]{16}: failed at install; ~/\.dockhand/logs/check-3/command-1/command\.log\.gz\n`, logged)
+	// --phase picks one step out of the log, which the command provider
+	// doesn't record, so it says so; a step a build doesn't take, or no
+	// port, is refused before anything is read.
+	_, _, err = dockhand(t, "logs", "check-3", "jq", "--phase", "install")
+	require.ErrorContains(t, err, "jq's build recorded no steps, so its install step can't be picked out of its log; logs without --phase prints it whole")
+	_, _, err = dockhand(t, "logs", "check-3", "jq", "--phase", "configure")
+	require.ErrorContains(t, err, "--phase takes one of the steps a build takes: deactivate, clean, lint, dependencies, fetch, checksum, install, test")
+	_, _, err = dockhand(t, "logs", "check-3", "--phase", "fetch")
+	require.ErrorContains(t, err, "--phase requires a port name")
 }
 
 // A narrowed plan says what --only left out, and that submit still needs

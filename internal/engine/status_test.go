@@ -99,3 +99,29 @@ func TestARunningTargetsLogIsFoundWhereTheDriverCopiesIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, newer, path, "the newest attempt's")
 }
+
+// A step of a port's build is in its log from where it began to where the
+// next began, the port's own next step or another target's in the same
+// log, or to the end; a step run twice is its last run.
+func TestStepLinesBoundAStep(t *testing.T) {
+	t.Parallel()
+	jq := model.TargetResult{Target: "jq", Log: "/logs/guest.log", Steps: []model.LogStep{{Name: model.StepFetch, Line: 10}, {Name: model.StepInstall, Line: 20}, {Name: model.StepFetch, Line: 30}}}
+	other := model.TargetResult{Target: "oniguruma", Log: "/logs/guest.log", Steps: []model.LogStep{{Name: model.StepClean, Line: 40}}}
+	apart := model.TargetResult{Target: "fd", Log: "/logs/fd.log", Steps: []model.LogStep{{Name: model.StepClean, Line: 35}}}
+	execution := model.GuestExecution{ID: "tart_1"}
+	logs := RunLogs{Executions: []ExecutionLogs{{Execution: execution, Results: []model.TargetResult{jq, other, apart}}}}
+	log := PortLog{Execution: execution, Result: jq}
+
+	from, to, ok := logs.StepLines(log, model.StepInstall)
+	require.True(t, ok)
+	require.Equal(t, [2]int{20, 30}, [2]int{from, to})
+	from, to, ok = logs.StepLines(log, model.StepFetch)
+	require.True(t, ok)
+	require.Equal(t, [2]int{30, 40}, [2]int{from, to}, "its last run, to where the next target in the log begins")
+	_, _, ok = logs.StepLines(log, model.StepTest)
+	require.False(t, ok)
+
+	logs.Executions[0].Results = []model.TargetResult{jq}
+	from, to, _ = logs.StepLines(log, model.StepFetch)
+	require.Equal(t, [2]int{30, 0}, [2]int{from, to}, "to the log's end")
+}

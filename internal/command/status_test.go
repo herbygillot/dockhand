@@ -278,6 +278,14 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 	require.Zero(t, portLogView(model.Run{Number: 48}, alone, nil).OwnBuild)
 }
 
+// A build that recorded its steps but not the one --phase names says
+// which it did record, as one that failed at fetch records no install.
+func TestAPhaseABuildDidntRecordSaysWhichItDid(t *testing.T) {
+	t.Parallel()
+	result := model.TargetResult{Target: "jq", Steps: []model.LogStep{{Name: model.StepClean, Line: 1}, {Name: model.StepDependencies, Line: 2}, {Name: model.StepFetch, Line: 9}}}
+	require.EqualError(t, phaseMissing("jq", "install", result), "jq's build recorded no install step; it recorded clean, dependencies, and fetch")
+}
+
 // A check's logs of a port open where it failed, or failed its tests,
 // before where it passed, the latest of those, and name the others:
 // check-65's libuv-devel failed its tests on macOS 15 and passed on 26, and
@@ -294,24 +302,24 @@ func TestLogsForAPortOpenWhereItFailed(t *testing.T) {
 		build("tart_z4oq", sequoia, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed}),
 		build("tart_k7ma", tahoe, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsPassed}),
 	}}
-	chosen, others, ok := portLogs(logs, "libuv-devel")
+	chosen, others, ok := logs.ForPort("libuv-devel")
 	require.True(t, ok)
-	require.Equal(t, model.ExecutionID("tart_z4oq"), chosen.execution.ID)
+	require.Equal(t, model.ExecutionID("tart_z4oq"), chosen.Execution.ID)
 	require.Len(t, others, 1)
-	require.Equal(t, model.ExecutionID("tart_k7ma"), others[0].execution.ID)
-	require.Equal(t, "passed, its tests failed", portBuildWords(chosen.result))
+	require.Equal(t, model.ExecutionID("tart_k7ma"), others[0].Execution.ID)
+	require.Equal(t, "passed, its tests failed", portBuildWords(chosen.Result))
 
 	// A failed build comes before failed tests; and with none, the latest.
 	logs.Executions = append(logs.Executions, build("tart_f41l", tahoe, model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}))
-	chosen, others, _ = portLogs(logs, "libuv-devel")
-	require.Equal(t, model.ExecutionID("tart_f41l"), chosen.execution.ID)
+	chosen, others, _ = logs.ForPort("libuv-devel")
+	require.Equal(t, model.ExecutionID("tart_f41l"), chosen.Execution.ID)
 	require.Len(t, others, 2)
-	require.Equal(t, "failed at install", portBuildWords(chosen.result))
+	require.Equal(t, "failed at install", portBuildWords(chosen.Result))
 	logs.Executions = logs.Executions[1:2]
-	chosen, others, _ = portLogs(logs, "libuv-devel")
-	require.Equal(t, model.ExecutionID("tart_k7ma"), chosen.execution.ID)
+	chosen, others, _ = logs.ForPort("libuv-devel")
+	require.Equal(t, model.ExecutionID("tart_k7ma"), chosen.Execution.ID)
 	require.Empty(t, others)
-	_, _, ok = portLogs(logs, "libuv")
+	_, _, ok = logs.ForPort("libuv")
 	require.False(t, ok)
 }
 

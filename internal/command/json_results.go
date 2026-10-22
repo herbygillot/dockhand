@@ -568,7 +568,11 @@ type portLogJSON struct {
 	// place.
 	Execution string                 `json:"execution,omitempty"`
 	Elsewhere []portLogElsewhereJSON `json:"elsewhere,omitempty"`
-	Text      string                 `json:"text"`
+	// Phase is the step --phase picked out, whose lines alone are the
+	// text, from the line From.
+	Phase string `json:"phase,omitempty"`
+	From  int    `json:"from,omitempty"`
+	Text  string `json:"text"`
 }
 
 type portLogElsewhereJSON struct {
