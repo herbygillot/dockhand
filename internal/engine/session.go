@@ -86,6 +86,9 @@ func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id mode
 		before(lead)
 	}
 	if lead.Here() {
+		if err := e.awaitSlot(ctx, session, id); err != nil {
+			return model.Run{}, nil, err
+		}
 		run, err = e.Drive(progress.Quiet(ctx), session, id)
 		held := new(coord.HeldError)
 		if !errors.As(err, &held) {

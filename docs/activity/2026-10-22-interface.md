@@ -345,3 +345,31 @@ mark's column (`view.Unmarked`).
   own `Next:` is the logs. `model.IsRunName` tells a check's name from a
   finding's code.
 - README and the usage guide say both.
+
+## Item 6: the shared-flag contract
+
+- **A test over the command tree** (`internal/command/contract_test.go`,
+  the command UX review's §9) holds the shared flags to one meaning:
+  every runnable command reports with `--json` but the five that say why
+  not (open, serve, shell, setup github, setup tart); a command with
+  `--plan` and `--yes` takes one or the other, which update, check,
+  submit, and tidy now refuse alike, where submit said it its own way
+  and the others took both; an edit's `--plan` with no branch to plan in
+  plans on master and starts nothing; and a question without a terminal is
+  refused alike, exit 1 with what `--yes` would do.
+- **--plan without a branch plans on master for every edit**: `checksums
+  --plan --new` and `revbump --plan`, with or without `--new`, refused
+  where `update --plan` planned on master (field testing's first surface
+  item). The engine prepares a rebuild's plan from master as it does a
+  checksum refresh's (`updateSource`), and revbump says "Planned on master
+  …" as update does.
+- **A preview's exit without a terminal** was already one rule,
+  `term.Streams.Decide`'s exit 1 (part 4); the test holds it.
+- **A check run here keeps to its provider's capacity**, as serve does
+  (`engine.awaitSlot`, before it drives a run): checks other live
+  processes run count, so two foreground checks don't share one Tart host
+  where `providers.tart.capacity` is 1, and the waiting one's journal says
+  "check-2 waits for a slot on command: providers.command.capacity is 1,
+  and check-1 is using it". The capacity is the engine's
+  (`Engine.Capacity`, which compose sets from the configuration), and
+  serve reads it there, where it took its own copy in `ServeOptions`.

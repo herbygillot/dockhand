@@ -714,9 +714,11 @@ func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, bra
 // now, read through the clone, since a plan only reads.
 func (e *Engine) updateSource(ctx context.Context, request UpdateRequest) (*git.Repository, string, model.ObjectID, error) {
 	if request.FromMaster || request.Start != nil {
-		// A checksum refresh's plan reads master too, as a version
-		// update's does; only a version update starts its branch here.
-		planned := request.FromMaster && request.Action == model.EditChecksums
+		// A checksum refresh's plan and a rebuild's read master too, as a
+		// version update's does (the command UX review's §9: --plan with
+		// no branch planned on master for update alone); only a version
+		// update starts its branch here.
+		planned := request.FromMaster && (request.Action == model.EditChecksums || request.Action == model.EditRevbump)
 		if request.FromMaster && !request.Plan || request.Action != model.EditUpdate && !planned {
 			return nil, "", "", errors.New("engine: only a version update is prepared from master; start a branch for anything else")
 		}

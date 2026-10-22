@@ -95,7 +95,7 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.Equal(t, "GH_TOKEN", named.Result["login_source"])
 	require.Equal(t, "ada", named.Result["fork_owner"])
 	_, _, err = cmdtest.Dockhand(t, "submit", "--plan", "--yes")
-	require.EqualError(t, err, "--plan previews the submission; it goes without --yes")
+	require.ErrorContains(t, err, "[plan yes] were all set", "--plan and --yes go apart, as on every command with both (§9)")
 
 	var stdout, errs bytes.Buffer
 	err = cmdtest.RunFor(t, t.Context(), []string{"submit", "--draft"}, term.Streams{In: strings.NewReader("y\n\np\ns\n"), Out: &stdout, Err: &errs}.AsTerminal())

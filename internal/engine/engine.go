@@ -125,6 +125,10 @@ type Engine struct {
 	// SourceArchiver writes a Git-fetched port's forge's archive of a
 	// commit, for its assessment; upstream discovery's forges when nil.
 	SourceArchiver SourceArchiver
+	// Capacity is how many checks each provider takes at once, by its
+	// name, from providers.<name>.capacity: serve keeps to it, and so does
+	// a check run here (awaitSlot).
+	Capacity map[string]int
 	// ConfigFile is the configuration file the command read, which a hint
 	// to set something there names: $DOCKHAND_CONFIG, or the default
 	// (configFile) where empty.

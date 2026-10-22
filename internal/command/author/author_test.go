@@ -140,8 +140,10 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	require.Contains(t, planned, "Plan, nothing changed:")
 	require.NotContains(t, planned, "Started ")
 	require.Equal(t, before, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")
-	_, _, err = cmdtest.Dockhand(t, "checksums", "jq", "--new", "--plan")
-	require.ErrorContains(t, err, "starts no branch")
+	planned, _, err = cmdtest.Dockhand(t, "checksums", "jq", "--new", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, planned, "Planned on master ", "as update's plan does (the command UX review's §9)")
+	require.Equal(t, before, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")
 	_, _, err = cmdtest.Dockhand(t, "update", "jq", "--new", "--branch", name)
 	require.ErrorContains(t, err, "none of the others can be")
 }

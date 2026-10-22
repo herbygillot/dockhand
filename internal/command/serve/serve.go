@@ -110,14 +110,9 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 // notify, serve.notify less --no-notify, allows; shipTo is serve.ship_to,
 // or --ship-to.
 func serveOptions(h *host.Host, e *engine.Engine, file config.File, out io.Writer, drain bool, shipTo string, notify bool) engine.ServeOptions {
-	capacity := map[string]int{}
-	for name := range e.Providers {
-		capacity[name] = file.Capacity(name)
-	}
 	hour, minute := file.Serve.Time()
 	options := engine.ServeOptions{
 		Drain:           drain,
-		Capacity:        capacity,
 		ShipTo:          shipTo,
 		SubmitLimit:     file.Serve.Limit(),
 		Outdated:        engine.ServeOutdated{Maintainers: file.Maintainers(), Hour: hour, Minute: minute},

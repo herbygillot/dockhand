@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
@@ -495,4 +496,52 @@ func TestStatusComparesTheFilesACheckIncluded(t *testing.T) {
 	result, err = cmdtest.JSONOf(t, "status")
 	require.NoError(t, err)
 	require.Equal(t, false, cmdtest.Dig(t, result.Result, "branches", 0, "latest_check", "current"), "the included file changed")
+}
+
+// A check run here keeps to its provider's capacity as serve does: with
+// providers.command.capacity at 1, a second foreground check waits for the
+// first, and says so (the command UX review's §9).
+func TestAForegroundCheckKeepsToTheProvidersCapacity(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.CheckedBranch(t)
+	script := filepath.Join(w.Home, "bin", "build-ports")
+	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
+dir=$(dirname "$1")
+run=$(basename "$(dirname "$dir")")
+: > "$HOME/started-$run"
+while [ ! -f "$HOME/go" ]; do sleep 0.02; done
+cat > "$dir/result.json" <<JSON
+{"version": 1, "targets": [{"id": "jq", "outcome": "passed"}]}
+JSON
+`), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[providers.command]\nrun = \"~/bin/build-ports\"\ncapacity = 1\n"), 0o644))
+	first := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-other")
+	require.NoError(t, err)
+	other := filepath.Join(w.Home, "Source", "macports-branches", "jq-other")
+	cmdtest.Setenv(t, "MACPORTS_TREE", other)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+
+	started := func(run string) bool {
+		_, err := os.Stat(filepath.Join(w.Home, "started-"+run))
+		return err == nil
+	}
+	run := func(dir string, out *cmdtest.SyncBuffer, done chan<- struct{}) {
+		err := cmdtest.RunFor(t, t.Context(), []string{"check", "-v", "--tree", dir}, term.Streams{In: strings.NewReader(""), Out: out, Err: out})
+		assert.NoError(t, err)
+		close(done)
+	}
+	var firstOut, otherOut cmdtest.SyncBuffer
+	firstDone, otherDone := make(chan struct{}), make(chan struct{})
+	go run(first, &firstOut, firstDone)
+	require.Eventually(t, func() bool { return started("check-1") }, cmdtest.Settle, 10*time.Millisecond)
+	go run(other, &otherOut, otherDone)
+	waiting := "check-2 waits for a slot on command: providers.command.capacity is 1, and check-1 is using it"
+	require.Eventually(t, func() bool { return strings.Contains(otherOut.String(), waiting) }, cmdtest.Settle, 10*time.Millisecond, "the second waits for the first's slot")
+	require.False(t, started("check-2"))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, "go"), nil, 0o644))
+	<-firstDone
+	<-otherDone
+	require.True(t, started("check-2"), "and runs once it's free")
 }

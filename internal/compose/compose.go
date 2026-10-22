@@ -329,6 +329,11 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	if dependencies.Leftovers != nil {
 		e.Providers[dependencies.Leftovers.Name()] = dependencies.Leftovers
 	}
+	// Each provider's capacity, which serve and a check run here keep to.
+	e.Capacity = map[string]int{}
+	for name := range e.Providers {
+		e.Capacity[name] = file.Capacity(name)
+	}
 	e.GitHubCLI = dependencies.GitHubCLI
 	if e.GitHubCLI == nil {
 		e.GitHubCLI = github.CLI{Path: options.LookPath("gh")}

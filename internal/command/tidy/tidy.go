@@ -149,6 +149,7 @@ commits, and its files are as they were when it was saved.`,
 	cmd.MarkFlagsMutuallyExclusive("apply", "group")
 	cmd.MarkFlagsMutuallyExclusive("apply", "branch")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "apply the plan as shown, without asking; a plan made only of dockhand's own edits applies without it")
+	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	settings.SupportsJSON(cmd)
 	return cmd
 }

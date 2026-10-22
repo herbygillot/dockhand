@@ -99,33 +99,46 @@ since a rebuild has its own reason.`,
 			defer e.Close()
 			var branch model.Branch
 			var started bool
-			if newName != "" {
-				if plan {
-					return errors.New("--plan changes nothing, so it starts no branch; plan in an existing one with --branch")
-				}
+			// A plan with no branch to plan in, or with --new, plans on
+			// master, as update's and checksums' do (the command UX
+			// review's §9).
+			fromMaster := plan && newName != ""
+			switch {
+			case fromMaster:
+			case newName != "":
 				branch, err = e.Start(ctx, engine.StartRequest{Name: newName, Ports: []string{args[0]}})
 				started = err == nil
-			} else {
+			default:
 				branch, started, err = revbumpBranch(ctx, e, selector, args[0], plan)
+				if errors.Is(err, errPlanOnMaster) {
+					fromMaster, err = true, nil
+				}
 			}
 			if err != nil {
 				return err
 			}
 			out := streams.Out
-			if started {
-				fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, branch.Base.Short())
+			switch {
+			case fromMaster:
+				// Said with the master the first port's plan read.
+			case started:
+				fmt.Fprintf(out, "Started %s from master %s (fetched just now) · %s\n", branch.Name, branch.Base.Short(), prose.Plural(len(args), "port"))
+			default:
+				fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), prose.Plural(len(args), "port"))
 			}
-			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), prose.Plural(len(args), "port"))
 			width := 0
 			for _, port := range args {
 				width = max(width, len(port))
 			}
 			result := view.RevbumpJSON{Branch: view.BranchRef(branch), Started: started, Subject: strings.TrimSpace(subject), Applied: !plan, Ports: []view.RevbumpedJSON{}}
 			defer func() { streams.Emit(result) }()
-			for _, port := range args {
-				update, err := e.Update(ctx, engine.UpdateRequest{Branch: branch, Action: model.EditRevbump, Port: port, Subject: subject, Plan: plan})
+			for i, port := range args {
+				update, err := e.Update(ctx, engine.UpdateRequest{Branch: branch, Action: model.EditRevbump, Port: port, Subject: subject, Plan: plan, FromMaster: fromMaster})
 				if err != nil {
 					return fmt.Errorf("%s: %w", port, err)
+				}
+				if fromMaster && i == 0 {
+					fmt.Fprintf(out, "Planned on master %s (fetched just now); --new without --plan starts the branch · %s\n", update.Base.Short(), prose.Plural(len(args), "port"))
 				}
 				result.Ports = append(result.Ports, view.RevbumpedJSON{Port: update.Port, Before: update.Before.Revision, After: update.After.Revision})
 				fmt.Fprintf(out, "  %-*s  revision %d → %d\n", width, update.Port, update.Before.Revision, update.After.Revision)
@@ -167,7 +180,11 @@ func revbumpBranch(ctx context.Context, e *engine.Engine, selector, port string,
 		return model.Branch{}, false, err
 	}
 	if plan {
-		return model.Branch{}, false, errors.New("--plan changes nothing, so it starts no branch; plan in an existing one with --branch")
+		return model.Branch{}, false, errPlanOnMaster
 	}
 	return branchflags.StartFor(ctx, e, port, engine.WorkRevbump)
 }
+
+// errPlanOnMaster is a plan with no branch to plan in, which plans on
+// master as fetched now.
+var errPlanOnMaster = errors.New("a plan with no branch plans on master")

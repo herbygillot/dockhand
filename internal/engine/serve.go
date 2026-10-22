@@ -28,9 +28,6 @@ import (
 type ServeOptions struct {
 	// Drain runs what is queued now and returns once the queue is empty.
 	Drain bool
-	// Capacity is how many checks each provider runs at once; one for a
-	// provider it doesn't name.
-	Capacity map[string]int
 	// ShipTo is serve.ship_to: how far serve carries your outdated ports
 	// each day, list, or one of ship's stages; at submit, a pull request
 	// for each branch serve prepared whose check passed, at most
@@ -237,7 +234,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	capacity := map[string]int{}
 	var described []string
 	for _, name := range providers {
-		capacity[name] = max(options.Capacity[name], 1)
+		capacity[name] = e.capacity(name)
 		described = append(described, capacityWords(name, e.Providers[name], capacity[name]))
 	}
 	if len(described) == 0 {

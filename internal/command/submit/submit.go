@@ -70,9 +70,6 @@ kept.
 			if cmd.Flags().Changed("note") {
 				request.Note = &note
 			}
-			if preview && yes {
-				return errors.New("--plan previews the submission; it goes without --yes")
-			}
 			if request.Branch, err = where.Resolve(ctx, e, streams); err != nil {
 				return err
 			}
@@ -156,6 +153,7 @@ kept.
 	cmd.Flags().BoolVar(&testedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files")
 	cmd.Flags().BoolVar(&testedVariants, "tested-variants", false, "state that you checked the most important variants")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "submit without asking, when there is no terminal")
+	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	cmd.MarkFlagsMutuallyExclusive("draft", "no-check")
 	cmd.MarkFlagsMutuallyExclusive("draft", "ready")
 	settings.SupportsJSON(cmd)

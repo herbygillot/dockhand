@@ -80,6 +80,7 @@ pull requests, and ship takes a port's update as far as --to says.`,
 	cmd.Flags().BoolVar(&mine, "mine", false, "update each of your ports with a newer release, in a branch of its own (config maintainer)")
 	settings.OverAllowanceFlag(cmd, s)
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --mine, start the branches without asking")
+	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	settings.SupportsJSON(cmd)
 	return cmd
 }
@@ -308,10 +309,11 @@ type LinkedOptions struct {
 
 // author finds the branch, makes the edit, and reports it.
 func Author(ctx context.Context, s *settings.Settings, streams term.Streams, where branchflags.BranchChoice, work engine.Work, request engine.UpdateRequest, linked LinkedOptions) (branch model.Branch, update engine.Update, err error) {
-	// A version update's plan with --new is a look before starting a
-	// branch, against master as fetched now; anything else needs one.
+	// A plan with --new is a look before starting a branch, against
+	// master as fetched now, a version update's and a checksum refresh's
+	// alike; anything else needs one.
 	fromMaster := where.IsNew() && request.Plan
-	if fromMaster && request.Action != model.EditUpdate {
+	if fromMaster && request.Action != model.EditUpdate && request.Action != model.EditChecksums {
 		return model.Branch{}, engine.Update{}, fmt.Errorf("--plan changes nothing, so it starts no branch; plan in an existing one with --branch, or drop --plan")
 	}
 	e, err := s.Open(ctx)

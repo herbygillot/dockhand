@@ -213,6 +213,7 @@ true, it runs that baseline by itself.`,
 	cmd.Flags().BoolVar(&keep, "keep", false, "keep each Tart environment's clone, stopped, where its guest finishes, for dockhand shell")
 	cmd.Flags().StringVar(&variants, "variants", "", "build the one port checked with these variants, +name -name, or each: its defaults, then each variant it declares")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --variants each, make its builds without asking")
+	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "keep")
 	cmd.MarkFlagsMutuallyExclusive("build", "on")
