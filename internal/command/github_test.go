@@ -16,6 +16,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -510,6 +511,6 @@ func TestAGitHubLogWithoutHeadingsIsPrintedWholeAndSaid(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	result := model.TargetResult{Target: "jq", Log: "build-macos-15.log", Builders: []model.BuilderResult{{Builder: "build (macos-15)"}}}
-	require.NoError(t, writePortLog(&out, cmdtest.TestPlaces(t), result, []byte("a log\n"), false))
+	require.NoError(t, view.WritePortLog(&out, cmdtest.TestPlaces(t), result, []byte("a log\n"), false))
 	require.Equal(t, "No build-step markers were found for jq. Showing the full log.\n\na log\n", out.String())
 }

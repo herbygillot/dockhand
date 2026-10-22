@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/command/outdated"
 	"github.com/herbygillot/dockhand/internal/command/review"
+	"github.com/herbygillot/dockhand/internal/command/runcmd"
 	"github.com/herbygillot/dockhand/internal/command/serve"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/setup"
@@ -208,9 +209,9 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	root.AddGroup(&cobra.Group{ID: "check", Title: "Check:"})
 	for _, command := range []*cobra.Command{
 		checkCommand(shared, streams),
-		logsCommand(shared, streams),
+		runcmd.LogsCommand(shared, streams),
 		shell.Command(shared, streams),
-		retryCommand(shared, streams),
+		runcmd.RetryCommand(shared, streams),
 	} {
 		command.GroupID = "check"
 		root.AddCommand(command)
@@ -227,8 +228,8 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	}
 	root.AddGroup(&cobra.Group{ID: "queue", Title: "Keep work moving:"})
 	for _, command := range []*cobra.Command{
-		waitCommand(shared, streams),
-		cancelCommand(shared, streams),
+		runcmd.WaitCommand(shared, streams),
+		runcmd.CancelCommand(shared, streams),
 		serve.Command(shared, streams),
 	} {
 		command.GroupID = "queue"

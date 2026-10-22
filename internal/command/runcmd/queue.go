@@ -1,4 +1,4 @@
-package command
+package runcmd
 
 import (
 	"cmp"
@@ -9,7 +9,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -27,7 +26,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func waitCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func WaitCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "wait [check]",
@@ -71,7 +70,7 @@ the check runs here, as a foreground check would.`,
 	return cmd
 }
 
-func cancelCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func CancelCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "cancel [check]",
@@ -123,7 +122,7 @@ branch, for its latest check from anywhere.`,
 	return cmd
 }
 
-func logsCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func LogsCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var port, phase string
 	var full, follow bool
 	var where branchflags.BranchFlags
@@ -220,7 +219,7 @@ copies it as it grows, as Tart's does.`,
 			}
 			if port == "" {
 				streams.Emit(view.LogsView(logs))
-				return writeLogs(streams.Out, s.Places(), logs, stoppedRun(ctx, e, logs.Run))
+				return view.WriteLogs(streams.Out, s.Places(), logs, stoppedRun(ctx, e, logs.Run))
 			}
 			chosen, others, ok := logs.ForPort(port)
 			if !ok {
@@ -258,7 +257,7 @@ copies it as it grows, as Tart's does.`,
 			if phase != "" {
 				from, to, ok := logs.StepLines(chosen, model.Step(phase))
 				if !ok {
-					return phaseMissing(port, phase, found)
+					return view.PhaseMissing(port, phase, found)
 				}
 				lines, ok := buildlog.Between(data, from, to)
 				if !ok {
@@ -276,7 +275,7 @@ copies it as it grows, as Tart's does.`,
 			}
 			streams.Emit(viewed)
 			writePortLogHeading(where, s.Places(), logs, port, chosen, others)
-			return writePortLog(streams.Out, s.Places(), found, data, full)
+			return view.WritePortLog(streams.Out, s.Places(), found, data, full)
 		},
 	}
 	where.Register(cmd, s, "show the latest check of")
@@ -365,7 +364,7 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, 
 func writePortLogHeading(out io.Writer, places config.Places, logs engine.RunLogs, port string, chosen engine.PortLog, others []engine.PortLog) {
 	execution := chosen.Execution
 	fmt.Fprintf(out, "%s's log on %s, attempt %d of %d, run %s: %s; %s\n", port, engine.DescribeEnvironment(execution.Environment), execution.Attempt, model.MaxAttempts, execution.ID,
-		portBuildWords(chosen.Result), places.Tilde(buildlog.Where(chosen.Result.Log)))
+		view.PortBuildWords(chosen.Result), places.Tilde(buildlog.Where(chosen.Result.Log)))
 	for _, earlier := range logs.Executions {
 		if earlier.Execution.Environment == execution.Environment && earlier.Execution.Attempt < execution.Attempt {
 			ended := cmp.Or(earlier.Execution.Detail, string(earlier.Execution.State))
@@ -373,24 +372,8 @@ func writePortLogHeading(out io.Writer, places config.Places, logs engine.RunLog
 		}
 	}
 	for _, other := range others {
-		fmt.Fprintf(out, "  also on %s, attempt %d, run %s: %s; dockhand logs %s %s\n", engine.DescribeEnvironment(other.Execution.Environment), other.Execution.Attempt, other.Execution.ID, portBuildWords(other.Result), other.Execution.ID, port)
+		fmt.Fprintf(out, "  also on %s, attempt %d, run %s: %s; dockhand logs %s %s\n", engine.DescribeEnvironment(other.Execution.Environment), other.Execution.Attempt, other.Execution.ID, view.PortBuildWords(other.Result), other.Execution.ID, port)
 	}
-}
-
-// phaseMissing says a build recorded no step a --phase names: none at
-// all, where its provider records none, or not that one, with the ones it
-// recorded, as a build that failed at fetch records no install.
-func phaseMissing(port, phase string, result model.TargetResult) error {
-	if len(result.Steps) == 0 {
-		return fmt.Errorf("%s's build recorded no steps, so its %s step can't be picked out of its log; logs without --phase prints it whole", port, phase)
-	}
-	var names []string
-	for _, step := range result.Steps {
-		if !slices.Contains(names, string(step.Name)) {
-			names = append(names, string(step.Name))
-		}
-	}
-	return fmt.Errorf("%s's build recorded no %s step; it recorded %s", port, phase, prose.And(names))
 }
 
 // stepNames lists steps by name.
@@ -400,59 +383,6 @@ func stepNames(steps []model.Step) string {
 		names[i] = string(step)
 	}
 	return strings.Join(names, ", ")
-}
-
-// portBuildWords say how a build of a port went, for choosing its log.
-func portBuildWords(result model.TargetResult) string {
-	switch {
-	case result.Outcome == model.OutcomeFailed && result.Phase != "":
-		return result.Phase.FailureWords()
-	case result.Tests.Failed():
-		return string(result.Outcome) + ", its tests " + strings.ReplaceAll(string(result.Tests), "-", " ")
-	}
-	return string(result.Outcome)
-}
-
-// writePortLog prints a port's log. Where its provider recorded where each
-// step of the build began, it lists them first, and prints from the port's
-// own build on, leaving out its dependencies' installs before it: hugo's
-// own phases began near line 46,400 of 47,000 (the hugo exercise). all
-// prints the whole log alone, as it is printed where no steps were
-// recorded.
-func writePortLog(out io.Writer, places config.Places, result model.TargetResult, data []byte, all bool) error {
-	if all {
-		_, err := out.Write(data)
-		return err
-	}
-	// A log with no steps recorded is printed whole; one of GitHub's runners
-	// whose log lacked the workflow's headings is said to be (D20). A
-	// provider that records no steps, as the command provider, says nothing.
-	if len(result.Steps) == 0 {
-		if len(result.Builders) > 0 {
-			fmt.Fprintf(out, "No build-step markers were found for %s. Showing the full log.\n\n", result.Target)
-		}
-		_, err := out.Write(data)
-		return err
-	}
-	fmt.Fprintf(out, "Steps in %s:\n", places.Tilde(buildlog.Where(result.Log)))
-	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	for _, step := range result.Steps {
-		fmt.Fprintf(tw, "  %s\tline %d\n", step.Name, step.Line)
-	}
-	if err := tw.Flush(); err != nil {
-		return err
-	}
-	if own, ok := result.OwnBuild(); ok && own.Line > 1 {
-		if rest, ok := buildlog.From(data, own.Line); ok {
-			fmt.Fprintf(out, "Showing from line %d, where the build for %s begins. Use --full to include the previous %d lines, including dependency installation.\n\n", own.Line, result.Target, own.Line-1)
-			_, err := out.Write(rest)
-			return err
-		}
-		fmt.Fprintf(out, "The log ends before line %d, where %s's own build was recorded to begin, so it's printed whole.\n", own.Line, result.Target)
-	}
-	fmt.Fprintln(out)
-	_, err := out.Write(data)
-	return err
 }
 
 // latestLogging is the latest check of the branch checked out here, where
@@ -506,78 +436,4 @@ func stoppedRun(ctx context.Context, e *engine.Engine, run model.Run) bool {
 	defer end()
 	stopped, err := engine.Stopped(ctx, session, run)
 	return err == nil && stopped
-}
-
-// writeLogs says what a check recorded, its state first: a run whose
-// process ended is said as stopped, where it read "running" (field
-// testing's rust check, 2026-10-15).
-func writeLogs(out io.Writer, places config.Places, logs engine.RunLogs, stopped bool) error {
-	if stopped {
-		name := logs.Run.Name()
-		fmt.Fprintf(out, "%s · stopped: the process running it ended; dockhand wait %s resumes it\n", name, name)
-	} else {
-		fmt.Fprintf(out, "%s · %s", logs.Run.Name(), logs.Run.State)
-	}
-	// A passed check's detail is "passed" again.
-	if !stopped && logs.Run.Detail != "" && logs.Run.Detail != string(logs.Run.State) {
-		fmt.Fprintf(out, ": %s", logs.Run.Detail)
-	}
-	if !stopped {
-		fmt.Fprintln(out)
-	}
-	if len(logs.Executions) == 0 && logs.Run.State.Terminal() {
-		fmt.Fprintln(out, "  No provider runs are recorded. The check either never reached a provider, or cleanup removed the provider records after the branch ended (cleanup.after).")
-	}
-	for _, execution := range logs.Executions {
-		x := execution.Execution
-		fmt.Fprintf(out, "  %s, attempt %d, run %s: %s", engine.DescribeEnvironment(x.Environment), x.Attempt, x.ID, x.State)
-		if x.Detail != "" {
-			fmt.Fprintf(out, " (%s)", x.Detail)
-		}
-		if x.Reused {
-			fmt.Fprint(out, ", reusing earlier builds: nothing was built")
-		}
-		fmt.Fprintln(out)
-		if x.ProviderRef != "" {
-			fmt.Fprintf(out, "    %s\n", x.ProviderRef)
-		}
-		for _, result := range execution.Results {
-			line := fmt.Sprintf("    %s %s", result.Target, result.Outcome)
-			if result.Phase == model.PhaseDependencies {
-				line = fmt.Sprintf("    %s: %s", result.Target, result.Phase.FailureWords())
-			} else if result.Phase != "" {
-				line += " at " + string(result.Phase)
-			}
-			if result.Detail != "" {
-				line += ": " + result.Detail
-			}
-			if result.ReusedFrom != "" {
-				line += ", as built by run " + string(result.ReusedFrom)
-			}
-			if result.Log != "" {
-				line += "  " + places.Tilde(buildlog.Where(result.Log))
-			}
-			fmt.Fprintln(out, line)
-			// A Git-fetched target's build says what it fetched, or that
-			// its provider couldn't say.
-			if fetch, ok := execution.Git[result.Target]; ok {
-				fmt.Fprintf(out, "      %s\n", engine.FetchedWords(fetch.Expected, fetch.Fetched))
-			}
-			// A result with several builders shows each one's part.
-			for _, part := range result.Builders {
-				line := fmt.Sprintf("      %s %s", part.Builder, part.Outcome)
-				if part.Outcome == model.OutcomeNotRun {
-					line = fmt.Sprintf("      %s didn't build it", part.Builder)
-				}
-				if part.Phase != "" {
-					line += " at " + string(part.Phase)
-				}
-				if part.Log != "" {
-					line += "  " + places.Tilde(buildlog.Where(part.Log))
-				}
-				fmt.Fprintln(out, line)
-			}
-		}
-	}
-	return nil
 }

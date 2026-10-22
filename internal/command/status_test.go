@@ -257,11 +257,11 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 		"  checksum      line 46005\n" +
 		"  install       line 46006\n"
 	var out strings.Builder
-	require.NoError(t, writePortLog(&out, cmdtest.TestPlaces(t), result, data, false))
+	require.NoError(t, view.WritePortLog(&out, cmdtest.TestPlaces(t), result, data, false))
 	require.Equal(t, steps+"Showing from line 46004, where the build for hugo begins. Use --full to include the previous 46003 lines, including dependency installation.\n\n"+own, out.String())
 
 	out.Reset()
-	require.NoError(t, writePortLog(&out, cmdtest.TestPlaces(t), result, data, true))
+	require.NoError(t, view.WritePortLog(&out, cmdtest.TestPlaces(t), result, data, true))
 	require.Equal(t, string(data), out.String(), "--full prints the log alone")
 
 	viewed := view.PortLogView(model.Run{Number: 48}, result, data)
@@ -274,14 +274,14 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 	// a log that ends before its own build was to begin is printed whole,
 	// saying so.
 	out.Reset()
-	require.NoError(t, writePortLog(&out, cmdtest.TestPlaces(t), model.TargetResult{Target: "hugo", Log: path}, data, false))
+	require.NoError(t, view.WritePortLog(&out, cmdtest.TestPlaces(t), model.TargetResult{Target: "hugo", Log: path}, data, false))
 	require.Equal(t, string(data), out.String())
 	out.Reset()
 	alone := model.TargetResult{Target: "hugo", Log: path, Steps: []model.LogStep{{Name: model.StepClean, Line: 1}, {Name: model.StepFetch, Line: 2}}}
-	require.NoError(t, writePortLog(&out, cmdtest.TestPlaces(t), alone, []byte("--->  Cleaning hugo\n--->  Fetching hugo\n"), false))
+	require.NoError(t, view.WritePortLog(&out, cmdtest.TestPlaces(t), alone, []byte("--->  Cleaning hugo\n--->  Fetching hugo\n"), false))
 	require.Equal(t, "Steps in "+path+":\n  clean  line 1\n  fetch  line 2\n\n--->  Cleaning hugo\n--->  Fetching hugo\n", out.String())
 	out.Reset()
-	require.NoError(t, writePortLog(&out, cmdtest.TestPlaces(t), result, []byte("--->  Deactivating zlib\n"), false))
+	require.NoError(t, view.WritePortLog(&out, cmdtest.TestPlaces(t), result, []byte("--->  Deactivating zlib\n"), false))
 	require.Equal(t, steps+"The log ends before line 46004, where hugo's own build was recorded to begin, so it's printed whole.\n\n--->  Deactivating zlib\n", out.String())
 	require.Zero(t, view.PortLogView(model.Run{Number: 48}, alone, nil).OwnBuild)
 }
@@ -291,7 +291,7 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 func TestAPhaseABuildDidntRecordSaysWhichItDid(t *testing.T) {
 	t.Parallel()
 	result := model.TargetResult{Target: "jq", Steps: []model.LogStep{{Name: model.StepClean, Line: 1}, {Name: model.StepDependencies, Line: 2}, {Name: model.StepFetch, Line: 9}}}
-	require.EqualError(t, phaseMissing("jq", "install", result), "jq's build recorded no install step; it recorded clean, dependencies, and fetch")
+	require.EqualError(t, view.PhaseMissing("jq", "install", result), "jq's build recorded no install step; it recorded clean, dependencies, and fetch")
 }
 
 // A check's logs of a port open where it failed, or failed its tests,
@@ -315,14 +315,14 @@ func TestLogsForAPortOpenWhereItFailed(t *testing.T) {
 	require.Equal(t, model.ExecutionID("tart_z4oq"), chosen.Execution.ID)
 	require.Len(t, others, 1)
 	require.Equal(t, model.ExecutionID("tart_k7ma"), others[0].Execution.ID)
-	require.Equal(t, "passed, its tests failed", portBuildWords(chosen.Result))
+	require.Equal(t, "passed, its tests failed", view.PortBuildWords(chosen.Result))
 
 	// A failed build comes before failed tests; and with none, the latest.
 	logs.Executions = append(logs.Executions, build("tart_f41l", tahoe, model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}))
 	chosen, others, _ = logs.ForPort("libuv-devel")
 	require.Equal(t, model.ExecutionID("tart_f41l"), chosen.Execution.ID)
 	require.Len(t, others, 2)
-	require.Equal(t, "failed at install", portBuildWords(chosen.Result))
+	require.Equal(t, "failed at install", view.PortBuildWords(chosen.Result))
 	logs.Executions = logs.Executions[1:2]
 	chosen, others, _ = logs.ForPort("libuv-devel")
 	require.Equal(t, model.ExecutionID("tart_k7ma"), chosen.Execution.ID)

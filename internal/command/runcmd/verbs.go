@@ -1,4 +1,4 @@
-package command
+package runcmd
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func retryCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func RetryCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var enqueue, ci bool
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{

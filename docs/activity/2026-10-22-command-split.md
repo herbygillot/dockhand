@@ -189,3 +189,7 @@ line without importing the root.
   author. author imports outdated alone, for update --mine's batch, which
   boundary_test's `verbImports` names with the composites.
   stealth's `refuser` is `cmdtest.Refuser`.
+- **runcmd**: wait, cancel, logs, and retry (with `retry --ci`), as
+  `WaitCommand`, `CancelCommand`, `LogsCommand`, and `RetryCommand`. The
+  log writers status's and json's tests read (`WritePortLog`,
+  `WriteLogs`, `PhaseMissing`, `PortBuildWords`) are view's.
