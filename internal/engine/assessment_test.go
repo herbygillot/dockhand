@@ -824,9 +824,9 @@ func TestAnArchiveNoLongerFetchedIsSaid(t *testing.T) {
 	require.Empty(t, problem)
 	require.Equal(t, []macports.SourceMatch{{Before: "extra-1.0.tar.gz", Status: macports.SourceRemoved}}, unpaired)
 	result := assess.Assess(assess.Input{Port: infos[1], Base: infos[0], Pairs: pairs, Unpaired: unpaired})
-	require.False(t, result.Held())
-	require.Contains(t, result.Changes, model.UpstreamChange{Kind: "source", Path: "extra-1.0.tar.gz", Message: "upstream: extra-1.0.tar.gz is no longer fetched",
-		Rule: assess.SourceRemoved, Class: model.Introduced, Source: "extra-*.tar.gz"})
+	require.True(t, result.Held(), "an archive no longer fetched holds for a look (L2a)")
+	require.Contains(t, result.Changes, model.UpstreamChange{Kind: "source", Path: "extra-1.0.tar.gz", Message: "upstream: extra-1.0.tar.gz is no longer fetched; look at what the port used of it, and at its checksum lines in the Portfile",
+		Rule: assess.SourceRemoved, Hold: true, Class: model.Introduced, Source: "extra-*.tar.gz"})
 	require.Contains(t, CoverageWords(result), "not compared: extra-1.0.tar.gz")
 	require.Contains(t, CoverageWords(result), "Compared LICENSE", "the one archive compared reads as a port of one archive's")
 }

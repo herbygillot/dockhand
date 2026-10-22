@@ -83,8 +83,10 @@ import (
 // the build files of the directories below worksrcpath a port's build
 // reads them from, as i2pd's cmake.source_dir, build/, are compared too,
 // so a stale "no build file changes" is made again (field testing at
-// c643559a).
-const Policy = 24
+// c643559a). 25: an archive the new version no longer fetches holds, its
+// checksum lines and what the port used of it for a person to look at,
+// where update said nothing of it (L2a).
+const Policy = 25
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -571,8 +573,11 @@ func (a *assessment) unpaired() {
 		identity := entry.Identity()
 		switch {
 		case entry.Status == macports.SourceRemoved:
-			a.add(model.UpstreamChange{Kind: "source", Path: entry.Before, Source: identity, Rule: SourceRemoved, Class: model.Introduced,
-				Message: fmt.Sprintf("upstream: %s is no longer fetched", entry.Before)})
+			// The Portfile keeps its checksum lines, and the port may have
+			// used what it held, a vendored crate it dropped: a look
+			// settles both (L2a).
+			a.add(model.UpstreamChange{Kind: "source", Path: entry.Before, Source: identity, Rule: SourceRemoved, Hold: true, Class: model.Introduced,
+				Message: fmt.Sprintf("upstream: %s is no longer fetched; look at what the port used of it, and at its checksum lines in the Portfile", entry.Before)})
 			a.cover(model.Coverage{Path: entry.Before, Source: identity, Relevance: "unknown", Treatment: "set-apart", Policy: SourceRemoved,
 				Reason: "the port no longer fetches it, so what it held isn't compared"})
 		case entry.Status == macports.SourceUncertain && entry.After != "":
