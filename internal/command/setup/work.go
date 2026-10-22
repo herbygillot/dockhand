@@ -112,12 +112,17 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 			return err
 		}
 	}
-	fmt.Fprintf(out, "  Git          ✓ %s at %s\n", report.Git.Version, s.Places().Tilde(report.Git.Path))
-	fmt.Fprintf(out, "  Branches     worktrees in %s\n", s.Places().Tilde(report.Worktrees))
+	// Each row's text wraps under its column (part 5, item 4: the Tart
+	// line was "one big run-on", 2026-10-21).
+	field := func(label, text string) {
+		fmt.Fprintln(out, streams.Hanging(fmt.Sprintf("  %-12s ", label), text))
+	}
+	field("Git", fmt.Sprintf("✓ %s at %s", report.Git.Version, s.Places().Tilde(report.Git.Path)))
+	field("Branches", "worktrees in "+s.Places().Tilde(report.Worktrees))
 	if report.MacPorts != "" {
-		fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", s.Places().Tilde(report.MacPorts))
+		field("Authoring", "✓ MacPorts at "+s.Places().Tilde(report.MacPorts))
 	} else {
-		fmt.Fprintf(out, "  Authoring    ! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports\n")
+		field("Authoring", "! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports")
 	}
 	for i, line := range providerLines(cmd.Context(), s, file) {
 		report.Providers = append(report.Providers, line)
@@ -125,12 +130,12 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 		if i == 0 {
 			label = "Providers"
 		}
-		fmt.Fprintf(out, "  %-12s %s\n", label, line)
+		field(label, line)
 	}
 	var publishLine string
 	publishLine, report.GitHub = publishing(cmd.Context(), s)
-	fmt.Fprintf(out, "  Publishing   %s\n", publishLine)
-	fmt.Fprintf(out, "  Records      %s\n", s.Places().Tilde(report.Records))
+	field("Publishing", publishLine)
+	field("Records", s.Places().Tilde(report.Records))
 	fmt.Fprintln(out)
 	if streams.Terminal() && !yes {
 		written, err := offerSetup(cmd.Context(), s, e, streams, file, configPath)

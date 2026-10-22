@@ -481,6 +481,10 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 // cleanKindWords say what a step of clean is, for what clean kept.
 var cleanKindWords = map[CleanKind]string{CleanWorktree: "worktree", CleanBranchRef: "Git branch", CleanFork: "fork branch", CleanCheck: "check branch"}
 
+// Words are what a step of the kind removes or keeps: "worktree", "Git
+// branch", "fork branch", or "check branch".
+func (k CleanKind) Words() string { return cleanKindWords[k] }
+
 // keepCleanWords records on the branch what clean kept of it, and why
 // (model.Branch.CleanKept), or nothing where it kept nothing.
 func (e *Engine) keepCleanWords(ctx context.Context, plan *CleanBranch) error {

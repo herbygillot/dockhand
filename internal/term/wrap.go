@@ -19,6 +19,10 @@ import (
 type wrapWriter struct {
 	w     io.Writer
 	width int
+	// cut is a terminal's output, whose table lines are cut at the width
+	// with "…" at the default level (Cut); mode says the level.
+	cut  bool
+	mode *outputMode
 	// line is what's held of the line being written; partial is a line
 	// already begun at once, which is written as it comes.
 	line    []byte
@@ -55,8 +59,12 @@ func (w *wrapWriter) Write(p []byte) (int, error) {
 			continue
 		}
 		w.line = append(w.line, line...)
+		text := Wrapped(string(w.line), w.width)
+		if w.cut && (w.mode == nil || w.mode.verbose == 0) {
+			text = Cut(text, w.width)
+		}
 		// Write, not WriteString, which a writer may take another way.
-		if _, err := w.w.Write([]byte(Wrapped(string(w.line), w.width) + "\n")); err != nil {
+		if _, err := w.w.Write([]byte(text + "\n")); err != nil {
 			return 0, err
 		}
 		w.line = w.line[:0]
@@ -87,16 +95,35 @@ func Wrapped(line string, width int) string {
 	if TableLine.MatchString(strings.TrimRight(text, " ")) {
 		return line
 	}
-	hang := strings.Repeat(" ", indent+2)
+	return line[:indent] + breakAt(text, indent, width, strings.Repeat(" ", indent+2))
+}
+
+// Cut is a table's line cut at width, its end said with "…", as a
+// terminal shows a table's widest free-text cell, the last; -v shows it
+// whole, and off a terminal nothing is cut, since field testing reads
+// dockhand through a pipe and acts on its words. A line that isn't a
+// table's, or fits, is as it is.
+func Cut(line string, width int) string {
+	if width <= 0 || utf8.RuneCountInString(line) <= width || strings.ContainsAny(line, "\t\x1b") || !TableLine.MatchString(strings.TrimSpace(line)) {
+		return line
+	}
+	runes := []rune(line)
+	return strings.TrimRight(string(runes[:width-1]), " ") + "…"
+}
+
+// breakAt is text begun at column start, broken at its spaces before a
+// word that would pass width, each later line begun with hang. Spaces in a
+// run, as between a row's cells, are kept, and never broken at.
+func breakAt(text string, start, width int, hang string) string {
 	var lines []string
-	current := line[:indent]
-	columns := indent
+	current := ""
+	columns := start
 	started := false
 	for _, word := range strings.Split(text, " ") {
 		size := utf8.RuneCountInString(word)
-		if started && columns+1+size > width {
-			lines = append(lines, current)
-			current, columns, started = hang, len(hang), false
+		if started && word != "" && columns+1+size > width {
+			lines = append(lines, strings.TrimRight(current, " "))
+			current, columns, started = hang, utf8.RuneCountInString(hang), false
 		}
 		if started {
 			current += " "
@@ -106,7 +133,7 @@ func Wrapped(line string, width int) string {
 		columns += size
 		started = true
 	}
-	return strings.Join(append(lines, current), "\n")
+	return strings.Join(append(lines, strings.TrimRight(current, " ")), "\n")
 }
 
 // Unwrapped turns the wrap off for the rest of the command line, whose

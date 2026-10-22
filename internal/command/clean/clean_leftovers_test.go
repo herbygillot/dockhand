@@ -84,7 +84,7 @@ func TestCleanRemovesWhatChecksLeft(t *testing.T) {
 
 	out, _, err = cmdtest.Dockhand(t, "clean", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "\nLeft by checks\n  removed  VM "+vm+", left by check-1\n  keep     VM vm-elsewhere: no check of this checkout made it\n")
+	require.Contains(t, out, "\nRemoved 1 thing a check left.\n", "one line, once done")
 	require.Empty(t, builder.left)
 
 	out, _, err = cmdtest.Dockhand(t, "clean")

@@ -48,7 +48,7 @@ func Begin(streams Streams, args []string) Streams {
 		out = &markWriter{w: out}
 	}
 	// Prose wraps at the width, a terminal's or COLUMNS (wrapWriter).
-	out = &wrapWriter{w: out, width: streams.Width()}
+	out = &wrapWriter{w: out, width: streams.Width(), cut: streams.OutTerminal(), mode: streams.mode}
 	streams.Out = &switchWriter{w: out}
 	if streams.status == nil {
 		streams.status = &StatusLine{w: streams.Err}
@@ -108,6 +108,15 @@ func (s Streams) Width() int {
 		return s.display.Columns
 	}
 	return defaultColumns
+}
+
+// Height is the output terminal's rows, for a view to fit; 0 off a
+// terminal, where nothing is fitted.
+func (s Streams) Height() int {
+	if file, ok := underlying(s.Out).(*os.File); ok {
+		return terminalHeight(file.Fd())
+	}
+	return 0
 }
 
 // Unattended are the streams of a command that asks nothing, whatever its

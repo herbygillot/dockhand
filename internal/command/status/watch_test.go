@@ -78,3 +78,10 @@ func TestWatchRedrawsAndRunsWhatIsTyped(t *testing.T) {
 	require.NoError(t, <-done)
 	require.True(t, strings.HasSuffix(viewed.String(), leaveView), "and gives the terminal back")
 }
+
+// A view taller than the screen is cut, its last line counting the rest.
+func TestFitHeight(t *testing.T) {
+	require.Equal(t, "a\nb\nc", fitHeight("a\nb\nc", 3))
+	require.Equal(t, "a\n  +2 more; dockhand status shows them all", fitHeight("a\nb\nc", 2))
+	require.Equal(t, "a\nb\nc", fitHeight("a\nb\nc", -3), "a height not known")
+}

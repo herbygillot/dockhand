@@ -78,7 +78,7 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 		"  keep     branch dockhand/jq-update: dockhand path jq-update checks it out again\n", out)
 	out, _, err = cmdtest.Dockhand(t, "clean", "jq-update", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "jq-update: removed worktree ~/Source/macports-branches/jq-update\n", "one line a branch, once done")
+	require.Contains(t, out, "\nRemoved 1 worktree.\n", "one line, once done")
 	require.NoDirExists(t, dir)
 }
 

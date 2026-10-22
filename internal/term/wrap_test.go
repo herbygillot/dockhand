@@ -32,3 +32,17 @@ func TestUnwrapped(t *testing.T) {
 	_, _ = streams.Out.Write([]byte("a log line longer than ten\n"))
 	require.Equal(t, "a log line longer than ten\n", out.String())
 }
+
+// On a terminal a table's line is cut at the width with "…", at the
+// default level; -v shows it whole.
+func TestCut(t *testing.T) {
+	require.Equal(t, "  jq  1.7.1 → 1.8.1  a long n…", Cut("  jq  1.7.1 → 1.8.1  a long note that runs on", 30))
+	require.Equal(t, "prose that runs on past the width", Cut("prose that runs on past the width", 10), "prose wraps instead")
+
+	var out bytes.Buffer
+	streams := Begin(Streams{Out: &out}.AsTerminal().WithDisplay(Display{Columns: 20}), nil)
+	_, _ = streams.Out.Write([]byte("  jq  update  a long note\n"))
+	streams.SetVerbosity(1)
+	_, _ = streams.Out.Write([]byte("  jq  update  a long note\n"))
+	require.Equal(t, "  jq  update  a lon…\n  jq  update  a long note\n", out.String())
+}

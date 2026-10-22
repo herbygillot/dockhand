@@ -6,8 +6,6 @@ import (
 	"os"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // Display is how a command line's text is shown, as its environment asks:
@@ -126,15 +124,6 @@ func (m *markWriter) markPlace() bool {
 // prose, where only that list wrapped, and lines ran to 400 columns.
 // A line is never cut; a word wider than the width overruns it.
 func (s Streams) Hanging(first, text string) string {
-	width := s.Width() - utf8.RuneCountInString(first)
-	indent := strings.Repeat(" ", utf8.RuneCountInString(first))
-	lines := strings.Split(prose.Wrap(text, max(width, 20)), "\n")
-	for i := range lines {
-		if i == 0 {
-			lines[i] = first + lines[i]
-		} else {
-			lines[i] = indent + lines[i]
-		}
-	}
-	return strings.Join(lines, "\n")
+	indent := utf8.RuneCountInString(first)
+	return first + breakAt(text, indent, max(s.Width(), indent+20), strings.Repeat(" ", indent))
 }

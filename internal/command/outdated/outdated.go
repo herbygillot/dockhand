@@ -87,8 +87,6 @@ checks them too.`,
 }
 
 func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report engine.OutdatedReport, all bool) error {
-	table := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(table, "  PORT\tNOW\tNEWEST\tDOCKHAND CAN")
 	summary := report.Summary()
 	newer, unknown, uncertain, moved, own := summary[engine.OutdatedNewer], summary[engine.OutdatedUnchecked], summary[engine.OutdatedUncertain], summary[engine.OutdatedMoved], summary[engine.OutdatedOwnVersion]
 	unready := summary[engine.OutdatedUnpublished]
@@ -120,32 +118,41 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		}
 		return ""
 	}
+	// The ports by what dockhand can do with them, a group each (part 5,
+	// item 4): ready to ship, held for a look, not checked, and with
+	// --current, current.
+	var ready, held, unchecked, current []outdatedRow
 	for _, port := range report.Ports {
 		folded := port.With != "" && listed[port.With]
 		class := port.Class()
+		row := outdatedRow{port: port.Port, now: orDash(port.Current), newest: orDash(port.Newest)}
 		switch {
 		case class == engine.OutdatedOwnVersion:
-			if all {
-				fmt.Fprintf(table, "  %s\t%s\t—\tnothing; it fetches nothing here, and no livecheck reads its version\n", port.Port, orDash(port.Current))
-			}
+			row.note = "it fetches nothing here, and no livecheck reads its version"
+			current = append(current, row)
 		case class == engine.OutdatedMoved:
 			// A port pinned to a commit of a branch that has moved on is
 			// behind; update moves the pin to the head, with the version
 			// the port's scheme gives it, or the one named (the roadmap's
 			// v0.5.0 part 3, step 2).
-			fmt.Fprintf(table, "  %s\t%s\t%s?\tdockhand update %s: its %s names a newer commit than the one it pins\n", port.Port, port.Current, port.Newest, port.Port, port.Moved.Branch)
+			row.newest += "?"
+			row.note = fmt.Sprintf("dockhand update %s: its %s names a newer commit than the one it pins", port.Port, port.Moved.Branch)
+			ready = append(ready, row)
 		case class == engine.OutdatedUnchecked:
-			if all || none {
-				fmt.Fprintf(table, "  %s\t%s\t?\tcouldn't check: %s\n", port.Port, orDash(port.Current), strings.ReplaceAll(port.Problem, "\n", "; "))
-			}
+			row.newest = "?"
+			row.note = strings.ReplaceAll(port.Problem, "\n", "; ")
+			unchecked = append(unchecked, row)
 		case class == engine.OutdatedUncertain:
-			// Neither current nor outdated for sure, so it's listed for
-			// a look, with the update that takes it.
-			fmt.Fprintf(table, "  %s\t%s\t%s?\tupdate %s %s after a look: %s\n", port.Port, port.Current, port.Newest, port.Port, port.Uncertain[0].Source, engine.SetAsideWords(port.Uncertain))
+			// Neither current nor outdated for sure, so it's held for a
+			// look, with the update that takes it.
+			row.newest += "?"
+			row.note = fmt.Sprintf("update %s %s after a look: %s", port.Port, port.Uncertain[0].Source, engine.SetAsideWords(port.Uncertain))
+			held = append(held, row)
 		case class == engine.OutdatedUnpublished:
 			// Newer, but update would refuse it until its release has
 			// its files (field testing at 43949b89, browsh).
-			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing yet: %s\n", port.Port, port.Current, port.Newest, port.Unpublished)
+			row.note = "not ready: " + port.Unpublished
+			held = append(held, row)
 		case class == engine.OutdatedNewer && folded:
 		case class == engine.OutdatedNewer:
 			can := "update"
@@ -159,20 +166,31 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			case port.With != "":
 				can = "update with " + port.With
 			}
-			// A major version bump and serve would hold (holds.majors).
+			row.note = can + with(port.Port)
+			// A major version bump, which serve would hold
+			// (holds.majors).
 			if e.HoldsMajor(port.Current, port.Newest) {
-				can += "; a new major version, held for a look unattended"
+				row.note = "a new major version, held for a look unattended; " + row.note
+				held = append(held, row)
+				continue
 			}
-			fmt.Fprintf(table, "  %s\t%s\t%s\t%s%s\n", port.Port, port.Current, port.Newest, can, with(port.Port))
+			ready = append(ready, row)
 		case folded:
-		case all && port.With != "":
-			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing; it is current, as %s is\n", port.Port, port.Current, port.Newest, port.With)
-		case all:
-			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing; it is current%s\n", port.Port, port.Current, port.Newest, with(port.Port))
+		case port.With != "":
+			row.note = fmt.Sprintf("it is current, as %s is", port.With)
+			current = append(current, row)
+		default:
+			row.note = "it is current" + with(port.Port)
+			current = append(current, row)
 		}
 	}
-	if newer > 0 || uncertain > 0 || moved > 0 || unready > 0 || all || none {
-		table.Flush()
+	writeGroup(out, "Ready to ship", ready)
+	writeGroup(out, "Held", held)
+	if all || none {
+		writeGroup(out, "Not checked", unchecked)
+	}
+	if all {
+		writeGroup(out, "Current", current)
 	}
 	if none {
 		return noneChecked(report)
@@ -245,6 +263,26 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		return &term.ExitError{Code: term.ExitAttention}
 	}
 	return nil
+}
+
+// outdatedRow is a port's row in outdated's groups: its version now, the
+// newest found, and what dockhand can do.
+type outdatedRow struct {
+	port, now, newest, note string
+}
+
+// writeGroup is a group's heading, with its count, and its rows, the
+// versions as now → newest; none where it's empty.
+func writeGroup(out io.Writer, heading string, rows []outdatedRow) {
+	if len(rows) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "%s (%d)\n", heading, len(rows))
+	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	for _, row := range rows {
+		fmt.Fprintf(table, "  %s\t%s → %s\t%s\n", row.port, row.now, row.newest, row.note)
+	}
+	table.Flush()
 }
 
 func orDash(value string) string {

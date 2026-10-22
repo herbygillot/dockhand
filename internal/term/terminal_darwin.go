@@ -15,3 +15,12 @@ func terminalWidth(fd uintptr) int {
 	}
 	return int(size.Col)
 }
+
+// terminalHeight is the terminal's rows, 0 where fd isn't one.
+func terminalHeight(fd uintptr) int {
+	size, err := unix.IoctlGetWinsize(int(fd), unix.TIOCGWINSZ)
+	if err != nil {
+		return 0
+	}
+	return int(size.Row)
+}

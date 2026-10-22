@@ -150,12 +150,17 @@ results were reused from. It asks, and without a terminal needs --yes.`,
 			done, err := e.ApplyClean(ctx, plans)
 			removed, leftoverErr := e.RemoveLeftovers(ctx, session, leftovers)
 			streams.Emit(map[string]any{"branches": view.CleanView(done), "leftovers": view.LeftoversView(removed), "applied": true})
-			// What was done is one line a branch, its plan having been
-			// shown in full: thirty branches' blocks printed twice were
-			// a lot to read (field testing's cleanup, af03bbab).
+			// What was done is one line, its plan having been shown in
+			// full: thirty branches' blocks printed twice were a lot to
+			// read (field testing's cleanup, af03bbab); -v lists it, a
+			// line a branch (part 5, item 4).
 			fmt.Fprintln(streams.Out)
-			writeCleanDone(streams.Out, done, s.Places())
-			writeLeftovers(streams.Out, removed, true)
+			if streams.Verbose() > 0 {
+				writeCleanDone(streams.Out, done, s.Places())
+				writeLeftovers(streams.Out, removed, true)
+			} else {
+				fmt.Fprintln(streams.Out, cleanedWords(done, removed))
+			}
 			return errors.Join(err, leftoverErr)
 		},
 	}
@@ -285,6 +290,49 @@ func cleanWords(places config.Places, what string) string {
 		return "worktree " + places.Tilde(path)
 	}
 	return what
+}
+
+// cleanedWords say what clean did in one line: what it removed, by kind,
+// and how much it kept, which -v lists.
+func cleanedWords(plans []engine.CleanBranch, leftovers []engine.Leftover) string {
+	removed := map[engine.CleanKind]int{}
+	kept := 0
+	for _, plan := range plans {
+		for _, step := range plan.Steps {
+			switch {
+			case step.Kept != "":
+				kept++
+			case step.Done:
+				removed[step.Kind]++
+			}
+		}
+	}
+	var parts []string
+	for _, kind := range []engine.CleanKind{engine.CleanWorktree, engine.CleanBranchRef, engine.CleanFork, engine.CleanCheck} {
+		if n := removed[kind]; n > 0 {
+			parts = append(parts, prose.Plural(n, kind.Words()))
+		}
+	}
+	left := 0
+	for _, leftover := range leftovers {
+		if leftover.Done {
+			left++
+		}
+	}
+	switch {
+	case left == 1:
+		parts = append(parts, "1 thing a check left")
+	case left > 1:
+		parts = append(parts, fmt.Sprintf("%d things checks left", left))
+	}
+	line := "Removed nothing"
+	if len(parts) > 0 {
+		line = "Removed " + prose.And(parts)
+	}
+	if kept > 0 {
+		line += fmt.Sprintf("; kept %d, which dockhand clean -v lists with why", kept)
+	}
+	return line + "."
 }
 
 // writeCleanDone says what clean did, one line a branch: what it removed,

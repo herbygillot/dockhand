@@ -169,8 +169,10 @@ func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timi
 			fmt.Fprintf(&viewed, "status: %v\n", err)
 		}
 		drawn = time.Now()
+		// The header, its blank line, and the prompt's line take three
+		// of the screen's rows.
 		fmt.Fprintf(streams.Out, "%sdockhand status --watch · %s · c check · l logs · t tidy · s submit, each <branch> · q quits\n\n%s\n> ",
-			clearView, drawn.Format("15:04:05"), strings.TrimRight(viewed.String(), "\n"))
+			clearView, drawn.Format("15:04:05"), fitHeight(strings.TrimRight(viewed.String(), "\n"), streams.Height()-3))
 	}
 	draw()
 	want <- struct{}{}
@@ -289,4 +291,17 @@ func watchVerb(ctx context.Context, e *engine.Engine, line string) (args []strin
 		return []string{"logs", latest.Name()}, false, nil
 	}
 	return nil, false, fmt.Errorf("%q: c, l, t, or s and a branch; Enter redraws; q quits", fields[0])
+}
+
+// fitHeight is a view cut to rows lines, its last saying how many more
+// there are, where it's taller: status's groups come first what needs you,
+// so what's cut is what waits (part 5, item 4). A height not known, as off
+// a terminal, fits everything.
+func fitHeight(view string, rows int) string {
+	lines := strings.Split(view, "\n")
+	if rows <= 1 || len(lines) <= rows {
+		return view
+	}
+	kept := lines[:rows-1]
+	return strings.Join(kept, "\n") + fmt.Sprintf("\n  +%d more; dockhand status shows them all", len(lines)-len(kept))
 }

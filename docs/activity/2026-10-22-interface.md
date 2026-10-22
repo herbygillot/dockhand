@@ -299,3 +299,30 @@ mark's column (`view.Unmarked`).
   or gone is still said. wait, which follows a check, reads the same.
 - Acceptance row D-I7 runs its checks with `-v`, since it reads "runs here"
   and "attempt 2 of"; the command tests that read progress do too.
+
+### The other overview commands
+
+- **outdated is grouped** by what dockhand can do: "Ready to ship",
+  "Held" (a new major version, a release set aside for a look, one not
+  ready yet), "Not checked" (with `--current`, or where none could be),
+  and with `--current`, "Current"; each a heading with its count, a row a
+  port, its versions as "1.7.1 → 1.8.1", and its note. The column headings
+  went with the one table; the arrow says what the two versions are.
+- **clean says what it did in one line**, "Removed 3 worktrees, 2 Git
+  branches, and 2 fork branches; kept 1, which dockhand clean -v lists
+  with why" (`engine.CleanKind.Words`), where it listed a line a branch,
+  which `-v` still does. Its plan, the question's report, is as it was.
+- **setup's rows wrap under their column** (`Streams.Hanging`, which now
+  keeps the spaces between a row's cells): the Tart line that ran on
+  wraps at the width. The maintainer hint is one sentence in one place
+  already, `engine.MaintainerHint`, which create, outdated `--mine`, and
+  serve read; setup's `Next:` only names the setting.
+- **On a terminal a table's line is cut at the width with "…"**
+  (`term.Cut`), at the default level; `-v` shows it whole, and off a
+  terminal nothing is cut.
+- **status --watch fits the screen**: a view taller than it is cut, its
+  last line "+N more; dockhand status shows them all", and since its
+  groups come first what needs you, what's cut is what waits
+  (`Streams.Height`).
+- serve's log was already a line an event, a port's preparing, its check,
+  and its pull request each one; it's unwrapped, as a log.

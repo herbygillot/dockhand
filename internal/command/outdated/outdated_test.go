@@ -50,12 +50,12 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	var offline bytes.Buffer
 	err = writeOutdated(t.Context(), nil, &offline, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{{Port: "jq", Current: "1.8.2", Problem: "dial tcp: connection refused\ngit ls-remote: exit status 128"}}}, false)
 	require.EqualError(t, err, "no port could be checked, at master 1bb30d5: dial tcp: connection refused")
-	require.Equal(t, "  PORT   NOW     NEWEST   DOCKHAND CAN\n  jq     1.8.2   ?        couldn't check: dial tcp: connection refused; git ls-remote: exit status 128\n", offline.String())
+	require.Equal(t, "Not checked (1)\n  jq  1.8.2 → ?  dial tcp: connection refused; git ls-remote: exit status 128\n", offline.String())
 
 	// Nor is one whose newest release is uncertain, which is listed, with
 	// why and the update that takes it (the update-workflow review's
 	// finding 6).
-	row := "  PORT   NOW      NEWEST   DOCKHAND CAN\n  yq     4.44.1   5.0?     update yq 5.0 after a look: v5.0 compares newer, but its commit is older than v4.44.1's\n"
+	row := "Held (1)\n  yq  4.44.1 → 5.0?  update yq 5.0 after a look: v5.0 compares newer, but its commit is older than v4.44.1's\n"
 	settle := "Where a tag set aside is an old one spelled oddly rather than a release, a livecheck.regex that skips it keeps it out of later looks.\n"
 	require.Equal(t, row+"yq may have a newer release, at master 1bb30d5\n"+settle, said(cmdtest.YqMayBeOutdated))
 	require.Equal(t, row+"None of 2 ports has a newer release, at master 1bb30d5 · 1 may have one, for a look\n"+settle, said(cmdtest.YqMayBeOutdated, current("jq")))
@@ -68,7 +68,7 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	var folded bytes.Buffer
 	require.NoError(t, writeOutdated(t.Context(), nil, &folded, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{
 		{Port: "py-flatbuffers", Current: "25.9.23", Newest: "25.9.23"}, follow("py313-flatbuffers"), follow("py314-flatbuffers")}}, true))
-	require.Equal(t, "  PORT             NOW       NEWEST    DOCKHAND CAN\n  py-flatbuffers   25.9.23   25.9.23   nothing; it is current (2 subports with it)\nNone of 3 ports has a newer release, at master 1bb30d5\n", folded.String())
+	require.Equal(t, "Current (1)\n  py-flatbuffers  25.9.23 → 25.9.23  it is current (2 subports with it)\nNone of 3 ports has a newer release, at master 1bb30d5\n", folded.String())
 
 	// A port with no release to look for, as a _select port, is covered,
 	// not a port that couldn't be checked (batch 37).
@@ -79,13 +79,13 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	require.Equal(t, "None of 2 ports has a newer release, at master 1bb30d5 · 1 has no release to look for\n", said(own("kubectl_select"), current("jq")))
 	var out bytes.Buffer
 	require.NoError(t, writeOutdated(t.Context(), nil, &out, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{own("helm_select"), own("kubectl_select")}}, true))
-	require.Equal(t, "  PORT             NOW   NEWEST   DOCKHAND CAN\n  helm_select      0.1   —        nothing; it fetches nothing here, and no livecheck reads its version\n  kubectl_select   0.1   —        nothing; it fetches nothing here, and no livecheck reads its version\nNone of 2 ports has a newer release, at master 1bb30d5 · 2 have no release to look for\n", out.String())
+	require.Equal(t, "Current (2)\n  helm_select     0.1 → —  it fetches nothing here, and no livecheck reads its version\n  kubectl_select  0.1 → —  it fetches nothing here, and no livecheck reads its version\nNone of 2 ports has a newer release, at master 1bb30d5 · 2 have no release to look for\n", out.String())
 
 	// A newer release whose files aren't published yet is said as not
 	// ready, as update would refuse it, and isn't counted as newer (field
 	// testing at 43949b89, browsh 1.8.3).
 	unready := engine.OutdatedPort{Port: "browsh", Current: "1.8.2", Newest: "1.8.3", Outdated: true, Unpublished: "release v1.8.3 has no downloadable assets yet; the update is not ready"}
-	notReady := "  PORT     NOW     NEWEST   DOCKHAND CAN\n  browsh   1.8.2   1.8.3    nothing yet: release v1.8.3 has no downloadable assets yet; the update is not ready\n"
+	notReady := "Held (1)\n  browsh  1.8.2 → 1.8.3  not ready: release v1.8.3 has no downloadable assets yet; the update is not ready\n"
 	require.Equal(t, notReady+"browsh has a newer release, not ready yet, at master 1bb30d5\n", said(unready))
 	require.Equal(t, notReady+"None of 2 ports has a newer release, at master 1bb30d5 · 1 has a release not ready yet\n", said(unready, current("jq")))
 }
@@ -112,12 +112,12 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "outdated", "--mine")
 	require.Equal(t, 3, term.ExitCode(err), "one couldn't be checked")
 	require.Equal(t, []string{"@ada", "example.org:ada"}, reader.Asked[0].Maintainers)
-	require.Contains(t, out, "  PORT   NOW     NEWEST   DOCKHAND CAN\n  jq     1.7.1   1.8.1    update\n")
+	require.Contains(t, out, "Ready to ship (1)\n  jq  1.7.1 → 1.8.1  update\n")
 	require.Contains(t, out, "1 of 2 ports couldn't be checked: no forge could be found for it\nOf the 1 port checked, 1 has a newer release, at master ")
 	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat(" · --current lists those it couldn't\n  check\n"))
 	out, _, err = cmdtest.Dockhand(t, "outdated", "--mine", "--current")
 	require.Equal(t, 3, term.ExitCode(err))
-	require.Contains(t, out, "couldn't check: no forge could be found for it")
+	require.Contains(t, out, "Not checked (1)\n  lost  —")
 
 	// --mine updates each in a branch of its own, nothing committed, and
 	// --plan starts none.
@@ -139,7 +139,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 
 	out, _, err = cmdtest.Dockhand(t, "outdated", "jq")
 	require.Equal(t, 3, term.ExitCode(err), "the fixture's lost couldn't be checked")
-	require.Regexp(t, `jq     1\.7\.1   1\.8\.1    already in jq-1\.8\.1\n`, out)
+	require.Contains(t, out, "  jq  1.7.1 → 1.8.1  already in jq-1.8.1\n")
 	out, _, err = cmdtest.Dockhand(t, "update", "--mine", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "  jq: left as it is: already in jq-")
@@ -232,7 +232,7 @@ func TestAnInterruptedLookPrintsWhatItFound(t *testing.T) {
 		err := cmdtest.RunFor(t, ctx, args, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 		require.ErrorIs(t, err, context.Canceled, args)
 		require.Contains(t, out.String(), "Interrupted after looking up 1 of 2 ports", args)
-		require.Contains(t, out.String(), "  jq     1.7.1   1.8.1    update\n", args)
+		require.Contains(t, out.String(), "Ready to ship (1)\n  jq  1.7.1 → 1.8.1  update\n", args)
 	}
 	cmdtest.Stands(t).OutdatedReader = nil
 	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "update --mine and ship --mine started nothing")

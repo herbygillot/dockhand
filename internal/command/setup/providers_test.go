@@ -203,7 +203,8 @@ func TestSetupShowsTheProviders(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "setup", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Providers    tart     ! not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n"+
-		"               github   ! needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n"+
+		"               github   ! needs a GitHub login, dockhand setup github, and your fork's Actions\n"+
+		"               enabled\n"+
 		"  Publishing   ")
 
 	// With this Mac's image deleted and its golden copy kept, setup offers
