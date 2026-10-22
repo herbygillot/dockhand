@@ -957,10 +957,15 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 	for _, candidate := range candidates {
 		name := candidate.Branch.ShortName()
 		if len(candidate.Held) > 0 {
-			// Said once a branch, while its first concern stays the same.
-			if first := candidate.Held[0]; p.held[candidate.Branch.ID] != first.Key() {
-				p.s.say("serve: %s needs review before submission: %s", name, first.Detail)
-				p.held[candidate.Branch.ID] = first.Key()
+			// Every concern is said, where only the first was (C2), once a
+			// branch while they stay the same.
+			var keys []string
+			for _, concern := range candidate.Held {
+				keys = append(keys, concern.Key())
+			}
+			if key := strings.Join(keys, "\x01"); p.held[candidate.Branch.ID] != key {
+				p.s.say("serve: %s needs review before submission: %s", name, strings.Join(HoldLines(candidate.Held), "; "))
+				p.held[candidate.Branch.ID] = key
 			}
 			continue
 		}

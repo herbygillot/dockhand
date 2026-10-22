@@ -447,9 +447,14 @@ func attentionFor(s engine.BranchStatus) []attention {
 			// own submission shows it and goes on, as submit does (the
 			// direction synthesis's third contradiction: status said a
 			// person's branch was paused that submit would send).
-			what := "passed; " + engine.HoldLines(s.Held)[0] + "; submit shows it for your look"
+			lines := engine.HoldLines(s.Held)
+			first := lines[0]
+			if len(lines) > 1 {
+				first += fmt.Sprintf(" (and %d more: dockhand status %s)", len(lines)-1, name)
+			}
+			what := "passed; " + first + "; submit shows it for your look"
 			if s.Branch.Origin == model.OriginServe {
-				what = "passed; submission paused for review: " + engine.HoldLines(s.Held)[0]
+				what = "passed; submission paused for review: " + first
 			}
 			return row(attentionNeedsYou, what, submitNext(s, name))
 		case s.Branch.PullRequest == nil && len(s.Moved) > 0:
@@ -716,6 +721,14 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places con
 			if status.Evidence.Problem != "" {
 				fmt.Fprintf(out, "           ! %s\n", status.Evidence.Problem)
 			}
+		}
+		// Every hold, where the attention row says the first (C2).
+		for i, line := range engine.HoldLines(status.Held) {
+			label := "         "
+			if i == 0 {
+				label = "Holds    "
+			}
+			fmt.Fprintf(out, "  %s! %s\n", label, line)
 		}
 	}
 	pr := prWords(status)

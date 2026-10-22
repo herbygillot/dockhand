@@ -370,6 +370,11 @@ func TestStatusSaysAHoldAsSubmitTreatsIt(t *testing.T) {
 	require.Equal(t, "passed; upstream's COPYING changed; submit shows it for your look", attentionFor(status)[0].what)
 	status.Branch.Origin = model.OriginServe
 	require.Equal(t, "passed; submission paused for review: upstream's COPYING changed", attentionFor(status)[0].what)
+
+	// A second is counted beside the first, as serve says them all.
+	build := model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "build-file-changed", Path: "configure.ac", Class: model.Introduced, Detail: "upstream's configure.ac changed"}
+	status.Held = append(status.Held, build)
+	require.Equal(t, "passed; submission paused for review: upstream's COPYING changed (and 1 more: dockhand status jq-1.8.2)", attentionFor(status)[0].what)
 }
 
 // A passed branch whose update chose a release whose tag named another
