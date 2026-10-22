@@ -169,6 +169,8 @@ type Reader interface {
 	Reusable(target model.TargetID, environment model.Environment, limit int) ([]Build, error)
 
 	Session(id model.SessionID) (model.Session, error)
+	// OpenSessions are the sessions that haven't ended, oldest first.
+	OpenSessions() ([]model.Session, error)
 	Lease(resource string) (model.Lease, error)
 	// Events lists events after a sequence number, oldest first.
 	// Events are the events after a sequence, at least as important as

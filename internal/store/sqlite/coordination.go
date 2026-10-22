@@ -10,13 +10,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
-const sessionColumns = "id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at"
+const sessionColumns = "id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at, schema"
 
 func (t *tx) scanSession(row interface{ Scan(...any) error }) (model.Session, error) {
 	var s model.Session
 	var started, heartbeat int64
 	var ended sql.NullInt64
-	if err := row.Scan(&s.ID, &s.Kind, &s.PID, &s.ProcessStart, &s.Version, &started, &heartbeat, &ended); err != nil {
+	if err := row.Scan(&s.ID, &s.Kind, &s.PID, &s.ProcessStart, &s.Version, &started, &heartbeat, &ended, &s.Schema); err != nil {
 		return model.Session{}, storageError(err)
 	}
 	s.Repository, s.StartedAt, s.HeartbeatAt, s.EndedAt = t.repo, fromMillis(started), fromMillis(heartbeat), fromNullable(ended)
@@ -27,6 +27,25 @@ func (t *tx) Session(id model.SessionID) (model.Session, error) {
 	return t.scanSession(t.conn.QueryRowContext(t.ctx, "SELECT "+sessionColumns+" FROM sessions WHERE repository_id=? AND id=?", t.repo, id))
 }
 
+// OpenSessions are the sessions that haven't ended, oldest first, live or
+// not: status judges each by coord's liveness.
+func (t *tx) OpenSessions() ([]model.Session, error) {
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT "+sessionColumns+" FROM sessions WHERE repository_id=? AND ended_at IS NULL ORDER BY started_at, rowid", t.repo)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	defer rows.Close()
+	var sessions []model.Session
+	for rows.Next() {
+		session, err := t.scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, session)
+	}
+	return sessions, storageError(rows.Err())
+}
+
 func (t *tx) AddSession(s model.Session) error {
 	if err := s.Validate(); err != nil {
 		return err
@@ -34,8 +53,9 @@ func (t *tx) AddSession(s model.Session) error {
 	if err := t.checkRepository(s.Repository); err != nil {
 		return err
 	}
-	_, err := t.exec("INSERT INTO sessions(repository_id, "+sessionColumns+") VALUES(?,?,?,?,?,?,?,?,?)",
-		t.repo, s.ID, s.Kind, s.PID, s.ProcessStart, s.Version, millis(s.StartedAt), millis(s.HeartbeatAt), nullableMillis(s.EndedAt))
+	// A session expects the schema this build writes.
+	_, err := t.exec("INSERT INTO sessions(repository_id, "+sessionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?)",
+		t.repo, s.ID, s.Kind, s.PID, s.ProcessStart, s.Version, millis(s.StartedAt), millis(s.HeartbeatAt), nullableMillis(s.EndedAt), schemaVersion)
 	return err
 }
 

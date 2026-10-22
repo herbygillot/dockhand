@@ -514,6 +514,35 @@ type statusJSON struct {
 	// Queue is the checks queued and running, oldest first, beside the
 	// branches: what queue listed.
 	Queue *[]queuedRunJSON `json:"queue,omitempty"`
+	// Processes are the dockhand processes working on the checkout.
+	Processes *[]processJSON `json:"processes,omitempty"`
+}
+
+// processJSON is a dockhand process working on the checkout.
+type processJSON struct {
+	PID     int      `json:"pid"`
+	Kind    string   `json:"kind"`
+	Build   string   `json:"build"`
+	Started string   `json:"started"`
+	Leads   bool     `json:"leads"`
+	Runs    []string `json:"runs"`
+	// Expects is the schema it expects where the database is at another,
+	// Database.
+	Expects  int `json:"expects_schema,omitempty"`
+	Database int `json:"database_schema,omitempty"`
+}
+
+func processesView(processes []engine.Process) *[]processJSON {
+	views := []processJSON{}
+	for _, process := range processes {
+		view := processJSON{PID: process.Session.PID, Kind: string(process.Session.Kind), Build: process.Session.Version, Started: process.Session.StartedAt.UTC().Format(time.RFC3339),
+			Leads: process.Leads, Runs: []string{}, Expects: process.Expects, Database: process.Database}
+		for _, run := range process.Runs {
+			view.Runs = append(view.Runs, run.Name())
+		}
+		views = append(views, view)
+	}
+	return &views
 }
 
 // serveJSON is serve's state as fields, beside its line.

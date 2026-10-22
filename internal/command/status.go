@@ -174,6 +174,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 	}
 	var serve engine.ServeState
 	var queue []engine.QueuedCheck
+	var processes []engine.Process
 	if !attentionOnly {
 		if serve, err = readServe(ctx, e); err != nil {
 			return err
@@ -183,6 +184,9 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			return err
 		}
 		if queue, err = e.Queue(ctx, session); err != nil {
+			return err
+		}
+		if processes, err = e.Processes(ctx, session); err != nil {
 			return err
 		}
 	}
@@ -197,6 +201,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			view := serveView(serve)
 			result.Serve, result.ServeState = serveWords(serve), &view
 			result.Queue = queueView(queue)
+			result.Processes = processesView(processes)
 		}
 		streams.Emit(result)
 	}
@@ -253,8 +258,46 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 		}
 	}
 	writeQueue(out, queue)
+	writeProcesses(out, processes)
 	fmt.Fprintf(out, "\n%s\n", serveWords(serve))
 	return nil
+}
+
+// writeProcesses lists the dockhand processes working on the checkout,
+// each with what it does, and one whose schema isn't the database's said,
+// where the exiv2 agent compared pgrep and versions by hand.
+func writeProcesses(out io.Writer, processes []engine.Process) {
+	if len(processes) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "\nDockhand processes")
+	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(table, "  PID\tKIND\tBUILD\tSINCE\tDOING")
+	for _, process := range processes {
+		fmt.Fprintf(table, "  %d\t%s\t%s\t%s\t%s\n", process.Session.PID, process.Session.Kind, cmp.Or(process.Session.Version, "unknown"), engine.Ago(process.Session.StartedAt), processWords(process))
+	}
+	table.Flush()
+	for _, process := range processes {
+		if process.Expects != 0 {
+			fmt.Fprintf(out, "! pid %d expects schema %d and the database is at %d: what it records may not be read; stop it and run this dockhand\n", process.Session.PID, process.Expects, process.Database)
+		}
+	}
+}
+
+// processWords is what a process is doing: leading the queue, running
+// checks, or neither.
+func processWords(process engine.Process) string {
+	var doing []string
+	if process.Leads {
+		doing = append(doing, "leads the queue")
+	}
+	for _, run := range process.Runs {
+		doing = append(doing, "runs "+run.Name())
+	}
+	if len(doing) == 0 {
+		return "—"
+	}
+	return strings.Join(doing, ", ")
 }
 
 // attention is one row of what needs you, with the command that moves it.

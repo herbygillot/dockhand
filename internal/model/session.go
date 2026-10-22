@@ -39,6 +39,9 @@ type Session struct {
 	HeartbeatAt time.Time
 	// EndedAt is set when the process ended cleanly.
 	EndedAt *time.Time
+	// Schema is the newest database schema the process's build writes,
+	// which the store records; 0 for a session an earlier build recorded.
+	Schema int
 }
 
 // Validate checks the rules every stored session keeps.
