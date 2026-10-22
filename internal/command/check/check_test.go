@@ -82,7 +82,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "check", "--replace")
 	require.Contains(t, out, "Replaced check-2, canceled before it started.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
 	require.Equal(t, 2, term.ExitCode(err), "a failed check exits 2")
-	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass\nNext: dockhand logs check-3")
+	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass\nNext: dockhand explain check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
 	require.Contains(t, out, "jq failed at install; the last it printed:\n    building from\n      ", "what no reading of its log explained (the Vx port's field testing)")
 	// Where each failure's log is, by environment and attempt, where it

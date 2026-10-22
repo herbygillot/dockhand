@@ -302,7 +302,7 @@ A commit the branch already has, where tidy would write the same one, from the s
 
 One `tidy`, `rebase`, or `undo` of a branch runs at a time; another waits. If one is stopped part-way, killed or lost with its terminal, the next of them on that branch finishes it from what Git shows: a change that was made is recorded, and one that wasn't is dropped, so `undo` of it says it was never made.
 
-Tidy writes commits by MacPorts' rules, and `submit` checks them: a subject naming the port, short and specific; a body wrapped at 72; tickets as full URLs; no merge or follow-up commits; the revision reset when the version changes. Each finding ends with a code in brackets, and `dockhand explain <code>` says what the rule asks and where MacPorts asks it.
+Tidy writes commits by MacPorts' rules, and `submit` checks them: a subject naming the port, short and specific; a body wrapped at 72; tickets as full URLs; no merge or follow-up commits; the revision reset when the version changes. Each finding ends with a code in brackets, and `dockhand explain <code>` says what the rule asks and where MacPorts asks it. `explain` answers the other "why"s too: `dockhand explain check-42` says where a check failed, the last lines of the step it failed at, the test failures its test policy let pass, and whether a baseline can say more, which a failed check's `Next:` points to; `dockhand explain -b <branch>` (or `-p`, `--pr`) says what needs you there, what holds it, and what clears it, or what it's doing or waiting on.
 
 ## Submitting
 

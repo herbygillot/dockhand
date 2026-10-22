@@ -326,3 +326,22 @@ mark's column (`view.Unmarked`).
   (`Streams.Height`).
 - serve's log was already a line an event, a port's preparing, its check,
   and its pull request each one; it's unwrapped, as a log.
+
+## Item 5: explain for checks and branches
+
+- **`explain check-42`** (the command UX review's §7) says why a check
+  ended as it did: each port that failed, where, and at which step, with
+  that step's last 8 lines where its provider recorded where its steps
+  begin; the test failures its test policy let pass, as advisory; whether
+  a baseline can say more, with its command; and the logs to read. A check
+  still going says so and names `wait`; one stopped names `retry`; one
+  that passed says where.
+- **`explain -b <branch>`** (or `-p`, `--pr`) says where a branch stands,
+  by its bucket: what needs you there, each hold on its own line, and the
+  command that clears it; what it's doing, and its next command; or that it
+  waits on reviewers.
+- A failed check's `Next:` is `dockhand explain check-42`
+  (`refusal.VerbExplain`), where it was `dockhand logs check-42`; explain's
+  own `Next:` is the logs. `model.IsRunName` tells a check's name from a
+  finding's code.
+- README and the usage guide say both.

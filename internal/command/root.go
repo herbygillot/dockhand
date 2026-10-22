@@ -244,7 +244,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		tidy.UndoCommand(shared, streams),
 		clean.ArchiveCommand(shared, streams),
 		clean.Command(shared, streams),
-		explain.Command(streams),
+		explain.Command(shared, streams),
 		config.Command(shared, streams),
 	} {
 		command.GroupID = "occasional"

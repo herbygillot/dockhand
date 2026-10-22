@@ -218,7 +218,9 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 			fmt.Fprintf(streams.Err, "baseline: %v\n", err)
 		}
 		return refusal.New(refusal.CheckFailed, "%s failed for %s: %s", run.Name(), engine.Describe(revision), run.Detail).
-			Then(refusal.Next{Verb: refusal.VerbLogs, Args: []string{run.Name()}})
+			// explain says where, the step's last lines, and whether a
+			// baseline can say more (the command UX review's §7).
+			Then(refusal.Next{Verb: refusal.VerbExplain, Args: []string{run.Name()}})
 	case model.RunCanceled:
 		return StoppedExit(run, evidence)
 	}

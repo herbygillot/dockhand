@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -88,6 +89,21 @@ func (r Run) BranchCheck() bool { return r.BaselineOf == "" && r.CancelRequested
 
 // Name is how people refer to a run.
 func (r Run) Name() string { return fmt.Sprintf("check-%d", r.Number) }
+
+// IsRunName reports whether a word is a run's name as Name says it,
+// check-42, which no finding's code or branch's name is.
+func IsRunName(word string) bool {
+	number, ok := strings.CutPrefix(word, "check-")
+	if !ok || number == "" {
+		return false
+	}
+	for _, digit := range number {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
+}
 
 // Validate checks the rules every stored run keeps.
 func (r Run) Validate() error {

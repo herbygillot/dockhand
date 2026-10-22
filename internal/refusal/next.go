@@ -15,6 +15,8 @@ const (
 	VerbArchive Verb = "archive"
 	VerbCheck   Verb = "check"
 	VerbLogs    Verb = "logs"
+	// VerbExplain says why a check or a branch is where it is.
+	VerbExplain Verb = "explain"
 	VerbTidy    Verb = "tidy"
 	VerbSetup   Verb = "setup"
 	// VerbOpenChecks opens a pull request's CI checks in the browser, its
@@ -26,7 +28,7 @@ const (
 )
 
 // Verbs are every verb a Next names, for the command line to render each.
-var Verbs = []Verb{VerbStatus, VerbRefresh, VerbAdopt, VerbWait, VerbSubmit, VerbEdit, VerbArchive, VerbCheck, VerbLogs, VerbTidy, VerbSetup, VerbOpenChecks, VerbRerunCI}
+var Verbs = []Verb{VerbStatus, VerbRefresh, VerbAdopt, VerbWait, VerbSubmit, VerbEdit, VerbArchive, VerbCheck, VerbLogs, VerbExplain, VerbTidy, VerbSetup, VerbOpenChecks, VerbRerunCI}
 
 // After is what must change before an action refused can be asked again
 // as it was: a person's look at what holds it, a check finishing, or a
