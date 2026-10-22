@@ -15,6 +15,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -23,9 +25,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func statusCommand(s *settings, streams term.Streams) *cobra.Command {
+func statusCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var attentionOnly, all, refresh, watch, plain bool
-	var where branchFlags
+	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "status [branch]",
 		Short: "Show your branches, and what needs you",
@@ -60,19 +62,19 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 			if plain && !watch {
 				return errors.New("--plain requires --watch")
 			}
-			if watch && (len(args) > 0 || attentionOnly || all || where.explicit() || streams.JSON()) {
+			if watch && (len(args) > 0 || attentionOnly || all || where.Explicit() || streams.JSON()) {
 				return errors.New("--watch shows all current status and cannot be combined with a branch selector, --attention, --all, or --json")
 			}
-			if len(args) > 0 && where.explicit() {
+			if len(args) > 0 && where.Explicit() {
 				return errors.New("name the branch once: as the argument, or with -b, -p, or --pr")
 			}
-			e, err := s.open(cmd.Context())
+			e, err := s.Open(cmd.Context())
 			if err != nil {
 				return err
 			}
 			defer e.Close()
 			if watch {
-				return statusWatch(cmd.Context(), e, streams, plain, s.host.Timings, s.places(), s.command)
+				return statusWatch(cmd.Context(), e, streams, plain, s.Host.Timings, s.Places(), s.Command)
 			}
 			if refresh {
 				// A read GitHub refused, as with a revoked login, is the
@@ -82,7 +84,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 					if streams.JSON() {
 						return err
 					}
-					if shown := showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where, s.places()); shown != nil {
+					if shown := showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where, s.Places()); shown != nil {
 						return shown
 					}
 					return err
@@ -93,22 +95,22 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 				// prompt, reads nothing.
 				readStalePullRequests(cmd.Context(), e, streams.Err)
 			}
-			return showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where, s.places())
+			return showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where, s.Places())
 		},
 	}
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "read your pull requests' state, reviews, and CI from GitHub first")
 	cmd.Flags().BoolVar(&attentionOnly, "attention", false, "print only what needs you; exit 3 when anything does")
 	cmd.Flags().BoolVar(&all, "all", false, "include merged, closed, and archived branches")
-	where.register(cmd, s, "show")
+	where.Register(cmd, s, "show")
 	cmd.Flags().Lookup("port").Usage = "show the branches touching this port: the one in detail, or several listed"
 	cmd.Flags().BoolVar(&watch, "watch", false, "keep status current as serve works, until q or Ctrl-C")
 	cmd.Flags().BoolVar(&plain, "plain", false, "with --watch, print events as lines, not a view that redraws")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
-func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, args []string, attentionOnly, all bool, where branchFlags, places config.Places) error {
-	port := where.port
+func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, args []string, attentionOnly, all bool, where branchflags.BranchFlags, places config.Places) error {
+	port := where.Port
 	ctx, _, end, err := e.Observing(ctx)
 	if err != nil {
 		return err
@@ -126,15 +128,15 @@ func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 		return showBranch(ctx, e, streams.Out, places, branch)
 	}
 	// A read reaches a merged branch's record, as path does.
-	if len(args) == 1 || where.branch != "" {
-		branch, err := e.ResolveRecord(ctx, cmp.Or(where.branch, append(args, "")[0]))
+	if len(args) == 1 || where.Branch != "" {
+		branch, err := e.ResolveRecord(ctx, cmp.Or(where.Branch, append(args, "")[0]))
 		if err != nil {
 			return err
 		}
 		return one(branch)
 	}
-	if where.pr != 0 {
-		branch, err := where.resolve(ctx, e, streams)
+	if where.PR != 0 {
+		branch, err := where.Resolve(ctx, e, streams)
 		if err != nil {
 			return err
 		}

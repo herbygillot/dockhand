@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -70,7 +71,7 @@ func watchPlain(ctx context.Context, e *engine.Engine, streams term.Streams, tim
 	if err := cursor.start(ctx); err != nil {
 		return err
 	}
-	if err := showStatus(ctx, e, streams, nil, false, false, branchFlags{}, places); err != nil {
+	if err := showStatus(ctx, e, streams, nil, false, false, branchflags.BranchFlags{}, places); err != nil {
 		return err
 	}
 	fmt.Fprintln(streams.Out, "\nWatching for changes. Press Ctrl-C to stop watching.")
@@ -161,7 +162,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timi
 	var drawn time.Time
 	draw := func() {
 		var viewed bytes.Buffer
-		if err := showStatus(ctx, e, term.Streams{Out: &viewed, Err: &viewed}, nil, false, false, branchFlags{}, places); err != nil {
+		if err := showStatus(ctx, e, term.Streams{Out: &viewed, Err: &viewed}, nil, false, false, branchflags.BranchFlags{}, places); err != nil {
 			fmt.Fprintf(&viewed, "status: %v\n", err)
 		}
 		drawn = time.Now()

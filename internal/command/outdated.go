@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -21,9 +22,9 @@ import (
 )
 
 // outdatedRequest is what --mine and the ports named choose.
-func outdatedRequest(ctx context.Context, s *settings, e *engine.Engine, streams term.Streams, ports []string, mine bool) (engine.OutdatedRequest, *lookups, error) {
+func outdatedRequest(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, ports []string, mine bool) (engine.OutdatedRequest, *lookups, error) {
 	looked := newLookups(streams)
-	request := engine.OutdatedRequest{Ports: ports, Progress: looked.progress, Allow: allowLook(e.GitHubAllowance, streams, s.overAllowance)}
+	request := engine.OutdatedRequest{Ports: ports, Progress: looked.progress, Allow: allowLook(e.GitHubAllowance, streams, s.OverAllowance)}
 	if !mine {
 		if len(ports) == 0 {
 			return request, looked, errors.New("name ports, or choose yours with --mine")
@@ -33,7 +34,7 @@ func outdatedRequest(ctx context.Context, s *settings, e *engine.Engine, streams
 	if len(ports) > 0 {
 		return request, looked, errors.New("--mine chooses your ports; name ports or use --mine, not both")
 	}
-	if request.Maintainers = s.file.Maintainers(); len(request.Maintainers) == 0 {
+	if request.Maintainers = s.File.Maintainers(); len(request.Maintainers) == 0 {
 		// The person's own line, as master's ports write their GitHub
 		// login, where it can be found, as serve suggests it.
 		return request, looked, fmt.Errorf("--mine needs to know who you are, as your ports' maintainers lines name you: %s", e.MaintainerHint(ctx))
@@ -41,7 +42,7 @@ func outdatedRequest(ctx context.Context, s *settings, e *engine.Engine, streams
 	return request, looked, nil
 }
 
-func outdatedCommand(s *settings, streams term.Streams) *cobra.Command {
+func outdatedCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var mine, all bool
 	cmd := &cobra.Command{
 		Use:   "outdated [port...]",
@@ -55,7 +56,7 @@ update --mine starts on them, a branch for each; ship --mine --to check
 checks them too.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
@@ -79,9 +80,9 @@ checks them too.`,
 		},
 	}
 	cmd.Flags().BoolVar(&mine, "mine", false, "the ports whose maintainers line names you (config maintainer)")
-	overAllowanceFlag(cmd, s)
+	settings.OverAllowanceFlag(cmd, s)
 	cmd.Flags().BoolVar(&all, "current", false, "list current ports and those that couldn't be checked too")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -310,7 +311,7 @@ func lookCost(lookups int) int { return (lookups*26/10 + 50) / 100 * 100 }
 // finds them, split one branch a port: the updates ship --mine and update
 // --mine make. What it leaves is said, each port the plan skipped with
 // why, and the rest counted by what the look found of them.
-func outdatedBatch(ctx context.Context, s *settings, e *engine.Engine, streams term.Streams) (engine.OutdatedPlan, error) {
+func outdatedBatch(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams) (engine.OutdatedPlan, error) {
 	request, looked, err := outdatedRequest(ctx, s, e, streams, nil, true)
 	if err != nil {
 		return engine.OutdatedPlan{}, err

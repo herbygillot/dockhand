@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -53,6 +54,6 @@ code, it lists them.`,
 			return nil
 		},
 	}
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }

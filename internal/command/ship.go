@@ -11,7 +11,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -22,9 +24,9 @@ import (
 // shipCommand carries a change as far as --to says, from wherever it is
 // now (the command-line UX second look's §6): a port, updated from master
 // in a branch of its own, or a branch, resumed where it stands.
-func shipCommand(s *settings, streams term.Streams) *cobra.Command {
+func shipCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var version versionUpdate
-	var where branchFlags
+	var where branchflags.BranchFlags
 	var to string
 	var yes, mine, passing, plan bool
 	cmd := &cobra.Command{
@@ -64,12 +66,12 @@ says whether any went through: 1 where none did, 3 where some need a look.`,
 			if err := version.stageReady(); err != nil {
 				return err
 			}
-			if chosen := len(args) > 0 || mine || passing; chosen && where.explicit() || len(args) > 0 && (mine || passing) || mine && passing {
+			if chosen := len(args) > 0 || mine || passing; chosen && where.Explicit() || len(args) > 0 && (mine || passing) || mine && passing {
 				return errors.New("choose one target source: port names, --mine, --passing, or a branch")
 			}
 			whole := &view.BatchJSON{}
 			streams.LinkSteps(whole)
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
@@ -116,17 +118,17 @@ says whether any went through: 1 where none did, 3 where some need a look.`,
 			return shipAll(ctx, s, streams, whole, targets, stage, answered, version)
 		},
 	}
-	where.register(cmd, s, "ship")
+	where.Register(cmd, s, "ship")
 	version.flags(cmd)
 	version.stageFlags(cmd)
 	cmd.Flags().StringVar(&to, "to", string(engine.ShipSubmit), "how far to carry each change: commit, check, or submit")
 	cmd.Flags().BoolVar(&mine, "mine", false, "your ports with newer releases, as outdated --mine finds them")
-	overAllowanceFlag(cmd, s)
+	settings.OverAllowanceFlag(cmd, s)
 	cmd.Flags().BoolVar(&passing, "passing", false, "the branches whose check passed for their commits, with no pull request of those commits yet")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "ship without asking, holding where serve would")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the plan and change nothing")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -151,9 +153,9 @@ func (t shipTarget) name() string {
 // shipTargets are the changes the arguments name: each port, as the open
 // branch changing it where one does, which ship resumes; else the branch
 // the flags name, or the one checked out here.
-func shipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, ports []string, where branchFlags) ([]shipTarget, error) {
+func shipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, ports []string, where branchflags.BranchFlags) ([]shipTarget, error) {
 	if len(ports) == 0 {
-		branch, err := where.resolve(ctx, e, streams)
+		branch, err := where.Resolve(ctx, e, streams)
 		if err != nil {
 			return nil, err
 		}
@@ -173,14 +175,14 @@ func shipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, po
 		if err != nil {
 			return nil, err
 		}
-		chosen, err := settleSelection(ctx, e, streams, selection, port, engine.WorkUpdate, false)
+		chosen, err := branchflags.SettleSelection(ctx, e, streams, selection, port, engine.WorkUpdate, false)
 		switch {
 		case err != nil:
 			return nil, err
-		case chosen.forVersion:
+		case chosen.ForVersion:
 			targets = append(targets, shipTarget{port: port})
 		default:
-			targets = append(targets, shipTarget{port: port, branch: &chosen.branch})
+			targets = append(targets, shipTarget{port: port, branch: &chosen.Branch})
 		}
 	}
 	return targets, nil
@@ -188,7 +190,7 @@ func shipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, po
 
 // mineTargets are the person's ports with newer releases, as outdated
 // --mine finds them, each at the release it found.
-func mineTargets(ctx context.Context, s *settings, e *engine.Engine, streams term.Streams) ([]shipTarget, error) {
+func mineTargets(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams) ([]shipTarget, error) {
 	plan, err := outdatedBatch(ctx, s, e, streams)
 	if err != nil {
 		return nil, err
@@ -269,7 +271,7 @@ func writeSubmitRow(ctx context.Context, e *engine.Engine, out io.Writer, indent
 // each submitted as its check passes (decision 4): serve runs them side by
 // side where it leads, and a rerun follows a check still queued or
 // running for the same files rather than starting another.
-func shipAll(ctx context.Context, s *settings, streams term.Streams, whole *view.BatchJSON, targets []shipTarget, stage engine.ShipStage, answered model.Answered, version versionUpdate) error {
+func shipAll(ctx context.Context, s *settings.Settings, streams term.Streams, whole *view.BatchJSON, targets []shipTarget, stage engine.ShipStage, answered model.Answered, version versionUpdate) error {
 	unattended := branchstate.Mode{Answered: answered}.Unattended()
 	if unattended {
 		streams = streams.Unattended()
@@ -324,7 +326,7 @@ type carried struct {
 // in the branch already changing it, then the branch's edits committed,
 // and its check queued where the stage goes on to one. Nil where there's
 // nothing more to do.
-func shipOne(ctx context.Context, s *settings, streams term.Streams, target shipTarget, stage engine.ShipStage, unattended, batch bool, version versionUpdate) (*carried, error) {
+func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, target shipTarget, stage engine.ShipStage, unattended, batch bool, version versionUpdate) (*carried, error) {
 	linked := version.linked
 	linked.unattended, linked.goesOn = unattended, true
 	var branch model.Branch
@@ -342,9 +344,9 @@ func shipOne(ctx context.Context, s *settings, streams term.Streams, target ship
 		// A batch, or a ship nobody looks over, starts no branch for an
 		// edit dockhand can't make (UpdateRequest.HandBranch).
 		request.Version, request.Release, request.Unattended, request.Batch = target.version, target.release, unattended, batch
-		where := branchChoice{new: newNamed}
+		where := branchflags.BranchChoice{New: branchflags.NewNamed}
 		if target.branch != nil {
-			where = branchChoice{branch: target.branch.ShortName()}
+			where = branchflags.BranchChoice{Branch: target.branch.ShortName()}
 		}
 		updated, update, err := author(ctx, s, streams, where, "update", request, linked)
 		if err != nil || target.branch == nil && !update.Applied {
@@ -353,7 +355,7 @@ func shipOne(ctx context.Context, s *settings, streams term.Streams, target ship
 		target.branch = &updated
 	}
 	branch = *target.branch
-	e, err := s.open(ctx)
+	e, err := s.Open(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -384,15 +386,15 @@ func shipOne(ctx context.Context, s *settings, streams term.Streams, target ship
 
 // finishCarried sees a change's check through, run here where no serve
 // leads, and submits it where it passed and ship goes on to submit.
-func finishCarried(ctx context.Context, s *settings, streams term.Streams, done carried) error {
-	e, err := s.open(ctx)
+func finishCarried(ctx context.Context, s *settings.Settings, streams term.Streams, done carried) error {
+	e, err := s.Open(ctx)
 	if err != nil {
 		return err
 	}
 	defer e.Close()
 	var checked error
 	if done.run != nil {
-		checked = checkrun.RunQueued(ctx, e, *done.run, streams, false, s.places(), s.drain)
+		checked = checkrun.RunQueued(ctx, e, *done.run, streams, false, s.Places(), s.Drain)
 		draft := done.submit != nil && branchstate.SubmitsDespiteCheck(done.submit.request.Draft)
 		// The check's outcome, failed, waiting for a look, or stopped, is
 		// what a draft submits despite; a failure to check isn't (R3-38:
@@ -426,7 +428,7 @@ type pendingSubmit struct {
 // queues the check those files still need, returning it; none where one
 // passed already. Running ship is the decision: the commit is bound here,
 // and submitPassed submits exactly it once its check passes.
-func prepareSubmit(ctx context.Context, s *settings, e *engine.Engine, streams term.Streams, request engine.SubmitRequest, place engine.WhereRequest, tests string) (pendingSubmit, *model.Run, error) {
+func prepareSubmit(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, request engine.SubmitRequest, place engine.WhereRequest, tests string) (pendingSubmit, *model.Run, error) {
 	request.PendingCheck, request.Head, request.Where, request.Tests = true, true, place, model.TestPolicy(tests)
 	plan, err := e.PlanSubmit(ctx, request)
 	if err != nil {
@@ -465,14 +467,14 @@ func prepareSubmit(ctx context.Context, s *settings, e *engine.Engine, streams t
 // submitPassed submits a pending submission once its check passed:
 // exactly the commit it was bound to, and, where nobody looks, only what
 // holds nothing.
-func submitPassed(ctx context.Context, s *settings, e *engine.Engine, streams term.Streams, pending pendingSubmit) error {
+func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, pending pendingSubmit) error {
 	plan, err := e.PlanSubmit(ctx, pending.request)
 	if err != nil {
 		return err
 	}
 	streams.Emit(view.SubmitView(plan))
 	fmt.Fprintln(streams.Out)
-	err = applySubmit(ctx, e, streams, plan, s.file.Submit.RerequestReview, pending.answered)
+	err = applySubmit(ctx, e, streams, plan, s.File.Submit.RerequestReview, pending.answered)
 	// The gate is the engine's (branchstate.Publish); ship words what it
 	// refused as ship says it.
 	refused := refusal.Of(err)
@@ -495,8 +497,8 @@ func submitPassed(ctx context.Context, s *settings, e *engine.Engine, streams te
 
 // whereReady settles where a change's check builds before anything is
 // edited, so stopping there changes nothing.
-func whereReady(ctx context.Context, s *settings, linked linkedOptions) error {
-	e, err := s.open(ctx)
+func whereReady(ctx context.Context, s *settings.Settings, linked linkedOptions) error {
+	e, err := s.Open(ctx)
 	if err != nil {
 		return err
 	}
@@ -510,7 +512,7 @@ func whereReady(ctx context.Context, s *settings, linked linkedOptions) error {
 // checkHead queues a check of a branch's committed head where place says,
 // as check --head would; nil where checks that passed for it already stand
 // for this one (queueHead).
-func checkHead(ctx context.Context, s *settings, e *engine.Engine, streams term.Streams, branch model.Branch, place engine.WhereRequest, tests string) (*model.Run, error) {
+func checkHead(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, branch model.Branch, place engine.WhereRequest, tests string) (*model.Run, error) {
 	return queueHead(ctx, s, e, streams, branch, place, tests, "")
 }
 
@@ -519,7 +521,7 @@ func checkHead(ctx context.Context, s *settings, e *engine.Engine, streams term.
 // same files is the one followed, so a rerun resumes rather than refusing
 // (decision 4). then says what follows it, as ", then submitting it if it
 // passes". tests is --tests, check.tests where it's empty.
-func queueHead(ctx context.Context, s *settings, e *engine.Engine, streams term.Streams, branch model.Branch, place engine.WhereRequest, tests, then string) (*model.Run, error) {
+func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, branch model.Branch, place engine.WhereRequest, tests, then string) (*model.Run, error) {
 	where, err := e.Where(ctx, place)
 	if err != nil {
 		return nil, err

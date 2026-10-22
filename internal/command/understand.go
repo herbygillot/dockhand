@@ -9,6 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -17,8 +19,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func diffCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchFlags
+func diffCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchFlags
 	var stat, archives bool
 	cmd := &cobra.Command{
 		Use:   "diff [<path>...]",
@@ -40,19 +42,19 @@ archive as declared, as after a stealth update, the old one comes from
 MacPorts' distfiles mirror.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
 			defer e.Close()
-			branch, err := where.resolve(ctx, e, streams)
+			branch, err := where.Resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
 			if archives {
 				return diffArchives(ctx, e, streams, branch, args, stat)
 			}
-			diff, err := e.Diff(ctx, branch, engine.TreePaths(branch, s.dir, args))
+			diff, err := e.Diff(ctx, branch, engine.TreePaths(branch, s.Dir, args))
 			if err != nil {
 				return err
 			}
@@ -75,10 +77,10 @@ MacPorts' distfiles mirror.`,
 			return err
 		},
 	}
-	where.register(cmd, s, "show")
+	where.Register(cmd, s, "show")
 	cmd.Flags().BoolVar(&stat, "stat", false, "list the changed files, not the patch")
 	cmd.Flags().BoolVar(&archives, "source", false, "compare what the ports' source archives hold, not the Portfiles")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -198,8 +200,8 @@ func writeDiffSummary(out io.Writer, diff engine.BranchDiff) {
 	}
 }
 
-func impactCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchFlags
+func impactCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "impact [<port>...]",
 		Short: "Show what the branch's change reaches beyond its ports",
@@ -211,12 +213,12 @@ are candidates to look at, not proof of anything: check --also builds
 some against the branch.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
 			defer e.Close()
-			branch, err := where.resolve(ctx, e, streams)
+			branch, err := where.Resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
@@ -225,12 +227,12 @@ some against the branch.`,
 				return err
 			}
 			streams.Emit(view.ImpactView(impact))
-			writeImpact(streams.Out, impact, nextIn(ctx, e, branch, ""))
+			writeImpact(streams.Out, impact, branchflags.NextIn(ctx, e, branch, ""))
 			return nil
 		},
 	}
-	where.register(cmd, s, "show")
-	supportsJSON(cmd)
+	where.Register(cmd, s, "show")
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -308,8 +310,8 @@ func writeImpact(out io.Writer, impact engine.Impact, in string) {
 // openCommand opens a branch's pull request in the browser (the
 // command-line UX review's smaller items): status shows its number, and
 // no link.
-func openCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchFlags
+func openCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "open",
 		Short: "Open the branch's pull request in your browser",
@@ -318,12 +320,12 @@ checked out here, in your browser, and prints its address.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
 			defer e.Close()
-			branch, err := where.resolve(ctx, e, streams)
+			branch, err := where.Resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
@@ -333,9 +335,9 @@ checked out here, in your browser, and prints its address.`,
 			}
 			address := github.PullRequestURL(pr.Repository, pr.Number)
 			fmt.Fprintln(streams.Out, address)
-			return s.host.OpenBrowser(ctx, address)
+			return s.Host.OpenBrowser(ctx, address)
 		},
 	}
-	where.register(cmd, s, "open")
+	where.Register(cmd, s, "open")
 	return cmd
 }

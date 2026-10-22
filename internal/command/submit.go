@@ -5,23 +5,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
-	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func submitCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchFlags
+func submitCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchFlags
 	var note string
 	var request engine.SubmitRequest
 	var yes, testedBinaries, testedVariants, ready, preview bool
@@ -60,7 +59,7 @@ kept.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
@@ -73,7 +72,7 @@ kept.
 			if preview && yes {
 				return errors.New("--plan previews the submission; it goes without --yes")
 			}
-			if request.Branch, err = where.resolve(ctx, e, streams); err != nil {
+			if request.Branch, err = where.Resolve(ctx, e, streams); err != nil {
 				return err
 			}
 			plan, err := e.PlanSubmit(ctx, request)
@@ -95,7 +94,7 @@ kept.
 				if _, _, err := streams.Decide(yes, term.Decision{Undone: "nothing was submitted", ByYes: "--yes submits exactly what is shown"}); err != nil {
 					return err
 				}
-				return finishSubmit(ctx, e, streams, plan, ready, s.file.Submit.RerequestReview)
+				return finishSubmit(ctx, e, streams, plan, ready, s.File.Submit.RerequestReview)
 			}
 			if err := askTested(streams, &plan); err != nil {
 				return err
@@ -109,14 +108,14 @@ kept.
 				case "p":
 					fmt.Fprintf(streams.Out, "\n%s\n\n%s\n", plan.Title, plan.Body)
 				case "e":
-					edited, err := editText(ctx, editorCommand(s), plan.Body)
+					edited, err := settings.EditText(ctx, settings.EditorCommand(s), plan.Body)
 					if err != nil {
 						fmt.Fprintln(streams.Err, err)
 						continue
 					}
 					plan.Describe(edited)
 				case "s":
-					return finishSubmit(ctx, e, streams, plan, ready, s.file.Submit.RerequestReview)
+					return finishSubmit(ctx, e, streams, plan, ready, s.File.Submit.RerequestReview)
 				case "q", "":
 					fmt.Fprintln(streams.Out, "Nothing was submitted.")
 					return nil
@@ -124,7 +123,7 @@ kept.
 			}
 		},
 	}
-	where.register(cmd, s, "submit")
+	where.Register(cmd, s, "submit")
 	cmd.Flags().BoolVar(&preview, "plan", false, "show what would be pushed and opened, and change nothing")
 	cmd.Flags().BoolVar(&request.Head, "head", false, "submit the committed head, leaving uncommitted edits out")
 	cmd.Flags().BoolVar(&request.Draft, "draft", false, "open the pull request as a draft, which unfinished or failing checks allow")
@@ -143,7 +142,7 @@ kept.
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "submit without asking, when there is no terminal")
 	cmd.MarkFlagsMutuallyExclusive("draft", "no-check")
 	cmd.MarkFlagsMutuallyExclusive("draft", "ready")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -240,7 +239,7 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	}
 	fmt.Fprintf(out, "  To       %s:%s\n", plan.Repository, engine.UpstreamBranch)
 	if !strings.EqualFold(plan.Repository, engine.UpstreamRepository) {
-		fmt.Fprintf(out, "           a sandbox, not %s, as %s says\n", engine.UpstreamRepository, pullRequestsVariable)
+		fmt.Fprintf(out, "           a sandbox, not %s, as %s says\n", engine.UpstreamRepository, settings.PullRequestsVariable)
 	}
 	rules := "follows MacPorts' commit rules"
 	if len(plan.Findings) > 0 {
@@ -488,25 +487,4 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams term.Streams, pl
 	}
 	fmt.Fprintf(streams.Out, "Asked %s to review again.\n", who)
 	return nil
-}
-
-// editText opens text in $VISUAL or $EDITOR and returns what was saved.
-func editText(ctx context.Context, editor, text string) (string, error) {
-	if editor == "" {
-		return "", errors.New("Set $VISUAL or $EDITOR to edit the description here, or edit it on GitHub after submitting. Dockhand preserves your edits.")
-	}
-	directory, err := scratch.Dir("description-")
-	if err != nil {
-		return "", err
-	}
-	defer os.RemoveAll(directory)
-	path := filepath.Join(directory, "DESCRIPTION.md")
-	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
-		return "", err
-	}
-	if err := runEditor(ctx, editor, path); err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(path)
-	return string(data), err
 }

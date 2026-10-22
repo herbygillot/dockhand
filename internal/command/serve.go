@@ -14,6 +14,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/command/host"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -21,7 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func serveCommand(s *settings, streams term.Streams) *cobra.Command {
+func serveCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var drain, install, uninstall, noNotify bool
 	var shipTo string
 	cmd := &cobra.Command{
@@ -74,7 +75,7 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 				}
 				return serveAgent(ctx, s, streams, install, flags)
 			}
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
@@ -84,7 +85,7 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
-			err = e.Serve(ctx, session, serveOptions(s.host, e, s.file, streams.Out, drain, cmp.Or(shipTo, s.file.Serve.Stage()), s.file.Serve.Notifies() && !noNotify))
+			err = e.Serve(ctx, session, serveOptions(s.Host, e, s.File, streams.Out, drain, cmp.Or(shipTo, s.File.Serve.Stage()), s.File.Serve.Notifies() && !noNotify))
 			// Being stopped is how serve ends, not a failure.
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 				fmt.Fprintln(streams.Out, "serve: stopped")
@@ -141,18 +142,18 @@ func serveOptions(h *host.Host, e *engine.Engine, file config.File, out io.Write
 // AgentLabel names serve's launchd agent.
 const AgentLabel = "io.github.herbygillot.dockhand.serve"
 
-func serveAgent(ctx context.Context, s *settings, streams term.Streams, install bool, flags []string) error {
-	if s.host.OS != "darwin" {
+func serveAgent(ctx context.Context, s *settings.Settings, streams term.Streams, install bool, flags []string) error {
+	if s.Host.OS != "darwin" {
 		return errors.New("serve --install requires macOS; on other platforms, run dockhand serve with your service manager")
 	}
-	home := s.places().Home
+	home := s.Places().Home
 	if home == "" {
 		return errors.New("$HOME is not defined, so serve --install has no LaunchAgents folder")
 	}
 	plist := filepath.Join(home, "Library", "LaunchAgents", AgentLabel+".plist")
 	// Both wait until launchd has let go of the agent, which bootout
 	// returns before (the rc10 full stage's B7).
-	agent := macos.LaunchAgent{Label: AgentLabel, Path: plist, Launchctl: s.host.Launchctl}
+	agent := macos.LaunchAgent{Label: AgentLabel, Path: plist, Launchctl: s.Host.Launchctl}
 	if !install {
 		if err := agent.Remove(ctx); err != nil {
 			return err
@@ -160,12 +161,12 @@ func serveAgent(ctx context.Context, s *settings, streams term.Streams, install 
 		fmt.Fprintln(streams.Out, "Removed the serve agent; serve no longer starts at login.")
 		return nil
 	}
-	e, err := s.open(ctx)
+	e, err := s.Open(ctx)
 	if err != nil {
 		return err
 	}
 	tree := e.Clone()
-	options, _, _, err := s.options(ctx)
+	options, _, _, err := s.Options(ctx)
 	e.Close()
 	if err != nil {
 		return err
@@ -178,7 +179,7 @@ func serveAgent(ctx context.Context, s *settings, streams term.Streams, install 
 		return err
 	}
 	// launchd starts the agent in /, so every path it's given is absolute.
-	database, err := s.places().Absolute(options.Database)
+	database, err := s.Places().Absolute(options.Database)
 	if err != nil {
 		return err
 	}
@@ -197,7 +198,7 @@ func serveAgent(ctx context.Context, s *settings, streams term.Streams, install 
 	if err := agent.Install(ctx, agentJob(append(arguments, flags...), environment, logs)); err != nil {
 		return err
 	}
-	fmt.Fprintf(streams.Out, "serve now starts at login and restarts if it stops.\n  Agent  %s\n  Log    %s\n", s.places().Tilde(plist), s.places().Tilde(logs))
+	fmt.Fprintf(streams.Out, "serve now starts at login and restarts if it stops.\n  Agent  %s\n  Log    %s\n", s.Places().Tilde(plist), s.Places().Tilde(logs))
 	var carried []string
 	for _, variable := range environment[1:] {
 		carried = append(carried, variable[0])
@@ -206,7 +207,7 @@ func serveAgent(ctx context.Context, s *settings, streams term.Streams, install 
 		fmt.Fprintf(streams.Out, "  With   %s, as set now\n", strings.Join(carried, ", "))
 	}
 	for _, token := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
-		if s.getenv(token) != "" {
+		if s.Getenv(token) != "" {
 			fmt.Fprintf(streams.Out, "%s is omitted from the agent file because that file is readable by other users on this Mac. serve uses the GitHub credentials saved in the Keychain; run dockhand setup github to save them.\n", token)
 		}
 	}
@@ -217,15 +218,15 @@ func serveAgent(ctx context.Context, s *settings, streams term.Streams, install 
 // agentEnvironment is PATH and whichever of the agent's variables
 // (config.AgentVariables) are set, each a local path made absolute, since
 // launchd starts the agent in /.
-func agentEnvironment(s *settings) ([][2]string, error) {
-	environment := [][2]string{{"PATH", s.getenv("PATH")}}
+func agentEnvironment(s *settings.Settings) ([][2]string, error) {
+	environment := [][2]string{{"PATH", s.Getenv("PATH")}}
 	for _, name := range config.AgentVariables() {
-		value := s.getenv(name)
+		value := s.Getenv(name)
 		if value == "" {
 			continue
 		}
 		if !filepath.IsAbs(value) {
-			if absolute := filepath.Join(s.dir, value); fileExists(absolute) {
+			if absolute := filepath.Join(s.Dir, value); fileExists(absolute) {
 				value = absolute
 			}
 		}

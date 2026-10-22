@@ -175,14 +175,14 @@ func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
 	t.Parallel()
 	newWorld(t)
 	s := *testSettings(t)
-	e, err := s.open(t.Context())
+	e, err := s.Open(t.Context())
 	require.NoError(t, err)
 	require.NotContains(t, e.Providers, "tart")
 	e.Close()
 
 	stands(t).LookTart = func(string) (string, error) { return "/opt/homebrew/bin/tart", nil }
 	s = *testSettings(t)
-	e, err = s.open(t.Context())
+	e, err = s.Open(t.Context())
 	require.NoError(t, err)
 	defer e.Close()
 	require.Contains(t, e.Providers, "tart")

@@ -429,7 +429,7 @@ func TestStatusOpensOneObserverSession(t *testing.T) {
 	setenv(t, "MACPORTS_TREE", w.clone) // every branch, and serve's line
 	started := func() int {
 		t.Helper()
-		e, err := testSettings(t).open(t.Context())
+		e, err := testSettings(t).Open(t.Context())
 		require.NoError(t, err)
 		defer e.Close()
 		var n int

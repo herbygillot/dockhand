@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/command/host"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -169,18 +170,18 @@ func runFor(t testing.TB, ctx context.Context, args []string, streams term.Strea
 }
 
 // testSettings are a command's settings, with the test's stand-ins.
-func testSettings(t testing.TB) *settings {
+func testSettings(t testing.TB) *settings.Settings {
 	t.Helper()
 	found := standsFor(t)
 	line := invocationFor(t, nil)
-	return &settings{deps: found.deps, host: found.host, env: line.env, dir: line.dir}
+	return &settings.Settings{Deps: found.deps, Host: found.host, Env: line.env, Dir: line.dir}
 }
 
 // testPlaces are the test's home and working directory, as a command run
 // in it reads them.
 func testPlaces(t testing.TB) config.Places {
 	t.Helper()
-	return testSettings(t).places()
+	return testSettings(t).Places()
 }
 
 // usePorts gives a command run in the test reader as its port reader,

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -16,8 +17,8 @@ import (
 
 // setupGitHubCommand logs in to GitHub, or with --logout removes the
 // login.
-func setupGitHubCommand(s *settings, streams term.Streams) *cobra.Command {
-	clientID := cmp.Or(s.getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID)
+func setupGitHubCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	clientID := cmp.Or(s.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID)
 	var noBrowser, logout bool
 	cmd := &cobra.Command{
 		Use:   "github",
@@ -49,16 +50,16 @@ authorized until you revoke it on GitHub's page for it, which it names.`,
 // default for its download, the Tart image of this Mac's macOS. Each is
 // the person's to decline, and one that fails is said, and the rest go on.
 // It says the maintainers line it wrote, or nothing.
-func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams term.Streams, file config.File, configPath string) (string, error) {
+func offerSetup(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, file config.File, configPath string) (string, error) {
 	written := ""
 	fmt.Fprintln(streams.Out)
-	if github.LoginSource(ctx, s.signin()) == "" {
+	if github.LoginSource(ctx, s.Signin()) == "" {
 		login, err := streams.AskYes("? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ", true)
 		if err != nil {
 			return written, err
 		}
 		if login {
-			if err := githubLogin(ctx, s, streams, cmp.Or(s.getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
+			if err := githubLogin(ctx, s, streams, cmp.Or(s.Getenv("DOCKHAND_GITHUB_CLIENT_ID"), github.DefaultOAuthClientID), false); err != nil {
 				fmt.Fprintf(streams.Err, "Not logged in: %v\n", err)
 			}
 		}
@@ -67,7 +68,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams term
 		suggestion := e.SuggestMaintainerAtMaster(ctx)
 		if len(suggestion.Spellings) > 0 {
 			line := suggestion.Spellings[0].Maintainer.String()
-			write, err := streams.AskYes(fmt.Sprintf("? Save maintainer = %q in %s? This matches the maintainer entry in ports listing @%s. [Y/n] ", line, s.places().Tilde(configPath), suggestion.Login), true)
+			write, err := streams.AskYes(fmt.Sprintf("? Save maintainer = %q in %s? This matches the maintainer entry in ports listing @%s. [Y/n] ", line, s.Places().Tilde(configPath), suggestion.Login), true)
 			if err != nil {
 				return written, err
 			}
@@ -79,7 +80,7 @@ func offerSetup(ctx context.Context, s *settings, e *engine.Engine, streams term
 				fmt.Fprintf(streams.Out, "Saved maintainer = %q for --mine, create, and the daily release check in serve.\n", line)
 			}
 		} else {
-			fmt.Fprintf(streams.Out, "· maintainer: %s, for --mine, create, and serve's daily look\n", engine.MaintainerWords(suggestion, s.places().Tilde(configPath)))
+			fmt.Fprintf(streams.Out, "· maintainer: %s, for --mine, create, and serve's daily look\n", engine.MaintainerWords(suggestion, s.Places().Tilde(configPath)))
 		}
 	}
 	if images := imagesOf(s); images != nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -35,7 +36,7 @@ func cleanStates(merged, closed bool) []model.BranchState {
 	return states
 }
 
-func cleanCommand(s *settings, streams term.Streams) *cobra.Command {
+func cleanCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var merged, closed, yes, automatic, forget bool
 	cmd := &cobra.Command{
 		Use:   "clean [branch...] [--merged] [--closed]",
@@ -77,7 +78,7 @@ forgets its record, keeping of its checks only what another branch's
 results were reused from. It asks, and without a terminal needs --yes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
@@ -86,7 +87,7 @@ results were reused from. It asks, and without a terminal needs --yes.`,
 				if len(args) > 0 {
 					return errors.New("--automatic cleans what's due, not branches named")
 				}
-				return cleanAutomatically(ctx, e, streams, s.file)
+				return cleanAutomatically(ctx, e, streams, s.File)
 			}
 			if forget {
 				return forgetBranches(ctx, e, streams, args, yes)
@@ -133,7 +134,7 @@ results were reused from. It asks, and without a terminal needs --yes.`,
 				}
 			}
 			streams.Emit(map[string]any{"branches": view.CleanView(plans), "leftovers": view.LeftoversView(leftovers), "applied": false})
-			removable := writeClean(streams.Out, plans, false, s.places()) + writeLeftovers(streams.Out, leftovers, false)
+			removable := writeClean(streams.Out, plans, false, s.Places()) + writeLeftovers(streams.Out, leftovers, false)
 			if removable == 0 {
 				fmt.Fprintln(streams.Out, "Nothing to remove.")
 				return nil
@@ -153,7 +154,7 @@ results were reused from. It asks, and without a terminal needs --yes.`,
 			// shown in full: thirty branches' blocks printed twice were
 			// a lot to read (field testing's cleanup, af03bbab).
 			fmt.Fprintln(streams.Out)
-			writeCleanDone(streams.Out, done, s.places())
+			writeCleanDone(streams.Out, done, s.Places())
 			writeLeftovers(streams.Out, removed, true)
 			return errors.Join(err, leftoverErr)
 		},
@@ -164,7 +165,7 @@ results were reused from. It asks, and without a terminal needs --yes.`,
 	cmd.Flags().BoolVar(&forget, "delete", false, "forget the archived branches named: their Git branch, worktree, and record")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
 	_ = cmd.Flags().MarkHidden("automatic")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -193,19 +194,19 @@ func cleanAutomatically(ctx context.Context, e *engine.Engine, streams term.Stre
 // command's own work is done, when it is due (decision 36): a day since the
 // last, or free space short, which it says. The command doesn't wait for
 // it. serve cleans up itself, and clean is cleaning.
-func cleanupAfter(s *settings, streams term.Streams, command string) {
-	e := s.opened
-	if e == nil || !s.file.Cleanup.On() || command == "clean" || command == "serve" {
+func cleanupAfter(s *settings.Settings, streams term.Streams, command string) {
+	e := s.Opened
+	if e == nil || !s.File.Cleanup.On() || command == "clean" || command == "serve" {
 		return
 	}
-	due, why := e.CleanupDue(engine.CleanupEvery, s.file.Cleanup.Free())
+	due, why := e.CleanupDue(engine.CleanupEvery, s.File.Cleanup.Free())
 	if !due {
 		return
 	}
 	if why.LowSpace {
 		fmt.Fprintf(streams.Err, "Cleaning up in the background: %s.\n", why.Words)
 	}
-	if err := s.host.StartCleanup(s.openedWith); err != nil {
+	if err := s.Host.StartCleanup(s.OpenedWith); err != nil {
 		fmt.Fprintf(streams.Err, "Couldn't start cleaning up in the background: %v\n", err)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -908,7 +909,7 @@ func TestTheDescriptionIsEditedInTheRunRoot(t *testing.T) {
 	t.Parallel()
 	record := filepath.Join(t.TempDir(), "path")
 	editor := `edit() { printf '%s' "$1" > '` + record + `'; printf 'edited' > "$1"; }; edit`
-	text, err := editText(t.Context(), editor, "draft")
+	text, err := settings.EditText(t.Context(), editor, "draft")
 	require.NoError(t, err)
 	require.Equal(t, "edited", text)
 	path, err := os.ReadFile(record)

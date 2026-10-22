@@ -97,3 +97,18 @@ its Timings, `MachineHost`, `TartImages`, and cleanup_unix.go's
 exported, since serve, setup, status --watch, and the tests read and set
 them; `os` is `OS`. Locals named `host` and `settings` in command are
 `mac` and `shared`, so the packages' names are free.
+
+## Step 3b: settings and branchflags
+
+- `internal/command/settings` holds settings.go whole (now `Settings`,
+  its fields and methods exported: `Open`, `Places`, `Options`, `Drain`,
+  `Getenv`, `Signin`, …), `SupportsJSON`, and the editor
+  (`EditorCommand`, `RunEditor`, `EditText`).
+- `internal/command/branchflags` holds branchflags.go whole
+  (`BranchFlags` with `Register`, `Resolve`, `Explicit`), and from
+  author.go the authoring commands' choice (`BranchChoice`, its
+  `Register`, which was a method author.go defined, `ChooseBranch`,
+  `ChosenBranch`, `SettleSelection`, `NextIn`, `StartFor`, `NewNamed`),
+  and from queue.go `NamedOrLatest`. `BranchFlags.Register` still takes
+  the settings, for its completion's engine. It's a layer beside settings,
+  which the boundary test allows.

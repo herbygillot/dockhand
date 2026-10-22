@@ -1,18 +1,17 @@
 package command
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -20,8 +19,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func editCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchChoice
+func editCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchChoice
 	var noOpen bool
 	cmd := &cobra.Command{
 		Use:   "edit <port>",
@@ -34,13 +33,13 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
 			defer e.Close()
-			chosen, err := chooseBranch(ctx, e, streams, where, args[0], engine.WorkEdit)
-			branch, started := chosen.branch, chosen.started
+			chosen, err := branchflags.ChooseBranch(ctx, e, streams, where, args[0], engine.WorkEdit)
+			branch, started := chosen.Branch, chosen.Started
 			if err != nil {
 				return err
 			}
@@ -53,7 +52,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 			}
 			portfile := filepath.Join(branch.Worktree, filepath.FromSlash(directory), "Portfile")
 			streams.Emit(map[string]any{"branch": view.BranchRef(branch), "started": started, "directory": directory, "portfile": portfile})
-			editor := editorCommand(s)
+			editor := settings.EditorCommand(s)
 			// --no-open only brings the port's files in, for an editor of
 			// the person's own, where EDITOR=true stood in for it (field
 			// testing's batch 13).
@@ -61,21 +60,21 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 				fmt.Fprintln(streams.Out, portfile)
 				return nil
 			}
-			fmt.Fprintf(streams.Err, "%s · %s\n", branch.ShortName(), s.places().Tilde(portfile))
-			if err := runEditor(ctx, editor, portfile); err != nil {
+			fmt.Fprintf(streams.Err, "%s · %s\n", branch.ShortName(), s.Places().Tilde(portfile))
+			if err := settings.RunEditor(ctx, editor, portfile); err != nil {
 				return err
 			}
-			fmt.Fprintln(streams.Out, "Next: "+nextIn(ctx, e, branch, "dockhand checksums "+args[0]+" (if you changed the version)", "dockhand check"))
+			fmt.Fprintln(streams.Out, "Next: "+branchflags.NextIn(ctx, e, branch, "dockhand checksums "+args[0]+" (if you changed the version)", "dockhand check"))
 			return nil
 		},
 	}
-	where.flags(cmd)
+	where.Register(cmd)
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "bring the port's files into the worktree and print the Portfile's path, opening no editor")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
-func revbumpCommand(s *settings, streams term.Streams) *cobra.Command {
+func revbumpCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var selector, subject, newName string
 	var plan bool
 	cmd := &cobra.Command{
@@ -95,7 +94,7 @@ since a rebuild has its own reason.`,
 			if strings.TrimSpace(subject) == "" {
 				return errors.New(`revbump needs the reason as --subject, such as --subject "rebuild for poppler 25.09.0"; maintainers read it`)
 			}
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
@@ -149,7 +148,7 @@ since a rebuild has its own reason.`,
 	cmd.MarkFlagsMutuallyExclusive("branch", "new")
 	cmd.Flags().StringVar(&subject, "subject", "", "the reason, which becomes each commit's subject after the port's name")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edits and change nothing")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -172,12 +171,12 @@ func revbumpBranch(ctx context.Context, e *engine.Engine, selector, port string,
 	if plan {
 		return model.Branch{}, false, errors.New("--plan changes nothing, so it starts no branch; plan in an existing one with --branch")
 	}
-	return startFor(ctx, e, port, engine.WorkRevbump)
+	return branchflags.StartFor(ctx, e, port, engine.WorkRevbump)
 }
 
-func retryCommand(s *settings, streams term.Streams) *cobra.Command {
+func retryCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var enqueue, ci bool
-	var where branchFlags
+	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "retry [check]",
 		Short: "Run a finished check's exact request again",
@@ -195,7 +194,7 @@ get past, as a mirror refusing an archive.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
@@ -206,7 +205,7 @@ get past, as a mirror refusing an archive.`,
 				}
 				return retryCI(ctx, e, streams, where)
 			}
-			previous, err := namedOrLatest(ctx, e, streams, where, args, "name a check, such as check-42, or a branch with -b or -p; in a branch's worktree, retry repeats the branch's latest check")
+			previous, err := branchflags.NamedOrLatest(ctx, e, streams, where, args, "name a check, such as check-42, or a branch with -b or -p; in a branch's worktree, retry repeats the branch's latest check")
 			if err != nil {
 				return err
 			}
@@ -219,18 +218,18 @@ get past, as a mirror refusing an archive.`,
 				return err
 			}
 			fmt.Fprintf(streams.Out, "%s repeats %s: %s\n", run.Name(), previous.Name(), engine.Describe(revision))
-			return checkrun.RunQueued(ctx, e, run, streams, enqueue, s.places(), s.drain)
+			return checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
 		},
 	}
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue it and return")
 	cmd.Flags().BoolVar(&ci, "ci", false, "run the branch's pull request's failed MacPorts CI jobs again, through your GitHub login")
-	where.register(cmd, s, "repeat the latest check of")
-	supportsJSON(cmd)
+	where.Register(cmd, s, "repeat the latest check of")
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
-func rebaseCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchFlags
+func rebaseCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "rebase",
 		Short: "Move the branch's commits onto fresh master",
@@ -241,12 +240,12 @@ rebase that conflicts is abandoned with the branch as it was.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
 			defer e.Close()
-			branch, err := where.resolve(ctx, e, streams)
+			branch, err := where.Resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
@@ -288,18 +287,18 @@ rebase that conflicts is abandoned with the branch as it was.`,
 				view.WriteNext(streams.Out, status)
 				return nil
 			}
-			fmt.Fprintln(streams.Out, "Next: "+nextIn(ctx, e, branch, "dockhand check (the files it builds on have changed)"))
+			fmt.Fprintln(streams.Out, "Next: "+branchflags.NextIn(ctx, e, branch, "dockhand check (the files it builds on have changed)"))
 			return nil
 		},
 	}
-	where.register(cmd, s, "rebase")
-	supportsJSON(cmd)
+	where.Register(cmd, s, "rebase")
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
-func archiveCommand(s *settings, streams term.Streams) *cobra.Command {
+func archiveCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var undo, keep, discard bool
-	var where branchFlags
+	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "archive [branch]",
 		Short: "Set aside a branch you are not working on",
@@ -318,18 +317,18 @@ closes it.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
 			defer e.Close()
 			if len(args) == 1 {
-				if where.explicit() {
+				if where.Explicit() {
 					return errors.New("name the branch once: as the argument, or with -b, -p, or --pr")
 				}
-				where.branch = args[0]
+				where.Branch = args[0]
 			}
-			branch, err := where.resolve(ctx, e, streams)
+			branch, err := where.Resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
@@ -374,8 +373,8 @@ closes it.`,
 	cmd.Flags().BoolVar(&keep, "keep-worktree", false, "keep the worktree")
 	cmd.Flags().BoolVar(&discard, "discard", false, "remove the worktree though it has uncommitted edits or untracked files, which go")
 	cmd.MarkFlagsMutuallyExclusive("keep-worktree", "discard")
-	where.register(cmd, s, "archive")
-	supportsJSON(cmd)
+	where.Register(cmd, s, "archive")
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -405,23 +404,6 @@ func commitOrDiscard(ctx context.Context, e *engine.Engine, streams term.Streams
 	return archived, nil
 }
 
-// editorCommand is the person's editor, $VISUAL or else $EDITOR, as a
-// shell command; empty where neither is set.
-func editorCommand(s *settings) string {
-	return cmp.Or(s.getenv("VISUAL"), s.getenv("EDITOR"))
-}
-
-// runEditor opens path in editor on the terminal dockhand runs on, and
-// waits for it.
-func runEditor(ctx context.Context, editor, path string) error {
-	command := exec.CommandContext(ctx, "sh", "-c", editor+` "$1"`, "sh", path)
-	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if err := command.Run(); err != nil {
-		return fmt.Errorf("the editor failed: %w", err)
-	}
-	return nil
-}
-
 // retryCIJSON is what retry --ci asked of GitHub: the pull request, and
 // the workflow runs whose failed jobs run again.
 type retryCIJSON struct {
@@ -431,8 +413,8 @@ type retryCIJSON struct {
 
 // retryCI runs a branch's pull request's failed CI jobs again, as status's
 // Next for a CI failure another run may get past names it.
-func retryCI(ctx context.Context, e *engine.Engine, streams term.Streams, where branchFlags) error {
-	branch, err := where.resolve(ctx, e, streams)
+func retryCI(ctx context.Context, e *engine.Engine, streams term.Streams, where branchflags.BranchFlags) error {
+	branch, err := where.Resolve(ctx, e, streams)
 	if err != nil {
 		return err
 	}

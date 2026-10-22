@@ -6,11 +6,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func shellCommand(s *settings, streams term.Streams) *cobra.Command {
+func shellCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var on, port string
 	var test bool
 	cmd := &cobra.Command{
@@ -45,7 +46,7 @@ phase doesn't apply, and the run is never a result or evidence.`,
 				return errors.New("without a terminal, name the command to run after --, as dockhand shell check-12 -- ls")
 			}
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}

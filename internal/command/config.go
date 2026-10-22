@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -23,7 +24,7 @@ type configSetting struct {
 	Source string `json:"source"`
 }
 
-func configCommand(s *settings, streams term.Streams) *cobra.Command {
+func configCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show the settings in effect, and where each comes from",
@@ -33,7 +34,7 @@ file is $DOCKHAND_CONFIG, else ~/.dockhand/config.toml; an unknown key in
 it is refused by name. Flags, then the environment, come before the file.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			options, file, path, err := s.options(cmd.Context())
+			options, file, path, err := s.Options(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -47,7 +48,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				all = append(all, configSetting{Key: key, Value: value, Source: source})
 			}
 			set := func(key, value string) { add(key, value, defaults[key]) }
-			set("worktrees", s.places().Tilde(file.Worktrees))
+			set("worktrees", s.Places().Tilde(file.Worktrees))
 			set("maintainer", file.Maintainer)
 			set("build.default", file.Build.Default)
 			set("build.unattended", file.Build.Unattended)
@@ -121,7 +122,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			set("providers.github.capacity", positive(file.Providers.GitHub.Capacity))
 			set("providers.github.build_timeout", file.Providers.GitHub.BuildTimeout)
 			streams.Emit(map[string]any{"file": path, "database": options.Database, "settings": all})
-			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", s.places().Tilde(path), s.places().Tilde(options.Database))
+			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", s.Places().Tilde(path), s.Places().Tilde(options.Database))
 			width := 0
 			for _, setting := range all {
 				width = max(width, len(setting.Key))
@@ -136,7 +137,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			return nil
 		},
 	}
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 

@@ -3,6 +3,8 @@ package command
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -12,7 +14,7 @@ import (
 // bumpCommand is ship's single-port front, ship <port> --yes with a
 // version to pin: nobody looks before it submits, so it holds what serve's
 // submissions hold (the person's word that bump stays, 2026-10-15).
-func bumpCommand(s *settings, streams term.Streams) *cobra.Command {
+func bumpCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var version versionUpdate
 	cmd := &cobra.Command{
 		Use:   "bump <port> [version]",
@@ -57,11 +59,11 @@ dockhand can't. The check builds where build.unattended's profile says;
 			}
 			whole := &view.BatchJSON{}
 			streams.LinkSteps(whole)
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
-			targets, err := shipTargets(ctx, e, streams, args[:1], branchFlags{})
+			targets, err := shipTargets(ctx, e, streams, args[:1], branchflags.BranchFlags{})
 			if err == nil && len(args) == 2 {
 				targets[0].version = args[1]
 			}
@@ -78,6 +80,6 @@ dockhand can't. The check builds where build.unattended's profile says;
 	}
 	version.flags(cmd)
 	version.stageFlags(cmd)
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }

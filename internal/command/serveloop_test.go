@@ -104,7 +104,7 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"@ada\"\n"), append(data, []byte("\n[serve]\nship_to = \"submit\"\nsubmit_limit = 1\nnotify = false\n")...)...), 0o644))
 	// One pull request was opened earlier today, by an earlier serve, and
 	// one yesterday, which today's limit doesn't count.
-	e, err := testSettings(t).open(t.Context())
+	e, err := testSettings(t).Open(t.Context())
 	require.NoError(t, err)
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
 		for _, at := range []time.Time{morning.Add(-25 * time.Hour), morning.Add(-time.Hour)} {

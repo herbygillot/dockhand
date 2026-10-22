@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/command/host"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -23,20 +24,20 @@ import (
 )
 
 // images is dockhand's Tart images, or nil when Tart isn't installed.
-func imagesOf(s *settings) host.TartImages {
-	if s.host.TartImages != nil {
-		return s.host.TartImages
+func imagesOf(s *settings.Settings) host.TartImages {
+	if s.Host.TartImages != nil {
+		return s.Host.TartImages
 	}
-	if _, err := s.host.LookTart("tart"); err != nil {
+	if _, err := s.Host.LookTart("tart"); err != nil {
 		return nil
 	}
-	return s.composeOptions().TartProvider()
+	return s.ComposeOptions().TartProvider()
 }
 
 // installTart installs Tart from MacPorts.
 const installTart = "sudo port install tart"
 
-func setupTartCommand(s *settings, streams term.Streams) *cobra.Command {
+func setupTartCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var options tart.SetupOptions
 	cmd := &cobra.Command{
 		Use:   "tart [release]",
@@ -64,13 +65,13 @@ as it is. --rebuild makes a replacement, and keeps the old one until the
 new one has passed.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !s.host.TartSupported() {
+			if !s.Host.TartSupported() {
 				return errors.New("Tart's macOS images need Apple silicon, and this Mac isn't; checks here build on GitHub, with --on github")
 			}
 			if len(args) == 1 {
 				options.Release = args[0]
 			}
-			_, file, _, err := s.options(cmd.Context())
+			_, file, _, err := s.Options(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -131,7 +132,7 @@ new one has passed.`,
 
 // providerLines say whether each provider is ready, one line each, as
 // setup shows them.
-func providerLines(ctx context.Context, s *settings, file config.File) []string {
+func providerLines(ctx context.Context, s *settings.Settings, file config.File) []string {
 	tartLines := tartReadiness(ctx, s)
 	lines := []string{fmt.Sprintf("%-8s %s", buildenv.Tart, tartLines[0])}
 	for _, line := range tartLines[1:] {
@@ -153,8 +154,8 @@ const noTart = "· needs Apple silicon; checks here build on GitHub, with --on g
 
 // tartReadiness is setup's Tart line, and the lines under it: a release's
 // each, where images are ready.
-func tartReadiness(ctx context.Context, s *settings) []string {
-	if !s.host.TartSupported() {
+func tartReadiness(ctx context.Context, s *settings.Settings) []string {
+	if !s.Host.TartSupported() {
 		return []string{noTart}
 	}
 	images := imagesOf(s)
@@ -268,8 +269,8 @@ func tartReadiness(ctx context.Context, s *settings) []string {
 	return lines
 }
 
-func githubReadiness(ctx context.Context, s *settings) string {
-	switch github.LoginSource(ctx, s.signin()) {
+func githubReadiness(ctx context.Context, s *settings.Settings) string {
+	switch github.LoginSource(ctx, s.Signin()) {
 	case "":
 		return "· needs a GitHub login, dockhand setup github, and your fork's Actions enabled"
 	case github.SourceKeychain:
@@ -282,16 +283,16 @@ func githubReadiness(ctx context.Context, s *settings) string {
 // Next: line, which jumped to update with Tart and the login undone (the
 // rc1 full stage's A2): a Tart image where Tart can build, and a login
 // where no token stands in for one.
-func missingSteps(ctx context.Context, s *settings) []string {
+func missingSteps(ctx context.Context, s *settings.Settings) []string {
 	var steps []string
-	if s.host.TartSupported() {
+	if s.Host.TartSupported() {
 		if images := imagesOf(s); images != nil {
 			if status, err := images.Status(ctx); err == nil && (status.Readiness() == tart.NoImage || status.Readiness() == tart.XcodeOnly) {
 				steps = append(steps, "dockhand setup tart")
 			}
 		}
 	}
-	if github.LoginSource(ctx, s.signin()) == "" {
+	if github.LoginSource(ctx, s.Signin()) == "" {
 		steps = append(steps, "dockhand setup github")
 	}
 	return steps

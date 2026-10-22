@@ -6,13 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -21,36 +22,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-// branchChoice is the branch an authoring command was pointed at.
-type branchChoice struct {
-	branch string
-	// new is --new's name, or newNamed where it named none; empty where
-	// --new wasn't given.
-	new string
-}
-
-// newNamed is --new given without a name: the branch is named for the
-// port, or the version an update moves to.
-const newNamed = "\x00"
-
-// isNew is whether --new was given; newName is the name it gave, if any.
-func (c branchChoice) isNew() bool { return c.new != "" }
-func (c branchChoice) newName() string {
-	if c.new == newNamed {
-		return ""
-	}
-	return c.new
-}
-
-func (c *branchChoice) flags(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&c.branch, "branch", "b", "", "work in this existing branch, by its exact name (the dockhand/ prefix is optional); --new=<name> starts one")
-	cmd.Flags().StringVar(&c.new, "new", "", "start a new branch for this, in its own worktree; --new=<name> names it")
-	cmd.Flags().Lookup("new").NoOptDefVal = newNamed
-	cmd.MarkFlagsMutuallyExclusive("branch", "new")
-}
-
-func updateCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchChoice
+func updateCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchChoice
 	var plan, mine, yes bool
 	var version versionUpdate
 	cmd := &cobra.Command{
@@ -82,7 +55,7 @@ pull requests, and ship takes a port's update as far as --to says.`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if mine {
-				if len(args) > 0 || where.branch != "" || where.isNew() {
+				if len(args) > 0 || where.Branch != "" || where.IsNew() {
 					return errors.New("--mine starts a branch for each of your ports; it takes no port, --branch, or --new")
 				}
 				return updateMine(cmd.Context(), s, streams, version, plan, yes)
@@ -101,22 +74,22 @@ pull requests, and ship takes a port's update as far as --to says.`,
 			return err
 		},
 	}
-	where.flags(cmd)
+	where.Register(cmd)
 	version.flags(cmd)
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&mine, "mine", false, "update each of your ports with a newer release, in a branch of its own (config maintainer)")
-	overAllowanceFlag(cmd, s)
+	settings.OverAllowanceFlag(cmd, s)
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --mine, start the branches without asking")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
 // updateMine is update --mine: ship's edit stage over your outdated ports,
 // each in a branch of its own, nothing committed (decision 7, 2026-10-13).
-func updateMine(ctx context.Context, s *settings, streams term.Streams, version versionUpdate, plan, yes bool) error {
+func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams, version versionUpdate, plan, yes bool) error {
 	whole := &view.BatchJSON{}
 	streams.LinkSteps(whole)
-	e, err := s.open(ctx)
+	e, err := s.Open(ctx)
 	if err != nil {
 		return err
 	}
@@ -159,7 +132,7 @@ func updateMine(ctx context.Context, s *settings, streams term.Streams, version 
 		request, err := version.request([]string{update.Port.Port}, false)
 		if err == nil {
 			request.Version, request.Release = update.Port.Newest, update.Port.Release
-			_, _, err = author(ctx, s, streams, branchChoice{new: update.Name}, engine.WorkUpdate, request, version.linked)
+			_, _, err = author(ctx, s, streams, branchflags.BranchChoice{New: update.Name}, engine.WorkUpdate, request, version.linked)
 		}
 		if err != nil {
 			fmt.Fprintf(streams.Err, "%s: %v\n", update.Port.Port, view.SayNext(err))
@@ -181,8 +154,8 @@ func batchExit(failed []string, total int, done string) error {
 	return nil
 }
 
-func checksumsCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchChoice
+func checksumsCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchChoice
 	var plan, keepOld, keepRevision bool
 	cmd := &cobra.Command{
 		Use:   "checksums [port]",
@@ -227,27 +200,27 @@ none is open, and exits 3 where any doesn't.`,
 			return err
 		},
 	}
-	where.flags(cmd)
+	where.Register(cmd)
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&keepRevision, "no-revbump", false, "for a stealth update, leave the revision as it is")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
 // branchPort is the port of the branch --branch names, or of the one
 // checked out here, where a command names none: its one port, what it
 // changes or was started for.
-func branchPort(ctx context.Context, s *settings, where branchChoice) (string, error) {
-	if where.isNew() {
+func branchPort(ctx context.Context, s *settings.Settings, where branchflags.BranchChoice) (string, error) {
+	if where.IsNew() {
 		return "", errors.New("name the port: --new starts a branch for it")
 	}
-	e, err := s.open(ctx)
+	e, err := s.Open(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer e.Close()
-	selection, err := e.Select(ctx, engine.Selector{Branch: where.branch, Policy: engine.SelectExisting}, engine.WorkNone)
+	selection, err := e.Select(ctx, engine.Selector{Branch: where.Branch, Policy: engine.SelectExisting}, engine.WorkNone)
 	if err != nil {
 		return "", err
 	}
@@ -384,14 +357,14 @@ type linkedOptions struct {
 }
 
 // author finds the branch, makes the edit, and reports it.
-func author(ctx context.Context, s *settings, streams term.Streams, where branchChoice, work engine.Work, request engine.UpdateRequest, linked linkedOptions) (branch model.Branch, update engine.Update, err error) {
+func author(ctx context.Context, s *settings.Settings, streams term.Streams, where branchflags.BranchChoice, work engine.Work, request engine.UpdateRequest, linked linkedOptions) (branch model.Branch, update engine.Update, err error) {
 	// A version update's plan with --new is a look before starting a
 	// branch, against master as fetched now; anything else needs one.
-	fromMaster := where.isNew() && request.Plan
+	fromMaster := where.IsNew() && request.Plan
 	if fromMaster && request.Action != model.EditUpdate {
 		return model.Branch{}, engine.Update{}, fmt.Errorf("--plan changes nothing, so it starts no branch; plan in an existing one with --branch, or drop --plan")
 	}
-	e, err := s.open(ctx)
+	e, err := s.Open(ctx)
 	if err != nil {
 		return branch, update, err
 	}
@@ -410,35 +383,35 @@ func author(ctx context.Context, s *settings, streams term.Streams, where branch
 	// A version update with --new starts its branch once there is an edit
 	// to make, so a port already current starts nothing.
 	// It's named for the version it moves to, which the update finds.
-	deferred := where.isNew() && !request.Plan && request.Action == model.EditUpdate
+	deferred := where.IsNew() && !request.Plan && request.Action == model.EditUpdate
 	switch {
 	case deferred:
-		request.Start = &engine.StartRequest{Name: where.newName()}
+		request.Start = &engine.StartRequest{Name: where.NewName()}
 	case !fromMaster:
 		// A plan asks nothing that would start a branch.
 		choosing := streams
 		if request.Plan {
 			choosing = streams.Unattended()
 		}
-		var chosen chosenBranch
-		chosen, err = chooseBranch(ctx, e, choosing, where, request.Port, work)
+		var chosen branchflags.ChosenBranch
+		chosen, err = branchflags.ChooseBranch(ctx, e, choosing, where, request.Port, work)
 		if err != nil {
 			return branch, update, err
 		}
-		branch, started = chosen.branch, chosen.started
-		if chosen.forVersion {
+		branch, started = chosen.Branch, chosen.Started
+		if chosen.ForVersion {
 			// The update starts it, named for the version it finds.
 			deferred = true
 			request.Start = &engine.StartRequest{}
 		} else {
-			announce(out, s.places(), branch, started)
+			announce(out, s.Places(), branch, started)
 		}
 	}
 	request.Branch, request.FromMaster, request.Started = branch, fromMaster, started
 	update, err = e.Update(ctx, request)
 	if update.Started {
 		branch, started = update.Branch, true
-		announce(out, s.places(), branch, started)
+		announce(out, s.Places(), branch, started)
 	}
 	if update.RenamedFrom != "" {
 		branch = update.Branch
@@ -651,20 +624,7 @@ const distSubdirRemoved = "dist_subdir: a stealth update set it for the old vers
 // other than the one checked out here is gone to first, since a check
 // from elsewhere takes the branch's committed head.
 func nextAfterEdit(ctx context.Context, e *engine.Engine, branch model.Branch) string {
-	return nextIn(ctx, e, branch, "dockhand check")
-}
-
-// nextIn is a Next: line's steps, run in a branch: as they are where it's
-// checked out, and after a cd into its worktree elsewhere, since a check
-// from outside takes its committed head, not its edits. A Next: names
-// only what would be accepted (the release bar's rule), so the branch's
-// steps run where the branch is.
-func nextIn(ctx context.Context, e *engine.Engine, branch model.Branch, steps ...string) string {
-	line := strings.Join(steps, ", then ")
-	if current, err := e.Current(ctx); err == nil && current.ID == branch.ID {
-		return line
-	}
-	return fmt.Sprintf(`cd "$(dockhand path %s)", then %s`, branch.ShortName(), line)
+	return branchflags.NextIn(ctx, e, branch, "dockhand check")
 }
 
 // announce says which branch an edit is in, and whether it was just
@@ -743,8 +703,8 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 // master, as --new --plan is, and beside is the untracked branch checked
 // out here, if one is. What's checked out here and changes the port is
 // refused instead, since a plan on master would leave it out (D7).
-func unbranchedPlan(ctx context.Context, e *engine.Engine, where branchChoice, port string) (fromMaster bool, beside string, err error) {
-	if where.branch != "" {
+func unbranchedPlan(ctx context.Context, e *engine.Engine, where branchflags.BranchChoice, port string) (fromMaster bool, beside string, err error) {
+	if where.Branch != "" {
 		return false, "", nil
 	}
 	if _, err := e.Current(ctx); !errors.Is(err, engine.ErrNoBranch) {
@@ -767,108 +727,6 @@ func unbranchedPlan(ctx context.Context, e *engine.Engine, where branchChoice, p
 		return true, beside, nil
 	}
 	return false, beside, err
-}
-
-// chosenBranch is the branch an authoring command works in, and whether it
-// was started for it; or, for forVersion, none yet: an update starts it,
-// named for the version it finds.
-type chosenBranch struct {
-	branch     model.Branch
-	started    bool
-	forVersion bool
-}
-
-// chooseBranch is the branch an authoring command works in, as
-// engine.Select finds it: -b's, an existing one; one --new starts; the one
-// checked out here; or the port's own open branch, one started for it
-// where none changes it, said first. Where several change it, a terminal
-// is asked once which, or for a new one, and a script is told them.
-func chooseBranch(ctx context.Context, e *engine.Engine, streams term.Streams, where branchChoice, port string, work engine.Work) (chosenBranch, error) {
-	selection, err := e.Select(ctx, engine.Selector{Branch: where.branch, New: where.isNew(), NewName: where.newName(), Port: port, Policy: engine.SelectOrStart}, work)
-	if err != nil {
-		return chosenBranch{}, err
-	}
-	return settleSelection(ctx, e, streams, selection, port, work, !where.isNew())
-}
-
-// settleSelection takes a selection: the branch found, said where it was
-// chosen for the port; the one to start, started, or for an update left
-// for it to start; or the choices, asked about once, a new branch among
-// them where the work may start one (the split's 7d row 7: the two
-// questions, "start another?" and "which one?", as one), and refused in a
-// script. A new branch chosen is the one Select starts for --new. say is
-// a command with --new where it wasn't given, which says the branch it
-// starts, and that --new starts another.
-func settleSelection(ctx context.Context, e *engine.Engine, streams term.Streams, selection engine.Selection, port string, work engine.Work, say bool) (chosenBranch, error) {
-	switch {
-	case selection.ForVersion:
-		fmt.Fprintf(streams.Err, "%s is in no open branch, so this starts one for it, named for the version it moves to.\n", port)
-		return chosenBranch{forVersion: true}, nil
-	case selection.Start != nil:
-		if say {
-			fmt.Fprintf(streams.Err, "%s is in no open branch, so this starts %s for it.\n", port, engine.BranchName(selection.Start.Name))
-		}
-		branch, err := e.Start(ctx, *selection.Start)
-		return chosenBranch{branch: branch, started: err == nil}, err
-	case len(selection.Choices) > 0:
-		chosen, start, err := choose(ctx, e, streams, port, selection.Choices, work != engine.WorkNone)
-		if err != nil || !start {
-			return chosenBranch{branch: chosen}, err
-		}
-		another, err := e.Select(ctx, engine.Selector{Port: port, New: true}, work)
-		if err != nil {
-			return chosenBranch{}, err
-		}
-		return settleSelection(ctx, e, streams, another, port, work, false)
-	}
-	if selection.Said != "" {
-		more := ""
-		if say && work != engine.WorkNone {
-			more = "; --new starts another"
-		}
-		fmt.Fprintf(streams.Err, "Working in %s, %s%s.\n", selection.Branch.ShortName(), selection.Said, more)
-	}
-	return chosenBranch{branch: selection.Branch}, nil
-}
-
-// choose asks which of the open branches changing a port to work in, one
-// question, a new branch among the answers where one may be started; a
-// script is told them all, by exact name.
-func choose(ctx context.Context, e *engine.Engine, streams term.Streams, port string, found []engine.PortBranch, mayStart bool) (model.Branch, bool, error) {
-	if !streams.Terminal() {
-		return model.Branch{}, false, &engine.AmbiguousError{Port: port, Branches: found}
-	}
-	fmt.Fprintf(streams.Err, "%s is changed in %d open branches:\n", port, len(found))
-	for i, f := range found {
-		fmt.Fprintf(streams.Err, "  %d. %s\n", i+1, branchPurpose(f))
-	}
-	question := fmt.Sprintf("? which one? [1-%d] ", len(found))
-	if mayStart {
-		question = fmt.Sprintf("? which one, or n for a new branch? [1-%d/n] ", len(found))
-	}
-	answer, err := streams.Ask(question)
-	if err != nil {
-		return model.Branch{}, false, err
-	}
-	if mayStart && strings.EqualFold(answer, "n") {
-		return model.Branch{}, true, nil
-	}
-	n, err := strconv.Atoi(answer)
-	if err != nil || n < 1 || n > len(found) {
-		return model.Branch{}, false, errors.New("nothing chosen, so nothing changed")
-	}
-	return found[n-1].Branch, false, nil
-}
-
-// startFor starts the branch Select names for the work on port, as --new
-// would.
-func startFor(ctx context.Context, e *engine.Engine, port string, work engine.Work) (model.Branch, bool, error) {
-	selection, err := e.Select(ctx, engine.Selector{Port: port, New: true}, work)
-	if err != nil {
-		return model.Branch{}, false, err
-	}
-	branch, err := e.Start(ctx, *selection.Start)
-	return branch, err == nil, err
 }
 
 // writePatches reports the patches an update found apply, those that no

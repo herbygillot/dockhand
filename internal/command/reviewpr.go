@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -17,7 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func reviewCommand(s *settings, streams term.Streams) *cobra.Command {
+func reviewCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var comment, requestChanges, markdown bool
 	cmd := &cobra.Command{
 		Use:   "review <pr>",
@@ -38,7 +39,7 @@ access. --markdown prints the text, for pasting.`,
 			if err != nil || number <= 0 {
 				return fmt.Errorf("%q is not a pull request number, such as 34905", args[0])
 			}
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
@@ -83,7 +84,7 @@ access. --markdown prints the text, for pasting.`,
 					}
 					return postReview(ctx, e, streams, report, body, true)
 				case "e":
-					edited, err := editText(ctx, editorCommand(s), body)
+					edited, err := settings.EditText(ctx, settings.EditorCommand(s), body)
 					if err != nil {
 						fmt.Fprintln(streams.Err, err)
 						continue
@@ -100,7 +101,7 @@ access. --markdown prints the text, for pasting.`,
 	cmd.Flags().BoolVar(&requestChanges, "request-changes", false, "post the review as a request for changes")
 	cmd.Flags().BoolVar(&markdown, "markdown", false, "print the review's text, for pasting, and post nothing")
 	cmd.MarkFlagsMutuallyExclusive("comment", "request-changes", "markdown")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 

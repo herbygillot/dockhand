@@ -11,7 +11,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/host"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -66,10 +68,10 @@ type invocation struct {
 // compose's real ones where they're empty, which a test gives its own.
 func run(ctx context.Context, line invocation, streams term.Streams, dependencies compose.Dependencies, mac *host.Host) error {
 	args := line.args
-	var shared settings
-	shared.deps, shared.host, shared.env, shared.dir, shared.command = dependencies, mac, line.env, line.dir, Run
+	var shared settings.Settings
+	shared.Deps, shared.Host, shared.Env, shared.Dir, shared.Command = dependencies, mac, line.env, line.dir, Run
 	streams = term.Begin(streams, args)
-	shared.streams = streams
+	shared.Streams = streams
 	root := newRoot(&shared, streams)
 	// Cobra reads os.Args for nil arguments; Run's are only those given,
 	// so a test binary's own flags never reach a command.
@@ -86,14 +88,14 @@ func run(ctx context.Context, line invocation, streams term.Streams, dependencie
 	if verbosity, _ := root.PersistentFlags().GetCount("verbose"); verbosity > 0 && requests > 0 {
 		streams.Say(fmt.Sprintf("GitHub's API: %s", prose.Plural(int(requests), "request")))
 	}
-	spend.Log(shared.composeOptions().SpendLog(), args)
+	spend.Log(shared.ComposeOptions().SpendLog(), args)
 	return streams.Finish(args, requests, err)
 }
 
 // newRoot is dockhand's command tree, which Run executes and the
 // help-reference test reads (the architecture review of 5897a82, R3-22:
 // a package-level seam in Run stood for it). streams are term.Begin's.
-func newRoot(shared *settings, streams term.Streams) *cobra.Command {
+func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	var asJSON bool
 	var verbosity int
 	root := &cobra.Command{
@@ -107,16 +109,16 @@ func newRoot(shared *settings, streams term.Streams) *cobra.Command {
 		// With no command, a ports checkout shows its status (Design v3
 		// §10); anywhere else, the help.
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			e, err := shared.open(cmd.Context())
+			e, err := shared.Open(cmd.Context())
 			if err != nil {
 				return cmd.Help()
 			}
 			defer e.Close()
-			return showStatus(cmd.Context(), e, streams, nil, false, false, branchFlags{}, shared.places())
+			return showStatus(cmd.Context(), e, streams, nil, false, false, branchflags.BranchFlags{}, shared.Places())
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
-	shared.flags(root)
+	shared.Flags(root)
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "write the result as one JSON envelope on standard output")
 	root.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "say more of what dockhand does as it works on standard error: -v the work behind the scenes, -vv every step")
 	// A command that can't report as JSON is refused before it does
@@ -127,11 +129,11 @@ func newRoot(shared *settings, streams term.Streams) *cobra.Command {
 		// status, and archive by its name.
 		for _, flag := range []string{"branch", "port", "pr"} {
 			if f := cmd.Flags().Lookup(flag); f != nil && f.Changed {
-				shared.namesBranch = true
+				shared.NamesBranch = true
 			}
 		}
 		if len(args) > 0 && slices.Contains([]string{"path", "status", "archive"}, cmd.Name()) {
-			shared.namesBranch = true
+			shared.NamesBranch = true
 		}
 		// What the work reports as it goes goes to standard error (Design
 		// v3 §12): what a person needs to follow it, and with -v and -vv,
@@ -156,12 +158,12 @@ func newRoot(shared *settings, streams term.Streams) *cobra.Command {
 			command = "status"
 		}
 		streams.Reports(command, asJSON)
-		if asJSON && cmd.Annotations[jsonAnnotation] == "" {
+		if asJSON && cmd.Annotations[settings.JsonAnnotation] == "" {
 			return fmt.Errorf("--json isn't available for dockhand %s yet; its output is text only", command)
 		}
 		return nil
 	}
-	supportsJSON(root)
+	settings.SupportsJSON(root)
 	root.AddGroup(&cobra.Group{ID: "work", Title: "Start or enter work:"})
 	for _, command := range []*cobra.Command{
 		setupCommand(shared, streams),

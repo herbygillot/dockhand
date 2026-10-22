@@ -7,6 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -14,8 +16,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func createCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchChoice
+func createCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchChoice
 	var name, category string
 	cmd := &cobra.Command{
 		Use:   "create <url | pypi:NAME | crates:NAME | go:MODULE>",
@@ -47,7 +49,7 @@ its go-get answer.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
@@ -76,13 +78,13 @@ its go-get answer.`,
 
 			var branch model.Branch
 			switch {
-			case where.branch != "":
+			case where.Branch != "":
 				// -b names an existing branch; --new=<name> starts one.
 				var selection engine.Selection
-				if selection, err = e.Select(ctx, engine.Selector{Branch: where.branch, Policy: engine.SelectOrStart}, engine.WorkCreate); err == nil {
+				if selection, err = e.Select(ctx, engine.Selector{Branch: where.Branch, Policy: engine.SelectOrStart}, engine.WorkCreate); err == nil {
 					branch = selection.Branch
 				}
-			case where.isNew():
+			case where.IsNew():
 				// A name master has is refused before a branch is started
 				// for it.
 				var taken, unchecked, free string
@@ -96,7 +98,7 @@ its go-get answer.`,
 				if unchecked != "" {
 					fmt.Fprintf(streams.Err, "Couldn't check whether a subport named %s already exists: %s\n", name, unchecked)
 				}
-				if free = where.newName(); free == "" {
+				if free = where.NewName(); free == "" {
 					if free, err = e.NameFor(ctx, name, "new"); err != nil {
 						return err
 					}
@@ -123,7 +125,7 @@ its go-get answer.`,
 					category = observed.Category
 				}
 			}
-			created, err := e.Create(ctx, engine.CreateRequest{Branch: branch, URL: args[0], Name: name, Category: category, Maintainer: s.file.Maintainer, Project: &project})
+			created, err := e.Create(ctx, engine.CreateRequest{Branch: branch, URL: args[0], Name: name, Category: category, Maintainer: s.File.Maintainer, Project: &project})
 			if err != nil {
 				// Interrupted once the port was written, the result says
 				// what is there.
@@ -135,7 +137,7 @@ its go-get answer.`,
 			streams.Emit(createdView(branch, created))
 			if created.MovedFrom != "" {
 				fmt.Fprintf(out, "Moved %s from %s to %s, preserving all files and your edits.\n", created.Port, created.MovedFrom, created.Directory)
-				fmt.Fprintln(out, "Next: "+nextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))
+				fmt.Fprintln(out, "Next: "+branchflags.NextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))
 				return nil
 			}
 			groups := []string{"github"}
@@ -183,21 +185,21 @@ its go-get answer.`,
 				}
 				fmt.Fprintf(out, "  Review these fields and remove their unconfirmed markers: %s\n", strings.Join(marked, ", "))
 			}
-			if s.file.Maintainer == "" {
+			if s.File.Maintainer == "" {
 				// The person's own line, as the ports at the branch's base
 				// write their GitHub login, where it can be found (the
 				// flyctl run).
 				fmt.Fprintf(out, "  maintainers: nomaintainer (no maintainer configured). %s\n", engine.MaintainerWords(e.SuggestMaintainer(ctx, branch.Base), e.ConfigFile))
 			}
 			view.WritePlainHTTP(out, created.PlainHTTP)
-			fmt.Fprintln(out, "Next: "+nextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))
+			fmt.Fprintln(out, "Next: "+branchflags.NextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))
 			return nil
 		},
 	}
-	where.flags(cmd)
+	where.Register(cmd)
 	cmd.Flags().StringVar(&name, "name", "", "the port's name (default: the project's, in lower case)")
 	cmd.Flags().StringVar(&category, "category", "", "port category (prompts in a terminal; otherwise uses a marked guess)")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 

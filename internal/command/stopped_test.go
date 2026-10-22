@@ -22,7 +22,7 @@ func TestAKilledCheckReadsAsStopped(t *testing.T) {
 
 	// The process that took the check up dies without settling it.
 	ctx := t.Context()
-	e, err := testSettings(t).open(ctx)
+	e, err := testSettings(t).Open(ctx)
 	require.NoError(t, err)
 	defer e.Close()
 	run, err := e.RunNamed(ctx, "check-1")

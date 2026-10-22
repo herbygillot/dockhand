@@ -9,7 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -17,8 +19,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func checkCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchFlags
+func checkCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchFlags
 	var tests, variants, build string
 	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, keep, yes bool
 	var include, only, also, on []string
@@ -66,12 +68,12 @@ true, it runs that baseline by itself.`,
 			if tests != "" && !model.TestPolicy(tests).Valid() {
 				return fmt.Errorf("--tests %q is not declared, required, or skip", tests)
 			}
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
 			defer e.Close()
-			branch, err := where.resolve(ctx, e, streams)
+			branch, err := where.Resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
@@ -93,7 +95,7 @@ true, it runs that baseline by itself.`,
 			if err != nil {
 				return err
 			}
-			proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: mode, Named: where.explicit(), Include: include, Plan: plan}, Where: place,
+			proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: mode, Named: where.Explicit(), Include: include, Plan: plan}, Where: place,
 				Tests: model.TestPolicy(tests), Only: only, Also: also, Fresh: fresh, Keep: keep, Variants: chosen, EachVariant: each})
 			if err != nil {
 				return err
@@ -163,7 +165,7 @@ true, it runs that baseline by itself.`,
 			if len(replaced) > 0 {
 				fmt.Fprintf(streams.Out, "%s replaces %s.\n", run.Name(), strings.Join(replaced, ", "))
 			}
-			err = checkrun.RunQueued(ctx, e, run, streams, enqueue, s.places(), s.drain)
+			err = checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
 			// A check that passed says what moves the branch on now, as
 			// status would; one run for submit leaves that to submit.
 			if err == nil && !enqueue {
@@ -176,7 +178,7 @@ true, it runs that baseline by itself.`,
 			// if it couldn't tell.
 			// The engine says whether one would answer anything, from the
 			// finished run, where this read the check's exit code.
-			if s.file.Check.Baseline && !enqueue {
+			if s.File.Check.Baseline && !enqueue {
 				finished, _ := e.RunNamed(ctx, run.Name())
 				if offer, _ := e.BaselineCandidates(ctx, finished); len(offer.Ports) > 0 {
 					fmt.Fprintln(streams.Out, "Running a baseline comparison because check.baseline is enabled:")
@@ -188,7 +190,7 @@ true, it runs that baseline by itself.`,
 			return err
 		},
 	}
-	where.register(cmd, s, "check")
+	where.Register(cmd, s, "check")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what would be built and change nothing")
 	cmd.Flags().BoolVar(&head, "head", false, "check the committed tip")
 	cmd.Flags().BoolVar(&staged, "staged", false, "check the index")
@@ -210,7 +212,7 @@ true, it runs that baseline by itself.`,
 	cmd.MarkFlagsMutuallyExclusive("baseline", "keep")
 	cmd.MarkFlagsMutuallyExclusive("build", "on")
 	cmd.MarkFlagsMutuallyExclusive("head", "staged", "working-tree")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -244,7 +246,7 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 
 // runBaseline plans a baseline of the branch's latest check and runs it,
 // here or through serve.
-func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string, enqueue bool, s *settings) error {
+func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string, enqueue bool, s *settings.Settings) error {
 	baseline, err := e.PlanBaseline(ctx, branch, only)
 	if err != nil {
 		return err
@@ -254,7 +256,7 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, br
 	if err != nil {
 		return err
 	}
-	return checkrun.RunQueued(ctx, e, run, streams, enqueue, s.places(), s.drain)
+	return checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
 }
 
 // writeBaselineHeader says what a baseline builds, and what it leaves out.

@@ -10,6 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -24,7 +26,7 @@ import (
 // a terminal offers what's missing (the command-line UX review's §6): one
 // first-run command, rerun for the health check, in place of init,
 // providers, and auth.
-func setupCommand(s *settings, streams term.Streams) *cobra.Command {
+func setupCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var worktrees string
 	var yes bool
 	cmd := &cobra.Command{
@@ -55,20 +57,20 @@ one older than 2.40, which rebase needs.`,
 	cmd.Flags().StringVar(&worktrees, "worktrees", "", "keep branch worktrees in this directory, and remember it")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept the defaults, and offer nothing")
 	cmd.AddCommand(setupTartCommand(s, streams), setupGitHubCommand(s, streams))
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
 // runSetup registers the checkout and reports, and on a terminal, unless
 // yes, offers what's missing.
-func runSetup(cmd *cobra.Command, s *settings, streams term.Streams, worktrees string, yes bool) error {
-	options, file, configPath, err := s.options(cmd.Context())
+func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, worktrees string, yes bool) error {
+	options, file, configPath, err := s.Options(cmd.Context())
 	if err != nil {
 		return err
 	}
 	named := ""
 	if worktrees != "" {
-		if named, err = s.places().Absolute(worktrees); err != nil {
+		if named, err = s.Places().Absolute(worktrees); err != nil {
 			return err
 		}
 	}
@@ -81,12 +83,12 @@ func runSetup(cmd *cobra.Command, s *settings, streams term.Streams, worktrees s
 	defer e.Close()
 	out := streams.Out
 	if remote := report.Upstream.Remote; remote != "" {
-		fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", s.places().Tilde(report.Checkout), report.Upstream.Repository, remote)
+		fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", s.Places().Tilde(report.Checkout), report.Upstream.Repository, remote)
 	} else {
-		fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", s.places().Tilde(report.Checkout), report.Upstream.Repository, report.Upstream.FetchedFrom)
+		fmt.Fprintf(out, "Using %s; it has no remote for %s, so master is fetched from %s.\n\n", s.Places().Tilde(report.Checkout), report.Upstream.Repository, report.Upstream.FetchedFrom)
 	}
 	if report.Unchosen && streams.Terminal() && !yes {
-		answer, err := streams.Ask(fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", s.places().Tilde(report.Worktrees)))
+		answer, err := streams.Ask(fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", s.Places().Tilde(report.Worktrees)))
 		if err != nil {
 			return err
 		}
@@ -98,7 +100,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams term.Streams, worktrees s
 			if where == "" {
 				return fmt.Errorf("no directory given; rerun with --worktrees <directory>")
 			}
-			directory, err := s.places().Absolute(where)
+			directory, err := s.Places().Absolute(where)
 			if err != nil {
 				return err
 			}
@@ -110,10 +112,10 @@ func runSetup(cmd *cobra.Command, s *settings, streams term.Streams, worktrees s
 			return err
 		}
 	}
-	fmt.Fprintf(out, "  Git          ✓ %s at %s\n", report.Git.Version, s.places().Tilde(report.Git.Path))
-	fmt.Fprintf(out, "  Branches     worktrees in %s\n", s.places().Tilde(report.Worktrees))
+	fmt.Fprintf(out, "  Git          ✓ %s at %s\n", report.Git.Version, s.Places().Tilde(report.Git.Path))
+	fmt.Fprintf(out, "  Branches     worktrees in %s\n", s.Places().Tilde(report.Worktrees))
 	if report.MacPorts != "" {
-		fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", s.places().Tilde(report.MacPorts))
+		fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", s.Places().Tilde(report.MacPorts))
 	} else {
 		fmt.Fprintf(out, "  Authoring    ! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports\n")
 	}
@@ -128,7 +130,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams term.Streams, worktrees s
 	var publishLine string
 	publishLine, report.GitHub = publishing(cmd.Context(), s)
 	fmt.Fprintf(out, "  Publishing   %s\n", publishLine)
-	fmt.Fprintf(out, "  Records      %s\n", s.places().Tilde(report.Records))
+	fmt.Fprintf(out, "  Records      %s\n", s.Places().Tilde(report.Records))
 	fmt.Fprintln(out)
 	if streams.Terminal() && !yes {
 		written, err := offerSetup(cmd.Context(), s, e, streams, file, configPath)
@@ -155,7 +157,7 @@ func runSetup(cmd *cobra.Command, s *settings, streams term.Streams, worktrees s
 	return nil
 }
 
-func startCommand(s *settings, streams term.Streams) *cobra.Command {
+func startCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var here bool
 	var ports []string
 	cmd := &cobra.Command{
@@ -174,7 +176,7 @@ tracked files.`,
 			if len(args) == 0 && len(ports) == 0 {
 				return errors.New("start needs a branch name or --port <port> to generate one.")
 			}
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
@@ -216,17 +218,17 @@ tracked files.`,
 				return nil
 			}
 			fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now)\nDirectory: %s\nNext: cd \"$(dockhand path %s)\"\n",
-				branch.Name, branch.Base.Short(), s.places().Tilde(branch.Worktree), branch.ShortName())
+				branch.Name, branch.Base.Short(), s.Places().Tilde(branch.Worktree), branch.ShortName())
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&here, "here", false, "create the branch in this checkout instead of its own worktree")
 	cmd.Flags().StringArrayVar(&ports, "port", nil, "bring this port's directory into the worktree; more than one may be given")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
-func adoptCommand(s *settings, streams term.Streams) *cobra.Command {
+func adoptCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var pr int
 	cmd := &cobra.Command{
 		Use:   "adopt [branch]",
@@ -242,7 +244,7 @@ push to their branch: submit pushes there only when they let maintainers
 edit and you have write access, and never rewrites their description.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := s.open(cmd.Context())
+			e, err := s.Open(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -251,7 +253,7 @@ edit and you have write access, and never rewrites their description.`,
 				if len(args) > 0 {
 					return errors.New("--pr names the pull request; adopt takes a branch or --pr, not both")
 				}
-				return adoptPullRequest(cmd.Context(), e, streams, s.places(), pr)
+				return adoptPullRequest(cmd.Context(), e, streams, s.Places(), pr)
 			}
 			request := engine.AdoptRequest{}
 			if len(args) == 1 {
@@ -281,7 +283,7 @@ edit and you have write access, and never rewrites their description.`,
 		},
 	}
 	cmd.Flags().IntVar(&pr, "pr", 0, "bring someone's pull request, by number, into a branch of its own")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -319,8 +321,8 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams term.Stream
 	return nil
 }
 
-func pathCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchFlags
+func pathCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "path [branch]",
 		Short: "Print a branch's directory",
@@ -330,17 +332,17 @@ its pull request, and -b by its exact name, as the argument does. Without
 any, the branch checked out here.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := s.open(cmd.Context())
+			e, err := s.Open(cmd.Context())
 			if err != nil {
 				return err
 			}
 			defer e.Close()
 			var path string
 			switch {
-			case len(args) == 1 && where.explicit():
+			case len(args) == 1 && where.Explicit():
 				return errors.New("Choose the branch with either an argument or one of -b, -p, or --pr.")
-			case where.explicit():
-				branch, err := where.resolve(cmd.Context(), e, streams)
+			case where.Explicit():
+				branch, err := where.Resolve(cmd.Context(), e, streams)
 				if err != nil {
 					return err
 				}
@@ -362,8 +364,8 @@ any, the branch checked out here.`,
 			return nil
 		},
 	}
-	where.register(cmd, s, "print the directory of")
-	supportsJSON(cmd)
+	where.Register(cmd, s, "print the directory of")
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -402,10 +404,10 @@ type githubLoginJSON struct {
 // publishing says whose GitHub login submit would use, asked of GitHub,
 // and where its token comes from, with the same as JSON: GH_TOKEN or
 // GITHUB_TOKEN, dockhand's login in the Keychain, or the GitHub CLI's.
-func publishing(ctx context.Context, s *settings) (string, githubLoginJSON) {
+func publishing(ctx context.Context, s *settings.Settings) (string, githubLoginJSON) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	status, err := s.host.AuthAPI(s.signin()).LoginStatus(ctx)
+	status, err := s.Host.AuthAPI(s.Signin()).LoginStatus(ctx)
 	switch {
 	case err == nil:
 		login := githubLoginJSON{Account: status.Account, Source: string(status.Source)}

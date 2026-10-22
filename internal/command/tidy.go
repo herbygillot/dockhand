@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -19,8 +21,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func tidyCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchFlags
+func tidyCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchFlags
 	var message, author, group, saveTo, apply string
 	var squash, plan, yes bool
 	cmd := &cobra.Command{
@@ -54,7 +56,7 @@ commits, and its files are as they were when it was saved.`,
 			if saveTo != "" && !plan {
 				return errors.New("--out saves the plan --plan shows; add --plan")
 			}
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
@@ -62,7 +64,7 @@ commits, and its files are as they were when it was saved.`,
 			if apply != "" {
 				return applySaved(ctx, e, streams, apply)
 			}
-			branch, err := where.resolve(ctx, e, streams)
+			branch, err := where.Resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
@@ -137,7 +139,7 @@ commits, and its files are as they were when it was saved.`,
 			return err
 		},
 	}
-	where.register(cmd, s, "tidy")
+	where.Register(cmd, s, "tidy")
 	cmd.Flags().BoolVar(&squash, "squash", false, "make one commit of the whole branch")
 	cmd.Flags().StringVar(&message, "message", "", "the message of the commit --squash makes")
 	cmd.Flags().StringVar(&author, "author", "", "attribute a commit that combines several people's commits: \"Name <email>\"")
@@ -150,7 +152,7 @@ commits, and its files are as they were when it was saved.`,
 	cmd.MarkFlagsMutuallyExclusive("apply", "group")
 	cmd.MarkFlagsMutuallyExclusive("apply", "branch")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "apply the plan as shown, without asking; a plan made only of dockhand's own edits applies without it")
-	supportsJSON(cmd)
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 
@@ -409,8 +411,8 @@ func modifiedBuildWarning(plan engine.TidyPlan, checkpoint string) string {
 // undoCommand puts back what a tidy or rebase replaced: the branch's
 // latest, or the checkpoint named (the command-line UX review's smaller
 // items: git restore restores files, and dockhand's restores history).
-func undoCommand(s *settings, streams term.Streams) *cobra.Command {
-	var where branchFlags
+func undoCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use: "undo [<checkpoint>]",
 		// v0.3.0's restore points here, not run as an alias.
@@ -428,18 +430,18 @@ checked out here.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			e, err := s.open(ctx)
+			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
 			defer e.Close()
 			if len(args) == 1 {
-				if where.explicit() {
+				if where.Explicit() {
 					return errors.New("a checkpoint names its branch already; name the checkpoint or the branch, not both")
 				}
 				return restoreCheckpoint(ctx, e, streams, args[0])
 			}
-			branch, err := where.resolve(ctx, e, streams)
+			branch, err := where.Resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
@@ -450,8 +452,8 @@ checked out here.`,
 			return restoreCheckpoint(ctx, e, streams, name)
 		},
 	}
-	where.register(cmd, s, "undo in")
-	supportsJSON(cmd)
+	where.Register(cmd, s, "undo in")
+	settings.SupportsJSON(cmd)
 	return cmd
 }
 

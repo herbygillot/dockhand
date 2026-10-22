@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -56,9 +57,9 @@ func TestEveryNamedCommandExists(t *testing.T) {
 // rootForReference is the command tree Run builds (newRoot).
 func rootForReference(t *testing.T) *cobra.Command {
 	t.Helper()
-	var s settings
+	var s settings.Settings
 	streams := term.Begin(term.Streams{Out: io.Discard, Err: io.Discard}, nil)
-	s.streams = streams
+	s.Streams = streams
 	root := newRoot(&s, streams)
 	// Cobra adds --help and --version as it executes.
 	root.InitDefaultHelpFlag()

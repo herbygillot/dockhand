@@ -1,4 +1,4 @@
-package command
+package branchflags
 
 import (
 	"cmp"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -19,25 +20,25 @@ import (
 // it changes, or --pr the pull request it tracks; with none of them, the
 // branch checked out here. Each flag has one meaning, so a port's name
 // and a branch's never collide, and none is a positional argument.
-type branchFlags struct {
-	branch, port string
-	pr           int
+type BranchFlags struct {
+	Branch, Port string
+	PR           int
 }
 
 // register adds the flags to a command, -b with completion of the open
 // branches' names.
-func (b *branchFlags) register(cmd *cobra.Command, s *settings, verb string) {
-	cmd.Flags().StringVarP(&b.branch, "branch", "b", "", verb+" this branch, by its exact name (the dockhand/ prefix is optional)")
-	cmd.Flags().StringVarP(&b.port, "port", "p", "", verb+" the open branch that changes this port")
-	cmd.Flags().IntVar(&b.pr, "pr", 0, verb+" the branch tracking this pull request, by number")
+func (b *BranchFlags) Register(cmd *cobra.Command, s *settings.Settings, verb string) {
+	cmd.Flags().StringVarP(&b.Branch, "branch", "b", "", verb+" this branch, by its exact name (the dockhand/ prefix is optional)")
+	cmd.Flags().StringVarP(&b.Port, "port", "p", "", verb+" the open branch that changes this port")
+	cmd.Flags().IntVar(&b.PR, "pr", 0, verb+" the branch tracking this pull request, by number")
 	cmd.MarkFlagsMutuallyExclusive("branch", "port", "pr")
 	_ = cmd.RegisterFlagCompletionFunc("branch", branchCompletion(s))
 }
 
 // explicit says whether a flag named the branch, rather than where the
 // command runs.
-func (b branchFlags) explicit() bool {
-	return b.branch != "" || b.port != "" || b.pr != 0
+func (b BranchFlags) Explicit() bool {
+	return b.Branch != "" || b.Port != "" || b.PR != 0
 }
 
 // resolve finds the branch the flags name, else the one checked out here.
@@ -45,26 +46,26 @@ func (b branchFlags) explicit() bool {
 // several change is asked about on a terminal and refused in a script,
 // with their exact names. A flag beats where the command runs, and says
 // so where the two differ.
-func (b branchFlags) resolve(ctx context.Context, e *engine.Engine, streams term.Streams) (model.Branch, error) {
-	selection, err := e.Select(ctx, engine.Selector{Branch: b.branch, PR: b.pr, Port: b.port, Policy: engine.SelectExisting}, engine.WorkNone)
+func (b BranchFlags) Resolve(ctx context.Context, e *engine.Engine, streams term.Streams) (model.Branch, error) {
+	selection, err := e.Select(ctx, engine.Selector{Branch: b.Branch, PR: b.PR, Port: b.Port, Policy: engine.SelectExisting}, engine.WorkNone)
 	// A checkout dockhand doesn't track is offered what tracks it, on a
 	// terminal, where nothing else could be meant; a script is refused,
 	// naming it (the roadmap's part 3, by the command-line UX review's §2).
-	if !b.explicit() {
+	if !b.Explicit() {
 		if branch, offered, offerErr := offerToTrack(ctx, e, streams, err); offered {
 			return branch, offerErr
 		}
 	}
 	if err != nil {
 		// On master, the engine's refusal already says how to name one.
-		if !b.explicit() && errors.Is(err, engine.ErrNoBranch) && !errors.Is(err, engine.ErrYourCheckout) {
+		if !b.Explicit() && errors.Is(err, engine.ErrNoBranch) && !errors.Is(err, engine.ErrYourCheckout) {
 			return model.Branch{}, fmt.Errorf("%w; name one with -b <branch> or -p <port>, or run this in the branch's worktree (dockhand path <branch>)", err)
 		}
 		return model.Branch{}, err
 	}
-	chosen, err := settleSelection(ctx, e, streams, selection, b.port, engine.WorkNone, false)
-	branch := chosen.branch
-	if err != nil || !b.explicit() {
+	chosen, err := SettleSelection(ctx, e, streams, selection, b.Port, engine.WorkNone, false)
+	branch := chosen.Branch
+	if err != nil || !b.Explicit() {
 		return branch, err
 	}
 	if here, err := e.Current(ctx); err == nil && here.ID != branch.ID {
@@ -92,9 +93,9 @@ func branchPurpose(f engine.PortBranch) string {
 
 // branchCompletion completes -b with the open branches' names, each
 // described by its pull request and title where it has them.
-func branchCompletion(s *settings) cobra.CompletionFunc {
+func branchCompletion(s *settings.Settings) cobra.CompletionFunc {
 	return func(cmd *cobra.Command, _ []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
-		e, err := s.open(cmd.Context())
+		e, err := s.Open(cmd.Context())
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
