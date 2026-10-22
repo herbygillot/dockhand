@@ -49,7 +49,7 @@ func (s *Service) prepareNewVersion(ctx context.Context, request Request, input 
 	}
 	executable, err := s.DependencyTools.Resolve(plan.Kind)
 	if err != nil {
-		return Result{}, fmt.Errorf("%w: %s: %w", ErrUnsupported, input.target.Name, err)
+		return Result{}, ErrUnsupported.Because("%s: %w", input.target.Name, err)
 	}
 	return s.prepareDependencyVersion(ctx, request, input, plan, executable)
 }
@@ -57,12 +57,12 @@ func (s *Service) prepareNewVersion(ctx context.Context, request Request, input 
 func inspectDependencies(input *sourceInput) (*depblock.Plan, error) {
 	for _, key := range []string{depblock.Go, depblock.Cargo, depblock.CargoGit, "cargo.update", "cargo.dir", "cargo.offline_cmd"} {
 		if input.info.OptionErrors[key] != "" {
-			return nil, fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)
+			return nil, ErrUnsupported.Because("cannot evaluate %s", key)
 		}
 	}
 	plan, err := depblock.Inspect(input.data, input.info.Options)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", ErrUnsupported, input.target.Name, err)
+		return nil, ErrUnsupported.Because("%s: %w", input.target.Name, err)
 	}
 	if plan != nil {
 		if err := dependencyPatches(input, plan.Kind); err != nil {
@@ -80,7 +80,7 @@ func inspectDependencies(input *sourceInput) (*depblock.Plan, error) {
 // clears the option.
 func checkCargoUpdate(info macports.PortInfo) error {
 	if _, err := info.Bool("cargo.update"); err != nil {
-		return fmt.Errorf("%w: cargo.update can't be read as yes or no", ErrUnsupported)
+		return ErrUnsupported.Because("cargo.update can't be read as yes or no")
 	}
 	return nil
 }
@@ -94,7 +94,7 @@ func manifestHookRefusal(hook, kind, block string) error {
 	if kind == depblock.Go {
 		tool = "go2port"
 	}
-	return fmt.Errorf("%w: %s edits a dependency manifest, and the Portfile's %s isn't exactly what the current version's lock gives, so the edit may have shaped it by hand; update it by hand, regenerating %s with %s from the new version's source", ErrUnsupported, hook, block, block, tool)
+	return ErrUnsupported.Because("%s edits a dependency manifest, and the Portfile's %s isn't exactly what the current version's lock gives, so the edit may have shaped it by hand; update it by hand, regenerating %s with %s from the new version's source", hook, block, block, tool)
 }
 
 func dependencyPatches(input *sourceInput, kind string) error {
@@ -117,7 +117,7 @@ func dependencyPatches(input *sourceInput, kind string) error {
 	}
 	script, errs := syntax.Parse(input.data)
 	if len(errs) > 0 {
-		return fmt.Errorf("%w: invalid Portfile", ErrUnsupported)
+		return ErrUnsupported.Because("invalid Portfile")
 	}
 	var checkHooks func(*syntax.Script) error
 	checkHooks = func(script *syntax.Script) error {
@@ -167,7 +167,7 @@ func dependencyPatches(input *sourceInput, kind string) error {
 			return err
 		}
 		if changed(string(data)) && !(kind == depblock.Cargo && featuresOnly(data)) {
-			return fmt.Errorf("%w: patch %s edits dependency manifests; regenerate manually", ErrUnsupported, name)
+			return ErrUnsupported.Because("patch %s edits dependency manifests; regenerate manually", name)
 		}
 	}
 	return nil
@@ -314,7 +314,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	for _, name := range slices.Sorted(maps.Keys(plan.Values)) {
 		differences, err := depblock.Differences(name, plan.Values[name], oldValues[name])
 		if err != nil {
-			return Result{}, fmt.Errorf("%w: existing %s differs from the original manifest/helper output; preserve these overrides with manual preparation", ErrUnsupported, name)
+			return Result{}, ErrUnsupported.Because("existing %s differs from the original manifest/helper output; preserve these overrides with manual preparation", name)
 		}
 		if input.manifestHook != "" && len(differences) > 0 {
 			return Result{}, manifestHookRefusal(input.manifestHook, plan.Kind, name)
@@ -334,7 +334,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 			named = append(named, difference.Name)
 		}
 		if len(named) > 0 {
-			return Result{}, fmt.Errorf("%w: existing %s differs from the original manifest/helper output for %s; preserve these overrides with manual preparation", ErrUnsupported, name, strings.Join(named, ", "))
+			return Result{}, ErrUnsupported.Because("existing %s differs from the original manifest/helper output for %s; preserve these overrides with manual preparation", name, strings.Join(named, ", "))
 		}
 	}
 	result, err := s.applyArchivePlan(ctx, baseRequest, base, archivePlan, store)
@@ -381,11 +381,11 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if len(keptModules) > 0 {
 		gosum, _, err := depblock.Manifest(ctx, nextInput.Archive, nextInput.Worksrcdir, "go.sum")
 		if err != nil {
-			return Result{}, fmt.Errorf("%w: existing %s includes modules omitted by go2port; could not read go.sum for %s to verify their pinned versions: %w", ErrUnsupported, depblock.Go, request.Release.Version, err)
+			return Result{}, ErrUnsupported.Because("existing %s includes modules omitted by go2port; could not read go.sum for %s to verify their pinned versions: %w", depblock.Go, request.Release.Version, err)
 		}
 		for _, kept := range keptModules {
 			if !depblock.GoSumPins(gosum, kept.Name, kept.Declared) {
-				return Result{}, fmt.Errorf("%w: existing %s includes %s %s, which go2port omits, but go.sum for %s no longer pins that version; prepare the update manually to preserve the override", ErrUnsupported, depblock.Go, kept.Name, kept.Declared, request.Release.Version)
+				return Result{}, ErrUnsupported.Because("existing %s includes %s %s, which go2port omits, but go.sum for %s no longer pins that version; prepare the update manually to preserve the override", depblock.Go, kept.Name, kept.Declared, request.Release.Version)
 			}
 			keptNames = append(keptNames, kept.Name)
 		}
@@ -397,7 +397,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	for _, override := range overrides {
 		locked, past := override.MovedPast(values[depblock.Cargo])
 		if !past {
-			return Result{}, fmt.Errorf("%w: existing %s overrides %s to %s instead of the locked %s, and the lockfile for %s does not select a newer version than the override; prepare the update manually to preserve it", ErrUnsupported, depblock.Cargo, override.Name, override.Declared, override.Generated, request.Release.Version)
+			return Result{}, ErrUnsupported.Because("existing %s overrides %s to %s instead of the locked %s, and the lockfile for %s does not select a newer version than the override; prepare the update manually to preserve it", depblock.Cargo, override.Name, override.Declared, override.Generated, request.Release.Version)
 		}
 		dropped = append(dropped, Override{Name: override.Name, Pinned: override.Declared, Was: override.Generated, Locked: locked})
 	}
@@ -438,13 +438,13 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	// (field testing, batch 11).
 	tagMoved := request.Release.Tag != "" && selected.Options["git.branch"] != request.Release.Tag
 	if selected.Version != request.Release.Version || selected.Revision != 0 || selected.Epoch != input.info.Epoch || tagMoved {
-		return Result{}, fmt.Errorf("%w: dependency regeneration changed the selected version or source: it evaluates as version %s, revision %d, epoch %d, tag %q, where the update chose %s, revision 0, epoch %d, tag %q",
-			ErrFidelity, selected.Version, selected.Revision, selected.Epoch, selected.Options["git.branch"], request.Release.Version, input.info.Epoch, request.Release.Tag)
+		return Result{}, ErrFidelity.Because("dependency regeneration changed the selected version or source: it evaluates as version %s, revision %d, epoch %d, tag %q, where the update chose %s, revision 0, epoch %d, tag %q",
+			selected.Version, selected.Revision, selected.Epoch, selected.Options["git.branch"], request.Release.Version, input.info.Epoch, request.Release.Tag)
 	}
 	for name, wanted := range values {
 		actual, errs := syntax.ListValues(selected.Options[name])
 		if len(errs) > 0 || !slices.Equal(actual, wanted) {
-			return Result{}, fmt.Errorf("%w: evaluated %s differs from regenerated declarations", ErrFidelity, name)
+			return Result{}, ErrFidelity.Because("evaluated %s differs from regenerated declarations", name)
 		}
 	}
 	family, err := input.familySnapshot(ctx, s.Ports)
@@ -452,7 +452,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	if len(family.Ports) != len(after.Ports) {
-		return Result{}, fmt.Errorf("%w: dependency regeneration changed the port set", ErrFidelity)
+		return Result{}, ErrFidelity.Because("dependency regeneration changed the port set")
 	}
 	// A sibling that shares the release moves with the target: what the
 	// version's evaluation and the regenerated block it shares change in
@@ -461,7 +461,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	// unauthorized move as the version check did before the downloads.
 	scope, err := fidelity.ReleaseScope(family, after, input.target.Name, request.SharedRelease)
 	if err != nil {
-		return Result{}, fmt.Errorf("%w: %v", ErrFidelity, err)
+		return Result{}, ErrFidelity.Because("%v", err)
 	}
 	// The block step predicts from the version step's own evaluation, its
 	// archives' checksums written (Prepared), with only the blocks it
@@ -493,7 +493,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	final := prediction.Observe(family, after)
 	if len(final.UnexpectedChanges) > 0 {
-		return Result{}, fmt.Errorf("%w: %v", ErrFidelity, final.UnexpectedChanges)
+		return Result{}, ErrFidelity.Because("%v", final.UnexpectedChanges)
 	}
 	result.Base = request.Source
 	result.Files = []portfile.Edit{evaluated.edit}
@@ -522,7 +522,7 @@ func dependencyInput(info macports.PortInfo, archive string, plan *depblock.Plan
 	root := info.Options["worksrcdir"]
 	if dir := info.Options["cargo.dir"]; dir != "" {
 		if dir != "@worksrc@" && !strings.HasPrefix(dir, "@worksrc@/") {
-			return depblock.Input{}, fmt.Errorf("%w: cargo.dir leaves the source archive", ErrUnsupported)
+			return depblock.Input{}, ErrUnsupported.Because("cargo.dir leaves the source archive")
 		}
 		root = filepath.Join(root, strings.TrimPrefix(strings.TrimPrefix(dir, "@worksrc@"), "/"))
 	}
@@ -567,7 +567,7 @@ func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input 
 	for _, crate := range generated.Git {
 		source, ok := byName[crate.Distfile()]
 		if !ok {
-			return nil, nil, fmt.Errorf("%w: Git crate archive missing from evaluated PortGroup", ErrFidelity)
+			return nil, nil, ErrFidelity.Because("Git crate archive missing from evaluated PortGroup")
 		}
 		download, err := s.Archives.Store("").Fetch(ctx, info, source)
 		if err != nil {
@@ -602,7 +602,7 @@ func inertWords(crates []depblock.GitCrate) string {
 // cargo.update requires (D19).
 func unlocked(err error, cargoUpdate bool, version string) error {
 	if cargoUpdate && errors.Is(err, macports.ErrManifestMissing) {
-		return fmt.Errorf("%w: cargo.update is enabled, but the source for %s contains no Cargo.lock; cannot regenerate crate dependencies: %w", ErrUnsupported, version, err)
+		return ErrUnsupported.Because("cargo.update is enabled, but the source for %s contains no Cargo.lock; cannot regenerate crate dependencies: %w", version, err)
 	}
 	return err
 }

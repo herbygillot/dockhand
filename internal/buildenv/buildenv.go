@@ -78,7 +78,7 @@ var ErrNeedsAttention = errors.New("another attempt won't fix it")
 // would repeat it, so the runner says it at once, as dockhand's. What's
 // marked none of the three is said at once too, as dockhand's: only
 // infrastructure is tried again.
-var ErrDockhandFault = errors.New("a fault in dockhand")
+var ErrDockhandFault = refusal.New(refusal.Failed, "a fault in dockhand")
 
 // Job is one guest execution's work.
 type Job struct {

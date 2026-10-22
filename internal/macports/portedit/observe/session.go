@@ -2,18 +2,20 @@ package observe
 
 import (
 	"context"
-	"errors"
 	"maps"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // ErrInconclusive means an observation could not settle what a modeled
 // context depends on: host state, an unresolved read, or a boundary the
 // profiles cannot close over.
-var ErrInconclusive = errors.New("portedit: version probe is inconclusive")
+// ErrInconclusive is a probe that couldn't say, an edit dockhand can't
+// establish by itself (refusal.Unsupported).
+var ErrInconclusive = refusal.New(refusal.Unsupported, "portedit: version probe is inconclusive")
 
 // Session observes one Portfile's contents in modeled contexts. It knows
 // the owning and selected targets, the native platform the baseline

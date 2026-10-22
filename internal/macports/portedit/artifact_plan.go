@@ -72,7 +72,7 @@ func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents
 func (s *Service) bindArchivesOn(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation, here bool) (distfiles.Binding, error) {
 	port, inconclusive := observe.Tolerate(ctx, observed.Ports[input.target.Name], contents, observed.Snapshot.Root)
 	if inconclusive && !here {
-		return distfiles.Binding{}, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, observe.HostInputs(port))
+		return distfiles.Binding{}, errProbeInconclusive.Because("modeled context depends on host state%s", observe.HostInputs(port))
 	}
 	info := observed.Snapshot.Ports[input.target.Name]
 	if err := distfetch.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
@@ -95,7 +95,7 @@ func (s *Service) bindArchivesOn(ctx context.Context, input *sourceInput, conten
 // download, as a metaport or a _select port has. It adds no archive to
 // an update's plan, and an update of a port that fetches nothing anywhere
 // edits its version alone; a checksum refresh has nothing to refresh.
-var errFetchesNothing = fmt.Errorf("%w: no downloadable source archives", ErrUnsupported)
+var errFetchesNothing = ErrUnsupported.Because("no downloadable source archives")
 
 func (s *Service) planObservedArchives(ctx context.Context, request Request, input *sourceInput, contents []byte) (*observedArchivePlan, error) {
 	profiles, err := input.observe.Profiles(ctx, contents)
@@ -112,11 +112,11 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	fetches := false
 	befores, err := input.observe.Observe(ctx, input.data, profiles, true, false)
 	if err != nil {
-		return nil, fmt.Errorf("%w: observing baseline %v", errProbeInconclusive, err)
+		return nil, errProbeInconclusive.Because("observing baseline %v", err)
 	}
 	afters, err := input.observe.Observe(ctx, contents, profiles, true, false)
 	if err != nil {
-		return nil, fmt.Errorf("%w: observing candidate %v", errProbeInconclusive, err)
+		return nil, errProbeInconclusive.Because("observing candidate %v", err)
 	}
 	// observeContext checks one context's baseline and candidate, and plans
 	// what it fetches: a profile's, or a variant's on this Mac.
@@ -137,7 +137,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			progress.VerboseReport(ctx, "Preserving rejection-only fetch guard for %s %s %s; archive coverage does not establish build support", profile.OS, profile.Version, profile.Architecture)
 		}
 		if affected && (old.Version != input.info.Version || next.Version != request.Release.Version) {
-			return fmt.Errorf("%w: candidate changed an independent version on %+v", ErrFidelity, profile)
+			return ErrFidelity.Because("candidate changed an independent version on %+v", profile)
 		}
 		if !affected {
 			if err := fidelity.Equivalent(before.Snapshot, after.Snapshot); err != nil {
@@ -146,7 +146,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		} else {
 			report := fidelity.ScopedVersion(request.SharedRelease, before.Snapshot, after.Snapshot, member.target.Name, *request.Release, next.Options["checksums"])
 			if len(report.UnexpectedChanges) > 0 {
-				return fmt.Errorf("%w: context %+v: %s", ErrFidelity, profile, strings.Join(report.UnexpectedChanges, "; "))
+				return ErrFidelity.Because("context %+v: %s", profile, strings.Join(report.UnexpectedChanges, "; "))
 			}
 		}
 		// A context where the port fetches nothing, before and after,
@@ -162,7 +162,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			return fmt.Errorf("candidate %+v: %w", profile, err)
 		}
 		if hadNothing != nothing {
-			return fmt.Errorf("%w: candidate changed whether %s fetches anything on %+v", ErrFidelity, member.target.Name, profile)
+			return ErrFidelity.Because("candidate changed whether %s fetches anything on %+v", member.target.Name, profile)
 		}
 		fetches = fetches || !nothing
 		if member == input {
@@ -180,7 +180,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			}
 		}
 		if len(oldBinding.Groups) != len(binding.Groups) || len(oldBinding.Artifacts) != len(binding.Artifacts) {
-			return fmt.Errorf("%w: candidate changed archive/checksum structure", ErrFidelity)
+			return ErrFidelity.Because("candidate changed archive/checksum structure")
 		}
 		oldGroups := map[string]distfiles.Group{}
 		for _, group := range oldBinding.Groups {
@@ -189,11 +189,11 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		for _, group := range binding.Groups {
 			previous, ok := oldGroups[group.ID()]
 			if !ok || len(previous.Values) != len(group.Values) {
-				return fmt.Errorf("%w: candidate activated different checksum declarations", ErrFidelity)
+				return ErrFidelity.Because("candidate activated different checksum declarations")
 			}
 			for algorithm, value := range group.Values {
 				if previous.Values[algorithm].Value != value.Value {
-					return fmt.Errorf("%w: candidate changed checksum literals", ErrFidelity)
+					return ErrFidelity.Because("candidate changed checksum literals")
 				}
 			}
 			if !affected {
@@ -210,17 +210,17 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			coverage.cover(artifact)
 			previous, ok := oldFiles[id]
 			if !ok {
-				return fmt.Errorf("%w: candidate changed archive ownership", ErrFidelity)
+				return ErrFidelity.Because("candidate changed archive ownership")
 			}
 			if slices.Equal(previous.URLs, artifact.URLs) {
 				protected[id] = true
 				if previous.Name != artifact.Name {
-					return fmt.Errorf("%w: filename changed without fetch location", ErrFidelity)
+					return ErrFidelity.Because("filename changed without fetch location")
 				}
 				continue
 			}
 			if !affected {
-				return fmt.Errorf("%w: protected artifact location changed", ErrFidelity)
+				return ErrFidelity.Because("protected artifact location changed")
 			}
 			changed[id] = true
 			coverage.download(artifact, next)
@@ -249,11 +249,11 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		native := []model.Platform{input.before.Platform}
 		before, err := session.Observe(ctx, input.data, native, true, false)
 		if err != nil {
-			return nil, fmt.Errorf("%w: +%s declares archives of its own, and couldn't be observed: %v", ErrUnsupported, variant, err)
+			return nil, ErrUnsupported.Because("+%s declares archives of its own, and couldn't be observed: %v", variant, err)
 		}
 		after, err := session.Observe(ctx, contents, native, true, false)
 		if err != nil {
-			return nil, fmt.Errorf("%w: +%s declares archives of its own, and couldn't be observed with the new version: %v", ErrUnsupported, variant, err)
+			return nil, ErrUnsupported.Because("+%s declares archives of its own, and couldn't be observed with the new version: %v", variant, err)
 		}
 		if err := observeContext(input, input.before.Platform, variant, session, before[0], after[0]); err != nil {
 			return nil, fmt.Errorf("+%s: %w", variant, err)
@@ -271,12 +271,12 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		}
 	}
 	if ids := coverage.uncovered(); len(ids) > 0 {
-		return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", errProbeInconclusive, ids[0])
+		return nil, errProbeInconclusive.Because("checksum declaration %s has no archive in the observed contexts", ids[0])
 	}
 	plan.downloads = coverage.downloads
 	for id := range changed {
 		if protected[id] {
-			return nil, fmt.Errorf("%w: checksum declaration %s is shared with a protected archive", ErrFidelity, id)
+			return nil, ErrFidelity.Because("checksum declaration %s is shared with a protected archive", id)
 		}
 	}
 	// A port that fetches nothing anywhere, a metaport or a _select port,
@@ -286,7 +286,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	// MacPorts' own has no release to find, so only a named one reaches
 	// here.
 	if len(plan.downloads) == 0 && fetches {
-		return nil, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
+		return nil, ErrUnsupported.Because("version edit did not change the download source")
 	}
 	return plan, nil
 }

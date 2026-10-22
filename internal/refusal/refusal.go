@@ -69,6 +69,11 @@ func (k Kind) Transient() bool {
 	return k == Network || k == Infrastructure || k == Limited || k == UpstreamNotYet
 }
 
+// Outcome reports whether a refusal of the kind is the work's outcome, a
+// check failed, waiting for a look, or stopped, rather than a failure to do
+// it: the kinds that exit other than 1.
+func (k Kind) Outcome() bool { return k.Exit() != 1 }
+
 // Exit is the kind's exit code, the one table of them: a check failed 2,
 // waiting for a look 3, interrupted 130, and every other refusal 1.
 func (k Kind) Exit() int {
@@ -100,6 +105,9 @@ type Refusal struct {
 	Next []Next
 	// cause is what the refusal was made of, where it wraps an error.
 	cause error
+	// of is the refusal this one is a particular of (Because), whose
+	// words lead its own when it's said.
+	of *Refusal
 }
 
 // New is a refusal of a kind, in words.
@@ -125,13 +133,30 @@ func (r *Refusal) Kind() Kind { return r.kind }
 func (r *Refusal) Words() string { return r.words }
 
 func (r *Refusal) Error() string {
-	if r.Kept != "" {
-		return r.words + "\nKept: " + r.Kept + "."
+	said := r.words
+	if r.of != nil {
+		said = r.of.words + ": " + said
 	}
-	return r.words
+	if r.Kept != "" {
+		return said + "\nKept: " + r.Kept + "."
+	}
+	return said
 }
 
 func (r *Refusal) Unwrap() error { return r.cause }
+
+// Because is a particular of a refusal, as portfile.ErrUnsupported's
+// "cargo.update can't be read as yes or no": of its kind, in its own words,
+// formatted as fmt.Errorf formats them, and the refusal too, which
+// errors.Is reaches, as it reaches each error a %w names. Said, r's words
+// lead; its Words are its own, which whoever says why it didn't go reads
+// rather than cutting r's off the error (R3-38).
+func (r *Refusal) Because(format string, args ...any) *Refusal {
+	particular := fmt.Errorf(format, args...)
+	c := New(r.kind, "%s", particular.Error())
+	c.cause, c.of = errors.Join(r, particular), r
+	return c
+}
 
 // With is the refusal with what was kept as it was.
 func (r *Refusal) With(kept string) *Refusal {
@@ -166,6 +191,20 @@ func Of(err error) *Refusal {
 		return r
 	}
 	return nil
+}
+
+// WordsOf are why an error says something didn't go, in its own words:
+// those of the first error in its chain that says them (a refusal, or a
+// type with Words of its own), without the sentinel it's a particular of,
+// "cargo.update can't be read as yes or no" for portfile's unsupported
+// edit; else the error's. Whoever says why reads them, rather than cutting
+// a sentinel's words off the error (R3-38).
+func WordsOf(err error) string {
+	var worded interface{ Words() string }
+	if errors.As(err, &worded) {
+		return worded.Words()
+	}
+	return err.Error()
 }
 
 // KindOf is the kind of refusal an error is, or Failed where it's none.

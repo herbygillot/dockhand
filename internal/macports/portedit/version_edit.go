@@ -2,7 +2,6 @@ package portedit
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"math/big"
 	"regexp"
@@ -33,7 +32,7 @@ func (s *Service) versionCarriers(ctx context.Context, request Request, input *s
 	}
 	candidates, err := portfile.Candidates(input.data)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnsupported, err)
+		return nil, ErrUnsupported.Because("%w", err)
 	}
 	var carriers versionInputs
 	failures := 0
@@ -91,9 +90,9 @@ func (s *Service) versionCarriers(ctx context.Context, request Request, input *s
 	}
 	if len(carriers) == 0 {
 		if failures > 0 {
-			return nil, fmt.Errorf("%w: %w: no editable version input established (%d candidate evaluations were inconclusive)", ErrUnsupported, errProbeInconclusive, failures)
+			return nil, ErrUnsupported.Because("%w: no editable version input established (%d candidate evaluations were inconclusive)", errProbeInconclusive, failures)
 		}
-		return nil, fmt.Errorf("%w: no editable version input established (%d candidate evaluations were inconclusive)", ErrUnsupported, failures)
+		return nil, ErrUnsupported.Because("no editable version input established (%d candidate evaluations were inconclusive)", failures)
 	}
 	return carriers, nil
 }
@@ -309,7 +308,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		if checkFidelity {
 			contents, err = s.resetRevision(ctx, request, input, contents)
 			if err != nil {
-				return nil, snapshot, fmt.Errorf("%w: %w", ErrUnsupported, err)
+				return nil, snapshot, ErrUnsupported.Because("%w", err)
 			}
 		}
 		evaluated, err := s.evaluateContents(ctx, reader, input, contents, !checkFidelity)
@@ -317,18 +316,18 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 			if ctx.Err() != nil {
 				return nil, snapshot, ctx.Err()
 			}
-			rejected = fmt.Errorf("%w: %w: candidate evaluation was inconclusive: %v", ErrUnsupported, errProbeInconclusive, err)
+			rejected = ErrUnsupported.Because("%w: candidate evaluation was inconclusive: %v", errProbeInconclusive, err)
 			continue
 		}
 		after := evaluated.after
 		next := after.Ports[input.target.Name]
 		observed, err := portsource.Interpret(next, portsource.Edit)
 		if err != nil || !sameRepository(spec, observed) || observed.SourceVersion != sourceVersion || spec.Forge != "" && next.Options["git.branch"] != spec.Pattern.Tag(sourceVersion) {
-			rejected = fmt.Errorf("%w: candidate did not select the requested source tag", ErrFidelity)
+			rejected = ErrFidelity.Because("candidate did not select the requested source tag")
 			continue
 		}
 		if checkFidelity && next.Version == input.info.Version {
-			rejected = fmt.Errorf("%w: candidate did not change the evaluated version", ErrUnsupported)
+			rejected = ErrUnsupported.Because("candidate did not change the evaluated version")
 			continue
 		}
 		if checkFidelity {
@@ -366,17 +365,17 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		if rejected != nil {
 			return nil, snapshot, rejected
 		}
-		return nil, snapshot, fmt.Errorf("%w: no version input can select %s", ErrUnsupported, sourceVersion)
+		return nil, snapshot, ErrUnsupported.Because("no version input can select %s", sourceVersion)
 	}
 	if matches != 1 {
-		return nil, snapshot, fmt.Errorf("%w: %d version inputs can select %s; edit the Portfile manually", ErrUnsupported, matches, sourceVersion)
+		return nil, snapshot, ErrUnsupported.Because("%d version inputs can select %s; edit the Portfile manually", matches, sourceVersion)
 	}
 	if checkFidelity {
 		// Archive names the checksums list literally move with the
 		// version, as go-1.26's three do (portfile.RenameChecksumFiles).
 		renamed, err := portfile.RenameChecksumFiles(selected, input.info.Version, snapshot.Ports[input.target.Name].Version)
 		if err != nil {
-			return nil, snapshot, fmt.Errorf("%w: %w", ErrUnsupported, err)
+			return nil, snapshot, ErrUnsupported.Because("%w", err)
 		}
 		return s.followObsolete(ctx, reader, input, renamed, snapshot)
 	}

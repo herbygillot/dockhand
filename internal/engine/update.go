@@ -79,6 +79,9 @@ type UpdateRequest struct {
 	// dockhand can't make by itself starts it too, for the person to make
 	// by hand. It takes the place of Branch.
 	Start *StartRequest
+	// Started is a branch started for this update before it was asked,
+	// which an update that doesn't go keeps (refusedUpdate).
+	Started bool
 	// KeepRevision leaves the revision of a stealth update as it is, for a
 	// change that needs no rebuild.
 	KeepRevision bool
@@ -238,7 +241,16 @@ type Update struct {
 // stands, committed or not, and commits nothing: `dockhand check` takes it
 // from there. The edit is prepared from a capture of the tracked files, and
 // written only if none of the files it touches changed in the meantime.
+// Where it doesn't go, it says why, what it kept, and what moves it on
+// (refusedUpdate).
 func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, error) {
+	update, err := e.updateWithObsolete(ctx, request)
+	return update, refusedUpdate(err, request, update)
+}
+
+// updateWithObsolete is the update, and its obsolete stub's, where it
+// moves that too.
+func (e *Engine) updateWithObsolete(ctx context.Context, request UpdateRequest) (Update, error) {
 	update, err := e.update(ctx, request)
 	// GitHub's rate limit is said as itself, with when it lifts and that
 	// nothing changed, not as the request it stopped, "Get …/git/commits/…:

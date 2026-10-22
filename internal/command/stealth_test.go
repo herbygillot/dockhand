@@ -3,7 +3,6 @@ package command
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -116,7 +115,7 @@ func (refuser) ResolveRelease(context.Context, editprep.Request) (model.Release,
 }
 
 func (refuser) Prepare(context.Context, editprep.Request) (editprep.Result, error) {
-	return editprep.Result{}, fmt.Errorf("%w: its pre-fetch hook runs exec", editprep.ErrUnsupported)
+	return editprep.Result{}, editprep.ErrUnsupported.Because("its pre-fetch hook runs exec")
 }
 
 func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
@@ -128,7 +127,7 @@ func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
 	_, _, err := dockhand(t, "update", "jq", "--new")
 	require.Error(t, err)
 	require.Regexp(t, `^Could not update jq automatically: its pre-fetch hook runs exec\nKept: dockhand/jq-[a-z0-9]{4}, with nothing changed\.\n`+
-		`Edit the version, run port checksum jq, then copy the reported checksums into the Portfile\.\nEdit with: dockhand edit jq$`, err.Error())
+		`Next: edit the version, run port checksum jq, then copy the reported checksums into the Portfile\nNext: dockhand edit jq$`, err.Error())
 
 	_, _, err = dockhand(t, "checksums", "jq", "--new")
 	require.ErrorContains(t, err, "Could not update the checksums for jq automatically: its pre-fetch hook runs exec\n")

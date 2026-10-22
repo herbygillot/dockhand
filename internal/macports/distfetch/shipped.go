@@ -43,7 +43,7 @@ func (s *Store) Shipped(ctx context.Context, info macports.PortInfo, plan []macp
 	var shipped []Shipped
 	for _, file := range plan {
 		if file.Name == "" || !portfile.Literal(file.Name) || file.Name == "." || file.Name == ".." {
-			return shipped, fmt.Errorf("%w: ambiguous distfile %s", portfile.ErrUnsupported, file.Name)
+			return shipped, portfile.ErrUnsupported.Because("ambiguous distfile %s", file.Name)
 		}
 		want, ok := declared[file.Name]
 		if !ok && len(declared) == 1 && len(plan) == 1 {

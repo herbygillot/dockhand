@@ -34,22 +34,22 @@ func StealthDistSubdir(src []byte, revbumped bool) ([]byte, error) {
 	}
 	switch {
 	case len(subdirs) > 1:
-		return nil, fmt.Errorf("%w: dist_subdir is set more than once", ErrUnsupported)
+		return nil, ErrUnsupported.Because("dist_subdir is set more than once")
 	case len(subdirs) == 1:
 		cmd := subdirs[0]
 		if len(cmd.Words) != 2 {
-			return nil, fmt.Errorf("%w: dist_subdir is not one word", ErrUnsupported)
+			return nil, ErrUnsupported.Because("dist_subdir is not one word")
 		}
 		value := string(src[cmd.Words[1].Span.Start:cmd.Words[1].Span.End])
 		if value == stealthRevision {
 			if !revbumped {
-				return nil, fmt.Errorf("%w: dist_subdir depends on revision; without a revision bump, the new archive would use the same mirror path as the old archive", ErrUnsupported)
+				return nil, ErrUnsupported.Because("dist_subdir depends on revision; without a revision bump, the new archive would use the same mirror path as the old archive")
 			}
 			return src, nil
 		}
 		m := stealthCounter.FindStringSubmatch(value)
 		if m == nil {
-			return nil, fmt.Errorf("%w: dist_subdir is already set, to %s", ErrUnsupported, value)
+			return nil, ErrUnsupported.Because("dist_subdir is already set, to %s", value)
 		}
 		n, _ := strconv.Atoi(m[1])
 		next := fmt.Sprintf("${name}/${version}_%d", n+1)
@@ -114,7 +114,7 @@ func RemoveStealthDistSubdir(src []byte) ([]byte, bool, error) {
 func distSubdirCommands(src []byte) (*syntax.Script, []syntax.Command, []syntax.Command, error) {
 	script, errs := syntax.Parse(src)
 	if len(errs) != 0 {
-		return nil, nil, nil, fmt.Errorf("%w: invalid Tcl syntax: %v", ErrUnsupported, errs)
+		return nil, nil, nil, ErrUnsupported.Because("invalid Tcl syntax: %v", errs)
 	}
 	var subdirs, checksums []syntax.Command
 	for _, item := range script.Items {

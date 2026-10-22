@@ -1,7 +1,6 @@
 package observe
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -164,7 +163,7 @@ func classifyReads(src []byte, script *syntax.Script, d *dimension) error {
 				continue
 			}
 			if d.any(src, word.Variables(src)) && !benignSink(name) {
-				return fmt.Errorf("%w: %s reads %s", ErrInconclusive, name, d.label)
+				return ErrInconclusive.Because("%s reads %s", name, d.label)
 			}
 		}
 	}
@@ -184,7 +183,7 @@ func benignBody(src []byte, body syntax.Word, d *dimension) error {
 	label := d.label
 	script, ok := body.BracedScript(src)
 	if !ok {
-		return fmt.Errorf("%w: a branch selected by %s is not a literal script", ErrInconclusive, label)
+		return ErrInconclusive.Because("a branch selected by %s is not a literal script", label)
 	}
 	for _, item := range script.Items {
 		cmd, ok := item.(syntax.Command)
@@ -211,7 +210,7 @@ func benignBody(src []byte, body syntax.Word, d *dimension) error {
 			if benignSink(name) {
 				continue
 			}
-			return fmt.Errorf("%w: %s is selected by %s", ErrInconclusive, name, label)
+			return ErrInconclusive.Because("%s is selected by %s", name, label)
 		}
 		for _, word := range nested {
 			if err := benignBody(src, word, d); err != nil {

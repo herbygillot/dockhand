@@ -2,7 +2,6 @@ package portfile
 
 import (
 	"bytes"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -12,11 +11,11 @@ import (
 
 func BumpRevision(src []byte, subport string, current int) ([]byte, error) {
 	if current < 0 || current == int(^uint(0)>>1) {
-		return nil, fmt.Errorf("%w: revision cannot be incremented", ErrUnsupported)
+		return nil, ErrUnsupported.Because("revision cannot be incremented")
 	}
 	script, errs := syntax.Parse(src)
 	if len(errs) != 0 {
-		return nil, fmt.Errorf("%w: invalid Tcl syntax: %v", ErrUnsupported, errs)
+		return nil, ErrUnsupported.Because("invalid Tcl syntax: %v", errs)
 	}
 	if subport != "" {
 		// A subport with no literal block of its own, as the python
@@ -42,22 +41,22 @@ func BumpRevision(src []byte, subport string, current int) ([]byte, error) {
 	}
 	next := strconv.Itoa(current + 1)
 	if len(revisions) > 1 {
-		return nil, fmt.Errorf("%w: multiple revision commands in the selected scope", ErrUnsupported)
+		return nil, ErrUnsupported.Because("multiple revision commands in the selected scope")
 	}
 	if len(revisions) == 1 {
 		cmd := revisions[0]
 		if len(cmd.Words) != 2 {
-			return nil, fmt.Errorf("%w: revision is not a single literal argument", ErrUnsupported)
+			return nil, ErrUnsupported.Because("revision is not a single literal argument")
 		}
 		value, literal := cmd.Words[1].Literal(src)
 		n, err := strconv.Atoi(value)
 		if !literal || err != nil || n != current {
-			return nil, fmt.Errorf("%w: revision expression does not have a matching literal", ErrUnsupported)
+			return nil, ErrUnsupported.Because("revision expression does not have a matching literal")
 		}
 		return textedit.Apply(src, []textedit.Edit{{Span: cmd.Words[1].Span, New: []byte(next)}})
 	}
 	if subport == "" && current != 0 {
-		return nil, fmt.Errorf("%w: nonzero revision is set outside the supported scope", ErrUnsupported)
+		return nil, ErrUnsupported.Because("nonzero revision is set outside the supported scope")
 	}
 	newline := "\n"
 	if bytes.Contains(src, []byte("\r\n")) {

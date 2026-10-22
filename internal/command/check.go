@@ -22,6 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/term"
 )
@@ -489,7 +490,8 @@ func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 		fmt.Fprintf(streams.Err, "%s was taken by serve (pid %d); following it.\n", run.Name(), taker.PID)
 	}
 	if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
-		err = &term.ExitError{Code: term.ExitInterrupted, Message: fmt.Sprintf("stopped following %s; it continues (dockhand wait %s)", run.Name(), run.Name())}
+		err = refusal.New(refusal.Interrupted, "stopped following %s; it continues", run.Name()).
+			Then(refusal.Next{Verb: refusal.VerbWait, Args: []string{run.Name()}})
 	}
 	stop()
 	<-done
@@ -578,11 +580,12 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		if err := hintBaseline(ctx, e, out, run); err != nil {
 			fmt.Fprintf(streams.Err, "baseline: %v\n", err)
 		}
-		return term.Exitf(term.ExitCheckFailed, "%s failed for %s: %s. Logs: dockhand logs %s", run.Name(), engine.Describe(revision), run.Detail, run.Name())
+		return refusal.New(refusal.CheckFailed, "%s failed for %s: %s", run.Name(), engine.Describe(revision), run.Detail).
+			Then(refusal.Next{Verb: refusal.VerbLogs, Args: []string{run.Name()}})
 	case model.RunCanceled:
 		return stoppedExit(run, evidence)
 	}
-	return term.Exitf(term.ExitAttention, "%s needs attention: %s", run.Name(), run.Detail)
+	return refusal.New(refusal.Attention, "%s needs attention: %s", run.Name(), run.Detail)
 }
 
 // failureLines is how many of a failed step's last lines a check's
@@ -624,9 +627,9 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 // or nothing, when it finished nothing, as one cancelled while queued.
 func stoppedExit(run model.Run, evidence engine.Evidence) error {
 	if !evidence.Recorded() {
-		return term.Exitf(term.ExitInterrupted, "%s stopped before anything finished", run.Name())
+		return refusal.New(refusal.Interrupted, "%s stopped before anything finished", run.Name())
 	}
-	return term.Exitf(term.ExitInterrupted, "%s stopped; finished results are kept", run.Name())
+	return refusal.New(refusal.Interrupted, "%s stopped; finished results are kept", run.Name())
 }
 
 // stopWords say what cancelling a check did: one only queued is cancelled
@@ -849,7 +852,7 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 	case model.RunCanceled:
 		return stoppedExit(run, base)
 	case model.RunAttention:
-		return term.Exitf(term.ExitAttention, "%s needs attention: %s", run.Name(), run.Detail)
+		return refusal.New(refusal.Attention, "%s needs attention: %s", run.Name(), run.Detail)
 	}
 	return nil
 }

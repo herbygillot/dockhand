@@ -202,3 +202,45 @@ that `KindOf` must read joins: upstream's 404 beside a mirror's 502 is
 worth another try, so `KindOf` takes the first transient kind among the
 outermost refusals on each path, else the first, and `Transient` is
 `KindOf(err).Transient()`.
+
+## R3-38: no error is read as a verdict, and none is cut
+
+- **Particulars of sentinels.** `Refusal.Because(format, ...)` is a
+  sentinel's particular: of its kind, `errors.Is` reaching the sentinel and
+  each `%w`, said with the sentinel's words first, its `Words` its own.
+  `portfile.ErrUnsupported`, `portsource.ErrUnsupported`,
+  `fidelity.ErrMismatch` (now `Unsupported`), `observe.ErrInconclusive`
+  (`Unsupported`) and `buildenv.ErrDockhandFault` (`Failed`) are refusals,
+  and their 190-odd `fmt.Errorf("%w: ...", sentinel, ...)` sites (tests'
+  fakes too) are `sentinel.Because(...)`, every message as it was.
+  `refusal.WordsOf(err)` reads the first error that has its own words
+  (`InPortGroup` and `AmbiguousDeclaration` gained `Words`). It replaces
+  every `strings.TrimPrefix(err.Error(), sentinel.Error()+": ")`:
+  author.go's byHand, portedit's `unsupportedReason` and `reasonWords`,
+  distfiles' `Unlocated`, fidelity's `ScopedVersion`, and the runner's
+  dockhand fault. None is left in internal/.
+- **Update's refusals are the engine's** (`engine/refused.go`):
+  `Engine.Update` composes once what didn't go, with Kept from
+  `UpdateRequest.Started` (the branch the command started for it) and
+  `Update.Started`. `byHand` maps its steps from what refused it by type
+  (`InPortGroup`, `ChecksumsToWrite`, `Unlocated`, the action), and the
+  steps are `Next`s: the by-hand step in words, then `dockhand edit
+  <port>`. An uncertain release is an `Attention` refusal, its two ifs as
+  steps, `bump` where nobody looks. author.go's `byHand`,
+  `uncertainUpdate` and inline "Kept:" are gone; `setAsideWords` moved to
+  the engine as `SetAsideWords`. A batch's line for a port says its steps
+  too.
+- **A check's outcome is a refusal**: failed (`CheckFailed`, Next `logs`),
+  waiting for a look (`Attention`), stopped (`Interrupted`; one no longer
+  followed has Next `wait`). ship reads `KindOf(checked).Outcome()`
+  (`Kind.Outcome`: the kinds that exit other than 1) for what a draft
+  submits despite, and says "nothing was submitted" by wrapping it, where
+  it appended to an `ExitError`'s message.
+- **outdated's reason is the engine's**: `OutdatedPort.Reason()`, the
+  problem's first line, which the engine's grouping and the command's
+  "no port could be checked" both read.
+
+The output moves "Logs:", "Edit with:" and the uncertain release's ifs to
+"Next:" lines, one per step. The grep at the close: no "Kept:" composed in
+command, no `TrimPrefix` or `Cut` on an error's words in command (or below
+it), and author.go's three composers gone.

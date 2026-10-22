@@ -656,7 +656,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
 				return err
 			}
-			fault := strings.TrimPrefix(err.Error(), buildenv.ErrDockhandFault.Error()+": ")
+			fault := refusal.WordsOf(err)
 			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", DescribeEnvironment(environment), fault))
 			return nil
 		case refusal.Transient(err):

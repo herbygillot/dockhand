@@ -1,7 +1,6 @@
 package observe
 
 import (
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -32,7 +31,7 @@ func scanPlatformNeeds(src []byte) (platformNeeds, error) {
 	n := platformNeeds{majors: map[int]bool{}}
 	script, errs := syntax.Parse(src)
 	if len(errs) > 0 {
-		return n, fmt.Errorf("%w: invalid context syntax", portfile.ErrUnsupported)
+		return n, portfile.ErrUnsupported.Because("invalid context syntax")
 	}
 	if err := unmodeledReads(src, script); err != nil {
 		return n, err
@@ -90,7 +89,7 @@ func (s *platformScanner) command(cmd syntax.Command) error {
 			for nested := range script.Commands(s.src, func(syntax.Command) bool { return true }) {
 				for _, read := range nested.Reads(s.src) {
 					if read.Name.Text(s.src) == "os.major" {
-						return fmt.Errorf("%w: Darwin major in an expression form that is not modeled", ErrInconclusive)
+						return ErrInconclusive.Because("Darwin major in an expression form that is not modeled")
 					}
 				}
 			}
@@ -235,7 +234,7 @@ func (s *platformScanner) boundary(other syntax.Expr) error {
 			}
 		}
 	}
-	return fmt.Errorf("%w: unresolved Darwin comparison", ErrInconclusive)
+	return ErrInconclusive.Because("unresolved Darwin comparison")
 }
 
 func (s *platformScanner) operand(name string) {
@@ -246,7 +245,7 @@ func (s *platformScanner) operand(name string) {
 
 func addBoundary(majors map[int]bool, n int) error {
 	if n < 8 || n > 1000 {
-		return fmt.Errorf("%w: unsupported Darwin boundary %d", ErrInconclusive, n)
+		return ErrInconclusive.Because("unsupported Darwin boundary %d", n)
 	}
 	for _, v := range []int{n - 1, n, n + 1} {
 		if v >= 8 {
@@ -259,7 +258,7 @@ func addBoundary(majors map[int]bool, n int) error {
 func profilesForBoundaries(majors map[int]bool, archDependent bool, native model.Platform) ([]model.Platform, error) {
 	result := []model.Platform{native}
 	if native.OS != "darwin" && (archDependent || len(majors) > 0) {
-		return nil, fmt.Errorf("%w: alternate platforms require Darwin modeling", ErrInconclusive)
+		return nil, ErrInconclusive.Because("alternate platforms require Darwin modeling")
 	}
 	current, _ := strconv.Atoi(native.Version)
 	appendProfile := func(major int, arch string) {

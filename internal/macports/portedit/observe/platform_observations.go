@@ -40,7 +40,7 @@ func (s *Session) Profiles(ctx context.Context, candidate []byte) ([]model.Platf
 	if needs.exhaustive {
 		current, err := strconv.Atoi(s.Native.Version)
 		if err != nil || current < 8 || current > 30 {
-			return nil, fmt.Errorf("%w: Darwin enumeration exceeds modeled range", ErrInconclusive)
+			return nil, ErrInconclusive.Because("Darwin enumeration exceeds modeled range")
 		}
 		for n := 8; n <= current; n++ {
 			needs.majors[n] = true
@@ -65,21 +65,21 @@ func (s *Session) Profiles(ctx context.Context, candidate []byte) ([]model.Platf
 				}
 				for _, port := range observed.Ports {
 					if port, inconclusive := Tolerate(ctx, port, contents, observed.Snapshot.Root); inconclusive {
-						return nil, fmt.Errorf("%w: platform boundary depends on host state%s", ErrInconclusive, HostInputs(port))
+						return nil, ErrInconclusive.Because("platform boundary depends on host state%s", HostInputs(port))
 					}
 					for _, fact := range port.Operands {
 						if !slices.Contains(needs.operands, fact.Name) {
 							continue
 						}
 						if !sourceBoundOperand(observed.Snapshot.Root, fact.Frames) {
-							return nil, fmt.Errorf("%w: platform operand %s has no captured source", ErrInconclusive, fact.Name)
+							return nil, ErrInconclusive.Because("platform operand %s has no captured source", fact.Name)
 						}
 						value, err := strconv.Atoi(fact.Value)
 						if err != nil {
-							return nil, fmt.Errorf("%w: platform operand %s is not an integer", ErrInconclusive, fact.Name)
+							return nil, ErrInconclusive.Because("platform operand %s is not an integer", fact.Name)
 						}
 						if previous, ok := values[fact.Name]; ok && previous != value {
-							return nil, fmt.Errorf("%w: platform operand %s changes value (%d, %d)", ErrInconclusive, fact.Name, previous, value)
+							return nil, ErrInconclusive.Because("platform operand %s changes value (%d, %d)", fact.Name, previous, value)
 						}
 						values[fact.Name] = value
 						if err := addBoundary(needs.majors, value); err != nil {
@@ -96,13 +96,13 @@ func (s *Session) Profiles(ctx context.Context, candidate []byte) ([]model.Platf
 		if len(expanded) == len(profiles) {
 			for _, name := range needs.operands {
 				if _, ok := values[name]; !ok {
-					return nil, fmt.Errorf("%w: platform operand %s was not observed; branch coverage is incomplete", ErrInconclusive, name)
+					return nil, ErrInconclusive.Because("platform operand %s was not observed; branch coverage is incomplete", name)
 				}
 			}
 			return expanded, nil
 		}
 		if len(expanded) > 40 {
-			return nil, fmt.Errorf("%w: platform observation limit exceeded", ErrInconclusive)
+			return nil, ErrInconclusive.Because("platform observation limit exceeded")
 		}
 		profiles = expanded
 	}

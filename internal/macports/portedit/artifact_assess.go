@@ -2,7 +2,6 @@ package portedit
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
@@ -37,10 +36,10 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		}
 		metadata, inconclusive := observe.Tolerate(ctx, observed.Ports[input.target.Name], input.data, observed.Snapshot.Root)
 		if inconclusive {
-			return contexts, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, observe.HostInputs(metadata)), nil
+			return contexts, errProbeInconclusive.Because("modeled context depends on host state%s", observe.HostInputs(metadata)), nil
 		}
 		if len(metadata.Problems) > 0 {
-			return contexts, fmt.Errorf("%w: %v", ErrUnsupported, metadata.Problems), nil
+			return contexts, ErrUnsupported.Because("%v", metadata.Problems), nil
 		}
 		if len(metadata.Distfiles) == 0 {
 			// Nothing to download here, as a metaport or a _select
@@ -58,7 +57,7 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		}
 	}
 	if ids := coverage.uncovered(); len(ids) > 0 {
-		return contexts, nil, fmt.Errorf("%w: checksum declaration %s is not covered by the observed contexts", errProbeInconclusive, ids[0])
+		return contexts, nil, errProbeInconclusive.Because("checksum declaration %s is not covered by the observed contexts", ids[0])
 	}
 	return contexts, nil, nil
 }

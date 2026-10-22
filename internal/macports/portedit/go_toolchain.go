@@ -3,7 +3,6 @@ package portedit
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
@@ -117,7 +116,7 @@ func (s *Service) goRequirement(ctx context.Context, request Request, info macpo
 		}
 		module, err := project.ReadGoMod(data)
 		if err != nil {
-			return "", false, fmt.Errorf("%w: reading go.mod: %v", ErrUnsupported, err)
+			return "", false, ErrUnsupported.Because("reading go.mod: %v", err)
 		}
 		return module.Go, true, nil
 	}
@@ -134,7 +133,7 @@ func (s *Service) goRequirement(ctx context.Context, request Request, info macpo
 		}
 		module, err := project.ReadGoMod(data)
 		if err != nil {
-			return "", false, fmt.Errorf("%w: reading go.mod: %v", ErrUnsupported, err)
+			return "", false, ErrUnsupported.Because("reading go.mod: %v", err)
 		}
 		return module.Go, true, nil
 	}

@@ -282,7 +282,7 @@ func shipAll(ctx context.Context, s *settings, streams term.Streams, whole *batc
 		// In a batch, each change that stopped is in the result with why,
 		// where only the error said it (the rc1 full stage, S2).
 		streams.Emit([]skippedJSON{{Port: target.name(), Reason: err.Error()}})
-		fmt.Fprintf(streams.Err, "%s: %v\n", target.name(), err)
+		fmt.Fprintf(streams.Err, "%s: %v\n", target.name(), sayNext(err))
 		failed = append(failed, target.name())
 		return nil
 	}
@@ -392,9 +392,13 @@ func finishCarried(ctx context.Context, s *settings, streams term.Streams, done 
 	if done.run != nil {
 		checked = runQueued(ctx, e, *done.run, streams, false, s)
 		draft := done.submit != nil && branchstate.SubmitsDespiteCheck(done.submit.request.Draft)
-		if exit := new(term.ExitError); checked != nil && (!draft || !errors.As(checked, &exit)) {
-			if done.submit != nil && errors.As(checked, &exit) {
-				exit.Message += "; nothing was submitted"
+		// The check's outcome, failed, waiting for a look, or stopped, is
+		// what a draft submits despite; a failure to check isn't (R3-38:
+		// an exit error was read as the verdict, and its message added to).
+		outcome := refusal.KindOf(checked).Outcome()
+		if checked != nil && (!draft || !outcome) {
+			if done.submit != nil && outcome {
+				return refusal.Wrap(refusal.KindOf(checked), checked, "%s; nothing was submitted", checked).Then(refusal.Of(checked).Next...)
 			}
 			return checked
 		}

@@ -129,7 +129,7 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		return nil, err
 	}
 	if len(targets) != 1 {
-		return nil, fmt.Errorf("%w: select one port", ErrUnsupported)
+		return nil, ErrUnsupported.Because("select one port")
 	}
 	selected := targets[0]
 	if selected.Subport != "" {
@@ -138,7 +138,7 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 			return nil, err
 		}
 		if len(targets) != 1 || targets[0].Subport != "" {
-			return nil, fmt.Errorf("%w: select one owning Portfile", ErrUnsupported)
+			return nil, ErrUnsupported.Because("select one owning Portfile")
 		}
 	}
 	// The owning Portfile's directory and _resources are what the
@@ -188,12 +188,12 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		// The selection was resolved when the job was bound: the target is
 		// the carrying subport and the stub's name is recorded. Honor it.
 		if _, ok := before.Ports[request.Stub]; !ok || selected.Name == request.Stub || selected.Subport == "" {
-			return nil, fmt.Errorf("%w: recorded stub %s does not match the selected subport %s", ErrUnsupported, request.Stub, selected.Name)
+			return nil, ErrUnsupported.Because("recorded stub %s does not match the selected subport %s", request.Stub, selected.Name)
 		}
 		stub = request.Stub
 		request.SharedRelease = true
 	} else if carrier, name, err := macports.ResolveStub(before, selected); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnsupported, err)
+		return nil, ErrUnsupported.Because("%v", err)
 	} else if name != "" {
 		// Said once, though the probe and the preparation each load the
 		// port (the sshuttle run: py-pipdeptree's update said it thrice).
@@ -218,7 +218,7 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	}
 	info, ok := before.Ports[selected.Name]
 	if !ok {
-		return nil, fmt.Errorf("%w: subport %s was not evaluated", ErrUnsupported, selected.Name)
+		return nil, ErrUnsupported.Because("subport %s was not evaluated", selected.Name)
 	}
 	if stub != "" {
 		// The stub owns the livecheck; MacPorts disables it on the subports

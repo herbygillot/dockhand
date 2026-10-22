@@ -3,7 +3,6 @@ package portedit
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -54,12 +53,12 @@ func (s *Service) sharedArchiveOwners(ctx context.Context, input *sourceInput, c
 			continue
 		}
 		if len(binding.Artifacts) != len(selected.Artifacts) {
-			return nil, fmt.Errorf("%w: %s has an independent archive plan", ErrFidelity, member.Target.Name)
+			return nil, ErrFidelity.Because("%s has an independent archive plan", member.Target.Name)
 		}
 		for i, item := range binding.Artifacts {
 			other := selected.Artifacts[i]
 			if item.Group.ID() != other.Group.ID() || item.Name != other.Name || !slices.Equal(item.URLs, other.URLs) {
-				return nil, fmt.Errorf("%w: %s has independently owned source/checksum declarations", ErrFidelity, member.Target.Name)
+				return nil, ErrFidelity.Because("%s has independently owned source/checksum declarations", member.Target.Name)
 			}
 		}
 	}

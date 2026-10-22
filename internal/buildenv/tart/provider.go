@@ -1144,14 +1144,14 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 		// neither tried again, or as infrastructure, which is.
 		switch failpoint.Fails("tart.results") {
 		case "fault":
-			return fmt.Errorf("%w: the guest's results were read wrong, as a failpoint asked", buildenv.ErrDockhandFault)
+			return buildenv.ErrDockhandFault.Because("the guest's results were read wrong, as a failpoint asked")
 		case "error":
 			return errors.New("the guest's results were lost, as a failpoint asked")
 		case "infrastructure":
 			return lost(buildenv.Infrastructure("the guest stopped answering, as a failpoint asked"))
 		}
 		if results.Protocol != Protocol {
-			return fmt.Errorf("%w: the guest program wrote protocol %d results; this dockhand reads %d", buildenv.ErrDockhandFault, results.Protocol, Protocol)
+			return buildenv.ErrDockhandFault.Because("the guest program wrote protocol %d results; this dockhand reads %d", results.Protocol, Protocol)
 		}
 		if err := take(results); err != nil {
 			return err
@@ -1306,13 +1306,13 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 		}
 	}
 	if !found {
-		return fmt.Errorf("%w: the guest reported %q, which this job didn't ask for", buildenv.ErrDockhandFault, got.ID)
+		return buildenv.ErrDockhandFault.Because("the guest reported %q, which this job didn't ask for", got.ID)
 	}
 	result := model.TargetResult{Target: target.ID, Outcome: model.Outcome(got.Outcome), Phase: model.Phase(got.Phase), Tests: model.TestOutcome(got.Tests)}
 	switch result.Outcome {
 	case model.OutcomePassed, model.OutcomeFailed, model.OutcomeBlocked:
 	default:
-		return fmt.Errorf("%w: the guest reported %s %q", buildenv.ErrDockhandFault, got.ID, got.Outcome)
+		return buildenv.ErrDockhandFault.Because("the guest reported %s %q", got.ID, got.Outcome)
 	}
 	if result.Outcome != model.OutcomeFailed {
 		result.Phase = ""
@@ -1335,7 +1335,7 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 	}
 	if got.Fetched != "" {
 		if !git.ValidObjectID(got.Fetched) {
-			return fmt.Errorf("%w: the guest reported %s fetched %q, which isn't a commit", buildenv.ErrDockhandFault, got.ID, got.Fetched)
+			return buildenv.ErrDockhandFault.Because("the guest reported %s fetched %q, which isn't a commit", got.ID, got.Fetched)
 		}
 		build.Fetched(target.ID, got.Fetched)
 	}

@@ -256,11 +256,11 @@ func setupVersionIndex(name string, words int) int {
 // and only one, is edited.
 func SetVersionLiteral(src []byte, from, to string) ([]byte, error) {
 	if !Literal(to) {
-		return nil, fmt.Errorf("%w: %q is not a safe version literal", ErrUnsupported, to)
+		return nil, ErrUnsupported.Because("%q is not a safe version literal", to)
 	}
 	script, errs := syntax.Parse(src)
 	if len(errs) > 0 {
-		return nil, fmt.Errorf("%w: invalid Tcl syntax", ErrUnsupported)
+		return nil, ErrUnsupported.Because("invalid Tcl syntax")
 	}
 	var spans []textedit.Span
 	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
@@ -272,7 +272,7 @@ func SetVersionLiteral(src []byte, from, to string) ([]byte, error) {
 		}
 	}
 	if len(spans) != 1 {
-		return nil, fmt.Errorf("%w: %d version commands write %s; the version is edited where one does", ErrUnsupported, len(spans), from)
+		return nil, ErrUnsupported.Because("%d version commands write %s; the version is edited where one does", len(spans), from)
 	}
 	return textedit.Apply(src, []textedit.Edit{{Span: spans[0], New: []byte(to)}})
 }

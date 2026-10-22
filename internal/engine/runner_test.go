@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -416,7 +415,7 @@ func TestOnlyWhatAnotherAttemptCouldFixIsTriedAgain(t *testing.T) {
 		{"infrastructure", buildenv.Infrastructure("the VM stopped"), model.MaxAttempts, "failed 3 times for reasons of its own"},
 		{"unclassified", errors.New("release 30 isn't one this dockhand knows"), 1,
 			"dockhand: command macOS 26 (Tahoe) arm64: release 30 isn't one this dockhand knows; the provider didn't mark it as trouble another attempt could clear, so none was made"},
-		{"dockhand's own", fmt.Errorf("%w: the guest reported %q, which this job didn't ask for", buildenv.ErrDockhandFault, "fd"), 1,
+		{"dockhand's own", buildenv.ErrDockhandFault.Because("the guest reported %q, which this job didn't ask for", "fd"), 1,
 			`dockhand: command macOS 26 (Tahoe) arm64: the guest reported "fd", which this job didn't ask for; the fault is dockhand's own, so another attempt would repeat it, and none was made`},
 	} {
 		t.Run(test.name, func(t *testing.T) {

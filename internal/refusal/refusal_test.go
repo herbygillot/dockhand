@@ -47,3 +47,21 @@ func TestJoinedFailuresAreWorthAnotherTryWhereOneIs(t *testing.T) {
 	again := New(Failed, "x").Then(Next{Verb: VerbSubmit})
 	require.False(t, again.Advances(string(VerbSubmit)))
 }
+
+// A particular of a sentinel is it, and its kind, and says the sentinel's
+// words first; its own words are read without them (R3-38, where they
+// were cut off the error).
+func TestAParticularIsItsSentinelInItsOwnWords(t *testing.T) {
+	t.Parallel()
+	unsupported := New(Unsupported, "portfile: unsupported source edit")
+	cause := errors.New("eval'd")
+	err := fmt.Errorf("baseline: %w", unsupported.Because("cargo.update can't be read as yes or no (%w)", cause))
+	require.ErrorIs(t, err, unsupported)
+	require.ErrorIs(t, err, cause)
+	require.Equal(t, Unsupported, KindOf(err))
+	require.EqualError(t, err, "baseline: portfile: unsupported source edit: cargo.update can't be read as yes or no (eval'd)")
+	require.Equal(t, "cargo.update can't be read as yes or no (eval'd)", WordsOf(err))
+	require.Equal(t, "plain", WordsOf(errors.New("plain")))
+	require.True(t, CheckFailed.Outcome())
+	require.False(t, Network.Outcome())
+}

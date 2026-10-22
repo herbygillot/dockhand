@@ -443,42 +443,6 @@ func TestProgressGoesToStandardError(t *testing.T) {
 	require.Contains(t, errs, "\n  macOS 15 (Tart): Using the cached PortIndex for base abc123\n")
 }
 
-// What dockhand can't write, it says in its own words, with advice only
-// where the advice works: git's refusal said "baseline {…}: portfile:
-// unsupported source edit: calculated checksum algorithm", advised
-// checksums, which refused the same way, and said a plan kept a branch it
-// never started (the git run's findings 1 to 4).
-func TestAnEditDockhandCantMakeSaysWhyAndWhatWorks(t *testing.T) {
-	t.Parallel()
-	unlocated := fmt.Errorf("baseline {OS:darwin Version:25 Architecture:arm64}: %w", &engine.Unlocated{Name: "git-htmldocs-2.56.0.tar.xz", Reason: fmt.Errorf("%w: no command written in the Portfile makes it, as an eval'd one isn't", engine.ErrUnsupported)})
-	branch := model.Branch{Name: "dockhand/git-ab12"}
-
-	err := byHand(unlocated, engine.UpdateRequest{Action: model.EditUpdate, Port: "git"}, branch, false)
-	require.EqualError(t, err, `Could not update git automatically: the checksums for git-htmldocs-2.56.0.tar.xz can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't
-Kept: the branch, unchanged.
-Edit the version, then run dockhand checksums git to print the checksums to copy into the Portfile.
-Edit with: dockhand edit git`)
-
-	err = byHand(&engine.ChecksumsToWrite{Err: unlocated, Checksums: []portfile.Checksum{{Name: "git-2.56.0.tar.xz", RMD160: "aaaa", SHA256: "bbbb", Size: 8}}}, engine.UpdateRequest{Action: model.EditChecksums, Port: "git"}, branch, false)
-	require.EqualError(t, err, `Could not update the checksums for git automatically: the checksums for git-htmldocs-2.56.0.tar.xz can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't
-Kept: the branch, unchanged.
-Use these checksums in the Portfile:
-    checksums           git-2.56.0.tar.xz \
-                        rmd160  aaaa \
-                        sha256  bbbb \
-                        size    8
-Edit with: dockhand edit git`)
-
-	err = byHand(fmt.Errorf("%w: a version it can't find", engine.ErrUnsupported), engine.UpdateRequest{Action: model.EditUpdate, Port: "git", Plan: true, FromMaster: true}, model.Branch{}, false)
-	require.EqualError(t, err, "Could not update git automatically: a version it can't find\nEdit the version, run port checksum git, then copy the reported checksums into the Portfile.\nEdit with: dockhand edit git", "a plan keeps nothing, having changed nothing")
-
-	// An edit whose evaluation isn't the change intended is refused as one
-	// dockhand can't make, with the way on, where rust's came bare (the
-	// rust and cargo run).
-	err = byHand(fmt.Errorf("%w: rust-src, another port of the same Portfile, fetches its own source (its distfiles differ from rust's), which updating rust doesn't move", engine.ErrFidelity), engine.UpdateRequest{Action: model.EditUpdate, Port: "rust", Plan: true}, model.Branch{}, false)
-	require.EqualError(t, err, "Could not update rust automatically: rust-src, another port of the same Portfile, fetches its own source (its distfiles differ from rust's), which updating rust doesn't move\nEdit the version, run port checksum rust, then copy the reported checksums into the Portfile.\nEdit with: dockhand edit rust")
-}
-
 // An update names the port's other open pull requests, planned or made,
 // and stops for none: libuv 1.53.0 was planned without a word of #34620
 // (the libuv run's finding 1). What couldn't be looked for is said.
@@ -537,10 +501,10 @@ func TestAnUncertainNewestReleaseIsNamedNotChosen(t *testing.T) {
 
 	_, _, err := dockhand(t, "update", "jq", "--new")
 	require.Equal(t, 3, term.ExitCode(err), "it needs a look")
-	require.EqualError(t, err, "can't tell whether jq is current, so nothing was changed: jq-1.9.0 compares newer, but its commit is older than jq-1.7.1's\nIf jq-1.9.0 is a release: dockhand update jq 1.9.0\nIf it isn't, as an old tag spelled oddly: a livecheck.regex in the Portfile that leaves jq-1.9.0 out keeps it out of later looks")
+	require.EqualError(t, err, "can't tell whether jq is current, so nothing was changed: jq-1.9.0 compares newer, but its commit is older than jq-1.7.1's\nNext: if jq-1.9.0 is a release: dockhand update jq 1.9.0\nNext: if it isn't, as an old tag spelled oddly: a livecheck.regex in the Portfile that leaves jq-1.9.0 out keeps it out of later looks")
 	_, _, err = bumpOn(t, "jq")
 	require.Equal(t, 3, term.ExitCode(err))
-	require.ErrorContains(t, err, "\nIf jq-1.9.0 is a release: dockhand bump jq 1.9.0")
+	require.ErrorContains(t, err, "\nNext: if jq-1.9.0 is a release: dockhand bump jq 1.9.0")
 	result, err := jsonOf(t, "update", "jq", "--plan")
 	require.Equal(t, 3, term.ExitCode(err))
 	require.Nil(t, result.Result, "a refusal before anything is done reports only its error")

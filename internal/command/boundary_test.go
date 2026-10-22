@@ -31,7 +31,6 @@ var commandImports = map[string]string{
 	"internal/scratch":     "the edit buffer an editor opens, in the process's run root",
 	// Vocabulary the engine's results carry beyond model's: a checksum,
 	// and a commit-rule finding, whose explanations explain prints.
-	"internal/macports/portfile":    "vocabulary in engine results",
 	"internal/macports/commitrules": "vocabulary in engine results, and explain's text",
 	"internal/compose":              "the engine, its providers, and its GitHub runtime, assembled for the command",
 	"internal/buildenv":             "vocabulary: the providers' names, which check's and logs' words say",

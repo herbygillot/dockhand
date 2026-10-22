@@ -263,7 +263,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		return result, err
 	}
 	if snapshot.Source != source {
-		return result, fmt.Errorf("%w: stored candidate source identity differs", ErrFidelity)
+		return result, ErrFidelity.Because("stored candidate source identity differs")
 	}
 	if err = fidelity.Equivalent(expected, snapshot); err != nil {
 		return result, err

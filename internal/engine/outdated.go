@@ -111,11 +111,18 @@ func (p OutdatedPort) Class() OutdatedClass {
 
 // uncheckedReason is why a port couldn't be checked, as ports are grouped
 // by: GitHub's rate limit for every port it kept, whenever each lifts, and
-// otherwise the problem's first line.
+// otherwise its Reason.
 func (p OutdatedPort) uncheckedReason() string {
 	if !p.RetryAt.IsZero() {
 		return "GitHub's rate limit"
 	}
+	return p.Reason()
+}
+
+// Reason is why the port couldn't be checked, in a line: its problem's
+// first, the rest being detail, as how its releases were listed after
+// GitHub's rate limit stopped the look (R3-38: the command cut it).
+func (p OutdatedPort) Reason() string {
 	reason, _, _ := strings.Cut(p.Problem, "\n")
 	return reason
 }
@@ -196,8 +203,7 @@ func (r OutdatedReport) UncheckedWords() string {
 	}
 	head := fmt.Sprintf("%d of %s couldn't be checked: ", len(unchecked), prose.Plural(len(r.Ports), "port"))
 	if len(reasons) == 1 {
-		why, _, _ := strings.Cut(unchecked[0].Problem, "\n")
-		return head + why
+		return head + unchecked[0].Reason()
 	}
 	// The commonest first; among equals, the order they were met.
 	slices.SortStableFunc(reasons, func(a, b string) int { return count[b] - count[a] })

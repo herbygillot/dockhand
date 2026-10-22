@@ -52,7 +52,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		sourceVersion, ok = release.SourceSpelling(), release.Forge == ""
 	}
 	if !ok {
-		return archivePlan{}, fmt.Errorf("%w: selected tag does not match source convention", ErrFidelity)
+		return archivePlan{}, ErrFidelity.Because("selected tag does not match source convention")
 	}
 	carriers, err := s.versionCarriers(ctx, request, input)
 	if err != nil {
@@ -63,7 +63,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		return archivePlan{}, err
 	}
 	if versioned.Ports[input.target.Name].Version != release.Version {
-		return archivePlan{}, fmt.Errorf("%w: evaluated version differs from resolved release", ErrFidelity)
+		return archivePlan{}, ErrFidelity.Because("evaluated version differs from resolved release")
 	}
 	family, err := input.familySnapshot(ctx, s.Ports)
 	if err != nil {
@@ -221,7 +221,7 @@ func shippedPlan(ctx context.Context, input *sourceInput) ([]macports.Distfile, 
 	}
 	plan, err := observations[0].Ports[input.target.Name].FetchPlan()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnsupported, err)
+		return nil, ErrUnsupported.Because("%w", err)
 	}
 	return plan, nil
 }

@@ -89,7 +89,7 @@ func RewriteChecksumGroup(src []byte, pairs []ChecksumWords, sums Checksum) (tex
 
 // ErrUnsupported is an edit dockhand doesn't make, which a person makes by
 // hand: a refusal of its kind, which every error wrapping it is.
-var ErrUnsupported error = refusal.New(refusal.Unsupported, "portfile: unsupported source edit")
+var ErrUnsupported = refusal.New(refusal.Unsupported, "portfile: unsupported source edit")
 
 type Checksum struct {
 	Name, SHA256, RMD160 string
@@ -174,7 +174,7 @@ func RenameChecksumFiles(src []byte, from, to string) ([]byte, error) {
 	}
 	script, errs := syntax.Parse(src)
 	if len(errs) > 0 {
-		return nil, fmt.Errorf("%w: invalid Tcl syntax", ErrUnsupported)
+		return nil, ErrUnsupported.Because("invalid Tcl syntax")
 	}
 	var edits []textedit.Edit
 	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {

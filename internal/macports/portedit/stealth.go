@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // StealthRequest asks a checksum refresh to treat an archive whose contents
@@ -96,13 +97,13 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 	if !keep {
 		bumped, err := s.bumpRevision(ctx, input, contents, previous.Ports[name].Revision)
 		if err != nil {
-			found.RevbumpProblem = unsupportedReason(err)
+			found.RevbumpProblem = refusal.WordsOf(err)
 		} else {
 			contents, found.Revbumped = bumped, true
 		}
 	}
 	if after, err := portfile.StealthDistSubdir(contents, found.Revbumped || byHand); err != nil {
-		found.Problem = unsupportedReason(err)
+		found.Problem = refusal.WordsOf(err)
 	} else {
 		contents = after
 	}
@@ -190,10 +191,4 @@ func distSubdirCorrection(contents []byte, selected string, revbumped bool) corr
 		return prepared
 	}
 	return c
-}
-
-// unsupportedReason is an unsupported edit's reason, without the sentinel's
-// own words.
-func unsupportedReason(err error) string {
-	return strings.TrimPrefix(err.Error(), portfile.ErrUnsupported.Error()+": ")
 }

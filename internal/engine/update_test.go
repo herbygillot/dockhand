@@ -458,7 +458,7 @@ func TestAnUpdateWhosePreviousArchivesWereRateLimitedIsTriedAgain(t *testing.T) 
 type refusing struct{ *fakePreparer }
 
 func (refusing) Prepare(context.Context, editprep.Request) (editprep.Result, error) {
-	return editprep.Result{}, fmt.Errorf("%w: its pre-fetch hook runs exec", ErrUnsupported)
+	return editprep.Result{}, ErrUnsupported.Because("its pre-fetch hook runs exec")
 }
 
 // A version update asked to start its branch prepares it on master and

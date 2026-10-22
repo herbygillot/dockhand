@@ -182,7 +182,7 @@ func downloadSource(info macports.PortInfo) (string, string, error) {
 		return "", "", err
 	}
 	if len(files) != 1 {
-		return "", "", fmt.Errorf("%w: expected one distfile", portfile.ErrUnsupported)
+		return "", "", portfile.ErrUnsupported.Because("expected one distfile")
 	}
 	return files[0].Name, files[0].URL, nil
 }

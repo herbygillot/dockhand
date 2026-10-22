@@ -15,7 +15,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -162,7 +161,7 @@ func updateMine(ctx context.Context, s *settings, streams term.Streams, version 
 			_, _, err = author(ctx, s, streams, branchChoice{new: update.Name}, engine.WorkUpdate, request, version.linked)
 		}
 		if err != nil {
-			fmt.Fprintf(streams.Err, "%s: %v\n", update.Port.Port, err)
+			fmt.Fprintf(streams.Err, "%s: %v\n", update.Port.Port, sayNext(err))
 			failed = append(failed, update.Port.Port)
 		}
 	}
@@ -434,7 +433,7 @@ func author(ctx context.Context, s *settings, streams term.Streams, where branch
 			announce(out, s.places(), branch, started)
 		}
 	}
-	request.Branch, request.FromMaster = branch, fromMaster
+	request.Branch, request.FromMaster, request.Started = branch, fromMaster, started
 	update, err = e.Update(ctx, request)
 	if update.Started {
 		branch, started = update.Branch, true
@@ -457,28 +456,12 @@ func author(ctx context.Context, s *settings, streams term.Streams, where branch
 		// The dependents are the index's at the master planned on.
 		branch.Base = update.Base
 	}
-	// One whose evaluation isn't the change intended is refused as one it
-	// can't make: rust's came bare, with no way on (the rust and cargo run).
-	if errors.Is(err, engine.ErrUnsupported) || errors.Is(err, engine.ErrFidelity) {
-		return branch, update, byHand(err, request, branch, started)
-	}
-	if uncertain := new(engine.UncertainRelease); errors.As(err, &uncertain) {
-		return branch, update, uncertainUpdate(request.Port, uncertain.SetAside, linked, branch, started)
-	}
+	// What didn't go is the engine's to say, with what it kept and what
+	// moves it on (R3-38), but for a hold before the edit.
 	if held := new(engine.HeldBeforeEdit); errors.As(err, &held) {
 		return branch, update, heldBeforeEdit(request, engine.HoldLines(held.Held))
 	}
 	if err != nil {
-		if started {
-			// An update that failed after its edit, as an obsolete stub's
-			// following did, says the edit it kept: "nothing changed" was
-			// said of a worktree holding terraform-1.16's (field testing
-			// at a3c43ef7).
-			if len(update.Files) > 0 {
-				return branch, update, fmt.Errorf("%w\nKept branch %s with uncommitted changes to %s.", err, branch.Name, strings.Join(update.Files, ", "))
-			}
-			return branch, update, fmt.Errorf("%w\nKept: %s, with nothing changed", err, branch.Name)
-		}
 		return branch, update, err
 	}
 	result := updateView(branch, started, update, request.Plan)
@@ -690,81 +673,6 @@ func announce(out io.Writer, places config.Places, branch model.Branch, started 
 		fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, branch.Base.Short())
 	}
 	fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), places.Tilde(branch.Worktree))
-}
-
-// byHand says that dockhand can't make the edit by itself, why, and how
-// to make it by hand (Design v3 §6.3), with advice only where it can work:
-// checksums dockhand can't find in the Portfile to edit, it can't refresh
-// either, and prints instead. A plan changes nothing, so it keeps nothing.
-func byHand(err error, request engine.UpdateRequest, branch model.Branch, started bool) error {
-	reason := strings.TrimPrefix(strings.TrimPrefix(err.Error(), engine.ErrUnsupported.Error()+": "), engine.ErrFidelity.Error()+": ")
-	var unlocated *engine.Unlocated
-	if errors.As(err, &unlocated) {
-		reason = unlocated.Error()
-	}
-	kept := ""
-	switch {
-	case request.Plan:
-	case started:
-		kept = "\nKept: " + branch.Name + ", with nothing changed."
-	case request.Start != nil && !request.HandBranch():
-		kept = "\nNo branch was started."
-	default:
-		kept = "\nKept: the branch, unchanged."
-	}
-	port := request.Port
-	var toWrite *engine.ChecksumsToWrite
-	group := new(portfile.InPortGroup)
-	switch {
-	case errors.As(err, &group):
-		// A PortGroup's own code sets them: it's never the Portfile's
-		// edit, and what's said is whether they agree with the archives.
-		words := ""
-		switch {
-		case errors.As(err, &toWrite) && toWrite.Agree:
-			words = "\nThe checksums there match the archives as they are now."
-		case errors.As(err, &toWrite):
-			words = "\nThe archives as they are now have these, which differ from those there:\n    " + strings.ReplaceAll(portfile.ChecksumsBlock(toWrite.Checksums), "\n", "\n    ")
-		}
-		what := port
-		if request.Action == model.EditChecksums {
-			what = "the checksums for " + port
-		}
-		return fmt.Errorf("Could not update %s automatically: %s%s%s", what, reason, kept, words)
-	case request.Action == model.EditChecksums && errors.As(err, &toWrite):
-		block := strings.ReplaceAll(portfile.ChecksumsBlock(toWrite.Checksums), "\n", "\n    ")
-		return fmt.Errorf("Could not update the checksums for %s automatically: %s%s\nUse these checksums in the Portfile:\n    %s\nEdit with: dockhand edit %s", port, reason, kept, block, port)
-	case request.Action == model.EditChecksums:
-		return fmt.Errorf("Could not update the checksums for %s automatically: %s%s\nRun port checksum %s, then copy the reported checksums into the Portfile.\nEdit with: dockhand edit %s", port, reason, kept, port, port)
-	case unlocated != nil:
-		return fmt.Errorf("Could not update %s automatically: %s%s\nEdit the version, then run dockhand checksums %s to print the checksums to copy into the Portfile.\nEdit with: dockhand edit %s", port, reason, kept, port, port)
-	}
-	// checksums meets what stopped the update, evaluating the same
-	// Portfile, so it isn't named: git's and qemu's refusals each sent
-	// the person to a checksums that refused them again (the hugo
-	// exercise, field testing). A Next: names only what would be
-	// accepted (the release bar's rule).
-	return fmt.Errorf("Could not update %s automatically: %s%s\nEdit the version, run port checksum %s, then copy the reported checksums into the Portfile.\nEdit with: dockhand edit %s", port, reason, kept, port, port)
-}
-
-// uncertainUpdate is an update to the newest release that found none to
-// choose: what compares newest was set aside, since its tag's commit is
-// older than the port's own, and nothing newer is beyond it. Whether it's
-// a release is a person's call, so it needs attention, and names the
-// update that takes it.
-func uncertainUpdate(port string, aside []engine.SetAside, linked linkedOptions, branch model.Branch, started bool) error {
-	verb := "update"
-	if linked.unattended {
-		verb = "bump"
-	}
-	kept := ""
-	if started {
-		kept = "\nKept: " + branch.Name + ", with nothing changed."
-	}
-	// One that isn't a release, as certgraph's tag on an older commit
-	// isn't, is better left out by the port's own livecheck than updated
-	// to "after a look" (field testing at c97bca63).
-	return term.Exitf(term.ExitAttention, "can't tell whether %s is current, so nothing was changed: %s\nIf %s is a release: dockhand %s %s %s\nIf it isn't, as an old tag spelled oddly: a livecheck.regex in the Portfile that leaves %s out keeps it out of later looks%s", port, setAsideWords(aside), aside[0].Tag, verb, port, aside[0].Source, aside[0].Tag, kept)
 }
 
 // heldBeforeEdit is an update nobody looks over, bump's or ship's with

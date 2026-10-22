@@ -139,7 +139,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		case class == engine.OutdatedUncertain:
 			// Neither current nor outdated for sure, so it's listed for
 			// a look, with the update that takes it.
-			fmt.Fprintf(table, "  %s\t%s\t%s?\tupdate %s %s after a look: %s\n", port.Port, port.Current, port.Newest, port.Port, port.Uncertain[0].Source, setAsideWords(port.Uncertain))
+			fmt.Fprintf(table, "  %s\t%s\t%s?\tupdate %s %s after a look: %s\n", port.Port, port.Current, port.Newest, port.Port, port.Uncertain[0].Source, engine.SetAsideWords(port.Uncertain))
 		case class == engine.OutdatedUnpublished:
 			// Newer, but update would refuse it until its release has
 			// its files (field testing at 43949b89, browsh).
@@ -245,20 +245,6 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	return nil
 }
 
-// setAsideWords says why a port's newest release is uncertain: what was set
-// aside compares newer than the port's version, but was tagged on a commit
-// older than the port's own tag's.
-func setAsideWords(aside []engine.SetAside) string {
-	if len(aside) == 1 {
-		return fmt.Sprintf("%s compares newer, but its commit is older than %s's", aside[0].Tag, aside[0].Predates)
-	}
-	var tags []string
-	for _, version := range aside {
-		tags = append(tags, version.Tag)
-	}
-	return fmt.Sprintf("%s compare newer, but their commits are older than %s's", strings.Join(tags, ", "), aside[0].Predates)
-}
-
 func orDash(value string) string {
 	if value == "" {
 		return "—"
@@ -279,8 +265,7 @@ func noneChecked(report engine.OutdatedReport) error {
 			return nil
 		}
 	}
-	problem, _, _ := strings.Cut(report.Ports[0].Problem, "\n")
-	return fmt.Errorf("no port could be checked, at master %s: %s", report.Master.Short(), problem)
+	return fmt.Errorf("no port could be checked, at master %s: %s", report.Master.Short(), report.Ports[0].Reason())
 }
 
 // allowLook asks before a look whose estimate passes what's left of the

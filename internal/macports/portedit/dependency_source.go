@@ -3,7 +3,6 @@ package portedit
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -79,7 +78,7 @@ func selectDependencySource(ctx context.Context, info macports.PortInfo, sources
 			}
 		}
 		if matches != 1 || filename == "" {
-			return depblock.Input{}, fmt.Errorf("%w: manifest candidate %s needs exactly one available source archive", ErrUnsupported, source.Name)
+			return depblock.Input{}, ErrUnsupported.Because("manifest candidate %s needs exactly one available source archive", source.Name)
 		}
 		input, err := dependencyInput(info, filename, plan)
 		if err != nil {
@@ -94,15 +93,15 @@ func selectDependencySource(ctx context.Context, info macports.PortInfo, sources
 			continue
 		}
 		if err != nil {
-			return depblock.Input{}, fmt.Errorf("%w: inspect dependency source %s: %w", ErrUnsupported, source.Name, err)
+			return depblock.Input{}, ErrUnsupported.Because("inspect dependency source %s: %w", source.Name, err)
 		}
 		if selected != nil {
-			return depblock.Input{}, fmt.Errorf("%w: multiple extracted archives contain the dependency manifest; select its source manually", ErrUnsupported)
+			return depblock.Input{}, ErrUnsupported.Because("multiple extracted archives contain the dependency manifest; select its source manually")
 		}
 		selected = &input
 	}
 	if selected == nil {
-		return depblock.Input{}, fmt.Errorf("%w: no extracted archive contains the dependency manifest at worksrcdir (%w)", ErrUnsupported, macports.ErrManifestMissing)
+		return depblock.Input{}, ErrUnsupported.Because("no extracted archive contains the dependency manifest at worksrcdir (%w)", macports.ErrManifestMissing)
 	}
 	return *selected, nil
 }

@@ -17,7 +17,7 @@ import (
 
 // ErrUnsupported is a convention dockhand doesn't read, which a person
 // edits by hand: a refusal of its kind, which every error wrapping it is.
-var ErrUnsupported error = refusal.New(refusal.Unsupported, "macports source: unsupported convention")
+var ErrUnsupported = refusal.New(refusal.Unsupported, "macports source: unsupported convention")
 var ErrTagPattern = errors.New("macports source: tag convention is unknown")
 
 type Forge string
@@ -95,12 +95,12 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 			return discoverListing(port)
 		}
 		if port.Version == "" {
-			return Spec{}, fmt.Errorf("%w: missing evaluated version", ErrUnsupported)
+			return Spec{}, ErrUnsupported.Because("missing evaluated version")
 		}
 		return Spec{CurrentVersion: port.Version, SourceVersion: archiveSourceVersion(port)}, nil
 	}
 	if github == gitlab {
-		return Spec{}, fmt.Errorf("%w: require exactly one recognized source PortGroup", ErrUnsupported)
+		return Spec{}, ErrUnsupported.Because("require exactly one recognized source PortGroup")
 	}
 	var spec Spec
 	var err error
@@ -114,7 +114,7 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 	}
 	for _, key := range macports.LivecheckOptions {
 		if err := evaluated(port, key); err != nil {
-			return Spec{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+			return Spec{}, ErrUnsupported.Because("%v", err)
 		}
 	}
 	spec.Livecheck = Livecheck{
@@ -126,22 +126,22 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 	}
 	switch {
 	case spec.Livecheck.Type == "none":
-		return Spec{}, fmt.Errorf("%w: the port's livecheck is disabled (livecheck.type none); name the version to update to", ErrUnsupported)
+		return Spec{}, ErrUnsupported.Because("the port's livecheck is disabled (livecheck.type none); name the version to update to")
 	case spec.Livecheck.Type != "regex" && spec.Livecheck.Type != "regexm":
-		return Spec{}, fmt.Errorf("%w: livecheck.type %s is not a regex livecheck; name the version to update to", ErrUnsupported, spec.Livecheck.Type)
+		return Spec{}, ErrUnsupported.Because("livecheck.type %s is not a regex livecheck; name the version to update to", spec.Livecheck.Type)
 	case spec.Livecheck.Regex == "" || (spec.Livecheck.Version != spec.CurrentVersion && spec.Livecheck.Version != spec.SourceVersion):
-		return Spec{}, fmt.Errorf("%w: require a regex livecheck for the evaluated port version", ErrUnsupported)
+		return Spec{}, ErrUnsupported.Because("require a regex livecheck for the evaluated port version")
 	}
 	if spec.Forge == GitHub {
 		if err := evaluated(port, "github.tarball_from"); err != nil {
-			return Spec{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+			return Spec{}, ErrUnsupported.Because("%v", err)
 		}
 		mode := port.Options["github.tarball_from"]
 		if mode == "" {
 			mode = "archive"
 		}
 		if mode != "releases" && mode != "archive" && mode != "tarball" {
-			return Spec{}, fmt.Errorf("%w: unknown GitHub archive mode", ErrUnsupported)
+			return Spec{}, ErrUnsupported.Because("unknown GitHub archive mode")
 		}
 		if mode == "releases" {
 			spec.Catalog = Releases
@@ -163,7 +163,7 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 		return Spec{}, err
 	}
 	if standard, err := port.LivecheckStandard(); err != nil || !standard {
-		return Spec{}, fmt.Errorf("%w: the port's livecheck has custom hooks; name the version to update to", ErrUnsupported)
+		return Spec{}, ErrUnsupported.Because("the port's livecheck has custom hooks; name the version to update to")
 	}
 	spec.Livecheck.Overridden = true
 	return spec, nil
@@ -181,7 +181,7 @@ func (s Spec) MatchText(tag string) (string, error) {
 		value, err := appendPath(web, "-", "tags", tag)
 		return value + "</id>", err
 	default:
-		return "", fmt.Errorf("%w: %s", ErrUnsupported, s.Forge)
+		return "", ErrUnsupported.Because("%s", s.Forge)
 	}
 }
 
@@ -197,7 +197,7 @@ func interpret(port macports.PortInfo, forge Forge, prefix, instance string) (Sp
 	}
 	raw := port.Options[prefix+".version"]
 	if raw == "" || port.Version == "" {
-		return Spec{}, fmt.Errorf("%w: empty source or port version", ErrUnsupported)
+		return Spec{}, ErrUnsupported.Because("empty source or port version")
 	}
 	values := make([]string, 0, 2)
 	for _, key := range []string{prefix + ".tag_prefix", prefix + ".tag_suffix"} {
@@ -312,12 +312,12 @@ func trimURL(value string) string { return strings.TrimRight(value, "/") }
 func gitHead(port macports.PortInfo, spec Spec) (Spec, error) {
 	for _, key := range []string{"livecheck.url", "livecheck.version", "livecheck.branch"} {
 		if err := evaluated(port, key); err != nil {
-			return Spec{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+			return Spec{}, ErrUnsupported.Because("%v", err)
 		}
 	}
 	parts, errs := syntax.ListValues(port.Options["livecheck.url"])
 	if len(errs) != 0 || len(parts) != 1 || port.Options["livecheck.version"] == "" {
-		return Spec{}, fmt.Errorf("%w: a git livecheck needs one livecheck.url and a livecheck.version", ErrUnsupported)
+		return Spec{}, ErrUnsupported.Because("a git livecheck needs one livecheck.url and a livecheck.version")
 	}
 	spec.Catalog = GitHead
 	spec.Livecheck = Livecheck{Type: "git", URL: parts[0], Version: port.Options["livecheck.version"], Branch: cmp.Or(port.Options["livecheck.branch"], "HEAD")}

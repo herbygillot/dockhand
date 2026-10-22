@@ -1,7 +1,6 @@
 package fidelity
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"path"
@@ -13,11 +12,14 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 // ErrMismatch means an evaluation does not match the intended change.
-var ErrMismatch = errors.New("fidelity: evaluation does not match the intended change")
+// It's an edit dockhand doesn't make by itself, which a person makes by
+// hand (refusal.Unsupported).
+var ErrMismatch = refusal.New(refusal.Unsupported, "fidelity: evaluation does not match the intended change")
 
 // Report is what an evaluated edit was expected to change and what it changed
 // beyond that. Any unexpected change refuses the edit.
@@ -35,7 +37,7 @@ type Report struct {
 // joined: printed as a list, they read "[fidelity: …: rust-src has …]"
 // inside another "fidelity: …" (the rust and cargo run).
 func (r Report) Err() error {
-	return fmt.Errorf("%w: %s", ErrMismatch, strings.Join(r.UnexpectedChanges, "; "))
+	return ErrMismatch.Because("%s", strings.Join(r.UnexpectedChanges, "; "))
 }
 
 // CheckSnapshot requires an evaluation to describe its bound source, target,
@@ -43,14 +45,14 @@ func (r Report) Err() error {
 func CheckSnapshot(snapshot macports.Snapshot, bound macports.Context) error {
 	platform := snapshot.Platform
 	if snapshot.Source != bound.Source() || !reflect.DeepEqual(snapshot.Target, bound.Target()) || platform.OS == "" || platform.Version == "" || platform.Architecture == "" || (bound.Platform().OS != "" && platform != bound.Platform()) {
-		return fmt.Errorf("%w: evaluation does not match its bound source, target, or platform", ErrMismatch)
+		return ErrMismatch.Because("evaluation does not match its bound source, target, or platform")
 	}
 	if len(snapshot.Ports) == 0 {
-		return fmt.Errorf("%w: evaluation contains no ports", ErrMismatch)
+		return ErrMismatch.Because("evaluation contains no ports")
 	}
 	for name, port := range snapshot.Ports {
 		if name != port.Name || port.Version == "" || port.Revision < 0 || port.Epoch < 0 {
-			return fmt.Errorf("%w: invalid evaluated port %s", ErrMismatch, name)
+			return ErrMismatch.Because("invalid evaluated port %s", name)
 		}
 	}
 	return nil
@@ -277,18 +279,18 @@ func fetchKind(port macports.PortInfo) string {
 // port and every compared field, each normalized by its own root.
 func Equivalent(expected, actual macports.Snapshot) error {
 	if expected.Platform != actual.Platform || !reflect.DeepEqual(expected.Target, actual.Target) {
-		return fmt.Errorf("%w: candidate evaluation changed evaluation context", ErrMismatch)
+		return ErrMismatch.Because("candidate evaluation changed evaluation context")
 	}
 	if len(expected.Ports) != len(actual.Ports) {
-		return fmt.Errorf("%w: candidate evaluation changed port set", ErrMismatch)
+		return ErrMismatch.Because("candidate evaluation changed port set")
 	}
 	for name, old := range expected.Ports {
 		next, ok := actual.Ports[name]
 		if !ok || old.Revision != next.Revision {
-			return fmt.Errorf("%w: candidate evaluation changed %s", ErrMismatch, name)
+			return ErrMismatch.Because("candidate evaluation changed %s", name)
 		}
 		if changes := Compare(name, ComparablePort(old, expected.Root), ComparablePort(next, actual.Root)); len(changes) > 0 {
-			return fmt.Errorf("%w: candidate evaluation: %v", ErrMismatch, changes)
+			return ErrMismatch.Because("candidate evaluation: %v", changes)
 		}
 	}
 	return nil
@@ -365,7 +367,7 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 	}
 	for _, finding := range findings {
 		if !finding.AnsweredBy(authorized) {
-			return nil, fmt.Errorf("%w: %s", ErrMismatch, finding)
+			return nil, ErrMismatch.Because("%s", finding)
 		}
 	}
 	return scope, nil
@@ -431,13 +433,13 @@ func Scope(before, after macports.Snapshot, selected string) (*macports.ReleaseS
 	var findings []ScopeFinding
 	oldRoot, nextRoot := before.Ports[selected], after.Ports[selected]
 	if len(before.Ports) != len(after.Ports) {
-		return nil, nil, fmt.Errorf("%w: release changes the port set", ErrMismatch)
+		return nil, nil, ErrMismatch.Because("release changes the port set")
 	}
 	for _, name := range slices.Sorted(maps.Keys(before.Ports)) {
 		old := before.Ports[name]
 		next, ok := after.Ports[name]
 		if !ok {
-			return nil, nil, fmt.Errorf("%w: sibling disappeared", ErrMismatch)
+			return nil, nil, ErrMismatch.Because("sibling disappeared")
 		}
 		target := before.Target
 		target.Name = name
@@ -521,7 +523,7 @@ func followsObsolete(name, selected string, old, next, oldRoot, nextRoot macport
 func ScopedVersion(shared bool, before, after macports.Snapshot, selected string, release model.Release, checksums string) Report {
 	scope, err := ReleaseScope(before, after, selected, shared)
 	if err != nil {
-		return Report{Before: before, After: after, UnexpectedChanges: []string{strings.TrimPrefix(err.Error(), ErrMismatch.Error()+": ")}}
+		return Report{Before: before, After: after, UnexpectedChanges: []string{refusal.WordsOf(err)}}
 	}
 	prediction := Predict(before)
 	prediction.Expected = []string{selected + ".version -> " + release.Version, selected + ".revision -> 0", selected + ".distfiles and checksums"}

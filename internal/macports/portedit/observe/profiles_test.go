@@ -1,7 +1,6 @@
 package observe
 
 import (
-	"fmt"
 	"github.com/stretchr/testify/require"
 	"slices"
 	"testing"
@@ -137,7 +136,7 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 func contextBoundaries(src []byte) (map[int]bool, bool, error) {
 	n, err := scanPlatformNeeds(src)
 	if err == nil && (len(n.operands) > 0 || n.exhaustive) {
-		err = fmt.Errorf("%w: native platform observations required", ErrInconclusive)
+		err = ErrInconclusive.Because("native platform observations required")
 	}
 	return n.majors, n.arch, err
 }

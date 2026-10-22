@@ -56,7 +56,7 @@ func indexAgreement(indexed, evaluated, stub string) error {
 	if indexed == evaluated || (stub != "" && stub == indexed) {
 		return nil
 	}
-	return fmt.Errorf("%w: indexed subport %s; evaluation selected a different port %s", ErrUnsupported, indexed, evaluated)
+	return ErrUnsupported.Because("indexed subport %s; evaluation selected a different port %s", indexed, evaluated)
 }
 
 func (p *VersionProbe) Port() macports.PortInfo {
@@ -146,7 +146,7 @@ func (p *VersionProbe) CheckRelease(ctx context.Context, release model.Release) 
 		raw, ok = release.SourceSpelling(), release.Forge == ""
 	}
 	if !ok {
-		return fmt.Errorf("%w: selected tag no longer matches source convention", ErrFidelity)
+		return ErrFidelity.Because("selected tag no longer matches source convention")
 	}
 	// The release goes with the request, as a commit pin's version does.
 	request := p.request
@@ -156,7 +156,7 @@ func (p *VersionProbe) CheckRelease(ctx context.Context, release model.Release) 
 		return err
 	}
 	if snapshot.Ports[p.input.target.Name].Version != release.Version {
-		return fmt.Errorf("%w: selected version changed during evaluation", ErrFidelity)
+		return ErrFidelity.Because("selected version changed during evaluation")
 	}
 	return nil
 }

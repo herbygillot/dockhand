@@ -184,7 +184,7 @@ func ownArchives(contents []byte, info macports.PortInfo) ([]byte, bool, error) 
 	declared, err := depblock.Declared(contents, info)
 	switch {
 	case err != nil:
-		return nil, false, fmt.Errorf("%w: %s: %w", portfile.ErrUnsupported, info.Name, err)
+		return nil, false, portfile.ErrUnsupported.Because("%s: %w", info.Name, err)
 	case declared == nil:
 		return contents, false, nil
 	}

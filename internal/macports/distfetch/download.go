@@ -60,13 +60,13 @@ type Client struct {
 func LocalPatches(info macports.PortInfo, portdir string) error {
 	files, errs := syntax.ListValues(info.Options["patchfiles"])
 	if len(errs) > 0 {
-		return fmt.Errorf("%w: invalid patchfiles", portfile.ErrUnsupported)
+		return portfile.ErrUnsupported.Because("invalid patchfiles")
 	}
 	if len(files) == 0 {
 		return nil
 	}
 	if portdir == "" {
-		return fmt.Errorf("%w: patchfiles require a frozen local files directory", portfile.ErrUnsupported)
+		return portfile.ErrUnsupported.Because("patchfiles require a frozen local files directory")
 	}
 	root := info.Options["filespath"]
 	if root == "" {
@@ -74,15 +74,15 @@ func LocalPatches(info macports.PortInfo, portdir string) error {
 	}
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return fmt.Errorf("%w: local patch directory is unavailable", portfile.ErrUnsupported)
+		return portfile.ErrUnsupported.Because("local patch directory is unavailable")
 	}
 	base, err := filepath.EvalSymlinks(portdir)
 	if err != nil {
-		return fmt.Errorf("%w: frozen port directory is unavailable", portfile.ErrUnsupported)
+		return portfile.ErrUnsupported.Because("frozen port directory is unavailable")
 	}
 	relative, err := filepath.Rel(base, resolved)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("%w: patches must be inside the frozen port directory; filespath %s is outside %s", portfile.ErrUnsupported, resolved, base)
+		return portfile.ErrUnsupported.Because("patches must be inside the frozen port directory; filespath %s is outside %s", resolved, base)
 	}
 	for _, name := range files {
 		// A patch in a subdirectory of files, as perl5's
@@ -90,11 +90,11 @@ func LocalPatches(info macports.PortInfo, portdir string) error {
 		// 2026-10-02); each segment is a plain name, so the path stays
 		// inside files. One with a site tag, name:tag, is fetched.
 		if !localPatchName(name) {
-			return fmt.Errorf("%w: patchfile %s is not in the port's files directory; checking downloaded patches is not supported", portfile.ErrUnsupported, name)
+			return portfile.ErrUnsupported.Because("patchfile %s is not in the port's files directory; checking downloaded patches is not supported", name)
 		}
 		stat, err := os.Lstat(filepath.Join(resolved, name))
 		if err != nil || !stat.Mode().IsRegular() {
-			return fmt.Errorf("%w: patchfile %s is not a frozen regular file", portfile.ErrUnsupported, name)
+			return portfile.ErrUnsupported.Because("patchfile %s is not a frozen regular file", name)
 		}
 	}
 	return nil
@@ -108,17 +108,17 @@ func Sources(info macports.PortInfo, portdir string) ([]Source, error) {
 	}
 	files, errs := syntax.ListValues(info.Options["distfiles"])
 	if len(errs) > 0 || len(files) == 0 {
-		return nil, fmt.Errorf("%w: source distfiles are required", portfile.ErrUnsupported)
+		return nil, portfile.ErrUnsupported.Because("source distfiles are required")
 	}
 	sites, errs := syntax.ListValues(info.Options["master_sites"])
 	if len(errs) > 0 || len(sites) == 0 {
-		return nil, fmt.Errorf("%w: direct master sites are required", portfile.ErrUnsupported)
+		return nil, portfile.ErrUnsupported.Because("direct master sites are required")
 	}
 	locations := map[string][]string{}
 	for _, raw := range sites {
 		site, err := url.Parse(raw)
 		if err != nil || site.Host == "" || site.User != nil || site.Fragment != "" || !fetch.Scheme(site.Scheme) {
-			return nil, fmt.Errorf("%w: only direct HTTP(S) or FTP master sites are supported", portfile.ErrUnsupported)
+			return nil, portfile.ErrUnsupported.Because("only direct HTTP(S) or FTP master sites are supported")
 		}
 		tags := []string{""}
 		authority := strings.Index(raw, "://") + 3
@@ -127,7 +127,7 @@ func Sources(info macports.PortInfo, portdir string) ([]Source, error) {
 			tags = strings.Split(raw[cut+1:], ",")
 			for _, tag := range tags {
 				if tag == "" || !portfile.Literal(tag) {
-					return nil, fmt.Errorf("%w: invalid master-site tag", portfile.ErrUnsupported)
+					return nil, portfile.ErrUnsupported.Because("invalid master-site tag")
 				}
 			}
 			raw = raw[:cut]
@@ -141,11 +141,11 @@ func Sources(info macports.PortInfo, portdir string) ([]Source, error) {
 	for _, file := range files {
 		name, tag, _ := strings.Cut(file, ":")
 		if name == "" || !portfile.Literal(name) || name == "." || name == ".." || seen[name] || (tag != "" && !portfile.Literal(tag)) {
-			return nil, fmt.Errorf("%w: ambiguous distfile %s", portfile.ErrUnsupported, file)
+			return nil, portfile.ErrUnsupported.Because("ambiguous distfile %s", file)
 		}
 		choices := locations[tag]
 		if len(choices) != 1 {
-			return nil, fmt.Errorf("%w: distfile %s must select exactly one direct master site", portfile.ErrUnsupported, file)
+			return nil, portfile.ErrUnsupported.Because("distfile %s must select exactly one direct master site", file)
 		}
 		seen[name] = true
 		result = append(result, Source{Name: name, URL: strings.TrimRight(choices[0], "/") + "/" + url.PathEscape(name)})
@@ -300,10 +300,10 @@ func notFoundWords(info macports.PortInfo, address string) string {
 func CheckFetchCredentials(info macports.PortInfo) error {
 	credentials, err := info.FetchCredentials()
 	if err != nil {
-		return fmt.Errorf("%w: cannot determine applicable MacPorts fetch credentials; prepare this update manually with MacPorts", portfile.ErrUnsupported)
+		return portfile.ErrUnsupported.Because("cannot determine applicable MacPorts fetch credentials; prepare this update manually with MacPorts")
 	}
 	if credentials {
-		return fmt.Errorf("%w: MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; prepare this update manually with MacPorts", portfile.ErrUnsupported)
+		return portfile.ErrUnsupported.Because("MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; prepare this update manually with MacPorts")
 	}
 	return nil
 }
@@ -318,13 +318,13 @@ func CheckPolicy(info macports.PortInfo, portdir string) error {
 	compatible, problem, err := info.ArchiveCompatible()
 	switch {
 	case err != nil:
-		return fmt.Errorf("%w: %v", portfile.ErrUnsupported, err)
+		return portfile.ErrUnsupported.Because("%v", err)
 	case !compatible:
-		return fmt.Errorf("%w: %s; prepare this port manually", portfile.ErrUnsupported, problem)
+		return portfile.ErrUnsupported.Because("%s; prepare this port manually", problem)
 	}
 	for _, key := range []string{"distfiles", "master_sites", "checksums", "fetch.type", "fetch.archive_compatible", "patchfiles", "filespath", "fetch.ignore_sslcert", "go.vendors", "cargo.crates", "cargo.crates_github"} {
 		if info.OptionErrors[key] != "" {
-			return fmt.Errorf("%w: cannot evaluate %s", portfile.ErrUnsupported, key)
+			return portfile.ErrUnsupported.Because("cannot evaluate %s", key)
 		}
 	}
 	// fetch.ignore_sslcert is read as Tcl reads a boolean, and must have
@@ -332,7 +332,7 @@ func CheckPolicy(info macports.PortInfo, portdir string) error {
 	_, evaluated := info.Options["fetch.ignore_sslcert"]
 	ignoreCertificate, err := info.Bool("fetch.ignore_sslcert")
 	if info.Options["fetch.type"] != "standard" || !evaluated || err != nil || ignoreCertificate || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
-		return fmt.Errorf("%w: fetch customization or vendored source requires a dedicated preparer", portfile.ErrUnsupported)
+		return portfile.ErrUnsupported.Because("fetch customization or vendored source requires a dedicated preparer")
 	}
 	if err := LocalPatches(info, portdir); err != nil {
 		return err

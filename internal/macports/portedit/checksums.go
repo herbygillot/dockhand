@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
@@ -50,7 +51,7 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 func vendoredSources(input *sourceInput) (*depblock.Plan, error) {
 	plan, err := depblock.Declared(input.data, input.info)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", ErrUnsupported, input.target.Name, err)
+		return nil, ErrUnsupported.Because("%s: %w", input.target.Name, err)
 	}
 	return plan, nil
 }
@@ -106,7 +107,7 @@ func (s *Service) refreshVendoredChecksums(ctx context.Context, request Request,
 	before, _ := syntax.ListValues(input.info.Options["checksums"])
 	own, _ := syntax.ListValues(base.info.Options["checksums"])
 	if len(before) < len(own) || !slices.Equal(before[:len(own)], own) {
-		return result, fmt.Errorf("%w: %s lists %s checksums before its source-archive checksums; cannot distinguish the two groups", ErrUnsupported, name, plan.Kind)
+		return result, ErrUnsupported.Because("%s lists %s checksums before its source-archive checksums; cannot distinguish the two groups", name, plan.Kind)
 	}
 	now, _ := syntax.ListValues(result.Prepared.Ports[name].Options["checksums"])
 	final, err := s.evaluateEdit(ctx, input, contents)
@@ -159,7 +160,7 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 	coverage := newArchiveCoverage()
 	observations, err := input.observe.Observe(ctx, input.data, profiles, true, false)
 	if err != nil {
-		return nil, fmt.Errorf("%w: observing %v", errProbeInconclusive, err)
+		return nil, errProbeInconclusive.Because("observing %v", err)
 	}
 	observeContext := func(profile model.Platform, variant string, session *observe.Session, observed macports.Observation) error {
 		if obsoleteIn(observed.Snapshot.Ports[input.target.Name]) {
@@ -171,7 +172,7 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 		// model, as one that reads the host, is left as it is, and said;
 		// this Mac's is read as it stands.
 		if !here && errors.Is(err, errProbeInconclusive) {
-			plan.left = append(plan.left, ChecksumLeft{Kind: LeftContext, What: contextWords(profile, variant), Reason: reasonWords(err)})
+			plan.left = append(plan.left, ChecksumLeft{Kind: LeftContext, What: contextWords(profile, variant), Reason: refusal.WordsOf(err)})
 			return nil
 		}
 		if err != nil {
@@ -204,7 +205,7 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 		session := input.observe.WithVariants(map[string]bool{variant: true})
 		observed, err := session.Observe(ctx, input.data, []model.Platform{input.before.Platform}, true, false)
 		if err != nil {
-			return nil, fmt.Errorf("%w: +%s declares archives of its own, and couldn't be observed: %v", ErrUnsupported, variant, err)
+			return nil, ErrUnsupported.Because("+%s declares archives of its own, and couldn't be observed: %v", variant, err)
 		}
 		if err := observeContext(input.before.Platform, variant, session, observed[0]); err != nil {
 			return nil, fmt.Errorf("+%s: %w", variant, err)
@@ -220,7 +221,7 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 		plan.left = append(plan.left, ChecksumLeft{Kind: LeftDeclaration, What: what, Reason: "no context dockhand could read fetches it"})
 	}
 	if len(coverage.downloads) == 0 {
-		return nil, fmt.Errorf("%w: no archive in the contexts dockhand could read; left: %s", errProbeInconclusive, leftWords(plan.left))
+		return nil, errProbeInconclusive.Because("no archive in the contexts dockhand could read; left: %s", leftWords(plan.left))
 	}
 	plan.downloads = coverage.downloads
 	return plan, nil
@@ -253,15 +254,6 @@ func contextWords(profile model.Platform, variant string) string {
 		return "+" + variant
 	}
 	return fmt.Sprintf("%s %s %s", profile.OS, profile.Version, profile.Architecture)
-}
-
-// reasonWords is an error as a reason, without the sentinels it wraps.
-func reasonWords(err error) string {
-	words := err.Error()
-	for _, sentinel := range []error{errProbeInconclusive, ErrUnsupported} {
-		words = strings.TrimPrefix(words, sentinel.Error()+": ")
-	}
-	return words
 }
 
 func leftWords(left []ChecksumLeft) string {
@@ -369,7 +361,7 @@ func (s *Service) fillEmptyBlock(ctx context.Context, request Request, input, ba
 	name := input.target.Name
 	executable, err := s.DependencyTools.Resolve(plan.Kind)
 	if err != nil {
-		return result, fmt.Errorf("%w: %s: %w", ErrUnsupported, name, err)
+		return result, ErrUnsupported.Because("%s: %w", name, err)
 	}
 	port := result.Prepared.Ports[name]
 	sources, err := distfetch.Sources(port, base.portdirIn(result.Prepared.Root))
@@ -409,13 +401,13 @@ func (s *Service) fillEmptyBlock(ctx context.Context, request Request, input, ba
 	}
 	selected := final.after.Ports[name]
 	if selected.Version != input.info.Version || selected.Revision != input.info.Revision || selected.Epoch != input.info.Epoch {
-		return result, fmt.Errorf("%w: writing %s changed the port's version", ErrFidelity, plan.Kind)
+		return result, ErrFidelity.Because("writing %s changed the port's version", plan.Kind)
 	}
 	var regenerated []Regenerated
 	for _, option := range slices.Sorted(maps.Keys(values)) {
 		actual, errs := syntax.ListValues(selected.Options[option])
 		if len(errs) > 0 || !slices.Equal(actual, values[option]) {
-			return result, fmt.Errorf("%w: evaluated %s differs from what was written", ErrFidelity, option)
+			return result, ErrFidelity.Because("evaluated %s differs from what was written", option)
 		}
 		if count, changed, err := depblock.Entries(option, nil, values[option]); err == nil {
 			regenerated = append(regenerated, Regenerated{Option: option, Count: count, Changed: changed})

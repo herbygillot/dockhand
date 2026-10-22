@@ -1,13 +1,13 @@
 package portedit
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +24,7 @@ func TestAnArchiveDiffersByAnyValue(t *testing.T) {
 // its reason wraps.
 func TestALeftContextSaysWhy(t *testing.T) {
 	left := ChecksumLeft{Kind: LeftContext, What: contextWords(model.Platform{OS: "darwin", Version: "21", Architecture: "x86_64"}, ""),
-		Reason: reasonWords(errors.Join(errProbeInconclusive, errors.New("x")))}
+		Reason: refusal.WordsOf(errProbeInconclusive.Because("x"))}
 	require.Equal(t, "darwin 21 x86_64", left.What)
 	require.Equal(t, "+doc", contextWords(model.Platform{}, "doc"))
 	require.Equal(t, "darwin 21 x86_64 (x)", leftWords([]ChecksumLeft{{What: left.What, Reason: "x"}}))

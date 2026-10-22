@@ -2,7 +2,6 @@ package portedit
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -33,14 +32,14 @@ func obsoleteIn(info macports.PortInfo) bool {
 // clone on the host.
 func checkGitSource(info macports.PortInfo) error {
 	if info.OptionErrors["git.url"] != "" || info.OptionErrors["git.branch"] != "" || info.Options["git.url"] == "" {
-		return fmt.Errorf("%w: git source without an evaluable git.url", ErrUnsupported)
+		return ErrUnsupported.Because("git source without an evaluable git.url")
 	}
 	if info.Options["checksums"] != "" {
-		return fmt.Errorf("%w: a git-fetched port with checksums mixes an archive into the clone; prepare this port manually", ErrUnsupported)
+		return ErrUnsupported.Because("a git-fetched port with checksums mixes an archive into the clone; prepare this port manually")
 	}
 	for _, key := range []string{"go.vendors", "cargo.crates", "cargo.crates_github"} {
 		if info.Options[key] != "" {
-			return fmt.Errorf("%w: %s regeneration needs the source on the host, which a git fetch does not provide", ErrUnsupported, key)
+			return ErrUnsupported.Because("%s regeneration needs the source on the host, which a git fetch does not provide", key)
 		}
 	}
 	return nil
@@ -56,7 +55,7 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 	}
 	next := versioned.Ports[input.target.Name]
 	if !next.GitFetched() {
-		return archivePlan{}, fmt.Errorf("%w: the version edit changed the fetch type", ErrFidelity)
+		return archivePlan{}, ErrFidelity.Because("the version edit changed the fetch type")
 	}
 	if err := checkGitSource(next); err != nil {
 		return archivePlan{}, err
@@ -70,7 +69,7 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 		branch = release.Commit
 	case commitPattern.MatchString(old):
 		if release.Commit == "" {
-			return archivePlan{}, fmt.Errorf("%w: git.branch pins a commit and the resolved release names none", ErrUnsupported)
+			return archivePlan{}, ErrUnsupported.Because("git.branch pins a commit and the resolved release names none")
 		}
 		rewritten, err := portfile.RewriteLiteralDeclaration(contents, "git.branch", old, release.Commit)
 		if err != nil {
@@ -91,7 +90,7 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Coverage: []ContextCoverage{{Fetch: next.Fetch, Platform: input.before.Platform}}}
 	result.report(report)
 	if len(report.UnexpectedChanges) > 0 {
-		return archivePlan{result: result}, fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
+		return archivePlan{result: result}, ErrFidelity.Because("%v", report.UnexpectedChanges)
 	}
 	progress.VerboseReport(ctx, "%s is fetched with git; the build clones %s at %s", input.target.Name, next.Options["git.url"], next.Options["git.branch"])
 	return archivePlan{result: result, contents: contents, versioned: versioned, viaGit: true, branch: branch, subject: "update to " + release.Version}, nil

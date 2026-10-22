@@ -3,7 +3,6 @@ package portedit
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -23,11 +22,11 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
 		before, err := input.observe.One(ctx, input.data, mode, !request.SharedRelease)
 		if err != nil {
-			return nil, fmt.Errorf("%w: baseline revision evaluation was inconclusive: %w", errProbeInconclusive, err)
+			return nil, errProbeInconclusive.Because("baseline revision evaluation was inconclusive: %w", err)
 		}
 		after, err := input.observe.One(ctx, contents, mode, !request.SharedRelease)
 		if err != nil {
-			return nil, fmt.Errorf("%w: candidate revision evaluation was inconclusive: %w", errProbeInconclusive, err)
+			return nil, errProbeInconclusive.Because("candidate revision evaluation was inconclusive: %w", err)
 		}
 		if selectedVersion == "" {
 			selectedVersion = after.Snapshot.Ports[input.target.Name].Version
@@ -38,7 +37,7 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 				continue
 			}
 			if old.Version != input.info.Version || next.Version != selectedVersion {
-				return nil, fmt.Errorf("%w: revision reset would affect independent release %s on %+v", ErrFidelity, name, profile)
+				return nil, ErrFidelity.Because("revision reset would affect independent release %s on %+v", name, profile)
 			}
 			if next.Revision == 0 {
 				continue
@@ -70,7 +69,7 @@ func revisionReset(contents []byte, path string, info macports.PortInfo, events 
 			return textedit.Edit{}, err
 		}
 		if len(cmd.Words) != 2 {
-			return textedit.Edit{}, fmt.Errorf("%w: revision is not a literal", ErrUnsupported)
+			return textedit.Edit{}, ErrUnsupported.Because("revision is not a literal")
 		}
 		value, literal := cmd.Words[1].Literal(contents)
 		if literal && value == strconv.Itoa(info.Revision) {
@@ -85,9 +84,9 @@ func revisionReset(contents []byte, path string, info macports.PortInfo, events 
 				return textedit.Edit{Span: span, New: []byte("revision 0")}, nil
 			}
 		}
-		return textedit.Edit{}, fmt.Errorf("%w: revision is calculated or overridden", ErrUnsupported)
+		return textedit.Edit{}, ErrUnsupported.Because("revision is calculated or overridden")
 	}
-	return textedit.Edit{}, fmt.Errorf("%w: nonzero revision has no editable declaration", ErrUnsupported)
+	return textedit.Edit{}, ErrUnsupported.Because("nonzero revision has no editable declaration")
 }
 
 // bumpRevision raises the target's revision from current in contents:
@@ -110,7 +109,7 @@ func (s *Service) revisionSharing(ctx context.Context, input *sourceInput, revis
 	}
 	evaluated, err := s.evaluateEdit(ctx, input, probe)
 	if err != nil {
-		return nil, fmt.Errorf("%w: which ports the revision line reaches couldn't be observed: %w", errProbeInconclusive, err)
+		return nil, errProbeInconclusive.Because("which ports the revision line reaches couldn't be observed: %w", err)
 	}
 	return fidelity.Sharing(family, evaluated.after, func(old, next macports.PortInfo) bool { return next.Revision != old.Revision }), nil
 }

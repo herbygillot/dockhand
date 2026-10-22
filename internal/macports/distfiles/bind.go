@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -44,7 +45,7 @@ func (u *Unlocated) Error() string {
 	if u.Name != "" {
 		what += " for " + u.Name
 	}
-	reason := strings.TrimPrefix(u.Reason.Error(), portfile.ErrUnsupported.Error()+": ")
+	reason := refusal.WordsOf(u.Reason)
 	// A PortGroup's checksums are said as its, never the Portfile's.
 	if group := new(portfile.InPortGroup); errors.As(u.Reason, &group) {
 		return fmt.Sprintf("%s are %s", what, reason)
@@ -114,7 +115,7 @@ type Resolver func(matches []syntax.Command) (syntax.Command, error)
 func BindResolving(src []byte, path string, info macports.PortInfo, observed macports.PortObservation, resolve Resolver) (Binding, error) {
 	var result Binding
 	if len(observed.Problems) > 0 {
-		return result, fmt.Errorf("%w: %v", portfile.ErrUnsupported, observed.Problems)
+		return result, portfile.ErrUnsupported.Because("%v", observed.Problems)
 	}
 	for _, declaration := range observed.Declarations {
 		name := strings.TrimPrefix(declaration.Command, "::")
@@ -168,7 +169,7 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 		values = append(values, token.Value)
 	}
 	if len(errs) > 0 || !slices.Equal(actual, values) {
-		return result, fmt.Errorf("%w: checksum observations differ from evaluated values", portfile.ErrUnsupported)
+		return result, portfile.ErrUnsupported.Because("checksum observations differ from evaluated values")
 	}
 	named := map[string]bool{}
 	for i := 0; i < len(result.Tokens); {
@@ -183,22 +184,22 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 				return result, &Unlocated{Name: group.Name, Reason: kind.Unlocated}
 			}
 			if !kind.Literal || i+1 >= len(result.Tokens) {
-				return result, fmt.Errorf("%w: calculated checksum algorithm", portfile.ErrUnsupported)
+				return result, portfile.ErrUnsupported.Because("calculated checksum algorithm")
 			}
 			value := result.Tokens[i+1]
 			if value.Unlocated != nil {
 				return result, &Unlocated{Name: group.Name, Reason: value.Unlocated}
 			}
 			if !value.Literal {
-				return result, fmt.Errorf("%w: checksum value has no unique literal owner", portfile.ErrUnsupported)
+				return result, portfile.ErrUnsupported.Because("checksum value has no unique literal owner")
 			}
 			if _, ok := group.Values[kind.Value]; ok {
-				return result, fmt.Errorf("%w: duplicate checksum algorithm", portfile.ErrUnsupported)
+				return result, portfile.ErrUnsupported.Because("duplicate checksum algorithm")
 			}
 			if group.Owner == "" {
 				group.Owner = kind.Owner
 			} else if declarationOf(kind.Owner) != declarationOf(group.Owner) && portfile.LegacyChecksums(append(group.Kinds, kind.Value)) {
-				return result, fmt.Errorf("%w: legacy checksum group spans declarations", portfile.ErrUnsupported)
+				return result, portfile.ErrUnsupported.Because("legacy checksum group spans declarations")
 			}
 			group.Values[kind.Value] = value
 			group.Kinds = append(group.Kinds, kind.Value)
@@ -206,10 +207,10 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 			i += 2
 		}
 		if len(group.Pairs) == 0 {
-			return result, fmt.Errorf("%w: checksum group without an algorithm", portfile.ErrUnsupported)
+			return result, portfile.ErrUnsupported.Because("checksum group without an algorithm")
 		}
 		if named[group.Name] {
-			return result, fmt.Errorf("%w: ambiguous checksum group", portfile.ErrUnsupported)
+			return result, portfile.ErrUnsupported.Because("ambiguous checksum group")
 		}
 		named[group.Name] = true
 		result.Groups = append(result.Groups, group)
@@ -217,7 +218,7 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 	seen := map[string]bool{}
 	for _, file := range observed.Distfiles {
 		if seen[file.Name] {
-			return result, fmt.Errorf("%w: duplicate fetch file %s", portfile.ErrUnsupported, file.Name)
+			return result, portfile.ErrUnsupported.Because("duplicate fetch file %s", file.Name)
 		}
 		seen[file.Name] = true
 		var group *Group
@@ -228,7 +229,7 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 			}
 		}
 		if group == nil {
-			return result, fmt.Errorf("%w: no checksum declaration for %s", portfile.ErrUnsupported, file.Name)
+			return result, portfile.ErrUnsupported.Because("no checksum declaration for %s", file.Name)
 		}
 		var addresses []string
 		for _, address := range file.URLs {
@@ -238,7 +239,7 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 			}
 		}
 		if len(addresses) == 0 {
-			return result, fmt.Errorf("%w: no HTTP(S) or FTP fetch location for %s", portfile.ErrUnsupported, file.Name)
+			return result, portfile.ErrUnsupported.Because("no HTTP(S) or FTP fetch location for %s", file.Name)
 		}
 		file.URLs = slices.Compact(addresses)
 		result.Artifacts = append(result.Artifacts, Artifact{Distfile: file, Group: *group})

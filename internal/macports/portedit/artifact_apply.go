@@ -96,7 +96,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		checked[key] = true
 		finalFidelity := scopedChecksums(input, frame.after, finals[i].Snapshot, wanted[key])
 		if len(finalFidelity.UnexpectedChanges) > 0 {
-			return result, fmt.Errorf("%w: final context %+v: %s", ErrFidelity, frame.profile, strings.Join(finalFidelity.UnexpectedChanges, "; "))
+			return result, ErrFidelity.Because("final context %+v: %s", frame.profile, strings.Join(finalFidelity.UnexpectedChanges, "; "))
 		}
 	}
 	// The final native snapshot is kept last: workflow validates the stored Git tree
@@ -164,7 +164,7 @@ type checksumUpdate struct {
 
 func recordChecksumUpdate(updates map[textedit.Span]checksumUpdate, span textedit.Span, update checksumUpdate) error {
 	if previous, ok := updates[span]; ok && previous.text != update.text {
-		return fmt.Errorf("%w: contexts require different bytes for one checksum declaration", ErrFidelity)
+		return ErrFidelity.Because("contexts require different bytes for one checksum declaration")
 	}
 	updates[span] = update
 	return nil

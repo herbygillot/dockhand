@@ -20,7 +20,7 @@ func LocateDeclaration(src []byte, path string, declaration macports.Declaration
 	}
 	script, errs := syntax.Parse(src)
 	if len(errs) > 0 {
-		return syntax.Command{}, fmt.Errorf("%w: invalid Tcl", ErrUnsupported)
+		return syntax.Command{}, ErrUnsupported.Because("invalid Tcl")
 	}
 	var commands []syntax.Command
 	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
@@ -40,7 +40,7 @@ func LocateDeclaration(src []byte, path string, declaration macports.Declaration
 		if cmd, ok, err := locateInVariant(src, commands, declaration); ok {
 			return cmd, err
 		}
-		return syntax.Command{}, fmt.Errorf("%w: declaration has no source location in the Portfile", ErrUnsupported)
+		return syntax.Command{}, ErrUnsupported.Because("declaration has no source location in the Portfile")
 	}
 	var matches []syntax.Command
 	for i := len(declaration.Frames) - 1; i >= 0; i-- {
@@ -53,7 +53,7 @@ func LocateDeclaration(src []byte, path string, declaration macports.Declaration
 		}
 		if len(matches) > 0 {
 			if frame.File != "" && filepath.Clean(frame.File) != filepath.Clean(path) {
-				return syntax.Command{}, fmt.Errorf("%w: declaration belongs to another source file", ErrUnsupported)
+				return syntax.Command{}, ErrUnsupported.Because("declaration belongs to another source file")
 			}
 			break
 		}
@@ -106,7 +106,7 @@ func LocateDeclaration(src []byte, path string, declaration macports.Declaration
 	}
 	switch len(matches) {
 	case 0:
-		return syntax.Command{}, fmt.Errorf("%w: no command written in the Portfile makes it, as an eval'd one isn't", ErrUnsupported)
+		return syntax.Command{}, ErrUnsupported.Because("no command written in the Portfile makes it, as an eval'd one isn't")
 	case 1:
 		return matches[0], nil
 	}
@@ -122,7 +122,12 @@ type AmbiguousDeclaration struct {
 }
 
 func (a *AmbiguousDeclaration) Error() string {
-	return fmt.Sprintf("%v: declaration source is ambiguous (%d matches)", ErrUnsupported, len(a.Matches))
+	return fmt.Sprintf("%v: %s", ErrUnsupported, a.Words())
+}
+
+// Words are why it's refused, without ErrUnsupported's (refusal.WordsOf).
+func (a *AmbiguousDeclaration) Words() string {
+	return fmt.Sprintf("declaration source is ambiguous (%d matches)", len(a.Matches))
 }
 
 func (a *AmbiguousDeclaration) Unwrap() error { return ErrUnsupported }
@@ -143,7 +148,7 @@ func locateInVariant(src []byte, commands []syntax.Command, declaration macports
 			continue
 		}
 		if i+1 >= len(declaration.Frames) || firstWord(declaration.Frames[i+1].Command) != name {
-			return syntax.Command{}, true, fmt.Errorf("%w: variant %s makes the declaration through another procedure", ErrUnsupported, variant)
+			return syntax.Command{}, true, ErrUnsupported.Because("variant %s makes the declaration through another procedure", variant)
 		}
 		inner := sourceCommand(declaration.Frames[i+1].Command)
 		var bodies []textedit.Span
@@ -156,7 +161,7 @@ func locateInVariant(src []byte, commands []syntax.Command, declaration macports
 			}
 		}
 		if len(bodies) != 1 {
-			return syntax.Command{}, true, fmt.Errorf("%w: the Portfile defines variant %s %d times", ErrUnsupported, variant, len(bodies))
+			return syntax.Command{}, true, ErrUnsupported.Because("the Portfile defines variant %s %d times", variant, len(bodies))
 		}
 		var matches []syntax.Command
 		for _, cmd := range commands {
@@ -166,7 +171,7 @@ func locateInVariant(src []byte, commands []syntax.Command, declaration macports
 			}
 		}
 		if len(matches) != 1 {
-			return syntax.Command{}, true, fmt.Errorf("%w: variant %s's declaration source is ambiguous (%d matches)", ErrUnsupported, variant, len(matches))
+			return syntax.Command{}, true, ErrUnsupported.Because("variant %s's declaration source is ambiguous (%d matches)", variant, len(matches))
 		}
 		return matches[0], true, nil
 	}
@@ -192,7 +197,7 @@ func sourceCommand(value string) string {
 func RewriteLiteralDeclaration(contents []byte, command, old, next string) ([]byte, error) {
 	script, errs := syntax.Parse(contents)
 	if len(errs) > 0 {
-		return nil, fmt.Errorf("%w: invalid Portfile syntax", ErrUnsupported)
+		return nil, ErrUnsupported.Because("invalid Portfile syntax")
 	}
 	var edits []textedit.Edit
 	for cmd := range script.Commands(contents, func(syntax.Command) bool { return true }) {
@@ -204,7 +209,7 @@ func RewriteLiteralDeclaration(contents []byte, command, old, next string) ([]by
 		}
 	}
 	if len(edits) != 1 {
-		return nil, fmt.Errorf("%w: %s is %s but no single literal declaration carries it", ErrUnsupported, command, old)
+		return nil, ErrUnsupported.Because("%s is %s but no single literal declaration carries it", command, old)
 	}
 	return textedit.Apply(contents, edits)
 }
@@ -224,12 +229,15 @@ type InPortGroup struct {
 	Tables      []string
 }
 
-func (g *InPortGroup) Error() string {
+func (g *InPortGroup) Error() string { return fmt.Sprintf("%v: %s", ErrUnsupported, g.Words()) }
+
+// Words are why it's refused, without ErrUnsupported's (refusal.WordsOf).
+func (g *InPortGroup) Words() string {
 	from := ""
 	if len(g.Tables) > 0 {
 		from = ", from " + strings.Join(g.Tables, " and ")
 	}
-	return fmt.Sprintf("%v: set by the %s PortGroup, at %s:%d%s, which no Portfile edit changes; a change there moves every port of the group", ErrUnsupported, g.Group, g.File, g.Line, from)
+	return fmt.Sprintf("set by the %s PortGroup, at %s:%d%s, which no Portfile edit changes; a change there moves every port of the group", g.Group, g.File, g.Line, from)
 }
 
 func (g *InPortGroup) Unwrap() error { return ErrUnsupported }
