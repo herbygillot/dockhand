@@ -288,9 +288,9 @@ func TestARegroupPuttingADependentFirstIsNoted(t *testing.T) {
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := twoPortBranch(t, e)
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
 		"textproc/jq": {port("jq", "libharbor")}, "devel/libharbor": {port("libharbor")},
-	}}
+	}})
 	// Edits to both, uncommitted, checked as they are: tidy proposes a
 	// commit for each.
 	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3.1\n", "textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})

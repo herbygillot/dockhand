@@ -588,7 +588,7 @@ func TestASubmissionNamesTheCheckItWaitsOn(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
 	branch := committedUpdate(t, e)
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
 	require.NoError(t, err)
@@ -628,7 +628,7 @@ func TestSubmitSaysTheNewPortsTheBranchAdds(t *testing.T) {
 	testsupport.Git(t, branch.Worktree, "add", "--sparse", "devel/harbor/Portfile")
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "harbor: new port, version 1.0")
 	harbor := macports.PortInfo{Name: "harbor", Version: "1.0", Options: map[string]string{"description": "{Harbor tools for the command line}", "homepage": "https://harbor.example/", "license": "{MIT Apache-2}"}}
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"devel/harbor": {harbor}, "textproc/jq": {port("jq")}}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"devel/harbor": {harbor}, "textproc/jq": {port("jq")}}})
 	checked(t, e, branch, model.OutcomePassed, model.OutcomePassed)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq: update to 1.8.1; harbor: new port"})
 	require.NoError(t, err)

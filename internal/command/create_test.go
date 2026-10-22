@@ -214,7 +214,7 @@ func TestCreateSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	versioned(t, w)
 	stands(t).ProjectReader = txtProject{}
 	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
-	stands(t).PortReader = maintainedPort{}
+	usePorts(stands(t), maintainedPort{})
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
 	require.NoFileExists(t, config)
 
@@ -262,7 +262,7 @@ func TestCreateTakesThePythonPortGroupsDefault(t *testing.T) {
 	versioned(t, w)
 	stands(t).ProjectReader = toolProject{}
 	stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
-	stands(t).PortReader = pythonPorts{}
+	usePorts(stands(t), pythonPorts{})
 	out, _, err := dockhand(t, "create", "https://github.com/o/tool", "--new", "--category", "textproc")
 	require.NoError(t, err)
 	branch := regexp.MustCompile(`dockhand/(py-tool-new)`).FindStringSubmatch(out)[1]

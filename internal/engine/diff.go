@@ -103,10 +103,10 @@ type DependentReader interface {
 	Dependents(ctx context.Context, source model.Source, directories []string) ([]treequery.Dependent, error)
 }
 
-// portNamer names the ports each of some directories defines, as a
+// PortNamer names the ports each of some directories defines, as a
 // source's port index has them; the port reader that reads the index is
 // one.
-type portNamer interface {
+type PortNamer interface {
 	PortsDefined(ctx context.Context, source model.Source, directories []string) (map[string][]string, error)
 }
 
@@ -116,17 +116,13 @@ type portNamer interface {
 // (the batch 11 run on #34620, batch 32). None where the reader can't say,
 // or the index couldn't be read, which names nothing wrongly.
 func (e *Engine) portsDefined(ctx context.Context, source model.Source, directories []string) map[string][]string {
-	var reader any = e.DependentReader
-	if reader == nil {
-		ports, err := e.portReader()
-		if err != nil {
-			return nil
-		}
-		reader = ports
+	ports, err := e.capabilities()
+	if err != nil {
+		return nil
 	}
-	namer, ok := reader.(portNamer)
+	namer := ports.Names
 	directories = e.inSource(ctx, source, directories)
-	if !ok || len(directories) == 0 {
+	if namer == nil || len(directories) == 0 {
 		return nil
 	}
 	defined, err := namer.PortsDefined(ctx, source, directories)
@@ -274,16 +270,13 @@ func (e *Engine) Impact(ctx context.Context, branch model.Branch, ports []string
 // variants, and adds those that depend on them only under a variant
 // (variantDependents).
 func (e *Engine) dependents(ctx context.Context, source model.Source, directories []string) ([]treequery.Dependent, error) {
-	reader := e.DependentReader
+	ports, err := e.capabilities()
+	if err != nil {
+		return nil, err
+	}
+	reader := ports.Dependents
 	if reader == nil {
-		ports, err := e.portReader()
-		if err != nil {
-			return nil, err
-		}
-		var ok bool
-		if reader, ok = ports.(DependentReader); !ok {
-			return nil, fmt.Errorf("nothing here reads dependents")
-		}
+		return nil, fmt.Errorf("nothing here reads dependents")
 	}
 	if directories = e.inSource(ctx, source, directories); len(directories) == 0 {
 		return nil, nil

@@ -272,7 +272,9 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		}
 	}
 
-	throughUnchanged(ctx, reader, revision.Source, candidates, evaluations)
+	if ports, err := e.capabilities(); err == nil {
+		throughUnchanged(ctx, ports.Graphs, revision.Source, candidates, evaluations)
+	}
 	releases := make([]string, len(plan.Environments))
 	for i, environment := range plan.Environments {
 		releases[i] = macos.ReleaseName(environment.Platform)
@@ -611,9 +613,9 @@ func VariantsFlag(value string) (map[string]bool, bool, error) {
 	return variants, false, nil
 }
 
-// dependencyGraphReader is a port reader that can read every port's direct
+// DependencyGraphReader is a port reader that can read every port's direct
 // dependencies from the revision's port index.
-type dependencyGraphReader interface {
+type DependencyGraphReader interface {
 	DependencyGraph(ctx context.Context, source model.Source) (map[string][]string, error)
 }
 
@@ -626,9 +628,12 @@ type dependencyGraphReader interface {
 // what makes the build use the branch's. Read from the port index, once,
 // and only where there are two candidates to order; where it can't be
 // read, the plan orders by direct dependencies alone, as before.
-func throughUnchanged(ctx context.Context, reader PortReader, source model.Source, candidates []model.PlanTarget, evaluations []planning.Evaluation) {
-	graphs, ok := reader.(dependencyGraphReader)
-	if !ok || len(candidates) < 2 {
+func throughUnchanged(ctx context.Context, graphs DependencyGraphReader, source model.Source, candidates []model.PlanTarget, evaluations []planning.Evaluation) {
+	if len(candidates) < 2 {
+		return
+	}
+	if graphs == nil {
+		progress.VerboseReport(ctx, "ordering by direct dependencies alone: nothing here reads the dependency graph")
 		return
 	}
 	graph, err := graphs.DependencyGraph(ctx, source)

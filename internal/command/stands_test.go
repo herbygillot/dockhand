@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -179,4 +180,47 @@ func testSettings(t testing.TB) *settings {
 func testPlaces(t testing.TB) config.Places {
 	t.Helper()
 	return testSettings(t).places()
+}
+
+// usePorts gives a command run in the test reader as its port reader,
+// with each capability the reader has, leaving any other given apart, as
+// engine's usePorts does.
+func usePorts(d *compose.Dependencies, reader engine.PortReader) {
+	d.Ports.Reader = reader
+	if families, ok := reader.(engine.FamilyReader); ok {
+		d.Ports.Families = families
+	}
+	if graphs, ok := reader.(engine.DependencyGraphReader); ok {
+		d.Ports.Graphs = graphs
+	}
+	if planner, ok := reader.(engine.ArchivePlanner); ok {
+		d.Ports.Archives = planner
+	}
+	if names, ok := reader.(engine.PortNamer); ok {
+		d.Ports.Names = names
+	}
+	if dependents, ok := reader.(engine.DependentReader); ok {
+		d.Ports.Dependents = dependents
+	}
+	if maintainers, ok := reader.(engine.MaintainerReader); ok {
+		d.Ports.Maintainers = maintainers
+	}
+}
+
+// useDependents gives a command run in the test reader as what finds
+// dependents, and as what names a directory's ports, which names none
+// where the reader doesn't.
+func useDependents(d *compose.Dependencies, reader engine.DependentReader) {
+	d.Ports.Dependents = reader
+	d.Ports.Names = noNames{}
+	if names, ok := reader.(engine.PortNamer); ok {
+		d.Ports.Names = names
+	}
+}
+
+// noNames names no directory's ports.
+type noNames struct{}
+
+func (noNames) PortsDefined(context.Context, model.Source, []string) (map[string][]string, error) {
+	return nil, nil
 }

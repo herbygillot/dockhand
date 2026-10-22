@@ -25,7 +25,7 @@ JSON
 `), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[providers.command]\nrun = \"~/bin/build-ports\"\n"+config), 0o644))
-	stands(t).PortReader = onePort{}
+	usePorts(stands(t), onePort{})
 	return func(outcome string) {
 		require.NoError(t, os.WriteFile(filepath.Join(w.home, "outcome"), []byte(outcome), 0o644))
 	}

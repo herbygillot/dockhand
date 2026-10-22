@@ -71,7 +71,7 @@ func TestCleanKeepsCheckBranchesThatMoved(t *testing.T) {
 	t.Parallel()
 	checked := func(t *testing.T) (*Engine, string, string, string) {
 		f, e, fake, branch := mergedBranch(t)
-		e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
+		usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
 		e.Providers = map[string]buildenv.Provider{"github": &scriptedProvider{}}
 		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
 		require.NoError(t, err)

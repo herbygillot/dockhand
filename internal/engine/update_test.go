@@ -610,7 +610,7 @@ func TestAPythonPinMacPortsCantMeetHolds(t *testing.T) {
 			branch, err := e.Start(t.Context(), StartRequest{Name: "sqlit-tui"})
 			require.NoError(t, err)
 			p.dependencies = []string{"py313-textual-fastdatatable", "py313-textual"}
-			e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"python/py-textual-fastdatatable": {{Name: "py313-textual-fastdatatable", Version: test.has}}}}
+			usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"python/py-textual-fastdatatable": {{Name: "py313-textual-fastdatatable", Version: test.has}}}})
 			p.upstream = [2]map[string]string{
 				{"pyproject.toml": "[project]\ndependencies = [\"textual-fastdatatable==0.17.1\", \"textual>=0.80\", \"PyYAML>=6\"]\n"},
 				{"pyproject.toml": "[project]\ndependencies = [\"Textual_FastDataTable==0.19.0\", \"textual>=0.80\", \"PyYAML>=6.0.2\"]\n"},
@@ -678,8 +678,8 @@ func TestAPinIsJudgedAgainstTheBasesTree(t *testing.T) {
 		demo := macports.PortInfo{Name: "demo", Options: map[string]string{"dockhand.portgroups": "python"}, Dependencies: []macports.Dependency{{Port: "py313-rich"}}}
 		result.Unchanged = &demo
 		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"demo": demo}}
-		e := Engine{PortReader: fakePorts{directories: map[string][]macports.PortInfo{"python/py-rich": {{Name: "py313-rich", Version: "13.2"}}},
-			trees: map[model.ObjectID]map[string][]macports.PortInfo{"base": {"python/py-rich": {{Name: "py313-rich", Version: test.base}}}}}}
+		e := Engine{Ports: Ports{Reader: fakePorts{directories: map[string][]macports.PortInfo{"python/py-rich": {{Name: "py313-rich", Version: "13.2"}}},
+			trees: map[model.ObjectID]map[string][]macports.PortInfo{"base": {"python/py-rich": {{Name: "py313-rich", Version: test.base}}}}}}}
 		comparison := e.assessUpstream(t.Context(), result, sourcecompare.Versions{}, [2]model.Source{{Tree: "base"}, {Tree: "new"}}, true)
 		var unmet []model.UpstreamChange
 		for _, change := range comparison.Changes {
@@ -812,7 +812,7 @@ func TestAPinForAnotherPlatformHoldsNothing(t *testing.T) {
 		result.Pairs = []editprep.ArchivePair{{Previous: old, Next: next}}
 		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"demo": {Name: "demo", Options: map[string]string{"dockhand.portgroups": "python"},
 			Dependencies: []macports.Dependency{{Port: "py313-requests"}}}}}
-		e := Engine{PortReader: fakePorts{directories: map[string][]macports.PortInfo{"python/py-requests": {{Name: "py313-requests", Version: "1"}}}}}
+		e := Engine{Ports: Ports{Reader: fakePorts{directories: map[string][]macports.PortInfo{"python/py-requests": {{Name: "py313-requests", Version: "1"}}}}}}
 		var pins []model.UpstreamChange
 		for _, change := range e.assessUpstream(t.Context(), result, sourcecompare.Versions{}, [2]model.Source{}, true).Changes {
 			if change.Rule == assess.RequirementUnmet {
@@ -841,8 +841,8 @@ func TestAStealthRefreshGetsTheBasesPort(t *testing.T) {
 	trees, err := e.Repo.CommitTrees(t.Context(), []string{string(branch.Base)})
 	require.NoError(t, err)
 	base := model.ObjectID(trees[string(branch.Base)])
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq", Version: "1.8.1"}}},
-		trees: map[model.ObjectID]map[string][]macports.PortInfo{base: {"textproc/jq": {{Name: "jq", Version: "1.7.1"}}}}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq", Version: "1.8.1"}}},
+		trees: map[model.ObjectID]map[string][]macports.PortInfo{base: {"textproc/jq": {{Name: "jq", Version: "1.7.1"}}}}})
 	source := model.Source{Tree: "branch-tree", Base: branch.Base}
 	port := e.basePort(t.Context(), source, branch.Base, "jq", []string{"textproc/jq/Portfile"})
 	require.NotNil(t, port)

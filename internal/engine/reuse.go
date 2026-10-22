@@ -341,8 +341,8 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 	}
 	// Their dependencies on, from the revision's port index; where it
 	// can't be read, the direct dependencies alone are offered.
-	if graphs, ok := reader.(dependencyGraphReader); ok && len(queue) > 0 {
-		if graph, err := graphs.DependencyGraph(ctx, source); err == nil {
+	if ports, err := d.e.capabilities(); err == nil && ports.Graphs != nil && len(queue) > 0 {
+		if graph, err := ports.Graphs.DependencyGraph(ctx, source); err == nil {
 			for len(queue) > 0 {
 				next := queue[0]
 				queue = queue[1:]

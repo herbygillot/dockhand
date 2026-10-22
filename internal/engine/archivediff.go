@@ -165,18 +165,14 @@ func (e *Engine) compareArchives(ctx context.Context, root, older, newer string,
 }
 
 func (e *Engine) archiveFetcher() (ArchiveFetcher, error) {
-	if e.ArchiveFetcher != nil {
-		return e.ArchiveFetcher, nil
-	}
-	reader, err := e.portReader()
+	ports, err := e.capabilities()
 	if err != nil {
 		return nil, err
 	}
-	fetcher, ok := reader.(ArchiveFetcher)
-	if !ok {
+	if ports.Fetcher == nil {
 		return nil, errors.New("fetching archives needs MacPorts' evaluator")
 	}
-	return fetcher, nil
+	return ports.Fetcher, nil
 }
 
 // ArchivePlanner says what a port fetches in a source, as MacPorts

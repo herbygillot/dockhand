@@ -57,7 +57,7 @@ func TestAPlanExpectsTheCommitAGitFetchedPortsTagNamesNow(t *testing.T) {
 	e := f.open(t)
 	url, first, move := harborRepository(t)
 	revision := harborBranch(t, e)
-	e.PortReader = gitHarbor(url, "v4")
+	usePorts(e, gitHarbor(url, "v4"))
 	environments := []model.Environment{tahoeArm, tahoeX86}
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: environments})
 	require.NoError(t, err)
@@ -79,7 +79,7 @@ func TestAPlanExpectsTheCommitAGitFetchedPortsTagNamesNow(t *testing.T) {
 	require.Equal(t, model.ObjectID(second), source.Commit, "the next check expects what the tag names then")
 	require.Equal(t, "git.branch v4 names "+second[:7]+" now, which its build must fetch", GitSourceWords(source))
 
-	e.PortReader = gitHarbor(url, "v9")
+	usePorts(e, gitHarbor(url, "v9"))
 	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: environments})
 	require.NoError(t, err)
 	source, _ = plan.GitIn(tahoeArm, "libharbor")
@@ -107,7 +107,7 @@ func TestAMovedTagDoesntLetEarlierEvidenceStand(t *testing.T) {
 		fetches: map[model.TargetID]string{"libharbor": first, "harbor-cli": first}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)
-	e.PortReader = gitHarbor(url, "v4")
+	usePorts(e, gitHarbor(url, "v4"))
 	var branch model.Branch
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		var err error
@@ -194,7 +194,7 @@ func TestAnEarlierResultFillsInOnlyForTheCommitExpected(t *testing.T) {
 		fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)
-	e.PortReader = gitHarbor(url, "v4")
+	usePorts(e, gitHarbor(url, "v4"))
 	var branch model.Branch
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		var err error
@@ -249,7 +249,7 @@ func newHarborChecks(t *testing.T, e *Engine, ports fakePorts, provider buildenv
 	t.Helper()
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	c := harborChecks{t: t, e: e, revision: harborBranch(t, e)}
-	e.PortReader = ports
+	usePorts(e, ports)
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		var err error
 		c.branch, err = r.Branch(c.revision.Branch)
@@ -490,7 +490,7 @@ func TestABuildThatFetchedAnotherCommitFailsAtFetch(t *testing.T) {
 	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)
-	e.PortReader = gitHarbor(url, "v4", true)
+	usePorts(e, gitHarbor(url, "v4", true))
 	var branch model.Branch
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		var err error
@@ -575,7 +575,7 @@ func TestAMovedGitHubTagIsSaidByCheckAndSubmit(t *testing.T) {
 	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)
-	e.PortReader = githubHarbor(url, "v4")
+	usePorts(e, githubHarbor(url, "v4"))
 	var branch model.Branch
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		var err error
@@ -641,10 +641,10 @@ func TestAMovedGitHubTagIsSaidByCheckAndSubmit(t *testing.T) {
 	}))
 	require.Contains(t, strings.Join(said, "\n"), "libharbor builds again: v4 now names "+second[:7]+", not "+first[:7]+", as when "+built.Name()+" built it; dockhand checksums libharbor handles a stealth update")
 
-	e.PortReader = githubHarbor(url, second[:9])
+	usePorts(e, githubHarbor(url, second[:9]))
 	planned, _ = plan().In(tahoeArm)
 	require.NotContains(t, planned.Tags, model.TargetID("libharbor"), "a commit binds its source")
-	e.PortReader = githubHarbor(url, "v9")
+	usePorts(e, githubHarbor(url, "v9"))
 	planned, _ = plan().In(tahoeArm)
 	require.Equal(t, url+" has no tag v9", planned.Tags["libharbor"].Unresolved)
 }

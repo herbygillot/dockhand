@@ -193,7 +193,7 @@ func githubBranch(t *testing.T) (*fakeActions, world) {
 	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	stands(t).PortReader = onePort{}
+	usePorts(stands(t), onePort{})
 	g := withGitHub(t, w)
 	recordPushes(t, g.Fork)
 	f := &fakeActions{fork: g.Fork}

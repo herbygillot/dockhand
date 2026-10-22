@@ -176,8 +176,8 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	p := newPlanner(t)
-	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}}
+	e.Ports.Archives = p
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
 	p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}}})
 	p.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"LICENSE": "MIT\n", "meson.build": "project('jq')\n"}}})
 	gpl := &model.UpstreamComparison{Changes: []model.UpstreamChange{{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}}}
@@ -238,8 +238,8 @@ func TestANewPortIsAssessedAlone(t *testing.T) {
 	t.Parallel()
 	e, branch, _, tree := revisionFixture(t, map[string]string{"sysutils/rift/Portfile": "name rift\nversion 0.4.2\n"})
 	p := newPlanner(t)
-	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"sysutils/rift": {{Name: "rift"}}}}
+	e.Ports.Archives = p
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"sysutils/rift": {{Name: "rift"}}}})
 	p.add(tree, plannedPort{info: macports.PortInfo{Name: "rift", Version: "0.4.2", Options: map[string]string{"license": "MIT"}},
 		archives: map[string]map[string]string{"rift-0.4.2.tar.gz": {"LICENSE": "MIT\n", "Package.swift": "// swift-tools-version:6.2\n"}}})
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
@@ -257,11 +257,11 @@ func TestEachSubportIsAssessedForItself(t *testing.T) {
 	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"python/py-demo/Portfile": "name py-demo\nversion 2\n"})
 	p := newPlanner(t)
-	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+	e.Ports.Archives = p
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
 		"python/py-demo":  {{Name: "py312-demo"}, {Name: "py313-demo"}},
 		"python/py-tomli": {{Name: "py312-tomli", Version: "1.0"}, {Name: "py313-tomli", Version: "1.0"}},
-	}}
+	}})
 	for _, python := range []string{"312", "313"} {
 		port := func(version string) macports.PortInfo {
 			return macports.PortInfo{Name: "py" + python + "-demo", Version: version, Options: map[string]string{"dockhand.portgroups": "python"},
@@ -288,9 +288,9 @@ func TestANewSubportIsComparedWithItsSibling(t *testing.T) {
 	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"python/py-sibling/Portfile": "name py-sibling\nversion 2\n"})
 	p := newPlanner(t)
-	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"python/py-sibling": {{Name: "py310-sibling"}, {Name: "py313-sibling"}}},
-		trees: map[model.ObjectID]map[string][]macports.PortInfo{base: {"python/py-sibling": {{Name: "py310-sibling"}}}}}
+	e.Ports.Archives = p
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"python/py-sibling": {{Name: "py310-sibling"}, {Name: "py313-sibling"}}},
+		trees: map[model.ObjectID]map[string][]macports.PortInfo{base: {"python/py-sibling": {{Name: "py310-sibling"}}}}})
 	port := func(python, version string) macports.PortInfo {
 		return macports.PortInfo{Name: "py" + python + "-sibling", Version: version, Options: map[string]string{"dockhand.portgroups": "python", "license": "MIT"}}
 	}
@@ -315,8 +315,8 @@ func TestWhatCantBeComparedSaysSo(t *testing.T) {
 	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/gitty/Portfile": "name gitty\n", "devel/meta/Portfile": "name meta\n", "python/py-stub/Portfile": "name py-stub\n"})
 	p := newPlanner(t)
-	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"devel/gitty": {{Name: "gitty"}}, "devel/meta": {{Name: "meta"}}, "python/py-stub": {{Name: "py-stub"}}}}
+	e.Ports.Archives = p
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"devel/gitty": {{Name: "gitty"}}, "devel/meta": {{Name: "meta"}}, "python/py-stub": {{Name: "py-stub"}}}})
 	for _, tree := range []model.ObjectID{base, tree} {
 		p.add(tree, plannedPort{info: macports.PortInfo{Name: "gitty", Options: map[string]string{"fetch.type": "git"}}})
 		p.add(tree, plannedPort{info: macports.PortInfo{Name: "meta"}, noSource: true})
@@ -348,8 +348,8 @@ func TestWhatsRecordedForARevisionStands(t *testing.T) {
 	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	p := newPlanner(t)
-	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}}
+	e.Ports.Archives = p
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
 	p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}}})
 	p.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"LICENSE": "MIT\n"}}})
 	marker := model.UpstreamComparison{Changes: []model.UpstreamChange{{Kind: "license", Path: "LICENSE", Message: "recorded", Hold: true}}}
@@ -404,8 +404,8 @@ func TestAlikeArchivesPairByName(t *testing.T) {
 	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	p := newPlanner(t)
-	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}}
+	e.Ports.Archives = p
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
 	manual := map[string]string{"LICENSE": "the manual's license\n"}
 	p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{
 		"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}, "jq-manual.tar.gz": manual}})
@@ -453,8 +453,8 @@ func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
 
 	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	p := newPlanner(t)
-	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"devel/libharbor": {{Name: "libharbor"}}}}
+	e.Ports.Archives = p
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"devel/libharbor": {{Name: "libharbor"}}}})
 	archives := commitArchives{t: t, files: map[string]map[string]string{v1: {"LICENSE": "MIT\n"}, v2: {"LICENSE": "GPL\n"}}, asked: &atomic.Int64{}}
 	e.SourceArchiver = archives
 	tool := func(ref string) plannedPort {
@@ -547,9 +547,9 @@ func TestAnAssessmentStoppedByTheNetworkIsTriedAgain(t *testing.T) {
 	}{{http.StatusServiceUnavailable, 0, true}, {http.StatusNotFound, 0, false}, {http.StatusNotFound, http.StatusBadGateway, true}} {
 		e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 		p := newPlanner(t)
-		e.ArchivePlanner = p
+		e.Ports.Archives = p
 		e.ArchiveMirror = p.server.URL + "/mirror/"
-		e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}}
+		usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
 		p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}}})
 		p.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"LICENSE": "MIT\n"}}})
 		p.refusing.Store(int64(test.status))
@@ -643,7 +643,7 @@ func TestAPortTheTreeHasntGotIsObservedAbsent(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"archivers/zstd": {{Name: "zstd", Version: "1.5.7"}}}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"archivers/zstd": {{Name: "zstd", Version: "1.5.7"}}}})
 	lock := func(crates ...string) string {
 		text := "version = 3\n"
 		for _, crate := range crates {
@@ -673,8 +673,8 @@ func TestARevisionsPatchesAreCheckedAgainstItsSource(t *testing.T) {
 	stale := "--- src/gone.c\n+++ src/gone.c\n@@ -1 +1 @@\n-old\n+new\n"
 	e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n", "textproc/jq/files/patch-kept.diff": kept, "textproc/jq/files/patch-stale.diff": stale})
 	p := newPlanner(t)
-	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}}
+	e.Ports.Archives = p
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
 	p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"src/main.c": "int main;\n"}}})
 	options := map[string]string{"patchfiles": "patch-kept.diff patch-stale.diff", "worksrcdir": "jq-1.8.1", "patch.pre_args": "-p0", "extract.rename": "0"}
 	p.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1", Options: options}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"src/main.c": "int main;\n"}}})
@@ -899,8 +899,8 @@ func TestASubportWhoseSourceDidntChangeIsLeftOut(t *testing.T) {
 	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\nsubport tool-2 {}\n"})
 	p := newPlanner(t)
-	e.ArchivePlanner = p
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"devel/libharbor": {{Name: "tool-1"}, {Name: "tool-2"}}}}
+	e.Ports.Archives = p
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"devel/libharbor": {{Name: "tool-1"}, {Name: "tool-2"}}}})
 	one := plannedPort{info: macports.PortInfo{Name: "tool-1", Version: "1.0"}, archives: map[string]map[string]string{"tool-1.0.tar.gz": {"LICENSE": "MIT\n"}}}
 	p.add(base, one)
 	p.add(tree, one)

@@ -154,7 +154,7 @@ func TestAFailedRecordIsTriedAgain(t *testing.T) {
 	reader, err := e.portReader()
 	require.NoError(t, err)
 	flaky := &flakyFamily{PortReader: reader, family: reader.(FamilyReader), fails: 1}
-	e.PortReader = flaky
+	usePorts(e, flaky)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "flaky"})
 	require.NoError(t, err)
 	trees, err := e.Repo.CommitTrees(t.Context(), []string{string(branch.Base)})

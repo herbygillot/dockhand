@@ -188,7 +188,7 @@ func session(t *testing.T, e *Engine) *coord.Session {
 func queuedHarborRun(t *testing.T, e *Engine, environments ...model.Environment) model.Run {
 	t.Helper()
 	revision := harborBranch(t, e)
-	e.PortReader = harborPorts()
+	usePorts(e, harborPorts())
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: environments})
 	require.NoError(t, err)
 	var branch model.Branch
@@ -955,11 +955,11 @@ func TestTheTargetsThatChangedBuildAndTheRestAreReused(t *testing.T) {
 	branch.Base = revision.Source.Base
 	// harbor-cli needs libharbor, as the plan says; harbor-viewer needs
 	// neither.
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
 		"devel/libharbor":        {port("libharbor")},
 		"devel/harbor-cli":       {port("harbor-cli", "libharbor")},
 		"graphics/harbor-viewer": {port("harbor-viewer")},
-	}}
+	}})
 	check := func() (model.Run, []model.TargetID, map[model.TargetID]model.ExecutionID, []model.GuestExecution) {
 		t.Helper()
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
@@ -1067,11 +1067,11 @@ func TestAGuestIsGivenTheDependencyArchivesAnEarlierGuestInstalled(t *testing.T)
 		return err
 	}))
 	branch.Base = revision.Source.Base
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
 		"devel/libharbor":        {port("libharbor")},
 		"devel/harbor-cli":       {port("harbor-cli", "libharbor", "rust")},
 		"graphics/harbor-viewer": {port("harbor-viewer", "rust")},
-	}}
+	}})
 	check := func() {
 		t.Helper()
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
@@ -1198,11 +1198,11 @@ func TestAGuestIsOfferedTheKeptArchivesOfWhatTheRevisionNeeds(t *testing.T) {
 	branch.Base = revision.Source.Base
 	// harbor-viewer needs cargo, and cargo rust, by the index; libadwaita,
 	// active as it built before, it needs no longer.
-	e.PortReader = graphPorts{fakePorts: fakePorts{directories: map[string][]macports.PortInfo{
+	usePorts(e, graphPorts{fakePorts: fakePorts{directories: map[string][]macports.PortInfo{
 		"devel/libharbor":        {port("libharbor")},
 		"devel/harbor-cli":       {port("harbor-cli", "libharbor")},
 		"graphics/harbor-viewer": {port("harbor-viewer", "cargo")},
-	}}, graph: map[string][]string{"cargo": {"rust"}, "harbor-viewer": {"cargo"}}}
+	}}, graph: map[string][]string{"cargo": {"rust"}, "harbor-viewer": {"cargo"}}})
 	check := func() model.Run {
 		t.Helper()
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
@@ -1264,11 +1264,11 @@ func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 		return err
 	}))
 	branch.Base = revision.Source.Base
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
 		"devel/libharbor":        {port("libharbor")},
 		"devel/harbor-cli":       {port("harbor-cli", "libharbor")},
 		"graphics/harbor-viewer": {port("harbor-viewer")},
-	}}
+	}})
 	check := func(fresh bool) model.Run {
 		t.Helper()
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Fresh: fresh})

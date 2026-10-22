@@ -99,7 +99,7 @@ func TestImpactNamesDependentsAndSharedFiles(t *testing.T) {
 	f := setup(t)
 	harborMaster(t, f)
 	e := f.open(t)
-	e.PortReader = harborPorts()
+	usePorts(e, harborPorts())
 	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-3", Here: true})
 	require.NoError(t, err)
 	write(t, branch.Worktree, map[string]string{
@@ -136,7 +136,7 @@ func TestLinkedPortsAreLibraryDependentsOncePerDirectory(t *testing.T) {
 	f := setup(t)
 	harborMaster(t, f)
 	e := f.open(t)
-	e.PortReader = harborPorts()
+	usePorts(e, harborPorts())
 	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-3", Here: true})
 	require.NoError(t, err)
 
@@ -163,9 +163,9 @@ func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
 	testsupport.Git(t, f.upstream, "add", "-A")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "yq and gojq")
 	e, _ := f.withPreparer(t)
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
 		"textproc/jq": {port("jq")}, "textproc/yq": {port("yq", "jq")}, "textproc/gojq": {port("gojq", "jq")},
-	}}
+	}})
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)
 	update := Update{Port: "jq", After: PortVersion{Version: "1.8.1"}}
@@ -224,7 +224,7 @@ func TestADependentUnderAVariantIsFound(t *testing.T) {
 		"textproc/enchant2/Portfile": "name enchant2\nvariant nuspell description {Use nuspell} {\n    depends_lib-append port:nuspell\n}\nvariant docs {\n    set note port:nuspell\n}\n",
 		"textproc/hunspell/Portfile": "name hunspell\ndepends_lib port:nuspell\nvariant extra {\n    depends_run-append port:nuspell\n}\n",
 	})
-	e.PortReader = fakePorts{
+	usePorts(e, fakePorts{
 		directories: map[string][]macports.PortInfo{
 			"textproc/nuspell":  {{Name: "nuspell"}},
 			"textproc/enchant2": {{Name: "enchant2"}},
@@ -236,7 +236,7 @@ func TestADependentUnderAVariantIsFound(t *testing.T) {
 			}
 			return port
 		},
-	}
+	})
 	dependents, err := e.dependents(t.Context(), model.Source{Tree: tree}, []string{"textproc/nuspell"})
 	require.NoError(t, err)
 	require.Equal(t, []treequery.Dependent{
@@ -267,7 +267,7 @@ func TestALinkedPortUnderAVariantIsBumpedAndCanBeExcepted(t *testing.T) {
 		}
 		return info
 	}
-	e.PortReader = ports
+	usePorts(e, ports)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-3", Here: true})
 	require.NoError(t, err)
 
@@ -296,7 +296,7 @@ func TestTheUpdateIsCommittedBeforeTheRebuildsForIt(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
 	require.NoError(t, err)
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}, "textproc/aaa": {port("aaa", "jq")}}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}, "textproc/aaa": {port("aaa", "jq")}}})
 	_, err = e.RevbumpLinked(t.Context(), branch, Update{Port: "jq", After: PortVersion{Version: "1.8.1"}}, nil, false)
 	require.NoError(t, err)
 	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})

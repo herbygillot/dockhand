@@ -25,7 +25,7 @@ func TestEditExpandsTheWorktreeToThePort(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "textproc/jq", directory)
 	require.FileExists(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile"))
-	e.PortReader = fakePorts{}
+	usePorts(e, fakePorts{})
 	_, err = e.Edit(t.Context(), branch, "nosuchport")
 	require.ErrorContains(t, err, "no port nosuchport in this tree")
 }
@@ -226,7 +226,7 @@ func TestStatusCreditsTheCheckOfTheFilesAsTheyAre(t *testing.T) {
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := committedUpdate(t, e)
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 	before := checkHead(t, e, branch)
 

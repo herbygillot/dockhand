@@ -51,7 +51,7 @@ func TestAKeptCloneLastsUntilCleanOrTheNextCheck(t *testing.T) {
 	provider := &keepingProvider{kept: map[string]time.Time{}}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)
-	e.PortReader = harborPorts()
+	usePorts(e, harborPorts())
 	var branch model.Branch
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) (err error) {
 		branch, err = r.Branch(revision.Branch)

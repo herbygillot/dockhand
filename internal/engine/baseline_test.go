@@ -24,7 +24,7 @@ func TestABaselineKeepsEachEnvironmentsRequirements(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
-	e.PortReader = xcodeOnArm{fakePorts: harborPorts()}
+	usePorts(e, xcodeOnArm{fakePorts: harborPorts()})
 	arm := tahoeArm
 	arm.DeveloperTools = model.DeveloperToolsCommandLine
 	intel := tahoeX86
@@ -288,10 +288,10 @@ func TestABaselineIsOfferedOnlyWhereTheBuildReadsTheBranch(t *testing.T) {
 	branch := twoPortBranch(t, e)
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
 	require.NoError(t, err)
-	e.PortReader = namedGraph{
+	usePorts(e, namedGraph{
 		graphPorts: graphPorts{graph: map[string][]string{"harbor-cli": {"zlib"}, "zlib": {"libharbor"}, "gnome-voice": {"gtk3"}, "gtk3": {"glib2"}}},
 		defined:    map[string][]string{"textproc/jq": {"jq"}, "devel/libharbor": {"libharbor"}},
-	}
+	})
 	target := func(id, directory string) TargetEvidence {
 		return TargetEvidence{Target: model.PlanTarget{ID: model.TargetID(id), Directory: directory, Target: model.Target{Name: id}}}
 	}
@@ -301,7 +301,7 @@ func TestABaselineIsOfferedOnlyWhereTheBuildReadsTheBranch(t *testing.T) {
 	require.Equal(t, []string{"jq", "harbor-cli"}, kept, "gnome-voice reads nothing the branch changes; harbor-cli reads libharbor through zlib")
 
 	// With no graph to read, every port is kept.
-	e.PortReader = namedGraph{defined: map[string][]string{"textproc/jq": {"jq"}, "devel/libharbor": {"libharbor"}}}
+	usePorts(e, namedGraph{defined: map[string][]string{"textproc/jq": {"jq"}, "devel/libharbor": {"libharbor"}}})
 	kept, err = e.readsChanged(t.Context(), capture.Revision, evidence, []string{"jq", "harbor-cli", "gnome-voice"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"jq", "harbor-cli", "gnome-voice"}, kept)
@@ -312,7 +312,7 @@ func TestABaselineIsOfferedOnlyWhereTheBuildReadsTheBranch(t *testing.T) {
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "harbor 1.0: new PortGroup")
 	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
 	require.NoError(t, err)
-	e.PortReader = namedGraph{graphPorts: graphPorts{graph: map[string][]string{}}, defined: map[string][]string{}}
+	usePorts(e, namedGraph{graphPorts: graphPorts{graph: map[string][]string{}}, defined: map[string][]string{}})
 	kept, err = e.readsChanged(t.Context(), capture.Revision, evidence, []string{"gnome-voice"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"gnome-voice"}, kept)
@@ -331,13 +331,13 @@ func TestABaselineLeavesOutWhatMastersBuildReadsTheSame(t *testing.T) {
 	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	testsupport.Git(t, branch.Worktree, "add", "devel/libharbor/Portfile")
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "libharbor: update to 3")
-	e.PortReader = namedGraph{
+	usePorts(e, namedGraph{
 		graphPorts: graphPorts{
 			fakePorts: fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}, "devel/libharbor": {port("libharbor")}}},
 			graph:     map[string][]string{"jq": {"oniguruma"}},
 		},
 		defined: map[string][]string{"devel/libharbor": {"libharbor"}},
-	}
+	})
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"jq": model.OutcomeFailed}}}
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
 	require.NoError(t, err)

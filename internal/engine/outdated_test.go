@@ -35,7 +35,7 @@ func TestOutdatedPortsArePreparedOneBranchEach(t *testing.T) {
 	e, p := f.withPreparer(t)
 	releases := &newReleases{}
 	e.OutdatedReader = releases
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
 
 	_, err := e.Outdated(t.Context(), OutdatedRequest{})
 	require.ErrorContains(t, err, "name ports, or ask for yours with --mine")

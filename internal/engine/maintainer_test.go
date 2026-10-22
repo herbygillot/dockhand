@@ -54,11 +54,11 @@ func TestTheMaintainerSuggestedIsTheLineThePortsWrite(t *testing.T) {
 	e.Forge = forgetest.New("", "")
 	var asked []model.Source
 	own := macports.Maintainer{"example.org:ada", "@ada"}
-	e.PortReader = maintainedPorts{asked: &asked, spellings: map[string][]portindex.MaintainerSpelling{"@ada": {
+	usePorts(e, maintainedPorts{asked: &asked, spellings: map[string][]portindex.MaintainerSpelling{"@ada": {
 		{Maintainer: own, Portfiles: 41},
 		{Maintainer: macports.Maintainer{"@ada"}, Portfiles: 3},
 		{Maintainer: macports.Maintainer{"@ada", "ada$x"}, Portfiles: 1},
-	}}}
+	}}})
 	base := model.ObjectID(testsupport.Git(t, f.clone, "rev-parse", "HEAD"))
 	tree := model.ObjectID(testsupport.Git(t, f.clone, "rev-parse", "HEAD^{tree}"))
 
@@ -70,7 +70,7 @@ func TestTheMaintainerSuggestedIsTheLineThePortsWrite(t *testing.T) {
 	require.Equal(t, `set maintainer = "{example.org:ada @ada}" in ~/.dockhand/config.toml, as the ports that name @ada write it`, MaintainerWords(suggestion, "~/.dockhand/config.toml"))
 
 	placeholder := `set maintainer to you as a Portfile's maintainers line writes you, such as "@you" for your GitHub login, or "{example.org:you @you}" with your email too, in ~/.dockhand/config.toml`
-	e.PortReader = maintainedPorts{asked: &asked}
+	usePorts(e, maintainedPorts{asked: &asked})
 	require.Equal(t, placeholder, MaintainerWords(e.SuggestMaintainer(t.Context(), base), "~/.dockhand/config.toml"), "nothing names the login")
 	e.Forge = signedOut{}
 	asked = nil
@@ -87,7 +87,7 @@ func TestServeSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	e := f.open(t)
 	e.Forge = forgetest.New("", "")
 	var asked []model.Source
-	e.PortReader = maintainedPorts{asked: &asked, spellings: map[string][]portindex.MaintainerSpelling{"@ada": {{Maintainer: macports.Maintainer{"example.org:ada", "@ada"}, Portfiles: 2}}}}
+	usePorts(e, maintainedPorts{asked: &asked, spellings: map[string][]portindex.MaintainerSpelling{"@ada": {{Maintainer: macports.Maintainer{"example.org:ada", "@ada"}, Portfiles: 2}}}})
 	var said []string
 	morning := time.Date(2026, 9, 30, 8, 0, 0, 0, time.Local)
 	s := newServer(e, ServeOptions{ShipTo: "list", Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return morning }})

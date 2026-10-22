@@ -1,0 +1,34 @@
+# C3: every capability explicit
+
+Roadmap part 2, item 1's first step (with CX-5). The engine found what its
+port reader could do by type assertion at seven sites, and did without a
+capability it didn't find, mostly unsaid: no change records, direct
+dependencies alone, nothing collected, subports unnamed.
+
+- `engine.Ports` holds a field for each capability: `Reader`,
+  `Families`, `Graphs`, `Archives`, `Fetcher`, `Names`, `Dependents`, and
+  `Maintainers`. The engine's `PortReader`, `ArchivePlanner`,
+  `ArchiveFetcher`, and `DependentReader` fields are gone. The narrow
+  interfaces stay as the fields' types; `dependencyGraphReader` and
+  `portNamer` are exported as `DependencyGraphReader` and `PortNamer`.
+- With no `Reader` given, every field is MacPorts' own, made once from
+  the concrete `treequery.Reader` (`MacPortsPorts`), so none is found by
+  assertion; a capability given beside no reader stands in for MacPorts'
+  (a test's archive planner). Given a reader, only the fields given are
+  there.
+- A missing capability is said or is an error where it's needed: no
+  change records, the baseline's ports alone, and ordering by direct
+  dependencies alone are each said with -v; fetching archives,
+  assessing, and dependents refuse as before.
+- `compose.Dependencies` carries `Ports` in place of `PortReader` and
+  `DependentReader`; its `ArchiveFetcher` fills `Ports.Fetcher`.
+- Tests say what their fakes read: `usePorts` gives a fake reader with
+  each capability it has, and `useDependents` a dependents fake with the
+  names it gives, none where it gives none, as the engine did when the
+  dependents fake was the one asked for names.
+
+Not done here, within C3: where it was decided. The roadmap says compose
+fills each field; MacPorts' own reader is made by the engine on first
+use, as before, since it reads the tree; compose fills what a test gives.
+The forge's `renamed()` assertion is next, then `throughUnchanged`'s move
+to `planning`.

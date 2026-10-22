@@ -121,18 +121,14 @@ func (e *Engine) revisionComparisons(ctx context.Context, branch model.Branch, t
 // archivePlanner is what says what a port fetches: MacPorts' evaluator,
 // unless one was given.
 func (e *Engine) archivePlanner() (ArchivePlanner, error) {
-	if e.ArchivePlanner != nil {
-		return e.ArchivePlanner, nil
-	}
-	reader, err := e.portReader()
+	ports, err := e.capabilities()
 	if err != nil {
 		return nil, err
 	}
-	planner, ok := reader.(ArchivePlanner)
-	if !ok {
+	if ports.Archives == nil {
 		return nil, errNoPlanner
 	}
-	return planner, nil
+	return ports.Archives, nil
 }
 
 // makeAssessments makes the assessments of each port a revision's changed

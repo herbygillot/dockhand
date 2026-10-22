@@ -37,14 +37,11 @@ func (e *Engine) SuggestMaintainer(ctx context.Context, commit model.ObjectID) M
 		return MaintainerSuggestion{}
 	}
 	suggestion := MaintainerSuggestion{Login: login}
-	ports, err := e.portReader()
-	if err != nil {
+	ports, err := e.capabilities()
+	if err != nil || ports.Maintainers == nil {
 		return suggestion
 	}
-	reader, ok := ports.(MaintainerReader)
-	if !ok {
-		return suggestion
-	}
+	reader := ports.Maintainers
 	trees, err := e.Repo.CommitTrees(ctx, []string{string(commit)})
 	if err != nil {
 		return suggestion

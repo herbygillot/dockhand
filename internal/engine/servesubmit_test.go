@@ -31,7 +31,7 @@ func servePrepared(t *testing.T, e *Engine) model.Branch {
 func preparedBy(t *testing.T, e *Engine, origin model.Origin) model.Branch {
 	t.Helper()
 	e.OutdatedReader = &newReleases{}
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 	report, err := e.Outdated(t.Context(), OutdatedRequest{Maintainers: []string{"@ada"}})
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	fake := f.withFork(t, e)
 	fake.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.1"}}
 	e.OutdatedReader = &newReleases{}
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 	report, err := e.Outdated(t.Context(), OutdatedRequest{Maintainers: []string{"@ada"}})
 	require.NoError(t, err)
@@ -386,7 +386,7 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 	jq := port("jq")
 	jq.Options = map[string]string{"fetch.type": "git", "git.url": project, "git.branch": "jq-1.8.1"}
 	e.OutdatedReader = taggedRelease{forge: forge, repository: "jqlang/jq", commit: chosen}
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {jq}}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {jq}}})
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 	report, err := e.Outdated(t.Context(), OutdatedRequest{Maintainers: []string{"@ada"}})
 	require.NoError(t, err)

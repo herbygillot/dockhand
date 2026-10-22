@@ -23,6 +23,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -102,6 +103,11 @@ type Engine struct {
 	Preparer Preparer
 	// Forge publishes; GitHub when nil.
 	Forge Forge
+	// Ports are what the engine reads of ports, each capability a field;
+	// MacPorts' own where no Reader is given (Ports).
+	Ports Ports
+	// macPorts is MacPorts' own reader, made on first use.
+	macPorts *treequery.Reader
 	// GitHub is the process's one GitHub runtime, which the forge,
 	// discovery, the source archiver, and project inspection share; the
 	// runtime with no login when nil, which compose never leaves it.
@@ -109,15 +115,10 @@ type Engine struct {
 	// GitHubCLI marks a draft ready where an organization refuses the
 	// forge's app; none when nil.
 	GitHubCLI GitHubCLI
-	// PortReader reads ports for plans; MacPorts' own evaluator when nil.
-	PortReader PortReader
 	// Builds are where checks build: build.default's profile, which a
 	// branch's evidence always requires (D17), build.unattended's, and the
 	// person's own profiles.
 	Builds Builds
-	// ArchivePlanner says what a port fetches, for its assessment;
-	// MacPorts' own evaluator when nil.
-	ArchivePlanner ArchivePlanner
 	// SourceArchiver writes a Git-fetched port's forge's archive of a
 	// commit, for its assessment; upstream discovery's forges when nil.
 	SourceArchiver SourceArchiver
@@ -129,14 +130,9 @@ type Engine struct {
 	// fetches an archive from where upstream no longer serves it;
 	// archives.MacPortsMirror when empty.
 	ArchiveMirror string
-	// DependentReader finds dependents for impact; the port index when nil.
-	DependentReader DependentReader
 	// OutdatedReader finds newer releases for outdated; MacPorts' evaluator
 	// and upstream discovery when nil.
 	OutdatedReader OutdatedReader
-	// ArchiveFetcher fetches the archives a Portfile declares, for diff
-	// --source; MacPorts' evaluator when nil.
-	ArchiveFetcher ArchiveFetcher
 	// ProjectReader observes upstream projects for create; GitHub when nil.
 	ProjectReader ProjectReader
 	// HTTPS says whether a URL answers over HTTPS, for a port's plain-HTTP

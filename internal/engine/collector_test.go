@@ -38,8 +38,8 @@ func TestAnUpdatesAssessmentChecksItsPatches(t *testing.T) {
 	require.NoError(t, err)
 	base, tree := model.ObjectID(trees[string(update.Base)]), model.ObjectID(current)
 	planner := newPlanner(t)
-	e.ArchivePlanner = planner
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}}
+	e.Ports.Archives = planner
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
 	planner.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1", Options: editor.options}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": old}})
 	planner.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1", Options: editor.options}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": new}})
 	// What the record says of the patch: a coverage line where it applied,

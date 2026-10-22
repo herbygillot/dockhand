@@ -87,7 +87,7 @@ func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports)
 	require.NoError(t, os.WriteFile(filepath.Join(clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
 	capture, err := e.Capture(t.Context(), engine.CaptureRequest{Branch: branch})
 	require.NoError(t, err)
-	e.PortReader = reader
+	e.Ports.Reader = reader
 	e.Providers = map[string]buildenv.Provider{"command": &script.Provider{Run: run, Label: "my build box", Repo: e.Repo, Grace: grace, Env: os.Environ()}}
 	plan, err := e.PlanCheck(t.Context(), engine.PlanRequest{Revision: capture.Revision, Environments: []model.Environment{{Provider: "command"}}})
 	require.NoError(t, err)

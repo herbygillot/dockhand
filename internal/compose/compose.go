@@ -148,15 +148,17 @@ func (o Options) Places() config.Places {
 // Dependencies stand in for what compose would make: the readers,
 // providers, and clients a test gives, each the real one where it's nil.
 type Dependencies struct {
-	Preparer        func(*engine.Engine) engine.Preparer
-	Forge           func(*engine.Engine) engine.Forge
-	ArchiveFetcher  func(*engine.Engine) engine.ArchiveFetcher
-	PortReader      engine.PortReader
-	DependentReader engine.DependentReader
-	OutdatedReader  engine.OutdatedReader
-	ProjectReader   engine.ProjectReader
-	HTTPS           engine.HTTPSProbe
-	GitHubCLI       engine.GitHubCLI
+	Preparer func(*engine.Engine) engine.Preparer
+	Forge    func(*engine.Engine) engine.Forge
+	// Ports are what the engine reads of ports, MacPorts' own where no
+	// Reader is given; ArchiveFetcher, given the engine, fetches archives
+	// in their place.
+	Ports          engine.Ports
+	ArchiveFetcher func(*engine.Engine) engine.ArchiveFetcher
+	OutdatedReader engine.OutdatedReader
+	ProjectReader  engine.ProjectReader
+	HTTPS          engine.HTTPSProbe
+	GitHubCLI      engine.GitHubCLI
 	// Actions stands in for GitHub Actions, with no waiting between polls.
 	Actions ghactions.API
 	// Leftovers is a provider with environments left behind, registered
@@ -328,14 +330,9 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	if dependencies.Forge != nil {
 		e.Forge = dependencies.Forge(e)
 	}
+	e.Ports = dependencies.Ports
 	if dependencies.ArchiveFetcher != nil {
-		e.ArchiveFetcher = dependencies.ArchiveFetcher(e)
-	}
-	if dependencies.PortReader != nil {
-		e.PortReader = dependencies.PortReader
-	}
-	if dependencies.DependentReader != nil {
-		e.DependentReader = dependencies.DependentReader
+		e.Ports.Fetcher = dependencies.ArchiveFetcher(e)
 	}
 	if dependencies.OutdatedReader != nil {
 		e.OutdatedReader = dependencies.OutdatedReader

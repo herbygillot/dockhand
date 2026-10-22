@@ -128,7 +128,7 @@ func TestPlanFollowsCIsScopeOrderAndEligibility(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
-	e.PortReader = harborPorts()
+	usePorts(e, harborPorts())
 
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm, tahoeX86}, Also: []string{"harbor-tools"}})
 	require.NoError(t, err)
@@ -174,7 +174,7 @@ func TestAPlanThatCannotEvaluateIsUnresolved(t *testing.T) {
 	revision := harborBranch(t, e)
 	ports := harborPorts()
 	ports.broken = map[string]bool{"graphics/harbor-viewer": true}
-	e.PortReader = ports
+	usePorts(e, ports)
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
 	require.NoError(t, err)
 	require.False(t, plan.Runnable())
@@ -184,7 +184,7 @@ func TestAPlanThatCannotEvaluateIsUnresolved(t *testing.T) {
 
 	cyclic := harborPorts()
 	cyclic.directories["devel/libharbor"] = []macports.PortInfo{port("libharbor", "harbor-cli")}
-	e.PortReader = cyclic
+	usePorts(e, cyclic)
 	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
 	require.NoError(t, err)
 	require.False(t, plan.Runnable())
@@ -208,7 +208,7 @@ func TestChangedSharedCodeIsSubstantive(t *testing.T) {
 	testsupport.Git(t, f.upstream, "add", "-A")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "jq: load group")
 	e := f.open(t)
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
 	for i, c := range []struct {
 		why   string
 		files map[string]string
@@ -277,7 +277,7 @@ func TestEachPlatformKeepsItsOwnDependencies(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
-	e.PortReader = harborByPlatform{fakePorts: harborPorts()}
+	usePorts(e, harborByPlatform{fakePorts: harborPorts()})
 
 	for _, environments := range [][]model.Environment{{tahoeArm, tahoeX86}, {tahoeX86, tahoeArm}} {
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: environments, Only: []string{"harbor-viewer"}})
@@ -313,7 +313,7 @@ func TestEachPlatformKeepsItsOwnDependencies(t *testing.T) {
 
 	// Dependencies that run opposite ways on two platforms are no cycle:
 	// each builds in its own order.
-	e.PortReader = harborByPlatform{fakePorts: harborPorts(), crossed: true}
+	usePorts(e, harborByPlatform{fakePorts: harborPorts(), crossed: true})
 	crossed, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm, tahoeX86}})
 	require.NoError(t, err)
 	require.Empty(t, crossed.Unresolved)
@@ -362,7 +362,7 @@ func TestAPortAnEnvironmentDoesNotDefineIsNotBuiltThere(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
-	e.PortReader = armOnlyViewer{harborPorts()}
+	usePorts(e, armOnlyViewer{harborPorts()})
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm, tahoeX86}})
 	require.NoError(t, err)
 	target, ok := plan.Target("harbor-viewer-intel")
@@ -406,13 +406,13 @@ func TestAPlanOrdersThroughUnchangedPorts(t *testing.T) {
 		"graphics/harbor-viewer": {port("harbor-viewer")},
 		"graphics/harbor-tools":  {port("harbor-tools")},
 	}}
-	e.PortReader = graphPorts{fakePorts: ports}
+	usePorts(e, graphPorts{fakePorts: ports})
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
 	require.NoError(t, err)
 	planned, _ := plan.In(tahoeArm)
 	require.Less(t, slices.Index(planned.Order, "harbor-cli"), slices.Index(planned.Order, "libharbor"), "no index: nothing says harbor-cli needs libharbor")
 
-	e.PortReader = graphPorts{fakePorts: ports, graph: map[string][]string{"harbor-cli": {"harbor-glue"}, "harbor-glue": {"zlib", "libharbor"}, "zlib": nil}}
+	usePorts(e, graphPorts{fakePorts: ports, graph: map[string][]string{"harbor-cli": {"harbor-glue"}, "harbor-glue": {"zlib", "libharbor"}, "zlib": nil}})
 	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
 	require.NoError(t, err)
 	planned, _ = plan.In(tahoeArm)
@@ -428,7 +428,7 @@ func TestAPlanRecordsWhatDeclaresNoTests(t *testing.T) {
 	ports := harborPorts()
 	ports.directories["devel/libharbor"][0].Options["dockhand.test_run"] = "1"
 	ports.directories["devel/harbor-cli"][0].Options["dockhand.test_run"] = "0"
-	e.PortReader = ports
+	usePorts(e, ports)
 
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Tests: model.TestsRequired})
 	require.NoError(t, err)
@@ -449,7 +449,7 @@ func TestAPlanKeepsAnUnreadEligibilityApart(t *testing.T) {
 	revision := harborBranch(t, e)
 	ports := harborPorts()
 	ports.directories["devel/libharbor"][0].OptionErrors = map[string]string{"supported_archs": "cannot evaluate"}
-	e.PortReader = ports
+	usePorts(e, ports)
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
 	require.NoError(t, err)
 	require.Contains(t, plan.Unresolved, model.Unresolved{Target: model.Target{Name: "libharbor", Portfile: "devel/libharbor/Portfile"}, Reason: "macports: evaluating supported_archs: cannot evaluate"})
@@ -457,7 +457,7 @@ func TestAPlanKeepsAnUnreadEligibilityApart(t *testing.T) {
 	ports = harborPorts()
 	cli := ports.directories["devel/harbor-cli"][0]
 	cli.Options["dockhand.known_fail"], cli.Options["dockhand.platforms_compatible"], cli.Options["platforms"] = "1", "0", "{darwin >= 26}"
-	e.PortReader = ports
+	usePorts(e, ports)
 	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
 	require.NoError(t, err)
 	exclusion, excluded := plan.ExclusionIn(tahoeArm, "harbor-cli")
@@ -513,7 +513,7 @@ func TestVariantsBuildOnePortTheirWay(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
-	e.PortReader = x86LacksDocs{harborVariants()}
+	usePorts(e, x86LacksDocs{harborVariants()})
 	both := []model.Environment{tahoeArm, tahoeX86}
 
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, Variants: map[string]bool{"tests": true}})

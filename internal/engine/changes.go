@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -54,12 +55,13 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 	if adopted || !collect {
 		return records, nil
 	}
-	reader, err := e.portReader()
+	ports, err := e.capabilities()
 	if err != nil {
 		return nil, err
 	}
-	family, ok := reader.(FamilyReader)
-	if !ok {
+	family := ports.Families
+	if family == nil {
+		progress.VerboseReport(ctx, "no change records are made: nothing here evaluates a port's family")
 		return records, nil
 	}
 	trees, err := e.Repo.CommitTrees(ctx, []string{string(base)})

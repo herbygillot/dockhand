@@ -101,7 +101,7 @@ func TestReviewStartsAtThePullRequestsOwnBase(t *testing.T) {
 	fake.PRs[34905] = &forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: 34905, URL: "https://github.com/macports/macports-ports/pull/34905"},
 		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", State: forge.PullRequestOpen, Title: "jq: update to 1.8.1", Commits: 1}
 	read := &readDirectories{}
-	e.DependentReader = read
+	useDependents(e, read)
 
 	report, err := e.Review(t.Context(), 34905)
 	require.NoError(t, err)
@@ -186,10 +186,10 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 	e := f.open(t)
 	fake := f.withFork(t, e)
 	contribution(t, f, fake)
-	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
 		"textproc/jq":  {{Name: "jq"}},
 		"textproc/jaq": {{Name: "jaq", Dependencies: []macports.Dependency{{Port: "jq", Phase: "lib"}}}},
-	}}
+	}})
 
 	report, err := e.Review(t.Context(), 34905)
 	require.NoError(t, err)
@@ -199,7 +199,7 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 	trees, err := e.Repo.CommitTrees(t.Context(), []string{report.Base, report.Head})
 	require.NoError(t, err)
 	p := newPlanner(t)
-	e.ArchivePlanner = p
+	e.Ports.Archives = p
 	p.add(model.ObjectID(trees[report.Base]), plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"COPYING": "MIT\n"}}})
 	p.add(model.ObjectID(trees[report.Head]), plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"COPYING": "GPL\n"}}})
 
@@ -253,7 +253,7 @@ func TestReviewNamesADirectorysOtherPorts(t *testing.T) {
 	e := f.open(t)
 	fake := f.withFork(t, e)
 	contribution(t, f, fake)
-	e.DependentReader = definedPorts{}
+	useDependents(e, definedPorts{})
 
 	report, err := e.Review(t.Context(), 34905)
 	require.NoError(t, err)

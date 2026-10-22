@@ -339,7 +339,7 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	testsupport.Git(t, w.upstream, "add", "-A")
 	testsupport.Git(t, w.upstream, "commit", "-q", "-m", "yq and jo")
 	withBumper(t)
-	stands(t).DependentReader = jqDependents{}
+	useDependents(stands(t), jqDependents{})
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
@@ -357,11 +357,11 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(dir, "textproc/yq/Portfile"), "a plan bumps nothing")
 
 	// One that links it only under a variant is listed apart.
-	stands(t).DependentReader = jqDependents{under: true}
+	useDependents(stands(t), jqDependents{under: true})
 	out, _, err = dockhand(t, "update", "jq", "--revbump-dependents", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, ":\n  yq\n  · under a variant, found in the Portfile, which the index doesn't record: jo (+jq)\n")
-	stands(t).DependentReader = jqDependents{}
+	useDependents(stands(t), jqDependents{})
 
 	out, _, err = dockhand(t, "update", "jq", "--revbump-dependents")
 	require.NoError(t, err)

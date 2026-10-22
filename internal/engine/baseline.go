@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/planning"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -246,12 +247,15 @@ func (e *Engine) readsChanged(ctx context.Context, checked model.Revision, evide
 	var graph map[string][]string
 	if len(directories) > 0 {
 		defined := e.portsDefined(ctx, checked.Source, directories)
-		reader, err := e.portReader()
-		graphs, ok := reader.(dependencyGraphReader)
-		if defined == nil || err != nil || !ok {
+		capabilities, err := e.capabilities()
+		if defined == nil || err != nil {
 			return ports, nil
 		}
-		if graph, err = graphs.DependencyGraph(ctx, checked.Source); err != nil {
+		if capabilities.Graphs == nil {
+			progress.VerboseReport(ctx, "the baseline builds the failed ports alone: nothing here reads the dependency graph")
+			return ports, nil
+		}
+		if graph, err = capabilities.Graphs.DependencyGraph(ctx, checked.Source); err != nil {
 			return ports, nil
 		}
 		for _, all := range defined {
