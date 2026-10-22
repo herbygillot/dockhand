@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/command/checkrun"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -391,7 +392,7 @@ func finishCarried(ctx context.Context, s *settings, streams term.Streams, done 
 	defer e.Close()
 	var checked error
 	if done.run != nil {
-		checked = runQueued(ctx, e, *done.run, streams, false, s.places(), s.drain)
+		checked = checkrun.RunQueued(ctx, e, *done.run, streams, false, s.places(), s.drain)
 		draft := done.submit != nil && branchstate.SubmitsDespiteCheck(done.submit.request.Draft)
 		// The check's outcome, failed, waiting for a look, or stopped, is
 		// what a draft submits despite; a failure to check isn't (R3-38:

@@ -73,8 +73,18 @@ comments, a go/types renamer over view, and the compiler's own
 hand-edited but the boundary test.
 
 **The boundary test walks every package under internal/command** and
-asserts the shape architecture asked for. The layers (view, run, host,
+asserts the shape architecture asked for. The layers (view, checkrun, host,
 settings, branchflags, cmdtest) import no verb and not the root. A verb
 imports no other verb, except as `verbImports` names (bump → author).
 The engine-boundary allowlist holds for all of them, its unused entries
 counted across the tree.
+
+## Step 2: checkrun
+
+The run library is `internal/command/checkrun`, so that every command's
+`run` variable keeps its name: `RunQueued`, `Follow`, `Report`,
+`StopWords`, and what check and its tests read (`StoppedExit`,
+`WriteBaselineResults`, `HintBaseline`), with the journal and the
+failure writers inside. It's check.go's sixteen declarations reachable
+from those, which a closure over the go/types cross-reference found
+closed but for view.

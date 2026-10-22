@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/checkrun"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -218,7 +219,7 @@ get past, as a mirror refusing an archive.`,
 				return err
 			}
 			fmt.Fprintf(streams.Out, "%s repeats %s: %s\n", run.Name(), previous.Name(), engine.Describe(revision))
-			return runQueued(ctx, e, run, streams, enqueue, s.places(), s.drain)
+			return checkrun.RunQueued(ctx, e, run, streams, enqueue, s.places(), s.drain)
 		},
 	}
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue it and return")

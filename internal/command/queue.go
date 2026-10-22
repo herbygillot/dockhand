@@ -16,6 +16,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildlog"
+	"github.com/herbygillot/dockhand/internal/command/checkrun"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -47,14 +48,14 @@ the check runs here, as a foreground check would.`,
 				return err
 			}
 			if run.State.Terminal() {
-				return report(ctx, e, run, streams, s.places())
+				return checkrun.Report(ctx, e, run, streams, s.places())
 			}
 			session, err := e.Session(ctx, model.SessionForeground)
 			if err != nil {
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
-			return follow(ctx, e, session, run, streams, s.places(), func(lead engine.Lead) {
+			return checkrun.Follow(ctx, e, session, run, streams, s.places(), func(lead engine.Lead) {
 				if lead.Here() {
 					fmt.Fprintf(streams.Err, "No dockhand serve is running, so %s will run here. Press Ctrl-C to stop it; completed results will be saved.\n", run.Name())
 					return
@@ -108,7 +109,7 @@ branch, for its latest check from anywhere.`,
 			}
 			streams.Emit(map[string]any{"run": view.RunView(run), "canceled": run.State == model.RunCanceled})
 			if run.State == model.RunCanceled {
-				fmt.Fprintln(streams.Out, stopWords(run, wasQueued))
+				fmt.Fprintln(streams.Out, checkrun.StopWords(run, wasQueued))
 				return nil
 			}
 			fmt.Fprintf(streams.Out, "%s: cancellation requested; the check will stop at the next step.\n", run.Name())

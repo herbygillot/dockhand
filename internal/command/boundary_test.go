@@ -54,7 +54,7 @@ const module = "github.com/herbygillot/dockhand/"
 // layers are command's packages below its verbs, which import no verb and
 // not the root: what renders, follows a check, holds the Mac and the
 // settings, and finds a branch (part 4, item 2).
-var layers = map[string]bool{"view": true, "run": true, "host": true, "settings": true, "branchflags": true, "cmdtest": true}
+var layers = map[string]bool{"view": true, "checkrun": true, "host": true, "settings": true, "branchflags": true, "cmdtest": true}
 
 // verbImports are the verb packages a verb may import: bump is ship's
 // single-port front, and nothing else reaches across.

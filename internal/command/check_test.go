@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/command/checkrun"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -324,7 +325,7 @@ func TestABaselineSaysWhatTheTestsDidAtTheBase(t *testing.T) {
 		{model.TestsTimedOut, model.TestsNone, "✓ builds at the base, as it does on the branch; its tests time out at the base, and weren't run in check-38 (none)."},
 		{model.TestsPassed, model.TestsPassed, "✓ builds at the base, as it does on the branch."},
 	} {
-		require.Equal(t, test.words, baselineWords(built(test.base), built(test.branch), "check-38"), "%s at the base, %s on the branch", test.base, test.branch)
+		require.Equal(t, test.words, checkrun.BaselineWords(built(test.base), built(test.branch), "check-38"), "%s at the base, %s on the branch", test.base, test.branch)
 	}
 }
 
@@ -349,7 +350,7 @@ func TestBaselineResultsShowWhereItRebuilt(t *testing.T) {
 		{Target: gone, Outcomes: cells([]model.TargetResult{notRun, notRun})},
 	}}
 	var out bytes.Buffer
-	writeBaselineResults(&out, base, branch, "1a2b3c4")
+	checkrun.WriteBaselineResults(&out, base, branch, "1a2b3c4")
 	require.Equal(t, "jq at master 1a2b3c4 · tart macOS 15 (Sequoia) arm64\n"+
 		"  ✗ fails at the base too, at install. Both results are kept; the cause isn't established.\n"+
 		"gone at master 1a2b3c4 · tart macOS 26 (Tahoe) arm64\n"+
@@ -382,11 +383,11 @@ func TestCheckRefusesAnUnknownTestPolicyAtOnce(t *testing.T) {
 func TestAStoppedCheckSaysWhatItLeft(t *testing.T) {
 	t.Parallel()
 	run := model.Run{ID: "run_2", Number: 2}
-	require.Equal(t, "Canceled check-2 before it started.", stopWords(run, true))
-	require.Equal(t, "Stopped check-2; what it finished is kept.", stopWords(run, false))
-	require.EqualError(t, stoppedExit(run, engine.Evidence{Run: run}), "check-2 stopped before anything finished")
+	require.Equal(t, "Canceled check-2 before it started.", checkrun.StopWords(run, true))
+	require.Equal(t, "Stopped check-2; what it finished is kept.", checkrun.StopWords(run, false))
+	require.EqualError(t, checkrun.StoppedExit(run, engine.Evidence{Run: run}), "check-2 stopped before anything finished")
 	recorded := engine.Evidence{Run: run, Executions: map[model.ExecutionID]model.GuestExecution{"tart_2": {ID: "tart_2", Run: "run_2"}}}
-	require.EqualError(t, stoppedExit(run, recorded), "check-2 stopped; finished results are kept")
+	require.EqualError(t, checkrun.StoppedExit(run, recorded), "check-2 stopped; finished results are kept")
 }
 
 // A plan requiring tests names the ports that declare none, which pass
