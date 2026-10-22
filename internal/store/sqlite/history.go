@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -216,6 +217,51 @@ func (t *tx) CIFailures(branch model.BranchID, head model.ObjectID) ([]model.CIF
 		failures = append(failures, f)
 	}
 	return failures, storageError(rows.Err())
+}
+
+func (t *tx) SetNetworkHolds(branch model.BranchID, tree model.ObjectID, at time.Time, holds []model.Concern) error {
+	if branch == "" || tree == "" || at.IsZero() {
+		return fmt.Errorf("%w: network holds need a branch, a tree, and a time", model.ErrInvalid)
+	}
+	if _, err := t.exec("DELETE FROM network_holds WHERE repository_id=? AND branch_id=? AND tree=?", t.repo, branch, tree); err != nil {
+		return err
+	}
+	// A plan that found none is kept too, as a row with no origin, so
+	// status says none were found rather than nothing being known.
+	if len(holds) == 0 {
+		_, err := t.exec("INSERT INTO network_holds(repository_id, branch_id, tree, origin, port, rule, path, subject, source, class, detail, at) VALUES(?,?,?,'','','','','','','','',?)", t.repo, branch, tree, millis(at))
+		return err
+	}
+	for _, h := range holds {
+		if _, err := t.exec("INSERT INTO network_holds(repository_id, branch_id, tree, origin, port, rule, path, subject, source, class, detail, at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+			t.repo, branch, tree, h.Origin, h.Port, h.Rule, h.Path, h.Subject, h.Source, h.Class, h.Detail, millis(at)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *tx) NetworkHolds(branch model.BranchID, tree model.ObjectID) ([]model.Concern, time.Time, error) {
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT origin, port, rule, path, subject, source, class, detail, at FROM network_holds WHERE repository_id=? AND branch_id=? AND tree=? ORDER BY rowid",
+		t.repo, branch, tree)
+	if err != nil {
+		return nil, time.Time{}, storageError(err)
+	}
+	defer rows.Close()
+	var holds []model.Concern
+	var at time.Time
+	for rows.Next() {
+		var h model.Concern
+		var when int64
+		if err := rows.Scan(&h.Origin, &h.Port, &h.Rule, &h.Path, &h.Subject, &h.Source, &h.Class, &h.Detail, &when); err != nil {
+			return nil, time.Time{}, storageError(err)
+		}
+		at = fromMillis(when)
+		if h.Origin != "" {
+			holds = append(holds, h)
+		}
+	}
+	return holds, at, storageError(rows.Err())
 }
 
 func (t *tx) AddReview(r model.Review) error {

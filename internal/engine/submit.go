@@ -407,6 +407,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		return plan, err
 	}
 	plan.Moved = e.movedSources(ctx, plan.Evidence)
+	moved := plan.Moved
 	if err := e.destination(ctx, worktree, &plan); err != nil {
 		return plan, err
 	}
@@ -441,6 +442,14 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	plan.facts = facts
 	plan.allowed = e.options.AllowHolds
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
+	// What took the network to find is kept for status, which never reads
+	// it, to say as this plan found it (C2's rest): the moved sources and
+	// the other pull requests. Keeping it is an observation, which a plan
+	// may record; a failure to keep it fails nothing the plan says.
+	network := append(slices.Clone(moved), othersConcerns(plan.Others, plan.SearchProblem)...)
+	_ = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		return tx.SetNetworkHolds(branch.ID, model.ObjectID(plan.Tree), e.now(), network)
+	})
 	return plan, nil
 }
 

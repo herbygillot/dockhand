@@ -55,9 +55,31 @@ func RateLimitError(err error) error {
 	// meet, as fetch says of any address (refusal.Network).
 	var unreached net.Error
 	if errors.As(err, &unreached) {
-		return refusal.Wrap(refusal.Network, err, "%s", err)
+		return refusal.Wrap(refusal.Network, err, "couldn't reach GitHub (%s)", unreachedWords(unreached))
 	}
 	return err
+}
+
+// unreachedWords say why GitHub wasn't reached, as the network's error
+// says it, without the request's address and its dial: "connection reset
+// by peer", "no such host", where git's or Go's whole words led (Later's
+// "offline said as offline").
+func unreachedWords(err net.Error) string {
+	var dns *net.DNSError
+	var op *net.OpError
+	switch {
+	case errors.As(err, &dns):
+		return dns.Err
+	case errors.As(err, &op) && op.Err != nil:
+		var inner *os.SyscallError
+		if errors.As(op.Err, &inner) {
+			return inner.Err.Error()
+		}
+		return op.Err.Error()
+	case err.Timeout():
+		return "timed out"
+	}
+	return err.Error()
 }
 
 // rateWait is the longest a read waits out GitHub's rate limit before

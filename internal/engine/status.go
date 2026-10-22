@@ -28,6 +28,9 @@ type BranchStatus struct {
 	// CI are its pull request's failed CI jobs at the head last observed,
 	// as each was classified (classifyCI).
 	CI []model.CIFailure
+	// NetworkHeldAt is when the last submission plan of its files found
+	// what in Held took the network to find; zero where none did.
+	NetworkHeldAt time.Time
 	// Missing is true when the Git branch is gone.
 	Missing bool
 	// Renamed is the branch's name before a rename by hand that this
@@ -306,6 +309,16 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 	// each: paused where serve prepared it, and for a person's own, what
 	// submit shows (C2, where it was serve's alone).
 	if status.Held, status.Assessment, err = e.assessedHolds(ctx, branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
+		return status, err
+	}
+	// And what the last submission plan of these files found that took
+	// the network, another pull request or a moved source, as it found
+	// them (C2's rest), since status reads no network itself.
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		network, at, err := r.NetworkHolds(branch.ID, model.ObjectID(status.Tree))
+		status.Held, status.NetworkHeldAt = append(status.Held, holding(network, e.options.AllowHolds)...), at
+		return err
+	}); err != nil {
 		return status, err
 	}
 

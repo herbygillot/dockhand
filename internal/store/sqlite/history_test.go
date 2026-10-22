@@ -415,3 +415,34 @@ func TestCIFailuresAreKeptByHead(t *testing.T) {
 		return nil
 	}))
 }
+
+// A submission plan's network holds are kept by tree, a later plan of the
+// tree replacing them, one that found none known as none (schema 38).
+func TestNetworkHoldsAreKeptByTree(t *testing.T) {
+	f := open(t)
+	b := f.branch("br_1", "dockhand/jq-4k2p")
+	other := model.Concern{Origin: model.FromOtherPullRequests, Rule: "open", Subject: "34620", Detail: "#34620 is open for the same port: jq: update to 1.8.0"}
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddBranch(b); err != nil {
+			return err
+		}
+		return tx.SetNetworkHolds(b.ID, "t1", at, []model.Concern{other})
+	}))
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		holds, when, err := tx.NetworkHolds(b.ID, "t1")
+		require.NoError(t, err)
+		require.Equal(t, []model.Concern{other}, holds)
+		require.Equal(t, at, when)
+		if err := tx.SetNetworkHolds(b.ID, "t1", at.Add(time.Hour), nil); err != nil {
+			return err
+		}
+		holds, when, err = tx.NetworkHolds(b.ID, "t1")
+		require.NoError(t, err)
+		require.Empty(t, holds)
+		require.Equal(t, at.Add(time.Hour), when, "none found is known")
+		_, when, err = tx.NetworkHolds(b.ID, "t2")
+		require.NoError(t, err)
+		require.True(t, when.IsZero(), "no plan of another tree")
+		return nil
+	}))
+}

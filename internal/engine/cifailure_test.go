@@ -76,3 +76,30 @@ func TestAFailedCIJobIsClassifiedOnceAndRunAgain(t *testing.T) {
 	_, err = e.RerunCI(t.Context(), statuses[0].Branch)
 	require.ErrorContains(t, err, fmt.Sprintf("nothing of #%d's CI failed at its head", number))
 }
+
+// What a submission plan found that took the network, another open pull
+// request for its port, is kept, so status, which reads no network, says
+// it as the plan found it; a later plan of the same files that finds none
+// says none (C2's rest, part 4, item 1).
+func TestStatusSaysTheNetworkHoldsTheLastPlanFound(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	fake.Others = []forge.PullRequestSummary{{Number: 34620, Title: "jq: update to 1.8.0", URL: "https://github.com/macports/macports-ports/pull/34620"}}
+	_, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	statuses, err := e.Status(t.Context())
+	require.NoError(t, err)
+	require.Contains(t, HoldLines(statuses[0].Held), "#34620 is open for the same port: jq: update to 1.8.0")
+	require.False(t, statuses[0].NetworkHeldAt.IsZero())
+
+	fake.Others = nil
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	statuses, err = e.Status(t.Context())
+	require.NoError(t, err)
+	require.NotContains(t, HoldLines(statuses[0].Held), "#34620 is open for the same port: jq: update to 1.8.0")
+	require.False(t, statuses[0].NetworkHeldAt.IsZero(), "none found is known")
+}

@@ -289,3 +289,22 @@ answered:
   architecture recommended: the verb's spelling is Herby's call, asked
   through the coordinator, and it's spelled in one place (renderNext and
   retry's flag).
+
+## Offline said as offline, and the network's holds kept (item 1's rest)
+
+- **GitHub not reached** is `refusal.Network` with words "couldn't reach
+  GitHub (connection reset by peer)", the network's own reason read by
+  type (`net.DNSError`, `net.OpError`, its `os.SyscallError`, a timeout),
+  where Go's whole request line led. git's own network failures stay in
+  git's words: git documents none of them, and reading its stderr would
+  be another decision-32 exception nobody asked for.
+- **A guest's network fault upstream** is `refusal.Network`, not
+  `Infrastructure`; both are transient, so the runner tries it again as
+  before (274d0c86).
+- **C2's rest, schema 38** (`network_holds`): what a submission plan found
+  that took the network (moved Git sources, other open pull requests, or
+  not knowing) is kept by branch and tree, replaced whole by the next plan
+  of that tree, with a row of no origin where it found none. `PlanSubmit`
+  records it (a failure to keep it fails nothing the plan says), and
+  `BranchStatus` adds it to `Held`, through the hold list, with
+  `NetworkHeldAt` saying when; status still reads no network.

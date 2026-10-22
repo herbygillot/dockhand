@@ -208,6 +208,10 @@ type Reader interface {
 	// CIFailures lists a branch's classified CI failures at a head, by
 	// check and job.
 	CIFailures(branch model.BranchID, head model.ObjectID) ([]model.CIFailure, error)
+	// NetworkHolds are what held the branch's last submission plan of a
+	// tree that took the network to find, and when that plan was made;
+	// none, and the zero time, where no plan of it was.
+	NetworkHolds(branch model.BranchID, tree model.ObjectID) ([]model.Concern, time.Time, error)
 	// LastReview is the newest review of a pull request; ErrNotFound when
 	// there is none.
 	LastReview(repository string, number int) (model.Review, error)
@@ -318,6 +322,9 @@ type Tx interface {
 	// AddCIFailure records a CI job's failure, classified; a job's attempt
 	// is recorded once, and repeating it changes nothing.
 	AddCIFailure(failure model.CIFailure) error
+	// SetNetworkHolds records what held a submission plan of a tree that
+	// took the network to find, replacing the last plan's of it.
+	SetNetworkHolds(branch model.BranchID, tree model.ObjectID, at time.Time, holds []model.Concern) error
 	// AddReview records a review of a pull request.
 	AddReview(review model.Review) error
 }

@@ -3,12 +3,15 @@ package github
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // limitedServer answers each request with the next of its replies, the
@@ -214,4 +218,20 @@ func TestSpendCountsAndLogs(t *testing.T) {
 	data, err := os.ReadFile(log)
 	require.NoError(t, err)
 	require.Regexp(t, `^3\t\d+\tstatus --refresh\n$`, string(data))
+}
+
+// GitHub not reached is said as that, the network's own reason in
+// brackets, where the request's address and dial led: offline said as
+// offline (part 4, item 1). It's the network's kind, worth another try.
+func TestGitHubNotReachedIsSaidAsThat(t *testing.T) {
+	t.Parallel()
+	reset := &url.Error{Op: "Get", URL: "https://api.github.com/repos/macports/macports-ports/pulls/1",
+		Err: &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET}}}
+	err := RateLimitError(reset)
+	require.EqualError(t, err, "couldn't reach GitHub (connection reset by peer)")
+	require.Equal(t, refusal.Network, refusal.KindOf(err))
+	require.ErrorIs(t, err, syscall.ECONNRESET)
+
+	offline := &url.Error{Op: "Get", URL: "https://api.github.com/user", Err: &net.OpError{Op: "dial", Net: "tcp", Err: &net.DNSError{Err: "no such host", Name: "api.github.com"}}}
+	require.EqualError(t, RateLimitError(offline), "couldn't reach GitHub (no such host)")
 }
