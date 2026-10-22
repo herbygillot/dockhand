@@ -47,12 +47,7 @@ import (
 // for its files, as an update's comparison always was; their next version
 // is assessed afresh.
 func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID, base, tree model.ObjectID, collect bool) ([]model.Assessment, error) {
-	trees, err := e.Repo.CommitTrees(ctx, []string{string(base)})
-	if err != nil {
-		return nil, err
-	}
-	baseTree := model.ObjectID(trees[string(base)])
-	changed, err := e.Repo.ChangedPaths(ctx, string(baseTree), string(tree))
+	analysis, err := e.analyze(ctx, base, tree)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +70,7 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 	if err != nil {
 		return nil, err
 	}
-	found, made, err := e.makeAssessments(ctx, branch, base, baseTree, tree, changed, recorded, records)
+	found, made, err := e.makeAssessments(ctx, branch, base, analysis.BaseTree, tree, analysis.Paths, recorded, records)
 	switch {
 	case errors.Is(err, errNoPlanner):
 		// Only an engine given no evaluator can't plan archives: it

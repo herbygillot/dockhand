@@ -154,6 +154,8 @@ type Engine struct {
 	// the forge), which serve's runs, and a check's environments building
 	// together, share.
 	lazy sync.Mutex
+	// analyses are the revisions analyzed, by tree and base (analyze).
+	analyses map[revisionKey]RevisionAnalysis
 	// forgeMade is whether forge assembled Forge, rather than being given it.
 	forgeMade bool
 	// githubOnce makes githubClient, the one forge client the engine's

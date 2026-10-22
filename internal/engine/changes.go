@@ -64,18 +64,13 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 		progress.VerboseReport(ctx, "no change records are made: nothing here evaluates a port's family")
 		return records, nil
 	}
-	trees, err := e.Repo.CommitTrees(ctx, []string{string(base)})
+	analysis, err := e.analyze(ctx, base, tree)
 	if err != nil {
 		return nil, err
 	}
-	baseTree := model.ObjectID(trees[string(base)])
-	changed, err := e.Repo.ChangedPaths(ctx, string(baseTree), string(tree))
-	if err != nil {
-		return nil, err
-	}
-	sources := [2]model.Source{{Commit: base, Tree: baseTree, Base: base}, {Tree: tree, Base: base}}
+	sources := analysis.Sources()
 	var made []model.ChangeRecord
-	for _, directory := range macports.ScopeOf(changed).Ports {
+	for _, directory := range analysis.Scope.Ports {
 		// A record whose evaluation failed is tried again: what kept it
 		// may have been this Mac's, such as MacPorts busy or a timeout
 		// (Codex's review of 386ac2cc, finding 5).

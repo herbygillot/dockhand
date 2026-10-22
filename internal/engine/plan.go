@@ -185,16 +185,11 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	if err != nil {
 		return plan, err
 	}
-	trees, err := e.Repo.CommitTrees(ctx, []string{string(revision.Source.Base)})
+	analysis, err := e.analyze(ctx, revision.Source.Base, revision.Source.Tree)
 	if err != nil {
 		return plan, err
 	}
-	baseTree := trees[string(revision.Source.Base)]
-	changed, err := e.Repo.ChangedPaths(ctx, baseTree, string(revision.Source.Tree))
-	if err != nil {
-		return plan, err
-	}
-	scope := macports.ScopeOf(changed)
+	scope, baseTree := analysis.Scope, string(analysis.BaseTree)
 
 	// Each environment evaluates the ports for itself: a port may be
 	// defined, eligible, need Xcode, or need a changed library on one
@@ -238,7 +233,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		}
 	}
 	for _, directory := range scope.Ports {
-		kind, err := e.targetKind(ctx, baseTree, string(revision.Source.Tree), directory, changed)
+		kind, err := e.targetKind(ctx, baseTree, string(revision.Source.Tree), directory, analysis.Paths)
 		if err != nil {
 			return plan, err
 		}

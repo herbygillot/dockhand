@@ -68,3 +68,25 @@ func TestACheckIsQueuedOneWay(t *testing.T) {
 	unrunnable := new(UnrunnableError)
 	require.ErrorAs(t, err, &unrunnable)
 }
+
+// A revision is analyzed once for its tree and base: what a later reader
+// changes of the analysis it was given is its own.
+func TestARevisionIsAnalyzedOnce(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := twoPortBranch(t, e)
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+	require.NoError(t, err)
+	first, err := e.analyze(t.Context(), capture.Revision.Source.Base, capture.Revision.Source.Tree)
+	require.NoError(t, err)
+	require.Equal(t, []string{"devel/libharbor", "textproc/jq"}, first.Scope.Ports)
+	require.Equal(t, capture.Revision.Source.Base, first.Sources()[0].Commit)
+	first.Scope.Ports[0] = "changed/by-a-reader"
+	analyzed := len(e.analyses)
+	again, err := e.analyze(t.Context(), capture.Revision.Source.Base, capture.Revision.Source.Tree)
+	require.NoError(t, err)
+	require.Equal(t, []string{"devel/libharbor", "textproc/jq"}, again.Scope.Ports)
+	require.Len(t, e.analyses, analyzed, "read again, not made again")
+}
