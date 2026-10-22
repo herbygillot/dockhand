@@ -2,8 +2,6 @@ package command
 
 import (
 	"bytes"
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,19 +15,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
-
-// asMaintainer names the person as the fixture's maintainers lines do,
-// for --mine.
-func asMaintainer(t *testing.T, w cmdtest.World) {
-	t.Helper()
-	config := filepath.Join(w.Home, ".dockhand", "config.toml")
-	data, err := os.ReadFile(config)
-	if !errors.Is(err, fs.ErrNotExist) {
-		require.NoError(t, err)
-	}
-	require.NoError(t, os.MkdirAll(filepath.Dir(config), 0o755))
-	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"@ada\"\n"), data...), 0o644))
-}
 
 // shipAnswering runs ship on a terminal that answers.
 func shipAnswering(t *testing.T, answers string, args ...string) (string, string, error) {
@@ -131,7 +116,7 @@ func TestShipMineAndPassing(t *testing.T) {
 	reader := cmdtest.WithOutdated(t)
 	g := cmdtest.WithGitHub(t, w)
 	g.Others = nil
-	asMaintainer(t, w)
+	cmdtest.AsMaintainer(t, w)
 
 	_, _, err := cmdtest.Dockhand(t, "ship", "--mine", "jq")
 	require.EqualError(t, err, "choose one target source: port names, --mine, --passing, or a branch")

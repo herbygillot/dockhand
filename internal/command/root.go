@@ -14,10 +14,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/clean"
 	"github.com/herbygillot/dockhand/internal/command/config"
+	"github.com/herbygillot/dockhand/internal/command/create"
 	"github.com/herbygillot/dockhand/internal/command/explain"
 	"github.com/herbygillot/dockhand/internal/command/host"
+	"github.com/herbygillot/dockhand/internal/command/outdated"
 	"github.com/herbygillot/dockhand/internal/command/serve"
 	"github.com/herbygillot/dockhand/internal/command/settings"
+	"github.com/herbygillot/dockhand/internal/command/setup"
 	"github.com/herbygillot/dockhand/internal/command/shell"
 	"github.com/herbygillot/dockhand/internal/command/understand"
 	"github.com/herbygillot/dockhand/internal/command/view"
@@ -164,10 +167,10 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	settings.SupportsJSON(root)
 	root.AddGroup(&cobra.Group{ID: "work", Title: "Start or enter work:"})
 	for _, command := range []*cobra.Command{
-		setupCommand(shared, streams),
-		startCommand(shared, streams),
-		adoptCommand(shared, streams),
-		pathCommand(shared, streams),
+		setup.Command(shared, streams),
+		setup.StartCommand(shared, streams),
+		setup.AdoptCommand(shared, streams),
+		setup.PathCommand(shared, streams),
 	} {
 		command.GroupID = "work"
 		root.AddCommand(command)
@@ -179,7 +182,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		updateCommand(shared, streams),
 		checksumsCommand(shared, streams),
 		revbumpCommand(shared, streams),
-		createCommand(shared, streams),
+		create.Command(shared, streams),
 		editCommand(shared, streams),
 	} {
 		command.GroupID = "author"
@@ -191,7 +194,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		understand.DiffCommand(shared, streams),
 		understand.OpenCommand(shared, streams),
 		understand.ImpactCommand(shared, streams),
-		outdatedCommand(shared, streams),
+		outdated.Command(shared, streams),
 	} {
 		command.GroupID = "understand"
 		root.AddCommand(command)

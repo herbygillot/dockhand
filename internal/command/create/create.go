@@ -1,4 +1,4 @@
-package command
+package create
 
 import (
 	"errors"
@@ -16,7 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func createCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchChoice
 	var name, category string
 	cmd := &cobra.Command{

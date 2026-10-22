@@ -1,4 +1,4 @@
-package command
+package outdated
 
 import (
 	"context"
@@ -42,7 +42,7 @@ func outdatedRequest(ctx context.Context, s *settings.Settings, e *engine.Engine
 	return request, looked, nil
 }
 
-func outdatedCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var mine, all bool
 	cmd := &cobra.Command{
 		Use:   "outdated [port...]",
@@ -311,7 +311,7 @@ func lookCost(lookups int) int { return (lookups*26/10 + 50) / 100 * 100 }
 // finds them, split one branch a port: the updates ship --mine and update
 // --mine make. What it leaves is said, each port the plan skipped with
 // why, and the rest counted by what the look found of them.
-func outdatedBatch(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams) (engine.OutdatedPlan, error) {
+func Batch(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams) (engine.OutdatedPlan, error) {
 	request, looked, err := outdatedRequest(ctx, s, e, streams, nil, true)
 	if err != nil {
 		return engine.OutdatedPlan{}, err

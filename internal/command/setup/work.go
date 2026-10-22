@@ -1,4 +1,4 @@
-package command
+package setup
 
 import (
 	"context"
@@ -26,7 +26,7 @@ import (
 // a terminal offers what's missing (the command-line UX review's §6): one
 // first-run command, rerun for the health check, in place of init,
 // providers, and auth.
-func setupCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var worktrees string
 	var yes bool
 	cmd := &cobra.Command{
@@ -157,7 +157,7 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 	return nil
 }
 
-func startCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func StartCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var here bool
 	var ports []string
 	cmd := &cobra.Command{
@@ -228,7 +228,7 @@ tracked files.`,
 	return cmd
 }
 
-func adoptCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func AdoptCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var pr int
 	cmd := &cobra.Command{
 		Use:   "adopt [branch]",
@@ -321,7 +321,7 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams term.Stream
 	return nil
 }
 
-func pathCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func PathCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "path [branch]",

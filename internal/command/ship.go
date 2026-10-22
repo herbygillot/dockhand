@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
+	"github.com/herbygillot/dockhand/internal/command/outdated"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -191,7 +192,7 @@ func shipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, po
 // mineTargets are the person's ports with newer releases, as outdated
 // --mine finds them, each at the release it found.
 func mineTargets(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams) ([]shipTarget, error) {
-	plan, err := outdatedBatch(ctx, s, e, streams)
+	plan, err := outdated.Batch(ctx, s, e, streams)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +312,7 @@ func shipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 			}
 		}
 	}
-	return batchExit(failed, len(targets), "shipped")
+	return view.BatchExit(failed, len(targets), "shipped")
 }
 
 // carried is a change ship carried as far as its check: the check queued,

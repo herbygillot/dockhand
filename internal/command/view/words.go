@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 func PortChangeWords(port engine.PortDiff) string {
@@ -198,4 +199,16 @@ func ServeWords(s engine.ServeState) string {
 		return line + fmt.Sprintf(" · queue: %s, %d stopped", prose.Plural(s.Queue, "run"), s.Stopped)
 	}
 	return line + " · queue: " + prose.Plural(s.Queue, "run")
+}
+
+// batchExit is a batch's exit (the command-line UX review's §10): 1 where
+// none of total went through, 3 where some stopped and need a look.
+func BatchExit(failed []string, total int, done string) error {
+	switch {
+	case len(failed) > 0 && len(failed) == total:
+		return &term.ExitError{Code: term.ExitFailure, Message: "nothing was " + done + ": " + strings.Join(failed, ", ") + " stopped"}
+	case len(failed) > 0:
+		return &term.ExitError{Code: term.ExitAttention, Message: strings.Join(failed, ", ") + " stopped; the rest went on"}
+	}
+	return nil
 }

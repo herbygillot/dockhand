@@ -1,4 +1,4 @@
-package command
+package outdated
 
 import (
 	"errors"
@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -159,7 +160,7 @@ func TestUpdateMineLeavesAnUncertainPortForALook(t *testing.T) {
 	cmdtest.WithBumper(t)
 	reader := cmdtest.WithOutdated(t)
 	reader.Uncertain = true
-	asMaintainer(t, w)
+	cmdtest.AsMaintainer(t, w)
 
 	out, _, err := cmdtest.Dockhand(t, "update", "--mine", "--plan")
 	require.NoError(t, err)
@@ -219,7 +220,7 @@ func TestAnInterruptedLookPrintsWhatItFound(t *testing.T) {
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
 	cmdtest.WithBumper(t)
-	asMaintainer(t, w)
+	cmdtest.AsMaintainer(t, w)
 	for _, args := range [][]string{{"outdated", "jq", "lost"}, {"update", "--mine"}, {"ship", "--mine"}} {
 		ctx, cancel := context.WithCancel(t.Context())
 		cmdtest.Stands(t).OutdatedReader = cutShort{cancel: cancel}
@@ -253,9 +254,9 @@ func TestABatchCountsWhatItLeaves(t *testing.T) {
 // done, 3 where some need a look, and 0 where all were.
 func TestABatchsExitSaysWhetherAnythingWorked(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, 1, term.ExitCode(batchExit([]string{"jq"}, 1, "shipped")), "none could be done")
-	require.Equal(t, 3, term.ExitCode(batchExit([]string{"jq"}, 2, "shipped")), "some need a look")
-	require.NoError(t, batchExit(nil, 2, "shipped"), "all were done")
+	require.Equal(t, 1, term.ExitCode(view.BatchExit([]string{"jq"}, 1, "shipped")), "none could be done")
+	require.Equal(t, 3, term.ExitCode(view.BatchExit([]string{"jq"}, 2, "shipped")), "some need a look")
+	require.NoError(t, view.BatchExit(nil, 2, "shipped"), "all were done")
 }
 
 // A look over hundreds of ports says once what it spends of GitHub's

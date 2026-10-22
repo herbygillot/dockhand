@@ -165,3 +165,11 @@ line without importing the root.
   `tidy.Decide`, `submit.Apply`, `submit.AskTested`, `outdated.Batch`.
   The pure writers ship reads (writeTidyPlan, describeWork,
   writeSubmitPlan, pullRequestWords, upstreamLines) go to view.
+- **outdated** (`Command`, and `Batch`, which ship and update's
+  --outdated compose). A batch's exit rule, `batchExit`, is
+  `view.BatchExit`; ship's test helper `asMaintainer` is
+  `cmdtest.AsMaintainer`.
+- **create**.
+- **setup**: auth.go, providers.go, setup.go, and work.go, which hold
+  setup and its github and tart subcommands, adopt, path, and start
+  (`Command`, `AdoptCommand`, `PathCommand`, `StartCommand`).

@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/outdated"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
@@ -93,7 +94,7 @@ func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams,
 	if err != nil {
 		return err
 	}
-	outdated, err := outdatedBatch(ctx, s, e, streams)
+	outdated, err := outdated.Batch(ctx, s, e, streams)
 	e.Close()
 	if err != nil {
 		return err
@@ -139,19 +140,7 @@ func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams,
 			failed = append(failed, update.Port.Port)
 		}
 	}
-	return batchExit(failed, len(outdated.Updates), "updated")
-}
-
-// batchExit is a batch's exit (the command-line UX review's §10): 1 where
-// none of total went through, 3 where some stopped and need a look.
-func batchExit(failed []string, total int, done string) error {
-	switch {
-	case len(failed) > 0 && len(failed) == total:
-		return &term.ExitError{Code: term.ExitFailure, Message: "nothing was " + done + ": " + strings.Join(failed, ", ") + " stopped"}
-	case len(failed) > 0:
-		return &term.ExitError{Code: term.ExitAttention, Message: strings.Join(failed, ", ") + " stopped; the rest went on"}
-	}
-	return nil
+	return view.BatchExit(failed, len(outdated.Updates), "updated")
 }
 
 func checksumsCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
