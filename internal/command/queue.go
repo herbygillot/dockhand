@@ -207,7 +207,7 @@ copies it as it grows, as Tart's does.`,
 				if port == "" {
 					return errors.New("--follow follows one port's log: name it, as dockhand logs check-42 jq --follow")
 				}
-				return followPortLog(ctx, e, streams, run, port, s.host.timings.followPoll)
+				return followPortLog(ctx, e, streams, run, port, s.host.Timings.FollowPoll)
 			}
 			logs, err := e.Logs(ctx, run.ID)
 			if err != nil {

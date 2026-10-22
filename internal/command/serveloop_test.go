@@ -28,13 +28,13 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	// yq may have a newer release, which serve lists for a look, and
 	// neither calls current nor prepares.
 	withOutdated(t).uncertain = true
-	hosted(t).timings.servePoll = 20 * time.Millisecond
+	hosted(t).Timings.ServePoll = 20 * time.Millisecond
 	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
-	hosted(t).now = func() time.Time { return morning }
+	hosted(t).Now = func() time.Time { return morning }
 	var mu sync.Mutex
 	var notes []string
-	hosted(t).notify = func(title, text string) error {
+	hosted(t).Notify = func(title, text string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		notes = append(notes, title+": "+text)
@@ -94,10 +94,10 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	g.Others = nil
 	withScript(t, w, "passed")
 	withOutdated(t)
-	hosted(t).timings.servePoll = 20 * time.Millisecond
+	hosted(t).Timings.ServePoll = 20 * time.Millisecond
 	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
-	hosted(t).now = func() time.Time { return morning }
+	hosted(t).Now = func() time.Time { return morning }
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
@@ -150,10 +150,10 @@ func TestServeLooksAgainAfterStoppingMidLook(t *testing.T) {
 	g := withGitHub(t, w)
 	g.Others = nil
 	withScript(t, w, "passed")
-	hosted(t).timings.servePoll = 20 * time.Millisecond
+	hosted(t).Timings.ServePoll = 20 * time.Millisecond
 	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
-	hosted(t).now = func() time.Time { return morning }
+	hosted(t).Now = func() time.Time { return morning }
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
+	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -22,20 +22,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-// tartImages is what setup and setup tart ask of dockhand's Tart images.
-type tartImages interface {
-	Status(ctx context.Context) (tart.Status, error)
-	Setup(ctx context.Context, options tart.SetupOptions, progress io.Writer) (tart.SetupResult, error)
-	Xcodes() (string, bool)
-	DownloadXcode(ctx context.Context, missing *tart.MissingXcode, in io.Reader, out, errs io.Writer) (string, error)
-}
-
 // images is dockhand's Tart images, or nil when Tart isn't installed.
-func imagesOf(s *settings) tartImages {
-	if s.host.tartImages != nil {
-		return s.host.tartImages
+func imagesOf(s *settings) host.TartImages {
+	if s.host.TartImages != nil {
+		return s.host.TartImages
 	}
-	if _, err := s.host.lookTart("tart"); err != nil {
+	if _, err := s.host.LookTart("tart"); err != nil {
 		return nil
 	}
 	return s.composeOptions().TartProvider()
@@ -72,7 +64,7 @@ as it is. --rebuild makes a replacement, and keeps the old one until the
 new one has passed.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !s.host.tartSupported() {
+			if !s.host.TartSupported() {
 				return errors.New("Tart's macOS images need Apple silicon, and this Mac isn't; checks here build on GitHub, with --on github")
 			}
 			if len(args) == 1 {
@@ -106,9 +98,9 @@ new one has passed.`,
 			} else {
 				fmt.Fprintf(streams.Out, "Made %s: %s.\n", result.Image, made)
 			}
-			if host := result.HostMacPorts; host != "" {
+			if mac := result.HostMacPorts; mac != "" {
 				fmt.Fprintf(streams.Out, "This Mac has MacPorts %s. Checks read ports with it and build them with the image's %s; --rebuild --macports-version %s makes them the same.\n",
-					host, result.MacPorts, host)
+					mac, result.MacPorts, mac)
 			}
 			// An Xcode image is an add-on beside the release's base image,
 			// which keeps its own MacPorts: one made again with --xcode
@@ -162,7 +154,7 @@ const noTart = "· needs Apple silicon; checks here build on GitHub, with --on g
 // tartReadiness is setup's Tart line, and the lines under it: a release's
 // each, where images are ready.
 func tartReadiness(ctx context.Context, s *settings) []string {
-	if !s.host.tartSupported() {
+	if !s.host.TartSupported() {
 		return []string{noTart}
 	}
 	images := imagesOf(s)
@@ -173,13 +165,13 @@ func tartReadiness(ctx context.Context, s *settings) []string {
 	if err != nil {
 		return []string{"! " + err.Error()}
 	}
-	var host string
+	var mac string
 	if status.Host.Product != "" {
-		host = fmt.Sprintf("macOS %s", status.Host.Product)
+		mac = fmt.Sprintf("macOS %s", status.Host.Product)
 	}
 	cost := "up to " + tart.SetupDisk
-	if host != "" {
-		cost = host + ", " + cost
+	if mac != "" {
+		cost = mac + ", " + cost
 	}
 	products := func(releases []macos.Release) string {
 		var names []string
@@ -268,7 +260,7 @@ func tartReadiness(ctx context.Context, s *settings) []string {
 		lines = append(lines, fmt.Sprintf("  Their base images have MacPorts %s, which no check builds with while the release has its Xcode image", strings.Join(baseBehind, " or ")))
 	}
 	if status.Readiness() == tart.NotForHost && !status.HostRestorable() {
-		lines = append(lines, "  none for this Mac's "+host+": dockhand setup tart")
+		lines = append(lines, "  none for this Mac's "+mac+": dockhand setup tart")
 	}
 	if restore != "" {
 		lines = append(lines, "  "+restore)
@@ -292,7 +284,7 @@ func githubReadiness(ctx context.Context, s *settings) string {
 // where no token stands in for one.
 func missingSteps(ctx context.Context, s *settings) []string {
 	var steps []string
-	if s.host.tartSupported() {
+	if s.host.TartSupported() {
 		if images := imagesOf(s); images != nil {
 			if status, err := images.Status(ctx); err == nil && (status.Readiness() == tart.NoImage || status.Readiness() == tart.XcodeOnly) {
 				steps = append(steps, "dockhand setup tart")
@@ -310,7 +302,7 @@ func missingSteps(ctx context.Context, s *settings) []string {
 // when it needs it; dockhand never sees it. Without one it downloads, as
 // setup downloads a vanilla image, with the sign-in xcodes keeps, and
 // shows what xcodes said when it fails.
-func offerXcode(ctx context.Context, images tartImages, streams term.Streams, missing *tart.MissingXcode) error {
+func offerXcode(ctx context.Context, images host.TartImages, streams term.Streams, missing *tart.MissingXcode) error {
 	_, installed := images.Xcodes()
 	switch {
 	case missing.Folder == "":

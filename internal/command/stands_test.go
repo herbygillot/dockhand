@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -28,7 +29,7 @@ var standIns sync.Map
 // sets them (setenv, chdir), the process's otherwise.
 type standing struct {
 	deps compose.Dependencies
-	host *host
+	host *host.Host
 	env  map[string]string
 	dir  string
 }
@@ -42,8 +43,8 @@ func standingOf(t testing.TB) *standing {
 	}
 	made := &standing{deps: compose.Dependencies{GitHubCLI: signedIn{}}, host: testHost(), env: map[string]string{}}
 	if parent, ok := parentStanding(t.Name()); ok {
-		host := *parent.host
-		made = &standing{deps: parent.deps, host: &host, env: maps.Clone(parent.env), dir: parent.dir}
+		mac := *parent.host
+		made = &standing{deps: parent.deps, host: &mac, env: maps.Clone(parent.env), dir: parent.dir}
 	}
 	actual, loaded := standIns.LoadOrStore(t.Name(), made)
 	if !loaded {
@@ -119,7 +120,7 @@ func stands(t testing.TB) *compose.Dependencies {
 }
 
 // hosted is the test's host (testHost), which it changes as it needs.
-func hosted(t testing.TB) *host {
+func hosted(t testing.TB) *host.Host {
 	t.Helper()
 	return standingOf(t).host
 }
@@ -130,17 +131,17 @@ func hosted(t testing.TB) *host {
 // afresh by serve's identity check, unless the test gives it one
 // (withAuth); and it starts no cleanup, the executable being the test
 // binary, which isn't dockhand.
-func testHost() *host {
-	h := machineHost()
-	h.lookTart = func(string) (string, error) { return "", exec.ErrNotFound }
-	h.tartSupported = func() bool { return true }
-	h.identity = func(*github.Runtime) func(context.Context) (string, error) { return nil }
-	h.authStore = memoryStore{}
-	h.authAPI = func(github.Signin) *github.Client {
+func testHost() *host.Host {
+	h := host.MachineHost()
+	h.LookTart = func(string) (string, error) { return "", exec.ErrNotFound }
+	h.TartSupported = func() bool { return true }
+	h.Identity = func(*github.Runtime) func(context.Context) (string, error) { return nil }
+	h.AuthStore = memoryStore{}
+	h.AuthAPI = func(github.Signin) *github.Client {
 		return &github.Client{Credentials: github.TokenSourceFunc(func(context.Context) (github.Token, error) { return github.Token{}, github.ErrNoCredentials })}
 	}
-	h.startCleanup = func(engine.Options) error { return nil }
-	h.startDrain = func(engine.Options) (int, error) { return 0, errors.New("no drain starts in a test") }
+	h.StartCleanup = func(engine.Options) error { return nil }
+	h.StartDrain = func(engine.Options) (int, error) { return 0, errors.New("no drain starts in a test") }
 	return h
 }
 

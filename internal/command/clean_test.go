@@ -18,7 +18,7 @@ func TestACommandStartsCleanupWhenItIsDue(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	var started []engine.Options
-	hosted(t).startCleanup = func(options engine.Options) error {
+	hosted(t).StartCleanup = func(options engine.Options) error {
 		started = append(started, options)
 		return nil
 	}

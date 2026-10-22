@@ -49,7 +49,7 @@ func checkedBranch(t *testing.T) world {
 	versioned(t, w)
 	withBumper(t)
 	withScript(t, w, "passed")
-	hosted(t).timings.servePoll = 20 * time.Millisecond
+	hosted(t).Timings.ServePoll = 20 * time.Millisecond
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	setenv(t, "MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
@@ -121,7 +121,7 @@ func TestServeStopsForAnUpgrade(t *testing.T) {
 	checkedBranch(t)
 	executable := filepath.Join(t.TempDir(), "dockhand")
 	require.NoError(t, os.WriteFile(executable, []byte("rc4"), 0o755))
-	hosted(t).executable = func(bool) string { return executable }
+	hosted(t).Executable = func(bool) string { return executable }
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
@@ -149,8 +149,8 @@ func TestServeStopsWhenUninstalled(t *testing.T) {
 	checkedBranch(t)
 	executable := filepath.Join(t.TempDir(), "dockhand")
 	require.NoError(t, os.WriteFile(executable, []byte("rc6"), 0o755))
-	hosted(t).executable = func(bool) string { return executable }
-	hosted(t).timings.serveGrace = 200 * time.Millisecond
+	hosted(t).Executable = func(bool) string { return executable }
+	hosted(t).Timings.ServeGrace = 200 * time.Millisecond
 	var served syncBuffer
 	done := make(chan error)
 	go func() {
@@ -183,7 +183,7 @@ func withLaunchd(t *testing.T, printsUntilGone int) *[][]string {
 	t.Helper()
 	var calls [][]string
 	loaded, going := false, 0
-	hosted(t).launchctl = func(_ context.Context, args ...string) ([]byte, error) {
+	hosted(t).Launchctl = func(_ context.Context, args ...string) ([]byte, error) {
 		switch args[0] {
 		case "print":
 			if loaded && going > 0 {
@@ -210,11 +210,11 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	t.Parallel()
 	w := checkedBranch(t)
 	calls := withLaunchd(t, 2)
-	hosted(t).os = "linux"
+	hosted(t).OS = "linux"
 	_, _, err := dockhand(t, "serve", "--install")
 	require.ErrorContains(t, err, "serve --install requires macOS")
 
-	hosted(t).os = "darwin"
+	hosted(t).OS = "darwin"
 	out, _, err := dockhand(t, "serve", "--install")
 	require.NoError(t, err)
 	require.Contains(t, out, "serve now starts at login and restarts if it stops.\n  Agent  ~/Library/LaunchAgents/"+AgentLabel+".plist\n  Log    ~/.dockhand/logs/serve.log\n")
@@ -244,7 +244,7 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	require.Contains(t, out, "Removed the serve agent")
 	require.Len(t, *calls, 1, "uninstall only boots it out")
 	require.NoFileExists(t, filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
-	loaded, err := macos.LaunchAgent{Label: AgentLabel, Launchctl: hosted(t).launchctl}.Loaded(t.Context())
+	loaded, err := macos.LaunchAgent{Label: AgentLabel, Launchctl: hosted(t).Launchctl}.Loaded(t.Context())
 	require.NoError(t, err)
 	require.False(t, loaded, "gone when uninstall returns")
 }
@@ -255,7 +255,7 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 	versioned(t, w)
 	withBumper(t)
 	g := withGitHub(t, w)
-	hosted(t).timings.servePoll = 20 * time.Millisecond
+	hosted(t).Timings.ServePoll = 20 * time.Millisecond
 	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
@@ -392,7 +392,7 @@ func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
 	t.Parallel()
 	w := checkedBranch(t)
 	withLaunchd(t, 0)
-	hosted(t).os = "darwin"
+	hosted(t).OS = "darwin"
 	git, err := exec.LookPath("git")
 	require.NoError(t, err)
 	setenv(t, "GIT_BIN", git)
@@ -423,8 +423,8 @@ func TestServeActsOnlyAsTheAccountItStartedAs(t *testing.T) {
 	checkedBranch(t)
 	var mu sync.Mutex
 	answers := []string{"ada", "", "", "bob", "revoked", "revoked", "ada"}
-	hosted(t).timings.serveIdentity = 50 * time.Millisecond
-	hosted(t).identity = func(*github.Runtime) func(context.Context) (string, error) {
+	hosted(t).Timings.ServeIdentity = 50 * time.Millisecond
+	hosted(t).Identity = func(*github.Runtime) func(context.Context) (string, error) {
 		return func(context.Context) (string, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -468,8 +468,8 @@ func TestServeSaysALoginItCantRead(t *testing.T) {
 	checkedBranch(t)
 	var mu sync.Mutex
 	answers := []string{"ada", "revoked", "unread", "unread", "ada"}
-	hosted(t).timings.serveIdentity = 50 * time.Millisecond
-	hosted(t).identity = func(*github.Runtime) func(context.Context) (string, error) {
+	hosted(t).Timings.ServeIdentity = 50 * time.Millisecond
+	hosted(t).Identity = func(*github.Runtime) func(context.Context) (string, error) {
 		return func(context.Context) (string, error) {
 			mu.Lock()
 			defer mu.Unlock()

@@ -88,3 +88,12 @@ The run library is `internal/command/checkrun`, so that every command's
 failure writers inside. It's check.go's sixteen declarations reachable
 from those, which a closure over the go/types cross-reference found
 closed but for view.
+
+## Step 3a: host
+
+`internal/command/host` holds the Host (the Mac, or a test's stand-in),
+its Timings, `MachineHost`, `TartImages`, and cleanup_unix.go's
+`StartCleanup` and `StartDrain`, whole. Host's and Timings' fields are
+exported, since serve, setup, status --watch, and the tests read and set
+them; `os` is `OS`. Locals named `host` and `settings` in command are
+`mac` and `shared`, so the packages' names are free.

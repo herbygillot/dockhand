@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -50,7 +51,7 @@ func Run(ctx context.Context, args []string, streams term.Streams) error {
 	if err != nil {
 		return err
 	}
-	return run(ctx, invocation{args: args, env: os.Environ(), dir: dir}, streams, compose.Dependencies{}, machineHost())
+	return run(ctx, invocation{args: args, env: os.Environ(), dir: dir}, streams, compose.Dependencies{}, host.MachineHost())
 }
 
 // invocation is a command line: its arguments, and the environment and
@@ -63,13 +64,13 @@ type invocation struct {
 
 // run executes the command line on the host, with the stand-ins given,
 // compose's real ones where they're empty, which a test gives its own.
-func run(ctx context.Context, line invocation, streams term.Streams, dependencies compose.Dependencies, host *host) error {
+func run(ctx context.Context, line invocation, streams term.Streams, dependencies compose.Dependencies, mac *host.Host) error {
 	args := line.args
-	var settings settings
-	settings.deps, settings.host, settings.env, settings.dir, settings.command = dependencies, host, line.env, line.dir, Run
+	var shared settings
+	shared.deps, shared.host, shared.env, shared.dir, shared.command = dependencies, mac, line.env, line.dir, Run
 	streams = term.Begin(streams, args)
-	settings.streams = streams
-	root := newRoot(&settings, streams)
+	shared.streams = streams
+	root := newRoot(&shared, streams)
 	// Cobra reads os.Args for nil arguments; Run's are only those given,
 	// so a test binary's own flags never reach a command.
 	root.SetArgs(append([]string{}, args...))
@@ -78,21 +79,21 @@ func run(ctx context.Context, line invocation, streams term.Streams, dependencie
 	root.SetErr(streams.Err)
 	spend := github.StartSpend()
 	err := view.SayNext(root.ExecuteContext(ctx))
-	cleanupAfter(&settings, streams, streams.Command())
+	cleanupAfter(&shared, streams, streams.Command())
 	// What the command spent of GitHub's hourly allowance, said with -v,
 	// in the envelope, and in the spend log.
 	requests := spend.Requests()
 	if verbosity, _ := root.PersistentFlags().GetCount("verbose"); verbosity > 0 && requests > 0 {
 		streams.Say(fmt.Sprintf("GitHub's API: %s", prose.Plural(int(requests), "request")))
 	}
-	spend.Log(settings.composeOptions().SpendLog(), args)
+	spend.Log(shared.composeOptions().SpendLog(), args)
 	return streams.Finish(args, requests, err)
 }
 
 // newRoot is dockhand's command tree, which Run executes and the
 // help-reference test reads (the architecture review of 5897a82, R3-22:
 // a package-level seam in Run stood for it). streams are term.Begin's.
-func newRoot(settings *settings, streams term.Streams) *cobra.Command {
+func newRoot(shared *settings, streams term.Streams) *cobra.Command {
 	var asJSON bool
 	var verbosity int
 	root := &cobra.Command{
@@ -106,16 +107,16 @@ func newRoot(settings *settings, streams term.Streams) *cobra.Command {
 		// With no command, a ports checkout shows its status (Design v3
 		// §10); anywhere else, the help.
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			e, err := settings.open(cmd.Context())
+			e, err := shared.open(cmd.Context())
 			if err != nil {
 				return cmd.Help()
 			}
 			defer e.Close()
-			return showStatus(cmd.Context(), e, streams, nil, false, false, branchFlags{}, settings.places())
+			return showStatus(cmd.Context(), e, streams, nil, false, false, branchFlags{}, shared.places())
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
-	settings.flags(root)
+	shared.flags(root)
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "write the result as one JSON envelope on standard output")
 	root.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "say more of what dockhand does as it works on standard error: -v the work behind the scenes, -vv every step")
 	// A command that can't report as JSON is refused before it does
@@ -126,11 +127,11 @@ func newRoot(settings *settings, streams term.Streams) *cobra.Command {
 		// status, and archive by its name.
 		for _, flag := range []string{"branch", "port", "pr"} {
 			if f := cmd.Flags().Lookup(flag); f != nil && f.Changed {
-				settings.namesBranch = true
+				shared.namesBranch = true
 			}
 		}
 		if len(args) > 0 && slices.Contains([]string{"path", "status", "archive"}, cmd.Name()) {
-			settings.namesBranch = true
+			shared.namesBranch = true
 		}
 		// What the work reports as it goes goes to standard error (Design
 		// v3 §12): what a person needs to follow it, and with -v and -vv,
@@ -163,74 +164,74 @@ func newRoot(settings *settings, streams term.Streams) *cobra.Command {
 	supportsJSON(root)
 	root.AddGroup(&cobra.Group{ID: "work", Title: "Start or enter work:"})
 	for _, command := range []*cobra.Command{
-		setupCommand(settings, streams),
-		startCommand(settings, streams),
-		adoptCommand(settings, streams),
-		pathCommand(settings, streams),
+		setupCommand(shared, streams),
+		startCommand(shared, streams),
+		adoptCommand(shared, streams),
+		pathCommand(shared, streams),
 	} {
 		command.GroupID = "work"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "author", Title: "Author:"})
 	for _, command := range []*cobra.Command{
-		shipCommand(settings, streams),
-		bumpCommand(settings, streams),
-		updateCommand(settings, streams),
-		checksumsCommand(settings, streams),
-		revbumpCommand(settings, streams),
-		createCommand(settings, streams),
-		editCommand(settings, streams),
+		shipCommand(shared, streams),
+		bumpCommand(shared, streams),
+		updateCommand(shared, streams),
+		checksumsCommand(shared, streams),
+		revbumpCommand(shared, streams),
+		createCommand(shared, streams),
+		editCommand(shared, streams),
 	} {
 		command.GroupID = "author"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "understand", Title: "Understand:"})
 	for _, command := range []*cobra.Command{
-		statusCommand(settings, streams),
-		diffCommand(settings, streams),
-		openCommand(settings, streams),
-		impactCommand(settings, streams),
-		outdatedCommand(settings, streams),
+		statusCommand(shared, streams),
+		diffCommand(shared, streams),
+		openCommand(shared, streams),
+		impactCommand(shared, streams),
+		outdatedCommand(shared, streams),
 	} {
 		command.GroupID = "understand"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "check", Title: "Check:"})
 	for _, command := range []*cobra.Command{
-		checkCommand(settings, streams),
-		logsCommand(settings, streams),
-		shellCommand(settings, streams),
-		retryCommand(settings, streams),
+		checkCommand(shared, streams),
+		logsCommand(shared, streams),
+		shellCommand(shared, streams),
+		retryCommand(shared, streams),
 	} {
 		command.GroupID = "check"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "review", Title: "Prepare for review:"})
 	for _, command := range []*cobra.Command{
-		tidyCommand(settings, streams),
-		submitCommand(settings, streams),
-		rebaseCommand(settings, streams),
-		reviewCommand(settings, streams),
+		tidyCommand(shared, streams),
+		submitCommand(shared, streams),
+		rebaseCommand(shared, streams),
+		reviewCommand(shared, streams),
 	} {
 		command.GroupID = "review"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "queue", Title: "Keep work moving:"})
 	for _, command := range []*cobra.Command{
-		waitCommand(settings, streams),
-		cancelCommand(settings, streams),
-		serveCommand(settings, streams),
+		waitCommand(shared, streams),
+		cancelCommand(shared, streams),
+		serveCommand(shared, streams),
 	} {
 		command.GroupID = "queue"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "occasional", Title: "Occasional:"})
 	for _, command := range []*cobra.Command{
-		undoCommand(settings, streams),
-		archiveCommand(settings, streams),
-		cleanCommand(settings, streams),
+		undoCommand(shared, streams),
+		archiveCommand(shared, streams),
+		cleanCommand(shared, streams),
 		explainCommand(streams),
-		configCommand(settings, streams),
+		configCommand(shared, streams),
 	} {
 		command.GroupID = "occasional"
 		root.AddCommand(command)

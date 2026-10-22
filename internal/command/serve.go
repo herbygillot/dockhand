@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -105,7 +106,7 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 // its lines going to out and its notices to macOS notifications when
 // notify, serve.notify less --no-notify, allows; shipTo is serve.ship_to,
 // or --ship-to.
-func serveOptions(h *host, e *engine.Engine, file config.File, out io.Writer, drain bool, shipTo string, notify bool) engine.ServeOptions {
+func serveOptions(h *host.Host, e *engine.Engine, file config.File, out io.Writer, drain bool, shipTo string, notify bool) engine.ServeOptions {
 	capacity := map[string]int{}
 	for name := range e.Providers {
 		capacity[name] = file.Capacity(name)
@@ -120,19 +121,19 @@ func serveOptions(h *host, e *engine.Engine, file config.File, out io.Writer, dr
 		Cleanup:         file.Cleanup.On(),
 		CleanupAge:      file.Cleanup.Age(),
 		Say:             func(line string) { fmt.Fprintln(out, line) },
-		Poll:            h.timings.servePoll,
-		Refresh:         h.timings.serveRefresh,
-		CleanupEvery:    h.timings.serveCleanup,
+		Poll:            h.Timings.ServePoll,
+		Refresh:         h.Timings.ServeRefresh,
+		CleanupEvery:    h.Timings.ServeCleanup,
 		MinFree:         file.Cleanup.Free(),
 		Build:           buildinfo.Current().String(),
-		Executable:      h.executable(drain),
-		ExecutableGrace: h.timings.serveGrace,
-		Identity:        h.identity(e.GitHub),
-		IdentityEvery:   h.timings.serveIdentity,
-		Now:             h.now,
+		Executable:      h.Executable(drain),
+		ExecutableGrace: h.Timings.ServeGrace,
+		Identity:        h.Identity(e.GitHub),
+		IdentityEvery:   h.Timings.ServeIdentity,
+		Now:             h.Now,
 	}
 	if notify {
-		options.Notify = func(title, text string) { _ = h.notify(title, text) }
+		options.Notify = func(title, text string) { _ = h.Notify(title, text) }
 	}
 	return options
 }
@@ -141,7 +142,7 @@ func serveOptions(h *host, e *engine.Engine, file config.File, out io.Writer, dr
 const AgentLabel = "io.github.herbygillot.dockhand.serve"
 
 func serveAgent(ctx context.Context, s *settings, streams term.Streams, install bool, flags []string) error {
-	if s.host.os != "darwin" {
+	if s.host.OS != "darwin" {
 		return errors.New("serve --install requires macOS; on other platforms, run dockhand serve with your service manager")
 	}
 	home := s.places().Home
@@ -151,7 +152,7 @@ func serveAgent(ctx context.Context, s *settings, streams term.Streams, install 
 	plist := filepath.Join(home, "Library", "LaunchAgents", AgentLabel+".plist")
 	// Both wait until launchd has let go of the agent, which bootout
 	// returns before (the rc10 full stage's B7).
-	agent := macos.LaunchAgent{Label: AgentLabel, Path: plist, Launchctl: s.host.launchctl}
+	agent := macos.LaunchAgent{Label: AgentLabel, Path: plist, Launchctl: s.host.Launchctl}
 	if !install {
 		if err := agent.Remove(ctx); err != nil {
 			return err

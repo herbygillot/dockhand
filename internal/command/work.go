@@ -405,7 +405,7 @@ type githubLoginJSON struct {
 func publishing(ctx context.Context, s *settings) (string, githubLoginJSON) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	status, err := s.host.authAPI(s.signin()).LoginStatus(ctx)
+	status, err := s.host.AuthAPI(s.signin()).LoginStatus(ctx)
 	switch {
 	case err == nil:
 		login := githubLoginJSON{Account: status.Account, Source: string(status.Source)}

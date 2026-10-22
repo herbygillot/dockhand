@@ -70,8 +70,8 @@ func withAuth(t *testing.T, flow credential.DeviceFlow) memoryStore {
 		json.NewEncoder(w).Encode(map[string]any{"login": "ada"})
 	}))
 	t.Cleanup(server.Close)
-	hosted(t).authFlow, hosted(t).authStore = flow, store
-	hosted(t).authAPI = func(signin github.Signin) *github.Client {
+	hosted(t).AuthFlow, hosted(t).AuthStore = flow, store
+	hosted(t).AuthAPI = func(signin github.Signin) *github.Client {
 		return &github.Client{HTTP: server.Client(), Config: github.Config{BaseURL: server.URL}, Credentials: github.SystemCredentials{Store: signin.Store, Key: github.CredentialKey, Override: signin.Token, CLI: signin.CLI}}
 	}
 	setenv(t, "GH_TOKEN", "")
@@ -85,7 +85,7 @@ func TestSetupGitHubLogsInAndOutAndSetupNamesTheLogin(t *testing.T) {
 	path := getenv(t, "PATH")
 	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	var opened string
-	hosted(t).openBrowser = func(_ context.Context, url string) error { opened = url; return nil }
+	hosted(t).OpenBrowser = func(_ context.Context, url string) error { opened = url; return nil }
 
 	out, errs, err := dockhand(t, "setup", "github")
 	require.NoError(t, err)
@@ -169,7 +169,7 @@ func TestADeviceFlowAddressThatIsntHTTPSIsntOpened(t *testing.T) {
 	t.Parallel()
 	withAuth(t, plainFlow{})
 	opened := ""
-	hosted(t).openBrowser = func(_ context.Context, url string) error { opened = url; return nil }
+	hosted(t).OpenBrowser = func(_ context.Context, url string) error { opened = url; return nil }
 	_, _, err := dockhand(t, "setup", "github")
 	require.ErrorContains(t, err, "an HTTPS URL is required, so the browser was not opened")
 	require.Empty(t, opened)

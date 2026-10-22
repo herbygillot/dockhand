@@ -171,14 +171,14 @@ func serveWith(t *testing.T, concerns concerned, search error) (bool, string) {
 	t.Helper()
 	g := concernedWorld(t, concerns, search)
 	withOutdated(t)
-	hosted(t).timings.servePoll = 20 * time.Millisecond
+	hosted(t).Timings.ServePoll = 20 * time.Millisecond
 	// The day's look runs from serve.outdated_at, 07:00 local by default:
 	// a clock left running found it not yet due past midnight, and serve
 	// prepared nothing (CI on the rc9 tag, 00:21 to 00:45 UTC).
 	morning := time.Date(2026, 10, 7, 8, 0, 0, 0, time.Local)
-	hosted(t).now = func() time.Time { return morning }
+	hosted(t).Now = func() time.Time { return morning }
 	setenv(t, "DOCKHAND_INDEX_CACHE", t.TempDir())
-	hosted(t).notify = func(string, string) error { return nil }
+	hosted(t).Notify = func(string, string) error { return nil }
 	config := filepath.Join(getenv(t, "HOME"), ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)

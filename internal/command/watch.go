@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -21,7 +22,7 @@ import (
 // view redrawn on a terminal, else events as lines; it only observes. A
 // command typed at its prompt runs through command, the whole command
 // line's, which the watch is given rather than reaching back to.
-func statusWatch(ctx context.Context, e *engine.Engine, streams term.Streams, plain bool, timings timings, places config.Places, command func(context.Context, []string, term.Streams) error) error {
+func statusWatch(ctx context.Context, e *engine.Engine, streams term.Streams, plain bool, timings host.Timings, places config.Places, command func(context.Context, []string, term.Streams) error) error {
 	// One observer for the whole watch, however often it redraws.
 	ctx, _, end, err := e.Observing(ctx)
 	if err != nil {
@@ -64,7 +65,7 @@ func (c *journalCursor) next(ctx context.Context) ([]model.Event, error) {
 }
 
 // watchPlain prints status once, then each event as it is journaled.
-func watchPlain(ctx context.Context, e *engine.Engine, streams term.Streams, timings timings, places config.Places) error {
+func watchPlain(ctx context.Context, e *engine.Engine, streams term.Streams, timings host.Timings, places config.Places) error {
 	cursor := &journalCursor{e: e}
 	if err := cursor.start(ctx); err != nil {
 		return err
@@ -78,7 +79,7 @@ func watchPlain(ctx context.Context, e *engine.Engine, streams term.Streams, tim
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(timings.watchPoll):
+		case <-time.After(timings.WatchPoll):
 		}
 		events, err := cursor.next(ctx)
 		if err != nil {
@@ -132,7 +133,7 @@ const (
 // watchLive redraws status on a terminal as what it shows changes, and
 // runs the commands typed at it. A check's progress isn't redrawn for: it
 // redrew every branch's status each second of every check (SQL-O6).
-func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timings timings, places config.Places, command func(context.Context, []string, term.Streams) error) error {
+func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timings host.Timings, places config.Places, command func(context.Context, []string, term.Streams) error) error {
 	fmt.Fprint(streams.Out, enterView)
 	defer fmt.Fprint(streams.Out, leaveView)
 	cursor := &journalCursor{e: e}
@@ -205,7 +206,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timi
 				paused = true
 			}
 			want <- struct{}{}
-		case <-time.After(timings.watchPoll):
+		case <-time.After(timings.WatchPoll):
 			if paused {
 				continue
 			}
@@ -216,7 +217,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timi
 			changed := slices.ContainsFunc(events, func(event model.Event) bool { return event.Kind.ChangesStatus() })
 			// Progress waits for its interval, and isn't lost meanwhile.
 			progressed = progressed || slices.ContainsFunc(events, func(event model.Event) bool { return event.Kind == model.EventProgress })
-			if changed || progressed && time.Since(drawn) >= timings.watchProgress || time.Since(drawn) >= timings.watchRedraw {
+			if changed || progressed && time.Since(drawn) >= timings.WatchProgress || time.Since(drawn) >= timings.WatchRedraw {
 				draw()
 				progressed = false
 			}

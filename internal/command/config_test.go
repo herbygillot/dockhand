@@ -57,8 +57,8 @@ func TestEverySettingHasItsDefaultInTheTable(t *testing.T) {
 	out, _, err := dockhand(t, "config")
 	require.NoError(t, err)
 	defaults := config.Defaults()
-	_, settings, _ := strings.Cut(out, "\n\n")
-	for _, line := range strings.Split(strings.TrimSpace(settings), "\n") {
+	_, shared, _ := strings.Cut(out, "\n\n")
+	for _, line := range strings.Split(strings.TrimSpace(shared), "\n") {
 		key := strings.Fields(line)[0]
 		if !strings.HasPrefix(key, "providers.tart.xcode.") {
 			require.Contains(t, defaults, key)

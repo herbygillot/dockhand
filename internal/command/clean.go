@@ -205,7 +205,7 @@ func cleanupAfter(s *settings, streams term.Streams, command string) {
 	if why.LowSpace {
 		fmt.Fprintf(streams.Err, "Cleaning up in the background: %s.\n", why.Words)
 	}
-	if err := s.host.startCleanup(s.openedWith); err != nil {
+	if err := s.host.StartCleanup(s.openedWith); err != nil {
 		fmt.Fprintf(streams.Err, "Couldn't start cleaning up in the background: %v\n", err)
 	}
 }

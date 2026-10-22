@@ -514,7 +514,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 
 	// serve reads them by itself.
 	g.Status = forge.PullRequestStatus{Review: "none", Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
-	hosted(t).timings.servePoll = 20 * time.Millisecond
+	hosted(t).Timings.ServePoll = 20 * time.Millisecond
 	ctx, stop := context.WithCancel(t.Context())
 	var served syncBuffer
 	done := make(chan error)

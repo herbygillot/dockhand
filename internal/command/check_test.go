@@ -104,7 +104,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	// With no serve leading, a background drain of its own runs it, on
 	// the same checkout and database.
 	var drained engine.Options
-	hosted(t).startDrain = func(options engine.Options) (int, error) { drained = options; return 4242, nil }
+	hosted(t).StartDrain = func(options engine.Options) (int, error) { drained = options; return 4242, nil }
 	out, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
 	require.Contains(t, out, "check-2 queued; a background drain (pid 4242) runs it. dockhand wait check-2 follows it.\n")

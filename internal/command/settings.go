@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -41,7 +42,7 @@ type settings struct {
 	// the real ones where they're empty.
 	deps compose.Dependencies
 	// host is the Mac's, or a test's stand-in.
-	host *host
+	host *host.Host
 	// env and dir are the command line's environment and working
 	// directory (invocation), which compose reads.
 	env []string
@@ -53,7 +54,7 @@ func (s *settings) getenv(name string) string { return s.composeOptions().Getenv
 
 // signin is how the command line reaches the person's GitHub login, with
 // the host's keeping of it (compose.Options.Signin).
-func (s *settings) signin() github.Signin { return s.composeOptions().Signin(s.host.authStore) }
+func (s *settings) signin() github.Signin { return s.composeOptions().Signin(s.host.AuthStore) }
 
 // places are the command line's home and working directory.
 func (s *settings) places() config.Places { return s.composeOptions().Places() }
@@ -116,20 +117,20 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 func (s *settings) dependencies() compose.Dependencies {
 	d := s.deps
 	if d.GitHubClient == nil {
-		d.GitHubClient = s.host.authAPI
+		d.GitHubClient = s.host.AuthAPI
 	}
 	if d.Store == nil {
-		d.Store = s.host.authStore
+		d.Store = s.host.AuthStore
 	}
 	if d.LookTart == nil {
-		d.LookTart = s.host.lookTart
+		d.LookTart = s.host.LookTart
 	}
 	return d
 }
 
 // drain starts a background drain of the queue, outliving the command,
 // with the options the command was opened with; its pid.
-func (s *settings) drain() (int, error) { return s.host.startDrain(s.openedWith) }
+func (s *settings) drain() (int, error) { return s.host.StartDrain(s.openedWith) }
 
 // jsonAnnotation marks a command that can report its result as JSON.
 const jsonAnnotation = "dockhand.json"

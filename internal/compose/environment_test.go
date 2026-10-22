@@ -55,7 +55,7 @@ func TestNothingBelowComposeReadsTheEnvironment(t *testing.T) {
 			return err
 		}
 		pkg := filepath.ToSlash(filepath.Dir(path))[len("../"):]
-		if pkg == "command" || pkg == "compose" || pkg == "testsupport" || strings.HasPrefix(pkg, "testsupport/") {
+		if pkg == "command" || strings.HasPrefix(pkg, "command/") || pkg == "compose" || pkg == "testsupport" || strings.HasPrefix(pkg, "testsupport/") {
 			return nil
 		}
 		file, err := parser.ParseFile(files, path, nil, parser.SkipObjectResolution)

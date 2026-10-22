@@ -13,7 +13,7 @@ import (
 
 func fastWatch(t *testing.T) {
 	t.Helper()
-	hosted(t).timings.watchPoll = 20 * time.Millisecond
+	hosted(t).Timings.WatchPoll = 20 * time.Millisecond
 }
 
 func TestWatchPrintsEventsAsLinesWithoutATerminal(t *testing.T) {

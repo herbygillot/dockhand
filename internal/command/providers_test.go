@@ -64,7 +64,7 @@ func (f *fakeImages) Setup(_ context.Context, options tart.SetupOptions, progres
 
 func useImages(t *testing.T, images *fakeImages) {
 	t.Helper()
-	hosted(t).tartImages = images
+	hosted(t).TartImages = images
 }
 
 func release(t *testing.T, name string) macos.Release {
@@ -77,7 +77,7 @@ func release(t *testing.T, name string) macos.Release {
 // onIntel says this Mac is an Intel one, which Tart's macOS guests
 // don't run on, whichever Mac runs the test.
 func onIntel(t *testing.T) {
-	hosted(t).tartSupported = func() bool { return false }
+	hosted(t).TartSupported = func() bool { return false }
 }
 
 // An Intel Mac is told Tart isn't for it, and where its checks build,
