@@ -409,6 +409,7 @@ Serve opens no pull requests by default. With `serve.ship_to = "submit"`, it ope
 | `cleanup.after` | `15d` | how long cleanup keeps what it would remove: a port index unused, events, an ended branch's checks and logs, an open branch's superseded logs |
 | `cleanup.min_free` | `30GB` | the free space below which cleanup runs at once; sizes are SI, as Finder and `df -H` count them, so `30GB` is 30,000,000,000 bytes; `GiB` and `TiB` name binary ones, and `1.5TB` and `500MB` read too |
 | `holds.majors` | `hold` | `hold` holds an update nobody looks over, bump's or serve's, where its major version moves, before anything is prepared; `allow` lets it go on |
+| `holds.allow` | (none) | Rules whose concerns an update nobody looks over is said to have, and goes on past: an upstream finding's rule, such as `build-file-changed` or `license-changed`; a commit rule's error, such as `subject-port`; or a hold dockhand raises, such as `open` for another open pull request, `upstream-moved`, `deployment-target`, or `major-version`. Each concern still shows in submit's preview, and in status. What blocks a submission, and archives that couldn't be compared, hold whatever the list says. A rule dockhand doesn't raise is refused, with the list of those it does. |
 | `serve.ship_to` | `list` | how far serve carries your outdated ports each day: `list`, `commit`, `check`, or `submit` |
 | `serve.outdated_at` | `07:00` | when serve looks for new releases, in local time |
 | `serve.submit_limit` | `10` | the most pull requests serve opens a day |

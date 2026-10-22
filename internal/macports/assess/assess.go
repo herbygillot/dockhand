@@ -185,6 +185,15 @@ const (
 	GitHubTarball       = "github-tarball"
 )
 
+// Rules are every rule an assessment's finding is raised by, for a hold
+// list to name (holds.allow).
+func Rules() []string {
+	return []string{LicenseChanged, LicenseYears, LicenseMoved, BuildFileChanged, BuildFileVersion, BuildFileOptions, DependencyAdded, DependencyDropped,
+		DependencyMoved, DependenciesCounted, NativeLibrary, NativeLibraryLeft, Unread, LayoutAmbiguous, RequirementUnmet, RequirementUnknown,
+		ProviderUnresolved, ProviderRemoved, GoToolchainRule, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, SourceRemoved,
+		SourceUncertain, WorksrcPathGone, GitHubTarball}
+}
+
 // proven are the manifests whose dependencies a check proves (D9). A Go
 // module or a Rust crate is compiled into what the port builds, and a
 // check builds with only what the port declares, so one needing a library

@@ -524,3 +524,24 @@ func TestOnlyACommitRuleErrorHolds(t *testing.T) {
 	require.Equal(t, model.FromCommitRules, held[0].Origin)
 	require.Equal(t, "merge", held[0].Rule)
 }
+
+// The configuration's hold list sets a rule apart: its concerns are said,
+// and hold nothing; what blocks a submission holds whatever it says, as do
+// archives that couldn't be compared (D4).
+func TestTheHoldListSetsARuleApart(t *testing.T) {
+	t.Parallel()
+	license := model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: assess.LicenseChanged, Detail: "upstream's LICENSE changed"}
+	plan := SubmitPlan{Blocking: []string{"jq did not pass in check-1"}, Others: []forge.PullRequestSummary{{Number: 35001, Title: "jq: update to 1.8.2"}}}
+	plan.Upstream = []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Problem: "the archive couldn't be fetched",
+		Changes: []model.UpstreamChange{{Kind: "license", Path: "LICENSE", Message: license.Detail, Hold: true, Rule: license.Rule, Class: model.Introduced}}}}}
+	plan.allowed = []string{"open", assess.LicenseChanged, "not-compared", "blocking"}
+	var rules []string
+	for _, concern := range plan.Held() {
+		rules = append(rules, concern.Rule)
+	}
+	require.Equal(t, []string{"blocking", "not-compared"}, rules)
+	require.Len(t, plan.Concerns(), 3, "each is still said")
+	require.NotContains(t, HoldRules(), "blocking")
+	require.NotContains(t, HoldRules(), "not-compared")
+	require.Subset(t, HoldRules(), []string{"open", "major-version", assess.LicenseChanged, "subject-port"})
+}

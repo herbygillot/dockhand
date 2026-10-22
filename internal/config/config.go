@@ -65,6 +65,12 @@ type Holds struct {
 	// hold (the default) or allow (the person's preference since
 	// 2026-10-06; hyperfine went from 1.21.0 to 2.0.0 unlooked at).
 	Majors string `toml:"majors"`
+	// Allow are the rules whose concerns such an update is said to have,
+	// and goes on past: a rule of what comparing its archives found, such
+	// as build-file-changed, a commit rule's error, or one of the holds
+	// dockhand raises, such as open, for another open pull request
+	// (engine.HoldRules, which the command line checks it against).
+	Allow []string `toml:"allow"`
 }
 
 // HoldMajors reports whether an unattended update holds where its major
@@ -412,6 +418,7 @@ func Defaults() map[string]string {
 		"cleanup.after":                  ageWords(DefaultCleanupAfter),
 		"cleanup.min_free":               prose.Bytes(DefaultMinFree),
 		"holds.majors":                   "hold",
+		"holds.allow":                    "(none)",
 		"serve.ship_to":                  DefaultShipTo,
 		"serve.outdated_at":              DefaultOutdatedAt,
 		"serve.submit_limit":             strconv.Itoa(DefaultSubmitLimit),

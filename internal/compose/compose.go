@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -199,6 +200,13 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 	if err != nil {
 		return engine.Options{}, config.File{}, "", err
 	}
+	// The hold list names rules the engine raises, which the configuration
+	// can't know of.
+	for _, rule := range file.Holds.Allow {
+		if !slices.Contains(engine.HoldRules(), rule) {
+			return engine.Options{}, config.File{}, "", fmt.Errorf("%s: holds.allow: %q is not a hold dockhand raises or lets go; the rules are %s", configPath, rule, strings.Join(engine.HoldRules(), ", "))
+		}
+	}
 	git := cmp.Or(options.Git, options.Getenv("GIT_BIN"))
 	database := cmp.Or(options.Database, options.Getenv("DOCKHAND_DB"))
 	if database == "" {
@@ -241,6 +249,7 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		Worktrees: file.Worktrees,
 		// holds.majors = "allow" lets bump and serve move a major version.
 		AllowMajors: !file.Holds.HoldMajors(),
+		AllowHolds:  file.Holds.Allow,
 		Tests:       model.TestPolicy(file.Check.Tests),
 		// DOCKHAND_UPSTREAM fetches master from a mirror or, in tests, a
 		// local repository.

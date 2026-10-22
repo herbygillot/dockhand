@@ -192,6 +192,9 @@ type SubmitPlan struct {
 	Written string
 
 	facts bodyFacts
+	// allowed are the rules the configuration's hold list sets apart
+	// (holds.allow), whose concerns Held leaves out.
+	allowed []string
 }
 
 // PortComparison is what upstream's change means for a port a revision
@@ -429,6 +432,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
 		Note: plan.Note, UncoveredCI: plan.UncoveredCI}
 	plan.facts = facts
+	plan.allowed = e.options.AllowHolds
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
 	return plan, nil
 }

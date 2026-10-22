@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 )
 
@@ -40,4 +41,22 @@ func TestRelativePathsAreTheCommandLinesDirectorys(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, ".dockhand", "dockhand.db"), options.Database)
 	require.Equal(t, filepath.Join(dir, "ports"), options.Tree)
+}
+
+// The hold list names rules dockhand raises; one it doesn't is refused,
+// with those it does.
+func TestTheHoldListNamesRulesDockhandRaises(t *testing.T) {
+	t.Parallel()
+	home, dir := t.TempDir(), t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	settings := func(allow string) (engine.Options, error) {
+		require.NoError(t, os.WriteFile(path, []byte("[holds]\nallow = ["+allow+"]\n"), 0o644))
+		options, _, _, err := Settings(t.Context(), Options{Dir: dir, Env: []string{"HOME=" + home, "DOCKHAND_CONFIG=" + path}})
+		return options, err
+	}
+	options, err := settings(`"open", "build-file-changed"`)
+	require.NoError(t, err)
+	require.Equal(t, []string{"open", "build-file-changed"}, options.AllowHolds)
+	_, err = settings(`"licence-changed"`)
+	require.ErrorContains(t, err, `holds.allow: "licence-changed" is not a hold dockhand raises or lets go; the rules are`)
 }

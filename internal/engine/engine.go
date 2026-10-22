@@ -85,6 +85,9 @@ type Options struct {
 	// AllowMajors lets an update nobody looks over move a port's major
 	// version without a look; holds.majors = "allow". Held otherwise.
 	AllowMajors bool
+	// AllowHolds are the rules whose concerns don't hold an update nobody
+	// looks over, though they're said (holds.allow; HoldRules).
+	AllowHolds []string
 	// Tests are the tests a check runs where it asks none, check.tests,
 	// which ProposeCheck resolves for check, ship, and serve alike (the
 	// architecture review of 5897a82, R3-35); declared where it's empty.

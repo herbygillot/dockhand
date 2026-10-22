@@ -82,6 +82,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			}
 			set("cleanup.min_free", minFree)
 			set("holds.majors", file.Holds.Majors)
+			set("holds.allow", strings.Join(file.Holds.Allow, ", "))
 			set("serve.ship_to", file.Serve.ShipTo)
 			set("serve.outdated_at", file.Serve.OutdatedAt)
 			set("serve.submit_limit", positive(file.Serve.SubmitLimit))

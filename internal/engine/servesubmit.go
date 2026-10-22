@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -110,7 +111,7 @@ func (p SubmitPlan) Held() []model.Concern {
 	for _, blocking := range p.Blocking {
 		held = append(held, model.Concern{Origin: model.FromSubmission, Rule: "blocking", Detail: blocking})
 	}
-	return append(held, p.Concerns()...)
+	return append(held, holding(p.Concerns(), p.allowed)...)
 }
 
 // HoldLines are concerns as they're said, a line each, the same finding of
@@ -353,7 +354,7 @@ func (h *HeldBeforeEdit) Error() string {
 // hold the submission once the check passed, so it holds the update now,
 // before anything is downloaded or built.
 func (e *Engine) heldBeforeEdit(ctx context.Context, port string, except int) error {
-	held := othersConcerns(e.openPullRequests(ctx, []string{port}, except))
+	held := holding(othersConcerns(e.openPullRequests(ctx, []string{port}, except)), e.options.AllowHolds)
 	if len(held) > 0 {
 		return &HeldBeforeEdit{Port: port, Held: held}
 	}
@@ -382,7 +383,7 @@ func (e *Engine) assessedHolds(ctx context.Context, branch model.Branch, tree mo
 			state = AssessmentPending
 		}
 	}
-	return held, state, nil
+	return holding(held, e.options.AllowHolds), state, nil
 }
 
 // AssessmentState is how far a branch's files are assessed, as status
@@ -419,6 +420,27 @@ func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (
 
 // majorRule is the hold on an update whose major version moves.
 const majorRule = "major-version"
+
+// HoldRules are the rules whose concerns holds.allow may name, each said
+// and holding nothing then: every assessment rule, every commit rule whose
+// finding is an error, and the holds the engine raises itself. What blocks
+// a submission, and archives that couldn't be compared, hold whatever the
+// list says, as what couldn't be checked does (D4).
+func HoldRules() []string {
+	rules := slices.Concat(assess.Rules(), commitrules.ErrorCodes(), []string{majorRule, darwinFloorRule, deploymentTargetRule,
+		"source-moved", "tag-moved", "release-moved", "assessment-moved", "open", "search-failed",
+		upstreamMovedRule, upstreamTransferredRule, mirrorConflictRule})
+	slices.Sort(rules)
+	return slices.Compact(rules)
+}
+
+// holding are the concerns that hold, those the configuration's hold list
+// allows set apart (holds.allow), which are still said.
+func holding(concerns []model.Concern, allowed []string) []model.Concern {
+	return slices.DeleteFunc(slices.Clone(concerns), func(c model.Concern) bool {
+		return c.Origin != model.FromSubmission && c.Rule != "not-compared" && slices.Contains(allowed, c.Rule)
+	})
+}
 
 // The holds on a revision that raises the oldest macOS a port builds on:
 // its platforms' darwin floor, or its macosx_deployment_target. Older Macs
@@ -469,7 +491,7 @@ func (e *Engine) floorHolds(ctx context.Context, branch model.BranchID, base, tr
 // said before the edit, so nothing is downloaded or built; nil where it
 // doesn't hold.
 func (e *Engine) majorHold(port, from, to string) *model.Concern {
-	if e.options.AllowMajors || from == "" || !version.CrossesMajor(from, to) {
+	if e.options.AllowMajors || slices.Contains(e.options.AllowHolds, majorRule) || from == "" || !version.CrossesMajor(from, to) {
 		return nil
 	}
 	return &model.Concern{Origin: model.FromHolds, Port: port, Rule: majorRule, Subject: to,
