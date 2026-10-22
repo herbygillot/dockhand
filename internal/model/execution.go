@@ -305,7 +305,21 @@ type TargetResult struct {
 	// Dependency is the dependency whose failure failed the target at its
 	// dependencies phase, where its provider said which; zero otherwise.
 	Dependency FailedDependency
+	// Links are what the Mach-O files a passed build installed link under
+	// the prefix, each with the port that provides it (part 6): an
+	// observation of the build, not an input, so reuse never reads it. Nil
+	// where its provider couldn't read them, empty where nothing links.
+	Links      []Link
 	RecordedAt time.Time
+}
+
+// Link is one library a target's installed binary links: the binary, the
+// library as the link resolves under the prefix, and the port that
+// provides it, empty where no port does.
+type Link struct {
+	Binary  string `json:"binary"`
+	Library string `json:"library"`
+	Port    string `json:"port,omitempty"`
 }
 
 // FailedDependency is a dependency whose failure failed a target: its

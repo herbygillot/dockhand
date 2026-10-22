@@ -19,6 +19,10 @@ set input [json::json2dict [read $fd]]
 close $fd
 set prefix [dict get $input prefix]
 set port $prefix/bin/port
+# otool is Xcode's, which reads a Mach-O's load commands; a test stands
+# one in.
+set otool /usr/bin/otool
+if {[info exists ::env(DOCKHAND_GUEST_OTOOL)]} { set otool $::env(DOCKHAND_GUEST_OTOOL) }
 set results {}
 set building ""
 # phase is the step under way of the target building, which mark says as
@@ -31,16 +35,16 @@ set fromsource {}
 set environment [dict create]
 
 # save writes the results so far, replacing the file whole. A result's
-# fields are strings, but for the ports active as it built, a list of
-# them, and for where each step of its build began in its log, a list of
-# each step's name and line.
+# fields are strings, but for the ports active as it built, and what its
+# binaries link, lists of them, and for where each step of its build began
+# in its log, a list of each step's name and line.
 proc save {state {detail ""}} {
     global root input results building phase fromsource environment
     set targets {}
     foreach result $results {
         set fields {}
         dict for {key value} $result {
-            if {$key eq "active"} {
+            if {$key in {active links}} {
                 set ports {}
                 foreach entry $value {
                     set object {}
@@ -433,6 +437,104 @@ proc consumed {name} {
     return $inputs
 }
 
+# links are what a passed target's installed Mach-O files link under the
+# prefix (v0.5.0 part 6): each library, as the link resolves, with the
+# binary that links it and the port that provides it, "" where none does.
+# port contents lists the target's files, otool -L each Mach-O's
+# libraries, its LC_RPATHs resolving an @rpath one, and port provides each
+# library's port, asked once for all of them. A list that can't be read is
+# an error, which leaves the links unknown, never none.
+proc links {name} {
+    global port prefix
+    set found {}
+    foreach file [split [known $port -q contents $name] \n] {
+        set file [string trim $file]
+        if {$file eq "" || [catch {file type $file} type] || $type ne "file" || ![macho $file]} { continue }
+        foreach library [linked $file] {
+            if {[string first $prefix/ $library] == 0} { lappend found [list $file $library] }
+        }
+    }
+    set libraries [lsort -unique [lmap entry $found { lindex $entry 1 }]]
+    set owners [dict create]
+    if {[llength $libraries]} {
+        foreach line [split [known $port provides {*}$libraries] \n] {
+            if {[regexp {^(.+) is provided by: (\S+)$} [string trim $line] -> library owner]} { dict set owners $library $owner }
+        }
+    }
+    return [lmap entry $found {
+        lassign $entry file library
+        set owner ""
+        if {[dict exists $owners $library]} { set owner [dict get $owners $library] }
+        dict create binary $file library $library port $owner
+    }]
+}
+
+# macho reports whether a file is a Mach-O, thin or universal, by its
+# magic: a universal one's magic is Java's class files' too, which a small
+# count of architectures after it tells apart.
+proc macho {file} {
+    if {[catch {open $file rb} fd]} { return 0 }
+    set head [read $fd 8]
+    close $fd
+    if {[binary scan $head H8 magic] != 1} { return 0 }
+    if {$magic in {feedface feedfacf cefaedfe cffaedfe}} { return 1 }
+    return [expr {$magic eq "cafebabe" && [binary scan $head x4I count] == 1 && $count > 0 && $count < 32}]
+}
+
+# linked are the libraries a Mach-O links, as otool -L lists them, but for
+# its own install name, each @rpath, @loader_path, or @executable_path
+# resolved where it can be, through its LC_RPATHs as otool -l lists them;
+# one that can't is left out.
+proc linked {file} {
+    global otool
+    set own [lindex [split [fact $otool -D $file] \n] end]
+    set rpaths {}
+    set loads [split [known $otool -l $file] \n]
+    set inrpath 0
+    foreach line $loads {
+        set line [string trim $line]
+        if {$line eq "cmd LC_RPATH"} { set inrpath 1; continue }
+        if {$inrpath && [regexp {^path (.+) \(offset \d+\)$} $line -> path]} {
+            lappend rpaths $path
+            set inrpath 0
+        }
+    }
+    set dir [file dirname $file]
+    set libraries {}
+    foreach line [lrange [split [known $otool -L $file] \n] 1 end] {
+        if {![regexp {^\s*(\S.*?) \(compatibility version} $line -> library] || $library eq $own} { continue }
+        set resolved ""
+        switch -glob -- $library {
+            @rpath/* {
+                foreach rpath $rpaths {
+                    set candidate [string map [list @loader_path $dir @executable_path $dir] $rpath]/[string range $library 7 end]
+                    if {[file exists $candidate]} { set resolved [lexical $candidate]; break }
+                }
+            }
+            @loader_path/* - @executable_path/* {
+                set resolved [lexical $dir/[string range $library [expr {[string first / $library] + 1}] end]]
+            }
+            default { set resolved $library }
+        }
+        if {$resolved ne "" && $resolved ni $libraries} { lappend libraries $resolved }
+    }
+    return $libraries
+}
+
+# lexical is a path with its . and .. parts taken away, as the dynamic
+# loader reads one, never through a symbolic link as file normalize does.
+proc lexical {path} {
+    set parts {}
+    foreach part [file split $path] {
+        switch -- $part {
+            . {}
+            .. { if {[llength $parts] > 1} { set parts [lrange $parts 0 end-1] } }
+            default { lappend parts $part }
+        }
+    }
+    return [file join {*}$parts]
+}
+
 # build builds one target, returning its result.
 proc build {index target} {
     global root port input results
@@ -722,6 +824,17 @@ foreach target [dict get $input targets] {
             close $log
         } else {
             set result [dict merge $result $inputs]
+        }
+    }
+    # What a passed build's binaries link is an observation beside its
+    # result, unknown where it can't be read.
+    if {[dict get $result outcome] eq "passed"} {
+        if {[catch {links [dict get $target name]} linked]} {
+            set log [open $root/[dict get $result log] a]
+            puts $log "dockhand: what this build's binaries link wasn't read: $linked"
+            close $log
+        } else {
+            dict set result links $linked
         }
     }
     lappend results $result

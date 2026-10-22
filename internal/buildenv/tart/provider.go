@@ -663,6 +663,18 @@ type guestResult struct {
 	// where MacPorts' line didn't say, or the tree didn't.
 	Dependency        string `json:"dependency,omitempty"`
 	DependencyVersion string `json:"dependency_version,omitempty"`
+	// Links are what a passed target's installed Mach-O files link under
+	// the prefix; absent where the guest couldn't read them, and empty
+	// where nothing links.
+	Links []guestLink `json:"links"`
+}
+
+// guestLink is a library a target's binary links, as the guest saw it,
+// with the port that provides it.
+type guestLink struct {
+	Binary  string `json:"binary"`
+	Library string `json:"library"`
+	Port    string `json:"port"`
 }
 
 // guestStep is where a step of a target's build began in its log: the
@@ -1341,6 +1353,12 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 		report.Active = make([]model.ActivePort, len(got.Active))
 		for i, port := range got.Active {
 			report.Active[i] = model.ActivePort{Name: port.Name, Spec: port.Spec, Directory: port.Directory, Archive: port.Archive}
+		}
+	}
+	if got.Links != nil {
+		report.Links = make([]model.Link, len(got.Links))
+		for i, link := range got.Links {
+			report.Links[i] = model.Link{Binary: link.Binary, Library: link.Library, Port: link.Port}
 		}
 	}
 	result.Archive, result.Detail = got.Archive, got.Detail

@@ -21,6 +21,17 @@ import (
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
+// fakeOtool stands for Xcode's otool: it prints a file's -L, -l, or -D
+// answer from the file beside it, harbor.links, harbor.loads, or
+// harbor.id (named apart, since a Mac's file system folds case).
+const fakeOtool = `#!/bin/sh
+case "$1" in
+  -L) cat "$2.links" ;;
+  -l) cat "$2.loads" 2>/dev/null; exit 0 ;;
+  -D) cat "$2.id" 2>/dev/null; exit 0 ;;
+esac
+`
+
 // fakePort stands for MacPorts' port in a guest: it records each command,
 // has the ports ACTIVE lists active ("  name @spec (active)" lines), prints
 // each target's dependencies from DEPS ("name=dep ..."), and fails the
@@ -44,6 +55,15 @@ echo "$*" >> "$PORT_LOG"
 case "$*" in
   *"-q installed active"*) if [ -n "$ACTIVEFAILS" ]; then echo "Error: registry locked" >&2; exit 1; fi; printf '%b' "$ACTIVE"; exit 0 ;;
   *"-q installed"*) exit 0 ;;
+  *"-q contents "*) if [ -z "$CONTENTS" ]; then echo "Error: registry locked" >&2; exit 1; fi; printf '%b' "$CONTENTS"; exit 0 ;;
+  "provides "*)
+    shift
+    for file in "$@"; do
+      owner=""
+      for entry in $PROVIDES; do [ "${entry%%=*}" = "$file" ] && owner=${entry#*=}; done
+      if [ -n "$owner" ]; then echo "$file is provided by: $owner"; else echo "$file is not provided by a MacPorts port."; fi
+    done
+    exit 0 ;;
   "-q location "*)
     shift 2
     while [ $# -gt 0 ]; do echo "$ARCHIVES/$1"; shift 2; done
@@ -197,7 +217,9 @@ set foreignManagers {}
 	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	otool := filepath.Join(root, "otool")
+	require.NoError(t, os.WriteFile(otool, []byte(fakeOtool), 0o755))
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	return command
 }
 
@@ -714,4 +736,42 @@ func TestADependencysFailureIsItsOwnPhase(t *testing.T) {
 	require.Equal(t, "libgcc15", results.Targets[0].Dependency)
 	require.Equal(t, "15.2.0_1", results.Targets[0].DependencyVersion)
 	require.Contains(t, commands, "-q info --line --version --revision libgcc15")
+}
+
+// A passed target says what its installed Mach-O files link under the
+// prefix, each library with the port that provides it, an @rpath link
+// resolved through the binary's LC_RPATH; a file that isn't a Mach-O, a
+// system library, and the library's own install name are left out
+// (v0.5.0 part 6). Where its files can't be listed, the links are absent,
+// unknown, never none.
+func TestTheGuestSaysWhatAPassedTargetsBinariesLink(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	prefix := filepath.Join(root, "prefix")
+	bin, lib := filepath.Join(prefix, "bin"), filepath.Join(prefix, "lib")
+	require.NoError(t, os.MkdirAll(lib, 0o755))
+	require.NoError(t, os.MkdirAll(bin, 0o755))
+	harbor, own, script := filepath.Join(bin, "harbor"), filepath.Join(lib, "libharbor.1.dylib"), filepath.Join(bin, "harbor-notes")
+	onig, z := filepath.Join(lib, "libonig.5.dylib"), filepath.Join(lib, "libz.1.dylib")
+	macho := []byte{0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0}
+	for _, file := range []string{harbor, own, onig, z} {
+		require.NoError(t, os.WriteFile(file, macho, 0o755))
+	}
+	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\n"), 0o755))
+	require.NoError(t, os.WriteFile(harbor+".links", []byte(harbor+":\n\t@rpath/libonig.5.dylib (compatibility version 6.0.0, current version 6.9.0)\n\t"+own+" (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n"), 0o644))
+	require.NoError(t, os.WriteFile(harbor+".loads", []byte("Load command 12\n          cmd LC_RPATH\n      cmdsize 32\n         path @loader_path/../lib (offset 12)\n"), 0o644))
+	require.NoError(t, os.WriteFile(own+".links", []byte(own+":\n\t"+own+" (compatibility version 1.0.0, current version 1.0.0)\n\t"+z+" (compatibility version 1.0.0, current version 1.3.1)\n"), 0o644))
+	require.NoError(t, os.WriteFile(own+".id", []byte(own+":\n"+own+"\n"), 0o644))
+	input := guestInput{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []guestTarget{{ID: "harbor", Name: "harbor", Portfile: "devel/harbor/Portfile", Log: buildenv.LogName("harbor")}}}
+	results, _ := guestRunIn(t, root, input, "CONTENTS="+harbor+"\\n"+own+"\\n"+script+"\\n", "PROVIDES="+onig+"=oniguruma "+own+"=harbor")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, []guestLink{
+		{Binary: harbor, Library: onig, Port: "oniguruma"},
+		{Binary: harbor, Library: own, Port: "harbor"},
+		{Binary: own, Library: z},
+	}, results.Targets[0].Links)
+
+	results, _ = guestRun(t, input)
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Nil(t, results.Targets[0].Links, "its files couldn't be listed")
 }

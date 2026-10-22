@@ -816,7 +816,9 @@ func (b *build) Record(report buildenv.TargetReport) error {
 	if report.Active != nil {
 		b.activeIn(target, report.Active)
 	}
-	return b.record(report.Result)
+	result := report.Result
+	result.Links = report.Links
+	return b.record(result)
 }
 
 // activeIn completes what the provider saw active as a target built with

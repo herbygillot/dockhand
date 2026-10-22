@@ -371,7 +371,9 @@ func TestExecutionsAndCheckpoints(t *testing.T) {
 	result := func(target model.TargetID, outcome model.Outcome, phase model.Phase) model.TargetResult {
 		return model.TargetResult{Execution: execution.ID, Target: target, Outcome: outcome, Phase: phase, Tests: model.TestsNone, RecordedAt: at}
 	}
-	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(result("libharbor", model.OutcomePassed, "")) }))
+	passed := result("libharbor", model.OutcomePassed, "")
+	passed.Links = []model.Link{{Binary: "/opt/local/bin/harbor", Library: "/opt/local/lib/libz.1.dylib", Port: "zlib"}}
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(passed) }))
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(result("harbor-cli", model.OutcomeNotRun, "")) }))
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(result("harbor-cli", model.OutcomeInterrupted, "")) }))
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
@@ -400,6 +402,13 @@ func TestExecutionsAndCheckpoints(t *testing.T) {
 		results, err := rd.Results(execution.ID)
 		require.NoError(t, err)
 		require.Len(t, results, 2)
+		for _, got := range results {
+			if got.Target == "libharbor" {
+				require.Equal(t, passed.Links, got.Links, "what its binaries link")
+			} else {
+				require.Nil(t, got.Links, "not read is nil, never none (schema 39)")
+			}
+		}
 		executions, err := rd.Executions(run.ID)
 		require.NoError(t, err)
 		require.Equal(t, []int{1, 2}, []int{executions[0].Attempt, executions[1].Attempt})

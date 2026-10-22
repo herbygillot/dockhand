@@ -110,7 +110,13 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // naming the dependency for its detail, where it read as install's. A
 // failed result is no evidence a later check reuses, and nothing is built
 // otherwise, so the protocol stays 3.
-const guestPin = "d2e49201c24b5a1facdbee3df3d2642bc6c681ec21165767e38e4f587cee09fd"
+//
+// Since v0.5.0's part 6, a passed target's result says what its
+// installed Mach-O files link under the prefix, read after its build with
+// port contents, otool, and port provides: an observation beside the
+// result, which builds and judges nothing otherwise, so the protocol stays
+// 3.
+const guestPin = "b41abfb440866a5d16071da12d28162718ca983f9e832cf3f4441e6aa99a1202"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

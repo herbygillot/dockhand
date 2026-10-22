@@ -151,6 +151,11 @@ type TargetReport struct {
 	// (decision 28). Nil where the provider couldn't see them, and the
 	// result's inputs are then unknown; empty where there were none.
 	Active []model.ActivePort
+	// Links are what a passed target's installed Mach-O files link under
+	// the prefix (model.TargetResult.Links): an observation, not an input,
+	// so an unknown stops no reuse. Nil where the provider couldn't read
+	// them, empty where nothing links.
+	Links []model.Link
 }
 
 // Reported is a result as a report with nothing seen beside it, as for a

@@ -71,3 +71,26 @@ declares, said as a finding, a notice first.
   beside it. The engine's build records the observations, then the result
   (`build.Record`, `activeIn`, `fetchedBy`, `record`), as it did.
 - Tart, the script provider, GitHub Actions, and the tests' fakes report so.
+
+## What a build links, gathered and kept
+
+- **The Tart guest** reads, after a target passes, what its installed
+  Mach-O files link under the prefix (guest.tcl `links`): `port -q
+  contents` lists its files, a file's magic says whether it's a Mach-O
+  (thin, or universal, told from a Java class by its small count of
+  architectures), `otool -L` lists its libraries, its own install name
+  (`otool -D`) left out, an `@rpath` link resolved through its `LC_RPATH`s
+  (`otool -l`), and an `@loader_path` or `@executable_path` one against its
+  directory, each path cleaned lexically, as the loader reads it; `port
+  provides`, asked once for every library, names each one's port. A list
+  that can't be read leaves the links absent, and the log says so.
+  `VerifierProtocol` stays 3, since nothing is built or judged otherwise;
+  `guestPin` moves.
+- **The host** reads them into `buildenv.TargetReport.Links`
+  (`model.Link{Binary, Library, Port}`), and the engine keeps them with the
+  result, `model.TargetResult.Links`, nil where unknown, never in its
+  inputs, so they're no reuse key. A reused result keeps its earlier
+  build's links.
+- **Schema 39** adds `results.links`, JSON, NULL where unknown and an empty
+  list where nothing links.
+- The script provider and GitHub Actions report none, unknown.
