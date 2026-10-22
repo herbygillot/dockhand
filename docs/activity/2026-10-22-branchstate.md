@@ -119,3 +119,17 @@ This was the exiv2 session's note 7, the part c66c9394 left undone. submit's blo
 ## R3-24: the two readings of a pull request share their precedence
 
 The REST inspection (forge/github/inspect.go) and the GraphQL reading (reading.go) each decided what a review's state and a check's outcome count as. They agreed only by being copied: a waiting first-time contributor's run is pending, and a request for changes holds over an approval. `precedence.go` now holds `review` and `check`, which both readings call. `TestBothReadingsCountAlike` holds the table in both spellings, REST's lowercase and GraphQL's uppercase. CI's classification by cause will read what these give.
+
+## Refusals: one shape, a kind each (the first step)
+
+Architecture settled where the shape lives: a leaf package, `internal/refusal`, which imports nothing of dockhand's, so the packages below the engine that refuse can fill it. It holds:
+- **`Refusal`**: its kind, its words, what was kept, and what moves it on. It's an error, reached with `errors.As` through any wrapping. It's made only by `New` or `Wrap`, which require a kind, so a refusal without a kind can't exist.
+- **`Kind`**: network, upstream-not-yet, upstream-missing, auth, unsupported, environment, busy, attention, check-failed, interrupted, failed. Each kind's doc says who gives its Next: the producer where the remedy is unconditional and its own, the engine or branchstate where it depends on the branch. `Kind.Exit` is the one table of exit codes, which `term.ExitCode` reads after an explicit exit error. `Kind.Transient` says another try may meet it, and `refusal.Transient(err)` reads it.
+- **`Next`, `Verb` and `After`**, moved down from branchstate, which now aliases them. `Next` gains `External`, for a remedy that isn't a dockhand command. `refusal.Verbs`, with `VerbSetup` added, is the one vocabulary of verbs, and the command's test holds each to rendering.
+
+branchstate's publish gate now returns a `refusal.Refusal`: a blocked or moved submission is `Failed`, and one held for a look is `Attention`, whose Next is submit after a look. Its own refusal type is gone. Ship renders the refusal by its kind.
+
+Next in this item:
+- one Transient, with the retry rule reading `refusal.Transient` alone and the five shapes deleted (R3-6);
+- the producers below the engine filling kinds and Nexts (R3-31);
+- the command's string surgery and "Kept:" composers gone (R3-38).

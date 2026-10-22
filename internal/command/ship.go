@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -468,20 +469,20 @@ func submitPassed(ctx context.Context, s *settings, e *engine.Engine, streams te
 	err = applySubmit(ctx, e, streams, plan, s.file.Submit.RerequestReview, pending.answered)
 	// The gate is the engine's (branchstate.Publish); ship words what it
 	// refused as ship says it.
-	refusal := new(branchstate.Refusal)
-	if !errors.As(err, &refusal) {
+	refused := refusal.Of(err)
+	switch {
+	case refused == nil:
 		return err
-	}
-	switch refusal.Kind {
-	case branchstate.PublishBlocked:
+	case len(plan.Blocks) > 0:
 		writeSubmitPlan(streams.Out, plan)
 		return errors.New("nothing was submitted")
-	case branchstate.PublishHeld:
+	case refused.Kind() == refusal.Attention:
+		held := engine.HoldLines(plan.Held())
 		view := submitView(plan)
-		view.Held = engine.HoldLines(refusal.Holds)
+		view.Held = held
 		streams.Emit(view)
 		name := plan.Branch.ShortName()
-		return term.Exitf(term.ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: %s", name, strings.Join(engine.HoldLines(refusal.Holds), "; "), renderNext(branchstate.Next{Verb: refusal.Next.Verb, Branch: name}, ""))
+		return term.Exitf(term.ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: %s", name, strings.Join(held, "; "), renderNext(*refused.Next, ""))
 	}
 	return err
 }

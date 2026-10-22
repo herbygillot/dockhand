@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -363,6 +364,9 @@ func renderNext(next branchstate.Next, reason branchstate.Reason) string {
 	if len(next.Args) > 0 {
 		args = " " + strings.Join(next.Args, " ")
 	}
+	if next.Verb == "" {
+		return next.External
+	}
 	var line string
 	switch next.Verb {
 	case branchstate.VerbRefresh:
@@ -373,6 +377,8 @@ func renderNext(next branchstate.Next, reason branchstate.Reason) string {
 		line = "dockhand " + string(next.Verb) + " " + next.Branch
 	case branchstate.VerbWait, branchstate.VerbLogs, branchstate.VerbEdit:
 		line = "dockhand " + string(next.Verb) + args
+	case refusal.VerbSetup:
+		return "dockhand setup" + args
 	case branchstate.VerbOpenChecks:
 		number, _ := strconv.Atoi(next.Args[1])
 		return "open " + github.PullRequestChecksURL(next.Args[0], number)

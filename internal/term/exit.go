@@ -3,6 +3,8 @@ package term
 import (
 	"errors"
 	"fmt"
+
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // The exit codes a command's outcome calls for (Design v3 §12), named so
@@ -28,10 +30,14 @@ type ExitError struct {
 func (e *ExitError) Error() string { return e.Message }
 
 // ExitCode is the process exit code for err: its own when it carries one,
-// however wrapped, else ExitFailure.
+// however wrapped, else its refusal's kind's (refusal.Kind.Exit, the one
+// table of them), else ExitFailure.
 func ExitCode(err error) int {
 	if exit := new(ExitError); errors.As(err, &exit) {
 		return exit.Code
+	}
+	if r := refusal.Of(err); r != nil {
+		return r.Kind().Exit()
 	}
 	return ExitFailure
 }

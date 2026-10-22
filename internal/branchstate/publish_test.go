@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // One gate for every submission: what blocks it stops it; a branch that
@@ -17,15 +18,15 @@ func TestOneGateForEverySubmission(t *testing.T) {
 	p := Publication{Branch: "jq-1.8.2", Holds: []model.Concern{held}, Commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
 	asked, nobody := Mode{Answered: model.AnsweredAsked}, Mode{Answered: model.AnsweredNobody}
 	require.Nil(t, Publish(p, asked, words{}))
-	refusal := Publish(p, nobody, words{})
-	require.Equal(t, PublishHeld, refusal.Kind)
-	require.Equal(t, "jq-1.8.2 is held for a look: upstream's COPYING changed", refusal.Error())
-	require.True(t, refusal.Next.Advances(ActionSubmit), "submit again, after a look")
+	waits := Publish(p, nobody, words{})
+	require.Equal(t, refusal.Attention, waits.Kind())
+	require.Equal(t, "jq-1.8.2 is held for a look: upstream's COPYING changed", waits.Error())
+	require.True(t, waits.Next.Advances(string(ActionSubmit)), "submit again, after a look")
 
 	p.Bound = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	require.Equal(t, PublishMoved, Publish(p, asked, words{}).Kind)
+	require.Contains(t, Publish(p, asked, words{}).Error(), "moved to aaaaaaa while it was checked")
 	p.Blocks = []Block{{Kind: BlockNoTitle}}
-	refusal = Publish(p, asked, words{})
-	require.Equal(t, PublishBlocked, refusal.Kind)
-	require.Contains(t, refusal.Error(), "can't submit yet: the pull request needs a title")
+	blocked := Publish(p, asked, words{})
+	require.Equal(t, refusal.Failed, blocked.Kind())
+	require.Contains(t, blocked.Error(), "can't submit yet: the pull request needs a title")
 }

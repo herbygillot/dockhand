@@ -17,6 +17,7 @@ var branchstateImports = map[string]string{
 	"internal/model":    "the records the facts hold",
 	"internal/evidence": "what the checks of the files establish",
 	"internal/prose":    "counts and lists worded as everywhere else",
+	"internal/refusal":  "the Next type, which every layer that refuses fills",
 }
 
 // The verdict reads only the facts it's given: no store, no provider, no

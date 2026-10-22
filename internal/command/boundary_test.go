@@ -19,6 +19,7 @@ var commandImports = map[string]string{
 	// The verdict on a branch's state, whose kinds and Next the command
 	// renders (v0.5.0 part 4).
 	"internal/branchstate": "the verdict on a branch's state, rendered",
+	"internal/refusal":     "why something didn't go, its kind and Next, rendered",
 	"internal/model":       "the records the engine returns",
 	"internal/config":      "the person's settings, turned into the engine's options",
 	"internal/coord":       "the command's own session, and who leads",

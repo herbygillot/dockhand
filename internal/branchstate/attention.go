@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // Kind is what an attention row asks of the person: something failed, a
@@ -50,25 +51,20 @@ const (
 	NotPushed              Reason = "not-pushed"
 )
 
-// Verbs a Next of an attention row names.
+// The verbs a verdict's Next names (refusal).
 const (
-	VerbStatus  Verb = "status"
-	VerbRefresh Verb = "status --refresh"
-	VerbAdopt   Verb = "adopt"
-	VerbWait    Verb = "wait"
-	VerbSubmit  Verb = "submit"
-	VerbEdit    Verb = "edit"
-	VerbArchive Verb = "archive"
-	VerbCheck   Verb = "check"
-	VerbLogs    Verb = "logs"
-	VerbTidy    Verb = "tidy"
-	// VerbOpenChecks opens a pull request's CI checks in the browser, its
-	// Args the repository and the number.
-	VerbOpenChecks Verb = "open-checks"
+	VerbStatus     = refusal.VerbStatus
+	VerbRefresh    = refusal.VerbRefresh
+	VerbAdopt      = refusal.VerbAdopt
+	VerbWait       = refusal.VerbWait
+	VerbSubmit     = refusal.VerbSubmit
+	VerbEdit       = refusal.VerbEdit
+	VerbArchive    = refusal.VerbArchive
+	VerbCheck      = refusal.VerbCheck
+	VerbLogs       = refusal.VerbLogs
+	VerbTidy       = refusal.VerbTidy
+	VerbOpenChecks = refusal.VerbOpenChecks
 )
-
-// Verbs are every verb a Next names, for the command line to render each.
-var Verbs = []Verb{VerbStatus, VerbRefresh, VerbAdopt, VerbWait, VerbSubmit, VerbEdit, VerbArchive, VerbCheck, VerbLogs, VerbTidy, VerbOpenChecks}
 
 // Branch is what's recorded of a branch beside its checks, as attention
 // reads it.

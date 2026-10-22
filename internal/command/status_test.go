@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -539,7 +540,7 @@ func TestAttentionRowsWrapWithTheirCommandBelow(t *testing.T) {
 // new kind can't render as nothing (architecture, 2026-10-22).
 func TestEveryNextVerbRenders(t *testing.T) {
 	t.Parallel()
-	for _, verb := range branchstate.Verbs {
+	for _, verb := range refusal.Verbs {
 		next := branchstate.Next{Verb: verb, Branch: "jq-1.8.2", Args: []string{"macports/macports-ports", "35001"}}
 		line := renderNext(next, "")
 		require.True(t, strings.HasPrefix(line, "dockhand ") || strings.HasPrefix(line, "open "), "%s renders as %q", verb, line)

@@ -51,7 +51,7 @@ func TestARefusalsNextAdvances(t *testing.T) {
 		verdict := Evaluate(c.facts, c.action, c.mode)
 		require.True(t, verdict.Refused, "%s: each case is a refusal", c.name)
 		require.NotNil(t, verdict.Next, "%s: a refusal says what moves it on", c.name)
-		require.True(t, verdict.Next.Advances(c.action), "%s: %+v asks %s again with nothing to wait for", c.name, *verdict.Next, c.action)
+		require.True(t, verdict.Next.Advances(string(c.action)), "%s: %+v asks %s again with nothing to wait for", c.name, *verdict.Next, c.action)
 	}
 	require.True(t, Next{Verb: "check"}.Advances("submit"))
 	require.True(t, Next{Verb: "submit", After: AfterLook}.Advances("submit"))
