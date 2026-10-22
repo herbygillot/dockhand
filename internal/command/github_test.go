@@ -397,7 +397,7 @@ func TestTestedOnGivesTheGitHubRunnersReleases(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
 
-	previewed, _, err := cmdtest.Dockhand(t, "submit", "--plan")
+	previewed, _, err := cmdtest.Dockhand(t, "submit", "--plan", "-v")
 	require.NoError(t, err)
 	require.Contains(t, previewed, "\n    ###### Tested on\n\n    macOS 14, 15\n"+
 		"    Developer tools not recorded · github: MacPorts' CI workflow in the author's fork (Run ID: https://github.com/ada/macports-ports/actions/runs/7 - checked in check-1)\n")

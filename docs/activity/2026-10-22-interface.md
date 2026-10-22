@@ -173,3 +173,26 @@ mark's column (`view.Unmarked`).
 
   `ship --mine` and bump's batches read the same. With `-v`, each stage's
   report, as before.
+
+### The six patterns
+
+- **A branch is named once**: update's header was "jq-update ·
+  ~/Source/macports-branches/jq-update", after "Started dockhand/jq-update
+  from master …" where it started one. It's now one line, "Started … (fetched
+  just now) in ~/…", or "jq-update in ~/…", and the directory only where
+  the command doesn't run in it (`config.Places.Here`, `view.Where`).
+  status's branch detail heads the same way.
+- **The checkpoint line** is said where tidy rewrote commits someone might
+  want back; a tidy that only committed edits says it at `-v`. tidy has no
+  `Next:` to join, so it stays its own line where it's said.
+- **The note nudge** ("Note missing; … Add --note") is in a submission's
+  plan only where `--note` can still be added: a preview, or a question on
+  a terminal (`view.WriteSubmitPlan`'s `noteStill`).
+- **The uncommitted-build warning** is one line naming its commits, where
+  it was a line a commit. At the default level ship holds the submission's
+  plan, so tidy's warning is the one said.
+- **The empty upstream comparison** ("Upstream not compared: jq fetches no
+  upstream source…") after an edit is `-v`'s; the submission's Upstream row
+  says it, and an update's `--plan` still does.
+- **submit --plan's description** shows its first 8 lines, then "+N lines
+  (dockhand submit --plan -v shows it all)".

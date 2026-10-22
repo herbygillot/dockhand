@@ -651,6 +651,23 @@ func (p Places) Tilde(path string) string {
 	return path
 }
 
+// Here reports whether the working directory is dir or within it, where
+// naming dir tells the person nothing; symbolic links are resolved, as
+// Git reports resolved paths.
+func (p Places) Here(dir string) bool {
+	if p.Dir == "" || dir == "" {
+		return false
+	}
+	resolve := func(path string) string {
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			return resolved
+		}
+		return filepath.Clean(path)
+	}
+	rel, err := filepath.Rel(resolve(dir), resolve(p.Dir))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // Absolute is a path a person gave, its leading ~ expanded, made absolute
 // against the working directory.
 func (p Places) Absolute(path string) (string, error) {

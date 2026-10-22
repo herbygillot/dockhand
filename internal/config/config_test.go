@@ -288,3 +288,16 @@ func TestBuildProfiles(t *testing.T) {
 		require.ErrorContains(t, err, refusal, text)
 	}
 }
+
+// Here is the working directory at or within a directory, which a header
+// needn't name.
+func TestPlacesHere(t *testing.T) {
+	dir := t.TempDir()
+	inside := filepath.Join(dir, "textproc", "jq")
+	require.NoError(t, os.MkdirAll(inside, 0o755))
+	require.True(t, Places{Dir: dir}.Here(dir))
+	require.True(t, Places{Dir: inside}.Here(dir))
+	require.False(t, Places{Dir: filepath.Dir(dir)}.Here(dir))
+	require.False(t, Places{Dir: dir + "-other"}.Here(dir))
+	require.False(t, Places{}.Here(dir))
+}

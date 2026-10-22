@@ -155,7 +155,7 @@ func TestABranchStartedForAPortIsThatPorts(t *testing.T) {
 	require.NoError(t, err)
 	out, _, err := cmdtest.Dockhand(t, "status", "--port", "jq")
 	require.NoError(t, err)
-	require.Contains(t, out, "notes · ~/Source/macports-branches/notes\n", "found, and the one shown in detail")
+	require.Contains(t, out, "notes in ~/Source/macports-branches/notes\n", "found, and the one shown in detail")
 	require.Contains(t, out, "  Ports    none changed yet; started for jq\n")
 	out, _, err = cmdtest.Dockhand(t, "status", "notes")
 	require.NoError(t, err)

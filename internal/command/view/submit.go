@@ -11,7 +11,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
-func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
+// WriteSubmitPlan is a submission's plan: where it goes, what it pushes,
+// and what holds it. noteStill is where --note can still be added, a
+// preview's or a question's, the only places a missing note is said
+// (part 5, item 3: it was in 56 runs, most where nobody could add one).
+func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 	state := "ready to submit"
 	if len(plan.Blocking) > 0 {
 		state = "can't submit yet"
@@ -49,7 +53,7 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	fmt.Fprintf(out, "  PR       %s\n", PullRequestWords(plan))
 	if plan.Note != "" {
 		fmt.Fprintf(out, "  Note     %s\n", noteLine(plan))
-	} else if plan.DescriptionSaysNothing() {
+	} else if noteStill && plan.DescriptionSaysNothing() {
 		fmt.Fprintln(out, "  Note     missing; the commit has no body, so the description does not explain the change. Add --note \"…\".")
 	}
 	if len(plan.LeftOut) > 0 {
@@ -58,8 +62,18 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	for _, finding := range plan.Findings {
 		fmt.Fprintf(out, "  %s\n", finding)
 	}
-	for _, commit := range plan.ModifiedBuilds {
-		fmt.Fprintf(out, "  ! commit %s names a Dockhand build from uncommitted source in Generated-By. Run tidy again using a build from a pushed commit so others can identify the source.\n", model.ObjectID(commit).Short())
+	// Said once, naming each commit, where it was a line a commit (part 5,
+	// item 3: in 69 runs).
+	if len(plan.ModifiedBuilds) > 0 {
+		var commits []string
+		for _, commit := range plan.ModifiedBuilds {
+			commits = append(commits, model.ObjectID(commit).Short())
+		}
+		which := "commit "
+		if len(commits) > 1 {
+			which = "commits "
+		}
+		fmt.Fprintf(out, "  ! Generated-By names a dockhand build from uncommitted source in %s%s. Run tidy again using a build from a pushed commit so others can identify the source.\n", which, prose.And(commits))
 	}
 	for _, build := range plan.UnfoundBuilds {
 		fmt.Fprintf(out, "  ! %s\n", UnfoundBuildWords(build))

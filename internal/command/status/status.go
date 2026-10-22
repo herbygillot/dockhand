@@ -414,7 +414,7 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places con
 	}
 	head := branch.ShortName()
 	if branch.Worktree != "" && !status.Cleaned() {
-		head += " · " + places.Tilde(branch.Worktree)
+		head += view.Where(places, branch.Worktree)
 	}
 	fmt.Fprintln(out, head)
 	if status.Cleaned() {

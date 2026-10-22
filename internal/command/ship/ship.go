@@ -583,7 +583,7 @@ func prepareSubmit(ctx context.Context, s *settings.Settings, e *engine.Engine, 
 		return pendingSubmit{}, nil, err
 	}
 	streams.Emit(view.SubmitView(plan))
-	view.WriteSubmitPlan(streams.Out, plan)
+	view.WriteSubmitPlan(streams.Out, plan, streams.Terminal())
 	if len(plan.Blocking) > 0 {
 		return pendingSubmit{}, nil, errors.New("nothing was checked or submitted")
 	}
@@ -630,7 +630,7 @@ func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, s
 	case refused == nil:
 		return submitted, err
 	case len(plan.Blocks) > 0:
-		view.WriteSubmitPlan(streams.Out, plan)
+		view.WriteSubmitPlan(streams.Out, plan, false)
 		return submitted, errors.New("nothing was submitted")
 	case refused.Kind() == refusal.Attention:
 		held := engine.HoldLines(plan.Held())

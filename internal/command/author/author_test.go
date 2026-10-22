@@ -38,18 +38,17 @@ func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "jq-update · ~/Source/macports-branches/jq-update\n")
+	require.Contains(t, out, "jq-update in ~/Source/macports-branches/jq-update\n")
 	require.Contains(t, out, "jq: 1.7.1 → 1.8.1   (GitHub tag jq-1.8.1)\nPlan, nothing changed:\n\n")
 	require.Contains(t, out, "+version 1.8.1")
 	require.NoFileExists(t, filepath.Join(dir, "textproc/jq/Portfile"))
 
 	out, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	require.Equal(t, "jq-update · ~/Source/macports-branches/jq-update\n"+
+	require.Equal(t, "jq-update in ~/Source/macports-branches/jq-update\n"+
 		"jq: 1.7.1 → 1.8.1   (GitHub tag jq-1.8.1)\n"+
 		"Updated version.\n"+ // the fixture's jq fetches nothing
-		"Changed: textproc/jq/Portfile\n"+
-		"Upstream not compared: jq fetches no upstream source, so there's nothing to compare.\n"+
+		"Changed: textproc/jq/Portfile\n"+ // nothing to compare upstream is -v's
 		"Next: dockhand check\n", out)
 	data, err := os.ReadFile(filepath.Join(dir, "textproc/jq/Portfile"))
 	require.NoError(t, err)
@@ -99,7 +98,8 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	started := regexp.MustCompile(`Started dockhand/(jq-1\.8\.1) from master `).FindStringSubmatch(out.String())
 	require.NotNil(t, started, out.String())
 	name := started[1]
-	require.Contains(t, out.String(), name+" · ~/Source/macports-branches/"+name+"\n")
+	require.Contains(t, out.String(), "Started dockhand/"+name+" from master ")
+	require.Contains(t, out.String(), " (fetched just now) in ~/Source/macports-branches/"+name+"\n", "named once, with its directory")
 	testsupport.Git(t, filepath.Join(w.Home, "Source", "macports-branches", name), "commit", "-q", "-am", "jq: update to 1.8.1")
 
 	// With exactly one, the work goes there, a plan's too, and says so.
@@ -113,7 +113,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "Working in "+name+", the one open branch changing jq")
 	require.NotContains(t, errs.String(), "? ", "nothing else could be meant, so nothing is asked")
-	require.Contains(t, out.String(), name+" · ")
+	require.Contains(t, out.String(), name+" in ")
 	require.Contains(t, out.String(), "Updated checksums.")
 
 	out.Reset()
@@ -157,7 +157,7 @@ func TestAPlanInANamedBranchIsPlannedThere(t *testing.T) {
 	require.NoError(t, err)
 	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--plan", "--branch", "plain")
 	require.NoError(t, err)
-	require.Contains(t, out, "plain · ~/Source/macports-branches/plain\n")
+	require.Contains(t, out, "plain in ~/Source/macports-branches/plain\n")
 	require.NotContains(t, out, "Planned on master")
 }
 

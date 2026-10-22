@@ -93,7 +93,7 @@ func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 		"Updated checksums (1 distfile), revision 0 → 1, and dist_subdir jq/1.7.1_1, so mirrors keep both archives.\n"+
 		"Changed: textproc/jq/Portfile\n"+
 		"Bumped the revision because the source changed. Use --no-revbump only if the change needs no rebuild.\n")
-	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
+	dir := regexp.MustCompile(` in (\S+)\n`).FindStringSubmatch(out)[1]
 	home := cmdtest.Getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
@@ -169,7 +169,7 @@ func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {
 	require.Contains(t, out, "Updated checksums (1 distfile) and dist_subdir jq/1.7.1_1, so mirrors keep both archives.\n"+
 		"Changed: textproc/jq/Portfile\n"+
 		"Inspect the source change before deciding whether it needs a revision bump.\n")
-	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
+	dir := regexp.MustCompile(` in (\S+)\n`).FindStringSubmatch(out)[1]
 	home := cmdtest.Getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
@@ -191,7 +191,7 @@ func TestANewVersionRemovesTheStealthDistSubdir(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--new")
 	require.NoError(t, err)
 	require.Contains(t, out, "Removed dist_subdir: a stealth update set it for the old version, and every archive of the new version has a name of its own.\n")
-	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
+	dir := regexp.MustCompile(` in (\S+)\n`).FindStringSubmatch(out)[1]
 	home := cmdtest.Getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)

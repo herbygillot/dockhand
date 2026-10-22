@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -36,4 +37,13 @@ func PassedOn(checked engine.Evidence) string {
 		return "passed"
 	}
 	return "passed on " + prose.And(on)
+}
+
+// Where is a branch's directory after its name, " in ~/Source/…", or
+// nothing where the command runs in it.
+func Where(places config.Places, dir string) string {
+	if dir == "" || places.Here(dir) {
+		return ""
+	}
+	return " in " + places.Tilde(dir)
 }

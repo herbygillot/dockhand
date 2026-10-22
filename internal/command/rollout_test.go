@@ -26,10 +26,10 @@ func TestTheSelectorReachesStatusPathArchiveAndRuns(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "status", "-p", "jq")
 	require.NoError(t, err)
-	require.Contains(t, out, "jq-update · ~/Source/macports-branches/jq-update\n", "one branch touches jq: shown in detail")
+	require.Contains(t, out, "jq-update in ~/Source/macports-branches/jq-update\n", "one branch touches jq: shown in detail")
 	out, _, err = cmdtest.Dockhand(t, "status", "-b", "jq-update")
 	require.NoError(t, err)
-	require.Contains(t, out, "jq-update · ")
+	require.Contains(t, out, "jq-update in ")
 	_, _, err = cmdtest.Dockhand(t, "status", "jq-update", "-b", "jq-update")
 	require.EqualError(t, err, "name the branch once: as the argument, or with -b, -p, or --pr")
 

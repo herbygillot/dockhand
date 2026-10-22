@@ -548,7 +548,11 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	if update.DistSubdirRemoved {
 		fmt.Fprintln(out, "Removed "+distSubdirRemoved)
 	}
-	view.WriteUpstream(out, update.Upstream)
+	// A port with nothing upstream to compare says so at -v alone (part
+	// 5, item 3: said again by the submission's Upstream row).
+	if update.Upstream == nil || !engine.NothingCompared(*update.Upstream) || streams.Verbose() > 0 {
+		view.WriteUpstream(out, update.Upstream)
+	}
 	writePatches(out, update)
 	writeOthers(out, update)
 	view.WritePlainHTTP(out, update.PlainHTTP)
@@ -580,10 +584,14 @@ func nextAfterEdit(ctx context.Context, e *engine.Engine, branch model.Branch) s
 // announce says which branch an edit is in, and whether it was just
 // started.
 func announce(out io.Writer, places config.Places, branch model.Branch, started bool) {
+	// The branch is named once, and its directory only where it isn't
+	// this one (part 5, item 3).
+	where := view.Where(places, branch.Worktree)
 	if started {
-		fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, branch.Base.Short())
+		fmt.Fprintf(out, "Started %s from master %s (fetched just now)%s\n", branch.Name, branch.Base.Short(), where)
+		return
 	}
-	fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), places.Tilde(branch.Worktree))
+	fmt.Fprintf(out, "%s%s\n", branch.ShortName(), where)
 }
 
 // heldBeforeEdit is an update nobody looks over, bump's or ship's with

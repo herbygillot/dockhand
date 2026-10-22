@@ -96,13 +96,13 @@ kept.
 				return err
 			}
 			streams.Emit(view.SubmitView(plan))
-			view.WriteSubmitPlan(streams.Out, plan)
+			view.WriteSubmitPlan(streams.Out, plan, preview || streams.Terminal())
 			if len(plan.Blocking) > 0 {
 				return errors.New("nothing was submitted")
 			}
 			if preview {
 				writeReadyPreview(streams.Out, plan, ready)
-				writeDescription(streams.Out, plan)
+				writeDescription(streams, plan)
 				fmt.Fprintln(streams.Out, "Nothing was submitted (--plan).")
 				return nil
 			}
@@ -206,13 +206,28 @@ func writeReadyPreview(out io.Writer, plan engine.SubmitPlan, ready bool) {
 
 // writeDescription shows the pull request's description as the submission
 // would leave it, which a preview otherwise shows only in its JSON.
-func writeDescription(out io.Writer, plan engine.SubmitPlan) {
+func writeDescription(streams term.Streams, plan engine.SubmitPlan) {
+	out := streams.Out
 	fmt.Fprintln(out, "\nProposed pull request description:")
-	for _, line := range strings.Split(strings.TrimRight(plan.Body, "\n"), "\n") {
+	lines := strings.Split(strings.TrimRight(plan.Body, "\n"), "\n")
+	// Its first lines at the default level, and how to see the rest (part
+	// 5, item 3: the whole description made submit --plan's 53 lines).
+	shown := lines
+	if streams.Verbose() == 0 && len(lines) > descriptionLines {
+		shown = lines[:descriptionLines]
+	}
+	for _, line := range shown {
 		fmt.Fprintln(out, strings.TrimRight("    "+line, " "))
+	}
+	if more := len(lines) - len(shown); more > 0 {
+		fmt.Fprintf(out, "    +%s (dockhand submit --plan -v shows it all)\n", prose.Plural(more, "line"))
 	}
 	fmt.Fprintln(out)
 }
+
+// descriptionLines are how many of a description's lines submit --plan
+// shows at the default level.
+const descriptionLines = 8
 
 // finishSubmit applies a plan, then takes its pull request out of draft
 // when --ready asked.

@@ -109,7 +109,12 @@ func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan eng
 		}
 		made = fmt.Sprintf("Kept %s as %s, and created %d", prose.Plural(result.Kept, "commit"), as, len(result.Commits)-result.Kept)
 	}
-	fmt.Fprintf(streams.Out, "%s. The files are unchanged.\nCheckpoint %s keeps the old history (dockhand undo %s).\n", made, name, name)
+	fmt.Fprintf(streams.Out, "%s. The files are unchanged.\n", made)
+	// The checkpoint is said where tidy rewrote commits someone might want
+	// back; one that only committed edits is -v's (part 5, item 3).
+	if result.Kept < len(plan.History) || streams.Verbose() > 0 {
+		fmt.Fprintf(streams.Out, "Checkpoint %s keeps the old history (dockhand undo %s).\n", name, name)
+	}
 	if len(result.Narrowed) > 0 {
 		fmt.Fprintf(streams.Out, "Removed %s from the sparse checkout; the branch has no changes there.\n", strings.Join(result.Narrowed, ", "))
 	}

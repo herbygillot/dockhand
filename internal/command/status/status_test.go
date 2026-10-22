@@ -103,7 +103,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	require.NoError(t, err)
 	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err, "inside a worktree, status is the branch's")
-	require.Contains(t, out, "jq-update · ~/Source/macports-branches/jq-update\n  Ports    jq (not yet evaluated)\n  Work     1 commit above master ")
+	require.Contains(t, out, "jq-update in ~/Source/macports-branches/jq-update\n  Ports    jq (not yet evaluated)\n  Work     1 commit above master ")
 	require.Contains(t, out, "  Checks   passed for this commit\n           jq  command ✓\n  PR       —\nNext: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-update\n")
 
 	out, _, err = cmdtest.Dockhand(t, "status", "--port", "fd")

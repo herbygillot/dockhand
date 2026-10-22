@@ -150,7 +150,7 @@ func TestTheSubmitPreviewGivesEachUpstreamFindingALine(t *testing.T) {
 	dropped := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod drops golang.org/x/net"}
 	preview := func(upstream ...engine.PortComparison) string {
 		var out bytes.Buffer
-		view.WriteSubmitPlan(&out, engine.SubmitPlan{Branch: model.Branch{Name: "dockhand/jq-update"}, Upstream: upstream})
+		view.WriteSubmitPlan(&out, engine.SubmitPlan{Branch: model.Branch{Name: "dockhand/jq-update"}, Upstream: upstream}, true)
 		return out.String()
 	}
 
@@ -209,7 +209,7 @@ func TestSubmitShowsACommitNamingAModifiedBuild(t *testing.T) {
 	testsupport.Git(t, dir, "commit", "-q", "--amend", "-m", "jq: update to 1.8.1"+fmt.Sprintf(trailer, "+dirty"))
 	out, _, err = cmdtest.Dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
-	require.Contains(t, out, "  ! commit "+model.ObjectID(testsupport.Git(t, dir, "rev-parse", "HEAD")).Short()+" names a Dockhand build from uncommitted source in Generated-By. Run tidy again using a build from a pushed commit so others can identify the source.\n")
+	require.Contains(t, out, "  ! Generated-By names a dockhand build from uncommitted source in commit "+model.ObjectID(testsupport.Git(t, dir, "rev-parse", "HEAD")).Short()+". Run tidy again using a build from a pushed commit so others can identify the source.\n")
 	preview, err := cmdtest.JSONOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Equal(t, []any{testsupport.Git(t, dir, "rev-parse", "HEAD")}, preview.Result["modified_builds"])
@@ -603,7 +603,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	require.NoError(t, err, "a merged branch's name can be used again")
 	out, _, err = cmdtest.Dockhand(t, "status", "jq-update")
 	require.NoError(t, err)
-	require.Contains(t, out, "jq-update · ~/Source/macports-branches/jq-update\n  Ports    none yet\n")
+	require.Contains(t, out, "jq-update in ~/Source/macports-branches/jq-update\n  Ports    none yet\n")
 	require.Contains(t, out, "  PR       —\n", "the open branch of the name, not the merged record")
 }
 
@@ -664,6 +664,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, previewed, "#34901 isn't a draft, so --ready has nothing to do.\n")
 	require.Contains(t, previewed, "\nProposed pull request description:\n    Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**\n\n    #### Description\n")
+	require.Regexp(t, `\n    \+\d+ lines \(dockhand submit --plan -v shows it all\)\n`, previewed, "its first 8 lines")
 	require.Contains(t, previewed, "Nothing was submitted (--plan).\n")
 	require.Empty(t, g.Readied, "a preview marks nothing")
 
@@ -1082,12 +1083,12 @@ func TestASubmissionToAnotherAccountsForkIsSaid(t *testing.T) {
 	plan := engine.SubmitPlan{HeadRepository: "herbyg-test/macports-ports", Repository: "herbyg-test/macports-ports",
 		Login: forge.Login{Account: "herbygillot", Source: "Dockhand macOS Keychain", From: "dockhand's login in the Keychain"}}
 	var out bytes.Buffer
-	view.WriteSubmitPlan(&out, plan)
+	view.WriteSubmitPlan(&out, plan, true)
 	require.Contains(t, out.String(), "  As       herbygillot, from dockhand's login in the Keychain\n"+
 		"           ! herbyg-test/macports-ports belongs to herbyg-test; you will push and create or update the pull request as herbygillot\n")
 	plan.Theirs = true
 	out.Reset()
-	view.WriteSubmitPlan(&out, plan)
+	view.WriteSubmitPlan(&out, plan, true)
 	require.NotContains(t, out.String(), "is herbyg-test's")
 	plan.Theirs, plan.HeadRepository = false, "HerbyGillot/macports-ports"
 	_, another := plan.ForkOwner()
