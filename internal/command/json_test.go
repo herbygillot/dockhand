@@ -234,7 +234,7 @@ func TestShipReportsOneShape(t *testing.T) {
 	cmdtest.WithBumper(t)
 	g := cmdtest.WithGitHub(t, w)
 	g.Others = nil
-	next := withOutcomeScript(t, w, "")
+	next := cmdtest.WithOutcomeScript(t, w, "")
 	committed := func(name string) {
 		t.Helper()
 		started, err := cmdtest.JSONOf(t, "start", name)

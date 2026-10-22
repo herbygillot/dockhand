@@ -1,4 +1,4 @@
-package command
+package status
 
 import (
 	"cmp"
@@ -23,7 +23,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func statusCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var attentionOnly, all, refresh, watch, plain bool
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
@@ -82,7 +82,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 					if streams.JSON() {
 						return err
 					}
-					if shown := showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where, s.Places()); shown != nil {
+					if shown := ShowStatus(cmd.Context(), e, streams, args, attentionOnly, all, where, s.Places()); shown != nil {
 						return shown
 					}
 					return err
@@ -93,7 +93,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 				// prompt, reads nothing.
 				readStalePullRequests(cmd.Context(), e, streams.Err)
 			}
-			return showStatus(cmd.Context(), e, streams, args, attentionOnly, all, where, s.Places())
+			return ShowStatus(cmd.Context(), e, streams, args, attentionOnly, all, where, s.Places())
 		},
 	}
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "read your pull requests' state, reviews, and CI from GitHub first")
@@ -107,7 +107,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 	return cmd
 }
 
-func showStatus(ctx context.Context, e *engine.Engine, streams term.Streams, args []string, attentionOnly, all bool, where branchflags.BranchFlags, places config.Places) error {
+func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, args []string, attentionOnly, all bool, where branchflags.BranchFlags, places config.Places) error {
 	port := where.Port
 	ctx, _, end, err := e.Observing(ctx)
 	if err != nil {

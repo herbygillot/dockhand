@@ -210,26 +210,6 @@ func TestAVariantsCheckAnswersTheVariantsItem(t *testing.T) {
 	require.False(t, ok, "only --variants each answers it")
 }
 
-// check's --variants is each, or variants as MacPorts' command line takes
-// them.
-func TestTheVariantsFlag(t *testing.T) {
-	t.Parallel()
-	variants, each, err := VariantsFlag("+tests -docs")
-	require.NoError(t, err)
-	require.False(t, each)
-	require.Equal(t, map[string]bool{"tests": true, "docs": false}, variants)
-	variants, each, err = VariantsFlag(" each ")
-	require.NoError(t, err)
-	require.True(t, each)
-	require.Nil(t, variants)
-	variants, each, err = VariantsFlag("")
-	require.NoError(t, err)
-	require.False(t, each)
-	require.Nil(t, variants)
-	_, _, err = VariantsFlag("tests")
-	require.ErrorContains(t, err, "--variants: ")
-}
-
 // A new port is said under Description as its Portfile says it, for a
 // reviewer who has never heard of it; its Type(s) stay unticked, since
 // MacPorts' automation labels a new Portfile a submission (the txt run's

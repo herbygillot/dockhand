@@ -2,6 +2,7 @@ package outdated
 
 import (
 	"errors"
+	"regexp"
 
 	"bytes"
 	"context"
@@ -191,7 +192,10 @@ func TestOutdatedShowsItsProgressAtATerminal(t *testing.T) {
 	var out, errs bytes.Buffer
 	err := cmdtest.RunFor(t, t.Context(), []string{"outdated", "jq", "lost"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs}.AsTerminal())
 	require.Equal(t, 3, term.ExitCode(err), "lost couldn't be checked")
-	require.Equal(t, "\r\033[KLooking up each port's newest release: 0 of 2\r\033[KLooking up each port's newest release: 1 of 2\r\033[K", errs.String())
+	// A fetch of master slower than two seconds says so first, as a loaded
+	// machine's can be: the split's test binaries run many at once.
+	said := regexp.MustCompile(`^Fetching master from \S+\n`).ReplaceAllString(errs.String(), "")
+	require.Equal(t, "\r\033[KLooking up each port's newest release: 0 of 2\r\033[KLooking up each port's newest release: 1 of 2\r\033[K", said)
 	require.NotContains(t, out.String(), "Looking up")
 
 	_, errOut, err := cmdtest.Dockhand(t, "outdated", "jq", "lost")

@@ -47,6 +47,7 @@ var commandImports = map[string]string{
 	// logs --port prints its log from that line, counted as the guest
 	// counts it.
 	"internal/buildlog": "a log from the line a step of its build began on, for logs --port",
+	"internal/macports": "a variant spec read as MacPorts reads one, for check's --variants",
 }
 
 const module = "github.com/herbygillot/dockhand/"

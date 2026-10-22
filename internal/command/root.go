@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/author"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/bump"
+	"github.com/herbygillot/dockhand/internal/command/check"
 	"github.com/herbygillot/dockhand/internal/command/clean"
 	"github.com/herbygillot/dockhand/internal/command/config"
 	"github.com/herbygillot/dockhand/internal/command/create"
@@ -27,6 +28,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/setup"
 	"github.com/herbygillot/dockhand/internal/command/shell"
 	"github.com/herbygillot/dockhand/internal/command/ship"
+	"github.com/herbygillot/dockhand/internal/command/status"
 	"github.com/herbygillot/dockhand/internal/command/submit"
 	"github.com/herbygillot/dockhand/internal/command/tidy"
 	"github.com/herbygillot/dockhand/internal/command/understand"
@@ -122,7 +124,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 				return cmd.Help()
 			}
 			defer e.Close()
-			return showStatus(cmd.Context(), e, streams, nil, false, false, branchflags.BranchFlags{}, shared.Places())
+			return status.ShowStatus(cmd.Context(), e, streams, nil, false, false, branchflags.BranchFlags{}, shared.Places())
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
@@ -197,7 +199,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	}
 	root.AddGroup(&cobra.Group{ID: "understand", Title: "Understand:"})
 	for _, command := range []*cobra.Command{
-		statusCommand(shared, streams),
+		status.Command(shared, streams),
 		understand.DiffCommand(shared, streams),
 		understand.OpenCommand(shared, streams),
 		understand.ImpactCommand(shared, streams),
@@ -208,7 +210,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	}
 	root.AddGroup(&cobra.Group{ID: "check", Title: "Check:"})
 	for _, command := range []*cobra.Command{
-		checkCommand(shared, streams),
+		check.Command(shared, streams),
 		runcmd.LogsCommand(shared, streams),
 		shell.Command(shared, streams),
 		runcmd.RetryCommand(shared, streams),

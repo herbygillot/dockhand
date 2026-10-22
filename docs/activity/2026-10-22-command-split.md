@@ -202,3 +202,20 @@ now their own binary, and `go test ./...` ran about twenty at once on
 this Mac. The rerun of the whole suite passed. It's load, and the split
 raises it; CI runs fewer packages at once. If it comes back, the tests'
 store needs a longer operation deadline, or go test a lower -p.
+- **status, with its watch** (`Command`, `ShowStatus` for the bare
+  command line). watch's prompt runs check, tidy, submit, and logs, which
+  status can't import, so it keeps the command line it's given
+  (`settings.Command`, step 0's injection) rather than calling status's
+  renderer alone, as architecture's note expected.
+- **check, with baseline's tests**, and `VariantsFlag` from engine/plan.go
+  with its test, as `variantsFlag`, its one caller's.
+  `cmdtest.WithOutcomeScript` is json's and baseline's shared script. The
+  boundary list names internal/macports for the variant spec it reads.
+- **The root** holds root.go and doc.go, which now describes the split,
+  and the cross-cutting tests: rollout, stealth, json, github,
+  helpreference, bumpserve, stopped, and verbs (archive and retry
+  end to end).
+
+One more load effect: outdated's terminal-progress test read a "Fetching
+master from …" line, which the engine says when fetching master takes
+over two seconds. The test leaves that line out.

@@ -59,3 +59,25 @@ func Cells(results []model.TargetResult) []engine.Cell {
 	}
 	return cells
 }
+
+// withOutcomeScript configures a command provider that reports jq as
+// ~/outcome says, "passed", or "failed" and the phase, install unless
+// named, so a test can change what the next build does.
+func WithOutcomeScript(t *testing.T, w World, config string) func(string) {
+	t.Helper()
+	script := filepath.Join(w.Home, "bin", "build-ports")
+	require.NoError(t, os.MkdirAll(filepath.Dir(script), 0o755))
+	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
+read -r outcome phase < "$HOME/outcome"
+[ "$outcome" = failed ] && phase=", \"phase\": \"${phase:-install}\""
+cat > "$(dirname "$1")/result.json" <<JSON
+{"version": 1, "targets": [{"id": "jq", "outcome": "$outcome"$phase}]}
+JSON
+`), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[providers.command]\nrun = \"~/bin/build-ports\"\n"+config), 0o644))
+	UsePorts(Stands(t), OnePort{})
+	return func(outcome string) {
+		require.NoError(t, os.WriteFile(filepath.Join(w.Home, "outcome"), []byte(outcome), 0o644))
+	}
+}

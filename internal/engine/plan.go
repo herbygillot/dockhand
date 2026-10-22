@@ -592,22 +592,6 @@ func VariantBuilds(declared []macports.Variant) []map[string]bool {
 	return builds
 }
 
-// VariantsFlag reads check's --variants: "each", or variants as MacPorts'
-// command line takes them (macports.ParseVariants); none where empty.
-func VariantsFlag(value string) (map[string]bool, bool, error) {
-	switch strings.TrimSpace(value) {
-	case "":
-		return nil, false, nil
-	case "each":
-		return nil, true, nil
-	}
-	variants, err := macports.ParseVariants(value)
-	if err != nil {
-		return nil, false, fmt.Errorf("--variants: %w", err)
-	}
-	return variants, false, nil
-}
-
 // DependencyGraphReader is a port reader that can read every port's direct
 // dependencies from the revision's port index.
 type DependencyGraphReader interface {

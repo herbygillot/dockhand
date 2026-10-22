@@ -1,4 +1,4 @@
-package command
+package check
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func checkCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	var tests, variants, build string
 	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, keep, yes bool
@@ -91,7 +91,7 @@ true, it runs that baseline by itself.`,
 			if err != nil {
 				return err
 			}
-			chosen, each, err := engine.VariantsFlag(variants)
+			chosen, each, err := variantsFlag(variants)
 			if err != nil {
 				return err
 			}

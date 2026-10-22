@@ -1,7 +1,6 @@
-package command
+package check
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -10,34 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// withOutcomeScript configures a command provider that reports jq as
-// ~/outcome says, "passed", or "failed" and the phase, install unless
-// named, so a test can change what the next build does.
-func withOutcomeScript(t *testing.T, w cmdtest.World, config string) func(string) {
-	t.Helper()
-	script := filepath.Join(w.Home, "bin", "build-ports")
-	require.NoError(t, os.MkdirAll(filepath.Dir(script), 0o755))
-	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
-read -r outcome phase < "$HOME/outcome"
-[ "$outcome" = failed ] && phase=", \"phase\": \"${phase:-install}\""
-cat > "$(dirname "$1")/result.json" <<JSON
-{"version": 1, "targets": [{"id": "jq", "outcome": "$outcome"$phase}]}
-JSON
-`), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[providers.command]\nrun = \"~/bin/build-ports\"\n"+config), 0o644))
-	cmdtest.UsePorts(cmdtest.Stands(t), cmdtest.OnePort{})
-	return func(outcome string) {
-		require.NoError(t, os.WriteFile(filepath.Join(w.Home, "outcome"), []byte(outcome), 0o644))
-	}
-}
-
 func TestBaselineComparesWithTheBase(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
 	cmdtest.WithBumper(t)
-	next := withOutcomeScript(t, w, "")
+	next := cmdtest.WithOutcomeScript(t, w, "")
 	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
@@ -78,7 +55,7 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	require.Error(t, err, "nothing committed yet; the baseline changed nothing about that")
 
 	// check.baseline runs one by itself after a failure.
-	withOutcomeScript(t, w, "[check]\nbaseline = true\n")
+	cmdtest.WithOutcomeScript(t, w, "[check]\nbaseline = true\n")
 	next("failed")
 	out, _, err = cmdtest.Dockhand(t, "check")
 	require.Equal(t, 2, term.ExitCode(err))
@@ -110,7 +87,7 @@ func TestCheckReportsItsBaselineInsideIt(t *testing.T) {
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
 	cmdtest.WithBumper(t)
-	next := withOutcomeScript(t, w, "[check]\nbaseline = true\n")
+	next := cmdtest.WithOutcomeScript(t, w, "[check]\nbaseline = true\n")
 	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
