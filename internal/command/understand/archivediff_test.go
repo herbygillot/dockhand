@@ -1,4 +1,4 @@
-package command
+package understand
 
 import (
 	"archive/tar"

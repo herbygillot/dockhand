@@ -1,4 +1,4 @@
-package command
+package understand
 
 import (
 	"context"
@@ -9,27 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
-	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
-// jqDependents stands in for the port index: two ports depend on jq.
-// jqDependents are jq's dependents, as the index has them; where under,
-// jo links it under its +jq variant too, as variantDependents finds.
-type jqDependents struct{ under bool }
-
-func (d jqDependents) Dependents(context.Context, model.Source, []string) ([]treequery.Dependent, error) {
-	jo := treequery.Dependent{Name: "jo", Directory: "textproc/jo", On: []string{"jq"}, Phases: []string{"build"}}
-	if d.under {
-		jo.Phases, jo.Variants = []string{"library"}, []string{"jq"}
-	}
-	return []treequery.Dependent{jo, {Name: "yq", Directory: "textproc/yq", On: []string{"jq"}, Phases: []string{"library", "runtime"}}}, nil
-}
-
-// jqAndDevel reads jq's dependents as jqDependents does, and names the
+// jqAndDevel reads jq's dependents as cmdtest.JqDependents does, and names the
 // ports textproc/jq defines, as the index does for a directory with a
 // subport.
-type jqAndDevel struct{ jqDependents }
+type jqAndDevel struct{ cmdtest.JqDependents }
 
 func (jqAndDevel) PortsDefined(context.Context, model.Source, []string) (map[string][]string, error) {
 	return map[string][]string{"textproc/jq": {"jq", "jq-devel"}}, nil
@@ -62,7 +48,7 @@ func TestDiffAndImpact(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "Nothing changed under those paths.")
 
-	cmdtest.UseDependents(cmdtest.Stands(t), jqDependents{})
+	cmdtest.UseDependents(cmdtest.Stands(t), cmdtest.JqDependents{})
 	out, _, err = cmdtest.Dockhand(t, "impact")
 	require.NoError(t, err)
 	require.Equal(t, `Changed ports     jq
@@ -77,7 +63,7 @@ Next: dockhand check --also yq,jo (it builds them against the branch)
 	out, _, err = cmdtest.Dockhand(t, "impact")
 	require.NoError(t, err)
 	require.Contains(t, out, "Changed ports     jq and jq-devel\n")
-	cmdtest.UseDependents(cmdtest.Stands(t), jqDependents{})
+	cmdtest.UseDependents(cmdtest.Stands(t), cmdtest.JqDependents{})
 
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\nrevision 1\n"), 0o644))
 	out, _, err = cmdtest.Dockhand(t, "impact")

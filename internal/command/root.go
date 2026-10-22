@@ -12,12 +12,14 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
+	"github.com/herbygillot/dockhand/internal/command/clean"
 	"github.com/herbygillot/dockhand/internal/command/config"
 	"github.com/herbygillot/dockhand/internal/command/explain"
 	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/command/serve"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/shell"
+	"github.com/herbygillot/dockhand/internal/command/understand"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -77,7 +79,7 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 	root.SetErr(streams.Err)
 	spend := github.StartSpend()
 	err := view.SayNext(root.ExecuteContext(ctx))
-	cleanupAfter(&shared, streams, streams.Command())
+	clean.CleanupAfter(&shared, streams, streams.Command())
 	// What the command spent of GitHub's hourly allowance, said with -v,
 	// in the envelope, and in the spend log.
 	requests := spend.Requests()
@@ -186,9 +188,9 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	root.AddGroup(&cobra.Group{ID: "understand", Title: "Understand:"})
 	for _, command := range []*cobra.Command{
 		statusCommand(shared, streams),
-		diffCommand(shared, streams),
-		openCommand(shared, streams),
-		impactCommand(shared, streams),
+		understand.DiffCommand(shared, streams),
+		understand.OpenCommand(shared, streams),
+		understand.ImpactCommand(shared, streams),
 		outdatedCommand(shared, streams),
 	} {
 		command.GroupID = "understand"
@@ -226,8 +228,8 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	root.AddGroup(&cobra.Group{ID: "occasional", Title: "Occasional:"})
 	for _, command := range []*cobra.Command{
 		undoCommand(shared, streams),
-		archiveCommand(shared, streams),
-		cleanCommand(shared, streams),
+		clean.ArchiveCommand(shared, streams),
+		clean.Command(shared, streams),
 		explain.Command(streams),
 		config.Command(shared, streams),
 	} {

@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -79,7 +78,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 				// A read GitHub refused, as with a revoked login, is the
 				// command's error: status is still shown, from what's
 				// recorded, but for --json, whose one envelope says it.
-				if err := refreshPullRequests(cmd.Context(), e, streams.Err); err != nil {
+				if err := readAndSay(cmd.Context(), e, streams.Err); err != nil {
 					if streams.JSON() {
 						return err
 					}
@@ -481,66 +480,17 @@ func writeReleases(out io.Writer, status engine.BranchStatus) {
 	}
 }
 
-// refreshPullRequests reads the pull requests and says what changed, and
-// what could not be read. GitHub refusing the read altogether is its
-// error, worded once for every command that reads them (status, clean),
-// and said, as its caller goes on by what was last read; the store's is
-// returned as it is.
-func refreshPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) error {
-	refreshed, err := readPullRequests(ctx, e, out)
-	if err != nil {
-		return err
-	}
-	for _, r := range refreshed.Branches {
-		if r.Err != nil {
-			fmt.Fprintf(out, "%s: could not read #%d: %v\n", r.Branch.ShortName(), r.Branch.PullRequest.Number, r.Err)
-		}
-	}
-	if refreshed.Refused != nil {
-		return refusedRead{refreshed.Refused}
-	}
-	return nil
-}
-
-// readPullRequests is the one read of the pull requests status and clean
-// make, saying what changed of each; its callers say what couldn't be read
-// as they go on (the architecture review of 5897a82, R3-39).
-func readPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) (engine.RefreshResult, error) {
-	refreshed, err := e.RefreshPullRequests(ctx)
-	if err != nil {
-		return refreshed, err
-	}
-	for _, r := range refreshed.Branches {
-		for _, change := range r.Changes {
-			fmt.Fprintf(out, "%s: %s\n", r.Branch.ShortName(), change)
-		}
-	}
-	return refreshed, nil
-}
-
-// refusedRead is GitHub refusing to let the pull requests be read at
-// all, as a revoked login: one error for every pull request.
-type refusedRead struct{ err error }
-
-func (r refusedRead) Error() string { return "could not read pull requests: " + r.err.Error() }
-func (r refusedRead) Unwrap() error { return r.err }
-
-// staleReadTimeout bounds the read status makes by itself, so a slow or
-// unreachable GitHub delays it only so long.
-const staleReadTimeout = 20 * time.Second
-
 // readStalePullRequests reads the pull requests where what's recorded of
 // them is older than serve reads them (engine.PullRequestsStale), as a
 // plain status does by itself, where it said "CI not read yet" until
 // --refresh. It says what changed; a read that fails, wholly or for some,
 // is said in one line, and status goes on by what was last read.
 func readStalePullRequests(ctx context.Context, e *engine.Engine, out io.Writer) {
-	if stale, err := e.PullRequestsStale(ctx); err != nil || !stale {
+	refreshed, read, err := e.RefreshStalePullRequests(ctx)
+	if !read {
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, staleReadTimeout)
-	defer cancel()
-	refreshed, err := readPullRequests(ctx, e, out)
+	view.WriteChanges(out, refreshed)
 	if err == nil {
 		err = refreshed.Refused
 	}
@@ -575,4 +525,14 @@ func portWords(status engine.BranchStatus) string {
 		words = append(words, port)
 	}
 	return strings.Join(words, ", ")
+}
+
+// readAndSay reads the pull requests and says what it found
+// (view.WriteRefreshed), as clean does.
+func readAndSay(ctx context.Context, e *engine.Engine, out io.Writer) error {
+	refreshed, err := e.RefreshPullRequests(ctx)
+	if err != nil {
+		return err
+	}
+	return view.WriteRefreshed(out, refreshed)
 }

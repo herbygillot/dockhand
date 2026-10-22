@@ -1,4 +1,4 @@
-package command
+package clean
 
 import (
 	"context"
@@ -36,7 +36,7 @@ func cleanStates(merged, closed bool) []model.BranchState {
 	return states
 }
 
-func cleanCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var merged, closed, yes, automatic, forget bool
 	cmd := &cobra.Command{
 		Use:   "clean [branch...] [--merged] [--closed]",
@@ -95,7 +95,7 @@ results were reused from. It asks, and without a terminal needs --yes.`,
 			// Which branches merged is their pull requests' to say, read
 			// now: two merged a minute before were left out, unsaid, until
 			// status --refresh (field testing, 2026-10-02).
-			if err := refreshPullRequests(ctx, e, streams.Err); err != nil {
+			if err := readAndSay(ctx, e, streams.Err); err != nil {
 				fmt.Fprintf(streams.Err, "%v; clean goes by the states last read\n", err)
 			}
 			var plans []engine.CleanBranch
@@ -194,7 +194,7 @@ func cleanAutomatically(ctx context.Context, e *engine.Engine, streams term.Stre
 // command's own work is done, when it is due (decision 36): a day since the
 // last, or free space short, which it says. The command doesn't wait for
 // it. serve cleans up itself, and clean is cleaning.
-func cleanupAfter(s *settings.Settings, streams term.Streams, command string) {
+func CleanupAfter(s *settings.Settings, streams term.Streams, command string) {
 	e := s.Opened
 	if e == nil || !s.File.Cleanup.On() || command == "clean" || command == "serve" {
 		return
@@ -369,4 +369,14 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 	}
 	streams.Emit(map[string]any{"forgotten": forgotten})
 	return nil
+}
+
+// readAndSay reads the pull requests and says what it found
+// (view.WriteRefreshed).
+func readAndSay(ctx context.Context, e *engine.Engine, out io.Writer) error {
+	refreshed, err := e.RefreshPullRequests(ctx)
+	if err != nil {
+		return err
+	}
+	return view.WriteRefreshed(out, refreshed)
 }

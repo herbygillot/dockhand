@@ -332,3 +332,22 @@ func (s BranchStatus) Failing() []string {
 	slices.Sort(failing)
 	return failing
 }
+
+// staleReadTimeout bounds a read of the pull requests a command makes by
+// itself, so a slow or unreachable GitHub delays it only so long.
+const staleReadTimeout = 20 * time.Second
+
+// RefreshStalePullRequests reads the pull requests where what's recorded
+// of them is older than serve reads them (PullRequestsStale), within
+// staleReadTimeout, as a plain status does by itself, where it said "CI
+// not read yet" until --refresh: the one stale-read rule (R3-39). read is
+// whether it read; a failure to tell whether they're stale reads nothing.
+func (e *Engine) RefreshStalePullRequests(ctx context.Context) (result RefreshResult, read bool, err error) {
+	if stale, err := e.PullRequestsStale(ctx); err != nil || !stale {
+		return RefreshResult{}, false, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, staleReadTimeout)
+	defer cancel()
+	result, err = e.RefreshPullRequests(ctx)
+	return result, true, err
+}

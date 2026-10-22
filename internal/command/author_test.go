@@ -261,7 +261,7 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	testsupport.Git(t, w.Upstream, "add", "-A")
 	testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "yq and jo")
 	cmdtest.WithBumper(t)
-	cmdtest.UseDependents(cmdtest.Stands(t), jqDependents{})
+	cmdtest.UseDependents(cmdtest.Stands(t), cmdtest.JqDependents{})
 	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
@@ -279,11 +279,11 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(dir, "textproc/yq/Portfile"), "a plan bumps nothing")
 
 	// One that links it only under a variant is listed apart.
-	cmdtest.UseDependents(cmdtest.Stands(t), jqDependents{under: true})
+	cmdtest.UseDependents(cmdtest.Stands(t), cmdtest.JqDependents{Under: true})
 	out, _, err = cmdtest.Dockhand(t, "update", "jq", "--revbump-dependents", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, ":\n  yq\n  · under a variant, found in the Portfile, which the index doesn't record: jo (+jq)\n")
-	cmdtest.UseDependents(cmdtest.Stands(t), jqDependents{})
+	cmdtest.UseDependents(cmdtest.Stands(t), cmdtest.JqDependents{})
 
 	out, _, err = cmdtest.Dockhand(t, "update", "jq", "--revbump-dependents")
 	require.NoError(t, err)

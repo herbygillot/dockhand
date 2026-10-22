@@ -1,4 +1,4 @@
-package command
+package clean
 
 import (
 	"bytes"

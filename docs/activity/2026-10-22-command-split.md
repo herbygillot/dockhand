@@ -148,3 +148,20 @@ line without importing the root.
   clean's test helper `cleanupStamp` is `cmdtest.CleanupStamp`. config
   imports internal/config under its own name, since a package's name
   isn't in its scope; the root imports `command/config`.
+- **understand** (diff, impact, open: `DiffCommand`, `ImpactCommand`,
+  `OpenCommand`), with archivediff_test. jq's dependents, a fake that
+  author's tests share, is `cmdtest.JqDependents`.
+- **clean, with archive** (`Command`, `ArchiveCommand`, `CleanupAfter`).
+  The pull requests' refresh that status and clean shared splits by
+  architecture's note. The stale-read rule is the engine's:
+  `Engine.RefreshStalePullRequests` re-reads where the record is older
+  than serve reads it, within 20 seconds. The words are view's:
+  `WriteRefreshed`, what changed and what couldn't be read, with GitHub's
+  refusal worded once, and `WriteChanges`. view reads nothing. Each verb
+  calls the engine and view in a few lines of its own.
+- **ship gets its own package**, by architecture's answer. It imports
+  author, tidy, submit, outdated, and checkrun, and bump imports ship.
+  ship composes the four stages each owner exports as its operation:
+  `tidy.Decide`, `submit.Apply`, `submit.AskTested`, `outdated.Batch`.
+  The pure writers ship reads (writeTidyPlan, describeWork,
+  writeSubmitPlan, pullRequestWords, upstreamLines) go to view.

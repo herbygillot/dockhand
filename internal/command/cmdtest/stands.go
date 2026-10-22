@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 )
@@ -225,4 +226,17 @@ type noNames struct{}
 
 func (noNames) PortsDefined(context.Context, model.Source, []string) (map[string][]string, error) {
 	return nil, nil
+}
+
+// jqDependents stands in for the port index: two ports depend on jq.
+// jqDependents are jq's dependents, as the index has them; where under,
+// jo links it under its +jq variant too, as variantDependents finds.
+type JqDependents struct{ Under bool }
+
+func (d JqDependents) Dependents(context.Context, model.Source, []string) ([]treequery.Dependent, error) {
+	jo := treequery.Dependent{Name: "jo", Directory: "textproc/jo", On: []string{"jq"}, Phases: []string{"build"}}
+	if d.Under {
+		jo.Phases, jo.Variants = []string{"library"}, []string{"jq"}
+	}
+	return []treequery.Dependent{jo, {Name: "yq", Directory: "textproc/yq", On: []string{"jq"}, Phases: []string{"library", "runtime"}}}, nil
 }

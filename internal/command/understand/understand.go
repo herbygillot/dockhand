@@ -1,4 +1,4 @@
-package command
+package understand
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-func diffCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func DiffCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	var stat, archives bool
 	cmd := &cobra.Command{
@@ -200,7 +200,7 @@ func writeDiffSummary(out io.Writer, diff engine.BranchDiff) {
 	}
 }
 
-func impactCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func ImpactCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "impact [<port>...]",
@@ -310,7 +310,7 @@ func writeImpact(out io.Writer, impact engine.Impact, in string) {
 // openCommand opens a branch's pull request in the browser (the
 // command-line UX review's smaller items): status shows its number, and
 // no link.
-func openCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
+func OpenCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "open",
