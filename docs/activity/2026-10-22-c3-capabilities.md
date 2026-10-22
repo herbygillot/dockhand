@@ -41,3 +41,11 @@ whose couldn't, found no rename, unsaid. `engine.Forge` now has
 `Describe(ctx, instance, name)`, which the GitHub client answers through
 its repository and forgetest by `Renamed`; `renamed()` and create's
 project inspection ask it, and `DescribedRepository` is gone.
+
+## throughUnchanged's traversal, planning's
+
+`planning.ThroughUnchanged` walks the dependency graph, adding to each
+candidate's evaluated dependencies the candidates it reaches through
+ports the plan doesn't build, beside `Needs` and `Narrow`'s kin, with a
+test of its own; the engine's `throughUnchanged` reads the graph, once,
+where there are two candidates, and hands it over. With this, C3 is done.

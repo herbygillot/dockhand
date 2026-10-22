@@ -320,3 +320,19 @@ func TestSpanBuildsEachPortOnItsOldestAndNewest(t *testing.T) {
 	}
 	require.NotEmpty(t, decision.Builds[1].Exclusions)
 }
+
+// A candidate that reaches another only through a port the plan doesn't
+// build depends on it all the same, and one it reaches directly isn't
+// added again (field testing's py-mlx-vlm, check-201).
+func TestCandidatesAreOrderedThroughUnchangedPorts(t *testing.T) {
+	t.Parallel()
+	candidates := []model.PlanTarget{{ID: "py313-mlx-vlm", Target: model.Target{Name: "py313-mlx-vlm"}}, {ID: "py313-safetensors", Target: model.Target{Name: "py313-safetensors"}}}
+	evaluations := []Evaluation{{
+		"py313-mlx-vlm":     {Dependencies: []Dependency{{Port: "py313-transformers"}}},
+		"py313-safetensors": {},
+	}}
+	graph := map[string][]string{"py313-transformers": {"py313-tokenizers"}, "py313-tokenizers": {"py313-safetensors"}}
+	ThroughUnchanged(graph, candidates, evaluations)
+	require.Equal(t, []Dependency{{Port: "py313-transformers"}, {Port: "py313-safetensors"}}, evaluations[0]["py313-mlx-vlm"].Dependencies)
+	require.Empty(t, evaluations[0]["py313-safetensors"].Dependencies)
+}

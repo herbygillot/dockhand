@@ -304,6 +304,54 @@ func Built(candidates []model.PlanTarget, reasons []map[model.TargetID]Excluded)
 	})
 }
 
+// ThroughUnchanged adds to each candidate's evaluated dependencies the
+// candidates it depends on only by way of ports the plan doesn't build,
+// as graph, every port's direct dependencies by lower-case name, has them:
+// py313-mlx-vlm on py313-safetensors through py313-transformers, which
+// --only had put first (field testing's py-mlx-vlm, check-201).
+func ThroughUnchanged(graph map[string][]string, candidates []model.PlanTarget, evaluations []Evaluation) {
+	byName := map[string]model.TargetID{}
+	for _, candidate := range candidates {
+		// A port's default build, not one of --variants' builds of it.
+		name := candidate.Target.Name
+		if candidate.Target.Subport != "" {
+			name = candidate.Target.Subport
+		}
+		if model.TargetID(name) == candidate.ID {
+			byName[strings.ToLower(name)] = candidate.ID
+		}
+	}
+	for _, evaluation := range evaluations {
+		for id, evaluated := range evaluation {
+			seen := map[string]bool{}
+			var queue []string
+			for _, dependency := range evaluated.Dependencies {
+				if _, candidate := byName[strings.ToLower(string(dependency.Port))]; !candidate {
+					queue = append(queue, strings.ToLower(string(dependency.Port)))
+				}
+			}
+			for len(queue) > 0 {
+				name := queue[0]
+				queue = queue[1:]
+				if seen[name] {
+					continue
+				}
+				seen[name] = true
+				for _, next := range graph[name] {
+					if reached, candidate := byName[next]; candidate {
+						if reached != id && !slices.ContainsFunc(evaluated.Dependencies, func(d Dependency) bool { return d.Port == reached }) {
+							evaluated.Dependencies = append(evaluated.Dependencies, Dependency{Port: reached})
+						}
+						continue
+					}
+					queue = append(queue, next)
+				}
+			}
+			evaluation[id] = evaluated
+		}
+	}
+}
+
 // Needs are what each target needs built first in each environment: the
 // targets built there that it depends on there. Their union, over every
 // environment, is what --only adds back.
