@@ -206,7 +206,7 @@ anywhere.`,
 				return err
 			}
 			fmt.Fprintf(streams.Out, "%s repeats %s: %s\n", run.Name(), previous.Name(), engine.Describe(revision))
-			return runQueued(ctx, e, run, streams, enqueue, s.places())
+			return runQueued(ctx, e, run, streams, enqueue, s)
 		},
 	}
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue it and return")

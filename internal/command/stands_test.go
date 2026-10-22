@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"os/exec"
@@ -138,6 +139,7 @@ func testHost() *host {
 		return &github.Client{Credentials: github.TokenSourceFunc(func(context.Context) (github.Token, error) { return github.Token{}, github.ErrNoCredentials })}
 	}
 	h.startCleanup = func(engine.Options) error { return nil }
+	h.startDrain = func(engine.Options) (int, error) { return 0, errors.New("no drain starts in a test") }
 	return h
 }
 

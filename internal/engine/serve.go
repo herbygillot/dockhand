@@ -92,14 +92,31 @@ func (o ServeOptions) submits() bool { return o.ShipTo == string(ShipSubmit) }
 // between checks (Design v3 §11). With another serve leading it stands by,
 // and takes over when that one's session dies; a drain has nothing to do
 // then. Runs still going when it stops are left for the next serve.
+//
+// A drain that found the queue empty reads it once more after letting go
+// of the lead, and drains again where a check was queued meanwhile, as
+// check -d does where it sees no serve leading (dockhand check -d's drain).
 func (e *Engine) Serve(ctx context.Context, session *coord.Session, options ServeOptions) error {
 	s := newServer(e, options)
-	lease, err := s.lead(ctx, session)
-	if err != nil || lease == nil {
-		return err
+	var again model.RunID
+	for {
+		lease, err := s.lead(ctx, session)
+		if err != nil || lease == nil {
+			return err
+		}
+		err = s.run(ctx, session, *lease)
+		session.Release(context.WithoutCancel(ctx), *lease)
+		if err != nil || !options.Drain || ctx.Err() != nil {
+			return err
+		}
+		queued, err := e.Runs(ctx, store.RunFilter{States: []model.RunState{model.RunQueued}, Limit: 1})
+		// One the drain left queued, it can't run: it's not drained again.
+		if err != nil || len(queued) == 0 || queued[0].ID == again {
+			return err
+		}
+		again = queued[0].ID
+		s.say("serve: %s was queued as the drain ended; draining again", queued[0].Name())
 	}
-	defer session.Release(context.WithoutCancel(ctx), *lease)
-	return s.run(ctx, session, *lease)
 }
 
 // server is one serve's state while it leads.

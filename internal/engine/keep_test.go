@@ -134,3 +134,26 @@ func (p *shellingProvider) Shell(_ context.Context, job buildenv.ShellJob) (int,
 	p.shells = append(p.shells, job)
 	return 7, nil
 }
+
+// A drain that found the queue empty reads it again after letting go of
+// the lead, and drains a check queued meanwhile, which check -d's drain
+// would otherwise leave.
+func TestADrainRunsWhatWasQueuedAsItEnded(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	e.Providers = map[string]buildenv.Provider{"command": &leavingProvider{}}
+	var late model.Run
+	var said []string
+	err := e.Serve(t.Context(), session(t, e), ServeOptions{Drain: true, Poll: 10 * time.Millisecond, Say: func(line string) {
+		said = append(said, line)
+		if line == "serve: the queue is empty" && late.ID == "" {
+			late = queuedHarborRun(t, e, tahoeArm)
+		}
+	}})
+	require.NoError(t, err)
+	require.Contains(t, said, "serve: "+late.Name()+" was queued as the drain ended; draining again")
+	finished, err := e.Run(t.Context(), late.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, finished.State, finished.Detail)
+}

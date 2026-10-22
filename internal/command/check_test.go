@@ -99,9 +99,15 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.Contains(t, out, "jq-update · checking snapshot 1\n", "a plan finds a snapshot already recorded of the same files")
 	require.Contains(t, out, "Reuse       when this check runs, it may reuse passing builds with identical inputs", "with a passed check before it, a plan says reuse may apply (the rc6 full stage, B5)")
 
+	// With no serve leading, a background drain of its own runs it, on
+	// the same checkout and database.
+	var drained engine.Options
+	hosted(t).startDrain = func(options engine.Options) (int, error) { drained = options; return 4242, nil }
 	out, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	require.Contains(t, out, "check-2 queued. Start dockhand serve to run it.\n")
+	require.Contains(t, out, "check-2 queued; a background drain (pid 4242) runs it. dockhand wait check-2 follows it.\n")
+	require.NotEmpty(t, drained.Database)
+	require.NotEmpty(t, drained.Env, "in the command line's environment")
 
 	withScript(t, w, "failed")
 	_, _, err = dockhand(t, "check")

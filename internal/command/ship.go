@@ -388,7 +388,7 @@ func finishCarried(ctx context.Context, s *settings, streams term.Streams, done 
 	defer e.Close()
 	var checked error
 	if done.run != nil {
-		checked = runQueued(ctx, e, *done.run, streams, false, s.places())
+		checked = runQueued(ctx, e, *done.run, streams, false, s)
 		// A draft goes up whatever its check found, as submit --draft
 		// allows, with the check's exit; anything else stops.
 		draft := done.submit != nil && done.submit.request.Draft

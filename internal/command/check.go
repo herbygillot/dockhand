@@ -90,7 +90,7 @@ true, it runs that baseline by itself.`,
 				return previewBaseline(ctx, e, streams, branch, only)
 			}
 			if baseline {
-				return runBaseline(ctx, e, streams, branch, only, enqueue, s.places())
+				return runBaseline(ctx, e, streams, branch, only, enqueue, s)
 			}
 			mode := captureMode(head, staged, workingTree)
 			place, err := e.Where(ctx, engine.WhereRequest{On: on, Build: build})
@@ -171,7 +171,7 @@ true, it runs that baseline by itself.`,
 			if len(replaced) > 0 {
 				fmt.Fprintf(streams.Out, "%s replaces %s.\n", run.Name(), strings.Join(replaced, ", "))
 			}
-			err = runQueued(ctx, e, run, streams, enqueue, s.places())
+			err = runQueued(ctx, e, run, streams, enqueue, s)
 			// A check that passed says what moves the branch on now, as
 			// status would; one run for submit leaves that to submit.
 			if err == nil && !enqueue {
@@ -188,7 +188,7 @@ true, it runs that baseline by itself.`,
 				finished, _ := e.RunNamed(ctx, run.Name())
 				if offer, _ := e.BaselineCandidates(ctx, finished); len(offer.Ports) > 0 {
 					fmt.Fprintln(streams.Out, "Running a baseline comparison because check.baseline is enabled:")
-					if baselineErr := runBaseline(ctx, e, streams, branch, nil, false, s.places()); baselineErr != nil {
+					if baselineErr := runBaseline(ctx, e, streams, branch, nil, false, s); baselineErr != nil {
 						fmt.Fprintf(streams.Err, "baseline: %v\n", baselineErr)
 					}
 				}
@@ -225,7 +225,8 @@ true, it runs that baseline by itself.`,
 // runQueued sees a queued run through (Design v3 §11): handed to serve and
 // followed when serve leads, otherwise run here; with enqueue, only
 // queued, saying whether anything will run it.
-func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, enqueue bool, places config.Places) error {
+func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, enqueue bool, s *settings) error {
+	places := s.places()
 	session, err := e.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return err
@@ -244,7 +245,15 @@ func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 	}
 	switch {
 	case enqueue && leader == nil:
-		fmt.Fprintf(streams.Out, "%s queued. Start dockhand serve to run it.\n", run.Name())
+		// Nothing leads, so a drain of its own runs it, outliving this
+		// command as automatic cleanup does: an agent's check outlived
+		// its tool's timeout, and a session's end killed one run here.
+		pid, err := s.host.startDrain(s.openedWith)
+		if err != nil {
+			fmt.Fprintf(streams.Out, "%s queued, but a background drain couldn't start (%v). Start dockhand serve to run it.\n", run.Name(), err)
+			return nil
+		}
+		fmt.Fprintf(streams.Out, "%s queued; a background drain (pid %d) runs it. dockhand wait %s follows it.\n", run.Name(), pid, run.Name())
 		return nil
 	case enqueue:
 		fmt.Fprintf(streams.Out, "%s queued; serve (pid %d) runs it. dockhand wait %s follows it.\n", run.Name(), leader.PID, run.Name())
@@ -767,7 +776,7 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 
 // runBaseline plans a baseline of the branch's latest check and runs it,
 // here or through serve.
-func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string, enqueue bool, places config.Places) error {
+func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string, enqueue bool, s *settings) error {
 	baseline, err := e.PlanBaseline(ctx, branch, only)
 	if err != nil {
 		return err
@@ -777,7 +786,7 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, br
 	if err != nil {
 		return err
 	}
-	return runQueued(ctx, e, run, streams, enqueue, places)
+	return runQueued(ctx, e, run, streams, enqueue, s)
 }
 
 // writeBaselineHeader says what a baseline builds, and what it leaves out.

@@ -36,8 +36,11 @@ type host struct {
 	launchctl func(ctx context.Context, args ...string) ([]byte, error)
 	// os is the operating system serve --install targets.
 	os string
-	// startCleanup starts dockhand clean --automatic after a command.
+	// startCleanup starts dockhand clean --automatic after a command, and
+	// startDrain dockhand serve --drain where check -d finds no serve
+	// leading, returning its process's ID.
 	startCleanup func(engine.Options) error
+	startDrain   func(engine.Options) (int, error)
 	// lookTart finds Tart, for setup's report and the engine's provider.
 	lookTart func(string) (string, error)
 	// tartImages, when set, stands in for dockhand's Tart images.
@@ -112,6 +115,7 @@ func machineHost() *host {
 		},
 		os:            runtime.GOOS,
 		startCleanup:  startCleanup,
+		startDrain:    startDrain,
 		lookTart:      exec.LookPath,
 		tartSupported: tart.Supported,
 		authFlow:      &github.DeviceFlow{},
