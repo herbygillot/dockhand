@@ -154,3 +154,51 @@ kind, and `refusal.Transient` is the one reading.
 - `model.UpstreamComparison` stores `problem_kind` in place of
   `transient`; a recorded `"transient": true` reads as `network`.
   `portedit`'s `PreviousKind` carries the kind through preparation.
+
+## R3-31: producers below the engine fill kinds and Nexts
+
+The sentences with remedies the architecture review listed below the
+engine now each say their kind, and the producer gives Next only where the
+remedy is unconditional and its own:
+
+- `forge.ErrAuthentication` is a refusal of the `Auth` kind, so every error
+  wrapping it is; `ErrNoCredentials` and a rejected credential too, their
+  remedies (several ways to sign in) staying words.
+- A GitHub login that has ended (an earlier dockhand's format, six months
+  unused, GitHub refusing to renew it) is `Auth` with Next `setup github`,
+  its words only what happened: "the GitHub login expired after six months
+  of inactivity". A locked Keychain and an expired device code are `Auth`,
+  their remedies words.
+- A Tart image missing is `Environment` with Next `setup tart <release>`
+  (`setup tart` for `tart:all` with none); the words say whether setup
+  restores it from its golden copy or creates it.
+- An archive's 404 is `UpstreamMissing`, `notFoundWords` kept as the
+  diagnosis; its Next is the engine's.
+- `portfile.ErrUnsupported` and `portsource.ErrUnsupported` are
+  `Unsupported` refusals, so portedit's manifest-hook refusal and the
+  others wrapping them are; `portfile/move.go`'s substituted github.setup
+  now wraps `ErrUnsupported`.
+- `store.ErrLiveUnderMigration` is `Busy`, with no Next: waiting for the
+  processes or stopping them is the person's choice.
+- coord's heartbeat sentences stay: they're progress reports, not refusals.
+
+The command line says a producer's Next last: `sayNext` in `command.run`
+appends "Next: dockhand setup github" (rendered by `renderNext`, as status
+renders a branch's) to a refusal that carries one, unless the error is an
+exit error a command composed with its own. The setup line for an ended
+login (work.go) reads the refusal's words and Next, where it cut
+`ErrAuthentication`'s text off the error (one of R3-38's three surgeries).
+
+Left, by the grep: `portedit/stealth.go` trims `ErrUnsupported`'s words off
+an error for its own sentence, below the engine; it goes with R3-38's
+`author.go` composer, which does the same at the command.
+
+With it, by architecture's answer on R3-38: `Refusal.Next` is a list of
+steps, `[]Next`, each one a dockhand command or a remedy in words
+(`External` keeps its one meaning), in order; `Then(steps...)` sets them,
+and `Refusal.Advances` holds where some step moves on. The command line
+says one "Next:" line a step. And the 404 becoming `UpstreamMissing` showed
+that `KindOf` must read joins: upstream's 404 beside a mirror's 502 is
+worth another try, so `KindOf` takes the first transient kind among the
+outermost refusals on each path, else the first, and `Transient` is
+`KindOf(err).Transient()`.

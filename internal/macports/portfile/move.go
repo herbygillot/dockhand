@@ -46,7 +46,7 @@ func MoveGitHub(src []byte, from, to string) ([]byte, int, error) {
 						edits = append(edits, textedit.Edit{Span: cmd.Words[2].Span, New: []byte(toProject)})
 					}
 				case !ownerLiteral || !projectLiteral:
-					refused = fmt.Errorf("portfile: a github.setup names its repository by substitution, which dockhand doesn't edit; point it at %s yourself", to)
+					refused = fmt.Errorf("%w: a github.setup names its repository by substitution, which dockhand doesn't edit; point it at %s yourself", ErrUnsupported, to)
 				}
 			}
 			for _, body := range bodies(src, cmd) {

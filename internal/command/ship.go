@@ -482,7 +482,7 @@ func submitPassed(ctx context.Context, s *settings, e *engine.Engine, streams te
 		view.Held = held
 		streams.Emit(view)
 		name := plan.Branch.ShortName()
-		return term.Exitf(term.ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: %s", name, strings.Join(held, "; "), renderNext(*refused.Next, ""))
+		return term.Exitf(term.ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: %s", name, strings.Join(held, "; "), strings.Join(renderSteps(refused.Next), "; then "))
 	}
 	return err
 }

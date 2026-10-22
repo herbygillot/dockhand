@@ -184,7 +184,8 @@ func (p *Provider) Environments(ctx context.Context, releases string) ([]model.E
 			}
 		}
 		if len(chosen) == 0 {
-			return nil, errors.New("--on tart:all: no Tart base images are available; run dockhand setup tart to create one for this Mac's macOS")
+			return nil, refusal.New(refusal.Environment, "--on tart:all: no Tart base images are available; setup makes one for this Mac's macOS").
+				Then(refusal.Next{Verb: refusal.VerbSetup, Args: []string{"tart"}})
 		}
 	default:
 		for _, name := range strings.Split(releases, ",") {
@@ -203,9 +204,11 @@ func (p *Provider) Environments(ctx context.Context, releases string) ([]model.E
 			// restore it itself: that writes tens of gigabytes unasked (the
 			// person's decision on D-R3, 2026-10-16).
 			if golden := tartvm.GoldenName(baseImage(release)); slices.Contains(images, golden) {
-				return nil, fmt.Errorf("no Tart image for macOS %s (%s); run dockhand setup tart %s to restore %s from %s (about a minute)", release.Product, release.Name, release.Slug, baseImage(release), golden)
+				return nil, refusal.New(refusal.Environment, "no Tart image for macOS %s (%s); setup restores %s from %s in about a minute", release.Product, release.Name, baseImage(release), golden).
+					Then(refusal.Next{Verb: refusal.VerbSetup, Args: []string{"tart", release.Slug}})
 			}
-			return nil, fmt.Errorf("no Tart image for macOS %s (%s); run dockhand setup tart %s to create %s", release.Product, release.Name, release.Slug, baseImage(release))
+			return nil, refusal.New(refusal.Environment, "no Tart image for macOS %s (%s); setup creates %s", release.Product, release.Name, baseImage(release)).
+				Then(refusal.Next{Verb: refusal.VerbSetup, Args: []string{"tart", release.Slug}})
 		}
 		environment := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
 			DeveloperTools: model.DeveloperToolsCommandLine}

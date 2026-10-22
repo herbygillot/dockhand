@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/fetch"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/endpoints"
 )
@@ -59,7 +60,7 @@ func (f *DeviceFlow) Authorize(ctx context.Context, clientID string, present fun
 		var retrieve *oauth2.RetrieveError
 		switch {
 		case errors.As(err, &retrieve) && retrieve.ErrorCode == "expired_token", errors.Is(err, context.DeadlineExceeded):
-			return credential.Login{}, fmt.Errorf("github: the code %s expired before it was entered at %s; run dockhand setup github again for a new one", authorization.UserCode, authorization.VerificationURI)
+			return credential.Login{}, refusal.New(refusal.Auth, "github: the code %s expired before it was entered at %s; run dockhand setup github again for a new one", authorization.UserCode, authorization.VerificationURI)
 		case errors.As(err, &retrieve) && retrieve.ErrorCode == "access_denied":
 			return credential.Login{}, fmt.Errorf("github: the sign-in was declined at %s; nothing was saved", authorization.VerificationURI)
 		}

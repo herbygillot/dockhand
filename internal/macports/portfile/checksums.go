@@ -1,12 +1,12 @@
 package portfile
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -87,7 +87,9 @@ func RewriteChecksumGroup(src []byte, pairs []ChecksumWords, sums Checksum) (tex
 	return textedit.Edit{Span: span, New: []byte(out.String())}, values
 }
 
-var ErrUnsupported = errors.New("portfile: unsupported source edit")
+// ErrUnsupported is an edit dockhand doesn't make, which a person makes by
+// hand: a refusal of its kind, which every error wrapping it is.
+var ErrUnsupported error = refusal.New(refusal.Unsupported, "portfile: unsupported source edit")
 
 type Checksum struct {
 	Name, SHA256, RMD160 string

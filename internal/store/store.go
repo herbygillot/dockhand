@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 var (
@@ -48,7 +49,7 @@ var (
 	// ErrLiveUnderMigration refuses a migration while dockhand processes
 	// that read the schema it would replace are working: after it, none
 	// of them could record what it does (LiveUnderMigrationError).
-	ErrLiveUnderMigration = errors.New("dockhand processes are working on the database's schema")
+	ErrLiveUnderMigration error = refusal.New(refusal.Busy, "dockhand processes are working on the database's schema")
 	// ErrUncertain reports a commit whose outcome is unknown: the write
 	// may have landed or not, as when a cancel arrives while the commit
 	// syncs. A writer that would undo work outside the store on a failed

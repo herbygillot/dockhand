@@ -11,10 +11,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/version"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
-var ErrUnsupported = errors.New("macports source: unsupported convention")
+// ErrUnsupported is a convention dockhand doesn't read, which a person
+// edits by hand: a refusal of its kind, which every error wrapping it is.
+var ErrUnsupported error = refusal.New(refusal.Unsupported, "macports source: unsupported convention")
 var ErrTagPattern = errors.New("macports source: tag convention is unknown")
 
 type Forge string

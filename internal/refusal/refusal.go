@@ -50,7 +50,8 @@ const (
 	// missing. Its producer's Next is the setup that makes it.
 	Environment Kind = "environment"
 	// Busy is the store or a check held by another process. Its
-	// producer's Next is what to wait for.
+	// producer gives a Next where one command waits it out; a migration
+	// held by running processes has none (wait for them, or stop them).
 	Busy Kind = "busy"
 	// Attention is what waits for a person's look, which exits 3.
 	// branchstate gives its Next.
@@ -92,9 +93,11 @@ type Refusal struct {
 	// Kept is what was left as it was, in words, by whoever knows: "the
 	// branch, unchanged", "nothing was changed".
 	Kept string
-	// Next is what moves it on, where the refusal's producer knows; nil
-	// where the engine or branchstate gives it (Kind).
-	Next *Next
+	// Next is what moves it on, step by step in order, each a dockhand
+	// command or a remedy in words, where the refusal's producer knows;
+	// empty where the engine or branchstate gives it (Kind). Most have one
+	// step; a script wanting "the" command takes the last with a Verb.
+	Next []Next
 	// cause is what the refusal was made of, where it wraps an error.
 	cause error
 }
@@ -137,11 +140,23 @@ func (r *Refusal) With(kept string) *Refusal {
 	return &c
 }
 
-// Then is the refusal with what moves it on.
-func (r *Refusal) Then(next Next) *Refusal {
+// Then is the refusal with what moves it on, its steps in order.
+func (r *Refusal) Then(steps ...Next) *Refusal {
 	c := *r
-	c.Next = &next
+	c.Next = steps
 	return &c
+}
+
+// Advances reports whether what moves the refusal on moves on from the
+// action it refuses, named by its verb: some step names another verb, or
+// the same one once something has changed (Next.Advances).
+func (r *Refusal) Advances(refused string) bool {
+	for _, step := range r.Next {
+		if step.Advances(refused) {
+			return true
+		}
+	}
+	return false
 }
 
 // Of is the refusal an error is, or wraps; nil where it's none.
@@ -154,31 +169,47 @@ func Of(err error) *Refusal {
 }
 
 // KindOf is the kind of refusal an error is, or Failed where it's none.
+// Of errors joined, as upstream's and a mirror's failures are, it's the
+// first that another try may meet, else the first: one part of them that
+// may go another time makes the whole worth another try.
 func KindOf(err error) Kind {
-	if r := Of(err); r != nil {
-		return r.kind
+	found := kinds(err)
+	for _, kind := range found {
+		if kind.Transient() {
+			return kind
+		}
+	}
+	if len(found) > 0 {
+		return found[0]
 	}
 	return Failed
 }
 
+// kinds are the kinds of the outermost refusals an error is or holds, on
+// each of its paths: through wrapping, and each of a join's parts.
+func kinds(err error) []Kind {
+	switch e := err.(type) {
+	case nil:
+		return nil
+	case *Refusal:
+		return []Kind{e.kind}
+	case interface{ Unwrap() []error }:
+		var found []Kind
+		for _, part := range e.Unwrap() {
+			found = append(found, kinds(part)...)
+		}
+		return found
+	case interface{ Unwrap() error }:
+		return kinds(e.Unwrap())
+	}
+	return nil
+}
+
 // Transient reports whether another try may meet an error: one that is,
 // or wraps, a refusal of a transient kind, or joins one, as upstream's and
-// a mirror's failures are joined. It's the one reading of it, which the
-// retry rule and collecting an assessment again read (R3-6, where it had
-// five shapes).
+// a mirror's failures are joined (KindOf). It's the one reading of it,
+// which the retry rule and collecting an assessment again read (R3-6,
+// where it had five shapes).
 func Transient(err error) bool {
-	if err == nil {
-		return false
-	}
-	if r := Of(err); r != nil {
-		return r.kind.Transient()
-	}
-	if joined, ok := err.(interface{ Unwrap() []error }); ok {
-		for _, e := range joined.Unwrap() {
-			if Transient(e) {
-				return true
-			}
-		}
-	}
-	return false
+	return err != nil && KindOf(err).Transient()
 }

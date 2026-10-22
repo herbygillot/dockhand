@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -136,13 +137,19 @@ func TestALoginThatCantRenewSaysWhy(t *testing.T) {
 
 	server, asked := tokenEndpoint(t, "")
 	_, err := renewer(server, expiring(t, time.Now().Add(-time.Hour)), lock).Token(t.Context())
-	require.EqualError(t, err, "forge: authentication is required: the GitHub login expired after six months of inactivity; run dockhand setup github to sign in again")
+	require.EqualError(t, err, "the GitHub login expired after six months of inactivity")
+	// A login that has ended is signed in to again, unconditionally: its
+	// Next, which the command line says (R3-31).
+	setup := refusal.Next{Verb: refusal.VerbSetup, Args: []string{"github"}}
+	require.Equal(t, refusal.Auth, refusal.KindOf(err))
+	require.Equal(t, []refusal.Next{setup}, refusal.Of(err).Next)
 	require.Zero(t, asked.Load())
 
 	server, _ = tokenEndpoint(t, "bad_refresh_token")
 	_, err = renewer(server, expiring(t, time.Now().AddDate(0, 6, 0)), lock).Token(t.Context())
 	require.ErrorIs(t, err, github.ErrAuthentication)
-	require.EqualError(t, err, "forge: authentication is required: GitHub refused to renew the login (bad_refresh_token); run dockhand setup github")
+	require.EqualError(t, err, "GitHub refused to renew the login (bad_refresh_token)")
+	require.Equal(t, []refusal.Next{setup}, refusal.Of(err).Next)
 
 	server, _ = tokenEndpoint(t, "500")
 	store := expiring(t, time.Now().AddDate(0, 6, 0))

@@ -843,14 +843,19 @@ func TestEnvironmentsAreReleasesWithImages(t *testing.T) {
 		require.Equal(t, want, got, releases)
 	}
 	_, err := p.Environments(t.Context(), "sequoia")
-	require.ErrorContains(t, err, "no Tart image for macOS 15 (Sequoia); run dockhand setup tart sequoia to create dockhand-base-sequoia", "an Xcode image is an add-on to the base image")
+	require.EqualError(t, err, "no Tart image for macOS 15 (Sequoia); setup creates dockhand-base-sequoia", "an Xcode image is an add-on to the base image")
+	// An environment not set up, whose setup is what moves it on (R3-31).
+	setup := refusal.Next{Verb: refusal.VerbSetup, Args: []string{"tart", "sequoia"}}
+	require.Equal(t, refusal.Environment, refusal.KindOf(err))
+	require.Equal(t, []refusal.Next{setup}, refusal.Of(err).Next)
 	_, err = p.Environments(t.Context(), "leopard")
 	require.ErrorContains(t, err, "unknown release")
 	// A deleted image whose golden copy is kept is a restore, said as one;
 	// check doesn't make it itself (the person's decision on D-R3).
 	mac.images = append(mac.images, "dockhand-golden-sequoia")
 	_, err = p.Environments(t.Context(), "sequoia")
-	require.EqualError(t, err, "no Tart image for macOS 15 (Sequoia); run dockhand setup tart sequoia to restore dockhand-base-sequoia from dockhand-golden-sequoia (about a minute)")
+	require.EqualError(t, err, "no Tart image for macOS 15 (Sequoia); setup restores dockhand-base-sequoia from dockhand-golden-sequoia in about a minute")
+	require.Equal(t, []refusal.Next{setup}, refusal.Of(err).Next)
 
 	// A Tart older than setup takes is refused before any VM starts, as
 	// setup refuses it (the rc9 full stage's F8).

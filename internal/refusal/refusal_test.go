@@ -26,3 +26,24 @@ func TestARefusalIsReachedByItsKind(t *testing.T) {
 	require.Panics(t, func() { New("", "no kind") })
 	require.True(t, Transient(errors.Join(errors.New("a"), New(UpstreamNotYet, "mirrors behind"))))
 }
+
+// Of failures joined, one another try may meet makes the whole worth one,
+// whichever comes first: upstream's 404 beside a mirror's 502 is tried
+// again (R3-6). A refusal's steps move on where any of them does.
+func TestJoinedFailuresAreWorthAnotherTryWhereOneIs(t *testing.T) {
+	t.Parallel()
+	missing := Wrap(UpstreamMissing, errors.New("404"), "archives: not found")
+	behind := New(Network, "mirror: 502")
+	joined := fmt.Errorf("archives couldn't be fetched: %w", errors.Join(missing, behind))
+	require.Equal(t, Network, KindOf(joined))
+	require.True(t, Transient(joined))
+	require.Equal(t, UpstreamMissing, KindOf(errors.Join(missing, errors.New("other"))))
+	require.False(t, Transient(errors.Join(missing, errors.New("other"))))
+	require.Equal(t, Failed, KindOf(errors.New("plain")))
+
+	edit := New(Unsupported, "could not update jq automatically").
+		Then(Next{External: "run port checksum jq"}, Next{Verb: VerbEdit, Args: []string{"jq"}})
+	require.True(t, edit.Advances("update"))
+	again := New(Failed, "x").Then(Next{Verb: VerbSubmit})
+	require.False(t, again.Advances(string(VerbSubmit)))
+}

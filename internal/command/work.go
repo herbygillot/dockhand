@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -414,8 +415,14 @@ func (s *settings) publishing(ctx context.Context) (string, githubLoginJSON) {
 		}
 		return line, login
 	case errors.Is(err, github.ErrLoginEnded):
-		problem := strings.TrimPrefix(err.Error(), github.ErrAuthentication.Error()+": ")
-		return "! " + problem, githubLoginJSON{Problem: problem}
+		// The login's own words, and what signs in again, as its producer
+		// gives them (R3-38: the words were cut out of the error).
+		ended := refusal.Of(err)
+		line := "! " + ended.Words()
+		if len(ended.Next) > 0 {
+			line += "; run " + strings.Join(renderSteps(ended.Next), ", then ")
+		}
+		return line, githubLoginJSON{Problem: ended.Words()}
 	case errors.Is(err, github.ErrNoCredentials):
 		return "· not set up: dockhand setup github, when you're ready to submit", githubLoginJSON{Problem: "not set up"}
 	}

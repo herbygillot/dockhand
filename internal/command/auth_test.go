@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/refusal"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 type memoryStore map[credential.Key]string
@@ -150,15 +153,15 @@ func TestALoginThatCantRenewIsSaid(t *testing.T) {
 	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	store[github.CredentialKey] = "gho_a_bare_token_from_an_earlier_dockhand"
 	line, _ := testSettings(t).publishing(t.Context())
-	require.Equal(t, "! the saved GitHub login uses an older format; run dockhand setup github to sign in again", line)
+	require.Equal(t, "! the saved GitHub login uses an older format; run dockhand setup github", line)
 	expired := login("secret-token", "ada")
 	expired.AccessExpiry, expired.RefreshExpiry = time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)
 	saved, err := expired.Encode()
 	require.NoError(t, err)
 	store[github.CredentialKey] = saved
 	line, said := testSettings(t).publishing(t.Context())
-	require.Equal(t, "! the GitHub login expired after six months of inactivity; run dockhand setup github to sign in again", line)
-	require.Equal(t, githubLoginJSON{Problem: "the GitHub login expired after six months of inactivity; run dockhand setup github to sign in again"}, said)
+	require.Equal(t, "! the GitHub login expired after six months of inactivity; run dockhand setup github", line)
+	require.Equal(t, githubLoginJSON{Problem: "the GitHub login expired after six months of inactivity"}, said)
 }
 
 func TestADeviceFlowAddressThatIsntHTTPSIsntOpened(t *testing.T) {
@@ -176,4 +179,20 @@ type plainFlow struct{}
 
 func (plainFlow) Authorize(_ context.Context, _ string, present func(credential.DeviceAuthorization) error) (credential.Login, error) {
 	return credential.Login{}, present(credential.DeviceAuthorization{UserCode: "ABCD-1234", VerificationURL: "http://example.invalid/device"})
+}
+
+// A refusal whose producer gave what moves it on says it last, as a Next:
+// line, and stays the refusal, its exit code its kind's; a composed exit
+// error says its own (R3-31).
+func TestARefusalsNextIsSaidLast(t *testing.T) {
+	t.Parallel()
+	ended := refusal.New(refusal.Auth, "the GitHub login expired after six months of inactivity").
+		Then(refusal.Next{Verb: refusal.VerbSetup, Args: []string{"github"}})
+	err := sayNext(fmt.Errorf("submit: %w", ended))
+	require.EqualError(t, err, "submit: the GitHub login expired after six months of inactivity\nNext: dockhand setup github")
+	require.Equal(t, refusal.Auth, refusal.KindOf(err))
+	composed := term.Exitf(term.ExitAttention, "held")
+	require.Equal(t, composed, sayNext(composed))
+	plain := errors.New("plain")
+	require.Equal(t, plain, sayNext(plain))
 }

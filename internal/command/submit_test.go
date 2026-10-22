@@ -880,7 +880,8 @@ JSON
 	setenv(t, "MOVE_IN", dir)
 	_, _, err = dockhand(t, "ship", "--yes")
 	require.Error(t, err)
-	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was checked; nothing was submitted, since ship binds [0-9a-f]{7}$`, err.Error())
+	// What moves it on, branchstate's, is said last (R3-31).
+	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was checked; nothing was submitted, since ship binds [0-9a-f]{7}\nNext: dockhand submit --branch jq-update$`, err.Error())
 	require.Equal(t, "jq: update to 1.8.1", g.PRs[34901].Title)
 	require.NotEqual(t, testsupport.Git(t, dir, "rev-parse", "HEAD"), testsupport.Git(t, g.Fork, "rev-parse", "dockhand/jq-update"), "the moved branch wasn't pushed")
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"golang.org/x/crypto/ripemd160" //nolint:staticcheck // MacPorts checksums are rmd160, among others.
 )
@@ -261,11 +262,12 @@ func downloadError(parent context.Context, info macports.PortInfo, name, address
 	var transport *url.Error
 	switch {
 	case errors.As(err, &status):
-		note := ""
 		if status.Status == http.StatusNotFound {
-			note = notFoundWords(info, address)
+			// Not where the Portfile says: what moves it on depends on
+			// the branch, the engine's to say (refusal.UpstreamMissing).
+			return refusal.Wrap(refusal.UpstreamMissing, err, "archives: downloading %s: %v%s", name, err, notFoundWords(info, address))
 		}
-		return fmt.Errorf("archives: downloading %s: %w%s", name, err, note)
+		return fmt.Errorf("archives: downloading %s: %w", name, err)
 	case errors.Is(err, fetch.ErrTooLarge):
 		return fmt.Errorf("archives: downloading %s from %s: larger than the %s limit: %w", name, address, prose.Bytes(limit), err)
 	case errors.Is(err, fetch.ErrStalled):

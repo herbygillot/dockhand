@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // Forge names as recorded on releases, destinations, and pull requests.
@@ -15,7 +17,10 @@ const (
 )
 
 var ErrRejected = errors.New("forge: remote write was rejected")
-var ErrAuthentication = errors.New("forge: authentication is required")
+
+// ErrAuthentication is a forge refusing who's asking, or no one to ask as:
+// a refusal of the auth kind, which every error wrapping it is.
+var ErrAuthentication error = refusal.New(refusal.Auth, "forge: authentication is required")
 
 var ErrNotFound = errors.New("forge: requested object was not found")
 

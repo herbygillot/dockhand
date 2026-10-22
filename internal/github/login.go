@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // lockWait is how long a renewal waits for another process's.
@@ -90,9 +91,17 @@ func (e loginEnded) Unwrap() error        { return e.error }
 func (e loginEnded) Is(target error) bool { return target == ErrLoginEnded }
 
 var (
-	errOldLogin     = loginEnded{fmt.Errorf("%w: the saved GitHub login uses an older format; run dockhand setup github to sign in again", ErrAuthentication)}
-	errExpiredLogin = loginEnded{fmt.Errorf("%w: the GitHub login expired after six months of inactivity; run dockhand setup github to sign in again", ErrAuthentication)}
+	errOldLogin     = ended("the saved GitHub login uses an older format")
+	errExpiredLogin = ended("the GitHub login expired after six months of inactivity")
 )
+
+// ended is a login that has ended, in words, whose remedy is to sign in
+// again, its Next, unconditionally: no other way renews it.
+func ended(format string, args ...any) loginEnded {
+	words := fmt.Sprintf(format, args...)
+	return loginEnded{refusal.Wrap(refusal.Auth, ErrAuthentication, "%s", words).
+		Then(refusal.Next{Verb: refusal.VerbSetup, Args: []string{"github"}})}
+}
 
 // login is the token of the login the store keeps, renewed where its
 // access token is within renewBefore of expiring, or is rejected's; found
@@ -170,7 +179,7 @@ func (s SystemCredentials) saved(ctx context.Context) (credential.Login, error) 
 	// Locked, it keeps the login still: no other source is tried, as for
 	// any login that's there (the rc10 full stage's F5).
 	if errors.Is(err, credential.ErrLocked) {
-		return credential.Login{}, fmt.Errorf("github: cannot read the saved GitHub login: %w; unlock the Keychain or set GH_TOKEN for this command", err)
+		return credential.Login{}, refusal.Wrap(refusal.Auth, err, "github: cannot read the saved GitHub login: %v; unlock the Keychain or set GH_TOKEN for this command", err)
 	}
 	if err != nil {
 		return credential.Login{}, fmt.Errorf("github: reading saved credential: %w", err)
@@ -210,7 +219,7 @@ func (s SystemCredentials) refresh(ctx context.Context, saved credential.Login) 
 	var refused *oauth2.RetrieveError
 	switch {
 	case errors.As(err, &refused) && (refused.ErrorCode == "bad_refresh_token" || refused.ErrorCode == "invalid_grant" || refused.ErrorCode == "unauthorized_client"):
-		return credential.Login{}, loginEnded{fmt.Errorf("%w: GitHub refused to renew the login (%s); run dockhand setup github", ErrAuthentication, refused.ErrorCode)}
+		return credential.Login{}, ended("GitHub refused to renew the login (%s)", refused.ErrorCode)
 	case err != nil:
 		return credential.Login{}, fmt.Errorf("github: could not renew the GitHub login; the saved credentials are unchanged: %w", RateLimitError(err))
 	}
