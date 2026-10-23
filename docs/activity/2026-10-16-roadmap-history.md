@@ -898,3 +898,16 @@ Before implementation's replays confirmed it and 52d14a6c fixed it, the `go.vend
 ## From Next on 2026-10-23: the corpus's card
 
 Before the person's "Before rc5" (12:26Z), the corpus's lead said its Go and Rust half went before rc5's tag "(asked on a card in the prioritization thread, 2026-10-23, work going on with it meanwhile)".
+
+## From Next on 2026-10-23: rc5's rows and the corpus's cache
+
+Before implementation's 8f8a3919 and its report that dockhand keeps no distfile cache, these sentences stood, each whole:
+
+- "Before rc5's tag the quick stage gains mailpit's row, as dust, pgdog, and doge are Rust's."
+- "caddy, mailpit, git-credential-oauth, direnv, and opkssh,"
+- "Archives are fetched once into a cache keyed by checksum; `make test-corpus` stays out of `make test`."
+- "Done when the corpus fails on rc4's commit and passes on rc5's, in under five minutes with a warm cache."
+
+## From Next on 2026-10-23: the corpus's cache, measured
+
+Before the corpus's first run took 1 min 52 s with the network, its entry said, whole: "A warm cache joins that rest only if the measurement asks for one: in the harness, with no knob in dockhand for tests alone, unless a distfile cache earns its place for the person's own updates."
