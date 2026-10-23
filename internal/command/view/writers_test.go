@@ -53,13 +53,17 @@ func TestAPlanNamesTheChangedSubportAndItsSiblings(t *testing.T) {
 }
 
 // A link finding is a notice, its mark !, and one that couldn't be read
-// says nothing of them, unmarked.
+// says nothing of them, unmarked, as one whose links are each declared.
 func TestWriteLinks(t *testing.T) {
 	var out bytes.Buffer
 	WriteLinks(&out, []engine.LinkFinding{
 		{Target: "harbor", Port: "oniguruma", Library: "/opt/local/lib/libonig.5.dylib", Binary: "/opt/local/bin/harbor", Libraries: 2},
 		{Target: "harbor-cli", Unread: true},
+		{Target: "crystal", Clean: true, Ports: 5},
+		{Target: "jq", Clean: true},
 	})
 	require.Equal(t, "Links\n  ! harbor links libonig.5.dylib from oniguruma (and 1 more of its libraries), which it doesn't declare in depends_lib\n"+
-		"    couldn't read what harbor-cli's build links, so whether it declares them isn't said\n", out.String())
+		"    couldn't read what harbor-cli's build links, so whether it declares them isn't said\n"+
+		"    crystal links 5 ports, each declared in depends_lib\n"+
+		"    jq links no port's libraries\n", out.String())
 }

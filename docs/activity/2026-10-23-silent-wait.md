@@ -40,3 +40,20 @@ doesn't: an advisory test failure leaves the outcome passed
 llvm-23, pcre2, boehmgc, libiconv, and libffi, and declares all five in
 depends_lib, so no notice is right. That a clean scan says nothing at all
 goes to prioritization.
+
+## Then: a clean link scan says it ran
+
+Prioritization placed it in Next, as a fix for main after rc3 (roadmap
+de2f447c).
+
+- `evidence.UndeclaredLinks` now also returns a `Clean` finding, counting
+  `Ports`, for a target whose builds' links were read and each declared.
+  The ports are counted once across environments.
+- `view.LinkWords` says it as "crystal links 5 ports, each declared in
+  depends_lib", or "jq links no port's libraries" where no port is linked.
+  `view.LinkMark` leaves it unmarked, as an unread one is.
+- The check's report and status's Links row both print it.
+- A failed build is still never read, so it says nothing.
+- Tests: TestACleanLinkScanIsSaid has crystal's five links, with failed
+  advisory tests, on two releases. TestWriteLinks and the engine's links
+  test cover the words.

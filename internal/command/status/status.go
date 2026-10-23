@@ -617,11 +617,7 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places con
 					if i == 0 {
 						label = "Links    "
 					}
-					mark := view.Look
-					if finding.Unread {
-						mark = view.Unmarked
-					}
-					fmt.Fprintf(out, "  %s%s %s\n", label, mark, view.LinkWords(finding))
+					fmt.Fprintf(out, "  %s%s %s\n", label, view.LinkMark(finding), view.LinkWords(finding))
 				}
 			}
 		}

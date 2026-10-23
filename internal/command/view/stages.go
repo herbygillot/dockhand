@@ -53,8 +53,15 @@ func Where(places config.Places, dir string) string {
 // LinkWords say a link finding (evidence.LinkFinding) as a notice, its
 // mark !, holding nothing: "harbor links libonig.5.dylib from oniguruma
 // (and 1 more of its libraries), which it doesn't declare in depends_lib";
-// or, where the links couldn't be read, so nothing is said of them.
+// or, where the links couldn't be read, so nothing is said of them; or,
+// where each is declared, how many ports they map to.
 func LinkWords(finding engine.LinkFinding) string {
+	if finding.Clean {
+		if finding.Ports == 0 {
+			return fmt.Sprintf("%s links no port's libraries", finding.Target)
+		}
+		return fmt.Sprintf("%s links %s, each declared in depends_lib", finding.Target, prose.Plural(finding.Ports, "port"))
+	}
 	if finding.Unread {
 		return fmt.Sprintf("couldn't read what %s's build links, so whether it declares them isn't said", finding.Target)
 	}
@@ -75,6 +82,15 @@ func LinkWords(finding engine.LinkFinding) string {
 	return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib%s", finding.Target, path.Base(finding.Library), finding.Port, more, where)
 }
 
+// LinkMark is a link finding's mark: !, a notice, where a port is linked
+// and not declared, and none otherwise.
+func LinkMark(finding engine.LinkFinding) string {
+	if finding.Unread || finding.Clean {
+		return Unmarked
+	}
+	return Look
+}
+
 // WriteLinks says a check's link findings, each a notice under a heading;
 // nothing where it has none.
 func WriteLinks(out io.Writer, findings []engine.LinkFinding) {
@@ -83,10 +99,6 @@ func WriteLinks(out io.Writer, findings []engine.LinkFinding) {
 	}
 	fmt.Fprintln(out, "Links")
 	for _, finding := range findings {
-		mark := Look
-		if finding.Unread {
-			mark = Unmarked
-		}
-		fmt.Fprintf(out, "  %s %s\n", mark, LinkWords(finding))
+		fmt.Fprintf(out, "  %s %s\n", LinkMark(finding), LinkWords(finding))
 	}
 }

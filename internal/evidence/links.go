@@ -10,7 +10,9 @@ import (
 // LinkFinding is a target's build linking a library from a port it doesn't
 // declare in depends_lib (model.FindingUndeclaredLink, v0.5.0 part 6), or,
 // where Unread, a build whose links couldn't be read, so nothing is said of
-// them: never that it links nothing. A notice; it holds nothing.
+// them: never that it links nothing; or, where Clean, a target whose links
+// were read and each declared, so the scan is seen to have run (field
+// testing's crystal 1.22.1, after rc3). A notice; it holds nothing.
 type LinkFinding struct {
 	Target model.TargetID
 	// Port is the port the target links and doesn't declare; Library and
@@ -23,6 +25,10 @@ type LinkFinding struct {
 	// 8c007979, C8-2: a declaration in one hid another's link).
 	Environments []model.Environment
 	Unread       bool
+	// Clean is a target whose read builds link only ports it declares,
+	// Ports counting them.
+	Clean bool
+	Ports int
 }
 
 // Subject is what the finding is about, as a decision on it names it:
@@ -54,6 +60,7 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 	found := map[key]*LinkFinding{}
 	libraries := map[key]map[string]bool{}
 	read, passed := map[model.TargetID]bool{}, map[model.TargetID]bool{}
+	linked := map[model.TargetID]map[string]bool{}
 	for _, build := range builds {
 		result := build.Result
 		if result.Outcome != model.OutcomePassed {
@@ -64,7 +71,13 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 			continue
 		}
 		read[result.Target] = true
+		if linked[result.Target] == nil {
+			linked[result.Target] = map[string]bool{}
+		}
 		for _, link := range result.Links {
+			if link.Port != "" {
+				linked[result.Target][strings.ToLower(link.Port)] = true
+			}
 			if link.Port == "" || slices.ContainsFunc(build.Declared, func(name string) bool { return strings.EqualFold(name, link.Port) }) {
 				continue
 			}
@@ -80,13 +93,18 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 		}
 	}
 	var findings []LinkFinding
+	undeclared := map[model.TargetID]bool{}
 	for k, finding := range found {
 		finding.Libraries = len(libraries[k])
 		findings = append(findings, *finding)
+		undeclared[k.target] = true
 	}
 	for target := range passed {
-		if !read[target] {
+		switch {
+		case !read[target]:
 			findings = append(findings, LinkFinding{Target: target, Unread: true})
+		case !undeclared[target]:
+			findings = append(findings, LinkFinding{Target: target, Clean: true, Ports: len(linked[target])})
 		}
 	}
 	slices.SortFunc(findings, func(a, b LinkFinding) int {

@@ -39,5 +39,23 @@ func TestUndeclaredLinks(t *testing.T) {
 		{Target: "harbor-cli", Unread: true},
 	}, found)
 	require.Equal(t, "harbor links oniguruma", found[0].Subject())
-	require.Empty(t, UndeclaredLinks([]LinkedBuild{{Result: model.TargetResult{Target: "harbor", Outcome: model.OutcomePassed, Links: []model.Link{}}}}), "nothing links")
+	require.Equal(t, []LinkFinding{{Target: "harbor", Clean: true}}, UndeclaredLinks([]LinkedBuild{{Result: model.TargetResult{Target: "harbor", Outcome: model.OutcomePassed, Links: []model.Link{}}}}), "nothing links, read")
+}
+
+// A target whose read builds link only ports it declares is said, the
+// ports counted once across builds, so a clean scan is seen to have run
+// (field testing's crystal 1.22.1); a failed build is none.
+func TestACleanLinkScanIsSaid(t *testing.T) {
+	link := func(library, port string) model.Link {
+		return model.Link{Binary: "/opt/local/bin/crystal", Library: "/opt/local/lib/" + library, Port: port}
+	}
+	declared := []string{"crystal", "boehmgc", "libffi", "libiconv", "llvm-23", "pcre2"}
+	links := []model.Link{link("libLLVM.23.1.dylib", "llvm-23"), link("libpcre2-8.0.dylib", "pcre2"), link("libgc.1.dylib", "boehmgc"), link("libiconv.2.dylib", "libiconv"), link("libffi.8.dylib", "libffi")}
+	monterey, tahoe := model.Environment{Provider: "tart", Platform: model.Platform{Version: "21"}}, model.Environment{Provider: "tart", Platform: model.Platform{Version: "25"}}
+	found := UndeclaredLinks([]LinkedBuild{
+		{Result: model.TargetResult{Target: "crystal", Outcome: model.OutcomePassed, Tests: model.TestsFailed, Links: links}, Environment: monterey, Declared: declared},
+		{Result: model.TargetResult{Target: "crystal", Outcome: model.OutcomePassed, Tests: model.TestsFailed, Links: links[:2]}, Environment: tahoe, Declared: declared},
+		{Result: model.TargetResult{Target: "shards", Outcome: model.OutcomeFailed}, Environment: tahoe},
+	})
+	require.Equal(t, []LinkFinding{{Target: "crystal", Clean: true, Ports: 5}}, found)
 }

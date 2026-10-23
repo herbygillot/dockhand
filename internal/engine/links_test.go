@@ -44,6 +44,7 @@ func TestUndeclaredLinksSetABuildsLinksBesideItsDeclaredOnes(t *testing.T) {
 	}
 	require.Contains(t, said, "harbor-cli links oniguruma", "libharbor is declared")
 	require.NotContains(t, said, "libharbor unread", "nothing links is read")
+	require.Contains(t, found, LinkFinding{Target: "libharbor", Clean: true}, "and said, as a clean scan")
 	require.Contains(t, said, "harbor-viewer unread")
 
 	provider.readsLinks = false
