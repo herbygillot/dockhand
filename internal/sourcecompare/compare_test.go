@@ -542,3 +542,32 @@ func TestAnAddedOptionSaysWhatItGates(t *testing.T) {
 		require.NotContains(t, changes[i].Message, "unlinked", "what NOT the option reaches isn't its gate")
 	}
 }
+
+// A license file whose only change is the party it names is said, as a
+// change of party, not of the license: vault 2.2's LICENSE names IBM where
+// 2.1.2's named HashiCorp, its terms word for word the same (field
+// testing, 2026-10-23). Text changed beside the name is a change of the
+// license still.
+func TestALicensesRenamedPartyIsSaid(t *testing.T) {
+	t.Parallel()
+	old, err := os.ReadFile("testdata/vault/LICENSE-2.1.2")
+	require.NoError(t, err)
+	now, err := os.ReadFile("testdata/vault/LICENSE-2.2.1")
+	require.NoError(t, err)
+	changes, err := compareArchives(t,
+		testsupport.Tarball(t, "vault-2.1.2", map[string]string{"LICENSE": string(old)}),
+		testsupport.Tarball(t, "vault-2.2.1", map[string]string{"LICENSE": string(now)}), Versions{Old: "2.1.2", New: "2.2.1"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"license party  LICENSE"}, hows(changes))
+	require.Equal(t, "upstream's LICENSE changed only the party it names, HashiCorp to IBM, in 7 places", changes[0].Message)
+
+	// A term changed beside the name is the license's change.
+	reworded := strings.Replace(string(now), "Change Date:", "Change Date (amended):", 1)
+	changes, err = compareArchives(t,
+		testsupport.Tarball(t, "vault-2.1.2", map[string]string{"LICENSE": string(old)}),
+		testsupport.Tarball(t, "vault-2.2.1", map[string]string{"LICENSE": reworded}), Versions{Old: "2.1.2", New: "2.2.1"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"license changed  LICENSE"}, hows(changes))
+	_, _, _, ok := partyOnly([]byte("Copyright Ada\nMIT terms here.\n"), []byte("Copyright Ada\nMIT terms here, and more.\n"))
+	require.False(t, ok, "an added term, no party")
+}

@@ -28,7 +28,8 @@ type Change struct {
 	Kind string
 	// How is what happened to it:
 	//   - a license or build file "added", "removed", or "changed", or
-	//     "years" where only a license's copyright years moved, or "moved"
+	//     "years" where only a license's copyright years moved, "party" where
+	//     only the party it names did, or "moved"
 	//     where license text moved between files and none is new, and
 	//     "version" where a build file changed only the project's version
 	//     it declares, or "library" where a Makefile.am's -version-info
@@ -97,6 +98,119 @@ func yearsOnly(old, now []byte) (string, bool) {
 		}
 	}
 	return first, first != ""
+}
+
+// partyWords is the most words a renamed party's mention may take, at
+// either end: "International Business Machines Corporation (IBM)" is five.
+const partyWords = 8
+
+// partyOnly reports whether two versions of a license file differ only in
+// the party they name, and gives it at each end and in how many places:
+// every change replaces a few words, each mention of the old party sharing
+// a word, as "HashiCorp, Inc." and "HashiCorp's" share HashiCorp, and each
+// of the new sharing one, as IBM. vault 2.2's LICENSE made IBM its
+// licensor where 2.1.2's named HashiCorp, the terms word for word the
+// same, and held as a changed license (field testing, 2026-10-23). Text
+// added or removed beside it is a change of the license, as before.
+func partyOnly(old, now []byte) (was, is string, places int, ok bool) {
+	before, after := strings.Fields(string(old)), strings.Fields(string(now))
+	hunks := wordHunks(before, after)
+	if len(hunks) == 0 {
+		return "", "", 0, false
+	}
+	var olds, news [][]string
+	for _, h := range hunks {
+		if len(h[0]) == 0 || len(h[1]) == 0 || len(h[0]) > partyWords || len(h[1]) > partyWords {
+			return "", "", 0, false
+		}
+		olds, news = append(olds, h[0]), append(news, h[1])
+	}
+	// A party is named more than once: one word for another, once, is as
+	// likely a license's name, "MIT" for "Apache-2.0".
+	was, is = sharedWord(olds), sharedWord(news)
+	if len(hunks) < 2 || was == "" || is == "" || strings.EqualFold(was, is) {
+		return "", "", 0, false
+	}
+	return was, is, len(hunks), true
+}
+
+// sameLicense reports whether two texts are the same licenses by what
+// licensecheck finds, or both none it knows: a party's rename leaves the
+// license as it was.
+func sameLicense(was, is project.LicenseText) bool {
+	if was.Known() || is.Known() {
+		return was.Known() && is.Known() && was.Same(is)
+	}
+	return true
+}
+
+// wordHunks are the runs of words two texts differ by, each the old run
+// and the new, by their longest common subsequence of words.
+func wordHunks(before, after []string) [][2][]string {
+	n, m := len(before), len(after)
+	common := make([][]int, n+1)
+	for i := range common {
+		common[i] = make([]int, m+1)
+	}
+	for i := n - 1; i >= 0; i-- {
+		for j := m - 1; j >= 0; j-- {
+			if before[i] == after[j] {
+				common[i][j] = common[i+1][j+1] + 1
+			} else {
+				common[i][j] = max(common[i+1][j], common[i][j+1])
+			}
+		}
+	}
+	var hunks [][2][]string
+	var hunk [2][]string
+	flush := func() {
+		if len(hunk[0])+len(hunk[1]) > 0 {
+			hunks = append(hunks, hunk)
+		}
+		hunk = [2][]string{}
+	}
+	i, j := 0, 0
+	for i < n || j < m {
+		switch {
+		case i < n && j < m && before[i] == after[j]:
+			flush()
+			i, j = i+1, j+1
+		case j < m && (i == n || common[i][j+1] >= common[i+1][j]):
+			hunk[1] = append(hunk[1], after[j])
+			j++
+		default:
+			hunk[0] = append(hunk[0], before[i])
+			i++
+		}
+	}
+	flush()
+	return hunks
+}
+
+// sharedWord is a word every run has, as it's spelled in the first run,
+// its possessive and punctuation set aside; empty where there's none.
+func sharedWord(runs [][]string) string {
+	bare := func(word string) string {
+		word = strings.TrimSuffix(strings.TrimSuffix(word, "'s"), "’s")
+		return strings.ToLower(strings.Trim(word, ".,;:()[]\"'’"))
+	}
+	for _, candidate := range runs[0] {
+		key := bare(candidate)
+		if key == "" {
+			continue
+		}
+		every := true
+		for _, run := range runs[1:] {
+			if !slices.ContainsFunc(run, func(word string) bool { return bare(word) == key }) {
+				every = false
+				break
+			}
+		}
+		if every {
+			return strings.Trim(strings.TrimSuffix(strings.TrimSuffix(candidate, "'s"), "’s"), ".,;:()[]\"'’")
+		}
+	}
+	return ""
 }
 
 // Versions are the release an update moves from and to, which a build file
@@ -179,6 +293,11 @@ func Compare(older, newer project.Reading, versions Versions, named, sets func(o
 			if line, ok := yearsOnly(old.Data, now.Data); ok {
 				changes = append(changes, Change{Kind: "license", How: "years", Path: name,
 					Message: fmt.Sprintf("upstream's %s changed only its copyright years: %q", name, line)})
+				continue
+			}
+			if was, is, places, ok := partyOnly(old.Data, now.Data); ok && sameLicense(old.License(), now.License()) {
+				changes = append(changes, Change{Kind: "license", How: "party", Path: name,
+					Message: fmt.Sprintf("upstream's %s changed only the party it names, %s to %s, in %s", name, was, is, map[bool]string{true: "1 place", false: fmt.Sprintf("%d places", places)}[places == 1])})
 				continue
 			}
 			fallthrough

@@ -158,6 +158,7 @@ type Observation struct {
 const (
 	LicenseChanged      = "license-changed"
 	LicenseYears        = "license-years"
+	LicenseParty        = "license-party"
 	LicenseMoved        = "license-moved"
 	BuildFileChanged    = "build-file-changed"
 	BuildFileVersion    = "build-file-version"
@@ -189,7 +190,7 @@ const (
 // Rules are every rule an assessment's finding is raised by, for a hold
 // list to name (holds.allow).
 func Rules() []string {
-	return []string{LicenseChanged, LicenseYears, LicenseMoved, BuildFileChanged, BuildFileVersion, BuildFileOptions, DependencyAdded, DependencyDropped,
+	return []string{LicenseChanged, LicenseYears, LicenseParty, LicenseMoved, BuildFileChanged, BuildFileVersion, BuildFileOptions, DependencyAdded, DependencyDropped,
 		DependencyMoved, DependenciesCounted, NativeLibrary, NativeLibraryLeft, Unread, LayoutAmbiguous, RequirementUnmet, RequirementUnknown,
 		ProviderUnresolved, ProviderRemoved, GoToolchainRule, GoModuleMoved, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, SourceRemoved,
 		SourceUncertain, WorksrcPathGone, GitHubTarball}
@@ -523,7 +524,7 @@ func (a *assessment) pair(pair Pair) {
 				found.Message += alongside(change, pair)
 				a.add(found)
 			}
-		case change.Kind == "license" && (change.How == "years" || change.How == "moved"):
+		case change.Kind == "license" && (change.How == "years" || change.How == "party" || change.How == "moved"):
 			a.add(finding(change, false))
 		case change.Kind == "license" && a.input.New:
 			a.add(newLicense(change, pair, port))
@@ -635,6 +636,8 @@ func finding(change sourcecompare.Change, hold bool) model.UpstreamChange {
 	switch {
 	case change.Kind == "license" && change.How == "years":
 		found.Rule = LicenseYears
+	case change.Kind == "license" && change.How == "party":
+		found.Rule = LicenseParty
 	case change.Kind == "license" && change.How == "moved":
 		found.Rule = LicenseMoved
 	case change.Kind == "license":

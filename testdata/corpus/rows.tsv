@@ -12,3 +12,4 @@ pgdog	databases/pgdog	4b4fe65227f	0.1.62	plans	cargo.crates_github rows pinned b
 hex	sysutils/hex	177079175a9	0.7.1	plans	a small cargo.crates port, bumped by dockhand itself
 mise	sysutils/mise	e7d64862d47	2026.10.15	plans	the longest cargo.crates block, bumped by dockhand itself
 jaq	textproc/jaq	dd72ddebf6e	3.1.2	plans	a cargo workspace's port, bumped by dockhand itself
+vault	security/vault	133f0fb7908	2.1.2	plans	field testing named it for its 2.2 licensor rename, which no MacPorts bump has yet; until one does, its 2.1.2 bump stands for its go.mod and go.toolchain_min
