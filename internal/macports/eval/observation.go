@@ -21,8 +21,25 @@ func (e *Evaluator) Observe(ctx context.Context, source macports.Context, reques
 func decodeObservation(value string) (macports.PortObservation, error) {
 	var out macports.PortObservation
 	fields, errs := syntax.ListValues(value)
-	if len(errs) > 0 || len(fields) != 7 {
+	if len(errs) > 0 || len(fields) != 8 {
 		return out, fmt.Errorf("macports: invalid observation")
+	}
+	// The source frames, each once; the events name them by index.
+	table, errs := syntax.ListValues(fields[7])
+	if len(errs) > 0 {
+		return out, fmt.Errorf("macports: invalid source frames")
+	}
+	sourceFrames := make([]macports.SourceFrame, len(table))
+	for i, frame := range table {
+		f, errs := syntax.ListValues(frame)
+		if len(errs) > 0 || len(f) != 3 {
+			return out, fmt.Errorf("macports: invalid source frame")
+		}
+		line, err := strconv.Atoi(f[1])
+		if err != nil {
+			return out, err
+		}
+		sourceFrames[i] = macports.SourceFrame{File: f[0], Line: line, Command: f[2]}
 	}
 	events, errs := syntax.ListValues(fields[0])
 	if len(errs) > 0 {
@@ -48,15 +65,11 @@ func decodeObservation(value string) (macports.PortObservation, error) {
 		}
 		d := macports.Declaration{Command: args[0], Values: args[1:]}
 		for _, frame := range frames {
-			f, errs := syntax.ListValues(frame)
-			if len(errs) > 0 || len(f) != 3 {
+			index, err := strconv.Atoi(frame)
+			if err != nil || index < 0 || index >= len(sourceFrames) {
 				return out, fmt.Errorf("macports: invalid source frame")
 			}
-			line, err := strconv.Atoi(f[1])
-			if err != nil {
-				return out, err
-			}
-			d.Frames = append(d.Frames, macports.SourceFrame{File: f[0], Line: line, Command: f[2]})
+			d.Frames = append(d.Frames, sourceFrames[index])
 		}
 		if d.Command == "dockhand.operand" && len(d.Values) == 2 {
 			out.Operands = append(out.Operands, macports.OperandObservation{Name: d.Values[0], Value: d.Values[1], Frames: d.Frames})

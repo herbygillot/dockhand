@@ -27,6 +27,23 @@ func (m *ModuleMoved) Error() string {
 	return fmt.Sprintf("dependency: go.mod's module is %s, where go.package is %s", m.From, m.To)
 }
 
+// samePackage reports whether a go.mod's module is the go.package a
+// Portfile names, but for Go's major-version suffix: a module
+// github.com/direnv/direnv/v2 is go.package github.com/direnv/direnv, as
+// gopkg.in/yaml.v3 is gopkg.in/yaml. direnv refused as moved where its
+// module had carried /v2 for years (field testing, 2026-10-23).
+func samePackage(modulePath, pkg string) bool {
+	if modulePath == pkg {
+		return true
+	}
+	// A go.package that names its own major version names that one.
+	if _, major, ok := module.SplitPathVersion(pkg); ok && major != "" {
+		return false
+	}
+	prefix, _, ok := module.SplitPathVersion(modulePath)
+	return ok && prefix == pkg
+}
+
 // GoModules are the modules go.vendors tokens declare, in their order.
 func GoModules(values []string) ([]string, error) {
 	rows, err := goRows(values)
@@ -60,7 +77,7 @@ func generateGo(ctx context.Context, executable string, in Input) (GeneratedBloc
 	if mod.Module == nil {
 		return GeneratedBlocks{}, fmt.Errorf("dependency: go.mod names no module")
 	}
-	if mod.Module.Mod.Path != in.Package {
+	if !samePackage(mod.Module.Mod.Path, in.Package) {
 		return GeneratedBlocks{}, &ModuleMoved{From: mod.Module.Mod.Path, To: in.Package}
 	}
 	if err := unprunedGraph(ctx, in, mod); err != nil {

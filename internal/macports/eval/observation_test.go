@@ -1,8 +1,11 @@
 package eval
 
 import (
+	"fmt"
 	"github.com/stretchr/testify/require"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -105,4 +108,39 @@ set host_value [exec /usr/bin/true]
 	require.NoError(t, err)
 	require.True(t, o.Ports["host"].ModeledHostAccess)
 	require.NotEmpty(t, o.Ports["host"].Problems)
+}
+
+// Each source frame is sent once: a PortGroup command that appends a
+// checksum for each row of a long list, as golang 1.0's go.vendors does,
+// had the whole list's command on every append's stack, and opkssh's
+// ~500 rows went past the RPC frame limit (field testing, 2026-10-23).
+// These 600 rows sent about 27 MB that way.
+func TestALongListsFramesAreSentOnce(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	var rows strings.Builder
+	for i := range 600 {
+		fmt.Fprintf(&rows, " \\\n    row%03d.tar.gz %064d", i, i)
+	}
+	putFile(t, tree.Root(), "devel/listed/Portfile", `PortSystem 1.0
+name listed
+version 1.0
+proc listed_rows {args} {
+ foreach {file sum} $args { checksums-append $file sha256 $sum }
+}
+listed_rows`+rows.String()+"\n")
+	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "listed"})
+	require.NoError(t, err)
+	bound, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Declarations: true})
+	require.NoError(t, err)
+	declarations := got.Ports["listed"].Declarations
+	require.Len(t, declarations, 600)
+	last := declarations[599]
+	require.Equal(t, []string{"row599.tar.gz", "sha256", fmt.Sprintf("%064d", 599)}, last.Values)
+	require.True(t, slices.ContainsFunc(last.Frames, func(frame macports.SourceFrame) bool {
+		return strings.HasPrefix(frame.Command, "listed_rows") && strings.Contains(frame.Command, "row599.tar.gz")
+	}), "each append keeps the list's command on its stack")
 }

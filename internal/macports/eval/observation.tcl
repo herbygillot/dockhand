@@ -203,7 +203,33 @@ namespace eval ::dockhand {
         if {[$worker eval {info exists ::dockhand_dispatcher::ledger}]} {
             set ledger [$worker eval {set ::dockhand_dispatcher::ledger}]
         }
-        return [list $events $artifacts $problems $host_access $operands $any_host_access $ledger]
+        # Each source frame goes once, in a table the events name by
+        # index: every checksums-append go.vendors makes had the whole
+        # go.vendors command on its stack, so opkssh's ~500-line block
+        # sent 18.5 MB, past the RPC frame limit (field testing,
+        # 2026-10-23), growing with the square of the block.
+        set table {}
+        set ids [dict create]
+        set intern {{events} {
+            upvar 1 table table ids ids
+            set sent {}
+            foreach event $events {
+                lassign $event cmd frames
+                set named {}
+                foreach frame $frames {
+                    if {![dict exists $ids $frame]} {
+                        dict set ids $frame [llength $table]
+                        lappend table $frame
+                    }
+                    lappend named [dict get $ids $frame]
+                }
+                lappend sent [list $cmd $named]
+            }
+            return $sent
+        }}
+        set events [apply $intern $events]
+        set operands [apply $intern $operands]
+        return [list $events $artifacts $problems $host_access $operands $any_host_access $ledger $table]
     }
 }
 ::tclrpc::register observation_setup ::dockhand::observation_setup
