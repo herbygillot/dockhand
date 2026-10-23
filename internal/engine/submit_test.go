@@ -244,6 +244,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, plan.Replaces, "the amend replaces their commit")
 	require.Empty(t, plan.Blocking, "made from it, as the branch's reflog shows")
+	require.Equal(t, model.ObjectID(again), plan.Amended, "the preview names the commit only the reflog vouches for")
 	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Equal(t, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")), fake.ForkHead("dockhand/jq-update"))

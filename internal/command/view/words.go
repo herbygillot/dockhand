@@ -52,6 +52,9 @@ func PushWords(plan engine.SubmitPlan) string {
 	case engine.PushNothingNew:
 		return "nothing new; the fork already has " + model.ObjectID(plan.Commit).Short()
 	case engine.PushReplaces:
+		if plan.Amended != "" {
+			return fmt.Sprintf("replaces %s, someone else's commit, which this branch's reflog shows and %s amends, only if it is still there", plan.Amended.Short(), model.ObjectID(plan.Commit).Short())
+		}
 		return fmt.Sprintf("replaces the fork's branch at %s with %s, only if it is still there", model.ObjectID(plan.RemoteHead.Object).Short(), model.ObjectID(plan.Commit).Short())
 	case engine.PushAdds:
 		return fmt.Sprintf("adds to the fork's branch, up to %s", model.ObjectID(plan.Commit).Short())

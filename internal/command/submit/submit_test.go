@@ -1059,6 +1059,10 @@ func TestThePushLineSaysItWontPushOverAnotherPush(t *testing.T) {
 	plan := engine.SubmitPlan{Commit: strings.Repeat("7", 40), Replaces: true, OthersPushed: model.ObjectID(strings.Repeat("d", 40))}
 	plan.RemoteHead.Exists, plan.RemoteHead.Object = true, strings.Repeat("d", 40)
 	require.Equal(t, "won't push: someone else pushed ddddddd", view.PushWords(plan))
+	// One that amends their commit names it, since only the branch's
+	// reflog vouches for it (the rc5 full stage, D-S1).
+	plan.OthersPushed, plan.Amended = "", model.ObjectID(strings.Repeat("d", 40))
+	require.Equal(t, "replaces ddddddd, someone else's commit, which this branch's reflog shows and 7777777 amends, only if it is still there", view.PushWords(plan))
 }
 
 // The Checks line says where a port failed apart from where nothing of

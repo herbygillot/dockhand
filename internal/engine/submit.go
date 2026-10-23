@@ -121,6 +121,11 @@ type SubmitPlan struct {
 	// Replaces is true when the push replaces history rather than adding
 	// to it.
 	Replaces bool
+	// Amended is someone else's commit the push replaces, which the
+	// branch's reflog shows and the commit amends: said on the preview's
+	// Push line, as only the reflog vouches for it (the rc5 full stage,
+	// D-S1).
+	Amended model.ObjectID
 	// OthersPushed is what someone else pushed to the pull request since
 	// dockhand last did, which holds the push; empty where none did.
 	OthersPushed model.ObjectID
@@ -666,6 +671,9 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 			if builtOn, err = worktree.Amends(ctx, plan.Commit, string(pr.RemoteHead)); err != nil {
 				return err
 			}
+		}
+		if last := plan.Branch.PullRequest; builtOn && last != nil && last.Pushed != "" && pr.RemoteHead != last.Pushed {
+			plan.Amended = pr.RemoteHead
 		}
 	}
 	if last := plan.Branch.PullRequest; last != nil && last.Pushed != "" && pr.RemoteHead != last.Pushed && string(pr.RemoteHead) != plan.Commit && !builtOn {
