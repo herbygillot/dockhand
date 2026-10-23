@@ -60,6 +60,20 @@ func Open(ctx context.Context, directory string, program Program) (*Repository, 
 	return r, nil
 }
 
+// Init makes an empty repository in an existing directory, its unborn
+// branch named, and opens it: a scratch tree a tool builds and commits,
+// as tools/corpus's slice.
+func Init(ctx context.Context, directory, branch string, program Program) (*Repository, error) {
+	if !ValidBranchName(branch) {
+		return nil, fmt.Errorf("git: invalid branch %q", branch)
+	}
+	r := &Repository{Root: directory, Program: program}
+	if _, err := r.output(ctx, "init", "-q", "-b", branch); err != nil {
+		return nil, err
+	}
+	return Open(ctx, directory, program)
+}
+
 func (r *Repository) Resolve(ctx context.Context, revision string) (string, error) {
 	out, err := r.output(ctx, "rev-parse", "--verify", "--end-of-options", revision)
 	return strings.TrimSpace(string(out)), err

@@ -1,0 +1,14 @@
+# The corpus: a row an exemplar, tab-separated: port, directory, the MacPorts commit that bumped it, the version it bumped to, what a replay of the bump does ("plans", or "refuses: <words of its refusal>"), and why it is here.
+# A port a field or acceptance finding names joins in the commit that fixes it. tools/corpus refresh rewrites tree/ and bumped/ from these.
+git-credential-oauth	security/git-credential-oauth	30269f94ba3	0.17.2	plans	go.vendors rows with their own sums and sizes, which golang 1.0 appends one by one (rc4's refusal, 52d14a6c)
+direnv	devel/direnv	2ee0f9aedc6	2.37.1	plans	a go.mod module with its major version, github.com/direnv/direnv/v2 (8f8a3919)
+opkssh	net/opkssh	538f708756a	0.17.0	plans	a go.vendors block of about 500 lines, the longest that plans, past the RPC frame limit before 8f8a3919
+terraform-ls	devel/terraform-ls	0d4f359a9d5	0.39.0	refuses: missing generated Go checksum	a long go.vendors block that lists github.com/chigopher/pathlib, whose repository is gone: go2port writes it no checksum, so the block can't be checked against 0.38.8's source
+mailpit	mail/mailpit	47c768c52ef	1.31.4	plans	a mid-sized go.vendors block, field testing's second go.vendors port
+go-reflex	sysutils/go-reflex	e9c4372f153	0.3.2	plans	a small go.vendors port, bumped by dockhand itself
+caddy	www/caddy	9b6d1e5c1ee	2.11.7	refuses: edits dependency manifests	the longest go.vendors block, whose patch edits go.mod: the designed refusal
+dust	sysutils/dust	0c749065fd6	1.2.6	plans	cargo.crates under the Cargo PortGroup's dist_subdir (rc1's refusal, 1b3899e7)
+pgdog	databases/pgdog	4b4fe65227f	0.1.62	plans	cargo.crates_github rows pinned by rev under a label
+hex	sysutils/hex	177079175a9	0.7.1	plans	a small cargo.crates port, bumped by dockhand itself
+mise	sysutils/mise	e7d64862d47	2026.10.15	plans	the longest cargo.crates block, bumped by dockhand itself
+jaq	textproc/jaq	dd72ddebf6e	3.1.2	plans	a cargo workspace's port, bumped by dockhand itself

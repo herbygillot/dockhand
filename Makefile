@@ -19,7 +19,7 @@ ifneq ($(strip $(VERSION)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.Version=$(strip $(VERSION))
 endif
 
-.PHONY: build test test-race vet lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest clean
+.PHONY: build test test-race vet lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest test-corpus clean
 
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
@@ -122,6 +122,13 @@ acceptance:
 # stand-in dockhand (tools/acceptance).
 acceptance-selftest:
 	tools/acceptance/selftest.sh
+
+# Replay the corpus's version bumps through this build's update, against
+# MacPorts' own PortGroups (tools/corpus). It needs the network.
+test-corpus:
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	$(GO) build -o "$$tmp/dockhand" ./cmd/dockhand && $(GO) build -o "$$tmp/corpus" ./tools/corpus && \
+	env -u MACPORTS_TREE "$$tmp/corpus" replay -dockhand "$$tmp/dockhand"
 
 clean:
 	rm -f -- "$(BINARY)"
