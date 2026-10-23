@@ -880,3 +880,21 @@ v0.4.0 was tagged on 5897a828 on 2026-10-21, and Next's head became v0.5.0's par
 ## From Then on 2026-10-23: the line part 6's valve left
 
 Then's last sentence, before Codex's review of 8c007979 grew Then and part 6 stayed in v0.5.0, was, whole: "If part 6 moves here by its valve, it goes before item 1's revbump classifier." Then's header said "about 10.5 batches, sized 2026-10-22 as part 5 closed".
+
+## From Next on 2026-10-23: the head before rc4, and the lead after rc3
+
+Next's head, before rc4 was tagged and field testing found the `go.vendors` refusal, began: "**Now: v0.5.0's acceptance, rc2's quick stage, and rc3's three fixes at the person's word.**" Its sentences on the candidates were, whole: "The known issues' fixes below are done (8c007979), and rc1 was tagged on them, then rc2 on 1b3899e7, for a Rust update rc1 refused on `dist_subdir` (2026-10-22). Codex's review of rc1 gives rc3's three fixes below, which the M1's full stage waits for; the acceptance is the person's, on the M1, as v0.4.0's was."
+
+The lead of the fixes found after rc3, before rc4 took the first of them, was, whole: "Found by field testing after rc3 was tagged on 25f16ace, each a fix for main that rides the next tag, an rc4 if acceptance needs one for a harm, else the release after v0.5.0, and never one of its own:"
+
+## From Next and the open decisions on 2026-10-23: rc5 cut
+
+Before the person's "Cut rc5" (12:17Z), the `go.vendors` entry ended: "If v0.5.0 ships without it, a known-issues row says `update` refuses these ports and to update them by hand, `go2port` regenerating the list." Open decisions held: "**An rc5 for the ports that list `go.vendors`** (asked 2026-10-23 on a card in the prioritization thread; recommended: cut it, its M1 run repeating the rows that plan an update)."
+
+## From Next on 2026-10-23: the go.vendors entry, confirmed and done
+
+Before implementation's replays confirmed it and 52d14a6c fixed it, the `go.vendors` entry's count said "(inferred from golang-1.0.tcl and counted in a ports tree of 2026-10-02; each Go port field testing updated since 2026-10-19 builds with `go.offline_build no`, so none met it)", and its last sentence but one was, whole: "Done when git-credential-oauth and a second port that lists `go.vendors` plan on main, and the quick stage gains a row that plans one, as dust, pgdog, and doge are Rust's."
+
+## From Next on 2026-10-23: the corpus's card
+
+Before the person's "Before rc5" (12:26Z), the corpus's lead said its Go and Rust half went before rc5's tag "(asked on a card in the prioritization thread, 2026-10-23, work going on with it meanwhile)".
