@@ -944,7 +944,7 @@ func (p *Provider) slot(ctx context.Context, m machine, build buildenv.Build) (i
 			return running, nil
 		}
 		if !told {
-			build.Progress(fmt.Sprintf("waiting for the Mac's VMs: %d are running, and macOS runs two at most", running))
+			build.Waiting(fmt.Sprintf("waiting for the Mac's VMs: %d are running, and macOS runs two at most", running))
 			told = true
 		}
 		select {

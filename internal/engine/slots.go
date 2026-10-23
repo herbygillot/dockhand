@@ -48,7 +48,7 @@ func (e *Engine) awaitSlot(ctx context.Context, session *coord.Session, id model
 			said = true
 			words := fmt.Sprintf("%s waits for a slot on %s: %s", run.Name(), prose.And(slices.Sorted(maps.Keys(full))), strings.Join(slotWords(full, e), "; "))
 			if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-				_, err := session.Emit(tx, model.Event{Branch: run.Branch, Run: run.ID, Kind: model.EventProgress, Level: model.LevelInfo, Message: words})
+				_, err := session.Emit(tx, model.Event{Branch: run.Branch, Run: run.ID, Kind: model.EventWaiting, Level: model.LevelInfo, Message: words})
 				return err
 			}); err != nil {
 				return err

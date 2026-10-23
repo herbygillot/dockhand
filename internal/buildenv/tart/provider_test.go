@@ -364,7 +364,8 @@ func (b *fakeBuild) Progress(message string) {
 	defer b.mu.Unlock()
 	b.progress = append(b.progress, message)
 }
-func (b *fakeBuild) Canceled() bool { return false }
+func (b *fakeBuild) Waiting(message string) { b.Progress(message) }
+func (b *fakeBuild) Canceled() bool         { return false }
 
 var tahoe = model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 

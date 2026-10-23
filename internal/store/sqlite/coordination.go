@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -207,8 +208,15 @@ func (t *tx) RunEvents(run model.RunID, after int64, limit int) ([]model.Event, 
 	return t.events("SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND run_id=? AND sequence>? ORDER BY sequence LIMIT ?", t.repo, run, after, limit)
 }
 
-func (t *tx) LatestRunEvent(run model.RunID, kind model.EventKind) (model.Event, bool, error) {
-	events, err := t.events("SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND run_id=? AND kind=? ORDER BY sequence DESC LIMIT 1", t.repo, run, kind)
+func (t *tx) LatestRunEvent(run model.RunID, kinds ...model.EventKind) (model.Event, bool, error) {
+	if len(kinds) == 0 {
+		return model.Event{}, false, nil
+	}
+	args := []any{t.repo, run}
+	for _, kind := range kinds {
+		args = append(args, kind)
+	}
+	events, err := t.events("SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND run_id=? AND kind IN (?"+strings.Repeat(",?", len(kinds)-1)+") ORDER BY sequence DESC LIMIT 1", args...)
 	if err != nil || len(events) == 0 {
 		return model.Event{}, false, err
 	}

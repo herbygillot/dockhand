@@ -181,9 +181,9 @@ type Reader interface {
 	// most limit; LastEvent is the journal's newest sequence, 0 when it has
 	// none.
 	RunEvents(run model.RunID, after int64, limit int) ([]model.Event, error)
-	// LatestRunEvent is a run's newest event of a kind; found is false
-	// where it has none.
-	LatestRunEvent(run model.RunID, kind model.EventKind) (event model.Event, found bool, err error)
+	// LatestRunEvent is a run's newest event of any of the kinds; found is
+	// false where it has none.
+	LatestRunEvent(run model.RunID, kinds ...model.EventKind) (event model.Event, found bool, err error)
 	LastEvent() (int64, error)
 	// CountEvents counts the events of a kind journaled at or after a time.
 	CountEvents(kind model.EventKind, since time.Time) (int, error)

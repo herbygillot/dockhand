@@ -996,6 +996,10 @@ func (b *build) Progress(message string) {
 	b.d.emit(b.ctx, model.EventProgress, DescribeEnvironment(b.execution.Environment)+": "+message)
 }
 
+func (b *build) Waiting(message string) {
+	b.d.emit(b.ctx, model.EventWaiting, DescribeEnvironment(b.execution.Environment)+": "+message)
+}
+
 // withCause adds to a failure's detail what its log most likely says made
 // it fail, marked as read from the log, beside what the provider said
 // (D10): whichever provider built it, the log is on this Mac by now. It's
@@ -1406,7 +1410,7 @@ func (e *Engine) Queue(ctx context.Context, session *coord.Session) ([]QueuedChe
 				return err
 			}
 			if run.State == model.RunRunning && !checked.Stopped {
-				event, found, err := r.LatestRunEvent(run.ID, model.EventProgress)
+				event, found, err := r.LatestRunEvent(run.ID, model.EventProgress, model.EventWaiting)
 				if err != nil {
 					return err
 				}

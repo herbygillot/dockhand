@@ -95,12 +95,15 @@ type Event struct {
 type EventKind string
 
 const (
-	EventSessionStart   EventKind = "session.start"
-	EventSessionEnd     EventKind = "session.end"
-	EventLeaseAcquire   EventKind = "lease.acquire"
-	EventRunState       EventKind = "run.state"
-	EventRunCancel      EventKind = "run.cancel"
-	EventProgress       EventKind = "progress"
+	EventSessionStart EventKind = "session.start"
+	EventSessionEnd   EventKind = "session.end"
+	EventLeaseAcquire EventKind = "lease.acquire"
+	EventRunState     EventKind = "run.state"
+	EventRunCancel    EventKind = "run.cancel"
+	EventProgress     EventKind = "progress"
+	// EventWaiting is a run waiting on something outside it, a slot or
+	// the Mac's VMs, which every level says (rc1's D-R2).
+	EventWaiting        EventKind = "waiting"
 	EventTargetResult   EventKind = "target.result"
 	EventExecutionState EventKind = "execution.state"
 	EventExecutionRetry EventKind = "execution.retry"

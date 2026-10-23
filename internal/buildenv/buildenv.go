@@ -201,6 +201,10 @@ type Build interface {
 	KeepDependency(port model.ActivePort, name string, fetch func(path string) error) error
 	// Progress reports a step to whoever is watching.
 	Progress(message string)
+	// Waiting reports a wait on something outside the build, such as the
+	// Mac's VM slots, which is said at every level: a silent wait reads
+	// as a hang (rc1's D-R2).
+	Waiting(message string)
 	// Observe records what the environment reported about itself, for
 	// the pull request's Tested on.
 	Observe(observed model.Observed) error

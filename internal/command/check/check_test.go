@@ -528,7 +528,7 @@ JSON
 		return err == nil
 	}
 	run := func(dir string, out *cmdtest.SyncBuffer, done chan<- struct{}) {
-		err := cmdtest.RunFor(t, t.Context(), []string{"check", "-v", "--tree", dir}, term.Streams{In: strings.NewReader(""), Out: out, Err: out})
+		err := cmdtest.RunFor(t, t.Context(), []string{"check", "--tree", dir}, term.Streams{In: strings.NewReader(""), Out: out, Err: out})
 		assert.NoError(t, err)
 		close(done)
 	}
@@ -538,7 +538,7 @@ JSON
 	require.Eventually(t, func() bool { return started("check-1") }, cmdtest.Settle, 10*time.Millisecond)
 	go run(other, &otherOut, otherDone)
 	waiting := "check-2 waits for a slot on command: providers.command.capacity is 1, and check-1 is using it"
-	require.Eventually(t, func() bool { return strings.Contains(otherOut.String(), waiting) }, cmdtest.Settle, 10*time.Millisecond, "the second waits for the first's slot")
+	require.Eventually(t, func() bool { return strings.Contains(otherOut.String(), waiting) }, cmdtest.Settle, 10*time.Millisecond, "the second waits for the first's slot, said at the default level (rc1's D-R2)")
 	require.False(t, started("check-2"))
 	require.NoError(t, os.WriteFile(filepath.Join(w.Home, "go"), nil, 0o644))
 	<-firstDone

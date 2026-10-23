@@ -222,7 +222,9 @@ func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timi
 			}
 			changed := slices.ContainsFunc(events, func(event model.Event) bool { return event.Kind.ChangesStatus() })
 			// Progress waits for its interval, and isn't lost meanwhile.
-			progressed = progressed || slices.ContainsFunc(events, func(event model.Event) bool { return event.Kind == model.EventProgress })
+			progressed = progressed || slices.ContainsFunc(events, func(event model.Event) bool {
+				return event.Kind == model.EventProgress || event.Kind == model.EventWaiting
+			})
 			if changed || progressed && time.Since(drawn) >= timings.WatchProgress || time.Since(drawn) >= timings.WatchRedraw {
 				draw()
 				progressed = false

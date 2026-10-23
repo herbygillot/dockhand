@@ -141,6 +141,14 @@ func (j *journal) show(ctx context.Context) {
 	for _, event := range events {
 		j.last = event.Sequence
 		switch event.Kind {
+		case model.EventWaiting:
+			// A wait is said at every level, where the redrawn line
+			// can't show it: a silent wait reads as a hang (rc1's D-R2).
+			if j.live {
+				j.status.Show("⋯ " + event.Message)
+			} else {
+				fmt.Fprintf(j.out, "  %s\n", event.Message)
+			}
 		case model.EventProgress, model.EventTargetResult, model.EventExecutionRetry, model.EventExecutionState:
 			switch {
 			case j.live:

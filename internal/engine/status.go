@@ -786,7 +786,7 @@ func (e *Engine) Logs(ctx context.Context, id model.RunID) (RunLogs, error) {
 		}
 		logs.Run = check.Run
 		if logs.Run.State == model.RunRunning {
-			event, found, err := r.LatestRunEvent(id, model.EventProgress)
+			event, found, err := r.LatestRunEvent(id, model.EventProgress, model.EventWaiting)
 			if err != nil {
 				return err
 			}
