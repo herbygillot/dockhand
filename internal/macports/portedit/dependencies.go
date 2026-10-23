@@ -489,15 +489,30 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 				delete(port.Options, block)
 			}
 		}
-		// The Cargo PortGroup keeps a port's archives with its crates,
-		// dist_subdir cargo-crates, where it lists any, which the version
-		// step, evaluating the Portfile with its crates set aside
-		// (dependencyBase), read as the port's own name: every Rust update
-		// that lists its crates refused, "[dust.dist_subdir changed]"
-		// (v0.5.0-rc1's quick stage). Where the crates are, it's theirs.
-		if crates := next.Options[depblock.Cargo] + next.Options[depblock.CargoGit]; strings.TrimSpace(crates) != "" {
-			if value, ok := next.Options["dist_subdir"]; ok {
-				port.Options["dist_subdir"] = value
+		// What a PortGroup sets where its block lists anything, which the
+		// version step, evaluating the Portfile with its blocks set aside
+		// (dependencyBase), read without: where the block lists any, it's
+		// the block's. The Cargo PortGroup keeps a port's archives with its
+		// crates, dist_subdir cargo-crates: every Rust update that lists
+		// its crates refused, "[dust.dist_subdir changed]" (v0.5.0-rc1's
+		// quick stage). golang 1.0's go.vendors turns extract.rename off
+		// and wraps extract.cmd, its args emptied, to extract each module
+		// apart: git-credential-oauth refused, "[git-credential-oauth.
+		// extract.rename changed]" (field testing, 2026-10-23).
+		for _, set := range blockSettings {
+			listed := false
+			for _, block := range set.blocks {
+				listed = listed || strings.TrimSpace(next.Options[block]) != ""
+			}
+			if !listed {
+				continue
+			}
+			for _, option := range set.options {
+				if value, ok := next.Options[option]; ok {
+					port.Options[option] = value
+				} else {
+					delete(port.Options, option)
+				}
 			}
 		}
 		prediction.Ports[name] = port
@@ -616,6 +631,14 @@ func unlocked(err error, cargoUpdate bool, version string) error {
 		return ErrUnsupported.Because("cargo.update is enabled, but the source for %s contains no Cargo.lock; cannot regenerate crate dependencies: %w", version, err)
 	}
 	return err
+}
+
+// blockSettings are the options a PortGroup sets where a dependency block
+// of its lists anything, by its handler for the block: what the block's
+// evaluation changes beside it, as the block step predicts it.
+var blockSettings = []struct{ blocks, options []string }{
+	{[]string{depblock.Cargo, depblock.CargoGit}, []string{"dist_subdir"}},
+	{[]string{depblock.Go}, []string{"extract.rename", "extract.cmd", "extract.pre_args", "extract.post_args"}},
 }
 
 // portGroupChecksums refuses an update of a port whose checksums its

@@ -71,7 +71,7 @@ func dependencyHelper(t *testing.T, body string) string {
 func TestGoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)
-	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "patched-curated", "local-patch", "unsupported-context", "moved", "collateral", "patched-moved"} {
+	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "patched-curated", "local-patch", "unsupported-context", "moved", "collateral", "patched-moved", "vendors-extract"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
@@ -131,6 +131,13 @@ func TestGoDependencyPreparation(t *testing.T) {
 			// (architecture, 2026-10-22: the block step predicts its blocks).
 			if scenario == "collateral" {
 				extra += "subport fixture-child { notes ${go.vendors} }\n"
+			}
+			// golang 1.0's own: go.vendors turns extract.rename off where it
+			// lists any module, which the version step, reading the
+			// Portfile with its block set aside, sees on (field testing's
+			// git-credential-oauth: "[...extract.rename changed]").
+			if scenario == "vendors-extract" {
+				extra += "extract.rename yes\nproc fixture_extract {} { if {[llength [option go.vendors]]} { extract.rename no } }\nport::register_callback fixture_extract\n"
 			}
 			var requests atomic.Int64
 			service, request := versionFixture(t, "go-setup", extra, func(w http.ResponseWriter, r *http.Request) {

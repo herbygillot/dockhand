@@ -250,8 +250,11 @@ func (g *InPortGroup) Unwrap() error { return ErrUnsupported }
 // table. A PortGroup's command that carries the Portfile's checksums is the
 // Portfile's to change, though the PortGroup makes it: refused as the
 // PortGroup's, every cargo port's update stopped (field testing on
-// 5a727e00, purl, fakecloud, and wasmtime). A size alone is no checksum
-// the Portfile need write.
+// 5a727e00, purl, fakecloud, and wasmtime). A size is a value as a sum is,
+// the Portfile's where it writes it. golang 1.0's go.vendors appends each
+// row in three: its file alone, then each sum, then its size, so a
+// declaration that carries a file and no value is no value the PortGroup
+// sets (field testing's git-credential-oauth 0.18.0).
 func WritesChecksums(src []byte, values []string) bool {
 	var fields []string
 	for _, value := range values {
@@ -260,13 +263,13 @@ func WritesChecksums(src []byte, values []string) bool {
 	var sums []string
 	for i := 0; i+1 < len(fields); i++ {
 		switch fields[i] {
-		case "sha256", "rmd160", "sha1", "md5":
+		case "sha256", "rmd160", "sha1", "md5", "size":
 			sums = append(sums, fields[i+1])
 			i++
 		}
 	}
 	if len(sums) == 0 {
-		return false
+		return true
 	}
 	script, errs := syntax.Parse(src)
 	if len(errs) != 0 {

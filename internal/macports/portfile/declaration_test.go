@@ -164,5 +164,29 @@ cargo.crates \
 	require.True(t, portfile.WritesChecksums(src, crate))
 	require.True(t, portfile.WritesChecksums(src, []string{"adler2-2.0.0.crate sha256 512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"}), "one value or many")
 	require.False(t, portfile.WritesChecksums(src, []string{"binutils-2.47.tar.xz", "sha256", "aaaa", "size", "1000"}), "a table's row")
-	require.False(t, portfile.WritesChecksums(src, []string{"x.tar.gz", "size", "1000"}), "a size alone")
+	require.False(t, portfile.WritesChecksums(src, []string{"x.tar.gz", "size", "4096"}), "a size it doesn't write")
+	require.True(t, portfile.WritesChecksums(src, []string{"x.tar.gz", "size", "1000"}), "a size it writes")
+}
+
+// golang 1.0's go.vendors appends each row's file, sums, and size as
+// checksums-appends of their own (golang-1.0.tcl's file alone at line
+// 521): each is the Portfile's where it writes the values, and a file
+// alone carries none (field testing's git-credential-oauth 0.18.0).
+func TestGoVendorsChecksumsAreThePortfiles(t *testing.T) {
+	t.Parallel()
+	src := []byte(`PortSystem 1.0
+PortGroup golang 1.0
+go.setup github.com/hickford/git-credential-oauth 0.18.0 v
+go.vendors rsc.io/qr \
+               repo    github.com/rsc/qr \
+               lock    v0.2.0 \
+               rmd160  f642fe01c13937615e5a975e6a1932f8dc25359a \
+               sha256  1d69d5a13366a84a1484abdec5affd7f5781016469f4b43b1a26f5fa5c93497b \
+               size    18816
+`)
+	require.True(t, portfile.WritesChecksums(src, []string{"qr-v0.2.0.tar.gz"}), "a file alone")
+	require.True(t, portfile.WritesChecksums(src, []string{"rmd160", "f642fe01c13937615e5a975e6a1932f8dc25359a"}))
+	require.True(t, portfile.WritesChecksums(src, []string{"sha256", "1d69d5a13366a84a1484abdec5affd7f5781016469f4b43b1a26f5fa5c93497b"}))
+	require.True(t, portfile.WritesChecksums(src, []string{"size", "18816"}))
+	require.False(t, portfile.WritesChecksums(src, []string{"sha256", "3333333333333333333333333333333333333333333333333333333333333333"}), "a sum it doesn't write")
 }
