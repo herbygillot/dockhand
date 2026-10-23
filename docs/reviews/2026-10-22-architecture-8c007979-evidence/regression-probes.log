@@ -1,0 +1,40 @@
+--- FAIL: TestArchitectureWatchPreservesInvocation (2.79s)
+    zz_architecture_watch_overlay_test.go:42: 
+        	Error Trace:	~/Source/dockhand2/internal/command/zz_architecture_watch_overlay_test.go:42
+        	Error:      	"\x1b[?1049h\x1b[H\x1b[2Jdockhand status --watch · 19:26:51 · c check · l logs · t tidy · s submit, each <branch> · q quits\n\njq-update in ~/Source/macports-branches/jq-update\n  Ports    jq\n  Work     edits, uncommitted above master d6a7f9c\n  Release  jq 1.8.1, GitHub tag jq-1.8.1 of jqlang/jq at 1a2b3c4\n  Edited   textproc/jq/Portfile\n  Checks   passed for snapshot 1\n           jq  command ✓\n  PR       —\nNext: dockhand tidy --branch jq-update\n> \x1b[H\x1b[2J$ dockhand logs check-1\ndockhand: not a MacPorts ports tree: ~/Source/dockhand2 has no <category>/<port>/Portfile (select your macports-ports clone with --tree or MACPORTS_TREE)\n\nPress Enter to return to status. " should not contain "dockhand:"
+        	Test:       	TestArchitectureWatchPreservesInvocation
+        	Messages:   	nested logs must run in the watch's valid fake tree/database, rather than process defaults
+FAIL
+FAIL	github.com/herbygillot/dockhand/internal/command	3.168s
+--- FAIL: TestArchitectureLinksKeepDeclarationsInTheirOwnEnvironment (0.70s)
+    architecture_probe_test.go:38: 
+        	Error Trace:	~/Source/dockhand2/internal/engine/architecture_probe_test.go:38
+        	Error:      	Should be true
+        	Test:       	TestArchitectureLinksKeepDeclarationsInTheirOwnEnvironment
+        	Messages:   	arm64 build links oniguruma without declaring it; x86 declaration must not hide it: []evidence.LinkFinding{evidence.LinkFinding{Target:"harbor-viewer", Port:"", Library:"", Binary:"", Libraries:0, Unread:true}, evidence.LinkFinding{Target:"harbor-viewer-legacy", Port:"", Library:"", Binary:"", Libraries:0, Unread:true}}
+--- FAIL: TestArchitectureStandingAcceptanceReachesCandidateReadiness (2.36s)
+    architecture_probe_test.go:69: 
+        	Error Trace:	~/Source/dockhand2/internal/engine/architecture_probe_test.go:69
+        	Error:      	Should be true
+        	Test:       	TestArchitectureStandingAcceptanceReachesCandidateReadiness
+        	Messages:   	submission has no blocks and a standing acceptance, but candidate policy excludes it: ready=[] others=1
+FAIL
+FAIL	github.com/herbygillot/dockhand/internal/engine	3.360s
+--- FAIL: TestArchitectureArchiveUsesActualGitSource (0.00s)
+    architecture_source_identity_test.go:21: 
+        	Error Trace:	~/Source/dockhand2/internal/upstream/architecture_source_identity_test.go:21
+        	Error:      	Not equal: 
+        	            	expected: "fork/project"
+        	            	actual  : "owner/project"
+        	            	
+        	            	Diff:
+        	            	--- Expected
+        	            	+++ Actual
+        	            	@@ -1 +1 @@
+        	            	-fork/project
+        	            	+owner/project
+        	Test:       	TestArchitectureArchiveUsesActualGitSource
+        	Messages:   	archive must come from the actual fetched Git repository
+FAIL
+FAIL	github.com/herbygillot/dockhand/internal/upstream	0.428s
+FAIL

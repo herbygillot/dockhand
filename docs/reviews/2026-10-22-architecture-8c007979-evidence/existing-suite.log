@@ -1,0 +1,111 @@
+?   	github.com/herbygillot/dockhand/cmd/dockhand	[no test files]
+ok  	github.com/herbygillot/dockhand/internal/archive	0.275s
+ok  	github.com/herbygillot/dockhand/internal/atomicfile	0.213s
+ok  	github.com/herbygillot/dockhand/internal/branchstate	0.362s
+ok  	github.com/herbygillot/dockhand/internal/buildenv	0.369s
+ok  	github.com/herbygillot/dockhand/internal/buildenv/ghactions	0.674s
+ok  	github.com/herbygillot/dockhand/internal/buildenv/script	11.518s
+ok  	github.com/herbygillot/dockhand/internal/buildenv/staging	0.395s
+ok  	github.com/herbygillot/dockhand/internal/buildenv/tart	9.801s
+ok  	github.com/herbygillot/dockhand/internal/buildinfo	0.334s
+ok  	github.com/herbygillot/dockhand/internal/buildlog	0.340s
+ok  	github.com/herbygillot/dockhand/internal/command	51.983s
+ok  	github.com/herbygillot/dockhand/internal/command/author	13.931s
+?   	github.com/herbygillot/dockhand/internal/command/branchflags	[no test files]
+ok  	github.com/herbygillot/dockhand/internal/command/bump	12.945s
+ok  	github.com/herbygillot/dockhand/internal/command/check	10.640s
+?   	github.com/herbygillot/dockhand/internal/command/checkrun	[no test files]
+ok  	github.com/herbygillot/dockhand/internal/command/clean	6.117s
+ok  	github.com/herbygillot/dockhand/internal/command/cmdtest	0.195s
+ok  	github.com/herbygillot/dockhand/internal/command/config	0.485s
+ok  	github.com/herbygillot/dockhand/internal/command/create	6.087s
+ok  	github.com/herbygillot/dockhand/internal/command/explain	3.310s
+?   	github.com/herbygillot/dockhand/internal/command/host	[no test files]
+ok  	github.com/herbygillot/dockhand/internal/command/outdated	2.756s
+ok  	github.com/herbygillot/dockhand/internal/command/review	11.284s
+?   	github.com/herbygillot/dockhand/internal/command/runcmd	[no test files]
+ok  	github.com/herbygillot/dockhand/internal/command/serve	7.973s
+?   	github.com/herbygillot/dockhand/internal/command/settings	[no test files]
+ok  	github.com/herbygillot/dockhand/internal/command/setup	2.755s
+?   	github.com/herbygillot/dockhand/internal/command/shell	[no test files]
+ok  	github.com/herbygillot/dockhand/internal/command/ship	8.585s
+ok  	github.com/herbygillot/dockhand/internal/command/status	8.345s
+ok  	github.com/herbygillot/dockhand/internal/command/submit	25.615s
+ok  	github.com/herbygillot/dockhand/internal/command/tidy	7.151s
+?   	github.com/herbygillot/dockhand/internal/command/tidyrun	[no test files]
+ok  	github.com/herbygillot/dockhand/internal/command/understand	5.411s
+ok  	github.com/herbygillot/dockhand/internal/command/view	0.219s
+ok  	github.com/herbygillot/dockhand/internal/compose	0.251s
+ok  	github.com/herbygillot/dockhand/internal/config	0.359s
+ok  	github.com/herbygillot/dockhand/internal/coord	1.414s
+ok  	github.com/herbygillot/dockhand/internal/credential	0.160s
+ok  	github.com/herbygillot/dockhand/internal/credential/keychain	0.519s
+ok  	github.com/herbygillot/dockhand/internal/editprep	0.195s
+ok  	github.com/herbygillot/dockhand/internal/engine	139.118s
+ok  	github.com/herbygillot/dockhand/internal/evidence	0.310s
+ok  	github.com/herbygillot/dockhand/internal/failpoint	1.260s
+ok  	github.com/herbygillot/dockhand/internal/fetch	0.749s
+ok  	github.com/herbygillot/dockhand/internal/filelock	4.448s
+?   	github.com/herbygillot/dockhand/internal/forge	[no test files]
+?   	github.com/herbygillot/dockhand/internal/forge/forgetest	[no test files]
+ok  	github.com/herbygillot/dockhand/internal/forge/github	0.720s
+ok  	github.com/herbygillot/dockhand/internal/forge/gitlab	0.180s
+ok  	github.com/herbygillot/dockhand/internal/git	9.128s
+ok  	github.com/herbygillot/dockhand/internal/github	6.360s
+ok  	github.com/herbygillot/dockhand/internal/history	0.903s
+ok  	github.com/herbygillot/dockhand/internal/macos	21.872s
+ok  	github.com/herbygillot/dockhand/internal/macports	0.160s
+ok  	github.com/herbygillot/dockhand/internal/macports/assess	0.789s
+ok  	github.com/herbygillot/dockhand/internal/macports/binaryarchive	1.179s
+ok  	github.com/herbygillot/dockhand/internal/macports/commitmsg	0.138s
+ok  	github.com/herbygillot/dockhand/internal/macports/commitrules	0.141s
+ok  	github.com/herbygillot/dockhand/internal/macports/depblock	1.818s
+ok  	github.com/herbygillot/dockhand/internal/macports/distfetch	1.161s
+ok  	github.com/herbygillot/dockhand/internal/macports/distfiles	0.228s
+ok  	github.com/herbygillot/dockhand/internal/macports/eval	0.235s
+ok  	github.com/herbygillot/dockhand/internal/macports/fetchguard	0.140s
+ok  	github.com/herbygillot/dockhand/internal/macports/fidelity	0.467s
+ok  	github.com/herbygillot/dockhand/internal/macports/installation	0.636s
+ok  	github.com/herbygillot/dockhand/internal/macports/patchcheck	0.840s
+ok  	github.com/herbygillot/dockhand/internal/macports/portcreate	0.154s
+ok  	github.com/herbygillot/dockhand/internal/macports/portedit	0.214s
+ok  	github.com/herbygillot/dockhand/internal/macports/portedit/observe	0.161s
+ok  	github.com/herbygillot/dockhand/internal/macports/portfile	0.265s
+ok  	github.com/herbygillot/dockhand/internal/macports/portindex	2.283s
+ok  	github.com/herbygillot/dockhand/internal/macports/portsource	0.273s
+ok  	github.com/herbygillot/dockhand/internal/macports/prdescription	0.134s
+ok  	github.com/herbygillot/dockhand/internal/macports/selection	0.156s
+ok  	github.com/herbygillot/dockhand/internal/macports/survey	0.280s
+ok  	github.com/herbygillot/dockhand/internal/macports/treequery	0.171s
+ok  	github.com/herbygillot/dockhand/internal/macports/version	0.126s
+ok  	github.com/herbygillot/dockhand/internal/macports/workspace	0.983s
+ok  	github.com/herbygillot/dockhand/internal/model	0.303s
+ok  	github.com/herbygillot/dockhand/internal/outdated	0.172s
+ok  	github.com/herbygillot/dockhand/internal/planning	0.136s
+ok  	github.com/herbygillot/dockhand/internal/progress	0.254s
+ok  	github.com/herbygillot/dockhand/internal/project	0.611s
+ok  	github.com/herbygillot/dockhand/internal/prose	0.210s
+ok  	github.com/herbygillot/dockhand/internal/pypi	0.168s
+ok  	github.com/herbygillot/dockhand/internal/refusal	0.135s
+ok  	github.com/herbygillot/dockhand/internal/registry	0.243s
+ok  	github.com/herbygillot/dockhand/internal/reuse	0.152s
+ok  	github.com/herbygillot/dockhand/internal/scratch	0.365s
+ok  	github.com/herbygillot/dockhand/internal/signify	0.153s
+ok  	github.com/herbygillot/dockhand/internal/sourcecompare	0.824s
+?   	github.com/herbygillot/dockhand/internal/store	[no test files]
+ok  	github.com/herbygillot/dockhand/internal/store/sqlite	9.451s
+ok  	github.com/herbygillot/dockhand/internal/subprocess	1.152s
+ok  	github.com/herbygillot/dockhand/internal/tart	1.768s
+ok  	github.com/herbygillot/dockhand/internal/tart/guestssh	1.542s
+ok  	github.com/herbygillot/dockhand/internal/tart/host	3.947s
+ok  	github.com/herbygillot/dockhand/internal/tart/provision	3.414s
+ok  	github.com/herbygillot/dockhand/internal/tcl/rpc	0.601s
+ok  	github.com/herbygillot/dockhand/internal/tcl/shell	0.326s
+ok  	github.com/herbygillot/dockhand/internal/tcl/syntax	0.338s
+ok  	github.com/herbygillot/dockhand/internal/term	0.261s
+ok  	github.com/herbygillot/dockhand/internal/testsupport	11.947s
+?   	github.com/herbygillot/dockhand/internal/textedit	[no test files]
+ok  	github.com/herbygillot/dockhand/internal/upstream	0.509s
+?   	github.com/herbygillot/dockhand/tools/acceptance/faultproxy	[no test files]
+ok  	github.com/herbygillot/dockhand/tools/facts	0.382s
+ok  	github.com/herbygillot/dockhand/tools/survey	0.195s

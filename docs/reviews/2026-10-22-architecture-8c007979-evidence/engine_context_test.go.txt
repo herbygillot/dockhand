@@ -1,0 +1,70 @@
+package engine
+
+import (
+	"context"
+	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/stretchr/testify/require"
+	"slices"
+	"testing"
+)
+
+type architectureLinksPorts struct{ fakePorts }
+
+func (p architectureLinksPorts) Ports(ctx context.Context, source model.Source, directory string, env model.Environment, variants map[string]bool) ([]macports.PortInfo, error) {
+	infos, err := p.fakePorts.Ports(ctx, source, directory, env, variants)
+	infos = slices.Clone(infos)
+	for i := range infos {
+		if infos[i].Name == "harbor-cli" && env.Platform.Architecture == "x86_64" {
+			infos[i].Dependencies = append(slices.Clone(infos[i].Dependencies), macports.Dependency{Phase: "lib", Port: "oniguruma"})
+		}
+	}
+	return infos, err
+}
+func TestArchitectureLinksKeepDeclarationsInTheirOwnEnvironment(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	provider := &scriptedProvider{active: []model.ActivePort{}, readsLinks: true, links: map[model.TargetID][]model.Link{"harbor-cli": {{Binary: "/opt/local/bin/harbor", Library: "/opt/local/lib/libonig.5.dylib", Port: "oniguruma"}}, "libharbor": {}}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm, tahoeX86)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State)
+	usePorts(e, architectureLinksPorts{harborPorts()})
+	found, err := e.UndeclaredLinks(t.Context(), run)
+	require.NoError(t, err)
+	require.True(t, slices.ContainsFunc(found, func(f LinkFinding) bool { return f.Target == "harbor-cli" && f.Port == "oniguruma" }), "arm64 build links oniguruma without declaring it; x86 declaration must not hide it: %#v", found)
+}
+
+func TestArchitectureStandingAcceptanceReachesCandidateReadiness(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	gcc := model.FailedDependency{Name: "libgcc15", Version: "15.2.0_1"}
+	checkedWith(t, e, branch, model.OutcomeFailed, model.OutcomePassed, func(execution *model.GuestExecution, jq *model.TargetResult) {
+		execution.Identity = "image sha256:12; setup 3"
+		jq.Phase, jq.Dependency, jq.Detail = model.PhaseDependencies, gcc, "Failed to build libgcc15"
+	})
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}, Standing: true})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocking)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		for _, decision := range plan.Standing {
+			decision.At = e.now()
+			if err := tx.AddDecision(decision); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocking)
+	require.Equal(t, AcceptedStanding, plan.Accepted["jq"].Kind)
+	passing, err := e.PassingBranches(t.Context())
+	require.NoError(t, err)
+	require.True(t, slices.ContainsFunc(passing.Ready, func(s BranchStatus) bool { return s.Branch.ID == branch.ID }), "submission has no blocks and a standing acceptance, but candidate policy excludes it: ready=%v others=%d", passing.Ready, passing.Others)
+}
