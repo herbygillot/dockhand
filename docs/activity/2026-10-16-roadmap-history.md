@@ -919,3 +919,7 @@ Before rc5 was tagged on 6246e4b9, these stood, each whole:
 - "**Now: v0.5.0's acceptance, moving to rc5 for the ports that list `go.vendors`.**"
 - "so rc5 carries its fix (the person's "Cut rc5", 2026-10-23 12:17Z), its M1 run repeating the rows that plan an update. The replays that confirmed it found two older refusals on the same path, a module's major-version suffix and a reply too long for the RPC frame, which go before rc5's tag, since its rerun covers them."
 - "It rides rc5 if it's done before rc5's tag and never holds it, since it hides an update rather than making a wrong one; otherwise the release after v0.5.0,"
+
+## From Next on 2026-10-23: py-lmdb's row
+
+Before acceptance read py-lmdb as planned on rc3 to rc5, the release step's rows that stay ended, whole: "serve's doubled line if it has recurred, and py-lmdb's as acceptance's replay reads it."
