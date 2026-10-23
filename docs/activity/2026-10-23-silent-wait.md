@@ -57,3 +57,15 @@ de2f447c).
 - Tests: TestACleanLinkScanIsSaid has crystal's five links, with failed
   advisory tests, on two releases. TestWriteLinks and the engine's links
   test cover the words.
+
+## The harness: rows that wait on a check's progress run it with -v
+
+Prime-time's rc3 quick stage found that D-I2 never reached its build to
+kill. At the default level, off a terminal, a check prints its header, its
+results, and its outcome; attempts and provider steps ("building in <vm>")
+are -v's, as part 5 intends. So the rows that wait on those lines now run
+their background check with `-v`: D-I2, D-S6, D-S9, and D-I5's sleeping
+check.
+
+D-R2 stays at the default level on purpose. It tests 74426269, a wait
+said at every level.

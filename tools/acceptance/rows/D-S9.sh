@@ -6,7 +6,7 @@
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
 	dh_setup update "$(port)" --new || return 0
-	dh_bg check -p "$(port)"
+	dh_bg -v check -p "$(port)"
 	wait_for_line "$DH_BG_LOG" 'building in' 900 || :
 	git -C "$MACPORTS_TREE" gc -q --prune=now 2>>"$ROW_DIR/git.log" || :
 	# The prune is the row's own, the person's: the remote-tracking refs it

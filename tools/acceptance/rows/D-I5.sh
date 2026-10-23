@@ -81,7 +81,7 @@ di5_sleep() {
 	local started ended
 	DI5_SLEEP_BRANCH=$(own_branch)
 	[ -n "$DI5_SLEEP_BRANCH" ] || { row_fail "the sleep port's update made no branch"; return 1; }
-	dh_bg check -b "$DI5_SLEEP_BRANCH" --fresh
+	dh_bg -v check -b "$DI5_SLEEP_BRANCH" --fresh
 	wait_for_line "$DH_BG_LOG" 'building|running' 900 || { row_fail "the check never started building"; kill "$DH_BG_PID" 2>/dev/null; return 1; }
 	started=$(date '+%Y-%m-%d %H:%M:%S')
 	# Asked only of a check still running: one already done has nothing
