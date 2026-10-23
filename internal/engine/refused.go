@@ -30,6 +30,9 @@ func refusedUpdate(err error, request UpdateRequest, update Update) error {
 	if uncertain := new(UncertainRelease); errors.As(err, &uncertain) {
 		return uncertainRelease(request, uncertain.SetAside, branch, started)
 	}
+	if ahead := new(AheadRelease); errors.As(err, &ahead) {
+		return aheadRelease(request, *ahead, branch, started)
+	}
 	if !started || errors.As(err, new(*HeldBeforeEdit)) {
 		return err
 	}
@@ -138,6 +141,29 @@ func uncertainRelease(request UpdateRequest, aside []SetAside, branch string, st
 		With(kept).
 		Then(refusal.Next{External: fmt.Sprintf("if %s is a release: dockhand %s %s %s", aside[0].Tag, verb, request.Port, aside[0].Source)},
 			refusal.Next{External: fmt.Sprintf("if it isn't, as an old tag spelled oddly: a livecheck.regex in the Portfile that leaves %s out keeps it out of later looks", aside[0].Tag)})
+}
+
+// aheadRelease is an update to the newest release of a port ahead of
+// every version upstream lists, its own tag not among them: the
+// repository may have moved, as mergestat's CLI did, so the release to
+// take is a person's to name.
+func aheadRelease(request UpdateRequest, ahead AheadRelease, branch string, started bool) error {
+	verb := "update"
+	if request.Unattended {
+		verb = "bump"
+	}
+	kept := ""
+	if started {
+		kept = branch + ", with nothing changed"
+	}
+	return refusal.New(refusal.Attention, "can't tell whether %s is current, so nothing was changed: %s", request.Port, AheadWords(ahead.Current, ahead.Tag)).
+		With(kept).
+		Then(refusal.Next{External: fmt.Sprintf("with the version to take: dockhand %s %s <version>", verb, request.Port)})
+}
+
+// AheadWords say why a port ahead of upstream's tags isn't current.
+func AheadWords(current, tag string) string {
+	return fmt.Sprintf("its %s isn't among upstream's tags; the newest is %s; the repository may have moved", current, tag)
 }
 
 // SetAsideWords say why a port's newest release is uncertain: what was set

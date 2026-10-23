@@ -541,3 +541,35 @@ func TestChecksumsTakesTheBranchsPort(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "checksums", "--new", "--plan")
 	require.Error(t, err)
 }
+
+// aheadBumper is a bumper whose discovery found jq ahead of every version
+// upstream lists, its own tag among none of them.
+type aheadBumper struct{ cmdtest.Bumper }
+
+func (b aheadBumper) ResolveRelease(ctx context.Context, r editprep.Request) (model.Release, error) {
+	if r.Version == "" {
+		return model.Release{}, &engine.AheadRelease{Port: "jq", Current: "1.7.1", Tag: "jq-1.6"}
+	}
+	return b.Bumper.ResolveRelease(ctx, r)
+}
+
+// An update of a port ahead of every version upstream lists chooses none:
+// the repository may have moved, as mergestat's CLI did, so it changes
+// nothing, needs a look, and a version named still goes ahead (field
+// testing, 2026-10-23).
+func TestAPortAheadOfUpstreamIsNamedNotChosen(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return aheadBumper{cmdtest.Bumper{Repo: e.Repo}} }
+	cmdtest.WithScript(t, w, "passed")
+	cmdtest.WithGitHub(t, w)
+
+	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--new")
+	require.Equal(t, 3, term.ExitCode(err), "it needs a look")
+	require.EqualError(t, err, "can't tell whether jq is current, so nothing was changed: its 1.7.1 isn't among upstream's tags; the newest is jq-1.6; the repository may have moved\nNext: with the version to take: dockhand update jq <version>")
+	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")
+	out, _, err := cmdtest.Dockhand(t, "update", "jq", "1.9.0", "--new")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq: 1.7.1 → 1.9.0")
+}

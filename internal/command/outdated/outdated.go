@@ -90,6 +90,9 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	summary := report.Summary()
 	newer, unknown, uncertain, moved, own := summary[engine.OutdatedNewer], summary[engine.OutdatedUnchecked], summary[engine.OutdatedUncertain], summary[engine.OutdatedMoved], summary[engine.OutdatedOwnVersion]
 	unready := summary[engine.OutdatedUnpublished]
+	// One ahead of every version upstream lists may have a newer release
+	// elsewhere, as one with a version set aside may: each is for a look.
+	uncertain += summary[engine.OutdatedAhead]
 	// Where no port could be checked, as offline, each says why, and the
 	// command fails: "none has a newer release" would be a guess (the M1's
 	// quick stage, D-N1, 2026-10-03).
@@ -147,6 +150,13 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			// look, with the update that takes it.
 			row.newest += "?"
 			row.note = fmt.Sprintf("update %s %s after a look: %s", port.Port, port.Uncertain[0].Source, engine.SetAsideWords(port.Uncertain))
+			held = append(held, row)
+		case class == engine.OutdatedAhead:
+			// Checked, and ahead of everything upstream lists: its
+			// releases may be elsewhere now, so it's held for a look
+			// (field testing's mergestat, 2026-10-23).
+			row.newest += "?"
+			row.note = fmt.Sprintf("update %s <version> after a look: %s", port.Port, engine.AheadWords(port.Current, port.Ahead))
 			held = append(held, row)
 		case class == engine.OutdatedUnpublished:
 			// Newer, but update would refuse it until its release has
@@ -252,7 +262,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		line += " · --current lists those it couldn't check"
 	}
 	fmt.Fprintln(out, line)
-	if uncertain > 0 {
+	if summary[engine.OutdatedUncertain] > 0 {
 		// Serve says such a port once, but outdated every time it's asked:
 		// the port's own livecheck can settle it for good.
 		fmt.Fprintln(out, "Where a tag set aside is an old one spelled oddly rather than a release, a livecheck.regex that skips it keeps it out of later looks.")
@@ -404,6 +414,7 @@ func restWords(report engine.OutdatedReport, plan engine.OutdatedPlan) string {
 		{engine.OutdatedCurrent, "%d current"},
 		{engine.OutdatedUnpublished, "%d with a newer release not published yet"},
 		{engine.OutdatedUncertain, "%d that may have one, for your look"},
+		{engine.OutdatedAhead, "%d ahead of every version upstream lists, for your look"},
 		{engine.OutdatedMoved, "%d pinned to a commit its branch has moved past, for update"},
 		{engine.OutdatedUnchecked, "%d that couldn't be checked"},
 	} {

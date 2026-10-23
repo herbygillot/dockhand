@@ -44,6 +44,11 @@ type OutdatedPort struct {
 	// is a person's call, and Newest is the first of them. It is neither
 	// current nor to be updated by itself.
 	Uncertain []SetAside
+	// Ahead is, for a port whose version compares newer than every one
+	// upstream lists, its own tag not among them, the newest tag listed:
+	// the repository may have moved, so it's neither current nor to be
+	// updated by itself, and Newest is that tag's version.
+	Ahead string
 	// Problem says why the port could not be checked; RetryAt, when a
 	// rate limit that kept it from being checked lifts, zero where none.
 	Problem string
@@ -79,6 +84,9 @@ const (
 	OutdatedUnchecked OutdatedClass = "unchecked"
 	// OutdatedUncertain may have a newer release, for a look (Uncertain).
 	OutdatedUncertain OutdatedClass = "uncertain"
+	// OutdatedAhead is ahead of every version upstream lists, for a look
+	// (Ahead).
+	OutdatedAhead OutdatedClass = "ahead"
 	// OutdatedUnpublished has a newer release not ready yet (Unpublished).
 	OutdatedUnpublished OutdatedClass = "unpublished"
 	// OutdatedNewer has a newer release (Outdated).
@@ -101,6 +109,8 @@ func (p OutdatedPort) Class() OutdatedClass {
 		return OutdatedUnchecked
 	case len(p.Uncertain) > 0:
 		return OutdatedUncertain
+	case p.Ahead != "":
+		return OutdatedAhead
 	case p.Outdated && p.Unpublished != "":
 		return OutdatedUnpublished
 	case p.Outdated:
@@ -138,6 +148,11 @@ type SetAside = upstream.SetAside
 // discovery set a newer one aside and found nothing newer beyond it: the
 // update needs the version named.
 type UncertainRelease = upstream.UncertainError
+
+// AheadRelease is an update's refusal to choose a release where the port
+// is ahead of every version upstream lists: the update needs the version
+// named.
+type AheadRelease = upstream.AheadError
 
 // OutdatedReader finds ports' newest releases at a commit of master.
 // MacPorts' evaluator and upstream discovery are the real one.
@@ -290,6 +305,8 @@ func outdatedPort(port outdated.Port) OutdatedPort {
 		}
 	case upstream.Uncertain:
 		entry.Uncertain = port.SetAside
+	case upstream.Ahead:
+		entry.Ahead = port.NewestTag
 	case upstream.Moved:
 		entry.Moved = port.Head
 	case upstream.OwnVersion:

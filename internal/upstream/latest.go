@@ -241,6 +241,16 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		result.Detail = fmt.Sprintf("Cannot determine whether %s is current: excluded %s because it predates %s despite having a higher version", port.Version, strings.Join(asideTags, ", "), current)
 		return result, nil
 	}
+	// Ahead of every version listed, its own tag, as discovery names it,
+	// not among them: not current, but a look's (Ahead). Where the port's
+	// own tag is listed, it's current, its livecheck filter leaving the
+	// newer ones out.
+	if comparison < 0 && len(setAside) == 0 && current != "" && !seen[current] {
+		result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
+		result.Assessment, result.CandidateVersion, result.NewestTag = Ahead, candidates[index].Version, tags[index]
+		result.Detail = fmt.Sprintf("%s isn't among %s's %s, whose newest is %s; the repository may have moved", port.Version, repository.Name(), catalogWords(spec.Catalog), tags[index])
+		return result, nil
+	}
 	tag, err := repository.Tag(ctx, tags[index])
 	if err != nil {
 		return result, err
@@ -249,10 +259,7 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		return result, fmt.Errorf("upstream: invalid selected tag observation")
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
-	catalog := "tags"
-	if spec.Catalog == portsource.Releases {
-		catalog = "published releases"
-	}
+	catalog := catalogWords(spec.Catalog)
 	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: candidates[index].Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt}
 	result.finish(release, port.Version, "Selected "+tag.Name+" from "+catalog, " among "+catalog)
 	if len(setAside) > 0 {
@@ -447,4 +454,12 @@ func (s *Service) discoverHead(ctx context.Context, port macports.PortInfo, spec
 	}
 	result.Assessment, result.CandidateVersion = Moved, commit[:min(len(commit), 12)]
 	return result, nil
+}
+
+// catalogWords names what a catalog lists: tags, or published releases.
+func catalogWords(catalog portsource.Catalog) string {
+	if catalog == portsource.Releases {
+		return "published releases"
+	}
+	return "tags"
 }

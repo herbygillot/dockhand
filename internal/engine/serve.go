@@ -829,6 +829,11 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 			for _, aside := range port.Uncertain {
 				setAside[port.Port] = append(setAside[port.Port], aside.Tag)
 			}
+		case OutdatedAhead:
+			// Ahead of every version upstream lists: a look's too, as
+			// status says, and never prepared.
+			uncertain = append(uncertain, port.Port)
+			setAside[port.Port] = []string{port.Ahead}
 		}
 	}
 	last, _ := e.LastOutdatedLook()

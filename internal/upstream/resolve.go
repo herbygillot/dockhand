@@ -39,6 +39,9 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 		if result.Assessment == Uncertain {
 			return model.Release{}, &UncertainError{Port: port.Name, SetAside: result.SetAside}
 		}
+		if result.Assessment == Ahead {
+			return model.Release{}, &AheadError{Port: port.Name, Current: port.Version, Tag: result.NewestTag}
+		}
 		if result.Assessment == OwnVersion {
 			return model.Release{}, fmt.Errorf("%w: %s fetches no source on this platform, and livecheck does not use its version; specify a version with dockhand update %s <version>", ErrOwnVersion, port.Name, port.Name)
 		}

@@ -60,6 +60,14 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	require.Equal(t, row+"yq may have a newer release, at master 1bb30d5\n"+settle, said(cmdtest.YqMayBeOutdated))
 	require.Equal(t, row+"None of 2 ports has a newer release, at master 1bb30d5 · 1 may have one, for a look\n"+settle, said(cmdtest.YqMayBeOutdated, current("jq")))
 
+	// One ahead of every version upstream lists, its own tag not among
+	// them, is held for a look, never current (field testing's mergestat,
+	// 2026-10-23).
+	ahead := engine.OutdatedPort{Port: "mergestat", Current: "0.5.4", Newest: "0.1.0", Ahead: "v0.1.0"}
+	require.Equal(t, "Held (1)\n  mergestat  0.5.4 → 0.1.0?  update mergestat <version> after a look: its 0.5.4 isn't among upstream's tags; the newest is v0.1.0; the repository may have moved\n"+
+		"mergestat may have a newer release, at master 1bb30d5\n", said(ahead))
+	require.Equal(t, engine.OutdatedAhead, ahead.Class())
+
 	// Subports checked with a sibling that's listed are said on its row
 	// (field testing, 2026-10-02).
 	follow := func(name string) engine.OutdatedPort {

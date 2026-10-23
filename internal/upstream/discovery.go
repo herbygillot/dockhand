@@ -26,6 +26,14 @@ const (
 	// (Result.SetAside), and nothing newer is found beyond it. Nothing is
 	// selected; a person looks, and names the version to update to.
 	Uncertain Assessment = "uncertain"
+	// Ahead is a port whose version compares newer than every version
+	// upstream lists, and whose own tag isn't among them: its project's
+	// releases may have gone elsewhere, as mergestat's CLI's went to
+	// mergestat-lite, leaving the repository's stable tags at v0.1.0 under
+	// a port at 0.5.4 (field testing, 2026-10-23). It was checked, but
+	// isn't current: a person looks, and names the version to update to.
+	// CandidateVersion and NewestTag are the newest listed.
+	Ahead Assessment = "ahead"
 	// Moved is a port that tracks a branch, whose branch names a newer
 	// commit than the one it pins: it's behind, and the version to name
 	// for that commit is a person's (Head).
@@ -78,6 +86,16 @@ func (e *UncertainError) Error() string {
 	return fmt.Sprintf("upstream: can't tell whether %s is current: %s compares newer, but predates %s; name the version to update to", e.Port, strings.Join(tags, ", "), e.SetAside[0].Predates)
 }
 
+// AheadError is Resolve's answer for a port whose discovery is Ahead: an
+// update chooses no release there, and needs one named.
+type AheadError struct {
+	Port, Current, Tag string
+}
+
+func (e *AheadError) Error() string {
+	return fmt.Sprintf("upstream: can't tell whether %s is current: %s isn't among its tags, whose newest is %s; the repository may have moved; name the version to update to", e.Port, e.Current, e.Tag)
+}
+
 // Catalog binds an interpreted Portfile source to its remote repository.
 type Catalog interface {
 	Repository(instance, name string) (forge.Repository, error)
@@ -95,6 +113,8 @@ type Result struct {
 	// beyond them, the assessment is Uncertain, and CandidateVersion is the
 	// newest of them.
 	SetAside []SetAside
+	// NewestTag is the newest tag listed, for a port that's Ahead of it.
+	NewestTag string
 	// Head is the branch a port tracks and the commit it names now, for a
 	// port that tracks a branch; nil for any other.
 	Head       *Head

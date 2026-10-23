@@ -138,6 +138,10 @@ func TestANewerReleaseWithoutItsFilesIsntReady(t *testing.T) {
 	require.False(t, result.Unpublished)
 }
 
+// A port whose own tag is listed is current where its livecheck filter
+// leaves the newer ones out; one ahead of every version listed, its own
+// tag not among them, is Ahead, for a look (field testing's mergestat,
+// 2026-10-23), where this test's second half once called it current.
 func TestAutomaticSelectionAppliesMaintainerFilterAndReportsCurrentOrAhead(t *testing.T) {
 	t.Parallel()
 	c := &catalog{releases: []forge.Release{{Tag: "v1.0"}, {Tag: "v2.0"}}}
@@ -154,9 +158,33 @@ func TestAutomaticSelectionAppliesMaintainerFilterAndReportsCurrentOrAhead(t *te
 	port.Options["livecheck.version"] = "1.1"
 	result, err = service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)
-	require.True(t, result.Release.NoUpdate)
-	require.Equal(t, "1.0", result.Release.Version)
-	require.Equal(t, "1.1", result.Release.CurrentVersion)
+	require.Equal(t, upstream.Ahead, result.Assessment)
+	require.Nil(t, result.Release)
+	require.Equal(t, "1.0", result.CandidateVersion)
+	require.Equal(t, "v1.0", result.NewestTag)
+	require.Contains(t, result.Detail, "1.1 isn't among")
+	_, err = service.Resolve(t.Context(), port, "")
+	ahead := new(upstream.AheadError)
+	require.ErrorAs(t, err, &ahead)
+	require.Equal(t, "upstream: can't tell whether "+port.Name+" is current: 1.1 isn't among its tags, whose newest is v1.0; the repository may have moved; name the version to update to", err.Error())
+}
+
+// mergestat's shape: the repository's stable tags stop at v0.1.0, its
+// newer ones prereleases a stable port doesn't follow, and the port's
+// 0.5.4 is no tag of it, since its CLI moved to another repository.
+func TestAPortAheadOfEveryStableTagIsAhead(t *testing.T) {
+	t.Parallel()
+	c := &catalog{releases: []forge.Release{{Tag: "v0.0.9"}, {Tag: "v0.1.0"}, {Tag: "v2.3.2-beta", Prerelease: true}}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	port.Version = "0.5.4"
+	port.Options["github.version"] = "0.5.4"
+	port.Options["git.branch"] = "v0.5.4"
+	port.Options["livecheck.version"] = "0.5.4"
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Ahead, result.Assessment, result.Detail)
+	require.Equal(t, "v0.1.0", result.NewestTag)
 }
 
 func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {
