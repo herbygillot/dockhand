@@ -88,3 +88,10 @@ These are harness fixes; nothing in dockhand changed.
   started, after it uninstalls serve and again in its teardown. A drain
   then finishes only what the uninstall stopped. v0.4.0-rc5's soak left
   24 of its daily look's checks queued, which the next drain built.
+- **D-S1** makes its outside commit in a clone of the fork's branch of its
+  own, one commit deep with nothing checked out, and pushes it from there,
+  as a collaborator does. It was made in dockhand's worktree, pushed, and
+  reset away, so the branch's reflog held it, and submit took it as an
+  amend of dockhand's own and replaced it (herbyg-test/macports-ports#84).
+  Whether submit's amend rule should ask for more than the reflog is
+  Herby's call, and on hold.
