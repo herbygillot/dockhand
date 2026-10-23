@@ -57,7 +57,13 @@ func (r *Runtime) Allowance(ctx context.Context) (Allowance, error) {
 	if r == nil || r.Client == nil {
 		return Allowance{}, fmt.Errorf("github: no client to ask")
 	}
-	api, err := r.Client.API(ctx)
+	return r.Client.Allowance(ctx)
+}
+
+// Allowance asks GitHub what's left of the hour's requests for the
+// client's login, or for requests without one (Runtime.Allowance).
+func (c *Client) Allowance(ctx context.Context) (Allowance, error) {
+	api, err := c.API(ctx)
 	if err != nil {
 		return Allowance{}, err
 	}

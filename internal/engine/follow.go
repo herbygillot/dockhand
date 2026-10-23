@@ -87,12 +87,37 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 	// signed-in refresh, which sees a reopening. Logged out, serve read
 	// 15 closed test pull requests, spent the hour's allowance, and never
 	// saw #88 close (rc5's D-C2).
+	// And each is one request, its state and head alone: reviews, checks,
+	// and CI's logs cost four or more a pull request a refresh, the
+	// hour's 60 in an hour's refreshes of one, and #88 and #89 were never
+	// read (rc5's D-C2 again). The review and checks recorded stay as
+	// they were. It stops anonymousReserve short of the hour's allowance,
+	// as GitHub says it, so a person's own command still has some.
+	budget := -1
+	var lifts time.Time
 	if !signedIn {
-		branches = openNewestFirst(branches)
+		branches, read = openNewestFirst(branches), e.observeState
+		if reader, ok := e.forge().(forge.AllowanceReader); ok {
+			if left, resets, err := reader.RequestsLeft(ctx); err == nil {
+				budget, lifts = max(left-anonymousReserve, 0), resets
+			}
+		}
 	}
 	for i, branch := range branches {
 		if branch.PullRequest == nil {
 			continue
+		}
+		if budget == 0 {
+			for _, rest := range branches[i:] {
+				if rest.PullRequest != nil {
+					result.Unread++
+				}
+			}
+			result.RetryAt = lifts
+			break
+		}
+		if budget > 0 {
+			budget--
 		}
 		next, err := read(ctx, branch.PullRequest)
 		if refused(err) {
@@ -110,7 +135,7 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 			break
 		}
 		o := observedPullRequest{branch: branch, next: next, err: err}
-		if err == nil {
+		if err == nil && signedIn {
 			o.ci = e.classifyCI(ctx, branch, next)
 		}
 		observed = append(observed, o)
@@ -134,6 +159,29 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 		return nil
 	})
 	return result, err
+}
+
+// anonymousReserve is the requests a signed-out refresh leaves of the
+// hour's allowance.
+const anonymousReserve = 10
+
+// observeState reads a pull request's state and head alone, one request,
+// for a refresh without a login: the review and checks recorded stay as
+// they were, since reading them is four requests more.
+func (e *Engine) observeState(ctx context.Context, pr *model.PullRequest) (model.PullRequestObservation, error) {
+	observed, err := e.forge().Observe(ctx, pullRequestRef(pr.Repository, pr.Number))
+	if errors.Is(err, forge.ErrNotFound) {
+		return model.PullRequestObservation{}, fmt.Errorf("#%d was not found", pr.Number)
+	}
+	if err != nil {
+		return model.PullRequestObservation{}, err
+	}
+	next := e.observation(observed.PullRequest, forge.PullRequestStatus{})
+	if was := pr.Observed; was != nil && next.State == model.PullRequestOpen {
+		next.Draft, next.Review, next.ChangesRequestedBy, next.ReviewedAt = was.Draft, was.Review, was.ChangesRequestedBy, was.ReviewedAt
+		next.Checks, next.Failing = was.Checks, was.Failing
+	}
+	return next, nil
 }
 
 // openNewestFirst are the open branches with a pull request, the newest

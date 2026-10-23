@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -22,4 +23,11 @@ func (c *Client) Login(ctx context.Context) (forge.Login, error) {
 		return forge.Login{}, err
 	}
 	return forge.Login{Account: status.Account, Source: string(status.Source), From: status.Source.Words(), RenewsUntil: status.RenewsUntil}, nil
+}
+
+// RequestsLeft is what's left of the hour's requests for the client's
+// login, or without one, as GitHub says it (forge.AllowanceReader).
+func (c *Client) RequestsLeft(ctx context.Context) (int, time.Time, error) {
+	allowance, err := c.Allowance(ctx)
+	return allowance.Remaining, allowance.Reset, err
 }

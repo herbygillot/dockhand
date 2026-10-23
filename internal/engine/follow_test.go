@@ -247,11 +247,23 @@ type anonymousForge struct {
 	*forgetest.GitHub
 	allowance int
 	read      []int
+	inspected int
 	state     map[int]forge.PullRequestState
 }
 
 func (a *anonymousForge) ReadPullRequests(context.Context, []forge.PullRequestRef) ([]forge.PullRequestReading, error) {
 	return nil, github.ErrNoCredentials
+}
+
+func (a *anonymousForge) RequestsLeft(context.Context) (int, time.Time, error) {
+	return a.allowance, time.Date(2026, 10, 23, 15, 4, 0, 0, time.UTC), nil
+}
+
+// Inspect reads reviews and checks, four requests more, which a refresh
+// without a login never spends.
+func (a *anonymousForge) Inspect(context.Context, forge.PullRequestRef) (forge.PullRequestStatus, error) {
+	a.inspected++
+	return forge.PullRequestStatus{}, nil
 }
 
 func (a *anonymousForge) Observe(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
@@ -315,4 +327,32 @@ func TestASignedOutRefreshReadsOpenPullRequestsNewestFirst(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, refreshed.Unread)
 	require.Equal(t, "GitHub’s rate limit left 1 pull request unread. Reading again after "+time.Date(2026, 10, 23, 15, 4, 0, 0, time.UTC).Local().Format("15:04 MST"), refreshed.UnreadWords())
+
+	// Each read is one request, the state and head alone, the review and
+	// checks recorded kept; and it stops 10 short of the hour's allowance
+	// (rc5's D-C2 again: five requests a pull request a refresh spent the
+	// hour on one).
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		for i := range 4 {
+			branch := base
+			branch.ID, branch.Name, branch.Worktree = model.BranchID(store.NewID("br")), fmt.Sprintf("%sjq-open-%d", model.BranchPrefix, i), filepath.Join(t.TempDir(), "open")
+			branch.PullRequest = &model.PullRequest{Repository: "macports/macports-ports", Number: 100 + i, Head: "ada/macports-ports:" + branch.Name,
+				Observed: &model.PullRequestObservation{State: model.PullRequestOpen, Review: model.ReviewChangesRequested, ChangesRequestedBy: []string{"ryan"}, Checks: model.ChecksFailing, Failing: []string{"macOS 15"}}}
+			if err := tx.AddBranch(branch); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	anonymous.allowance, anonymous.read = 12, nil
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []int{103, 102}, anonymous.read, "12 left, 10 kept: two reads, the newest first")
+	require.Zero(t, anonymous.inspected, "no review or checks read")
+	require.Equal(t, 3, refreshed.Unread, "#101, #100, and #99 wait")
+	for _, r := range refreshed.Branches {
+		require.Empty(t, r.Changes, "nothing new said of a review or checks not read")
+		require.Equal(t, model.ReviewChangesRequested, r.Branch.PullRequest.Observed.Review)
+		require.Equal(t, []string{"macOS 15"}, r.Branch.PullRequest.Observed.Failing)
+	}
 }

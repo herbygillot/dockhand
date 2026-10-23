@@ -148,6 +148,13 @@ type PullRequestReader interface {
 	ReadPullRequests(context.Context, []PullRequestRef) ([]PullRequestReading, error)
 }
 
+// AllowanceReader says what's left of the hour's requests to the forge,
+// and when the count starts again, without spending one, as GitHub's
+// rate_limit endpoint does. A forge that can't say is simply not one.
+type AllowanceReader interface {
+	RequestsLeft(context.Context) (left int, resets time.Time, err error)
+}
+
 // Login is who a forge's requests are made as, and where its token comes
 // from: Source as the forge names it, and From as a person reads it; with
 // RenewsUntil, for a login that renews itself unused, until when.
