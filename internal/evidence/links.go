@@ -18,21 +18,35 @@ type LinkFinding struct {
 	// file that links it, with Libraries counting them all.
 	Port, Library, Binary string
 	Libraries             int
-	Unread                bool
+	// Environments are the builds' environments where it links the port
+	// and doesn't declare it, in the order given (Codex's review of
+	// 8c007979, C8-2: a declaration in one hid another's link).
+	Environments []model.Environment
+	Unread       bool
 }
 
 // Subject is what the finding is about, as a decision on it names it:
 // "harbor links oniguruma".
 func (f LinkFinding) Subject() string { return string(f.Target) + " links " + f.Port }
 
-// UndeclaredLinks are what a check's results link that their ports don't
-// declare (v0.5.0 part 6): for each target, every port its passed builds
-// link a library from but for those declared names, which are the ports
-// in its depends_lib, itself, and its Portfile's other subports, as plain
-// names; a library no port provides is no port to declare. A passed result
-// whose links weren't read says so, once a target. In target order, then
-// by port.
-func UndeclaredLinks(results []model.TargetResult, declared map[model.TargetID][]string) []LinkFinding {
+// LinkedBuild is one passed build as the link rule reads it: its result,
+// the environment it built in, and the ports it declares there, its
+// depends_lib as that environment evaluates it, itself, and its
+// Portfile's other subports, as plain names.
+type LinkedBuild struct {
+	Result      model.TargetResult
+	Environment model.Environment
+	Declared    []string
+}
+
+// UndeclaredLinks are what a check's builds link that their ports don't
+// declare (v0.5.0 part 6): each build judged against its own environment's
+// declarations, since a port's dependencies can differ by architecture or
+// release, then those of one target and port combined, naming the
+// environments; a library no port provides is no port to declare. A target
+// none of whose passed builds' links were read says so, once; one read in
+// any environment is read. In target order, then by port.
+func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 	type key struct {
 		target model.TargetID
 		port   string
@@ -40,7 +54,8 @@ func UndeclaredLinks(results []model.TargetResult, declared map[model.TargetID][
 	found := map[key]*LinkFinding{}
 	libraries := map[key]map[string]bool{}
 	read, passed := map[model.TargetID]bool{}, map[model.TargetID]bool{}
-	for _, result := range results {
+	for _, build := range builds {
+		result := build.Result
 		if result.Outcome != model.OutcomePassed {
 			continue
 		}
@@ -50,7 +65,7 @@ func UndeclaredLinks(results []model.TargetResult, declared map[model.TargetID][
 		}
 		read[result.Target] = true
 		for _, link := range result.Links {
-			if link.Port == "" || slices.ContainsFunc(declared[result.Target], func(name string) bool { return strings.EqualFold(name, link.Port) }) {
+			if link.Port == "" || slices.ContainsFunc(build.Declared, func(name string) bool { return strings.EqualFold(name, link.Port) }) {
 				continue
 			}
 			k := key{result.Target, strings.ToLower(link.Port)}
@@ -59,6 +74,9 @@ func UndeclaredLinks(results []model.TargetResult, declared map[model.TargetID][
 				libraries[k] = map[string]bool{}
 			}
 			libraries[k][link.Library] = true
+			if !slices.Contains(found[k].Environments, build.Environment) {
+				found[k].Environments = append(found[k].Environments, build.Environment)
+			}
 		}
 	}
 	var findings []LinkFinding
@@ -66,7 +84,6 @@ func UndeclaredLinks(results []model.TargetResult, declared map[model.TargetID][
 		finding.Libraries = len(libraries[k])
 		findings = append(findings, *finding)
 	}
-	// A target read in one environment and not another is read.
 	for target := range passed {
 		if !read[target] {
 			findings = append(findings, LinkFinding{Target: target, Unread: true})

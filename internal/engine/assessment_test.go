@@ -532,7 +532,16 @@ func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
 	require.Equal(t, "tool: git.branch v2 pointed to "+built[:7]+" when check-8 was planned, but now points to "+now[:7]+". The checked source differs from the source this submission would use", moved[0].Detail)
 
 	evidence.Plan.Builds[0].Git["tool"] = model.GitSource{URL: t.TempDir() + "/gone", Ref: "v2", Commit: model.ObjectID(built)}
-	require.Empty(t, e.movedSources(t.Context(), evidence), "a ref that can't be read now isn't said to have moved")
+	// A ref that can't be read now isn't said to have moved, but its
+	// freshness is unknown, which holds serve (C8-5's gap, the person's
+	// word, 2026-10-23), and a person's submission shows it.
+	unknown := e.movedSources(t.Context(), evidence)
+	require.Len(t, unknown, 1)
+	require.Equal(t, "source-unknown", unknown[0].Rule)
+	require.Equal(t, model.UnknownBaseline, unknown[0].Class)
+	require.Contains(t, unknown[0].Detail, "tool: whether git.branch v2 still points to "+built[:7]+", as when check-7 was planned, isn't known: ")
+	require.Contains(t, HoldLines(SubmitPlan{Moved: unknown}.Held()), unknown[0].Detail, "it holds a submission nobody looks over")
+	require.NotContains(t, HoldRules(), "source-unknown", "what couldn't be checked holds whatever holds.allow says (D4)")
 	require.Empty(t, e.movedSources(t.Context(), nil))
 }
 

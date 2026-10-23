@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
@@ -839,4 +841,57 @@ func TestSubmitHoldsWhatsMarkedUnconfirmed(t *testing.T) {
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Contains(t, plan.Blocking, `textproc/jq/Portfile still marks 1 guess unconfirmed (license): confirm each, remove its "# dockhand: unconfirmed," line, and tidy`)
+}
+
+// A standing acceptance is one eligibility: what submit takes, serve's
+// candidates and ship --passing take, and status says it waits to be
+// submitted, accepted, where they judged without it; and where its
+// evidence lapses, none takes it (Codex's review of 8c007979, C8-3, its
+// probe).
+func TestAStandingAcceptanceIsOneEligibility(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	gcc := model.FailedDependency{Name: "libgcc15", Version: "15.2.0_1"}
+	failed := func(dependency model.FailedDependency) {
+		checkedWith(t, e, branch, model.OutcomeFailed, model.OutcomePassed, func(execution *model.GuestExecution, jq *model.TargetResult) {
+			execution.Identity = "image sha256:12; setup 3"
+			jq.Phase, jq.Dependency, jq.Detail = model.PhaseDependencies, dependency, "Failed to build "+dependency.Name
+		})
+	}
+	failed(gcc)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}, Standing: true})
+	require.NoError(t, err)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		for _, decision := range plan.Standing {
+			decision.At = e.now()
+			if err := tx.AddDecision(decision); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	agree := func(eligible bool, why string) {
+		t.Helper()
+		plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+		require.NoError(t, err)
+		require.Equal(t, eligible, len(plan.Blocking) == 0, "submit: %s", why)
+		passing, err := e.PassingBranches(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, eligible, slices.ContainsFunc(passing.Ready, func(s BranchStatus) bool { return s.Branch.ID == branch.ID }), "serve and ship --passing: %s", why)
+		status, err := e.BranchStatus(t.Context(), branch)
+		require.NoError(t, err)
+		rows := branchstate.Attend(status.Facts())
+		require.Len(t, rows, 1)
+		// Accepted, it goes on as a pass does, here to what holds it
+		// unattended; not, it's the failure to look at.
+		require.Equal(t, !eligible, rows[0].Kind == branchstate.Failed, "status and Next: %s, got %s", why, rows[0].Reason)
+		require.Equal(t, branchstate.CheckFailed, status.CheckStanding(), "what happened stays failed")
+	}
+	agree(true, "the standing acceptance takes libgcc15 15.2.0_1's failure")
+	// A newer libgcc15 lapses it.
+	failed(model.FailedDependency{Name: "libgcc15", Version: "15.3.0_0"})
+	agree(false, "libgcc15 15.3.0_0 is no failure it accepted")
 }

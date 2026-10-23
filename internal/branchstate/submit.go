@@ -28,7 +28,7 @@ func SubmitReadiness(facts Facts) Readiness {
 	switch {
 	case b.Missing || b.Commits == 0 || check.Latest == nil || b.Pushed:
 		return NotCandidate
-	case check.Standing() == CheckPassed && len(b.Edited) == 0 && check.Evidence != nil:
+	case check.Publishable() && len(b.Edited) == 0:
 		return SubmitReady
 	}
 	return NotReady

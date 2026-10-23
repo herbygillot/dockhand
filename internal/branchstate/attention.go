@@ -49,6 +49,7 @@ const (
 	SourceMoved            Reason = "source-moved"
 	NotAssessed            Reason = "not-assessed"
 	WaitingToSubmit        Reason = "waiting-to-submit"
+	AcceptedToSubmit       Reason = "accepted-to-submit"
 	NotPushed              Reason = "not-pushed"
 )
 
@@ -219,6 +220,12 @@ func Attend(facts Facts) []Attention {
 	for _, on := range b.CheckOn {
 		again.Args = append(again.Args, "--on", on)
 	}
+	// A failed check whose every failure a decision accepts goes on as a
+	// pass does, said as accepted (C8-3).
+	accepted := standing == CheckFailed && check.Publishable()
+	if accepted {
+		standing = CheckPassed
+	}
 	switch standing {
 	case CheckFailed:
 		for _, target := range check.Evidence.Failed() {
@@ -293,6 +300,8 @@ func Attend(facts Facts) []Attention {
 		case b.Record.PullRequest == nil && b.NotAssessed:
 			// Status collects nothing; submitting assesses what isn't yet.
 			return row(Ready, NotAssessed, submitNext(b), nil)
+		case b.Record.PullRequest == nil && accepted:
+			return row(Ready, AcceptedToSubmit, submitNext(b), func(a *Attention) { a.Run = run })
 		case b.Record.PullRequest == nil:
 			return row(Ready, WaitingToSubmit, submitNext(b), nil)
 		case !b.Pushed:
@@ -433,6 +442,8 @@ func (a Attention) Words(v Vocabulary) string {
 		return "passed; what upstream's change means isn't assessed yet, which submitting does"
 	case WaitingToSubmit:
 		return "passed; waiting for you to submit"
+	case AcceptedToSubmit:
+		return a.Run.Name() + "'s failures are accepted; waiting for you to submit"
 	case NotPushed:
 		return fmt.Sprintf("passed; #%d has not been updated with these changes", pr.Number)
 	}

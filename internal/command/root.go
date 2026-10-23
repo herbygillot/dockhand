@@ -80,10 +80,24 @@ func Run(ctx context.Context, args []string, streams term.Streams) error {
 func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams, dependencies compose.Dependencies, mac *host.Host) error {
 	args := line.Args
 	var shared settings.Settings
-	shared.Deps, shared.Host, shared.Env, shared.Dir, shared.Command = dependencies, mac, line.Env, line.Dir, Run
+	var root *cobra.Command
+	// A command typed at status --watch runs in this invocation, its
+	// environment, directory, stand-ins, and host, with the tree, database,
+	// and Git this line chose, where it ran in the process's (Codex's
+	// review of 8c007979, C8-1).
+	nested := func(ctx context.Context, args []string, streams term.Streams) error {
+		var chosen []string
+		for _, name := range []string{"tree", "db", "git"} {
+			if flag := root.PersistentFlags().Lookup(name); flag != nil && flag.Changed {
+				chosen = append(chosen, "--"+name, flag.Value.String())
+			}
+		}
+		return RunWith(ctx, settings.Invocation{Args: append(chosen, args...), Env: line.Env, Dir: line.Dir}, streams, dependencies, mac)
+	}
+	shared.Deps, shared.Host, shared.Env, shared.Dir, shared.Command = dependencies, mac, line.Env, line.Dir, nested
 	streams = term.Begin(streams.WithDisplay(display(line.Env)), args)
 	shared.Streams = streams
-	root := newRoot(&shared, streams)
+	root = newRoot(&shared, streams)
 	// Cobra reads os.Args for nil arguments; Run's are only those given,
 	// so a test binary's own flags never reach a command.
 	root.SetArgs(append([]string{}, args...))

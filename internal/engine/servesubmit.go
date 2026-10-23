@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
@@ -197,6 +198,15 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 			now[key] = e.resolveGit(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
 		}
 		current := now[key]
+		// A current commit that couldn't be read leaves the source's
+		// freshness unknown, which holds serve, as an archive that
+		// couldn't be compared does, and a person's submission says it
+		// and goes on (the person's word, 2026-10-23; Codex's review of
+		// 8c007979, C8-5's gap: it was skipped, and serve submitted).
+		if planned.Commit != "" && current.Commit == "" && current.Unresolved != "" {
+			concerns = append(concerns, unknownSource(target.Target.Name, "git.branch "+planned.Ref, planned.Commit, current.Unresolved, evidence.Run.Name()))
+			continue
+		}
 		if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
 			continue
 		}
@@ -211,6 +221,10 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 			tags[key] = e.resolveTag(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
 		}
 		current := tags[key]
+		if planned.Commit != "" && current.Commit == "" && current.Unresolved != "" && !git.ValidAbbreviation(planned.Ref) {
+			concerns = append(concerns, unknownSource(target.Target.Name, "tag "+planned.Ref, planned.Commit, current.Unresolved, evidence.Run.Name()))
+			continue
+		}
 		if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
 			continue
 		}
@@ -218,6 +232,18 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 			Detail: tagMovedWords(planned, current, evidence.Run.Name(), target.Target.Name)})
 	}
 	return concerns
+}
+
+// sourceUnknownRule is a source whose current commit couldn't be read.
+// It's no rule holds.allow may name: what couldn't be checked holds (D4).
+const sourceUnknownRule = "source-unknown"
+
+// unknownSource is the concern of a source whose current commit couldn't
+// be read, so whether the checked source is the one a submission would use
+// isn't known.
+func unknownSource(port, ref string, planned model.ObjectID, why, run string) model.Concern {
+	return model.Concern{Origin: model.FromUpstream, Port: port, Rule: sourceUnknownRule, Subject: string(planned), Class: model.UnknownBaseline,
+		Detail: fmt.Sprintf("%s: whether %s still points to %s, as when %s was planned, isn't known: %s", port, ref, planned.Short(), run, why)}
 }
 
 // preparedSources are the Git-fetched ports whose update chose a release

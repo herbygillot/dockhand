@@ -35,8 +35,9 @@ type Settings struct {
 	// OverAllowance is --over-allowance: a look goes on past what's left
 	// of the hour's GitHub allowance (allowLook).
 	OverAllowance bool
-	// Command runs a command line as the process does (Run), for one typed
-	// at status --watch's prompt.
+	// Command runs a command line in this one's invocation, its
+	// environment, directory, and tree, database, and Git, for one typed at
+	// status --watch's prompt.
 	Command func(context.Context, []string, term.Streams) error
 	// Deps are the stand-ins for what compose makes, which a test gives;
 	// the real ones where they're empty.

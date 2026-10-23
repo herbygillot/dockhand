@@ -85,3 +85,36 @@ func TestFitHeight(t *testing.T) {
 	require.Equal(t, "a\n  +2 more; dockhand status shows them all", fitHeight("a\nb\nc", 2))
 	require.Equal(t, "a\nb\nc", fitHeight("a\nb\nc", -3), "a height not known")
 }
+
+// A command typed at the watch runs in the watch's own invocation, its
+// environment, directory, tree, and database, where it ran in the
+// process's and failed, or could act on another checkout's branch of the
+// same name (Codex's review of 8c007979, C8-1, its probe).
+func TestAWatchsCommandRunsInTheWatchsInvocation(t *testing.T) {
+	t.Parallel()
+	cmdtest.CheckedBranch(t)
+	cmdtest.Hosted(t).Timings.WatchPoll = 10 * time.Millisecond
+	_, _, err := cmdtest.Dockhand(t, "check")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	typed, typing := io.Pipe()
+	defer typed.Close()
+	defer typing.Close()
+	var viewed cmdtest.SyncBuffer
+	done := make(chan error, 1)
+	go func() {
+		done <- cmdtest.RunFor(t, ctx, []string{"status", "--watch"}, term.Streams{In: typed, Out: &viewed, Err: &viewed}.AsTerminal())
+	}()
+	require.Eventually(t, func() bool { return strings.Contains(viewed.String(), "dockhand status --watch · ") }, cmdtest.Settle, 10*time.Millisecond)
+	_, err = io.WriteString(typing, "l\n")
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return strings.Contains(viewed.String(), "Press Enter to return to status.") }, cmdtest.Settle, 10*time.Millisecond)
+	observed := viewed.String()
+	_, err = io.WriteString(typing, "\nq\n")
+	require.NoError(t, err)
+	require.NoError(t, <-done)
+	require.Contains(t, observed, "$ dockhand logs check-1\n")
+	require.NotContains(t, observed, "dockhand:", "the logs of the check the watch shows, from its tree and database")
+}

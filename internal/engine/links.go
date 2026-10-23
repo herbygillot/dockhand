@@ -50,8 +50,7 @@ func (e *Engine) UndeclaredLinks(ctx context.Context, run model.Run) ([]evidence
 		evaluated[key] = found
 		return found, found != nil
 	}
-	var results []model.TargetResult
-	declared := map[model.TargetID][]string{}
+	var builds []evidence.LinkedBuild
 	for _, target := range checked.Targets {
 		for _, cell := range target.Outcomes {
 			reader, ok := e.Providers[cell.Environment.Provider].(buildenv.LinkReader)
@@ -64,21 +63,24 @@ func (e *Engine) UndeclaredLinks(ctx context.Context, run model.Run) ([]evidence
 			if !ok {
 				result.Links = nil
 			}
-			results = append(results, result)
+			// What this environment declares, judged with its own build
+			// alone (Codex's review of 8c007979, C8-2).
+			var declared []string
 			for _, info := range infos {
-				declared[target.Target.ID] = appendOnce(declared[target.Target.ID], info.Name)
+				declared = appendOnce(declared, info.Name)
 				if !strings.EqualFold(info.Name, builtPort(target.Target.Target)) {
 					continue
 				}
 				for _, dependency := range info.Dependencies {
 					if dependency.Phase == "lib" && dependency.Port != "" {
-						declared[target.Target.ID] = appendOnce(declared[target.Target.ID], dependency.Port)
+						declared = appendOnce(declared, dependency.Port)
 					}
 				}
 			}
+			builds = append(builds, evidence.LinkedBuild{Result: result, Environment: cell.Environment, Declared: declared})
 		}
 	}
-	return evidence.UndeclaredLinks(results, declared), nil
+	return evidence.UndeclaredLinks(builds), nil
 }
 
 // builtPort is the port a target builds: its subport, else its name.

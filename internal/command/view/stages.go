@@ -62,7 +62,17 @@ func LinkWords(finding engine.LinkFinding) string {
 	if finding.Libraries > 1 {
 		more = fmt.Sprintf(" (and %s of its libraries)", prose.Plural(finding.Libraries-1, "more"))
 	}
-	return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib", finding.Target, path.Base(finding.Library), finding.Port, more)
+	// Where it doesn't, since a port's dependencies can differ by
+	// environment (C8-2).
+	where := ""
+	if len(finding.Environments) > 0 {
+		var on []string
+		for _, environment := range finding.Environments {
+			on = append(on, engine.DescribeEnvironment(environment))
+		}
+		where = " on " + prose.And(on)
+	}
+	return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib%s", finding.Target, path.Base(finding.Library), finding.Port, more, where)
 }
 
 // WriteLinks says a check's link findings, each a notice under a heading;

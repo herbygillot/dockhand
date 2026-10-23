@@ -28,3 +28,33 @@ On 2026-10-22 the person passed on Codex's architecture review of rc1's commit, 
 ## The size
 
 rc3 is about two batches. Then grows from about 10.5 to about 14.5 batches: one for the source, one for status gathered once, and two for the assessment as a package.
+
+## rc3's fixes, done (2026-10-23)
+
+- **C8-1**: `RunWith` gives watch a nested runner bound to its own
+  invocation, its environment, directory, stand-ins, and host, with the
+  `--tree`, `--db`, and `--git` the line chose, where it installed the
+  process's `Run`. The review's probe is `TestAWatchsCommandRunsInTheWatchsInvocation`
+  (command/status), which fails without the fix.
+- **C8-3**: `branchstate.Check` carries the decisions beside its evidence,
+  the ports a person accepted at the head, the failures a baseline fails
+  alike, and the standing decisions, which status reads as submit does
+  (`engine.readDecisions`); `Check.Publishable` is the one judgment:
+  passed, or failed with no publication block left. `SubmitReadiness`
+  (serve's candidates and `ship --passing`) and `Attend` (status and
+  `Next:`) read it, an accepted failure going on as a pass does, said
+  "check-3's failures are accepted; waiting for you to submit"
+  (`AcceptedToSubmit`); the run stays failed. `TestAStandingAcceptanceIsOneEligibility`
+  has submit, `PassingBranches`, and status agree, and agree again once a
+  newer libgcc15 lapses the decision.
+- **C8-2**: `evidence.UndeclaredLinks` takes each build, its result,
+  environment, and that environment's declarations
+  (`evidence.LinkedBuild`), and names the environments where a link is
+  undeclared; the review's probe is `TestALinkIsJudgedInTheEnvironmentThatBuiltIt`.
+- **C8-5's gap**: a Git source whose current commit couldn't be read is a
+  concern, `source-unknown`, classed unknown baseline, which holds serve
+  whatever `holds.allow` says, as an uncompared archive does (D4), and a
+  person's submission shows it and goes on (the person's word, 2026-10-23
+  00:23Z).
+- **docs/architecture.md** says X1 is done, where composition lives, the
+  one report value, and branchstate's verdict.

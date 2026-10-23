@@ -109,3 +109,27 @@ func TestFailingCISaysWhyAndWhetherAnotherRunMayPass(t *testing.T) {
 	rows = Attend(Facts{Branch: branch})
 	require.Equal(t, "#35174 MacPorts CI failing: macos-15 (1 hour ago)", rows[0].Words(words{}), "none classified, it's as it was")
 }
+
+// A failed check whose failure a decision accepts is publishable, and goes
+// on as a pass does, said as accepted; one nothing accepts is the failure
+// (Codex's review of 8c007979, C8-3).
+func TestAnAcceptedFailureGoesOnAsAPass(t *testing.T) {
+	failed := &model.Run{Number: 3, State: model.RunFailed}
+	branch := Branch{Record: model.Branch{Name: "dockhand/jq-1.8.2", State: model.BranchOpen}, Commits: 1, Revision: &model.Revision{Kind: model.RevisionCommit}}
+	environment := model.Environment{Provider: "tart"}
+	jq := evidence.TargetEvidence{Target: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed},
+		Outcomes: []evidence.Cell{{TargetResult: model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}, Kind: evidence.CellRecorded, Environment: environment}}}
+	check := Check{Latest: failed, Current: true, Evidence: &evidence.Evidence{Run: *failed, Plan: model.Plan{Environments: []model.Environment{environment}}, Targets: []evidence.TargetEvidence{jq}}}
+	facts := Facts{Branch: branch, Check: check}
+	require.False(t, check.Publishable())
+	require.Equal(t, Failed, Attend(facts)[0].Kind)
+	require.Equal(t, NotReady, SubmitReadiness(facts))
+
+	facts.Check.Accepted, facts.Check.AtBase = []string{"jq"}, map[string][]string{"jq": {"check-4"}}
+	require.True(t, facts.Check.Publishable(), "accepted at this commit, failing at the base alike")
+	require.Equal(t, CheckFailed, facts.Check.Standing(), "what happened stays failed")
+	rows := Attend(facts)
+	require.Equal(t, AcceptedToSubmit, rows[0].Reason)
+	require.Equal(t, "check-3's failures are accepted; waiting for you to submit", rows[0].Words(words{}))
+	require.Equal(t, SubmitReady, SubmitReadiness(facts))
+}

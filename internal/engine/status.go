@@ -25,6 +25,11 @@ import (
 // into one "done".
 type BranchStatus struct {
 	Branch model.Branch
+	// Accepted, AtBase, and Decisions are what publication reads beside a
+	// failed check of the files as they are (branchstate.Check).
+	Accepted  []string
+	AtBase    map[string][]string
+	Decisions []model.Decision
 	// CI are its pull request's failed CI jobs at the head last observed,
 	// as each was classified (classifyCI).
 	CI []model.CIFailure
@@ -222,7 +227,8 @@ func (s BranchStatus) Cleaned() bool {
 // Check is what's recorded of the branch's checks, as the verdict reads
 // it (branchstate.Check).
 func (s BranchStatus) Check() branchstate.Check {
-	return branchstate.Check{Latest: s.Latest, Current: s.Current, Active: s.Active, Stopped: s.Stopped, Evidence: s.Evidence}
+	return branchstate.Check{Latest: s.Latest, Current: s.Current, Active: s.Active, Stopped: s.Stopped, Evidence: s.Evidence,
+		Accepted: s.Accepted, AtBase: s.AtBase, Decisions: s.Decisions}
 }
 
 // Facts are what's recorded of the branch, as the verdict reads it
@@ -404,7 +410,34 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 	if status.Current {
 		status.Moved = preparedSources(status.Evidence, edits)
 	}
+	if err == nil && status.Current && len(evidence.Failed()) > 0 {
+		err = e.readDecisions(ctx, &status)
+	}
 	return status, err
+}
+
+// readDecisions reads what publication reads of a branch beside its
+// failed check, as submit does: the failures a person accepted at its
+// head, those a baseline fails alike, and the standing decisions, so
+// status, serve's candidates, and ship --passing judge them as submit
+// does (Codex's review of 8c007979, C8-3).
+func (e *Engine) readDecisions(ctx context.Context, status *BranchStatus) error {
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		decisions, err := r.Decisions(status.Branch.ID, model.FindingFailure, status.Head)
+		if err != nil {
+			return err
+		}
+		for _, d := range decisions {
+			status.Accepted = append(status.Accepted, d.Subject)
+		}
+		status.Decisions, err = r.StandingDecisions(model.FindingEnvironmentFailure)
+		return err
+	}); err != nil {
+		return err
+	}
+	atBase, err := e.failsAtBase(ctx, status.Branch.ID, *status.Evidence)
+	status.AtBase = atBase
+	return err
 }
 
 // compareIncluded compares the files as they are now with a snapshot that

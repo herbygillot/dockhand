@@ -18,6 +18,32 @@ type Check struct {
 	Stopped *model.Run
 	// Evidence is what the checks of the files as they are establish.
 	Evidence *evidence.Evidence
+	// Accepted are the ports whose failures a person accepted at this
+	// commit, AtBase the failed ports a baseline fails alike, with the
+	// baselines, and Decisions the standing ones that may take a
+	// dependency's failure: what publication reads beside the evidence
+	// (Publishable).
+	Accepted  []string
+	AtBase    map[string][]string
+	Decisions []model.Decision
+}
+
+// Publishable reports whether the files' checks let them be published:
+// passed, or failed with no publication block left once the decisions
+// that stand for this evidence are read, a person's at this commit or a
+// standing one (PublicationBlocks). The run's outcome stays failed;
+// acceptance changes whether the work goes on, not what happened. It's
+// the one judgment submit, serve's candidates, ship --passing, attention,
+// and Next: read, where submit took a standing acceptance and the rest
+// didn't (Codex's review of 8c007979, C8-3).
+func (c Check) Publishable() bool {
+	switch c.Standing() {
+	case CheckPassed:
+		return c.Evidence != nil
+	case CheckFailed:
+		return c.Evidence != nil && len(PublicationBlocks(*c.Evidence, c.Accepted, c.AtBase, StandingAccepted(*c.Evidence, c.Decisions))) == 0
+	}
+	return false
 }
 
 // Standing is what a branch's checks establish of its files as they are
