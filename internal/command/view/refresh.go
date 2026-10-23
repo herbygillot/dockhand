@@ -18,6 +18,9 @@ func WriteRefreshed(out io.Writer, refreshed engine.RefreshResult) error {
 			fmt.Fprintf(out, "%s: could not read #%d: %v\n", r.Branch.ShortName(), r.Branch.PullRequest.Number, r.Err)
 		}
 	}
+	if words := refreshed.UnreadWords(); words != "" {
+		fmt.Fprintln(out, words)
+	}
 	if refreshed.Refused != nil {
 		return refusedRead{refreshed.Refused}
 	}

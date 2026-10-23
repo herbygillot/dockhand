@@ -617,6 +617,9 @@ func (f *follower) maybe(ctx context.Context) {
 	case err != nil:
 		report(fmt.Sprintf("serve: could not read pull requests: %v", err))
 	}
+	if words := refreshed.UnreadWords(); words != "" {
+		report("serve: " + words)
+	}
 	for _, r := range refreshed.Branches {
 		if r.Err != nil {
 			report(fmt.Sprintf("serve: could not read %s's #%d: %v", r.Branch.ShortName(), r.Branch.PullRequest.Number, r.Err))

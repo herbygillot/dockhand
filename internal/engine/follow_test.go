@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -237,4 +238,81 @@ func TestPullRequestsAreReadAtOnceWhereTheForgeCan(t *testing.T) {
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.EqualError(t, refreshed.Branches[0].Err, "#34901 was not found")
+}
+
+// anonymousForge is GitHub without a login: no read over many pull
+// requests, and each one read a request of an hourly allowance, which a
+// rate limit ends.
+type anonymousForge struct {
+	*forgetest.GitHub
+	allowance int
+	read      []int
+	state     map[int]forge.PullRequestState
+}
+
+func (a *anonymousForge) ReadPullRequests(context.Context, []forge.PullRequestRef) ([]forge.PullRequestReading, error) {
+	return nil, github.ErrNoCredentials
+}
+
+func (a *anonymousForge) Observe(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	if a.allowance == 0 {
+		return forge.PullRequestObservation{}, &forge.RateLimitError{RetryAt: time.Date(2026, 10, 23, 15, 4, 0, 0, time.UTC), Err: fmt.Errorf("rate limited")}
+	}
+	a.allowance--
+	a.read = append(a.read, ref.Number)
+	state, ok := a.state[ref.Number]
+	if !ok {
+		state = forge.PullRequestOpen
+	}
+	return forge.PullRequestObservation{Found: true, PullRequest: forge.PullRequest{Ref: ref, State: state}}, nil
+}
+
+// Signed out, a refresh reads the open branches' pull requests, the
+// newest first, and none of the closed ones, which a signed-in refresh
+// reads: logged out, serve read 15 closed test pull requests, spent
+// GitHub's anonymous 60 an hour, and never saw #88 close (rc5's D-C2).
+// Where the limit stops it, it says how many it left and when.
+func TestASignedOutRefreshReadsOpenPullRequestsNewestFirst(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	base := committedUpdate(t, e)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		for i := range 16 {
+			branch := base
+			branch.ID, branch.Name = model.BranchID(store.NewID("br")), fmt.Sprintf("%sjq-%d", model.BranchPrefix, i)
+			branch.Worktree = filepath.Join(t.TempDir(), "jq")
+			branch.State, branch.EndedAt = model.BranchClosed, time.Now()
+			if i == 15 {
+				branch.State, branch.EndedAt = model.BranchOpen, time.Time{}
+			}
+			branch.PullRequest = &model.PullRequest{Repository: "macports/macports-ports", Number: 73 + i, Head: "ada/macports-ports:" + branch.Name}
+			if err := tx.AddBranch(branch); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	anonymous := &anonymousForge{GitHub: forgetest.New(f.upstream, ""), allowance: 60, state: map[int]forge.PullRequestState{88: forge.PullRequestClosed}}
+	e.Forge = anonymous
+	refreshed, err := e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []int{88}, anonymous.read, "the open one, and no closed one")
+	require.Len(t, refreshed.Branches, 1)
+	require.Equal(t, []string{"#88 is closed"}, refreshed.Branches[0].Changes, "and it sees #88 close")
+	require.Equal(t, model.BranchClosed, refreshed.Branches[0].Branch.State)
+	require.Empty(t, refreshed.UnreadWords())
+
+	// With the allowance spent, the refresh stops, and says what's left.
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		branch := base
+		branch.ID, branch.Name, branch.Worktree = model.BranchID(store.NewID("br")), model.BranchPrefix+"jq-new", filepath.Join(t.TempDir(), "new")
+		branch.PullRequest = &model.PullRequest{Repository: "macports/macports-ports", Number: 99, Head: "ada/macports-ports:dockhand/jq-new"}
+		return tx.AddBranch(branch)
+	}))
+	anonymous.allowance = 0
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, refreshed.Unread)
+	require.Equal(t, "GitHub’s rate limit left 1 pull request unread. Reading again after "+time.Date(2026, 10, 23, 15, 4, 0, 0, time.UTC).Local().Format("15:04 MST"), refreshed.UnreadWords())
 }

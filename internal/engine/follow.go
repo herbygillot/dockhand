@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -29,6 +31,19 @@ type Refreshed struct {
 type RefreshResult struct {
 	Branches []Refreshed
 	Refused  error
+	// Unread counts the pull requests a rate limit left unread, and
+	// RetryAt is when it lifts; zero where none stopped the refresh.
+	Unread  int
+	RetryAt time.Time
+}
+
+// UnreadWords say how many pull requests a rate limit left unread, and
+// when it lifts, as the day's look says its own; empty where none did.
+func (r RefreshResult) UnreadWords() string {
+	if r.Unread == 0 {
+		return ""
+	}
+	return fmt.Sprintf("GitHub’s rate limit left %s unread. Reading again after %s", prose.Plural(r.Unread, "pull request"), r.RetryAt.Local().Format("15:04 MST"))
 }
 
 // PullRequestRefresh is how often serve reads the pull requests, and how
@@ -63,17 +78,35 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 	}
 	var result RefreshResult
 	var observed []observedPullRequest
-	read, err := e.readPullRequests(ctx, branches)
+	read, signedIn, err := e.readPullRequests(ctx, branches)
 	if refused(err) {
 		return RefreshResult{Refused: err}, nil
 	}
-	for _, branch := range branches {
+	// Signed out, each pull request is a request of GitHub's 60 an hour:
+	// the open branches go, newest first, and the closed ones wait for a
+	// signed-in refresh, which sees a reopening. Logged out, serve read
+	// 15 closed test pull requests, spent the hour's allowance, and never
+	// saw #88 close (rc5's D-C2).
+	if !signedIn {
+		branches = openNewestFirst(branches)
+	}
+	for i, branch := range branches {
 		if branch.PullRequest == nil {
 			continue
 		}
 		next, err := read(ctx, branch.PullRequest)
 		if refused(err) {
 			result.Refused = err
+			break
+		}
+		// The rest would be refused alike: they wait for the limit.
+		if limit := new(forge.RateLimitError); errors.As(err, &limit) {
+			for _, rest := range branches[i:] {
+				if rest.PullRequest != nil {
+					result.Unread++
+				}
+			}
+			result.RetryAt = limit.RetryAt
 			break
 		}
 		o := observedPullRequest{branch: branch, next: next, err: err}
@@ -103,6 +136,19 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 	return result, err
 }
 
+// openNewestFirst are the open branches with a pull request, the newest
+// pull request first.
+func openNewestFirst(branches []model.Branch) []model.Branch {
+	var open []model.Branch
+	for _, branch := range branches {
+		if branch.State == model.BranchOpen && branch.PullRequest != nil {
+			open = append(open, branch)
+		}
+	}
+	slices.SortStableFunc(open, func(a, b model.Branch) int { return cmp.Compare(b.PullRequest.Number, a.PullRequest.Number) })
+	return open
+}
+
 // refused reports a read the forge refused altogether, as it refuses a
 // rejected or ended login for every pull request.
 func refused(err error) bool {
@@ -114,11 +160,12 @@ func refused(err error) bool {
 // API), and gives what reads each: what that read found, or
 // observePullRequest's own read for one it couldn't say all of, or where
 // the forge can't read many at once. A read over all of them that fails,
-// but for a refusal, leaves each to its own.
-func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) (func(context.Context, *model.PullRequest) (model.PullRequestObservation, error), error) {
+// but for a refusal, leaves each to its own. signedIn is false where the
+// forge has no credentials, so each read is one of its anonymous ones.
+func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) (_ func(context.Context, *model.PullRequest) (model.PullRequestObservation, error), signedIn bool, _ error) {
 	reader, ok := e.forge().(forge.PullRequestReader)
 	if !ok {
-		return e.observePullRequest, nil
+		return e.observePullRequest, true, nil
 	}
 	var refs []forge.PullRequestRef
 	for _, branch := range branches {
@@ -127,16 +174,16 @@ func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) 
 		}
 	}
 	if len(refs) == 0 {
-		return e.observePullRequest, nil
+		return e.observePullRequest, true, nil
 	}
 	readings, err := reader.ReadPullRequests(ctx, refs)
 	switch {
 	// GitHub's GraphQL API takes only a signed-in request, and a public
 	// pull request is read without one, a request at a time.
 	case errors.Is(err, github.ErrNoCredentials):
-		return e.observePullRequest, nil
+		return e.observePullRequest, false, nil
 	case err != nil:
-		return e.observePullRequest, err
+		return e.observePullRequest, true, err
 	}
 	byNumber := map[forge.PullRequestRef]forge.PullRequestReading{}
 	for _, reading := range readings {
@@ -151,7 +198,7 @@ func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) 
 			return model.PullRequestObservation{}, fmt.Errorf("#%d was not found", pr.Number)
 		}
 		return e.observation(reading.PullRequest, reading.Status), nil
-	}, nil
+	}, true, nil
 }
 
 // observation is a pull request's reading as the branch records it: its
