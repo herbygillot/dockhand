@@ -58,6 +58,8 @@ s1_pid() {
 act() {
 	host_only "a day of serve on the host" || return 0
 	allow_change "*"
+	# The checks queued before the row, which its teardown leaves be.
+	s1_queue >"$ROW_DIR/queue.before"
 	dh serve --install || return 0
 	local i waited
 	# The first sample is serve's, once it has started under launchd.
@@ -82,6 +84,7 @@ act() {
 	# what that stopped, so the VMs listed are what serve left behind.
 	s1_idle || printf '%s serve still busy after %s minutes; uninstalling, and draining what it leaves\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(drain_minutes)" >>"$ROW_DIR/samples"
 	dh serve --uninstall || :
+	s1_cancel_queued
 	dh serve --drain || :
 	fault_tart list 2>/dev/null >"$ROW_DIR/vms" || :
 }
@@ -102,7 +105,30 @@ s1_idle() {
 	return 1
 }
 
+# s1_queue lists the checks queued or running, a name a line.
+s1_queue() {
+	dh_quiet --json status --all | jq -r '.result.queue[]? | "\(.name) \(.state)"' 2>/dev/null
+}
+
+# s1_cancel_queued cancels each check serve queued during the row that
+# hasn't started: its daily look queued 24, check-453 to check-476, which
+# the next serve --drain set about building (v0.4.0-rc5's soak). One it
+# started, stopped by the uninstall, is drain's to finish.
+s1_cancel_queued() {
+	local name state
+	[ -f "$ROW_DIR/queue.before" ] || return 0
+	s1_queue | while read -r name state; do
+		[ "$state" = queued ] || continue
+		grep -q "^$name " "$ROW_DIR/queue.before" && continue
+		dh cancel "$name" </dev/null || :
+	done
+}
+
+# The row's serve is uninstalled and its queued checks canceled however
+# act ended, before the config goes back.
 teardown() {
+	"$DH_BIN" serve --uninstall >/dev/null 2>&1 || :
+	s1_cancel_queued
 	[ -f "$ROW_DIR/config.before" ] && cp "$ROW_DIR/config.before" "$DOCKHAND_CONFIG"
 	return 0
 }

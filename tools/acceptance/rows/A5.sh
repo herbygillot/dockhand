@@ -1,7 +1,7 @@
 # stages: quick full
 # A5: the upgrade path. A copy of the person's database at the schema
-# before the candidate's newest (ACCEPT_REAL_DB: unless set, the
-# ~/.dockhand/dockhand.db.schema-N an earlier migration kept, else
+# before the candidate's newest or earlier (ACCEPT_REAL_DB: unless set, the
+# newest ~/.dockhand/dockhand.db.schema-N an earlier migration kept, else
 # ~/.dockhand/dockhand.db; copied with SQLite's backup, which only reads
 # it) is opened by the build before that schema, then by the candidate: the migration says so and keeps the copy
 # of the old schema; status --all lists the same branches before and
@@ -17,7 +17,17 @@ setup() {
 	previous=$((10#${newest%.sql} - 1))
 	if [ -z "${ACCEPT_REAL_DB:-}" ]; then
 		ACCEPT_REAL_DB=$HOME/.dockhand/dockhand.db
-		[ -f "$HOME/.dockhand/dockhand.db.schema-$previous" ] && ACCEPT_REAL_DB=$HOME/.dockhand/dockhand.db.schema-$previous
+		# The newest copy kept at or before the schema before: a migration
+		# keeps the schema it started from, so dhtest's went from 32 to 39
+		# and kept 32's, where only a 38 was looked for (the rc4 full
+		# stage). The build before migrates it the rest of the way first.
+		local kept n best=0
+		for kept in "$HOME"/.dockhand/dockhand.db.schema-*; do
+			[ -f "$kept" ] || continue
+			n=${kept##*.schema-}
+			case "$n" in '' | *[!0-9]*) continue ;; esac
+			[ "$((10#$n))" -le "$previous" ] && [ "$((10#$n))" -gt "$best" ] && best=$((10#$n)) && ACCEPT_REAL_DB=$kept
+		done
 	fi
 	: "${ACCEPT_REAL_TREE:=${ACCEPT_PORTS_SOURCE:-$HOME/Source/macports-ports}}"
 	# Without a database of the person's, there's nothing to migrate, and

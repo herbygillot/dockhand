@@ -74,6 +74,11 @@ act() {
 			# left open: D-I7's go-reflex branch sorted first, and the
 			# examples ran in it (the rc3 rerun, 2026-10-17).
 			branch=$(a10_branch "$name")
+			# The row's stamped name first, as update --new=<name> made it: an
+			# earlier row's branch of the same name, A4's dblab-update, sorted
+			# first by its newer commit, and submit refused its closed pull
+			# request (the rc4 full stage).
+			"$DH_BIN" path "$(run_name "$name")" >/dev/null 2>&1 && branch=$(run_name "$name")
 			if [ -n "$branch" ] && dir=$("$DH_BIN" path "$branch"); then
 				printf '$ cd %s\n' "$dir" >>"$ROW_DIR/out.log"
 			else

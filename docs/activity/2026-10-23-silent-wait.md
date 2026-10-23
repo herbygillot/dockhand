@@ -69,3 +69,22 @@ check.
 
 D-R2 stays at the default level on purpose. It tests 74426269, a wait
 said at every level.
+
+## The harness: the rc4 full stage's four
+
+These are harness fixes; nothing in dockhand changed.
+
+- **A10** goes to its own stamped branch, the one its `update
+  --new=<name>` made, before any other branch of the docs' name. A4's
+  `dblab-update` sorted first by its newer commit, and `submit` refused
+  its closed pull request.
+- **A5** copies the newest database a migration kept at or before the
+  schema before the candidate's. dhtest's went from 32 to 39 and kept
+  32's, where only 38's was looked for. The build before migrates the copy
+  the rest of the way first.
+- **D-C2** looks for rc4's words, "serve: no GitHub credentials are
+  available", where it looked for "no GitHub login now".
+- **S1** cancels each check serve queued during the row that hadn't
+  started, after it uninstalls serve and again in its teardown. A drain
+  then finishes only what the uninstall stopped. v0.4.0-rc5's soak left
+  24 of its daily look's checks queued, which the next drain built.
