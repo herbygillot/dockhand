@@ -131,6 +131,51 @@ func (r *Repository) BranchWasAt(ctx context.Context, branch, object string) (bo
 	return false, nil
 }
 
+// Amends reports whether a commit is another's amended: made on the same
+// first parent, or holding in its tree each file the other changes as the
+// other has it. An empty commit is amended only on its parent, since
+// nothing of it is in any tree: D-S1's outside commit, reset away and
+// replaced by a commit on master, was "amended" by a tree that held none
+// of its changes (the rc4 full stage).
+func (r *Repository) Amends(ctx context.Context, commit, other string) (bool, error) {
+	if !ValidObjectID(commit) || !ValidObjectID(other) {
+		return false, fmt.Errorf("git: amends requires literal commit IDs")
+	}
+	parent, err := r.Resolve(ctx, commit+"^")
+	if err != nil {
+		return false, err
+	}
+	theirs, err := r.Resolve(ctx, other+"^")
+	if err != nil {
+		return false, err
+	}
+	if parent == theirs {
+		return true, nil
+	}
+	changed, err := r.ChangedPaths(ctx, theirs, other)
+	if err != nil || len(changed) == 0 {
+		return false, err
+	}
+	trees, err := r.CommitTrees(ctx, []string{commit, other})
+	if err != nil {
+		return false, err
+	}
+	mine, err := r.FileBlobs(ctx, trees[commit], changed)
+	if err != nil {
+		return false, err
+	}
+	their, err := r.FileBlobs(ctx, trees[other], changed)
+	if err != nil {
+		return false, err
+	}
+	for _, path := range changed {
+		if mine[path] != their[path] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 // DeleteRemoteBranch removes a remote branch only while it still holds the
 // expected commit, using the same lease the push path relies on. A branch that
 // is already gone is not an error; a moved branch is a RefConflict.

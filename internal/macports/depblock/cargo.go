@@ -67,11 +67,11 @@ func generateCargo(ctx context.Context, executable string, in Input) (GeneratedB
 	if err := os.WriteFile(filename, data, 0600); err != nil {
 		return GeneratedBlocks{}, err
 	}
-	output, err := run(ctx, executable, directory, filename)
+	result, err := run(ctx, executable, directory, filename)
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}
-	values, err := generated(output, Cargo)
+	values, err := generated(result.Output, Cargo)
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}

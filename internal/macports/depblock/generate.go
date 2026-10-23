@@ -33,17 +33,17 @@ type GeneratedBlocks struct {
 	Relabelled []GitCrate
 }
 
-func run(ctx context.Context, executable, directory string, args ...string) ([]byte, error) {
+func run(ctx context.Context, executable, directory string, args ...string) (subprocess.Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: filepath.Base(executable), Path: executable, Args: args, Dir: directory, Limit: maxManifestBytes})
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return subprocess.Result{}, ctx.Err()
 		}
-		return nil, fmt.Errorf("dependency: %w", err)
+		return subprocess.Result{}, fmt.Errorf("dependency: %w", err)
 	}
-	return result.Output, nil
+	return result, nil
 }
 func Generate(ctx context.Context, kind, executable string, in Input) (GeneratedBlocks, error) {
 	if kind == Go {

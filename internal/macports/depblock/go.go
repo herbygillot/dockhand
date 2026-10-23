@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -97,15 +98,18 @@ func generateGo(ctx context.Context, executable string, in Input) (GeneratedBloc
 	} else {
 		subdir = "/"
 	}
-	output, err := run(ctx, executable, directory, "get", "--dir", subdir, "--", in.Package, in.Tag)
+	result, err := run(ctx, executable, directory, "get", "--dir", subdir, "--", in.Package, in.Tag)
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}
-	values, err := generated(output, Go)
+	values, err := generated(result.Output, Go)
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}
 	rows, err := goRows(values)
+	if missing := new(MissingChecksum); errors.As(err, &missing) {
+		return GeneratedBlocks{}, unfetched(*missing, result.Stderr)
+	}
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}
@@ -253,6 +257,36 @@ func unprunedGraph(ctx context.Context, in Input, mod *modfile.File) error {
 	return fmt.Errorf("dependency: go.mod says %s, before 1.17, so it needn't require every module its build reads, and go2port writes go.mod's alone; go.sum has the source of %s too, which go.vendors needs by hand: add %s, as go.sum pins %s, with the checksums port -v checksum reports for %s archive", version, strings.Join(missing, ", "), strings.Join(rows, "; "), map[bool]string{true: "it", false: "them"}[len(rows) == 1], map[bool]string{true: "its", false: "each one's"}[len(rows) == 1])
 }
 
+// MissingChecksum is a go.vendors row whose sha256 isn't one: go2port
+// writes 0 for a module whose archive it couldn't fetch.
+type MissingChecksum struct{ Module, Lock string }
+
+func (m *MissingChecksum) Error() string {
+	return fmt.Sprintf("dependency: %s %s has no sha256 checksum", m.Module, m.Lock)
+}
+
+// goTarballMissing is go2port's word for an archive it couldn't fetch.
+var goTarballMissing = regexp.MustCompile(`(?m)^Could not retrieve tarball for (\S+); HTTP status=(\d+)`)
+
+// unfetched says why go2port wrote a module no checksum, from what it
+// wrote to standard error: terraform-ls 0.38.8's go.sum pins
+// github.com/chigopher/pathlib, whose repository is gone, and the update
+// refused with "missing generated Go checksum", which named neither the
+// module nor why (the corpus, 2026-10-23).
+func unfetched(missing MissingChecksum, stderr []byte) error {
+	for _, match := range goTarballMissing.FindAllSubmatch(stderr, -1) {
+		if string(match[1]) != missing.Module {
+			continue
+		}
+		gone := ""
+		if string(match[2]) == "404" {
+			gone = "; its repository may be gone"
+		}
+		return fmt.Errorf("dependency: go2port couldn't fetch %s %s's archive (HTTP %s)%s, so it wrote the module no checksum", missing.Module, missing.Lock, match[2], gone)
+	}
+	return fmt.Errorf("dependency: go2port wrote %s %s no checksum", missing.Module, missing.Lock)
+}
+
 func goRows(values []string) ([][]string, error) {
 	var rows [][]string
 	for i := 0; i < len(values); {
@@ -271,7 +305,13 @@ func goRows(values []string) ([][]string, error) {
 				return nil, fmt.Errorf("dependency: incomplete or duplicate Go field")
 			}
 			if key == "sha256" && !sha256Value(values[i+1]) {
-				return nil, fmt.Errorf("dependency: missing generated Go checksum")
+				lock := ""
+				for j := start + 1; j+1 < i; j += 2 {
+					if values[j] == "lock" {
+						lock = values[j+1]
+					}
+				}
+				return nil, &MissingChecksum{Module: values[start], Lock: lock}
 			}
 			seen[key] = true
 			i += 2

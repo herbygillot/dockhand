@@ -652,11 +652,20 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	// as theirs amended in turn, which MacPorts' one commit a change asks
 	// for, where the branch's reflog shows it at their commit
 	// (py-coremltools, #35220, the Vx language port session at 7a38bfff
-	// and a0470412). One over a commit the branch was never at holds.
+	// and a0470412) and the commit is theirs amended: on their parent, or
+	// with their changes in its tree. A reflog that once saw their commit
+	// isn't enough: pulled, reset away, and replaced, it was overwritten
+	// (the rc4 full stage, D-S1). One over a commit the branch was never
+	// at holds.
 	builtOn := plan.RemoteHead.Exists && model.ObjectID(plan.RemoteHead.Object) == pr.RemoteHead && !plan.Replaces
 	if !builtOn && plan.RemoteHead.Exists && model.ObjectID(plan.RemoteHead.Object) == pr.RemoteHead {
 		if builtOn, err = worktree.BranchWasAt(ctx, plan.Branch.Name, string(pr.RemoteHead)); err != nil {
 			return err
+		}
+		if builtOn {
+			if builtOn, err = worktree.Amends(ctx, plan.Commit, string(pr.RemoteHead)); err != nil {
+				return err
+			}
 		}
 	}
 	if last := plan.Branch.PullRequest; last != nil && last.Pushed != "" && pr.RemoteHead != last.Pushed && string(pr.RemoteHead) != plan.Commit && !builtOn {

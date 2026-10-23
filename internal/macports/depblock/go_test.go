@@ -29,3 +29,17 @@ func TestAModuleIsItsPackageButForItsMajorVersion(t *testing.T) {
 		require.False(t, samePackage(moved[0], moved[1]), "%s moved from %s", moved[0], moved[1])
 	}
 }
+
+// A module go2port couldn't fetch is named, with why, where go2port wrote
+// it a checksum of 0: terraform-ls's github.com/chigopher/pathlib, whose
+// repository is gone (the corpus, 2026-10-23).
+func TestAModuleGo2portCouldntFetchIsNamed(t *testing.T) {
+	t.Parallel()
+	_, err := goRows([]string{"github.com/chigopher/pathlib", "lock", "v0.15.0", "sha256", "0", "size", "0"})
+	missing := new(MissingChecksum)
+	require.ErrorAs(t, err, &missing)
+	require.Equal(t, MissingChecksum{Module: "github.com/chigopher/pathlib", Lock: "v0.15.0"}, *missing)
+	stderr := []byte("WARNING: Could not calculate checksums for package: github.com/chigopher/pathlib\nCould not retrieve tarball for github.com/chigopher/pathlib; HTTP status=404\nExpected at: https://github.com/chigopher/pathlib/tarball/v0.15.0\n")
+	require.EqualError(t, unfetched(*missing, stderr), "dependency: go2port couldn't fetch github.com/chigopher/pathlib v0.15.0's archive (HTTP 404); its repository may be gone, so it wrote the module no checksum")
+	require.EqualError(t, unfetched(*missing, nil), "dependency: go2port wrote github.com/chigopher/pathlib v0.15.0 no checksum")
+}

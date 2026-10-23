@@ -3,7 +3,7 @@
 git-credential-oauth	security/git-credential-oauth	30269f94ba3	0.17.2	plans	go.vendors rows with their own sums and sizes, which golang 1.0 appends one by one (rc4's refusal, 52d14a6c)
 direnv	devel/direnv	2ee0f9aedc6	2.37.1	plans	a go.mod module with its major version, github.com/direnv/direnv/v2 (8f8a3919)
 opkssh	net/opkssh	538f708756a	0.17.0	plans	a go.vendors block of about 500 lines, the longest that plans, past the RPC frame limit before 8f8a3919
-terraform-ls	devel/terraform-ls	0d4f359a9d5	0.39.0	refuses: missing generated Go checksum	a long go.vendors block that lists github.com/chigopher/pathlib, whose repository is gone: go2port writes it no checksum, so the block can't be checked against 0.38.8's source
+terraform-ls	devel/terraform-ls	0d4f359a9d5	0.39.0	refuses: go2port couldn't fetch github.com/chigopher/pathlib v1.0.0's archive (HTTP 404)	a long go.vendors block that lists github.com/chigopher/pathlib, whose repository is gone: go2port writes it no checksum, so the block can't be checked against 0.38.8's source, and the refusal names it
 mailpit	mail/mailpit	47c768c52ef	1.31.4	plans	a mid-sized go.vendors block, field testing's second go.vendors port
 go-reflex	sysutils/go-reflex	e9c4372f153	0.3.2	plans	a small go.vendors port, bumped by dockhand itself
 caddy	www/caddy	9b6d1e5c1ee	2.11.7	refuses: edits dependency manifests	the longest go.vendors block, whose patch edits go.mod: the designed refusal

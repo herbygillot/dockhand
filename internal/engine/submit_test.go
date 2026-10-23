@@ -247,6 +247,27 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Equal(t, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")), fake.ForkHead("dockhand/jq-update"))
+
+	// Pulled, reset away, and replaced by an amend of the branch's own
+	// commit, theirs is someone else's push still, though the reflog once
+	// saw it: the replacement isn't theirs amended (the rc4 full stage,
+	// D-S1, herbyg-test/macports-ports#84).
+	ours := strings.TrimSpace(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
+	testsupport.Git(t, other, "pull", "-q", "--rebase=false", "origin", "dockhand/jq-update")
+	write(t, other, map[string]string{"README": "theirs, a third time\n"})
+	testsupport.Git(t, other, "commit", "-q", "-am", "their third change")
+	testsupport.Git(t, other, "push", "-q", "origin", "dockhand/jq-update")
+	third := strings.TrimSpace(testsupport.Git(t, other, "rev-parse", "HEAD"))
+	testsupport.Git(t, branch.Worktree, "fetch", "-q", fake.Fork, "dockhand/jq-update")
+	testsupport.Git(t, branch.Worktree, "reset", "-q", "--hard", third)
+	testsupport.Git(t, branch.Worktree, "reset", "-q", "--hard", ours)
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# amended over ours\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-a", "--amend", "-m", "jq: amended from ours")
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Len(t, plan.Blocking, 1)
+	require.Contains(t, plan.Blocking[0], "someone else pushed to #34901")
+	require.Equal(t, model.ObjectID(third), plan.OthersPushed)
 }
 
 func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {
