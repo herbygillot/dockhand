@@ -29,3 +29,22 @@ Both go to prioritization. BurntSushi/toml, cobra, testify, licensecheck,
 and jlaffaye/ftp are current.
 
 The full gate passes, and the corpus, 14 of 14 in 3 min 10 s.
+
+# The harness: a fixture port that's current
+
+Prime-time on rc5: B4 failed because its Go fixture port, dblab, was
+already current, after MacPorts updated it to 0.53.0 (983bca05f8f).
+`update dblab --new` rightly made no branch, and the row went on to run
+`check -b null`. D-C4, F5, F7, and D-I5 build on the same fixture update.
+
+- **dh_setup:** an `update ... --new` that made no branch of the row's own
+  (`own_branch`) now leaves the row "not run". It says the fixture port is
+  current and to name one that's due, and returns, so no row goes on
+  without a branch. Every row's setup update goes through it.
+- **full.sh:** before any row runs, it asks the installed dockhand,
+  where one is, whether ACCEPT_GO_PORT and ACCEPT_RUST_PORT are due
+  (`outdated --json`). If either is current it stops, naming it. Picking
+  the fixture from the ports that are due is left out: the full stage's
+  rows need a small Go and Rust port of a known shape, which is a person's
+  choice.
+- The harness self-test and path-check pass.
