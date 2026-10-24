@@ -90,3 +90,18 @@ func TestABuildsTagSaysWhatFindsItsSource(t *testing.T) {
 	installed := Info{Version: running.Version}
 	require.Equal(t, Source{Commit: "2bbcfdb76480"}, sourceOf(installed.Tag(), installed), "go install from the module proxy records no revision, and the tag's abbreviation is all there is")
 }
+
+// A release is a tag with no pre-release or build part; an rc, a
+// pseudo-version, a modified build, and devel are not, and each says how
+// to reach it (2026-10-24).
+func TestReleasedAndTheWayToABuild(t *testing.T) {
+	for version, want := range map[string]bool{"v0.4.0": true, "v0.4.0 (5897a828e1c2)": true, "v0.5.0-rc5 (6246e4b9eb84)": false,
+		"v0.5.1-0.20261024120000-0123456789ab": false, "v0.4.0 (5897a828e1c2, modified)": false, "devel (abcdef123456)": false, "": false} {
+		_, got := Released(version)
+		require.Equal(t, want, got, version)
+	}
+	require.Equal(t, "dockhand v0.4.0 comes with the port's upgrade, sudo port upgrade dockhand", Way("v0.4.0 (5897a828e1c2)"))
+	require.Equal(t, "it was built from commit 0123456789ab of "+ProjectURL, Way("v0.5.1-0.20261024120000-0123456789ab"))
+	require.Equal(t, "it was built from commit abcdef123456 of "+ProjectURL, Way("devel (abcdef123456, modified)"))
+	require.Empty(t, Way("devel"))
+}

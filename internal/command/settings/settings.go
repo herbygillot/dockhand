@@ -114,6 +114,19 @@ func (s *Settings) Open(ctx context.Context) (*engine.Engine, error) {
 			assembly, err = compose.Open(ctx, options, s.Dependencies())
 		}
 	}
+	if refused := new(engine.ReleaseUnderMigrationError); errors.As(err, &refused) && s.Streams.Terminal() {
+		// A development or rc build opening a release's database: the
+		// person decides, since the release can't open it after (the
+		// exiv2 session's notes, 2026-10-24).
+		migrate, askErr := s.Streams.AskYes(fmt.Sprintf("%v.\n? Migrate it anyway? Its schema %d form is kept at %s. [y/N] ", refused.ReleaseUnderMigrationError, refused.From, refused.Copy), false)
+		if askErr != nil {
+			return nil, askErr
+		}
+		if migrate {
+			options.MigrateRelease = true
+			assembly, err = compose.Open(ctx, options, s.Dependencies())
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

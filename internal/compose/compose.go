@@ -41,6 +41,9 @@ type Options struct {
 	// MigrateUnderLive migrates the database though a process on the
 	// older schema is working, as the person answered.
 	MigrateUnderLive bool
+	// MigrateRelease migrates a database a release last opened with a
+	// build that isn't one, as the person answered.
+	MigrateRelease bool
 	// NamesBranch is a command naming a branch, which run outside any
 	// checkout finds the one the database registered (registeredCheckout).
 	NamesBranch bool
@@ -266,6 +269,7 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		IndexMirror:      options.Getenv("DOCKHAND_INDEX_MIRROR"),
 		Home:             places.Home,
 		MigrateUnderLive: options.MigrateUnderLive,
+		MigrateRelease:   options.MigrateRelease,
 	}, file, configPath, nil
 }
 

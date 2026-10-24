@@ -18,6 +18,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -1658,4 +1659,59 @@ func TestAForgottenBranchKeepsOnlyWhatOthersName(t *testing.T) {
 	var violations int
 	require.NoError(t, f.db(t).QueryRow("SELECT count(*) FROM pragma_foreign_key_check").Scan(&violations))
 	require.Zero(t, violations)
+}
+
+// A development or rc build doesn't migrate, unasked, a database a release
+// last opened, since the release couldn't open it after: the exiv2
+// session's read-only status on a main build locked the installed v0.4.0
+// out (2026-10-24). Asked, it migrates; a release migrates it unasked, as
+// the port's upgrade.
+func TestADevelopmentBuildAsksBeforeMigratingAReleasesDatabase(t *testing.T) {
+	t.Parallel()
+	ended := "INSERT INTO repositories VALUES('repo_1', '/src/macports-ports/.git', 0);\n" +
+		"INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_1','foreground',101,'p','v0.4.0 (5897a828e1c2)',1,1,2);"
+	path := schemaAt(t, 32, ended)
+	_, err := Open(t.Context(), path, Options{Build: "v0.5.0-rc5 (6246e4b9eb84)"})
+	refused := new(store.ReleaseUnderMigrationError)
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, store.ReleaseUnderMigrationError{Release: "v0.4.0", Copy: path + ".schema-32", From: 32, To: schemaVersion}, *refused)
+	require.NoFileExists(t, path+".schema-32", "nothing kept or migrated before the person answers")
+
+	asked, err := Open(t.Context(), path, Options{Build: "v0.5.0-rc5 (6246e4b9eb84)", MigrateRelease: true})
+	require.NoError(t, err)
+	require.NotNil(t, asked.Migration())
+	require.NoError(t, asked.Close())
+
+	release := schemaAt(t, 32, ended)
+	upgraded, err := Open(t.Context(), release, Options{Build: "v0.5.0"})
+	require.NoError(t, err, "a release's migration is the port's upgrade")
+	require.NoError(t, upgraded.Close())
+
+	devel := schemaAt(t, 32, strings.Replace(ended, "v0.4.0 (5897a828e1c2)", "v0.4.1-0.20261024120000-0123456789ab", 1))
+	opened, err := Open(t.Context(), devel, Options{Build: "devel (abcdef123456)"})
+	require.NoError(t, err, "a database a development build last opened is no release's")
+	require.NoError(t, opened.Close())
+}
+
+// A newer schema's refusal names the build that last opened the database,
+// and when, the way to that build, and the copy kept at this build's
+// schema: v0.4.0's "use a newer build" named neither (2026-10-24).
+func TestANewerSchemasRefusalNamesItsBuildAndTheCopy(t *testing.T) {
+	t.Parallel()
+	f := open(t)
+	require.NoError(t, f.store.Close())
+	db, err := sql.Open("sqlite", f.path)
+	require.NoError(t, err)
+	_, err = db.Exec("INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES(?, 'ses_new', 'foreground', 101, 'p', 'v0.5.1-0.20261024120000-0123456789ab', 1792878000000, 1792878000000, 1792878000001)", string(f.repo))
+	require.NoError(t, err)
+	_, err = db.Exec(fmt.Sprintf("PRAGMA user_version=%d;", schemaVersion+1))
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	require.NoError(t, os.WriteFile(fmt.Sprintf("%s.schema-%d", f.path, schemaVersion), []byte("kept"), 0o600))
+	_, err = Open(t.Context(), f.path, Options{})
+	require.ErrorIs(t, err, store.ErrSchema)
+	require.ErrorContains(t, err, "newer than this dockhand supports")
+	require.ErrorContains(t, err, "dockhand v0.5.1-0.20261024120000-0123456789ab opened it last")
+	require.ErrorContains(t, err, "it was built from commit 0123456789ab of "+buildinfo.ProjectURL)
+	require.ErrorContains(t, err, fmt.Sprintf("Its schema %d form is kept at %s.schema-%d; put back, what was recorded since it was kept is lost", schemaVersion, f.path, schemaVersion))
 }

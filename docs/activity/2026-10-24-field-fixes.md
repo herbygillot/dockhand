@@ -69,3 +69,33 @@ portindex now says it once a command, at the default level, before the
 first incremental update: "Updating the port index with the edits before
 each evaluation, a few seconds each time". A full build said itself
 already ("Building the PortIndex; this may take several minutes").
+
+## A development build asks before it migrates a release's database
+
+The exiv2 session's notes, with the gnome-voice session's note 4 and the
+bazel session's. A main build's read-only `status -b` migrated the shared
+database from schema 32 to 39. The installed v0.4.0 then refused it ("use
+a newer build"), naming neither the build nor where to get it.
+
+- **The rule turns on whose database it is.** Before migrating,
+  `sqlite.Store.refuseReleaseMigration` reads the newest session's build.
+  Where that's a release and this build isn't, it refuses unasked with
+  `store.ReleaseUnderMigrationError`, before anything is kept or
+  migrated. A release, in buildinfo's new `Released`, is a tag with no
+  pre-release or build part; an rc, a pseudo-version, a modified build
+  and devel aren't. A release build migrates as before, since that is
+  the port's upgrade. A database a development build last opened is
+  migrated as before too.
+- **The person answers.** On a terminal, settings.Open asks, naming the
+  release it locks out and where the copy goes (`MigrateRelease`). Without
+  one, engine's `ReleaseUnderMigrationError` refuses, naming DOCKHAND_DB
+  pointed at a copy to try the build.
+- **A newer schema's refusal says whose it is.** `newerSchema` names the
+  build that last opened the database, and when. It gives the way to that
+  build (buildinfo's new `Way`: a release comes with the port's upgrade, a
+  development build from its commit of the project), and the copy kept at
+  this build's schema, which loses what was recorded since if it's put
+  back. The words "newer than this dockhand supports" stay, which A5 reads.
+- **Tests:** TestADevelopmentBuildAsksBeforeMigratingAReleasesDatabase,
+  TestANewerSchemasRefusalNamesItsBuildAndTheCopy, and
+  TestReleasedAndTheWayToABuild.
