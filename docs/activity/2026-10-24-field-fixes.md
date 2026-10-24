@@ -54,3 +54,18 @@ result reused from another check read as unread.
 - **Tests:** TestUnreadLinksAreOneLineAReason (view),
   TestAnUnreadTargetCarriesItsReason (evidence), and the guest's reason in
   the engine's links test.
+
+## revbump says what it waits for
+
+The exiv2 session's notes: an applied revbump of 15 ports sat silent for 120
+seconds or more, where its `--plan` was instant. Measured in a scratch run:
+each port after the first is evaluated in a tree holding the bumps before
+it, so the port index is updated for that tree first ("Updating PortIndex
+for tree … from 1 changed path"), about 3 seconds of an 11-second port.
+That line was `-vv`'s, so at the default level nothing was said between
+ports. A plan edits nothing, so it never pays for this.
+
+portindex now says it once a command, at the default level, before the
+first incremental update: "Updating the port index with the edits before
+each evaluation, a few seconds each time". A full build said itself
+already ("Building the PortIndex; this may take several minutes").
