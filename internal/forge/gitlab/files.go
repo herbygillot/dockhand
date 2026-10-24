@@ -9,7 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
-	sdk "gitlab.com/gitlab-org/api/client-go/v2"
+	sdk "gitlab.com/gitlab-org/api/client-go/v3"
 )
 
 // File reads one file at a commit through the raw file endpoint, bounded
@@ -23,7 +23,7 @@ func (r *repository) File(ctx context.Context, commit, path string, limit int64)
 	if err != nil {
 		return nil, err
 	}
-	body, response, err := client.RepositoryFiles.GetRawFileReader(r.project, path, &sdk.GetRawFileOptions{Ref: sdk.Ptr(commit)}, sdk.WithContext(ctx))
+	body, response, err := client.RepositoryFiles.GetRawFileReader(r.project, path, &sdk.GetRawFileOptions{Ref: new(commit)}, sdk.WithContext(ctx))
 	if err != nil {
 		if response != nil && response.StatusCode == http.StatusNotFound {
 			return nil, fmt.Errorf("%w: %w", forge.ErrNotFound, err)

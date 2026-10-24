@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	gh "github.com/google/go-github/v91/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/refusal"

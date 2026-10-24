@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/google/go-github/v91/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	githubapi "github.com/herbygillot/dockhand/internal/github"

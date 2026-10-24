@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	sdk "gitlab.com/gitlab-org/api/client-go/v2"
+	sdk "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"

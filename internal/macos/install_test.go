@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -64,6 +65,11 @@ func TestFailedXcodeExpansionPreservesDiagnosticsWithoutRecursiveCleanup(t *test
 // and shasum give them, to compare with the original before it's expanded
 // (field testing, monterey's xip, 2026-10-16).
 func TestAGuestCopysDigestIsRead(t *testing.T) {
+	// The guest's commands are macOS's, as BSD stat -f, which a Linux
+	// host's GNU stat reads as another flag.
+	if runtime.GOOS != "darwin" {
+		t.Skip("runs the guest's macOS commands on the host")
+	}
 	path := filepath.Join(t.TempDir(), "Xcode.xip")
 	require.NoError(t, os.WriteFile(path, []byte("fixture"), 0o600))
 	digest, err := GuestDigest(t.Context(), func(ctx context.Context, _ io.Reader, args ...string) ([]byte, error) {

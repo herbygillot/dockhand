@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	sdk "gitlab.com/gitlab-org/api/client-go/v2"
+	sdk "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 )

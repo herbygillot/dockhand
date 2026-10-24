@@ -9,9 +9,9 @@ github.com/dustin/go-humanize
 ## explicit; go 1.24
 github.com/github/go-spdx/v2/spdxexp
 github.com/github/go-spdx/v2/spdxexp/spdxlicenses
-# github.com/google/go-github/v91 v91.0.0
+# github.com/google/go-github/v93 v93.0.0
 ## explicit; go 1.26.0
-github.com/google/go-github/v91/github
+github.com/google/go-github/v93/github
 # github.com/google/go-querystring v1.2.0
 ## explicit; go 1.13
 github.com/google/go-querystring/query
@@ -56,11 +56,11 @@ github.com/stretchr/testify/assert/yaml
 github.com/stretchr/testify/internal/difflib
 github.com/stretchr/testify/internal/spew
 github.com/stretchr/testify/require
-# gitlab.com/gitlab-org/api/client-go/v2 v2.64.0
-## explicit; go 1.25.0
-gitlab.com/gitlab-org/api/client-go/v2
-gitlab.com/gitlab-org/api/client-go/v2/internal/graphql
-gitlab.com/gitlab-org/api/client-go/v2/internal/graphqlfields
+# gitlab.com/gitlab-org/api/client-go/v3 v3.34.0
+## explicit; go 1.26.0
+gitlab.com/gitlab-org/api/client-go/v3
+gitlab.com/gitlab-org/api/client-go/v3/internal/graphql
+gitlab.com/gitlab-org/api/client-go/v3/internal/graphqlfields
 # go.yaml.in/yaml/v3 v3.0.5
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
@@ -86,8 +86,8 @@ golang.org/x/sync/errgroup
 golang.org/x/sys/cpu
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/time v0.15.0
-## explicit; go 1.25.0
+# golang.org/x/time v0.16.0
+## explicit; go 1.26.0
 golang.org/x/time/rate
 # modernc.org/libc v1.79.0
 ## explicit; go 1.26.0

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/go-github/v91/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"

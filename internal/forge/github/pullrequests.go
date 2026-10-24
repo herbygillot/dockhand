@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v91/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	githubapi "github.com/herbygillot/dockhand/internal/github"

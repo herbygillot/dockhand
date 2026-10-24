@@ -48,3 +48,19 @@ already current, after MacPorts updated it to 0.53.0 (983bca05f8f).
   rows need a small Go and Rust port of a known shape, which is a person's
   choice.
 - The harness self-test and path-check pass.
+
+# go-github v93 and GitLab's client-go v3
+
+Prioritization measured both by building main against each, and placed
+them in ef6b5eca, a fix for main riding v0.6.0.
+
+- The import paths move, from `github.com/google/go-github/v91` to `/v93`
+  in 12 files, and from `gitlab.com/gitlab-org/api/client-go/v2` to `/v3`
+  in 5. go.mod and vendor/ follow, with golang.org/x/time going to v0.16.0
+  alongside client-go. The only other change: client-go v3 marks its
+  `Ptr` helper deprecated in favour of Go 1.26's `new(expr)`, which
+  staticcheck flagged, so forge/gitlab's two calls use `new`.
+- The full gate passes, and so does the corpus, 14 of 14 in 2 min 39 s.
+- internal/macos's TestAGuestCopysDigestIsRead runs the guest's BSD
+  `stat -f` on the host, so it now skips off darwin, where it failed on
+  Linux on main too.

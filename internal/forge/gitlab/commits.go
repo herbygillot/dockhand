@@ -8,7 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
-	sdk "gitlab.com/gitlab-org/api/client-go/v2"
+	sdk "gitlab.com/gitlab-org/api/client-go/v3"
 )
 
 var _ forge.DatedRepository = (*repository)(nil)
