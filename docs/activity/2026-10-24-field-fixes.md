@@ -30,3 +30,27 @@ carries another check's mark: "(check-490): an earlier check's result,
 standing since nothing its build read has changed". Several checks are
 named in one line. Test: TestTheGridSaysAnEarlierChecksCellStands, which
 also checks that a grid without such cells has no line.
+
+## A link scan that couldn't read says why, once
+
+The exiv2 session's notes: `status -b` printed five "couldn't read what
+…'s build links" lines, none with a reason. The bazel session's notes: a
+result reused from another check read as unread.
+
+- **The reason travels with the finding.** `evidence.LinkedBuild.Unread`
+  says why a build's links weren't read. `LinkFinding.Reason` is the reason
+  the target's first unread build gave. engine/links.go names three:
+  - "its Portfile couldn't be evaluated there, so what it declares isn't
+    known";
+  - "its result is check-N's, which didn't read them", for a reused
+    result. It already carries its origin's reading (reusedResult copies
+    the links), so this says when that origin predates the scan;
+  - "the guest couldn't read them, as its log says".
+- **One line per reason.** `view.LinkLines` folds unread targets that share
+  a reason into one line, standing where its first target would: "couldn't
+  read what 5 targets link (exiv2, gpsbabel, libheif, darktable, and 1
+  more): …". Targets with different reasons get a line each. The check's
+  report and status's Links row both use it.
+- **Tests:** TestUnreadLinksAreOneLineAReason (view),
+  TestAnUnreadTargetCarriesItsReason (evidence), and the guest's reason in
+  the engine's links test.

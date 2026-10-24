@@ -59,3 +59,13 @@ func TestACleanLinkScanIsSaid(t *testing.T) {
 	})
 	require.Equal(t, []LinkFinding{{Target: "crystal", Clean: true, Ports: 5}}, found)
 }
+
+// An unread target carries the reason its first unread build gave.
+func TestAnUnreadTargetCarriesItsReason(t *testing.T) {
+	t.Parallel()
+	found := UndeclaredLinks([]LinkedBuild{
+		{Result: model.TargetResult{Target: "bazel", Outcome: model.OutcomePassed}, Unread: "its result is check-610's, which didn't read them"},
+		{Result: model.TargetResult{Target: "bazel", Outcome: model.OutcomePassed}, Unread: "the guest couldn't read them, as its log says"},
+	})
+	require.Equal(t, []LinkFinding{{Target: "bazel", Unread: true, Reason: "its result is check-610's, which didn't read them"}}, found)
+}

@@ -93,3 +93,20 @@ func TestTheGridSaysAnEarlierChecksCellStands(t *testing.T) {
 	WriteResults(&out, "  ", evidence, false)
 	require.NotContains(t, out.String(), "standing since")
 }
+
+// Targets whose links couldn't be read for one reason are one line with
+// it, a line each where the reasons differ: status said five such lines
+// with no reason (the exiv2 session's notes, 2026-10-24).
+func TestUnreadLinksAreOneLineAReason(t *testing.T) {
+	t.Parallel()
+	guest := "the guest couldn't read them, as its log says"
+	var findings []engine.LinkFinding
+	for _, name := range []string{"exiv2", "gpsbabel", "libheif", "darktable", "digikam"} {
+		findings = append(findings, engine.LinkFinding{Target: model.TargetID(name), Unread: true, Reason: guest})
+	}
+	findings = append(findings, engine.LinkFinding{Target: "bazel", Unread: true, Reason: "its result is check-610's, which didn't read them"})
+	var out bytes.Buffer
+	WriteLinks(&out, findings)
+	require.Equal(t, "Links\n    couldn't read what 5 targets link (exiv2, gpsbabel, libheif, darktable, and 1 more): "+guest+"\n"+
+		"    couldn't read what bazel's build links: its result is check-610's, which didn't read them\n", out.String())
+}

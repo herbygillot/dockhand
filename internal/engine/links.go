@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
@@ -60,8 +61,17 @@ func (e *Engine) UndeclaredLinks(ctx context.Context, run model.Run) ([]evidence
 			result := cell.TargetResult
 			result.Target = target.Target.ID
 			infos, ok := ports(target.Target, cell.Environment)
-			if !ok {
-				result.Links = nil
+			unread := ""
+			switch {
+			case !ok:
+				result.Links, unread = nil, "its Portfile couldn't be evaluated there, so what it declares isn't known"
+			case result.Links == nil && result.ReusedFrom != "":
+				// A reused result carries the reading of the check that
+				// built it, which may predate the scan (the bazel
+				// session's notes, 2026-10-24).
+				unread = fmt.Sprintf("its result is %s's, which didn't read them", cmp.Or(checked.CellCheck(cell), "an earlier check"))
+			case result.Links == nil:
+				unread = "the guest couldn't read them, as its log says"
 			}
 			// What this environment declares, judged with its own build
 			// alone (Codex's review of 8c007979, C8-2).
@@ -77,7 +87,7 @@ func (e *Engine) UndeclaredLinks(ctx context.Context, run model.Run) ([]evidence
 					}
 				}
 			}
-			builds = append(builds, evidence.LinkedBuild{Result: result, Environment: cell.Environment, Declared: declared})
+			builds = append(builds, evidence.LinkedBuild{Result: result, Environment: cell.Environment, Declared: declared, Unread: unread})
 		}
 	}
 	return evidence.UndeclaredLinks(builds), nil
