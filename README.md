@@ -244,6 +244,7 @@ Each is rough, harms nothing a look wouldn't catch, and has a workaround. Those 
 - After you pull a collaborator's commit to a branch's pull request and discard it with a reset, `submit` replaces their commit with yours. Its preview says so on its Push line, so read the preview before you confirm. Fixed on `main`: a commit replaces theirs only when it is their commit amended.
 - A port whose project moved its releases to another repository, so that the old repository's tags stop below the port's version, reads as current in `outdated`, as mergestat, carl, and zed with zq do: mergestat at 0.5.4, its old repository's newest stable tag v0.1.0. Check such a port's project page. Fixed on `main` (1c9d5a47): `outdated` holds it for a look, and `update` asks for the version to take.
 - A trailer given in `tidy --squash --message` that the branch's commits already carry, as `Assisted-by:`, is written twice in the squashed commit. Leave it out of the message: tidy keeps the commits' own trailers. Fixed on `main`: a trailer the message gives is written once.
+- Off a terminal, as under an agent or a script, a foreground `check` prints nothing between its plan and its report, though it runs for as long as its builds take. `-v` prints each step as it goes, and `check -d` runs the check in the background, with or without serve, for `dockhand wait` or `status` to follow.
 
 ## Scope
 
