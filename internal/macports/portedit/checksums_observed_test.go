@@ -191,3 +191,40 @@ checksums fixture.tar.gz md5 00000000000000000000000000000000 \
 	_, err = s.Prepare(t.Context(), r)
 	require.Error(t, err)
 }
+
+// A subport whose block declares no checksums, where the port's names the
+// port's own archive, has a declaration written in its block, after its
+// last fetch line, filled in from its archive; the port's own stays as it
+// was. kb-old, a subport beside kb at 0.1.6, was refused (field testing on
+// rc3). A main port with none is still refused.
+func TestASubportsChecksumsAreWrittenInItsBlock(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+checksums ${distname}${extract.suffix} rmd160 aaaa sha256 bbbb size 2
+subport fixture-old {
+    version 0.1.6
+    revision 0
+}
+`)
+	r.Action, r.Version, r.Release = model.EditChecksums, "", nil
+	r.Selection.Subport = "fixture-old"
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Equal(t, []string{"/1.2.3/fixture-0.1.6.tar.gz"}, *requests, "master_sites is the port's, read before the subport's version")
+	require.Len(t, result.Files, 1)
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "checksums ${distname}${extract.suffix} rmd160 aaaa sha256 bbbb size 2\n", "the port's own declaration stays")
+	sum := result.Downloads[0].Checksum
+	require.Contains(t, after, "    version 0.1.6\n    checksums           rmd160  "+sum.RMD160+" \\\n                        sha256  "+sum.SHA256+" \\\n                        size    "+strconv.FormatInt(sum.Size, 10)+"\n    revision 0\n}")
+	require.Equal(t, "fixture-old: refresh checksums", result.Commits[0].Subject)
+
+	s, r, _ = archiveFixture(t, `version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+`)
+	r.Action, r.Version, r.Release = model.EditChecksums, "", nil
+	_, err = s.Prepare(t.Context(), r)
+	require.ErrorContains(t, err, "no checksum declaration for fixture-1.2.3.tar.gz")
+}

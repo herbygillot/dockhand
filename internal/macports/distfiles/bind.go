@@ -55,6 +55,18 @@ func (u *Unlocated) Error() string {
 
 func (u *Unlocated) Unwrap() error { return u.Reason }
 
+// Undeclared is an archive the port fetches that no checksum declaration
+// it reads covers, with every archive the context fetches, for a
+// declaration of them all to be written.
+type Undeclared struct {
+	Name  string
+	Names []string
+	Err   error
+}
+
+func (u *Undeclared) Error() string { return u.Err.Error() }
+func (u *Undeclared) Unwrap() error { return u.Err }
+
 type Group struct {
 	Name   string
 	Values map[string]Token
@@ -229,7 +241,11 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 			}
 		}
 		if group == nil {
-			return result, portfile.ErrUnsupported.Because("no checksum declaration for %s", file.Name)
+			undeclared := &Undeclared{Name: file.Name, Err: portfile.ErrUnsupported.Because("no checksum declaration for %s", file.Name)}
+			for _, fetched := range observed.Distfiles {
+				undeclared.Names = append(undeclared.Names, fetched.Name)
+			}
+			return result, undeclared
 		}
 		var addresses []string
 		for _, address := range file.URLs {

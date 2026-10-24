@@ -148,3 +148,30 @@ list` didn't show dockhand's VMs, which live in its own Tart home.
 - **Tests:** TestAForegroundCheckKeepsToTheProvidersCapacity,
   TestAnAttemptSweepsAndWaitsForRoom, and
   TestTheQueueNamesARunningChecksVMsWithTheirTartHome.
+
+## checksums writes a subport's declaration where it has none
+
+Field testing on rc3, at the bazel session's note, which wrote a new
+subport's checksums with curl and openssl. kb-old, a subport beside kb at
+0.1.6, declared no checksums in its block, and kb's declaration names kb's
+own archive, so `checksums kb-old` was refused: "no checksum declaration
+for kb-0.1.6.tar.gz".
+
+- **The refusal is typed.** distfiles `Bind` returns `Undeclared`, the
+  archive and every archive the context fetches, with the same words.
+- **The declaration.** portfile `DeclareSubportChecksums` writes
+  placeholders in the subport's block, after its last fetch line, in the
+  block's indentation, as create writes them: rmd160, sha256, and size,
+  each archive named where there are several. It writes nothing where the
+  subport has no one literal block, its block declares checksums, or its
+  lines aren't one command to a line.
+- **The refresh.** portedit `refreshChecksums`, on `Undeclared`, writes the
+  placeholders and refreshes them as any declaration is refreshed
+  (`declareSubportChecksums`). The family as written and as edited is
+  compared, so nothing but the subport's checksums may move, and kb's stay.
+  A main port with no declaration is still refused.
+- **Left as it is.** A port whose declaration is unnamed, which Bind reads
+  as covering a subport's other archive, is still refused by strict
+  fidelity ("fixture.checksums changed"), since writing it would change
+  the port's checksums.
+- **Test:** TestASubportsChecksumsAreWrittenInItsBlock.
