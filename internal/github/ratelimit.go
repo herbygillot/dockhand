@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -51,13 +52,43 @@ func RateLimitError(err error) error {
 		at := now.Add(delay)
 		return limited(&forge.RateLimitError{RetryAt: at, Err: fmt.Errorf("%s: %w", limitWords(secondaryLimit, "", at, now), err)})
 	}
+	// A login GitHub rejected, or none to ask as, is said as itself,
+	// without the request's address: the transport's refusal reaches here
+	// in http.Client's *url.Error, itself a net.Error, which D-C3 on rc5
+	// read as GitHub unreached, offering another try none would meet.
+	// A write said as rejected already is publicationError's, said so.
+	if errors.Is(err, forge.ErrAuthentication) {
+		if errors.Is(err, forge.ErrRejected) {
+			return err
+		}
+		if request := new(url.Error); errors.As(err, &request) {
+			return request.Err
+		}
+		return err
+	}
 	// GitHub not reached, the network's failure, is one another try may
 	// meet, as fetch says of any address (refusal.Network).
-	var unreached net.Error
-	if errors.As(err, &unreached) {
+	if unreached, ok := networkError(err); ok {
 		return refusal.Wrap(refusal.Network, err, "couldn't reach GitHub (%s)", unreachedWords(unreached))
 	}
 	return err
+}
+
+// networkError is the network's failure an error carries: a DNS
+// failure's, a dial's, or a timeout's, inside a request's *url.Error,
+// which is a net.Error whatever it wraps.
+func networkError(err error) (net.Error, bool) {
+	if request := new(url.Error); errors.As(err, &request) {
+		err = request.Err
+	}
+	var unreached net.Error
+	if !errors.As(err, &unreached) {
+		return nil, false
+	}
+	if _, wrapped := unreached.(*url.Error); wrapped {
+		return nil, false
+	}
+	return unreached, true
 }
 
 // unreachedWords say why GitHub wasn't reached, as the network's error

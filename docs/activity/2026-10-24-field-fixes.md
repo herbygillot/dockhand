@@ -175,3 +175,28 @@ for kb-0.1.6.tar.gz".
   fidelity ("fixture.checksums changed"), since writing it would change
   the port's checksums.
 - **Test:** TestASubportsChecksumsAreWrittenInItsBlock.
+
+## A rejected GitHub login said as one, not as GitHub unreached
+
+D-C3 on rc5: after the login was revoked, a command said `couldn't reach
+GitHub (Post "https://api.github.com/graphql": forge: authentication is
+required: GitHub rejected the credential…)`. http.Client wraps the
+transport's refusal in a `*url.Error`, which is a `net.Error`, so
+`RateLimitError` took it as the network's, of a kind another try is
+offered for.
+
+- **Auth first.** github `RateLimitError` takes `forge.ErrAuthentication`
+  before the network, and returns it without the request's `*url.Error`,
+  kind Auth. A write publicationError already says as rejected keeps its
+  `forge.ErrRejected`; publicationError wraps the converted error.
+- **The network's alone.** `networkError` takes a `*url.Error` only where
+  what it wraps is a DNS failure, a dial's, or a timeout.
+- **The words.** `rejected()` is a particular of the sentinel
+  (`refusal.Because`), so its words lead. dockhand's login reads as
+  serve's: "GitHub rejected the login from dockhand's Keychain; run
+  dockhand setup github to sign in again, or dockhand setup github
+  --logout to remove it", Next `dockhand setup github`. Other sources keep
+  their remedies.
+- **v0.5.0.** README's known issues and the release notes gain the row.
+- **Test:** TestARejectedLoginIsSaidAsThatNotAsGitHubUnreached, a 401 and
+  a reset connection through the client.

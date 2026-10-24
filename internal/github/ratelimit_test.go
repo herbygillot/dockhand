@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -234,4 +235,41 @@ func TestGitHubNotReachedIsSaidAsThat(t *testing.T) {
 
 	offline := &url.Error{Op: "Get", URL: "https://api.github.com/user", Err: &net.OpError{Op: "dial", Net: "tcp", Err: &net.DNSError{Err: "no such host", Name: "api.github.com"}}}
 	require.EqualError(t, RateLimitError(offline), "couldn't reach GitHub (no such host)")
+}
+
+// A login GitHub rejects is said as that, of the Auth kind, without the
+// request's address, where D-C3 on rc5 read "couldn't reach GitHub (Post
+// \"https://api.github.com/graphql\": forge: authentication is required:
+// …)": http.Client's *url.Error is a net.Error, and was taken as the
+// network's, offering another try none would meet.
+func TestARejectedLoginIsSaidAsThatNotAsGitHubUnreached(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"message":"Bad credentials"}`)
+	}))
+	t.Cleanup(server.Close)
+	keychain := TokenSourceFunc(func(context.Context) (Token, error) {
+		return Token{Secret: "ghp_" + strings.Repeat("a", 36), Source: SourceKeychain}, nil
+	})
+	c := &Client{HTTP: server.Client(), Config: Config{BaseURL: server.URL + "/"}, Credentials: keychain}
+	_, err := c.AuthenticatedUser(t.Context())
+	require.ErrorIs(t, err, ErrAuthentication)
+	require.Equal(t, refusal.Auth, refusal.KindOf(err))
+	require.Equal(t, "GitHub rejected the login from dockhand's Keychain; run dockhand setup github to sign in again, or dockhand setup github --logout to remove it", refusal.WordsOf(err))
+	require.NotContains(t, err.Error(), server.URL)
+	require.NotContains(t, err.Error(), "couldn't reach GitHub")
+	require.Equal(t, []refusal.Next{{Verb: refusal.VerbSetup, Args: []string{"github"}}}, refusal.Of(err).Next)
+
+	// A connection reset is still the network's.
+	dropping := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connection, _, _ := w.(http.Hijacker).Hijack()
+		_ = connection.(*net.TCPConn).SetLinger(0)
+		_ = connection.Close()
+	}))
+	t.Cleanup(dropping.Close)
+	c = &Client{HTTP: dropping.Client(), Config: Config{BaseURL: dropping.URL + "/"}, Credentials: keychain}
+	_, err = c.AuthenticatedUser(t.Context())
+	require.Equal(t, refusal.Network, refusal.KindOf(err))
+	require.Contains(t, refusal.WordsOf(err), "couldn't reach GitHub (connection reset by peer)")
 }

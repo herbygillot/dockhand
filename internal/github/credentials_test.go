@@ -105,7 +105,7 @@ func TestATokenRejectedAgainOrFromTheEnvironmentIsRefused(t *testing.T) {
 	server, seen := accepting(t)
 	_, err := client(server, &tokens{source: github.SourceKeychain, given: []string{"A", "B"}}).AuthenticatedUser(t.Context())
 	require.ErrorIs(t, err, github.ErrAuthentication)
-	require.ErrorContains(t, err, "GitHub rejected the credential from Dockhand macOS Keychain")
+	require.ErrorContains(t, err, "GitHub rejected the login from dockhand's Keychain")
 	require.Len(t, *seen, 2)
 
 	*seen = nil
