@@ -134,6 +134,9 @@ type Engine struct {
 	// name, from providers.<name>.capacity: serve keeps to it, and so does
 	// a check run here (awaitSlot).
 	Capacity map[string]int
+	// Maintainers are the config's maintainer entries, whose ports serve's
+	// daily look is for, and whose look status shows (LastOutdatedLook).
+	Maintainers []string
 	// ConfigFile is the configuration file the command read, which a hint
 	// to set something there names: $DOCKHAND_CONFIG, or the default
 	// (configFile) where empty.

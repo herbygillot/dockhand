@@ -104,7 +104,8 @@ func TestServeSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	scanner := &outdatedScanner{s: s}
 	scanner.announce(t.Context())
 	require.Equal(t, []string{`serve: serve.ship_to needs to know your ports: set maintainer = "{example.org:ada @ada}" in /tmp/elsewhere.toml, as the ports that name @ada write it`}, said)
-	require.NoError(t, os.Remove(e.serveFile("outdated.stamp")))
+	_, err := os.Stat(e.serveFile("outdated.stamp"))
+	require.ErrorIs(t, err, os.ErrNotExist, "a day with no maintainer isn't stamped, so a restart once one is set looks that day")
 	scanner.maybe(t.Context())
 	require.Len(t, said, 1, "said once")
 }
@@ -166,7 +167,7 @@ func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 			require.Contains(t, said, "serve: GitHub’s rate limit still prevents checking 1 port for new releases. No further retries today")
 			continue
 		}
-		look, ok := e.LastOutdatedLook()
+		look, ok := e.LastOutdatedLook([]string{"@ada"})
 		require.True(t, ok)
 		require.ElementsMatch(t, []string{"jq", "fd"}, look.Outdated, "the retry adds to the day's look")
 	}
@@ -194,4 +195,38 @@ func TestTheDaysLookNotifiesWhenWhatItFoundChanged(t *testing.T) {
 	scanner := &outdatedScanner{s: s}
 	scanner.maybe(t.Context())
 	require.Contains(t, notified, "Your ports: 1 port has newer releases (dockhand outdated --mine)")
+}
+
+// A look shows only for the maintainers it looked for, the config's then,
+// compared as sets: on rc5, status said a look under an earlier maintainer
+// with none in the config (the M1's rc5 run). A look that records none, as
+// v0.4.0 and v0.5.0 wrote, is no one's. And serve, the day's no-maintainer
+// hint said, looks the same day once restarted with one.
+func TestALookShowsOnlyForTheMaintainersItLookedFor(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	e.Forge = forgetest.New("", "")
+	morning := time.Date(2026, 10, 7, 8, 0, 0, 0, time.Local)
+	e.OutdatedReader = &limitedReader{lifted: morning.Add(-time.Hour)}
+	usePorts(e, maintainedPorts{asked: new([]model.Source), spellings: map[string][]portindex.MaintainerSpelling{}})
+	var said []string
+	quiet := newServer(e, ServeOptions{ShipTo: "list", Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return morning }})
+	(&outdatedScanner{s: quiet}).maybe(t.Context())
+	_, ok := e.LastOutdatedLook(nil)
+	require.False(t, ok, "no look yet")
+
+	s := newServer(e, ServeOptions{Outdated: ServeOutdated{Maintainers: []string{"@ada", "example.org:ada"}}, ShipTo: "list", Say: func(string) {}, Now: func() time.Time { return morning.Add(time.Minute) }})
+	(&outdatedScanner{s: s}).maybe(t.Context())
+	look, ok := e.LastOutdatedLook([]string{"example.org:ada", "@ada"})
+	require.True(t, ok, "the same maintainers, in another order: the restart looked the same day")
+	require.Equal(t, []string{"jq"}, look.Outdated)
+	_, ok = e.LastOutdatedLook(nil)
+	require.False(t, ok, "not under no maintainer")
+	_, ok = e.LastOutdatedLook([]string{"@bob"})
+	require.False(t, ok, "not under another")
+
+	require.NoError(t, os.WriteFile(e.serveFile("outdated.json"), []byte(`{"checked_at":"2026-10-21T08:00:00Z","outdated":["jq"]}`), 0o644))
+	_, ok = e.LastOutdatedLook([]string{"@ada", "example.org:ada"})
+	require.False(t, ok, "a look that records no maintainer, as v0.5.0 wrote, is no one's")
 }

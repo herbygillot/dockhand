@@ -689,7 +689,10 @@ func (c *cleaner) maybe(ctx context.Context) {
 // status.
 type OutdatedLook struct {
 	CheckedAt time.Time `json:"checked_at"`
-	Outdated  []string  `json:"outdated"`
+	// Maintainers are those the look looked for, the config's then; a
+	// look is shown only where they're the config's now (LastOutdatedLook).
+	Maintainers []string `json:"maintainers,omitempty"`
+	Outdated    []string `json:"outdated"`
 	// Uncertain are the ports that may have a newer release, which serve
 	// neither calls current nor prepares: a person looks. SetAside are the
 	// tags each was uncertain for, which the next look reads to say a port
@@ -799,8 +802,11 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	}
 	if len(settings.Maintainers) == 0 {
 		// The person's own line, as master's ports write their GitHub
-		// login, where it can be found (the flyctl run).
+		// login, where it can be found (the flyctl run). The day isn't
+		// stamped, so a serve restarted once a maintainer is set looks
+		// that day, not the next (the M1's rc5 run).
 		report(o.hint(ctx))
+		stamp = false
 		return
 	}
 	request := OutdatedRequest{Maintainers: settings.Maintainers}
@@ -839,8 +845,8 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 			setAside[port.Port] = []string{port.Ahead}
 		}
 	}
-	last, _ := e.LastOutdatedLook()
-	look := OutdatedLook{CheckedAt: now, Outdated: names, Uncertain: uncertain, SetAside: setAside}
+	last, _ := e.LastOutdatedLook(settings.Maintainers)
+	look := OutdatedLook{CheckedAt: now, Maintainers: settings.Maintainers, Outdated: names, Uncertain: uncertain, SetAside: setAside}
 	// A retry's look adds to the day's, which it went over only part of.
 	if retrying {
 		for _, name := range last.Outdated {
@@ -911,14 +917,27 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 }
 
 // LastOutdatedLook is what serve's daily look at your ports last found, if
-// it looked.
-func (e *Engine) LastOutdatedLook() (OutdatedLook, bool) {
+// it looked for these maintainers, the config's, compared as sets: on rc5,
+// with no maintainer in the config, status still said "Your ports: 123
+// ports have newer releases", a look under an earlier maintainer's (the
+// M1's rc5 run). A look that records none, as v0.4.0 and v0.5.0 wrote,
+// is no one's. status and serve's notice read it alike.
+func (e *Engine) LastOutdatedLook(maintainers []string) (OutdatedLook, bool) {
 	var look OutdatedLook
 	data, err := os.ReadFile(e.serveFile("outdated.json"))
-	if err != nil || json.Unmarshal(data, &look) != nil {
-		return look, false
+	if err != nil || json.Unmarshal(data, &look) != nil || len(look.Maintainers) == 0 || !sameSet(look.Maintainers, maintainers) {
+		return OutdatedLook{}, false
 	}
 	return look, true
+}
+
+// sameSet reports whether two lists hold the same strings, whatever their
+// order or repeats.
+func sameSet(a, b []string) bool {
+	a, b = slices.Clone(a), slices.Clone(b)
+	slices.Sort(a)
+	slices.Sort(b)
+	return slices.Equal(slices.Compact(a), slices.Compact(b))
 }
 
 // passingSubmitter opens pull requests for the branches serve prepared

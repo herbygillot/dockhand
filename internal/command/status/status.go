@@ -221,7 +221,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 		}
 	}
 	writeOverview(out, streams, statuses, rows, processes, all)
-	if found, ok := e.LastOutdatedLook(); ok && (len(found.Outdated) > 0 || len(found.Uncertain) > 0) {
+	if found, ok := e.LastOutdatedLook(e.Maintainers); ok && (len(found.Outdated) > 0 || len(found.Uncertain) > 0) {
 		fmt.Fprintln(out)
 		if len(found.Outdated) > 0 {
 			fmt.Fprintf(out, "Your ports: %s newer releases, as serve found %s (dockhand ship --mine)\n", prose.Plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], engine.Ago(found.CheckedAt))
