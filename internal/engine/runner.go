@@ -998,6 +998,26 @@ func (b *build) Progress(message string) {
 	b.d.emit(b.ctx, model.EventProgress, DescribeEnvironment(b.execution.Environment)+": "+message)
 }
 
+// Holding is the check whose execution runs in the VM a provider named
+// ref, among the running checks: a wait for the Mac's VMs names them.
+func (b *build) Holding(ref string) string {
+	holding := ""
+	_ = b.d.e.Store.View(b.ctx, b.d.e.Repository, func(r store.Reader) error {
+		executions, err := r.ExecutionsReferred(ref)
+		if err != nil {
+			return err
+		}
+		for _, execution := range executions {
+			if run, err := r.Run(execution.Run); err == nil && run.State == model.RunRunning {
+				holding = run.Name()
+				return nil
+			}
+		}
+		return nil
+	})
+	return holding
+}
+
 func (b *build) Waiting(message string) {
 	b.d.emit(b.ctx, model.EventWaiting, DescribeEnvironment(b.execution.Environment)+": "+message)
 }
@@ -1383,6 +1403,11 @@ type QueuedCheck struct {
 	// Progress is a running check's newest progress line, as "building
 	// jq (2 of 5): fetch", for live progress; empty for one queued.
 	Progress string
+	// VMs are the Tart VMs a running check's executions run in, by name,
+	// and TartHome the home that reaches them: a person's tart list
+	// doesn't see dockhand's (the bazel session's notes, 2026-10-24).
+	VMs      []string
+	TartHome string
 }
 
 // Queue is every check queued or running, oldest first, each with what
@@ -1419,6 +1444,16 @@ func (e *Engine) Queue(ctx context.Context, session *coord.Session) ([]QueuedChe
 				if found {
 					checked.Progress = event.Message
 				}
+				executions, err := r.Executions(run.ID)
+				if err != nil {
+					return err
+				}
+				for _, execution := range executions {
+					if execution.Environment.Provider == buildenv.Tart && execution.State == model.ExecutionRunning && execution.ProviderRef != "" {
+						checked.VMs = append(checked.VMs, execution.ProviderRef)
+					}
+				}
+				checked.TartHome = e.TartHome
 			}
 			queue = append(queue, checked)
 		}

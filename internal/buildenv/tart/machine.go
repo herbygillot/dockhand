@@ -23,6 +23,9 @@ type machine interface {
 	// Running counts the VMs running on the Mac, the person's among them:
 	// the Mac runs two macOS VMs at most, whoever started them.
 	Running(ctx context.Context) (int, error)
+	// Whose are the VMs running: dockhand's, by name, and how many of the
+	// person's own Tart home's.
+	Whose(ctx context.Context) (ours []string, theirs int, err error)
 	Clone(ctx context.Context, image, vm string) error
 	// Start runs a VM owned by this process.
 	Start(vm string) (run, error)
@@ -94,27 +97,33 @@ func (n *native) Cached(ctx context.Context) ([]tartvm.Image, error) {
 // of their Tart home that takes and changes nothing there. A personal
 // listing a running ASIF VM blocks counts as that one VM.
 func (n *native) Running(ctx context.Context) (int, error) {
+	ours, theirs, err := n.Whose(ctx)
+	return len(ours) + theirs, err
+}
+
+// Whose are dockhand's running VMs, by name, and how many of the person's
+// are running.
+func (n *native) Whose(ctx context.Context) ([]string, int, error) {
 	own, err := n.Machine.Running(ctx)
 	if err != nil {
-		return 0, err
+		return nil, 0, err
 	}
-	count := len(own)
 	personal := n.personal
 	if personal == "" || personal == n.Client.Home {
-		return count, nil
+		return own, 0, nil
 	}
 	if _, err := os.Stat(filepath.Join(personal, "vms")); err != nil {
-		return count, nil
+		return own, 0, nil
 	}
 	theirs := host.Machine{Client: tartvm.Client{Executable: n.Client.Executable, Home: personal, Env: n.Client.Env}}
 	names, err := theirs.Running(ctx)
 	switch {
 	case errors.Is(err, tartvm.ErrListingBlocked):
-		return count + 1, nil
+		return own, 1, nil
 	case err != nil:
-		return 0, fmt.Errorf("counting the VMs running in %s: %w", personal, err)
+		return nil, 0, fmt.Errorf("counting the VMs running in %s: %w", personal, err)
 	}
-	return count + len(names), nil
+	return own, len(names), nil
 }
 
 func (n *native) Start(vm string) (run, error) {

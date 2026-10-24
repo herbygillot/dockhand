@@ -62,10 +62,17 @@ func (e *Engine) awaitSlot(ctx context.Context, session *coord.Session, id model
 	}
 }
 
+// slotHolder is a check filling a provider's capacity, and the process
+// that runs it.
+type slotHolder struct {
+	run     model.Run
+	process *model.Session
+}
+
 // fullProviders are the providers among needs whose capacity checks live
 // processes other than this one are running fill, with those checks.
-func (e *Engine) fullProviders(ctx context.Context, session *coord.Session, id model.RunID, needs []string) (map[string][]model.Run, error) {
-	full := map[string][]model.Run{}
+func (e *Engine) fullProviders(ctx context.Context, session *coord.Session, id model.RunID, needs []string) (map[string][]slotHolder, error) {
+	full := map[string][]slotHolder{}
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		runs, err := r.Runs(store.RunFilter{States: []model.RunState{model.RunRunning}})
 		if err != nil {
@@ -75,7 +82,7 @@ func (e *Engine) fullProviders(ctx context.Context, session *coord.Session, id m
 		if err != nil {
 			return err
 		}
-		using := map[string][]model.Run{}
+		using := map[string][]slotHolder{}
 		for _, other := range runs {
 			holder := holders[RunResource(other.ID)]
 			if other.ID == id || holder == nil || holder.ID == session.ID() {
@@ -87,7 +94,7 @@ func (e *Engine) fullProviders(ctx context.Context, session *coord.Session, id m
 			}
 			for _, provider := range needs {
 				if slices.ContainsFunc(plan.Environments, func(environment model.Environment) bool { return environment.Provider == provider }) {
-					using[provider] = append(using[provider], other)
+					using[provider] = append(using[provider], slotHolder{run: other, process: holder})
 				}
 			}
 		}
@@ -101,14 +108,26 @@ func (e *Engine) fullProviders(ctx context.Context, session *coord.Session, id m
 	return full, err
 }
 
-// slotWords say what fills each full provider: "providers.tart.capacity
-// is 1, and check-41 is using it".
-func slotWords(full map[string][]model.Run, e *Engine) []string {
+// slotWords say what fills each full provider, with the process that
+// runs each check, its build, and how long the check has run, as status
+// -v's processes give them: "providers.tart.capacity is 1, and check-616
+// is using it (a foreground dockhand, pid 4242, v0.5.0-rc5, for 2 hours)".
+// "check-616 is using it" said nothing of whose it was (the bazel and
+// exiv2 sessions' notes, 2026-10-24).
+func slotWords(full map[string][]slotHolder, e *Engine) []string {
 	var words []string
 	for _, provider := range slices.Sorted(maps.Keys(full)) {
 		var names []string
-		for _, run := range full[provider] {
-			names = append(names, run.Name())
+		for _, held := range full[provider] {
+			name := held.run.Name()
+			if p := held.process; p != nil {
+				ran := "under a minute"
+				if age := e.now().Sub(held.run.CreatedAt); age >= time.Minute {
+					ran = AgeWords(age.Round(time.Minute))
+				}
+				name += fmt.Sprintf(" (a %s dockhand, pid %d, %s, for %s)", p.Kind, p.PID, p.Version, ran)
+			}
+			names = append(names, name)
 		}
 		words = append(words, fmt.Sprintf("providers.%s.capacity is %d, and %s %s using it", provider, e.capacity(provider), prose.And(names), map[bool]string{true: "is", false: "are"}[len(names) == 1]))
 	}

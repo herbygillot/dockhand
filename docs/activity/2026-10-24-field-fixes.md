@@ -124,3 +124,27 @@ progress on the redrawn line, which off a terminal is never drawn.
 - **Tests:** TestCheckRunsHereWithoutServe checks the notice and a step
   line off a terminal. TestAStalledLogIsSaidOnce checks a stall said once,
   as a wait.
+
+## A wait for the Mac's VMs or a check's capacity says whose they are
+
+The bazel and exiv2 sessions' notes. A check waited on "macOS runs two at
+most" or a provider's capacity without saying what held it, and `tart
+list` didn't show dockhand's VMs, which live in its own Tart home.
+
+- **Capacity.** engine `slotWords` names each holder's process and how long
+  it has run: "check-1 (a foreground dockhand, pid N, devel, for under a
+  minute) is using it".
+- **The Mac's VMs.** Tart's `machine` interface gains `Whose`, dockhand's
+  running VMs by name and a count of the personal Tart home's. buildenv's
+  `Build` gains `Holding(ref)`, the running check whose execution the
+  provider knows by that ref (store `ExecutionsReferred`). The wait reads
+  "waiting for the Mac's VMs: 2 are running, and macOS runs two at most:
+  check-616's dockhand-check-run-9-tahoe-1 and 1 of yours".
+- **Reaching a VM.** check -v's "building in <vm>" line adds
+  `TART_HOME=<home> tart exec <vm> …`. `status -v` lists each running
+  check's VMs under the queue with the same, from engine `QueuedCheck`'s
+  `VMs` and `TartHome` (compose sets the engine's `TartHome`); status's
+  JSON carries them as `vms` and `tart_home`.
+- **Tests:** TestAForegroundCheckKeepsToTheProvidersCapacity,
+  TestAnAttemptSweepsAndWaitsForRoom, and
+  TestTheQueueNamesARunningChecksVMsWithTheirTartHome.

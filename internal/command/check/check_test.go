@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -543,8 +544,10 @@ JSON
 	go run(first, &firstOut, firstDone)
 	require.Eventually(t, func() bool { return started("check-1") }, cmdtest.Settle, 10*time.Millisecond)
 	go run(other, &otherOut, otherDone)
-	waiting := "check-2 waits for a slot on command: providers.command.capacity is 1, and check-1 is using it"
-	require.Eventually(t, func() bool { return strings.Contains(otherOut.String(), waiting) }, cmdtest.Settle, 10*time.Millisecond, "the second waits for the first's slot, said at the default level (rc1's D-R2)")
+	// Said at the default level (rc1's D-R2), with whose process runs the
+	// check it waits on (the bazel and exiv2 sessions' notes, 2026-10-24).
+	waiting := regexp.MustCompile(`check-2 waits for a slot on command: providers\.command\.capacity is 1, and check-1 \(a foreground dockhand, pid [0-9]+, [^,]+, for [^)]+\) is using it`)
+	require.Eventually(t, func() bool { return waiting.MatchString(otherOut.String()) }, cmdtest.Settle, 10*time.Millisecond, "the second waits for the first's slot: %s", &otherOut)
 	require.False(t, started("check-2"))
 	require.NoError(t, os.WriteFile(filepath.Join(w.Home, "go"), nil, 0o644))
 	<-firstDone

@@ -345,6 +345,18 @@ func WriteQueue(out io.Writer, queue []engine.QueuedCheck) {
 		fmt.Fprintf(table, "  %s\t%s\t%s\t%s\t%s\t%s\n", run.Name(), queued.Branch.ShortName(), engine.Describe(queued.Revision), strings.Join(on, ", "), state, detail)
 	}
 	_ = table.Flush()
+	// The VMs a running check runs in, with the Tart home that reaches
+	// them, which a person's tart list doesn't see (the bazel session's
+	// notes, 2026-10-24).
+	for _, queued := range queue {
+		for _, vm := range queued.VMs {
+			reach := "tart exec " + vm + " …"
+			if queued.TartHome != "" {
+				reach = "TART_HOME=" + queued.TartHome + " " + reach
+			}
+			fmt.Fprintf(out, "  %s runs in %s: %s\n", queued.Run.Name(), vm, reach)
+		}
+	}
 }
 
 // QueueView is the queue for status's JSON.
@@ -353,6 +365,9 @@ func QueueView(queue []engine.QueuedCheck) *[]queuedRunJSON {
 	for _, queued := range queue {
 		row := queuedRunJSON{runJSON: RunView(queued.Run), Branch: queued.Branch.ShortName(), Revision: engine.Describe(queued.Revision), Environments: []environmentJSON{}}
 		row.Stopped, row.Progress = queued.Stopped, queued.Progress
+		if len(queued.VMs) > 0 {
+			row.VMs, row.TartHome = queued.VMs, queued.TartHome
+		}
 		for _, environment := range queued.Plan.Environments {
 			row.Environments = append(row.Environments, EnvironmentView(environment))
 		}

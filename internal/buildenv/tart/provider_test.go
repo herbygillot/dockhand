@@ -36,6 +36,10 @@ import (
 type fakeMac struct {
 	mu     sync.Mutex
 	images []string
+	// whose are dockhand's VMs running, by name, and theirs the person's,
+	// as a wait names them.
+	whose  []string
+	theirs int
 	// noAddress is a VM that takes no address, as one whose tart run
 	// ended: Reach waits until it's given up on.
 	noAddress bool
@@ -88,6 +92,11 @@ func (m *fakeMac) Running(context.Context) (int, error) {
 		m.running = m.running[1:]
 	}
 	return count, nil
+}
+func (m *fakeMac) Whose(context.Context) ([]string, int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.whose), m.theirs, nil
 }
 func (m *fakeMac) Clone(_ context.Context, image, vm string) error {
 	m.log("clone " + image + " " + vm)
@@ -276,6 +285,8 @@ func (g *fakeGuest) Close(context.Context) {}
 
 // fakeBuild records what the provider records.
 type fakeBuild struct {
+	// holding are the checks running in VMs, by name.
+	holding  map[string]string
 	mu       sync.Mutex
 	blocked  map[model.TargetID]bool
 	consumed map[model.TargetID][]model.ActivePort
@@ -365,7 +376,12 @@ func (b *fakeBuild) Progress(message string) {
 	b.progress = append(b.progress, message)
 }
 func (b *fakeBuild) Waiting(message string) { b.Progress(message) }
-func (b *fakeBuild) Canceled() bool         { return false }
+func (b *fakeBuild) Holding(ref string) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.holding[ref]
+}
+func (b *fakeBuild) Canceled() bool { return false }
 
 var tahoe = model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 
@@ -714,12 +730,15 @@ func TestAnAttemptSweepsAndWaitsForRoom(t *testing.T) {
 	mac := newMac(guestResults{State: "finished"})
 	mac.images = append(mac.images, "dockhand-check-run-7-tahoe-1", "dockhand-check-run-7-sonoma-1", "dockhand-check-run-8-tahoe-1")
 	mac.running = []int{2, 2, 1}
-	build := &fakeBuild{}
+	// Whose they are is said: the check another session runs, and the
+	// person's own (the exiv2 and bazel sessions' notes, 2026-10-24).
+	mac.whose, mac.theirs = []string{"dockhand-check-run-9-tahoe-1"}, 1
+	build := &fakeBuild{holding: map[string]string{"dockhand-check-run-9-tahoe-1": "check-616"}}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 2), build))
 	require.Equal(t, []string{"stop dockhand-check-run-7-tahoe-1", "delete dockhand-check-run-7-tahoe-1"}, mac.events[:2], "only this run and release's earlier attempt")
 	require.Contains(t, mac.images, "dockhand-check-run-7-sonoma-1")
 	require.Contains(t, mac.images, "dockhand-check-run-8-tahoe-1")
-	require.Contains(t, build.progress, "waiting for the Mac's VMs: 2 are running, and macOS runs two at most")
+	require.Contains(t, build.progress, "waiting for the Mac's VMs: 2 are running, and macOS runs two at most: check-616's dockhand-check-run-9-tahoe-1 and 1 of yours")
 }
 
 // The clone is named on the execution before it is made, so a process
