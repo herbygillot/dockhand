@@ -1,8 +1,9 @@
-# Two sessions' field notes, coalesced
+# Three sessions' field notes, coalesced
 
-On 2026-10-24 the person asked field testing to gather notes from two
+On 2026-10-24 the person asked field testing to gather notes from three
 sessions that used dockhand: the gnome-voice session's (21:04Z, MacPorts
-#35727) and the exiv2 session's on rc5+388c304c (21:07Z). Each session
+#35727), the exiv2 session's on rc5+388c304c (21:07Z), and the bazel
+session's on the v0.4.0 port and rc5+388c304c (21:18Z). Each session
 marked its notes as verified against output or inferred. Field testing
 didn't re-verify them, so each was checked against main at 8bb5c196, and
 against v0.5.0-rc5, before it was placed. As the coalescing rule asks
@@ -28,6 +29,13 @@ v0.5.0 needs only its notes to say that any command migrates it, and
 that DOCKHAND_DB pointed at a copy tries a newer build without touching
 it.
 
+The bazel session's silent check is a regression from v0.4.0, but not
+harm either. Part 5 moved a check's progress to `-v` off a terminal, so
+a session reading dockhand's output saw nothing for 36 minutes while
+bazel's server held `port`'s pipe open. Nothing was lost or sent wrong,
+and `-v` prints every step, so it is a known-issues row in v0.5.0 and a
+fix for main.
+
 ## The gnome-voice session's notes
 
 | | Note | Found | Placed |
@@ -48,7 +56,7 @@ it.
 | --- | --- | --- |
 | A read-only `status -b` migrated the shared database, locking v0.4.0 out | Holds: `engine.Open` migrates for any command | Next, a fix for main: a development build asks before it migrates a release's database |
 | `revbump` on 15 ports silent for 120 s or more | Holds: the first applied update's wait isn't said | Next, a fix for main |
-| Tart capacity 1 runs every environment in turn; two VMs ran under rc4 | Default 1 since 2026-10-02; docs/build-platforms.md says two | Next, a fix for main: the doc, and the plan says it |
+| Tart capacity 1 runs every environment in turn; two VMs ran under rc4 | The capacity counts checks; a check runs two VMs, the Mac's two at most (tart/provider.go `slot`), so other sessions' VMs held the second (inferred). 67f37e9d's entry, which called the doc wrong, was corrected the same evening | Next, a fix for main: each wait says whose it is |
 | A baseline isn't reused after a rebase with the port's files unchanged | Holds: baselines don't reuse by inputs as checks do | Then's item 4 |
 | `status -b` printed five "couldn't read" link lines with no reason | Holds: `Unread` carries no reason | Next, a fix for main |
 | The grid shows pre-rebase cells marked (check-490) | They stand by `reuse.Current`; nothing says so | Next, a fix for main: one line under the grid |
@@ -60,9 +68,24 @@ it.
 | No long-check mode without serve | `check -d` starts a background drain (552f1966), in rc4 and rc5 | Nothing; field testing asks the session for the output if its drain didn't start |
 | No list of running instances with their builds | `status -v` lists dockhand's processes with their builds (status.go `writeProcesses`) | Nothing |
 
+## The bazel session's notes
+
+| Note | Found | Placed |
+| --- | --- | --- |
+| rc5's foreground check printed nothing after its plan; v0.4.0 printed each step; a VM sat idle 36 minutes | Holds: off a terminal, progress is `-v`'s (checkrun/run.go `quiet`) | Next, a fix for main: a line a step off a terminal, a stalled log said, `check -d` named; v0.5.0's README row |
+| The schema 39 lockout, the third session to meet it | Placed in 67f37e9d | Next's database entry, now first of these |
+| No way into a running check's VM; `tart list` doesn't see it | Holds: dockhand's Tart home is its own | Next: `status -v` names the VM and its Tart home; Later: `dockhand exec` and a kept guest |
+| "capacity is 1, check-616 is using it" while check-616 ran two VMs | The capacity counts checks, a check runs two VMs | Next: each wait says whose it is; counting VMs is the person's, open |
+| "couldn't read what bazel's build links" for a reused result | Holds | Next's link entry: a reused result carries its check's reading |
+| Whether a message-only amend after a `--head` check keeps its results (inferred) | It does: the trees are the same | Next's grid entry says so |
+| Checksums for a new subport by hand (inferred: it didn't try `dockhand checksums`) | `checksums [port]` writes a port's checksums for the version it names | Nothing; field testing tries it on a new subport |
+| Other open pull requests looked for with `gh pr list` | submit looks already, and ticks the box only where it did | Later: said when work starts |
+| ports.macports.org's build history instead of a baseline | The exiv2 session asked too | Later's entry grows, a candidate for Then |
+| Wrapping each check in screen | `check -d` runs it in the background with no serve (552f1966, in v0.5.0, not v0.4.0) | Next: the foreground notice names it |
+
 ## The size
 
-The fixes for main are about 1.3 batches. Then's item 4 grows by a
-quarter batch and item 7 by half a batch, so Then is about 25 batches.
-v0.6.0, the fixes, the corpus's rest, and Then's items 1 to 5, is about
-7.5 batches after v0.5.0's tag.
+The fixes for main are about 2 batches. Then's item 4 grows by a quarter
+batch and item 7 by half a batch, so Then is about 25 batches. v0.6.0,
+the fixes, the corpus's rest, and Then's items 1 to 5, is about 8
+batches after v0.5.0's tag.
