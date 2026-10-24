@@ -82,3 +82,60 @@ func DeclareSubportChecksums(src []byte, subport string, names []string) ([]byte
 	out, err := textedit.Apply(src, []textedit.Edit{{Span: textedit.Span{Start: end, End: end}, New: []byte(declaration)}})
 	return out, err == nil
 }
+
+// BlockPlace is where a command lies against a subport's block.
+type BlockPlace int
+
+const (
+	// PlaceUnknown is a subport with no one literal block, or no such
+	// command.
+	PlaceUnknown BlockPlace = iota
+	PlaceInBlock
+	PlaceBeforeBlock
+	PlaceAfterBlock
+)
+
+// SubportPlace is where the command at ordinal, counted as Commands visits
+// every command, lies against subport's one block with a literal name: a
+// checksums declaration of the port's before the block, which a
+// declaration in the block replaces, or after it, which MacPorts reads
+// over the block's.
+func SubportPlace(src []byte, subport string, ordinal int) BlockPlace {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 || ordinal < 0 {
+		return PlaceUnknown
+	}
+	var blocks []textedit.Span
+	for _, item := range script.Items {
+		cmd, ok := item.(syntax.Command)
+		if !ok {
+			continue
+		}
+		if name, _ := cmd.Name(src); name != "subport" || len(cmd.Words) != 3 {
+			continue
+		}
+		if name, ok := cmd.Words[1].Literal(src); ok && name == subport {
+			blocks = append(blocks, cmd.Span)
+		}
+	}
+	if len(blocks) != 1 {
+		return PlaceUnknown
+	}
+	block := blocks[0]
+	index := 0
+	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
+		if index++; index-1 != ordinal {
+			continue
+		}
+		switch {
+		case cmd.Span.Start >= block.Start && cmd.Span.End <= block.End:
+			return PlaceInBlock
+		case cmd.Span.End <= block.Start:
+			return PlaceBeforeBlock
+		case cmd.Span.Start >= block.End:
+			return PlaceAfterBlock
+		}
+		return PlaceUnknown
+	}
+	return PlaceUnknown
+}

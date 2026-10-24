@@ -170,10 +170,10 @@ for kb-0.1.6.tar.gz".
   (`declareSubportChecksums`). The family as written and as edited is
   compared, so nothing but the subport's checksums may move, and kb's stay.
   A main port with no declaration is still refused.
-- **Left as it is.** A port whose declaration is unnamed, which Bind reads
-  as covering a subport's other archive, is still refused by strict
-  fidelity ("fixture.checksums changed"), since writing it would change
-  the port's checksums.
+- **Left as it was.** A port whose declaration is unnamed, which Bind
+  reads as covering a subport's other archive, was still refused by strict
+  fidelity ("fixture.checksums changed"); the next entry writes the
+  subport its own.
 - **Test:** TestASubportsChecksumsAreWrittenInItsBlock.
 
 ## A rejected GitHub login said as one, not as GitHub unreached
@@ -200,3 +200,25 @@ offered for.
 - **v0.5.0.** README's known issues and the release notes gain the row.
 - **Test:** TestARejectedLoginIsSaidAsThatNotAsGitHubUnreached, a 401 and
   a reset connection through the client.
+
+## A subport under the port's unnamed declaration gets its own
+
+Left by the entry above, placed at 13c3e330. A port with one distfile
+usually declares its checksums unnamed, and Bind reads that declaration as
+a subport's where the subport fetches one archive, as MacPorts does; the
+refresh would have rewritten the port's line, and strict fidelity refused
+it saying nothing of what to do.
+
+- **Where the declaration is.** portfile `SubportPlace` says whether a
+  command, by the ordinal Bind counts, is in a subport's block, before it,
+  or after it.
+- **The archive undeclared.** portedit `underPortsDeclaration`, in each
+  context a refresh reads, takes a subport's archive bound to an unnamed
+  group declared outside its block and not among the port's own distfiles.
+  Before the block, it's `Undeclared`, and the subport's declaration is
+  written in its block (the entry above), the port's line unchanged. After
+  the block, which MacPorts would read over the block's, it's refused:
+  "move fixture's checksums line above the subport fixture-old block, then
+  dockhand checksums fixture-old writes its own".
+- **Test:** TestASubportUnderThePortsUnnamedDeclarationGetsItsOwn, with a
+  subport fetching the port's own archive, which gets nothing.
