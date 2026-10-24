@@ -50,7 +50,10 @@ func TestABodyThatStallsIsGivenUp(t *testing.T) {
 	}))
 	defer server.Close()
 	defer close(release)
-	client := &http.Client{Transport: &stalling{next: newTransport(), bound: 200 * time.Millisecond}}
+	// The bound is far above the steady body's 30ms gaps: at 200ms, a
+	// loaded CI runner's gap passed it, and the steady body read as
+	// stalled (CI on 0ca99cab's Intel job).
+	client := &http.Client{Transport: &stalling{next: newTransport(), bound: 1500 * time.Millisecond}}
 	get := func(path string) ([]byte, error) {
 		response, err := client.Get(server.URL + path)
 		require.NoError(t, err)
@@ -63,7 +66,7 @@ func TestABodyThatStallsIsGivenUp(t *testing.T) {
 	started := time.Now()
 	body, err = get("/stalls")
 	require.ErrorIs(t, err, ErrStalled)
-	require.ErrorContains(t, err, "for 200ms after the response began")
+	require.ErrorContains(t, err, "for 1.5s after the response began")
 	require.Equal(t, "slow slow slow slow slow ", string(body))
 	require.Less(t, time.Since(started), 5*time.Second)
 }
