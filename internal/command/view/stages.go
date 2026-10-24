@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -63,7 +64,11 @@ func LinkWords(finding engine.LinkFinding) string {
 		return fmt.Sprintf("%s links %s, each declared in depends_lib", finding.Target, prose.Plural(finding.Ports, "port"))
 	}
 	if finding.Unread {
-		return fmt.Sprintf("couldn't read what %s's build links, so whether it declares them isn't said", finding.Target)
+		words := fmt.Sprintf("couldn't read what %s's build links, so whether it declares them isn't said", finding.Target)
+		if finding.Reason != "" {
+			words = fmt.Sprintf("couldn't read what %s's build links: %s", finding.Target, finding.Reason)
+		}
+		return words
 	}
 	more := ""
 	if finding.Libraries > 1 {
@@ -82,6 +87,51 @@ func LinkWords(finding engine.LinkFinding) string {
 	return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib%s", finding.Target, path.Base(finding.Library), finding.Port, more, where)
 }
 
+// LinkLine is one line of a check's link findings, its mark and words.
+type LinkLine struct{ Mark, Words string }
+
+// LinkLines are a check's link findings as lines, the targets whose links
+// couldn't be read for one reason folded into one, "couldn't read what 5
+// targets link (…): the guest couldn't read them", a line each only where
+// the reasons differ: status said five such lines with no reason (the
+// exiv2 session's notes, 2026-10-24).
+func LinkLines(findings []engine.LinkFinding) []LinkLine {
+	var lines []LinkLine
+	unread := map[string][]string{}
+	at := map[string]int{}
+	for _, finding := range findings {
+		if !finding.Unread {
+			lines = append(lines, LinkLine{LinkMark(finding), LinkWords(finding)})
+			continue
+		}
+		// A reason's line stands where its first target's would.
+		if _, seen := at[finding.Reason]; !seen {
+			at[finding.Reason] = len(lines)
+			lines = append(lines, LinkLine{})
+		}
+		unread[finding.Reason] = append(unread[finding.Reason], string(finding.Target))
+	}
+	for reason, i := range at {
+		targets := unread[reason]
+		if len(targets) == 1 {
+			lines[i] = LinkLine{Unmarked, LinkWords(engine.LinkFinding{Target: model.TargetID(targets[0]), Unread: true, Reason: reason})}
+			continue
+		}
+		named := strings.Join(targets, ", ")
+		if len(targets) > 4 {
+			named = fmt.Sprintf("%s, and %d more", strings.Join(targets[:4], ", "), len(targets)-4)
+		}
+		words := fmt.Sprintf("couldn't read what %d targets link (%s)", len(targets), named)
+		if reason == "" {
+			words += ", so whether they declare them isn't said"
+		} else {
+			words += ": " + reason
+		}
+		lines[i] = LinkLine{Unmarked, words}
+	}
+	return lines
+}
+
 // LinkMark is a link finding's mark: !, a notice, where a port is linked
 // and not declared, and none otherwise.
 func LinkMark(finding engine.LinkFinding) string {
@@ -98,7 +148,7 @@ func WriteLinks(out io.Writer, findings []engine.LinkFinding) {
 		return
 	}
 	fmt.Fprintln(out, "Links")
-	for _, finding := range findings {
-		fmt.Fprintf(out, "  %s %s\n", LinkMark(finding), LinkWords(finding))
+	for _, line := range LinkLines(findings) {
+		fmt.Fprintf(out, "  %s %s\n", line.Mark, line.Words)
 	}
 }

@@ -612,12 +612,12 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places con
 		// (v0.5.0 part 6).
 		if status.Latest != nil {
 			if links, err := e.UndeclaredLinks(ctx, *status.Latest); err == nil {
-				for i, finding := range links {
+				for i, line := range view.LinkLines(links) {
 					label := "         "
 					if i == 0 {
 						label = "Links    "
 					}
-					fmt.Fprintf(out, "  %s%s %s\n", label, view.LinkMark(finding), view.LinkWords(finding))
+					fmt.Fprintf(out, "  %s%s %s\n", label, line.Mark, line.Words)
 				}
 			}
 		}

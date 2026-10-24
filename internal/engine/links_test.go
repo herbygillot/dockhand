@@ -46,6 +46,8 @@ func TestUndeclaredLinksSetABuildsLinksBesideItsDeclaredOnes(t *testing.T) {
 	require.NotContains(t, said, "libharbor unread", "nothing links is read")
 	require.Contains(t, found, LinkFinding{Target: "libharbor", Clean: true}, "and said, as a clean scan")
 	require.Contains(t, said, "harbor-viewer unread")
+	viewer := found[slices.IndexFunc(found, func(f LinkFinding) bool { return f.Target == "harbor-viewer" })]
+	require.Equal(t, "the guest couldn't read them, as its log says", viewer.Reason, "why, said once")
 
 	provider.readsLinks = false
 	found, err = e.UndeclaredLinks(t.Context(), run)

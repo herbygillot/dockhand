@@ -50,6 +50,9 @@ var (
 	// that read the schema it would replace are working: after it, none
 	// of them could record what it does (LiveUnderMigrationError).
 	ErrLiveUnderMigration error = refusal.New(refusal.Busy, "dockhand processes are working on the database's schema")
+	// ErrReleaseUnderMigration refuses a development build's migration of
+	// a database a release last opened, which a person answers.
+	ErrReleaseUnderMigration error = refusal.New(refusal.Attention, "a release last opened the database")
 	// ErrUncertain reports a commit whose outcome is unknown: the write
 	// may have landed or not, as when a cancel arrives while the commit
 	// syncs. A writer that would undo work outside the store on a failed
@@ -378,6 +381,24 @@ func (e *LiveUnderMigrationError) Error() string {
 }
 
 func (e *LiveUnderMigrationError) Unwrap() error { return ErrLiveUnderMigration }
+
+// ReleaseUnderMigrationError is a migration a development or rc build
+// refused of a database a release last opened, unasked: it would lock that
+// release out. The exiv2 session's read-only status, on a main build,
+// migrated the shared database from 32 to 39, and the installed v0.4.0
+// then refused it (the exiv2 session's notes, 2026-10-24).
+type ReleaseUnderMigrationError struct {
+	// Release is the release that last opened the database; Copy is where
+	// a migration keeps its form at From.
+	Release, Copy string
+	From, To      int
+}
+
+func (e *ReleaseUnderMigrationError) Error() string {
+	return fmt.Sprintf("dockhand %s, a release, last opened this database, at schema %d; migrating it to schema %d, as this build would, leaves %s unable to open it", e.Release, e.From, e.To, e.Release)
+}
+
+func (e *ReleaseUnderMigrationError) Unwrap() error { return ErrReleaseUnderMigration }
 
 // Check is a check's records read in one call, where four places read a
 // run's executions and each one's results row by row (the SQL study's

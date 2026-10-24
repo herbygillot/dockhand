@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/coord"
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -70,6 +71,9 @@ type Options struct {
 	// processes that read the older one are working: a person's answer to
 	// store.LiveUnderMigrationError, which the migration is otherwise.
 	MigrateUnderLive bool
+	// MigrateRelease migrates a database a release last opened though this
+	// build isn't one, a person's answer to ReleaseUnderMigrationError.
+	MigrateRelease bool
 	// Now defaults to time.Now.
 	Now func() time.Time
 	// Poll is how often a driver looks for a cancel request; a second when
@@ -225,9 +229,12 @@ func Checkouts(ctx context.Context, options Options) ([]string, error) {
 	if _, err := os.Stat(options.Database); errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
-	s, err := sqlite.Open(ctx, options.Database, sqlite.Options{MigrateUnderLive: options.MigrateUnderLive, LiveWithin: coord.DefaultHungAfter})
+	s, err := sqlite.Open(ctx, options.Database, options.storeOptions())
 	if refused := new(store.LiveUnderMigrationError); errors.As(err, &refused) {
 		return nil, &LiveUnderMigrationError{refused}
+	}
+	if refused := new(store.ReleaseUnderMigrationError); errors.As(err, &refused) {
+		return nil, &ReleaseUnderMigrationError{refused}
 	}
 	if err != nil {
 		return nil, err
@@ -258,9 +265,12 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := sqlite.Open(ctx, options.Database, sqlite.Options{MigrateUnderLive: options.MigrateUnderLive, LiveWithin: coord.DefaultHungAfter})
+	s, err := sqlite.Open(ctx, options.Database, options.storeOptions())
 	if refused := new(store.LiveUnderMigrationError); errors.As(err, &refused) {
 		return nil, &LiveUnderMigrationError{refused}
+	}
+	if refused := new(store.ReleaseUnderMigrationError); errors.As(err, &refused) {
+		return nil, &ReleaseUnderMigrationError{refused}
 	}
 	if err != nil {
 		return nil, err
@@ -310,6 +320,26 @@ func (e *Engine) PullRequestRepository() string {
 func (e *Engine) Sandboxed() bool {
 	return !strings.EqualFold(e.PullRequestRepository(), UpstreamRepository)
 }
+
+// storeOptions are what the store opens with: the person's answers to a
+// migration's refusals, and this build, which a release's database is
+// refused to unasked where it isn't one.
+func (o Options) storeOptions() sqlite.Options {
+	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease, Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter}
+}
+
+// ReleaseUnderMigrationError is a migration Open refused, since a release
+// last opened the database and this build isn't one: it would lock that
+// release out. Options.MigrateRelease is a person's answer to it.
+type ReleaseUnderMigrationError struct {
+	*store.ReleaseUnderMigrationError
+}
+
+func (e *ReleaseUnderMigrationError) Error() string {
+	return e.ReleaseUnderMigrationError.Error() + fmt.Sprintf(". To try this build without touching it, copy the database and point DOCKHAND_DB at the copy; run on a terminal, it asks, keeping its schema %d form at %s", e.From, e.Copy)
+}
+
+func (e *ReleaseUnderMigrationError) Unwrap() error { return e.ReleaseUnderMigrationError }
 
 // LiveUnderMigrationError is a migration Open refused, since dockhand
 // processes that read the older schema are working, said with the way on;

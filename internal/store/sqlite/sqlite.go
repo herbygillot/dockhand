@@ -27,6 +27,7 @@ import (
 
 	sqlitedriver "modernc.org/sqlite"
 
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -69,6 +70,12 @@ type Options struct {
 	// read the older one are working, a person's answer; otherwise such a
 	// migration is refused (store.LiveUnderMigrationError).
 	MigrateUnderLive bool
+	// Build is this build's version, as buildinfo.Info.String gives it, and
+	// MigrateRelease a person's answer to migrating a database a release
+	// last opened with a build that isn't one
+	// (store.ReleaseUnderMigrationError).
+	Build          string
+	MigrateRelease bool
 	// LiveWithin is how recent a heartbeat says a process is working,
 	// coord.DefaultHungAfter, which the engine gives; where it's zero,
 	// every session not ended is working.
@@ -205,6 +212,9 @@ func (s *Store) initialize(ctx context.Context) error {
 	if mode != "wal" {
 		return fmt.Errorf("%w: WAL mode required, got %q", store.ErrUnavailable, mode)
 	}
+	if err := s.refuseReleaseMigration(ctx); err != nil {
+		return err
+	}
 	if err := s.keepBeforeMigrating(ctx); err != nil {
 		return err
 	}
@@ -222,6 +232,79 @@ func (s *Store) initialize(ctx context.Context) error {
 		return fmt.Errorf("planner statistics: %w", storageError(err))
 	}
 	return nil
+}
+
+// refuseReleaseMigration refuses, unasked, a development or rc build's
+// migration of a database a release last opened, as the newest session
+// recorded says: it would lock that release out, where a release's own
+// migration is the port's upgrade. Unknown is no release, and a store
+// opened with no build named, as a test's, refuses nothing.
+func (s *Store) refuseReleaseMigration(ctx context.Context) error {
+	if s.options.MigrateRelease || s.options.Build == "" {
+		return nil
+	}
+	if _, release := buildinfo.Released(s.options.Build); release {
+		return nil
+	}
+	var version, app int
+	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return storageError(err)
+	}
+	if err := s.db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&app); err != nil {
+		return storageError(err)
+	}
+	if app != applicationID || version == 0 || version >= schemaVersion {
+		return nil
+	}
+	last, _, ok := s.lastBuild(ctx, s.db)
+	release, released := buildinfo.Released(last)
+	if !ok || !released {
+		return nil
+	}
+	return &store.ReleaseUnderMigrationError{Release: release, Copy: fmt.Sprintf("%s.schema-%d", s.path, version), From: version, To: schemaVersion}
+}
+
+// queryer is a database or a connection, which lastBuild reads with.
+type queryer interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// lastBuild is the build of the newest session the database records, and
+// when it started: the sessions table is every schema's alike.
+func (s *Store) lastBuild(ctx context.Context, q queryer) (string, time.Time, bool) {
+	var build string
+	var started int64
+	if err := q.QueryRowContext(ctx, "SELECT version, started_at FROM sessions ORDER BY started_at DESC LIMIT 1").Scan(&build, &started); err != nil {
+		return "", time.Time{}, false
+	}
+	return build, time.UnixMilli(started), true
+}
+
+// newerSchema is the refusal of a database whose schema is newer than
+// this build's: it names the build that last opened it, and when, the way
+// to that build, and the copy a migration kept at this build's schema, with
+// what's lost if it's put back. The installed v0.4.0's "use a newer build"
+// named neither (the exiv2 session's notes, and the gnome-voice session's
+// note 4, 2026-10-24).
+func (s *Store) newerSchema(ctx context.Context, q queryer, version int) error {
+	words := fmt.Sprintf("%s has schema %d, newer than this dockhand supports (%d)", s.path, version, schemaVersion)
+	if build, started, ok := s.lastBuild(ctx, q); ok {
+		words += fmt.Sprintf("; dockhand %s opened it last, at %s", build, started.Local().Format("2006-01-02 15:04"))
+		if way := buildinfo.Way(build); way != "" {
+			words += ", and " + way
+		}
+	} else {
+		words += "; use a newer build"
+	}
+	if copy := fmt.Sprintf("%s.schema-%d", s.path, schemaVersion); fileExists(copy) {
+		words += fmt.Sprintf(". Its schema %d form is kept at %s; put back, what was recorded since it was kept is lost", schemaVersion, copy)
+	}
+	return fmt.Errorf("%w: %s", store.ErrSchema, words)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // keepBeforeMigrating copies a database this build would migrate, as it is,
@@ -326,7 +409,7 @@ func (s *Store) prepareSchema(ctx context.Context) error {
 			}
 			return t.migrate(ctx, version)
 		case app == applicationID && version > schemaVersion:
-			return fmt.Errorf("%w: %s has schema %d, newer than this dockhand supports (%d); use a newer build", store.ErrSchema, s.path, version, schemaVersion)
+			return s.newerSchema(ctx, t.conn, version)
 		case app == v2ApplicationID:
 			return fmt.Errorf("%w: %s is a dockhand v2 database; v3 keeps its records in its own file and never reads v2's", store.ErrSchema, s.path)
 		case app != 0 || version != 0:
@@ -506,7 +589,7 @@ func (s *Store) transaction(ctx context.Context, write bool, repo model.Reposito
 		return storageError(err)
 	}
 	if version > schemaVersion {
-		return fmt.Errorf("%w: %s has schema %d, newer than this dockhand supports (%d); use a newer build", store.ErrSchema, s.path, version, schemaVersion)
+		return s.newerSchema(ctx, conn, version)
 	}
 	if repo != "" {
 		var exists int

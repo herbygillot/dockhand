@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"golang.org/x/mod/module"
+	"golang.org/x/mod/semver"
 )
 
 // ProjectURL is where dockhand lives.
@@ -158,4 +159,45 @@ func sourceOf(tag string, running Info) Source {
 		return Source{Commit: running.FullRevision}
 	}
 	return source
+}
+
+// Released is the release a build's version names, as String gives it,
+// "v0.4.0" of "v0.4.0 (5897a828e1c2)": a tag with no pre-release or build
+// part, as the port's builds are. False for an rc, a pseudo-version, a
+// modified build, devel, or unknown.
+func Released(version string) (string, bool) {
+	fields := strings.Fields(version)
+	if len(fields) == 0 {
+		return "", false
+	}
+	tag := fields[0]
+	if !semver.IsValid(tag) || semver.Prerelease(tag) != "" || semver.Build(tag) != "" || strings.Contains(version, "modified") {
+		return "", false
+	}
+	return tag, true
+}
+
+// Way is how to reach the build a version names, as String gives it: a
+// release's is the port's upgrade, a pseudo-version's or a devel build's
+// its commit; empty where none can be found.
+func Way(version string) string {
+	if release, ok := Released(version); ok {
+		return "dockhand " + release + " comes with the port's upgrade, sudo port upgrade dockhand"
+	}
+	fields := strings.Fields(version)
+	if len(fields) == 0 {
+		return ""
+	}
+	tag := fields[0]
+	if module.IsPseudoVersion(tag) {
+		if commit, err := module.PseudoVersionRev(tag); err == nil {
+			return "it was built from commit " + commit + " of " + ProjectURL
+		}
+	}
+	if len(fields) > 1 {
+		if commit := strings.Trim(strings.Split(fields[1], ",")[0], "()"); commit != "" {
+			return "it was built from commit " + commit + " of " + ProjectURL
+		}
+	}
+	return ""
 }

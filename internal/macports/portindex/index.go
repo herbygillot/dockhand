@@ -377,6 +377,10 @@ func buildPortIndex(ctx context.Context, c Config, platform model.Platform, sour
 		progress.Report(ctx, "Building the PortIndex; this may take several minutes")
 		progress.VerboseReport(ctx, "Generating full PortIndex for %s", name)
 	} else {
+		// Said once a command: revbump of 15 ports sat silent through an
+		// index update before each port's evaluation, a few seconds each
+		// (the exiv2 session's notes, 2026-10-24).
+		progress.ReportOnce(ctx, "Updating the port index with the edits before each evaluation, a few seconds each time")
 		progress.VerboseReport(ctx, "Updating PortIndex for %s from %s", name, prose.Plural(len(changed), "changed path"))
 	}
 	started := time.Now()

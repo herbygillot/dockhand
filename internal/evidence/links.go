@@ -25,6 +25,10 @@ type LinkFinding struct {
 	// 8c007979, C8-2: a declaration in one hid another's link).
 	Environments []model.Environment
 	Unread       bool
+	// Reason is why an Unread target's links weren't read, as its first
+	// unread build says it: five "couldn't read" lines said no reason (the
+	// exiv2 session's notes, 2026-10-24).
+	Reason string
 	// Clean is a target whose read builds link only ports it declares,
 	// Ports counting them.
 	Clean bool
@@ -43,6 +47,8 @@ type LinkedBuild struct {
 	Result      model.TargetResult
 	Environment model.Environment
 	Declared    []string
+	// Unread is why the build's links weren't read, where they weren't.
+	Unread string
 }
 
 // UndeclaredLinks are what a check's builds link that their ports don't
@@ -60,6 +66,7 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 	found := map[key]*LinkFinding{}
 	libraries := map[key]map[string]bool{}
 	read, passed := map[model.TargetID]bool{}, map[model.TargetID]bool{}
+	reasons := map[model.TargetID]string{}
 	linked := map[model.TargetID]map[string]bool{}
 	for _, build := range builds {
 		result := build.Result
@@ -68,6 +75,9 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 		}
 		passed[result.Target] = true
 		if result.Links == nil {
+			if reasons[result.Target] == "" {
+				reasons[result.Target] = build.Unread
+			}
 			continue
 		}
 		read[result.Target] = true
@@ -102,7 +112,7 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 	for target := range passed {
 		switch {
 		case !read[target]:
-			findings = append(findings, LinkFinding{Target: target, Unread: true})
+			findings = append(findings, LinkFinding{Target: target, Unread: true, Reason: reasons[target]})
 		case !undeclared[target]:
 			findings = append(findings, LinkFinding{Target: target, Clean: true, Ports: len(linked[target])})
 		}
