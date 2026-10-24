@@ -407,3 +407,54 @@ if {${version} eq "1.2.3"} {
 	require.ErrorIs(t, err, ErrFidelity)
 	require.ErrorContains(t, err, "candidate changed archive/checksum structure")
 }
+
+// A revision that's one variable, as mysql9's subports write `revision
+// ${revision_client}`, is reset where the Portfile sets the variable, once:
+// field testing reset both of mysql9's by hand (2026-10-24). A variable set
+// twice has no one place, and one that moves another release's revision
+// too is refused by strict fidelity.
+func TestPrepareResetsARevisionSetThroughAVariable(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, `set revision_client 1
+set revision_server 1
+version 1.2.3
+master_sites @SITE@/${version}
+distfiles fixture.tar.gz
+checksums sha256 aaaa size 2
+revision ${revision_client}
+subport fixture-server {
+ revision ${revision_server}
+}
+`)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "set revision_client 0\nset revision_server 0\n")
+	require.Contains(t, after, "revision ${revision_client}\n")
+	require.Contains(t, after, "version 1.2.4")
+
+	s, r, _ = archiveFixture(t, `set revision_client 1
+version 1.2.3
+master_sites @SITE@/${version}
+distfiles fixture.tar.gz
+checksums sha256 aaaa size 2
+if {${os.major} >= 17} { set revision_client 1 }
+revision ${revision_client}
+`)
+	_, err = s.Prepare(t.Context(), r)
+	require.ErrorContains(t, err, "revision is calculated or overridden", "a variable set twice has no one place")
+
+	s, r, _ = archiveFixture(t, `set rev 1
+version 1.2.3
+master_sites @SITE@/${version}
+distfiles fixture.tar.gz
+checksums sha256 aaaa size 2
+revision ${rev}
+subport fixture-legacy {
+ version 0.9
+ revision ${rev}
+}
+`)
+	_, err = s.Prepare(t.Context(), r)
+	require.ErrorContains(t, err, "fixture-legacy.revision", "the variable moves fixture-legacy's revision too, another release's")
+}

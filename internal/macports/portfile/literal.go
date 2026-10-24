@@ -38,3 +38,38 @@ func UniqueLiteral(src []byte, value string) (textedit.Span, bool) {
 	}
 	return found[0], true
 }
+
+// SetLiteral is the value word of the one `set name <literal>` the
+// Portfile writes, anywhere in it, and that value: mysql9 sets each
+// subport's revision through `set revision_client 1`. False where the
+// variable is set more than once, or not as a literal, since then no one
+// word is where it's set.
+func SetLiteral(src []byte, name string) (textedit.Span, string, bool) {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return textedit.Span{}, "", false
+	}
+	var found []syntax.Word
+	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
+		if len(cmd.Words) < 2 {
+			continue
+		}
+		verb, _ := cmd.Words[0].Literal(src)
+		variable, _ := cmd.Words[1].Literal(src)
+		if verb != "set" || variable != name {
+			continue
+		}
+		if len(cmd.Words) != 3 {
+			return textedit.Span{}, "", false
+		}
+		found = append(found, cmd.Words[2])
+	}
+	if len(found) != 1 {
+		return textedit.Span{}, "", false
+	}
+	value, literal := found[0].Literal(src)
+	if !literal {
+		return textedit.Span{}, "", false
+	}
+	return found[0].Span, value, true
+}

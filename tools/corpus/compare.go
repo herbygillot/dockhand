@@ -38,6 +38,13 @@ func read(src []byte) (statements, error) {
 			continue
 		}
 		name, ok := cmd.Words[0].Literal(src)
+		// A variable a revision is set through, as mysql's and mariadb's
+		// `set revision_client 1`, is the revision's.
+		if variable, _ := cmd.Words[min(1, len(cmd.Words)-1)].Literal(src); ok && name == "set" && strings.HasPrefix(variable, "revision") && len(cmd.Words) == 3 {
+			value, _ := cmd.Words[2].Literal(src)
+			out["set "+variable] = append(out["set "+variable], value)
+			continue
+		}
 		if !ok || !compared[name] {
 			continue
 		}
@@ -82,6 +89,17 @@ func sums(words []string) []string {
 func differences(want, got statements) []string {
 	var found []string
 	names := slices.Sorted(maps.Keys(compared))
+	for name := range want {
+		if strings.HasPrefix(name, "set ") && !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	for name := range got {
+		if strings.HasPrefix(name, "set ") && !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
 	for _, name := range names {
 		if slices.Equal(want[name], got[name]) {
 			continue

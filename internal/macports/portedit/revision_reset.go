@@ -3,6 +3,7 @@ package portedit
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strconv"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -83,11 +84,32 @@ func revisionReset(contents []byte, path string, info macports.PortInfo, events 
 			if span, ok := portfile.UniqueLiteral(contents, "revision "+strconv.Itoa(info.Revision)); ok {
 				return textedit.Edit{Span: span, New: []byte("revision 0")}, nil
 			}
+			// A revision that's one variable, as mysql9's subports write
+			// `revision ${revision_client}`, is reset where the Portfile
+			// sets that variable, once, to it: field testing reset both
+			// mysql9's `set revision_*` by hand (2026-10-24). What else
+			// the variable moves, strict fidelity's check refuses.
+			if name, ok := oneVariable(cmd.Words[1].Span.Text(contents)); ok {
+				if span, value, ok := portfile.SetLiteral(contents, name); ok && value == strconv.Itoa(info.Revision) {
+					return textedit.Edit{Span: span, New: []byte("0")}, nil
+				}
+			}
 		}
 		return textedit.Edit{}, ErrUnsupported.Because("revision is calculated or overridden")
 	}
 	return textedit.Edit{}, ErrUnsupported.Because("nonzero revision has no editable declaration")
 }
+
+// oneVariable is the variable a word is, alone, as $name or ${name}.
+func oneVariable(word string) (string, bool) {
+	match := variableWord.FindStringSubmatch(word)
+	if match == nil {
+		return "", false
+	}
+	return match[1] + match[2], true
+}
+
+var variableWord = regexp.MustCompile(`^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))$`)
 
 // bumpRevision raises the target's revision from current in contents:
 // where the Portfile's text has one place to bump (portfile.BumpRevision),
