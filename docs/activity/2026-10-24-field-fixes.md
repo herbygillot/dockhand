@@ -99,3 +99,28 @@ a newer build"), naming neither the build nor where to get it.
 - **Tests:** TestADevelopmentBuildAsksBeforeMigratingAReleasesDatabase,
   TestANewerSchemasRefusalNamesItsBuildAndTheCopy, and
   TestReleasedAndTheWayToABuild.
+
+## A check off a terminal says each step, and a stalled log is said
+
+The bazel session's notes, the costliest of them. In check-615, arowpp's
+bazel client exited, but bazel's server kept the output pipe open, so
+`port` waited and the VM sat idle for 36 minutes. rc5's foreground check
+printed nothing after its plan, where v0.4.0 printed each step. Part 5 put
+progress on the redrawn line, which off a terminal is never drawn.
+
+- **Each step, once.** Off a terminal at the default level, a foreground
+  check's journal (checkrun `steps`) prints what the redrawn line would
+  show, a line each time it changes: "  ⋯ command: jq failed …". A
+  stage's held journal, ship's or bump's, stays held.
+- **A stalled log.** engine `watchStalls` watches an execution's log
+  directory while it runs. When the newest log, the target building,
+  hasn't grown for ten minutes, it says so once as a wait, which every
+  level prints and status and serve read: "arowpp's log hasn't grown in
+  10 minutes". It says it again only once the log has grown. The timing
+  is the engine's (`stall`), so a test can shorten it.
+- **`-d` is named.** The foreground notice ends "check -d runs it in the
+  background instead". `check --help` and its `-d` line say serve runs a
+  `-d` check, or, with no serve running, a background drain dockhand starts.
+- **Tests:** TestCheckRunsHereWithoutServe checks the notice and a step
+  line off a terminal. TestAStalledLogIsSaidOnce checks a stall said once,
+  as a wait.

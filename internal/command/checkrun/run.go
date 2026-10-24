@@ -62,14 +62,19 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 	return Follow(ctx, e, session, run, streams, places, true, func(lead engine.Lead) {
 		if quiet(streams) {
 			// The notice is the redrawn line's, and -v's line (part 5,
-			// item 4).
-			if streams.ErrTerminal() && lead.Here() {
+			// item 4); off a terminal, the line, naming -d, since two
+			// sessions wrapped their checks in screen not knowing it
+			// (the bazel and exiv2 sessions' notes, 2026-10-24).
+			switch {
+			case streams.ErrTerminal() && lead.Here():
 				streams.Status().Show(fmt.Sprintf("⋯ %s runs here; Ctrl-C stops it and keeps what finished", run.Name()))
+			case lead.Here() && !streams.Held():
+				fmt.Fprintf(streams.Err, "%s runs here; check -d runs it in the background instead.\n", run.Name())
 			}
 			return
 		}
 		if lead.Here() {
-			fmt.Fprintf(streams.Err, "%s runs here, since no dockhand serve is running. Ctrl-C stops it and keeps what finished.\n", run.Name())
+			fmt.Fprintf(streams.Err, "%s runs here, since no dockhand serve is running. Ctrl-C stops it and keeps what finished; check -d runs it in the background instead.\n", run.Name())
 			return
 		}
 		fmt.Fprintf(streams.Err, "%s handed to serve (pid %d); following it. Ctrl-C stops following, not the check.\n", run.Name(), cmp.Or(lead.Serve, lead.Holder).PID)
@@ -91,6 +96,12 @@ func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 	if quiet(streams) {
 		journal.held, journal.live = true, streams.ErrTerminal()
 		journal.status = streams.Status()
+		// Off a terminal, a foreground check's own redrawn line is
+		// printed, a line each time it changes: rc5 printed nothing
+		// between a check's plan and its report, which a session reading
+		// dockhand's output took for a hang (the bazel session's notes,
+		// 2026-10-24). A stage's held journal stays held.
+		journal.steps = !journal.live && !streams.Held()
 	}
 	watching, stop := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -131,9 +142,12 @@ type journal struct {
 	out  io.Writer
 	last int64
 	// held is a stage's journal, its report held back: its progress is
-	// -v's, and the latest is the redrawn line where it's live.
-	held, live bool
-	status     *term.StatusLine
+	// -v's, and the latest is the redrawn line where it's live. steps
+	// prints, off a terminal, what the redrawn line would show, each
+	// change once.
+	held, live, steps bool
+	status            *term.StatusLine
+	shown             string
 }
 
 func (j *journal) show(ctx context.Context) {
@@ -155,6 +169,9 @@ func (j *journal) show(ctx context.Context) {
 				j.status.Show("⋯ " + event.Message)
 			case !j.held:
 				fmt.Fprintf(j.out, "  %s\n", event.Message)
+			case j.steps && event.Message != j.shown:
+				j.shown = event.Message
+				fmt.Fprintf(j.out, "  ⋯ %s\n", event.Message)
 			}
 		case model.EventArchiveAltered, model.EventArchiveGone:
 			// A kept archive found altered, or gone, is marked, where it

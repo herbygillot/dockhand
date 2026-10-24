@@ -70,6 +70,9 @@ type scriptedProvider struct {
 	links      map[model.TargetID][]model.Link
 	readsLinks bool
 	jobs       []buildenv.Job
+	// stall writes each target's log once and holds it that long before
+	// its result, as a build whose output stopped.
+	stall time.Duration
 }
 
 // scriptedArchive is the archive a scripted build of a target makes: its
@@ -114,6 +117,15 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 		if p.wait {
 			<-ctx.Done()
 			return ctx.Err()
+		}
+		if p.stall > 0 {
+			if err := os.MkdirAll(job.Directory, 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(job.Directory, buildenv.LogName(target.ID)), []byte("building\n"), 0o644); err != nil {
+				return err
+			}
+			time.Sleep(p.stall)
 		}
 		if _, blocked := build.Blocked(target.ID); blocked {
 			if err := build.Record(buildenv.Reported(model.TargetResult{Target: target.ID, Outcome: model.OutcomeBlocked, Tests: model.TestsNone})); err != nil {
@@ -1574,4 +1586,31 @@ func TestTheOfferSaysItsArchivesWhereAPortHasTwo(t *testing.T) {
 	require.Equal(t, "the guest may install up to 2 dependencies from archives earlier checks kept", offeredWords(2, 2))
 	require.Equal(t, "the guest may install up to 221 dependencies from archives earlier checks kept (223 archives, the newest two of some)", offeredWords(221, 223))
 	require.Equal(t, "the guest may install up to 1 dependency from archives earlier checks kept", offeredWords(1, 1))
+}
+
+// A target whose log stops growing is said once, at every level: bazel's
+// server held port's pipe open after its client exited, and the VM sat
+// idle for 36 minutes with nothing said (the bazel session's notes,
+// 2026-10-24).
+func TestAStalledLogIsSaidOnce(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	e.stall = [2]time.Duration{60 * time.Millisecond, 10 * time.Millisecond}
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{stall: 400 * time.Millisecond}}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	events, err := e.RunEvents(t.Context(), run.ID, 0)
+	require.NoError(t, err)
+	var stalls []string
+	for _, event := range events {
+		if event.Kind == model.EventWaiting && strings.Contains(event.Message, "log hasn't grown") {
+			stalls = append(stalls, event.Message)
+		}
+	}
+	require.NotEmpty(t, stalls)
+	require.Len(t, stalls, len(slices.Compact(slices.Clone(stalls))), "each stall said once")
+	require.Contains(t, stalls[0], "'s log hasn't grown in ")
 }

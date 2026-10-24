@@ -80,8 +80,14 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	cmdtest.WithScript(t, w, "failed")
 	_, _, err = cmdtest.Dockhand(t, "check")
 	require.ErrorContains(t, err, "check-2 is already queued for these files; dockhand wait check-2 follows it", "one check of a branch at a time")
-	out, _, err = cmdtest.Dockhand(t, "check", "--replace")
+	out, errs, err = cmdtest.Dockhand(t, "check", "--replace")
 	require.Contains(t, out, "Replaced check-2, canceled before it started.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
+	// Off a terminal at the default level, the check says it runs here,
+	// naming -d, and each step its redrawn line would show: rc5 said
+	// nothing between its plan and its report (the bazel session's notes,
+	// 2026-10-24).
+	require.Contains(t, errs, "check-3 runs here; check -d runs it in the background instead.\n")
+	require.Contains(t, errs, "  ⋯ command: jq failed")
 	require.Equal(t, 2, term.ExitCode(err), "a failed check exits 2")
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass\nNext: dockhand explain check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
