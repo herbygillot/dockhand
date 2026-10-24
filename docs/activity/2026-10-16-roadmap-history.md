@@ -958,3 +958,25 @@ Implementation found that tidy giving its commits the modeline left a tree no ch
 The decided entry read:
 
 - **dockhand adds or corrects the modeline on every Portfile it touches, unless told to keep it** (the person's ask, 2026-10-24 04:41Z): a fix for main riding the release after v0.5.0, with `--keep-modeline` to opt out.
+
+## From Then and the decisions on 2026-10-24: two sessions' field notes
+
+The gnome-voice and exiv2 sessions' notes ([note](2026-10-24-field-notes-coalesced.md)) grew Then's items 4 and 7 and v0.6.0's size. Before them, Then's item 4 read, whole:
+
+   4. **The baseline in every check's path** (about half a batch; the reflections' D). `check.baseline = true` runs the baseline a failed check points to, but only the command's foreground check reads it (command/check/check.go), so `check -d`, ship's, and serve's checks never run it. The setting moves to the engine, as the check's continuation, queued once where the pipeline queues (`engine.QueueCheck`), so every path runs it; its answer is the verdict's "the same failure at the base: --accept" (branchstate/blocks.go), never an acceptance, since dockhand never accepts a failure itself. One bool still, not architecture's `offer|auto`: the setting exists, and serve reads it as every path does. Done when a `check -d` and a serve check that fail as master does each run their baseline with the setting on, and status's Next offers `--accept`.
+
+Then's item 7 read, whole:
+
+   7. **After submit: a follow-up branch, and CI's error line** (about 1 batch together; the reflections' F). A branch whose pull request merged with commits on it beyond the merge gets a Next, `dockhand start --from <branch>`, which starts a new branch from master and picks those commits onto it, branchstate's verdict and one engine operation (wasmedge's follow-up was made by hand); `start --from` over architecture's `tidy --carry`, since starting a branch is start's. And an unclassified CI failure's status quotes the job log's first error line, read as a local log's is (D10), where today it says the log said nothing of its cause (xapian-core).
+
+Then's heading read:
+
+3. **Then** (about 24 batches: 10.5 sized 2026-10-22 as part 5 closed, [note](activity/2026-10-22-then-sized.md), 4 from Codex's review of 8c007979 on 2026-10-23, [note](activity/2026-10-23-codex-review-8c007979-coalesced.md), and about 10.5 from field testing's [reflections](reviews/2026-10-23-field-reflections.md) after some 300 bumps, [weighed by architecture](reviews/2026-10-23-field-reflections-architecture.md) within the person's scope ruling, 2026-10-23, [note](activity/2026-10-23-field-reflections-coalesced.md); each item at the person's word, after v0.5.0's tag), in this order, the field's measured costs ahead of the 2026-10-22 order, with v0.6.0 cut once items 1 to 5 are done (the person's "After item 5", 2026-10-24 11:59Z), carrying main's fixes for the release after v0.5.0 and the corpus's rest; its acceptance is planned as item 5 closes:
+
+The paragraph on v0.5.0 as the final state read:
+
+**Then v0.5.0, the final state** (two releases to it, the person's "Two releases", 2026-10-13; the order's history is in [the roadmap's history](activity/2026-10-16-roadmap-history.md#from-next-on-2026-10-17-v040s-parts-and-v050-as-it-stood)). After it, Then's items come at the person's word, and the release after v0.5.0 is v0.6.0, cut once Then's items 1 to 5 are done (the person's "After item 5", 2026-10-24 11:59Z, on the prioritization thread's card): it carries main's fixes placed above for the release after v0.5.0, the corpus's rest, and those five items, about six batches after v0.5.0's tag; items 6 to 15 follow it. A harm found in a release gets a point release on the quick stage alone, and field testing exercises main between tags.
+
+The decided entry on v0.6.0 read:
+
+- **v0.6.0 is cut once Then's items 1 to 5 are done** (the person's "After item 5", 2026-10-24 11:59Z, on the prioritization thread's card, over one release at Then's end or a point release of the fixes first): it carries main's fixes for the release after v0.5.0, nine on 2026-10-24, the corpus's rest, and the typed source, per-port holds, `update --hand-edit`, the baseline on every check, and the GitHub allowance, about six batches after v0.5.0's tag. A point release stays for harm alone.
