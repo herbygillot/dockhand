@@ -151,7 +151,62 @@ func (s *Service) refreshVendoredChecksums(ctx context.Context, request Request,
 // refreshChecksums re-downloads a port's archives and rewrites the
 // checksums they're declared by.
 func (s *Service) refreshChecksums(ctx context.Context, request Request, input *sourceInput) (Result, error) {
-	return s.refreshChecksumsInto(ctx, request, input, s.Archives.Store(""))
+	result, err := s.refreshChecksumsInto(ctx, request, input, s.Archives.Store(""))
+	if undeclared := new(distfiles.Undeclared); errors.As(err, &undeclared) {
+		return s.declareSubportChecksums(ctx, request, input, undeclared)
+	}
+	return result, err
+}
+
+// declareSubportChecksums writes a checksums declaration in a subport's
+// block, where none it reads covers the archives it fetches, and refreshes
+// it: a declaration of placeholders, as create writes one, filled in as a
+// refresh fills any. kb-old, a subport beside kb at an older version, was
+// refused, kb's declaration naming kb's archive (field testing on rc3).
+// Strict fidelity holds the edit to the subport's checksums; where the
+// subport has no block to write in, the refusal stands.
+func (s *Service) declareSubportChecksums(ctx context.Context, request Request, input *sourceInput, undeclared *distfiles.Undeclared) (Result, error) {
+	result := Result{Base: request.Source, Target: input.target}
+	name := input.target.Name
+	placeholders, ok := portfile.DeclareSubportChecksums(input.data, name, undeclared.Names)
+	if !ok {
+		return result, undeclared
+	}
+	evaluated, err := s.evaluateEdit(ctx, input, placeholders)
+	if err != nil {
+		return result, err
+	}
+	result, err = s.refreshChecksumsInto(ctx, request, input.derive(placeholders, evaluated.after), s.Archives.Store(""))
+	if err != nil {
+		return result, err
+	}
+	if len(result.Files) == 0 {
+		return result, ErrFidelity.Because("the checksums written for %s weren't filled in", name)
+	}
+	final, err := s.evaluateEdit(ctx, input, result.Files[0].After)
+	if err != nil {
+		return result, err
+	}
+	written := final.after.Ports[name].Options["checksums"]
+	if values, _ := syntax.ListValues(written); slices.Contains(values, "0") {
+		return result, ErrFidelity.Because("the checksums written for %s weren't filled in", name)
+	}
+	// The port and its siblings as written, evaluated as the edit is, so
+	// nothing but the subport's checksums moves: kb's stay as they were.
+	baseline, err := s.evaluateEdit(ctx, input, input.data)
+	if err != nil {
+		return result, err
+	}
+	report := fidelity.ScopedChecksums(input.scope, baseline.after, final.after, name, written)
+	if err := result.commitEdit(input, request, final.edit, report, "refresh checksums"); err != nil {
+		return result, err
+	}
+	if input.scope != nil {
+		if result.Scope, err = macports.RebindReleaseScope(input.scope, final.after); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
 }
 
 // refreshChecksumsInto is refreshChecksums, with the archives fetched

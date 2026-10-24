@@ -334,6 +334,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		e.Providers[dependencies.Leftovers.Name()] = dependencies.Leftovers
 	}
 	e.Maintainers = file.Maintainers()
+	e.TartHome = options.TartPlaces().Home
 	// Each provider's capacity, which serve and a check run here keep to.
 	e.Capacity = map[string]int{}
 	for name := range e.Providers {

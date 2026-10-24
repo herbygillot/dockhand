@@ -99,3 +99,79 @@ a newer build"), naming neither the build nor where to get it.
 - **Tests:** TestADevelopmentBuildAsksBeforeMigratingAReleasesDatabase,
   TestANewerSchemasRefusalNamesItsBuildAndTheCopy, and
   TestReleasedAndTheWayToABuild.
+
+## A check off a terminal says each step, and a stalled log is said
+
+The bazel session's notes, the costliest of them. In check-615, arowpp's
+bazel client exited, but bazel's server kept the output pipe open, so
+`port` waited and the VM sat idle for 36 minutes. rc5's foreground check
+printed nothing after its plan, where v0.4.0 printed each step. Part 5 put
+progress on the redrawn line, which off a terminal is never drawn.
+
+- **Each step, once.** Off a terminal at the default level, a foreground
+  check's journal (checkrun `steps`) prints what the redrawn line would
+  show, a line each time it changes: "  ⋯ command: jq failed …". A
+  stage's held journal, ship's or bump's, stays held.
+- **A stalled log.** engine `watchStalls` watches an execution's log
+  directory while it runs. When the newest log, the target building,
+  hasn't grown for ten minutes, it says so once as a wait, which every
+  level prints and status and serve read: "arowpp's log hasn't grown in
+  10 minutes". It says it again only once the log has grown. The timing
+  is the engine's (`stall`), so a test can shorten it.
+- **`-d` is named.** The foreground notice ends "check -d runs it in the
+  background instead". `check --help` and its `-d` line say serve runs a
+  `-d` check, or, with no serve running, a background drain dockhand starts.
+- **Tests:** TestCheckRunsHereWithoutServe checks the notice and a step
+  line off a terminal. TestAStalledLogIsSaidOnce checks a stall said once,
+  as a wait.
+
+## A wait for the Mac's VMs or a check's capacity says whose they are
+
+The bazel and exiv2 sessions' notes. A check waited on "macOS runs two at
+most" or a provider's capacity without saying what held it, and `tart
+list` didn't show dockhand's VMs, which live in its own Tart home.
+
+- **Capacity.** engine `slotWords` names each holder's process and how long
+  it has run: "check-1 (a foreground dockhand, pid N, devel, for under a
+  minute) is using it".
+- **The Mac's VMs.** Tart's `machine` interface gains `Whose`, dockhand's
+  running VMs by name and a count of the personal Tart home's. buildenv's
+  `Build` gains `Holding(ref)`, the running check whose execution the
+  provider knows by that ref (store `ExecutionsReferred`). The wait reads
+  "waiting for the Mac's VMs: 2 are running, and macOS runs two at most:
+  check-616's dockhand-check-run-9-tahoe-1 and 1 of yours".
+- **Reaching a VM.** check -v's "building in <vm>" line adds
+  `TART_HOME=<home> tart exec <vm> …`. `status -v` lists each running
+  check's VMs under the queue with the same, from engine `QueuedCheck`'s
+  `VMs` and `TartHome` (compose sets the engine's `TartHome`); status's
+  JSON carries them as `vms` and `tart_home`.
+- **Tests:** TestAForegroundCheckKeepsToTheProvidersCapacity,
+  TestAnAttemptSweepsAndWaitsForRoom, and
+  TestTheQueueNamesARunningChecksVMsWithTheirTartHome.
+
+## checksums writes a subport's declaration where it has none
+
+Field testing on rc3, at the bazel session's note, which wrote a new
+subport's checksums with curl and openssl. kb-old, a subport beside kb at
+0.1.6, declared no checksums in its block, and kb's declaration names kb's
+own archive, so `checksums kb-old` was refused: "no checksum declaration
+for kb-0.1.6.tar.gz".
+
+- **The refusal is typed.** distfiles `Bind` returns `Undeclared`, the
+  archive and every archive the context fetches, with the same words.
+- **The declaration.** portfile `DeclareSubportChecksums` writes
+  placeholders in the subport's block, after its last fetch line, in the
+  block's indentation, as create writes them: rmd160, sha256, and size,
+  each archive named where there are several. It writes nothing where the
+  subport has no one literal block, its block declares checksums, or its
+  lines aren't one command to a line.
+- **The refresh.** portedit `refreshChecksums`, on `Undeclared`, writes the
+  placeholders and refreshes them as any declaration is refreshed
+  (`declareSubportChecksums`). The family as written and as edited is
+  compared, so nothing but the subport's checksums may move, and kb's stay.
+  A main port with no declaration is still refused.
+- **Left as it is.** A port whose declaration is unnamed, which Bind reads
+  as covering a subport's other archive, is still refused by strict
+  fidelity ("fixture.checksums changed"), since writing it would change
+  the port's checksums.
+- **Test:** TestASubportsChecksumsAreWrittenInItsBlock.

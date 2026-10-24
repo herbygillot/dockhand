@@ -16,7 +16,9 @@ act() {
 	# the same token each ten.
 	# Only this row's lines: serve.log keeps earlier runs' (the rc10 full
 	# stage).
-	wait_for_line "$log" '^serve: GitHub rejected its login' 720 "${before:-0}" || :
+	# serve's words since 4a33af6d; the row waited 12 minutes for the old
+	# ones, and the first device code expired (the rc5 full stage).
+	wait_for_line "$log" '^serve: GitHub rejected (its login|the credentials)' 720 "${before:-0}" || :
 	local rejected
 	rejected=$(log_size "$log")
 	dh_json status --all || :
@@ -40,12 +42,14 @@ assert() {
 	local status queue
 	status=$(grep -l '^status --refresh$' "$ROW_DIR"/json/*.json.args 2>/dev/null | head -1)
 	queue=$(grep -l '^status --all$' "$ROW_DIR"/json/*.json.args 2>/dev/null | head -1)
-	# 401 as a word: a commit's SHA in status's JSON held it (the rc4 sitting).
-	jq -r '.error // empty' "${status%.args}" | grep -qi 'rejected' && ! grep -qw '401' "$ROW_DIR/out.log" ||
+	# A raw 401 as GitHub's status or its words, not the number alone: a
+	# commit's SHA held it (the rc4 sitting), and so did check-401 (the rc5
+	# full stage).
+	jq -r '.error // empty' "${status%.args}" | grep -qi 'rejected' && ! grep -qiE '(HTTP|status|code)[ :=]*401|401 (Unauthorized|Bad credentials)' "$ROW_DIR/out.log" ||
 		{ row_fail "not said as rejected: $(jq -r '.error // empty' "${status%.args}")"; return; }
 	[ "$(grep -c 'rejected the credential' "$ROW_DIR/out.log")" -le 2 ] ||
 		{ row_fail "the rejection was said more than once"; return; }
-	[ "$(grep -c '^serve: GitHub rejected its login' "$ROW_DIR/serve.log")" = 1 ] ||
+	[ "$(grep -cE '^serve: GitHub rejected (its login|the credentials)' "$ROW_DIR/serve.log")" = 1 ] ||
 		{ row_fail "serve didn't say once that GitHub rejected its login"; return; }
 	jq -r '.result.serve_state.not_acting // empty' "${queue%.args}" | grep -q 'rejected' ||
 		{ row_fail "status didn't say serve wasn't acting on GitHub"; return; }

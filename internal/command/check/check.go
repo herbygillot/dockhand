@@ -50,7 +50,10 @@ built there; --fresh builds everything.
 
 Without dockhand serve, the check runs here and says so; Ctrl-C stops it
 and keeps what finished. With serve running, it is handed to serve and
-followed here; Ctrl-C then only stops following. -d queues it and returns.
+followed here; Ctrl-C then only stops following. -d queues it and returns:
+serve runs it, or, with no serve running, a drain dockhand starts in the
+background, so -d runs a check in the background either way; dockhand
+wait follows it.
 
 One check of a branch runs at a time: while one is queued or running,
 check refuses, and --replace stops it, keeping what it finished, and checks
@@ -206,7 +209,7 @@ true, it runs that baseline by itself.`,
 	cmd.Flags().StringVar(&build, "build", "", "where to build, by build profile: host, minmax, macports-ci, all, or yours (default build.default)")
 	cmd.Flags().StringArrayVar(&on, "on", nil, "where to build, explicit environments, as tart:15,26, github, or command; repeat for several, all of which must pass")
 	cmd.Flags().StringVar(&tests, "tests", "", "declared (advisory), required, or skip")
-	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return")
+	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return; serve, or a background drain where none runs, runs it")
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
 	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the master it started from")
 	cmd.Flags().BoolVar(&fresh, "fresh", false, "build every port, reusing no earlier build's result")

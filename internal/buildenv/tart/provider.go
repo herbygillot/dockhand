@@ -40,6 +40,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/guestssh"
@@ -815,7 +816,13 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if err := p.install(ctx, g, job, build); err != nil {
 		return p.trouble(ctx, "giving "+vm+" the archives it installs", err)
 	}
-	build.Progress("building in " + vm)
+	// With the Tart home that reaches it, which a person's tart list
+	// doesn't see (the bazel session's notes, 2026-10-24).
+	building := "building in " + vm
+	if home, err := p.home(); err == nil && home != "" {
+		building += fmt.Sprintf(" (TART_HOME=%s tart exec %s …)", home, vm)
+	}
+	build.Progress(building)
 	if err := launch(ctx, g, archive); err != nil {
 		return p.trouble(ctx, "starting the build in "+vm, err)
 	}
@@ -944,7 +951,7 @@ func (p *Provider) slot(ctx context.Context, m machine, build buildenv.Build) (i
 			return running, nil
 		}
 		if !told {
-			build.Waiting(fmt.Sprintf("waiting for the Mac's VMs: %d are running, and macOS runs two at most", running))
+			build.Waiting(fmt.Sprintf("waiting for the Mac's VMs: %d are running, and macOS runs two at most%s", running, whoseWords(ctx, m, build)))
 			told = true
 		}
 		select {
@@ -953,6 +960,30 @@ func (p *Provider) slot(ctx context.Context, m machine, build buildenv.Build) (i
 		case <-time.After(3 * p.poll()):
 		}
 	}
+}
+
+// whoseWords say whose the running VMs are, the checks dockhand's run and
+// how many are the person's own: "check-616's tart-abc, and 1 of yours".
+// Nothing said whose they were, so a session's environments ran in turn
+// behind other sessions' checks with no word why (the exiv2 and bazel
+// sessions' notes, 2026-10-24). Empty where it can't be read.
+func whoseWords(ctx context.Context, m machine, build buildenv.Build) string {
+	ours, theirs, err := m.Whose(ctx)
+	if err != nil || len(ours)+theirs == 0 {
+		return ""
+	}
+	var words []string
+	for _, vm := range ours {
+		if check := build.Holding(vm); check != "" {
+			words = append(words, check+"'s "+vm)
+		} else {
+			words = append(words, "dockhand's "+vm)
+		}
+	}
+	if theirs > 0 {
+		words = append(words, fmt.Sprintf("%d of yours", theirs))
+	}
+	return ": " + prose.And(words)
 }
 
 // stage packs the revision's tree, its port index for the release, and

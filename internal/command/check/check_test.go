@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -80,8 +81,14 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	cmdtest.WithScript(t, w, "failed")
 	_, _, err = cmdtest.Dockhand(t, "check")
 	require.ErrorContains(t, err, "check-2 is already queued for these files; dockhand wait check-2 follows it", "one check of a branch at a time")
-	out, _, err = cmdtest.Dockhand(t, "check", "--replace")
+	out, errs, err = cmdtest.Dockhand(t, "check", "--replace")
 	require.Contains(t, out, "Replaced check-2, canceled before it started.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
+	// Off a terminal at the default level, the check says it runs here,
+	// naming -d, and each step its redrawn line would show: rc5 said
+	// nothing between its plan and its report (the bazel session's notes,
+	// 2026-10-24).
+	require.Contains(t, errs, "check-3 runs here; check -d runs it in the background instead.\n")
+	require.Contains(t, errs, "  ⋯ command: jq failed")
 	require.Equal(t, 2, term.ExitCode(err), "a failed check exits 2")
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass\nNext: dockhand explain check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
@@ -537,8 +544,10 @@ JSON
 	go run(first, &firstOut, firstDone)
 	require.Eventually(t, func() bool { return started("check-1") }, cmdtest.Settle, 10*time.Millisecond)
 	go run(other, &otherOut, otherDone)
-	waiting := "check-2 waits for a slot on command: providers.command.capacity is 1, and check-1 is using it"
-	require.Eventually(t, func() bool { return strings.Contains(otherOut.String(), waiting) }, cmdtest.Settle, 10*time.Millisecond, "the second waits for the first's slot, said at the default level (rc1's D-R2)")
+	// Said at the default level (rc1's D-R2), with whose process runs the
+	// check it waits on (the bazel and exiv2 sessions' notes, 2026-10-24).
+	waiting := regexp.MustCompile(`check-2 waits for a slot on command: providers\.command\.capacity is 1, and check-1 \(a foreground dockhand, pid [0-9]+, [^,]+, for [^)]+\) is using it`)
+	require.Eventually(t, func() bool { return waiting.MatchString(otherOut.String()) }, cmdtest.Settle, 10*time.Millisecond, "the second waits for the first's slot: %s", &otherOut)
 	require.False(t, started("check-2"))
 	require.NoError(t, os.WriteFile(filepath.Join(w.Home, "go"), nil, 0o644))
 	<-firstDone

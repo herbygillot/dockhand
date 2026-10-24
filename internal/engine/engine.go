@@ -141,6 +141,13 @@ type Engine struct {
 	// Maintainers are the config's maintainer entries, whose ports serve's
 	// daily look is for, and whose look status shows (LastOutdatedLook).
 	Maintainers []string
+	// TartHome is dockhand's Tart home, which status -v names to reach a
+	// running check's VMs.
+	TartHome string
+	// stall is how long a target's log may go without growing, and how
+	// often it's looked at (watchStalls); stallAfter and stallPoll where
+	// zero, a test's otherwise.
+	stall [2]time.Duration
 	// ConfigFile is the configuration file the command read, which a hint
 	// to set something there names: $DOCKHAND_CONFIG, or the default
 	// (configFile) where empty.

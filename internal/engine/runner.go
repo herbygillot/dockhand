@@ -626,7 +626,9 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}
 		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit, Installs: build.installs,
 			Directory: filepath.Join(e.LogDirectory(), d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
+		stopWatching := watchStalls(ctx, build, job.Directory)
 		err = provider.Execute(ctx, job, build)
+		stopWatching()
 		build.blockRemaining(building)
 		// An attempt that left no log keeps no directory for it: exiv2's
 		// check-448 had an empty tart-macos27-arm64-1/ beside -2/, and
@@ -994,6 +996,26 @@ func (b *build) Observe(observed model.Observed) error {
 
 func (b *build) Progress(message string) {
 	b.d.emit(b.ctx, model.EventProgress, DescribeEnvironment(b.execution.Environment)+": "+message)
+}
+
+// Holding is the check whose execution runs in the VM a provider named
+// ref, among the running checks: a wait for the Mac's VMs names them.
+func (b *build) Holding(ref string) string {
+	holding := ""
+	_ = b.d.e.Store.View(b.ctx, b.d.e.Repository, func(r store.Reader) error {
+		executions, err := r.ExecutionsReferred(ref)
+		if err != nil {
+			return err
+		}
+		for _, execution := range executions {
+			if run, err := r.Run(execution.Run); err == nil && run.State == model.RunRunning {
+				holding = run.Name()
+				return nil
+			}
+		}
+		return nil
+	})
+	return holding
 }
 
 func (b *build) Waiting(message string) {
@@ -1381,6 +1403,11 @@ type QueuedCheck struct {
 	// Progress is a running check's newest progress line, as "building
 	// jq (2 of 5): fetch", for live progress; empty for one queued.
 	Progress string
+	// VMs are the Tart VMs a running check's executions run in, by name,
+	// and TartHome the home that reaches them: a person's tart list
+	// doesn't see dockhand's (the bazel session's notes, 2026-10-24).
+	VMs      []string
+	TartHome string
 }
 
 // Queue is every check queued or running, oldest first, each with what
@@ -1417,6 +1444,16 @@ func (e *Engine) Queue(ctx context.Context, session *coord.Session) ([]QueuedChe
 				if found {
 					checked.Progress = event.Message
 				}
+				executions, err := r.Executions(run.ID)
+				if err != nil {
+					return err
+				}
+				for _, execution := range executions {
+					if execution.Environment.Provider == buildenv.Tart && execution.State == model.ExecutionRunning && execution.ProviderRef != "" {
+						checked.VMs = append(checked.VMs, execution.ProviderRef)
+					}
+				}
+				checked.TartHome = e.TartHome
 			}
 			queue = append(queue, checked)
 		}
@@ -1459,4 +1496,59 @@ func offeredWords(ports, archives int) string {
 		words += fmt.Sprintf(" (%d archives, the newest two of some)", archives)
 	}
 	return words
+}
+
+// stallAfter is how long a target's log may go without growing before it's
+// said, and stallPoll how often it's looked at; an engine's stall sets
+// others, as a test's.
+const stallAfter, stallPoll = 10 * time.Minute, time.Minute
+
+// watchStalls says, once, at every level, a target whose log in an
+// execution's directory hasn't grown for stallAfter: arowpp's bazel client
+// exited and its server held port's pipe open, and the VM sat idle for 36
+// minutes with nothing said (the bazel session's notes, 2026-10-24). The
+// newest log is the target building. It says it again only once the log
+// has grown since. The returned function stops it.
+func watchStalls(ctx context.Context, build *build, directory string) func() {
+	after, poll := stallAfter, stallPoll
+	if s := build.d.e.stall; s[0] > 0 {
+		after, poll = s[0], s[1]
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var watched string
+		var size int64
+		var since time.Time
+		said := false
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(poll):
+			}
+			logs, _ := filepath.Glob(filepath.Join(directory, "*.log"))
+			newest, newestAt, newestSize := "", time.Time{}, int64(0)
+			for _, path := range logs {
+				if info, err := os.Stat(path); err == nil && info.ModTime().After(newestAt) {
+					newest, newestAt, newestSize = path, info.ModTime(), info.Size()
+				}
+			}
+			now := time.Now()
+			switch {
+			case newest == "":
+				continue
+			case newest != watched || newestSize != size:
+				watched, size, since, said = newest, newestSize, now, false
+			case !said && now.Sub(since) >= after:
+				said = true
+				build.Waiting(fmt.Sprintf("%s's log hasn't grown in %s", strings.TrimSuffix(filepath.Base(newest), ".log"), AgeWords(after)))
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
 }

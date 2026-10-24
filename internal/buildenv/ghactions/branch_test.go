@@ -20,6 +20,7 @@ type said struct {
 
 func (s *said) Progress(message string) { s.lines = append(s.lines, message) }
 func (s *said) Waiting(message string)  { s.Progress(message) }
+func (s *said) Holding(string) string   { return "" }
 
 // The check's branch goes from your fork once the check is done with it,
 // only while it holds the commit checked: one that moved since is left,

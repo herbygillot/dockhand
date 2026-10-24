@@ -567,6 +567,10 @@ type queuedRunJSON struct {
 	Branch       string            `json:"branch"`
 	Revision     string            `json:"revision"`
 	Environments []environmentJSON `json:"environments"`
+	// VMs are the Tart VMs a running check runs in, and TartHome the home
+	// that reaches them; absent when it runs in none.
+	VMs      []string `json:"vms,omitempty"`
+	TartHome string   `json:"tart_home,omitempty"`
 }
 
 type diffJSON struct {

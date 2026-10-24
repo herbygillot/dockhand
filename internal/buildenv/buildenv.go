@@ -205,6 +205,10 @@ type Build interface {
 	// Mac's VM slots, which is said at every level: a silent wait reads
 	// as a hang (rc1's D-R2).
 	Waiting(message string)
+	// Holding is the check running in one of this provider's VMs, by the
+	// name Refer recorded for it, as "check-616"; empty where none of
+	// this database's is.
+	Holding(ref string) string
 	// Observe records what the environment reported about itself, for
 	// the pull request's Tested on.
 	Observe(observed model.Observed) error

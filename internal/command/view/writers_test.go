@@ -110,3 +110,17 @@ func TestUnreadLinksAreOneLineAReason(t *testing.T) {
 	require.Equal(t, "Links\n    couldn't read what 5 targets link (exiv2, gpsbabel, libheif, darktable, and 1 more): "+guest+"\n"+
 		"    couldn't read what bazel's build links: its result is check-610's, which didn't read them\n", out.String())
 }
+
+// A running check's VMs are named under the queue with the Tart home that
+// reaches them, which a person's tart list doesn't see (the bazel
+// session's notes, 2026-10-24).
+func TestTheQueueNamesARunningChecksVMsWithTheirTartHome(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	WriteQueue(&out, []engine.QueuedCheck{
+		{Run: model.Run{ID: "r1", Number: 616, State: model.RunRunning}, VMs: []string{"dockhand-check-run-9-tahoe-1"}, TartHome: "~/.dockhand/tart"},
+		{Run: model.Run{ID: "r2", Number: 617, State: model.RunQueued}},
+	})
+	require.Contains(t, out.String(), "  check-616 runs in dockhand-check-run-9-tahoe-1: TART_HOME=~/.dockhand/tart tart exec dockhand-check-run-9-tahoe-1 …\n")
+	require.NotContains(t, out.String(), "check-617 runs in")
+}
