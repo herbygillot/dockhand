@@ -67,3 +67,29 @@ func TestWriteLinks(t *testing.T) {
 		"    crystal links 5 ports, each declared in depends_lib\n"+
 		"    jq links no port's libraries\n", out.String())
 }
+
+// A grid with a cell an earlier check gave says once, under it, that the
+// cell stands, since such a cell fills only where nothing its build read
+// has changed; one without such cells says nothing (the exiv2 session's
+// notes, 2026-10-24).
+func TestTheGridSaysAnEarlierChecksCellStands(t *testing.T) {
+	t.Parallel()
+	twelve := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	plan := model.Plan{Environments: []model.Environment{twelve, tahoe}, Builds: []model.EnvironmentPlan{{Environment: twelve}, {Environment: tahoe}}}
+	cell := func(environment model.Environment, execution model.ExecutionID) engine.Cell {
+		return engine.Cell{Kind: engine.CellRecorded, Environment: environment, TargetResult: model.TargetResult{Target: "exiv2", Outcome: model.OutcomePassed, Execution: execution}}
+	}
+	evidence := engine.Evidence{Run: model.Run{ID: "r2", Number: 491}, Earlier: []model.Run{{ID: "r1", Number: 490}}, Plan: plan,
+		Executions: map[model.ExecutionID]model.GuestExecution{"x1": {ID: "x1", Run: "r1"}, "x2": {ID: "x2", Run: "r2"}},
+		Targets:    []engine.TargetEvidence{{Target: model.PlanTarget{ID: "exiv2", Target: model.Target{Name: "exiv2"}}, Passed: true, Outcomes: []engine.Cell{cell(twelve, "x1"), cell(tahoe, "x2")}}}}
+	var out bytes.Buffer
+	WriteResults(&out, "  ", evidence, false)
+	require.Contains(t, out.String(), "(check-490)")
+	require.Contains(t, out.String(), "\n  (check-490): an earlier check's result, standing since nothing its build read has changed\n")
+
+	evidence.Targets[0].Outcomes[0] = cell(twelve, "x2")
+	out.Reset()
+	WriteResults(&out, "  ", evidence, false)
+	require.NotContains(t, out.String(), "standing since")
+}

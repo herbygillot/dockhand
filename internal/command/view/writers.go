@@ -215,6 +215,7 @@ func writeExclusions(out io.Writer, plan model.Plan) {
 // headed by its release, macOS 26, since the plan named the environments
 // in full.
 func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where bool) {
+	defer writeStanding(out, indent, evidence)
 	environments := evidence.Plan.Environments
 	// The releases a profile chose not to build on are left out, as the
 	// pull request leaves them out, and so are those build.default
@@ -253,6 +254,29 @@ func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where 
 		fmt.Fprintln(grid)
 	}
 	_ = grid.Flush()
+}
+
+// writeStanding says, once under the results, that a cell marked with an
+// earlier check stands: an earlier result fills a cell only where nothing
+// its build read has changed, across a rebase too (reuse.Current). After
+// a rebase, cells marked "(check-490)" said nothing of whether they
+// applied (the exiv2 session's notes, 2026-10-24).
+func writeStanding(out io.Writer, indent string, evidence engine.Evidence) {
+	var checks []string
+	for _, target := range evidence.Targets {
+		for _, i := range evidence.Checked() {
+			if check := evidence.CellCheck(target.Outcomes[i]); check != "" && !slices.Contains(checks, check) {
+				checks = append(checks, check)
+			}
+		}
+	}
+	switch len(checks) {
+	case 0:
+	case 1:
+		fmt.Fprintf(out, "%s(%s): an earlier check's result, standing since nothing its build read has changed\n", indent, checks[0])
+	default:
+		fmt.Fprintf(out, "%s(%s): earlier checks' results, standing since nothing their builds read has changed\n", indent, strings.Join(checks, ", "))
+	}
 }
 
 // resultWords are a target's result in one environment, as the pull

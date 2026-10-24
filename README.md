@@ -243,6 +243,7 @@ Each is rough, harms nothing a look wouldn't catch, and has a workaround. Those 
 - On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first Tart check of a Rust or Go port there builds rust and cargo, or go, from source: hours on a VM's two cores. The check says so before it builds, and a later check installs them from the archives dockhand kept, until cleanup forgets them. Check such a port first on the previous release, `--on tahoe`, or let the first check run.
 - After you pull a collaborator's commit to a branch's pull request and discard it with a reset, `submit` replaces their commit with yours. Its preview says so on its Push line, so read the preview before you confirm. Fixed on `main`: a commit replaces theirs only when it is their commit amended.
 - A port whose project moved its releases to another repository, so that the old repository's tags stop below the port's version, reads as current in `outdated`, as mergestat, carl, and zed with zq do: mergestat at 0.5.4, its old repository's newest stable tag v0.1.0. Check such a port's project page. Fixed on `main` (1c9d5a47): `outdated` holds it for a look, and `update` asks for the version to take.
+- A trailer given in `tidy --squash --message` that the branch's commits already carry, as `Assisted-by:`, is written twice in the squashed commit. Leave it out of the message: tidy keeps the commits' own trailers. Fixed on `main`: a trailer the message gives is written once.
 
 ## Scope
 

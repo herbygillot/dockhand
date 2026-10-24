@@ -41,9 +41,18 @@ func Compose(subject, text string, combined []string, generated bool) string {
 			*list = append(*list, line)
 		}
 	}
+	// The text's own trailer paragraph joins the combined commits', each
+	// line once: tidy --squash --message given an Assisted-by: its commit
+	// carried wrote it twice, the message's as body (the gnome-voice
+	// session's note 2, 2026-10-24).
+	text, given := SplitTrailers(strings.TrimSpace(text))
+	lists := [][]string{given}
 	for _, message := range combined {
 		_, rest, _ := strings.Cut(strings.TrimSpace(message), "\n")
 		_, trailers := SplitTrailers(strings.TrimSpace(rest))
+		lists = append(lists, trailers)
+	}
+	for _, trailers := range lists {
 		for _, line := range trailers {
 			switch {
 			case IsAttribution(line):

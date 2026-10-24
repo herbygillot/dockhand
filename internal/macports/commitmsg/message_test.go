@@ -121,3 +121,16 @@ func TestComposeKeepsTheCombinedCommitsTrailers(t *testing.T) {
 	require.Equal(t, []string{"See: x", "Closes: y"}, trailers)
 	require.Equal(t, "The body.", commitmsg.Body("jq: x\n\nThe body.\n\nSee: z\n"))
 }
+
+// A message's own trailer paragraph joins the combined commits' trailers,
+// each line once: tidy --squash --message given an Assisted-by: its
+// commit carried wrote it twice (the gnome-voice session's note 2,
+// 2026-10-24). One only the message carries is kept.
+func TestComposeWritesAGivenTrailerOnce(t *testing.T) {
+	t.Parallel()
+	combined := []string{"gnome-voice: wip\n\nfirst pass\n\nAssisted-by: Claude:claude-opus-5"}
+	require.Equal(t, "gnome-voice: fix destroot\n\nAssisted-by: Claude:claude-opus-5\n",
+		commitmsg.Compose("gnome-voice: fix destroot", "Assisted-by: Claude:claude-opus-5", combined, false))
+	require.Equal(t, "gnome-voice: fix destroot\n\nWhy it moved.\n\nCloses: https://trac.macports.org/ticket/1\nAssisted-by: Claude:claude-opus-5\n",
+		commitmsg.Compose("gnome-voice: fix destroot", "Why it moved.\n\nCloses: https://trac.macports.org/ticket/1", combined, false))
+}
