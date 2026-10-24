@@ -97,7 +97,7 @@ func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 	home := cmdtest.Getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
-	require.Equal(t, "name                jq\nversion             1.7.1\nrevision            1\nchecksums           sha256 "+newSHA+" size 7114508\ndist_subdir         ${name}/${version}_${revision}\n", string(data))
+	require.Equal(t, portfile.Modeline+"\n\n"+"name                jq\nversion             1.7.1\nrevision            1\nchecksums           sha256 "+newSHA+" size 7114508\ndist_subdir         ${name}/${version}_${revision}\n", string(data))
 
 	// A version edited by hand first is not a stealth update.
 	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(home, dir[2:]))
@@ -195,5 +195,5 @@ func TestANewVersionRemovesTheStealthDistSubdir(t *testing.T) {
 	home := cmdtest.Getenv(t, "HOME")
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
-	require.Equal(t, "name jq\nversion 1.8.1\nrevision 1\n", string(data))
+	require.Equal(t, portfile.Modeline+"\n\n"+"name jq\nversion 1.8.1\nrevision 1\n", string(data))
 }

@@ -13,12 +13,13 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 // Modeline is the first line of every Portfile in MacPorts' tree.
-const Modeline = "# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4"
+const Modeline = portfile.Modeline
 
 // Unconfirmed begins the comment that marks a guessed line.
 const Unconfirmed = "# dockhand: unconfirmed,"

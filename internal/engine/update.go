@@ -447,6 +447,11 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	if err != nil {
 		return Update{}, err
 	}
+	if !e.KeepModeline {
+		if err := withModelines(ctx, worktree, captured, &result); err != nil {
+			return Update{}, err
+		}
+	}
 	// A version update or a checksum refresh is where the port's URLs are
 	// looked at, so its plain-HTTP ones are said there, beside the edit. A
 	// port with nothing to change is said to be current without waiting on
@@ -1165,4 +1170,29 @@ func binaryReason(port string, err error) string {
 		return fmt.Sprintf("%s ships %s (%s), with no source to compare", port, binary.Kind, binary.File)
 	}
 	return port + " ships a binary package, with no source to compare"
+}
+
+// withModelines gives each Portfile an edit writes MacPorts' modeline as
+// its first line, where it lacks one or spells its settings otherwise
+// (portfile.WithModeline, the person's ask, 2026-10-24), and the prepared
+// tree with them. Line 1 is a comment, which nothing evaluates.
+func withModelines(ctx context.Context, worktree *git.Repository, captured string, result *editprep.Result) error {
+	changed := false
+	for i, file := range result.Files {
+		if file.Delete || path.Base(file.Path) != "Portfile" {
+			continue
+		}
+		if after, ok := portfile.WithModeline(file.After); ok {
+			result.Files[i].After, changed = after, true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	prepared, err := worktree.EditTree(ctx, captured, result.Files)
+	if err != nil {
+		return err
+	}
+	result.PreparedTree = model.ObjectID(prepared)
+	return nil
 }

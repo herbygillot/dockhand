@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -52,7 +53,7 @@ func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
 		"Next: dockhand check\n", out)
 	data, err := os.ReadFile(filepath.Join(dir, "textproc/jq/Portfile"))
 	require.NoError(t, err)
-	require.Equal(t, "name jq\nversion 1.8.1\n", string(data))
+	require.Equal(t, portfile.Modeline+"\n\n"+"name jq\nversion 1.8.1\n", string(data))
 
 	out, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
@@ -292,7 +293,7 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	require.Contains(t, out, "Revision bumped 1 port; subject \"<port>: rebuild for jq 1.8.1\" recorded for tidy.\n")
 	yq, err := os.ReadFile(filepath.Join(dir, "textproc/yq/Portfile"))
 	require.NoError(t, err)
-	require.Equal(t, "name yq\nversion 1\nrevision 1\n", string(yq))
+	require.Equal(t, portfile.Modeline+"\n\n"+"name yq\nversion 1\nrevision 1\n", string(yq))
 	require.NoFileExists(t, filepath.Join(dir, "textproc/jo/Portfile"))
 
 	out, _, err = cmdtest.Dockhand(t, "update", "jq", "2.0", "--revbump-dependents")

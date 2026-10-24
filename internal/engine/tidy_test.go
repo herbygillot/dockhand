@@ -57,7 +57,7 @@ func TestTidyCommitsAnUpdateUnambiguouslyAndRestoreUndoesIt(t *testing.T) {
 	require.Equal(t, "tidy-1", result.Checkpoint.Name())
 	require.Equal(t, []string{"jq: update to 1.8.1"}, log(t, branch.Worktree, branch.Base))
 	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"), "the files are the commit, and the index agrees")
-	require.Equal(t, "name jq\nversion 1.8.1\nchecksums sha256 0000\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
+	require.Equal(t, modelineHead+"name jq\nversion 1.8.1\nchecksums sha256 0000\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
 	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "refs/dockhand/checkpoints/tidy-1"))
 
 	again, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
@@ -252,8 +252,8 @@ func TestAPersonsEditBesideAnUpdateKeepsItsSubject(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditRevbump, Port: "jq", Subject: "rebuild against the new oniguruma"})
 	require.NoError(t, err)
-	require.Equal(t, "name jq\nversion 1.8.1\nrevision 1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\nbuild.args-append VERSION=1.8.1\n"})
+	require.Equal(t, modelineHead+"name jq\nversion 1.8.1\nrevision 1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": modelineHead + "name jq\nversion 1.8.1\nrevision 1\nbuild.args-append VERSION=1.8.1\n"})
 
 	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
@@ -267,7 +267,7 @@ func TestAPersonsEditBesideAnUpdateKeepsItsSubject(t *testing.T) {
 	require.Empty(t, group.Blocking)
 	require.False(t, plan.Unambiguous(), "a person's changes are reviewed")
 
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "version 1.8.1\nrevision 1\n"})
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": modelineHead + "version 1.8.1\nrevision 1\n"})
 	plan, err = e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Equal(t, "jq: update to 1.8.1", plan.Groups[0].Subject())

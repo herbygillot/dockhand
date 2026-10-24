@@ -160,6 +160,7 @@ since a rebuild has its own reason.`,
 	cmd.Flags().StringVar(&subject, "subject", "", "the reason, which becomes each commit's subject after the port's name")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edits and change nothing")
 	settings.SupportsJSON(cmd)
+	settings.KeepModelineFlag(cmd, s)
 	return cmd
 }
 

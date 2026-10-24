@@ -92,5 +92,6 @@ dockhand can't. The check builds where build.unattended's profile says;
 	version.StageFlags(cmd)
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what it would do and change nothing")
 	settings.SupportsJSON(cmd)
+	settings.KeepModelineFlag(cmd, s)
 	return cmd
 }

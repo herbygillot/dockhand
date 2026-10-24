@@ -55,7 +55,10 @@ it.
 
 --drain runs what is queued now and exits. --install makes serve a launchd
 agent that starts at login and restarts if it stops, and runs it with the
-flags given beside --install, such as --no-notify; --uninstall removes it.`,
+flags given beside --install, such as --no-notify; --uninstall removes it.
+
+Every Portfile serve's updates write gets MacPorts' modeline as its first
+line, unless --keep-modeline.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// serve's output is a log, read a line an event (term.Streams.Unwrapped).
@@ -74,6 +77,9 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 				}
 				if noNotify {
 					flags = append(flags, "--no-notify")
+				}
+				if s.KeepModeline {
+					flags = append(flags, "--keep-modeline")
 				}
 				return serveAgent(ctx, s, streams, install, flags)
 			}
@@ -101,6 +107,7 @@ flags given beside --install, such as --no-notify; --uninstall removes it.`,
 	cmd.Flags().BoolVar(&uninstall, "uninstall", false, "remove the launchd agent")
 	cmd.Flags().StringVar(&shipTo, "ship-to", "", "override serve.ship_to for this run: list, commit, check, or submit")
 	cmd.Flags().BoolVar(&noNotify, "no-notify", false, "disable macOS notifications for this run, overriding serve.notify")
+	settings.KeepModelineFlag(cmd, s)
 	cmd.MarkFlagsMutuallyExclusive("install", "uninstall", "drain")
 	return cmd
 }

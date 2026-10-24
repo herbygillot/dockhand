@@ -104,6 +104,11 @@ type Engine struct {
 	Repository model.RepositoryID
 	// Preparer edits ports; MacPorts' own evaluator when nil.
 	Preparer Preparer
+	// KeepModeline leaves the first line of every Portfile an edit writes
+	// as it was, where each edit otherwise gives it MacPorts' modeline
+	// (portfile.WithModeline): the person's --keep-modeline, for the
+	// command's whole run, serve's every update.
+	KeepModeline bool
 	// Forge publishes; GitHub when nil.
 	Forge Forge
 	// Ports are what the engine reads of ports, each capability a field;

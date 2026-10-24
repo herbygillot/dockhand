@@ -35,6 +35,9 @@ type Settings struct {
 	// OverAllowance is --over-allowance: a look goes on past what's left
 	// of the hour's GitHub allowance (allowLook).
 	OverAllowance bool
+	// KeepModeline is --keep-modeline: the Portfiles the command's edits
+	// write keep their first line (engine.Engine.KeepModeline).
+	KeepModeline bool
 	// Command runs a command line in this one's invocation, its
 	// environment, directory, and tree, database, and Git, for one typed at
 	// status --watch's prompt.
@@ -64,6 +67,12 @@ func (s *Settings) Places() config.Places { return s.ComposeOptions().Places() }
 // ports' newest releases.
 func OverAllowanceFlag(cmd *cobra.Command, s *Settings) {
 	cmd.Flags().BoolVar(&s.OverAllowance, "over-allowance", false, "look up the ports though the look's estimate passes what's left of the hour's GitHub allowance")
+}
+
+// KeepModelineFlag registers --keep-modeline on a command whose edits
+// write a Portfile.
+func KeepModelineFlag(cmd *cobra.Command, s *Settings) {
+	cmd.Flags().BoolVar(&s.KeepModeline, "keep-modeline", false, "leave each Portfile's first line as it is, where dockhand otherwise gives it MacPorts' modeline")
 }
 
 func (s *Settings) Flags(root *cobra.Command) {
@@ -109,6 +118,7 @@ func (s *Settings) Open(ctx context.Context) (*engine.Engine, error) {
 		return nil, err
 	}
 	s.File, s.Opened, s.OpenedWith = assembly.File, assembly.Engine, assembly.Options
+	assembly.Engine.KeepModeline = s.KeepModeline
 	return assembly.Engine, nil
 }
 

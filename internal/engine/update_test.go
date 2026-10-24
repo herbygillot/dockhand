@@ -258,7 +258,7 @@ func TestUpdateEditsWorkingFilesAndCommitsNothing(t *testing.T) {
 	require.Equal(t, "jq: update to 1.8.1", update.Subject)
 	require.Contains(t, update.Diff, "+version 1.8.1")
 
-	require.Equal(t, "name jq\nversion 1.8.1\n", read(t, portfile), "the cone grew to hold the edited port")
+	require.Equal(t, modelineHead+"name jq\nversion 1.8.1\n", read(t, portfile), "the cone grew to hold the edited port")
 	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "nothing is committed")
 	require.Equal(t, "M textproc/jq/Portfile", testsupport.Git(t, branch.Worktree, "status", "--porcelain"))
 
@@ -292,14 +292,14 @@ func TestUpdateStartsFromTheWorkingFilesAsTheyAre(t *testing.T) {
 
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", Version: "1.8.0"})
 	require.NoError(t, err)
-	require.Equal(t, "name jq\nversion 1.8.0\n# my note\n", read(t, portfile), "an uncommitted edit is kept")
+	require.Equal(t, modelineHead+"name jq\nversion 1.8.0\n# my note\n", read(t, portfile), "an uncommitted edit is kept")
 	require.Equal(t, model.ObjectID(branch.Base), p.requests[0].Source.Base)
 	require.Equal(t, "1.8.0", p.requests[0].Version)
 
 	checksums, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditChecksums, Port: "jq"})
 	require.NoError(t, err)
 	require.True(t, checksums.Applied)
-	require.Equal(t, "name jq\nversion 1.8.0\n# my note\nchecksums sha256 0000\n", read(t, portfile))
+	require.Equal(t, modelineHead+"name jq\nversion 1.8.0\n# my note\nchecksums sha256 0000\n", read(t, portfile))
 
 	again, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditChecksums, Port: "jq"})
 	require.NoError(t, err)
@@ -944,7 +944,7 @@ func TestAnObsoleteStubMovesWithItsReplacementWhenAsked(t *testing.T) {
 	moved, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", WithObsolete: true})
 	require.NoError(t, err)
 	require.Equal(t, &ObsoleteStub{Port: "jq-old", Version: "1.7.1", Moved: true}, moved.Obsolete)
-	require.Equal(t, "name jq-old\nversion 1.8.1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq-old/Portfile")))
+	require.Equal(t, modelineHead+"name jq-old\nversion 1.8.1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq-old/Portfile")))
 	var edits []model.Edit
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		edits, err = r.Edits(branch.ID)
@@ -1029,4 +1029,35 @@ func TestAnUpdatesRecordKeepsTheSubportsItCantSee(t *testing.T) {
 func TestABinaryDistfileIsSaidByItsName(t *testing.T) {
 	err := fmt.Errorf("reading: %w", &archivefile.BinaryError{File: "op_apple_universal_v2.31.0.pkg", Kind: "a macOS installer package"})
 	require.Equal(t, "1password-cli ships a macOS installer package (op_apple_universal_v2.31.0.pkg), with no source to compare", binaryReason("1password-cli", err))
+}
+
+// An update gives its Portfile MacPorts' modeline: added where it has none,
+// replacing one spelled otherwise, and leaving one that sets tabs; with
+// --keep-modeline, line 1 is as it was (the person's ask, 2026-10-24).
+func TestAnUpdateGivesItsPortfileTheModeline(t *testing.T) {
+	t.Parallel()
+	spelled := "# -*- coding: utf-8; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:filetype=tcl:et:sw=4:ts=4:sts=4\n\n"
+	tabs := "# -*- coding: utf-8; mode: tcl; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- vim:fenc=utf-8:ft=tcl:noet:sw=8:ts=8\n\n"
+	for _, c := range []struct {
+		why, head, want string
+		keep            bool
+	}{
+		{"none", "", modelineHead, false},
+		{"spelled otherwise", spelled, modelineHead, false},
+		{"tabs", tabs, tabs, false},
+		{"none, kept", "", "", true},
+	} {
+		t.Run(c.why, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			e, p := f.withPreparer(t)
+			e.KeepModeline = c.keep
+			p.rewrite = func(after string) string { return c.head + after }
+			branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+			require.NoError(t, err)
+			_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+			require.NoError(t, err)
+			require.Equal(t, c.want+"name jq\nversion 1.8.1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
+		})
+	}
 }

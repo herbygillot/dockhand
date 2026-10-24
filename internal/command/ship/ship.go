@@ -133,6 +133,7 @@ says whether any went through: 1 where none did, 3 where some need a look.`,
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the plan and change nothing")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	settings.SupportsJSON(cmd)
+	settings.KeepModelineFlag(cmd, s)
 	return cmd
 }
 

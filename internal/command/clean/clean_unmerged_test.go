@@ -2,6 +2,7 @@ package clean
 
 import (
 	"bytes"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,7 +70,7 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	require.Equal(t, strings.TrimPrefix(dir, "/private")+"\n", strings.TrimPrefix(out, "/private"))
 	data, err := os.ReadFile(filepath.Join(dir, "textproc/jq/Portfile"))
 	require.NoError(t, err)
-	require.Equal(t, "name jq\nversion 1.8.1\n", string(data), "checked out again, sparse over the ports it changes")
+	require.Equal(t, portfile.Modeline+"\n\n"+"name jq\nversion 1.8.1\n", string(data), "checked out again, sparse over the ports it changes")
 
 	// Its worktree, checked out again, is clean's when named.
 	out, _, err = cmdtest.Dockhand(t, "clean", "jq-update")

@@ -181,7 +181,7 @@ func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"yq"}, done.Bumped)
 	require.Equal(t, []string{"gojq"}, done.Excepted)
-	require.Equal(t, "name yq\nversion 1\nrevision 1\n", read(t, filepath.Join(branch.Worktree, "textproc/yq/Portfile")))
+	require.Equal(t, modelineHead+"name yq\nversion 1\nrevision 1\n", read(t, filepath.Join(branch.Worktree, "textproc/yq/Portfile")))
 	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Equal(t, "yq: rebuild for jq 1.8.1", plan.Groups[0].Subject())

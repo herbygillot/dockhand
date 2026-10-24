@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -42,7 +43,7 @@ func TestRevbumpRecordsItsReasonForTidy(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, update.Before.Revision)
 	require.Equal(t, 1, update.After.Revision)
-	require.Equal(t, "name jq\nversion 1.7.1\nrevision 1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
+	require.Equal(t, modelineHead+"name jq\nversion 1.7.1\nrevision 1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
 	var records []model.ChangeRecord
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		records, err = r.ChangeRecords(store.AssessmentFilter{Branch: branch.ID})
@@ -287,3 +288,7 @@ func TestARebaseAndATidySayAnOlderBuildsAttribution(t *testing.T) {
 	require.Equal(t, 1, rebased.Commits)
 	require.Equal(t, []string{old}, rebased.OlderBuilds, "the rebased commit keeps it")
 }
+
+// modelineHead is MacPorts' modeline and the blank line after it, which an
+// edit gives a Portfile that lacks it (portfile.WithModeline).
+const modelineHead = portfile.Modeline + "\n\n"
