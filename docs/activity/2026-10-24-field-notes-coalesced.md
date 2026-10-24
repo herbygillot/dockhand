@@ -65,7 +65,7 @@ fix for main.
 | Merge fitness: maintainers, the 72-hour timeout, notified, approved | New | Later |
 | ports.macports.org's build history in `impact` | New | Later |
 | No shell into the guest after a failure | Holds | Later |
-| No long-check mode without serve | `check -d` starts a background drain (552f1966), in rc4 and rc5 | Nothing; field testing asks the session for the output if its drain didn't start |
+| No long-check mode without serve | `check -d` starts a background drain (552f1966), in rc4 and rc5; the session never tried it, reading rc5's help, "-d queues it and returns", as serve's alone (field testing's follow-up) | Next's silent-check entry: `check --help` and its `-d` line say it |
 | No list of running instances with their builds | `status -v` lists dockhand's processes with their builds (status.go `writeProcesses`) | Nothing |
 
 ## The bazel session's notes
@@ -78,14 +78,14 @@ fix for main.
 | "capacity is 1, check-616 is using it" while check-616 ran two VMs | The capacity counts checks, a check runs two VMs | Next: each wait says whose it is; counting VMs is the person's, open |
 | "couldn't read what bazel's build links" for a reused result | Holds | Next's link entry: a reused result carries its check's reading |
 | Whether a message-only amend after a `--head` check keeps its results (inferred) | It does: the trees are the same | Next's grid entry says so |
-| Checksums for a new subport by hand (inferred: it didn't try `dockhand checksums`) | `checksums [port]` writes a port's checksums for the version it names | Nothing; field testing tries it on a new subport |
+| Checksums for a new subport by hand (inferred: it didn't try `dockhand checksums`) | Field testing tried it on rc3: a subport with no declaration is refused, one with a placeholder is filled in | Next, a fix for main: checksums writes the declaration in the subport's block |
 | Other open pull requests looked for with `gh pr list` | submit looks already, and ticks the box only where it did | Later: said when work starts |
 | ports.macports.org's build history instead of a baseline | The exiv2 session asked too | Later's entry grows, a candidate for Then |
 | Wrapping each check in screen | `check -d` runs it in the background with no serve (552f1966, in v0.5.0, not v0.4.0) | Next: the foreground notice names it |
 
 ## The size
 
-The fixes for main are about 2 batches. Then's item 4 grows by a quarter
+The fixes for main are about 2.25 batches. Then's item 4 grows by a quarter
 batch and item 7 by half a batch, so Then is about 25 batches. v0.6.0,
 the fixes, the corpus's rest, and Then's items 1 to 5, is about 8
 batches after v0.5.0's tag.
