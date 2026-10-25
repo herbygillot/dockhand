@@ -99,6 +99,7 @@ Several dockhand processes can share one database: a foreground `check`, a `serv
 | the user cache directory, `dockhand/indexes` (`$DOCKHAND_INDEX_CACHE`) | port indexes, keyed by source tree; disposable |
 | one run root under the system temporary directory | a process's short-lived workspaces, removed when it exits (`scratch`) |
 | the user cache directory, `dockhand/readings` (`$DOCKHAND_READING_CACHE`) | readings of upstream files, keyed by what they read; disposable |
+| the user cache directory, `dockhand/github` (`$DOCKHAND_GITHUB_CACHE`) | GitHub's answers to reads with their ETags, keyed by the address, what it accepts, and a digest of the credential; disposable |
 | `~/Source/macports-branches` | branch worktrees, unless `worktrees` says otherwise |
 
 Beside the variables naming those places, dockhand reads `MACPORTS_TREE` (the ports checkout, where `--tree` doesn't name one), `GIT_BIN` (the Git it runs), `GH_TOKEN` and `GITHUB_TOKEN` (a GitHub token in place of dockhand's login), `VISUAL` and `EDITOR`, `DOCKHAND_GITHUB_CLIENT_ID` (another OAuth application for `setup github`), `DOCKHAND_GITHUB_LOG` (a file each command appends what it spent of GitHub's allowance to), `DOCKHAND_UPSTREAM` (where master is fetched from: a mirror, or a test's repository), `DOCKHAND_INDEX_MIRROR` (where prebuilt port indexes are fetched from), and `DOCKHAND_PULL_REQUESTS` (the repository pull requests go to, the acceptance harness's sandbox). `DOCKHAND_FAILPOINT` is read by the acceptance build alone, and the `DOCKHAND_TEST_*` variables by tests.

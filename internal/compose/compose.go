@@ -328,6 +328,11 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		store = keychain.Store{}
 	}
 	e.GitHub = &github.Runtime{Client: client(options.Signin(store))}
+	// Reads GitHub answered before are asked again with their ETags, which
+	// cost nothing where nothing moved, in this process and the next
+	// (Then's item 5); where no cache directory can be had, in this one.
+	conditionalCache, _ := options.cacheDirectory("DOCKHAND_GITHUB_CACHE", "github")
+	e.GitHub.Client.Conditional = github.NewConditionalCache(conditionalCache)
 	remote := file.Providers.GitHub.Remote
 	actions := &ghactions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
 		API: ghactions.GitHub{Client: e.GitHub.Client}, BuildTimeout: file.Providers.GitHub.BuildBound()}

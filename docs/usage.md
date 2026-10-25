@@ -448,6 +448,7 @@ The rest of dockhand's bounds are fixed in code: how large an archive it downloa
 | `DOCKHAND_GITHUB_CLIENT_ID` | the OAuth application `setup github` uses |
 | `DOCKHAND_GITHUB_LOG` | a file each command appends what it spent of GitHub's allowance to |
 | `DOCKHAND_READING_CACHE` | where readings of upstream files are cached; `dockhand/readings` in your cache directory otherwise |
+| `DOCKHAND_GITHUB_CACHE` | where GitHub's answers to reads are kept with their ETags, so a read asked again costs nothing of the hour's allowance where nothing moved; `dockhand/github` in your cache directory otherwise |
 | `VISUAL`, `EDITOR` | the editor `edit` opens a Portfile in, and `submit` a pull request's description |
 
-`serve --install` keeps the ones serve reads, as they are when it's run, in the agent: `DOCKHAND_CONFIG`, `DOCKHAND_UPSTREAM`, `DOCKHAND_PULL_REQUESTS`, `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`, `DOCKHAND_READING_CACHE`, `DOCKHAND_TART_HOME`, `TART_HOME`, and `DOCKHAND_SSH_DIR`, with `--git` and `--db`. A token is never kept there, since anyone on the Mac can read the agent's file.
+`serve --install` keeps the ones serve reads, as they are when it's run, in the agent: `DOCKHAND_CONFIG`, `DOCKHAND_UPSTREAM`, `DOCKHAND_PULL_REQUESTS`, `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`, `DOCKHAND_READING_CACHE`, `DOCKHAND_GITHUB_CACHE`, `DOCKHAND_TART_HOME`, `TART_HOME`, and `DOCKHAND_SSH_DIR`, with `--git` and `--db`. A token is never kept there, since anyone on the Mac can read the agent's file.

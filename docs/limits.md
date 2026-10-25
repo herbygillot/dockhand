@@ -6,7 +6,7 @@ The sweep that wrote this (2026-10-01) found gaps among them: those batch 25 fix
 
 ## What you can change
 
-These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` variable tunes a time or size bound; `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`, and `DOCKHAND_READING_CACHE` change only where things are fetched from or kept.
+These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` variable tunes a time or size bound; `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`, `DOCKHAND_READING_CACHE`, and `DOCKHAND_GITHUB_CACHE` change only where things are fetched from or kept.
 
 | Key | Default |
 | --- | --- |

@@ -202,13 +202,17 @@ func Used() int64 { return apiUsed.Load() }
 
 // Spend counts the requests a span of this process sends GitHub's API: a
 // command's, for its -v line and its envelope (the M1's run at 10aac0c3).
-type Spend struct{ start int64 }
+type Spend struct{ start, answered int64 }
 
 // StartSpend starts counting.
-func StartSpend() Spend { return Spend{start: apiRequests.Load()} }
+func StartSpend() Spend { return Spend{start: apiRequests.Load(), answered: conditionalHits.Load()} }
 
-// Requests is how many requests were sent since StartSpend.
-func (s Spend) Requests() int64 { return apiRequests.Load() - s.start }
+// Requests is how many requests sent since StartSpend counted against the
+// hour's allowance: those GitHub answered 304, as nothing moved since an
+// answer kept, count nothing (ConditionalCache).
+func (s Spend) Requests() int64 {
+	return apiRequests.Load() - s.start - (conditionalHits.Load() - s.answered)
+}
 
 // Log appends a command's line to the spend log at path,
 // $DOCKHAND_GITHUB_LOG, where there's one, --json or not: how many

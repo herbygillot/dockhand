@@ -27,6 +27,9 @@ var Environment = []Variable{
 	{Name: "DOCKHAND_INDEX_MIRROR", Agent: true},
 	{Name: "DOCKHAND_INDEX_CACHE", Agent: true},
 	{Name: "DOCKHAND_READING_CACHE", Agent: true},
+	// Where GitHub's answers are kept with their ETags (github.
+	// ConditionalCache).
+	{Name: "DOCKHAND_GITHUB_CACHE", Agent: true},
 	{Name: "DOCKHAND_TART_HOME", Agent: true},
 	{Name: "TART_HOME", Agent: true},
 	{Name: "DOCKHAND_SSH_DIR", Agent: true},
