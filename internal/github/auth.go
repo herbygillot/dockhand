@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
@@ -126,19 +127,25 @@ func resolvedToken(secret string, source CredentialSource) (Token, error) {
 	return Token{Secret: value, Source: source}, nil
 }
 
+// rejected is GitHub's refusal of the credential from s, a particular of
+// ErrAuthentication whose own words lead, with s's remedy: dockhand's
+// login says it as serve does, "GitHub rejected the login", where D-C3 on
+// rc5 read the sentinel's "forge: authentication is required" first.
 func (s CredentialSource) rejected() error {
+	auth := ErrAuthentication.(*refusal.Refusal)
 	remedy := "replace the explicitly configured credential"
 	switch s {
 	case SourceGHEnvironment, SourceGitHubEnvironment:
 		remedy = fmt.Sprintf("replace or unset %s; it takes precedence over saved logins", s)
 	case SourceKeychain:
-		remedy = "run dockhand setup github to replace it, or dockhand setup github --logout to remove it"
+		return auth.Because("GitHub rejected the login from dockhand's Keychain; run dockhand setup github to sign in again, or dockhand setup github --logout to remove it").
+			Then(refusal.Next{Verb: refusal.VerbSetup, Args: []string{"github"}})
 	case SourceGitHubCLI:
 		remedy = "run gh auth login --hostname github.com to replace it"
 	default:
 		s = SourceExplicit
 	}
-	return fmt.Errorf("%w: GitHub rejected the credential from %s; %s; no alternative credential was tried", ErrAuthentication, s, remedy)
+	return auth.Because("GitHub rejected the credential from %s; %s; no alternative credential was tried", s, remedy)
 }
 
 // Renew is a token after GitHub rejected one: the login renewed, where the

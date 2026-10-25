@@ -170,8 +170,55 @@ for kb-0.1.6.tar.gz".
   (`declareSubportChecksums`). The family as written and as edited is
   compared, so nothing but the subport's checksums may move, and kb's stay.
   A main port with no declaration is still refused.
-- **Left as it is.** A port whose declaration is unnamed, which Bind reads
-  as covering a subport's other archive, is still refused by strict
-  fidelity ("fixture.checksums changed"), since writing it would change
-  the port's checksums.
+- **Left as it was.** A port whose declaration is unnamed, which Bind
+  reads as covering a subport's other archive, was still refused by strict
+  fidelity ("fixture.checksums changed"); the next entry writes the
+  subport its own.
 - **Test:** TestASubportsChecksumsAreWrittenInItsBlock.
+
+## A rejected GitHub login said as one, not as GitHub unreached
+
+D-C3 on rc5: after the login was revoked, a command said `couldn't reach
+GitHub (Post "https://api.github.com/graphql": forge: authentication is
+required: GitHub rejected the credential…)`. http.Client wraps the
+transport's refusal in a `*url.Error`, which is a `net.Error`, so
+`RateLimitError` took it as the network's, of a kind another try is
+offered for.
+
+- **Auth first.** github `RateLimitError` takes `forge.ErrAuthentication`
+  before the network, and returns it without the request's `*url.Error`,
+  kind Auth. A write publicationError already says as rejected keeps its
+  `forge.ErrRejected`; publicationError wraps the converted error.
+- **The network's alone.** `networkError` takes a `*url.Error` only where
+  what it wraps is a DNS failure, a dial's, or a timeout.
+- **The words.** `rejected()` is a particular of the sentinel
+  (`refusal.Because`), so its words lead. dockhand's login reads as
+  serve's: "GitHub rejected the login from dockhand's Keychain; run
+  dockhand setup github to sign in again, or dockhand setup github
+  --logout to remove it", Next `dockhand setup github`. Other sources keep
+  their remedies.
+- **v0.5.0.** README's known issues and the release notes gain the row.
+- **Test:** TestARejectedLoginIsSaidAsThatNotAsGitHubUnreached, a 401 and
+  a reset connection through the client.
+
+## A subport under the port's unnamed declaration gets its own
+
+Left by the entry above, placed at 13c3e330. A port with one distfile
+usually declares its checksums unnamed, and Bind reads that declaration as
+a subport's where the subport fetches one archive, as MacPorts does; the
+refresh would have rewritten the port's line, and strict fidelity refused
+it saying nothing of what to do.
+
+- **Where the declaration is.** portfile `SubportPlace` says whether a
+  command, by the ordinal Bind counts, is in a subport's block, before it,
+  or after it.
+- **The archive undeclared.** portedit `underPortsDeclaration`, in each
+  context a refresh reads, takes a subport's archive bound to an unnamed
+  group declared outside its block and not among the port's own distfiles.
+  Before the block, it's `Undeclared`, and the subport's declaration is
+  written in its block (the entry above), the port's line unchanged. After
+  the block, which MacPorts would read over the block's, it's refused:
+  "move fixture's checksums line above the subport fixture-old block, then
+  dockhand checksums fixture-old writes its own".
+- **Test:** TestASubportUnderThePortsUnnamedDeclarationGetsItsOwn, with a
+  subport fetching the port's own archive, which gets nothing.

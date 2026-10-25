@@ -255,6 +255,9 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 		if err != nil {
 			return fmt.Errorf("context %+v: %w", profile, err)
 		}
+		if err := s.underPortsDeclaration(ctx, input, binding); err != nil {
+			return err
+		}
 		// A sibling with archives of its own keeps them: a refresh is the
 		// target's checksums.
 		if _, err := s.sharedArchiveOwners(ctx, input, input.data, observed, binding); err != nil {
@@ -302,6 +305,64 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 	}
 	plan.downloads = coverage.downloads
 	return plan, nil
+}
+
+// underPortsDeclaration is a subport's archive bound to the port's unnamed
+// declaration, one distfile to one group as MacPorts reads it, where the
+// archive isn't the port's: refreshing it would rewrite the port's line,
+// which strict fidelity refuses, saying nothing of what to do. Where the
+// port's declaration comes before the subport's block, the archive is
+// Undeclared, for a declaration of the subport's own in its block, which
+// MacPorts reads in the port's place; after it, the port's would be read
+// over the block's, and the refusal says to move it. The bazel session's
+// new subport at a version of its own was this shape (roadmap 13c3e330).
+func (s *Service) underPortsDeclaration(ctx context.Context, input *sourceInput, binding distfiles.Binding) error {
+	subport, port := input.target.Name, input.primary.Name
+	if subport == port {
+		return nil
+	}
+	var ports []string
+	read := false
+	for _, artifact := range binding.Artifacts {
+		if artifact.Group.Name != "" {
+			continue
+		}
+		ordinal, err := strconv.Atoi(artifact.Group.Owner[:strings.IndexByte(artifact.Group.Owner, '/')])
+		if err != nil {
+			continue
+		}
+		place := portfile.SubportPlace(input.data, subport, ordinal)
+		if place != portfile.PlaceBeforeBlock && place != portfile.PlaceAfterBlock {
+			continue
+		}
+		if !read {
+			baseline, err := s.evaluateEdit(ctx, input, input.data)
+			if err != nil {
+				return err
+			}
+			names, _ := syntax.ListValues(baseline.after.Ports[port].Options["distfiles"])
+			for _, name := range names {
+				// A distfile's :tag names its site, not the file.
+				if cut := strings.LastIndexByte(name, ':'); cut > 0 {
+					name = name[:cut]
+				}
+				ports = append(ports, name)
+			}
+			read = true
+		}
+		if slices.Contains(ports, artifact.Name) {
+			continue
+		}
+		if place == portfile.PlaceAfterBlock {
+			return ErrUnsupported.Because("%s reads %s's checksums, declared after its block and so read over any of its own; move %s's checksums line above the subport %s block, then dockhand checksums %s writes its own", subport, port, port, subport, subport)
+		}
+		undeclared := &distfiles.Undeclared{Name: artifact.Name, Err: ErrUnsupported.Because("%s reads %s's checksums, which are for %s's archive", subport, port, port)}
+		for _, fetched := range binding.Artifacts {
+			undeclared.Names = append(undeclared.Names, fetched.Name)
+		}
+		return undeclared
+	}
+	return nil
 }
 
 // ChecksumLeft is what a checksum refresh left as it was, with why: a

@@ -64,11 +64,12 @@ func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.Reposit
 // later write; other failures require observation to determine the outcome.
 func publicationError(response *gh.Response, err error) error {
 	var limited *forge.RateLimitError
-	if converted := githubapi.RateLimitError(err); errors.As(converted, &limited) {
+	converted := githubapi.RateLimitError(err)
+	if errors.As(converted, &limited) {
 		return converted
 	}
 	if errors.Is(err, forge.ErrAuthentication) {
-		return fmt.Errorf("%w: %w", forge.ErrRejected, err)
+		return fmt.Errorf("%w: %w", forge.ErrRejected, converted)
 	}
 	if err != nil && response != nil {
 		switch response.StatusCode {

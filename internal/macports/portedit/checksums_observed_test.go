@@ -228,3 +228,58 @@ master_sites @SITE@/${version}
 	_, err = s.Prepare(t.Context(), r)
 	require.ErrorContains(t, err, "no checksum declaration for fixture-1.2.3.tar.gz")
 }
+
+// A subport under the port's unnamed declaration, fetching an archive of
+// its own, gets its own declaration in its block, which MacPorts reads in
+// the port's place; the port's line stays. One fetching the port's own
+// archive gets nothing, and a port's declaration after the block, read
+// over the block's, is refused with what to move (roadmap 13c3e330).
+func TestASubportUnderThePortsUnnamedDeclarationGetsItsOwn(t *testing.T) {
+	t.Parallel()
+	refresh := func(body, subport string) (Result, []string, error) {
+		s, r, requests := archiveFixture(t, body)
+		r.Action, r.Version, r.Release = model.EditChecksums, "", nil
+		r.Selection.Subport = subport
+		result, err := s.Prepare(t.Context(), r)
+		return result, *requests, err
+	}
+	result, requests, err := refresh(`version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+checksums rmd160 aaaa sha256 bbbb size 2
+subport fixture-old {
+    version 0.1.6
+    revision 0
+}
+`, "fixture-old")
+	require.NoError(t, err)
+	require.Equal(t, []string{"/1.2.3/fixture-0.1.6.tar.gz"}, requests)
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "checksums rmd160 aaaa sha256 bbbb size 2\n", "the port's line stays")
+	sum := result.Downloads[0].Checksum
+	require.Contains(t, after, "    version 0.1.6\n    checksums           rmd160  "+sum.RMD160+" \\\n                        sha256  "+sum.SHA256+" \\\n")
+
+	result, _, _ = refresh(`version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+checksums rmd160 aaaa sha256 bbbb size 2
+subport fixture-docs {
+    description docs
+}
+`, "fixture-docs")
+	for _, file := range result.Files {
+		require.NotContains(t, string(file.After), "    checksums", "a subport fetching the port's archive gets nothing")
+	}
+
+	_, requests, err = refresh(`version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+subport fixture-old {
+    version 0.1.6
+    revision 0
+}
+checksums rmd160 aaaa sha256 bbbb size 2
+`, "fixture-old")
+	require.ErrorContains(t, err, "move fixture's checksums line above the subport fixture-old block, then dockhand checksums fixture-old writes its own")
+	require.Empty(t, requests)
+}

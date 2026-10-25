@@ -170,8 +170,12 @@ func TestRejectedCredentialsIdentifySourceWithoutFallback(t *testing.T) {
 			for i := 0; i < 2; i++ {
 				_, err := client.AuthenticatedUser(t.Context())
 				require.ErrorIs(t, err, forge.ErrAuthentication)
-				require.Contains(t, err.Error(), string(source))
-				require.Contains(t, err.Error(), "no alternative credential was tried")
+				if source == github.SourceKeychain {
+					require.Contains(t, err.Error(), "GitHub rejected the login from dockhand's Keychain")
+				} else {
+					require.Contains(t, err.Error(), string(source))
+					require.Contains(t, err.Error(), "no alternative credential was tried")
+				}
 				require.NotContains(t, err.Error(), secret)
 			}
 			require.Equal(t, source, client.CredentialSource())
