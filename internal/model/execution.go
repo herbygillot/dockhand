@@ -95,6 +95,12 @@ type Observed struct {
 	DeveloperDir string `json:"developer_dir,omitempty"`
 	// MacPorts is the MacPorts that built the ports, 2.12.6.
 	MacPorts string `json:"macports,omitempty"`
+	// ActivePorts is how many ports were active in a local check's prefix
+	// as it began, which a build as-is builds among; Foreign are the other
+	// package managers found on the Mac, /opt/homebrew. Both empty for a
+	// clean VM's.
+	ActivePorts int      `json:"active_ports,omitempty"`
+	Foreign     []string `json:"foreign,omitempty"`
 	// Builders are what each builder reported, where the environment has
 	// several, as MacPorts' workflow has a runner for each macOS release
 	// (TargetResult.Builders); the fields above then say nothing. Empty

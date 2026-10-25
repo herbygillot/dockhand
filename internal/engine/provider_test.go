@@ -27,7 +27,8 @@ func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 
 	for on, refusal := range map[string]string{
 		"tart:sonoma": "Tart isn't installed here",
-		"prefix":      "the prefix provider is not available in v3",
+		"local":       "the local provider builds in a MacPorts prefix on a Mac, and this isn't one",
+		"prefix":      `no provider "prefix" is set up`,
 		"nosuch":      `no provider "nosuch" is set up`,
 		"github:15":   "the github provider builds on the runners MacPorts' workflow names",
 		"command:15":  "the command provider builds wherever its script does",
@@ -104,9 +105,10 @@ func TestEnvironmentsAreNamedAsOnNamesThem(t *testing.T) {
 	tart := func(darwin string, tools model.DeveloperTools) model.Environment {
 		return model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: darwin, Architecture: "arm64"}, DeveloperTools: tools}
 	}
-	values, ok := OnValues([]model.Environment{{Provider: "command"}, tart("21", model.DeveloperToolsCommandLine), tart("25", model.DeveloperToolsXcode), tart("21", model.DeveloperToolsXcode), {Provider: "github"}})
+	values, ok := OnValues([]model.Environment{{Provider: "command"}, tart("21", model.DeveloperToolsCommandLine), tart("25", model.DeveloperToolsXcode), tart("21", model.DeveloperToolsXcode), {Provider: "github"},
+		{Provider: "local", Prefix: "/opt/local"}, {Provider: "local", Prefix: "/opt/macports-test"}})
 	require.True(t, ok)
-	require.Equal(t, []string{"command", "tart:12,26", "github"}, values)
+	require.Equal(t, []string{"command", "tart:12,26", "github", "local:/opt/local", "local:/opt/macports-test"}, values)
 	_, ok = OnValues([]model.Environment{tart("99", "")})
 	require.False(t, ok)
 }

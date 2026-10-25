@@ -40,9 +40,9 @@ const (
 	GitHub = "github"
 	// Command builds with a person's own script.
 	Command = "command"
-	// Prefix would build in a MacPorts installation of your own on this
-	// Mac (Design v3 §7), which v3 doesn't have yet.
-	Prefix = "prefix"
+	// Local builds in a MacPorts prefix on this Mac, /opt/local or one of
+	// the person's own (Design v3 §7).
+	Local = "local"
 )
 
 // DefaultTestTimeout bounds a target's tests where the configuration sets
@@ -291,6 +291,26 @@ type LeftoverProvider interface {
 	// RemoveLeftover removes one, and refuses anything it didn't make for
 	// a check.
 	RemoveLeftover(ctx context.Context, ref string) error
+}
+
+// A ChangingProvider changes something of the person's for a check and
+// puts it back after, as the local provider does the prefix it builds in.
+// Changes are what its checks have changed and not yet put back: each one
+// building now, and each a check left changed when its process ended
+// first, with how to put it back, which status says.
+type ChangingProvider interface {
+	Provider
+	Changes(ctx context.Context) ([]Change, error)
+}
+
+// Change is something of the person's a check changed: Check names the
+// check, check-12, and Place what it changed, /opt/local. Building is a
+// check building there now, which puts it back when it ends; otherwise
+// Remedy is how to put it back, "sudo port restore --snapshot-id 7".
+type Change struct {
+	Check, Place string
+	Building     bool
+	Remedy       string
 }
 
 // A ParallelProvider can build several of one check's environments at once,

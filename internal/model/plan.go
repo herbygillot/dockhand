@@ -130,6 +130,10 @@ type Environment struct {
 	// Xcode image, else the Command Line Tools alone. Unstated for a
 	// provider whose builders have their own.
 	DeveloperTools DeveloperTools `json:",omitempty"`
+	// Prefix is the MacPorts installation on this Mac a local check builds
+	// in, /opt/macports-test: two prefixes are two environments, each with
+	// its own evidence. Empty for every other provider.
+	Prefix string `json:",omitempty"`
 }
 
 // Requirement is something a target needs of the environment it builds

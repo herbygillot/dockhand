@@ -49,9 +49,39 @@ esac
 // binary archive, which -b archivefetch fails for. With COMMAND set, a
 // failure says FAILSAYS as the tool's line, where it's set. With
 // ACTIVEFAILS set,
-// listing the active ports fails.
+// listing the active ports fails. With ACTIVEFILE set, it's a registry
+// of its own, as a prefix of the person's is: the active ports are that
+// file's lines, which deactivating, activating, and installing change, a
+// target's install activating it at NEWVERSION. INSTALLED lists the
+// installed images of a port, as "-q installed <name>" does. Its port
+// snapshot keeps the note it's made with, which --list says as ID 7.
+// Where PORTSRC names a macports.conf, it's copied beside PORT_LOG once,
+// with the sources.conf it names.
 const fakePort = `#!/bin/sh
 echo "$*" >> "$PORT_LOG"
+if [ -n "$PORTSRC" ] && [ ! -f "$PORT_LOG.conf" ]; then cat "$PORTSRC" "$(awk '/^sources_conf/ {print $2}' "$PORTSRC")" > "$PORT_LOG.conf"; fi
+drop() { for name in "$@"; do grep -v "^  $name @" "$ACTIVEFILE" > "$ACTIVEFILE.new"; mv "$ACTIVEFILE.new" "$ACTIVEFILE"; done; }
+case "$*" in
+  "-N snapshot --create --note "*) all="$*"; echo "${all#-N snapshot --create --note }" > "$DOCKHAND_GUEST_ROOT/snapshot.note"; exit 0 ;;
+  "-q snapshot --list") if [ -f "$DOCKHAND_GUEST_ROOT/snapshot.note" ]; then printf '   7  2026-10-25 12:00:00+0000  %s\n' "$(cat "$DOCKHAND_GUEST_ROOT/snapshot.note")"; fi; exit 0 ;;
+  "-N snapshot --delete "*) exit 0 ;;
+esac
+if [ -n "$ACTIVEFILE" ]; then
+  case "$*" in
+    *"-q installed active"*) cat "$ACTIVEFILE"; exit 0 ;;
+    "-N -f deactivate active") : > "$ACTIVEFILE" ;;
+    "-N -f deactivate "*) shift 3; drop "$@" ;;
+    "-N activate "*) drop "$3"; echo "  $3 $4 (active)" >> "$ACTIVEFILE"; echo "port $*"; exit 0 ;;
+    *"install --unrequested "*"subport="*)
+      all="$*"; name=${all##*subport=}; name=${name%% *}; drop "$name"; echo "  $name @${NEWVERSION:-9.9_0} (active)" >> "$ACTIVEFILE" ;;
+    "-N install --unrequested "*|"-N -d install --unrequested "*)
+      for dep in $*; do case "$dep" in -*|install) ;; *) grep -q "^  $dep @" "$ACTIVEFILE" || echo "  $dep @1_0 (active)" >> "$ACTIVEFILE" ;; esac; done ;;
+  esac
+fi
+case "$*" in
+  *"-q installed active"*) ;;
+  "-q installed "?*) printf '%b' "$INSTALLED"; exit 0 ;;
+esac
 case "$*" in
   *"-q installed active"*) if [ -n "$ACTIVEFAILS" ]; then echo "Error: registry locked" >&2; exit 1; fi; printf '%b' "$ACTIVE"; exit 0 ;;
   *"-q installed"*) exit 0 ;;
@@ -87,7 +117,7 @@ case "$*" in
     exit 0 ;;
   *"-q info --line --version --revision "*)
     for entry in $DEPVERSION; do
-      case "$*" in *" ${entry%%=*}") echo "${entry#*=}" | tr ',' '\t' ;; esac
+      case "$*" in *" ${entry%%=*}"|*"subport=${entry%%=*}") echo "${entry#*=}" | tr ',' '\t' ;; esac
     done
     exit 0 ;;
   *"-q rdeps --no-build "*)
@@ -211,7 +241,7 @@ proc mportinit {} {}
 proc declares_tests {portdir name variants} { return [expr {$name in $::env(TESTED)}] }
 proc checkout {portdir name variants} { return [file join $::env(CHECKOUTS) $name] }
 proc work_dir {portdir name variants} { return [file join $::env(CHECKOUTS) $name-work] }
-set foreignManagers {}
+set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 `
 	script := filepath.Join(root, "guest.tcl")
 	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
@@ -219,7 +249,7 @@ set foreignManagers {}
 	portLog := filepath.Join(root, "port.log")
 	otool := filepath.Join(root, "otool")
 	require.NoError(t, os.WriteFile(otool, []byte(fakeOtool), 0o755))
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	return command
 }
 

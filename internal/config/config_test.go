@@ -94,7 +94,18 @@ func TestCheckAndProviderSettings(t *testing.T) {
 	_, err = parse("config.toml", "[providers.command]\nname = \"box\"\n")
 	require.ErrorContains(t, err, "providers.command.run")
 	_, err = parse("config.toml", "[providers.prefix]\npath = \"x\"\n")
-	require.ErrorContains(t, err, "unknown setting providers.prefix.path")
+	require.ErrorContains(t, err, "unknown setting providers.prefix")
+	// The local provider's prefix, its toggle to keep what a check built
+	// active, the prefixes it may clean, and whether serve checks there.
+	f, err = parse("config.toml", "[providers.local]\nprefix = \"/opt/macports-test\"\nkeep = true\nclean = [\"/opt/macports-test\"]\nserve = true\n")
+	require.NoError(t, err)
+	require.Equal(t, LocalProvider{Prefix: "/opt/macports-test", Keep: true, Clean: []string{"/opt/macports-test"}, Serve: true}, f.Providers.Local)
+	_, err = parse("config.toml", "[providers.local]\nprefix = \"opt/local\"\n")
+	require.ErrorContains(t, err, "providers.local.prefix: \"opt/local\" is not a path from the root")
+	_, err = parse("config.toml", "[providers.local]\nclean = [\"~/mp\"]\n")
+	require.ErrorContains(t, err, "providers.local.clean")
+	_, err = parse("config.toml", "[providers.local]\nbuild_timeout = \"soon\"\n")
+	require.ErrorContains(t, err, "providers.local.build_timeout")
 
 	f, err = parse("config.toml", "[providers.tart]\ncapacity = 2\ntest_timeout = \"45m\"\n")
 	require.NoError(t, err)

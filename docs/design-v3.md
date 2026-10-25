@@ -83,7 +83,7 @@ This section is the consolidated contract. The v3 layers are rebuilt with a fres
 | **branch** | Stable identity (an ID independent of the ref name), the Git branch that locates it, its base, title, lifecycle, and at most one PR. |
 | **revision** | An immutable candidate: a source tree and base. Either a **commit** (committed source) or a **snapshot** (captured working files, numbered per branch). The changed scope derives from it. |
 | **verification plan** | For one revision: the frozen coverage, exclusions with their reasons, prerequisites, and environment choices. |
-| **provider** | A way of building: `tart` (a clean VM per release), `prefix` (a MacPorts installation on this Mac), `github` (MacPorts' CI workflow in your fork), or `command` (your own script). |
+| **provider** | A way of building: `tart` (a clean VM per release), `local` (a MacPorts prefix on this Mac), `github` (MacPorts' CI workflow in your fork), or `command` (your own script). |
 | **run** | One accepted check request: a plan, and the providers and releases it asked for. It has an ID that people type (`check-42`). |
 | **guest execution** | For one run, provider, and release: the single owner of that environment. It holds per-target checkpoints. |
 | **target result** | What happened to one target, in one configuration, with particular inputs. It is reusable only while those inputs still apply. |
@@ -200,7 +200,7 @@ Using this ports repository; upstream is macports/macports-ports.
   Branches     ? keep branch worktrees in ~/Source/macports-branches? [Y/n] y
   Providers    tart    · not set up: dockhand setup tart   (macOS 26, ≈ 30 min, 45 GB)
                github  · needs a GitHub login and your fork's Actions enabled
-               prefix  · optional: dockhand setup prefix
+               local   · /opt/local, MacPorts 2.12.6: check --on local
   Publishing   · not set up: dockhand setup github, when you're ready to submit
 
 Next: dockhand start <name>, or dockhand outdated --mine
@@ -549,18 +549,20 @@ Coverage options:
 
 A narrowed check never quietly shrinks what `submit` requires.
 
-`--on <provider>[:<releases>]` selects where the build runs. Examples are `--on tart:sonoma,tahoe`, `--on tart:all`, `--on prefix`, and `--on github`. A bare release name means Tart, and `check.on` in the config sets the default. Several `--on` flags mean all of them must pass, never one of them (decisions 14 and 29). Switching a queued or running check to another provider is explicit: `check --on github --replace`.
+`--on <provider>[:<releases>]` selects where the build runs. Examples are `--on tart:sonoma,tahoe`, `--on tart:all`, `--on local`, `--on local:/opt/macports-test`, and `--on github`. A bare release name means Tart, and `check.on` in the config sets the default. Several `--on` flags mean all of them must pass, never one of them (decisions 14 and 29). Switching a queued or running check to another provider is explicit: `check --on github --replace`.
 
 | Provider | Builds in | Clean each time | What its result can claim |
 | --- | --- | --- | --- |
 | `tart` | a fresh clone of a prepared VM image per release | yes | CI's order, declared tests, any release with an image |
-| `prefix` | a MacPorts installation on this Mac | no; says how many ports were already installed | quick iteration on this Mac's release |
+| `local` | a MacPorts prefix on this Mac, `/opt/local` or one of yours | no, unless the prefix is listed in `clean`; says how many ports were active | this Mac's release, among what you have installed |
 | `github` | MacPorts' CI workflow in your fork | yes | only what CI does: default variants, `port lint` without `--nitpick`, the built-in test phase, the runners' releases |
 | `command` | whatever your script does | as it reports | labelled "reported by <name>"; dockhand can't vouch for it |
 
-The default `prefix` is a separate MacPorts installation that you own, set up by `dockhand setup prefix` without root. It needs no `sudo` and leaves your everyday ports alone. MacPorts' binary archives only serve `/opt/local`, so its first build compiles every dependency from source.
+`local` builds in `/opt/local`, or the prefix `[providers.local] prefix` or `--on local:<prefix>` names; `--on local:/opt/local --on local:/opt/macports-test` builds in both, each its own environment. Dockhand never installs MacPorts: any other prefix is one you made with MacPorts' own source install. A prefix whose MacPorts predates `port snapshot` (2.9) is refused. The guest program Tart's clones run builds the targets there, under the prefix's own `port-tclsh`, in CI's order. MacPorts reads the branch through a `macports.conf` of the check's own, named by `PORTSRC`, whose `sources_conf` lists the staged tree first and the prefix's own sources after it; the prefix's `etc/macports` is never written.
 
-Your everyday `/opt/local` can also be a provider, but only as an explicit opt-in. It installs the branch's versions over your own and needs root. Dockhand restores the previously active versions after the build, and says so when it can't.
+It builds as-is: nothing is deactivated, and how many ports were active, and any other package manager found, are facts of the build, which the Tested on line names ("built in /opt/local on the author's Mac with 143 ports active"). `port snapshot` records the prefix before anything changes. Afterwards dockhand activates again each port whose active version changed and deactivates what the check activated, leaving the new images inactive and unrequested for `port reclaim`. `check --keep`, or `[providers.local] keep = true`, leaves the branch's versions active instead. A prefix listed in `[providers.local] clean` is treated as dockhand's own: each target builds there with all but its dependencies deactivated, as in a clean VM, and the rest is put back after. A check that ends before it puts the prefix back leaves it changed; status says so, with `sudo port restore --snapshot-id N`, and the next check there puts it back first.
+
+Where you can write the prefix's registry, as in a prefix installed without root, nothing needs `sudo`. Otherwise a check asks for your password once and runs the build as root. serve doesn't check in a prefix unless `[providers.local] serve = true`, which needs a sudo rule with no password: root for anything a Portfile does. A pull request you adopted is refused there, since someone else's Portfile would run as root on this Mac. MacPorts' binary archives serve `/opt/local` alone, so in any other prefix every dependency builds from source, and the plan says so.
 
 A `command` provider receives a request file (the revision as a Git bundle, the targets in order, the release, the variants, and the test policy) and writes a result file with each target's phases. Configuring any provider that pushes somewhere shows that push when the check is accepted: "only checking" never hides a write to your fork.
 
@@ -661,7 +663,7 @@ The PR body is written in the template's own sections, and ticks only what dockh
 
 - **`#### Description`**: for one commit, its body. For several, a table of commit, port, and change.
 - **`###### Type(s)`**: `bugfix`, `enhancement`, or `security fix`, ticked when stated (`--type`), or when a commit cites a CVE. MacPorts' bot detects "update" from a title containing ": update", and "submission" from a new Portfile, by itself.
-- **`###### Tested on`**: the template's lines for each release built (`macOS 26.1 25B78 arm64`, then Xcode or the Command Line Tools version). Each names the provider and what its result establishes: "built in a clean VM", "built in a MacPorts prefix with 143 ports already installed", "MacPorts CI workflow in ada/macports-ports" with the run's link, or "reported by <name>". A grid below shows each port against each provider and release, including anything accepted, baselined, or not built locally.
+- **`###### Tested on`**: the template's lines for each release built (`macOS 26.1 25B78 arm64`, then Xcode or the Command Line Tools version). Each names the provider and what its result establishes: "built in a clean VM", "built in /opt/local on the author's Mac with 143 ports active", "MacPorts CI workflow in ada/macports-ports" with the run's link, or "reported by <name>". A grid below shows each port against each provider and release, including anything accepted, baselined, or not built locally.
 - **`###### Verification`**:
   - `port lint`, `sudo port test`, and install are ticked from recorded results. Dockhand builds from source as CI does, without trace mode (decision 28), so the `-vst` item is ticked with that stated, never silently.
   - "Commit Message Guidelines" and "squashed and minimized" are ticked when the commit rules passed on what's being submitted.
@@ -728,7 +730,7 @@ dockhand serve --submit-passing   # also open PRs for the branches it prepared t
 
 ```console
 $ dockhand queue
-serve: running (pid 4711, up 3h) · tart 2 of 2 VMs · prefix idle · github idle
+serve: running (pid 4711, up 3h) · tart 2 of 2 VMs · github idle
 
 RUN        BRANCH        SOURCE       ON           STATE      DETAIL
 check-42   libharbor-2   snapshot 5   tart:tahoe   running    harbor-viewer: build
@@ -811,8 +813,11 @@ submit_passing = false    # open PRs for the updates serve prepared that pass (�
 submit_limit = 10         # at most this many a day
 notify = true
 
-[providers.prefix]
-path = "~/.dockhand/prefix"
+[providers.local]
+prefix = "/opt/local"     # where --on local builds; --on local:<prefix> names another
+keep = false              # leave the branch's versions active after a check, as check --keep does
+clean = []                # prefixes that are dockhand's own to clean
+serve = false             # let serve check there, under a sudo rule with no password
 ```
 
 ## 13. Promises

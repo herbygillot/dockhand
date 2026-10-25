@@ -2,9 +2,11 @@ package setup
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -19,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/term"
 )
@@ -66,7 +69,7 @@ new one has passed.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !s.Host.TartSupported() {
-				return errors.New("Tart's macOS images need Apple silicon, and this Mac isn't; checks here build on GitHub, with --on github")
+				return errors.New("Tart's macOS images need Apple silicon, and this Mac isn't; checks here build in a MacPorts prefix, with --on local, or on GitHub, with --on github")
 			}
 			if len(args) == 1 {
 				options.Release = args[0]
@@ -139,6 +142,9 @@ func providerLines(ctx context.Context, s *settings.Settings, file config.File) 
 		lines = append(lines, fmt.Sprintf("%-8s %s", "", line))
 	}
 	lines = append(lines, fmt.Sprintf("%-8s %s", buildenv.GitHub, githubReadiness(ctx, s)))
+	if tart.LocalSupported() {
+		lines = append(lines, fmt.Sprintf("%-8s %s", buildenv.Local, localReadiness(file.Providers.Local)))
+	}
 	if command := file.Providers.Command; command != nil {
 		name := command.Name
 		if name == "" {
@@ -150,7 +156,17 @@ func providerLines(ctx context.Context, s *settings.Settings, file config.File) 
 }
 
 // noTart says why Tart isn't for this Mac, and where its checks build.
-const noTart = "  needs Apple silicon; checks here build on GitHub, with --on github"
+const noTart = "  needs Apple silicon; checks here build in a MacPorts prefix, with --on local, or on GitHub, with --on github"
+
+// localReadiness is setup's line for the local provider: the prefix
+// --on local builds in, where MacPorts is installed there.
+func localReadiness(local config.LocalProvider) string {
+	prefix := cmp.Or(local.Prefix, macports.DefaultPrefix)
+	if _, err := os.Stat(filepath.Join(prefix, "bin", "port")); err != nil {
+		return "· no MacPorts at " + prefix + "; [providers.local] prefix names another"
+	}
+	return "✓ in " + prefix + ", among the ports active there: check --on local"
+}
 
 // tartReadiness is setup's Tart line, and the lines under it: a release's
 // each, where images are ready.

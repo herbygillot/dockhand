@@ -140,7 +140,7 @@ func pullRequestBody(facts bodyFacts) string {
 // didn't report, who built it, and the runs behind it, each with its
 // check.
 func report(environment model.Environment, observed model.Observed, runs []model.GuestExecution, checks map[model.RunID]string, reusedIn map[model.ExecutionID]string) prdescription.Report {
-	described := prdescription.Report{Observed: observed, Architecture: environment.Platform.Architecture, Tools: environment.DeveloperTools, Provider: providerWords(environment.Provider)}
+	described := prdescription.Report{Observed: observed, Architecture: environment.Platform.Architecture, Tools: environment.DeveloperTools, Provider: providerWords(environment, observed)}
 	if environment.Platform != (model.Platform{}) {
 		described.Release = strings.TrimPrefix(describePlace(model.Environment{Platform: environment.Platform}), " ")
 	}

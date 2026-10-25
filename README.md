@@ -34,7 +34,7 @@ For local VM builds, install [Tart](https://tart.run) on an Apple silicon Mac:
 sudo port install tart
 ```
 
-An Intel Mac can prepare changes and check them through GitHub Actions instead. Some Go and Rust ports also need the MacPorts `go2port` or `cargo2port` helper to regenerate their dependency lists.
+A Mac without Tart, an Intel Mac among them, can check in a MacPorts prefix on the Mac itself with `dockhand check --on local`, or through GitHub Actions. Some Go and Rust ports also need the MacPorts `go2port` or `cargo2port` helper to regenerate their dependency lists.
 
 <details>
 <summary>Build Dockhand from source</summary>
@@ -106,7 +106,7 @@ dockhand check
 
 By default, `check` builds tracked files as they are on disk, including uncommitted edits. Stage new files or add them with `--include <file>` so the check sees them too. You do not have to commit before checking.
 
-If you use GitHub Actions instead of Tart, run `dockhand check --on github`; enable Actions in your fork first.
+If you use GitHub Actions instead of Tart, run `dockhand check --on github`; enable Actions in your fork first. To build in your own MacPorts prefix instead, run `dockhand check --on local`.
 
 When the change is ready:
 
@@ -142,6 +142,7 @@ Dockhand runs lint, fetch, checksum, installation, and declared tests. Test fail
 | Build environment | How it works |
 | --- | --- |
 | **Tart** | Builds in disposable macOS VMs on your Apple silicon Mac. The usual `host` profile selects a VM matching your Mac's macOS release. |
+| **Local** | Builds in a MacPorts prefix on this Mac, `/opt/local` or one of your own, among the ports you have active, and puts them back as they were after; `--keep` leaves the branch's versions active. Select `--on local`, or `--on local:/opt/macports-test`. See [the local provider](docs/local-provider.md). |
 | **GitHub Actions** | Runs MacPorts' own workflow in your fork. Enable Actions in the fork and select `--on github`. |
 | **Custom command** | Runs a script you configure for a build machine or VM you manage. |
 

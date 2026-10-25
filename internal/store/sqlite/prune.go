@@ -23,7 +23,7 @@ import (
 // choose, which keeps its archive and its record (D6). Its columns are
 // the result's execution, target, and archive.
 const reusableBuilds = "SELECT execution_id, target_id, archive FROM (SELECT r.execution_id, r.target_id, r.archive, ROW_NUMBER() OVER (" +
-	"PARTITION BY r.target_id, e.provider, e.platform_os, e.platform_version, e.platform_architecture, e.developer_tools " +
+	"PARTITION BY r.target_id, e.provider, e.platform_os, e.platform_version, e.platform_architecture, e.developer_tools, e.prefix " +
 	"ORDER BY r.recorded_at DESC, r.rowid DESC) AS newest FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
 	"WHERE r.repository_id=? AND r.outcome='passed' AND r.inputs<>'' AND r.reused_from='' AND r.archive<>'') WHERE newest=1"
 
@@ -31,7 +31,7 @@ const reusableBuilds = "SELECT execution_id, target_id, archive FROM (SELECT r.e
 // result of each target in each environment names, a reuse's included:
 // what its evidence may name.
 const openBranchArchives = "SELECT archive FROM (SELECT r.archive, ROW_NUMBER() OVER (" +
-	"PARTITION BY u.branch_id, r.target_id, e.provider, e.platform_os, e.platform_version, e.platform_architecture, e.developer_tools " +
+	"PARTITION BY u.branch_id, r.target_id, e.provider, e.platform_os, e.platform_version, e.platform_architecture, e.developer_tools, e.prefix " +
 	"ORDER BY r.recorded_at DESC, r.rowid DESC) AS newest FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
 	"JOIN runs u ON u.repository_id=e.repository_id AND u.id=e.run_id JOIN branches b ON b.repository_id=u.repository_id AND b.id=u.branch_id " +
 	"WHERE r.repository_id=? AND r.outcome='passed' AND r.archive<>'' AND b.state='open') WHERE newest=1"

@@ -229,6 +229,11 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	e, options := s.e, s.options
 	var providers []string
 	for name := range e.Providers {
+		// serve checks in a prefix on this Mac only where it may
+		// (localAllowed).
+		if name == buildenv.Local && !e.LocalServe {
+			continue
+		}
 		providers = append(providers, name)
 	}
 	slices.Sort(providers)

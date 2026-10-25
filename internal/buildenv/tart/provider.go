@@ -106,6 +106,21 @@ type Provider struct {
 	// stands in for it in tests.
 	hostMacPorts sync.Once
 	macPorts     string
+	// local follows the guest program the local provider runs on this
+	// Mac, in root, rather than in a clone (Local): it reports no drift
+	// from the facts table, its program's end is its process's, and the
+	// archives of the person's own ports aren't kept.
+	local bool
+	root  string
+}
+
+// guestDir is where the guest program writes its results and logs: the
+// clone's guestRoot, or a local check's own directory.
+func (p *Provider) guestDir() string {
+	if p.root != "" {
+		return p.root
+	}
+	return guestRoot
 }
 
 func (p *Provider) Name() string { return buildenv.Tart }
@@ -580,6 +595,22 @@ type guestInput struct {
 	Archives    []guestArchive `json:"archives,omitempty"`
 	ArchiveSite string         `json:"archive_site,omitempty"`
 	ArchiveKeys []string       `json:"archive_keys,omitempty"`
+	// Local is a check in a MacPorts prefix of the person's, on this Mac
+	// (Local); nil in a clone.
+	Local *guestLocal `json:"local,omitempty"`
+}
+
+// guestLocal is how a check in a prefix of the person's leaves it: Clean
+// builds each target with all but its dependencies deactivated, as in a
+// clone, where the prefix is one dockhand may treat as its own; Keep
+// leaves what it built active; Note is what its port snapshot is noted
+// with. Restore runs the program only to put back the prefix a check
+// left changed.
+type guestLocal struct {
+	Clean   bool   `json:"clean"`
+	Keep    bool   `json:"keep"`
+	Note    string `json:"note"`
+	Restore bool   `json:"restore,omitempty"`
 }
 
 // guestArchive is a kept archive in the guest: the port it is of, and
@@ -723,21 +754,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if input.Tests == "" {
 		input.Tests = string(model.TestsDeclared)
 	}
-	for _, target := range job.Targets {
-		name := target.Target.Name
-		if target.Target.Subport != "" {
-			name = target.Target.Subport
-		}
-		t := guestTarget{ID: string(target.ID), Name: name, Portfile: target.Target.Portfile, Variants: target.Target.Variants, Log: buildenv.LogName(target.ID)}
-		for _, dependency := range target.DependsOn {
-			t.DependsOn = append(t.DependsOn, string(dependency))
-		}
-		if target.Git != nil {
-			t.Git = &guestGit{Ref: target.Git.Ref, Expect: target.Git.Expected()}
-		}
-		_, t.Blocked = build.Blocked(target.ID)
-		input.Targets = append(input.Targets, t)
-	}
+	input.Targets = guestTargets(job, build)
 	// With nothing to build, no VM starts; the runner records what's
 	// blocked.
 	if !slices.ContainsFunc(input.Targets, func(t guestTarget) bool { return !t.Blocked }) {
@@ -827,6 +844,28 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		return p.trouble(ctx, "starting the build in "+vm, err)
 	}
 	return p.follow(ctx, g, started, job, build, release)
+}
+
+// guestTargets are the job's targets as the guest program reads them, each
+// marked blocked where a changed dependency of it didn't pass.
+func guestTargets(job buildenv.Job, build buildenv.Build) []guestTarget {
+	var targets []guestTarget
+	for _, target := range job.Targets {
+		name := target.Target.Name
+		if target.Target.Subport != "" {
+			name = target.Target.Subport
+		}
+		t := guestTarget{ID: string(target.ID), Name: name, Portfile: target.Target.Portfile, Variants: target.Target.Variants, Log: buildenv.LogName(target.ID)}
+		for _, dependency := range target.DependsOn {
+			t.DependsOn = append(t.DependsOn, string(dependency))
+		}
+		if target.Git != nil {
+			t.Git = &guestGit{Ref: target.Git.Ref, Expect: target.Git.Expected()}
+		}
+		_, t.Blocked = build.Blocked(target.ID)
+		targets = append(targets, t)
+	}
+	return targets
 }
 
 func (p *Provider) prefix() string {
@@ -1149,7 +1188,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 	take := func(results guestResults) error {
 		if !observed && results.Environment["macos"] != "" {
 			observed = true
-			if message := driftReport(release, job.Environment.DeveloperTools, results.Environment); message != "" {
+			if message := driftReport(release, job.Environment.DeveloperTools, results.Environment); message != "" && !p.local {
 				build.Progress(message)
 			}
 			if err := build.Observe(reported(results.Environment)); err != nil {
@@ -1168,6 +1207,11 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-started.Done():
+			if p.local {
+				// The program's end is its process's: what it wrote last
+				// is read, as when it stopped below.
+				return p.ended(ctx, g, job, build, take, building, lost)
+			}
 			return interrupted(job, build, building, buildenv.Infrastructure("the VM stopped: %v", started.Err()), nil)
 		case <-time.After(p.poll()):
 		}
@@ -1225,6 +1269,13 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 			return nil
 		case "errored":
 			return lost(buildenv.Infrastructure("the guest: %s", results.Detail))
+		case "refused":
+			// What the prefix holds keeps the build from being the
+			// branch's, which another attempt won't change.
+			return buildenv.Infrastructure("%w: %s", buildenv.ErrNeedsAttention, results.Detail)
+		}
+		if p.local {
+			continue
 		}
 		if gone, err := stopped(ctx, g); err == nil && gone {
 			// It may have written its last results after the read above.
@@ -1234,10 +1285,37 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job builden
 				}
 				building = last.Building
 			}
-			log, _ := g.Read(ctx, guestRoot+"/runner.log", true)
+			log, _ := g.Read(ctx, p.guestDir()+"/runner.log", true)
 			return lost(buildenv.Infrastructure("the guest program stopped before it finished: %s", strings.TrimSpace(tail(string(log), 400))))
 		}
 	}
+}
+
+// ended reads what a local guest program wrote last, once its process
+// has ended: its finish, or why it stopped short.
+func (p *Provider) ended(ctx context.Context, g guest, job buildenv.Job, build buildenv.Build, take func(guestResults) error, building string, lost func(error) error) error {
+	last, err := p.read(ctx, g)
+	if err != nil || last.Protocol != Protocol {
+		return lost(buildenv.Infrastructure("the guest program ended without its results: %v", err))
+	}
+	if err := take(last); err != nil {
+		return err
+	}
+	switch last.State {
+	case "finished":
+		for _, target := range last.Targets {
+			if target.Outcome == string(model.OutcomeFailed) && target.Transient != "" {
+				return refusal.New(refusal.Network, "%s's build met a network fault upstream: %s", target.ID, target.Transient)
+			}
+		}
+		return nil
+	case "refused":
+		return buildenv.Infrastructure("%w: %s", buildenv.ErrNeedsAttention, last.Detail)
+	case "errored":
+		return interrupted(job, build, last.Building, buildenv.Infrastructure("the guest: %s", last.Detail), func(name string) string { return p.partialLog(ctx, g, job, name) })
+	}
+	log, _ := g.Read(ctx, p.guestDir()+"/runner.log", true)
+	return lost(buildenv.Infrastructure("the guest program stopped before it finished: %s", strings.TrimSpace(tail(string(log), 400))))
 }
 
 // buildingWords is what the guest is building, and how far it is, as
@@ -1296,7 +1374,7 @@ func interrupted(job buildenv.Job, build buildenv.Build, building string, cause 
 
 func (p *Provider) read(ctx context.Context, g guest) (guestResults, error) {
 	var results guestResults
-	data, err := g.Read(ctx, guestRoot+"/results.json", true)
+	data, err := g.Read(ctx, p.guestDir()+"/results.json", true)
 	if err != nil {
 		return results, err
 	}
@@ -1320,7 +1398,7 @@ func (p *Provider) partialLog(ctx context.Context, g guest, job buildenv.Job, na
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	local := filepath.Join(job.Directory, name)
-	if err := g.Download(ctx, guestRoot+"/"+name, local, true); err != nil {
+	if err := g.Download(ctx, p.guestDir()+"/"+name, local, true); err != nil {
 		return ""
 	}
 	return local
@@ -1337,7 +1415,7 @@ func (p *Provider) liveLog(ctx context.Context, g guest, job buildenv.Job, id mo
 	ctx, cancel := context.WithTimeout(ctx, max(p.poll(), 5*time.Second))
 	defer cancel()
 	name := buildenv.LogName(id)
-	_ = g.Append(ctx, guestRoot+"/"+name, filepath.Join(job.Directory, name), true)
+	_ = g.Append(ctx, p.guestDir()+"/"+name, filepath.Join(job.Directory, name), true)
 }
 
 // ReadsLinks says the guest reads what a passed build's binaries link
@@ -1372,7 +1450,7 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 	}
 	if got.Log != "" && filepath.Base(got.Log) == got.Log {
 		local := filepath.Join(job.Directory, got.Log)
-		if err := g.Download(ctx, guestRoot+"/"+got.Log, local, true); err == nil {
+		if err := g.Download(ctx, p.guestDir()+"/"+got.Log, local, true); err == nil {
 			result.Log = local
 			// Where each step began is a place in this log, kept with it.
 			for _, step := range got.Steps {
@@ -1419,7 +1497,9 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 	// d302e744, batch 90). One that isn't kept is said, and builds again
 	// next time.
 	for _, port := range got.Active {
-		if port.Archive == "" || port.ArchiveFile == "" || isTarget(job, port.Name) {
+		// A local check's ports are the person's own, built however they
+		// were, and aren't offered to a clean guest.
+		if p.local || port.Archive == "" || port.ArchiveFile == "" || isTarget(job, port.Name) {
 			continue
 		}
 		active := model.ActivePort{Name: port.Name, Spec: port.Spec, Directory: port.Directory, Archive: port.Archive}
@@ -1468,9 +1548,16 @@ func (p *Provider) keepDependency(ctx context.Context, g guest, build buildenv.B
 func reported(environment map[string]string) model.Observed {
 	// The guest records port version's own words, "Version: 2.12.6".
 	macports, _ := installation.ParseVersion([]byte(environment["macports"]))
-	return model.Observed{MacOS: environment["macos"], Build: environment["build"], Architecture: environment["architecture"],
+	observed := model.Observed{MacOS: environment["macos"], Build: environment["build"], Architecture: environment["architecture"],
 		Xcode: environment["xcode"], XcodeBuild: environment["xcode_build"], Tools: environment["tools"],
 		DeveloperDir: environment["developer_dir"], MacPorts: macports}
+	// A local check's prefix: how many ports were active, and the other
+	// package managers on the Mac.
+	observed.ActivePorts, _ = strconv.Atoi(environment["active_ports"])
+	if foreign := environment["foreign"]; foreign != "" {
+		observed.Foreign = strings.Split(foreign, ",")
+	}
+	return observed
 }
 
 // driftReport compares the guest's tools with the facts table's row for

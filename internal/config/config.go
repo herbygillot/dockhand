@@ -53,6 +53,7 @@ type File struct {
 		Command *CommandProvider `toml:"command"`
 		GitHub  GitHubProvider   `toml:"github"`
 		Tart    TartProvider     `toml:"tart"`
+		Local   LocalProvider    `toml:"local"`
 	} `toml:"providers"`
 	Cleanup Cleanup `toml:"cleanup"`
 	Holds   Holds   `toml:"holds"`
@@ -376,6 +377,40 @@ type TartProvider struct {
 	Xcode map[string]string `toml:"xcode"`
 }
 
+// LocalProvider builds in a MacPorts prefix on this Mac (Design v3 §7).
+type LocalProvider struct {
+	// Prefix is the prefix --on local builds in; /opt/local when unset.
+	// --on local:<prefix> names another.
+	Prefix string `toml:"prefix"`
+	// Keep leaves the branch's versions active after a check, as check
+	// --keep does, where a check otherwise puts the prefix back as it was.
+	Keep bool `toml:"keep"`
+	// Clean are the prefixes dockhand may treat as its own: each target
+	// builds there with all but its dependencies deactivated, as in a
+	// clean VM, and the rest is put back after. A prefix not named builds
+	// among whatever is active.
+	Clean []string `toml:"clean"`
+	// Serve lets serve check in the prefix, which it otherwise skips: its
+	// Portfiles run as root, under a sudo rule that needs no password.
+	Serve bool `toml:"serve"`
+	// TestTimeout and BuildTimeout bound a target's tests and its build,
+	// as Tart's do.
+	TestTimeout  string `toml:"test_timeout"`
+	BuildTimeout string `toml:"build_timeout"`
+}
+
+// Timeout is the test timeout the configuration sets, or zero.
+func (l LocalProvider) Timeout() time.Duration {
+	timeout, _ := time.ParseDuration(l.TestTimeout)
+	return timeout
+}
+
+// BuildBound is the build timeout the configuration sets, or zero.
+func (l LocalProvider) BuildBound() time.Duration {
+	timeout, _ := time.ParseDuration(l.BuildTimeout)
+	return timeout
+}
+
 // Timeout is the test timeout the configuration sets, or zero.
 func (t TartProvider) Timeout() time.Duration {
 	timeout, _ := time.ParseDuration(t.TestTimeout)
@@ -455,6 +490,12 @@ func Defaults() map[string]string {
 		"providers.github.remote":        "the one remote pushing to your fork",
 		"providers.github.capacity":      strconv.Itoa(DefaultGitHubCapacity),
 		"providers.github.build_timeout": ageWords(buildenv.DefaultBuildTimeout),
+		"providers.local.prefix":         macports.DefaultPrefix,
+		"providers.local.keep":           "false",
+		"providers.local.clean":          "(none)",
+		"providers.local.serve":          "false",
+		"providers.local.test_timeout":   ageWords(buildenv.DefaultTestTimeout),
+		"providers.local.build_timeout":  ageWords(buildenv.DefaultBuildTimeout),
 	}
 }
 
@@ -630,6 +671,20 @@ func parse(path, text string) (File, error) {
 	if timeout := f.Providers.Tart.BuildTimeout; timeout != "" {
 		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
 			return File{}, fmt.Errorf("%s: providers.tart.build_timeout: %q is not a duration such as \"8h\"", path, timeout)
+		}
+	}
+	local := &f.Providers.Local
+	if local.Prefix != "" && !filepath.IsAbs(local.Prefix) {
+		return File{}, fmt.Errorf("%s: providers.local.prefix: %q is not a path from the root, such as \"/opt/local\"", path, local.Prefix)
+	}
+	for _, clean := range local.Clean {
+		if !filepath.IsAbs(clean) {
+			return File{}, fmt.Errorf("%s: providers.local.clean: %q is not a path from the root, such as \"/opt/macports-test\"", path, clean)
+		}
+	}
+	for name, timeout := range map[string]string{"test_timeout": local.TestTimeout, "build_timeout": local.BuildTimeout} {
+		if d, err := time.ParseDuration(timeout); timeout != "" && (err != nil || d <= 0) {
+			return File{}, fmt.Errorf("%s: providers.local.%s: %q is not a duration such as \"45m\"", path, name, timeout)
 		}
 	}
 	for release, version := range f.Providers.Tart.Xcode {
