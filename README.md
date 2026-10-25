@@ -12,7 +12,7 @@ Dockhand helps contributors to [macports/macports-ports](https://github.com/macp
 
 Each change lives on an ordinary Git branch, with its own working directory. You can edit with your usual tools, review each step, or let Dockhand take a routine update through to a pull request. Pushes go to your fork; you do not need commit access to MacPorts.
 
-> These examples use the v0.4.0 command interface, released as v0.4.0; `main` heads for v0.5.0, and may add to it. Commands may differ in earlier releases. Run `dockhand --version` to check your build and `dockhand <command> --help` for its options.
+> These examples use the v0.5.0 command interface, released as v0.5.0; `main` heads for v0.6.0, and may add to it. Commands may differ in earlier releases. Run `dockhand --version` to check your build and `dockhand <command> --help` for its options.
 
 ## Install
 
