@@ -71,7 +71,7 @@ func dependencyHelper(t *testing.T, body string) string {
 func TestGoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)
-	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "patched-curated", "local-patch", "unsupported-context", "moved", "collateral", "patched-moved", "vendors-extract"} {
+	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "patched-curated", "local-patch", "unsupported-context", "moved", "collateral", "patched-moved"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
@@ -132,13 +132,9 @@ func TestGoDependencyPreparation(t *testing.T) {
 			if scenario == "collateral" {
 				extra += "subport fixture-child { notes ${go.vendors} }\n"
 			}
-			// golang 1.0's own: go.vendors turns extract.rename off where it
-			// lists any module, which the version step, reading the
-			// Portfile with its block set aside, sees on (field testing's
-			// git-credential-oauth: "[...extract.rename changed]").
-			if scenario == "vendors-extract" {
-				extra += "extract.rename yes\nproc fixture_extract {} { if {[llength [option go.vendors]]} { extract.rename no } }\nport::register_callback fixture_extract\n"
-			}
+			// golang 1.0's go.vendors turning extract.rename off, which a
+			// stand-in proc modelled here, is the corpus's git-credential-oauth
+			// row now, against the real PortGroup (tools/corpus).
 			var requests atomic.Int64
 			service, request := versionFixture(t, "go-setup", extra, func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
@@ -343,7 +339,7 @@ func TestAnUnprunedGoModuleKeepsWhatGoVendorsKeeps(t *testing.T) {
 func TestCargoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("b", 64)
-	for _, scenario := range []string{"success", "auxiliary", "added", "removed", "missing", "failed", "partial", "shared", "shared-unauthorized", "cargo-update", "cargo-update-unlocked", "crates-dist-subdir"} {
+	for _, scenario := range []string{"success", "auxiliary", "added", "removed", "missing", "failed", "partial", "shared", "shared-unauthorized", "cargo-update", "cargo-update-unlocked"} {
 		t.Run(scenario, func(t *testing.T) {
 			lock := func(name string) string {
 				result := "version = 4\n[[package]]\nname = \"fixture\"\nversion = \"1.0.0\"\n"
@@ -395,14 +391,9 @@ extract.rename no
 			if strings.HasPrefix(scenario, "cargo-update") {
 				extra += "cargo.update yes\n"
 			}
-			if scenario == "crates-dist-subdir" {
-				// cargo_fetch-1.0's own default: the port's archives go in
-				// the crates' directory where it lists any, which the
-				// version step, reading the Portfile with its crates set
-				// aside, sees as the port's own name (v0.5.0-rc1's dust:
-				// "[dust.dist_subdir changed]").
-				extra += "default dist_subdir {[expr {[llength ${cargo.crates}] > 0 ? \"cargo-crates\" : ${name}}]}\n"
-			}
+			// cargo_fetch-1.0's dist_subdir, the crates' directory where the
+			// port lists any, which a stand-in default modelled here, is the
+			// corpus's dust row now, against the real PortGroup (tools/corpus).
 			if strings.HasPrefix(scenario, "shared") {
 				// A buildable subport sharing the version, the checksums, and
 				// the regenerated block, as atuin-server shares atuin's.
@@ -469,9 +460,6 @@ extract.rename no
 					// Taken, said, and the option left as it was (D19).
 					require.Contains(t, result.Regenerated[0].Notices, "cargo.update is on; MacPorts re-resolves offline against these crates.")
 					require.Contains(t, string(result.Files[0].After), "cargo.update yes\n")
-				}
-				if scenario == "crates-dist-subdir" {
-					require.Equal(t, "cargo-crates", result.Prepared.Ports["fixture"].Options["dist_subdir"], "the crates' directory, as MacPorts evaluates the update")
 				}
 				if scenario == "shared" {
 					require.NotNil(t, result.Scope)

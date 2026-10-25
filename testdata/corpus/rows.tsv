@@ -14,3 +14,8 @@ mise	sysutils/mise	e7d64862d47	2026.10.15	plans	the longest cargo.crates block, 
 jaq	textproc/jaq	dd72ddebf6e	3.1.2	plans	a cargo workspace's port, bumped by dockhand itself
 vault	security/vault	133f0fb7908	2.1.2	plans	field testing named it for its 2.2 licensor rename, which no MacPorts bump has yet; until one does, its 2.1.2 bump stands for its go.mod and go.toolchain_min
 mariadb-10.11	databases/mariadb-10.11	a50e4e482ab	10.11.19	plans	revisions set through set revision_client and set revision_server, reset on the bump, the shape of field testing's mysql9 (2026-10-24), whose own bump MacPorts has yet to merge
+terraform-1.16	sysutils/terraform	2d65c4acf9c	1.16.6	plans	the five-port replay set's terraform: a family of 24 subports, one series' bump moving the obsolete terraform stub that's replaced_by it, which fetches nothing
+py-lmdb	python/py-lmdb	dceb0abff5a	1.7.5	plans	the five-port replay set's py-lmdb: a PyPI port of the python PortGroup's subports (its bump added py311 to py314 too, which the replay doesn't compare)
+qemu	emulators/qemu	48ac9de2ce3	11.1.2	plans	the five-port replay set's qemu: a large port with a livecheck override, its regex against its own master_sites
+perl5.40	lang/perl5	b60062b118b	5.40.4	refuses: no editable version input established	the five-port replay set's perl5: a large subport family made in a loop, each series' version, revision, and checksums a row of one table, perl5.versions_info, which update doesn't edit; a person edits the row
+postgresql18-server	databases/postgresql18-server	ed2c0d83c61	18.6	plans	a port that fetches nothing, its version following postgresql18's: the version edit alone

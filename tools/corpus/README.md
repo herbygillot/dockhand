@@ -39,8 +39,10 @@ like) as words, where order doesn't matter. A row that should refuse
 passes only when it refuses with its words.
 
 It needs the network: the forge's tags, both versions' archives, and
-go2port's and cargo2port's lookups. One run took about 2 minutes on the
-main Mac.
+go2port's and cargo2port's lookups. 19 rows took 4 minutes 18 seconds on
+the main Mac (2026-10-25). CI's corpus job runs it on macOS on each push,
+with go2port and cargo2port from MacPorts' archives, and field testing
+builds from a main it has passed.
 
 A port named by a field or acceptance finding joins the corpus in the
 commit that fixes it.
