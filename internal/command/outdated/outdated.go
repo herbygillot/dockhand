@@ -179,7 +179,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			row.note = can + with(port.Port)
 			// A major version bump, which serve would hold
 			// (holds.majors).
-			if e.HoldsMajor(port.Current, port.Newest) {
+			if e.HoldsMajor(port.Port, port.Current, port.Newest) {
 				row.note = "a new major version, held for a look unattended; " + row.note
 				held = append(held, row)
 				continue

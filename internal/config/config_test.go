@@ -225,6 +225,24 @@ func TestHoldsMajorsHoldsUnlessAllowed(t *testing.T) {
 	require.ErrorContains(t, err, "holds.majors")
 }
 
+// A port's own holds, [holds.ports."<port>"], read with their keys, and a
+// value none of them takes refused by name (Then's item 2).
+func TestAPortsOwnHoldsAreRead(t *testing.T) {
+	f, err := parse("config.toml", "[holds]\nmajors = \"allow\"\n[holds.ports.\"harfbuzz\"]\nafter = [\"harfbuzz-devel\"]\nmajors = \"hold\"\n[holds.ports.\"skopeo\"]\nmoves = \"follow\"\nallow = [\"open\"]\n")
+	require.NoError(t, err)
+	require.Equal(t, map[string]PortHolds{"harfbuzz": {Majors: "hold", After: []string{"harfbuzz-devel"}}, "skopeo": {Moves: MovesFollow, Allow: []string{"open"}}}, f.Holds.Ports)
+	for setting, words := range map[string]string{
+		`majors = "sometimes"`: `holds.ports."harfbuzz".majors: "sometimes" is not hold or allow`,
+		`moves = "always"`:     `holds.ports."harfbuzz".moves: "always" is not hold or follow`,
+		`after = ["harfbuzz"]`: `holds.ports."harfbuzz".after: "harfbuzz" is not another port`,
+	} {
+		_, err = parse("config.toml", "[holds.ports.\"harfbuzz\"]\n"+setting+"\n")
+		require.ErrorContains(t, err, words)
+	}
+	_, err = parse("config.toml", "[holds.ports.\"harfbuzz\"]\nfollow = true\n")
+	require.ErrorContains(t, err, "follow", "an unknown key is refused by name")
+}
+
 // The maintainers line setup inferred is written beside what the file
 // holds, and written again in its place.
 func TestSetMaintainerWritesTheLineBesideWhatsThere(t *testing.T) {

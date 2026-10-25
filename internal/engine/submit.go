@@ -189,6 +189,9 @@ type SubmitPlan struct {
 	// builds on, each of which holds a submission nobody looks over.
 	Majors []model.Concern
 	Floors []model.Concern
+	// After are the holds of a port whose holds name ports to submit
+	// first, at the same version (afterHolds).
+	After []model.Concern
 	// Blocking is what stops the submission.
 	Blocking []string
 	// CheckNeeded is true when a PendingCheck plan has no check for its
@@ -210,9 +213,9 @@ type SubmitPlan struct {
 	Written string
 
 	facts bodyFacts
-	// allowed are the rules the configuration's hold list sets apart
-	// (holds.allow), whose concerns Held leaves out.
-	allowed []string
+	// allowed are the rules the configuration's hold list sets apart for
+	// a port (holds.allow, or its own), whose concerns Held leaves out.
+	allowed func(port string) []string
 }
 
 // PortComparison is what upstream's change means for a port a revision
@@ -445,6 +448,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	squashed := !slices.ContainsFunc(plan.Findings, func(f commitrules.Finding) bool { return f.Code == "follow-up" || f.Code == "merge" })
 	plan.Moved = append(append(preparedSources(plan.Evidence, edits), plan.Moved...), assessedSources(plan.Evidence, plan.Upstream)...)
 	plan.Majors = e.majorHolds(edits)
+	plan.After = e.afterHolds(ctx, edits)
 	plan.Floors = e.floorHolds(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree))
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: plan.Accepted, Types: request.Types,
 		Updated:     dockhandUpdate(plan.Commits, edits),
@@ -452,7 +456,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
 		Note: plan.Note, UncoveredCI: plan.UncoveredCI}
 	plan.facts = facts
-	plan.allowed = e.options.AllowHolds
+	plan.allowed = e.allowedFor
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
 	// What took the network to find is kept for status, which never reads
 	// it, to say as this plan found it (C2's rest): the moved sources and

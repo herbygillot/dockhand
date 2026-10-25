@@ -3,6 +3,7 @@ package config
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -84,6 +85,16 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			set("cleanup.min_free", minFree)
 			set("holds.majors", file.Holds.Majors)
 			set("holds.allow", strings.Join(file.Holds.Allow, ", "))
+			// A port's own holds, each key it gives (Then's item 2).
+			for _, port := range slices.Sorted(maps.Keys(file.Holds.Ports)) {
+				own := file.Holds.Ports[port]
+				key := fmt.Sprintf("holds.ports.%q.", port)
+				for _, given := range [][2]string{{"majors", own.Majors}, {"allow", strings.Join(own.Allow, ", ")}, {"moves", own.Moves}, {"after", strings.Join(own.After, ", ")}} {
+					if given[1] != "" {
+						add(key+given[0], given[1], "")
+					}
+				}
+			}
 			set("serve.ship_to", file.Serve.ShipTo)
 			set("serve.outdated_at", file.Serve.OutdatedAt)
 			set("serve.submit_limit", positive(file.Serve.SubmitLimit))

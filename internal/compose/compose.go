@@ -210,6 +210,21 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 			return engine.Options{}, config.File{}, "", fmt.Errorf("%s: holds.allow: %q is not a hold dockhand raises or lets go; the rules are %s", configPath, rule, strings.Join(engine.HoldRules(), ", "))
 		}
 	}
+	// A port's own holds, as the engine composes them over the global
+	// ones, each allow checked as the global list is.
+	portHolds := map[string]engine.PortHolds{}
+	for port, own := range file.Holds.Ports {
+		for _, rule := range own.Allow {
+			if !slices.Contains(engine.HoldRules(), rule) {
+				return engine.Options{}, config.File{}, "", fmt.Errorf("%s: holds.ports.%q.allow: %q is not a hold dockhand raises or lets go; the rules are %s", configPath, port, rule, strings.Join(engine.HoldRules(), ", "))
+			}
+		}
+		held := engine.PortHolds{Allow: own.Allow, FollowMoves: own.Moves == config.MovesFollow, After: own.After}
+		if own.Majors != "" {
+			held.AllowMajors = new(own.Majors == "allow")
+		}
+		portHolds[port] = held
+	}
 	git := cmp.Or(options.Git, options.Getenv("GIT_BIN"))
 	database := cmp.Or(options.Database, options.Getenv("DOCKHAND_DB"))
 	if database == "" {
@@ -253,6 +268,7 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		// holds.majors = "allow" lets bump and serve move a major version.
 		AllowMajors: !file.Holds.HoldMajors(),
 		AllowHolds:  file.Holds.Allow,
+		PortHolds:   portHolds,
 		Tests:       model.TestPolicy(file.Check.Tests),
 		// DOCKHAND_UPSTREAM fetches master from a mirror or, in tests, a
 		// local repository.

@@ -493,8 +493,8 @@ func TestAMajorVersionHoldsAnUnattendedUpdate(t *testing.T) {
 	require.Equal(t, []string{"jq moves from 1.7.1 to 2.0.0, a major version update. holds.majors requires review before an unattended update"}, HoldLines(held.Held))
 	require.Equal(t, model.FromHolds, held.Held[0].Origin)
 	require.Empty(t, p.requests, "nothing was prepared")
-	require.True(t, e.HoldsMajor("1.7.1", "2.0.0"))
-	require.False(t, e.HoldsMajor("1.7.1", "1.8.1"))
+	require.True(t, e.HoldsMajor("hyperfine", "1.7.1", "2.0.0"))
+	require.False(t, e.HoldsMajor("hyperfine", "1.7.1", "1.8.1"))
 
 	require.Equal(t, []string{"jq moves from 1.7.1 to 2.0.0, a major version update. holds.majors requires review before an unattended update"},
 		HoldLines(e.majorHolds([]model.Edit{{Kind: model.EditUpdate, Port: "jq", Release: &major}})))
@@ -534,7 +534,7 @@ func TestTheHoldListSetsARuleApart(t *testing.T) {
 	plan := SubmitPlan{Blocking: []string{"jq did not pass in check-1"}, Others: []forge.PullRequestSummary{{Number: 35001, Title: "jq: update to 1.8.2"}}}
 	plan.Upstream = []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Problem: "the archive couldn't be fetched",
 		Changes: []model.UpstreamChange{{Kind: "license", Path: "LICENSE", Message: license.Detail, Hold: true, Rule: license.Rule, Class: model.Introduced}}}}}
-	plan.allowed = []string{"open", assess.LicenseChanged, "not-compared", "blocking"}
+	plan.allowed = func(string) []string { return []string{"open", assess.LicenseChanged, "not-compared", "blocking"} }
 	var rules []string
 	for _, concern := range plan.Held() {
 		rules = append(rules, concern.Rule)
@@ -544,4 +544,50 @@ func TestTheHoldListSetsARuleApart(t *testing.T) {
 	require.NotContains(t, HoldRules(), "blocking")
 	require.NotContains(t, HoldRules(), "not-compared")
 	require.Subset(t, HoldRules(), []string{"open", "major-version", assess.LicenseChanged, "subject-port"})
+}
+
+// A port's own holds go over the global ones for it alone: its majors and
+// its allow list, where it gives them (Then's item 2).
+func TestAPortsOwnHoldsGoOverTheGlobalOnes(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	e.options.AllowHolds = []string{assess.LicenseChanged}
+	e.options.PortHolds = map[string]PortHolds{
+		"jq":  {AllowMajors: new(true)},
+		"fzf": {AllowMajors: new(false), Allow: []string{"open"}},
+	}
+	require.Nil(t, e.majorHold("jq", "1.7.1", "2.0.0"), "jq's majors = \"allow\"")
+	require.NotNil(t, e.majorHold("hyperfine", "1.21.0", "2.0.0"), "held by the global majors")
+	e.options.AllowMajors = true
+	require.NotNil(t, e.majorHold("fzf", "0.9.0", "1.0.0"), "fzf's majors = \"hold\" over the global allow")
+	require.Nil(t, e.majorHold("hyperfine", "1.21.0", "2.0.0"))
+
+	open := func(port string) model.Concern {
+		return model.Concern{Origin: model.FromOtherPullRequests, Port: port, Rule: "open", Detail: port + " has another open pull request"}
+	}
+	license := model.Concern{Origin: model.FromUpstream, Port: "fzf", Rule: assess.LicenseChanged, Detail: "upstream's LICENSE changed"}
+	require.Equal(t, []model.Concern{open("jq"), license}, holding([]model.Concern{open("fzf"), open("jq"), license}, e.allowedFor),
+		"fzf's allow replaces the global list for it")
+}
+
+// A port whose holds name another to submit first holds its unattended
+// submission until that one has a pull request open at the same version:
+// harfbuzz after harfbuzz-devel (Then's item 2).
+func TestAPortWaitsForThePortItsHoldsNameFirst(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	e.options.PortHolds = map[string]PortHolds{"harfbuzz": {After: []string{"harfbuzz-devel"}}}
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "11.2.0", CurrentVersion: "11.1.0"}, Version: "11.2.0"}
+	edits := []model.Edit{{Kind: model.EditUpdate, Port: "harfbuzz", Release: &release}}
+	held := e.afterHolds(t.Context(), edits)
+	require.Equal(t, []string{`harfbuzz waits for harfbuzz-devel's update to 11.2.0, as its holds say (holds.ports."harfbuzz".after): with no pull request open at 11.2.0`}, HoldLines(held))
+	require.Len(t, SubmitPlan{After: held}.Held(), 1, "it holds a submission nobody looks over")
+	require.Contains(t, HoldRules(), "after", "holds.allow may name it")
+
+	fake.Others = []forge.PullRequestSummary{{Number: 35100, Title: "harfbuzz-devel: update to 11.2.0"}}
+	require.Empty(t, e.afterHolds(t.Context(), edits), "it goes once harfbuzz-devel's pull request is open")
+	require.Empty(t, e.afterHolds(t.Context(), []model.Edit{{Kind: model.EditUpdate, Port: "harfbuzz-devel", Release: &release}}), "only the port whose holds say so waits")
 }
