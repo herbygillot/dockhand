@@ -275,6 +275,8 @@ func githubReadiness(ctx context.Context, s *settings.Settings) string {
 		return "! needs a GitHub login, dockhand setup github, and your fork's Actions enabled"
 	case github.SourceKeychain:
 		return "✓ with your GitHub login; your fork's Actions must be enabled"
+	case github.LoginLocked:
+		return "! with your GitHub login, saved but the login Keychain is locked: security unlock-keychain in this shell, or GH_TOKEN for this command"
 	}
 	return "✓ with your GitHub token; your fork's Actions must be enabled"
 }
@@ -292,8 +294,12 @@ func missingSteps(ctx context.Context, s *settings.Settings) []string {
 			}
 		}
 	}
-	if github.LoginSource(ctx, s.Signin()) == "" {
+	switch github.LoginSource(ctx, s.Signin()) {
+	case "":
 		steps = append(steps, "dockhand setup github")
+	case github.LoginLocked:
+		// Saved, and locked: signing in again couldn't be saved (F5 on rc5).
+		steps = append(steps, "security unlock-keychain in this shell, or GH_TOKEN for this command")
 	}
 	return steps
 }
