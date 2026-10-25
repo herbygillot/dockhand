@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -36,6 +37,9 @@ type BranchStatus struct {
 	// NetworkHeldAt is when the last submission plan of its files found
 	// what in Held took the network to find; zero where none did.
 	NetworkHeldAt time.Time
+	// HandEdits are the branch's hand edits as its working files have
+	// them (update --hand-edit), by directory.
+	HandEdits []HandEdit
 	// Missing is true when the Git branch is gone.
 	Missing bool
 	// Renamed is the branch's name before a rename by hand that this
@@ -316,6 +320,22 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 	// submit shows (C2, where it was serve's alone).
 	if status.Held, status.Assessment, err = e.assessedHolds(ctx, branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
 		return status, err
+	}
+	// A hand edit says why it's the person's, as its working files have
+	// it, written or committed (Then's item 3).
+	hands, err := e.handEditsIn(ctx, branch.ID, string(branch.Base), func() string {
+		if worktree, err := e.worktree(ctx, branch); err == nil {
+			if _, final, err := worktree.WorkingTree(ctx); err == nil {
+				return final
+			}
+		}
+		return status.Tree
+	})
+	if err != nil {
+		return status, err
+	}
+	for _, directory := range slices.Sorted(maps.Keys(hands)) {
+		status.HandEdits = append(status.HandEdits, hands[directory])
 	}
 	// And what the last submission plan of these files found that took
 	// the network, another pull request or a moved source, as it found

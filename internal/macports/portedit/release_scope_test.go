@@ -245,3 +245,42 @@ if {${subport} eq ${name}} {
 	require.Equal(t, "regex", port.Options["livecheck.type"], "the member's own livecheck stands")
 	require.Contains(t, port.Options["livecheck.url"], "/gems")
 }
+
+// A refused update's attempt, for a person to finish by hand: the refused
+// edit, with its checksums refreshed where it had none of the new
+// version's, and, where the refusal came with no edit, the version
+// written as its literal, its revision reset, and its checksums refreshed
+// (update --hand-edit, Then's item 3).
+func TestARefusedUpdatesAttemptIsWrittenForAHandEdit(t *testing.T) {
+	t.Parallel()
+	const portfile = `version 1.2.3
+revision 1
+master_sites @SITE@/${version}
+distname fixture-core-${version}
+checksums sha256 aaaa size 2
+subport fixture-omega {
+ distname fixture-omega-${version}
+ checksums sha256 bbbb size 3
+}
+`
+	s, r, requests := archiveFixture(t, portfile)
+	r.Selection = macports.Selection{Selector: "devel/fixture/Portfile", Subport: "fixture-omega"}
+	refused, err := s.Prepare(t.Context(), r)
+	require.ErrorIs(t, err, ErrFidelity)
+	attempt, err := s.HandAttempt(t.Context(), r, refused)
+	require.NoError(t, err)
+	require.Len(t, attempt.Files, 1)
+	after := string(attempt.Files[0].After)
+	require.Contains(t, after, "version 1.2.4")
+	require.NotContains(t, after, "sha256 bbbb", "the subport's checksums are the new version's")
+	require.NotEmpty(t, *requests)
+
+	s, r, _ = archiveFixture(t, "version 1.2.3\nrevision 2\nmaster_sites @SITE@/${version}\nchecksums sha256 aaaa size 2\n")
+	attempt, err = s.HandAttempt(t.Context(), r, Result{})
+	require.NoError(t, err)
+	after = string(attempt.Files[0].After)
+	require.Contains(t, after, "version 1.2.4")
+	require.Contains(t, after, "revision 0")
+	require.NotContains(t, after, "sha256 aaaa")
+	require.Empty(t, attempt.Left)
+}

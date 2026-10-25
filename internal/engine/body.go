@@ -63,6 +63,9 @@ type bodyFacts struct {
 	// UncoveredCI are the releases MacPorts' CI builds on that no check
 	// built on.
 	UncoveredCI []string
+	// HandEdits are the branch's hand edits, as its submitted tree has
+	// them (Engine.handEdits).
+	HandEdits []HandEdit
 }
 
 // description is what the facts let the description claim, as
@@ -71,6 +74,9 @@ type bodyFacts struct {
 func (facts bodyFacts) description() prdescription.Facts {
 	described := prdescription.Facts{Note: facts.Note, Types: facts.Types, Updated: facts.Updated, NewPorts: facts.NewPorts,
 		SkipNotification: facts.SkipNotification, Version: buildinfo.Current().Tag()}
+	for _, hand := range facts.HandEdits {
+		described.HandEdits = append(described.HandEdits, "**"+hand.Directory+"**: "+hand.Line())
+	}
 	for _, commit := range facts.Commits {
 		described.Commits = append(described.Commits, prdescription.Commit{ID: commit.ID, Message: commit.Message})
 	}

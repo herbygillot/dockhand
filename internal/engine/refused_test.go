@@ -26,7 +26,8 @@ func TestAnEditDockhandCantMakeSaysWhyAndWhatWorks(t *testing.T) {
 	require.EqualError(t, err, `Could not update git automatically: the checksums for git-htmldocs-2.56.0.tar.xz can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't
 Kept: the branch, unchanged.`)
 	require.Equal(t, refusal.Unsupported, refusal.KindOf(err))
-	require.Equal(t, []refusal.Next{{External: "edit the version, then run dockhand checksums git to print the checksums to copy into the Portfile"}, edit}, refusal.Of(err).Next)
+	require.Equal(t, []refusal.Next{{External: "edit the version, then run dockhand checksums git to print the checksums to copy into the Portfile"}, edit,
+		{External: "or dockhand update git --hand-edit, which writes dockhand's attempt for you to finish by hand"}}, refusal.Of(err).Next, "an attended update names --hand-edit last")
 
 	err = byHand(&ChecksumsToWrite{Err: unlocated, Checksums: []portfile.Checksum{{Name: "git-2.56.0.tar.xz", RMD160: "aaaa", SHA256: "bbbb", Size: 8}}}, UpdateRequest{Action: model.EditChecksums, Port: "git"}, "dockhand/git-ab12", true)
 	require.EqualError(t, err, `Could not update the checksums for git automatically: the checksums for git-htmldocs-2.56.0.tar.xz can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't

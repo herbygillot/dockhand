@@ -454,7 +454,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
-		Note: plan.Note, UncoveredCI: plan.UncoveredCI}
+		Note: plan.Note, UncoveredCI: plan.UncoveredCI, HandEdits: e.submittedHandEdits(ctx, branch, plan.Tree)}
 	plan.facts = facts
 	plan.allowed = e.allowedFor
 	plan.Answer(request.TestedBinaries, request.TestedVariants)

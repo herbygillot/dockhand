@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
@@ -110,6 +111,12 @@ func byHand(err error, request UpdateRequest, branch string, started bool) error
 		// exercise, field testing). A step names only what would be
 		// accepted (the release bar's rule).
 		steps = []refusal.Next{{External: fmt.Sprintf("edit the version, run port checksum %s, then copy the reported checksums into the Portfile", port)}, edit}
+	}
+	// An attended version update can have dockhand's attempt written, for
+	// the person to finish (Then's item 3); serve and bump never take it.
+	if request.Action == model.EditUpdate && !request.Unattended && !request.HandEdit && !request.Plan && len(steps) > 0 {
+		attempt := strings.Join(slices.DeleteFunc([]string{"dockhand update", port, request.Version, "--hand-edit"}, func(s string) bool { return s == "" }), " ")
+		steps = append(steps, refusal.Next{External: "or " + attempt + ", which writes dockhand's attempt for you to finish by hand"})
 	}
 	return refusal.Wrap(refusal.Unsupported, err, "%s", words).With(kept).Then(steps...)
 }

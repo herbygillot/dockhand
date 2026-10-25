@@ -57,6 +57,10 @@ type Request struct {
 	// archive it finds changed under the same name; nil refreshes the
 	// checksums alone.
 	Stealth *StealthRequest
+	// HandEdit asks, where a version update is refused as an edit dockhand
+	// doesn't make, for its best attempt (HandAttempt), for the person to
+	// finish as their own: update --hand-edit, attended alone.
+	HandEdit bool
 }
 
 // Fidelity is the comparison report for one evaluated edit.
@@ -78,6 +82,9 @@ type ContextCoverage struct {
 }
 
 type Result struct {
+	// Refused is the refusal a hand edit's attempt was written for
+	// (Request.HandEdit); nil for an edit of dockhand's own.
+	Refused  error                  `json:"-"`
 	Scope    *macports.ReleaseScope `json:",omitempty"`
 	Coverage []ContextCoverage      `json:",omitempty"`
 	Base     model.Source

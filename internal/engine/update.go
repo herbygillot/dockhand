@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
@@ -99,6 +101,11 @@ type UpdateRequest struct {
 	// would hold the submission after the check: nothing is downloaded or
 	// built for it. Submit looks again before publishing.
 	Unattended bool
+	// HandEdit asks, where dockhand refuses the update as an edit it
+	// doesn't make, for its best attempt, written as the person's hand edit
+	// with the refusal recorded (model.FindingHandEdit). Attended only:
+	// serve and bump never take it.
+	HandEdit bool
 	// FollowMoves points github.setup at the repository GitHub now answers
 	// the release's by, where it moved: the person's choice, never made
 	// unasked (part 2's new holds), save by the port's own holds, moves =
@@ -206,6 +213,12 @@ type Update struct {
 	Started bool
 	// Applied is true when the working files were written.
 	Applied bool
+	// HandEdit is the refusal a hand edit's attempt was written for, in
+	// its words (update --hand-edit): the files are the person's to
+	// finish, recorded as theirs, not as dockhand's edit.
+	HandEdit string
+	// Left is what the hand edit's attempt couldn't write, with why.
+	Left []editprep.ChecksumLeft
 	// Upstream is what comparing the old and new upstream archives found,
 	// when the update compared them.
 	Upstream *model.UpstreamComparison
@@ -337,6 +350,9 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	if !macports.ValidName(request.Port) {
 		return Update{}, fmt.Errorf("%q is not a port name", request.Port)
 	}
+	if request.HandEdit && (request.Unattended || request.Action != model.EditUpdate) {
+		return Update{}, errors.New("--hand-edit writes an attempt for a person to finish: a version update, attended, never bump's or serve's")
+	}
 	if request.Release != nil && (request.Action != model.EditUpdate || request.Release.Version != request.Version) {
 		return Update{}, fmt.Errorf("engine: the release found is %s's, for a version update to %q", request.Release.Version, request.Version)
 	}
@@ -392,6 +408,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		Selection:  macports.Selection{Selector: request.Port},
 		Version:    request.Version,
 		Subject:    request.Subject,
+		HandEdit:   request.HandEdit,
 	}
 	if request.Action == model.EditChecksums {
 		// Which files the branch changed since its base is the branch's to
@@ -556,6 +573,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		case renamed != "":
 			update.RenamedFrom, update.Branch = renamed, branch
 		}
+	}
+	// A hand edit's attempt is the person's from here: no edit of
+	// dockhand's is recorded, and the refusal it answers is, for status,
+	// the hold, and the pull request to say (Then's item 3).
+	if result.Refused != nil {
+		return e.recordHandEdit(ctx, branch, update, result)
 	}
 	edit, err := e.editRecord(ctx, worktree, branch, request, update, result)
 	if err != nil {
@@ -1201,4 +1224,34 @@ func withModelines(ctx context.Context, worktree *git.Repository, captured strin
 	}
 	result.PreparedTree = model.ObjectID(prepared)
 	return nil
+}
+
+// recordHandEdit records a hand edit's attempt as the person's answer to
+// the refusal it was written for (model.FindingHandEdit): the port's
+// directory, the attempt's digest, and the refusal's words.
+func (e *Engine) recordHandEdit(ctx context.Context, branch model.Branch, update Update, result editprep.Result) (Update, error) {
+	update.HandEdit = fmt.Sprintf("%s to %s: %s", update.Port, update.After.Version, refusal.WordsOf(result.Refused))
+	update.Left = result.Left
+	directory := path.Dir(result.Target.Portfile)
+	decision := model.Decision{Branch: branch.ID, Finding: model.FindingHandEdit, Subject: directory, Evidence: attemptDigest(result.Files), Answer: model.ByHand, Words: update.HandEdit, At: e.now()}
+	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		if err := tx.AddDecision(decision); err != nil {
+			return err
+		}
+		_, err := tx.AppendEvent(model.Event{At: decision.At, Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
+			Message: fmt.Sprintf("%s: dockhand's attempt written for a hand edit, %s (%s)", update.Port, update.HandEdit, listPaths(update.Files))})
+		return err
+	})
+	return update, err
+}
+
+// attemptDigest is what a hand edit's attempt is known by: its files'
+// paths and contents, as written.
+func attemptDigest(files []git.FileEdit) string {
+	sum := sha256.New()
+	for _, file := range files {
+		fmt.Fprintf(sum, "%s\x00%d\x00", file.Path, len(file.After))
+		sum.Write(file.After)
+	}
+	return hex.EncodeToString(sum.Sum(nil))
 }

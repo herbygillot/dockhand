@@ -608,6 +608,15 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places con
 			}
 			fmt.Fprintf(out, "  %s! %s\n", label, line)
 		}
+		// A hand edit, with why dockhand left it to the person (Then's
+		// item 3).
+		for i, hand := range status.HandEdits {
+			label := "         "
+			if i == 0 {
+				label = "By hand  "
+			}
+			fmt.Fprintf(out, "  %s! %s: %s\n", label, hand.Directory, hand.Line())
+		}
 		// What the latest check's builds link and don't declare, a notice
 		// (v0.5.0 part 6).
 		if status.Latest != nil {

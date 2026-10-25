@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
@@ -211,6 +212,16 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		}
 	}
 	edited, err := s.editor().Prepare(ctx, request)
+	// An edit dockhand doesn't make, asked to be attempted, is written as
+	// well as it can be for the person to finish, as theirs (update
+	// --hand-edit, Then's item 3); one it couldn't attempt is refused as it
+	// was.
+	if err != nil && request.HandEdit && refusal.KindOf(err) == refusal.Unsupported {
+		if attempt, attemptErr := s.editor().HandAttempt(ctx, request, edited); attemptErr == nil {
+			attempt.Refused = err
+			edited, err = attempt, nil
+		}
+	}
 	result := Result{Result: edited}
 	result.Result.Files, result.Commits = nil, nil
 	if err != nil {
@@ -240,6 +251,11 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	tree, err := s.Repo.EditTree(ctx, string(request.Source.Tree), result.Files)
 	if err != nil {
 		return result, err
+	}
+	// A hand edit's attempt proves nothing of itself: it's the person's.
+	if edited.Refused != nil {
+		result.PreparedTree = model.ObjectID(tree)
+		return result, nil
 	}
 	// The committed candidate is evaluated once more from git, in a
 	// projection of its own tree holding the target's directory, to prove

@@ -76,6 +76,7 @@ pull requests, and ship takes a port's update as far as --to says.`,
 	}
 	where.Register(cmd)
 	version.Flags(cmd)
+	cmd.Flags().BoolVar(&version.HandEdit, "hand-edit", false, "where dockhand refuses the update, write its best attempt for you to finish by hand, recorded as your edit with the refusal")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&mine, "mine", false, "update each of your ports with a newer release, in a branch of its own (config maintainer)")
 	settings.OverAllowanceFlag(cmd, s)
@@ -229,7 +230,9 @@ func branchPort(ctx context.Context, s *settings.Settings, where branchflags.Bra
 // what going on to the pull request takes.
 type VersionUpdate struct {
 	KeepOld, Shared, Obsolete, FollowMoves bool
-	Linked                                 LinkedOptions
+	// HandEdit is update's --hand-edit alone: ship and bump never take it.
+	HandEdit bool
+	Linked   LinkedOptions
 }
 
 // flags adds the edit's flags, which update, ship, and bump share.
@@ -273,7 +276,7 @@ func (v VersionUpdate) Request(args []string, plan bool) (engine.UpdateRequest, 
 	if len(v.Linked.Except) > 0 && !v.Linked.Revbump {
 		return engine.UpdateRequest{}, errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
 	}
-	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], EditIntent: model.EditIntent{KeepOldChecksums: v.KeepOld, SharedRelease: v.Shared}, WithObsolete: v.Obsolete, FollowMoves: v.FollowMoves, Plan: plan, CompareUpstream: true, LookForOthers: true}
+	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], EditIntent: model.EditIntent{KeepOldChecksums: v.KeepOld, SharedRelease: v.Shared}, WithObsolete: v.Obsolete, FollowMoves: v.FollowMoves, HandEdit: v.HandEdit, Plan: plan, CompareUpstream: true, LookForOthers: true}
 	if len(args) == 2 {
 		request.Version = args[1]
 	}
@@ -468,6 +471,18 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 				return branch, update, &term.ExitError{Code: term.ExitAttention}
 			}
 		}
+		return branch, update, nil
+	}
+	// A hand edit's attempt is the person's to finish, and said so, with
+	// the refusal it answers and what it couldn't write (Then's item 3).
+	if update.HandEdit != "" {
+		fmt.Fprintf(out, "Wrote dockhand's attempt for you to finish by hand, as the update was refused: %s\nChanged: %s\n", update.HandEdit, strings.Join(update.Files, ", "))
+		for _, left := range update.Left {
+			fmt.Fprintf(out, "  ! %s not written: %s\n", left.What, left.Reason)
+		}
+		view.WriteUpstream(out, update.Upstream)
+		fmt.Fprintln(out, "It's recorded as your hand edit with that reason, which tidy, status, and the pull request say.")
+		fmt.Fprintln(out, "Next: dockhand edit "+request.Port+" to finish it, then "+nextAfterEdit(ctx, e, branch))
 		return branch, update, nil
 	}
 	what := "Updated version and checksums"
