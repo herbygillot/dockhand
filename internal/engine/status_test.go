@@ -3,6 +3,8 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,4 +126,26 @@ func TestStepLinesBoundAStep(t *testing.T) {
 	logs.Executions[0].Results = []model.TargetResult{jq}
 	from, to, _ = logs.StepLines(log, model.StepFetch)
 	require.Equal(t, [2]int{30, 0}, [2]int{from, to}, "to the log's end")
+}
+
+// status reads the checkout's remotes once, however many branches it
+// says: each branch read them again, five git processes, 3,415 of
+// status --all's 7,372 over 683 branches (the M1's rc1 measure).
+func TestStatusReadsTheRemotesOnce(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	trace := filepath.Join(t.TempDir(), "git.trace")
+	f.options.Env = append(slices.Clone(f.options.Env), "GIT_TRACE="+trace)
+	e := f.open(t)
+	for _, name := range []string{"one", "two", "three"} {
+		_, err := e.Start(t.Context(), StartRequest{Name: name})
+		require.NoError(t, err)
+	}
+	require.NoError(t, os.WriteFile(trace, nil, 0o600))
+	statuses, err := e.Status(t.Context())
+	require.NoError(t, err)
+	require.Len(t, statuses, 3)
+	data, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	require.Equal(t, 2, strings.Count(string(data), "git remote get-url"), "origin's fetch and push URLs, once")
 }

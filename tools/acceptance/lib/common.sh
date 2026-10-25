@@ -292,3 +292,23 @@ wait_for_line() {
 	done
 	return 1
 }
+
+# end_drains ends any background drain a row's check -d started on the
+# stage's database that's still running once the row's teardown has run,
+# before the stage moves on: B11's outlived its row on rc1, queued its
+# baseline against a worktree the next reset removed, and C3's harm sweep
+# read its VM as left running (the M1's run on rc1). Each is said in the
+# row's notes.
+end_drains() {
+	local pid waited
+	for pid in $(pgrep -f "serve --drain.*--db ${DOCKHAND_DB:-$HOME/.dockhand/dockhand.db}" 2>/dev/null); do
+		kill "$pid" 2>/dev/null || continue
+		waited=0
+		while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 60 ]; do
+			sleep 1
+			waited=$((waited + 1))
+		done
+		kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null
+		printf 'a background drain (pid %s) outlived the row, and the runner ended it\n' "$pid" >>"$ROW_DIR/notes"
+	done
+}

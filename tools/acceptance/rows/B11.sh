@@ -7,6 +7,7 @@
 # baseline_of says. A baseline standing across a rebase needs master to
 # move, which the stage's pinned master doesn't: the engine's
 # TestABaselineStandsWhereNothingItReadChanged covers it.
+. "${ROW_LIB:?}/fault.sh"
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 
 # b11_config is the stage's configuration with check.baseline on, in the
@@ -38,10 +39,56 @@ act() {
 	B11_RUN=$(jq -r '.result.run.name // empty' "$DH_LAST_JSON")
 	if [ -n "$B11_RUN" ]; then
 		dh_json wait "$B11_RUN" || :
-		B11_BASELINE=$(stage_db "SELECT number FROM runs WHERE baseline_of = (SELECT id FROM runs WHERE number = ${B11_RUN#check-})" | head -1)
+		# The drain queues the baseline once the check is recorded failed,
+		# planning it first, which takes seconds: the row asked straight
+		# after wait returned, too early (the M1's run on rc1).
+		local tries=0
+		while [ "$tries" -lt 36 ]; do
+			B11_BASELINE=$(stage_db "SELECT number FROM runs WHERE baseline_of = (SELECT id FROM runs WHERE number = ${B11_RUN#check-})" | head -1)
+			[ -z "$B11_BASELINE" ] || break
+			sleep 5
+			tries=$((tries + 1))
+		done
 		[ -z "$B11_BASELINE" ] || dh_json wait "check-$B11_BASELINE" || :
+		b11_drain_ended 120 || :
 	fi
 	export DOCKHAND_CONFIG="$stage"
+}
+
+# b11_drain is the pid of the background drain check -d started on the
+# stage's database, if it's still running.
+b11_drain() { pgrep -f "serve --drain.*--db ${DOCKHAND_DB:-$HOME/.dockhand/dockhand.db}" 2>/dev/null | head -1; }
+
+# b11_drain_ended waits up to some seconds for the drain to end by itself,
+# its queue empty.
+b11_drain_ended() {
+	local waited=0
+	while [ -n "$(b11_drain)" ] && [ "$waited" -lt "$1" ]; do
+		sleep 5
+		waited=$((waited + 5))
+	done
+	[ -z "$(b11_drain)" ]
+}
+
+# teardown ends a drain the row's check -d left, before the stage's reset
+# removes the worktree it would queue against: rc1's outlived the row,
+# retried its baseline against a removed worktree, and C3's harm sweep read
+# its VM as left running (the M1's run on rc1). Any check the row left
+# queued or running is cancelled, and a VM still running is said.
+teardown() {
+	local pid run
+	pid=$(b11_drain)
+	if [ -n "$pid" ]; then
+		kill "$pid" 2>/dev/null || :
+		b11_drain_ended 60 || kill -KILL "$pid" 2>/dev/null || :
+		printf 'teardown: ended the background drain (pid %s)\n' "$pid" >>"$ROW_DIR/notes"
+	fi
+	for run in $(stage_db "SELECT number FROM runs WHERE state IN ('queued','running')" 2>/dev/null); do
+		"$DH_BIN" cancel "check-$run" >>"$ROW_DIR/out.log" 2>&1 || :
+	done
+	if command -v tart >/dev/null && fault_tart list 2>/dev/null | grep -q 'dockhand-check.*running'; then
+		printf 'teardown: a check VM is still running: %s\n' "$(fault_tart list | grep 'dockhand-check.*running' | awk '{print $2}' | tr '\n' ' ')" >>"$ROW_DIR/notes"
+	fi
 }
 
 assert() {
@@ -51,7 +98,7 @@ assert() {
 		return
 	fi
 	if [ -z "${B11_BASELINE:-}" ]; then
-		row_fail "check.baseline queued no baseline after $B11_RUN failed in the background"
+		row_fail "check.baseline queued no baseline in the three minutes after $B11_RUN failed in the background"
 		return
 	fi
 	if [ "$(cat "$ROW_DIR/json/3.json.exit" 2>/dev/null)" != 0 ] && [ "$(cat "$ROW_DIR/json/3.json.exit" 2>/dev/null)" != 2 ]; then

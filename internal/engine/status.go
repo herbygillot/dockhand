@@ -292,8 +292,12 @@ func (e *Engine) Status(ctx context.Context, states ...model.BranchState) ([]Bra
 		return nil, err
 	}
 	var all []BranchStatus
+	// The checkout's remotes are the same for every branch: read once,
+	// where each branch ran five git processes for them, 3,415 of
+	// status --all's 7,372 over 683 branches (the M1's rc1 measure).
+	noFork := !e.hasForkRemote(ctx)
 	for _, branch := range branches {
-		status, err := e.BranchStatus(ctx, branch)
+		status, err := e.branchStatus(ctx, branch, noFork)
 		if err != nil {
 			return nil, err
 		}
@@ -305,7 +309,13 @@ func (e *Engine) Status(ctx context.Context, states ...model.BranchState) ([]Bra
 
 // BranchStatus gathers one branch's status.
 func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchStatus, error) {
-	status := BranchStatus{Branch: branch, NoFork: !e.hasForkRemote(ctx)}
+	return e.branchStatus(ctx, branch, !e.hasForkRemote(ctx))
+}
+
+// branchStatus is BranchStatus, with whether the checkout has a fork
+// remote read already.
+func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork bool) (BranchStatus, error) {
+	status := BranchStatus{Branch: branch, NoFork: noFork}
 	changed, worktree, err := e.readFiles(ctx, &status)
 	if err != nil || status.Missing {
 		return status, err
@@ -322,9 +332,12 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 		return status, err
 	}
 	// A hand edit says why it's the person's, as its working files have
-	// it, written or committed (Then's item 3).
+	// it, written or committed (Then's item 3). The worktree is opened,
+	// never checked out again: status only reads, and a worktree gone
+	// stays gone, its committed files standing for it (openWorktree's
+	// rule; rc1 checked removed ones out again).
 	hands, err := e.handEditsIn(ctx, branch.ID, string(branch.Base), func() string {
-		if worktree, err := e.worktree(ctx, branch); err == nil {
+		if worktree, err := e.openWorktree(ctx, branch); err == nil {
 			if _, final, err := worktree.WorkingTree(ctx); err == nil {
 				return final
 			}
