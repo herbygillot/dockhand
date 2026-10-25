@@ -30,6 +30,10 @@ DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh \
 go test -v ./internal/buildenv/tart -run '^TestLiveCheckInATahoeGuest$' -timeout 30m
 ```
 
+## Scratch runs
+
+A run of dockhand on a scratch clone, a measurement or a replay, sets three things, not one: `MACPORTS_TREE` to the clone, `DOCKHAND_DB` to a database of its own (a `.backup` copy for a replay, with `~/.dockhand/archives/` copied beside it), and `DOCKHAND_CONFIG` to a configuration whose `worktrees` is a directory of its own, as `tools/acceptance/quick.sh` writes one. `MACPORTS_TREE` picks the tree, not where its branches' worktrees go: the worktree root stays `~/Source/macports-branches` whichever clone runs, so a scratch run that sets the tree alone puts its branches beside yours.
+
 ## Other opt-in tests
 
 Tests that need MacPorts run only against the installation `DOCKHAND_TEST_MACPORTS_TCLSH` names, taking `portindex` from beside it, and skip without it: a `PATH` that happens to reach another Base would test that one silently. They run on a Mac, and on Linux with MacPorts Base built there, where the evaluator models a Mac:
