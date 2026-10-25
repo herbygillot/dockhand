@@ -21,8 +21,11 @@ func githubLogin(ctx context.Context, s *settings.Settings, streams term.Streams
 			return nil
 		}
 		fmt.Fprintf(streams.Err, "Opening %s in your browser...\n", authorization.VerificationURL)
+		// A browser that won't open, as over SSH, leaves the login waiting
+		// for the code already printed, where it failed and named
+		// --no-browser (F5 on rc5).
 		if err := s.Host.OpenBrowser(ctx, authorization.VerificationURL); err != nil {
-			return fmt.Errorf("could not open the browser: %w; run dockhand setup github --no-browser to sign in using a URL you open manually", err)
+			fmt.Fprintf(streams.Err, "Couldn't open a browser (%v). Open %s, enter the code, and authorize dockhand.\n", err, authorization.VerificationURL)
 		}
 		fmt.Fprintln(streams.Err, "Waiting for authorization...")
 		return nil

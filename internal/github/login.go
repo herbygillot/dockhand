@@ -279,16 +279,36 @@ func SavedLogin(ctx context.Context, store credential.Store) (credential.Login, 
 
 // LoginSource is where a login comes from, as dockhand tells without
 // asking GitHub: the token that overrides dockhand's login, else the
-// store, where it keeps a login that hasn't ended (SavedLogin); else
-// empty, which setup offers to fix.
+// store, where it keeps a login that hasn't ended (SavedLogin), or
+// LoginLocked where the store keeps one it can't give now; else empty,
+// which setup offers to fix.
 func LoginSource(ctx context.Context, signin Signin) CredentialSource {
 	if signin.Token.Secret != "" {
 		return signin.Token.Source
 	}
-	if _, err := SavedLogin(ctx, signin.Store); err == nil {
+	_, err := SavedLogin(ctx, signin.Store)
+	switch {
+	case err == nil:
 		return SourceKeychain
+	case errors.Is(err, credential.ErrLocked):
+		return LoginLocked
 	}
 	return ""
+}
+
+// LoginLocked is LoginSource's word for a login the Keychain keeps but
+// can't give now, locked, as over SSH: setup read it as no login, offered
+// one, and named dockhand setup github, while its Publishing line said the
+// Keychain was locked (F5 on rc5).
+const LoginLocked CredentialSource = "the locked login Keychain"
+
+// LockedLogin is the refusal of a login, or a sign-in, while the login
+// Keychain that keeps dockhand's login is locked: the way on is to unlock
+// it, never to sign in again, which couldn't be saved. It wraps the
+// store's error, credential.ErrLocked.
+func LockedLogin(locked error) *refusal.Refusal {
+	return refusal.Wrap(refusal.Auth, locked, "your GitHub login is saved, but the login Keychain is locked; unlock it with security unlock-keychain in this shell, or set GH_TOKEN for this command").
+		Then(refusal.Next{External: "security unlock-keychain"})
 }
 
 // RevocationPage is where the person revokes the login an OAuth app was
@@ -309,6 +329,11 @@ type LoginStore interface {
 // code and where to enter it, which is only ever GitHub's address over
 // https; nothing is kept where the sign-in doesn't finish.
 func Login(ctx context.Context, flow credential.DeviceFlow, store credential.Store, clientID string, present func(credential.DeviceAuthorization) error) (credential.Login, error) {
+	// A locked Keychain is refused before GitHub's page, which the person
+	// would go through only for the login not to be saved (F5 on rc5).
+	if _, err := store.Get(ctx, CredentialKey); errors.Is(err, credential.ErrLocked) {
+		return credential.Login{}, LockedLogin(err)
+	}
 	login, err := flow.Authorize(ctx, clientID, func(authorization credential.DeviceAuthorization) error {
 		if address, err := url.Parse(authorization.VerificationURL); err != nil || address.Scheme != "https" || address.Host == "" {
 			return fmt.Errorf("GitHub returned an invalid authorization URL, %q; an HTTPS URL is required, so the browser was not opened", authorization.VerificationURL)

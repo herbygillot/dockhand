@@ -1,10 +1,15 @@
 package setup
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -151,4 +156,76 @@ func TestARefusalsNextIsSaidLast(t *testing.T) {
 	require.Equal(t, composed, view.SayNext(composed))
 	plain := errors.New("plain")
 	require.Equal(t, plain, view.SayNext(plain))
+}
+
+// lockedKeychain keeps a login it can't give, locked, as over SSH.
+type lockedKeychain struct{}
+
+type keychainLocked struct{}
+
+func (keychainLocked) Error() string        { return "the login Keychain is locked" }
+func (keychainLocked) Is(target error) bool { return target == credential.ErrLocked }
+
+func (lockedKeychain) Get(context.Context, credential.Key) (string, error) {
+	return "", keychainLocked{}
+}
+func (lockedKeychain) Put(context.Context, credential.Key, string) error { return keychainLocked{} }
+func (lockedKeychain) Delete(context.Context, credential.Key) error      { return keychainLocked{} }
+
+// A locked Keychain isn't no login: setup offers none, its github line and
+// Next say to unlock it, and setup github refuses before GitHub's page,
+// whose login couldn't be saved; a missing login is still offered one (F5
+// on rc5).
+func TestALockedKeychainIsNotNoLogin(t *testing.T) {
+	t.Parallel()
+	cmdtest.NewWorld(t)
+	git, err := exec.LookPath("git")
+	require.NoError(t, err)
+	flow := &countingFlow{deviceFlow: deviceFlow{value: login("secret-token", "ada")}}
+	cmdtest.WithAuth(t, flow)
+	cmdtest.Hosted(t).AuthStore = lockedKeychain{}
+	// Git, and no Tart, so no image is offered.
+	bin := t.TempDir()
+	require.NoError(t, os.Symlink(git, filepath.Join(bin, "git")))
+	cmdtest.Setenv(t, "PATH", bin)
+	var out, errs bytes.Buffer
+	err = cmdtest.RunFor(t, t.Context(), []string{"setup"}, term.Streams{In: strings.NewReader("\nn\nn\n"), Out: &out, Err: &errs}.AsTerminal())
+	require.NoError(t, err)
+	require.NotContains(t, errs.String(), "Log in to GitHub")
+	flat := cmdtest.Flat(out.String())
+	require.NotContains(t, flat, "dockhand setup github")
+	require.Contains(t, flat, cmdtest.Flat("github   ! with your GitHub login, saved but the login Keychain is locked: security unlock-keychain in this shell, or GH_TOKEN for this command"))
+	require.Contains(t, flat, cmdtest.Flat("Next: security unlock-keychain in this shell, or GH_TOKEN for this command, then"))
+	require.Zero(t, flow.asked)
+
+	_, said, err := cmdtest.Dockhand(t, "setup", "github")
+	require.ErrorIs(t, err, credential.ErrLocked, "a refusal of the Auth kind")
+	require.Equal(t, refusal.Auth, refusal.KindOf(err))
+	require.Equal(t, "your GitHub login is saved, but the login Keychain is locked; unlock it with security unlock-keychain in this shell, or set GH_TOKEN for this command", refusal.WordsOf(err))
+	require.NotContains(t, said, "one-time code")
+	require.Zero(t, flow.asked)
+}
+
+type countingFlow struct {
+	deviceFlow
+	asked int
+}
+
+func (f *countingFlow) Authorize(ctx context.Context, clientID string, present func(credential.DeviceAuthorization) error) (credential.Login, error) {
+	f.asked++
+	return f.deviceFlow.Authorize(ctx, clientID, present)
+}
+
+// A browser that won't open, as over SSH, leaves the login waiting for the
+// code it printed, where it failed and named --no-browser (F5 on rc5).
+func TestABrowserThatWontOpenLeavesTheLoginWaiting(t *testing.T) {
+	t.Parallel()
+	store := cmdtest.WithAuth(t, deviceFlow{value: login("secret-token", "ada")})
+	cmdtest.Hosted(t).OpenBrowser = func(context.Context, string) error { return errors.New("no display") }
+	out, errs, err := cmdtest.Dockhand(t, "setup", "github")
+	require.NoError(t, err)
+	require.Contains(t, errs, "Couldn't open a browser (no display). Open https://github.com/login/device, enter the code, and authorize dockhand.\nWaiting for authorization...\n")
+	require.NotContains(t, errs, "--no-browser")
+	require.Contains(t, out, "Logged in to github.com as ada.")
+	require.NotEmpty(t, store[github.CredentialKey])
 }
