@@ -116,7 +116,12 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // port contents, otool, and port provides: an observation beside the
 // result, which builds and judges nothing otherwise, so the protocol stays
 // 3.
-const guestPin = "b41abfb440866a5d16071da12d28162718ca983f9e832cf3f4441e6aa99a1202"
+//
+// Since v0.6.0's local provider, the program also runs on this Mac in a
+// prefix of the person's, where input's local says so: there it builds
+// as-is, snapshots the prefix, and puts it back. In a clone, where local
+// is absent, it builds and judges as it did, so the protocol stays 3.
+const guestPin = "ffdf860ecab3242a90f7a6eba2e660e4709d3f4d0516cba2de5596445bfca92f"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

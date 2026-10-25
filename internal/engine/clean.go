@@ -556,6 +556,24 @@ type Leftover struct {
 	Done bool
 }
 
+// Changes are what checks have changed of the person's own, as the local
+// provider does a prefix on this Mac: each building there now, and each a
+// check left changed when its process ended first, with how to put it
+// back (buildenv.ChangingProvider). A provider that can't say is passed
+// over: status still says the rest.
+func (e *Engine) Changes(ctx context.Context) []buildenv.Change {
+	var changes []buildenv.Change
+	for _, name := range slices.Sorted(maps.Keys(e.Providers)) {
+		if provider, ok := e.Providers[name].(buildenv.ChangingProvider); ok {
+			found, err := provider.Changes(ctx)
+			if err == nil {
+				changes = append(changes, found...)
+			}
+		}
+	}
+	return changes
+}
+
 // PlanLeftovers finds what providers left of checks, and which clean may
 // remove. A provider removes its environment when the attempt using it
 // ends, and a run's next attempt removes an earlier one's, so what is left

@@ -24,8 +24,10 @@ func TestAReportIsTheEnvironmentInWords(t *testing.T) {
 		Runs: []prdescription.Run{{ID: "tart_a", Ref: "dockhand-check-run-x", Check: "check-10", ReusedIn: "check-11"}}}, got)
 	require.Equal(t, "Darwin 30 arm64", report(model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "30", Architecture: "arm64"}}, model.Observed{}, nil, nil, nil).Release)
 	require.Empty(t, report(model.Environment{Provider: "command"}, model.Observed{}, nil, nil, nil).Release)
-	require.Equal(t, "command: built by the author's own command", providerWords("command"))
-	require.Equal(t, "github: MacPorts' CI workflow in the author's fork", providerWords("github"))
+	require.Equal(t, "command: built by the author's own command", providerWords(model.Environment{Provider: "command"}, model.Observed{}))
+	require.Equal(t, "github: MacPorts' CI workflow in the author's fork", providerWords(model.Environment{Provider: "github"}, model.Observed{}))
+	// A local check names its prefix, and the ports it built among.
+	require.Equal(t, "local: built in /opt/local on the author's Mac with 143 ports active", providerWords(model.Environment{Provider: "local", Prefix: "/opt/local"}, model.Observed{ActivePorts: 143}))
 }
 
 // A column heading is the environment's release alone, with its

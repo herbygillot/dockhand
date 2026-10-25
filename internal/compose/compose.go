@@ -352,6 +352,14 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		provider.TestTimeout, provider.BuildTimeout = file.Providers.Tart.Timeout(), file.Providers.Tart.BuildBound()
 		e.Providers[buildenv.Tart] = provider
 	}
+	// The local provider builds in a MacPorts prefix wherever there's a
+	// Mac to have one; a prefix is checked when a check names it.
+	if tart.LocalSupported() {
+		local := file.Providers.Local
+		e.Providers[buildenv.Local] = &tart.Local{Repo: e.Repo, Index: e.PortIndex, Prefix: local.Prefix, Keep: local.Keep, Clean: local.Clean,
+			TestTimeout: local.Timeout(), BuildTimeout: local.BuildBound(), Env: options.Env}
+		e.LocalServe = local.Serve
+	}
 	if dependencies.Leftovers != nil {
 		e.Providers[dependencies.Leftovers.Name()] = dependencies.Leftovers
 	}

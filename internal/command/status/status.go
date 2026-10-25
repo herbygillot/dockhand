@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
@@ -177,7 +178,9 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 	var serve engine.ServeState
 	var queue []engine.QueuedCheck
 	var processes []engine.Process
+	var changes []buildenv.Change
 	if !attentionOnly {
+		changes = e.Changes(ctx)
 		if serve, err = readServe(ctx, e); err != nil {
 			return err
 		}
@@ -204,6 +207,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			result.Serve, result.ServeState = view.ServeWords(serve), &viewed
 			result.Queue = view.QueueView(queue)
 			result.Processes = view.ProcessesView(processes)
+			result.Changed = view.ChangesView(changes)
 		}
 		streams.Emit(result)
 	}
@@ -221,6 +225,12 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 		}
 	}
 	writeOverview(out, streams, statuses, rows, processes, all)
+	if len(changes) > 0 {
+		fmt.Fprintln(out)
+		for _, change := range changes {
+			fmt.Fprintln(out, view.ChangeWords(change))
+		}
+	}
 	if found, ok := e.LastOutdatedLook(e.Maintainers); ok && (len(found.Outdated) > 0 || len(found.Uncertain) > 0) {
 		fmt.Fprintln(out)
 		if len(found.Outdated) > 0 {

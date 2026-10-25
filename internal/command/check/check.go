@@ -219,7 +219,7 @@ true, it runs that baseline by itself.`,
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
 	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the master it started from")
 	cmd.Flags().BoolVar(&fresh, "fresh", false, "build every port, reusing no earlier build's result")
-	cmd.Flags().BoolVar(&keep, "keep", false, "keep each Tart environment's clone, stopped, where its guest finishes, for dockhand shell")
+	cmd.Flags().BoolVar(&keep, "keep", false, "keep what the check built: each Tart clone, stopped, where its guest finishes, for dockhand shell, and in a local prefix the branch's versions, left active")
 	cmd.Flags().StringVar(&variants, "variants", "", "build the one port checked with these variants, +name -name, or each: its defaults, then each variant it declares")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --variants each, make its builds without asking")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")

@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // Beside is what queuing a check does where the branch has one queued or
@@ -80,6 +81,23 @@ func Runnable(plan model.Plan) error {
 	return &UnrunnableError{Plan: plan}
 }
 
+// localAllowed refuses a check in a MacPorts prefix on this Mac where its
+// Portfiles would run as root unasked: a pull request someone else wrote,
+// which the person adopted (the trust rule, ahead of Then's item 12), and
+// serve's checks, unless [providers.local] serve says they may.
+func (e *Engine) localAllowed(request QueueRequest) error {
+	if !slices.ContainsFunc(request.Plan.Environments, func(environment model.Environment) bool { return environment.Provider == buildenv.Local }) {
+		return nil
+	}
+	if pr := request.Branch.PullRequest; pr != nil && pr.Adopted {
+		return refusal.New(refusal.Failed, "%s is a pull request you adopted, whose Portfiles someone else wrote: a local check would run them as root on this Mac, so it checks with --on tart or --on github", request.Branch.ShortName())
+	}
+	if request.Origin == model.OriginServe && !e.LocalServe {
+		return refusal.New(refusal.Environment, "serve doesn't check in a MacPorts prefix on this Mac unless [providers.local] serve = true, since its Portfiles run as root there, under a sudo rule that needs no password")
+	}
+	return nil
+}
+
 // QueueCheck is the one way a check is queued, for check, ship, and serve
 // alike (the architecture review of 5897a82, R3-4 and R3-14): a passing
 // check that stands for it, where request.Covered takes one; a plan nothing
@@ -96,6 +114,9 @@ func (e *Engine) QueueCheck(ctx context.Context, request QueueRequest) (Queued, 
 		}
 	}
 	if err := Runnable(request.Plan); err != nil {
+		return Queued{}, err
+	}
+	if err := e.localAllowed(request); err != nil {
 		return Queued{}, err
 	}
 	queued, err := e.beside(ctx, request)

@@ -75,6 +75,10 @@ func release(t *testing.T, name string) macos.Release {
 	return found
 }
 
+// localLine is the local provider's line, as this Mac has MacPorts at
+// /opt/local or not.
+const localLine = `local    (✓ in /opt/local, among the ports active there: check --on local|· no MacPorts at /opt/local; \[providers.local\] prefix names another)\n`
+
 // onIntel says this Mac is an Intel one, which Tart's macOS guests
 // don't run on, whichever Mac runs the test.
 func onIntel(t *testing.T) {
@@ -87,16 +91,17 @@ func TestAnIntelMacChecksOnGitHub(t *testing.T) {
 	t.Parallel()
 	onIntel(t)
 	out := providers(t)
-	require.Contains(t, out, "tart       needs Apple silicon; checks here build on GitHub, with --on github\n")
+	require.Contains(t, out, "tart       needs Apple silicon; checks here build in a MacPorts prefix, with --on local, or on GitHub, with --on github\n")
 	_, _, err := cmdtest.Dockhand(t, "setup", "tart")
-	require.ErrorContains(t, err, "Tart's macOS images need Apple silicon, and this Mac isn't; checks here build on GitHub, with --on github")
+	require.ErrorContains(t, err, "Tart's macOS images need Apple silicon, and this Mac isn't; checks here build in a MacPorts prefix, with --on local, or on GitHub, with --on github")
 }
 
 func TestProviderLinesWithoutTart(t *testing.T) {
 	t.Parallel()
 	out := providers(t)
-	require.Equal(t, "tart     ! needs Tart: sudo port install tart, then dockhand setup tart\n"+
-		"github   ! needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n", out)
+	require.Regexp(t, "^tart     ! needs Tart: sudo port install tart, then dockhand setup tart\n"+
+		"github   ! needs a GitHub login, dockhand setup github, and your fork's Actions enabled\n"+
+		localLine+"$", out)
 
 	_, _, err := cmdtest.Dockhand(t, "setup", "tart")
 	require.ErrorContains(t, err, "Tart isn't installed: sudo port install tart")
@@ -204,8 +209,9 @@ func TestSetupShowsTheProviders(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "  Providers    tart     ! not set up: dockhand setup tart   (macOS 26, up to 60 GB)\n"+
 		"               github   ! needs a GitHub login, dockhand setup github, and your fork's Actions\n"+
-		"               enabled\n"+
-		"  Publishing   ")
+		"               enabled\n")
+	// The local provider's prefix, as this Mac has MacPorts there or not.
+	require.Regexp(t, `\n               local    (✓ in /opt/local, among the ports active there: check --on local|· no MacPorts at /opt/local; \[providers.local\] prefix\n               names another)\n  Publishing   `, out)
 
 	// With this Mac's image deleted and its golden copy kept, setup offers
 	// the restore, not a 60 GB download (Codex's review, checked against

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -432,8 +434,8 @@ func EnvironmentHeading(environment model.Environment, all []model.Environment) 
 			shared++
 		}
 	}
-	if len(providers) > 1 {
-		parts = append(parts, environment.Provider)
+	if len(providers) > 1 || environment.Prefix != "" {
+		parts = append(parts, providerPlace(environment))
 	}
 	parts = append(parts, macos.ReleaseName(platform))
 	if shared > 1 && platform.Architecture != "" {
@@ -447,19 +449,45 @@ func EnvironmentHeading(environment model.Environment, all []model.Environment) 
 func describePlace(environment model.Environment) string {
 	platform := environment.Platform
 	if platform.Version == "" && platform.Architecture == "" {
-		return environment.Provider
+		return providerPlace(environment)
 	}
-	return environment.Provider + " " + macos.Describe(platform)
+	return providerPlace(environment) + " " + macos.Describe(platform)
+}
+
+// PrefixNote is what a plan says of a local check's prefix other than
+// /opt/local: MacPorts' binary archives are built for /opt/local alone, so
+// every dependency builds from source there. Empty for any other
+// environment.
+func PrefixNote(environment model.Environment) string {
+	if environment.Provider != buildenv.Local || environment.Prefix == "" || environment.Prefix == macports.DefaultPrefix {
+		return ""
+	}
+	return environment.Prefix + ": MacPorts' binary archives are built for " + macports.DefaultPrefix + " alone, so its dependencies build from source"
+}
+
+// providerPlace is an environment's provider, with the prefix a local
+// check builds in, local:/opt/macports-test, as --on names it.
+func providerPlace(environment model.Environment) string {
+	if environment.Prefix != "" {
+		return environment.Provider + ":" + environment.Prefix
+	}
+	return environment.Provider
 }
 
 // providerWords says how a provider built, as a pull request's Tested on
-// line says it.
-func providerWords(provider string) string {
+// line says it: a local check names its prefix and how many ports were
+// active there, as it built among them.
+func providerWords(environment model.Environment, observed model.Observed) string {
+	provider := environment.Provider
 	switch provider {
 	case buildenv.Tart:
 		return provider + ": built in a clean VM"
-	case buildenv.Prefix:
-		return provider + ": built in a MacPorts prefix on the author's Mac"
+	case buildenv.Local:
+		words := provider + ": built in " + cmp.Or(environment.Prefix, "a MacPorts prefix") + " on the author's Mac"
+		if observed.ActivePorts > 0 {
+			words += " with " + prose.Plural(observed.ActivePorts, "port") + " active"
+		}
+		return words
 	case buildenv.GitHub:
 		return provider + ": MacPorts' CI workflow in the author's fork"
 	}

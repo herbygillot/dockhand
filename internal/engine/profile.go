@@ -186,7 +186,7 @@ func (e *Engine) profileEnvironments(ctx context.Context, profile Profile) ([]mo
 func (e *Engine) notSetUp(_ context.Context, profile Profile) error {
 	switch profile.Provider {
 	case buildenv.Tart:
-		return fmt.Errorf(`build profile %s requires Tart, which is not installed. On Apple silicon, install it with sudo port install tart. Alternatively, use --on github to run the MacPorts workflow in your fork, or --on command with a script configured under [providers.command]. To make either provider the default, define a profile under [build.profiles] in %s, for example {provider = "github"}`, profile.Name, e.configFile())
+		return fmt.Errorf(`build profile %s requires Tart, which is not installed. On Apple silicon, install it with sudo port install tart. Alternatively, use --on local to build in your MacPorts prefix on this Mac, --on github to run the MacPorts workflow in your fork, or --on command with a script configured under [providers.command]. To make one of them the default, define a profile under [build.profiles] in %s, for example {provider = "github"}`, profile.Name, e.configFile())
 	case buildenv.Command:
 		return fmt.Errorf(`build profile %s builds with your own script, which isn't set up: [providers.command] run = "..." in %s`, profile.Name, e.configFile())
 	}

@@ -1,9 +1,11 @@
 package view
 
 import (
+	"fmt"
 	"slices"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -50,11 +52,12 @@ type environmentJSON struct {
 	Version        string `json:"version,omitempty"`
 	Architecture   string `json:"architecture,omitempty"`
 	DeveloperTools string `json:"developer_tools,omitempty"`
+	Prefix         string `json:"prefix,omitempty"`
 }
 
 func EnvironmentView(environment model.Environment) environmentJSON {
 	return environmentJSON{Provider: environment.Provider, OS: environment.Platform.OS, Version: environment.Platform.Version, Architecture: environment.Platform.Architecture,
-		DeveloperTools: string(environment.DeveloperTools)}
+		DeveloperTools: string(environment.DeveloperTools), Prefix: environment.Prefix}
 }
 
 type TargetJSON struct {
@@ -513,6 +516,39 @@ type StatusJSON struct {
 	Queue *[]queuedRunJSON `json:"queue,omitempty"`
 	// Processes are the dockhand processes working on the checkout.
 	Processes *[]processJSON `json:"processes,omitempty"`
+	// Changed are what checks are building in of the person's own, and
+	// what checks left changed (engine.Changes).
+	Changed []changeJSON `json:"changed,omitempty"`
+}
+
+// changeJSON is something of the person's a check changed: a MacPorts
+// prefix on this Mac, the check building there now, or how to put back
+// what it left changed.
+type changeJSON struct {
+	Check    string `json:"check"`
+	Place    string `json:"place"`
+	Building bool   `json:"building,omitempty"`
+	Remedy   string `json:"remedy,omitempty"`
+}
+
+// ChangesView is engine.Changes as fields.
+func ChangesView(changes []buildenv.Change) []changeJSON {
+	var viewed []changeJSON
+	for _, change := range changes {
+		viewed = append(viewed, changeJSON{Check: change.Check, Place: change.Place, Building: change.Building, Remedy: change.Remedy})
+	}
+	return viewed
+}
+
+// ChangeWords say something of the person's a check changed, as status
+// says it: a check building in a prefix now, whose put-back undoes an
+// upgrade made meanwhile, or one a check left changed, with how to put it
+// back.
+func ChangeWords(change buildenv.Change) string {
+	if change.Building {
+		return fmt.Sprintf("%s is building in %s: your own port commands there wait for it, and what you upgrade there meanwhile is undone when it puts the prefix back.", change.Check, change.Place)
+	}
+	return fmt.Sprintf("%s left %s changed, ending before it could put it back: %s puts it back, or the next check there does.", change.Check, change.Place, change.Remedy)
 }
 
 // processJSON is a dockhand process working on the checkout.

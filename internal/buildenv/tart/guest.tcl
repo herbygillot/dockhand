@@ -8,6 +8,14 @@
 # guest lost midway keeps what it recorded (decision 44), and the target
 # it is building is written as it begins, so the one a lost guest was
 # building is recorded as interrupted.
+#
+# The local provider runs it on this Mac, in a MacPorts prefix of the
+# person's (input's local): there MacPorts reads the staged tree through
+# the macports.conf the host names in PORTSRC, and the prefix's
+# etc/macports is never written. It builds among whatever is active,
+# unless the prefix is one dockhand may clean, makes a port snapshot
+# before it changes anything, and puts the prefix back after, unless it
+# is asked to keep what it built active.
 package require json
 package require json::write
 json::write indented false
@@ -33,6 +41,11 @@ set phase ""
 # with the target, for live progress, and cleared between targets.
 set fromsource {}
 set environment [dict create]
+# local is how a check in a prefix of the person's leaves it: whether it
+# builds clean, as in a VM, whether it keeps what it built active, and the
+# note its snapshot is made with; empty in a VM.
+set local {}
+if {[dict exists $input local]} { set local [dict get $input local] }
 
 # save writes the results so far, replacing the file whole. A result's
 # fields are strings, but for the ports active as it built, and what its
@@ -536,8 +549,80 @@ proc lexical {path} {
 }
 
 # build builds one target, returning its result.
+# clean says whether each target builds with all but its dependencies
+# deactivated: in a VM always, and in a prefix of the person's only where
+# dockhand may treat it as its own (providers.local.clean).
+proc clean {} {
+    global local
+    return [expr {![llength $local] || [dict get $local clean]}]
+}
+
+# actives are the ports a listing says are active, by name, each with its
+# version, revision, and variants: "@1.8.1_0+universal".
+proc actives {listing} {
+    set found [dict create]
+    foreach line [split $listing \n] {
+        if {[regexp {^\s*(\S+) (@\S+) \(active\)$} $line -> name spec]} { dict set found $name $spec }
+    }
+    return $found
+}
+
+# snapshot makes MacPorts' port snapshot of what is active in the prefix
+# before the check changes it, and returns its ID, which port restore
+# --snapshot-id takes. port snapshot --create says no ID, so it is read
+# from --list, the newest made with the check's note.
+proc snapshot {note} {
+    global port root
+    if {[set message [run $root/snapshot.log [list $port -N snapshot --create --note $note]]] ne ""} {
+        error "port snapshot --create failed: $message"
+    }
+    set id ""
+    foreach line [split [known $port -q snapshot --list] \n] {
+        if {[regexp {^\s*(\d+)\s+\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\S*\s+(.*?)\s*$} $line -> found said] && $said eq $note && ($id eq "" || $found > $id)} {
+            set id $found
+        }
+    }
+    if {$id eq ""} { error "port snapshot --list named no snapshot noted \"$note\"" }
+    return $id
+}
+
+# putback puts the prefix back as it was before the check, from the
+# listing of what was active then, before.txt: each port whose active
+# version changed is activated again at its old one, each the check
+# activated that wasn't is deactivated, and each it deactivated is
+# activated again. What the check installed stays, inactive and
+# unrequested, for port reclaim. It's faster than port restore, which
+# installs each port of the snapshot again. Returns "" or why it failed.
+proc putback {} {
+    global port root
+    set fd [open $root/before.txt r]
+    set before [actives [read $fd]]
+    close $fd
+    if {[catch {actives [known $port -q installed active]} now]} { return $now }
+    set off {}
+    set on {}
+    dict for {name spec} $now {
+        if {![dict exists $before $name]} {
+            lappend off $name
+        } elseif {[dict get $before $name] ne $spec} {
+            lappend on $name [dict get $before $name]
+        }
+    }
+    dict for {name spec} $before {
+        if {![dict exists $now $name]} { lappend on $name $spec }
+    }
+    set log $root/putback.log
+    if {[llength $off]} {
+        if {[set message [run $log [concat [list $port -N -f deactivate] $off]]] ne ""} { return "deactivating [join $off {, }]: $message" }
+    }
+    foreach {name spec} $on {
+        if {[set message [run $log [list $port -N activate $name $spec]]] ne ""} { return "activating $name $spec: $message" }
+    }
+    return ""
+}
+
 proc build {index target} {
-    global root port input results
+    global root port input results local
     set id [dict get $target id]
     set name [dict get $target name]
     # Each target's log is named by its target, as the host names it.
@@ -576,8 +661,9 @@ proc build {index target} {
     set here [list $port -N -D $portdir]
     set fail {apply {{result phase detail} { dict set result outcome failed; dict set result phase $phase; dict set result detail $detail; return $result }}}
 
-    # Only this target's dependencies are active when it builds.
-    if {[fact $port -q installed active] ne ""} {
+    # Only this target's dependencies are active when it builds, in a VM
+    # or a prefix dockhand may clean; elsewhere it builds as-is.
+    if {[clean] && [fact $port -q installed active] ne ""} {
         mark result $log deactivate
         if {[set message [run $log [list $port -N -f deactivate active]]] ne ""} {
             return [{*}$fail $result install "deactivating the ports before it failed: [why $log $message]"]
@@ -655,7 +741,7 @@ proc build {index target} {
             }
         }
         set strays {}
-        foreach line [split [fact $port -q installed active] \n] {
+        foreach line [split [expr {[clean] ? [fact $port -q installed active] : ""}] \n] {
             if {[regexp {^\s*(\S+) @\S+ \(active\)$} $line -> other] && [lsearch -exact -nocase $closure $other] < 0 && $other ni $strays} {
                 lappend strays $other
             }
@@ -710,6 +796,16 @@ proc build {index target} {
     # archive, as CI's install-port --source builds it: an archive of the
     # same version, revision, and variants is master's Portfile's build,
     # not the branch's.
+    # In a prefix of the person's, an image of the version the branch
+    # builds would be activated, not built: the check stops, saying so.
+    if {[llength $local]} {
+        lassign [split [fact {*}$here -q info --line --version --revision $selection] \t] version revision
+        foreach line [split [fact $port -q installed $name] \n] {
+            if {$version ne "" && [regexp {^\s*\S+ @([^+\s]+)} $line -> installed] && $installed eq "${version}_$revision"} {
+                return -code error -errorcode {DOCKHAND REFUSED} "$name @${version}_$revision is installed in [dict get $input prefix] already, so MacPorts would activate it rather than build the branch's; port uninstall $name @${version}_$revision, or a revision bump, lets it build"
+            }
+        }
+    }
     set install [concat $here -dks install --unrequested $selection]
     if {![llength $variants]} { set install [concat $here -dkns install --unrequested $selection] }
     mark result $log install
@@ -740,6 +836,18 @@ proc build {index target} {
     return $result
 }
 
+# A check in a prefix that ended before it put the prefix back is put
+# back by the next, which runs this program to do only that.
+if {[llength $local] && [dict exists $local restore] && [dict get $local restore]} {
+    if {[set message [putback]] ne ""} {
+        save errored "putting the prefix back: $message"
+        exit 1
+    }
+    dict set environment restored yes
+    save finished
+    exit 0
+}
+
 save running
 try {
     dict set environment user [fact /usr/bin/id -un]
@@ -761,31 +869,52 @@ try {
     }
     dict set environment macports [fact $port version]
     if {![info exists foreignManagers]} { set foreignManagers {/opt/homebrew /usr/local/Homebrew /usr/local/Cellar /sw /opt/pkg} }
+    # In a prefix of the person's, what's there is a fact of the build,
+    # said with it: how many ports are active, and any other package
+    # manager on the Mac. In a VM, either is an image that isn't clean.
+    set foreigners {}
     foreach foreign $foreignManagers {
-        if {[file exists $foreign]} { error "the image has another package manager, at $foreign" }
+        if {[file exists $foreign]} {
+            if {![llength $local]} { error "the image has another package manager, at $foreign" }
+            lappend foreigners $foreign
+        }
     }
-    if {[set installed [fact $port -q installed]] ne ""} { error "the image already has ports installed: $installed" }
+    if {[llength $local]} {
+        # The program's own process, which goes on where dockhand's ends
+        # first, and says the prefix is still being built in.
+        dict set environment pid [pid]
+        dict set environment foreign [join $foreigners ,]
+        set listing [known $port -q installed active]
+        dict set environment active_ports [dict size [actives $listing]]
+    } elseif {[set installed [fact $port -q installed]] ne ""} {
+        error "the image already has ports installed: $installed"
+    }
     if {![file exists $root/ports/PortIndex]} { error "the staged ports tree has no PortIndex" }
-    set sources [open $prefix/etc/macports/sources.conf w]
-    puts $sources "file://$root/ports \[default\]"
-    close $sources
-    # The archives dockhand kept of targets this guest installs rather than
-    # builds (decision 28) are an archive site of MacPorts' own kind: local,
-    # so tried first, and verified by the keys it is told to trust.
-    if {[dict exists $input archives] && [llength [dict get $input archives]]} {
-        set keys [open $prefix/etc/macports/pubkeys.conf a]
-        foreach key [dict get $input archive_keys] { puts $keys $key }
-        close $keys
-        set types {}
-        foreach archive [dict get $input archives] {
-            set type [string range [file extension [dict get $archive name]] 1 end]
-            if {$type ni $types} { lappend types $type }
+    # In a prefix of the person's, MacPorts reads the staged tree through
+    # the host's macports.conf (PORTSRC), and the prefix's own files are
+    # never written.
+    if {![llength $local]} {
+        set sources [open $prefix/etc/macports/sources.conf w]
+        puts $sources "file://$root/ports \[default\]"
+        close $sources
+        # The archives dockhand kept of targets this guest installs rather than
+        # builds (decision 28) are an archive site of MacPorts' own kind: local,
+        # so tried first, and verified by the keys it is told to trust.
+        if {[dict exists $input archives] && [llength [dict get $input archives]]} {
+            set keys [open $prefix/etc/macports/pubkeys.conf a]
+            foreach key [dict get $input archive_keys] { puts $keys $key }
+            close $keys
+            set types {}
+            foreach archive [dict get $input archives] {
+                set type [string range [file extension [dict get $archive name]] 1 end]
+                if {$type ni $types} { lappend types $type }
+            }
+            set sites [open $prefix/etc/macports/archive_sites.conf a]
+            foreach type $types {
+                puts $sites "\nname dockhand_$type\nurls file://[dict get $input archive_site]/\ntype $type\nprefix $prefix"
+            }
+            close $sites
         }
-        set sites [open $prefix/etc/macports/archive_sites.conf a]
-        foreach type $types {
-            puts $sites "\nname dockhand_$type\nurls file://[dict get $input archive_site]/\ntype $type\nprefix $prefix"
-        }
-        close $sites
     }
     package require macports
     mportinit
@@ -793,9 +922,38 @@ try {
     foreach {key actual} [list OS $::macports::os_platform Version $::macports::os_major Architecture $::macports::build_arch] {
         if {[dict get $platform $key] ne $actual} { error "the guest's $key is $actual, not [dict get $platform $key]" }
     }
+    # What was active is recorded, and a snapshot made, before anything
+    # changes.
+    if {[llength $local]} {
+        set fd [open $root/before.txt w]
+        puts $fd $listing
+        close $fd
+        dict set environment snapshot [snapshot [dict get $local note]]
+    }
 } on error {message} {
     save errored $message
     exit 1
+}
+
+# finish ends the program's results with their state. A check in a prefix
+# of the person's puts it back first, unless it keeps what it built
+# active, and says how it left the prefix: restored, kept, or why it
+# couldn't be put back, its snapshot then standing for it. The snapshot
+# of a prefix put back is deleted, its work done.
+proc finish {state {detail ""}} {
+    global local environment port root
+    if {[llength $local] && [dict exists $environment snapshot]} {
+        if {[dict get $local keep]} {
+            dict set environment restored kept
+        } elseif {[set message [putback]] ne ""} {
+            dict set environment restored "no: $message"
+        } else {
+            dict set environment restored yes
+            run $root/putback.log [list $port -N snapshot --delete [dict get $environment snapshot]]
+        }
+    }
+    save $state $detail
+    exit [expr {$state eq "finished" ? 0 : 1}]
 }
 # What the guest found about itself is written now, not only with the
 # first result, so it is read however soon the program ends.
@@ -805,9 +963,11 @@ foreach target [dict get $input targets] {
     incr index
     set building [dict get $target id]
     save running
-    if {[catch {build $index $target} result]} {
-        save errored "building [dict get $target id]: $result"
-        exit 1
+    if {[catch {build $index $target} result options]} {
+        # A build the prefix keeps from being a check of the branch's
+        # stops it, as a refusal another attempt won't change.
+        if {[dict get $options -errorcode] eq {DOCKHAND REFUSED}} { finish refused $result }
+        finish errored "building [dict get $target id]: $result"
     }
     # A step the network failed upstream is said, for the host to try the
     # build again; a test's failure is the port's own.
@@ -843,4 +1003,4 @@ foreach target [dict get $input targets] {
     set fromsource {}
     save running
 }
-save finished
+finish finished

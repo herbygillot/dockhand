@@ -152,6 +152,9 @@ type Engine struct {
 	// TartHome is dockhand's Tart home, which status -v names to reach a
 	// running check's VMs.
 	TartHome string
+	// LocalServe lets serve check in a MacPorts prefix on this Mac
+	// ([providers.local] serve), which it otherwise doesn't (localAllowed).
+	LocalServe bool
 	// stall is how long a target's log may go without growing, and how
 	// often it's looked at (watchStalls); stallAfter and stallPoll where
 	// zero, a test's otherwise.

@@ -75,6 +75,11 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 		profile = " · build profile " + plan.Profile
 	}
 	fmt.Fprintf(out, "Provider    %s%s · tests %s\n", strings.Join(on, "; "), profile, plan.Tests)
+	for _, environment := range plan.Environments {
+		if note := engine.PrefixNote(environment); note != "" {
+			fmt.Fprintf(out, "            %s\n", note)
+		}
+	}
 	WriteVariants(out, plan)
 	// Tests required ask nothing of a port that declares none, which
 	// passes under any policy: said, so its ✓ isn't read as tests passed.

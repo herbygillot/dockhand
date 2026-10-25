@@ -53,8 +53,8 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 			switch name {
 			case buildenv.Tart:
 				return nil, fmt.Errorf("--on %s: Tart isn't installed here; MacPorts' tart port installs it", value)
-			case buildenv.Prefix:
-				return nil, fmt.Errorf("--on %s: the prefix provider is not available in v3; use Tart or a custom build script with --on command", value)
+			case buildenv.Local:
+				return nil, fmt.Errorf("--on %s: the local provider builds in a MacPorts prefix on a Mac, and this isn't one", value)
 			}
 			return nil, fmt.Errorf("--on %s: no provider %q is set up", value, name)
 		}
@@ -81,7 +81,8 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 
 // OnValues are environments as --on names them, as Environments reads
 // them back: Tart's releases together by their product versions,
-// tart:12,26, and another provider by its name, in the order the
+// tart:12,26, a local check's prefix, local:/opt/local, and another
+// provider by its name, in the order the
 // environments first name each. False where a release can't be named, as
 // one this dockhand doesn't know can't.
 func OnValues(environments []model.Environment) ([]string, bool) {
@@ -89,8 +90,10 @@ func OnValues(environments []model.Environment) ([]string, bool) {
 	releases := map[string][]string{}
 	for _, environment := range environments {
 		if environment.Provider != buildenv.Tart {
-			if !slices.Contains(values, environment.Provider) {
-				values = append(values, environment.Provider)
+			// A local check's prefix is named as --on names it.
+			value := providerPlace(environment)
+			if !slices.Contains(values, value) {
+				values = append(values, value)
 			}
 			continue
 		}

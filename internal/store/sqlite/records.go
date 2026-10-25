@@ -409,7 +409,7 @@ func (t *tx) UpdateRun(r model.Run) error {
 		r.State, r.Detail, nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), t.repo, r.ID)
 }
 
-const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, attempt, state, detail, provider_ref, observed, identity, reused, created_at, finished_at"
+const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, prefix, attempt, state, detail, provider_ref, observed, identity, reused, created_at, finished_at"
 
 // executionFields are where a row's executionColumns are scanned into e,
 // and what completes e once they are.
@@ -418,7 +418,7 @@ func executionFields(e *model.GuestExecution) ([]any, func() error) {
 	var finished sql.NullInt64
 	var observed string
 	p := &e.Environment.Platform
-	fields := []any{&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &observed, &e.Identity, &e.Reused, &created, &finished}
+	fields := []any{&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Environment.Prefix, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &observed, &e.Identity, &e.Reused, &created, &finished}
 	return fields, func() error {
 		if observed != "" {
 			if err := json.Unmarshal([]byte(observed), &e.Observed); err != nil {
@@ -507,8 +507,8 @@ func (t *tx) AddExecution(e model.GuestExecution) error {
 	if err != nil {
 		return err
 	}
-	_, err = t.exec("INSERT INTO executions(repository_id, "+executionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, e.ID, e.Run, e.Environment.Provider, p.OS, p.Version, p.Architecture, e.Environment.DeveloperTools, e.Attempt, e.State, e.Detail, e.ProviderRef, observed, e.Identity, boolInt(e.Reused), millis(e.CreatedAt), nullableMillis(e.FinishedAt))
+	_, err = t.exec("INSERT INTO executions(repository_id, "+executionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, e.ID, e.Run, e.Environment.Provider, p.OS, p.Version, p.Architecture, e.Environment.DeveloperTools, e.Environment.Prefix, e.Attempt, e.State, e.Detail, e.ProviderRef, observed, e.Identity, boolInt(e.Reused), millis(e.CreatedAt), nullableMillis(e.FinishedAt))
 	return err
 }
 
@@ -599,12 +599,12 @@ func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) 
 // back from the newest.
 var reusableQuery = "SELECT " + resultColumns + ", " + qualified("e", executionColumns) + " FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
 	"WHERE r.repository_id=? AND r.target_id=? AND r.outcome='passed' AND r.inputs<>'' AND r.reused_from='' " +
-	"AND e.provider=? AND e.platform_os=? AND e.platform_version=? AND e.platform_architecture=? AND e.developer_tools=? " +
+	"AND e.provider=? AND e.platform_os=? AND e.platform_version=? AND e.platform_architecture=? AND e.developer_tools=? AND e.prefix=? " +
 	"ORDER BY r.recorded_at DESC, r.rowid DESC LIMIT ?"
 
 func (t *tx) Reusable(target model.TargetID, environment model.Environment, limit int) ([]store.Build, error) {
 	p := environment.Platform
-	rows, err := t.conn.QueryContext(t.ctx, reusableQuery, t.repo, target, environment.Provider, p.OS, p.Version, p.Architecture, environment.DeveloperTools, limit)
+	rows, err := t.conn.QueryContext(t.ctx, reusableQuery, t.repo, target, environment.Provider, p.OS, p.Version, p.Architecture, environment.DeveloperTools, environment.Prefix, limit)
 	if err != nil {
 		return nil, storageError(err)
 	}

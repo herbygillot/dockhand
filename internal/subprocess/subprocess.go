@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -27,7 +28,9 @@ type Spec struct {
 	// Stdout receives standard output in addition to the captured copy.
 	Stdout io.Writer
 	// StdoutOnly sends standard output to Stdout alone, uncaptured, for a
-	// stream too large to keep, such as a file being transferred.
+	// stream too large to keep, such as a file being transferred; with
+	// Combined, standard error too. Where Stdout is a file, the program
+	// writes it itself, and goes on writing if this process ends.
 	StdoutOnly bool
 	// Combined captures standard error into the same buffer as standard output.
 	Combined   bool
@@ -36,6 +39,12 @@ type Spec struct {
 	// and how long its output may take to arrive once it has exited; zero
 	// selects DefaultWaitDelay.
 	WaitDelay time.Duration
+	// Group starts the program in a process group of its own, which a
+	// terminal's interrupt doesn't reach, and a canceled context asks it
+	// to stop with SIGTERM, its whole group where it may, before
+	// WaitDelay's kill: the local provider's guest program, whose builds
+	// are its children.
+	Group bool
 	// Limit bounds the captured bytes of each stream; zero imposes none.
 	Limit int64
 	// Drain, with a Limit, reads a stream on past it and drops the rest,
@@ -111,13 +120,23 @@ func Run(ctx context.Context, spec Spec) (Result, error) {
 		out = io.MultiWriter(spec.Stdout, output)
 	}
 	command.Stdout = out
-	if spec.StdoutOnly && spec.Stdout != nil && !spec.Combined {
+	if spec.StdoutOnly && spec.Stdout != nil {
 		command.Stdout = spec.Stdout
 	}
-	if spec.Combined {
-		command.Stderr = out
-	} else {
+	switch {
+	case spec.Combined:
+		command.Stderr = command.Stdout
+	default:
 		command.Stderr = stderr
+	}
+	if spec.Group {
+		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		command.Cancel = func() error {
+			if err := syscall.Kill(-command.Process.Pid, syscall.SIGTERM); err == nil {
+				return nil
+			}
+			return command.Process.Signal(syscall.SIGTERM)
+		}
 	}
 	err := command.Run()
 	result := Result{Output: output.Bytes(), Stderr: stderr.Bytes(), Truncated: spec.Drain && (output.exceeded || stderr.exceeded)}

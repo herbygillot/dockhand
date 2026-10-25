@@ -566,6 +566,41 @@ func TestAnExecutionsEnvironmentIncludesItsDeveloperTools(t *testing.T) {
 	}), store.ErrConflict, "one attempt in each whole environment")
 }
 
+// A local check's environment includes its prefix (schema 41): one check
+// builds in two prefixes on this Mac, each its own attempt, and reuse
+// reads a prefix's builds alone.
+func TestAnExecutionsEnvironmentIncludesItsPrefix(t *testing.T) {
+	f := open(t)
+	local := model.Environment{Provider: "local", Platform: tahoe.Platform, Prefix: "/opt/local"}
+	test := local
+	test.Prefix = "/opt/macports-test"
+	b := f.branch("br_1", "dockhand/libharbor-2")
+	r := model.Revision{ID: "rev_1", Branch: b.ID, Kind: model.RevisionSnapshot, Snapshot: 1, Source: model.Source{Tree: "tree", Base: "base"}, Head: "head", CreatedAt: at}
+	p := model.Plan{ID: "plan_1", Revision: r.ID, Tests: model.TestsDeclared, CreatedAt: at, Environments: []model.Environment{local, test},
+		Targets: []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Directory: "devel/libharbor", Kind: model.Substantive, Role: model.Changed}},
+		Builds:  []model.EnvironmentPlan{{Environment: local, Order: []model.TargetID{"libharbor"}}, {Environment: test, Order: []model.TargetID{"libharbor"}}}}
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		return errors.Join(tx.AddBranch(b), tx.AddRevision(r), tx.AddPlan(p))
+	}))
+	run := f.run(t, b, r, p)
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		return errors.Join(
+			tx.AddExecution(model.GuestExecution{ID: "ex_local", Run: run.ID, Environment: local, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}),
+			tx.AddExecution(model.GuestExecution{ID: "ex_test", Run: run.ID, Environment: test, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}))
+	}))
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+		executions, err := rd.Executions(run.ID)
+		require.NoError(t, err)
+		require.Equal(t, []string{"/opt/local", "/opt/macports-test"}, []string{executions[0].Environment.Prefix, executions[1].Environment.Prefix})
+		return nil
+	}))
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		found, err := tx.Reusable("libharbor", test, 5)
+		require.Empty(t, found)
+		return err
+	}))
+}
+
 // schemaAt is a database at an earlier schema version, with setup run
 // in it.
 func schemaAt(t *testing.T, version int, setup string) string {
@@ -1195,14 +1230,16 @@ func (f fixture) planOf(t *testing.T, query string, args ...any) string {
 // here, not a year of history later.
 func TestHistoryIsReadThroughIndexes(t *testing.T) {
 	f := open(t)
-	reusable := []any{f.repo, "libharbor", "tart", "darwin", "25", "arm64", "", 5}
+	reusable := []any{f.repo, "libharbor", "tart", "darwin", "25", "arm64", "", "", 5}
 	revisionAssessments, revision := assessmentsQuery(f.repo, store.AssessmentFilter{Branch: "br_1", Tree: "tree", Base: "base"})
 	for _, c := range []struct {
 		query string
 		args  []any
 		index string
 	}{
-		{"SELECT digest FROM archives a WHERE " + unnamedArchive, []any{f.repo, 1, f.repo, f.repo, f.repo, 1}, "result_target (repository_id=?)"},
+		// Schema 41's rebuilt results have SQLite read the builds a reuse
+		// may choose by reused_from, which they're all filtered by.
+		{"SELECT digest FROM archives a WHERE " + unnamedArchive, []any{f.repo, 1, f.repo, f.repo, f.repo, 1}, "result_reused (repository_id=? AND reused_from=?)"},
 		{reusableQuery, reusable, "result_target (repository_id=? AND target_id=?)"},
 		{revisionsQuery, []any{f.repo, "br_1"}, "revision_branch (repository_id=? AND branch_id=?)"},
 		{referredQuery, []any{f.repo, "clone"}, "execution_ref (repository_id=? AND provider_ref=?)"},
