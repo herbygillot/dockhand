@@ -484,7 +484,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 			view.WriteUpstream(out, update.Upstream)
 		}
 		fmt.Fprintln(out, "It's recorded as your hand edit with that reason, which tidy, status, and the pull request say.")
-		fmt.Fprintln(out, "Next: dockhand edit "+request.Port+" to finish it, then "+nextAfterEdit(ctx, e, branch))
+		fmt.Fprintln(out, "Next: dockhand edit "+request.Port+", then "+nextAfterEdit(ctx, e, branch))
 		return branch, update, nil
 	}
 	what := "Updated version and checksums"

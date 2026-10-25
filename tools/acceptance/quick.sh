@@ -80,6 +80,8 @@ export MACPORTS_TREE="$state/clone" DOCKHAND_UPSTREAM="$state/upstream.git"
 # pinned tree's, and building one takes minutes; the readings aren't.
 mkdir -p "$state/cache/index"
 export DOCKHAND_INDEX_CACHE="$state/cache/index" DOCKHAND_READING_CACHE="$state/home/readings"
+# GitHub's answers with their ETags (v0.6.0), in the stage, never yours.
+export DOCKHAND_GITHUB_CACHE="$state/home/github"
 # The github remote, where there is one, is read, never pushed to: SSH,
 # which a push to it takes, is refused outright, and no key, the agent's
 # included, is offered. H2 watches fork.git.
