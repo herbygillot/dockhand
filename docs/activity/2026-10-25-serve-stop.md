@@ -35,3 +35,20 @@ and launchd's SIGKILL likely came first (inferred).
 - **Test:** TestServeSaysARunUnfinishedBeforeWaitingForIt, a command
   provider script that ignores the interrupt until released: the line is
   said while serve waits, once, then "serve: stopped".
+
+## The stop measured on the Mac
+
+A scratch build of 89e8c490, with its own database, config, and tree, and
+dockhand's Tart home, ran a check under a background drain (serve's loop),
+and a SIGTERM, what launchd sends, stopped it:
+
+- check-1, jq, early in its guest's index step: serve exited in 7 seconds.
+- check-2, cmake, after three minutes in its VM, "building cmake (1 of
+  3): install": serve exited in 7 seconds.
+
+Each logged "check-N: unfinished; the next serve instance will resume it"
+then "serve: stopped", and no check VM was left. Seven seconds is inside
+launchd's allowance before SIGKILL, which launchd.plist(5) calls
+system-defined, so the agent's plist sets no ExitTimeOut. The agent itself
+wasn't installed for the measure, a standing change to the Mac; the
+signal is the one launchd sends.
