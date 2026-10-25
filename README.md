@@ -246,6 +246,7 @@ Each is rough, harms nothing a look wouldn't catch, and has a workaround. Those 
 - A trailer given in `tidy --squash --message` that the branch's commits already carry, as `Assisted-by:`, is written twice in the squashed commit. Leave it out of the message: tidy keeps the commits' own trailers. Fixed on `main`: a trailer the message gives is written once.
 - Off a terminal, as under an agent or a script, a foreground `check` prints nothing between its plan and its report, though it runs for as long as its builds take. `-v` prints each step as it goes, and `check -d` runs the check in the background, with or without serve, for `dockhand wait` or `status` to follow.
 - After GitHub rejects dockhand's login, as when it's revoked, a command reading GitHub says it couldn't reach GitHub, though the words in its parentheses say GitHub rejected the credential. Run `dockhand setup github` to sign in again. Fixed on `main`: the command says GitHub rejected the login, and how to sign in again.
+- Over SSH with the login Keychain locked, `dockhand setup` says GitHub needs a login, offers one, and its Next: line says `dockhand setup github`, though the login is saved, as its Publishing line says. Run `security unlock-keychain` in that shell, or set GH_TOKEN, and decline the login it offers. Fixed on `main` (6a5ad0f4): setup says the Keychain is locked, and offers no login.
 
 ## Scope
 
