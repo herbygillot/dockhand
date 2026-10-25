@@ -11,6 +11,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"math/big"
 	"os"
@@ -71,7 +72,28 @@ type Holds struct {
 	// dockhand raises, such as open, for another open pull request
 	// (engine.HoldRules, which the command line checks it against).
 	Allow []string `toml:"allow"`
+	// Ports are a port's own holds, [holds.ports."<port>"], over majors
+	// and allow for it, with moves and after besides: a maintainer's way is
+	// per port, harfbuzz updated after harfbuzz-devel (Then's item 2).
+	Ports map[string]PortHolds `toml:"ports"`
 }
+
+// PortHolds are one port's holds. Majors and Allow, where given, replace
+// the global ones for it; Moves = MovesFollow follows a moved repository
+// in an unattended update, --follow-moves standing for it; After are the
+// ports whose update to the same version is submitted first.
+type PortHolds struct {
+	Majors string   `toml:"majors"`
+	Allow  []string `toml:"allow"`
+	Moves  string   `toml:"moves"`
+	After  []string `toml:"after"`
+}
+
+// The values of a port's moves: hold, as without one, or follow.
+const (
+	MovesHold   = "hold"
+	MovesFollow = "follow"
+)
 
 // HoldMajors reports whether an unattended update holds where its major
 // version moves: unless majors is allow.
@@ -549,6 +571,25 @@ func parse(path, text string) (File, error) {
 	case "", "hold", "allow":
 	default:
 		return File{}, fmt.Errorf("%s: holds.majors: %q is not hold or allow", path, f.Holds.Majors)
+	}
+	for _, port := range slices.Sorted(maps.Keys(f.Holds.Ports)) {
+		holds := f.Holds.Ports[port]
+		key := fmt.Sprintf("holds.ports.%q", port)
+		switch holds.Majors {
+		case "", "hold", "allow":
+		default:
+			return File{}, fmt.Errorf("%s: %s.majors: %q is not hold or allow", path, key, holds.Majors)
+		}
+		switch holds.Moves {
+		case "", MovesHold, MovesFollow:
+		default:
+			return File{}, fmt.Errorf("%s: %s.moves: %q is not hold or follow", path, key, holds.Moves)
+		}
+		for _, after := range holds.After {
+			if strings.TrimSpace(after) == "" || after == port {
+				return File{}, fmt.Errorf("%s: %s.after: %q is not another port", path, key, after)
+			}
+		}
 	}
 	switch f.Submit.RerequestReview {
 	case "", "ask", "always", "never":

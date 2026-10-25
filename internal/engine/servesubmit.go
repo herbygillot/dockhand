@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -156,6 +158,9 @@ func (p SubmitPlan) Concerns() []model.Concern {
 	}
 	for _, floor := range p.Floors {
 		add(floor)
+	}
+	for _, after := range p.After {
+		add(after)
 	}
 	// A commit-rule error holds, as tidy rewrites the commits it's in; a
 	// warning is said and holds nothing, as tidy keeps the commits it's
@@ -378,7 +383,7 @@ func (h *HeldBeforeEdit) Error() string {
 // hold the submission once the check passed, so it holds the update now,
 // before anything is downloaded or built.
 func (e *Engine) heldBeforeEdit(ctx context.Context, port string, except int) error {
-	held := holding(othersConcerns(e.openPullRequests(ctx, []string{port}, except)), e.options.AllowHolds)
+	held := holding(othersConcerns(e.openPullRequests(ctx, []string{port}, except)), e.allowedFor)
 	if len(held) > 0 {
 		return &HeldBeforeEdit{Port: port, Held: held}
 	}
@@ -407,7 +412,7 @@ func (e *Engine) assessedHolds(ctx context.Context, branch model.Branch, tree mo
 			state = AssessmentPending
 		}
 	}
-	return holding(held, e.options.AllowHolds), state, nil
+	return holding(held, e.allowedFor), state, nil
 }
 
 // AssessmentState is how far a branch's files are assessed, as status
@@ -445,6 +450,10 @@ func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (
 // majorRule is the hold on an update whose major version moves.
 const majorRule = "major-version"
 
+// afterRule is the hold of a port whose holds name another to submit first
+// (holds.ports."<port>".after).
+const afterRule = "after"
+
 // HoldRules are the rules whose concerns holds.allow may name, each said
 // and holding nothing then: every assessment rule, every commit rule whose
 // finding is an error, and the holds the engine raises itself. What blocks
@@ -453,18 +462,61 @@ const majorRule = "major-version"
 func HoldRules() []string {
 	rules := slices.Concat(assess.Rules(), commitrules.ErrorCodes(), []string{majorRule, darwinFloorRule, deploymentTargetRule,
 		"source-moved", "tag-moved", "release-moved", "assessment-moved", "open", "search-failed",
-		upstreamMovedRule, upstreamTransferredRule, mirrorConflictRule, manifestHookRule})
+		upstreamMovedRule, upstreamTransferredRule, mirrorConflictRule, manifestHookRule, afterRule})
 	slices.Sort(rules)
 	return slices.Compact(rules)
 }
 
 // holding are the concerns that hold, those the configuration's hold list
-// allows set apart (holds.allow), which are still said.
-func holding(concerns []model.Concern, allowed []string) []model.Concern {
+// allows for their port set apart (holds.allow, or the port's own), which
+// are still said.
+func holding(concerns []model.Concern, allowed func(port string) []string) []model.Concern {
 	return slices.DeleteFunc(slices.Clone(concerns), func(c model.Concern) bool {
-		return c.Origin != model.FromSubmission && c.Rule != "not-compared" && slices.Contains(allowed, c.Rule)
+		return c.Origin != model.FromSubmission && c.Rule != "not-compared" && allowed != nil && slices.Contains(allowed(c.Port), c.Rule)
 	})
 }
+
+// PortHolds are one port's own holds, as the configuration gives them
+// ([holds.ports."<port>"]): AllowMajors and Allow, where set, over the
+// global ones; FollowMoves, --follow-moves standing for an unattended
+// update of it; After, the ports whose update to the same version is
+// submitted before its own.
+type PortHolds struct {
+	AllowMajors *bool
+	Allow       []string
+	FollowMoves bool
+	After       []string
+}
+
+// heldAs is what holds an update of a port nobody looks over, the global
+// holds with the port's own over them: composed here alone (Then's item
+// 2).
+type heldAs struct {
+	allowMajors bool
+	allow       []string
+	followMoves bool
+	after       []string
+}
+
+// holdsFor composes a port's holds.
+func (e *Engine) holdsFor(port string) heldAs {
+	held := heldAs{allowMajors: e.options.AllowMajors, allow: e.options.AllowHolds}
+	own, ok := e.options.PortHolds[port]
+	if !ok {
+		return held
+	}
+	if own.AllowMajors != nil {
+		held.allowMajors = *own.AllowMajors
+	}
+	if own.Allow != nil {
+		held.allow = own.Allow
+	}
+	held.followMoves, held.after = own.FollowMoves, own.After
+	return held
+}
+
+// allowedFor are the hold rules a port's update goes on past.
+func (e *Engine) allowedFor(port string) []string { return e.holdsFor(port).allow }
 
 // The holds on a revision that raises the oldest macOS a port builds on:
 // its platforms' darwin floor, or its macosx_deployment_target. Older Macs
@@ -515,17 +567,18 @@ func (e *Engine) floorHolds(ctx context.Context, branch model.BranchID, base, tr
 // said before the edit, so nothing is downloaded or built; nil where it
 // doesn't hold.
 func (e *Engine) majorHold(port, from, to string) *model.Concern {
-	if e.options.AllowMajors || slices.Contains(e.options.AllowHolds, majorRule) || from == "" || !version.CrossesMajor(from, to) {
+	held := e.holdsFor(port)
+	if held.allowMajors || slices.Contains(held.allow, majorRule) || from == "" || !version.CrossesMajor(from, to) {
 		return nil
 	}
 	return &model.Concern{Origin: model.FromHolds, Port: port, Rule: majorRule, Subject: to,
 		Detail: fmt.Sprintf("%s moves from %s to %s, a major version update. holds.majors requires review before an unattended update", port, from, to)}
 }
 
-// HoldsMajor reports whether an update nobody looks over from one version
-// to another is held for its major version (majorHold), for outdated to
-// mark the updates it would hold.
-func (e *Engine) HoldsMajor(from, to string) bool { return e.majorHold("", from, to) != nil }
+// HoldsMajor reports whether an update of a port nobody looks over from
+// one version to another is held for its major version (majorHold), for
+// outdated to mark the updates it would hold.
+func (e *Engine) HoldsMajor(port, from, to string) bool { return e.majorHold(port, from, to) != nil }
 
 // majorHolds are the major-version holds of a branch's updates, from what
 // each edit's release moved from and to, for a submission nobody looks
@@ -541,4 +594,66 @@ func (e *Engine) majorHolds(edits []model.Edit) []model.Concern {
 		}
 	}
 	return held
+}
+
+// afterHolds hold the update of a port whose holds name ports to submit
+// first, holds.ports."<port>".after, until each named port is at the same
+// version on master, as dockhand last fetched it, or has a pull request
+// open at it: harfbuzz is updated after harfbuzz-devel (Then's item 2).
+// Not knowing holds, as not knowing of another pull request does.
+func (e *Engine) afterHolds(ctx context.Context, edits []model.Edit) []model.Concern {
+	var held []model.Concern
+	for _, edit := range edits {
+		if edit.Kind != model.EditUpdate || edit.Release == nil {
+			continue
+		}
+		for _, first := range e.holdsFor(edit.Port).after {
+			why, ok := e.submittedFirst(ctx, first, edit.Release.Version)
+			if ok {
+				continue
+			}
+			concern := model.Concern{Origin: model.FromHolds, Port: edit.Port, Rule: afterRule, Subject: first,
+				Detail: fmt.Sprintf("%s waits for %s's update to %s, as its holds say (holds.ports.%q.after): %s", edit.Port, first, edit.Release.Version, edit.Port, why)}
+			if !slices.ContainsFunc(held, func(c model.Concern) bool { return c.Key() == concern.Key() }) {
+				held = append(held, concern)
+			}
+		}
+	}
+	return held
+}
+
+// submittedFirst reports whether port is at version on the master dockhand
+// last fetched, or has a pull request open at it; where not, why.
+func (e *Engine) submittedFirst(ctx context.Context, port, version string) (string, bool) {
+	at := ""
+	if master, ok := e.lastMaster(ctx); ok {
+		if directory, err := e.findDirectory(ctx, string(master), port); err == nil {
+			if _, text, err := e.Repo.File(ctx, string(master), directory+"/Portfile"); err == nil {
+				subport := ""
+				if path.Base(directory) != port {
+					subport = port
+				}
+				if declared, ok := portfile.DeclaredVersion(text, subport); ok {
+					if declared == version {
+						return "", true
+					}
+					at = fmt.Sprintf("%s is at %s on master", port, declared)
+				}
+			}
+		}
+	}
+	open, problem := e.openPullRequests(ctx, []string{port}, 0)
+	if problem != "" {
+		return fmt.Sprintf("its pull requests couldn't be read: %s", problem), false
+	}
+	for _, pr := range open {
+		if slices.Contains(strings.Fields(pr.Title), version) {
+			return "", true
+		}
+	}
+	why := "with no pull request open at " + version
+	if at != "" {
+		why = at + ", " + why
+	}
+	return why, false
 }

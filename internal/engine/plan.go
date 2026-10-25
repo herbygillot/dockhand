@@ -372,7 +372,7 @@ func (e *Engine) resolveTag(ctx context.Context, source model.GitSource) model.G
 	case err != nil:
 		source.Unresolved = "its tags couldn't be read: " + err.Error()
 	case len(tags) == 0:
-		source.Unresolved = fmt.Sprintf("%s has no tag %s", source.URL, source.Ref)
+		source.Unresolved, source.Missing = fmt.Sprintf("%s has no tag %s", source.URL, source.Ref), true
 	default:
 		source.Commit = model.ObjectID(tags[0].Object)
 	}
@@ -387,9 +387,9 @@ func (e *Engine) resolveGit(ctx context.Context, source model.GitSource) model.G
 	source.ResolvedAt = e.now()
 	switch {
 	case errors.Is(err, git.ErrNoRef) && source.Ref == "":
-		source.Unresolved = source.URL + " names no default branch"
+		source.Unresolved, source.Missing = source.URL+" names no default branch", true
 	case errors.Is(err, git.ErrNoRef):
-		source.Unresolved = fmt.Sprintf("%s has no branch or tag %s", source.URL, source.Ref)
+		source.Unresolved, source.Missing = fmt.Sprintf("%s has no branch or tag %s", source.URL, source.Ref), true
 	case err != nil:
 		source.Unresolved = "its refs couldn't be read: " + err.Error()
 	default:

@@ -322,7 +322,7 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 	// them (C2's rest), since status reads no network itself.
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		network, at, err := r.NetworkHolds(branch.ID, model.ObjectID(status.Tree))
-		status.Held, status.NetworkHeldAt = append(status.Held, holding(network, e.options.AllowHolds)...), at
+		status.Held, status.NetworkHeldAt = append(status.Held, holding(network, e.allowedFor)...), at
 		return err
 	}); err != nil {
 		return status, err

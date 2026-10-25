@@ -60,3 +60,21 @@ func TestTheHoldListNamesRulesDockhandRaises(t *testing.T) {
 	_, err = settings(`"licence-changed"`)
 	require.ErrorContains(t, err, `holds.allow: "licence-changed" is not a hold dockhand raises or lets go; the rules are`)
 }
+
+// A port's own holds reach the engine as it composes them, its allow list
+// checked as the global one is (Then's item 2).
+func TestAPortsOwnHoldsReachTheEngine(t *testing.T) {
+	t.Parallel()
+	home, dir := t.TempDir(), t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	settings := func(holds string) (engine.Options, error) {
+		require.NoError(t, os.WriteFile(path, []byte(holds), 0o644))
+		options, _, _, err := Settings(t.Context(), Options{Dir: dir, Env: []string{"HOME=" + home, "DOCKHAND_CONFIG=" + path}})
+		return options, err
+	}
+	options, err := settings("[holds.ports.\"harfbuzz\"]\nmajors = \"allow\"\nmoves = \"follow\"\nafter = [\"harfbuzz-devel\"]\nallow = [\"open\"]\n")
+	require.NoError(t, err)
+	require.Equal(t, map[string]engine.PortHolds{"harfbuzz": {AllowMajors: new(true), Allow: []string{"open"}, FollowMoves: true, After: []string{"harfbuzz-devel"}}}, options.PortHolds)
+	_, err = settings("[holds.ports.\"harfbuzz\"]\nallow = [\"licence-changed\"]\n")
+	require.ErrorContains(t, err, `holds.ports."harfbuzz".allow: "licence-changed" is not a hold dockhand raises or lets go`)
+}

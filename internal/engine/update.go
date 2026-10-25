@@ -101,7 +101,8 @@ type UpdateRequest struct {
 	Unattended bool
 	// FollowMoves points github.setup at the repository GitHub now answers
 	// the release's by, where it moved: the person's choice, never made
-	// unasked (part 2's new holds).
+	// unasked (part 2's new holds), save by the port's own holds, moves =
+	// "follow", for an unattended update.
 	FollowMoves bool
 	// WithObsolete also moves the obsolete stub the Portfile keeps for the
 	// port, one replaced_by it that fetches nothing, to the same version,
@@ -244,6 +245,11 @@ type Update struct {
 // Where it doesn't go, it says why, what it kept, and what moves it on
 // (refusedUpdate).
 func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, error) {
+	// A port whose holds say moves = "follow" follows a moved repository
+	// unattended, its standing answer to the move's hold (Then's item 2).
+	if request.Unattended && e.holdsFor(request.Port).followMoves {
+		request.FollowMoves = true
+	}
 	update, err := e.updateWithObsolete(ctx, request)
 	return update, refusedUpdate(err, request, update)
 }

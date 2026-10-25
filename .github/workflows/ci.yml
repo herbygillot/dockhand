@@ -61,6 +61,44 @@ jobs:
       - name: Build
         run: make build
 
+  # The corpus (tools/corpus): MacPorts' own version bumps replayed
+  # through this build's update, against the PortGroups of a pinned slice
+  # of macports-ports, so a PortGroup's model in a unit test can't stand
+  # in for the real one. It reaches GitHub, the archives, and the Go
+  # proxy, and runs go2port and cargo2port, installed from MacPorts' own
+  # archives; field testing builds from a main this has passed.
+  corpus:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: MacPorts
+        run: .github/scripts/macports.sh
+
+      # The dependency helpers update runs, from MacPorts' ports tree and
+      # binary archives, which the tests' nosync source doesn't reach.
+      - name: go2port and cargo2port
+        run: |
+          set -euo pipefail
+          echo "rsync://rsync.macports.org/macports/release/tarballs/ports.tar [default]" | sudo tee /opt/local/etc/macports/sources.conf
+          sudo /opt/local/bin/port -N sync
+          sudo /opt/local/bin/port -N install go2port cargo2port
+          echo "/opt/local/bin" >> "$GITHUB_PATH"
+
+      - name: Corpus
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: make test-corpus
+
   # Row A6 of the release-candidate test (the project's plan/prime-time.md):
   # an Intel Mac, which prepares changes and checks them on GitHub. The
   # suite runs on x86_64, and dockhand, run as a new user would, sets up,

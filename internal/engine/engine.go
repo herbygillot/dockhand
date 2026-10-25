@@ -92,6 +92,9 @@ type Options struct {
 	// AllowHolds are the rules whose concerns don't hold an update nobody
 	// looks over, though they're said (holds.allow; HoldRules).
 	AllowHolds []string
+	// PortHolds are ports' own holds, over AllowMajors and AllowHolds for
+	// each, [holds.ports."<port>"], which holdsFor composes.
+	PortHolds map[string]PortHolds
 	// Tests are the tests a check runs where it asks none, check.tests,
 	// which ProposeCheck resolves for check, ship, and serve alike (the
 	// architecture review of 5897a82, R3-35); declared where it's empty.

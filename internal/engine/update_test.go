@@ -920,6 +920,15 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 	data, err = os.ReadFile(portfilePath)
 	require.NoError(t, err)
 	require.Contains(t, string(data), "github.setup semgrep semgrep 1.8.1 v")
+
+	// A port whose holds say moves = "follow" follows the move unattended,
+	// unasked: its standing answer (Then's item 2).
+	require.NoError(t, os.WriteFile(portfilePath, append(data, []byte("github.setup returntocorp semgrep 1.8.1 v\n")...), 0o644))
+	e.options.PortHolds = map[string]PortHolds{"jq": {FollowMoves: true}}
+	standing, err := e.Update(t.Context(), UpdateRequest{Branch: update.Branch, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", CompareUpstream: true, Unattended: true,
+		Release: &model.Release{Forge: forge.GitHub, Repository: "returntocorp/semgrep", Version: "1.8.1"}})
+	require.NoError(t, err)
+	require.Equal(t, "semgrep/semgrep", standing.Followed)
 }
 
 // The obsolete stub a Portfile keeps for a port, replaced_by it and

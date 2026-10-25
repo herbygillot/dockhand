@@ -30,6 +30,10 @@ type GitSource struct {
 	// Unresolved says why neither is known: the repository couldn't be
 	// read, or none of its refs is Ref.
 	Unresolved string `json:",omitempty"`
+	// Missing is an Unresolved repository that was read, and has no ref
+	// Ref names, which a day may change, as a tag not yet pushed; one not
+	// Missing couldn't be read, which another try may meet at once (C8-5).
+	Missing bool `json:",omitempty"`
 }
 
 // Expected is what a build of the source must check out: the commit, or
