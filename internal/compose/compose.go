@@ -269,6 +269,7 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		AllowMajors: !file.Holds.HoldMajors(),
 		AllowHolds:  file.Holds.Allow,
 		PortHolds:   portHolds,
+		Baseline:    file.Check.Baseline,
 		Tests:       model.TestPolicy(file.Check.Tests),
 		// DOCKHAND_UPSTREAM fetches master from a mirror or, in tests, a
 		// local repository.

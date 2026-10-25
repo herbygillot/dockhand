@@ -761,6 +761,11 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventRunState, Level: model.LevelInfo, Message: fmt.Sprintf("%s %s: %s", d.run.Name(), state, detail)})
 		return err
 	})
+	// A check that failed queues the baseline it points to, where
+	// check.baseline asks, whichever path ran it (Then's item 4).
+	if err == nil && state == model.RunFailed {
+		d.e.continueWithBaseline(ctx, d.run)
+	}
 	if err == nil {
 		// Its logs are kept compressed from now on (D6); one that can't be
 		// is said, and cleanup tries again.

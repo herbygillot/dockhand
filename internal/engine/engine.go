@@ -92,6 +92,11 @@ type Options struct {
 	// AllowHolds are the rules whose concerns don't hold an update nobody
 	// looks over, though they're said (holds.allow; HoldRules).
 	AllowHolds []string
+	// Baseline runs, after a check that fails, the baseline it points to,
+	// check.baseline: queued by the engine as the check's continuation, so
+	// a check -d, ship's, and serve's run it as the foreground one does
+	// (Then's item 4).
+	Baseline bool
 	// PortHolds are ports' own holds, over AllowMajors and AllowHolds for
 	// each, [holds.ports."<port>"], which holdsFor composes.
 	PortHolds map[string]PortHolds

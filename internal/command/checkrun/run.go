@@ -353,6 +353,11 @@ func hintBaseline(ctx context.Context, e *engine.Engine, out io.Writer, run mode
 	if len(offer.NewTests) > 0 {
 		fmt.Fprintln(out, engine.NewTestsWords(offer.NewTests)+".")
 	}
+	// An earlier baseline a rebase left behind says why it no longer
+	// answers (Then's item 4).
+	for _, changed := range offer.Changed {
+		fmt.Fprintln(out, changed+".")
+	}
 	ports, base := offer.Ports, offer.Base
 	if len(ports) == 0 {
 		return nil

@@ -404,7 +404,7 @@ Serve opens no pull requests by default. With `serve.ship_to = "submit"`, it ope
 | `build.unattended` | `minmax`, or `build.default`'s without Tart | the build profile of a check nobody looks over: serve's, and bump's |
 | `build.profiles.<name>` | none | your own profiles: `{ provider = "tart", releases = ["15", "26"] }`, the releases a list or a rule |
 | `check.tests` | `declared` | `declared` (advisory), `required`, or `skip` |
-| `check.baseline` | `false` | run a baseline after a failed check |
+| `check.baseline` | `false` | run the baseline a failed check points to, after it, whichever runs the check: the command, its `-d` drain, `ship`, or `serve`; the same failure at the base is then said with `--accept`, which dockhand never takes itself. An earlier baseline answers across a rebase where nothing master's build read changed, and where something did, the check says what |
 | `submit.rerequest_review` | `ask` | after pushing to a pull request with changes requested: `ask`, `always`, or `never` |
 | `cleanup.automatic` | `true` | the daily automatic cleanup |
 | `cleanup.after` | `15d` | how long cleanup keeps what it would remove: a port index unused, events, an ended branch's checks and logs, an open branch's superseded logs |

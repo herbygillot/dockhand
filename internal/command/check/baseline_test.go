@@ -102,3 +102,33 @@ func TestCheckReportsItsBaselineInsideIt(t *testing.T) {
 	require.NotContains(t, checked.Result["run"], "baseline_of", "the check is the branch's own")
 	require.Equal(t, cmdtest.Dig(t, checked.Result, "run", "id"), cmdtest.Dig(t, checked.Result, "baseline", "run", "baseline_of"))
 }
+
+// check.baseline is the engine's: a check -d that fails, run by its drain,
+// is followed by its baseline there too, where only the foreground check
+// ran one (Then's item 4).
+func TestABackgroundCheckRunsItsBaseline(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	next := cmdtest.WithOutcomeScript(t, w, "[check]\nbaseline = true\n")
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+
+	_, _, err = cmdtest.Dockhand(t, "tidy", "--yes")
+	require.NoError(t, err)
+	next("failed")
+	_, _, err = cmdtest.Dockhand(t, "check", "-d")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "wait", "check-1")
+	require.Equal(t, 2, term.ExitCode(err))
+	out, _, err := cmdtest.Dockhand(t, "wait", "check-2")
+	require.NoError(t, err, "the baseline queued after it, and run")
+	require.Contains(t, out, "✗ fails at the base too, at install")
+	out, _, err = cmdtest.Dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "--accept", "the verdict offers --accept, and accepts nothing itself")
+}

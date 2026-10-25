@@ -88,7 +88,7 @@ true, it runs that baseline by itself.`,
 				return previewBaseline(ctx, e, streams, branch, only)
 			}
 			if baseline {
-				return runBaseline(ctx, e, streams, branch, only, enqueue, false, s)
+				return runBaseline(ctx, e, streams, branch, only, enqueue, s)
 			}
 			mode := captureMode(head, staged, workingTree)
 			place, err := e.Where(ctx, engine.WhereRequest{On: on, Build: build})
@@ -187,10 +187,16 @@ true, it runs that baseline by itself.`,
 			// if it couldn't tell.
 			// The engine says whether one would answer anything, from the
 			// finished run, where this read the check's exit code.
+			// The engine queued it as the check's continuation, which a
+			// drain runs for check -d; here it runs next, in the foreground.
 			if s.File.Check.Baseline && !enqueue {
-				finished, _ := e.RunNamed(ctx, run.Name())
-				if offer, _ := e.BaselineCandidates(ctx, finished); len(offer.Ports) > 0 {
-					if baselineErr := runBaseline(ctx, e, streams, branch, nil, false, true, s); baselineErr != nil {
+				if queued, plan, ok := e.QueuedBaseline(ctx, run.ID); ok {
+					var names []string
+					for _, target := range plan.Targets {
+						names = append(names, string(target.ID))
+					}
+					fmt.Fprintf(streams.Out, "%s · baseline, since check.baseline is on: %s\n", branch.ShortName(), strings.Join(names, ", "))
+					if baselineErr := checkrun.RunQueued(ctx, e, queued, streams, false, s.Places(), s.Drain); baselineErr != nil {
 						fmt.Fprintf(streams.Err, "baseline: %v\n", baselineErr)
 					}
 				}
@@ -246,7 +252,7 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 	if err != nil {
 		return err
 	}
-	writeBaselineHeader(streams.Out, branch, baseline, false)
+	writeBaselineHeader(streams.Out, branch, baseline)
 	view.WritePlan(streams.Out, baseline.Plan, e.PlanNotes(ctx, baseline.Plan), nil, e.Remedy)
 	planned := view.PlanView(baseline.Plan)
 	streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Plan: &planned, Targets: []view.TargetJSON{}})
@@ -257,12 +263,12 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 // here or through serve.
 // runBaseline runs a baseline of a branch's failed check; auto is
 // check.baseline's, which the failed check's report pointed to.
-func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string, enqueue, auto bool, s *settings.Settings) error {
+func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string, enqueue bool, s *settings.Settings) error {
 	baseline, err := e.PlanBaseline(ctx, branch, only)
 	if err != nil {
 		return err
 	}
-	writeBaselineHeader(streams.Out, branch, baseline, auto)
+	writeBaselineHeader(streams.Out, branch, baseline)
 	run, err := e.EnqueueBaseline(ctx, branch, baseline, model.OriginPerson)
 	if err != nil {
 		return err
@@ -274,16 +280,12 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, br
 // Its results name the check they're beside, and check.baseline's follows
 // the failed check's pointer to it, which named master's commit (part 5,
 // item 3: each was said twice).
-func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Baseline, auto bool) {
+func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Baseline) {
 	var names []string
 	for _, target := range baseline.Plan.Targets {
 		names = append(names, string(target.ID))
 	}
-	if auto {
-		fmt.Fprintf(out, "%s · baseline, since check.baseline is on: %s\n", branch.ShortName(), strings.Join(names, ", "))
-	} else {
-		fmt.Fprintf(out, "%s · baseline at master %s: %s\n", branch.ShortName(), baseline.Revision.Source.Commit.Short(), strings.Join(names, ", "))
-	}
+	fmt.Fprintf(out, "%s · baseline at master %s: %s\n", branch.ShortName(), baseline.Revision.Source.Commit.Short(), strings.Join(names, ", "))
 	if len(baseline.New) > 0 {
 		fmt.Fprintf(out, "    left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
 	}
