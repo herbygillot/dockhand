@@ -85,3 +85,38 @@ func TestServeWritesItsLoginStateBeforeSayingIt(t *testing.T) {
 	require.True(t, ok)
 	require.Empty(t, got, "acting again, written before it's said")
 }
+
+// A pass serve's own stop cancelled says nothing and keeps its state, where
+// D-I5 on rc5 read "could not verify the GitHub account (… context
+// canceled) … retrying each minute" before "serve: stopped"; GitHub out of
+// reach while serve runs is still said, once.
+func TestServeSaysNothingOfWhatItsStopCancelled(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	var said []string
+	unreachable := errors.New("couldn't reach GitHub (no such host)")
+	s := newServer(e, ServeOptions{
+		IdentityEvery: time.Nanosecond,
+		Refresh:       time.Nanosecond,
+		Identity: func(ctx context.Context) (string, error) {
+			if ctx.Err() != nil {
+				return "", fmt.Errorf("Get \"https://api.github.com/user\": %w", ctx.Err())
+			}
+			return "", unreachable
+		},
+		Say: func(line string) { said = append(said, line) },
+	})
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	g := &loginGate{s: s}
+	g.look(cancelled)
+	(&follower{s: s, reported: map[string]bool{}}).maybe(cancelled)
+	require.Empty(t, said)
+	require.Empty(t, g.problem)
+	for range 2 {
+		g.last = time.Time{}
+		g.look(t.Context())
+	}
+	require.Equal(t, []string{"serve: could not verify the GitHub account (couldn't reach GitHub (no such host)). Continuing with the current authentication state; retrying each minute"}, said)
+}

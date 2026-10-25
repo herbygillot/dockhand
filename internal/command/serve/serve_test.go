@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -469,4 +470,78 @@ func TestServeSaysALoginItCantRead(t *testing.T) {
 
 	require.Equal(t, "serve: running (pid 7) · not acting on GitHub: GitHub rejected the login; dockhand setup github · couldn't read its GitHub login: the keychain won't answer · queue: empty",
 		view.ServeWords(engine.ServeState{Running: true, PID: 7, NotActing: "GitHub rejected the login; dockhand setup github", LoginProblem: "the keychain won't answer"}))
+}
+
+// A run that outlasts serve's stop is said unfinished as the stop begins,
+// before serve waits for it, once, and "serve: stopped" follows: a Tart
+// check stops its VM for up to a minute, and launchd's SIGKILL came before
+// either line (a reboot on rc5).
+func TestServeSaysARunUnfinishedBeforeWaitingForIt(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.CheckedBranch(t)
+	script := filepath.Join(w.Home, "bin", "build-ports")
+	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
+trap '' INT
+: > "$HOME/started"
+while [ ! -f "$HOME/release" ]; do sleep 0.02; done
+`), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[providers.command]\nrun = \"~/bin/build-ports\"\n"), 0o644))
+	_, _, err := cmdtest.Dockhand(t, "check", "-d")
+	require.NoError(t, err)
+	ctx, stop := context.WithCancel(t.Context())
+	var served cmdtest.SyncBuffer
+	done := make(chan error)
+	go func() {
+		done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+	}()
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(filepath.Join(w.Home, "started"))
+		return err == nil
+	}, cmdtest.Settle, 10*time.Millisecond)
+	stop()
+	require.Eventually(t, func() bool {
+		return strings.Contains(served.String(), "check-1: unfinished; the next serve instance will resume it\n")
+	}, cmdtest.Settle, 10*time.Millisecond,
+		"said while serve waits for the run")
+	require.NotContains(t, served.String(), "serve: stopped")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, "release"), nil, 0o644))
+	require.NoError(t, <-done)
+	out := served.String()
+	require.Equal(t, 1, strings.Count(out, "check-1: unfinished"), out)
+	require.True(t, strings.HasSuffix(out, "check-1: unfinished; the next serve instance will resume it\nserve: stopped\n"), out)
+}
+
+// A look at the login that serve's own stop cancels says nothing before
+// "serve: stopped" (D-I5 on rc5).
+func TestServeSaysNothingOfALookItsStopCancelled(t *testing.T) {
+	t.Parallel()
+	cmdtest.CheckedBranch(t)
+	looking := make(chan struct{}, 1)
+	var looks atomic.Int32
+	cmdtest.Hosted(t).Timings.ServeIdentity = 20 * time.Millisecond
+	cmdtest.Hosted(t).Identity = func(*github.Runtime) func(context.Context) (string, error) {
+		return func(ctx context.Context) (string, error) {
+			if looks.Add(1) == 1 {
+				return "ada", nil
+			}
+			select {
+			case looking <- struct{}{}:
+			default:
+			}
+			<-ctx.Done()
+			return "", fmt.Errorf("Get \"https://api.github.com/user\": %w", ctx.Err())
+		}
+	}
+	ctx, stop := context.WithCancel(t.Context())
+	var served cmdtest.SyncBuffer
+	done := make(chan error)
+	go func() {
+		done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+	}()
+	<-looking
+	stop()
+	require.NoError(t, <-done)
+	out := served.String()
+	require.NotContains(t, out, "could not verify", out)
+	require.True(t, strings.HasSuffix(out, "serve: stopped\n"), out)
 }

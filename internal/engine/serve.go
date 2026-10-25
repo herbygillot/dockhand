@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -272,7 +273,12 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	running, stop := context.WithCancel(ctx)
 	defer stop()
 	inUse := map[string]int{}
-	inFlight := map[model.RunID]bool{}
+	inFlight := map[model.RunID]model.Run{}
+	// unfinished are the runs said unfinished as serve's stop began, before
+	// it waited for them: a Tart check stops its VM for up to a minute, and
+	// launchd's SIGKILL came first, so neither line was said (a reboot on
+	// rc5).
+	unfinished := map[model.RunID]bool{}
 	type finished struct {
 		run       model.Run
 		branch    model.Branch
@@ -286,7 +292,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	ended := map[model.RunID]bool{}
 	var failure error
 	launch := func(run model.Run, branch model.Branch, needs []string) {
-		inFlight[run.ID] = true
+		inFlight[run.ID] = run
 		for _, name := range needs {
 			inUse[name]++
 		}
@@ -319,7 +325,9 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			return
 		}
 		if !f.run.State.Terminal() {
-			s.say("%s: unfinished; the next serve instance will resume it", f.run.Name())
+			if !unfinished[f.run.ID] {
+				s.say("%s: unfinished; the next serve instance will resume it", f.run.Name())
+			}
 			return
 		}
 		if ended[f.run.ID] {
@@ -396,7 +404,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		}
 		waiting := false
 		for _, run := range candidates {
-			if inFlight[run.ID] {
+			if _, in := inFlight[run.ID]; in {
 				continue
 			}
 			needs, err := e.RunProviders(running, run)
@@ -445,8 +453,15 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		case <-time.After(options.Poll):
 		}
 	}
-	// Runs still going stop with serve, and are left for the next one.
+	// Runs still going stop with serve, and are left for the next one,
+	// said so before serve waits for them to stop.
 	stop()
+	left := slices.Collect(maps.Values(inFlight))
+	slices.SortFunc(left, func(a, b model.Run) int { return cmp.Compare(a.Number, b.Number) })
+	for _, run := range left {
+		unfinished[run.ID] = true
+		s.say("%s: unfinished; the next serve instance will resume it", run.Name())
+	}
 	for len(inFlight) > 0 {
 		settle(<-done)
 	}
@@ -484,6 +499,14 @@ func (g *loginGate) look(ctx context.Context) {
 	}
 	g.last = time.Now()
 	account, err := identity(ctx)
+	// serve's own stop cancelled the look, which says nothing and changes
+	// nothing: D-I5 on rc5 read "could not verify the GitHub account (…
+	// context canceled) … retrying each minute" just before "serve:
+	// stopped".
+	if ctx.Err() != nil {
+		g.last = time.Time{}
+		return
+	}
 	if errors.Is(err, github.ErrNoCredentials) || errors.Is(err, github.ErrAuthentication) {
 		g.unread(nil)
 	} else {
@@ -593,6 +616,12 @@ func (f *follower) maybe(ctx context.Context) {
 	}
 	f.last = time.Now()
 	refreshed, err := f.s.e.RefreshPullRequests(ctx)
+	// A refresh serve's own stop cancelled says nothing, as the login's
+	// look doesn't (D-I5 on rc5).
+	if ctx.Err() != nil {
+		f.last = time.Time{}
+		return
+	}
 	if err == nil {
 		err = refreshed.Refused
 	}
@@ -650,7 +679,7 @@ func (c *cleaner) maybe(ctx context.Context) {
 			c.s.say("cleaning up now: %s", why.Words)
 		}
 	})
-	if !ran {
+	if !ran || ctx.Err() != nil {
 		return
 	}
 	// A cleanup that fails is tried again the next day, and its problem
@@ -795,6 +824,10 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		}
 	}()
 	report := func(problem string) {
+		// A problem serve's own stop caused is unsaid (D-I5 on rc5).
+		if ctx.Err() != nil {
+			return
+		}
 		if problem != o.reported {
 			o.s.say("%s", problem)
 			o.reported = problem
@@ -815,6 +848,9 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		o.retry, o.retryAt = nil, time.Time{}
 	}
 	found, err := e.Outdated(ctx, request)
+	if ctx.Err() != nil {
+		return
+	}
 	if err != nil {
 		report(fmt.Sprintf("serve: looking for new releases of your ports: %v", err))
 		return
@@ -904,7 +940,9 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	}
 	for _, done := range e.PrepareOutdated(ctx, plan, prepare) {
 		if done.Problem != "" {
-			o.s.say("serve: %s: %s", done.Planned.Name, done.Problem)
+			if ctx.Err() == nil {
+				o.s.say("serve: %s: %s", done.Planned.Name, done.Problem)
+			}
 			continue
 		}
 		line := fmt.Sprintf("serve: prepared %s: %s → %s", done.Branch.ShortName(), done.Update.Before, done.Update.After)
@@ -958,6 +996,11 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 	p.last = time.Now()
 	e := p.s.e
 	candidates, yours, err := e.serveCandidates(ctx)
+	// What serve's own stop cancelled is unsaid (D-I5 on rc5).
+	if ctx.Err() != nil {
+		p.last = time.Time{}
+		return
+	}
 	if err != nil {
 		p.s.say("serve: finding passing updates: %v", err)
 		return
@@ -994,6 +1037,9 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 			continue
 		}
 		opened, err := e.servedToday(ctx, p.s.options.Now())
+		if ctx.Err() != nil {
+			return
+		}
 		if err != nil {
 			p.s.say("serve: counting today's pull requests: %v", err)
 			return
@@ -1003,6 +1049,9 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 			return
 		}
 		submitted, err := e.SubmitForServe(ctx, candidate)
+		if ctx.Err() != nil {
+			return
+		}
 		if err != nil {
 			p.s.say("serve: submitting %s: %v", name, err)
 			continue
