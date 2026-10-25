@@ -1666,3 +1666,44 @@ func TestABaselineStandsWhereNothingItReadChanged(t *testing.T) {
 	require.Empty(t, standing)
 	require.Equal(t, "master's build of libharbor reads harbor-tools's directory, changed since "+baseline.Name()+"'s baseline", changed)
 }
+
+// A baseline builds the base the check started from, a commit in the
+// clone, so neither its planning, as the failed check's continuation, nor
+// its run reads the branch's worktree: with the worktree removed before
+// the check ends, the baseline is planned, queued, and run in one attempt
+// (the look at B11 on rc1, roadmap 5e6287d5; the M1's retries weren't
+// reproduced this way).
+func TestABaselineNeedsNothingOfTheBranchsWorktree(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	e.options.Baseline = true
+	provider := &identified{scriptedProvider: scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-2"})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n", "devel/harbor-cli/Portfile": "name harbor-cli\nrevision 0\n", "graphics/harbor-viewer/Portfile": "name harbor-viewer\n", "graphics/harbor-viewer/files/a.patch": "a\n", "graphics/harbor-tools/Portfile": "name harbor-tools\n"})
+	testsupport.Git(t, branch.Worktree, "add", "--sparse", "-A")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "base")
+	base := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
+	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 4\n"})
+	branch.Base = model.ObjectID(base)
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	usePorts(e, harborPorts())
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(branch.Worktree))
+	failed, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunFailed, failed.State, failed.Detail)
+	baseline, _, ok := e.QueuedBaseline(t.Context(), failed.ID)
+	require.True(t, ok, "planned and queued with the worktree gone")
+	run, err := e.Drive(t.Context(), session(t, e), baseline.ID)
+	require.NoError(t, err)
+	require.True(t, run.State.Terminal(), run.Detail)
+	require.Len(t, provider.jobs, 2, "the check's one attempt, and the baseline's")
+	require.NoDirExists(t, branch.Worktree, "nothing checked it out again")
+}
