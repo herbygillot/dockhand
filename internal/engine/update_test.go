@@ -1125,4 +1125,16 @@ func TestAHandEditWritesTheAttemptAsThePersons(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, plan.Groups[0].Notes, "hand edit (dockhand's attempt, adjusted by hand): the update was refused, "+update.HandEdit)
 	require.ErrorContains(t, plan.Gate().CommitUnasked(branchstate.Mode{Answered: model.AnsweredNobody}), "textproc/jq: hand edit (")
+
+	// Committed, its worktree then removed: status reads the hand edit
+	// from the committed files, and leaves the worktree removed, where
+	// rc1 checked it out again.
+	testsupport.Git(t, update.Branch.Worktree, "add", "--sparse", "textproc/jq/Portfile")
+	testsupport.Git(t, update.Branch.Worktree, "commit", "-q", "-m", "jq: update to 1.8.1")
+	require.NoError(t, os.RemoveAll(update.Branch.Worktree))
+	status, err = e.BranchStatus(t.Context(), update.Branch)
+	require.NoError(t, err)
+	require.NoDirExists(t, update.Branch.Worktree, "status only reads")
+	require.Len(t, status.HandEdits, 1, "read from the committed files")
+	require.True(t, status.HandEdits[0].Adjusted)
 }
