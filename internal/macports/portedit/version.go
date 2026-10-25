@@ -97,6 +97,8 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {
 	plan, err := s.planArchiveVersion(ctx, request, input)
 	if err != nil {
+		// The version as the plan wrote it, for a hand edit's attempt.
+		plan.result.Versioned = plan.contents
 		return plan.result, err
 	}
 	store := s.Archives.Store("")

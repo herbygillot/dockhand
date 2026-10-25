@@ -33,6 +33,9 @@ func (s *Service) HandAttempt(ctx context.Context, request Request, refused Resu
 			contents = file.After
 		}
 	}
+	if contents == nil && refused.Versioned != nil {
+		contents = refused.Versioned
+	}
 	if contents == nil {
 		if contents, err = portfile.SetVersionLiteral(input.data, input.info.Version, request.Version); err != nil {
 			return Result{}, err

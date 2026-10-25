@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -1230,6 +1231,16 @@ func withModelines(ctx context.Context, worktree *git.Repository, captured strin
 // the refusal it was written for (model.FindingHandEdit): the port's
 // directory, the attempt's digest, and the refusal's words.
 func (e *Engine) recordHandEdit(ctx context.Context, branch model.Branch, update Update, result editprep.Result) (Update, error) {
+	// The attempt proves no evaluation, so its versions are the release's.
+	if release := update.Release; release != nil {
+		update.Before.Version = cmp.Or(update.Before.Version, release.CurrentVersion)
+		update.After.Version = cmp.Or(update.After.Version, release.Version)
+	}
+	// An attempt that fetched no archive compared none, which isn't said
+	// as a port that fetches nothing.
+	if update.Upstream != nil && len(result.Downloads) == 0 && NothingCompared(*update.Upstream) {
+		update.Upstream = nil
+	}
 	update.HandEdit = fmt.Sprintf("%s to %s: %s", update.Port, update.After.Version, refusal.WordsOf(result.Refused))
 	update.Left = result.Left
 	directory := path.Dir(result.Target.Portfile)

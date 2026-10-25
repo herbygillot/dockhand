@@ -84,14 +84,18 @@ type ContextCoverage struct {
 type Result struct {
 	// Refused is the refusal a hand edit's attempt was written for
 	// (Request.HandEdit); nil for an edit of dockhand's own.
-	Refused  error                  `json:"-"`
-	Scope    *macports.ReleaseScope `json:",omitempty"`
-	Coverage []ContextCoverage      `json:",omitempty"`
-	Base     model.Source
-	Target   model.Target
-	Files    []portfile.Edit
-	Commits  []CommitIntent
-	Fidelity []Fidelity
+	Refused error `json:"-"`
+	// Versioned is the Portfile with its version written, where a version
+	// update was refused after writing it, for a hand edit's attempt to
+	// start from (HandAttempt).
+	Versioned []byte                 `json:"-"`
+	Scope     *macports.ReleaseScope `json:",omitempty"`
+	Coverage  []ContextCoverage      `json:",omitempty"`
+	Base      model.Source
+	Target    model.Target
+	Files     []portfile.Edit
+	Commits   []CommitIntent
+	Fidelity  []Fidelity
 	// Prepared is the evaluated snapshot of the prepared files, the state
 	// every later step reads: the go.mod check, dependency regeneration,
 	// the patch check, and the adapter's final evaluation. It is set with

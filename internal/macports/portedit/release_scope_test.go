@@ -284,3 +284,20 @@ subport fixture-omega {
 	require.NotContains(t, after, "sha256 aaaa")
 	require.Empty(t, attempt.Left)
 }
+
+// A refusal after the version was written, as a calculated checksum
+// algorithm's, starts the attempt from the version as the plan wrote it,
+// a github.setup's version word as well as a version command, and says
+// the checksums it couldn't write (field testing's probe of --hand-edit
+// on jq, 2026-10-25).
+func TestARefusalAfterTheVersionStartsTheAttemptFromIt(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, "version 1.2.3\nrevision 0\nmaster_sites @SITE@/${version}\nchecksums [join {sha 256} \"\"] aaaa size 2\n")
+	refused, err := s.Prepare(t.Context(), r)
+	require.ErrorContains(t, err, "calculated checksum algorithm")
+	require.Contains(t, string(refused.Versioned), "version 1.2.4", "the version as the plan wrote it")
+	attempt, err := s.HandAttempt(t.Context(), r, refused)
+	require.NoError(t, err)
+	require.Contains(t, string(attempt.Files[0].After), "version 1.2.4")
+	require.Equal(t, []ChecksumLeft{{Kind: LeftDeclaration, What: "the checksums", Reason: "calculated checksum algorithm"}}, attempt.Left)
+}

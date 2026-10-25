@@ -480,7 +480,9 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		for _, left := range update.Left {
 			fmt.Fprintf(out, "  ! %s not written: %s\n", left.What, left.Reason)
 		}
-		view.WriteUpstream(out, update.Upstream)
+		if update.Upstream != nil {
+			view.WriteUpstream(out, update.Upstream)
+		}
 		fmt.Fprintln(out, "It's recorded as your hand edit with that reason, which tidy, status, and the pull request say.")
 		fmt.Fprintln(out, "Next: dockhand edit "+request.Port+" to finish it, then "+nextAfterEdit(ctx, e, branch))
 		return branch, update, nil
