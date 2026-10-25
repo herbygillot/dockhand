@@ -205,6 +205,7 @@ for row in $rows; do
 		# failure included, and H7 reads what it leaves (the M1's run at
 		# 1da4fdbf: D-R2's setup failed with both slot VMs started).
 		teardown || :
+		end_drains || :
 		harm_running >"$ROW_DIR/after/running.teardown" 2>/dev/null || :
 		harm_check
 	) >"$ROW_DIR/runner.log" 2>&1 || :
