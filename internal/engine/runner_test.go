@@ -17,6 +17,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -1613,4 +1614,55 @@ func TestAStalledLogIsSaidOnce(t *testing.T) {
 	require.NotEmpty(t, stalls)
 	require.Len(t, stalls, len(slices.Compact(slices.Clone(stalls))), "each stall said once")
 	require.Contains(t, stalls[0], "'s log hasn't grown in ")
+}
+
+// An earlier baseline answers a failure at the branch's base where what
+// master's build read is unchanged there, across a rebase, as a check's
+// results stand; where something it read changed, it says what (Then's
+// item 4, the exiv2 session's baseline after a rebase).
+func TestABaselineStandsWhereNothingItReadChanged(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	tools := model.ActivePort{Name: "harbor-tools", Spec: "@1_0", Directory: "graphics/harbor-tools", Archive: "sha256:aa"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{tools}, outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	failed, err := e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm).ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunFailed, failed.State, failed.Detail)
+	var branch model.Branch
+	var revision model.Revision
+	var plan model.Plan
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		if revision, err = r.Revision(failed.Revision); err != nil {
+			return err
+		}
+		if plan, err = r.Plan(failed.Plan); err != nil {
+			return err
+		}
+		branch, err = r.Branch(failed.Branch)
+		return err
+	}))
+	// A baseline of it, built at the tree standing for master's here.
+	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: plan.Environments})
+	require.NoError(t, err)
+	queued, err := e.enqueue(t.Context(), branch, plan, model.OriginPerson, failed.ID)
+	require.NoError(t, err)
+	baseline, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	evidence, err := e.RunEvidence(t.Context(), failed.ID)
+	require.NoError(t, err)
+	phase := evidence.Failed()[0].Outcomes[0].Phase
+
+	standing, changed := e.standingBaseline(t.Context(), branch.ID, revision.Source.Tree, "libharbor", tahoeArm, phase)
+	require.Equal(t, baseline.Name(), standing, "nothing it read changed")
+	require.Empty(t, changed)
+
+	before, _, err := e.Repo.File(t.Context(), string(revision.Source.Tree), "graphics/harbor-tools/Portfile")
+	require.NoError(t, err)
+	moved, err := e.Repo.EditTree(t.Context(), string(revision.Source.Tree), []git.FileEdit{{Path: "graphics/harbor-tools/Portfile", Before: before, After: []byte("name harbor-tools\nrevision 1\n"), Mode: before.Mode}})
+	require.NoError(t, err)
+	standing, changed = e.standingBaseline(t.Context(), branch.ID, model.ObjectID(moved), "libharbor", tahoeArm, phase)
+	require.Empty(t, standing)
+	require.Equal(t, "master's build of libharbor reads harbor-tools's directory, changed since "+baseline.Name()+"'s baseline", changed)
 }

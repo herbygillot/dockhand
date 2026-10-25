@@ -77,6 +77,18 @@ func (p Plan) CommitUnasked(mode Mode) error {
 		mode.Answered = model.AnsweredNobody
 	}
 	if p.AppliesUnasked(mode, false) != nil {
+		// A hand edit's reason is said with the way on (Then's item 3).
+		var hand []string
+		for _, g := range p.Groups {
+			for _, note := range g.Notes {
+				if strings.HasPrefix(note, "hand edit (") {
+					hand = append(hand, g.Directory+": "+note)
+				}
+			}
+		}
+		if len(hand) > 0 {
+			return fmt.Errorf("review the commit plan before committing: run dockhand tidy --branch %s; %s", p.Branch, strings.Join(hand, "; "))
+		}
 		return fmt.Errorf("review the commit plan before committing: run dockhand tidy --branch %s", p.Branch)
 	}
 	return nil

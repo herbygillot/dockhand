@@ -319,7 +319,11 @@ type Decision struct {
 	// Evidence is what it rests on: the commit a failure was accepted at.
 	Evidence string
 	Answer   DecisionAnswer
-	At       time.Time
+	// Words are the decision's words, whoever wrote them: dockhand's
+	// refusal a hand edit answers (Refusal), or, as the person's voice
+	// plans, the person's reason. Empty where none were given.
+	Words string `json:",omitempty"`
+	At    time.Time
 }
 
 // FindingKind is the kind of finding a decision answers.
@@ -342,6 +346,12 @@ const (
 	// holds nothing, and a decision may say why it's fine, as a bundled
 	// copy.
 	FindingUndeclaredLink FindingKind = "undeclared-link"
+	// FindingHandEdit is an update dockhand refused, whose best attempt it
+	// wrote for the person to finish (update --hand-edit, Then's item 3):
+	// its subject the port's directory, its evidence the digest of the
+	// attempted files, its words the refusal (HandRefusal), and its answer
+	// ByHand.
+	FindingHandEdit FindingKind = "hand-edit"
 )
 
 // EnvironmentEvidence is what a standing acceptance of a dependency's
@@ -359,16 +369,22 @@ type DecisionAnswer string
 // doing, submitted with the failure disclosed.
 const Accepted DecisionAnswer = "accepted"
 
+// ByHand takes an edit dockhand refused as the person's own to make, from
+// dockhand's attempt (FindingHandEdit).
+const ByHand DecisionAnswer = "by-hand"
+
 // Validate checks the rules every stored decision keeps.
 func (d Decision) Validate() error {
 	switch {
 	case d.Subject == "" || d.Evidence == "" || d.At.IsZero():
 		return invalid("decision on %q is incomplete", d.Subject)
-	case d.Finding != FindingFailure && d.Finding != FindingEnvironmentFailure:
+	case d.Finding != FindingFailure && d.Finding != FindingEnvironmentFailure && d.Finding != FindingHandEdit:
 		return invalid("decision on %s answers an unknown kind of finding %q", d.Subject, d.Finding)
 	case d.Finding == FindingEnvironmentFailure && d.Branch != "":
 		return invalid("a dependency's failure in an environment is accepted standing, on no branch: %s", d.Subject)
-	case d.Answer != Accepted:
+	case d.Finding == FindingHandEdit && (d.Branch == "" || d.Answer != ByHand || d.Words == ""):
+		return invalid("a hand edit of %s is taken by hand on a branch, with dockhand's refusal", d.Subject)
+	case d.Finding != FindingHandEdit && d.Answer != Accepted:
 		return invalid("decision on %s has an unknown answer %q", d.Subject, d.Answer)
 	}
 	return nil

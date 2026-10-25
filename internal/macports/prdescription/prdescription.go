@@ -50,6 +50,10 @@ type Facts struct {
 	// Note is the person's own note, which the Description gives after
 	// what dockhand wrote there.
 	Note string
+	// HandEdits are the ports edited by hand from dockhand's attempt at an
+	// update it refused, each a line with the refusal (update --hand-edit),
+	// which the Description gives before the note.
+	HandEdits []string
 	// Types are the Type(s) the person named; Updated is true when
 	// dockhand wrote every commit and one is an update it made, a new
 	// release, which the template calls an enhancement unless Types says
@@ -173,7 +177,7 @@ func Compose(facts Facts) string {
 	}
 	// Where nothing else would be said, the note is the Description
 	// itself, unquoted (field testing, 2026-10-20).
-	alone := facts.Note != "" && len(facts.NewPorts) == 0 && len(facts.Commits) == 1 && commitBody(facts.Commits[0].Message) == ""
+	alone := facts.Note != "" && len(facts.NewPorts) == 0 && len(facts.HandEdits) == 0 && len(facts.Commits) == 1 && commitBody(facts.Commits[0].Message) == ""
 	if len(facts.Commits) == 1 {
 		if text := commitBody(facts.Commits[0].Message); text != "" {
 			fmt.Fprintf(&b, "%s\n\n", text)
@@ -189,6 +193,12 @@ func Compose(facts Facts) string {
 			fmt.Fprintf(&b, "| %s | %s | %s |\n", model.ObjectID(commit.ID).Short(), escape(ports), escape(change))
 		}
 		fmt.Fprintln(&b)
+	}
+	for _, line := range facts.HandEdits {
+		fmt.Fprintf(&b, "- %s\n", line)
+	}
+	if len(facts.HandEdits) > 0 {
+		b.WriteString("\n")
 	}
 	switch {
 	case alone:
@@ -555,7 +565,7 @@ var trailer = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*: \S`)
 // field testing, 2026-10-04: py-coremltools' Description held its
 // Assisted-by trailer alone).
 func SaysNothing(facts Facts) bool {
-	if len(facts.NewPorts) > 0 || facts.Note != "" || len(facts.Commits) != 1 {
+	if len(facts.NewPorts) > 0 || facts.Note != "" || len(facts.HandEdits) > 0 || len(facts.Commits) != 1 {
 		return false
 	}
 	for _, line := range strings.Split(commitBody(facts.Commits[0].Message), "\n") {

@@ -26,6 +26,9 @@ type Client struct {
 	HTTP        *http.Client
 	Config      Config
 	Credentials TokenSource
+	// Conditional keeps reads' answers with their ETags, for reads asked
+	// again to cost nothing where nothing moved; nil keeps none.
+	Conditional *ConditionalCache
 
 	once        sync.Once
 	sdk         *gh.Client
@@ -158,7 +161,7 @@ func (c *Client) sdkClient(authenticated bool, source func() CredentialSource, c
 	// The transport reads GitHub's rate limits (rateLimited), so go-github's
 	// own check, which refuses before the transport could wait, is off.
 	client.Transport = rateLimited{
-		next:   redirectTransport{next: carry(transport), source: source, authenticated: authenticated},
+		next:   redirectTransport{next: carry(conditional{next: transport, cache: c.Conditional}), source: source, authenticated: authenticated},
 		limits: newRateLimits(authenticated),
 	}
 	options := []gh.ClientOptionsFunc{gh.WithHTTPClient(&client), gh.WithDisableRateLimitCheck()}

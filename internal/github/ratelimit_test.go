@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -272,4 +273,57 @@ func TestARejectedLoginIsSaidAsThatNotAsGitHubUnreached(t *testing.T) {
 	_, err = c.AuthenticatedUser(t.Context())
 	require.Equal(t, refusal.Network, refusal.KindOf(err))
 	require.Contains(t, refusal.WordsOf(err), "couldn't reach GitHub (connection reset by peer)")
+}
+
+// A read GitHub answered with an ETag is asked again with If-None-Match,
+// and GitHub's 304, which counts nothing against the hour, is answered
+// with what was kept, in this process and, from the cache's directory, the
+// next: a second look within the hour spends next to nothing, where the
+// M1's spent 2,166 requests each time (Then's item 5).
+func TestAReadAskedAgainCostsNothingWhereNothingMoved(t *testing.T) {
+	var asked, conditional atomic.Int64
+	login := "ada"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.Add(1)
+		etag := `"` + login + `"`
+		if r.Header.Get("If-None-Match") == etag {
+			conditional.Add(1)
+			w.Header().Set("X-RateLimit-Remaining", "4000")
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"login":"`+login+`"}`)
+	}))
+	t.Cleanup(server.Close)
+	token := TokenSourceFunc(func(context.Context) (Token, error) {
+		return Token{Secret: "ghp_" + strings.Repeat("a", 36), Source: SourceKeychain}, nil
+	})
+	directory := t.TempDir()
+	client := func() *Client {
+		return &Client{HTTP: server.Client(), Config: Config{BaseURL: server.URL + "/"}, Credentials: token, Conditional: NewConditionalCache(directory)}
+	}
+	c := client()
+	spend := StartSpend()
+	for range 3 {
+		account, err := c.AuthenticatedUser(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, "ada", account)
+	}
+	require.EqualValues(t, 3, asked.Load())
+	require.EqualValues(t, 2, conditional.Load(), "asked again with its ETag")
+	require.EqualValues(t, 1, spend.Requests(), "the 304s spent nothing")
+
+	// The next process reads what this one kept.
+	account, err := client().AuthenticatedUser(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "ada", account)
+	require.EqualValues(t, 3, conditional.Load())
+
+	// What moved is read anew.
+	login = "bob"
+	account, err = client().AuthenticatedUser(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "bob", account)
 }

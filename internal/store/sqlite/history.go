@@ -156,18 +156,23 @@ func (t *tx) AddDecision(d model.Decision) error {
 	if d.Branch != "" {
 		branch = d.Branch
 	}
-	_, err := t.exec("INSERT INTO decisions(repository_id, branch_id, finding, subject, evidence, answer, at) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
-		t.repo, branch, d.Finding, d.Subject, d.Evidence, d.Answer, millis(d.At))
+	_, err := t.exec("INSERT INTO decisions(repository_id, branch_id, finding, subject, evidence, answer, words, at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+		t.repo, branch, d.Finding, d.Subject, d.Evidence, d.Answer, d.Words, millis(d.At))
 	return err
 }
 
 func (t *tx) Decisions(branch model.BranchID, finding model.FindingKind, evidence string) ([]model.Decision, error) {
-	return t.decisions("SELECT ifnull(branch_id, ''), finding, subject, evidence, answer, at FROM decisions WHERE repository_id=? AND branch_id=? AND finding=? AND evidence=? ORDER BY subject",
+	return t.decisions("SELECT ifnull(branch_id, ''), finding, subject, evidence, answer, words, at FROM decisions WHERE repository_id=? AND branch_id=? AND finding=? AND evidence=? ORDER BY subject",
 		t.repo, branch, finding, evidence)
 }
 
+func (t *tx) BranchDecisions(branch model.BranchID, finding model.FindingKind) ([]model.Decision, error) {
+	return t.decisions("SELECT ifnull(branch_id, ''), finding, subject, evidence, answer, words, at FROM decisions WHERE repository_id=? AND branch_id=? AND finding=? ORDER BY subject, at",
+		t.repo, branch, finding)
+}
+
 func (t *tx) StandingDecisions(finding model.FindingKind) ([]model.Decision, error) {
-	return t.decisions("SELECT '', finding, subject, evidence, answer, at FROM decisions WHERE repository_id=? AND branch_id IS NULL AND finding=? ORDER BY subject, evidence",
+	return t.decisions("SELECT '', finding, subject, evidence, answer, words, at FROM decisions WHERE repository_id=? AND branch_id IS NULL AND finding=? ORDER BY subject, evidence",
 		t.repo, finding)
 }
 
@@ -181,7 +186,7 @@ func (t *tx) decisions(query string, args ...any) ([]model.Decision, error) {
 	for rows.Next() {
 		var d model.Decision
 		var at int64
-		if err := rows.Scan(&d.Branch, &d.Finding, &d.Subject, &d.Evidence, &d.Answer, &at); err != nil {
+		if err := rows.Scan(&d.Branch, &d.Finding, &d.Subject, &d.Evidence, &d.Answer, &d.Words, &at); err != nil {
 			return nil, storageError(err)
 		}
 		d.At = fromMillis(at)

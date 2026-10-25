@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/reuse"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -169,6 +170,9 @@ type BaselineOffer struct {
 	Ports    []string
 	Base     model.ObjectID
 	NewTests []string
+	// Changed say, of ports offered again, what changed since an earlier
+	// baseline that would have answered them, as a rebase leaves it.
+	Changed []string
 }
 
 // BaselineCandidates are the baseline a failed check offers. There is none
@@ -202,6 +206,34 @@ func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) (Baselin
 	}
 	if worthy, err = e.readsChanged(ctx, checked, evidence, worthy); err != nil || len(worthy) == 0 {
 		return offer, err
+	}
+	// A port an earlier baseline still answers at the base, across a
+	// rebase, isn't offered again; one whose baseline read something that
+	// changed is, saying what (Then's item 4).
+	worthy = slices.DeleteFunc(worthy, func(port string) bool {
+		answered := false
+		for _, target := range evidence.Failed() {
+			if target.Target.Target.Name != port {
+				continue
+			}
+			for n, cell := range target.Outcomes {
+				if cell.Outcome != model.OutcomeFailed {
+					continue
+				}
+				standing, changed := e.standingBaseline(ctx, run.Branch, checked.Source.Base, target.Target.ID, evidence.Plan.Environments[n], cell.Phase)
+				if standing == "" {
+					if changed != "" && !slices.Contains(offer.Changed, changed) {
+						offer.Changed = append(offer.Changed, changed)
+					}
+					return false
+				}
+				answered = true
+			}
+		}
+		return answered
+	})
+	if len(worthy) == 0 {
+		return offer, nil
 	}
 	targets, _, _, err := e.atBase(ctx, checked.Source.Base, evidence, worthy)
 	if err != nil || len(targets) == 0 {
@@ -533,4 +565,139 @@ func BaselineComparison(base, branch Evidence) []BaselineRow {
 		}
 	}
 	return rows
+}
+
+// continueWithBaseline queues the baseline a failed check points to, where
+// check.baseline is on, as the check's continuation: whatever ran the
+// check, the foreground command, a drain, ship, or serve, runs its baseline
+// next, where only the foreground command did (Then's item 4). Its answer
+// is the verdict's, the same failure at the base, which --accept takes;
+// dockhand never accepts a failure itself. One that can't be queued is
+// said, and the check's result stands.
+func (e *Engine) continueWithBaseline(ctx context.Context, run model.Run) {
+	if !e.options.Baseline || run.BaselineOf != "" {
+		return
+	}
+	offer, err := e.BaselineCandidates(ctx, run)
+	if err != nil || len(offer.Ports) == 0 {
+		return
+	}
+	branch, err := e.Branch(ctx, run.Branch)
+	if err == nil {
+		var baseline Baseline
+		if baseline, err = e.PlanBaseline(ctx, branch, nil); err == nil {
+			var queued model.Run
+			if queued, err = e.EnqueueBaseline(ctx, branch, baseline, run.Origin); err == nil {
+				progress.Report(ctx, "%s's baseline is %s, queued since check.baseline is on", run.Name(), queued.Name())
+				return
+			}
+		}
+	}
+	progress.Report(ctx, "%s's baseline wasn't queued: %v", run.Name(), err)
+}
+
+// QueuedBaseline is the baseline queued as a check's continuation
+// (continueWithBaseline), for the foreground check to run next; false
+// where none is queued.
+func (e *Engine) QueuedBaseline(ctx context.Context, of model.RunID) (model.Run, model.Plan, bool) {
+	var found model.Run
+	var plan model.Plan
+	_ = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		runs, err := r.Runs(store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
+		if err != nil {
+			return err
+		}
+		for _, run := range runs {
+			if run.BaselineOf == of {
+				found = run
+			}
+		}
+		if found.ID != "" {
+			plan, err = r.Plan(found.Plan)
+		}
+		return err
+	})
+	return found, plan, found.ID != ""
+}
+
+// standingBaseline is an earlier baseline of the branch that still answers
+// a failure at the branch's base now, across a rebase, as a check's
+// results stand: one whose build of the target, in the environment, failed
+// at the phase, and read nothing that differs at the base, by the same
+// rule reuse reads (reuse.Current). Where the newest such baseline read
+// something that changed, why is said instead, "master's build of exiv2
+// reads libheif's directory, changed since check-490's baseline" (the
+// exiv2 session's notes, 2026-10-24). Neither where the branch has none.
+func (e *Engine) standingBaseline(ctx context.Context, branch model.BranchID, base model.ObjectID, id model.TargetID, environment model.Environment, phase model.Phase) (standing, changed string) {
+	var runs []model.Run
+	_ = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		runs, err = r.Runs(store.RunFilter{Branch: branch, States: []model.RunState{model.RunPassed, model.RunFailed}})
+		return err
+	})
+	slices.SortFunc(runs, func(a, b model.Run) int { return b.Number - a.Number })
+	identity := e.identitiesNow(ctx, []model.Environment{environment})[environment]
+	for _, run := range runs {
+		if run.BaselineOf == "" {
+			continue
+		}
+		evidence, err := e.RunEvidence(ctx, run.ID)
+		if err != nil {
+			continue
+		}
+		n := slices.Index(evidence.Plan.Environments, environment)
+		i := slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.ID == id })
+		if n < 0 || i < 0 {
+			continue
+		}
+		cell := evidence.Targets[i].Outcomes[n]
+		if cell.Outcome != model.OutcomeFailed || cell.Phase != phase || cell.Inputs == "" {
+			continue
+		}
+		var recorded model.TargetInputs
+		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+			var err error
+			recorded, err = r.Inputs(cell.Inputs)
+			return err
+		}); err != nil {
+			continue
+		}
+		paths := []string{recorded.Directory, macports.ResourcesDirectory}
+		for _, port := range recorded.Active {
+			if port.Directory != "" {
+				paths = append(paths, port.Directory)
+			}
+		}
+		slices.Sort(paths)
+		objects, err := e.Repo.Directories(ctx, string(base), slices.Compact(paths))
+		if err != nil {
+			continue
+		}
+		trees := map[string]model.ObjectID{}
+		for path, object := range objects {
+			trees[path] = model.ObjectID(object)
+		}
+		target := evidence.Targets[i].Target
+		if reuse.Current(recorded, identity, model.PlanTarget{ID: target.ID, Target: target.Target, Directory: recorded.Directory}, nil, trees, nil) {
+			return run.Name(), ""
+		}
+		read := "its own directory"
+		switch {
+		case trees[recorded.Directory] != recorded.Tree:
+		case trees[macports.ResourcesDirectory] != recorded.Resources:
+			read = "_resources"
+		default:
+			for _, port := range recorded.Active {
+				if port.Directory != "" && trees[port.Directory] != port.Tree {
+					read = port.Name + "'s directory"
+					break
+				}
+			}
+		}
+		if read == "its own directory" && trees[recorded.Directory] == recorded.Tree {
+			return "", fmt.Sprintf("%s's baseline of %s doesn't stand: %s isn't what built it, or what it read wasn't recorded", run.Name(), target.Target.Name, DescribeEnvironment(environment))
+		}
+		return "", fmt.Sprintf("master's build of %s reads %s, changed since %s's baseline", target.Target.Name, read, run.Name())
+	}
+	return "", ""
 }

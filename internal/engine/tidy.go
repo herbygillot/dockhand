@@ -198,6 +198,12 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if err != nil {
 		return TidyPlan{}, err
 	}
+	// A directory holding a hand edit's attempt says why it's the
+	// person's, in the refusal's words (Then's item 3).
+	handEdits, err := e.handEdits(ctx, branch.ID, trees[base], final)
+	if err != nil {
+		return TidyPlan{}, err
+	}
 	if len(changed) == 0 {
 		return TidyPlan{}, fmt.Errorf("%s changes nothing yet; there is nothing to tidy", branch.Name)
 	}
@@ -319,6 +325,9 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 			}
 		} else if directory != "" && !group.Created {
 			group.Notes = append(group.Notes, "has changes dockhand's commands did not make; review them")
+		}
+		if hand, ok := handEdits[directory]; ok {
+			group.Notes = append(group.Notes, hand.Line())
 		}
 		var chosen *git.HistoryCommit
 		if subject == "" {

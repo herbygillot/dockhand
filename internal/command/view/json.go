@@ -368,6 +368,9 @@ type BranchJSON struct {
 	// HeldConcerns are Held, typed, each with where it came from and the
 	// rule that raised it, beside held's words.
 	HeldConcerns []ConcernJSON `json:"concerns,omitempty"`
+	// HandEdits are the branch's hand edits, each its directory, the
+	// refusal dockhand left it for, and whether the attempt was adjusted.
+	HandEdits []handEditJSON `json:"hand_edits,omitempty"`
 	// Moved are the Git-fetched ports whose release's tag named another
 	// commit when the update chose it than when the latest check, of the
 	// files as they are now, planned it (rule release-moved), which hold a
@@ -414,6 +417,9 @@ func BranchView(status engine.BranchStatus) BranchJSON {
 		Standing: status.Check().Standing().String()}
 	if len(status.Held) > 0 {
 		viewed.HeldConcerns = concernsView(status.Held)
+	}
+	for _, hand := range status.HandEdits {
+		viewed.HandEdits = append(viewed.HandEdits, handEditJSON{Directory: hand.Directory, Refused: hand.Words, Adjusted: hand.Adjusted})
 	}
 	viewed.Changed, viewed.Notes = status.ChangedPorts()
 	viewed.Changed = NonNil(viewed.Changed)
@@ -647,4 +653,11 @@ func logWhere(path string) string {
 		return ""
 	}
 	return buildlog.Where(path)
+}
+
+// handEditJSON is a hand edit (engine.HandEdit).
+type handEditJSON struct {
+	Directory string `json:"directory"`
+	Refused   string `json:"refused"`
+	Adjusted  bool   `json:"adjusted"`
 }

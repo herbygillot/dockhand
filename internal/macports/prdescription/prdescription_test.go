@@ -281,3 +281,17 @@ func TestANoteAloneIsTheDescription(t *testing.T) {
 	beside.Commits = []Commit{{ID: "1234567890abcdef", Message: "jq: update to 1.8.1\n\nThe tests are new.\n\nAssisted-by: Claude Code\n"}}
 	require.Contains(t, Compose(beside), "The tests are new.\n\n> **Author's note:** Upstream's tests need network access.\n")
 }
+
+// A port edited by hand from dockhand's attempt at an update it refused is
+// said under Description, with the refusal, before the person's note, and
+// the note is no longer the Description alone (Then's item 3).
+func TestAHandEditIsSaidInTheDescription(t *testing.T) {
+	t.Parallel()
+	facts := Facts{Commits: []Commit{{ID: "abc1234", Message: "jq: update to 1.8.1"}}, Note: "Checked the build by hand.",
+		HandEdits: []string{"**textproc/jq**: hand edit (dockhand's attempt, adjusted by hand): the update was refused, jq to 1.8.1: version probe is inconclusive"}}
+	body := Compose(facts)
+	require.Contains(t, body, "- **textproc/jq**: hand edit (dockhand's attempt, adjusted by hand): the update was refused, jq to 1.8.1: version probe is inconclusive\n\n")
+	require.Less(t, strings.Index(body, "hand edit ("), strings.Index(body, "Checked the build by hand."))
+	facts.Note = ""
+	require.False(t, SaysNothing(facts), "the hand edit says something")
+}

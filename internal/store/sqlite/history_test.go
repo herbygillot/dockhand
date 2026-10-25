@@ -209,6 +209,18 @@ func TestUpgradingKeepsAcceptancesAsDecisions(t *testing.T) {
 		require.Equal(t, []model.Decision{{Branch: "br_1", Finding: model.FindingFailure, Subject: "harbor-cli", Evidence: "c1", Answer: model.Accepted, At: fromMillis(1)}}, decisions)
 		return nil
 	}))
+
+	// A hand edit's decision keeps its words, dockhand's refusal (schema
+	// 40), and is read for the branch whatever its evidence.
+	hand := model.Decision{Branch: "br_1", Finding: model.FindingHandEdit, Subject: "textproc/jq", Evidence: "d1", Answer: model.ByHand, Words: "jq to 1.8.1: version probe is inconclusive", At: fromMillis(2)}
+	require.NoError(t, s.Update(t.Context(), "repo_1", func(tx store.Tx) error { return tx.AddDecision(hand) }))
+	require.NoError(t, s.View(t.Context(), "repo_1", func(r store.Reader) error {
+		decisions, err := r.BranchDecisions("br_1", model.FindingHandEdit)
+		require.NoError(t, err)
+		require.Equal(t, []model.Decision{hand}, decisions)
+		return nil
+	}))
+	require.Error(t, model.Decision{Branch: "br_1", Finding: model.FindingHandEdit, Subject: "textproc/jq", Evidence: "d1", Answer: model.ByHand, At: fromMillis(2)}.Validate(), "a hand edit carries its refusal")
 }
 
 func TestReviewsAreKeptNewestFirst(t *testing.T) {

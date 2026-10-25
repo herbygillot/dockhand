@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	archivefile "github.com/herbygillot/dockhand/internal/archive"
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
@@ -70,6 +71,9 @@ type fakePreparer struct {
 	// fetched, and whether another try may fetch them.
 	previous          string
 	previousTransient bool
+	// refused refuses the edit, unless the request asks for a hand edit's
+	// attempt, which the result then carries it for.
+	refused error
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r editprep.Request) (model.Release, error) {
@@ -181,6 +185,12 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 	result.Commits = []editprep.CommitIntent{{Subject: r.Selection.Selector + ": update to " + next}}
 	if r.Action == model.EditRevbump {
 		result.Commits[0].Subject = r.Selection.Selector + ": " + r.Subject
+	}
+	if p.refused != nil {
+		if !r.HandEdit {
+			return editprep.Result{}, p.refused
+		}
+		result.Refused, result.Commits = p.refused, nil
 	}
 	// The new archive replaces the old one where both are given; given
 	// alone, it replaces none dockhand found.
@@ -1069,4 +1079,50 @@ func TestAnUpdateGivesItsPortfileTheModeline(t *testing.T) {
 			require.Equal(t, c.want+"name jq\nversion 1.8.1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
 		})
 	}
+}
+
+// An update dockhand refuses, asked with --hand-edit, writes its attempt as
+// the person's hand edit: no edit of dockhand's is recorded, the refusal
+// is, as the hand edit status says, and the refusal without the flag names
+// it. bump's and serve's never take it (Then's item 3).
+func TestAHandEditWritesTheAttemptAsThePersons(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	p.refused = ErrUnsupported.Because("version probe is inconclusive: modeled context depends on host state")
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.8.1"}, Version: "1.8.1", Forge: "github", Tag: "jq-1.8.1"}
+	_, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-refused"}, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", Release: &release})
+	require.NotNil(t, refusal.Of(err))
+	steps := refusal.Of(err).Next
+	require.Equal(t, "or dockhand update jq 1.8.1 --hand-edit, which writes dockhand's attempt for you to finish by hand", steps[len(steps)-1].External)
+	_, err = e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-bump"}, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", Release: &release, HandEdit: true, Unattended: true})
+	require.ErrorContains(t, err, "never bump's or serve's")
+
+	update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-hand"}, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", Release: &release, HandEdit: true})
+	require.NoError(t, err)
+	require.Equal(t, "jq to 1.8.1: version probe is inconclusive: modeled context depends on host state", update.HandEdit)
+	require.True(t, update.Applied)
+	data, err := os.ReadFile(filepath.Join(update.Branch.Worktree, "textproc/jq/Portfile"))
+	require.NoError(t, err)
+	require.Contains(t, string(data), "version 1.8.1")
+	var edits []model.Edit
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		edits, err = r.Edits(update.Branch.ID)
+		return err
+	}))
+	require.Empty(t, edits, "no edit of dockhand's: it's the person's")
+
+	status, err := e.BranchStatus(t.Context(), update.Branch)
+	require.NoError(t, err)
+	require.Equal(t, []HandEdit{{Directory: "textproc/jq", Words: update.HandEdit}}, status.HandEdits)
+	require.Equal(t, "hand edit (dockhand's attempt, as written): the update was refused, jq to 1.8.1: version probe is inconclusive: modeled context depends on host state", status.HandEdits[0].Line())
+
+	require.NoError(t, os.WriteFile(filepath.Join(update.Branch.Worktree, "textproc/jq/Portfile"), append(data, []byte("# finished by hand\n")...), 0o644))
+	status, err = e.BranchStatus(t.Context(), update.Branch)
+	require.NoError(t, err)
+	require.True(t, status.HandEdits[0].Adjusted, "adjusted by hand, the reason still said")
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: update.Branch})
+	require.NoError(t, err)
+	require.Contains(t, plan.Groups[0].Notes, "hand edit (dockhand's attempt, adjusted by hand): the update was refused, "+update.HandEdit)
+	require.ErrorContains(t, plan.Gate().CommitUnasked(branchstate.Mode{Answered: model.AnsweredNobody}), "textproc/jq: hand edit (")
 }

@@ -208,6 +208,10 @@ type Reader interface {
 	// StandingDecisions lists the decisions on a kind of finding that
 	// belong to no branch, by subject.
 	StandingDecisions(finding model.FindingKind) ([]model.Decision, error)
+	// BranchDecisions are a branch's decisions on a kind of finding,
+	// whatever their evidence, by subject, oldest first: a hand edit's,
+	// whose attempt is the evidence (model.FindingHandEdit).
+	BranchDecisions(branch model.BranchID, finding model.FindingKind) ([]model.Decision, error)
 	// CIFailures lists a branch's classified CI failures at a head, by
 	// check and job.
 	CIFailures(branch model.BranchID, head model.ObjectID) ([]model.CIFailure, error)

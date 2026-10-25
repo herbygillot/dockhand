@@ -288,9 +288,14 @@ func (e *Engine) failsAtBase(ctx context.Context, branch model.BranchID, judged 
 		return nil, nil
 	}
 	var runs []model.Run
+	var base model.ObjectID
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
-		runs, err = r.Runs(store.RunFilter{Branch: branch, States: []model.RunState{model.RunPassed, model.RunFailed}})
+		if runs, err = r.Runs(store.RunFilter{Branch: branch, States: []model.RunState{model.RunPassed, model.RunFailed}}); err != nil {
+			return err
+		}
+		recorded, err := r.Branch(branch)
+		base = recorded.Base
 		return err
 	}); err != nil {
 		return nil, err
@@ -327,6 +332,11 @@ func (e *Engine) failsAtBase(ctx context.Context, branch model.BranchID, judged 
 				return nil, err
 			}
 			name := baseFailure(found, target.Target.ID, judged.Plan.Environments[n], cell.Phase)
+			// An earlier baseline stands across a rebase where master's
+			// build read nothing changed since (Then's item 4).
+			if name == "" {
+				name, _ = e.standingBaseline(ctx, branch, base, target.Target.ID, judged.Plan.Environments[n], cell.Phase)
+			}
 			if name == "" {
 				reproduced = false
 				break
