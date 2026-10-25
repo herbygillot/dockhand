@@ -510,10 +510,15 @@ func (e *Engine) readCommits(ctx context.Context, infos [2]macports.PortInfo, ha
 		}
 		resolved := e.resolveGit(ctx, declared)
 		switch {
+		case resolved.Missing:
+			// The repository has no such ref yet, as a tag not yet pushed:
+			// looked at again a day later, as a refused archive is.
+			return nil, nil, fmt.Sprintf("%s git.branch couldn't be resolved: %s", which, resolved.Unresolved), refusal.UpstreamMissing
 		case resolved.Unresolved != "":
-			// Its refs couldn't be read, or a tag isn't there yet, which
-			// another try may not meet, and reading refs again is cheap.
-			return nil, nil, fmt.Sprintf("%s git.branch couldn't be resolved: %s", which, resolved.Unresolved), refusal.Failed
+			// Its refs couldn't be read, a clone failing or timing out,
+			// which another try may meet at once: it was Failed, which
+			// lookAgain never made again, against its own comment (C8-5).
+			return nil, nil, fmt.Sprintf("%s git.branch couldn't be resolved: %s", which, resolved.Unresolved), refusal.Network
 		case resolved.Commit == "":
 			return nil, nil, fmt.Sprintf("%s git.branch is an abbreviated commit, %s, which only a clone expands", which, resolved.Abbreviation), ""
 		}
@@ -524,7 +529,7 @@ func (e *Engine) readCommits(ctx context.Context, infos [2]macports.PortInfo, ha
 			readings[side] = reading
 			continue
 		}
-		path, err := archiver.SourceArchive(ctx, info, commits[side], directory)
+		path, err := archiver.SourceArchive(ctx, info, resolved, directory)
 		if err != nil {
 			return nil, nil, fmt.Sprintf("%s commit %s couldn't be fetched from its forge: %v", which, commits[side], err), refusal.KindOf(err)
 		}
@@ -560,7 +565,7 @@ func commitKey(commit string) string {
 // SourceArchiver writes a Git-fetched port's forge's archive of a commit,
 // for its assessment.
 type SourceArchiver interface {
-	SourceArchive(ctx context.Context, port macports.PortInfo, commit, directory string) (string, error)
+	SourceArchive(ctx context.Context, port macports.PortInfo, source model.GitSource, directory string) (string, error)
 }
 
 // sourceArchiver is the one the engine was given, or upstream discovery's

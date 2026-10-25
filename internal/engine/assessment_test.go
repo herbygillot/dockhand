@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -427,8 +428,9 @@ type commitArchives struct {
 	asked *atomic.Int64
 }
 
-func (c commitArchives) SourceArchive(_ context.Context, _ macports.PortInfo, commit, directory string) (string, error) {
+func (c commitArchives) SourceArchive(_ context.Context, _ macports.PortInfo, source model.GitSource, directory string) (string, error) {
 	c.asked.Add(1)
+	commit := string(source.Commit)
 	files, ok := c.files[commit]
 	if !ok {
 		return "", fmt.Errorf("no archive of %s", commit)
@@ -488,6 +490,22 @@ func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, assessments[0].Comparison.Problem, "the revision's git.branch couldn't be resolved")
 	require.NotEmpty(t, holds(assessments[0]))
+	require.EqualValues(t, refusal.UpstreamMissing, assessments[0].Comparison.ProblemKind, "a ref not there yet, looked at again a day later")
+
+	// A repository that couldn't be read, as a clone that failed, is
+	// looked at again with no tree change, and compared once it reads
+	// (C8-5: it was Failed, which lookAgain never made again).
+	unreadable := filepath.Join(t.TempDir(), "harbor")
+	elsewhere := editTree(t, e, tree, map[string]string{"devel/libharbor/files/d.diff": "d"})
+	p.add(elsewhere, plannedPort{info: macports.PortInfo{Name: "libharbor", Options: map[string]string{"fetch.type": "git", "git.url": unreadable, "git.branch": "v2"}}})
+	assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, elsewhere, true)
+	require.NoError(t, err)
+	require.Contains(t, assessments[0].Comparison.Problem, "the revision's git.branch couldn't be resolved")
+	require.True(t, refusal.Kind(assessments[0].Comparison.ProblemKind).Transient())
+	testsupport.Git(t, filepath.Dir(unreadable), "clone", "-q", project, unreadable)
+	assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, elsewhere, true)
+	require.NoError(t, err)
+	require.Empty(t, assessments[0].Comparison.Problem, "made again, and read")
 
 	abbreviated := editTree(t, e, tree, map[string]string{"devel/libharbor/files/c.diff": "c"})
 	p.add(abbreviated, tool(v2[:9]))

@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
@@ -34,17 +35,24 @@ func (a *archiving) Archive(_ context.Context, commit string, into io.Writer, _ 
 	return err
 }
 
-// A Git-fetched port's archive of a commit comes from its forge
-// PortGroup's repository, or, where it has none, from the repository its
-// git.url names on GitHub or GitLab.com; another host is no forge to ask.
+// A Git-fetched port's archive of a commit comes from the repository its
+// commit was resolved in, the one git.url names, on its forge PortGroup's
+// instance or on GitHub or GitLab.com; another host is no forge to ask. A
+// port that keeps github.setup owner project with git.url pointed at a fork
+// asks the fork (C8-4, the architecture review's probe).
 func TestASourceArchiveIsTheForgesOfTheCommit(t *testing.T) {
 	commit := strings.Repeat("a", 40)
+	forked := githubPort().Options
+	forked["git.url"] = "https://github.com/fork/project.git"
+	own := githubPort().Options
+	own["git.url"] = "https://github.com/owner/project.git"
 	for _, test := range []struct {
 		options        map[string]string
 		instance, name string
 		fails          string
 	}{
-		{githubPort().Options, "https://github.com", "owner/project", ""},
+		{own, "https://github.com", "owner/project", ""},
+		{forked, "https://github.com", "fork/project", ""},
 		{map[string]string{"fetch.type": "git", "git.url": "https://github.com/harbor/harbor.git"}, "https://github.com", "harbor/harbor", ""},
 		{map[string]string{"fetch.type": "git", "git.url": "https://gitlab.com/group/tool"}, "https://gitlab.com", "group/tool", ""},
 		{map[string]string{"fetch.type": "git", "git.url": "https://git.example.org/tool.git"}, "", "", "downloading source archives from git.example.org is not supported"},
@@ -52,7 +60,8 @@ func TestASourceArchiveIsTheForgesOfTheCommit(t *testing.T) {
 	} {
 		catalog := &archiving{}
 		service := &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: catalog, portsource.GitLab: catalog}}
-		path, err := service.SourceArchive(t.Context(), macports.PortInfo{Name: "tool", Version: "1.0", Options: test.options}, commit, t.TempDir())
+		source := model.GitSource{URL: test.options["git.url"], Commit: model.ObjectID(commit)}
+		path, err := service.SourceArchive(t.Context(), macports.PortInfo{Name: "tool", Version: "1.0", Options: test.options}, source, t.TempDir())
 		if test.fails != "" {
 			require.ErrorContains(t, err, test.fails)
 			continue
