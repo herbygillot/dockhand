@@ -1,4 +1,4 @@
-package tart
+package guest
 
 import (
 	"crypto/sha256"
@@ -17,168 +17,21 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildenv/guest/guesttest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
-// fakeOtool stands for Xcode's otool: it prints a file's -L, -l, or -D
-// answer from the file beside it, harbor.links, harbor.loads, or
-// harbor.id (named apart, since a Mac's file system folds case).
-const fakeOtool = `#!/bin/sh
-case "$1" in
-  -L) cat "$2.links" ;;
-  -l) cat "$2.loads" 2>/dev/null; exit 0 ;;
-  -D) cat "$2.id" 2>/dev/null; exit 0 ;;
-esac
-`
-
-// fakePort stands for MacPorts' port in a guest: it records each command,
-// has the ports ACTIVE lists active ("  name @spec (active)" lines), prints
-// each target's dependencies from DEPS ("name=dep ..."), and fails the
-// phases FAIL names ("phase:port ..."), with MacPorts' closing Error
-// lines after the failure's own, or with no Error line at all where QUIET
-// is set. Each port's dependencies other than for building, as rdeps
-// --no-build has them, come from RDEPS ("name=dep,dep ..."). A port's
-// archive is ARCHIVES/<name>, and
-// its directory devel/<name>, but for UNRESOLVED, which port can't
-// resolve. Each step of a build writes its command to the log, "port
-// <arguments>", installing dependencies writes DEPLINES lines more, and
-// lint writes LINTSAYS, an Error line lint says and goes on past. A
-// phase HANG names ("phase:port ...") sleeps, as a compiler that never
-// finishes would, in a process of its own. A port NOARCHIVE names has no
-// binary archive, which -b archivefetch fails for. With COMMAND set, a
-// failure says FAILSAYS as the tool's line, where it's set. With
-// ACTIVEFAILS set,
-// listing the active ports fails. With ACTIVEFILE set, it's a registry
-// of its own, as a prefix of the person's is: the active ports are that
-// file's lines, which deactivating, activating, and installing change, a
-// target's install activating it at NEWVERSION. INSTALLED lists the
-// installed images of a port, as "-q installed <name>" does. Its port
-// snapshot keeps the note it's made with, which --list says as ID 7.
-// Where PORTSRC names a macports.conf, it's copied beside PORT_LOG once,
-// with the sources.conf it names.
-const fakePort = `#!/bin/sh
-echo "$*" >> "$PORT_LOG"
-if [ -n "$PORTSRC" ] && [ ! -f "$PORT_LOG.conf" ]; then cat "$PORTSRC" "$(awk '/^sources_conf/ {print $2}' "$PORTSRC")" > "$PORT_LOG.conf"; fi
-drop() { for name in "$@"; do grep -v "^  $name @" "$ACTIVEFILE" > "$ACTIVEFILE.new"; mv "$ACTIVEFILE.new" "$ACTIVEFILE"; done; }
-case "$*" in
-  "-N snapshot --create --note "*) all="$*"; echo "${all#-N snapshot --create --note }" > "$DOCKHAND_GUEST_ROOT/snapshot.note"; exit 0 ;;
-  "-q snapshot --list") if [ -f "$DOCKHAND_GUEST_ROOT/snapshot.note" ]; then printf '   7  2026-10-25 12:00:00+0000  %s\n' "$(cat "$DOCKHAND_GUEST_ROOT/snapshot.note")"; fi; exit 0 ;;
-  "-N snapshot --delete "*) exit 0 ;;
-esac
-if [ -n "$ACTIVEFILE" ]; then
-  case "$*" in
-    *"-q installed active"*) cat "$ACTIVEFILE"; exit 0 ;;
-    "-N -f deactivate active") : > "$ACTIVEFILE" ;;
-    "-N -f deactivate "*) shift 3; drop "$@" ;;
-    "-N activate "*) drop "$3"; echo "  $3 $4 (active)" >> "$ACTIVEFILE"; echo "port $*"; exit 0 ;;
-    *"install --unrequested "*"subport="*)
-      all="$*"; name=${all##*subport=}; name=${name%% *}; drop "$name"; echo "  $name @${NEWVERSION:-9.9_0} (active)" >> "$ACTIVEFILE" ;;
-    "-N install --unrequested "*|"-N -d install --unrequested "*)
-      for dep in $*; do case "$dep" in -*|install) ;; *) grep -q "^  $dep @" "$ACTIVEFILE" || echo "  $dep @1_0 (active)" >> "$ACTIVEFILE" ;; esac; done ;;
-  esac
-fi
-case "$*" in
-  *"-q installed active"*) ;;
-  "-q installed "?*) printf '%b' "$INSTALLED"; exit 0 ;;
-esac
-case "$*" in
-  *"-q installed active"*) if [ -n "$ACTIVEFAILS" ]; then echo "Error: registry locked" >&2; exit 1; fi; printf '%b' "$ACTIVE"; exit 0 ;;
-  *"-q installed"*) exit 0 ;;
-  *"-q contents "*) if [ -z "$CONTENTS" ]; then echo "Error: registry locked" >&2; exit 1; fi; printf '%b' "$CONTENTS"; exit 0 ;;
-  "provides "*)
-    shift
-    for file in "$@"; do
-      owner=""
-      for entry in $PROVIDES; do [ "${entry%%=*}" = "$file" ] && owner=${entry#*=}; done
-      if [ -n "$owner" ]; then echo "$file is provided by: $owner"; else echo "$file is not provided by a MacPorts port."; fi
-    done
-    exit 0 ;;
-  "-q location "*)
-    shift 2
-    while [ $# -gt 0 ]; do echo "$ARCHIVES/$1"; shift 2; done
-    exit 0 ;;
-  "-q dir "*)
-    shift 2
-    for name in "$@"; do
-      if [ "$name" = "$UNRESOLVED" ]; then echo "Error: Port $name not found" >&2; exit 1; fi
-      echo "$DOCKHAND_GUEST_ROOT/ports/devel/$name"
-    done
-    exit 0 ;;
-  *"echo depof:"*)
-    for entry in $DEPS; do
-      case "$*" in *"depof:${entry%%=*}") echo "${entry#*=}" | tr ',' ' ' ;; esac
-    done
-    exit 0 ;;
-  "-N -b archivefetch "*)
-    for name in $NOARCHIVE; do
-      case "$*" in *" archivefetch $name") echo "Error: no archive for $name" >&2; exit 1 ;; esac
-    done
-    exit 0 ;;
-  *"-q info --line --version --revision "*)
-    for entry in $DEPVERSION; do
-      case "$*" in *" ${entry%%=*}"|*"subport=${entry%%=*}") echo "${entry#*=}" | tr ',' '\t' ;; esac
-    done
-    exit 0 ;;
-  *"-q rdeps --no-build "*)
-    for entry in $RDEPS; do
-      case "$*" in *"--no-build ${entry%%=*}") echo "${entry#*=}" | tr ',' '\n' | sed 's/^/  /' ;; esac
-    done
-    exit 0 ;;
-esac
-case "$*" in
-  *" deactivate "*|*" clean "*|*" lint "*|*" install "*|*" fetch "*|*" checksum "*|*" test "*)
-    echo "port $*"
-    case "$*" in
-      "-N -d install --unrequested "*|"-N install --unrequested "*)
-        if [ "${DEPLINES:-0}" -gt 0 ]; then yes "a dependency's line" | head -n "$DEPLINES"; fi
-        if [ -n "$DEPFAILS" ]; then
-          echo "Error: Failed to build $DEPFAILS: command execution failed"
-          echo "Error: See /opt/local/var/macports/logs/$DEPFAILS/main.log for details."
-          exit 1
-        fi ;;
-      *" lint "*) if [ -n "$LINTSAYS" ]; then echo "$LINTSAYS"; fi ;;
-    esac ;;
-esac
-for entry in $HANG; do
-  phase=${entry%%:*}; port=${entry#*:}
-  case "$*" in
-    *" $phase "*"subport=$port"*) sleep 60 ;;
-  esac
-done
-for entry in $FAIL; do
-  phase=${entry%%:*}; port=${entry#*:}
-  case "$*" in
-    *" $phase "*"subport=$port"*|*" $phase "*"subport=$port "*)
-      if [ -n "$QUIET" ]; then exit 1; fi
-      if [ -n "$COMMAND" ]; then
-        echo "DEBUG: Executing org.macports.build ($port)"
-        echo "${FAILSAYS:-go: github.com/spf13/pflag: cannot find package}"
-        echo "Command failed:  cd /work/$port && go build ./..."
-        echo "Exit code: 1"
-        echo "Error: Failed to build $port: command execution failed"
-        echo "Error: See /opt/local/var/macports/logs/$port/main.log for details."
-        exit 1
-      fi
-      echo "Error: Failed to $phase $port: it broke"
-      echo "Error: See /opt/local/var/macports/logs/$port/main.log for details."
-      echo "Error: Processing of port $port failed"
-      exit 1 ;;
-  esac
-done
-exit 0
-`
-
 // guestRun runs the shipped guest program on input, in a scratch root with
 // the fake port, and returns its results and the commands port was given.
-func guestRun(t *testing.T, input guestInput, env ...string) (guestResults, []string) {
+func guestRun(t *testing.T, input Input, env ...string) (Results, []string) {
 	t.Helper()
 	return guestRunIn(t, t.TempDir(), input, env...)
 }
 
 // guestRunIn is guestRun in a root the caller gives, whose prefix is
 // root/prefix.
-func guestRunIn(t *testing.T, root string, input guestInput, env ...string) (guestResults, []string) {
+func guestRunIn(t *testing.T, root string, input Input, env ...string) (Results, []string) {
 	t.Helper()
 	command := guestCommand(t, root, input, env...)
 	output, _ := command.CombinedOutput()
@@ -196,8 +49,8 @@ func guestRunIn(t *testing.T, root string, input guestInput, env ...string) (gue
 }
 
 // readResults reads the results the guest program has written in root.
-func readResults(root string) (guestResults, error) {
-	var results guestResults
+func readResults(root string) (Results, error) {
+	var results Results
 	data, err := os.ReadFile(filepath.Join(root, "results.json"))
 	if err != nil {
 		return results, err
@@ -207,13 +60,13 @@ func readResults(root string) (guestResults, error) {
 
 // guestCommand is the shipped guest program, ready to run on input in
 // root, with the fake port.
-func guestCommand(t *testing.T, root string, input guestInput, env ...string) *exec.Cmd {
+func guestCommand(t *testing.T, root string, input Input, env ...string) *exec.Cmd {
 	t.Helper()
 	executable := testsupport.MacPortsTclsh(t)
 	prefix := filepath.Join(root, "prefix")
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "bin"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "etc", "macports"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(prefix, "bin", "port"), []byte(fakePort), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(prefix, "bin", "port"), []byte(guesttest.FakePort), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "ports"), 0o755))
 	if !strings.Contains(strings.Join(env, " "), "NO_INDEX=1") {
 		require.NoError(t, os.WriteFile(filepath.Join(root, "ports", "PortIndex"), nil, 0o644))
@@ -244,17 +97,17 @@ proc work_dir {portdir name variants} { return [file join $::env(CHECKOUTS) $nam
 set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 `
 	script := filepath.Join(root, "guest.tcl")
-	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
+	require.NoError(t, os.WriteFile(script, append([]byte(prelude), Program...), 0o644))
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
 	otool := filepath.Join(root, "otool")
-	require.NoError(t, os.WriteFile(otool, []byte(fakeOtool), 0o755))
+	require.NoError(t, os.WriteFile(otool, []byte(guesttest.FakeOtool), 0o755))
 	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	return command
 }
 
-func twoTargets(tests string) guestInput {
-	return guestInput{Run: "check-1", Attempt: 1, Tests: tests, Targets: []guestTarget{
+func twoTargets(tests string) Input {
+	return Input{Run: "check-1", Attempt: 1, Tests: tests, Targets: []Target{
 		{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile", Log: buildenv.LogName("libharbor")},
 		{ID: "harbor-cli", Name: "harbor-cli", Portfile: "devel/harbor-cli/Portfile", DependsOn: []string{"libharbor"}, Log: buildenv.LogName("harbor-cli")},
 	}}
@@ -271,10 +124,10 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 	t.Parallel()
 	results, commands := guestRun(t, twoTargets("declared"), "TESTED=libharbor", "DEPS=libharbor=zlib harbor-cli=libharbor")
 	require.Equal(t, "finished", results.State, results.Detail)
-	steps := []guestStep{{"clean", 1}, {"lint", 2}, {"dependencies", 3}, {"fetch", 4}, {"checksum", 5}, {"install", 6}}
-	require.Equal(t, []guestResult{
-		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "libharbor.log", Active: []guestPort{}, Steps: append(slices.Clone(steps), guestStep{"test", 7})},
-		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log", Active: []guestPort{}, Steps: steps},
+	steps := []Step{{"clean", 1}, {"lint", 2}, {"dependencies", 3}, {"fetch", 4}, {"checksum", 5}, {"install", 6}}
+	require.Equal(t, []Result{
+		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "libharbor.log", Active: []Port{}, Steps: append(slices.Clone(steps), Step{"test", 7})},
+		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log", Active: []Port{}, Steps: steps},
 	}, results.Targets)
 	// The guest says what uname -m says, here the Mac running the test's.
 	require.Equal(t, map[string]string{"arm64": "arm64", "amd64": "x86_64"}[runtime.GOARCH], results.Environment["architecture"])
@@ -309,8 +162,8 @@ func TestTheGuestRecordsWhereEachStepBeginsInItsLog(t *testing.T) {
 	results, _ := guestRunIn(t, root, twoTargets("declared"), "TESTED=libharbor", "DEPS=libharbor=zlib harbor-cli=libharbor", "RDEPS=libharbor=zlib",
 		"ACTIVE=  zlib @1.3.2_0 (active)\\n", "DEPLINES=46000")
 	require.Equal(t, "finished", results.State, results.Detail)
-	steps := []guestStep{{"deactivate", 1}, {"clean", 2}, {"lint", 3}, {"dependencies", 4}, {"fetch", 46005}, {"checksum", 46006}, {"install", 46007}}
-	require.Equal(t, append(slices.Clone(steps), guestStep{"test", 46008}), results.Targets[0].Steps)
+	steps := []Step{{"deactivate", 1}, {"clean", 2}, {"lint", 3}, {"dependencies", 4}, {"fetch", 46005}, {"checksum", 46006}, {"install", 46007}}
+	require.Equal(t, append(slices.Clone(steps), Step{"test", 46008}), results.Targets[0].Steps)
 	require.Equal(t, steps, results.Targets[1].Steps, "its own log, counted from its start")
 	commands := map[string]string{
 		"deactivate": "-N -f deactivate active", "clean": " clean --work ", "lint": " lint ", "dependencies": "-N install --unrequested ",
@@ -329,7 +182,7 @@ func TestTheGuestRecordsWhereEachStepBeginsInItsLog(t *testing.T) {
 	// A target that fails has the steps it began, the one it failed at
 	// last; one blocked has none.
 	results, _ = guestRunIn(t, t.TempDir(), twoTargets("declared"), "FAIL=checksum:libharbor")
-	require.Equal(t, []guestStep{{"clean", 1}, {"lint", 2}, {"fetch", 3}, {"checksum", 4}}, results.Targets[0].Steps)
+	require.Equal(t, []Step{{"clean", 1}, {"lint", 2}, {"fetch", 3}, {"checksum", 4}}, results.Targets[0].Steps)
 	require.Equal(t, "blocked", results.Targets[1].Outcome)
 	require.Empty(t, results.Targets[1].Steps)
 }
@@ -346,14 +199,14 @@ func TestAVerdictRecordsThePortsActiveAsItBuilt(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(archives, "libharbor"), []byte("libharbor's archive"), 0o644))
 	require.NoError(t, os.Mkdir(filepath.Join(archives, "xz"), 0o755))
 	active := `  zlib @1.3.2_0 (active)\n  xz @5.8.1_0+universal (active)\n  gone @1.0_0 (active)\n  libharbor @3_0 (active)\n`
-	input := guestInput{Run: "check-1", Attempt: 1, Tests: "skip", Targets: []guestTarget{{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile"}}}
+	input := Input{Run: "check-1", Attempt: 1, Tests: "skip", Targets: []Target{{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile"}}}
 	results, commands := guestRun(t, input, "ACTIVE="+active, "ARCHIVES="+archives, "UNRESOLVED=gone")
 	require.Equal(t, "finished", results.State, results.Detail)
 	digest := func(data string) string {
 		sum := sha256.Sum256([]byte(data))
 		return "sha256:" + hex.EncodeToString(sum[:])
 	}
-	require.Equal(t, []guestPort{
+	require.Equal(t, []Port{
 		{Name: "zlib", Spec: "@1.3.2_0", Directory: "devel/zlib", Archive: digest("zlib's archive"), ArchiveFile: filepath.Join(archives, "zlib")},
 		{Name: "xz", Spec: "@5.8.1_0+universal", Directory: "devel/xz"},
 		{Name: "gone", Spec: "@1.0_0"},
@@ -480,7 +333,7 @@ func TestATargetBlockedBeforeIsNotBuilt(t *testing.T) {
 	input.Targets = input.Targets[1:]
 	input.Targets[0].Blocked = true
 	results, commands := guestRun(t, input)
-	require.Equal(t, []guestResult{{ID: "harbor-cli", Outcome: "blocked", Tests: "none", Log: "harbor-cli.log"}}, results.Targets)
+	require.Equal(t, []Result{{ID: "harbor-cli", Outcome: "blocked", Tests: "none", Log: "harbor-cli.log"}}, results.Targets)
 	for _, command := range commands {
 		require.NotContains(t, command, "subport=", "only the guest's setup ran port")
 	}
@@ -524,8 +377,8 @@ func TestTheGuestReportsTheCommitAGitFetchCheckedOut(t *testing.T) {
 	commit := checkoutAt(t, root, "libharbor")
 	cli := checkoutAt(t, root, "harbor-cli")
 	input := twoTargets("declared")
-	input.Targets[0].Git = &guestGit{Ref: "v4", Expect: commit}
-	input.Targets[1].Git = &guestGit{Ref: cli[:8], Expect: cli[:8]}
+	input.Targets[0].Git = &Git{Ref: "v4", Expect: commit}
+	input.Targets[1].Git = &Git{Ref: cli[:8], Expect: cli[:8]}
 	results, _ := guestRunIn(t, root, input)
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Equal(t, "passed", results.Targets[0].Outcome, results.Targets[0].Detail)
@@ -564,7 +417,7 @@ func TestAnAbbreviationOfDigitsIsReadAsWritten(t *testing.T) {
 	}
 	input := twoTargets("declared")
 	input.Targets = input.Targets[:1]
-	input.Targets[0].Git = &guestGit{Ref: commit[:4], Expect: commit[:4]}
+	input.Targets[0].Git = &Git{Ref: commit[:4], Expect: commit[:4]}
 	results, _ := guestRunIn(t, root, input)
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Equal(t, "passed", results.Targets[0].Outcome, results.Targets[0].Detail)
@@ -581,7 +434,7 @@ func TestAGitSourceThatMovedIsNotBuilt(t *testing.T) {
 	moved := checkoutAt(t, root, "libharbor")
 	expected := strings.Repeat("1", 40)
 	input := twoTargets("declared")
-	input.Targets[0].Git = &guestGit{Ref: "v4", Expect: expected}
+	input.Targets[0].Git = &Git{Ref: "v4", Expect: expected}
 	results, commands := guestRunIn(t, root, input)
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Equal(t, "failed", results.Targets[0].Outcome)
@@ -601,9 +454,9 @@ func TestAGitFetchThatCantBeReadBuildsAsBefore(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	input := twoTargets("declared")
-	input.Targets[0].Git = &guestGit{Ref: "v4", Expect: strings.Repeat("1", 40)}
+	input.Targets[0].Git = &Git{Ref: "v4", Expect: strings.Repeat("1", 40)}
 	cli := checkoutAt(t, root, "harbor-cli")
-	input.Targets[1].Git = &guestGit{Ref: "v4"}
+	input.Targets[1].Git = &Git{Ref: "v4"}
 	results, _ := guestRunIn(t, root, input)
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Equal(t, "passed", results.Targets[0].Outcome, results.Targets[0].Detail)
@@ -631,7 +484,7 @@ func keep(items []string, wanted func(string) bool) []string {
 func TestKeptArchivesAreAnArchiveSiteOfMacPorts(t *testing.T) {
 	root := t.TempDir()
 	input := twoTargets("declared")
-	input.Archives = []guestArchive{{Port: "libharbor", Name: "libharbor-4_0.darwin_25.arm64.tbz2"}, {Port: "zlib", Name: "zlib-1.3.2_0.darwin_25.arm64.tbz2"}}
+	input.Archives = []Archive{{Port: "libharbor", Name: "libharbor-4_0.darwin_25.arm64.tbz2"}, {Port: "zlib", Name: "zlib-1.3.2_0.darwin_25.arm64.tbz2"}}
 	input.ArchiveSite, input.ArchiveKeys = "/var/tmp/dockhand-archives", []string{"/var/tmp/dockhand-archives/dockhand.pem", "/var/tmp/dockhand-archives/dockhand.pub"}
 	results, _ := guestRunIn(t, root, input)
 	require.Equal(t, "finished", results.State, results.Detail)
@@ -684,7 +537,7 @@ func TestTheGuestSaysWhatItIsBuilding(t *testing.T) {
 	input.BuildTimeout = 2
 	command := guestCommand(t, root, input, "HANG=install:harbor-cli")
 	require.NoError(t, command.Start())
-	var results guestResults
+	var results Results
 	require.Eventually(t, func() bool {
 		var err error
 		results, err = readResults(root)
@@ -715,7 +568,7 @@ func TestTheGuestSaysWhatItIsBuilding(t *testing.T) {
 // nothing more is run.
 func TestATargetBuildsWithOnlyItsClosureActive(t *testing.T) {
 	t.Parallel()
-	input := guestInput{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []guestTarget{{ID: "taisei", Name: "taisei", Portfile: "games/taisei/Portfile"}}}
+	input := Input{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []Target{{ID: "taisei", Name: "taisei", Portfile: "games/taisei/Portfile"}}}
 	active := `  git @2.51.0_0 (active)\n  gettext @1.0_0 (active)\n  gettext-runtime @1.0_0 (active)\n  meson @1.9.1_0 (active)\n  python314 @3.14.0_0 (active)\n`
 	results, commands := guestRun(t, input, "DEPS=taisei=meson,git", "RDEPS=meson=python314 git=gettext-runtime", "ACTIVE="+active)
 	require.Equal(t, "passed", results.Targets[0].Outcome, results.Detail)
@@ -792,10 +645,10 @@ func TestTheGuestSaysWhatAPassedTargetsBinariesLink(t *testing.T) {
 	require.NoError(t, os.WriteFile(harbor+".loads", []byte("Load command 12\n          cmd LC_RPATH\n      cmdsize 32\n         path @loader_path/../lib (offset 12)\n"), 0o644))
 	require.NoError(t, os.WriteFile(own+".links", []byte(own+":\n\t"+own+" (compatibility version 1.0.0, current version 1.0.0)\n\t"+z+" (compatibility version 1.0.0, current version 1.3.1)\n"), 0o644))
 	require.NoError(t, os.WriteFile(own+".id", []byte(own+":\n"+own+"\n"), 0o644))
-	input := guestInput{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []guestTarget{{ID: "harbor", Name: "harbor", Portfile: "devel/harbor/Portfile", Log: buildenv.LogName("harbor")}}}
+	input := Input{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []Target{{ID: "harbor", Name: "harbor", Portfile: "devel/harbor/Portfile", Log: buildenv.LogName("harbor")}}}
 	results, _ := guestRunIn(t, root, input, "CONTENTS="+harbor+"\\n"+own+"\\n"+script+"\\n", "PROVIDES="+onig+"=oniguruma "+own+"=harbor")
 	require.Equal(t, "finished", results.State, results.Detail)
-	require.Equal(t, []guestLink{
+	require.Equal(t, []Link{
 		{Binary: harbor, Library: onig, Port: "oniguruma"},
 		{Binary: harbor, Library: own, Port: "harbor"},
 		{Binary: own, Library: z},

@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildenv/local"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/command/settings"
@@ -142,7 +143,7 @@ func providerLines(ctx context.Context, s *settings.Settings, file config.File) 
 		lines = append(lines, fmt.Sprintf("%-8s %s", "", line))
 	}
 	lines = append(lines, fmt.Sprintf("%-8s %s", buildenv.GitHub, githubReadiness(ctx, s)))
-	if tart.LocalSupported() {
+	if local.Supported() {
 		lines = append(lines, fmt.Sprintf("%-8s %s", buildenv.Local, localReadiness(file.Providers.Local)))
 	}
 	if command := file.Providers.Command; command != nil {

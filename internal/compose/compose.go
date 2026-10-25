@@ -19,6 +19,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
+	"github.com/herbygillot/dockhand/internal/buildenv/local"
 	"github.com/herbygillot/dockhand/internal/buildenv/script"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
@@ -354,11 +355,11 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	}
 	// The local provider builds in a MacPorts prefix wherever there's a
 	// Mac to have one; a prefix is checked when a check names it.
-	if tart.LocalSupported() {
-		local := file.Providers.Local
-		e.Providers[buildenv.Local] = &tart.Local{Repo: e.Repo, Index: e.PortIndex, Prefix: local.Prefix, Keep: local.Keep, Clean: local.Clean,
-			TestTimeout: local.Timeout(), BuildTimeout: local.BuildBound(), Env: options.Env}
-		e.LocalServe = local.Serve
+	if local.Supported() {
+		settings := file.Providers.Local
+		e.Providers[buildenv.Local] = &local.Local{Repo: e.Repo, Index: e.PortIndex, Prefix: settings.Prefix, Keep: settings.Keep, Clean: settings.Clean,
+			TestTimeout: settings.Timeout(), BuildTimeout: settings.BuildBound(), Env: options.Env}
+		e.LocalServe = settings.Serve
 	}
 	if dependencies.Leftovers != nil {
 		e.Providers[dependencies.Leftovers.Name()] = dependencies.Leftovers

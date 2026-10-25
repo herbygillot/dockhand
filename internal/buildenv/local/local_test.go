@@ -1,4 +1,4 @@
-package tart
+package local
 
 import (
 	"context"
@@ -7,27 +7,31 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildenv/guest"
+	"github.com/herbygillot/dockhand/internal/buildenv/guest/guesttest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
-// asIs is two targets checked in a prefix of the person's, as the local
-// provider asks: among whatever is active, put back after.
-func asIs(local guestLocal) guestInput {
-	input := twoTargets("declared")
+// asIs is two targets checked in a prefix of the person's: among
+// whatever is active, put back after.
+func asIs(local guest.Local) guest.Input {
 	local.Note = "dockhand check-1 attempt 1"
-	input.Local = &local
-	return input
+	return guest.Input{Run: "check-1", Attempt: 1, Tests: "declared", Local: &local, Targets: []guest.Target{
+		{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile", Log: buildenv.LogName("libharbor")},
+		{ID: "harbor-cli", Name: "harbor-cli", Portfile: "devel/harbor-cli/Portfile", DependsOn: []string{"libharbor"}, Log: buildenv.LogName("harbor-cli")},
+	}}
 }
 
-// registry is a fake port's registry of active ports, as ACTIVEFILE has
-// it, holding these lines.
+// registry is the fake port's registry of active ports, as ACTIVEFILE
+// has it, holding these lines.
 func registry(t *testing.T, lines ...string) (string, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "active")
@@ -42,103 +46,59 @@ func readRegistry(t *testing.T, path string) string {
 	return string(data)
 }
 
-// In a prefix of the person's, nothing is deactivated before a target
-// builds, and nothing is refused for what's there: how many ports are
-// active, and another package manager, are facts of the build. A snapshot
-// is made before anything changes, and the prefix is put back after:
-// each port whose active version changed activated again at its old one,
-// each the check activated deactivated, and the snapshot, its work done,
-// deleted. The prefix's etc/macports is never written.
-func TestALocalCheckBuildsAsIsAndPutsThePrefixBack(t *testing.T) {
-	t.Parallel()
-	before := []string{"  zlib @1.3.2_0 (active)\n", "  libharbor @3_0 (active)\n"}
-	path, active := registry(t, before...)
-	homebrew := t.TempDir()
-	root := t.TempDir()
-	results, commands := guestRunIn(t, root, asIs(guestLocal{}), active, "DEPS=libharbor=zlib harbor-cli=libharbor", "FOREIGN="+homebrew)
-	require.Equal(t, "finished", results.State, results.Detail)
-	require.Equal(t, "passed", results.Targets[1].Outcome)
-	require.Equal(t, "7", results.Environment["snapshot"])
-	require.Equal(t, "2", results.Environment["active_ports"])
-	require.Equal(t, homebrew, results.Environment["foreign"])
-	require.Equal(t, "yes", results.Environment["restored"])
-	require.NotContains(t, commands, "-N -f deactivate active", "nothing is deactivated before a target builds")
-	require.Equal(t, "-N snapshot --create --note dockhand check-1 attempt 1", commands[slices.IndexFunc(commands, func(c string) bool { return strings.Contains(c, "snapshot --create") })])
-	require.Less(t, slices.Index(commands, "-N snapshot --create --note dockhand check-1 attempt 1"), slices.IndexFunc(commands, func(c string) bool { return strings.Contains(c, " clean --work ") }),
-		"the snapshot comes before anything changes")
-	require.Contains(t, commands, "-N activate libharbor @3_0")
-	require.Contains(t, commands, "-N -f deactivate harbor-cli")
-	require.Contains(t, commands, "-N snapshot --delete 7")
-	got := readRegistry(t, path)
-	for _, line := range before {
-		require.Contains(t, got, line)
+// fakeBuild records what the provider records.
+type fakeBuild struct {
+	mu           sync.Mutex
+	results      []model.TargetResult
+	progress     []string
+	observed     []model.Observed
+	refs         []string
+	dependencies []string
+}
+
+func (b *fakeBuild) Refer(ref string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.refs = append(b.refs, ref)
+	return nil
+}
+func (b *fakeBuild) Observe(observed model.Observed) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.observed = append(b.observed, observed)
+	return nil
+}
+func (b *fakeBuild) Keep(_ model.TargetID, name string, fetch func(path string) error) error {
+	directory, err := os.MkdirTemp("", "dockhand-kept-")
+	if err != nil {
+		return err
 	}
-	require.NotContains(t, got, "harbor-cli", "what the check activated is deactivated")
-	require.NoFileExists(t, filepath.Join(root, "prefix", "etc", "macports", "sources.conf"))
+	defer os.RemoveAll(directory)
+	return fetch(filepath.Join(directory, name))
 }
+func (b *fakeBuild) KeepDependency(port model.ActivePort, _ string, _ func(path string) error) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.dependencies = append(b.dependencies, port.Name)
+	return nil
+}
+func (b *fakeBuild) Blocked(model.TargetID) (model.TargetID, bool) { return "", false }
+func (b *fakeBuild) Record(report buildenv.TargetReport) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.results = append(b.results, report.Result)
+	return nil
+}
+func (b *fakeBuild) Progress(message string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.progress = append(b.progress, message)
+}
+func (b *fakeBuild) Waiting(message string) { b.Progress(message) }
+func (b *fakeBuild) Holding(string) string  { return "" }
+func (b *fakeBuild) Canceled() bool         { return false }
 
-// Keeping what the check built leaves the branch's versions active, as
-// check --keep and [providers.local] keep ask, and its snapshot standing
-// for a put-back of the person's own.
-func TestALocalCheckKeepsWhatItBuiltWhereAsked(t *testing.T) {
-	t.Parallel()
-	path, active := registry(t, "  libharbor @3_0 (active)\n")
-	results, commands := guestRun(t, asIs(guestLocal{Keep: true}), active, "NEWVERSION=4_0")
-	require.Equal(t, "finished", results.State, results.Detail)
-	require.Equal(t, "kept", results.Environment["restored"])
-	require.NotContains(t, commands, "-N activate libharbor @3_0")
-	require.NotContains(t, commands, "-N snapshot --delete 7")
-	require.Contains(t, readRegistry(t, path), "  libharbor @4_0 (active)\n")
-	require.Contains(t, readRegistry(t, path), "  harbor-cli @4_0 (active)\n")
-}
-
-// A prefix dockhand may clean builds each target as a clone does, all but
-// its dependencies deactivated, and is put back after.
-func TestALocalCheckInAPrefixItMayCleanBuildsClean(t *testing.T) {
-	t.Parallel()
-	path, active := registry(t, "  zlib @1.3.2_0 (active)\n", "  xz @5.8.1_0 (active)\n")
-	results, commands := guestRun(t, asIs(guestLocal{Clean: true}), active, "DEPS=libharbor=zlib harbor-cli=libharbor")
-	require.Equal(t, "finished", results.State, results.Detail)
-	require.Contains(t, commands, "-N -f deactivate active")
-	require.Equal(t, "yes", results.Environment["restored"])
-	got := readRegistry(t, path)
-	require.Contains(t, got, "  zlib @1.3.2_0 (active)\n")
-	require.Contains(t, got, "  xz @5.8.1_0 (active)\n")
-	require.NotContains(t, got, "libharbor")
-}
-
-// An image of the version the branch builds, installed already, would be
-// activated rather than built: the check stops, saying so, and puts the
-// prefix back.
-func TestALocalCheckRefusesWhereTheBranchsVersionIsInstalled(t *testing.T) {
-	t.Parallel()
-	_, active := registry(t, "  zlib @1.3.2_0 (active)\n")
-	results, commands := guestRun(t, asIs(guestLocal{}), active, "DEPVERSION=libharbor=4,0", "INSTALLED=  libharbor @4_0\\n")
-	require.Equal(t, "refused", results.State)
-	require.Contains(t, results.Detail, "libharbor @4_0 is installed in")
-	require.Contains(t, results.Detail, "port uninstall libharbor @4_0")
-	require.Equal(t, "yes", results.Environment["restored"])
-	require.False(t, slices.ContainsFunc(commands, func(c string) bool { return strings.Contains(c, "-dkns install") }), "nothing is built")
-}
-
-// A check whose process ended before it put the prefix back is put back
-// by the program run to do only that, from what was active before.
-func TestTheGuestPutsBackWhatAnEarlierCheckLeft(t *testing.T) {
-	t.Parallel()
-	path, active := registry(t, "  libharbor @4_0 (active)\n", "  harbor-cli @4_0 (active)\n")
-	root := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(root, "before.txt"), []byte("  libharbor @3_0 (active)\n  zlib @1.3.2_0 (active)\n"), 0o644))
-	results, commands := guestRunIn(t, root, asIs(guestLocal{Restore: true}), active)
-	require.Equal(t, "finished", results.State, results.Detail)
-	require.Equal(t, "yes", results.Environment["restored"])
-	require.Contains(t, commands, "-N -f deactivate harbor-cli")
-	require.Contains(t, commands, "-N activate libharbor @3_0")
-	require.Contains(t, commands, "-N activate zlib @1.3.2_0")
-	got := readRegistry(t, path)
-	require.Contains(t, got, "  libharbor @3_0 (active)\n")
-	require.Contains(t, got, "  zlib @1.3.2_0 (active)\n")
-	require.NotContains(t, got, "harbor-cli")
-}
+var tahoe = model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 
 // fakePrefix is a MacPorts prefix of the person's for the local provider:
 // the fake port, and a port-tclsh that runs the guest program under the
@@ -152,7 +112,7 @@ func fakePrefix(t *testing.T, env ...string) (prefix string, environment []strin
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "etc", "macports"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "var", "macports", "registry"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(prefix, "etc", "macports", "sources.conf"), []byte("rsync://rsync.macports.org/macports/release/tarballs/ports.tar [default]\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(prefix, "bin", "port"), []byte(fakePort), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(prefix, "bin", "port"), []byte(guesttest.FakePort), 0o755))
 	prelude := filepath.Join(root, "prelude.tcl")
 	require.NoError(t, os.WriteFile(prelude, []byte(`
 package provide macports 1.0
@@ -169,7 +129,7 @@ source $argv0
 	tclsh := testsupport.MacPortsTclsh(t)
 	require.NoError(t, os.WriteFile(filepath.Join(prefix, "bin", "port-tclsh"), []byte("#!/bin/sh\nexec "+tclsh+" "+prelude+" \"$@\"\n"), 0o755))
 	otool := filepath.Join(root, "otool")
-	require.NoError(t, os.WriteFile(otool, []byte(fakeOtool), 0o755))
+	require.NoError(t, os.WriteFile(otool, []byte(guesttest.FakeOtool), 0o755))
 	portLog = filepath.Join(root, "port.log")
 	environment = append(append(os.Environ(), "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=",
 		"ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "INSTALLED=", "DEPVERSION=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
@@ -181,7 +141,7 @@ source $argv0
 // empty tree.
 func localProvider(t *testing.T, env []string) *Local {
 	return &Local{Poll: 10 * time.Millisecond, Temp: t.TempDir(), Env: env,
-		stager: func(_ context.Context, _ buildenv.Job, input guestInput, dir string) error {
+		stager: func(_ context.Context, _ buildenv.Job, input guest.Input, dir string) error {
 			data, err := json.Marshal(input)
 			if err != nil {
 				return err
@@ -192,7 +152,7 @@ func localProvider(t *testing.T, env []string) *Local {
 			if err := os.WriteFile(filepath.Join(dir, "ports", "PortIndex"), nil, 0o644); err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(dir, "guest.tcl"), guestProgram, 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "guest.tcl"), guest.Program, 0o644); err != nil {
 				return err
 			}
 			return os.WriteFile(filepath.Join(dir, "input.json"), data, 0o644)
@@ -200,9 +160,17 @@ func localProvider(t *testing.T, env []string) *Local {
 }
 
 func localJob(t *testing.T, prefix string) buildenv.Job {
-	job := tartJob(t, 1)
-	job.Environment = model.Environment{Provider: buildenv.Local, Platform: tahoe, Prefix: prefix}
-	return job
+	return buildenv.Job{
+		Run:         model.Run{ID: "run_7", Number: 3},
+		Execution:   model.GuestExecution{ID: "ex_1", Attempt: 1},
+		Plan:        model.Plan{Tests: model.TestsDeclared},
+		Environment: model.Environment{Provider: buildenv.Local, Platform: tahoe, Prefix: prefix},
+		Directory:   t.TempDir(),
+		Targets: []buildenv.Target{
+			{PlanTarget: model.PlanTarget{ID: "libharbor", Target: model.Target{Name: "libharbor", Portfile: "devel/libharbor/Portfile"}}},
+			{PlanTarget: model.PlanTarget{ID: "harbor-cli", Target: model.Target{Name: "harbor", Subport: "harbor-cli", Portfile: "devel/harbor/Portfile"}}, DependsOn: []model.TargetID{"libharbor"}},
+		},
+	}
 }
 
 // The local provider runs the guest program in the prefix, as the person
@@ -281,12 +249,12 @@ func leftBehind(t *testing.T, temp, prefix string) string {
 	owned, err := json.Marshal(owner{PID: 0, Check: "check-9", Prefix: prefix})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(left, "owner.json"), owned, 0o644))
-	earlier := asIs(guestLocal{})
-	earlier.Protocol, earlier.Prefix = Protocol, prefix
+	earlier := asIs(guest.Local{})
+	earlier.Protocol, earlier.Prefix = guest.Protocol, prefix
 	input, err := json.Marshal(earlier)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(left, "input.json"), input, 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(left, "guest.tcl"), guestProgram, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(left, "guest.tcl"), guest.Program, 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(left, "results.json"), []byte(`{"protocol":1,"state":"running","environment":{"snapshot":"7"}}`), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(left, "before.txt"), []byte("  zlib @1.3.2_0 (active)\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(left, "macports.conf"), nil, 0o644))

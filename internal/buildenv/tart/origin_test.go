@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	guestprogram "github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/model"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 )
@@ -130,9 +131,7 @@ const guestPin = "ffdf860ecab3242a90f7a6eba2e660e4709d3f4d0516cba2de5596445bfca9
 // program recorded before; or, for a change of wording only, update the
 // pin.
 func TestTheVerifierProtocolCoversTheGuestProgram(t *testing.T) {
-	data, err := os.ReadFile("guest.tcl")
-	require.NoError(t, err)
-	sum := sha256.Sum256(data)
+	sum := sha256.Sum256(guestprogram.Program)
 	require.Equal(t, 3, VerifierProtocol)
 	require.Equal(t, guestPin, hex.EncodeToString(sum[:]), "guest.tcl changed: raise VerifierProtocol if ports are built or judged otherwise, or update guestPin if not")
 }

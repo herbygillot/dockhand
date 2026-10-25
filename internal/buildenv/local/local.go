@@ -1,4 +1,8 @@
-package tart
+// Package local is the local provider (Design v3 §7): it builds a check's
+// targets in a MacPorts prefix on this Mac, /opt/local or one of the
+// person's own, with the guest program Tart's clones run (package guest),
+// under the prefix's port-tclsh and in MacPorts CI's order.
+package local
 
 import (
 	"cmp"
@@ -19,6 +23,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/buildenv/staging"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -30,12 +35,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
-// Local is the local provider (Design v3 §7): it builds a check's targets
-// in a MacPorts prefix on this Mac, /opt/local or one of the person's own,
-// with the guest program Tart's clones run, under the prefix's port-tclsh
-// and in MacPorts CI's order. It lives beside Tart's provider because it
-// is that program, and the following of its results, run on this Mac
-// rather than in a clone.
+// Local builds a check's targets in a MacPorts prefix on this Mac.
 //
 // The prefix is the person's, so the check changes it as little as it
 // can: MacPorts reads the staged tree through a macports.conf of the
@@ -77,7 +77,7 @@ type Local struct {
 	sudo []string
 	// stager replaces staging the revision in tests: it writes the guest
 	// program, its input, and a tree into the check's directory.
-	stager func(ctx context.Context, job buildenv.Job, input guestInput, dir string) error
+	stager func(ctx context.Context, job buildenv.Job, input guest.Input, dir string) error
 	// building guards the check directories this process is building in,
 	// which Changes says are building.
 	building sync.Map
@@ -163,12 +163,12 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		return err
 	}
 	keep := job.Plan.Keep || l.Keep
-	input := guestInput{Protocol: Protocol, Run: job.Run.Name(), Attempt: job.Execution.Attempt, Prefix: prefix,
+	input := guest.Input{Protocol: guest.Protocol, Run: job.Run.Name(), Attempt: job.Execution.Attempt, Prefix: prefix,
 		Platform: job.Environment.Platform, Tests: cmp.Or(string(job.Plan.Tests), string(model.TestsDeclared)),
 		TestTimeout: int(cmp.Or(l.TestTimeout, buildenv.DefaultTestTimeout) / time.Second), BuildTimeout: int(cmp.Or(l.BuildTimeout, buildenv.DefaultBuildTimeout) / time.Second),
-		LintTimeout: int(LintTimeout / time.Second), Targets: guestTargets(job, build),
-		Local: &guestLocal{Clean: slices.Contains(l.Clean, prefix), Keep: keep, Note: fmt.Sprintf("dockhand %s attempt %d", job.Run.Name(), job.Execution.Attempt)}}
-	if !slices.ContainsFunc(input.Targets, func(t guestTarget) bool { return !t.Blocked }) {
+		LintTimeout: int(guest.LintTimeout / time.Second), Targets: guest.Targets(job, build),
+		Local: &guest.Local{Clean: slices.Contains(l.Clean, prefix), Keep: keep, Note: fmt.Sprintf("dockhand %s attempt %d", job.Run.Name(), job.Execution.Attempt)}}
+	if !slices.ContainsFunc(input.Targets, func(t guest.Target) bool { return !t.Blocked }) {
 		return nil
 	}
 	sudo, err := l.asRoot(ctx, prefix, build)
@@ -212,9 +212,9 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		return buildenv.Infrastructure("starting the guest program: %w", err)
 	}
 	build.Progress(fmt.Sprintf("building in %s (%s)", prefix, map[bool]string{true: "as root", false: "as you"}[len(sudo) > 0]))
-	follower := &Provider{Prefix: prefix, Poll: l.Poll, local: true, root: dir}
+	follower := &guest.Follower{Prefix: prefix, Root: dir, Poll: l.Poll}
 	release, _ := hostRelease(job.Environment.Platform)
-	err = follower.follow(ctx, hostGuest{}, started, job, build, release)
+	err = follower.Follow(ctx, hostGuest{}, started, job, build, release)
 	select {
 	case <-started.Done():
 	default:
@@ -237,8 +237,8 @@ func hostRelease(platform model.Platform) (macos.Release, error) {
 // wrote last, and removes the check's directory where nothing is left to
 // put back. A prefix the program didn't put back, as when its check was
 // stopped, is put back now; one that can't be is said, with how.
-func (l *Local) settle(ctx context.Context, follower *Provider, dir, prefix, check string, sudo []string, build buildenv.Build) {
-	results, err := follower.read(ctx, hostGuest{})
+func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefix, check string, sudo []string, build buildenv.Build) {
+	results, err := follower.Read(ctx, hostGuest{})
 	snapshot := results.Environment["snapshot"]
 	restored := results.Environment["restored"]
 	switch {
@@ -267,7 +267,7 @@ func (l *Local) settle(ctx context.Context, follower *Provider, dir, prefix, che
 
 // stage packs the revision's tree, its port index, and the guest program
 // and its input, and unpacks them in the check's directory.
-func (l *Local) stage(ctx context.Context, job buildenv.Job, input guestInput, dir string) error {
+func (l *Local) stage(ctx context.Context, job buildenv.Job, input guest.Input, dir string) error {
 	if l.Index == nil {
 		return errors.New("no port index source")
 	}
@@ -285,7 +285,7 @@ func (l *Local) stage(ctx context.Context, job buildenv.Job, input guestInput, d
 	}
 	archive := filepath.Join(job.Directory, "input.tar")
 	defer os.Remove(archive)
-	payload := map[string][]byte{"guest.tcl": guestProgram, "input.json": data}
+	payload := map[string][]byte{"guest.tcl": guest.Program, "input.json": data}
 	if err := staging.Archive(ctx, l.Repo, &l.workspaces, staging.Request{Source: job.Revision.Source, Target: job.Targets[0].Target, AdditionalTargets: rest,
 		Platform: job.Environment.Platform, Index: index}, archive, payload, nil); err != nil {
 		return err
@@ -394,7 +394,7 @@ func (l *Local) restore(ctx context.Context, dir, prefix, check string, sudo []s
 	if err != nil {
 		return err
 	}
-	var input guestInput
+	var input guest.Input
 	if err := json.Unmarshal(data, &input); err != nil || input.Local == nil {
 		return fmt.Errorf("the check's input couldn't be read: %v", err)
 	}
@@ -415,7 +415,7 @@ func (l *Local) restore(ctx context.Context, dir, prefix, check string, sudo []s
 		_ = run.Stop(context.WithoutCancel(ctx), 30*time.Second)
 		return ctx.Err()
 	}
-	results, err := (&Provider{root: dir}).read(ctx, hostGuest{})
+	results, err := (&guest.Follower{Root: dir}).Read(ctx, hostGuest{})
 	if err != nil {
 		return err
 	}
@@ -455,7 +455,7 @@ func (l *Local) left() []leftDirectory {
 		if err != nil || json.Unmarshal(data, &left.owner) != nil {
 			continue
 		}
-		results, err := (&Provider{root: dir}).read(context.Background(), hostGuest{})
+		results, err := (&guest.Follower{Root: dir}).Read(context.Background(), hostGuest{})
 		if building(left.owner, results) {
 			continue
 		}
@@ -471,7 +471,7 @@ func (l *Local) left() []leftDirectory {
 // building says whether a check's directory is still being built in: by
 // the dockhand that made it, or by its guest program, which goes on where
 // dockhand ended first.
-func building(made owner, results guestResults) bool {
+func building(made owner, results guest.Results) bool {
 	program, _ := strconv.Atoi(results.Environment["pid"])
 	return alive(made.PID) || alive(program)
 }
@@ -534,7 +534,7 @@ func (l *Local) Changes(ctx context.Context) ([]buildenv.Change, error) {
 		if err != nil || json.Unmarshal(data, &made) != nil {
 			continue
 		}
-		results, err := (&Provider{root: dir}).read(ctx, hostGuest{})
+		results, err := (&guest.Follower{Root: dir}).Read(ctx, hostGuest{})
 		if err != nil || results.Environment["snapshot"] == "" || slices.Contains([]string{"yes", "kept"}, results.Environment["restored"]) {
 			continue
 		}
@@ -666,6 +666,6 @@ func (hostGuest) Append(_ context.Context, path, local string, _ bool) error {
 
 func (hostGuest) Close(context.Context) {}
 
-// LocalSupported says whether the local provider can build here: on a
-// Mac, MacPorts' own.
-func LocalSupported() bool { return runtime.GOOS == "darwin" }
+// Supported says whether the local provider can build here: on a Mac,
+// MacPorts' own.
+func Supported() bool { return runtime.GOOS == "darwin" }

@@ -56,7 +56,7 @@ func TestLiveCheckInATahoeGuest(t *testing.T) {
 	require.Len(t, build.results, 2)
 	for _, result := range build.results {
 		log, _ := os.ReadFile(result.Log)
-		require.Equal(t, model.OutcomePassed, result.Outcome, "%s: %s", result.Target, tail(string(log), 2000))
+		require.Equal(t, model.OutcomePassed, result.Outcome, "%s: %s", result.Target, string(log[max(0, len(log)-2000):]))
 		require.NotEmpty(t, log)
 	}
 	images, err := p.machine.Images(t.Context())
