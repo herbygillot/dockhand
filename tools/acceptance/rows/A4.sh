@@ -1,5 +1,5 @@
 # stages: full
-# A4: the README's "An update, start to finish" followed word for word,
+# A4: the README's "Make your first update" followed word for word,
 # on a port that's due. Where the README and the tool disagree, one is
 # fixed. A10 runs the same examples as tests; this is a person's reading.
 # prs: ${ACCEPT_GO_PORT} test
@@ -22,7 +22,7 @@ export PATH="/opt/local/bin:/opt/local/sbin:\$PATH"
 ENV
 	local image=""
 	"$DH_BIN" setup </dev/null 2>/dev/null | matches '✓ images for' || image=" Its check builds in Tart's plain image, which this home hasn't: make it first with dockhand setup tart, the README's setup."
-	checkpoint "in a dhtest Terminal, source $ROW_DIR/env.sh, then follow the README's \"An update, start to finish\" word for word on $ACCEPT_GO_PORT. At submit, add --title \"[testing] <the commit's subject>\" --skip-notification --note \"This pull request tests a dockhand release candidate, ${ACCEPT_CANDIDATE:-}, and will be closed without merging.\", so it's a test pull request in $DOCKHAND_PULL_REQUESTS.$image Note every disagreement with the README in $ROW_DIR/notes" || return 0
+	checkpoint "in a dhtest Terminal, source $ROW_DIR/env.sh, then follow the README's \"Make your first update\" word for word on $ACCEPT_GO_PORT. At submit, add --title \"[testing] <the commit's subject>\" --skip-notification --note \"This pull request tests a dockhand release candidate, ${ACCEPT_CANDIDATE:-}, and will be closed without merging.\", so it's a test pull request in $DOCKHAND_PULL_REQUESTS.$image Note every disagreement with the README in $ROW_DIR/notes" || return 0
 }
 assert() {
 	if [ -s "$ROW_DIR/notes" ]; then

@@ -12,6 +12,8 @@ assert() {
 		row_fail "$(port)'s plan exited $(cat "$C13_PLAN.exit"): $(jq -r '.error // empty' "$C13_PLAN")"
 	elif [ "$(cat "$C13_PLAN.exit")" != 0 ]; then
 		row_fail "$(port), with a long go.vendors, was refused: $(jq -r '.error // empty' "$C13_PLAN")"
+	elif plan_current "$(port)"; then
+		plan_not_due "$(port)"
 	elif ! plan_words "$(port)" | matches -E '^\+go\.setup .*/opkssh [0-9]'; then
 		row_fail "$(port)'s plan didn't move its version: $(plan_words "$(port)" | grep -E '^[-+]go\.setup' | tr '\n' ';')"
 	else

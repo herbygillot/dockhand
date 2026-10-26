@@ -235,19 +235,13 @@ dockhand serve --install
 
 New Portfiles include `# dockhand: unconfirmed` markers for inferred values. Review and correct those fields, then remove the markers before submitting. For Go and Rust version updates, prefer `update` over editing the version and running `checksums`: `checksums` alone does not regenerate dependency lists.
 
-## Known issues in v0.5.0
+## Known issues in v0.6.0
 
-Each is rough, harms nothing a look wouldn't catch, and has a workaround. Those marked are fixed on `main` already, for the release after v0.5.0.
+Each is rough, harms nothing a look wouldn't catch, and has a workaround.
 
 - `check` builds on this Mac's release unless told otherwise, `build.default`'s `host`, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--build macports-ci` checks on all three, and `build.default = "macports-ci"` makes it the default.
-- A batch of submits, with serve watching their pull requests, can spend GitHub's hourly limit of requests; dockhand says when it lifts. Signed out, the limit is 60 requests an hour, and serve's watch of a single open pull request spends it all, so its pull requests' changes go unseen until the hour ends. Sign in with `dockhand setup github`. Fixed on `main`: signed out, a refresh reads each open pull request's state alone, one request, and stops short of the limit.
 - On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first Tart check of a Rust or Go port there builds rust and cargo, or go, from source: hours on a VM's two cores. The check says so before it builds, and a later check installs them from the archives dockhand kept, until cleanup forgets them. Check such a port first on the previous release, `--on tahoe`, or let the first check run.
-- After you pull a collaborator's commit to a branch's pull request and discard it with a reset, `submit` replaces their commit with yours. Its preview says so on its Push line, so read the preview before you confirm. Fixed on `main`: a commit replaces theirs only when it is their commit amended.
-- A port whose project moved its releases to another repository, so that the old repository's tags stop below the port's version, reads as current in `outdated`, as mergestat, carl, and zed with zq do: mergestat at 0.5.4, its old repository's newest stable tag v0.1.0. Check such a port's project page. Fixed on `main` (1c9d5a47): `outdated` holds it for a look, and `update` asks for the version to take.
-- A trailer given in `tidy --squash --message` that the branch's commits already carry, as `Assisted-by:`, is written twice in the squashed commit. Leave it out of the message: tidy keeps the commits' own trailers. Fixed on `main`: a trailer the message gives is written once.
-- Off a terminal, as under an agent or a script, a foreground `check` prints nothing between its plan and its report, though it runs for as long as its builds take. `-v` prints each step as it goes, and `check -d` runs the check in the background, with or without serve, for `dockhand wait` or `status` to follow.
-- After GitHub rejects dockhand's login, as when it's revoked, a command reading GitHub says it couldn't reach GitHub, though the words in its parentheses say GitHub rejected the credential. Run `dockhand setup github` to sign in again. Fixed on `main`: the command says GitHub rejected the login, and how to sign in again.
-- Over SSH with the login Keychain locked, `dockhand setup` says GitHub needs a login, offers one, and its Next: line says `dockhand setup github`, though the login is saved, as its Publishing line says. Run `security unlock-keychain` in that shell, or set GH_TOKEN, and decline the login it offers. Fixed on `main` (6a5ad0f4): setup says the Keychain is locked, and offers no login.
+- `status --all` reads each branch in turn, close to a minute with several hundred branches, most of them archived (55 s for 683 on rc2); plain `status`, or `status <branch>`, stays quick.
 
 ## Scope
 
