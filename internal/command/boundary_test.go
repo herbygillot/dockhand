@@ -38,6 +38,7 @@ var commandImports = map[string]string{
 	"internal/buildenv":             "vocabulary: the providers' names, which check's and logs' words say, and what a check changed of the person's, which status says",
 	"internal/buildenv/ghactions":   "vocabulary: the branch prefix check's preview names",
 	"internal/buildenv/tart":        "setup's, until part 4.2: Tart's images and readiness, and config's Xcodes",
+	"internal/buildenv/local":       "setup's: whether the local provider builds on this Mac",
 	"internal/github":               "setup's, until part 4.2: the login and its source; and GitHub's pull request URLs, the spend log, and the allowance",
 	"internal/credential":           "setup's, until part 4.2: where the login is kept",
 	"internal/credential/keychain":  "setup's, until part 4.2: the macOS Keychain",

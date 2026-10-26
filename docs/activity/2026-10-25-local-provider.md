@@ -17,10 +17,9 @@ person; design-v3 §7's `prefix` text is replaced by it.
   did) since the uniqueness of a run's environment and attempt takes the
   prefix in. Reuse and archive pruning partition by it. Dependency
   archives aren't keyed by it: local keeps none.
-- **Tart's guest program, run here.** tart.Local lives beside Tart's
-  provider because it is that program, guest.tcl, under the prefix's
-  port-tclsh, and Tart's follower reading its results (Provider.local and
-  root, a host guest of plain file reads). guest.tcl changes only where
+- **Tart's guest program, run here.** local.Local runs guest.tcl under
+  the prefix's port-tclsh, and the guest package's Follower reads its
+  results through a host guest of plain file reads. guest.tcl changes only where
   input.local is set, so a Tart check takes rc2's path: VerifierProtocol
   stays 3 and the pin moves.
 - **The prefix is the person's.** MacPorts reads the staged tree through
@@ -65,3 +64,32 @@ put back by the next check. The engine's: `--on local:<prefix>`, the
 refusals, and Changes. Not tested: sudo's prompt, and an Intel Mac,
 inferred to work since nothing in it is arch-specific. The four M1 rows
 for rc3 are the acceptance.
+
+## Its own package (before rc3)
+
+7d58ee72 put the provider in package tart, beside the program it runs,
+and tart/provider.go grew to 1,598 lines. The architecture thread asked
+for the split before rc3 (roadmap e9323eb6), and it changes no behaviour:
+
+- **internal/buildenv/guest** holds guest.tcl, embedded as guest.Program,
+  Protocol and LintTimeout, the program's input and results types, now
+  exported (Input, Target, Local, Archive, Git, Results, Result, Link,
+  Step, Port), Targets, the Guest and Run interfaces, and the Follower,
+  Follow and Read with what they call. What 7d58ee72's Provider.local
+  toggled is named on the Follower: Stopped, how a clone's program is
+  known to have exited (nil where it's the Run's end, as a process's is),
+  Drift, and KeepDependencies. guest/guesttest holds the fake port and
+  otool both packages' tests run.
+- **internal/buildenv/tart** keeps the VM's lifecycle; its follower is
+  guest.Follower{Root: guestRoot, Stopped: stopped, Drift: true,
+  KeepDependencies: true}, and its guest and run are the guest package's.
+  provider.go is 1,024 lines.
+- **internal/buildenv/local** holds the provider, its host guest, sudo,
+  the snapshot's directory, and Changes; tart.LocalSupported is
+  local.Supported.
+
+The tests moved with what they test, none changed in what it asserts:
+guest_test.go and the guest's local-mode tests to guest, the provider's
+to local, and the progress-words test to guest's follow_test.go. The
+VerifierProtocol pin now reads guest.Program; guest.tcl and the protocol
+are as 7d58ee72 left them.

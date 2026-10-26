@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	guestprogram "github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -188,10 +189,10 @@ func (r *fakeRun) Stop(context.Context, time.Duration) error { r.stopped = true;
 // guest program's launchd job has exited.
 type fakeGuest struct {
 	mu       sync.Mutex
-	results  []guestResults
+	results  []guestprogram.Results
 	exited   bool
 	uploaded string
-	input    guestInput
+	input    guestprogram.Input
 	logs     map[string]string
 	// uploads are the files sent other than the input, and commands the
 	// commands run, other than launchd's.
@@ -402,7 +403,7 @@ func tartJob(t *testing.T, attempt int) buildenv.Job {
 // testProvider builds on a fake Mac, staging only the guest's input.
 func testProvider(mac *fakeMac) *Provider {
 	return &Provider{machine: mac, Poll: time.Millisecond, host: 25,
-		stager: func(_ context.Context, _ buildenv.Job, input guestInput, archive string) error {
+		stager: func(_ context.Context, _ buildenv.Job, input guestprogram.Input, archive string) error {
 			data, err := json.Marshal(input)
 			if err != nil {
 				return err
@@ -411,9 +412,9 @@ func testProvider(mac *fakeMac) *Provider {
 		}}
 }
 
-func newMac(results ...guestResults) *fakeMac {
+func newMac(results ...guestprogram.Results) *fakeMac {
 	for i := range results {
-		results[i].Protocol = Protocol
+		results[i].Protocol = guestprogram.Protocol
 	}
 	return &fakeMac{images: []string{"dockhand-base-tahoe"}, run: &fakeRun{done: make(chan struct{})},
 		guest: &fakeGuest{results: results, logs: map[string]string{"target-1.log": "built libharbor", "target-2.log": "built harbor-cli"}}}
@@ -424,16 +425,16 @@ func newMac(results ...guestResults) *fakeMac {
 // after.
 func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	t.Parallel()
-	libharbor := guestResult{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestPort{}, Archive: "sha256:11",
+	libharbor := guestprogram.Result{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestprogram.Port{}, Archive: "sha256:11",
 		ArchiveFile: "/opt/local/var/macports/software/libharbor/libharbor-3_0.darwin_25.arm64.tbz2"}
-	cli := guestResult{ID: "harbor-cli", Outcome: "failed", Phase: "install", Log: "target-2.log", Detail: "Failed to install harbor-cli",
-		Active: []guestPort{{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11", ArchiveFile: "/opt/local/var/macports/software/libharbor/libharbor-3_0.darwin_25.arm64.tbz2"},
+	cli := guestprogram.Result{ID: "harbor-cli", Outcome: "failed", Phase: "install", Log: "target-2.log", Detail: "Failed to install harbor-cli",
+		Active: []guestprogram.Port{{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11", ArchiveFile: "/opt/local/var/macports/software/libharbor/libharbor-3_0.darwin_25.arm64.tbz2"},
 			{Name: "rust", Spec: "@1.91.0_0", Directory: "lang/rust", Archive: "sha256:22", ArchiveFile: "/opt/local/var/macports/software/rust/rust-1.91.0_0.darwin_25.arm64.tbz2"}},
-		Steps: []guestStep{{"lint", 1}, {"dependencies", 3}, {"fetch", 900}, {"checksum", 902}, {"install", 903}}}
+		Steps: []guestprogram.Step{{Name: "lint", Line: 1}, {Name: "dependencies", Line: 3}, {Name: "fetch", Line: 900}, {Name: "checksum", Line: 902}, {Name: "install", Line: 903}}}
 	mac := newMac(
-		guestResults{State: "running"},
-		guestResults{State: "running", Targets: []guestResult{libharbor}},
-		guestResults{State: "finished", Targets: []guestResult{libharbor, cli}},
+		guestprogram.Results{State: "running"},
+		guestprogram.Results{State: "running", Targets: []guestprogram.Result{libharbor}},
+		guestprogram.Results{State: "finished", Targets: []guestprogram.Result{libharbor, cli}},
 	)
 	mac.guest.logs["libharbor-3_0.darwin_25.arm64.tbz2"] = "libharbor's archive"
 	mac.guest.logs["rust-1.91.0_0.darwin_25.arm64.tbz2"] = "rust's archive"
@@ -474,8 +475,8 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 func TestAnArchiveIsKeptOnlyFromMacPortsSoftware(t *testing.T) {
 	t.Parallel()
 	for _, file := range []string{"", "/etc/master.passwd", "/opt/local/var/macports/software/../../../../etc/master.passwd"} {
-		libharbor := guestResult{ID: "libharbor", Outcome: "passed", Tests: "none", Log: "target-1.log", Archive: "sha256:11", ArchiveFile: file}
-		mac := newMac(guestResults{State: "finished", Targets: []guestResult{libharbor}})
+		libharbor := guestprogram.Result{ID: "libharbor", Outcome: "passed", Tests: "none", Log: "target-1.log", Archive: "sha256:11", ArchiveFile: file}
+		mac := newMac(guestprogram.Results{State: "finished", Targets: []guestprogram.Result{libharbor}})
 		mac.guest.logs["master.passwd"] = "secrets"
 		build := &fakeBuild{}
 		job := tartJob(t, 1)
@@ -502,7 +503,7 @@ func TestKeptArchivesGoToTheGuestSigned(t *testing.T) {
 	name := "libharbor-4_0.darwin_25.arm64.tbz2"
 	install := buildenv.Archive{Target: "libharbor", Port: "libharbor", Name: name, Digest: "sha256:" + hex.EncodeToString(sum[:]), Path: kept}
 	run := func(install buildenv.Archive) (*fakeMac, *fakeBuild, buildenv.Job, error) {
-		mac := newMac(guestResults{State: "finished", Targets: []guestResult{{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log"}}})
+		mac := newMac(guestprogram.Results{State: "finished", Targets: []guestprogram.Result{{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log"}}})
 		provider := testProvider(mac)
 		provider.archiveKeys = func() (binaryarchive.Keys, error) { return keys, nil }
 		job := tartJob(t, 1)
@@ -514,7 +515,7 @@ func TestKeptArchivesGoToTheGuestSigned(t *testing.T) {
 	mac, build, job, err := run(install)
 	require.NoError(t, err)
 	require.Len(t, build.results, 1)
-	require.Equal(t, []guestArchive{{Port: "libharbor", Name: name}}, mac.guest.input.Archives)
+	require.Equal(t, []guestprogram.Archive{{Port: "libharbor", Name: name}}, mac.guest.input.Archives)
 	require.Equal(t, "/var/tmp/dockhand-archives", mac.guest.input.ArchiveSite)
 	require.Equal(t, []string{"/var/tmp/dockhand-archives/dockhand.pem", "/var/tmp/dockhand-archives/dockhand.pub"}, mac.guest.input.ArchiveKeys)
 	remote := "/var/tmp/dockhand-archives/libharbor/" + name
@@ -566,7 +567,7 @@ func TestKeptArchivesGoToTheGuestSigned(t *testing.T) {
 // A target an earlier attempt found blocked goes to the guest marked so.
 func TestABlockedTargetGoesToTheGuestMarked(t *testing.T) {
 	t.Parallel()
-	mac := newMac(guestResults{State: "finished"})
+	mac := newMac(guestprogram.Results{State: "finished"})
 	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 2), &fakeBuild{blocked: map[model.TargetID]bool{"harbor-cli": true}}))
 	require.False(t, mac.guest.input.Targets[0].Blocked)
 	require.True(t, mac.guest.input.Targets[1].Blocked)
@@ -579,19 +580,19 @@ func TestABlockedTargetGoesToTheGuestMarked(t *testing.T) {
 func TestAGitFetchedTargetGoesToTheGuestWithTheCommitExpected(t *testing.T) {
 	t.Parallel()
 	commit := strings.Repeat("a", 40)
-	libharbor := guestResult{ID: "libharbor", Outcome: "passed", Tests: "none", Log: "target-1.log", Fetched: commit}
-	cli := guestResult{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log"}
+	libharbor := guestprogram.Result{ID: "libharbor", Outcome: "passed", Tests: "none", Log: "target-1.log", Fetched: commit}
+	cli := guestprogram.Result{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log"}
 	job := tartJob(t, 1)
 	job.Targets[0].Git = &model.GitSource{URL: "https://example.org/libharbor.git", Ref: "v4", Commit: model.ObjectID(commit), ResolvedAt: time.Now()}
-	mac := newMac(guestResults{State: "finished", Targets: []guestResult{libharbor, cli}})
+	mac := newMac(guestprogram.Results{State: "finished", Targets: []guestprogram.Result{libharbor, cli}})
 	build := &fakeBuild{}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
-	require.Equal(t, &guestGit{Ref: "v4", Expect: commit}, mac.guest.input.Targets[0].Git)
+	require.Equal(t, &guestprogram.Git{Ref: "v4", Expect: commit}, mac.guest.input.Targets[0].Git)
 	require.Nil(t, mac.guest.input.Targets[1].Git)
 	require.Equal(t, map[model.TargetID]string{"libharbor": commit}, build.fetched)
 
 	libharbor.Fetched = "v4"
-	mac = newMac(guestResults{State: "finished", Targets: []guestResult{libharbor}})
+	mac = newMac(guestprogram.Results{State: "finished", Targets: []guestprogram.Result{libharbor}})
 	err := testProvider(mac).Execute(t.Context(), job, &fakeBuild{})
 	require.ErrorIs(t, err, buildenv.ErrDockhandFault, "the guest program is dockhand's")
 	require.ErrorContains(t, err, `fetched "v4", which isn't a commit`)
@@ -602,13 +603,13 @@ func TestAGitFetchedTargetGoesToTheGuestWithTheCommitExpected(t *testing.T) {
 // again; what was recorded stays, and the clone goes.
 func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	t.Parallel()
-	passed := guestResult{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
+	passed := guestprogram.Result{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
 	for name, test := range map[string]struct {
 		mac  *fakeMac
 		want string
 	}{
-		"errored": {newMac(guestResults{State: "running", Targets: []guestResult{passed}}, guestResults{State: "errored", Detail: "the image already has ports installed"}), "the image already has ports installed"},
-		"exited":  {newMac(guestResults{State: "running", Targets: []guestResult{passed}}), "the guest program stopped before it finished: the runner's last words"},
+		"errored": {newMac(guestprogram.Results{State: "running", Targets: []guestprogram.Result{passed}}, guestprogram.Results{State: "errored", Detail: "the image already has ports installed"}), "the image already has ports installed"},
+		"exited":  {newMac(guestprogram.Results{State: "running", Targets: []guestprogram.Result{passed}}), "the guest program stopped before it finished: the runner's last words"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if name == "exited" {
@@ -622,7 +623,7 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 			require.Contains(t, test.mac.events, "delete dockhand-check-run-7-tahoe-1")
 		})
 	}
-	mac := newMac(guestResults{State: "running"})
+	mac := newMac(guestprogram.Results{State: "running"})
 	close(mac.run.done)
 	err := testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
 	require.Equal(t, refusal.Infrastructure, refusal.KindOf(err))
@@ -630,7 +631,7 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 
 	// A VM whose tart run ends before it takes an address is said at
 	// once, not after tart ip's five minutes (the rc5 full stage).
-	mac = newMac(guestResults{State: "running"})
+	mac = newMac(guestprogram.Results{State: "running"})
 	mac.noAddress = true
 	close(mac.run.done)
 	start := time.Now()
@@ -643,9 +644,9 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	// recorded: dolt's go build met proxy.golang.org's stream reset (field
 	// testing at 23c5e2aa).
 	reset := `read "https://proxy.golang.org/x.zip": stream error: stream ID 575; INTERNAL_ERROR; received from peer`
-	failed := guestResult{ID: "libharbor", Outcome: "failed", Phase: "install", Log: "target-1.log", Transient: reset}
+	failed := guestprogram.Result{ID: "libharbor", Outcome: "failed", Phase: "install", Log: "target-1.log", Transient: reset}
 	build := &fakeBuild{}
-	err = testProvider(newMac(guestResults{State: "finished", Targets: []guestResult{failed}})).Execute(t.Context(), tartJob(t, 1), build)
+	err = testProvider(newMac(guestprogram.Results{State: "finished", Targets: []guestprogram.Result{failed}})).Execute(t.Context(), tartJob(t, 1), build)
 	require.Equal(t, refusal.Network, refusal.KindOf(err))
 	require.ErrorContains(t, err, "libharbor's build met a network fault upstream: "+reset)
 	require.Len(t, build.results, 1, "the failure stays recorded")
@@ -656,22 +657,22 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 // lost between targets, or before any, interrupts none.
 func TestTheTargetALostGuestWasBuildingIsInterrupted(t *testing.T) {
 	t.Parallel()
-	passed := guestResult{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
+	passed := guestprogram.Result{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
 	for name, test := range map[string]struct {
 		mac  *fakeMac
 		want []model.TargetResult
 	}{
 		"errored": {
-			newMac(guestResults{State: "running", Targets: []guestResult{passed}}, guestResults{State: "errored", Building: "harbor-cli", Targets: []guestResult{passed}, Detail: "building harbor-cli: no such variable"}),
+			newMac(guestprogram.Results{State: "running", Targets: []guestprogram.Result{passed}}, guestprogram.Results{State: "errored", Building: "harbor-cli", Targets: []guestprogram.Result{passed}, Detail: "building harbor-cli: no such variable"}),
 			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest: building harbor-cli: no such variable", Log: "harbor-cli.log"}},
 		},
 		// What the guest wrote last, read after it stopped, is taken first:
 		// libharbor finished, and harbor-cli was building.
 		"exited": {
-			newMac(guestResults{State: "running", Building: "libharbor"}, guestResults{State: "running", Building: "harbor-cli", Targets: []guestResult{passed}}),
+			newMac(guestprogram.Results{State: "running", Building: "libharbor"}, guestprogram.Results{State: "running", Building: "harbor-cli", Targets: []guestprogram.Result{passed}}),
 			[]model.TargetResult{{Target: "harbor-cli", Outcome: model.OutcomeInterrupted, Detail: "the guest program stopped before it finished: the runner's last words", Log: "harbor-cli.log"}},
 		},
-		"between targets": {newMac(guestResults{State: "running", Targets: []guestResult{passed}}), []model.TargetResult{}},
+		"between targets": {newMac(guestprogram.Results{State: "running", Targets: []guestprogram.Result{passed}}), []model.TargetResult{}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if name != "errored" {
@@ -702,12 +703,12 @@ func TestTheTargetALostGuestWasBuildingIsInterrupted(t *testing.T) {
 func TestResultsDockhandCantReadAreItsOwnFault(t *testing.T) {
 	t.Parallel()
 	for name, test := range map[string]struct {
-		results guestResults
+		results guestprogram.Results
 		want    string
 	}{
-		"protocol": {guestResults{Protocol: 9, State: "finished"}, "the guest program wrote protocol 9 results; this dockhand reads 1"},
-		"unasked":  {guestResults{State: "finished", Targets: []guestResult{{ID: "fd", Outcome: "passed"}}}, `the guest reported "fd", which this job didn't ask for`},
-		"outcome":  {guestResults{State: "finished", Targets: []guestResult{{ID: "libharbor", Outcome: "skipped"}}}, `the guest reported libharbor "skipped"`},
+		"protocol": {guestprogram.Results{Protocol: 9, State: "finished"}, "the guest program wrote protocol 9 results; this dockhand reads 1"},
+		"unasked":  {guestprogram.Results{State: "finished", Targets: []guestprogram.Result{{ID: "fd", Outcome: "passed"}}}, `the guest reported "fd", which this job didn't ask for`},
+		"outcome":  {guestprogram.Results{State: "finished", Targets: []guestprogram.Result{{ID: "libharbor", Outcome: "skipped"}}}, `the guest reported libharbor "skipped"`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			mac := newMac(test.results)
@@ -727,7 +728,7 @@ func TestResultsDockhandCantReadAreItsOwnFault(t *testing.T) {
 // and waits while the Mac already runs its two VMs.
 func TestAnAttemptSweepsAndWaitsForRoom(t *testing.T) {
 	t.Parallel()
-	mac := newMac(guestResults{State: "finished"})
+	mac := newMac(guestprogram.Results{State: "finished"})
 	mac.images = append(mac.images, "dockhand-check-run-7-tahoe-1", "dockhand-check-run-7-sonoma-1", "dockhand-check-run-8-tahoe-1")
 	mac.running = []int{2, 2, 1}
 	// Whose they are is said: the check another session runs, and the
@@ -745,7 +746,7 @@ func TestAnAttemptSweepsAndWaitsForRoom(t *testing.T) {
 // that dies while cloning leaves a clone clean can trace to its check.
 func TestTheCloneIsNamedBeforeItIsMade(t *testing.T) {
 	t.Parallel()
-	mac := newMac(guestResults{State: "finished"})
+	mac := newMac(guestprogram.Results{State: "finished"})
 	mac.cloneErr = errors.New("tart clone failed")
 	build := &fakeBuild{}
 	err := testProvider(mac).Execute(t.Context(), tartJob(t, 1), build)
@@ -781,7 +782,7 @@ func TestLeftoversAreOnlyCheckClones(t *testing.T) {
 // A canceled check stops, and its clone goes.
 func TestACanceledCheckStopsItsGuest(t *testing.T) {
 	t.Parallel()
-	mac := newMac(guestResults{State: "running"})
+	mac := newMac(guestprogram.Results{State: "running"})
 	ctx, cancel := context.WithCancel(t.Context())
 	build := &fakeBuild{}
 	go func() {
@@ -808,12 +809,12 @@ func TestDriftFromTheFactsTableIsReported(t *testing.T) {
 	t.Parallel()
 	facts, ok := macos.Table().Lookup(25, "arm64", macos.ProfileTools)
 	require.True(t, ok)
-	mac := newMac(guestResults{State: "finished", Environment: map[string]string{"macos": "26.6.2", "build": "25G71", "architecture": "arm64", "tools": "27.0.0.0.1788430756"}})
+	mac := newMac(guestprogram.Results{State: "finished", Environment: map[string]string{"macos": "26.6.2", "build": "25G71", "architecture": "arm64", "tools": "27.0.0.0.1788430756"}})
 	build := &fakeBuild{}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
 	require.Contains(t, build.progress, "drift: the guest has Command Line Tools 27.0.0.0.1788430756; the facts table has "+facts.Tools+", from "+facts.Source.From+" on "+facts.Source.Date)
 
-	mac = newMac(guestResults{State: "finished", Environment: map[string]string{"macos": "26.6.2", "tools": facts.Tools}})
+	mac = newMac(guestprogram.Results{State: "finished", Environment: map[string]string{"macos": "26.6.2", "tools": facts.Tools}})
 	build = &fakeBuild{}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
 	for _, message := range build.progress {
@@ -826,7 +827,7 @@ func TestDriftFromTheFactsTableIsReported(t *testing.T) {
 	require.True(t, ok)
 	job := tartJob(t, 1)
 	job.Environment.DeveloperTools = model.DeveloperToolsXcode
-	mac = newMac(guestResults{State: "finished", Environment: map[string]string{"macos": "26.6.2", "build": "25G71", "architecture": "arm64", "tools": xcode.Tools, "xcode": "26.1", "xcode_build": "17B55"}})
+	mac = newMac(guestprogram.Results{State: "finished", Environment: map[string]string{"macos": "26.6.2", "build": "25G71", "architecture": "arm64", "tools": xcode.Tools, "xcode": "26.1", "xcode_build": "17B55"}})
 	mac.images = append(mac.images, "dockhand-xcode-tahoe")
 	build = &fakeBuild{}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
@@ -885,12 +886,12 @@ func TestEnvironmentsAreReleasesWithImages(t *testing.T) {
 // check, whose pull request had lost its macOS and Xcode.
 func TestWhatAGuestReportedIsKeptWhenItFinishesBetweenReads(t *testing.T) {
 	t.Parallel()
-	passed := guestResult{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
+	passed := guestprogram.Result{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
 	mac := newMac(
-		guestResults{State: "running"},
-		guestResults{State: "finished", Environment: map[string]string{"macos": "26.6.2", "build": "25G83", "architecture": "arm64", "xcode": "26.6", "xcode_build": "17F113",
+		guestprogram.Results{State: "running"},
+		guestprogram.Results{State: "finished", Environment: map[string]string{"macos": "26.6.2", "build": "25G83", "architecture": "arm64", "xcode": "26.6", "xcode_build": "17F113",
 			"developer_dir": "/Applications/Xcode.app/Contents/Developer", "macports": "Version: 2.12.6"},
-			Targets: []guestResult{passed, {ID: "harbor-cli", Outcome: "passed", Log: "target-2.log"}}},
+			Targets: []guestprogram.Result{passed, {ID: "harbor-cli", Outcome: "passed", Log: "target-2.log"}}},
 	)
 	mac.guest.exited = true
 	build := &fakeBuild{}
@@ -930,7 +931,7 @@ func TestTheCacheKeepsWhatIsUsed(t *testing.T) {
 // before the second asked for a slot, and nothing waited.
 func TestReleasesTakeTheMacsSlotsInTurn(t *testing.T) {
 	t.Parallel()
-	mac := newMac(guestResults{State: "finished"})
+	mac := newMac(guestprogram.Results{State: "finished"})
 	mac.images = append(mac.images, "dockhand-base-sonoma")
 	mac.live, mac.base = true, 1
 	p := testProvider(mac)
@@ -990,13 +991,13 @@ func TestAStatusHasTheHostsImage(t *testing.T) {
 // changes, once each, for live progress; between targets nothing is.
 func TestTheGuestsProgressIsSaidAsItChanges(t *testing.T) {
 	t.Parallel()
-	passed := guestResult{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
+	passed := guestprogram.Result{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
 	mac := newMac(
-		guestResults{State: "running", Building: "libharbor", Phase: "fetch"},
-		guestResults{State: "running", Building: "libharbor", Phase: "fetch"},
-		guestResults{State: "running", Building: "libharbor", Phase: "install"},
-		guestResults{State: "running", Targets: []guestResult{passed}},
-		guestResults{State: "finished", Targets: []guestResult{passed, {ID: "harbor-cli", Outcome: "passed", Log: "target-2.log"}}},
+		guestprogram.Results{State: "running", Building: "libharbor", Phase: "fetch"},
+		guestprogram.Results{State: "running", Building: "libharbor", Phase: "fetch"},
+		guestprogram.Results{State: "running", Building: "libharbor", Phase: "install"},
+		guestprogram.Results{State: "running", Targets: []guestprogram.Result{passed}},
+		guestprogram.Results{State: "finished", Targets: []guestprogram.Result{passed, {ID: "harbor-cli", Outcome: "passed", Log: "target-2.log"}}},
 	)
 	build := &fakeBuild{}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
@@ -1007,15 +1008,6 @@ func TestTheGuestsProgressIsSaidAsItChanges(t *testing.T) {
 		}
 	}
 	require.Equal(t, []string{"building libharbor (1 of 2): fetch", "building libharbor (1 of 2): install"}, building)
-}
-
-// What builds from source is said with what the guest is building.
-func TestTheProgressSaysWhatBuildsFromSource(t *testing.T) {
-	job := tartJob(t, 1)
-	tahoe, err := macos.ReleaseForDarwin(25)
-	require.NoError(t, err)
-	line := buildingWords(job, tahoe, guestResults{Building: "libharbor", Phase: "dependencies", FromSource: []string{"rust", "cargo"}})
-	require.Equal(t, "building libharbor (1 of 2): dependencies; rust, cargo: no archive for macOS 26 arm64; building from source", line)
 }
 
 // A target's log is named by its target, for a multi-port check's
@@ -1032,8 +1024,8 @@ func TestALogIsNamedByItsTarget(t *testing.T) {
 // log's copy replaces it (the gnome-voice session's notes, 2026-10-20).
 func TestTheBuildingTargetsLogIsCopiedAsItGrows(t *testing.T) {
 	t.Parallel()
-	mac := newMac(guestResults{State: "running", Building: "libharbor"}, guestResults{State: "running", Building: "libharbor"},
-		guestResults{State: "finished", Targets: []guestResult{{ID: "libharbor", Outcome: "passed", Tests: "none", Log: "libharbor.log"}, {ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log"}}})
+	mac := newMac(guestprogram.Results{State: "running", Building: "libharbor"}, guestprogram.Results{State: "running", Building: "libharbor"},
+		guestprogram.Results{State: "finished", Targets: []guestprogram.Result{{ID: "libharbor", Outcome: "passed", Tests: "none", Log: "libharbor.log"}, {ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log"}}})
 	mac.guest.logs["libharbor.log"] = "--->  Building libharbor\n"
 	job := tartJob(t, 1)
 	build := &fakeBuild{}

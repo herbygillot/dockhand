@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
+	guestprogram "github.com/herbygillot/dockhand/internal/buildenv/guest"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 	"github.com/herbygillot/dockhand/internal/tart/host"
@@ -43,23 +42,12 @@ type machine interface {
 	Version(ctx context.Context) (string, error)
 }
 
-// run is a VM this process started.
-type run interface {
-	Done() <-chan struct{}
-	Err() error
-	Stop(ctx context.Context, grace time.Duration) error
-}
-
-// guest is a running clone, reached over dockhand's SSH channel.
-type guest interface {
-	Command(ctx context.Context, input io.Reader, args ...string) ([]byte, error)
-	Attach(ctx context.Context, input io.Reader, output io.Writer, terminal bool, directory string, args ...string) (int, error)
-	Upload(ctx context.Context, local, path string, sudo bool) error
-	Read(ctx context.Context, path string, sudo bool) ([]byte, error)
-	Download(ctx context.Context, path, local string, sudo bool) error
-	Append(ctx context.Context, path, local string, sudo bool) error
-	Close(ctx context.Context)
-}
+// run is a VM this process started, and guest a running clone, reached
+// over dockhand's SSH channel: the guest program's Run and Guest.
+type (
+	run   = guestprogram.Run
+	guest = guestprogram.Guest
+)
 
 // native is the Mac's Tart, in dockhand's own home.
 type native struct {

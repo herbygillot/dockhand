@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	guestprogram "github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -17,7 +18,7 @@ func TestTheEnvironmentsToolsChooseTheImage(t *testing.T) {
 		model.DeveloperToolsCommandLine: "dockhand-base-tahoe",
 		"":                              "dockhand-base-tahoe",
 	} {
-		mac := newMac(guestResults{State: "finished"})
+		mac := newMac(guestprogram.Results{State: "finished"})
 		mac.images = append(mac.images, "dockhand-xcode-tahoe")
 		job := tartJob(t, 1)
 		job.Environment.DeveloperTools = tools
