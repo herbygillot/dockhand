@@ -202,10 +202,16 @@ func Used() int64 { return apiUsed.Load() }
 
 // Spend counts the requests a span of this process sends GitHub's API: a
 // command's, for its -v line and its envelope (the M1's run at 10aac0c3).
-type Spend struct{ start, answered int64 }
+type Spend struct {
+	start, answered int64
+	charged         int
+}
 
 // StartSpend starts counting.
-func StartSpend() Spend { return Spend{start: apiRequests.Load(), answered: conditionalHits.Load()} }
+func StartSpend() Spend {
+	charged, _ := chargedSince(0)
+	return Spend{start: apiRequests.Load(), answered: conditionalHits.Load(), charged: charged}
+}
 
 // Requests is how many requests sent since StartSpend counted against the
 // hour's allowance: those GitHub answered 304, as nothing moved since an
@@ -217,9 +223,10 @@ func (s Spend) Requests() int64 {
 // Log appends a command's line to the spend log at path,
 // $DOCKHAND_GITHUB_LOG, where there's one, --json or not: how many
 // requests it sent GitHub's API, how much of the hour's allowance GitHub
-// last said was spent, and what it was asked, tab-separated, so a run can
-// say which command spent it. One that can't be written is skipped, as a
-// log is.
+// last said was spent, what it was asked, and the first of the requests
+// the cache didn't answer, tab-separated, so a run can say which command
+// spent it, and on what. One that can't be written is skipped, as a log
+// is.
 func (s Spend) Log(path string, args []string) {
 	if path == "" {
 		return
@@ -229,7 +236,11 @@ func (s Spend) Log(path string, args []string) {
 		return
 	}
 	defer file.Close()
-	fmt.Fprintf(file, "%d\t%d\t%s\n", s.Requests(), Used(), strings.Join(args, " "))
+	_, requests := chargedSince(s.charged)
+	if len(requests) > 20 {
+		requests = append(requests[:20], fmt.Sprintf("and %d more", len(requests)-20))
+	}
+	fmt.Fprintf(file, "%d\t%d\t%s\t%s\n", s.Requests(), Used(), strings.Join(args, " "), strings.Join(requests, "; "))
 }
 
 type rateLimited struct {

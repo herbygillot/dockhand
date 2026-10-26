@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -116,8 +118,18 @@ type conditional struct {
 }
 
 func (t conditional) RoundTrip(req *http.Request) (*http.Response, error) {
+	response, hit, err := t.roundTrip(req)
+	if err == nil && !hit && !freeOfTheAllowance(req) {
+		recordCharged(req, response.StatusCode)
+	}
+	return response, err
+}
+
+// roundTrip is RoundTrip, saying whether the cache answered it.
+func (t conditional) roundTrip(req *http.Request) (*http.Response, bool, error) {
 	if t.cache == nil || req.Method != http.MethodGet || req.Header.Get("If-None-Match") != "" || req.Header.Get("Range") != "" {
-		return t.next.RoundTrip(req)
+		response, err := t.next.RoundTrip(req)
+		return response, false, err
 	}
 	key := conditionalKey(req)
 	kept, ok := t.cache.load(key)
@@ -127,7 +139,7 @@ func (t conditional) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	response, err := t.next.RoundTrip(req)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if ok && response.StatusCode == http.StatusNotModified {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
@@ -140,20 +152,47 @@ func (t conditional) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 		}
 		return &http.Response{Status: strconv.Itoa(kept.Status) + " " + http.StatusText(kept.Status), StatusCode: kept.Status, Proto: response.Proto, ProtoMajor: response.ProtoMajor, ProtoMinor: response.ProtoMinor,
-			Header: header, Body: io.NopCloser(bytes.NewReader(kept.Body)), ContentLength: int64(len(kept.Body)), Request: response.Request}, nil
+			Header: header, Body: io.NopCloser(bytes.NewReader(kept.Body)), ContentLength: int64(len(kept.Body)), Request: response.Request}, true, nil
 	}
 	etag := response.Header.Get("ETag")
 	if response.StatusCode != http.StatusOK || etag == "" {
-		return response, nil
+		return response, false, nil
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, keptLimit+1))
 	response.Body.Close()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	response.Body = io.NopCloser(bytes.NewReader(body))
 	if len(body) <= keptLimit {
 		t.cache.store(key, keptAnswer{ETag: etag, Status: response.StatusCode, Header: response.Header.Clone(), Body: body})
 	}
-	return response, nil
+	return response, false, nil
+}
+
+// charged are the requests this process sent GitHub that the cache didn't
+// answer, each as "GET /repos/x/y/tags 200", for a command's spend line to
+// name: D-N6's second look on rc4 counted one request, and nothing said
+// which.
+var charged struct {
+	mu       sync.Mutex
+	requests []string
+}
+
+// chargedLimit bounds what's kept of them; a spend names its first few.
+const chargedLimit = 10000
+
+func recordCharged(req *http.Request, status int) {
+	charged.mu.Lock()
+	defer charged.mu.Unlock()
+	if len(charged.requests) < chargedLimit {
+		charged.requests = append(charged.requests, fmt.Sprintf("%s %s %d", req.Method, req.URL.Path, status))
+	}
+}
+
+// chargedSince are the requests recorded since the nth.
+func chargedSince(n int) (int, []string) {
+	charged.mu.Lock()
+	defer charged.mu.Unlock()
+	return len(charged.requests), slices.Clone(charged.requests[min(n, len(charged.requests)):])
 }

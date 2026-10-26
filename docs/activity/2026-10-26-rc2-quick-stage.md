@@ -50,3 +50,17 @@ failed, no harm): C15 and D-N6 were the quick stage's, fixed above.
   gone upstream with a newer release, needs a test repository whose
   releases the harness deletes and re-tags, which the roadmap leaves to
   the person (Later's fixtures for D-N2 and D-N5).
+
+## D-N6 on rc4
+
+rc4's quick stage counted 8 requests for the first look and 1 for the
+second, the cache holding 8 entries the second rewrote none of. Traced
+here with a scratch build logging each request: two looks over jq,
+ripgrep, and lazygit, and over the quick stage's go-critic, dust, and jq,
+each second look's every read a 304, counted 0, so the M1's one isn't
+reproduced; X-RateLimit-Used drifted by one or two between looks without
+a charged request, so it doesn't name one either. Each dockhand's spend
+line now names the requests its cache didn't answer, "GET /repos/…/tags
+404", as a fourth field (github.recordCharged, from the conditional
+transport), and D-N6's failure quotes the second look's, so the next
+stage says which it is.
