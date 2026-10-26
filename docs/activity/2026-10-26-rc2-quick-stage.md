@@ -77,3 +77,23 @@ then nothing for eleven minutes, and reads the foreground check, off a
 terminal and without `-v`, print its steps and "…'s log hasn't grown in
 10 minutes" before its result. Harness only; the M1 runs them on rc5 at
 the person's word.
+
+## The docs dig's I43: base's master, weekly
+
+A workflow of its own, .github/workflows/base-master.yml, builds MacPorts
+base's master from source each Monday (and on demand), installs it at
+/opt/local with a nosync source, as ci.yml's macports.sh does for the
+release, and runs ./internal/macports/..., the evaluator's tests among
+them. It's no gate on main; a failure is a notice that base's next
+release would have dockhand read Portfiles otherwise.
+
+Its first run refused base master, 2.12.99, as a development build, so
+the job chooses the evaluator's preview adapter
+(DOCKHAND_TEST_BASE_ADAPTER=preview). Its second run, at base master
+22f546e2 (2026-10-23), found two differences, as it's meant to:
+TestAFailedMetadataProbeIsRecorded, where a Portfile whose `distfiles`
+fails now fails the evaluation through `extract.only`'s default, rather
+than being recorded as a failed probe; and
+TestAModelledContextTakesItsToolsFromTheTable, where a modelled macOS 12
+context's SDK reads MacOSX.sdk, not MacOSX12.sdk. Both are for
+prioritization to place before base's next release.

@@ -1,0 +1,57 @@
+name: MacPorts base master
+
+# The evaluator's and macports' tests against MacPorts base's master,
+# weekly (the docs dig's I43): ci.yml tests against the release MacPorts
+# points its users at, so a change on base's master that would have
+# dockhand read Portfiles wrong shows here before base releases it. A
+# failure is a notice for the person, not a gate on main: nothing a
+# release ships waits on this workflow.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  base-master:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      # Base's own source install, as its documentation gives it, into
+      # MacPorts' usual prefix, with a nosync source as ci.yml's
+      # macports.sh sets up, so nothing fetches a ports tree these tests
+      # never read.
+      - name: MacPorts base master
+        run: |
+          set -euo pipefail
+          git clone -q --depth 1 https://github.com/macports/macports-base.git "$RUNNER_TEMP/base"
+          cd "$RUNNER_TEMP/base"
+          git log -1 --format='base master at %H, %cd'
+          ./configure --prefix=/opt/local
+          make -j"$(sysctl -n hw.ncpu)"
+          sudo make install
+          sudo mkdir -p "$RUNNER_TEMP/ports"
+          echo "file://$RUNNER_TEMP/ports [default,nosync]" | sudo tee /opt/local/etc/macports/sources.conf
+          /opt/local/bin/port version
+          echo "DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh" >> "$GITHUB_ENV"
+
+      # Base's master calls itself a development build, 2.12.99, which the
+      # evaluator refuses unless its preview adapter is chosen, as the
+      # tests choose it here (testsupport.BaseAdapter).
+      - name: Evaluator and macports tests
+        env:
+          DOCKHAND_TEST_BASE_ADAPTER: preview
+        run: go test ./internal/macports/...
