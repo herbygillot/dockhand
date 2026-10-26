@@ -64,3 +64,16 @@ line now names the requests its cache didn't answer, "GET /repos/…/tags
 404", as a fourth field (github.recordCharged, from the conditional
 transport), and D-N6's failure quotes the second look's, so the next
 stage says which it is.
+
+## The docs dig's I29, for rc5
+
+v0.6.0 fixed v0.5.0's silent check off a terminal (34fa8f65), but the
+rows that follow a check's output ran it with `-v`, so the fix was never
+accepted as an agent reads it. D-I2, D-I5, D-S6, and D-S9 now run their
+background check at the default level, waiting on lines the default
+prints off a terminal ("building in …", each step as "⋯"). D-S11, a full
+stage row, checks through a command provider stub that writes a line,
+then nothing for eleven minutes, and reads the foreground check, off a
+terminal and without `-v`, print its steps and "…'s log hasn't grown in
+10 minutes" before its result. Harness only; the M1 runs them on rc5 at
+the person's word.
