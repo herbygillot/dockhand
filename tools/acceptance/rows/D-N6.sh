@@ -31,7 +31,10 @@ assert() {
 		return
 	fi
 	if [ "$((second * 10))" -gt "$first" ]; then
-		row_fail "the second look spent $second requests, more than a tenth of the first's $first"
+		# Each dockhand's line names the requests its cache didn't answer.
+		local named
+		named=$(awk -F '\t' -v a="outdated $(d_n6_ports)" '$3 == a { print $4 }' "$log" 2>/dev/null | sed -n 2p)
+		row_fail "the second look spent $second requests, more than a tenth of the first's $first: ${named:-none named}"
 		return
 	fi
 	row_pass "the first look spent $first requests, the second $second"

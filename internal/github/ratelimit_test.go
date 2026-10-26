@@ -216,10 +216,13 @@ func TestSpendCountsAndLogs(t *testing.T) {
 	spend := StartSpend()
 	apiRequests.Add(3)
 	require.Equal(t, int64(3), spend.Requests())
+	// What the cache didn't answer is named, so a look's one request is
+	// said (D-N6 on rc4).
+	recordCharged(httptest.NewRequest(http.MethodGet, "https://api.github.com/repos/jqlang/jq/git/ref/tags/jq-1.7", nil), http.StatusNotFound)
 	spend.Log(log, []string{"status", "--refresh"})
 	data, err := os.ReadFile(log)
 	require.NoError(t, err)
-	require.Regexp(t, `^3\t\d+\tstatus --refresh\n$`, string(data))
+	require.Regexp(t, `^3\t\d+\tstatus --refresh\t(.*; )?GET /repos/jqlang/jq/git/ref/tags/jq-1.7 404(; .*)?\n$`, string(data))
 }
 
 // GitHub's rate_limit endpoint, which costs nothing of the allowance, is
@@ -327,6 +330,8 @@ func TestAReadAskedAgainCostsNothingWhereNothingMoved(t *testing.T) {
 	require.EqualValues(t, 3, asked.Load())
 	require.EqualValues(t, 2, conditional.Load(), "asked again with its ETag")
 	require.EqualValues(t, 1, spend.Requests(), "the 304s spent nothing")
+	_, requests := chargedSince(spend.charged)
+	require.Equal(t, 1, strings.Count(strings.Join(requests, "\n"), "GET /user 200"), "only the read the cache didn't answer is named")
 
 	// The next process reads what this one kept.
 	account, err := client().AuthenticatedUser(t.Context())
