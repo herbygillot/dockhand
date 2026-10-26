@@ -48,5 +48,10 @@ jobs:
           /opt/local/bin/port version
           echo "DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh" >> "$GITHUB_ENV"
 
+      # Base's master calls itself a development build, 2.12.99, which the
+      # evaluator refuses unless its preview adapter is chosen, as the
+      # tests choose it here (testsupport.BaseAdapter).
       - name: Evaluator and macports tests
+        env:
+          DOCKHAND_TEST_BASE_ADAPTER: preview
         run: go test ./internal/macports/...
