@@ -36,7 +36,7 @@ act() {
 }
 assert() {
 	[ "$(cat "$ROW_DIR/json/1.json.exit" 2>/dev/null)" = 0 ] || { row_fail "the check on GitHub failed: $(jq -r '.error // empty' "$ROW_DIR/json/1.json")"; return; }
-	if git -C "$MACPORTS_TREE" ls-remote --heads fork 'dockhand-check/*' | grep -q .; then
+	if git -C "$MACPORTS_TREE" ls-remote --heads fork 'dockhand-check/*' | matches .; then
 		row_fail "a dockhand-check/ branch was left on the fork"
 		return
 	fi

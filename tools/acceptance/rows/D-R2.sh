@@ -10,7 +10,7 @@ setup() {
 	if [ -z "${ACCEPT_VANILLA:-}" ]; then
 		local images
 		images=$(fault_tart list --quiet 2>/dev/null)
-		if printf '%s\n' "$images" | grep -qxF ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest; then
+		if printf '%s\n' "$images" | matches -xF ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest; then
 			export ACCEPT_VANILLA=ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest
 		else
 			ACCEPT_VANILLA=$(printf '%s\n' "$images" | grep -E '^ghcr\.io/cirruslabs/macos-[a-z-]+-vanilla:' | head -1)

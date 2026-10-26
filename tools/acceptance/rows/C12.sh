@@ -13,7 +13,7 @@ assert() {
 		row_fail "$(port)'s plan exited $(cat "$C12_PLAN.exit"): $(jq -r '.error // empty' "$C12_PLAN")"
 	elif [ "$(cat "$C12_PLAN.exit")" != 0 ]; then
 		row_fail "$(port), whose module is .../v2, was refused: $(jq -r '.error // empty' "$C12_PLAN")"
-	elif ! plan_words "$(port)" | grep -qE '^\+go\.setup .*/direnv [0-9]'; then
+	elif ! plan_words "$(port)" | matches -E '^\+go\.setup .*/direnv [0-9]'; then
 		row_fail "$(port)'s plan didn't move its version: $(plan_words "$(port)" | grep -E '^[-+]go\.setup' | tr '\n' ';')"
 	else
 		row_pass "planned: $(plan_words "$(port)" | grep -E '^\+go\.setup' | head -1 | awk '{print ($NF == "v" ? $(NF-1) : $NF)}')"

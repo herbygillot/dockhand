@@ -60,7 +60,7 @@ clean_after() {
 	now=$("$DH_BIN" --json status --all 2>/dev/null | jq -r '.result.branches[]? | select(.cleaned != true) | .name' 2>/dev/null || :)
 	while IFS= read -r name; do
 		[ -n "$name" ] || continue
-		printf '%s\n' "$now" | grep -qxF "$name" || next_superseded_for "$name" "clean took it out"
+		printf '%s\n' "$now" | matches -xF "$name" || next_superseded_for "$name" "clean took it out"
 	done <"$ROW_DIR/clean.before"
 	rm -f "$ROW_DIR/clean.before"
 }
@@ -149,6 +149,14 @@ dh_json() {
 	DH_LAST_JSON=$file
 	return "$status"
 }
+
+# matches is grep -q for the end of a pipeline: grep -q exits at its first
+# match, and under run.sh's pipefail the command writing to it then dies
+# of SIGPIPE, failing the pipeline as no match would. C13's long plan
+# moved opkssh's go.setup and its row failed, 5 of 5 times on the M1
+# (rc2's quick stage), and where a match means a failure, a row could
+# pass it silently. matches reads all its input.
+matches() { grep "$@" >/dev/null; }
 
 # expect_exit runs a command and fails the row unless it exits as said.
 expect_exit() {
@@ -286,7 +294,7 @@ log_size() { wc -c <"$1" 2>/dev/null | tr -d ' ' || echo 0; }
 wait_for_line() {
 	local file=$1 pattern=$2 seconds=${3:-600} from=${4:-0} waited=0
 	while [ "$waited" -lt "$seconds" ]; do
-		tail -c +"$((from + 1))" "$file" 2>/dev/null | grep -qE "$pattern" && return 0
+		tail -c +"$((from + 1))" "$file" 2>/dev/null | matches -E "$pattern" && return 0
 		sleep 2
 		waited=$((waited + 2))
 	done

@@ -54,7 +54,7 @@ assert() {
 	[ "$(cat "${submit%.args}.exit" 2>/dev/null)" != 0 ] || { row_fail "submit went ahead over someone's push"; return; }
 	grep -q "Push .*won't push: someone else pushed" "$ROW_DIR/out.log" ||
 		{ row_fail "the preview's Push line didn't say it won't push"; return; }
-	jq -r '.error // empty' "${submit%.args}" | grep -qi "no check has finished" &&
+	jq -r '.error // empty' "${submit%.args}" | matches -i "no check has finished" &&
 		{ row_fail "submit refused for want of a check, not for someone's push"; return; }
 	row_pass "refused: $(jq -r '.error // empty' "${submit%.args}")"
 }

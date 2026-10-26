@@ -104,12 +104,12 @@ assert() {
 	fi
 	case "$status" in
 	0) row_pass "bumped to its pull request${B2_REUSED:+; $B2_REUSED}" ;;
-	3) if grep -q '^Once it.s fine: dockhand submit' "$ROW_DIR/out.log" || printf '%s' "$error" | grep -q 'dockhand submit'; then
+	3) if grep -q '^Once it.s fine: dockhand submit' "$ROW_DIR/out.log" || printf '%s' "$error" | matches 'dockhand submit'; then
 		row_pass "held for a look, naming the submit that finishes it"
 	else
 		row_fail "held without naming the command that finishes it: $error"
 	fi ;;
-	*) if printf '%s' "$error" | grep -qi fork && [ -z "$(git -C "$MACPORTS_TREE" branch --list 'dockhand/*')" ]; then
+	*) if printf '%s' "$error" | matches -i fork && [ -z "$(git -C "$MACPORTS_TREE" branch --list 'dockhand/*')" ]; then
 		row_refused_well "refused before editing anything, for want of a GitHub fork, which the quick stage hasn't: $error"
 	else
 		row_fail "bump exited $status: $error"

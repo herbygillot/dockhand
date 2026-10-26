@@ -222,6 +222,19 @@ func TestSpendCountsAndLogs(t *testing.T) {
 	require.Regexp(t, `^3\t\d+\tstatus --refresh\n$`, string(data))
 }
 
+// GitHub's rate_limit endpoint, which costs nothing of the allowance, is
+// no request a spend counts; any other read is.
+func TestTheRateLimitEndpointCostsNothing(t *testing.T) {
+	t.Parallel()
+	read := func(path string) *http.Request {
+		return httptest.NewRequest(http.MethodGet, "https://api.github.com"+path, nil)
+	}
+	require.True(t, freeOfTheAllowance(read("/rate_limit")))
+	require.True(t, freeOfTheAllowance(read("/api/v3/rate_limit")))
+	require.False(t, freeOfTheAllowance(read("/repos/macports/macports-ports/pulls")))
+	require.False(t, freeOfTheAllowance(httptest.NewRequest(http.MethodPost, "https://api.github.com/rate_limit", nil)))
+}
+
 // GitHub not reached is said as that, the network's own reason in
 // brackets, where the request's address and dial led: offline said as
 // offline (part 4, item 1). It's the network's kind, worth another try.

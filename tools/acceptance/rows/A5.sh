@@ -69,7 +69,7 @@ a5_status() {
 
 # a5_refused_release is whether a status was refused for migrating a
 # database a release last opened, which a development or rc build asks.
-a5_refused_release() { jq -r '.error // ""' "$1" 2>/dev/null | grep -q 'a release, last opened this database'; }
+a5_refused_release() { jq -r '.error // ""' "$1" 2>/dev/null | matches 'a release, last opened this database'; }
 
 # a5_status_yes is a5_status on a terminal, given the person's yes to the
 # migration it asks of a release's database: script gives it the
@@ -83,7 +83,7 @@ a5_status_yes() {
 
 # a5_refused_live is whether a status was refused for processes working
 # on the database, which the candidate does rather than migrate under them.
-a5_refused_live() { jq -r '.error // ""' "$1" 2>/dev/null | grep -q 'would leave them unable to record what they do'; }
+a5_refused_live() { jq -r '.error // ""' "$1" 2>/dev/null | matches 'would leave them unable to record what they do'; }
 
 act() {
 	# The candidate first, on its own copy, with no terminal to ask on.
@@ -110,7 +110,7 @@ assert() {
 	local names_before names_after
 	names_before=$(jq -r '[.result.branches[]?.name] | sort | join(" ")' "$ROW_DIR/before.json" 2>/dev/null)
 	names_after=$(jq -r '[.result.branches[]?.name] | sort | join(" ")' "$ROW_DIR/after.json" 2>/dev/null)
-	if jq -r '.error // ""' "$ROW_DIR/before.json" 2>/dev/null | grep -q 'newer than this dockhand supports'; then
+	if jq -r '.error // ""' "$ROW_DIR/before.json" 2>/dev/null | matches 'newer than this dockhand supports'; then
 		row_result "not run" "nothing to migrate: $ACCEPT_REAL_DB is already at the candidate's schema, and no earlier copy was kept; set ACCEPT_REAL_DB to a database at the schema before"
 		return
 	fi
@@ -134,7 +134,7 @@ assert() {
 		row_fail "status --all differs: before [$names_before], after [$names_after]"
 		return
 	fi
-	if [ "$(jq -r .exit_code "$ROW_DIR/refused.json" 2>/dev/null)" = 0 ] || ! jq -r .error "$ROW_DIR/refused.json" | grep -q "newer than this dockhand supports"; then
+	if [ "$(jq -r .exit_code "$ROW_DIR/refused.json" 2>/dev/null)" = 0 ] || ! jq -r .error "$ROW_DIR/refused.json" | matches "newer than this dockhand supports"; then
 		row_fail "the older build didn't refuse the migrated database by name: $(jq -r .error "$ROW_DIR/refused.json" 2>/dev/null)"
 		return
 	fi
@@ -144,7 +144,7 @@ assert() {
 	fi
 	# A release's database: the candidate asked rather than migrate it.
 	local release_words="its last build, ${A5_LAST_BUILD:-unknown}, is no release, so nothing was asked"
-	if printf '%s' "${A5_LAST_BUILD:-}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+( |$)'; then
+	if printf '%s' "${A5_LAST_BUILD:-}" | matches -E '^v[0-9]+\.[0-9]+\.[0-9]+( |$)'; then
 		if ! a5_refused_release "$ROW_DIR/release.json"; then
 			row_fail "the candidate migrated a database $A5_LAST_BUILD last opened, unasked: $(jq -r '.error // "no refusal"' "$ROW_DIR/release.json")"
 			return

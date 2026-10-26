@@ -29,7 +29,7 @@ act() {
 }
 assert() {
 	grep -q unconfirmed "$ROW_DIR/out.log" || { row_fail "no guess was marked unconfirmed"; return; }
-	if [ -n "${B8_UNPRUNED:-}" ] && ! jq -r '.result.checksums_problem // ""' "$B8_UNPRUNED" | grep -q 'go.sum has the source of .*rivo/uniseg'; then
+	if [ -n "${B8_UNPRUNED:-}" ] && ! jq -r '.result.checksums_problem // ""' "$B8_UNPRUNED" | matches 'go.sum has the source of .*rivo/uniseg'; then
 		row_fail "create didn't say countdown's go.vendors needs rivo/uniseg: $(jq -r '.result.checksums_problem // .error // "it said nothing"' "$B8_UNPRUNED")"
 		return
 	fi

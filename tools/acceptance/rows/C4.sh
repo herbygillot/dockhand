@@ -29,7 +29,7 @@ assert() {
 	# dockhand doesn't look for releases. So no update reaches the move, and
 	# a plan with nothing to change tests nothing (the rc8 full stage, which
 	# read it a known issue).
-	if plan_words pomo | grep -qiE 'nothing to change|already at'; then
+	if plan_words pomo | matches -iE 'nothing to change|already at'; then
 		row_result "not run" "pomo's newest release dockhand can find, on GitHub, is 0.8.1, which the pin has; the move came with 0.8.2, tagged on Codeberg alone, so no update reaches it"
 		return
 	fi
@@ -37,7 +37,7 @@ assert() {
 		row_fail "pomo's plan exited $(cat "$C4_PLAN.exit"): $(jq -r '.error // empty' "$C4_PLAN")"
 	elif [ "$(cat "$C4_PLAN.exit")" = 1 ]; then
 		row_refused_well "$(jq -r .error "$C4_PLAN")"
-	elif plan_words pomo | grep -qi codeberg && plan_words pomo | grep -q 'go.vendors'; then
+	elif plan_words pomo | matches -i codeberg && plan_words pomo | matches 'go.vendors'; then
 		row_pass "both module paths named, and go.vendors written again"
 	else
 		row_known "pomo planned without naming the move: $(plan_words pomo | grep -v '^[-+ @]' | head -3 | tr '\n' ';')"

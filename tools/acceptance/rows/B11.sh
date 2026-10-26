@@ -86,7 +86,7 @@ teardown() {
 	for run in $(stage_db "SELECT number FROM runs WHERE state IN ('queued','running')" 2>/dev/null); do
 		"$DH_BIN" cancel "check-$run" >>"$ROW_DIR/out.log" 2>&1 || :
 	done
-	if command -v tart >/dev/null && fault_tart list 2>/dev/null | grep -q 'dockhand-check.*running'; then
+	if command -v tart >/dev/null && fault_tart list 2>/dev/null | matches 'dockhand-check.*running'; then
 		printf 'teardown: a check VM is still running: %s\n' "$(fault_tart list | grep 'dockhand-check.*running' | awk '{print $2}' | tr '\n' ' ')" >>"$ROW_DIR/notes"
 	fi
 }

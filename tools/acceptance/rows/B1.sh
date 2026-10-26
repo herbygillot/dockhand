@@ -34,7 +34,7 @@ assert() {
 	why=$(b_step 4 "submit --plan")
 	if [ -z "$why" ]; then
 		row_pass "updated, checked, tidied into one commit, and previewed"
-	elif printf '%s' "$why" | grep -qi fork; then
+	elif printf '%s' "$why" | matches -i fork; then
 		row_pass "updated, checked, tidied, and stopped at submit's preview for want of a GitHub fork, which the quick stage hasn't"
 	else
 		row_fail "$why"

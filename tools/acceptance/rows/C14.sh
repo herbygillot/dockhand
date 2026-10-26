@@ -31,7 +31,7 @@ assert() {
 		row_fail "the update with a calculated checksum algorithm wasn't refused"
 		return
 	fi
-	if ! sed -n "/^\\\$ dockhand --json update $(port) -b $C14_BRANCH\$/,/^\\\$ dockhand update/p" "$ROW_DIR/out.log" | grep -q -- '--hand-edit'; then
+	if ! sed -n "/^\\\$ dockhand --json update $(port) -b $C14_BRANCH\$/,/^\\\$ dockhand update/p" "$ROW_DIR/out.log" | matches -- '--hand-edit'; then
 		row_fail "the refusal didn't name --hand-edit: $(jq -r '.error // empty' "$refused")"
 		return
 	fi

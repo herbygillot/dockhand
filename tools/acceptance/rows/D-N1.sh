@@ -21,7 +21,7 @@ assert() {
 	for file in "$ROW_DIR"/json/[0-9]*.json; do
 		[ "$(cat "$file.exit")" = 0 ] && { bad="$bad $(cat "$file.args"): exit 0 offline"; continue; }
 		err=$(jq -r '.error // ""' "$file")$(jq -r '[.result.ports[]?.problem // empty] | join(" ")' "$file" 2>/dev/null)
-		printf '%s' "$err" | grep -qiE 'reach|connect|network|offline|proxy|reset|EOF' || bad="$bad $(cat "$file.args"): [$err]"
+		printf '%s' "$err" | matches -iE 'reach|connect|network|offline|proxy|reset|EOF' || bad="$bad $(cat "$file.args"): [$err]"
 	done
 	if [ -n "$bad" ]; then
 		row_fail "offline, not said so:$bad"

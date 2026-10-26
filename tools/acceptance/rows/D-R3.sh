@@ -14,7 +14,7 @@ port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 dr3_tart() { TART_HOME="${DOCKHAND_TART_HOME:-$HOME/.dockhand/tart}" tart "$@"; }
 
 # dr3_has says whether dockhand's Tart home has the image.
-dr3_has() { dr3_tart list --quiet 2>/dev/null | grep -qxF "$1"; }
+dr3_has() { dr3_tart list --quiet 2>/dev/null | matches -xF "$1"; }
 
 # Its check names a branch of its own; and the image it deletes is a base
 # image, dockhand-base-*, which dockhand-base-golden-gate, macOS 27's, is:
@@ -40,7 +40,7 @@ act() {
 }
 assert() {
 	[ -n "${DR3_IMAGE:-}" ] || return 0
-	jq -r '.error // ""' "$ROW_DIR/json/1.json" | grep -q "dockhand setup tart $DR3_RELEASE" ||
+	jq -r '.error // ""' "$ROW_DIR/json/1.json" | matches "dockhand setup tart $DR3_RELEASE" ||
 		{ row_fail "check didn't say what restores the image: $(jq -r '.error // empty' "$ROW_DIR/json/1.json")"; return; }
 	grep -q "Restoring $DR3_IMAGE from dockhand-golden-$DR3_RELEASE" "$ROW_DIR/out.log" ||
 		{ row_fail "setup tart didn't restore $DR3_IMAGE from its golden copy"; return; }
