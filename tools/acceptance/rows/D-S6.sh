@@ -5,7 +5,10 @@
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
 	dh_setup update "$(port)" --new || return 0
-	dh_bg -v check -p "$(port)"
+	# At the default level, as an agent reads it: off a terminal a
+	# check says each step (34fa8f65), where rc5 needed -v (the docs
+	# dig's I29).
+	dh_bg check -p "$(port)"
 	wait_for_line "$DH_BG_LOG" 'runs here|building' 600 || :
 	DS6_FIRST=$DH_BG_PID
 	DS6_FIRST_LOG=$DH_BG_LOG

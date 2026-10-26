@@ -6,7 +6,10 @@
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
 	dh_setup update "$(port)" --new || return 0
-	dh_bg -v check -p "$(port)"
+	# At the default level, as an agent reads it: off a terminal a
+	# check says each step (34fa8f65), where rc5 needed -v (the docs
+	# dig's I29).
+	dh_bg check -p "$(port)"
 	wait_for_line "$DH_BG_LOG" 'building in' 900 || :
 	git -C "$MACPORTS_TREE" gc -q --prune=now 2>>"$ROW_DIR/git.log" || :
 	# The prune is the row's own, the person's: the remote-tracking refs it
