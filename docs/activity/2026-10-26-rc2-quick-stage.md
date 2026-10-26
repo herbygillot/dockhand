@@ -25,3 +25,28 @@ Its three findings are fixed before rc3.
   nothing: under a `Serve` label it says "would hold it:" and each hold's
   own words, once each (view.ServeHolds), and the submission goes ahead as
   before. C15's row stands as written.
+
+## The full stage on rc2
+
+The M1's full stage on rc2 (75 passed, 2 refused well, 13 not run, 4
+failed, no harm): C15 and D-N6 were the quick stage's, fixed above.
+
+- **C11, C12, and C13 plan against live master,** where
+  git-credential-oauth is at 0.18.0 already (44bbe1c, 10-23), so C11's
+  plan rightly said nothing to change, and failed. Each now says "not
+  run" where its port is current (plan.sh's `plan_current` and
+  `plan_not_due`), as B4's setup does. The grep -q under pipefail it
+  also named was fixed in aafea625.
+- **A4** passed on the product (sandbox #91), but looked for the
+  README's old heading, "An update, start to finish"; it reads "Make
+  your first update" now.
+- **The README's known issues** are v0.6.0's: the rows v0.6.0 fixes go
+  (the signed-out limit, the reset collaborator's commit, a project that
+  moved, the doubled trailer, the silent check off a terminal, the
+  rejected login's words, and setup under a locked Keychain), the two
+  still true stay, and the status --all row the roadmap placed joins
+  them.
+- **D-N2** wasn't run, ACCEPT_DN2_PORT unset. Its fixture, a distfile
+  gone upstream with a newer release, needs a test repository whose
+  releases the harness deletes and re-tags, which the roadmap leaves to
+  the person (Later's fixtures for D-N2 and D-N5).

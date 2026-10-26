@@ -25,3 +25,15 @@ plan_ok() {
 
 # plan_words is what the update's plan said to a person, from its log.
 plan_words() { sed -n "/^\\\$ dockhand update $1 /,/^\\[exit/p" "$ROW_DIR/out.log"; }
+
+# plan_current says whether an update's plan found its port current at
+# the stage's master, "is already at …; nothing to change": the row's
+# fixture is no longer due, as git-credential-oauth wasn't once MacPorts
+# had 0.18.0 (44bbe1c, the M1's rc2 full stage, whose C11 then failed).
+plan_current() { plan_words "$1" | matches -E ' is already at [^;]*; nothing to change'; }
+
+# plan_not_due says a row isn't run, its fixture port current at the
+# stage's master, as dh_setup says an update --new's is (B4).
+plan_not_due() {
+	row_result "not run" "its fixture port, $1, is current at the stage's master, so its plan had nothing to change; name a port that's due"
+}
