@@ -45,13 +45,13 @@ assert() {
 	# A raw 401 as GitHub's status or its words, not the number alone: a
 	# commit's SHA held it (the rc4 sitting), and so did check-401 (the rc5
 	# full stage).
-	jq -r '.error // empty' "${status%.args}" | grep -qi 'rejected' && ! grep -qiE '(HTTP|status|code)[ :=]*401|401 (Unauthorized|Bad credentials)' "$ROW_DIR/out.log" ||
+	jq -r '.error // empty' "${status%.args}" | matches -i 'rejected' && ! grep -qiE '(HTTP|status|code)[ :=]*401|401 (Unauthorized|Bad credentials)' "$ROW_DIR/out.log" ||
 		{ row_fail "not said as rejected: $(jq -r '.error // empty' "${status%.args}")"; return; }
 	[ "$(grep -c 'rejected the credential' "$ROW_DIR/out.log")" -le 2 ] ||
 		{ row_fail "the rejection was said more than once"; return; }
 	[ "$(grep -cE '^serve: GitHub rejected (its login|the credentials)' "$ROW_DIR/serve.log")" = 1 ] ||
 		{ row_fail "serve didn't say once that GitHub rejected its login"; return; }
-	jq -r '.result.serve_state.not_acting // empty' "${queue%.args}" | grep -q 'rejected' ||
+	jq -r '.result.serve_state.not_acting // empty' "${queue%.args}" | matches 'rejected' ||
 		{ row_fail "status didn't say serve wasn't acting on GitHub"; return; }
 	grep -q '^serve: logged in again as ' "$ROW_DIR/serve.log" ||
 		{ row_fail "serve didn't say its login was back"; return; }

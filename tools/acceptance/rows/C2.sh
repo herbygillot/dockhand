@@ -9,11 +9,11 @@ act() { C2_PLAN=$(plan_update pgdog); }
 assert() {
 	if ! plan_ok "$C2_PLAN"; then
 		row_fail "pgdog's plan exited $(cat "$C2_PLAN.exit"): $(jq -r '.error // empty' "$C2_PLAN")"
-	elif [ "$(cat "$C2_PLAN.exit")" = 1 ] && jq -r '.error // empty' "$C2_PLAN" | grep -qiE 'crate|pin'; then
+	elif [ "$(cat "$C2_PLAN.exit")" = 1 ] && jq -r '.error // empty' "$C2_PLAN" | matches -iE 'crate|pin'; then
 		row_refused_well "$(jq -r .error "$C2_PLAN")"
 	elif [ "$(cat "$C2_PLAN.exit")" = 1 ]; then
 		row_fail "pgdog was refused for what isn't its crates or pins, where v0.4.0 planned it: $(jq -r .error "$C2_PLAN")"
-	elif plan_words pgdog | grep -q 'so the pin is dropped'; then
+	elif plan_words pgdog | matches 'so the pin is dropped'; then
 		row_pass "a pin the new lock passes is dropped, and said"
 	else
 		row_pass "planned, with no pin to drop"

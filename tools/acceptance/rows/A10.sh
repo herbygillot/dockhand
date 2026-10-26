@@ -155,16 +155,16 @@ act() {
 			# naming the setup that makes it, as it should be: the example
 			# needs that image first, which isn't the docs' fault (the rc6
 			# full stage).
-			if [ "$verb" = submit ] && tail -c +"$((before + 1))" "$ROW_DIR/out.log" | grep -q "no check has finished for this commit's files"; then
+			if [ "$verb" = submit ] && tail -c +"$((before + 1))" "$ROW_DIR/out.log" | matches "no check has finished for this commit's files"; then
 				# submit's preview refuses a commit no check passed, as it
 				# should, and A10 runs check only as --plan; rc5 passed only by
 				# finding A4's checked branch (the rc6 full stage).
 				printf '%s: needs a finished check, and A10 runs check only as its plan\n' "$line" >>"$ROW_DIR/a10.notrun"
-			elif [ "$verb" = logs ] && tail -c +"$((before + 1))" "$ROW_DIR/out.log" | grep -q 'has no check yet'; then
+			elif [ "$verb" = logs ] && tail -c +"$((before + 1))" "$ROW_DIR/out.log" | matches 'has no check yet'; then
 				# logs in a worktree whose branch has no check says so, as it
 				# should, and A10 runs check only as --plan (the rc5 rerun).
 				printf '%s: needs a check, and A10 runs check only as its plan\n' "$line" >>"$ROW_DIR/a10.notrun"
-			elif tail -c +"$((before + 1))" "$ROW_DIR/out.log" | grep -q 'dockhand setup tart'; then
+			elif tail -c +"$((before + 1))" "$ROW_DIR/out.log" | matches 'dockhand setup tart'; then
 				# A refusal naming the setup that makes the image ran as
 				# written: the line is right, and this Mac lacks the image.
 				# The grep wanted "…: dockhand setup tart" where the provider

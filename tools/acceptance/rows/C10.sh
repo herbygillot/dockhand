@@ -25,7 +25,7 @@ assert() {
 		fi
 		n=$((n + 1))
 	done
-	if [ "$(cat "$ROW_DIR/json/5.json.exit")" = 0 ] || ! jq -r .error "$ROW_DIR/json/5.json" | grep -q 'cleanup.min_free: "30 parsecs" is not a size'; then
+	if [ "$(cat "$ROW_DIR/json/5.json.exit")" = 0 ] || ! jq -r .error "$ROW_DIR/json/5.json" | matches 'cleanup.min_free: "30 parsecs" is not a size'; then
 		row_fail "a size that isn't one wasn't refused by name: $(jq -r .error "$ROW_DIR/json/5.json")"
 		return
 	fi

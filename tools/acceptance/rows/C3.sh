@@ -22,7 +22,7 @@ assert() {
 			row_fail "doge, whose archive ships its Cargo.lock, was refused, where v0.4.0 planned it: $(jq -r '.error // empty' "$file")"
 			return
 		fi
-		if plan_words "$port" | grep -qE '^[-+][[:space:]]*cargo\.update'; then
+		if plan_words "$port" | matches -E '^[-+][[:space:]]*cargo\.update'; then
 			row_fail "$port's plan adds or removes the cargo.update line"
 			return
 		fi

@@ -58,7 +58,7 @@ act() {
 		{ row_fail "serve never said the check was running"; return 0; }
 	check=$(tail -c +"$((served + 1))" "$serve_log" | grep -oE "check-[0-9]+ $DI5_BRANCH: running" | tail -1 | cut -d' ' -f1)
 	sleep 30
-	if tail -c +"$((served + 1))" "$serve_log" | grep -qE "$check $DI5_BRANCH: (passed|failed|attention|canceled)"; then
+	if tail -c +"$((served + 1))" "$serve_log" | matches -E "$check $DI5_BRANCH: (passed|failed|attention|canceled)"; then
 		row_result "not run" "the reboot half's $check ended before the reboot could be asked for; set ACCEPT_SLEEP_PORT to a port with a longer build"
 		return 0
 	fi

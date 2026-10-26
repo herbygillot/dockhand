@@ -28,7 +28,7 @@ assert() {
 		row_fail "a saved plan applied after the branch's files moved"
 		return
 	fi
-	if ! jq -r '.error // ""' "$ROW_DIR/json/3.json" | grep -qiE 'as they were|changed|since|saved'; then
+	if ! jq -r '.error // ""' "$ROW_DIR/json/3.json" | matches -iE 'as they were|changed|since|saved'; then
 		row_fail "the stale plan's refusal didn't say why: $(jq -r .error "$ROW_DIR/json/3.json")"
 		return
 	fi

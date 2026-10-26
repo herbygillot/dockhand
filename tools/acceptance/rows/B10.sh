@@ -32,7 +32,7 @@ assert() {
 		row_fail "the broken check exited ${exit:-nothing}, not 2 for a failed check"
 		return
 	fi
-	if ! sed -n "/^\\\$ dockhand logs $B10_RUN/,/^\\[exit/p" "$ROW_DIR/out.log" | grep -q '^\[exit 0\]'; then
+	if ! sed -n "/^\\\$ dockhand logs $B10_RUN/,/^\\[exit/p" "$ROW_DIR/out.log" | matches '^\[exit 0\]'; then
 		row_fail "logs $B10_RUN didn't find the run"
 		return
 	fi

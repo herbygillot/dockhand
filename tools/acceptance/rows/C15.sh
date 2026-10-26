@@ -41,7 +41,7 @@ assert() {
 		row_fail "submit's preview didn't say the port waits for the one its holds name first"
 		return
 	fi
-	if [ "$(cat "$ROW_DIR/json/2.json.exit")" = 0 ] || ! jq -r '.error // ""' "$ROW_DIR/json/2.json" | grep -q "holds.ports.\"$(port)\".moves: \"always\" is not hold or follow"; then
+	if [ "$(cat "$ROW_DIR/json/2.json.exit")" = 0 ] || ! jq -r '.error // ""' "$ROW_DIR/json/2.json" | matches "holds.ports.\"$(port)\".moves: \"always\" is not hold or follow"; then
 		row_fail "a moves value none takes wasn't refused by name: $(jq -r '.error // empty' "$ROW_DIR/json/2.json")"
 		return
 	fi

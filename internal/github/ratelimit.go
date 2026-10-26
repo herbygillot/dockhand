@@ -250,7 +250,13 @@ func (t rateLimited) RoundTrip(req *http.Request) (*http.Response, error) {
 		waited = true
 	}
 	for {
-		apiRequests.Add(1)
+		// GitHub's rate_limit endpoint costs nothing of the allowance, as
+		// its documentation says, and isn't counted: outdated's look asks
+		// it each time, and D-N6's second look, every other read answered
+		// on a 304, counted that one (rc2's quick stage).
+		if !freeOfTheAllowance(req) {
+			apiRequests.Add(1)
+		}
 		response, err := t.next.RoundTrip(req)
 		if err != nil {
 			return nil, err
@@ -403,4 +409,10 @@ func duration(d time.Duration) string {
 		return count(int64((d+time.Minute-1)/time.Minute), "minute")
 	}
 	return count(int64((d+time.Hour-1)/time.Hour), "hour")
+}
+
+// freeOfTheAllowance says whether a request costs nothing of the hour's
+// allowance: GitHub's rate_limit endpoint, which says what's left of it.
+func freeOfTheAllowance(req *http.Request) bool {
+	return req.Method == http.MethodGet && strings.HasSuffix(strings.TrimSuffix(req.URL.Path, "/"), "/rate_limit")
 }

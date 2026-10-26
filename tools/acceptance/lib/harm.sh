@@ -399,7 +399,7 @@ harm_h6() {
 			ran=$((ran + 1))
 			# The quick stage has no GitHub fork, so a submit it's told to
 			# run can't be tried there (the M1's rerun, D-S6).
-			if [ "$status" = 1 ] && [ "$verb" = submit ] && [ "${ACCEPT_STAGE:-}" = quick ] && tail -3 "$ROW_DIR/next.log" | grep -qE 'fork of|the quick stage (never pushes|reads the fork)'; then
+			if [ "$status" = 1 ] && [ "$verb" = submit ] && [ "${ACCEPT_STAGE:-}" = quick ] && tail -3 "$ROW_DIR/next.log" | matches -E 'fork of|the quick stage (never pushes|reads the fork)'; then
 				unverified="$unverified [dockhand $words: the stage has no GitHub fork]"
 				continue
 			fi

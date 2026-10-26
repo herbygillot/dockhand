@@ -21,7 +21,7 @@ act() {
 assert() {
 	local plan
 	plan=$(sed -n '/^\$ dockhand tidy/,/^\[exit/p' "$ROW_DIR/out.log")
-	if ! printf '%s' "$plan" | grep -qi 'did not make\|review them\|yours'; then
+	if ! printf '%s' "$plan" | matches -i 'did not make\|review them\|yours'; then
 		row_fail "tidy's plan didn't say the hand edits are yours: $(printf '%s' "$plan" | head -5 | tr '\n' ';')"
 	elif ! grep -q '# a hand edit' "$DS4_PORTFILE" || [ ! -f "$DS4_DIR/HAND.txt" ]; then
 		row_fail "a hand edit is gone"

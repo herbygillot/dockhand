@@ -14,7 +14,7 @@ assert() {
 		row_fail "$(port)'s plan exited $(cat "$C11_PLAN.exit"): $(jq -r '.error // empty' "$C11_PLAN")"
 	elif [ "$(cat "$C11_PLAN.exit")" != 0 ]; then
 		row_fail "$(port), which lists go.vendors, was refused, where v0.4.0 planned it: $(jq -r '.error // empty' "$C11_PLAN")"
-	elif ! plan_words "$(port)" | grep -qE '^\+go\.setup .*/git-credential-oauth [0-9]'; then
+	elif ! plan_words "$(port)" | matches -E '^\+go\.setup .*/git-credential-oauth [0-9]'; then
 		row_fail "$(port)'s plan didn't move its version: $(plan_words "$(port)" | grep -E '^[-+]go\.setup' | tr '\n' ';')"
 	else
 		row_pass "planned: $(plan_words "$(port)" | grep -E '^\+go\.setup' | head -1 | awk '{print ($NF == "v" ? $(NF-1) : $NF)}')"

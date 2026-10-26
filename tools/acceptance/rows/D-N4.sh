@@ -56,7 +56,7 @@ assert() {
 		[ "$(cat "$file.exit")" = 3 ] || { row_fail "some couldn't be checked, and it exited $(cat "$file.exit"), not 3"; return; }
 		grep -q "None of .* has a newer release" "$ROW_DIR/out.log" && { row_fail "it said none had a newer release, with some unchecked"; return; }
 	fi
-	[ "$(cat "$ROW_DIR/json/2.json.exit" 2>/dev/null)" = 1 ] && jq -r '.error // ""' "$ROW_DIR/json/2.json" | grep -q 'nothing was changed' ||
+	[ "$(cat "$ROW_DIR/json/2.json.exit" 2>/dev/null)" = 1 ] && jq -r '.error // ""' "$ROW_DIR/json/2.json" | matches 'nothing was changed' ||
 		{ row_fail "update --plan, rate-limited, didn't refuse saying nothing was changed: exit $(cat "$ROW_DIR/json/2.json.exit" 2>/dev/null), $(jq -r '.error // empty' "$ROW_DIR/json/2.json")"; return; }
 	row_pass "said when the limit resets, with its zone, and led with what it couldn't check; update said nothing was changed"
 }

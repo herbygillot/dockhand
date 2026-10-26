@@ -28,9 +28,9 @@ assert() {
 	local tidy update
 	tidy=$(cat "$ROW_DIR/dt4.tidy_-b_$(run_name dt4-a).log")
 	update=$(cat "$ROW_DIR/dt4.update_${ACCEPT_GO_PORT}.log")
-	if ! printf '%s' "$tidy" | grep -qE -- '-y|--yes|terminal|--message|review'; then
+	if ! printf '%s' "$tidy" | matches -E -- '-y|--yes|terminal|--message|review'; then
 		row_fail "tidy without a terminal didn't say what it needs: $tidy"
-	elif ! printf '%s' "$update" | grep -q -- '-b'; then
+	elif ! printf '%s' "$update" | matches -- '-b'; then
 		row_fail "update with two branches changing the port didn't name -b: $update"
 	else
 		row_pass "none hung; each said what it needs: $(tr '\n' ';' <"$ROW_DIR/dt4.exits")"

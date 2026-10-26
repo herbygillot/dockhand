@@ -51,6 +51,6 @@ teardown() {
 }
 assert() {
 	[ "$(cat "$ROW_DIR/json/1.json.exit")" = 0 ] || { row_fail "status failed without a login"; return; }
-	jq -r '.error // empty' "$ROW_DIR/json/3.json" | grep -q 'setup github' &&
+	jq -r '.error // empty' "$ROW_DIR/json/3.json" | matches 'setup github' &&
 		row_pass "read-only commands worked; submit named setup github" || row_fail "submit didn't name setup github"
 }

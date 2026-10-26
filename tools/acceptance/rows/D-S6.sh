@@ -17,9 +17,9 @@ assert() {
 	local second tidy
 	second=$(cat "$ROW_DIR/json/1.json.exit" 2>/dev/null)
 	tidy=$(cat "$ROW_DIR/json/2.json.exit" 2>/dev/null)
-	if [ "$second" != 0 ] && ! jq -r '.error // ""' "$ROW_DIR/json/1.json" | grep -qiE 'check-[0-9]+|already|running|wait'; then
+	if [ "$second" != 0 ] && ! jq -r '.error // ""' "$ROW_DIR/json/1.json" | matches -iE 'check-[0-9]+|already|running|wait'; then
 		row_fail "the second check exited $second without naming the first: $(jq -r '.error // empty' "$ROW_DIR/json/1.json")"
-	elif [ "$tidy" != 0 ] && ! jq -r '.error // ""' "$ROW_DIR/json/2.json" | grep -qiE 'check|running|wait|another'; then
+	elif [ "$tidy" != 0 ] && ! jq -r '.error // ""' "$ROW_DIR/json/2.json" | matches -iE 'check|running|wait|another'; then
 		row_fail "tidy exited $tidy without naming what holds the branch: $(jq -r '.error // empty' "$ROW_DIR/json/2.json")"
 	else
 		row_pass "the second check $( [ "$second" = 0 ] && echo waited || echo refused, naming the first); tidy $( [ "$tidy" = 0 ] && echo waited and applied || echo refused, naming the check)"

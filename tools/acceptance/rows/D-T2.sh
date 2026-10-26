@@ -11,9 +11,9 @@ assert() {
 	local bad unknown
 	bad=$(jq -r '.error // ""' "$ROW_DIR/json/1.json")
 	unknown=$(jq -r '.error // ""' "$ROW_DIR/json/2.json")
-	if ! printf '%s' "$bad" | grep -qE 'bad.toml.*(line|[0-9]+)'; then
+	if ! printf '%s' "$bad" | matches -E 'bad.toml.*(line|[0-9]+)'; then
 		row_fail "malformed TOML not refused by file and line: $bad"
-	elif ! printf '%s' "$unknown" | grep -q 'worktree_dir'; then
+	elif ! printf '%s' "$unknown" | matches 'worktree_dir'; then
 		row_fail "the unknown key not named: $unknown"
 	else
 		row_pass "refused: [$bad] [$unknown]"

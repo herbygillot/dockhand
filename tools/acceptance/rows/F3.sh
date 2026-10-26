@@ -34,7 +34,7 @@ act() {
 }
 assert() {
 	if [ -n "${F3_RENAMED:-}" ]; then
-		jq -r '.error // ""' "$F3_RENAMED" | grep -q 'is now .* on GitHub, renamed or transferred.*git remote set-url' ||
+		jq -r '.error // ""' "$F3_RENAMED" | matches 'is now .* on GitHub, renamed or transferred.*git remote set-url' ||
 			{ row_fail "submit didn't name the renamed fork and the remote to point at it: $(jq -r '.error // "it went on"' "$F3_RENAMED")"; return; }
 	fi
 	judged "the fork and upstream were found in each layout, and submit named the rename"
