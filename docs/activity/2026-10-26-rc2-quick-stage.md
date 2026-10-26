@@ -77,3 +77,12 @@ then nothing for eleven minutes, and reads the foreground check, off a
 terminal and without `-v`, print its steps and "…'s log hasn't grown in
 10 minutes" before its result. Harness only; the M1 runs them on rc5 at
 the person's word.
+
+## The docs dig's I43: base's master, weekly
+
+A workflow of its own, .github/workflows/base-master.yml, builds MacPorts
+base's master from source each Monday (and on demand), installs it at
+/opt/local with a nosync source, as ci.yml's macports.sh does for the
+release, and runs ./internal/macports/..., the evaluator's tests among
+them. It's no gate on main; a failure is a notice that base's next
+release would have dockhand read Portfiles otherwise.
