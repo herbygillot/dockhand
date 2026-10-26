@@ -2,8 +2,7 @@
 
 2026-10-26, from the M1's quick stage on rc2 (54 rows: 46 passed, E5
 and E8 refused well, 3 not run by design, 3 failed, no harm tripped).
-Two of its findings are fixed before rc3; C15's, submit's preview not
-showing an `after` hold, went to prioritization as a design question.
+Its three findings are fixed before rc3.
 
 - **C13 failed on a plan that did what it should.** Its plan exited 0 and
   moved opkssh 0.16.0 to 0.19.1. The row's `plan_words … | grep -qE …`
@@ -19,3 +18,10 @@ showing an `after` hold, went to prioritization as a design question.
   which GitHub's documentation says costs nothing of the allowance; the
   spend counter counted it as a request. It no longer does
   (github.freeOfTheAllowance), so a look's count is what GitHub charges.
+- **C15: submit's preview didn't say what serve would hold** (roadmap
+  a2e4b53b). The plan had the majors, floors, and `after` holds, and so did
+  the JSON's concerns, but the text showed only a moved tag's, under
+  Upstream. `after` binds serve alone by design, so the preview holds
+  nothing: under a `Serve` label it says "would hold it:" and each hold's
+  own words, once each (view.ServeHolds), and the submission goes ahead as
+  before. C15's row stands as written.

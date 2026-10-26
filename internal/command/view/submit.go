@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/command/settings"
@@ -48,6 +49,18 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 			lines = []string{"compared; no license, build file, or dependency changes"}
 		}
 		fmt.Fprintf(out, "  Upstream %s\n", strings.Join(lines, "\n           "))
+	}
+	// What would hold serve's submission of it, which a person's own goes
+	// ahead of: its major versions, a raised floor, and the ports its
+	// holds name first (the M1's C15 on rc2, which the text never said).
+	for i, hold := range ServeHolds(plan) {
+		label := "           "
+		if i == 0 {
+			label = "  Serve    "
+			fmt.Fprintf(out, "%swould hold it:\n", label)
+			label = "           "
+		}
+		fmt.Fprintf(out, "%s%s\n", label, hold)
 	}
 	fmt.Fprintf(out, "  Other PRs  %s\n", otherWords(plan))
 	fmt.Fprintf(out, "  PR       %s\n", PullRequestWords(plan))
@@ -225,4 +238,19 @@ func loginWords(plan engine.SubmitPlan) string {
 		return plan.Login.Account
 	}
 	return plan.Login.Account + ", from " + plan.Login.From
+}
+
+// ServeHolds are the words of each hold serve's submission of the branch
+// would wait on, its majors, floors, and holds naming ports first, a line
+// each, once each; none hold a person's own submission.
+func ServeHolds(plan engine.SubmitPlan) []string {
+	var words []string
+	for _, holds := range [][]model.Concern{plan.Majors, plan.Floors, plan.After} {
+		for _, hold := range holds {
+			if hold.Detail != "" && !slices.Contains(words, hold.Detail) {
+				words = append(words, hold.Detail)
+			}
+		}
+	}
+	return words
 }
