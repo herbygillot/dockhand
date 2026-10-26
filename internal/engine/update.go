@@ -171,6 +171,11 @@ type Update struct {
 	// CrossesMajor is an update to a new major version, semgrep's 0.14.0
 	// to 1.179.0, which read as a plain bump (field testing, 2026-10-02).
 	CrossesMajor bool
+	// ClosedBefore says an earlier update of the port to this version was
+	// closed unmerged, which an attended update goes ahead of and says,
+	// and an unattended look doesn't propose again (the docs dig's I1);
+	// empty where none was.
+	ClosedBefore string
 	// Release is where a bump found its version.
 	Release *model.Release
 	// Files are the paths the edit changes, sorted.
@@ -265,6 +270,15 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		request.FollowMoves = true
 	}
 	update, err := e.updateWithObsolete(ctx, request)
+	if err == nil && request.Action == model.EditUpdate && !update.Current && update.Port != "" {
+		closed, ok, closedErr := e.ClosedAt(ctx, update.Port, update.After.Version)
+		if closedErr != nil {
+			return update, closedErr
+		}
+		if ok {
+			update.ClosedBefore = ClosedWords(closed, update.After.Version)
+		}
+	}
 	return update, refusedUpdate(err, request, update)
 }
 
