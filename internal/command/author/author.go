@@ -425,6 +425,9 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		if update.CrossesMajor {
 			fmt.Fprintf(out, "New major version: ports that depend on %s may also need updates.\n", update.Port)
 		}
+		if update.ClosedBefore != "" {
+			fmt.Fprintf(out, "Closed before: %s.\n", strings.TrimSuffix(update.ClosedBefore, "; a newer release lifts this"))
+		}
 		switch stub := update.Obsolete; {
 		case stub == nil:
 		case stub.Moved:

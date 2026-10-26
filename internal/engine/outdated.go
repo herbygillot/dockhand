@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/outdated"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
@@ -379,6 +380,19 @@ func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (Outda
 			plan.Skipped = append(plan.Skipped, SkippedUpdate{Port: port.Port, Reason: "already in " + open[0].ShortName()})
 			continue
 		}
+		// An update a maintainer closed unmerged isn't proposed again at
+		// its version: the closed branch keeps its name, so the next look
+		// planned it again under another, and serve's submit opened its
+		// pull request again each day (the docs dig's I1). A newer release
+		// lifts it.
+		closed, ok, err := e.ClosedAt(ctx, port.Port, port.Newest)
+		if err != nil {
+			return plan, err
+		}
+		if ok {
+			plan.Skipped = append(plan.Skipped, SkippedUpdate{Port: port.Port, Reason: ClosedWords(closed, port.Newest)})
+			continue
+		}
 		name, err := e.NameFor(ctx, port.Port, port.Newest)
 		if err != nil {
 			return plan, err
@@ -386,6 +400,50 @@ func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (Outda
 		plan.Updates = append(plan.Updates, PlannedUpdate{Port: port, Name: name})
 	}
 	return plan, nil
+}
+
+// ClosedAt is the newest closed or archived branch that updated a port to
+// a version and wasn't merged: an update a maintainer, or the person,
+// closed, which an unattended look doesn't propose again at that
+// version.
+func (e *Engine) ClosedAt(ctx context.Context, port, version string) (model.Branch, bool, error) {
+	var found model.Branch
+	ok := false
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		branches, err := r.Branches(store.BranchFilter{States: []model.BranchState{model.BranchClosed, model.BranchArchived}})
+		if err != nil {
+			return err
+		}
+		for _, branch := range branches {
+			// An archived branch may have been merged first: master
+			// has that version, and nothing waits for a look.
+			if pr := branch.PullRequest; pr != nil && pr.Observed != nil && pr.Observed.State == model.PullRequestMerged {
+				continue
+			}
+			edits, err := r.Edits(branch.ID)
+			if err != nil {
+				return err
+			}
+			for _, edit := range edits {
+				if edit.Kind == model.EditUpdate && strings.EqualFold(edit.Port, port) && edit.Release != nil && edit.Release.Version == version &&
+					(!ok || branch.CreatedAt.After(found.CreatedAt)) {
+					found, ok = branch, true
+				}
+			}
+		}
+		return nil
+	})
+	return found, ok, err
+}
+
+// ClosedWords say why an update closed unmerged isn't proposed again:
+// "1.8.1's pull request #123 was closed unmerged, in jq-1.8.1; a newer
+// release lifts this".
+func ClosedWords(branch model.Branch, version string) string {
+	if pr := branch.PullRequest; pr != nil && pr.Number > 0 {
+		return fmt.Sprintf("%s's pull request #%d was closed unmerged, in %s; a newer release lifts this", version, pr.Number, branch.ShortName())
+	}
+	return fmt.Sprintf("%s's update was %s unmerged, in %s; a newer release lifts this", version, branch.State, branch.ShortName())
 }
 
 // PrepareOptions are how PrepareOutdated prepares each branch.

@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/outdated"
+	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
@@ -205,4 +206,50 @@ func TestShipAsksOnceWhetherItMayGoOn(t *testing.T) {
 	require.False(t, handEdit.Unambiguous())
 	require.ErrorContains(t, commitUnasked(yes, handEdit), "review the commit plan before committing: run dockhand tidy --branch")
 	require.ErrorContains(t, commitUnasked(shipOptions{Answered: model.AnsweredNobody}, handEdit), "review the commit plan before committing: run dockhand tidy --branch")
+}
+
+// An update closed unmerged isn't proposed again at its version: the
+// closed branch kept its name, so the next look planned it again under
+// another, and serve's submit opened its pull request again each day (the
+// docs dig's I1). A newer release lifts it, and an attended update goes
+// ahead, saying the earlier close.
+func TestAnUpdateClosedUnmergedIsNotProposedAgain(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := servePrepared(t, e)
+	branch, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	branch.State, branch.EndedAt = model.BranchClosed, time.Now()
+	branch.PullRequest = &model.PullRequest{Repository: "macports/macports-ports", Number: 123, Head: "ada/macports-ports:" + branch.Name,
+		Observed: &model.PullRequestObservation{State: model.PullRequestClosed}}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+
+	report, err := e.Outdated(t.Context(), OutdatedRequest{Maintainers: []string{"@ada"}})
+	require.NoError(t, err)
+	plan, err := e.PlanOutdated(t.Context(), report)
+	require.NoError(t, err)
+	require.Empty(t, plan.Updates)
+	require.Contains(t, plan.Skipped, SkippedUpdate{Port: "jq", Reason: "1.8.1's pull request #123 was closed unmerged, in jq-1.8.1; a newer release lifts this"})
+	candidates, _, err := e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, candidates, "serve's submit pass has nothing to open again")
+
+	// A newer release lifts it.
+	for i := range report.Ports {
+		if report.Ports[i].Port == "jq" {
+			report.Ports[i].Newest = "1.8.2"
+		}
+	}
+	plan, err = e.PlanOutdated(t.Context(), report)
+	require.NoError(t, err)
+	require.Len(t, plan.Updates, 1)
+	require.Equal(t, "jq-1.8.2", plan.Updates[0].Name)
+
+	// An attended update of it goes ahead, and says the close.
+	closed, ok, err := e.ClosedAt(t.Context(), "jq", "1.8.1")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, branch.ID, closed.ID)
 }
