@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
+	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -65,25 +67,73 @@ func (e *Engine) classifyCI(ctx context.Context, branch model.Branch, next model
 
 // classifiedCI is a failure as its log says, by the readings dockhand
 // knows: an archive MacPorts' fetch couldn't get (buildlog.FetchFailed);
-// else unclassified.
+// else unclassified, with the log's first error line, read as a local
+// log's is (D10), else the workflow's own error marker, where status said
+// the log said nothing of its cause (xapian-core). And each port the job
+// built, with its result, which MacPorts' workflow marks a port at a time
+// (Then's item 7).
 func classifiedCI(failure model.CIFailure, log []byte) model.CIFailure {
+	failure.Ports = ghactions.PortResults(log)
 	if fetch, ok := buildlog.FetchFailed(bytes.NewReader(log)); ok {
 		failure.Cause, failure.File, failure.URL, failure.Status, failure.Reason = model.CIFetch, fetch.File, fetch.URL, fetch.Status, fetch.Reason
 		return failure
 	}
 	failure.Cause, failure.Reason = model.CIUnclassified, "its log names no cause dockhand reads"
+	if cause, ok := buildlog.FirstFrom(bytes.NewReader(ghactions.Untimed(log)), 1); ok {
+		failure.Error = cause.Line
+	} else if line, ok := ghactions.FirstError(log); ok {
+		failure.Error = line
+	}
 	return failure
 }
 
 // CIFailureWords say a classified CI failure as status does after "CI
 // failed": "fetching jni-sys-macros-0.4.1.crate (mirror.sjtu.edu.cn
-// answered 403) on macos-15"; the check alone for one unclassified.
+// answered 403) on macos-15"; one unclassified by its log's first error
+// line, "on macos-15: foo.cpp:12:3: error: …", or its check alone.
 func CIFailureWords(failure model.CIFailure) string {
 	if failure.Cause == model.CIFetch {
 		fetch := buildlog.FetchFailure{File: failure.File, URL: failure.URL, Status: failure.Status, Reason: failure.Reason}
 		return fmt.Sprintf("%s on %s", fetch.Words(), failure.Check)
 	}
+	if failure.Error != "" {
+		return fmt.Sprintf("on %s: %s", failure.Check, failure.Error)
+	}
 	return "on " + failure.Check
+}
+
+// CIPortWords are each port a pull request's failed CI jobs built, with
+// its result, a job's result for a port where several jobs built it
+// read worst first: "exiv2 ✓, gpsbabel ✗ (build)". Empty where no job's
+// log said any (Then's item 7).
+func CIPortWords(failures []model.CIFailure) string {
+	results := map[string]model.CIPort{}
+	var names []string
+	for _, failure := range failures {
+		for _, port := range failure.Ports {
+			was, seen := results[port.Port]
+			if !seen {
+				names = append(names, port.Port)
+			}
+			if !seen || was.Outcome == model.OutcomePassed && port.Outcome != model.OutcomePassed {
+				results[port.Port] = port
+			}
+		}
+	}
+	slices.Sort(names)
+	var words []string
+	for _, name := range names {
+		port := results[name]
+		switch {
+		case port.Outcome == model.OutcomePassed:
+			words = append(words, name+" ✓")
+		case port.Phase == model.PhaseInstall || port.Phase == model.PhaseDependencies || port.Phase == "":
+			words = append(words, name+" ✗ (build)")
+		default:
+			words = append(words, fmt.Sprintf("%s ✗ (%s)", name, port.Phase))
+		}
+	}
+	return strings.Join(words, ", ")
 }
 
 // RerunCI runs the failed CI jobs of a branch's pull request again, at its

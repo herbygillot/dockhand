@@ -1,6 +1,7 @@
 package branchstate
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,15 @@ func (words) Ago(time.Time) string                   { return "1 hour ago" }
 func (words) Remade(evidence.TargetEvidence) string  { return "the image changed" }
 func (words) Unmet(u model.Unmet) string             { return "needs " + string(u.Needs) }
 func (words) CIFailure(f model.CIFailure) string     { return "fetching " + f.File + " on " + f.Check }
+func (words) CIPorts(f []model.CIFailure) string {
+	var ports []string
+	for _, failure := range f {
+		for _, port := range failure.Ports {
+			ports = append(ports, port.Port+" "+string(port.Outcome))
+		}
+	}
+	return strings.Join(ports, ", ")
+}
 func (words) Holds(c []model.Concern) []string {
 	var lines []string
 	for _, concern := range c {
@@ -43,6 +53,15 @@ func TestAttentionReadsTheChecksStanding(t *testing.T) {
 	require.Equal(t, WaitingToSubmit, rows[0].Reason)
 	require.Equal(t, "passed; waiting for you to submit", rows[0].Words(words{}))
 	require.Equal(t, Next{Verb: VerbSubmit, Branch: "jq-1.8.2"}, rows[0].Next)
+
+	// A pull request that conflicts with master says so, and offers the
+	// rebase (the docs dig's I2).
+	open := facts
+	open.Branch.Record.PullRequest = &model.PullRequest{Number: 35101, Observed: &model.PullRequestObservation{State: model.PullRequestOpen, Conflicts: true}}
+	rows = Attend(open)
+	require.Equal(t, Conflicting, rows[0].Reason)
+	require.Equal(t, "#35101 conflicts with master", rows[0].Words(words{}))
+	require.Equal(t, Next{Verb: VerbRebase, Branch: "jq-1.8.2"}, rows[0].Next)
 
 	// A pass of this Mac's release alone on an update that raised a floor
 	// names minmax next, and says why (the docs dig's I47).

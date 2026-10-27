@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -46,6 +47,12 @@ type StartRequest struct {
 	// Ports are the ports it's started for, which its record keeps
 	// (model.Branch.Ports).
 	Ports []string
+	// Head is the commit the branch starts at, past Base, as start --from
+	// picks a merged branch's commits onto master (StartFrom); Base where
+	// empty. Directories are the port directories its worktree checks
+	// out beside _resources, the ports Head's commits change.
+	Head        model.ObjectID
+	Directories []string
 }
 
 // TakenError is a name a tracked branch holds, which start can't take,
@@ -153,10 +160,11 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 			return model.Branch{}, err
 		}
 	}
-	if err := e.Repo.CreateBranch(ctx, name, string(base)); err != nil {
+	head := cmp.Or(request.Head, base)
+	if err := e.Repo.CreateBranch(ctx, name, string(head)); err != nil {
 		return model.Branch{}, err
 	}
-	undo := func() error { return e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, string(base)) }
+	undo := func() error { return e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, string(head)) }
 	if request.Here {
 		if err := e.Repo.Switch(ctx, name); err != nil {
 			return model.Branch{}, errors.Join(err, undo())
@@ -166,14 +174,20 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 			if previous != "" {
 				switched = e.Repo.Switch(context.WithoutCancel(ctx), previous)
 			}
-			return errors.Join(switched, e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, string(base)))
+			return errors.Join(switched, e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, string(head)))
 		}
 	} else {
-		if err := e.Repo.AddSparseWorktree(ctx, directory, name, append([]string{macports.ResourcesDirectory}, e.portNamed(ctx, base, request.Name)...)); err != nil {
+		sparse := append([]string{macports.ResourcesDirectory}, e.portNamed(ctx, base, request.Name)...)
+		for _, port := range request.Directories {
+			if !slices.Contains(sparse, port) {
+				sparse = append(sparse, port)
+			}
+		}
+		if err := e.Repo.AddSparseWorktree(ctx, directory, name, sparse); err != nil {
 			return model.Branch{}, errors.Join(err, undo())
 		}
 		undo = func() error {
-			return errors.Join(e.Repo.RemoveWorktree(context.WithoutCancel(ctx), directory), e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, string(base)))
+			return errors.Join(e.Repo.RemoveWorktree(context.WithoutCancel(ctx), directory), e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, string(head)))
 		}
 	}
 

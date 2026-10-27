@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -102,4 +103,31 @@ func TestStatusSaysTheNetworkHoldsTheLastPlanFound(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, HoldLines(statuses[0].Held), "#34620 is open for the same port: jq: update to 1.8.0")
 	require.False(t, statuses[0].NetworkHeldAt.IsZero(), "none found is known")
+}
+
+// A failed CI job that wasn't a fetch's quotes its log's first error line,
+// read as a local log's is, where status said its log named no cause
+// (xapian-core), and says each port it built, as MacPorts' workflow marks
+// them a port at a time (Then's item 7, the exiv2 session's notes).
+func TestAFailedCIJobSaysItsFirstErrorAndEachPort(t *testing.T) {
+	t.Parallel()
+	log := []byte(strings.Join([]string{
+		"2026-10-24T10:00:00.0Z ##[group]Installing exiv2",
+		"2026-10-24T10:04:00.0Z ##[endgroup]",
+		"2026-10-24T10:04:01.0Z ##[group]Installing gpsbabel",
+		"2026-10-24T10:05:00.0Z src/garmin.cc:120:5: error: use of undeclared identifier 'gbfgetuint32'",
+		"2026-10-24T10:05:01.0Z src/garmin.cc:130:5: error: another one",
+		"2026-10-24T10:05:02.0Z ##[endgroup]",
+		"2026-10-24T10:05:03.0Z ##[error]Failed to install gpsbabel",
+	}, "\n") + "\n")
+	failure := classifiedCI(model.CIFailure{Check: "macos-15"}, log)
+	require.Equal(t, model.CIUnclassified, failure.Cause)
+	require.Equal(t, "src/garmin.cc:120:5: error: use of undeclared identifier 'gbfgetuint32'", failure.Error, "the first, its timestamp off")
+	require.Equal(t, []model.CIPort{{Port: "exiv2", Outcome: model.OutcomePassed}, {Port: "gpsbabel", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}}, failure.Ports)
+	require.Equal(t, "on macos-15: src/garmin.cc:120:5: error: use of undeclared identifier 'gbfgetuint32'", CIFailureWords(failure))
+	require.Equal(t, "exiv2 ✓, gpsbabel ✗ (build)", CIPortWords([]model.CIFailure{failure}))
+
+	// No build error: the workflow's own marker.
+	plain := classifiedCI(model.CIFailure{Check: "macos-14"}, []byte("2026-10-24T10:00:00.0Z ##[error]Process completed with exit code 1.\n"))
+	require.Equal(t, "Process completed with exit code 1.", plain.Error)
 }

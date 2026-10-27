@@ -37,7 +37,7 @@ func TestPullRequestsAreReadAtOnce(t *testing.T) {
 		assert.Contains(t, payload.Query, `p0: repository(owner: "macports", name: "macports-ports") { pullRequest(number: 34901) { ...fields } }`)
 		assert.Contains(t, payload.Query, `p2: repository(owner: "macports", name: "macports-ports") { pullRequest(number: 9) { ...fields } }`)
 		fmt.Fprintf(w, `{"data": {
-  "p0": {"pullRequest": {"number": 34901, "state": "OPEN", "isDraft": false, "headRefOid": %[1]q,
+  "p0": {"pullRequest": {"number": 34901, "state": "OPEN", "isDraft": false, "headRefOid": %[1]q, "mergeable": "CONFLICTING",
     "latestOpinionatedReviews": {"totalCount": 2, "nodes": [
       {"state": "APPROVED", "submittedAt": "2026-10-15T08:00:00Z", "author": {"login": "ryandesign"}},
       {"state": "CHANGES_REQUESTED", "submittedAt": "2026-10-15T09:00:00Z", "author": {"login": "jmroot"}}]},
@@ -46,7 +46,7 @@ func TestPullRequestsAreReadAtOnce(t *testing.T) {
       {"__typename": "CheckRun", "name": "macOS 14", "status": "COMPLETED", "conclusion": "SUCCESS"},
       {"__typename": "CheckRun", "name": "macOS 13", "status": "COMPLETED", "conclusion": "ACTION_REQUIRED"},
       {"__typename": "StatusContext", "context": "trac", "state": "SUCCESS"}]}}}}]}}},
-  "p1": {"pullRequest": {"number": 34902, "state": "MERGED", "isDraft": false, "headRefOid": %[1]q,
+  "p1": {"pullRequest": {"number": 34902, "state": "MERGED", "isDraft": false, "headRefOid": %[1]q, "mergeable": "UNKNOWN",
     "latestOpinionatedReviews": {"totalCount": 0, "nodes": []},
     "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"totalCount": 150, "nodes": []}}}}]}}},
   "p2": {"pullRequest": null}
@@ -71,6 +71,8 @@ func TestPullRequestsAreReadAtOnce(t *testing.T) {
 	require.Equal(t, []string{"jmroot"}, open.Status.ChangesRequestedBy)
 	require.Equal(t, time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC), open.Status.ReviewedAt)
 	require.Equal(t, forge.CheckSummary{Total: 4, Passed: 2, Failed: 1, Pending: 1, Failing: []string{"macOS 15"}}, open.Status.Checks)
+	require.Equal(t, "no", open.Status.Mergeable, "GitHub's conflict is read, where it was always unknown (the docs dig's I2)")
+	require.Equal(t, "unknown", readings[1].Status.Mergeable, "until GitHub has computed the merge")
 
 	require.Equal(t, forge.PullRequestMerged, readings[1].PullRequest.State)
 	require.True(t, readings[1].Partial, "more checks than a reading takes")

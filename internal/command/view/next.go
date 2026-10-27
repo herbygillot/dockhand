@@ -37,7 +37,7 @@ func RenderNext(next branchstate.Next, reason branchstate.Reason) string {
 		return "dockhand adopt <new name> (if you renamed the branch)"
 	case branchstate.VerbStatus, branchstate.VerbArchive:
 		line = "dockhand " + string(next.Verb) + " " + next.Branch
-	case branchstate.VerbWait, branchstate.VerbLogs, branchstate.VerbEdit, refusal.VerbExplain:
+	case branchstate.VerbWait, branchstate.VerbLogs, branchstate.VerbEdit, refusal.VerbExplain, refusal.VerbStart:
 		line = "dockhand " + string(next.Verb) + args
 	case refusal.VerbSetup:
 		return "dockhand setup" + args

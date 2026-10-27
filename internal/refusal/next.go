@@ -25,10 +25,15 @@ const (
 	// VerbRerunCI runs a branch's pull request's failed CI jobs again,
 	// through the person's login; the command line spells it.
 	VerbRerunCI Verb = "rerun-ci"
+	// VerbStart starts a branch; with --from, a merged branch's commits
+	// past its merge, picked onto fresh master.
+	VerbStart Verb = "start"
+	// VerbRebase moves a branch onto master as fetched now.
+	VerbRebase Verb = "rebase"
 )
 
 // Verbs are every verb a Next names, for the command line to render each.
-var Verbs = []Verb{VerbStatus, VerbRefresh, VerbAdopt, VerbWait, VerbSubmit, VerbEdit, VerbArchive, VerbCheck, VerbLogs, VerbExplain, VerbTidy, VerbSetup, VerbOpenChecks, VerbRerunCI}
+var Verbs = []Verb{VerbStatus, VerbRefresh, VerbAdopt, VerbWait, VerbSubmit, VerbEdit, VerbArchive, VerbCheck, VerbLogs, VerbExplain, VerbTidy, VerbSetup, VerbOpenChecks, VerbRerunCI, VerbStart, VerbRebase}
 
 // After is what must change before an action refused can be asked again
 // as it was: a person's look at what holds it, a check finishing, or a

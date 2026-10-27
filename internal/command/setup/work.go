@@ -176,8 +176,9 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 func StartCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var here bool
 	var ports []string
+	var from string
 	cmd := &cobra.Command{
-		Use:   "start [<name>] [--port <port>]...",
+		Use:   "start [<name>] [--port <port>]... | start --from <branch> [<name>]",
 		Short: "Start a branch from freshly fetched master",
 		Long: `Creates dockhand/<name> from MacPorts' master, fetched just now, in a sparse
 worktree of its own: _resources plus the ports you edit, beside your clone.
@@ -185,10 +186,22 @@ worktree of its own: _resources plus the ports you edit, beside your clone.
 be given more than once; with no name, the branch is named for the first
 port, with a short ID, as an edit's is. With --here, the branch is created
 in this checkout instead, which must have no uncommitted changes to
-tracked files.`,
+tracked files.
+
+--from takes a merged branch's commits past what its pull request merged,
+the follow-up status names, and picks them onto the new branch, from
+master fetched just now, as git rebase would replay them; a commit master
+has the change of is dropped, and a conflict starts nothing. With no name,
+it's the merged branch's with a short ID.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			if from != "" {
+				if here || len(ports) > 0 {
+					return errors.New("--from starts its own worktree with the merged branch's ports; it takes no --here or --port")
+				}
+				return startFrom(ctx, s, streams, from, args)
+			}
 			if len(args) == 0 && len(ports) == 0 {
 				return errors.New("start needs a branch name or --port <port> to generate one.")
 			}
@@ -240,8 +253,40 @@ tracked files.`,
 	}
 	cmd.Flags().BoolVar(&here, "here", false, "create the branch in this checkout instead of its own worktree")
 	cmd.Flags().StringArrayVar(&ports, "port", nil, "bring this port's directory into the worktree; more than one may be given")
+	cmd.Flags().StringVar(&from, "from", "", "start from master with this merged branch's commits past its merge picked onto it")
 	settings.SupportsJSON(cmd)
 	return cmd
+}
+
+// startFrom is start --from: a follow-up of a merged branch's commits past
+// its merge, on fresh master (Then's item 7).
+func startFrom(ctx context.Context, s *settings.Settings, streams term.Streams, from string, args []string) error {
+	e, err := s.Open(ctx)
+	if err != nil {
+		return err
+	}
+	defer e.Close()
+	merged, err := e.ResolveRecord(ctx, from)
+	if err != nil {
+		return err
+	}
+	name := ""
+	if len(args) == 1 {
+		name = args[0]
+	} else if name, err = e.FreeName(ctx, merged.ShortName()); err != nil {
+		return err
+	}
+	done, err := e.StartFrom(ctx, name, merged)
+	if err != nil {
+		return err
+	}
+	streams.Emit(map[string]any{"branch": view.BranchRef(done.Branch), "from": view.BranchRef(done.From), "picked": len(done.Picked)})
+	fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now), with %s past #%d's merge from %s:\n", done.Branch.Name, done.Branch.Base.Short(), prose.Plural(len(done.Picked), "commit"), done.From.PullRequest.Number, done.From.ShortName())
+	for _, commit := range done.Picked {
+		fmt.Fprintf(streams.Out, "  %s %s\n", model.ObjectID(commit.ID).Short(), prose.FirstLine(commit.Message))
+	}
+	fmt.Fprintf(streams.Out, "Directory: %s\nNext: dockhand check --branch %s\n", s.Places().Tilde(done.Branch.Worktree), done.Branch.ShortName())
+	return nil
 }
 
 func AdoptCommand(s *settings.Settings, streams term.Streams) *cobra.Command {

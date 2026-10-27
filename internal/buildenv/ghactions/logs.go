@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"iter"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -104,6 +105,52 @@ func lines(log []byte) iter.Seq2[int, string] {
 
 // GitHub's job logs begin each line with a timestamp.
 var timestamp = regexp.MustCompile(`^\d{4}-\d\d-\d\dT[0-9:.]+Z `)
+
+// workflowError is the workflow's own error marker, which a failed step
+// prints when nothing before it said why: "Error: Failed to build jq".
+var workflowError = regexp.MustCompile(`^(##\[error\]|::error::)\s*(.+)$`)
+
+// Untimed is a job's log with each line's timestamp taken off, as a
+// local build's log reads, for buildlog's readings of it.
+func Untimed(log []byte) []byte {
+	var out bytes.Buffer
+	for _, text := range lines(log) {
+		out.WriteString(text)
+		out.WriteByte('\n')
+	}
+	return out.Bytes()
+}
+
+// FirstError is the first error line the workflow itself marked in a job's
+// log, where a build's own error line, buildlog's to find, isn't there.
+func FirstError(log []byte) (string, bool) {
+	for _, text := range lines(log) {
+		if m := workflowError.FindStringSubmatch(text); m != nil {
+			return strings.TrimSpace(m[2]), true
+		}
+	}
+	return "", false
+}
+
+// PortResults are what a job's log says of each port it built, in name
+// order (ReadLog's), each passed or failed at a phase: MacPorts' workflow
+// builds every port of a pull request in turn in one job, so a failed
+// job's log says which of them failed (the exiv2 session's notes,
+// 2026-10-24, summarized by hand). A port the workflow listed and never
+// reached isn't said.
+func PortResults(log []byte) []model.CIPort {
+	var results []model.CIPort
+	for name, built := range ReadLog(log) {
+		// Failed tests count against nothing in the workflow (Tests).
+		outcome, phase := built.Outcome()
+		if outcome == model.OutcomeNotRun || name == "" {
+			continue
+		}
+		results = append(results, model.CIPort{Port: name, Outcome: outcome, Phase: phase})
+	}
+	slices.SortFunc(results, func(a, b model.CIPort) int { return strings.Compare(a.Port, b.Port) })
+	return results
+}
 
 // ReadLog reads one job's log into what it says about each subport.
 func ReadLog(log []byte) map[string]*Built {

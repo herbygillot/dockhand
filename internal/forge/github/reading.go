@@ -20,7 +20,7 @@ const readingChunk = 25
 // state and head, and its latest opinion from each reviewer and its
 // head's checks and statuses, as Observe and Inspect read them, a hundred
 // of each; one with more is Partial, and Inspect reads it.
-const pullRequestFields = `number state isDraft headRefOid
+const pullRequestFields = `number state isDraft headRefOid mergeable
 latestOpinionatedReviews(first: 100) { totalCount nodes { state submittedAt author { login } } }
 commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { totalCount nodes {
   __typename
@@ -50,7 +50,10 @@ type graphPullRequest struct {
 	State      string `json:"state"`
 	IsDraft    bool   `json:"isDraft"`
 	HeadRefOID string `json:"headRefOid"`
-	Reviews    struct {
+	// Mergeable is MERGEABLE, CONFLICTING, or UNKNOWN until GitHub has
+	// computed the merge, which a later look reads.
+	Mergeable string `json:"mergeable"`
+	Reviews   struct {
 		TotalCount int           `json:"totalCount"`
 		Nodes      []graphReview `json:"nodes"`
 	} `json:"latestOpinionatedReviews"`
@@ -141,6 +144,14 @@ func readingOf(ref forge.PullRequestRef, pr graphPullRequest) (forge.PullRequest
 	}
 	reading := forge.PullRequestReading{Ref: ref, Found: true, PullRequest: forge.PullRequest{Ref: ref, State: state, RemoteHead: model.ObjectID(pr.HeadRefOID)}}
 	status := forge.PullRequestStatus{Draft: pr.IsDraft, Mergeable: "unknown", Review: "none", ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	// The refresh's query reads mergeable as Inspect's REST read does, where
+	// it was set unknown whatever GitHub said (the docs dig's I2).
+	switch pr.Mergeable {
+	case "MERGEABLE":
+		status.Mergeable = "yes"
+	case "CONFLICTING":
+		status.Mergeable = "no"
+	}
 	reading.Partial = pr.Reviews.TotalCount > len(pr.Reviews.Nodes)
 	var opinions []opinion
 	for _, r := range pr.Reviews.Nodes {
