@@ -258,6 +258,7 @@ func (e *Engine) observation(now forge.PullRequest, status forge.PullRequestStat
 	}
 	next.Draft, next.Review, next.Failing, next.ChangesRequestedBy, next.ReviewedAt = status.Draft, model.PullRequestReview(status.Review), status.Checks.Failing, status.ChangesRequestedBy, status.ReviewedAt
 	next.Checks = checksOf(status.Checks)
+	next.Conflicts = status.Mergeable == "no"
 	return next
 }
 

@@ -207,13 +207,21 @@ func (t *tx) AddCIFailure(f model.CIFailure) error {
 	if err := f.Validate(); err != nil {
 		return err
 	}
-	_, err := t.exec("INSERT INTO ci_failures(repository_id, branch_id, head, run, attempt, job, check_name, cause, file, url, status, reason, at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
-		t.repo, f.Branch, f.Head, f.Run, f.Attempt, f.Job, f.Check, f.Cause, f.File, f.URL, f.Status, f.Reason, millis(f.At))
+	ports := ""
+	if len(f.Ports) > 0 {
+		data, err := json.Marshal(f.Ports)
+		if err != nil {
+			return err
+		}
+		ports = string(data)
+	}
+	_, err := t.exec("INSERT INTO ci_failures(repository_id, branch_id, head, run, attempt, job, check_name, cause, file, url, status, reason, error, ports, at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+		t.repo, f.Branch, f.Head, f.Run, f.Attempt, f.Job, f.Check, f.Cause, f.File, f.URL, f.Status, f.Reason, f.Error, ports, millis(f.At))
 	return err
 }
 
 func (t *tx) CIFailures(branch model.BranchID, head model.ObjectID) ([]model.CIFailure, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT branch_id, head, run, attempt, job, check_name, cause, file, url, status, reason, at FROM ci_failures WHERE repository_id=? AND branch_id=? AND head=? ORDER BY check_name, job, attempt",
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT branch_id, head, run, attempt, job, check_name, cause, file, url, status, reason, error, ports, at FROM ci_failures WHERE repository_id=? AND branch_id=? AND head=? ORDER BY check_name, job, attempt",
 		t.repo, branch, head)
 	if err != nil {
 		return nil, storageError(err)
@@ -223,8 +231,14 @@ func (t *tx) CIFailures(branch model.BranchID, head model.ObjectID) ([]model.CIF
 	for rows.Next() {
 		var f model.CIFailure
 		var at int64
-		if err := rows.Scan(&f.Branch, &f.Head, &f.Run, &f.Attempt, &f.Job, &f.Check, &f.Cause, &f.File, &f.URL, &f.Status, &f.Reason, &at); err != nil {
+		var ports string
+		if err := rows.Scan(&f.Branch, &f.Head, &f.Run, &f.Attempt, &f.Job, &f.Check, &f.Cause, &f.File, &f.URL, &f.Status, &f.Reason, &f.Error, &ports, &at); err != nil {
 			return nil, storageError(err)
+		}
+		if ports != "" {
+			if err := json.Unmarshal([]byte(ports), &f.Ports); err != nil {
+				return nil, fmt.Errorf("%w: CI job %d's ports: %w", store.ErrUnavailable, f.Job, err)
+			}
 		}
 		f.At = fromMillis(at)
 		failures = append(failures, f)

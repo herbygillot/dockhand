@@ -97,6 +97,10 @@ type PullRequestObservation struct {
 	// Head is the commit the pull request was at.
 	Head ObjectID
 	At   time.Time
+	// Conflicts is a pull request GitHub says doesn't merge cleanly into
+	// master, which a rebase onto master settles; false where it merges
+	// or GitHub hasn't computed it yet (the docs dig's I2).
+	Conflicts bool `json:",omitempty"`
 }
 
 // CIFailure is one of a pull request's failed CI jobs, classified once
@@ -118,7 +122,21 @@ type CIFailure struct {
 	File, URL string
 	Status    int
 	Reason    string
-	At        time.Time
+	// Error is the log's first error line, read as a local log's is, where
+	// the job wasn't a fetch's; Ports are each port the job built, as
+	// MacPorts' workflow marked it, in name order (schema 44, Then's item
+	// 7). Empty for a job read before them.
+	Error string
+	Ports []CIPort `json:",omitempty"`
+	At    time.Time
+}
+
+// CIPort is one port a CI job built, and how: passed, or failed at a
+// phase.
+type CIPort struct {
+	Port    string  `json:"port"`
+	Outcome Outcome `json:"outcome"`
+	Phase   Phase   `json:"phase,omitempty"`
 }
 
 // CICause is what made a CI job fail, as its log was read.

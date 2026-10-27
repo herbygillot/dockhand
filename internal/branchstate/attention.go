@@ -51,6 +51,8 @@ const (
 	NotAssessed            Reason = "not-assessed"
 	WaitingToSubmit        Reason = "waiting-to-submit"
 	CheckWider             Reason = "check-wider"
+	WorkPastMerge          Reason = "work-past-merge"
+	Conflicting            Reason = "conflicting"
 	AcceptedToSubmit       Reason = "accepted-to-submit"
 	NotPushed              Reason = "not-pushed"
 )
@@ -69,6 +71,8 @@ const (
 	VerbTidy       = refusal.VerbTidy
 	VerbOpenChecks = refusal.VerbOpenChecks
 	VerbRerunCI    = refusal.VerbRerunCI
+	VerbStart      = refusal.VerbStart
+	VerbRebase     = refusal.VerbRebase
 )
 
 // Branch is what's recorded of a branch beside its checks, as attention
@@ -108,6 +112,9 @@ type Branch struct {
 	// CheckOn is what a check that builds again where the latest one did
 	// names, its --on values; none where build.default covers it.
 	CheckOn []string
+	// PastMerge are a merged branch's commits past what its pull request
+	// merged, which start --from takes onto master (Then's item 7).
+	PastMerge int
 	// Wider is the check a passing attended check didn't build, where the
 	// update gives a reviewer reason to ask for it: minmax for a floor it
 	// raised, or a variant whose sources it changed (the docs dig's I47).
@@ -165,6 +172,9 @@ type Vocabulary interface {
 	// jni-sys-macros-0.4.1.crate (mirror.sjtu.edu.cn answered 403) on
 	// macos-15".
 	CIFailure(model.CIFailure) string
+	// CIPorts are each port the failed jobs built, with its result:
+	// "exiv2 ✓, gpsbabel ✗ (build)"; empty where no log said any.
+	CIPorts([]model.CIFailure) string
 }
 
 // Attend is what a branch needs, at most one row: from its pull request's
@@ -201,6 +211,13 @@ func Attend(facts Facts) []Attention {
 	}
 	if rows := pullRequestAttention(facts, row); len(rows) > 0 {
 		return rows
+	}
+	// Work that went on past a merge is a follow-up's, started from master
+	// with those commits picked onto it; wasmedge's was made by hand.
+	if b.Record.State == model.BranchMerged && b.PastMerge > 0 {
+		return row(Ready, WorkPastMerge, Next{Verb: VerbStart, Args: []string{"--from", name}}, func(a *Attention) {
+			a.PullRequest, a.Detail = b.Record.PullRequest, prose.Plural(b.PastMerge, "commit")
+		})
 	}
 	if pr := b.Record.PullRequest; pr != nil && b.Record.Origin == model.OriginServe && (pr.Observed == nil || pr.Observed.State == model.PullRequestOpen) {
 		return row(Ready, OpenedByServe, Next{Verb: VerbStatus}, func(a *Attention) { a.PullRequest = pr })
@@ -376,6 +393,9 @@ func pullRequestAttention(facts Facts, row func(Kind, Reason, Next, func(*Attent
 		return row(NeedsYou, SomeoneElsePushed, Next{Verb: VerbSubmit}, with)
 	case pr.Observed.Review == model.ReviewChangesRequested:
 		return row(NeedsYou, ChangesRequested, look, with)
+	case pr.Observed.Conflicts:
+		// principles.md promises it: "reports, and offers the command".
+		return row(NeedsYou, Conflicting, Next{Verb: VerbRebase}, with)
 	case pr.Observed.Checks == model.ChecksFailing:
 		// A failure every failed job of which was a fetch, as a mirror's
 		// 403, is one another run may get past: its Next runs them again
@@ -421,16 +441,22 @@ func (a Attention) Words(v Vocabulary) string {
 		}
 		return fmt.Sprintf("#%d: changes requested%s", pr.Number, age(at))
 	case CIFailing:
+		// A failure no reading named says its log's first error line,
+		// where there is one (Then's item 7: xapian-core's said nothing).
 		var classified []string
 		for _, failure := range a.CI {
-			if failure.Cause != model.CIUnclassified {
+			if failure.Cause != model.CIUnclassified || failure.Error != "" {
 				classified = append(classified, v.CIFailure(failure))
 			}
 		}
-		if len(classified) > 0 {
-			return fmt.Sprintf("#%d: MacPorts CI failed: %s%s", pr.Number, strings.Join(classified, "; "), age(pr.Observed.At))
+		ports := ""
+		if words := v.CIPorts(a.CI); words != "" {
+			ports = " (CI: " + words + ")"
 		}
-		return fmt.Sprintf("#%d: MacPorts CI is failing for %s%s", pr.Number, strings.Join(a.Ports, ", "), age(pr.Observed.At))
+		if len(classified) > 0 {
+			return fmt.Sprintf("#%d: MacPorts CI failed: %s%s%s", pr.Number, strings.Join(classified, "; "), ports, age(pr.Observed.At))
+		}
+		return fmt.Sprintf("#%d: MacPorts CI is failing for %s%s%s", pr.Number, strings.Join(a.Ports, ", "), ports, age(pr.Observed.At))
 	case OpenedByServe:
 		return fmt.Sprintf("#%d was opened by serve without human review", pr.Number)
 	case OnMaster:
@@ -485,6 +511,10 @@ func (a Attention) Words(v Vocabulary) string {
 		return "passed; the upstream changes have not yet been assessed. Submit will assess them"
 	case WaitingToSubmit:
 		return "passed; waiting for you to submit"
+	case Conflicting:
+		return fmt.Sprintf("#%d conflicts with master", pr.Number)
+	case WorkPastMerge:
+		return fmt.Sprintf("#%d merged; %s past the merge %s in it, for a follow-up", pr.Number, a.Detail, map[bool]string{true: "isn't", false: "aren't"}[a.Detail == "1 commit"])
 	case CheckWider:
 		return "passed on this Mac's release alone; " + a.Detail + ", so a wider check comes first; submit still goes on as it stands"
 	case AcceptedToSubmit:
