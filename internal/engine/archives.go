@@ -218,3 +218,52 @@ func (b *build) consumed(port model.ActivePort) bool {
 	}
 	return false
 }
+
+// Artifact is one archive a check's passed target built on one platform:
+// its port, environment, MacPorts' name for it, and where it's kept on
+// this Mac; Missing says why there's none, where it wasn't kept or is
+// gone.
+type Artifact struct {
+	Port        string
+	Environment model.Environment
+	Name, Path  string
+	Missing     string
+}
+
+// Artifacts are the archives a check's passed targets built, one for each
+// port and platform it passed on, for otool and smoke tests by hand: a
+// passed target's archive is kept by its digest, named nowhere a person
+// sees (field testing's outdated-ports session, the person's "dockhand
+// artifacts is a yes"). A target that didn't pass built none.
+func (e *Engine) Artifacts(ctx context.Context, run model.Run) ([]Artifact, error) {
+	evidence, err := e.RunEvidence(ctx, run.ID)
+	if err != nil {
+		return nil, err
+	}
+	var artifacts []Artifact
+	for _, target := range evidence.Targets {
+		for _, cell := range target.Outcomes {
+			if cell.Outcome != model.OutcomePassed {
+				continue
+			}
+			artifact := Artifact{Port: string(target.Target.ID), Environment: cell.Environment}
+			switch {
+			case cell.Archive == "":
+				artifact.Missing = "its archive wasn't kept"
+			default:
+				archive, kept, err := e.keptArchive(ctx, cell.Archive)
+				if err != nil {
+					return nil, err
+				}
+				artifact.Name = archive.Name
+				if kept {
+					artifact.Path = e.archivePath(cell.Archive)
+				} else {
+					artifact.Missing = "its archive is gone, as cleanup removes one no check uses"
+				}
+			}
+			artifacts = append(artifacts, artifact)
+		}
+	}
+	return artifacts, nil
+}

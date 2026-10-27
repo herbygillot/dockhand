@@ -46,6 +46,7 @@ var noPlan = map[string]string{
 	"explain":      "reads only",
 	"impact":       "reads only",
 	"logs":         "reads only",
+	"artifacts":    "reads only",
 	"open":         "opens a page",
 	"outdated":     "reads only",
 	"path":         "says a branch's directory, checking it out again where it's gone",
