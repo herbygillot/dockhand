@@ -824,7 +824,7 @@ func (b *build) Record(report buildenv.TargetReport) error {
 		b.activeIn(target, report.Active)
 	}
 	result := report.Result
-	result.Links = report.Links
+	result.Links, result.Installed, result.Libraries = report.Links, report.Installed, report.Libraries
 	return b.record(result)
 }
 

@@ -546,7 +546,7 @@ func (t *tx) UpdateExecution(e model.GuestExecution) error {
 		e.State, e.Detail, e.ProviderRef, observed, observed, nullableMillis(e.FinishedAt), t.repo, e.ID)
 }
 
-const resultColumns = "r.execution_id, r.target_id, r.outcome, r.phase, r.tests, r.log, r.steps, r.detail, r.builders, r.inputs, r.archive, r.reused_from, r.dependency, r.dependency_version, r.links, r.recorded_at"
+const resultColumns = "r.execution_id, r.target_id, r.outcome, r.phase, r.tests, r.log, r.steps, r.detail, r.builders, r.inputs, r.archive, r.reused_from, r.dependency, r.dependency_version, r.links, r.installed, r.libraries, r.recorded_at"
 
 func (t *tx) Check(id model.RunID) (store.Check, error) {
 	check := store.Check{Results: map[model.ExecutionID][]model.TargetResult{}, Origins: map[model.ExecutionID]store.Origin{}, Inputs: map[string]model.TargetInputs{}}
@@ -630,9 +630,22 @@ func (t *tx) Reusable(target model.TargetID, environment model.Environment, limi
 func resultFields(r *model.TargetResult) ([]any, func() error) {
 	var recorded int64
 	var steps, builders string
-	var links sql.NullString
-	fields := []any{&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &steps, &r.Detail, &builders, &r.Inputs, &r.Archive, &r.ReusedFrom, &r.Dependency.Name, &r.Dependency.Version, &links, &recorded}
+	var links, installed, libraries sql.NullString
+	fields := []any{&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &steps, &r.Detail, &builders, &r.Inputs, &r.Archive, &r.ReusedFrom, &r.Dependency.Name, &r.Dependency.Version, &links, &installed, &libraries, &recorded}
 	return fields, func() error {
+		// NULL is not read, as for links.
+		if installed.Valid {
+			r.Installed = []string{}
+			if err := json.Unmarshal([]byte(installed.String), &r.Installed); err != nil {
+				return fmt.Errorf("%w: %s's installed files in execution %s: %w", store.ErrUnavailable, r.Target, r.Execution, err)
+			}
+		}
+		if libraries.Valid {
+			r.Libraries = []model.Library{}
+			if err := json.Unmarshal([]byte(libraries.String), &r.Libraries); err != nil {
+				return fmt.Errorf("%w: %s's libraries in execution %s: %w", store.ErrUnavailable, r.Target, r.Execution, err)
+			}
+		}
 		// NULL is links not read; "[]" none.
 		if links.Valid {
 			r.Links = []model.Link{}
@@ -735,12 +748,20 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 		}
 		links = sql.NullString{String: string(data), Valid: true}
 	}
+	installed, err := nullableJSON(r.Installed != nil, r.Installed)
+	if err != nil {
+		return err
+	}
+	libraries, err := nullableJSON(r.Libraries != nil, r.Libraries)
+	if err != nil {
+		return err
+	}
 	var existing model.TargetResult
 	err = t.conn.QueryRowContext(t.ctx, "SELECT outcome FROM results WHERE repository_id=? AND execution_id=? AND target_id=?", t.repo, r.Execution, r.Target).Scan(&existing.Outcome)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, steps, detail, builders, inputs, archive, reused_from, dependency, dependency_version, links, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, r.Dependency.Name, r.Dependency.Version, links, millis(r.RecordedAt))
+		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, steps, detail, builders, inputs, archive, reused_from, dependency, dependency_version, links, installed, libraries, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, r.Dependency.Name, r.Dependency.Version, links, installed, libraries, millis(r.RecordedAt))
 		return err
 	case err != nil:
 		return storageError(err)
@@ -749,9 +770,21 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	if !existing.ReplacedBy(r) {
 		return fmt.Errorf("%w: %s's result in execution %s is %s and cannot become %s", store.ErrConflict, r.Target, r.Execution, existing.Outcome, r.Outcome)
 	}
-	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, steps=?, detail=?, builders=?, inputs=?, archive=?, reused_from=?, dependency=?, dependency_version=?, links=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
-		r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, r.Dependency.Name, r.Dependency.Version, links, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
+	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, steps=?, detail=?, builders=?, inputs=?, archive=?, reused_from=?, dependency=?, dependency_version=?, links=?, installed=?, libraries=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
+		r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, r.Dependency.Name, r.Dependency.Version, links, installed, libraries, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
 	return err
+}
+
+// nullableJSON is a value as a JSON column, NULL where it wasn't read.
+func nullableJSON(read bool, value any) (sql.NullString, error) {
+	if !read {
+		return sql.NullString{}, nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return sql.NullString{}, err
+	}
+	return sql.NullString{String: string(data), Valid: true}, nil
 }
 
 func (t *tx) Inputs(key string) (model.TargetInputs, error) {

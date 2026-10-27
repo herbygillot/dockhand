@@ -315,8 +315,24 @@ type TargetResult struct {
 	// the prefix, each with the port that provides it (part 6): an
 	// observation of the build, not an input, so reuse never reads it. Nil
 	// where its provider couldn't read them, empty where nothing links.
-	Links      []Link
+	Links []Link
+	// Installed are the files a passed build installed, as port contents
+	// lists them, and Libraries its own dynamic libraries, each with its
+	// install name and compatibility version: observations a check of the
+	// port's next version compares with (Then's item 9). Nil where its
+	// provider couldn't read them.
+	Installed  []string  `json:",omitempty"`
+	Libraries  []Library `json:",omitempty"`
 	RecordedAt time.Time
+}
+
+// Library is one of a build's own dynamic libraries: its file, the
+// LC_ID_DYLIB install name its dependents link it by, and its
+// compatibility version, which a change of breaks them until rebuilt.
+type Library struct {
+	File          string `json:"file"`
+	Name          string `json:"name"`
+	Compatibility string `json:"compatibility,omitempty"`
 }
 
 // Link is one library a target's installed binary links: the binary, the

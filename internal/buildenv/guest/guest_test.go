@@ -704,3 +704,28 @@ func TestAnUndeclaredLinkIsFoundFromTheGuestsReading(t *testing.T) {
 	declared := evidence.UndeclaredLinks([]evidence.LinkedBuild{{Result: result, Declared: []string{"xz"}}})
 	require.True(t, declared[0].Clean, "a declared link finds nothing")
 }
+
+// A passed build's installed files are kept, as port contents lists them,
+// and its own libraries' install names and compatibility versions, as
+// otool -l lists their LC_ID_DYLIB, for a check of the port's next version
+// to compare (Then's item 9).
+func TestAPassedBuildKeepsWhatItInstalledAndItsLibrariesNames(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	prefix := filepath.Join(root, "prefix")
+	bin, lib := filepath.Join(prefix, "bin"), filepath.Join(prefix, "lib")
+	require.NoError(t, os.MkdirAll(lib, 0o755))
+	require.NoError(t, os.MkdirAll(bin, 0o755))
+	tool, library := filepath.Join(bin, "exiv2"), filepath.Join(lib, "libexiv2.28.dylib")
+	macho := []byte{0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0}
+	for _, file := range []string{tool, library} {
+		require.NoError(t, os.WriteFile(file, macho, 0o755))
+		require.NoError(t, os.WriteFile(file+".links", []byte(file+":\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n"), 0o644))
+	}
+	require.NoError(t, os.WriteFile(library+".loads", []byte("Load command 3\n          cmd LC_ID_DYLIB\n      cmdsize 56\n         name "+library+" (offset 24)\n   time stamp 1 Thu Jan  1 00:00:01 1970\n      current version 28.0.2\ncompatibility version 28.0.0\nLoad command 4\n          cmd LC_LOAD_DYLIB\n"), 0o644))
+	input := Input{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []Target{{ID: "exiv2", Name: "exiv2", Portfile: "graphics/exiv2/Portfile", Log: buildenv.LogName("exiv2")}}}
+	results, _ := guestRunIn(t, root, input, "CONTENTS="+tool+"\\n"+library+"\\n")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, []string{tool, library}, results.Targets[0].Installed)
+	require.Equal(t, []Library{{File: library, Name: library, Compatibility: "28.0.0"}}, results.Targets[0].Libraries)
+}

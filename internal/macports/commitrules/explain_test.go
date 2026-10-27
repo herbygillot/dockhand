@@ -23,6 +23,8 @@ func TestEveryRuleIsExplained(t *testing.T) {
 		{Path: "textproc/jq/Portfile", Before: "version 1\nrevision 2\n", After: "version 2\nrevision 2\n"},
 		{Path: "textproc/yq/Portfile", Before: "version 2\n", After: "version 1\n"},
 		{Path: "textproc/oq/Portfile", Before: "version 1\n", After: "version 1\nreplaced_by jq\n"},
+		{Path: "devel/zq/Portfile", Before: "version 1\ndepends_lib port:a\n", After: "version 1\ndepends_lib port:b\n"},
+		{Path: "devel/xq/Portfile", Before: "version 1\ndepends_build port:a\n", After: "version 1\nrevision 1\ndepends_build port:b\n"},
 	}, lower)...)
 	var reported []string
 	for _, finding := range findings {

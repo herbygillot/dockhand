@@ -61,6 +61,10 @@ var explanations = []Explanation{
 		Sources: []Source{quoted(guideRevision, "An optional integer (the default is 0) that is incremented when a port is updated independently of the version of the software.")}},
 	{Code: "version-order", Rule: "A version MacPorts orders lower than the one it replaces raises the epoch by one; otherwise port upgrade never installs it, and every install stays at the old version.",
 		Sources: []Source{guideEpoch}},
+	{Code: "dependencies-unbumped", Rule: "A change to depends_lib or depends_run raises the revision, or comes with a new version: port upgrade rebuilds only what a version, revision, or epoch moves, and an installed copy keeps what it was built against.",
+		Sources: []Source{guideRevision}},
+	{Code: "revbump-build-only", Rule: "A change to depends_build, depends_fetch, or depends_extract alone needs no revision raised: build-time dependencies don't reach an installed copy, so the revision bump rebuilds every install for nothing.",
+		Sources: []Source{guideRevision}},
 	{Code: "replaced-by-unchanged", Rule: "Adding replaced_by also raises the revision, or changes the version or epoch, so port upgrade moves installed copies to the replacement.",
 		Sources: []Source{guideReplacedBy}},
 }
