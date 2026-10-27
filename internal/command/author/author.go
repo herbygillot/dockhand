@@ -755,6 +755,9 @@ func writePatches(out io.Writer, update engine.Update) {
 	for _, dropped := range update.PatchesDropped {
 		fmt.Fprintf(out, "Removed patch %s and its file; the new source already includes the fix.\n", dropped)
 	}
+	for _, refreshed := range update.PatchesRefreshed {
+		fmt.Fprintf(out, "Refreshed patch %s; it now applies as written, and its new form is in the diff for review.\n", refreshed)
+	}
 	for _, unchecked := range update.PatchesUnchecked {
 		fmt.Fprintf(out, "  patch %s\n", unchecked)
 	}

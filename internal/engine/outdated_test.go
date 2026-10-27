@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/outdated"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -185,6 +186,23 @@ func TestUncheckedPortsAreSaidAhead(t *testing.T) {
 // anything is prepared, through the update's own hold, the one judgment of
 // it on serve's path (the architecture review of 5897a82, R3-1); a pinned
 // version, bump's [version], is the target's.
+// A patch the refresh couldn't mend holds nobody's ship before its check,
+// the branch left at its committed edit, where its check would fail at the
+// patch phase after its dependencies' installs (the docs dig's I9); a
+// person's ship checks it, and holds.allow's patch-rejected lets it build.
+func TestAPatchThatDoesntApplyHoldsAnUnattendedShipBeforeItsCheck(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	p.patches = []patchcheck.Result{{Name: "patch-stale.diff", Checked: true, Detail: "1 out of 1 hunks failed"}}
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.8.1", CurrentVersion: "1.7.1"}, Version: "1.8.1", Forge: "github", Tag: "jq-1.8.1"}
+	target := shipTarget{Port: "jq", Version: "1.8.1", Release: &release, Name: "jq-1.8.1"}
+	done := e.ship(t.Context(), target, shipOptions{Origin: model.OriginServe, To: ShipCheck, Answered: model.AnsweredNobody})
+	require.Equal(t, `held before its check, at its committed edit: patch-stale.diff: 1 out of 1 hunks failed; holds.allow = ["patch-rejected"] lets it build`, done.Problem)
+	require.True(t, done.Tidied, "committed")
+	require.Nil(t, done.Run, "no check queued")
+}
+
 func TestShipAsksOnceWhetherItMayGoOn(t *testing.T) {
 	t.Parallel()
 	f := setup(t)

@@ -3,8 +3,12 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -105,6 +109,16 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 	}
 	done.Tidied = true
 	if options.To == ShipCommit {
+		return done
+	}
+	// A patch that doesn't apply, which the refresh couldn't mend, fails
+	// the check at its patch phase after its dependencies' installs and
+	// extract: nobody looking, the branch stays at its committed edit
+	// (the docs dig's I9, e2fsprogs and net-snmp in field testing).
+	// patchcheck's reading isn't the build's, so a person's ship and check
+	// build as before, and holds.allow's patch-rejected lets one go.
+	if options.Unattended() && len(done.Update.PatchProblems) > 0 && !slices.Contains(e.holdsFor(target.Port).allow, assess.PatchRejected) {
+		done.Problem = fmt.Sprintf("held before its check, at its committed edit: %s; holds.allow = [\"%s\"] lets it build", strings.Join(done.Update.PatchProblems, "; "), assess.PatchRejected)
 		return done
 	}
 	proposal, err := e.ProposeCheck(ctx, CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureHead}, Where: options.Where, Tests: options.Tests})

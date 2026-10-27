@@ -213,3 +213,62 @@ func TestPatchArgsStripLevelIsMacPorts(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, results[0].Applies, "at -p0 alone it finds no file")
 }
+
+// A patch that applies with a hunk at an offset says so, and one that
+// applies only with fuzz says that, where both read as applying: a fuzzed
+// hunk can land in the wrong place and still build (v1's D12, the docs
+// dig's I4).
+func TestFuzzIsToldFromAnOffset(t *testing.T) {
+	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "x\ny\nz\none\ntwo\nthree\nfour\nfive\n"})
+	offset := "--- dir/a.txt\n+++ dir/a.txt\n@@ -1,5 +1,5 @@\n one\n two\n-three\n+THREE\n four\n five\n"
+	fuzz := "--- dir/a.txt\n+++ dir/a.txt\n@@ -4,5 +4,5 @@\n ONE\n two\n-three\n+THREE\n four\n FIVE\n"
+	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "offset.diff", Data: []byte(offset)}, {Name: "fuzz.diff", Data: []byte(fuzz)}}})
+	require.NoError(t, err)
+	require.True(t, results[0].Applies)
+	require.False(t, results[0].Fuzzed())
+	require.Equal(t, []Hunk{{Number: 1, Line: 4, Offset: 3}}, results[0].Hunks)
+	require.Equal(t, "applies, hunk 1 at an offset of 3 lines", results[0].Detail)
+	require.True(t, results[1].Applies)
+	require.True(t, results[1].Fuzzed())
+	require.Equal(t, "applies only with fuzz: hunk 1 with fuzz 1", results[1].Detail)
+}
+
+// A patch that applies at an offset is re-emitted to apply as written,
+// its comment and header kept, and one with a hunk the source already
+// carries is re-emitted without it; the refreshed patch makes what the old
+// one made. One that takes fuzz isn't refreshed (the reflections' B, the
+// docs dig's I22).
+func TestAPatchIsRefreshedToApplyAsWritten(t *testing.T) {
+	source := "x\ny\nz\none\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n"
+	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": source})
+	request := func(name, data string) Request {
+		return Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: name, Data: []byte(data)}}}
+	}
+	offset := "Keep three upper-case.\n\n--- dir/a.txt\n+++ dir/a.txt\n@@ -1,5 +1,5 @@\n one\n two\n-three\n+THREE\n four\n five\n"
+	results, err := Check(t.Context(), request("offset.diff", offset))
+	require.NoError(t, err)
+	require.NotNil(t, results[0].Refresh)
+	require.Equal(t, []string{"hunk 1 of dir/a.txt"}, results[0].Refresh.Moved)
+	require.Equal(t, "Keep three upper-case.\n\n--- dir/a.txt\n+++ dir/a.txt\n@@ -3,7 +3,7 @@\n z\n one\n two\n-three\n+THREE\n four\n five\n six\n", string(results[0].Refresh.Data))
+	again, err := Check(t.Context(), request("offset.diff", string(results[0].Refresh.Data)))
+	require.NoError(t, err)
+	require.Equal(t, "applies", again[0].Detail, "as written")
+	require.Nil(t, again[0].Refresh)
+
+	// The first hunk upstream already carries; the second still applies.
+	carried := "--- dir/a.txt\n+++ dir/a.txt\n@@ -1,3 +1,3 @@\n x\n-Y\n+y\n z\n@@ -9,3 +9,3 @@\n six\n-seven\n+SEVEN\n eight\n"
+	results, err = Check(t.Context(), request("carried.diff", carried))
+	require.NoError(t, err)
+	require.False(t, results[0].Applies, "as patch reads it, the file skipped")
+	require.NotNil(t, results[0].Refresh)
+	require.Equal(t, []string{"hunk 1 of dir/a.txt"}, results[0].Refresh.Dropped)
+	require.Contains(t, string(results[0].Refresh.Data), "-seven\n+SEVEN\n")
+	require.NotContains(t, string(results[0].Refresh.Data), "-Y\n")
+	require.Equal(t, "hunk 1 of dir/a.txt left out, the new source carries it", results[0].Refresh.Words())
+
+	fuzz := "--- dir/a.txt\n+++ dir/a.txt\n@@ -4,5 +4,5 @@\n ONE\n two\n-three\n+THREE\n four\n FIVE\n"
+	results, err = Check(t.Context(), request("fuzz.diff", fuzz))
+	require.NoError(t, err)
+	require.True(t, results[0].Fuzzed())
+	require.Nil(t, results[0].Refresh, "fuzz is a person's look")
+}

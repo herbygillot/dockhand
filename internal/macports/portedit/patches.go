@@ -135,3 +135,43 @@ func (s *Service) dropMergedPatches(ctx context.Context, input *sourceInput, res
 	progress.Report(ctx, "Dropped %s, which the new source already holds", strings.Join(dropped, ", "))
 	return nil
 }
+
+// RefreshedPatch is a patch the update re-emitted, and what the refresh
+// did: "hunk 1 of src/x.c moved to where it now applies".
+type RefreshedPatch struct {
+	Name  string `json:"name"`
+	Words string `json:"words"`
+}
+
+// refreshPatches writes, beside the Portfile, each patch patchcheck
+// re-emitted to apply as written (patchcheck.Refresh): a hunk at an
+// offset, verbatim and in the one place it could land, moved there, and a
+// hunk the new source carries left out (the reflections' B, the docs dig's
+// I22). patchcheck's prediction is exact, the source with the refreshed
+// patch equal to the source as the old one made it, and the patch is in
+// the pull request's diff for review. The Portfile is as it was. A
+// fuzzed patch isn't refreshed: fuzz is never taken unattended, and holds
+// (patch-fuzz). Only a patch in files/ is written.
+func (s *Service) refreshPatches(ctx context.Context, input *sourceInput, result *Result) error {
+	if len(result.Files) == 0 || result.Prepared.Ports == nil {
+		return nil
+	}
+	info := result.Prepared.Ports[input.target.Name]
+	directory := path.Dir(input.target.Portfile)
+	for i, patch := range result.Patches {
+		if patch.Refresh == nil || patch.Merged || slices.Contains(result.Dropped, patch.Name) || patchcheck.Compressed(patch.Name) {
+			continue
+		}
+		file, below := info.FilesPath(directory, patch.Name)
+		if !below {
+			continue
+		}
+		result.Files = append(result.Files, portfile.Edit{Path: file, After: patch.Refresh.Data})
+		words := patch.Refresh.Words()
+		result.Refreshed = append(result.Refreshed, RefreshedPatch{Name: patch.Name, Words: words})
+		result.Patches[i].Applies, result.Patches[i].Hunks = true, nil
+		result.Patches[i].Detail = "applies as refreshed: " + words
+		progress.Report(ctx, "Refreshed %s: %s", patch.Name, words)
+	}
+	return nil
+}
