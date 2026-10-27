@@ -37,6 +37,13 @@ func (e *Engine) UndeclaredLinks(ctx context.Context, run model.Run) ([]evidence
 	if err != nil {
 		return nil, err
 	}
+	// What each target declares is its Portfile's evaluation, which the
+	// trust rule lets unattended work make of the person's alone.
+	if run.Branch != "" {
+		if branch, err := e.Branch(ctx, run.Branch); err == nil && !e.mayEvaluate(ctx, branch, "link scan") {
+			return nil, nil
+		}
+	}
 	reader, err := e.portReader()
 	if err != nil {
 		return nil, nil

@@ -35,6 +35,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/understand"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/compose"
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -179,6 +180,12 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 			}
 			streams.Say(update.Message)
 		}))
+		// A command with no terminal to ask on is a script's, which the
+		// trust rule takes as nobody watching: none of its work evaluates
+		// on this Mac a Portfile the person didn't author (Then's item 12).
+		if !streams.Terminal() {
+			cmd.SetContext(engine.Unattended(cmd.Context()))
+		}
 		command := strings.TrimPrefix(cmd.CommandPath(), "dockhand ")
 		if cmd == root {
 			command = "status"

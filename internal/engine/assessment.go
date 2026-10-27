@@ -53,7 +53,12 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 		return nil, err
 	}
 	var recorded []model.Assessment
+	var owner model.Branch
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		if owner, err = r.Branch(branch); err != nil {
+			return err
+		}
 		revision, err := r.Assessments(store.AssessmentFilter{Branch: branch, Tree: tree, Base: base})
 		for _, a := range revision {
 			if a.Policy == assess.Policy {
@@ -64,7 +69,9 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 	}); err != nil {
 		return nil, err
 	}
-	if !collect {
+	// Assessing evaluates the revision's Portfiles, which the trust rule
+	// lets unattended work do of the person's alone.
+	if !collect || !e.mayEvaluate(ctx, owner, "assessment") {
 		return recorded, nil
 	}
 	records, err := e.revisionChanges(ctx, branch, base, tree, true)

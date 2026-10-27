@@ -50,7 +50,6 @@ access. --markdown prints the text for pasting.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(streams.Err, view.ExperimentalWords(number, report.Author))
 			body := report.Markdown()
 			streams.Emit(view.ReviewView(report))
 			if markdown {

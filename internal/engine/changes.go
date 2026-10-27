@@ -28,19 +28,16 @@ type FamilyReader interface {
 // recorded. Without collect, nothing is evaluated: a record that couldn't
 // be made is read as it is, saying why. A directory with no record keeps its text
 // scope: every subport of it reads as changed, as before records. An
-// adopted pull request's branch gets none, since its Portfile isn't the
-// person's (the trust rule), and neither does a revision no evaluator
-// can read.
+// adopted pull request's branch gets them where the trust rule lets the
+// work evaluate its author's Portfiles (mayEvaluate), and a revision no
+// evaluator can read gets none.
 func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, tree model.ObjectID, collect bool) (map[string]model.ChangeRecord, error) {
 	records := map[string]model.ChangeRecord{}
-	adopted := false
+	var branch model.Branch
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		branch, err := r.Branch(id)
-		if err != nil {
+		var err error
+		if branch, err = r.Branch(id); err != nil {
 			return err
-		}
-		if adopted = branch.PullRequest != nil && branch.PullRequest.Adopted; adopted {
-			return nil
 		}
 		recorded, err := r.ChangeRecords(store.AssessmentFilter{Branch: id, Tree: tree, Base: base})
 		for _, record := range recorded {
@@ -52,7 +49,7 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 	}); err != nil {
 		return nil, err
 	}
-	if adopted || !collect {
+	if !collect {
 		return records, nil
 	}
 	ports, err := e.capabilities()
@@ -76,6 +73,9 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 		// (Codex's review of 386ac2cc, finding 5).
 		if recorded, ok := records[directory]; ok && recorded.Problem == "" {
 			continue
+		}
+		if !e.mayEvaluate(ctx, branch, "change records") {
+			break
 		}
 		var sides [2]*macports.Snapshot
 		var texts [2][]byte

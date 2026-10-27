@@ -157,17 +157,6 @@ func WritePlainHTTP(out io.Writer, plain []engine.PlainURL) {
 	}
 }
 
-// ExperimentalWords is the notice review and adopt --pr carry until the
-// trust rule is in code (the release bar, 5): they evaluate someone else's
-// Portfiles with MacPorts on this Mac, as no other command does.
-func ExperimentalWords(number int, author string) string {
-	whose := "its author's"
-	if author != "" {
-		whose = "@" + author + "'s"
-	}
-	return fmt.Sprintf("Experimental: this command evaluates pull request #%d using %s Portfiles with MacPorts on this Mac. Read any Portfiles you do not trust before running it; isolated evaluation is not yet available.", number, whose)
-}
-
 // serveWords are serve's state as a line: "serve: running (pid 34857) ·
 // queue: 1 run".
 func ServeWords(s engine.ServeState) string {

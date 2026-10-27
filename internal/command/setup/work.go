@@ -366,7 +366,6 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams term.Stream
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(streams.Err, view.ExperimentalWords(number, adoption.Author))
 	streams.Emit(map[string]any{"branch": view.BranchRef(adoption.Branch), "already": adoption.Already, "number": number, "title": adoption.Title,
 		"author": adoption.Author, "commits": adoption.Commits, "ports": view.NonNil(adoption.Scope.PortNames()), "maintainers_can_edit": adoption.MaintainerCanModify})
 	if adoption.Already {
