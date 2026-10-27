@@ -87,8 +87,9 @@ import (
 // checksum lines and what the port used of it for a person to look at,
 // where update said nothing of it (L2a). 26: a C++ standard upstream's
 // CMake files raised above the Portfile's compiler.cxx_standard is said
-// (the docs dig's I20).
-const Policy = 26
+// (the docs dig's I20). 27: a Go port's -X target its package no longer
+// declares holds (the docs dig's I18).
+const Policy = 27
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -188,6 +189,7 @@ const (
 	WorksrcPathGone     = "worksrc-path-gone"
 	GitHubTarball       = "github-tarball"
 	CXXStandardRule     = "cxx-standard"
+	GoLinkTargetRule    = "go-ldflags-target"
 )
 
 // Rules are every rule an assessment's finding is raised by, for a hold
@@ -196,7 +198,7 @@ func Rules() []string {
 	return []string{LicenseChanged, LicenseYears, LicenseParty, LicenseMoved, BuildFileChanged, BuildFileVersion, BuildFileOptions, DependencyAdded, DependencyDropped,
 		DependencyMoved, DependenciesCounted, NativeLibrary, NativeLibraryLeft, Unread, LayoutAmbiguous, RequirementUnmet, RequirementUnknown,
 		ProviderUnresolved, ProviderRemoved, GoToolchainRule, GoModuleMoved, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, SourceRemoved,
-		SourceUncertain, WorksrcPathGone, GitHubTarball, CXXStandardRule}
+		SourceUncertain, WorksrcPathGone, GitHubTarball, CXXStandardRule, GoLinkTargetRule}
 }
 
 // proven are the manifests whose dependencies a check proves (D9). A Go
@@ -257,6 +259,7 @@ func Assess(input Input) model.UpstreamComparison {
 	if found, ok := a.cxxStandard(); ok {
 		a.add(found)
 	}
+	a.goLinkTargets()
 	if found, ok := a.pythonPin(); ok {
 		a.add(found)
 	}

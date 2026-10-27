@@ -24,6 +24,26 @@ type Spec struct {
 	// (macports.PortInfo.BuildDirectories): i2pd builds from build/, and
 	// its build/CMakeLists.txt wasn't read (field testing at c643559a).
 	Directories []string
+	// GoPackages are Go import paths whose package's files the reading
+	// keeps, as a Go port's -X arguments name them
+	// (macports.PortInfo.GoLinkPackages): each directory whose path is the
+	// end of one, below the top, and the top itself for package main.
+	GoPackages []string
+}
+
+// goPackageFile reports a Go source file, not a test's, in a directory one
+// of packages ends with, or at the top where one is main.
+func goPackageFile(rest string, packages []string) bool {
+	if len(packages) == 0 || !strings.HasSuffix(rest, ".go") || strings.HasSuffix(rest, "_test.go") {
+		return false
+	}
+	dir := path.Dir(rest)
+	for _, imported := range packages {
+		if dir == "." && imported == "main" || dir != "." && (imported == dir || strings.HasSuffix(imported, "/"+dir)) {
+			return true
+		}
+	}
+	return false
 }
 
 // subdirectory is the spec's subdirectory as a path below the top, however
@@ -294,7 +314,8 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 			}
 			return nil
 		}
-		if !wantedIn(name, subdirectory, buildDirectories) && (!nested || !wantedIn(rest, subdirectory, buildDirectories)) {
+		goFile := goPackageFile(name, spec.GoPackages) || nested && goPackageFile(rest, spec.GoPackages)
+		if !goFile && !wantedIn(name, subdirectory, buildDirectories) && (!nested || !wantedIn(rest, subdirectory, buildDirectories)) {
 			switch {
 			case path.Base(name) == "Cargo.toml":
 				keep = manifests
@@ -378,7 +399,8 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 				continue
 			}
 		}
-		if wanted(rest, found.Root) || buildFileIn(rest, spec.directories(found.Root)) {
+		below := strings.TrimPrefix(rest, found.Root+"/")
+		if wanted(rest, found.Root) || buildFileIn(rest, spec.directories(found.Root)) || (found.Root == "" || below != rest) && goPackageFile(below, spec.GoPackages) {
 			found.Files[rest] = file
 		}
 	}
