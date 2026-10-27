@@ -34,6 +34,11 @@ type CleanStep struct {
 	// Kind is what it is: a worktree, a local branch, a fork's branch, or
 	// what a check left, which a command reads where it read What's words.
 	Kind CleanKind
+	// Said is a step clean can never take, a fork branch no remote pushes
+	// to, that an earlier clean kept and said (model.Branch.CleanKept): it
+	// stays kept, and on status --all's line, but isn't listed again, as
+	// pr-34539's was on every clean (field testing).
+	Said bool
 
 	path     string
 	remote   string
@@ -110,11 +115,43 @@ func (e *Engine) PlanCleanBranches(ctx context.Context, branches []model.Branch)
 		if err != nil {
 			return nil, err
 		}
-		if len(plan.Steps) > 0 || plan.Superseded != "" {
+		if slices.ContainsFunc(plan.Steps, func(step CleanStep) bool { return !step.Said }) || plan.Superseded != "" {
 			plans = append(plans, plan)
 		}
 	}
 	return plans, nil
+}
+
+// changesOnMaster reports whether every path a branch's commits change, from
+// its base to head, is at head as the master dockhand last fetched has it,
+// so removing the branch loses nothing; false where no master was fetched.
+func (e *Engine) changesOnMaster(ctx context.Context, branch model.Branch, head string) (bool, error) {
+	master, ok := e.lastMaster(ctx)
+	if !ok || branch.Base == "" {
+		return false, nil
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(branch.Base), head, string(master)})
+	if err != nil {
+		return false, err
+	}
+	paths, err := e.Repo.ChangedPaths(ctx, trees[string(branch.Base)], trees[head])
+	if err != nil {
+		return false, err
+	}
+	for _, name := range paths {
+		ours, _, err := e.Repo.File(ctx, trees[head], name)
+		if err != nil {
+			return false, err
+		}
+		theirs, _, err := e.Repo.File(ctx, trees[string(master)], name)
+		if err != nil {
+			return false, err
+		}
+		if ours != theirs {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (CleanBranch, error) {
@@ -130,17 +167,28 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 	if err != nil && !errors.Is(err, git.ErrBranchMissing) {
 		return plan, err
 	}
-	beyond := ""
+	beyond, why := "", ""
 	if hasBranch && string(plan.Merged) != head {
 		beyond = "it has commits beyond what was merged"
 		if plan.Merged == "" {
 			beyond = "the merged commit is not known"
 		}
+		// A branch retidied after its submit, whose tip isn't the merged
+		// commit, loses nothing where master has every file its commits
+		// change as its tip has it: xapian-core-dsq3, net-snmp-5.9.5.2,
+		// and wasmedge-0.18.1 were kept on every clean (field testing).
+		onMaster, err := e.changesOnMaster(ctx, branch, head)
+		if err != nil {
+			return plan, err
+		}
+		if onMaster {
+			beyond, why = "", "its changes are on master"
+		}
 	}
 
 	worktreeKept := false
 	if branch.Managed && exists(branch.Worktree) {
-		step := CleanStep{What: "worktree " + branch.Worktree, Kind: CleanWorktree, path: branch.Worktree}
+		step := CleanStep{What: "worktree " + branch.Worktree, Why: why, Kind: CleanWorktree, path: branch.Worktree}
 		if beyond != "" {
 			step.Kept = beyond
 		} else if dirty, err := e.dirty(ctx, branch.Worktree); err != nil {
@@ -152,7 +200,7 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 		plan.Steps = append(plan.Steps, step)
 	}
 	if hasBranch {
-		step := CleanStep{What: "branch " + branch.Name, Kind: CleanBranchRef, expected: head}
+		step := CleanStep{What: "branch " + branch.Name, Why: why, Kind: CleanBranchRef, expected: head}
 		switch {
 		case beyond != "":
 			step.Kept = beyond
@@ -176,6 +224,7 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 		switch {
 		case err != nil:
 			step.Kept = err.Error()
+			step.Said = errors.Is(err, errNoRemote) && strings.Contains(branch.CleanKept, cleanKindWords[CleanFork]+" kept: "+step.Kept)
 		default:
 			step.remote = remote
 			value, err := e.Repo.RemoteHead(ctx, remote, name)
@@ -393,8 +442,12 @@ func (e *Engine) remoteFor(ctx context.Context, repository string) (string, erro
 			return remote.PushURL, nil
 		}
 	}
-	return "", fmt.Errorf("no Git remote pushes to %s", repository)
+	return "", fmt.Errorf("%w %s", errNoRemote, repository)
 }
+
+// errNoRemote is no Git remote of the checkout's pushing to a repository,
+// which no clean can change.
+var errNoRemote = errors.New("no Git remote pushes to")
 
 // ApplyClean removes what the plans would, checking each again as it goes,
 // and marks each step done. Steps that are kept are left alone.

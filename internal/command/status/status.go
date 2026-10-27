@@ -513,6 +513,10 @@ func workWords(s engine.BranchStatus) string {
 		return "cleaned, " + s.Branch.CleanKept
 	case s.Cleaned():
 		return "cleaned"
+	// A merged or closed branch clean kept is kept, and why, never
+	// cleaned.
+	case s.Branch.State != model.BranchOpen && s.Branch.CleanKept != "":
+		return s.Branch.CleanKept
 	case s.Missing:
 		return "branch gone"
 	case s.Commits == 0 && len(s.Edited) == 0:
