@@ -116,11 +116,11 @@ func (s *Service) refreshVendoredChecksums(ctx context.Context, request Request,
 	if plan.Empty() {
 		refreshed := input.data
 		if len(result.Files) > 0 {
-			refreshed = result.Files[0].After
+			refreshed = result.portfileAfter()
 		}
 		return s.fillEmptyBlock(ctx, request, input, base, plan, result, refreshed)
 	}
-	refreshed := result.Files[0].After
+	refreshed := result.portfileAfter()
 	contents, err := plan.Apply(refreshed, plan.Values)
 	if err != nil {
 		return result, err
@@ -183,7 +183,7 @@ func (s *Service) declareSubportChecksums(ctx context.Context, request Request, 
 	if len(result.Files) == 0 {
 		return result, ErrFidelity.Because("the checksums written for %s weren't filled in", name)
 	}
-	final, err := s.evaluateEdit(ctx, input, result.Files[0].After)
+	final, err := s.evaluateEdit(ctx, input, result.portfileAfter())
 	if err != nil {
 		return result, err
 	}

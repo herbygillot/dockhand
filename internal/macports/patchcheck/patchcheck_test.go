@@ -104,6 +104,12 @@ func TestTargets(t *testing.T) {
 	data := "diff --git a/src/x.c b/src/x.c\nIndex: src/y.c\n--- a/src/x.c\t2026-01-01\n+++ b/src/x.c\n--- /dev/null\n+++ b/new.txt\n*** old/ctx.c\n"
 	require.Equal(t, []string{"src/x.c", "y.c", "new.txt", "ctx.c"}, targets([]byte(data), 1))
 	require.Equal(t, []string{"a/src/x.c", "b/src/x.c", "src/y.c", "b/new.txt", "old/ctx.c"}, targets([]byte(data), 0))
+
+	// git's quoted names, for a space, a tab, or a byte past ASCII, are
+	// unquoted, where they were skipped (the docs dig's I30).
+	quoted := "diff --git \"a/my file.c\" \"b/my file.c\"\n--- \"a/my file.c\"\n+++ \"b/my file.c\"\n" +
+		"diff --git \"a/caf\\303\\251.c\" \"b/caf\\303\\251.c\"\n--- \"a/caf\\303\\251.c\"\t2026-01-01\n+++ \"b/caf\\303\\251.c\"\n"
+	require.Equal(t, []string{"my file.c", "café.c"}, targets([]byte(quoted), 1))
 }
 
 // A compressed patch that decompresses past the 64 MiB checked of one is

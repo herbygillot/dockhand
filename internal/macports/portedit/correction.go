@@ -43,7 +43,7 @@ func (s *Service) correct(ctx context.Context, input *sourceInput, result *Resul
 	if len(report.UnexpectedChanges) > 0 {
 		return report, false, nil
 	}
-	result.Files[0] = evaluated.edit
+	result.setPortfile(evaluated.edit)
 	for _, file := range c.deletes {
 		result.Files = append(result.Files, portfile.Edit{Path: file, Delete: true})
 	}

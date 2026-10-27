@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -342,6 +343,37 @@ func (request Request) Validate() error {
 // commitEdit records one evaluated edit as the result's single commit unless
 // fidelity found unexpected changes. Files and fidelity are recorded either
 // way so callers can report what was attempted.
+// portfile is the result's edit of the Portfile, read by its path: the
+// other files an edit writes, as a patch the refresh writes beside it or
+// one a correction deletes, are its own, where a dozen sites took the
+// first file for the Portfile (the docs dig's I44).
+func (r *Result) portfile() *portfile.Edit {
+	for i := range r.Files {
+		if path.Base(r.Files[i].Path) == "Portfile" && !r.Files[i].Delete {
+			return &r.Files[i]
+		}
+	}
+	return nil
+}
+
+// portfileAfter is the Portfile as the result has it, nil where it has
+// none.
+func (r *Result) portfileAfter() []byte {
+	if edit := r.portfile(); edit != nil {
+		return edit.After
+	}
+	return nil
+}
+
+// setPortfile replaces the result's edit of the Portfile, or adds it.
+func (r *Result) setPortfile(edit portfile.Edit) {
+	if existing := r.portfile(); existing != nil {
+		*existing = edit
+		return
+	}
+	r.Files = append(r.Files, edit)
+}
+
 func (r *Result) commitEdit(input *sourceInput, request Request, edit portfile.Edit, report Fidelity, subject string) error {
 	r.Files = []portfile.Edit{edit}
 	r.report(report)
