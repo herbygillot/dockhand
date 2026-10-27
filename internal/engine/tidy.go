@@ -368,6 +368,8 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 		chosenBody := ""
 		if chosen != nil {
 			chosenBody = commitmsg.Body(chosen.Message)
+		} else if chained {
+			chosenBody = chainBody(edits, directory)
 		}
 		group.Message = commitmsg.Compose(subject, chosenBody, commitMessages(group.Combines), chained)
 		group.Author, err = groupAuthor(group, person, author)
@@ -568,6 +570,19 @@ func chainSubject(mine []model.Edit) string {
 		}
 	}
 	return mine[len(mine)-1].Subject
+}
+
+// chainBody is what the newest update of a directory's edits says of its
+// release, for the commit's body: the version it updates from and its
+// release's page or compare link, as far as they're known
+// (model.Release.CommitBody); empty where nothing is.
+func chainBody(edits []model.Edit, directory string) string {
+	for _, edit := range slices.Backward(edits) {
+		if edit.Directory == directory && edit.Kind == model.EditUpdate && edit.Release != nil {
+			return edit.Release.CommitBody()
+		}
+	}
+	return ""
 }
 
 // standingSubject is the subject dockhand's edits of a directory give,

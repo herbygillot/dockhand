@@ -329,7 +329,7 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 	require.Regexp(t, `  PR       updates #\d+; refreshes its Description section\n`, out)
 	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nBuilt against the new libonig.\n\n###### Type(s)")
+	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nBuilt against the new libonig.\n\nUpdates from 1.7.1.\n\n###### Type(s)")
 
 	edited := strings.Replace(g.PRs[34901].Body, "Built against the new libonig.", "What I tested by hand.", 1)
 	g.PRs[34901].Body = edited
@@ -360,7 +360,7 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--rewrite-description")
 	require.NoError(t, err)
 	require.NotContains(t, g.PRs[34901].Body, "What I tested by hand.")
-	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nBuilt against the new libonig.\n\n###### Type(s)")
+	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nBuilt against the new libonig.\n\nUpdates from 1.7.1.\n\n###### Type(s)")
 	require.Contains(t, g.PRs[34901].Body, "- [x] enhancement")
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
@@ -398,6 +398,11 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.NoError(t, err)
+	// A commit with no body, as one whose release dockhand knew nothing
+	// of has: the note is its Description alone.
+	worktree := cmdtest.Dig(t, started.Result, "branch", "worktree").(string)
+	subject, _, _ := strings.Cut(testsupport.Git(t, worktree, "log", "-1", "--format=%B"), "\n")
+	testsupport.Git(t, worktree, "commit", "-q", "--amend", "-m", subject)
 
 	note := "The tests failed on a permission error,\nbefore any test ran."
 	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan", "--note", note)
