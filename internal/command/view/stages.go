@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/config"
@@ -141,16 +142,17 @@ func LinkMark(finding engine.LinkFinding) string {
 	return Look
 }
 
-// WriteInstalled says what a check's builds installed against the port's
-// previous result in each environment (Then's item 9): its own libraries
-// whose install names moved, with the ports that link it, marked for a
-// look, and the files gone or added, for information; nothing where it
-// has none.
+// WriteInstalled says what a check's builds installed and configure found
+// against the port's previous result in each environment (Then's items 9
+// and 10): its own libraries whose install names moved, with the ports
+// that link it, and what configure no longer or now finds, each marked
+// for a look, and the files gone or added, for information; nothing where
+// it has none.
 func WriteInstalled(out io.Writer, findings []engine.InstallFinding) {
 	if len(findings) == 0 {
 		return
 	}
-	fmt.Fprintln(out, "Installed")
+	fmt.Fprintln(out, "Against the earlier build")
 	for _, finding := range findings {
 		against := ""
 		if finding.Check != "" {
@@ -174,12 +176,31 @@ func WriteInstalled(out io.Writer, findings []engine.InstallFinding) {
 		if len(finding.Added) > 0 {
 			files = append(files, "now installs "+prose.Few(finding.Added, 4, "file"))
 		}
+		if len(finding.Found)+len(finding.Lost) > 0 {
+			var said []string
+			if len(finding.Lost) > 0 {
+				said = append(said, "configure no longer says "+prose.FewJoined(quotedAll(finding.Lost), 3, "line", ", "))
+			}
+			if len(finding.Found) > 0 {
+				said = append(said, "now says "+prose.FewJoined(quotedAll(finding.Found), 3, "line", ", "))
+			}
+			fmt.Fprintf(out, "  %s %s: %s on %s%s\n", Look, finding.Target, strings.Join(said, "; "), where, against)
+		}
 		if len(files) > 0 && finding.Unbumped {
 			fmt.Fprintf(out, "  %s %s: %s on %s%s, with neither the version nor the revision raised, so installed copies keep the old files; raise the revision\n", Look, finding.Target, strings.Join(files, "; "), where, against)
 		} else if len(files) > 0 {
 			fmt.Fprintf(out, "  %s %s: %s on %s%s\n", Unmarked, finding.Target, strings.Join(files, "; "), where, against)
 		}
 	}
+}
+
+// quotedAll are lines quoted, as a sentence names what a log said.
+func quotedAll(lines []string) []string {
+	quoted := make([]string, len(lines))
+	for i, line := range lines {
+		quoted[i] = strconv.Quote(line)
+	}
+	return quoted
 }
 
 // WriteLinks says a check's link findings, each a notice under a heading;

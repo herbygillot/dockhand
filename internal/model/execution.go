@@ -321,8 +321,14 @@ type TargetResult struct {
 	// install name and compatibility version: observations a check of the
 	// port's next version compares with (Then's item 9). Nil where its
 	// provider couldn't read them.
-	Installed  []string  `json:",omitempty"`
-	Libraries  []Library `json:",omitempty"`
+	Installed []string  `json:",omitempty"`
+	Libraries []Library `json:",omitempty"`
+	// Configure are the configure phase's summary lines in the build's
+	// log, autoconf's "checking for", CMake's "-- Found" and "-- Could NOT
+	// find", meson's "Dependency … found", each once, as found and not
+	// where: what a check of the next version diffs (Then's item 10). Nil
+	// where its provider didn't read them.
+	Configure  []string `json:",omitempty"`
 	RecordedAt time.Time
 }
 

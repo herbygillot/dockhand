@@ -30,6 +30,7 @@ func TestACheckSaysWhatMovedOfWhatItInstalled(t *testing.T) {
 			jq.Inputs = key
 			jq.Installed = []string{"/opt/local/bin/jq", "/opt/local/lib/" + soname}
 			jq.Libraries = []model.Library{{File: "/opt/local/lib/" + soname, Name: "/opt/local/lib/" + soname, Compatibility: "1.0.0"}}
+			jq.Configure = []string{"-- Found ZLIB", "checking for " + soname + "... yes"}
 		}
 	}
 	latest := func() model.Run {
@@ -55,4 +56,6 @@ func TestACheckSaysWhatMovedOfWhatItInstalled(t *testing.T) {
 	require.Equal(t, first.Name(), found[0].Check)
 	require.Equal(t, "libjq.1.dylib is libjq.2.dylib now", found[0].Libraries[0].Words())
 	require.Empty(t, found[0].Added, "a new soname is the same file")
+	require.Equal(t, []string{"checking for libjq.2.dylib... yes"}, found[0].Found, "and configure's drift (Then's item 10)")
+	require.Equal(t, []string{"checking for libjq.1.dylib... yes"}, found[0].Lost)
 }

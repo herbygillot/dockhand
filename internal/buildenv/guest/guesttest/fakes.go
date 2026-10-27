@@ -120,6 +120,7 @@ case "$*" in
           exit 1
         fi ;;
       *" lint "*) if [ -n "$LINTSAYS" ]; then echo "$LINTSAYS"; fi ;;
+      *" install "*) if [ -n "$CONFIGURESAYS" ]; then printf '%b' "$CONFIGURESAYS"; fi ;;
     esac ;;
 esac
 for entry in $HANG; do

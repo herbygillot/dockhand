@@ -131,7 +131,10 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // listed, which the link scan read and discarded, and its own libraries'
 // install names and compatibility versions, from otool -l: observations,
 // which build and judge nothing otherwise, so the protocol stays 3.
-const guestPin = "c0123e229ce8d2fd858ab8fe629752bcc3e3246b2dfaafd9600c558e1fda4ac9"
+//
+// Since Then's item 10, it also keeps the configure summary's lines from
+// a passed build's log: an observation, so the protocol stays 3.
+const guestPin = "0072d018621df5146b596d6d11ca3ac7f7be62e709fc4952a05e8891e483fdc7"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

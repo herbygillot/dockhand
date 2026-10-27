@@ -162,6 +162,9 @@ type TargetReport struct {
 	// where the provider couldn't read them.
 	Installed []string
 	Libraries []model.Library
+	// Configure are its configure phase's summary lines
+	// (model.TargetResult.Configure).
+	Configure []string
 }
 
 // Reported is a result as a report with nothing seen beside it, as for a

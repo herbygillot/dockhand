@@ -39,3 +39,18 @@ func TestInstalledFilesAndLibrariesAreCompared(t *testing.T) {
 	_, ok = CompareInstalled(model.TargetResult{Target: "exiv2"}, after)
 	require.False(t, ok, "no earlier reading: unknown, never equal")
 }
+
+// The configure summary is diffed against the earlier build's: an answer
+// moved is a line lost and one found; no earlier summary says nothing
+// (Then's item 10: libxkbcommon's optional ICU).
+func TestTheConfigureSummaryIsDiffed(t *testing.T) {
+	t.Parallel()
+	before := model.TargetResult{Configure: []string{"checking for icu-uc... yes", "-- Found ZLIB"}}
+	after := model.TargetResult{Configure: []string{"checking for icu-uc... no", "-- Found ZLIB", "-- Could NOT find LibArchive"}}
+	found, lost, ok := CompareConfigure(before, after)
+	require.True(t, ok)
+	require.Equal(t, []string{"checking for icu-uc... no", "-- Could NOT find LibArchive"}, found)
+	require.Equal(t, []string{"checking for icu-uc... yes"}, lost)
+	_, _, ok = CompareConfigure(model.TargetResult{}, after)
+	require.False(t, ok)
+}
