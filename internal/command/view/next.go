@@ -1,7 +1,6 @@
 package view
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -113,21 +112,6 @@ func WriteNext(out io.Writer, status engine.BranchStatus) {
 	for _, row := range AttentionFor(status) {
 		fmt.Fprintf(out, "Next: %s\n", row.Next)
 	}
-}
-
-// WriteNextFor says what moves a branch on after its check, as status
-// would.
-func WriteNextFor(ctx context.Context, e *engine.Engine, out io.Writer, id model.BranchID) error {
-	branch, err := e.Branch(ctx, id)
-	if err != nil {
-		return err
-	}
-	status, err := e.BranchStatus(ctx, branch)
-	if err != nil {
-		return err
-	}
-	WriteNext(out, status)
-	return nil
 }
 
 // SayNext is a refusal whose producer gave what moves it on, as a login

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -15,7 +14,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
-	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
@@ -110,23 +108,28 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 	return cmd
 }
 
+// ShowStatus gathers what status shows in one engine.StatusReport, then
+// writes its text and JSON from the report alone (Then's item 6): it judged
+// a branch twice under --json, and read its links while writing it.
 func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, args []string, attentionOnly, all bool, where branchflags.BranchFlags, places config.Places) error {
 	port := where.Port
-	ctx, _, end, err := e.Observing(ctx)
+	ctx, session, end, err := e.Observing(ctx)
 	if err != nil {
 		return err
 	}
 	defer end()
 	one := func(branch model.Branch) error {
+		report, err := e.StatusReport(ctx, session, engine.StatusRequest{Branches: []model.Branch{branch}})
+		if err != nil {
+			return err
+		}
+		status := report.Statuses[0]
 		if streams.JSON() {
-			status, err := judgedStatus(ctx, e, branch)
-			if err != nil {
-				return err
-			}
 			viewed := view.BranchView(status)
 			streams.Emit(view.StatusJSON{Attention: view.AttentionView(view.AttentionFor(status)), Branches: []view.BranchJSON{viewed}})
 		}
-		return showBranch(ctx, e, streams.Out, places, branch)
+		showBranch(streams.Out, places, status, report.Links)
+		return nil
 	}
 	// A read reaches a merged branch's record, as path does.
 	if len(args) == 1 || where.Branch != "" {
@@ -152,15 +155,12 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 	if all {
 		states = []model.BranchState{model.BranchOpen, model.BranchMerged, model.BranchClosed, model.BranchArchived}
 	}
-	statuses, err := e.Status(ctx, states...)
+	report, err := e.StatusReport(ctx, session, engine.StatusRequest{States: states, Port: port, Overview: !attentionOnly})
 	if err != nil {
 		return err
 	}
-	if err := judgeStopped(ctx, e, statuses); err != nil {
-		return err
-	}
+	statuses := report.Statuses
 	if port != "" {
-		statuses = slices.DeleteFunc(statuses, func(s engine.BranchStatus) bool { return !s.Touches(port) })
 		// For a read, several aren't ambiguous: one is shown in detail,
 		// and several listed (the second look's §3).
 		switch {
@@ -175,26 +175,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 	for _, status := range statuses {
 		rows = append(rows, view.AttentionFor(status)...)
 	}
-	var serve engine.ServeState
-	var queue []engine.QueuedCheck
-	var processes []engine.Process
-	var changes []buildenv.Change
-	if !attentionOnly {
-		changes = e.Changes(ctx)
-		if serve, err = readServe(ctx, e); err != nil {
-			return err
-		}
-		_, session, _, err := e.Observing(ctx)
-		if err != nil {
-			return err
-		}
-		if queue, err = e.Queue(ctx, session); err != nil {
-			return err
-		}
-		if processes, err = e.Processes(ctx, session); err != nil {
-			return err
-		}
-	}
+	serve, queue, processes, changes := report.Serve, report.Queue, report.Processes, report.Changes
 	out := streams.Out
 	if streams.JSON() {
 		result := view.StatusJSON{Attention: view.AttentionView(rows)}
@@ -231,7 +212,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			fmt.Fprintln(out, view.ChangeWords(change))
 		}
 	}
-	if found, ok := e.LastOutdatedLook(e.Serves); ok && (len(found.Outdated) > 0 || len(found.Uncertain) > 0) {
+	if found := report.Look; found != nil {
 		fmt.Fprintln(out)
 		if len(found.Outdated) > 0 {
 			fmt.Fprintf(out, "%s: %s newer releases, as serve found %s (%s)\n", e.Serves.Title(), prose.Plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], engine.Ago(found.CheckedAt), e.Serves.Command("ship"))
@@ -461,28 +442,6 @@ func processWords(process engine.Process) string {
 	return strings.Join(doing, ", ")
 }
 
-// judgeStopped marks the statuses whose check stopped when the process
-// running it ended, which only a session can judge.
-func judgeStopped(ctx context.Context, e *engine.Engine, statuses []engine.BranchStatus) error {
-	_, session, end, err := e.Observing(ctx)
-	if err != nil {
-		return err
-	}
-	defer end()
-	return e.JudgeStopped(ctx, session, statuses)
-}
-
-// judgedStatus is one branch's status, with a stopped check marked.
-func judgedStatus(ctx context.Context, e *engine.Engine, branch model.Branch) (engine.BranchStatus, error) {
-	status, err := e.BranchStatus(ctx, branch)
-	if err != nil {
-		return status, err
-	}
-	statuses := []engine.BranchStatus{status}
-	err = judgeStopped(ctx, e, statuses)
-	return statuses[0], err
-}
-
 // writeAttention writes the rows, each one's message wrapped at width
 // beside its branch and its command on the line below: one long message
 // set every row's command column, which ended near column 400 (the
@@ -562,21 +521,10 @@ func prWords(s engine.BranchStatus) string {
 	return words
 }
 
-// readServe is serve's state, as this command's observer sees it.
-func readServe(ctx context.Context, e *engine.Engine) (engine.ServeState, error) {
-	_, session, end, err := e.Observing(ctx)
-	if err != nil {
-		return engine.ServeState{}, err
-	}
-	defer end()
-	return e.ServeState(ctx, session)
-}
-
-func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places config.Places, branch model.Branch) error {
-	status, err := judgedStatus(ctx, e, branch)
-	if err != nil {
-		return err
-	}
+// showBranch writes one branch's status in detail, its latest check's
+// links from what the report gathered.
+func showBranch(out io.Writer, places config.Places, status engine.BranchStatus, links map[model.RunID][]engine.LinkFinding) {
+	branch := status.Branch
 	head := branch.ShortName()
 	if branch.Worktree != "" && !status.Cleaned() {
 		head += view.Where(places, branch.Worktree)
@@ -634,7 +582,7 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places con
 		// What the latest check's builds link and don't declare, a notice
 		// (v0.5.0 part 6).
 		if status.Latest != nil {
-			if links, err := e.UndeclaredLinks(ctx, *status.Latest); err == nil {
+			if links, ok := links[status.Latest.ID]; ok {
 				for i, line := range view.LinkLines(links) {
 					label := "         "
 					if i == 0 {
@@ -652,7 +600,6 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, places con
 	}
 	fmt.Fprintf(out, "  PR       %s\n", pr)
 	view.WriteNext(out, status)
-	return nil
 }
 
 // writeReleases shows the releases the branch's updates chose, and below

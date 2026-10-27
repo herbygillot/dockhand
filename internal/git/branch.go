@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/filelock"
@@ -46,7 +47,6 @@ func withLock(ctx context.Context, directory, key string, fn func(context.Contex
 	})
 }
 
-// Checkouts lists the worktrees that have branch checked out.
 // SwitchNew starts a branch of a name at HEAD and checks it out, as git
 // switch -c does: a detached HEAD on a branch of its own.
 func (r *Repository) SwitchNew(ctx context.Context, name string) error {
@@ -57,23 +57,77 @@ func (r *Repository) SwitchNew(ctx context.Context, name string) error {
 	return err
 }
 
+// Checkouts lists the worktrees that have branch checked out.
 func (r *Repository) Checkouts(ctx context.Context, branch string) ([]string, error) {
 	if !ValidBranchName(branch) {
 		return nil, fmt.Errorf("git: invalid branch")
 	}
+	all, err := r.AllCheckouts(ctx)
+	return all[branch], err
+}
+
+// AllCheckouts are the worktrees each local branch is checked out in, by
+// the branch's name, read in one git process for every branch: status
+// opened each branch's worktree to ask, three processes a branch (Then's
+// item 6).
+func (r *Repository) AllCheckouts(ctx context.Context) (map[string][]string, error) {
 	out, err := r.output(ctx, "worktree", "list", "--porcelain", "-z")
 	if err != nil {
 		return nil, err
 	}
 	var checkout string
-	var result []string
+	result := map[string][]string{}
 	for _, field := range strings.Split(string(out), "\x00") {
 		if strings.HasPrefix(field, "worktree ") {
 			checkout = strings.TrimPrefix(field, "worktree ")
 		}
-		if field == "branch refs/heads/"+branch {
-			result = append(result, checkout)
+		if branch, ok := strings.CutPrefix(field, "branch refs/heads/"); ok {
+			result[branch] = append(result[branch], checkout)
 		}
 	}
 	return result, nil
+}
+
+// Worktree is the repository's worktree at root, one AllCheckouts listed,
+// opened without asking git where it is again.
+func (r *Repository) Worktree(root string) *Repository {
+	return &Repository{Root: root, CommonDir: r.CommonDir, Program: r.Program}
+}
+
+// AheadBehindVersion is the first Git whose for-each-ref says how far
+// each ref is ahead of a commit, %(ahead-behind:<commit>).
+var AheadBehindVersion = Version{Major: 2, Minor: 41}
+
+// CountsFrom are how many commits each branch has that base doesn't, by
+// the branch's name, in one git process, as CountCommits counts one; it
+// needs AheadBehindVersion.
+func (r *Repository) CountsFrom(ctx context.Context, base string, branches []string) (map[string]int, error) {
+	if !ValidObjectID(base) {
+		return nil, fmt.Errorf("git: invalid commit ID %q", base)
+	}
+	args := []string{"for-each-ref", "--format=%(refname:lstrip=2)%00%(ahead-behind:" + base + ")"}
+	for _, branch := range branches {
+		if !ValidBranchName(branch) {
+			return nil, fmt.Errorf("git: invalid branch %q", branch)
+		}
+		args = append(args, "refs/heads/"+branch)
+	}
+	out, err := r.output(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int{}
+	for _, line := range strings.Split(strings.TrimSuffix(string(out), "\n"), "\n") {
+		name, numbers, ok := strings.Cut(line, "\x00")
+		if !ok {
+			continue
+		}
+		ahead, _, _ := strings.Cut(numbers, " ")
+		n, err := strconv.Atoi(ahead)
+		if err != nil {
+			return nil, fmt.Errorf("git: cannot read %s's count from %s: %q", name, base, numbers)
+		}
+		counts[name] = n
+	}
+	return counts, nil
 }
