@@ -19,8 +19,9 @@ type Patch struct {
 // the base's it drops, with whether they still would: libuv's #34620
 // dropped patch-libuv-legacy.diff, which no longer applied to 1.52.1 in
 // five files, and its review said nothing of it (the libuv run's finding
-// 2). Neither holds: a patch that doesn't apply fails the build, which a
-// check catches, and dropping one is its author's to explain. A patch the
+// 2). A patch that doesn't apply holds, since nobody looking would spend a
+// check that fails at its patch phase (the docs dig's I9); dropping one is
+// its author's to explain, and holds nothing. A patch the
 // check couldn't model is coverage, not a finding.
 func (a *assessment) patches() []model.UpstreamChange {
 	source := "the new version's source"
@@ -42,8 +43,17 @@ func (a *assessment) patches() []model.UpstreamChange {
 			change.Rule = PatchDropped
 			change.Message = fmt.Sprintf("%s, which the base applied, is dropped, and no longer applies to %s: %s", patch.Name, source, patch.Detail)
 		case !patch.Applies:
-			change.Rule = PatchRejected
+			// It holds: serve and ship --yes stop before a check whose
+			// patch phase fails (the docs dig's I9).
+			change.Rule, change.Hold = PatchRejected, true
 			change.Message = fmt.Sprintf("%s doesn't apply to %s, as dockhand read it, and a check shows whether the build's patch phase fails: %s", patch.Name, source, patch.Detail)
+		case patch.Fuzzed():
+			// Fuzz is never accepted unattended (the person's ruling, v1's
+			// D12): a fuzzed hunk can land in the wrong place and still
+			// build, so it holds serve and ship --yes, which allow lets go,
+			// and is said to a person, whose look it is.
+			change.Rule, change.Hold = PatchFuzz, true
+			change.Message = fmt.Sprintf("%s applies to %s only with fuzz, %s, and a fuzzed hunk can land in the wrong place and still build: look at where it lands", patch.Name, source, patchcheck.HunkWords(patch.Hunks))
 		default:
 			// One that applies is coverage, said so a check that found
 			// nothing isn't taken for none: fluent-bit's six applied, and

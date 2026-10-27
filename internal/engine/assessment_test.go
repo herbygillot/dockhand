@@ -727,7 +727,7 @@ func TestARevisionsPatchesAreCheckedAgainstItsSource(t *testing.T) {
 	require.Equal(t, assess.PatchRejected, patches[0].Rule)
 	require.Equal(t, "patch-stale.diff", patches[0].Subject)
 	require.Contains(t, patches[0].Message, "patch-stale.diff doesn't apply to 1.8.1's source, as dockhand read it, and a check shows whether the build's patch phase fails")
-	require.False(t, patches[0].Hold)
+	require.True(t, patches[0].Hold, "it holds nobody's run (the docs dig's I9)")
 	require.Equal(t, int64(2), p.fetches.Load(), "each version's archive fetched once, the patch check reading the revision's as fetched")
 }
 

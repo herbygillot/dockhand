@@ -26,6 +26,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -75,6 +76,8 @@ type fakePreparer struct {
 	// refused refuses the edit, unless the request asks for a hand edit's
 	// attempt, which the result then carries it for.
 	refused error
+	// patches are the patch check's results the edit reports.
+	patches []patchcheck.Result
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r editprep.Request) (model.Release, error) {
@@ -179,6 +182,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 	}
 	result.Files, result.PreparedTree = []git.FileEdit{edit}, model.ObjectID(tree)
 	result.GoToolchain = p.toolchain
+	result.Patches = p.patches
 	if len(p.dependencies) > 0 {
 		result.Prepared = snapshot(next, nextRevision, options[1])
 		result.Prepared.Ports[r.Selection.Selector] = port(r.Selection.Selector, p.dependencies...)

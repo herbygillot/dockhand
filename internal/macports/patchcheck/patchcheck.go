@@ -57,6 +57,64 @@ type Result struct {
 	// leaves it.
 	Merged bool
 	Detail string
+	// Hunks are the hunks patch placed elsewhere than the patch says: at
+	// an offset, verbatim, or with fuzz, its context lines loosened, where
+	// a fuzzed hunk can land in the wrong place and still build (v1's
+	// D12). A patch that applies only so says it in Detail.
+	Hunks []Hunk `json:",omitempty"`
+	// Refresh is the patch re-emitted to apply as written, where it
+	// applied at an offset or with a hunk the source carries; nil where
+	// it needs none, or can't be (refresh).
+	Refresh *Refresh `json:",omitempty"`
+}
+
+// Hunk is one hunk patch placed other than as written: its number in the
+// patch, the line it landed at, how far that is from where the patch
+// said, and the fuzz it took, 0 for a verbatim one.
+type Hunk struct {
+	Number, Line, Offset, Fuzz int
+}
+
+// Fuzzed reports a patch that applies only with fuzz in some hunk.
+func (r Result) Fuzzed() bool {
+	return slices.ContainsFunc(r.Hunks, func(h Hunk) bool { return h.Fuzz > 0 })
+}
+
+// placedHunk is patch's line for a hunk placed other than as written, in
+// Apple's and GNU patch's words alike: "Hunk #1 succeeded at 4 with fuzz
+// 1 (offset 3 lines)."
+var placedHunk = regexp.MustCompile(`Hunk #(\d+) succeeded at (\d+)(?: with fuzz (\d+))?(?: \(offset (-?\d+) lines?\))?`)
+
+// placed are the hunks patch's verbose output says it placed elsewhere
+// than written.
+func placed(output []byte) []Hunk {
+	var hunks []Hunk
+	for _, m := range placedHunk.FindAllStringSubmatch(string(output), -1) {
+		var h Hunk
+		h.Number, _ = strconv.Atoi(m[1])
+		h.Line, _ = strconv.Atoi(m[2])
+		h.Fuzz, _ = strconv.Atoi(m[3])
+		h.Offset, _ = strconv.Atoi(m[4])
+		if h.Fuzz > 0 || h.Offset != 0 {
+			hunks = append(hunks, h)
+		}
+	}
+	return hunks
+}
+
+// HunkWords say the hunks a patch placed elsewhere: "hunk 2 at an offset
+// of 3 lines, hunk 3 with fuzz 1".
+func HunkWords(hunks []Hunk) string {
+	var words []string
+	for _, h := range hunks {
+		switch {
+		case h.Fuzz > 0:
+			words = append(words, fmt.Sprintf("hunk %d with fuzz %d", h.Number, h.Fuzz))
+		default:
+			words = append(words, fmt.Sprintf("hunk %d at an offset of %d lines", h.Number, h.Offset))
+		}
+	}
+	return strings.Join(words, ", ")
 }
 
 // Port checks a port's patches against archives as MacPorts would apply
@@ -180,7 +238,9 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 		if contents[i] == nil {
 			continue
 		}
-		args := append([]string{flag, "-t", "-N", "-p" + strconv.Itoa(strip)}, extra...)
+		// --verbose says each hunk patch placed elsewhere than written,
+		// which a check of applies alone passed over (v1's D12).
+		args := append([]string{flag, "--verbose", "-t", "-N", "-p" + strconv.Itoa(strip)}, extra...)
 		// patch's exit status is its verdict, and its output only the
 		// detail: output past the first MiB is dropped, not a failure of
 		// the check. Before, a patch that applied with that much to say
@@ -190,9 +250,18 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 			return nil, ctx.Err()
 		}
 		results[i].Checked = true
+		apply := append([]string{"--verbose", "-t", "-N", "-p" + strconv.Itoa(strip)}, extra...)
 		if err == nil {
 			results[i].Applies = true
 			results[i].Detail = "applies"
+			if results[i].Hunks = placed(output.Output); results[i].Fuzzed() {
+				results[i].Detail = "applies only with fuzz: " + HunkWords(results[i].Hunks)
+			} else if len(results[i].Hunks) > 0 {
+				results[i].Detail = "applies, " + HunkWords(results[i].Hunks)
+				if results[i].Refresh, err = refresh(ctx, command, apply, dir, contents[i], strip); err != nil {
+					return nil, err
+				}
+			}
 			continue
 		}
 		var failure *subprocess.Error
@@ -201,6 +270,12 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 			return nil, err
 		}
 		results[i].Detail = describe(output.Output)
+		// Apple's patch, which MacPorts runs, doesn't read git's quoted
+		// form of a name, as git writes one with a space or a byte past
+		// ASCII (the docs dig's I30, as done).
+		if quotes(contents[i]) {
+			results[i].Detail += "; it names a file in git's quoted form, which Apple's patch doesn't read"
+		}
 		// A file the patch targets that the source doesn't have is named,
 		// where patch's "No file to patch" said none, as hashcat 8.0's
 		// lacks bridge_python_generic_hash_mp.c (field testing's
@@ -218,6 +293,9 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 			results[i].Detail = "is already in the source: it applies in reverse"
 		} else if ctx.Err() != nil {
 			return nil, ctx.Err()
+		} else if results[i].Refresh, err = refresh(ctx, command, apply, dir, contents[i], strip); err != nil {
+			// One with some hunks the source carries applies without them.
+			return nil, err
 		}
 	}
 	return results, nil
@@ -238,6 +316,16 @@ func parseArgs(args []string) (strip int, extra []string, unsupported string) {
 		extra = append(extra, arg)
 	}
 	return strip, extra, ""
+}
+
+// Compressed reports a patch file stored compressed, which a refresh,
+// writing plain text, doesn't write over.
+func Compressed(name string) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".gz", ".bz2", ".xz", ".z":
+		return true
+	}
+	return false
 }
 
 func decompress(patch Patch) ([]byte, error) {
@@ -307,6 +395,17 @@ func targets(data []byte, strip int) []string {
 		}
 	}
 	return names
+}
+
+// quotes reports a patch whose file headers name a file in git's quoted
+// form.
+func quotes(data []byte) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "--- \"") || strings.HasPrefix(line, "+++ \"") || strings.HasPrefix(line, "diff --git \"") {
+			return true
+		}
+	}
+	return false
 }
 
 // headerName is the name a ---, +++, or *** line gives: git's quoted form

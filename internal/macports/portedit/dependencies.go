@@ -541,7 +541,10 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err := s.checkPatches(ctx, input, &result); err != nil {
 		return Result{}, err
 	}
-	return result, s.dropMergedPatches(ctx, input, &result)
+	if err := s.dropMergedPatches(ctx, input, &result); err != nil {
+		return result, err
+	}
+	return result, s.refreshPatches(ctx, input, &result)
 }
 
 func dependencyInput(info macports.PortInfo, archive string, plan *depblock.Plan) (depblock.Input, error) {

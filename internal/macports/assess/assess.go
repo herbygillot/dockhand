@@ -90,8 +90,9 @@ import (
 // (the docs dig's I20). 27: a Go port's -X target its package no longer
 // declares holds (the docs dig's I18). 28: the Homebrew library paths a
 // new version's source names as string literals are said (field
-// testing's outdated-ports session, hashcat 8.0).
-const Policy = 28
+// testing's outdated-ports session, hashcat 8.0). 29: a patch that
+// applies only with fuzz holds (patch-fuzz, v1's D12, the docs dig's I4).
+const Policy = 29
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -186,6 +187,7 @@ const (
 	PythonPinBehind     = "python-pin-behind"
 	PatchRejected       = "patch-rejected"
 	PatchDropped        = "patch-dropped"
+	PatchFuzz           = "patch-fuzz"
 	SourceRemoved       = "source-removed"
 	SourceUncertain     = "source-uncertain"
 	WorksrcPathGone     = "worksrc-path-gone"
@@ -199,7 +201,7 @@ const (
 func Rules() []string {
 	return []string{LicenseChanged, LicenseYears, LicenseParty, LicenseMoved, BuildFileChanged, BuildFileVersion, BuildFileOptions, DependencyAdded, DependencyDropped,
 		DependencyMoved, DependenciesCounted, NativeLibrary, NativeLibraryLeft, Unread, LayoutAmbiguous, RequirementUnmet, RequirementUnknown,
-		ProviderUnresolved, ProviderRemoved, GoToolchainRule, GoModuleMoved, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, SourceRemoved,
+		ProviderUnresolved, ProviderRemoved, GoToolchainRule, GoModuleMoved, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, PatchFuzz, SourceRemoved,
 		SourceUncertain, WorksrcPathGone, GitHubTarball, CXXStandardRule, GoLinkTargetRule}
 }
 

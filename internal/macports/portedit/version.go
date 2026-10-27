@@ -128,7 +128,10 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if err := s.checkPatches(ctx, input, &result); err != nil {
 		return result, err
 	}
-	return result, s.dropMergedPatches(ctx, input, &result)
+	if err := s.dropMergedPatches(ctx, input, &result); err != nil {
+		return result, err
+	}
+	return result, s.refreshPatches(ctx, input, &result)
 }
 
 func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *sourceInput, plan archivePlan, store *distfetch.Store) (Result, error) {
