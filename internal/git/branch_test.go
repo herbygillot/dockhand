@@ -113,7 +113,7 @@ func TestBranchLockSurvivesDriverExitWhileGitStillRuns(t *testing.T) {
 	defer child.Process.Kill()
 	// Upper bounds, as long as a child process may take to start under
 	// load, which five seconds wasn't; each ends as soon as it holds.
-	require.Eventually(t, func() bool { _, err := os.Stat(started); return err == nil }, time.Minute, 10*time.Millisecond)
+	require.Eventually(t, func() bool { _, err := os.Stat(started); return err == nil }, testsupport.Settle, 10*time.Millisecond)
 	require.NoError(t, child.Process.Kill())
 	require.Error(t, child.Wait())
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)

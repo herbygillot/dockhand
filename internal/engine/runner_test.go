@@ -534,9 +534,9 @@ func TestACancelIsAppliedByWhoeverHoldsTheRun(t *testing.T) {
 	require.Equal(t, model.RunCanceled, canceled.State)
 }
 
-// settleWait bounds a test's wait for what another goroutine does: a
-// bound, not a pace, since the wait ends once the condition holds.
-const settleWait = 2 * time.Minute
+// settleWait bounds a test's wait for what another goroutine does
+// (testsupport.Settle).
+const settleWait = testsupport.Settle
 
 func mustPlan(t *testing.T, e *Engine, run model.Run) model.Plan {
 	t.Helper()
@@ -571,7 +571,7 @@ func TestAStoppedServeLeavesTheRunForTheNext(t *testing.T) {
 		provider.mu.Lock()
 		defer provider.mu.Unlock()
 		return len(provider.jobs) == 1
-	}, 5*time.Second, 10*time.Millisecond)
+	}, settleWait, 10*time.Millisecond)
 	stop()
 	run := <-done
 	require.Equal(t, model.RunRunning, run.State, "serve stopping cancels nothing")

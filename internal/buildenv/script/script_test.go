@@ -118,12 +118,12 @@ wait`, 200*time.Millisecond)
 		data, err := os.ReadFile(child)
 		pid = strings.TrimSpace(string(data))
 		return err == nil && pid != ""
-	}, 10*time.Second, 20*time.Millisecond, "the script started its child")
+	}, testsupport.Settle, 20*time.Millisecond, "the script started its child")
 	cancel()
 	<-done
 	require.Eventually(t, func() bool {
 		return exec.Command("kill", "-0", pid).Run() != nil
-	}, 5*time.Second, 50*time.Millisecond, "the child is stopped with its script")
+	}, testsupport.Settle, 50*time.Millisecond, "the child is stopped with its script")
 }
 
 func TestTheScriptGetsTheRevisionAndReportsEachTarget(t *testing.T) {
