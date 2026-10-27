@@ -165,17 +165,18 @@ func TestATicketOutsideATrailerIsOfferedAsOne(t *testing.T) {
 // offered path-style; one the Portfile had, or one nothing else provides,
 // is said nothing of (the review survey's §5).
 func TestADependencyAnotherPortProvidesIsOfferedPathStyle(t *testing.T) {
-	providers := func(port string) []string {
-		return map[string][]string{"pkgconfig": {"pkgconf"}, "libfoo": {"libfoo-devel"}}[port]
+	providers := func(port string) ([]string, string) {
+		return map[string][]string{"pkgconfig": {"pkgconf"}, "libfoo": {"libfoo-devel"}, "libffi": {"libffi-devel"}}[port],
+			map[string]string{"pkgconfig": "path:bin/pkg-config:pkgconfig", "libfoo": "path:lib/libfoo.dylib:libfoo"}[port]
 	}
 	findings := CheckDependencies([]Portfile{
 		{Path: "devel/harbor/Portfile", Before: "name harbor\ndepends_lib port:libfoo\n", After: "name harbor\ndepends_lib port:libfoo\ndepends_build-append port:pkgconfig port:cmake\n"},
-		{Path: "devel/wharf/Portfile", After: "name wharf\ndepends_lib port:libfoo\n"},
+		{Path: "devel/wharf/Portfile", After: "name wharf\ndepends_lib port:libfoo port:libffi\n"},
 	}, providers)
 	require.Equal(t, []Finding{
-		{Code: "path-style", Severity: Warning, Where: "devel/harbor/Portfile:3", Message: "depends_build-append takes port:pkgconfig, which pkgconf can satisfy too; a path-style dependency, path:bin/pkg-config:pkgconfig, lets either"},
-		{Code: "path-style", Severity: Warning, Where: "devel/wharf/Portfile:2", Message: "depends_lib takes port:libfoo, which libfoo-devel can satisfy too; a path-style dependency, path:<a file both install>:libfoo, lets either"},
-	}, findings, "a new port's every dependency is one it adds")
+		{Code: "path-style", Severity: Warning, Where: "devel/harbor/Portfile:3", Message: "depends_build-append takes port:pkgconfig, which pkgconf can satisfy too; the tree writes it path-style, path:bin/pkg-config:pkgconfig, which lets either"},
+		{Code: "path-style", Severity: Warning, Where: "devel/wharf/Portfile:2", Message: "depends_lib takes port:libfoo, which libfoo-devel can satisfy too; the tree writes it path-style, path:lib/libfoo.dylib:libfoo, which lets either"},
+	}, findings, "a new port's every dependency is one it adds; libffi the tree never writes path-style")
 	require.Empty(t, CheckDependencies([]Portfile{{Path: "devel/wharf/Portfile", After: "depends_lib port:libfoo\n"}}, nil))
 }
 
@@ -203,4 +204,18 @@ func TestALineAPortGroupAlreadySetsIsSaid(t *testing.T) {
 		{Code: "restated", Severity: Warning, Where: "python/py-harbor/Portfile:5", Message: `"depends_build-append port:py-setuptools" restates what its PortGroups or MacPorts set already: without it, the port evaluates the same`},
 	}, findings, "homepage changes the evaluation; py-click isn't declared without its line; name was there")
 	require.Empty(t, CheckRestated([]Portfile{{Path: "python/py-harbor/Portfile", Before: before, After: after}}, func(string, []byte) (macports.PortInfo, bool) { return macports.PortInfo{}, false }))
+}
+
+// A line written as a trailer, in a list or without its colon, says what
+// the ticket is to the commit already (the measure over the Mac's tree:
+// "* Fixes: …", "- See …", "Fixes …").
+func TestATicketLineWrittenAsATrailerIsOne(t *testing.T) {
+	for _, line := range []string{"* Fixes: https://trac.macports.org/ticket/74244", "- See https://trac.macports.org/ticket/72379", "Fixes https://trac.macports.org/ticket/74479"} {
+		findings := CheckCommits([]Commit{{ID: "a", Message: "jq: update to 1.8.1\n\n" + line + "\n", Ports: []string{"jq"}}})
+		require.NotContains(t, codes(findings), "ticket-trailer", line)
+	}
+	findings := CheckCommits([]Commit{{ID: "a", Message: "go: remove a directory\n\nhttps://trac.macports.org/ticket/74572\n", Ports: []string{"go"}}})
+	require.Contains(t, codes(findings), "ticket-trailer", "a URL alone says nothing of what the ticket is to it")
+	findings = CheckCommits([]Commit{{ID: "a", Message: "commons-lang3: update to 3.18.0\n\nThis was https://trac.macports.org/ticket/63375.\n\nSee: https://trac.macports.org/ticket/63375\n", Ports: []string{"commons-lang3"}}})
+	require.NotContains(t, codes(findings), "ticket-trailer", "a trailer cites it too")
 }

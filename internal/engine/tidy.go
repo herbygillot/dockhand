@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -881,17 +882,27 @@ var otherProviders = map[string][]string{"pkgconfig": {"pkgconf"}}
 // providers are, for the path-style rule, the ports in tree that can
 // satisfy a dependency on a port: its -devel sibling and the survey's
 // others, each kept where MacPorts evaluates its conflicts as naming the
-// port, as one installing the same files does; nil where ports can't be
-// read. Each port is asked once.
+// port, as one installing the same files does; with the path-style spec
+// the tree writes most for it (treeSpec); nil where ports can't be read.
+// Each port is asked once.
 func (e *Engine) providers(ctx context.Context, tree string) commitrules.Providers {
 	reader, err := e.portReader()
 	if err != nil {
 		return nil
 	}
-	asked := map[string][]string{}
-	return func(port string) []string {
+	type answer struct {
+		others []string
+		spec   string
+	}
+	asked := map[string]answer{}
+	return func(port string) ([]string, string) {
 		if found, ok := asked[port]; ok {
-			return found
+			return found.others, found.spec
+		}
+		spec := e.treeSpec(ctx, tree, port)
+		if spec == "" {
+			asked[port] = answer{}
+			return nil, ""
 		}
 		var found []string
 		for _, candidate := range append([]string{port + "-devel"}, otherProviders[port]...) {
@@ -909,9 +920,37 @@ func (e *Engine) providers(ctx context.Context, tree string) commitrules.Provide
 				}
 			}
 		}
-		asked[port] = found
-		return found
+		asked[port] = answer{found, spec}
+		return found, spec
 	}
+}
+
+// treeSpec is the path-style dependency on a port the tree's Portfiles
+// write most, read from up to 20 of them; empty where none writes one.
+func (e *Engine) treeSpec(ctx context.Context, tree, port string) string {
+	quoted := regexp.QuoteMeta(port)
+	paths, err := e.Repo.GrepTree(ctx, tree, `path:[^[:space:]]+:`+quoted+`([[:space:]]|$)`, "*/*/Portfile")
+	if err != nil || len(paths) == 0 {
+		return ""
+	}
+	files, err := e.Repo.ReadFiles(ctx, tree, paths[:min(len(paths), 20)])
+	if err != nil {
+		return ""
+	}
+	spec := regexp.MustCompile(`path:\S+:` + quoted + `(?:\s|$)`)
+	counts := map[string]int{}
+	for _, data := range files {
+		for _, found := range spec.FindAllString(string(data), -1) {
+			counts[strings.TrimSpace(found)]++
+		}
+	}
+	most := ""
+	for found, n := range counts {
+		if n > counts[most] || n == counts[most] && found < most {
+			most = found
+		}
+	}
+	return most
 }
 
 // versionOrder orders versions with MacPorts' own vercmp, for the commit
