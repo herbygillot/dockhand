@@ -277,12 +277,17 @@ func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where 
 	_ = grid.Flush()
 }
 
+// saysTook is the least time a report says: a port's build takes
+// minutes, and one under it, as a result recorded without a build, or a
+// test's scripted check, crossing a second as its machine allows, says
+// none, so the report reads the same however fast it ran.
+const saysTook = 10 * time.Second
+
 // targetTook is how long a target's build took, as " (4m 12s)", or empty
-// where it wasn't this check's, or took under a second, as a result
-// recorded without a build does.
+// where it wasn't this check's, or took under saysTook.
 func targetTook(evidence engine.Evidence, target engine.TargetEvidence, environment int) string {
 	took, ok := evidence.TargetTook(target, environment)
-	if !ok || took < time.Second {
+	if !ok || took < saysTook {
 		return ""
 	}
 	return " (" + prose.Took(took) + ")"
@@ -296,7 +301,7 @@ func writeTook(out io.Writer, indent string, evidence engine.Evidence) {
 	var parts []string
 	for _, i := range evidence.Checked() {
 		took, ok := evidence.Took(i)
-		if !ok || took < time.Second {
+		if !ok || took < saysTook {
 			continue
 		}
 		parts = append(parts, prose.Took(took)+" on "+engine.DescribeEnvironment(environments[i]))

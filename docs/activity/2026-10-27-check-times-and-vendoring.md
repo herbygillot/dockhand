@@ -15,7 +15,7 @@ are there").
   (evidence.TargetTook), since a run builds and records its targets in
   order; a release's is each of the check's own runs there, start to end,
   every attempt counted (evidence.Took). A reused result, another check's,
-  or anything under a second says none. prose.Took words them.
+  or anything under ten seconds says none (made ten, from one, when a scripted test check crossed a second and its report's exact lines changed). prose.Took words them.
 - **setup's Vendoring rows** (engine.SetupReport.Vendoring, read with
   depblock.Tools.Resolve as the edits find them): "✓ go2port at …, for Go
   ports' go.vendors", or "! cargo2port is not on PATH; Rust ports'

@@ -185,5 +185,24 @@ func TestAPassingHostCheckNamesTheWiderCheck(t *testing.T) {
 	wider = e.wider(t.Context(), status, []string{"textproc/jq/Portfile", "textproc/jq/files/docs.patch"})
 	require.NotNil(t, wider)
 	require.Equal(t, branchstate.Next{Verb: branchstate.VerbCheck, Args: []string{"--variants", "+docs"}}, wider.Next)
-	require.Equal(t, "the update changes the sources of +docs, which a build of the default variants doesn't take", wider.Why)
+	require.Equal(t, "the update changes the sources of jq's +docs, which a build of the default variants doesn't take", wider.Why)
+
+	// A floor raised beside it: minmax first, then the variant once
+	// minmax passed, then nothing once the variant's check passed.
+	both := status
+	evidence := *status.Evidence
+	both.Evidence, both.Changes = &evidence, raised.Changes
+	require.Equal(t, []string{"--build", "minmax"}, e.wider(t.Context(), both, []string{"textproc/jq/files/docs.patch"}).Next.Args)
+	both.Evidence.Plan.Profile = "minmax"
+	require.Equal(t, []string{"--variants", "+docs"}, e.wider(t.Context(), both, []string{"textproc/jq/files/docs.patch"}).Next.Args)
+	both.Evidence.Plan.Variants = "+docs"
+	require.Nil(t, e.wider(t.Context(), both, []string{"textproc/jq/files/docs.patch"}))
+
+	// A branch that changes more than one port names the one by --only,
+	// as --variants needs (variantsTarget).
+	two := status
+	evidence = *status.Evidence
+	two.Evidence = &evidence
+	two.Evidence.Plan.Targets = append(slices.Clone(two.Evidence.Plan.Targets), model.PlanTarget{ID: "jq-devel", Target: model.Target{Name: "jq-devel"}, Directory: "textproc/jq", Role: model.Changed})
+	require.Equal(t, []string{"--variants", "+docs", "--only", "jq"}, e.wider(t.Context(), two, []string{"textproc/jq/files/docs.patch"}).Next.Args)
 }
