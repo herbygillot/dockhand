@@ -2,15 +2,17 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -230,22 +232,8 @@ func (e *Engine) masterArchive(ctx context.Context, target model.PlanTarget, env
 	if !binaryarchive.Installable(info.Name, name) {
 		return model.TargetResult{}, "", false
 	}
-	path := filepath.Join(e.ArchiveDirectory(), "master", name)
-	if _, err := os.Stat(path + ".none"); err == nil {
-		return model.TargetResult{}, "", false
-	}
-	if _, err := os.Stat(path); err != nil {
-		if !fetch || !e.fetchArchive(ctx, binaryarchive.URL(info.Name, name), path) {
-			return model.TargetResult{}, "", false
-		}
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return model.TargetResult{}, "", false
-	}
-	defer file.Close()
-	files, libraries, err := binaryarchive.Contents(file)
-	if err != nil {
+	files, libraries, ok := e.masterReading(ctx, info.Name, name, fetch)
+	if !ok {
 		return model.TargetResult{}, "", false
 	}
 	// The archive's prefix is the buildbots', /opt/local; a check in a
@@ -267,41 +255,74 @@ func (e *Engine) masterArchive(ctx context.Context, target model.PlanTarget, env
 	return model.TargetResult{Target: target.ID, Installed: files, Libraries: libraries}, name, true
 }
 
-// fetchArchive fetches an archive to path, whole or not at all; one the
-// site doesn't serve is marked, path.none, so it isn't asked for again.
-func (e *Engine) fetchArchive(ctx context.Context, url, path string) bool {
+// archiveReading is what an archive installs, as Contents read it, kept
+// in place of the archive.
+type archiveReading struct {
+	Installed []string        `json:"installed"`
+	Libraries []model.Library `json:"libraries"`
+}
+
+// notServedFor is how long an archive the site didn't serve is taken as
+// not served: the buildbots build a version some hours after it lands on
+// master, so one asked for early is asked again a day on.
+const notServedFor = 24 * time.Hour
+
+// masterReading is what master's archive installs, read as it downloads,
+// bzip2 over the response's body and each library's header from its tar
+// entry, and only the reading kept, by the archive's name under the
+// archive directory's master/, where a large port's archive kept whole
+// stayed as long as anything was added beside it. One the site doesn't
+// serve is marked, name.none, and asked again once the mark is a day old.
+// mayFetch false reads only a reading kept.
+func (e *Engine) masterReading(ctx context.Context, port, name string, mayFetch bool) ([]string, []model.Library, bool) {
+	path := filepath.Join(e.ArchiveDirectory(), "master", name+".json")
+	if data, err := os.ReadFile(path); err == nil {
+		var reading archiveReading
+		if json.Unmarshal(data, &reading) == nil && reading.Installed != nil {
+			return reading.Installed, reading.Libraries, true
+		}
+	}
+	if info, err := os.Stat(path + ".none"); err == nil && e.now().Sub(info.ModTime()) < notServedFor {
+		return nil, nil, false
+	}
+	if !mayFetch {
+		return nil, nil, false
+	}
+	url := binaryarchive.URL(port, name)
 	if base := e.options.Packages; base != "" {
 		url = base + strings.TrimPrefix(url, binaryarchive.Packages)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false
+		return nil, nil, false
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return false
+		return nil, nil, false
 	}
 	response, err := fetch.Client.Do(request)
 	if err != nil {
-		return false
+		return nil, nil, false
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNotFound {
 		_ = os.WriteFile(path+".none", nil, 0o644)
-		return false
+		now := e.now()
+		_ = os.Chtimes(path+".none", now, now)
+		return nil, nil, false
 	}
 	if response.StatusCode != http.StatusOK {
-		return false
+		return nil, nil, false
 	}
-	partial := path + ".part"
-	out, err := os.Create(partial)
+	files, libraries, err := binaryarchive.Contents(response.Body)
 	if err != nil {
-		return false
+		return nil, nil, false
 	}
-	if _, err := io.Copy(out, response.Body); err != nil || out.Close() != nil {
-		_ = os.Remove(partial)
-		return false
+	if data, err := json.Marshal(archiveReading{Installed: files, Libraries: libraries}); err == nil {
+		if atomicfile.Write(path, data, 0o644) == nil {
+			_ = os.Remove(path + ".none")
+		}
 	}
-	return os.Rename(partial, path) == nil
+	return files, libraries, true
 }
 
 // installedLines are the install findings of the check a submission

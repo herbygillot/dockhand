@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -168,5 +169,23 @@ func TestAFirstCheckComparesAgainstMastersArchive(t *testing.T) {
 
 	_, err = e.InstallChanges(t.Context(), runs[0], true)
 	require.NoError(t, err)
-	require.Len(t, asked, 1, "kept by its name, fetched once")
+	require.Len(t, asked, 1, "its reading kept by its name, fetched once")
+	kept, err := filepath.Glob(filepath.Join(e.ArchiveDirectory(), "master", "*"))
+	require.NoError(t, err)
+	require.Equal(t, []string{filepath.Join(e.ArchiveDirectory(), "master", "jq-1.7.1_0.darwin_25.arm64.tbz2.json")}, kept, "the reading, and no archive")
+
+	// One not served is marked, and asked again once the mark is a day old.
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	target := model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "textproc/jq"}
+	_, _, ok := e.masterArchive(t.Context(), target, tahoe, true)
+	require.False(t, ok)
+	require.Len(t, asked, 2)
+	_, _, ok = e.masterArchive(t.Context(), target, tahoe, true)
+	require.False(t, ok)
+	require.Len(t, asked, 2, "not asked again within the day")
+	none := filepath.Join(e.ArchiveDirectory(), "master", "jq-1.7.1_0.darwin_24.arm64.tbz2.json.none")
+	old := e.now().Add(-25 * time.Hour)
+	require.NoError(t, os.Chtimes(none, old, old))
+	_, _, _ = e.masterArchive(t.Context(), target, tahoe, true)
+	require.Len(t, asked, 3, "a day-old mark is asked again")
 }
