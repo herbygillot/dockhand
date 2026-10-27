@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -34,13 +35,13 @@ func (t *tx) AddEdit(e model.Edit) error {
 		}
 		release = string(data)
 	}
-	_, err = t.exec("INSERT INTO edits(repository_id, id, branch_id, kind, port, directory, subject, files, at, upstream, release) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, e.ID, e.Branch, e.Kind, e.Port, e.Directory, e.Subject, string(files), millis(e.At), upstream, release)
+	_, err = t.exec("INSERT INTO edits(repository_id, id, branch_id, kind, port, directory, subject, files, at, upstream, release, excepted) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, e.ID, e.Branch, e.Kind, e.Port, e.Directory, e.Subject, string(files), millis(e.At), upstream, release, strings.Join(e.Excepted, " "))
 	return err
 }
 
 func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT id, branch_id, kind, port, directory, subject, files, at, upstream, release FROM edits WHERE repository_id=? AND branch_id=? ORDER BY at, rowid", t.repo, branch)
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT id, branch_id, kind, port, directory, subject, files, at, upstream, release, excepted FROM edits WHERE repository_id=? AND branch_id=? ORDER BY at, rowid", t.repo, branch)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -48,10 +49,13 @@ func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
 	var edits []model.Edit
 	for rows.Next() {
 		var e model.Edit
-		var files, upstream, release string
+		var files, upstream, release, excepted string
 		var at int64
-		if err := rows.Scan(&e.ID, &e.Branch, &e.Kind, &e.Port, &e.Directory, &e.Subject, &files, &at, &upstream, &release); err != nil {
+		if err := rows.Scan(&e.ID, &e.Branch, &e.Kind, &e.Port, &e.Directory, &e.Subject, &files, &at, &upstream, &release, &excepted); err != nil {
 			return nil, storageError(err)
+		}
+		if excepted != "" {
+			e.Excepted = strings.Fields(excepted)
 		}
 		if upstream != "" {
 			if err := json.Unmarshal([]byte(upstream), &e.Upstream); err != nil {

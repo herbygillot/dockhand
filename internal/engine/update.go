@@ -69,8 +69,11 @@ type UpdateRequest struct {
 	// copied field by field).
 	model.EditIntent
 	// Subject is the reason for a revision bump, the commit subject after
-	// the port's name: "rebuild for poppler 25.09.0".
-	Subject string
+	// the port's name: "rebuild for poppler 25.09.0"; Excepted are the
+	// dependents --except left out of the same rebuild, which its edit
+	// keeps for the pull request's description.
+	Subject  string
+	Excepted []string
 	// Plan prepares the edit and changes nothing.
 	Plan bool
 	// FromMaster plans against master as fetched now, with no branch: a
@@ -804,7 +807,7 @@ func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branc
 		subject = request.subject
 	}
 	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: request.Action, Port: update.Port, Subject: subject, At: e.now(),
-		Upstream: update.Upstream, Release: update.Release}
+		Upstream: update.Upstream, Release: update.Release, Excepted: request.Excepted}
 	edit.Directory = portDirectory(result.Files[0].Path)
 	if result.Target.Portfile != "" {
 		edit.Directory = path.Dir(result.Target.Portfile)

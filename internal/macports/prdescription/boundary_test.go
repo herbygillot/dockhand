@@ -17,6 +17,7 @@ var prdescriptionImports = map[string]string{
 	"internal/model":              "what the engine reports of environments and their tools",
 	"internal/macports/commitmsg": "dockhand's attribution, which a commit's text the description gives leaves out",
 	"internal/buildinfo":          "where dockhand lives, which its first and last lines link",
+	"internal/prose":              "counts said as dockhand says them everywhere, as what a trimmed description left out",
 }
 
 // The description is composed and merged from the facts it's given: it

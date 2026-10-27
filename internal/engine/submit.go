@@ -8,6 +8,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildenv"
@@ -22,6 +23,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -459,7 +461,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
-		Note: plan.Note, UncoveredCI: plan.UncoveredCI, HandEdits: e.submittedHandEdits(ctx, branch, plan.Tree)}
+		Note: plan.Note, UncoveredCI: plan.UncoveredCI, HandEdits: e.submittedHandEdits(ctx, branch, plan.Tree), LeftOut: leftOut(edits)}
 	plan.facts = facts
 	plan.allowed = e.allowedFor
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
@@ -881,6 +883,12 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		Commit: model.ObjectID(plan.Commit), Bound: model.ObjectID(plan.Request.Bound)}
 	if refusal := branchstate.Publish(publication, branchstate.Mode{Answered: answered}, Vocabulary{}); refusal != nil {
 		return Submitted{}, refusal
+	}
+	// GitHub refuses a body past its limit after the push, so no pull
+	// request opens; dockhand's own parts are trimmed under it, and a
+	// person's kept part that passes it is said before anything is pushed.
+	if !plan.Theirs && !prdescription.Fits(plan.Body) {
+		return Submitted{}, fmt.Errorf("the description is %s characters, past GitHub's limit of %s, with what was kept of it as someone's own; shorten it on GitHub, or submit --rewrite-description; nothing was pushed", prose.Count(utf8.RuneCountInString(plan.Body)), prose.Count(prdescription.Limit))
 	}
 	worktree, err := e.worktree(ctx, plan.Branch)
 	if err != nil {
