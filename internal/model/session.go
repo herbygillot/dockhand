@@ -128,9 +128,6 @@ const (
 	EventBranchReady         EventKind = "branch.ready"
 	EventBranchRestore       EventKind = "branch.restore"
 	EventBranchClean         EventKind = "branch.clean"
-	// EventTrustSkipped is a step on a branch nothing unattended may take,
-	// evaluating a Portfile the person didn't author (the trust rule).
-	EventTrustSkipped EventKind = "branch.trust-skipped"
 )
 
 // ChangesStatus reports whether an event of the kind can change what

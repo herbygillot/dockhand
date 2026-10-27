@@ -60,9 +60,9 @@ type Proposal struct {
 // empty: the one pipeline check, ship, and serve take (the command package
 // review), which Enqueue then queues.
 func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Proposal, error) {
-	if err := e.MayCheck(ctx, request.Capture.Branch); err != nil {
-		return Proposal{}, err
-	}
+	// Planning evaluates the branch's Portfiles on this Mac, which says
+	// whose where another wrote them (the trust rule).
+	e.sayWhose(ctx, request.Capture.Branch)
 	capture, err := e.Capture(ctx, request.Capture)
 	if err != nil {
 		return Proposal{}, err

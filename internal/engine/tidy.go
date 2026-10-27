@@ -208,7 +208,8 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if len(changed) == 0 {
 		return TidyPlan{}, fmt.Errorf("%s changes nothing yet; there is nothing to tidy", branch.Name)
 	}
-	if plan.Findings, err = e.portfileFindings(ctx, worktree, trees[base], final, changed, e.mayEvaluate(ctx, branch, "Portfile rules")); err != nil {
+	e.sayWhose(ctx, branch)
+	if plan.Findings, err = e.portfileFindings(ctx, worktree, trees[base], final, changed); err != nil {
 		return TidyPlan{}, err
 	}
 	var working []string
@@ -826,10 +827,9 @@ func (e *Engine) ruleCommits(ctx context.Context, base, head model.Source, histo
 }
 
 // portfileFindings applies the content rules to the Portfiles a branch
-// changes, ordering versions as MacPorts' vercmp does (versionOrder);
-// the rules that evaluate them, restated's and path-style's, only where
-// evaluate says the trust rule lets them (mayEvaluate).
-func (e *Engine) portfileFindings(ctx context.Context, repo *git.Repository, before, after string, changed []string, evaluate bool) ([]commitrules.Finding, error) {
+// changes, ordering versions as MacPorts' vercmp does (versionOrder),
+// restated's and path-style's rules evaluating them.
+func (e *Engine) portfileFindings(ctx context.Context, repo *git.Repository, before, after string, changed []string) ([]commitrules.Finding, error) {
 	var portfiles []commitrules.Portfile
 	for _, path := range changed {
 		if !strings.HasSuffix(path, "/Portfile") {
@@ -846,9 +846,6 @@ func (e *Engine) portfileFindings(ctx context.Context, repo *git.Repository, bef
 		portfiles = append(portfiles, commitrules.Portfile{Path: path, Before: string(old), After: string(current)})
 	}
 	findings := commitrules.CheckPortfiles(portfiles, e.versionOrder(ctx))
-	if !evaluate {
-		return findings, nil
-	}
 	findings = append(findings, commitrules.CheckDependencies(portfiles, e.providers(ctx, after))...)
 	return append(findings, commitrules.CheckRestated(portfiles, e.evaluateText(ctx, repo, after))...), nil
 }

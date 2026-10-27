@@ -30,7 +30,7 @@ type FamilyReader interface {
 // be made is read as it is, saying why. A directory with no record keeps its text
 // scope: every subport of it reads as changed, as before records. An
 // adopted pull request's branch gets them where the trust rule lets the
-// work evaluate its author's Portfiles (mayEvaluate), and a revision no
+// work says whose Portfiles it evaluates (sayWhose), and a revision no
 // evaluator can read gets none.
 func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, tree model.ObjectID, collect bool) (map[string]model.ChangeRecord, error) {
 	var branch model.Branch
@@ -120,9 +120,7 @@ func (e *Engine) makeChanges(ctx context.Context, branch model.Branch, base, tre
 		if recorded, ok := records[directory]; ok && recorded.Problem == "" {
 			continue
 		}
-		if !e.mayEvaluate(ctx, branch, "change records") {
-			break
-		}
+		e.sayWhose(ctx, branch)
 		var sides [2]*macports.Snapshot
 		var texts [2][]byte
 		problem := ""
