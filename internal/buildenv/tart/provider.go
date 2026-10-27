@@ -252,7 +252,7 @@ func baseImage(release macos.Release) string {
 	return tartvm.Prepared{Release: release, Profile: macos.ProfileTools}.Name()
 }
 
-// image is the image an environment builds in (decision 23, amended): the
+// image is the image an environment builds in: the
 // release's Xcode image when the environment has Xcode, and its base image
 // otherwise.
 func image(release macos.Release, environment model.Environment) string {

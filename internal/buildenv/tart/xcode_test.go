@@ -10,7 +10,7 @@ import (
 )
 
 // An environment with Xcode builds in the release's Xcode image, and one
-// with the Command Line Tools in its base image (decision 23, amended).
+// with the Command Line Tools in its base image.
 func TestTheEnvironmentsToolsChooseTheImage(t *testing.T) {
 	t.Parallel()
 	for tools, want := range map[model.DeveloperTools]string{
