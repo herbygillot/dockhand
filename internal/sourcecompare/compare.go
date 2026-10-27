@@ -361,9 +361,47 @@ func Compare(older, newer project.Reading, versions Versions, named, sets func(o
 	changes = append(changes, libraryVersions(older.LibraryVersions, newer.LibraryVersions)...)
 	changes = append(changes, cargoBinaries(older, newer)...)
 	changes = append(changes, pythonBackend(older, newer)...)
+	changes = append(changes, hostPaths(older, newer)...)
 	changes = licenseMove(changes, before, after)
 	for i := range changes {
 		changes[i].System = project.SystemOf(changes[i].Path)
+	}
+	return changes
+}
+
+// hostPaths are the source files of the new version whose string literals
+// name a Homebrew prefix's libraries the old version's source names
+// nowhere, a notice each, holding nothing: hashcat 8.0's src/ext_zlib.c
+// and four more dlopen "/opt/homebrew/lib/libz.1.dylib" and
+// "/usr/local/lib/libz.1.dylib", and a MacPorts hashcat would lose
+// compression and crypto at run time, where its check passed and its links
+// were clean (field testing's outdated-ports session, at the person's
+// word). Build files and documentation aren't read for it, and no built
+// binary is scanned.
+func hostPaths(older, newer project.Reading) []Change {
+	had := map[string]bool{}
+	for _, literals := range older.HostPaths {
+		for _, literal := range literals {
+			had[literal] = true
+		}
+	}
+	var changes []Change
+	for _, name := range slices.Sorted(maps.Keys(newer.HostPaths)) {
+		var added []string
+		for _, literal := range newer.HostPaths[name] {
+			if !had[literal] {
+				added = append(added, literal)
+			}
+		}
+		if len(added) == 0 {
+			continue
+		}
+		words := strings.Join(added, " and ")
+		if len(added) > 2 {
+			words = strings.Join(added[:len(added)-1], ", ") + ", and " + added[len(added)-1]
+		}
+		changes = append(changes, Change{Kind: "host-path", How: "adds", Path: name,
+			Message: fmt.Sprintf("upstream: %s adds %s, so it may look for libraries at run time only outside ${prefix}", name, words)})
 	}
 	return changes
 }

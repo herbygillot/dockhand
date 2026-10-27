@@ -585,3 +585,33 @@ func TestALicenseWithLinesAddedSaysThem(t *testing.T) {
 	require.Len(t, changes, 1)
 	require.Equal(t, `upstream's LICENSE is still MIT by its text, with 2 lines added, none removed, the first "The bundled third_party/ directory keeps its own notices."`, changes[0].Message)
 }
+
+// Literal Homebrew library paths a new version's source adds are said,
+// each file's, as hashcat 8.0's five ext_*.c files dlopen; a literal the
+// old version had says nothing, and a Makefile's -L /usr/local/lib isn't
+// read for it (field testing's outdated-ports session).
+func TestHomebrewLibraryPathsAnUpdateAddsAreSaid(t *testing.T) {
+	ext := func(lib string) string {
+		return "static const char *paths[] = {\"/opt/homebrew/lib/" + lib + "\", \"/usr/local/lib/" + lib + "\"};\n"
+	}
+	old := map[string]string{"Makefile": "LDFLAGS += -L /usr/local/lib\n", "src/ext_iconv.c": ext("libiconv.2.dylib"), "src/main.c": "int main(void) { return 0; }\n"}
+	now := map[string]string{"Makefile": "LDFLAGS += -L /usr/local/lib -L /usr/local/opt/zlib/lib\n", "src/ext_iconv.c": ext("libiconv.2.dylib"), "src/main.c": "int main(void) { return 0; }\n"}
+	for _, file := range []string{"zlib:libz.1.dylib", "zstd:libzstd.1.dylib", "lzma:liblzma.5.dylib", "openssl:libssl.3.dylib"} {
+		name, lib, _ := strings.Cut(file, ":")
+		now["src/ext_"+name+".c"] = ext(lib)
+	}
+	changes, err := compareArchives(t, testsupport.Tarball(t, "hashcat-7.1.2", old), testsupport.Tarball(t, "hashcat-8.0", now), Versions{Old: "7.1.2", New: "8.0"})
+	require.NoError(t, err)
+	var said []string
+	for _, change := range changes {
+		if change.Kind == "host-path" {
+			said = append(said, change.Message)
+		}
+	}
+	require.Equal(t, []string{
+		"upstream: src/ext_lzma.c adds /opt/homebrew/lib/liblzma.5.dylib and /usr/local/lib/liblzma.5.dylib, so it may look for libraries at run time only outside ${prefix}",
+		"upstream: src/ext_openssl.c adds /opt/homebrew/lib/libssl.3.dylib and /usr/local/lib/libssl.3.dylib, so it may look for libraries at run time only outside ${prefix}",
+		"upstream: src/ext_zlib.c adds /opt/homebrew/lib/libz.1.dylib and /usr/local/lib/libz.1.dylib, so it may look for libraries at run time only outside ${prefix}",
+		"upstream: src/ext_zstd.c adds /opt/homebrew/lib/libzstd.1.dylib and /usr/local/lib/libzstd.1.dylib, so it may look for libraries at run time only outside ${prefix}",
+	}, said, "ext_iconv.c's, which 7.1.2 had, and the Makefile's say nothing")
+}
