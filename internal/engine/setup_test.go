@@ -1,10 +1,13 @@
 package engine
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 )
 
 func TestSetupPutsWorktreesWhereThePersonSaid(t *testing.T) {
@@ -51,4 +54,15 @@ func TestSetupRefusesAGitThatCantRunBeforeOpening(t *testing.T) {
 	require.ErrorContains(t, err, "can't be run")
 	require.Nil(t, e)
 	require.Empty(t, report.Checkout)
+}
+
+// setup says whether go2port and cargo2port are there, as the edits that
+// run them find them, so a missing one is said before an update needs it
+// (the docs dig's I38).
+func TestSetupSaysWhetherTheVendoringToolsAreThere(t *testing.T) {
+	t.Parallel()
+	helper := filepath.Join(t.TempDir(), "go2port")
+	require.NoError(t, os.WriteFile(helper, []byte("#!/bin/sh\n"), 0o755))
+	found := vendoringTools(depblock.Tools{Go2Port: helper, Cargo2Port: filepath.Join(t.TempDir(), "cargo2port")})
+	require.Equal(t, []SetupTool{{Name: "go2port", Path: helper, For: "Go ports' go.vendors"}, {Name: "cargo2port", For: "Rust ports' cargo.crates"}}, found)
 }

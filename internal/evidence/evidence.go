@@ -17,6 +17,7 @@ package evidence
 import (
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/reuse"
@@ -520,6 +521,51 @@ func (e Evidence) Runs(environment int) []model.GuestExecution {
 	}
 	slices.SortStableFunc(runs, func(a, b model.GuestExecution) int { return a.CreatedAt.Compare(b.CreatedAt) })
 	return runs
+}
+
+// Took is how long the check's own provider runs in an environment took,
+// from each run's start to its end, every attempt counted: its wall time
+// there, which a person reads to see where a check spent it (the docs
+// dig's I38). False where the check ran nothing there that finished, as
+// where every result was an earlier check's.
+func (e Evidence) Took(environment int) (time.Duration, bool) {
+	var took time.Duration
+	ran := false
+	for _, run := range e.Runs(environment) {
+		if run.Run != e.Run.ID || run.FinishedAt == nil {
+			continue
+		}
+		took += run.FinishedAt.Sub(run.CreatedAt)
+		ran = true
+	}
+	return took, ran
+}
+
+// TargetTook is how long a target's build took in an environment: from
+// the result its run recorded before it, or the run's start, to its own,
+// since a run builds its targets in order and records each as it ends.
+// False for a result reused from an earlier build, one another check
+// recorded, or one not recorded.
+func (e Evidence) TargetTook(target TargetEvidence, environment int) (time.Duration, bool) {
+	if environment >= len(target.Outcomes) {
+		return 0, false
+	}
+	cell := target.Outcomes[environment]
+	run, ok := e.Executions[cell.Execution]
+	if cell.Kind != CellRecorded || cell.ReusedFrom != "" || !ok || run.Run != e.Run.ID || cell.RecordedAt.IsZero() {
+		return 0, false
+	}
+	since := run.CreatedAt
+	for _, other := range e.Targets {
+		if environment >= len(other.Outcomes) {
+			continue
+		}
+		earlier := other.Outcomes[environment]
+		if earlier.Execution == cell.Execution && earlier.ReusedFrom == "" && earlier.RecordedAt.Before(cell.RecordedAt) && earlier.RecordedAt.After(since) {
+			since = earlier.RecordedAt
+		}
+	}
+	return cell.RecordedAt.Sub(since), true
 }
 
 // Tested reports whether anything the evidence holds was built or reused

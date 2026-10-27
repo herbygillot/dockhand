@@ -248,7 +248,7 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 	require.Contains(t, errs, "github: pushing to dockhand-check/")
 	require.Contains(t, errs, "github: in progress https://github.com/ada/macports-ports/actions/runs/7")
 	require.Contains(t, errs, "github: jq passed")
-	require.Contains(t, out, "  jq  ✓ build passed; tests failed (advisory)\n")
+	require.Regexp(t, `\n  jq  ✓ build passed; tests failed \(advisory\)( \(\d+s\))?\n`, out)
 	require.Contains(t, out, "\nPassed.\n", "the check's heading named what it checks")
 	require.Equal(t, 0, f.reruns)
 
@@ -514,7 +514,7 @@ func TestAGitHubRunPastItsBoundIsCancelled(t *testing.T) {
 	require.Error(t, err, errs)
 	require.Equal(t, 1, f.canceled)
 	require.Contains(t, errs, "built past its 1m0s bound; cancelling it")
-	require.Contains(t, out, "  jq  ✗ failed at install\n")
+	require.Regexp(t, `\n  jq  ✗ failed at install( \(\d+s\))?\n`, out)
 	logs, _, err := cmdtest.Dockhand(t, "logs", "check-1")
 	require.NoError(t, err)
 	require.Contains(t, logs, "on build (macos-14): the run exceeded the 1m0s build timeout (providers.github.build_timeout) and was cancelled", errs)
@@ -566,7 +566,7 @@ func TestRequiredTestsFailACheckOnGitHub(t *testing.T) {
 	f.conclusion = []string{"success"}
 	out, _, err := cmdtest.Dockhand(t, "check", "--on", "github", "--tests", "required")
 	require.Error(t, err, "a failing test fails a check that requires tests")
-	require.Contains(t, out, "  jq  ✗ failed at test\n")
+	require.Regexp(t, `\n  jq  ✗ failed at test( \(\d+s\))?\n`, out)
 
 	out, _, err = cmdtest.Dockhand(t, "check", "--on", "github", "--tests", "skip", "--plan")
 	require.NoError(t, err)

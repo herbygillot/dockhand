@@ -2,6 +2,7 @@ package prose
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -55,4 +56,11 @@ func TestTextHelpers(t *testing.T) {
 	require.Equal(t, "first", FirstLine("first\nsecond"))
 	require.Equal(t, "a b\nc d", Wrap("a b c d", 3))
 	require.Equal(t, []string{"two", "three"}, LastLines("one\r\n two \n\nthree\n", 2))
+}
+
+func TestTookIsShortEnoughForACell(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "38s", Took(38*time.Second))
+	require.Equal(t, "4m 12s", Took(4*time.Minute+12*time.Second+400*time.Millisecond))
+	require.Equal(t, "1h 3m", Took(time.Hour+3*time.Minute+20*time.Second))
 }

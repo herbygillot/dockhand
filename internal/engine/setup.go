@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"context"
 	"path/filepath"
+
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 )
 
 // SetupReport is what setup finds of the checkout dockhand works on: the
@@ -18,6 +20,10 @@ type SetupReport struct {
 	Worktrees string        `json:"worktrees"`
 	MacPorts  string        `json:"macports"`
 	Records   string        `json:"records"`
+	// Vendoring are go2port and cargo2port, which create and an update's
+	// Go and Rust vendoring run, each found or not, so a missing one is
+	// said before serve's next look fails on it (the docs dig's I38).
+	Vendoring []SetupTool `json:"vendoring"`
 	// Unchosen is where the person hasn't said where worktrees go, by name
 	// or in the configuration, so Worktrees is the default, which a
 	// question may change (Choose).
@@ -81,5 +87,25 @@ func Setup(ctx context.Context, options Options, named string) (*Engine, SetupRe
 	if tclsh := e.Tclsh(); tclsh != "" {
 		report.MacPorts = filepath.Dir(filepath.Dir(tclsh))
 	}
+	report.Vendoring = vendoringTools(depblock.Tools{})
 	return e, report, nil
+}
+
+// SetupTool is a helper dockhand runs, where it was found, or empty, and
+// what it's for.
+type SetupTool struct {
+	Name string `json:"name"`
+	Path string `json:"path,omitempty"`
+	For  string `json:"for"`
+}
+
+// vendoringTools are go2port and cargo2port as the edits that run them
+// find them (depblock.Tools.Resolve).
+func vendoringTools(tools depblock.Tools) []SetupTool {
+	var found []SetupTool
+	for _, tool := range []struct{ kind, name, used string }{{depblock.Go, "go2port", "Go ports' go.vendors"}, {depblock.Cargo, "cargo2port", "Rust ports' cargo.crates"}} {
+		path, _ := tools.Resolve(tool.kind)
+		found = append(found, SetupTool{Name: tool.name, Path: path, For: tool.used})
+	}
+	return found
 }

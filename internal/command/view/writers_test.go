@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -158,4 +159,36 @@ func TestVerboseNamesAWholeList(t *testing.T) {
 	streams.SetVerbosity(1)
 	WritePlan(&out, plan, nil, nil, nil, ListShown(streams))
 	require.Contains(t, out.String(), "Changed     "+strings.Join(names, ", ")+"\n", "all twenty at -v")
+}
+
+// A two-release check's report says how long each target took in each
+// release, from the result recorded before it or the run's start, and
+// how long the check ran in each; a reused result says no time (the docs
+// dig's I38).
+func TestTheReportSaysHowLongEachPartTook(t *testing.T) {
+	t.Parallel()
+	sonoma := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	plan := model.Plan{Environments: []model.Environment{sonoma, tahoe}, Builds: []model.EnvironmentPlan{{Environment: sonoma}, {Environment: tahoe}}}
+	start := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
+	ended := func(d time.Duration) *time.Time { at := start.Add(d); return &at }
+	cell := func(environment model.Environment, execution model.ExecutionID, target model.TargetID, at time.Duration) engine.Cell {
+		return engine.Cell{Kind: engine.CellRecorded, Environment: environment, TargetResult: model.TargetResult{Target: target, Outcome: model.OutcomePassed, Execution: execution, RecordedAt: start.Add(at)}}
+	}
+	evidence := engine.Evidence{Run: model.Run{ID: "r1", Number: 12}, Plan: plan,
+		Executions: map[model.ExecutionID]model.GuestExecution{"x1": {ID: "x1", Run: "r1", CreatedAt: start, FinishedAt: ended(13 * time.Minute)}, "x2": {ID: "x2", Run: "r1", CreatedAt: start, FinishedAt: ended(9*time.Minute + 41*time.Second)}},
+		Targets: []engine.TargetEvidence{
+			{Target: model.PlanTarget{ID: "oniguruma", Target: model.Target{Name: "oniguruma"}}, Passed: true, Outcomes: []engine.Cell{cell(sonoma, "x1", "oniguruma", 4*time.Minute+12*time.Second), cell(tahoe, "x2", "oniguruma", 3*time.Minute)}},
+			{Target: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}, Passed: true, Outcomes: []engine.Cell{cell(sonoma, "x1", "jq", 12*time.Minute), cell(tahoe, "x2", "jq", 9*time.Minute)}},
+		}}
+	var out bytes.Buffer
+	WriteResults(&out, "  ", evidence, false)
+	require.Regexp(t, `oniguruma +\S.*\(4m 12s\) +\S.*\(3m 0s\)`, out.String())
+	require.Regexp(t, `jq +\S.*\(7m 48s\) +\S.*\(6m 0s\)`, out.String(), "from the result before it")
+	require.Contains(t, out.String(), "\n  Took 13m 0s on "+engine.DescribeEnvironment(sonoma)+"; 9m 41s on "+engine.DescribeEnvironment(tahoe)+".\n")
+
+	evidence.Targets[1].Outcomes[1].ReusedFrom = "x0"
+	out.Reset()
+	WriteResults(&out, "  ", evidence, false)
+	require.NotContains(t, out.String(), "(6m 0s)", "a reused result took no time here")
 }
