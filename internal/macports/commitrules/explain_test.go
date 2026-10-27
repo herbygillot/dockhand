@@ -35,6 +35,7 @@ func TestEveryRuleIsExplained(t *testing.T) {
 		func(string, []byte) (macports.PortInfo, bool) {
 			return macports.PortInfo{Options: map[string]string{"use_configure": "no"}}, true
 		})...)
+	findings = append(findings, CheckNotices([]Portfile{{Path: "devel/uq/Portfile", After: "license BSD-3-Clause\nsupported_archs noarch\n# depends_lib port:a\n", Files: []string{"stray.diff"}}})...)
 	var reported []string
 	for _, finding := range findings {
 		if !slices.Contains(reported, finding.Code) {

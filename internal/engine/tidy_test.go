@@ -566,3 +566,27 @@ func TestTidyFixesTheLintFindingsOnTheLinesABranchTouches(t *testing.T) {
 	require.Equal(t, want, string(written))
 	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"))
 }
+
+// The survey's other lint-shaped findings are said among tidy's findings,
+// as notices holding nothing: a file the change adds under files/ that the
+// Portfile doesn't name among them.
+func TestTidySaysTheLintShapedNotices(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-hand", Here: true})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{
+		"textproc/jq/Portfile":         "name jq\nversion 1.7.1\nlicense BSD-3-Clause\npatchfiles fix.diff\n",
+		"textproc/jq/files/fix.diff":   "fix\n",
+		"textproc/jq/files/stray.diff": "stray\n",
+	})
+	testsupport.Git(t, branch.Worktree, "add", "-A")
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	var codes []string
+	for _, finding := range plan.Findings {
+		codes = append(codes, finding.Code+" "+finding.Where)
+	}
+	require.ElementsMatch(t, []string{"license-spdx textproc/jq/Portfile:3", "unreferenced-file textproc/jq/files/stray.diff"}, codes)
+}

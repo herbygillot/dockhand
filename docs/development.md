@@ -60,6 +60,29 @@ The rest reach something outside the checkout and run only when named:
 | `DOCKHAND_TEST_TART_IMAGE` | `tart/host` `TestLiveTartContracts`, `tart/guestssh` `TestLiveChannel` | Tart's listing, stop, and delete behavior, and the guest channel, on a clone of the named raw-disk image |
 | `DOCKHAND_TEST_TART_ASIF_SOURCE` | `tart/host` `TestLiveTartListsWhileAnASIFVMRuns` | an ASIF image such as Golden Gate's, cloned and run briefly while Tart lists its VMs; it needs Tart 2.39.0 or newer, and skips on an older one |
 
+## The notices' measure over a tree
+
+`tools/survey`'s `TestTheNoticesOverATree` runs the notices that hold nothing over a whole ports tree, each Portfile read as a new port's, every line one its change adds, the most each could say, and prints every match for a person to read. No snapshot is kept; a phrase or rule that reads wrong is narrowed in its code.
+
+```sh
+MACPORTS_TREE=~/Source/macports-ports DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh go test ./tools/survey -run TestTheNoticesOverATree -v -timeout 2h
+```
+
+`DOCKHAND_MEASURE_RESTATED` sets how many Portfiles `restated` evaluates (200 unless given, 0 for all) and `DOCKHAND_MEASURE_COMMITS` how many commits `ticket-trailer` reads (20,000 unless given).
+
+| Notice | Matches | Wrong | Narrowed by the measure |
+| --- | --- | --- | --- |
+| A maintainer's instruction in the comments (I7) | 49 of 20,231 Portfiles | 1, cpmtools' "do not update the version number" | nothing |
+| `restated` | 19 lines, of 600 Portfiles evaluated | none | nothing |
+| `path-style` | 1,689, pkgconfig's 1,462 first | none | only a port the tree writes path-style, in the form it writes most (libffi's 136 and libheif's 19 had read wrong) |
+| `ticket-trailer` | 10 of the last 20,000 commits | none | a trailer-shaped line in a list or without its colon counts as one, and a ticket a trailer cites is skipped |
+| `license-spdx` | 29 of 20,233 Portfiles | none | WTFPL left out, which the tree writes as often as WTFPL-2 (7 to 8) |
+| `noarch-platforms` | 58 | none seen | only platforms that are darwin, written or by default: go's `darwin >= …` is the maintainer's bound |
+| `commented-code` | 1,085 lines | about 1 in 50, as an English sentence that starts with a Portfile word | a word that is English too (version, copy, file, …) needs Tcl after it and no word such as "with" or "the" next; a build file's name, as meson.build, isn't an option |
+| `unreferenced-file` | 381 files | none seen: they're patches and select files earlier versions and subports used | a file is named by a word that builds it from variables, by its directory under files/, or by a `${filespath}` word of variables alone |
+
+The first four were measured on macports-ports 324108c8883 (20,231 Portfiles), the last four on 9c3d4bd8a7c (20,233). Those four are what the measure says of a whole tree; a change says one only of the lines and files it adds.
+
 ## State and service boundaries
 
 v3 keeps its records in SQLite behind the `internal/store` contract, with `internal/store/sqlite` as the implementation, in `~/.dockhand/dockhand.db` unless `--db` or `DOCKHAND_DB` says otherwise. The schema is `internal/store/sqlite/schema/NNN.sql`, applied in order and only forward: a change to it is a new file, never an edit to one already released. One database holds several ports checkouts, and every read and write names the one it is for. v2's `state.db` is never read.

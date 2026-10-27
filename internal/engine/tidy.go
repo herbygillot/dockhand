@@ -892,9 +892,23 @@ func (e *Engine) portfileFindings(ctx context.Context, repo *git.Repository, bef
 		if err != nil {
 			continue
 		}
-		portfiles = append(portfiles, commitrules.Portfile{Path: path, Before: string(old), After: string(current)})
+		// The files the change adds under the port's files/, for the
+		// notice of one nothing names.
+		var added []string
+		files := strings.TrimSuffix(path, "Portfile") + "files/"
+		for _, other := range changed {
+			if name, ok := strings.CutPrefix(other, files); ok {
+				if state, _, err := repo.File(ctx, before, other); err == nil && !state.Exists {
+					if now, _, err := repo.File(ctx, after, other); err == nil && now.Exists {
+						added = append(added, name)
+					}
+				}
+			}
+		}
+		portfiles = append(portfiles, commitrules.Portfile{Path: path, Before: string(old), After: string(current), Files: added})
 	}
 	findings := commitrules.CheckPortfiles(portfiles, e.versionOrder(ctx))
+	findings = append(findings, commitrules.CheckNotices(portfiles)...)
 	findings = append(findings, commitrules.CheckDependencies(portfiles, e.providers(ctx, after))...)
 	return append(findings, commitrules.CheckRestated(portfiles, e.evaluateText(ctx, repo, after))...), nil
 }

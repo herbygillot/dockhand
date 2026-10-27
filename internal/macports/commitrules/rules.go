@@ -219,6 +219,9 @@ func namesPort(prefix string, ports []string) bool {
 type Portfile struct {
 	Path          string
 	Before, After string
+	// Files are the files the change adds under the port's files/, as
+	// paths from it, "patch-fix.diff" or "a/b.patch".
+	Files []string
 }
 
 // Order orders two versions as MacPorts' vercmp does, negative where a is

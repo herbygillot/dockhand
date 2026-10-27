@@ -110,3 +110,26 @@ func TestTheTarballMovesToTheArchive(t *testing.T) {
 		}
 	}
 }
+
+// A comment of prose isn't commented-out code, though it starts with a
+// word a Portfile writes; one with Tcl after the word is.
+func TestCommentedCodeIsTclNotProse(t *testing.T) {
+	t.Parallel()
+	after := "# version 5.5.1 of qtwebengine must find python\n# copy the license\n# conflicts with the file \"expat\" installs\n# meson.build uses the GTK+ 3 backend\n#version ${github.version}\n# configure.args-append --disable-werror\n"
+	var lines []int
+	for _, found := range CommentedCode(nil, []byte(after)) {
+		lines = append(lines, found.Line)
+	}
+	require.Equal(t, []int{5, 6}, lines)
+}
+
+// A file of files/ is named by its name, by a word that builds it from
+// variables, or by a word under ${filespath} of variables alone.
+func TestAPortfileNamesItsFiles(t *testing.T) {
+	t.Parallel()
+	require.True(t, NamesFile([]byte("patchfiles patch-a.diff\n"), "patch-a.diff"))
+	require.True(t, NamesFile([]byte("select.file ${filespath}/py${python.version}-${python.rootname}\n"), "py312-csvkit"))
+	require.True(t, NamesFile([]byte("select.file ${filespath}/${subport}\n"), "php82"))
+	require.True(t, NamesFile([]byte("copy ${filespath}/prefix ${destroot}\n"), "prefix/etc/a.conf"))
+	require.False(t, NamesFile([]byte("patchfiles patch-a.diff\n"), "patch-old.diff"))
+}

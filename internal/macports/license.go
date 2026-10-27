@@ -143,6 +143,32 @@ func balanced(tokens []string) bool {
 	return depth == 0
 }
 
+// SPDXNamed is a license a Portfile's license line names by its SPDX
+// identifier, where MacPorts' name for it differs.
+type SPDXNamed struct {
+	SPDX, Name string
+}
+
+// SPDXNames are the licenses a license line names by their SPDX
+// identifiers where MacPorts names them otherwise, each with MacPorts'
+// name: BSD-3-Clause is BSD, Apache-2.0 Apache-2 (the review survey's §8).
+// One MacPorts names the same, as MIT, isn't among them, nor WTFPL, which
+// the tree writes as often as WTFPL-2 (7 ports to 8, the measure over the
+// Mac's tree); a line that isn't a Tcl list names none.
+func SPDXNames(line string) []SPDXNamed {
+	names, ok := licenseNames(line)
+	if !ok {
+		return nil
+	}
+	var found []SPDXNamed
+	for _, name := range names {
+		if macports, known := spdxLicenses[name]; known && macports != name && name != "WTFPL" {
+			found = append(found, SPDXNamed{SPDX: name, Name: macports})
+		}
+	}
+	return found
+}
+
 // LicenseNames reports whether a Portfile's license line names each
 // license another line does, as one that applies or among a choice: zola's
 // "EUPL-1.2 MIT" names Cargo.toml's EUPL-1.2, and "MIT" doesn't. A line
