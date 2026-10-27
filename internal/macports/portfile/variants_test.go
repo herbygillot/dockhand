@@ -121,3 +121,15 @@ func TestAMaintainersInstructionInACommentIsFound(t *testing.T) {
 	}, portfile.Instructions(src, "dav1d"))
 	require.Empty(t, portfile.Instructions([]byte("name jq\n# Thanks to the maintainer.\n"), ""))
 }
+
+// The lines a change adds at a Portfile's top are each with the Portfile
+// without it, and a line it kept, or one in a body, isn't one.
+func TestTheLinesAChangeAddsAreEachWithoutIt(t *testing.T) {
+	t.Parallel()
+	before := []byte("PortGroup github 1.0\ngithub.setup jqlang jq 1.8.1 jq-\nrevision 0\n")
+	after := []byte("PortGroup github 1.0\ngithub.setup jqlang jq 1.8.1 jq-\nversion  1.8.1\nrevision 0\nuse_configure no\nplatform darwin {\n    use_parallel_build no\n}\n")
+	added := portfile.AddedLines(before, after)
+	require.Len(t, added, 2, "the block's a command spanning several lines, so it isn't one")
+	require.Equal(t, portfile.AddedLine{Line: 3, Option: "version", Text: "version 1.8.1", Without: []byte("PortGroup github 1.0\ngithub.setup jqlang jq 1.8.1 jq-\nrevision 0\nuse_configure no\nplatform darwin {\n    use_parallel_build no\n}\n")}, added[0])
+	require.Equal(t, "use_configure", added[1].Option)
+}

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 // TestEveryRuleIsExplained keeps the rules and their explanations in step:
@@ -17,6 +19,7 @@ func TestEveryRuleIsExplained(t *testing.T) {
 		{ID: "b", Message: "jq: fix checksums\n", Ports: []string{"jq"}},
 		{ID: "c", Message: "jq: " + strings.Repeat("y", 70) + "\n", Ports: []string{"jq"}, Merge: true},
 		{ID: "d", Message: "jq: fix\n", Ports: []string{"jq"}},
+		{ID: "e", Message: "jq: update to 1.8.1\n\nThis fixes https://trac.macports.org/ticket/71234.\n", Ports: []string{"jq"}},
 	})
 	lower := func(a, b string) (int, bool) { return strings.Compare(a, b), true }
 	findings = append(findings, CheckPortfiles([]Portfile{
@@ -26,6 +29,12 @@ func TestEveryRuleIsExplained(t *testing.T) {
 		{Path: "devel/zq/Portfile", Before: "version 1\ndepends_lib port:a\n", After: "version 1\ndepends_lib port:b\n"},
 		{Path: "devel/xq/Portfile", Before: "version 1\ndepends_build port:a\n", After: "version 1\nrevision 1\ndepends_build port:b\n"},
 	}, lower)...)
+	findings = append(findings, CheckDependencies([]Portfile{{Path: "devel/wq/Portfile", After: "depends_build port:pkgconfig\n"}},
+		func(port string) []string { return []string{"pkgconf"} })...)
+	findings = append(findings, CheckRestated([]Portfile{{Path: "devel/vq/Portfile", After: "use_configure no\n"}},
+		func(string, []byte) (macports.PortInfo, bool) {
+			return macports.PortInfo{Options: map[string]string{"use_configure": "no"}}, true
+		})...)
 	var reported []string
 	for _, finding := range findings {
 		if !slices.Contains(reported, finding.Code) {

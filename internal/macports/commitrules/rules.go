@@ -17,6 +17,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -107,7 +108,11 @@ var (
 	// rather than make a change of their own.
 	followUp   = regexp.MustCompile(`(?i)^(fixup!|squash!|amend!)|\b(oops|typo|address(ed)? (review|comments|feedback)|review (comments|feedback)|fix (checksums?|the build|lint|previous|last commit|revision))\b`)
 	bareTicket = regexp.MustCompile(`(^|[\s(])#(\d{4,})\b`)
-	longURL    = regexp.MustCompile(`^\S*https?://\S+$`)
+	// tracTicket is a Trac ticket cited by its URL, and ticketTrailer a
+	// trailer line that cites one, as Closes: or See: does.
+	tracTicket    = regexp.MustCompile(`https?://trac\.macports\.org/ticket/(\d+)\b`)
+	ticketTrailer = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*:\s+\S*https?://trac\.macports\.org/ticket/\d+`)
+	longURL       = regexp.MustCompile(`^\S*https?://\S+$`)
 	// urlTrailer is a trailer whose value ends in a URL, as Closes:
 	// https://trac.macports.org/ticket/71234, or Generated-By's "Dockhand
 	// <build> (https://github.com/herbygillot/dockhand)", which may run
@@ -152,6 +157,8 @@ func CheckCommits(commits []Commit) []Finding {
 		}
 		if m := bareTicket.FindStringSubmatch(commit.Message); m != nil {
 			add("ticket-url", Warning, "cites #%s; cite tickets as full URLs, such as Closes: https://trac.macports.org/ticket/%s", m[2], m[2])
+		} else if ticket := untrailedTicket(subject, body); ticket != "" {
+			add("ticket-trailer", Warning, "cites Trac ticket %s outside a trailer; if this fixes it, say Closes: https://trac.macports.org/ticket/%s in the body (update's --closes %s writes it), or See: if it doesn't", ticket, ticket, ticket)
 		}
 		if i > 0 && followUp.MatchString(subject) && slices.ContainsFunc(commit.Ports, func(p string) bool { return seen[p] }) {
 			add("follow-up", Error, "%q corrects an earlier commit; squash it into that one (dockhand tidy)", subject)
@@ -161,6 +168,24 @@ func CheckCommits(commits []Commit) []Finding {
 		}
 	}
 	return findings
+}
+
+// untrailedTicket is the first Trac ticket a message cites by its URL in
+// its subject, or in its body outside a trailer line such as Closes: or
+// See:, where reviewers ask for it as a trailer (the review survey's
+// §3, 6 PRs: "The Trac ticket should not be in the short summary",
+// #31382); empty where every one it cites is a trailer's.
+func untrailedTicket(subject, body string) string {
+	if m := tracTicket.FindStringSubmatch(subject); m != nil {
+		return m[1]
+	}
+	for line := range strings.SplitSeq(body, "\n") {
+		line = strings.TrimSpace(line)
+		if m := tracTicket.FindStringSubmatch(line); m != nil && !ticketTrailer.MatchString(line) {
+			return m[1]
+		}
+	}
+	return ""
 }
 
 // namesPort reports whether a subject's prefix, "jq" or "jq, jq-devel",
@@ -307,4 +332,138 @@ func epochs(old, next []byte) (before, after int, ok bool) {
 	before, knownBefore := read(old)
 	after, knownAfter := read(next)
 	return before, after, knownBefore && knownAfter
+}
+
+// Providers are the other ports that can satisfy a dependency on a port,
+// as the caller found them by evaluating each: a port whose conflicts
+// names it, as pkgconf's names pkgconfig and OpenBLAS-devel's OpenBLAS,
+// installs the same files. Nil where none can be read.
+type Providers func(port string) []string
+
+// knownPaths are the files the tree's path-style dependencies name for the
+// ports the review survey found asked of (§5): pkg-config for pkgconfig,
+// so pkgconf satisfies it, and OpenBLAS's library, so OpenBLAS-devel does.
+var knownPaths = map[string]string{"pkgconfig": "bin/pkg-config", "OpenBLAS": "lib/libopenblas.dylib"}
+
+// CheckDependencies offers a path-style dependency for each port:
+// dependency a change adds where another port can satisfy it, as reviewers
+// ask (the review survey's §5, 8 PRs: path:bin/pkg-config:pkgconfig, so
+// pkgconf does): a notice, holding nothing, on the lines the change
+// touched alone, and its claim that another port provides the files the
+// providers' evaluation's to make.
+func CheckDependencies(portfiles []Portfile, providers Providers) []Finding {
+	if providers == nil {
+		return nil
+	}
+	var findings []Finding
+	for _, p := range portfiles {
+		if p.After == "" {
+			continue
+		}
+		offered := map[string]bool{}
+		for _, dependency := range portfile.AddedPortDependencies([]byte(p.Before), []byte(p.After)) {
+			if offered[dependency.Port] {
+				continue
+			}
+			others := providers(dependency.Port)
+			if len(others) == 0 {
+				continue
+			}
+			offered[dependency.Port] = true
+			form := "path:<a file both install>:" + dependency.Port
+			if file, ok := knownPaths[dependency.Port]; ok {
+				form = "path:" + file + ":" + dependency.Port
+			}
+			findings = append(findings, Finding{Code: "path-style", Severity: Warning, Where: fmt.Sprintf("%s:%d", p.Path, dependency.Line),
+				Message: fmt.Sprintf("%s takes port:%s, which %s can satisfy too; a path-style dependency, %s, lets either", dependency.Option, dependency.Port, strings.Join(others, " or "), form)})
+		}
+	}
+	return findings
+}
+
+// Evaluate is a Portfile's main port as MacPorts evaluates a text of it at
+// path; false where it can't be evaluated.
+type Evaluate func(path string, text []byte) (macports.PortInfo, bool)
+
+// restatable are the options the review survey found set to what a
+// PortGroup or base sets already (§1, 35 PRs): github.setup's and
+// go.setup's name, version, homepage, master_sites, and distname, the
+// cargo PortGroup's use_configure, the python PortGroup's python.pep517,
+// and use_parallel_build.
+var restatable = []string{"name", "version", "homepage", "master_sites", "distname", "use_configure", "use_parallel_build", "python.pep517"}
+
+// CheckRestated says each line a change adds that sets what the Portfile's
+// PortGroups or base set already, by evaluating the Portfile without it,
+// the alternative: a restatable option evaluating the same, or a
+// dependency line of one port: dependency, as the python PortGroup's
+// py-setuptools or golang's go, still declared in the same phase (the
+// review survey's §1). A notice, holding nothing, on the lines the change
+// touched alone; a line whose Portfile can't be evaluated either way
+// isn't said.
+func CheckRestated(portfiles []Portfile, evaluate Evaluate) []Finding {
+	if evaluate == nil {
+		return nil
+	}
+	var findings []Finding
+	for _, p := range portfiles {
+		if p.After == "" {
+			continue
+		}
+		var with *macports.PortInfo
+		for _, line := range portfile.AddedLines([]byte(p.Before), []byte(p.After)) {
+			option, _, _ := strings.Cut(line.Option, "-")
+			phase, dependency := strings.CutPrefix(option, "depends_")
+			if !slices.Contains(restatable, line.Option) && !dependency {
+				continue
+			}
+			var port string
+			if dependency {
+				words := strings.Fields(line.Text)[1:]
+				if len(words) != 1 || !strings.HasPrefix(words[0], "port:") {
+					continue
+				}
+				port = strings.TrimPrefix(words[0], "port:")
+			}
+			if with == nil {
+				info, ok := evaluate(p.Path, []byte(p.After))
+				if !ok {
+					break
+				}
+				with = &info
+			}
+			without, ok := evaluate(p.Path, line.Without)
+			if !ok {
+				continue
+			}
+			same := false
+			if dependency {
+				same = slices.ContainsFunc(without.Dependencies, func(d macports.Dependency) bool { return d.Phase == phase && d.Port == port })
+			} else {
+				value, known := optionValue(*with, line.Option)
+				other, knownWithout := optionValue(without, line.Option)
+				same = known && knownWithout && value == other
+			}
+			if same {
+				findings = append(findings, Finding{Code: "restated", Severity: Warning, Where: fmt.Sprintf("%s:%d", p.Path, line.Line),
+					Message: fmt.Sprintf("%q restates what its PortGroups or MacPorts set already: without it, the port evaluates the same", line.Text)})
+			}
+		}
+	}
+	return findings
+}
+
+// optionValue is an option of an evaluated port, its name and version
+// among them; false where the evaluation didn't settle it.
+func optionValue(info macports.PortInfo, option string) (string, bool) {
+	switch option {
+	case "name":
+		return info.Name, info.Name != ""
+	case "version":
+		return info.Version, info.Version != ""
+	}
+	if _, failed := info.OptionErrors[option]; failed {
+		return "", false
+	}
+	value, ok := info.Options[option]
+	return value, ok
 }
