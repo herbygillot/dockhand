@@ -3,14 +3,18 @@ package portedit
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"os"
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/refusal"
+	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
 // StealthRequest asks a checksum refresh to treat an archive whose contents
@@ -43,6 +47,14 @@ type Stealth struct {
 	// why.
 	DistSubdir string
 	Problem    string
+	// Unchanged is true where each archive's tree is the one MacPorts
+	// shipped, file for file: only its packaging differs, and nothing is
+	// revbumped. Differ are the files that differ where one doesn't, a
+	// few; CompareProblem why the shipped archive couldn't be compared
+	// (the docs dig's I19).
+	Unchanged      bool
+	Differ         []string
+	CompareProblem string
 }
 
 // StealthDistfile is one archive's checksums before and after.
@@ -94,6 +106,14 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 	result.Stealth = found
 	previous := result.Prepared
 	contents := result.Files[0].After
+	// What changed decides the revision, where nobody already has: a
+	// regenerated archive whose files are the ones MacPorts shipped, as
+	// gitea-tea's renamed root and 24 bytes of tar metadata, isn't a new
+	// source, while a re-roll could be a security event.
+	if !keep {
+		s.stealthContents(ctx, input, result, found)
+		keep = found.Unchanged
+	}
 	if !keep {
 		bumped, err := s.bumpRevision(ctx, input, contents, previous.Ports[name].Revision)
 		if err != nil {
@@ -123,6 +143,60 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 		found.DistSubdir = result.Prepared.Ports[name].Options["dist_subdir"]
 	}
 	return nil
+}
+
+// stealthContents compares each archive whose checksum changed with the one
+// MacPorts shipped under its name, fetched as shipped (distfetch's
+// Shipped, from MacPorts' mirror under the port's dist_subdir, since
+// upstream serves the new one), as archive.Tree reads them: Unchanged where
+// every tree is the same, else the files that differ. Where an archive
+// can't be had or read, it says why, and the caller revbumps as before.
+func (s *Service) stealthContents(ctx context.Context, input *sourceInput, result *Result, found *Stealth) {
+	directory, err := scratch.Dir("stealth-")
+	if err != nil {
+		found.CompareProblem = err.Error()
+		return
+	}
+	defer os.RemoveAll(directory)
+	store := s.Archives.Store(directory)
+	name := input.target.Name
+	shippedInfo, now := result.Fidelity[0].Before.Ports[name], result.Prepared.Ports[name]
+	var differ []string
+	for _, distfile := range found.Distfiles {
+		i := slices.IndexFunc(result.Downloads, func(d distfetch.Download) bool { return d.Name == distfile.Name })
+		if i < 0 {
+			found.CompareProblem = distfile.Name + " wasn't fetched"
+			return
+		}
+		fetched := result.Downloads[i]
+		next, err := store.Fetch(ctx, now, distfetch.Source{Name: fetched.Name, URL: fetched.URL})
+		if err == nil && distfetch.Differs(fetched.Checksum, next.Checksum) {
+			err = fmt.Errorf("upstream's %s changed again while it was compared", fetched.Name)
+		}
+		if err != nil {
+			found.CompareProblem = refusal.WordsOf(err)
+			return
+		}
+		shipped, err := store.Shipped(ctx, shippedInfo, []macports.Distfile{{Name: fetched.Name, URLs: []string{fetched.URL}}})
+		if err != nil {
+			found.CompareProblem = "the archive MacPorts shipped couldn't be fetched: " + refusal.WordsOf(err)
+			return
+		}
+		old, err := archive.Tree(ctx, shipped[0].Path)
+		if err == nil {
+			var tree map[string]string
+			if tree, err = archive.Tree(ctx, next.Path); err == nil {
+				differ = append(differ, archive.Differences(old, tree)...)
+			}
+		}
+		if err != nil {
+			found.CompareProblem = fmt.Sprintf("%s couldn't be read to compare: %s", fetched.Name, refusal.WordsOf(err))
+			return
+		}
+	}
+	found.Unchanged = len(differ) == 0
+	found.Differ = differ
+	progress.VerboseReport(ctx, "Compared %d archive(s) with what MacPorts shipped: %d file(s) differ", len(found.Distfiles), len(differ))
 }
 
 // dropStealthDistSubdir removes a stealth update's dist_subdir from a
