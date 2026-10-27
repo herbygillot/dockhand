@@ -25,6 +25,10 @@ type Built struct {
 	Listed bool
 	// Lint, Dependencies, and Install say a step failed.
 	Lint, Dependencies, Install bool
+	// LintWarnings are what lint warned of, from the lint step's
+	// annotation, each "Warning: " line without its prefix, once (the docs
+	// dig's I13); nil where the log annotated none.
+	LintWarnings []string
 	// Installing is true when the workflow began installing it, and
 	// Installed when that step ended, its group closed.
 	Installing, Installed bool
@@ -186,8 +190,12 @@ func ReadLog(log []byte) map[string]*Built {
 		case listing && line != "" && !strings.ContainsAny(line, " :"):
 			get(line).Listed = true
 		case strings.HasPrefix(trimMarker(line), "port lint "):
-			name, _, _ := strings.Cut(strings.TrimPrefix(trimMarker(line), "port lint "), ":")
+			name, said, _ := strings.Cut(strings.TrimPrefix(trimMarker(line), "port lint "), ":")
 			get(name).Lint = true
+			get(name).warned(said)
+		case strings.HasPrefix(trimWarning(line), "port lint "):
+			name, said, _ := strings.Cut(strings.TrimPrefix(trimWarning(line), "port lint "), ":")
+			get(name).warned(said)
 		case strings.HasPrefix(trimMarker(line), "Failed to install dependencies for "):
 			get(strings.TrimPrefix(trimMarker(line), "Failed to install dependencies for ")).Dependencies = true
 		case strings.HasPrefix(trimMarker(line), "Failed to install "):
@@ -206,6 +214,30 @@ func ReadLog(log []byte) map[string]*Built {
 		}
 	}
 	return built
+}
+
+// warned keeps the Warning: lines of a lint annotation's message, whose
+// lines the workflow joins with %0A, as GitHub's annotations take them.
+func (b *Built) warned(message string) {
+	for _, line := range strings.Split(message, "%0A") {
+		if said, ok := strings.CutPrefix(strings.TrimSpace(line), "Warning: "); ok && said != "" && !slices.Contains(b.LintWarnings, said) {
+			b.LintWarnings = append(b.LintWarnings, said)
+		}
+	}
+}
+
+// trimWarning is a warning line's message, as trimMarker is an error
+// line's: "::warning file=…::message", or "##[warning]message".
+func trimWarning(line string) string {
+	if message, ok := strings.CutPrefix(line, "##[warning]"); ok {
+		return message
+	}
+	if rest, ok := strings.CutPrefix(line, "::warning"); ok {
+		if _, message, ok := strings.Cut(rest, "::"); ok {
+			return message
+		}
+	}
+	return ""
 }
 
 // groupTitle is a group heading's title, as the workflow writes it or as

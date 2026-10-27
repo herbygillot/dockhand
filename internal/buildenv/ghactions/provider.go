@@ -534,6 +534,16 @@ func verdict(name string, runners []runner) (model.TargetResult, bool) {
 		}
 		part.Tests, part.Log = built.Tests(), r.log
 		parts = append(parts, part)
+		// What lint warned of on any runner, each once: the workflow
+		// lints without --nitpick (the docs dig's I13).
+		if result.Lint == nil {
+			result.Lint = []string{}
+		}
+		for _, said := range built.LintWarnings {
+			if !slices.Contains(result.Lint, said) {
+				result.Lint = append(result.Lint, said)
+			}
+		}
 		switch {
 		case part.Outcome == model.OutcomeFailed:
 			if failed == nil {
@@ -565,7 +575,7 @@ func verdict(name string, runners []runner) (model.TargetResult, bool) {
 	case !built:
 		return model.TargetResult{}, false
 	case failed != nil:
-		result = model.TargetResult{Outcome: model.OutcomeFailed, Phase: failed.Phase, Tests: failed.Tests, Log: failed.Log, Detail: "on " + failed.Builder}
+		result = model.TargetResult{Outcome: model.OutcomeFailed, Phase: failed.Phase, Tests: failed.Tests, Log: failed.Log, Detail: "on " + failed.Builder, Lint: result.Lint}
 		if why != "" {
 			result.Detail += ": " + why
 		}

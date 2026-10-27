@@ -328,7 +328,13 @@ type TargetResult struct {
 	// find", meson's "Dependency … found", each once, as found and not
 	// where: what a check of the next version diffs (Then's item 10). Nil
 	// where its provider didn't read them.
-	Configure  []string `json:",omitempty"`
+	Configure []string `json:",omitempty"`
+	// Lint is what port lint warned of, each "Warning:" line without its
+	// prefix, and Nitpicked says lint ran with --nitpick, as it does for a
+	// port the branch adds (the docs dig's I13). Nil where its provider
+	// didn't read them.
+	Lint       []string `json:",omitempty"`
+	Nitpicked  bool     `json:",omitempty"`
 	RecordedAt time.Time
 }
 

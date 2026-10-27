@@ -591,6 +591,15 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 		// What the latest check's builds link and don't declare, a notice
 		// (v0.5.0 part 6).
 		if status.Latest != nil {
+			// What lint warned of, as the check's report says (the docs
+			// dig's I13).
+			for i, line := range view.LintLines(report.Lint[status.Latest.ID]) {
+				label := "         "
+				if i == 0 {
+					label = "Lint     "
+				}
+				fmt.Fprintf(out, "  %s%s %s\n", label, line.Mark, line.Words)
+			}
 			if links, ok := report.Links[status.Latest.ID]; ok {
 				for i, line := range view.LinkLines(links) {
 					label := "         "

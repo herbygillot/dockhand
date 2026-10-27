@@ -223,6 +223,11 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 	}
 	fmt.Fprintln(out)
 	view.WriteResults(out, "  ", evidence, false)
+	// What lint warned of, a new port's counted as ✗ (the docs dig's I13).
+	if lint := engine.LintFindings(evidence); len(lint) > 0 {
+		fmt.Fprintln(out)
+		view.WriteLint(out, lint)
+	}
 	// What its builds link and don't declare is a notice (v0.5.0 part 6);
 	// one that couldn't be gathered says nothing.
 	if links, err := e.UndeclaredLinks(ctx, run); err == nil && len(links) > 0 {

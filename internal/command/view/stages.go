@@ -173,6 +173,41 @@ func InstalledLines(findings []engine.InstallFinding) []LinkLine {
 	return lines
 }
 
+// LintLines are what lint warned of, a line for each target's warning in
+// an environment: a new port's marked ✗, as they hold submit, an update's
+// a notice, and a new port lint didn't nitpick said so (the docs dig's
+// I13).
+func LintLines(findings []engine.LintFinding) []LinkLine {
+	var lines []LinkLine
+	for _, finding := range findings {
+		on := engine.DescribeEnvironment(finding.Environment)
+		mark := Look
+		if finding.Holds {
+			mark = Broken
+		}
+		for _, said := range finding.Lines {
+			lines = append(lines, LinkLine{mark, fmt.Sprintf("%s: %s on %s", finding.Target, said, on)})
+		}
+		if finding.NotNitpicked {
+			lines = append(lines, LinkLine{Unmarked, fmt.Sprintf("%s: a new port, linted without --nitpick on %s, so its nitpicks weren't read", finding.Target, on)})
+		}
+	}
+	return lines
+}
+
+// WriteLint says what lint warned of under a heading; nothing where it
+// warned of nothing.
+func WriteLint(out io.Writer, findings []engine.LintFinding) {
+	lines := LintLines(findings)
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "Lint")
+	for _, line := range lines {
+		fmt.Fprintf(out, "  %s %s\n", line.Mark, line.Words)
+	}
+}
+
 // WriteLinks says a check's link findings, each a notice under a heading;
 // nothing where it has none.
 func WriteLinks(out io.Writer, findings []engine.LinkFinding) {

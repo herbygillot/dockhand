@@ -134,7 +134,13 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 //
 // Since Then's item 10, it also keeps the configure summary's lines from
 // a passed build's log: an observation, so the protocol stays 3.
-const guestPin = "0072d018621df5146b596d6d11ca3ac7f7be62e709fc4952a05e8891e483fdc7"
+//
+// Since the docs dig's I13, it lints a port the branch adds with
+// --nitpick and keeps each target's lint warnings. Lint fails on errors
+// alone, and every --nitpick finding is a warning (base's portlint.tcl at
+// v2.12.6), so nothing is built or judged otherwise, and the protocol
+// stays 3.
+const guestPin = "e7826ca62e358ea4abefd869792c8351f2b3acbb9dd935cfe39add31c1fcf37b"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

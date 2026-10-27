@@ -45,16 +45,19 @@ const (
 	BuildAgain             Reason = "build-again"
 	Unbuilt                Reason = "unbuilt"
 	ExtraFailed            Reason = "extra-failed"
-	CommitForReview        Reason = "commit-for-review"
-	Held                   Reason = "held"
-	SourceMoved            Reason = "source-moved"
-	NotAssessed            Reason = "not-assessed"
-	WaitingToSubmit        Reason = "waiting-to-submit"
-	CheckWider             Reason = "check-wider"
-	WorkPastMerge          Reason = "work-past-merge"
-	Conflicting            Reason = "conflicting"
-	AcceptedToSubmit       Reason = "accepted-to-submit"
-	NotPushed              Reason = "not-pushed"
+	// LintWarned is a new port lint warned of, which submit asks to fix
+	// or accept (the docs dig's I13).
+	LintWarned       Reason = "lint-warned"
+	CommitForReview  Reason = "commit-for-review"
+	Held             Reason = "held"
+	SourceMoved      Reason = "source-moved"
+	NotAssessed      Reason = "not-assessed"
+	WaitingToSubmit  Reason = "waiting-to-submit"
+	CheckWider       Reason = "check-wider"
+	WorkPastMerge    Reason = "work-past-merge"
+	Conflicting      Reason = "conflicting"
+	AcceptedToSubmit Reason = "accepted-to-submit"
+	NotPushed        Reason = "not-pushed"
 )
 
 // The verbs a verdict's Next names (refusal).
@@ -334,9 +337,21 @@ func Attend(facts Facts) []Attention {
 		}
 		return nil
 	case CheckPassed:
+		var linted []string
+		for _, block := range LintBlocks(*check.Evidence, check.Accepted) {
+			linted = append(linted, block.Port)
+		}
 		switch {
 		case len(b.Edited) > 0:
 			return row(Ready, CommitForReview, Next{Verb: VerbTidy}, func(a *Attention) { a.Revision = b.Revision })
+		case b.Record.PullRequest == nil && len(linted) > 0:
+			// A new port's lint warnings count as ✗, which submit asks to
+			// fix or accept, as a failed extra's.
+			accept := submitNext(b)
+			for _, port := range linted {
+				accept.Args = append(accept.Args, "--accept", port)
+			}
+			return row(NeedsYou, LintWarned, accept, func(a *Attention) { a.Run, a.Ports = run, linted })
 		case b.Record.PullRequest == nil && len(b.Held) > 0:
 			// Paused where serve prepared it, as serve holds it; a person's
 			// own submission shows it and goes on, as submit does (the
@@ -489,6 +504,8 @@ func (a Attention) Words(v Vocabulary) string {
 		return fmt.Sprintf("%s passed, but no check of these files built %s", a.Run.Name(), strings.Join(a.Ports, ", "))
 	case ExtraFailed:
 		return fmt.Sprintf("%s passed the checks required for submission, but %s did not pass. Review the failure before accepting it for submission", a.Run.Name(), strings.Join(a.Ports, ", "))
+	case LintWarned:
+		return fmt.Sprintf("%s passed, but lint --nitpick warned of the new %s %s. Fix what it says (dockhand status %s), or accept it for submission", a.Run.Name(), map[bool]string{true: "port", false: "ports"}[len(a.Ports) == 1], prose.And(a.Ports), a.Branch)
 	case CommitForReview:
 		return v.Revision(*a.Revision) + " passed; commit it for review"
 	case Held, SourceMoved:

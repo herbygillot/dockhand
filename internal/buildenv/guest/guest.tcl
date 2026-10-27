@@ -58,7 +58,7 @@ proc save {state {detail ""}} {
     foreach result $results {
         set fields {}
         dict for {key value} $result {
-            if {$key in {installed configure}} {
+            if {$key in {installed configure lint}} {
                 lappend fields $key [json::write array {*}[lmap file $value { json::write string $file }]]
             } elseif {$key in {active links libraries}} {
                 set ports {}
@@ -68,6 +68,8 @@ proc save {state {detail ""}} {
                     lappend ports [json::write object {*}$object]
                 }
                 lappend fields $key [json::write array {*}$ports]
+            } elseif {$key eq "nitpick"} {
+                lappend fields $key [expr {$value ? "true" : "false"}]
             } elseif {$key eq "steps"} {
                 set steps {}
                 foreach entry $value {
@@ -515,6 +517,23 @@ proc summary {log} {
     return $found
 }
 
+# warnings are what lint warned of, each "Warning: " line since the
+# step began, without its prefix, each once (the docs dig's I13).
+proc warnings {log} {
+    global counted
+    set from 0
+    if {[dict exists $counted $log]} { set from [lindex [dict get $counted $log] 0] }
+    set fd [open $log r]
+    seek $fd $from
+    set text [read $fd]
+    close $fd
+    set found {}
+    foreach line [split $text \n] {
+        if {[regexp {^Warning: (.+)$} [string trim $line] -> said] && $said ni $found} { lappend found $said }
+    }
+    return $found
+}
+
 # contents are the files a target installed, as port contents lists them,
 # which the link scan and the install names read, and which its result
 # keeps (Then's item 9, the docs dig's I14).
@@ -755,11 +774,22 @@ proc build {index target} {
     set deadline [expr {[clock seconds] + $buildBound}]
     set left [list apply {{deadline} { expr {max(1, $deadline - [clock seconds])} }} $deadline]
     set over "the build ran past its [bound_words $buildBound] bound (providers.tart.build_timeout), so it was ended"
+    # A port the branch adds is linted with --nitpick, as MacPorts asks
+    # of a new port, and every target's warnings are kept: lint fails on
+    # errors alone, and warns and goes on (the docs dig's I13).
+    set nitpick {}
+    if {[dict exists $target added] && [dict get $target added]} {
+        set nitpick --nitpick
+        dict set result nitpick 1
+    }
     mark result $log lint
-    if {[set message [timed $log [concat $here lint $selection] $lintBound]] eq "timed out"} {
+    if {[set message [timed $log [concat $here lint $nitpick $selection] $lintBound]] eq "timed out"} {
         return [{*}$fail $result lint "lint ran past its [bound_words $lintBound] bound, so it was ended"]
     } elseif {$message ne ""} {
         return [{*}$fail $result lint [why $log $message]]
+    }
+    if {![catch {warnings $log} said]} {
+        dict set result lint $said
     }
     set dependencies [fact $port -q echo depof:$name]
     if {$dependencies ne ""} {

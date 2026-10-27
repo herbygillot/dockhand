@@ -79,3 +79,20 @@ func TestALongLineDoesNotEndTheLogsReading(t *testing.T) {
 	require.Equal(t, model.TestsFailed, built["jq"].Tests())
 	require.True(t, built["harbor"].Install, "the last marker is read")
 }
+
+// What lint warned of is read from the lint step's annotation, whose
+// lines the workflow joins with %0A, an error's warnings with its errors
+// (the docs dig's I13).
+func TestLintsWarningsAreReadFromItsAnnotation(t *testing.T) {
+	built := ReadLog([]byte(`##[group]Listing subports
+jq
+harbor
+##[endgroup]
+##[warning]port lint jq:%0AWarning: Line 3 has trailing whitespace%0AWarning: no license set%0A
+::error file=devel/harbor/Portfile,line=1,col=1::port lint harbor:%0AError: Unknown dependency: foo%0AWarning: Line 3 has trailing whitespace%0A
+`))
+	require.Equal(t, []string{"Line 3 has trailing whitespace", "no license set"}, built["jq"].LintWarnings)
+	require.False(t, built["jq"].Lint, "a warning fails nothing")
+	require.Equal(t, []string{"Line 3 has trailing whitespace"}, built["harbor"].LintWarnings)
+	require.True(t, built["harbor"].Lint)
+}
