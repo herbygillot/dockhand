@@ -27,6 +27,17 @@ func (e *Evaluator) SelectVersion(ctx context.Context, current, expression strin
 	return versions.SelectVersion(ctx, current, expression, candidates)
 }
 
+// CompareVersions orders two versions with MacPorts vercmp: negative where
+// a is lower, zero where they're equal, positive where it's higher.
+func (e *Evaluator) CompareVersions(ctx context.Context, a, b string) (_ int, err error) {
+	versions, err := e.versions(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { err = errors.Join(err, versions.Close()) }()
+	return versions.CompareVersions(ctx, a, b)
+}
+
 // ExtractVersions collects all distinct first captures using native Tcl regex
 // semantics and Base's line-oriented regex livecheck behavior. With
 // multiline it is Base's regexm instead: one match against the whole page,
@@ -97,6 +108,19 @@ func (v *versionSession) SelectVersion(ctx context.Context, current, expression 
 		result.Indices = append(result.Indices, index)
 	}
 	return result, nil
+}
+
+func (v *versionSession) CompareVersions(ctx context.Context, a, b string) (int, error) {
+	reply, err := v.session.Call(ctx, "compare-versions", a, b)
+	if err != nil {
+		return 0, err
+	}
+	comparison, err := strconv.Atoi(reply)
+	if err != nil {
+		return 0, fmt.Errorf("macports: invalid version comparison")
+	}
+	// vercmp may return a character difference, not just -1 or 1.
+	return cmp.Compare(comparison, 0), nil
 }
 
 func (v *versionSession) ExtractVersions(ctx context.Context, expression, page string, multiline bool) ([]string, error) {

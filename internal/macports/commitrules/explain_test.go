@@ -18,7 +18,12 @@ func TestEveryRuleIsExplained(t *testing.T) {
 		{ID: "c", Message: "jq: " + strings.Repeat("y", 70) + "\n", Ports: []string{"jq"}, Merge: true},
 		{ID: "d", Message: "jq: fix\n", Ports: []string{"jq"}},
 	})
-	findings = append(findings, CheckPortfiles([]Portfile{{Path: "textproc/jq/Portfile", Before: "version 1\nrevision 2\n", After: "version 2\nrevision 2\n"}})...)
+	lower := func(a, b string) (int, bool) { return strings.Compare(a, b), true }
+	findings = append(findings, CheckPortfiles([]Portfile{
+		{Path: "textproc/jq/Portfile", Before: "version 1\nrevision 2\n", After: "version 2\nrevision 2\n"},
+		{Path: "textproc/yq/Portfile", Before: "version 2\n", After: "version 1\n"},
+		{Path: "textproc/oq/Portfile", Before: "version 1\n", After: "version 1\nreplaced_by jq\n"},
+	}, lower)...)
 	var reported []string
 	for _, finding := range findings {
 		if !slices.Contains(reported, finding.Code) {

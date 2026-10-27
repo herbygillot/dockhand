@@ -323,7 +323,7 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	if !slices.Equal(covered, changed) {
 		return TidyPlan{}, fmt.Errorf("the plan's commits don't cover exactly the branch's changes: %s", pathDifference(changed, covered))
 	}
-	if plan.Findings, err = portfileFindings(ctx, worktree, plan.BaseTree, final, changed); err != nil {
+	if plan.Findings, err = e.portfileFindings(ctx, worktree, plan.BaseTree, final, changed); err != nil {
 		return TidyPlan{}, err
 	}
 	return plan, nil

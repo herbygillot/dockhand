@@ -8,7 +8,9 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
@@ -198,6 +200,25 @@ func TestExplicitArchiveReleaseNeedsNoForgeButRetainsSourceChecks(t *testing.T) 
 	require.Error(t, err)
 	release.Commit = strings.Repeat("a", 40)
 	require.Error(t, service.Check(t.Context(), port, release))
+}
+
+// A version the person names that vercmp orders below the current one is
+// marked Lowers, for the update to raise the epoch; one vercmp orders
+// forward, as a calendar scheme after a semantic one, isn't (the docs
+// dig's I3).
+func TestALowerExplicitVersionIsMarked(t *testing.T) {
+	t.Parallel()
+	service := upstream.Service{EvaluateVersion: identityVersion, Versions: &eval.Evaluator{Executable: testsupport.MacPortsTclsh(t), Adapter: testsupport.BaseAdapter()}}
+	port := macports.PortInfo{Name: "fixture", Version: "1.7", Options: map[string]string{}}
+	release, err := service.Resolve(t.Context(), port, "1.6")
+	require.NoError(t, err)
+	require.True(t, release.Lowers)
+	release, err = service.Resolve(t.Context(), port, "20260101")
+	require.NoError(t, err)
+	require.False(t, release.Lowers, "a scheme change vercmp orders forward")
+	release, err = service.Resolve(t.Context(), port, "1.7.1")
+	require.NoError(t, err)
+	require.False(t, release.Lowers)
 }
 
 func TestResolveClassifiesStabilityWithoutRefusing(t *testing.T) {

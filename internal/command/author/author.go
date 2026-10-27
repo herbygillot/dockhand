@@ -428,6 +428,11 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		if update.LeavesStable {
 			fmt.Fprintf(out, "Prerelease: %s.\n", engine.LeavesStableWords(update.Port, update.Before.Version, update.After.Version))
 		}
+		// port upgrade takes a lower version only with a higher epoch,
+		// which the edit raised (the docs dig's I3).
+		if update.Release != nil && update.Release.Lowers {
+			fmt.Fprintf(out, "Lower version: MacPorts orders %s below %s, so the epoch is raised by one for port upgrade to install it.\n", update.After.Version, update.Before.Version)
+		}
 		if update.ClosedBefore != "" {
 			fmt.Fprintf(out, "Closed before: %s.\n", strings.TrimSuffix(update.ClosedBefore, "; a newer release lifts this"))
 		}

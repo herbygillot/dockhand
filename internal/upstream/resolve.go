@@ -75,7 +75,7 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 		if version != requested {
 			release.SourceVersion = requested
 		}
-		return classified(release, port.Version), nil
+		return s.ordered(ctx, classified(release, port.Version))
 	}
 	spec, repository, err := s.repository(port, false)
 	if err != nil {
@@ -129,7 +129,23 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 	if version == port.Version {
 		return model.Release{}, fmt.Errorf("upstream: %s is already at version %s", port.Name, port.Version)
 	}
-	return classified(model.Release{ReleaseSelection: model.ReleaseSelection{Requested: requested, CurrentVersion: port.Version}, Version: version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: selection.Candidate.Tag, Commit: commits[selection.Candidate.Tag], ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}, port.Version), nil
+	return s.ordered(ctx, classified(model.Release{ReleaseSelection: model.ReleaseSelection{Requested: requested, CurrentVersion: port.Version}, Version: version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: selection.Candidate.Tag, Commit: commits[selection.Candidate.Tag], ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}, port.Version))
+}
+
+// ordered marks a version the person named that vercmp orders below the
+// current one (Lowers), the docs dig's I3: `update jq 1.6` on 1.7 wrote a
+// version `port upgrade` never takes, stranding every install, and said
+// nothing. Automatic selection never chooses one (Ahead).
+func (s *Service) ordered(ctx context.Context, release model.Release) (model.Release, error) {
+	if release.CurrentVersion == "" || s.Versions == nil {
+		return release, nil
+	}
+	order, err := s.Versions.CompareVersions(ctx, release.Version, release.CurrentVersion)
+	if err != nil {
+		return model.Release{}, err
+	}
+	release.Lowers = order < 0
+	return release, nil
 }
 
 func (s *Service) Check(ctx context.Context, port macports.PortInfo, release model.Release) error {

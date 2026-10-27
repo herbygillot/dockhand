@@ -458,3 +458,35 @@ subport fixture-legacy {
 	_, err = s.Prepare(t.Context(), r)
 	require.ErrorContains(t, err, "fixture-legacy.revision", "the variable moves fixture-legacy's revision too, another release's")
 }
+
+// An update to a version vercmp orders lower raises the epoch, after the
+// revision, else the version, or at its literal, since `port upgrade`
+// takes a lower version only where the epoch rises; an epoch the Portfile
+// sets inside a condition is its own, and refused (the docs dig's I3).
+func TestALowerVersionRaisesTheEpoch(t *testing.T) {
+	t.Parallel()
+	lower := func(body string) (*Service, Request) {
+		s, r, _ := archiveFixture(t, body)
+		r.Version = "1.2.2"
+		r.Release = &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.2.2", CurrentVersion: "1.2.3", Lowers: true}, Archive: true, Version: "1.2.2"}
+		return s, r
+	}
+	s, r := lower("version 1.2.3\nrevision 1\nmaster_sites @SITE@/${version}\ndistfiles fixture.tar.gz\nchecksums sha256 aaaa size 2\n")
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Contains(t, string(result.Files[0].After), "version 1.2.2\nrevision 0\nepoch    1\n", "aligned with the revision")
+
+	s, r = lower("version 1.2.3\nepoch 2\nmaster_sites @SITE@/${version}\ndistfiles fixture.tar.gz\nchecksums sha256 aaaa size 2\n")
+	result, err = s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Contains(t, string(result.Files[0].After), "version 1.2.2\nepoch 3\n")
+
+	s, r = lower("version 1.2.3\nif {${os.major} >= 17} { epoch 1 }\nmaster_sites @SITE@/${version}\ndistfiles fixture.tar.gz\nchecksums sha256 aaaa size 2\n")
+	_, err = s.Prepare(t.Context(), r)
+	require.ErrorContains(t, err, "epoch is set outside the selected scope")
+
+	s, r, _ = archiveFixture(t, "version 1.2.3\nmaster_sites @SITE@/${version}\ndistfiles fixture.tar.gz\nchecksums sha256 aaaa size 2\n")
+	result, err = s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.NotContains(t, string(result.Files[0].After), "epoch", "a higher version raises nothing")
+}

@@ -207,7 +207,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if len(changed) == 0 {
 		return TidyPlan{}, fmt.Errorf("%s changes nothing yet; there is nothing to tidy", branch.Name)
 	}
-	if plan.Findings, err = portfileFindings(ctx, worktree, trees[base], final, changed); err != nil {
+	if plan.Findings, err = e.portfileFindings(ctx, worktree, trees[base], final, changed); err != nil {
 		return TidyPlan{}, err
 	}
 	var working []string
@@ -786,8 +786,8 @@ func (e *Engine) ruleCommits(ctx context.Context, base, head model.Source, histo
 }
 
 // portfileFindings applies the content rules to the Portfiles a branch
-// changes.
-func portfileFindings(ctx context.Context, repo *git.Repository, before, after string, changed []string) ([]commitrules.Finding, error) {
+// changes, ordering versions as MacPorts' vercmp does (versionOrder).
+func (e *Engine) portfileFindings(ctx context.Context, repo *git.Repository, before, after string, changed []string) ([]commitrules.Finding, error) {
 	var portfiles []commitrules.Portfile
 	for _, path := range changed {
 		if !strings.HasSuffix(path, "/Portfile") {
@@ -803,7 +803,21 @@ func portfileFindings(ctx context.Context, repo *git.Repository, before, after s
 		}
 		portfiles = append(portfiles, commitrules.Portfile{Path: path, Before: string(old), After: string(current)})
 	}
-	return commitrules.CheckPortfiles(portfiles), nil
+	return commitrules.CheckPortfiles(portfiles, e.versionOrder(ctx)), nil
+}
+
+// versionOrder orders versions with MacPorts' own vercmp, for the commit
+// rules; nil where the evaluator can't be had, which leaves the order
+// unchecked.
+func (e *Engine) versionOrder(ctx context.Context) commitrules.Order {
+	reader, err := e.selectionReader()
+	if err != nil {
+		return nil
+	}
+	return func(a, b string) (int, bool) {
+		order, err := reader.CompareVersions(ctx, a, b)
+		return order, err == nil
+	}
 }
 
 // TidyResult is what applying a plan did.

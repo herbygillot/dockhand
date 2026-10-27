@@ -24,6 +24,7 @@ var ErrAutomaticUnsupported = errors.New("upstream: automatic selection does not
 // for order and its native regex for livecheck captures.
 type versionSelector interface {
 	SelectVersion(context.Context, string, string, []macports.VersionCandidate) (macports.VersionSelection, error)
+	CompareVersions(context.Context, string, string) (int, error)
 	ExtractVersions(context.Context, string, string, bool) ([]string, error)
 }
 

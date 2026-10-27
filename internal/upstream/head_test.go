@@ -22,6 +22,8 @@ func (noVersions) SelectVersion(context.Context, string, string, []macports.Vers
 	return macports.VersionSelection{}, nil
 }
 
+func (noVersions) CompareVersions(context.Context, string, string) (int, error) { return 0, nil }
+
 func (noVersions) ExtractVersions(context.Context, string, string, bool) ([]string, error) {
 	return nil, nil
 }
