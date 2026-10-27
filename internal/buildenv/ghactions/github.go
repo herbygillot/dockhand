@@ -127,6 +127,24 @@ func (g GitHub) Jobs(ctx context.Context, repository string, id int64, attempt i
 	}
 }
 
+// WorkflowState is the state GitHub gives the fork's workflow,
+// active or disabled_manually, say, or ErrNoWorkflow where the fork has
+// none by that name.
+func (g GitHub) WorkflowState(ctx context.Context, repository string) (string, error) {
+	service, owner, name, err := g.service(ctx, repository)
+	if err != nil {
+		return "", err
+	}
+	workflow, response, err := service.GetWorkflowByFileName(ctx, owner, name, Workflow)
+	if response != nil && response.StatusCode == http.StatusNotFound {
+		return "", ErrNoWorkflow
+	}
+	if err != nil {
+		return "", githubapi.RateLimitError(err)
+	}
+	return workflow.GetState(), nil
+}
+
 // JobLog follows the download URL GitHub gives, without the API's
 // credentials.
 func (g GitHub) JobLog(ctx context.Context, repository string, job int64) ([]byte, error) {

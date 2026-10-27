@@ -25,7 +25,11 @@ type Assessment struct {
 	// Policy is the version of the rules it was made under; one made
 	// under earlier rules no longer stands.
 	Policy int
-	At     time.Time
+	// Build is the dockhand build that made it, buildinfo's; an
+	// incomplete one another build made is made again. Empty for one
+	// recorded before schema 42.
+	Build string
+	At    time.Time
 }
 
 // Validate checks the rules every recorded assessment keeps.

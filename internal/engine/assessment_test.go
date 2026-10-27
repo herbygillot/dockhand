@@ -970,3 +970,22 @@ func TestALibraryWithNoPortIsSaidByItsCrate(t *testing.T) {
 	}}
 	require.Equal(t, "Compared Cargo.lock, Cargo.toml; set apart, with no port to declare: mimalloc-sys links mimalloc, which MacPorts has no port for", CoverageWords(comparison))
 }
+
+// An incomplete assessment another build made is made again, where a
+// refusal a newer dockhand reads stood until the tree moved; one this
+// build made stands, and so does a complete one another build made (the
+// docs dig's I26). A record from before schema 42, with no build, reads
+// as another build's.
+func TestAnIncompleteAssessmentIsMadeAgainByANewerBuild(t *testing.T) {
+	t.Parallel()
+	e := &Engine{}
+	incomplete := model.Assessment{At: time.Now(), Comparison: model.UpstreamComparison{Problem: "couldn't compare: an archive kind dockhand doesn't read", ProblemKind: string(refusal.Unsupported)}}
+	incomplete.Build = assessmentBuild()
+	require.False(t, e.lookAgain(incomplete), "this build's stands")
+	incomplete.Build = "v0.6.0-rc5"
+	require.True(t, e.lookAgain(incomplete), "another build's is made again")
+	incomplete.Build = ""
+	require.True(t, e.lookAgain(incomplete), "one recorded before builds were")
+	complete := model.Assessment{At: time.Now(), Build: "v0.6.0-rc5"}
+	require.False(t, e.lookAgain(complete), "a complete one stands across builds")
+}

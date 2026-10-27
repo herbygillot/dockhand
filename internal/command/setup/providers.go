@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/buildenv/local"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/command/host"
@@ -287,15 +288,44 @@ func tartReadiness(ctx context.Context, s *settings.Settings) []string {
 }
 
 func githubReadiness(ctx context.Context, s *settings.Settings) string {
+	login := "with your GitHub token"
 	switch github.LoginSource(ctx, s.Signin()) {
 	case "":
 		return "! needs a GitHub login, dockhand setup github, and your fork's Actions enabled"
 	case github.SourceKeychain:
-		return "✓ with your GitHub login; your fork's Actions must be enabled"
+		login = "with your GitHub login"
 	case github.LoginLocked:
 		return "! with your GitHub login, saved but the login Keychain is locked: security unlock-keychain in this shell, or GH_TOKEN for this command"
 	}
-	return "✓ with your GitHub token; your fork's Actions must be enabled"
+	// The fork's workflow, as a check reads it before it pushes (the
+	// docs dig's I24), where the fork can be found and read.
+	if repository, state, err := forkWorkflow(ctx, s); repository != "" {
+		if words := ghactions.WorkflowWords(repository, state, err); words != "" {
+			return "! " + login + "; " + words
+		}
+		if err == nil {
+			return "✓ " + login + "; " + repository + "'s Actions are enabled"
+		}
+	}
+	return "✓ " + login + "; your fork's Actions must be enabled"
+}
+
+// forkWorkflow is the fork the github provider pushes to and its
+// workflow's state; no repository where either can't be found.
+func forkWorkflow(ctx context.Context, s *settings.Settings) (string, string, error) {
+	e, err := s.Open(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	provider, ok := e.Providers[buildenv.GitHub].(*ghactions.Provider)
+	if !ok {
+		return "", "", nil
+	}
+	repository, state, err := provider.ForkWorkflow(ctx)
+	if repository == "" {
+		return "", "", err
+	}
+	return repository, state, err
 }
 
 // missingSteps are the setup commands still to run, in order, for setup's
