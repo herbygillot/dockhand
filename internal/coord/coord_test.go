@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // processes is a process table the test controls.
@@ -222,7 +223,7 @@ func TestKeepAliveBeats(t *testing.T) {
 		defer close(done)
 		s.KeepAlive(ctx)
 	}()
-	require.Eventually(t, func() bool { return s.Record().HeartbeatAt.After(started) }, 10*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return s.Record().HeartbeatAt.After(started) }, testsupport.Settle, 10*time.Millisecond)
 	cancel()
 	<-done
 }
@@ -279,7 +280,7 @@ func TestAHeartbeatGoesOnAfterAFailedBeat(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(said) >= 2 && s.Record().HeartbeatAt.After(started)
-	}, 10*time.Second, 10*time.Millisecond, "it beat again after the failures")
+	}, testsupport.Settle, 10*time.Millisecond, "it beat again after the failures")
 	cancel()
 	<-done
 	mu.Lock()

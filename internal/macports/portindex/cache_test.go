@@ -587,7 +587,7 @@ func TestAWaitForTheCacheIsSaid(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(said) == 1
-	}, 5*time.Second, 5*time.Millisecond)
+	}, testsupport.Settle, 5*time.Millisecond)
 	require.NoError(t, held.Close())
 	require.NoError(t, <-done)
 	require.Equal(t, []string{"Waiting for the PortIndex cache, which another dockhand is clearing of old indexes"}, said)

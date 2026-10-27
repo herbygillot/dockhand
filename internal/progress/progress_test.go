@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -137,7 +138,7 @@ func TestAfterSaysASlowStepOnce(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(said) == 1
-	}, time.Second, time.Millisecond)
+	}, testsupport.Settle, time.Millisecond)
 	stop()
 	stop()
 	mu.Lock()

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestProgressRunsOnlyDuringOperation(t *testing.T) {
@@ -14,7 +16,7 @@ func TestProgressRunsOnlyDuringOperation(t *testing.T) {
 	writer := &progressWriter{writer: &buffer}
 	failure := errors.New("fixture")
 	err := reportProgress(t.Context(), writer, "Xcode installation", time.Millisecond, func() error {
-		require.Eventually(t, func() bool { writer.mu.Lock(); defer writer.mu.Unlock(); return buffer.Len() > 0 }, time.Second, time.Millisecond)
+		require.Eventually(t, func() bool { writer.mu.Lock(); defer writer.mu.Unlock(); return buffer.Len() > 0 }, testsupport.Settle, time.Millisecond)
 		return failure
 	})
 	require.ErrorIs(t, err, failure)

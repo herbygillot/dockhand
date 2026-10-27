@@ -96,7 +96,7 @@ func TestAPortsURLsAreAskedTogetherEachOnce(t *testing.T) {
 	e := &Engine{HTTPS: probe}
 	said := make(chan []PlainURL)
 	go func() { said <- e.plainHTTP(t.Context(), info, nil) }()
-	require.Eventually(t, func() bool { return probe.inFlight() == httpsAsks }, 5*time.Second, time.Millisecond, "asked together, not in turn")
+	require.Eventually(t, func() bool { return probe.inFlight() == httpsAsks }, testsupport.Settle, time.Millisecond, "asked together, not in turn")
 	time.Sleep(50 * time.Millisecond) // were there no bound, the rest would be asked by now
 	require.Equal(t, httpsAsks, probe.inFlight(), "no more than that at once")
 	close(probe.open)

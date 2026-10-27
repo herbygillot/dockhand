@@ -217,7 +217,7 @@ func TestALocalCheckLeftUnfinishedIsPutBack(t *testing.T) {
 	build := &fakeBuild{}
 	done := make(chan error, 1)
 	go func() { done <- l.Execute(ctx, localJob(t, prefix), build) }()
-	require.Eventually(t, func() bool { return strings.Contains(readRegistry(t, path), "libharbor") }, 10*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(readRegistry(t, path), "libharbor") }, testsupport.Settle, 10*time.Millisecond)
 	cancel()
 	require.ErrorIs(t, <-done, context.Canceled)
 	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path), "a stopped check puts the prefix back")

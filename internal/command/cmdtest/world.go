@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
@@ -50,11 +49,9 @@ func NewWorld(t *testing.T) World {
 	return w
 }
 
-// Settle bounds a wait for what a running serve or watch says. It's a
-// bound, not a pace: a wait ends as soon as the words appear, and on a
-// loaded machine, such as CI's runner beside the other tests, they can
-// take far longer than they do here; five seconds failed there (2026-10-02).
-const Settle = 2 * time.Minute
+// Settle bounds a wait for what a running serve or watch says
+// (testsupport.Settle).
+const Settle = testsupport.Settle
 
 func Dockhand(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
