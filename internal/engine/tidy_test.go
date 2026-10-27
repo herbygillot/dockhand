@@ -613,3 +613,69 @@ func TestASavedPlanWithLintFixesApplies(t *testing.T) {
 	_, err = e.ApplyTidy(t.Context(), loaded)
 	require.NoError(t, err)
 }
+
+// tidy --restyle restyles a misaligned Portfile whole, in one commit of
+// its own, last, each subport evaluating as it did; a plain tidy leaves
+// the misalignment (the person's "that can be done as a separate commit
+// … behind a flag", 2026-10-27).
+func TestTidyRestyleMakesOneCommitThatEvaluatesTheSame(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	f.options.Tclsh = testsupport.MacPortsTclsh(t)
+	write(t, f.upstream, map[string]string{"devel/zdemo/Portfile": zdemo("0", "2.0")})
+	testsupport.Git(t, f.upstream, "add", ".")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "zdemo: new port")
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "zdemo-hand"})
+	require.NoError(t, err)
+	misaligned := strings.Replace(zdemo("0", "2.1"), "license MIT\nmaintainers nomaintainer\n", "license             MIT\nmaintainers    nomaintainer\n", 1)
+	misaligned = strings.Replace(misaligned, "    revision 0\n", "  revision 0\n", 1)
+	write(t, branch.Worktree, map[string]string{"devel/zdemo/Portfile": misaligned})
+
+	plain, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Nil(t, plain.Restyle, "nothing restyles unasked")
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Restyle: true})
+	require.NoError(t, err)
+	require.Empty(t, plan.NotRestyled)
+	require.NotNil(t, plan.Restyle)
+	require.Equal(t, "zdemo: whitespace", plan.Restyle.Subject())
+	require.Equal(t, []string{"devel/zdemo/Portfile"}, plan.Restyle.Paths)
+	plan.Groups[0].SetSubject("zdemo-devel: update to 2.1")
+	result, err := e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	require.Len(t, result.Commits, 2)
+	require.Equal(t, []string{"zdemo-devel: update to 2.1", "zdemo: whitespace"}, log(t, branch.Worktree, branch.Base))
+	restyled := testsupport.Git(t, branch.Worktree, "show", "HEAD:devel/zdemo/Portfile")
+	require.Contains(t, restyled, "license     MIT\nmaintainers nomaintainer\n")
+	require.Contains(t, restyled, "\n    revision 0\n")
+	require.Contains(t, testsupport.Git(t, branch.Worktree, "show", "HEAD~1:devel/zdemo/Portfile"), "maintainers    nomaintainer", "the change's commit is as written")
+	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"), "the working files are the restyled ones")
+}
+
+// A saved plan whose branch takes an untracked patch patchfiles names
+// applies: rc6 read it as stale, its files edited, since the plan held
+// the patch and the working files' tree didn't.
+func TestASavedPlanTakingAnUntrackedPatchApplies(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-patch"})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{
+		"textproc/jq/Portfile":       "name jq\nversion 1.7.1\npatchfiles fix.diff\n",
+		"textproc/jq/files/fix.diff": "fix\n",
+	})
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, []string{"textproc/jq/files/fix.diff"}, plan.Taken)
+	plan.Groups[0].SetSubject("jq: fix the build")
+	data, err := plan.Save()
+	require.NoError(t, err)
+	loaded, err := e.LoadTidyPlan(t.Context(), data)
+	require.NoError(t, err)
+	_, err = e.ApplyTidy(t.Context(), loaded)
+	require.NoError(t, err)
+	require.Equal(t, "textproc/jq/Portfile\ntextproc/jq/files/fix.diff", testsupport.Git(t, branch.Worktree, "show", "--format=", "--name-only", "HEAD"))
+}

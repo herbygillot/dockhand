@@ -21,14 +21,22 @@ import (
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	var message, author, group, saveTo, apply string
-	var squash, plan, yes bool
+	var squash, plan, yes, restyle bool
 	cmd := &cobra.Command{
 		Use:   "tidy",
 		Short: "Prepare the branch's commits for review",
 		Long: `Proposes the commits a reviewer should see: by default one per port
 directory, with the subject dockhand's commands wrote or the one your own
 commits give, and every uncommitted edit included. The final files are
-exactly what you have; tidy never changes a file.
+what you have, but for the lint findings dockhand fixes on the lines your
+change adds or alters, such as trailing whitespace, which it writes into
+your files too.
+
+--restyle restyles each Portfile the branch changes whole, in a last
+commit of its own, "<port>: whitespace": trailing whitespace, tabs under
+MacPorts' modeline, indentation in fours, and each run of declarations'
+values lined up. A Portfile that evaluates otherwise restyled is left as
+it was. Nothing else restyles a line the change didn't touch.
 
 A plan made only of dockhand's own edits applies without review, which is
 what a script gets. Anything else is shown for review first, on a terminal,
@@ -53,6 +61,9 @@ commits, and its files are as they were when it was saved.`,
 			if saveTo != "" && !plan {
 				return errors.New("--out saves the plan --plan shows; add --plan")
 			}
+			if restyle && (saveTo != "" || apply != "") {
+				return errors.New("--restyle makes its commit as tidy applies; save or apply the plan without it, then run dockhand tidy --restyle")
+			}
 			e, err := s.Open(ctx)
 			if err != nil {
 				return err
@@ -65,7 +76,7 @@ commits, and its files are as they were when it was saved.`,
 			if err != nil {
 				return err
 			}
-			proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Squash: squash, Message: message, Author: author})
+			proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Squash: squash, Message: message, Author: author, Restyle: restyle})
 			if err != nil {
 				return err
 			}
@@ -138,6 +149,7 @@ commits, and its files are as they were when it was saved.`,
 	}
 	where.Register(cmd, s, "tidy")
 	cmd.Flags().BoolVar(&squash, "squash", false, "make one commit of the whole branch")
+	cmd.Flags().BoolVar(&restyle, "restyle", false, "restyle each changed Portfile whole, in a last commit of its own, \"<port>: whitespace\"")
 	cmd.Flags().StringVar(&message, "message", "", "the message of the commit --squash makes")
 	cmd.Flags().StringVar(&author, "author", "", "attribute a commit that combines several people's commits: \"Name <email>\"")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the proposed commits and change nothing")
