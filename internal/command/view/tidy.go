@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -29,12 +30,17 @@ func DescribeWork(plan engine.TidyPlan) string {
 // combines, keeps, and notes; or, saved, what applying it writes, each
 // commit's whole message as it may have been edited, with its author.
 func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
+	// --restyle's commit comes last, after the series it restyles.
+	groups := plan.Groups
+	if plan.Restyle != nil {
+		groups = append(slices.Clone(groups), *plan.Restyle)
+	}
 	title := map[bool]string{false: "Proposed commit", true: "Commit to write"}[saved]
-	if len(plan.Groups) > 1 {
+	if len(groups) > 1 {
 		title = map[bool]string{false: "Proposed series", true: "Commits to write"}[saved]
 	}
 	fmt.Fprintf(out, "\n%s\n", title)
-	for i, group := range plan.Groups {
+	for i, group := range groups {
 		subject, body, _ := strings.Cut(strings.TrimSpace(group.Message), "\n")
 		if !saved {
 			// A proposal's first line is its subject, empty or not.
@@ -88,6 +94,9 @@ func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 		for _, blocking := range group.Blocking {
 			fmt.Fprintf(out, "       ✗ %s\n", blocking)
 		}
+	}
+	for _, left := range plan.NotRestyled {
+		fmt.Fprintf(out, "    Not restyled: %s\n", left)
 	}
 	if builds := plan.OlderBuilds(); len(builds) > 0 && !saved {
 		fmt.Fprintf(out, "    These commits name an older Dockhand build in Generated-By: %s. Commits left unchanged keep that value; rewritten commits name this build.\n", strings.Join(builds, ", "))

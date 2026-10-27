@@ -292,6 +292,9 @@ type tidyJSON struct {
 	// Fixed are the lint findings the plan fixes on the lines the branch
 	// adds or alters.
 	Fixed []string `json:"fixed"`
+	// NotRestyled are the Portfiles --restyle leaves as they are, and why;
+	// its commit is the last of Commits.
+	NotRestyled []string `json:"not_restyled,omitempty"`
 	// Applied is what applying made, when it did.
 	Applied *TidyAppliedJSON `json:"applied"`
 }
@@ -306,8 +309,12 @@ type TidyAppliedJSON struct {
 
 func TidyView(plan engine.TidyPlan) tidyJSON {
 	viewed := tidyJSON{Branch: plan.Branch.ShortName(), Keep: plan.Keep, Unambiguous: plan.Unambiguous(), Commits: []tidyCommitJSON{}, Findings: findingsView(plan.Findings), Warnings: findingsView(plan.Warnings),
-		Taken: NonNil(plan.Taken), LeftOut: NonNil(plan.LeftOut), Ignored: NonNil(plan.Ignored), Fixed: NonNil(plan.Fixed)}
-	for _, group := range plan.Groups {
+		Taken: NonNil(plan.Taken), LeftOut: NonNil(plan.LeftOut), Ignored: NonNil(plan.Ignored), Fixed: NonNil(plan.Fixed), NotRestyled: plan.NotRestyled}
+	groups := plan.Groups
+	if plan.Restyle != nil {
+		groups = append(slices.Clone(groups), *plan.Restyle)
+	}
+	for _, group := range groups {
 		commit := tidyCommitJSON{Subject: group.Subject(), Message: group.Message, Paths: NonNil(group.Paths), Ports: NonNil(group.Ports), Combines: []string{},
 			Working: group.Working, FromEdits: group.FromEdits, Created: group.Created, Notes: NonNil(group.Notes), Blocking: NonNil(group.Blocking)}
 		if group.Author.Name != "" {

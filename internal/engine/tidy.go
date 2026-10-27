@@ -31,6 +31,9 @@ type TidyRequest struct {
 	// Author attributes a commit that combines several people's commits,
 	// as "Name <email>".
 	Author string
+	// Restyle restyles whole each Portfile the branch changes, in a
+	// commit of its own, last (restyleTidy).
+	Restyle bool
 }
 
 // TidyGroup is one proposed commit.
@@ -121,6 +124,15 @@ type TidyPlan struct {
 	// (tidyWorkingFiles); applying commits them and writes them into the
 	// working files.
 	Fixed []string
+	// Restyle is the commit --restyle makes after the groups, of the
+	// Portfiles it restyles, and Restyled the tree it ends at, Final's
+	// with them; nil where nothing is restyled. NotRestyled say the
+	// Portfiles it leaves as they are, and why.
+	Restyle     *TidyGroup
+	Restyled    string
+	NotRestyled []string
+	// restyled are the restyle's edits of the working files.
+	restyled []git.FileEdit
 }
 
 // Subjects are the subjects the branch is committed with once the plan
@@ -161,6 +173,14 @@ func (p TidyPlan) Blocking() []string { return p.Gate().Blocking() }
 // wrote or the one the branch's own commits give, and every edit not yet
 // committed included. Nothing is changed.
 func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, error) {
+	plan, err := e.planTidy(ctx, request)
+	if err != nil || !request.Restyle {
+		return plan, err
+	}
+	return plan, e.restyleTidy(ctx, &plan)
+}
+
+func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, error) {
 	branch := request.Branch
 	worktree, err := e.worktree(ctx, branch)
 	if err != nil {
@@ -1173,6 +1193,12 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if tree != plan.Final {
 		return TidyResult{}, fmt.Errorf("engine: the tidied commits end at tree %s, not the working files' %s; nothing was changed", tree, plan.Final)
 	}
+	if restyle := plan.Restyle; restyle != nil {
+		if parent, err = worktree.WriteCommit(ctx, git.Commit{Tree: plan.Restyled, Parents: []string{parent}, Message: restyle.Message, Author: restyle.Author, Committer: committer}); err != nil {
+			return TidyResult{}, err
+		}
+		result.Commits = append(result.Commits, parent)
+	}
 
 	// The checkpoint is recorded before the branch moves, the refs move
 	// together, and the checkpoint is settled after.
@@ -1197,6 +1223,9 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 			// which would otherwise read as undoing them.
 			if err := worktree.ApplyToWorkingFiles(ctx, files.fixed); err != nil {
 				return "", fmt.Errorf("commits were created, but the lint fixes couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(files.fixed), " "))
+			}
+			if err := worktree.ApplyToWorkingFiles(ctx, plan.restyled); err != nil {
+				return "", fmt.Errorf("commits were created, but the restyled Portfiles couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(plan.restyled), " "))
 			}
 			// A narrowing that fails leaves the worktree as wide as it was.
 			if narrowed, err := e.narrow(ctx, worktree, plan.Branch, plan.Base, plan.Final); err == nil {
