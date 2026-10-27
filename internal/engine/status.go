@@ -263,22 +263,90 @@ func (s BranchStatus) Facts() branchstate.Facts {
 	return branchstate.Facts{Branch: b, Check: s.Check()}
 }
 
-// wider is the check a passing attended check of this Mac's release alone
-// didn't build, where the update gives a reviewer reason to ask for it
-// (the docs dig's I47): minmax where it raised a floor, the oldest macOS
-// the Portfile allows or a toolchain's, and where it changed a variant's
-// sources, that variant, since every build takes the default variants.
-// serve, bump, and ship --yes build minmax already; host stays the
-// attended default. Nil where neither, or the check built more.
+// wider is the check a passing attended check didn't build, where the
+// update gives a reviewer reason to ask for it (the docs dig's I47):
+// minmax, after a check of this Mac's release alone, where it raised a
+// floor, the oldest macOS the Portfile allows or a toolchain's; and, after
+// any check of the default variants, a variant whose sources it changed,
+// since every such build takes the defaults. So minmax comes first where
+// an update does both, and its pass names the variant next. serve, bump,
+// and ship --yes build minmax already; host stays the attended default.
+// Nil where neither is asked, or the check built it.
 func (e *Engine) wider(ctx context.Context, status BranchStatus, changed []string) *branchstate.Wider {
 	plan := status.Evidence.Plan
-	if status.Latest.State != model.RunPassed || status.Latest.Origin == model.OriginServe || plan.Profile != string(config.RuleHost) && plan.Profile != config.ProfileLocal {
+	if status.Latest.State != model.RunPassed || status.Latest.Origin == model.OriginServe || plan.Variants != "" || plan.EachVariant {
 		return nil
 	}
-	floors := floorConcerns(status.Changes)
+	if plan.Profile == string(config.RuleHost) || plan.Profile == config.ProfileLocal {
+		if raised := e.floorsRaised(ctx, status); len(raised) > 0 {
+			return &branchstate.Wider{Next: branchstate.Next{Verb: branchstate.VerbCheck, Args: []string{"--build", string(config.RuleMinMax)}},
+				Why: fmt.Sprintf("the update raises the oldest macOS %s builds on, or its toolchain's", prose.And(raised))}
+		}
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(status.Branch.Base)})
+	if err != nil {
+		return nil
+	}
+	// --variants builds one port, so Next names the first with a variant
+	// whose sources changed, by --only where the branch changes more than
+	// one (variantsTarget), and the rest in its words.
+	var changedTargets []model.PlanTarget
+	for _, target := range plan.Targets {
+		if target.Role == model.Changed {
+			changedTargets = append(changedTargets, target)
+		}
+	}
+	var next *branchstate.Wider
+	var others []string
+	for _, directory := range status.Scope.Ports {
+		file := path.Join(directory, "Portfile")
+		var patches []string
+		for _, changedFile := range changed {
+			if name, ok := strings.CutPrefix(changedFile, directory+"/files/"); ok {
+				patches = append(patches, name)
+			}
+		}
+		before, _ := e.Repo.ReadFiles(ctx, trees[string(status.Branch.Base)], []string{file})
+		after, _ := e.Repo.ReadFiles(ctx, status.Tree, []string{file})
+		variants := portfile.SourceVariants(before[file], after[file], patches)
+		if len(variants) == 0 {
+			continue
+		}
+		signed := make([]string, len(variants))
+		for i, variant := range variants {
+			signed[i] = "+" + variant
+		}
+		port := path.Base(directory)
+		if i := slices.IndexFunc(changedTargets, func(t model.PlanTarget) bool { return t.Directory == directory }); i >= 0 {
+			port = changedTargets[i].Target.Name
+		}
+		if next != nil {
+			others = append(others, port+"'s "+prose.And(signed))
+			continue
+		}
+		args := []string{"--variants", strings.Join(signed, "")}
+		if len(changedTargets) > 1 {
+			args = append(args, "--only", port)
+		}
+		next = &branchstate.Wider{Next: branchstate.Next{Verb: branchstate.VerbCheck, Args: args},
+			Why: fmt.Sprintf("the update changes the sources of %s's %s, which a build of the default variants doesn't take", port, prose.And(signed))}
+	}
+	if next != nil && len(others) > 0 {
+		next.Why += ", nor " + prose.And(others)
+	}
+	return next
+}
+
+// floorsRaised are the ports whose floor the branch's update raised: a
+// platforms Darwin floor or macosx_deployment_target in its change
+// records (floorConcerns), or upstream's newer toolchain in its recorded
+// assessments (assess.RaisesFloor).
+func (e *Engine) floorsRaised(ctx context.Context, status BranchStatus) []string {
 	var raised []string
-	for _, floor := range floors {
-		raised = append(raised, floor.Port)
+	for _, floor := range floorConcerns(status.Changes) {
+		if !slices.Contains(raised, floor.Port) {
+			raised = append(raised, floor.Port)
+		}
 	}
 	if assessments, err := e.revisionAssessments(ctx, status.Branch.ID, status.Branch.Base, model.ObjectID(status.Tree), false); err == nil {
 		for _, a := range assessments {
@@ -287,43 +355,7 @@ func (e *Engine) wider(ctx context.Context, status BranchStatus, changed []strin
 			}
 		}
 	}
-	if len(raised) > 0 {
-		return &branchstate.Wider{Next: branchstate.Next{Verb: branchstate.VerbCheck, Args: []string{"--build", string(config.RuleMinMax)}},
-			Why: fmt.Sprintf("the update raises the oldest macOS %s builds on, or its toolchain's", prose.And(raised))}
-	}
-	if plan.Variants != "" {
-		return nil
-	}
-	trees, err := e.Repo.CommitTrees(ctx, []string{string(status.Branch.Base)})
-	if err != nil {
-		return nil
-	}
-	var variants []string
-	for _, directory := range status.Scope.Ports {
-		file := path.Join(directory, "Portfile")
-		var patches []string
-		for _, file := range changed {
-			if name, ok := strings.CutPrefix(file, directory+"/files/"); ok {
-				patches = append(patches, name)
-			}
-		}
-		before, _ := e.Repo.ReadFiles(ctx, trees[string(status.Branch.Base)], []string{file})
-		after, _ := e.Repo.ReadFiles(ctx, status.Tree, []string{file})
-		for _, variant := range portfile.SourceVariants(before[file], after[file], patches) {
-			if !slices.Contains(variants, variant) {
-				variants = append(variants, variant)
-			}
-		}
-	}
-	if len(variants) == 0 {
-		return nil
-	}
-	signed := make([]string, len(variants))
-	for i, variant := range variants {
-		signed[i] = "+" + variant
-	}
-	return &branchstate.Wider{Next: branchstate.Next{Verb: branchstate.VerbCheck, Args: []string{"--variants", strings.Join(signed, "")}},
-		Why: fmt.Sprintf("the update changes the sources of %s, which a build of the default variants doesn't take", prose.And(signed))}
+	return raised
 }
 
 // Vocabulary words what branchstate's sentences name, as the engine words
