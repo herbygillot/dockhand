@@ -146,9 +146,10 @@ type Engine struct {
 	// name, from providers.<name>.capacity: serve keeps to it, and so does
 	// a check run here (awaitSlot).
 	Capacity map[string]int
-	// Maintainers are the config's maintainer entries, whose ports serve's
-	// daily look is for, and whose look status shows (LastOutdatedLook).
-	Maintainers []string
+	// Serves is the selection serve's daily look is for, your maintainer
+	// entries' ports by default, and whose look status shows
+	// (LastOutdatedLook).
+	Serves PortSelection
 	// TartHome is dockhand's Tart home, which status -v names to reach a
 	// running check's VMs.
 	TartHome string

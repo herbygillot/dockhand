@@ -24,6 +24,9 @@ import (
 type OutdatedRequest struct {
 	Ports       []string
 	Maintainers []string
+	// Categories and NotMaintainers narrow a selection by master's index,
+	// as port echo combines them, beside Maintainers.
+	Categories, NotMaintainers []string
 	// Progress, when set, hears how many of the ports are looked up, as
 	// the lookups finish.
 	Progress func(done, total int)
@@ -251,7 +254,7 @@ func (r OutdatedReport) Summary() map[OutdatedClass]int {
 // Outdated reports which of the chosen ports have newer releases upstream
 // (Design v3 §6.12), at master as fetched now.
 func (e *Engine) Outdated(ctx context.Context, request OutdatedRequest) (OutdatedReport, error) {
-	if len(request.Ports) == 0 && len(request.Maintainers) == 0 {
+	if len(request.Ports) == 0 && len(request.Maintainers)+len(request.Categories) == 0 {
 		return OutdatedReport{}, fmt.Errorf("name ports, or ask for yours with --mine")
 	}
 	master, err := e.fetchMaster(ctx)
@@ -287,7 +290,7 @@ type surveyedPorts struct {
 func (s *surveyedPorts) Outdated(ctx context.Context, commit model.ObjectID, request OutdatedRequest) ([]OutdatedPort, error) {
 	service := *s.service
 	service.Commit, service.Progress, service.Allow = string(commit), request.Progress, request.Allow
-	result, err := service.Observe(ctx, outdated.Selection{Ports: request.Ports, Maintainers: request.Maintainers})
+	result, err := service.Observe(ctx, outdated.Selection{Ports: request.Ports, Maintainers: request.Maintainers, Categories: request.Categories, NotMaintainers: request.NotMaintainers})
 	var ports []OutdatedPort
 	for _, port := range result.Ports {
 		ports = append(ports, outdatedPort(port))

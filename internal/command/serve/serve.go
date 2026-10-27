@@ -39,7 +39,9 @@ reviews and CI, and a merged one marks its branch merged. It cleans up
 once a day.
 
 Once a day, at serve.outdated_at, it looks up new releases of your ports
-(the config's maintainer) and takes them as far as serve.ship_to says, as
+(the config's maintainer), or of those serve.maintainers, serve.categories,
+and serve.not_maintainers select as outdated's flags do, and takes them as
+far as serve.ship_to says, under the same holds either way, as
 ship --to does: list counts them for status; commit prepares a branch
 with one commit for each; check also checks each, with
 build.unattended's profile.
@@ -127,7 +129,7 @@ func serveOptions(h *host.Host, e *engine.Engine, file config.File, out io.Write
 		Drain:           drain,
 		ShipTo:          shipTo,
 		SubmitLimit:     file.Serve.Limit(),
-		Outdated:        engine.ServeOutdated{Maintainers: file.Maintainers(), Hour: hour, Minute: minute},
+		Outdated:        engine.ServeOutdated{PortSelection: e.Serves, Hour: hour, Minute: minute},
 		Cleanup:         file.Cleanup.On(),
 		CleanupAge:      file.Cleanup.Age(),
 		Say:             func(line string) { fmt.Fprintln(out, line) },

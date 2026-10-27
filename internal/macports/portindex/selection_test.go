@@ -34,6 +34,8 @@ func TestMetadataSelection(t *testing.T) {
 		{"MacPorts email", portindex.Filter{Maintainers: []string{"macporter@macports.org"}}, []string{"beta"}},
 		{"email", portindex.Filter{Maintainers: []string{"owner@example.org"}}, []string{"alpha"}},
 		{"intersection", portindex.Filter{Maintainers: []string{"@CONTRIBUTOR"}, Categories: []string{"devel"}}, []string{"alpha"}},
+		{"no maintainer in a category", portindex.Filter{Maintainers: []string{"nomaintainer"}, Categories: []string{"sysutils"}}, []string{"gamma"}},
+		{"no maintainer in another", portindex.Filter{Maintainers: []string{"nomaintainer"}, Categories: []string{"devel"}}, nil},
 		{"alternatives", portindex.Filter{Categories: []string{"net", "sysutils"}}, []string{"alpha", "alpha-child", "beta", "gamma"}},
 		{"exact", portindex.Filter{Maintainers: []string{"@contrib"}}, nil},
 		{"none", portindex.Filter{Categories: []string{"missing"}}, nil},

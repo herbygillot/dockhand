@@ -103,6 +103,9 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				notify = fmt.Sprint(*file.Serve.Notify)
 			}
 			set("serve.notify", notify)
+			set("serve.maintainers", strings.Join(file.Serve.Maintainers, ", "))
+			set("serve.categories", strings.Join(file.Serve.Categories, ", "))
+			set("serve.not_maintainers", strings.Join(file.Serve.NotMaintainers, ", "))
 			set("providers.tart.test_timeout", file.Providers.Tart.TestTimeout)
 			set("providers.tart.build_timeout", file.Providers.Tart.BuildTimeout)
 			// Each release's Xcode image installs what MacPorts' arm64

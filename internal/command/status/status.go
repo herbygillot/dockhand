@@ -231,13 +231,13 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			fmt.Fprintln(out, view.ChangeWords(change))
 		}
 	}
-	if found, ok := e.LastOutdatedLook(e.Maintainers); ok && (len(found.Outdated) > 0 || len(found.Uncertain) > 0) {
+	if found, ok := e.LastOutdatedLook(e.Serves); ok && (len(found.Outdated) > 0 || len(found.Uncertain) > 0) {
 		fmt.Fprintln(out)
 		if len(found.Outdated) > 0 {
-			fmt.Fprintf(out, "Your ports: %s newer releases, as serve found %s (dockhand ship --mine)\n", prose.Plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], engine.Ago(found.CheckedAt))
+			fmt.Fprintf(out, "%s: %s newer releases, as serve found %s (%s)\n", e.Serves.Title(), prose.Plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], engine.Ago(found.CheckedAt), e.Serves.Command("ship"))
 		}
 		if len(found.Uncertain) > 0 {
-			fmt.Fprintf(out, "Your ports: %s may have newer releases; review needed. Last checked %s by serve. Run dockhand outdated %s for details.\n", prose.Plural(len(found.Uncertain), "port"), engine.Ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
+			fmt.Fprintf(out, "%s: %s may have newer releases; review needed. Last checked %s by serve. Run dockhand outdated %s for details.\n", e.Serves.Title(), prose.Plural(len(found.Uncertain), "port"), engine.Ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
 		}
 	}
 	// The checks and the processes are -v's tables: a check shows on its

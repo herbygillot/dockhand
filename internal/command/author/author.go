@@ -24,7 +24,8 @@ import (
 
 func UpdateCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchChoice
-	var plan, mine, yes bool
+	var plan, yes bool
+	var selectors outdated.Selectors
 	var version VersionUpdate
 	cmd := &cobra.Command{
 		Use:   "update <port> [version]",
@@ -51,17 +52,19 @@ reviewer would ask about, and what a passing build can't catch.
 outdated --mine finds them: one branch each, from fresh master, nothing
 committed. It shows the branches before starting any, and asks once; --yes
 starts them without asking. dockhand ship --mine carries them on, to their
-pull requests, and ship takes a port's update as far as --to says.`,
+pull requests, and ship takes a port's update as far as --to says.
+--maintainer, --category, and --not-maintainer choose the ports by
+master's index instead, or beside --mine, as outdated does.`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if mine {
+			if selectors.Chosen() {
 				if len(args) > 0 || where.Branch != "" || where.IsNew() {
-					return errors.New("--mine starts a branch for each of your ports; it takes no port, --branch, or --new")
+					return errors.New("a selection starts a branch for each port it chooses; it takes no port, --branch, or --new")
 				}
-				return updateMine(cmd.Context(), s, streams, version, plan, yes)
+				return updateMine(cmd.Context(), s, streams, version, selectors, plan, yes)
 			}
 			if yes {
-				return errors.New("--yes goes with --mine")
+				return errors.New("--yes goes with --mine, --maintainer, or --category")
 			}
 			if len(args) == 0 {
 				return errors.New("name the port to update, or update your outdated ports with --mine")
@@ -78,25 +81,26 @@ pull requests, and ship takes a port's update as far as --to says.`,
 	version.Flags(cmd)
 	cmd.Flags().BoolVar(&version.HandEdit, "hand-edit", false, "write Dockhand's best attempt when an update is refused, for you to finish manually; record the refusal")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
-	cmd.Flags().BoolVar(&mine, "mine", false, "update each of your ports with a newer release, in a branch of its own (config maintainer)")
+	selectors.Register(cmd, "update, each in a branch of its own,")
 	settings.OverAllowanceFlag(cmd, s)
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --mine, start the branches without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with a selection, start the branches without asking")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	settings.SupportsJSON(cmd)
 	settings.KeepModelineFlag(cmd, s)
 	return cmd
 }
 
-// updateMine is update --mine: ship's edit stage over your outdated ports,
-// each in a branch of its own, nothing committed (decision 7, 2026-10-13).
-func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams, version VersionUpdate, plan, yes bool) error {
+// updateMine is update --mine, or another selection: ship's edit stage
+// over the outdated ports chosen, each in a branch of its own, nothing
+// committed (decision 7, 2026-10-13).
+func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams, version VersionUpdate, selectors outdated.Selectors, plan, yes bool) error {
 	whole := &view.BatchJSON{}
 	streams.LinkSteps(whole)
 	e, err := s.Open(ctx)
 	if err != nil {
 		return err
 	}
-	outdated, err := outdated.Batch(ctx, s, e, streams)
+	outdated, err := outdated.Batch(ctx, s, e, streams, selectors)
 	e.Close()
 	if err != nil {
 		return err

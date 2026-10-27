@@ -75,11 +75,78 @@ type ServeOptions struct {
 // ServeOutdated is the daily look serve.ship_to carries, and whose ports
 // it looks at.
 type ServeOutdated struct {
-	// Maintainers are your identities; with none, serve says it needs them.
-	Maintainers []string
+	PortSelection
 	// Hour and Minute are when it looks each day. A check of each checks
 	// with check.tests (Options.Tests), on build.unattended's profile.
 	Hour, Minute int
+}
+
+// PortSelection is the ports serve's daily look is for, chosen by
+// master's index as outdated's selectors choose them: your ports by
+// default, the config's maintainer entries, else serve.maintainers,
+// serve.categories, and serve.not_maintainers. A default and not a
+// policy: either goes under the same holds, serve.submit_limit, and
+// stages (the dig's I38a, the person's 2026-10-27 02:02Z).
+type PortSelection struct {
+	// Maintainers are your identities, or serve.maintainers'; with none
+	// and no category, serve says it needs them.
+	Maintainers, Categories, NotMaintainers []string
+	// Chosen is that serve.maintainers or serve.categories chose the
+	// ports, not your maintainer line.
+	Chosen bool
+}
+
+// ServeSelection is serve's selection from the config: serve's keys where
+// they choose ports, else mine, your maintainer entries, beside
+// not_maintainers.
+func ServeSelection(mine, maintainers, categories, notMaintainers []string) PortSelection {
+	if len(maintainers)+len(categories) == 0 {
+		return PortSelection{Maintainers: mine, NotMaintainers: notMaintainers}
+	}
+	return PortSelection{Maintainers: maintainers, Categories: categories, NotMaintainers: notMaintainers, Chosen: true}
+}
+
+// empty is a selection that chooses nothing: no maintainer known, and no
+// serve key choosing ports.
+func (p PortSelection) empty() bool { return len(p.Maintainers)+len(p.Categories) == 0 }
+
+// Words name the selection's ports in serve's lines and status's.
+func (p PortSelection) Words() string {
+	if p.Chosen {
+		return "the selected ports"
+	}
+	return "your ports"
+}
+
+// Title heads a line or notification of the selection's ports.
+func (p PortSelection) Title() string {
+	if p.Chosen {
+		return "Selected ports"
+	}
+	return "Your ports"
+}
+
+// Command is a dockhand command, outdated or ship, over the selection.
+func (p PortSelection) Command(verb string) string {
+	if !p.Chosen {
+		return "dockhand " + verb + " --mine"
+	}
+	words := []string{"dockhand " + verb}
+	for _, flag := range []struct {
+		name   string
+		values []string
+	}{{"--maintainer", p.Maintainers}, {"--category", p.Categories}, {"--not-maintainer", p.NotMaintainers}} {
+		for _, value := range flag.values {
+			words = append(words, flag.name, value)
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// same reports whether two selections choose alike, each list compared as
+// a set.
+func (p PortSelection) same(other PortSelection) bool {
+	return sameSet(p.Maintainers, other.Maintainers) && sameSet(p.Categories, other.Categories) && sameSet(p.NotMaintainers, other.NotMaintainers)
 }
 
 // submits is whether serve opens pull requests: ship_to = "submit".
@@ -733,10 +800,13 @@ func (c *cleaner) maybe(ctx context.Context) {
 // status.
 type OutdatedLook struct {
 	CheckedAt time.Time `json:"checked_at"`
-	// Maintainers are those the look looked for, the config's then; a
-	// look is shown only where they're the config's now (LastOutdatedLook).
-	Maintainers []string `json:"maintainers,omitempty"`
-	Outdated    []string `json:"outdated"`
+	// Maintainers, Categories, and NotMaintainers are the selection the
+	// look looked for, the config's then; a look is shown only where it's
+	// the config's now (LastOutdatedLook).
+	Maintainers    []string `json:"maintainers,omitempty"`
+	Categories     []string `json:"categories,omitempty"`
+	NotMaintainers []string `json:"not_maintainers,omitempty"`
+	Outdated       []string `json:"outdated"`
 	// Uncertain are the ports that may have a newer release, which serve
 	// neither calls current nor prepares: a person looks. SetAside are the
 	// tags each was uncertain for, which the next look reads to say a port
@@ -777,16 +847,16 @@ func uncertainWords(last OutdatedLook, look OutdatedLook) string {
 // count went to serve.log and status alone, so serve.ship_to =
 // "list", the default, said nothing a person saw (the rc10 full stage's
 // B7). Empty where nothing changed, or none has a newer release. It names
-// outdated --mine, which lists them.
-func lookNotice(last, look OutdatedLook) string {
+// outdated over the selection, --mine for yours, which lists them.
+func lookNotice(last, look OutdatedLook, selection PortSelection) string {
 	if len(look.Outdated) == 0 || slices.Equal(slices.Sorted(slices.Values(last.Outdated)), slices.Sorted(slices.Values(look.Outdated))) {
 		return ""
 	}
-	return fmt.Sprintf("%s with newer releases. Run dockhand outdated --mine.", prose.Plural(len(look.Outdated), "port"))
+	return fmt.Sprintf("%s with newer releases. Run %s.", prose.Plural(len(look.Outdated), "port"), selection.Command("outdated"))
 }
 
-// outdatedScanner looks for new releases of your ports once a day, at the
-// configured time, and carries them as far as serve.ship_to says.
+// outdatedScanner looks for new releases of serve's selection, your ports
+// by default, once a day, at the configured time, and carries them as far as serve.ship_to says.
 type outdatedScanner struct {
 	s        *server
 	reported string
@@ -807,7 +877,7 @@ func (o *outdatedScanner) hint(ctx context.Context) string {
 // otherwise never said (the dogfood run with 251a1264); the look says it
 // again only where it changed.
 func (o *outdatedScanner) announce(ctx context.Context) {
-	if len(o.s.options.Outdated.Maintainers) == 0 {
+	if o.s.options.Outdated.empty() {
 		line := o.hint(ctx)
 		o.s.say("%s", line)
 		o.reported = line
@@ -848,7 +918,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 			o.reported = problem
 		}
 	}
-	if len(settings.Maintainers) == 0 {
+	if settings.empty() {
 		// The person's own line, as master's ports write their GitHub
 		// login, where it can be found (the flyctl run). The day isn't
 		// stamped, so a serve restarted once a maintainer is set looks
@@ -857,7 +927,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		stamp = false
 		return
 	}
-	request := OutdatedRequest{Maintainers: settings.Maintainers}
+	request := OutdatedRequest{Maintainers: settings.Maintainers, Categories: settings.Categories, NotMaintainers: settings.NotMaintainers}
 	if retrying {
 		request = OutdatedRequest{Ports: o.retry}
 		o.retry, o.retryAt = nil, time.Time{}
@@ -867,7 +937,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		return
 	}
 	if err != nil {
-		report(fmt.Sprintf("serve: looking for new releases of your ports: %v", err))
+		report(fmt.Sprintf("serve: looking for new releases of %s: %v", settings.Words(), err))
 		return
 	}
 	if limited, lifts := found.RateLimited(); len(limited) > 0 {
@@ -896,8 +966,8 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 			setAside[port.Port] = []string{port.Ahead}
 		}
 	}
-	last, _ := e.LastOutdatedLook(settings.Maintainers)
-	look := OutdatedLook{CheckedAt: now, Maintainers: settings.Maintainers, Outdated: names, Uncertain: uncertain, SetAside: setAside}
+	last, _ := e.LastOutdatedLook(settings.PortSelection)
+	look := OutdatedLook{CheckedAt: now, Maintainers: settings.Maintainers, Categories: settings.Categories, NotMaintainers: settings.NotMaintainers, Outdated: names, Uncertain: uncertain, SetAside: setAside}
 	// A retry's look adds to the day's, which it went over only part of.
 	if retrying {
 		for _, name := range last.Outdated {
@@ -909,8 +979,8 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	if data, err := json.Marshal(look); err == nil {
 		o.s.written("outdated.json", e.writeServeFile("outdated.json", data))
 	}
-	if line := lookNotice(last, look); line != "" {
-		o.s.notify("Your ports", line)
+	if line := lookNotice(last, look, settings.PortSelection); line != "" {
+		o.s.notify(settings.Title(), line)
 	}
 	// What couldn't be checked is said first, and the rest's result as the
 	// rest's: "none of your ports" said of ports it never saw (D-N4).
@@ -922,7 +992,9 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	case len(names) == 0 && unchecked != "":
 		o.s.say("serve: none of the rest has a newer release")
 	case len(names) == 0:
-		o.s.say("serve: none of your ports has a newer release")
+		o.s.say("serve: none of %s has a newer release", settings.Words())
+	case settings.Chosen:
+		o.s.say("serve: %s of the selected %s newer releases: %s", prose.Plural(len(names), "port"), map[bool]string{true: "has", false: "have"}[len(names) == 1], strings.Join(names, ", "))
 	default:
 		o.s.say("serve: %s of yours %s newer releases: %s", prose.Plural(len(names), "port"), map[bool]string{true: "has", false: "have"}[len(names) == 1], strings.Join(names, ", "))
 	}
@@ -974,16 +1046,20 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	}
 }
 
-// LastOutdatedLook is what serve's daily look at your ports last found, if
-// it looked for these maintainers, the config's, compared as sets: on rc5,
+// LastOutdatedLook is what serve's daily look last found, if it looked for
+// this selection, the config's, each list compared as a set: on rc5,
 // with no maintainer in the config, status still said "Your ports: 123
 // ports have newer releases", a look under an earlier maintainer's (the
 // M1's rc5 run). A look that records none, as v0.4.0 and v0.5.0 wrote,
 // is no one's. status and serve's notice read it alike.
-func (e *Engine) LastOutdatedLook(maintainers []string) (OutdatedLook, bool) {
+func (e *Engine) LastOutdatedLook(selection PortSelection) (OutdatedLook, bool) {
 	var look OutdatedLook
 	data, err := os.ReadFile(e.serveFile("outdated.json"))
-	if err != nil || json.Unmarshal(data, &look) != nil || len(look.Maintainers) == 0 || !sameSet(look.Maintainers, maintainers) {
+	if err != nil || json.Unmarshal(data, &look) != nil {
+		return OutdatedLook{}, false
+	}
+	looked := PortSelection{Maintainers: look.Maintainers, Categories: look.Categories, NotMaintainers: look.NotMaintainers}
+	if looked.empty() || !looked.same(selection) {
 		return OutdatedLook{}, false
 	}
 	return look, true

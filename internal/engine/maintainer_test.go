@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -145,7 +147,7 @@ func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 		e.OutdatedReader = reader
 		now := morning
 		var said []string
-		s := newServer(e, ServeOptions{Outdated: ServeOutdated{Maintainers: []string{"@ada"}}, ShipTo: "list", Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return now }})
+		s := newServer(e, ServeOptions{Outdated: ServeOutdated{PortSelection: PortSelection{Maintainers: []string{"@ada"}}}, ShipTo: "list", Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return now }})
 		scanner := &outdatedScanner{s: s}
 		scanner.maybe(t.Context())
 		require.Contains(t, said, "serve: GitHub’s rate limit prevented checking 1 port for new releases. Retrying at "+morning.Add(19*time.Minute).Format("15:04 MST"))
@@ -167,7 +169,7 @@ func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 			require.Contains(t, said, "serve: GitHub’s rate limit still prevents checking 1 port for new releases. No further retries today")
 			continue
 		}
-		look, ok := e.LastOutdatedLook([]string{"@ada"})
+		look, ok := e.LastOutdatedLook(PortSelection{Maintainers: []string{"@ada"}})
 		require.True(t, ok)
 		require.ElementsMatch(t, []string{"jq", "fd"}, look.Outdated, "the retry adds to the day's look")
 	}
@@ -178,10 +180,12 @@ func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 // there are none (the rc10 full stage's B7).
 func TestTheDaysLookNotifiesWhenWhatItFoundChanged(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "2 ports with newer releases. Run dockhand outdated --mine.", lookNotice(OutdatedLook{}, OutdatedLook{Outdated: []string{"jq", "fd"}}))
-	require.Equal(t, "1 port with newer releases. Run dockhand outdated --mine.", lookNotice(OutdatedLook{Outdated: []string{"jq", "fd"}}, OutdatedLook{Outdated: []string{"jq"}}))
-	require.Empty(t, lookNotice(OutdatedLook{Outdated: []string{"jq", "fd"}}, OutdatedLook{Outdated: []string{"fd", "jq"}}), "the same ports")
-	require.Empty(t, lookNotice(OutdatedLook{Outdated: []string{"jq"}}, OutdatedLook{}), "none")
+	require.Equal(t, "2 ports with newer releases. Run dockhand outdated --mine.", lookNotice(OutdatedLook{}, OutdatedLook{Outdated: []string{"jq", "fd"}}, PortSelection{}))
+	require.Equal(t, "1 port with newer releases. Run dockhand outdated --mine.", lookNotice(OutdatedLook{Outdated: []string{"jq", "fd"}}, OutdatedLook{Outdated: []string{"jq"}}, PortSelection{}))
+	require.Empty(t, lookNotice(OutdatedLook{Outdated: []string{"jq", "fd"}}, OutdatedLook{Outdated: []string{"fd", "jq"}}, PortSelection{}), "the same ports")
+	require.Empty(t, lookNotice(OutdatedLook{Outdated: []string{"jq"}}, OutdatedLook{}, PortSelection{}), "none")
+	chosen := ServeSelection([]string{"@ada"}, []string{"nomaintainer"}, []string{"devel"}, []string{"@bob"})
+	require.Equal(t, "1 port with newer releases. Run dockhand outdated --maintainer nomaintainer --category devel --not-maintainer @bob.", lookNotice(OutdatedLook{}, OutdatedLook{Outdated: []string{"jq"}}, chosen))
 
 	f := setup(t)
 	e := f.open(t)
@@ -190,7 +194,7 @@ func TestTheDaysLookNotifiesWhenWhatItFoundChanged(t *testing.T) {
 	e.OutdatedReader = &limitedReader{lifted: morning.Add(-time.Hour)}
 	now := morning
 	var notified []string
-	s := newServer(e, ServeOptions{Outdated: ServeOutdated{Maintainers: []string{"@ada"}}, ShipTo: "list", Say: func(string) {}, Now: func() time.Time { return now },
+	s := newServer(e, ServeOptions{Outdated: ServeOutdated{PortSelection: PortSelection{Maintainers: []string{"@ada"}}}, ShipTo: "list", Say: func(string) {}, Now: func() time.Time { return now },
 		Notify: func(title, text string) { notified = append(notified, title+": "+text) }})
 	scanner := &outdatedScanner{s: s}
 	scanner.maybe(t.Context())
@@ -213,20 +217,50 @@ func TestALookShowsOnlyForTheMaintainersItLookedFor(t *testing.T) {
 	var said []string
 	quiet := newServer(e, ServeOptions{ShipTo: "list", Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return morning }})
 	(&outdatedScanner{s: quiet}).maybe(t.Context())
-	_, ok := e.LastOutdatedLook(nil)
+	_, ok := e.LastOutdatedLook(PortSelection{})
 	require.False(t, ok, "no look yet")
 
-	s := newServer(e, ServeOptions{Outdated: ServeOutdated{Maintainers: []string{"@ada", "example.org:ada"}}, ShipTo: "list", Say: func(string) {}, Now: func() time.Time { return morning.Add(time.Minute) }})
+	s := newServer(e, ServeOptions{Outdated: ServeOutdated{PortSelection: PortSelection{Maintainers: []string{"@ada", "example.org:ada"}}}, ShipTo: "list", Say: func(string) {}, Now: func() time.Time { return morning.Add(time.Minute) }})
 	(&outdatedScanner{s: s}).maybe(t.Context())
-	look, ok := e.LastOutdatedLook([]string{"example.org:ada", "@ada"})
+	look, ok := e.LastOutdatedLook(PortSelection{Maintainers: []string{"example.org:ada", "@ada"}})
 	require.True(t, ok, "the same maintainers, in another order: the restart looked the same day")
 	require.Equal(t, []string{"jq"}, look.Outdated)
-	_, ok = e.LastOutdatedLook(nil)
+	_, ok = e.LastOutdatedLook(PortSelection{})
 	require.False(t, ok, "not under no maintainer")
-	_, ok = e.LastOutdatedLook([]string{"@bob"})
+	_, ok = e.LastOutdatedLook(PortSelection{Maintainers: []string{"@bob"}})
 	require.False(t, ok, "not under another")
 
 	require.NoError(t, os.WriteFile(e.serveFile("outdated.json"), []byte(`{"checked_at":"2026-10-21T08:00:00Z","outdated":["jq"]}`), 0o644))
-	_, ok = e.LastOutdatedLook([]string{"@ada", "example.org:ada"})
+	_, ok = e.LastOutdatedLook(PortSelection{Maintainers: []string{"@ada", "example.org:ada"}})
 	require.False(t, ok, "a look that records no maintainer, as v0.5.0 wrote, is no one's")
+}
+
+// serve's selection is your ports by default, a default and not a
+// policy: serve.maintainers and serve.categories choose others' ports by
+// master's index, and the day's look carries one as far as serve.ship_to
+// says, as it carries yours (the dig's I38a, 2026-10-27 02:02Z).
+func TestServesSelectionCarriesAnothersPortAsItsOwn(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, PortSelection{Maintainers: []string{"@ada"}, NotMaintainers: []string{"@bob"}}, ServeSelection([]string{"@ada"}, nil, nil, []string{"@bob"}), "yours, by default")
+
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	reader := &newReleases{}
+	e.OutdatedReader = reader
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
+	morning := time.Date(2026, 10, 7, 8, 0, 0, 0, time.Local)
+	selection := ServeSelection([]string{"@ada"}, []string{"nomaintainer"}, []string{"devel"}, nil)
+	var said []string
+	s := newServer(e, ServeOptions{Outdated: ServeOutdated{PortSelection: selection}, ShipTo: string(ShipCommit), Say: func(line string) { said = append(said, line) }, Now: func() time.Time { return morning }})
+	(&outdatedScanner{s: s}).maybe(t.Context())
+	require.Len(t, reader.asked, 1)
+	require.Equal(t, []string{"nomaintainer"}, reader.asked[0].Maintainers, "serve.maintainers, not yours")
+	require.Equal(t, []string{"devel"}, reader.asked[0].Categories)
+	require.Contains(t, said, "serve: 1 port of the selected has newer releases: jq")
+	prepared := slices.ContainsFunc(said, func(line string) bool { return strings.HasPrefix(line, "serve: prepared ") })
+	require.True(t, prepared, "carried to commit: %q", said)
+	_, ok := e.LastOutdatedLook(selection)
+	require.True(t, ok, "status shows the selection's look")
+	_, ok = e.LastOutdatedLook(PortSelection{Maintainers: []string{"@ada"}})
+	require.False(t, ok, "not as yours")
 }
