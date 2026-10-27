@@ -2,8 +2,7 @@
 
 `tools/facts` harvests and regenerates `internal/macos/facts.json`: what
 each macOS release's developer tools are, as MacPorts Base sees them, per
-architecture and profile (decisions 9–13 of the
-[contracts direction](../../docs/reviews/2026-09-23-contracts-direction.md)).
+architecture and profile ([decisions](../../docs/decisions.md) 9 to 13).
 A modelled context answers Base's toolchain questions from the table
 rather than from the Mac dockhand runs on ([oracle](../../docs/oracle.md),
 phase 5). The table is regenerated, never edited by hand.

@@ -11,7 +11,8 @@
 //
 // That keeps the command line from becoming v2's cli, which grew by repeating
 // one sequence thirteen times and by reaching past its layer to work out
-// verdicts (docs/reviews/2026-09-21-architecture-and-organization.md).
+// verdicts (the architecture review of 2026-09-21, at tag
+// docs-archive-2026-10-25).
 // TestCommandTalksToTheEngine holds the line mechanically: its packages
 // import only what they bind, render, and compose, and read and write
 // records only through the engine.
