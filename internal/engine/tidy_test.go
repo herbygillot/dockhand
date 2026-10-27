@@ -653,3 +653,29 @@ func TestTidyRestyleMakesOneCommitThatEvaluatesTheSame(t *testing.T) {
 	require.Contains(t, testsupport.Git(t, branch.Worktree, "show", "HEAD~1:devel/zdemo/Portfile"), "maintainers    nomaintainer", "the change's commit is as written")
 	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"), "the working files are the restyled ones")
 }
+
+// A saved plan whose branch takes an untracked patch patchfiles names
+// applies: rc6 read it as stale, its files edited, since the plan held
+// the patch and the working files' tree didn't.
+func TestASavedPlanTakingAnUntrackedPatchApplies(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-patch"})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{
+		"textproc/jq/Portfile":       "name jq\nversion 1.7.1\npatchfiles fix.diff\n",
+		"textproc/jq/files/fix.diff": "fix\n",
+	})
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, []string{"textproc/jq/files/fix.diff"}, plan.Taken)
+	plan.Groups[0].SetSubject("jq: fix the build")
+	data, err := plan.Save()
+	require.NoError(t, err)
+	loaded, err := e.LoadTidyPlan(t.Context(), data)
+	require.NoError(t, err)
+	_, err = e.ApplyTidy(t.Context(), loaded)
+	require.NoError(t, err)
+	require.Equal(t, "textproc/jq/Portfile\ntextproc/jq/files/fix.diff", testsupport.Git(t, branch.Worktree, "show", "--format=", "--name-only", "HEAD"))
+}
