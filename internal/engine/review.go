@@ -189,12 +189,12 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	report.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, baseSource, headSource, report.Commits))
 	// The rules that evaluate its Portfiles evaluate its author's, which
 	// the trust rule says once (Then's item 12).
-	whose := "@" + report.Author + "'s"
 	if report.Author == "" {
-		whose = fmt.Sprintf("#%d's author's", number)
+		sayWhoseOf(ctx, fmt.Sprintf("#%d's author's", number), fmt.Sprintf("#%d", number))
+	} else if report.Author != report.Login {
+		sayWhoseOf(ctx, "@"+report.Author+"'s", fmt.Sprintf("#%d", number))
 	}
-	evaluate := report.Author != "" && report.Author == report.Login || e.mayEvaluateOthers(ctx, whose, fmt.Sprintf("#%d", number), "", "Portfile rules")
-	portfiles, err := e.portfileFindings(ctx, e.Repo, trees[report.Base], trees[report.Head], changed, evaluate)
+	portfiles, err := e.portfileFindings(ctx, e.Repo, trees[report.Base], trees[report.Head], changed)
 	if err != nil {
 		return report, err
 	}

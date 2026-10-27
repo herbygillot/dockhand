@@ -162,9 +162,6 @@ func (o ServeOptions) submits() bool { return o.ShipTo == string(ShipSubmit) }
 // of the lead, and drains again where a check was queued meanwhile, as
 // check -d does where it sees no serve leading (dockhand check -d's drain).
 func (e *Engine) Serve(ctx context.Context, session *coord.Session, options ServeOptions) error {
-	// Nobody watches serve: none of its work evaluates on this Mac a
-	// Portfile the person didn't author (the trust rule).
-	ctx = Unattended(ctx)
 	s := newServer(e, options)
 	var again model.RunID
 	for {

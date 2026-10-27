@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"errors"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -255,35 +254,24 @@ func TestTidyNamesTheSubportAHandEditChanges(t *testing.T) {
 	require.Equal(t, "zdemo-devel: update to 2.1", plan.Groups[0].Subject())
 }
 
-// An adopted pull request's Portfile isn't the person's (the trust rule,
-// Then's item 12): nothing unattended evaluates it for a record, which is
-// skipped, said, and journaled, and its directories keep their text
-// scope; a person's command evaluates it, saying once whose it is.
-func TestAnAdoptedPullRequestsRecordWaitsForAPerson(t *testing.T) {
+// An adopted pull request's Portfile isn't the person's (the trust rule's
+// attended half, Then's item 12 as the person reshaped it, 2026-10-27):
+// its records are made, and the command says once whose Portfiles it
+// evaluates on this Mac.
+func TestAnAdoptedPullRequestsRecordSaysWhose(t *testing.T) {
 	t.Parallel()
 	e, branch, _, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	branch.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 4711, Head: "alice:feature", Adopted: true, Author: "alice"}
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
 	var said []string
 	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { said = append(said, update.Message) })
-	records, err := e.revisionChanges(Unattended(ctx), branch.ID, branch.Base, tree, true)
+	records, err := e.revisionChanges(ctx, branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
-	require.Empty(t, records)
-	_, ok := changedSubports(records, "devel/libharbor")
-	require.False(t, ok)
-	require.True(t, recordedChange(records, "devel/libharbor", "libharbor"), "its text scope")
-	require.Equal(t, []string{"assessed's change records skipped: nothing unattended evaluates @alice's Portfiles on this Mac"}, said)
-	events, err := e.Events(t.Context(), 0, model.LevelInfo)
-	require.NoError(t, err)
-	require.True(t, slices.ContainsFunc(events, func(event model.Event) bool {
-		return event.Kind == model.EventTrustSkipped && event.Branch == branch.ID
-	}), "journaled")
-
-	said = nil
-	records, err = e.revisionChanges(ctx, branch.ID, branch.Base, tree, true)
-	require.NoError(t, err)
-	require.Contains(t, records, "devel/libharbor", "a person's command makes it")
+	require.Contains(t, records, "devel/libharbor")
 	require.Equal(t, []string{"Evaluating @alice's Portfiles on this Mac, for assessed"}, said)
+	_, err = e.revisionChanges(ctx, branch.ID, branch.Base, tree, true)
+	require.NoError(t, err)
+	require.Len(t, said, 1, "once a command")
 }
 
 func portNames(ports []model.SubportChange) []string {
@@ -350,30 +338,6 @@ func TestAPlanOfNewFilesNamesItsSiblings(t *testing.T) {
 	}
 	plan := model.Plan{Revision: capture.Revision.ID, Targets: []model.PlanTarget{target("zdemo"), target("zdemo-devel"), target("zdemo-legacy")}}
 	require.Equal(t, map[model.TargetID]bool{"zdemo": true, "zdemo-legacy": true}, e.PlanSiblings(t.Context(), plan))
-}
-
-// Nothing unattended plans a check of an adopted pull request, which
-// evaluates its author's Portfiles on this Mac; the refusal says how a
-// person checks it (the trust rule, Then's item 12).
-func TestNothingUnattendedChecksAnAdoptedPullRequest(t *testing.T) {
-	t.Parallel()
-	e, branch, _, _ := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
-	branch.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 4711, Head: "alice:feature", Adopted: true, Author: "alice"}
-	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
-	_, err := e.ProposeCheck(Unattended(t.Context()), CheckRequest{Capture: CaptureRequest{Branch: branch}})
-	require.ErrorContains(t, err, "assessed holds @alice's Portfiles, which nothing unattended evaluates on this Mac; check it yourself, as dockhand check assessed does")
-}
-
-// Ship's work is unattended as dockhand reads it everywhere, where nobody
-// was asked or --yes answered, and a person's asked ship is attended; a
-// command with no terminal is a person's (the trust rule's reading, the
-// prioritization thread's ruling, 2026-10-27).
-func TestShipIsUnattendedWhereNobodyLooks(t *testing.T) {
-	t.Parallel()
-	require.True(t, unattended(shipOptions{Answered: model.AnsweredYes}.within(t.Context())))
-	require.True(t, unattended(shipOptions{Answered: model.AnsweredNobody}.within(t.Context())))
-	require.False(t, unattended(shipOptions{Answered: model.AnsweredAsked}.within(t.Context())))
-	require.False(t, unattended(t.Context()), "nothing marks a command unattended for having no terminal")
 }
 
 // A change record another process recorded after this one read none

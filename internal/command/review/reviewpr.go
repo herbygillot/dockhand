@@ -144,9 +144,6 @@ func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Setting
 	} else {
 		fmt.Fprintf(streams.Out, "Adopted #%d as %s; checking it.\n", number, branch.ShortName())
 	}
-	if err := e.MayCheck(ctx, branch); err != nil {
-		return err
-	}
 	if len(on) == 0 {
 		on = []string{"tart"}
 	}

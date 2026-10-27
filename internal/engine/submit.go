@@ -385,7 +385,8 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	newPorts := e.newPorts(ctx, worktree, model.Source{Commit: model.ObjectID(head), Tree: model.ObjectID(plan.Tree), Base: branch.Base}, trees[string(branch.Base)], changed)
 	plan.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, model.Source{Commit: branch.Base, Base: branch.Base, Tree: model.ObjectID(trees[string(branch.Base)])},
 		model.Source{Commit: model.ObjectID(head), Base: branch.Base, Tree: model.ObjectID(plan.Tree)}, plan.Commits))
-	portfiles, err := e.portfileFindings(ctx, worktree, trees[string(branch.Base)], plan.Tree, changed, e.mayEvaluate(ctx, branch, "Portfile rules"))
+	e.sayWhose(ctx, branch)
+	portfiles, err := e.portfileFindings(ctx, worktree, trees[string(branch.Base)], plan.Tree, changed)
 	if err != nil {
 		return plan, err
 	}

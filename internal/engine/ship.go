@@ -51,15 +51,6 @@ type shipOptions struct {
 // review of 832f059e, high 1).
 func (o shipOptions) Unattended() bool { return o.mode().Unattended() }
 
-// within is ctx as the trust rule reads ship's work: unattended where
-// nobody looks over it (Unattended).
-func (o shipOptions) within(ctx context.Context) context.Context {
-	if o.Unattended() {
-		return Unattended(ctx)
-	}
-	return ctx
-}
-
 // mode is how ship was asked, as the verdict reads it.
 func (o shipOptions) mode() branchstate.Mode { return branchstate.Mode{Answered: o.Answered} }
 
@@ -84,7 +75,6 @@ func commitUnasked(options shipOptions, tidy TidyPlan) error {
 func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOptions) PreparedUpdate {
 	done := PreparedUpdate{}
 	var err error
-	ctx = options.within(ctx)
 	// Unattended, the update holds what nobody looks over before it edits,
 	// a major version and another open pull request for the port among
 	// them, as the command's ship does: serve's prepared and checked one

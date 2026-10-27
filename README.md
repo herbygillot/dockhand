@@ -247,7 +247,7 @@ These limitations have workarounds:
 
 Dockhand currently supports updating GitHub-hosted Go and Rust ports, individually and in batches. Other port types, shared subport releases, library rebuilds, and variant-by-variant checks are outside the supported scope. They may work, but require closer review of plans and diffs. If Dockhand cannot prepare an edit automatically, it explains the limitation and any manual steps available.
 
-A pull request someone else wrote, which `review` reads and `adopt --pr` brings into a branch, holds their Portfiles. When a command you run evaluates them with MacPorts on your Mac, it says so once, naming whose they are: "Evaluating @alice's Portfiles on this Mac". Nothing unattended evaluates them, serve, or ship or bump with nobody asked or `--yes`: the step is skipped and said. `review <pr> --check` adopts a pull request and checks it in Tart: its plan evaluates the Portfiles on your Mac, which it says, and the builds run in the guests.
+A pull request someone else wrote, which `review` reads and `adopt --pr` brings into a branch, holds their Portfiles. When a command you run evaluates them with MacPorts on your Mac, it says so once, naming whose they are: "Evaluating @alice's Portfiles on this Mac". Nothing unattended reaches them: serve submits only the branches it prepared, ship and bump start their own, and a local check of an adopted branch, which would run its Portfile as root, is refused. `review <pr> --check` adopts a pull request and checks it in Tart: its plan evaluates the Portfiles on your Mac, which it says, and the builds run in the guests.
 
 ## Help and contributing
 

@@ -50,3 +50,26 @@
   TestNothingUnattendedChecksAnAdoptedPullRequest,
   TestShipIsUnattendedWhereNobodyLooks, TestReviewCheckAdoptsAndChecks,
   and review's two others.
+
+## Its unattended half leaves (2026-10-27, later)
+
+At the person's word on the docs consolidation's re-review ("Yes, I
+agree.", 15:42Z), the trust rule keeps its attended half alone. Its
+unattended half served the maintainer inbox, which isn't taken, and
+nothing else unattended evaluates another's unmerged Portfile.
+
+- **Gone**:
+  - `engine.Unattended` and its mark, set by serve and by ship's `within`;
+  - the skip and its words;
+  - `branch.trust-skipped` (`EventTrustSkipped`);
+  - `MayCheck`, with its calls in `ProposeCheck` and review's `--check`.
+
+  `mayEvaluate`, which always answered yes after that, is now `sayWhose`,
+  which only says it, and `portfileFindings` takes no `evaluate`.
+- **Kept**: `OthersPortfiles` and `branches.pr_author`, change records
+  and assessments for adopted branches, `review <pr> --check`, and
+  `local`'s refusal of an adopted branch.
+- **Docs**: the README, docs/usage.md, and the release-notes drafts say
+  it. v0.7.0's Upgrading loses its line on a command with no terminal,
+  which only the trust rule read.
+- Test: TestAnAdoptedPullRequestsRecordSaysWhose, with review's two.
