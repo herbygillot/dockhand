@@ -116,6 +116,11 @@ type TidyPlan struct {
 	// files patchfiles names that Git ignores, left out as git add leaves
 	// them (tidyWorkingFiles).
 	Taken, LeftOut, Ignored []string
+	// Fixed are the lint findings the plan fixes on the lines the branch
+	// adds or alters, as dockhand's own edits, each with its Portfile
+	// (tidyWorkingFiles); applying commits them and writes them into the
+	// working files.
+	Fixed []string
 }
 
 // Subjects are the subjects the branch is committed with once the plan
@@ -194,7 +199,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	}
 	final = files.final
 	plan := TidyPlan{Branch: branch, Base: base, Head: head, Final: final, BaseTree: trees[base], History: history, Index: index,
-		Taken: files.taken, LeftOut: files.leftOut, Ignored: files.ignored}
+		Taken: files.taken, LeftOut: files.leftOut, Ignored: files.ignored, Fixed: files.words}
 	changed, err := worktree.ChangedPaths(ctx, trees[base], final)
 	if err != nil {
 		return TidyPlan{}, err
@@ -501,6 +506,10 @@ func derivedSubject(ctx context.Context, repo *git.Repository, before, after str
 type tidyFiles struct {
 	final                   string
 	taken, leftOut, ignored []string
+	// fixed are the Portfiles' lint fixes, as edits of the working files,
+	// and words what each fixed.
+	fixed []git.FileEdit
+	words []string
 }
 
 // tidyWorkingFiles takes into final the untracked files a changed port's
@@ -555,7 +564,47 @@ func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, f
 			return tidyFiles{}, err
 		}
 	}
-	return files, nil
+	return files, tidyLintFixes(ctx, worktree, baseTree, changed, &files)
+}
+
+// tidyLintFixes fixes, in each Portfile the branch changes, the lint
+// findings dockhand fixes itself on the lines the branch adds or alters
+// since its base (portfile.FixTouched, the person's "we should have
+// Dockhand do those", 2026-10-27), as dockhand's own edits: a hand edit's
+// trailing spaces and swallowing \ are committed fixed, their untouched
+// neighbours as they were. Line 1 is left as it was, as tidy leaves the
+// modeline.
+func tidyLintFixes(ctx context.Context, worktree *git.Repository, baseTree string, changed []string, files *tidyFiles) error {
+	for _, name := range changed {
+		if path.Base(name) != "Portfile" {
+			continue
+		}
+		state, after, err := worktree.File(ctx, files.final, name)
+		if err != nil {
+			return err
+		}
+		if !state.Exists {
+			continue
+		}
+		_, before, err := worktree.File(ctx, baseTree, name)
+		if err != nil {
+			return err
+		}
+		fixed, fixes := portfile.FixTouched(before, after)
+		if len(fixes) == 0 {
+			continue
+		}
+		files.fixed = append(files.fixed, git.FileEdit{Path: name, Before: state, After: fixed, Mode: state.Mode})
+		for _, fix := range fixes {
+			files.words = append(files.words, name+": "+fix.Words())
+		}
+	}
+	if len(files.fixed) == 0 {
+		return nil
+	}
+	final, err := worktree.EditTree(ctx, files.final, files.fixed)
+	files.final = final
+	return err
 }
 
 func groupOf(path string) string {
@@ -1115,6 +1164,11 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 			if err := worktree.ResetIndex(ctx); err != nil {
 				return "", fmt.Errorf("commits were created, but the staging area could not be reset: %w; run git reset to align it with the new commits", err)
 			}
+			// The lint fixes the commits made go into the working files,
+			// which would otherwise read as undoing them.
+			if err := worktree.ApplyToWorkingFiles(ctx, files.fixed); err != nil {
+				return "", fmt.Errorf("commits were created, but the lint fixes couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(files.fixed), " "))
+			}
 			// A narrowing that fails leaves the worktree as wide as it was.
 			if narrowed, err := e.narrow(ctx, worktree, plan.Branch, plan.Base, plan.Final); err == nil {
 				result.Narrowed = narrowed
@@ -1126,6 +1180,14 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 		return result, err
 	}
 	return TidyResult{}, err
+}
+
+func fixedPaths(edits []git.FileEdit) []string {
+	paths := make([]string, len(edits))
+	for i, edit := range edits {
+		paths[i] = edit.Path
+	}
+	return paths
 }
 
 // narrow leaves out of a worktree dockhand made the directories the branch

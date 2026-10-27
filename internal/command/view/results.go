@@ -75,6 +75,8 @@ type updateJSON struct {
 	// PlainHTTP are the port's URLs over plain HTTP, and whether each
 	// answers over HTTPS.
 	PlainHTTP []plainHTTPJSON `json:"plain_http,omitempty"`
+	// Fixed are the lint findings the edit fixed on the lines it wrote.
+	Fixed []string `json:"fixed,omitempty"`
 	// Tidy, Check, and Submit are the steps ship and bump go on
 	// to, each as tidy, check, and submit report it, as far as they went.
 	Tidy   *tidyJSON   `json:"tidy,omitempty"`
@@ -214,6 +216,7 @@ func UpdateView(branch model.Branch, started bool, update engine.Update, plan bo
 		viewed.Others = append(viewed.Others, otherJSON{Number: pr.Number, Title: pr.Title, URL: pr.URL})
 	}
 	viewed.OthersProblem = update.OthersProblem
+	viewed.Fixed = update.Fixed
 	for _, url := range update.PlainHTTP {
 		viewed.PlainHTTP = append(viewed.PlainHTTP, plainHTTPJSON{Option: url.Option, URL: url.URL, HTTPS: url.HTTPS, Answers: url.Answers})
 	}
@@ -286,6 +289,9 @@ type tidyJSON struct {
 	Taken   []string `json:"taken"`
 	LeftOut []string `json:"left_out"`
 	Ignored []string `json:"ignored"`
+	// Fixed are the lint findings the plan fixes on the lines the branch
+	// adds or alters.
+	Fixed []string `json:"fixed"`
 	// Applied is what applying made, when it did.
 	Applied *TidyAppliedJSON `json:"applied"`
 }
@@ -300,7 +306,7 @@ type TidyAppliedJSON struct {
 
 func TidyView(plan engine.TidyPlan) tidyJSON {
 	viewed := tidyJSON{Branch: plan.Branch.ShortName(), Keep: plan.Keep, Unambiguous: plan.Unambiguous(), Commits: []tidyCommitJSON{}, Findings: findingsView(plan.Findings), Warnings: findingsView(plan.Warnings),
-		Taken: NonNil(plan.Taken), LeftOut: NonNil(plan.LeftOut), Ignored: NonNil(plan.Ignored)}
+		Taken: NonNil(plan.Taken), LeftOut: NonNil(plan.LeftOut), Ignored: NonNil(plan.Ignored), Fixed: NonNil(plan.Fixed)}
 	for _, group := range plan.Groups {
 		commit := tidyCommitJSON{Subject: group.Subject(), Message: group.Message, Paths: NonNil(group.Paths), Ports: NonNil(group.Ports), Combines: []string{},
 			Working: group.Working, FromEdits: group.FromEdits, Created: group.Created, Notes: NonNil(group.Notes), Blocking: NonNil(group.Blocking)}

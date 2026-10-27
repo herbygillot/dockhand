@@ -75,6 +75,9 @@ type sourceInput struct {
 	// does: the update goes on only where the declared block is exactly
 	// what the current version's lock gives (dependencyPatches).
 	manifestHook string
+	// tarballMoved is true where the version's edit moved
+	// github.tarball_from tarball to archive (probeVersion).
+	tarballMoved bool
 }
 
 // derive is the baseline of the same session with other contents: the

@@ -107,7 +107,8 @@ func WriteFindings(out io.Writer, plan engine.TidyPlan) {
 	}
 }
 
-// writeUntracked says the untracked files a plan takes in and leaves out.
+// writeUntracked says the untracked files a plan takes in and leaves out,
+// and the lint fixes it makes.
 func writeUntracked(out io.Writer, plan engine.TidyPlan) {
 	if len(plan.Taken) > 0 {
 		fmt.Fprintf(out, "Included untracked files named in patchfiles: %s\n", strings.Join(plan.Taken, ", "))
@@ -117,6 +118,9 @@ func writeUntracked(out io.Writer, plan engine.TidyPlan) {
 	}
 	for _, path := range plan.Ignored {
 		fmt.Fprintf(out, "Excluded ignored file named in patchfiles: %s. Run git check-ignore -v %s to see the rule.\n", path, path)
+	}
+	for _, fixed := range plan.Fixed {
+		fmt.Fprintf(out, "Fixes: %s\n", fixed)
 	}
 }
 

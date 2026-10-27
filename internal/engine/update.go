@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/portcreate"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -267,6 +268,10 @@ type Update struct {
 	// DistSubdirRemoved is true when a version update removed the
 	// dist_subdir an earlier stealth update set.
 	DistSubdirRemoved bool
+	// Fixed are the lint findings the edit fixed on the lines it wrote,
+	// each in words: whitespace, a swallowing continuation, a lone
+	// openmaintainer, and a version update's move from GitHub's tarball.
+	Fixed []string
 }
 
 // Update edits a port's files in the branch's worktree, as the worktree
@@ -502,6 +507,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		if err := withModelines(ctx, worktree, captured, &result); err != nil {
 			return Update{}, err
 		}
+	}
+	if update.Fixed, err = withLintFixes(ctx, worktree, captured, &result); err != nil {
+		return Update{}, err
+	}
+	if result.TarballMoved {
+		update.Fixed = append(update.Fixed, e.tarballMoved(ctx, update.Release, result))
 	}
 	// A version update or a checksum refresh is where the port's URLs are
 	// looked at, so its plain-HTTP ones are said there, beside the edit. A
@@ -1101,6 +1112,64 @@ func withModelines(ctx context.Context, worktree *git.Repository, captured strin
 	}
 	result.PreparedTree = model.ObjectID(prepared)
 	return nil
+}
+
+// withLintFixes fixes, on the lines each Portfile an edit writes adds or
+// alters, the lint findings dockhand fixes itself (portfile.FixTouched,
+// the person's "we should have Dockhand do those", 2026-10-27), and gives
+// the prepared tree with them: the fixes, in words, each with its file.
+func withLintFixes(ctx context.Context, worktree *git.Repository, captured string, result *editprep.Result) ([]string, error) {
+	var fixed []string
+	for i, file := range result.Files {
+		if file.Delete || path.Base(file.Path) != "Portfile" {
+			continue
+		}
+		_, before, err := worktree.File(ctx, captured, file.Path)
+		if err != nil {
+			return nil, err
+		}
+		after, fixes := portfile.FixTouched(before, file.After)
+		for _, fix := range fixes {
+			fixed = append(fixed, file.Path+": "+fix.Words())
+		}
+		result.Files[i].After = after
+	}
+	if len(fixed) == 0 {
+		return nil, nil
+	}
+	prepared, err := worktree.EditTree(ctx, captured, result.Files)
+	if err != nil {
+		return nil, err
+	}
+	result.PreparedTree = model.ObjectID(prepared)
+	return fixed, nil
+}
+
+// tarballMoved says a version update's move from GitHub's tarball to its
+// archive, and where the release carries the archive the github
+// PortGroup's releases fetch names, as create reads it
+// (portcreate.HasReleaseArchive), that github.tarball_from releases
+// fetches it: MacPorts prefers a release's own (the review survey's §4).
+func (e *Engine) tarballMoved(ctx context.Context, release *model.Release, result editprep.Result) string {
+	words := "github.tarball_from tarball is now archive, GitHub's archive of the tag, with the checksums the update made"
+	info, ok := result.PortAfter(result.Target.Name)
+	if !ok || release == nil || release.Forge != forge.GitHub || release.Tag == "" {
+		return words
+	}
+	repository, err := e.forge().Repository("https://github.com", release.Repository)
+	if err != nil {
+		return words
+	}
+	assets, ok := repository.(forge.AssetRepository)
+	if !ok {
+		return words
+	}
+	names, err := assets.Assets(ctx, release.Tag)
+	project, version := info.Options["github.project"], info.Options["github.version"]
+	if err != nil || !portcreate.HasReleaseArchive(names, project, version) {
+		return words
+	}
+	return fmt.Sprintf("%s; release %s carries its own, %s-%s.tar.gz, which github.tarball_from releases fetches", words, release.Tag, project, version)
 }
 
 // recordHandEdit records a hand edit's attempt as the person's answer to

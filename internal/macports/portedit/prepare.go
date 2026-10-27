@@ -155,6 +155,9 @@ type Result struct {
 	// DistSubdirRemoved is true when a version update removed the
 	// dist_subdir an earlier stealth update set.
 	DistSubdirRemoved bool `json:",omitempty"`
+	// TarballMoved is true when a version update moved
+	// github.tarball_from tarball to archive.
+	TarballMoved bool `json:",omitempty"`
 	// Unchanged is the port as it stands where nothing was edited, as for
 	// an update to the version it already has: what it is at, which no
 	// fidelity report says then. Nil when there was an edit.
