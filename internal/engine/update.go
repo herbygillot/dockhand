@@ -433,6 +433,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		Version:    request.Version,
 		Subject:    request.Subject,
 		HandEdit:   request.HandEdit,
+		Attended:   !request.Unattended,
 	}
 	if request.Action == model.EditChecksums {
 		// Which files the branch changed since its base is the branch's to

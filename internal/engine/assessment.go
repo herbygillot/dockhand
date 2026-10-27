@@ -477,7 +477,7 @@ func (e *Engine) patchesFor(ctx context.Context, request patchRequest) []assess.
 			patches = append(patches, patchcheck.Patch{Name: name, Data: data})
 		}
 	}
-	results, err := patchcheck.Port(ctx, infos[1], paths, patches)
+	results, err := patchcheck.Port(ctx, infos[1], paths, patches, false)
 	if err != nil {
 		return unchecked(err.Error())
 	}

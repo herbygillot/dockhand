@@ -205,11 +205,11 @@ func TestPatchArgsStripLevelIsMacPorts(t *testing.T) {
 	archive := sourceArchive(t, map[string]string{"herdr-0.9.5/src/update.rs": "one\ntwo\nthree\n"})
 	patch := strings.ReplaceAll(strings.ReplaceAll(good, "--- dir/a.txt", "--- a/src/update.rs"), "+++ dir/a.txt", "+++ b/src/update.rs")
 	info := macports.PortInfo{Options: map[string]string{"worksrcdir": "herdr-0.9.5", "extract.rename": "1", "patch.pre_args": "-t -N -p0", "patch.args": "-p1"}}
-	results, err := Port(t.Context(), info, []string{archive}, []Patch{{Name: "patch-macports-update.diff", Data: []byte(patch)}})
+	results, err := Port(t.Context(), info, []string{archive}, []Patch{{Name: "patch-macports-update.diff", Data: []byte(patch)}}, false)
 	require.NoError(t, err)
 	require.True(t, results[0].Applies, results[0].Detail)
 	delete(info.Options, "patch.args")
-	results, err = Port(t.Context(), info, []string{archive}, []Patch{{Name: "patch-macports-update.diff", Data: []byte(patch)}})
+	results, err = Port(t.Context(), info, []string{archive}, []Patch{{Name: "patch-macports-update.diff", Data: []byte(patch)}}, false)
 	require.NoError(t, err)
 	require.False(t, results[0].Applies, "at -p0 alone it finds no file")
 }
@@ -271,4 +271,18 @@ func TestAPatchIsRefreshedToApplyAsWritten(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, results[0].Fuzzed())
 	require.Nil(t, results[0].Refresh, "fuzz is a person's look")
+
+	// An attended edit's is re-emitted where patch put it, its fuzzed hunk
+	// said for the person to look over; it applies as written, and makes
+	// what the old one made with fuzz.
+	attended := request("fuzz.diff", fuzz)
+	attended.Fuzz = true
+	results, err = Check(t.Context(), attended)
+	require.NoError(t, err)
+	require.NotNil(t, results[0].Refresh)
+	require.Equal(t, []string{"hunk 1 of dir/a.txt with fuzz 1"}, results[0].Refresh.Fuzzed)
+	require.Equal(t, "hunk 1 of dir/a.txt with fuzz 1 written where patch put it: look it over in the diff", results[0].Refresh.Words())
+	again, err = Check(t.Context(), request("fuzz.diff", string(results[0].Refresh.Data)))
+	require.NoError(t, err)
+	require.Equal(t, "applies", again[0].Detail)
 }

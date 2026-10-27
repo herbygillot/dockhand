@@ -62,6 +62,10 @@ type Request struct {
 	// doesn't make, for its best attempt (HandAttempt), for the person to
 	// finish as their own: update --hand-edit, attended alone.
 	HandEdit bool
+	// Attended is an edit a person looks over before it's committed,
+	// where a patch that applies only with fuzz is re-emitted for them to
+	// look at in the diff; nobody's holds it (patch-fuzz), unwritten.
+	Attended bool
 }
 
 // Fidelity is the comparison report for one evaluated edit.
