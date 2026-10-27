@@ -29,14 +29,14 @@ func TestConfigShowsWhatIsInEffect(t *testing.T) {
 	require.Regexp(t, setting("providers.tart.xcode.sonoma", "15.4, as MacPorts' arm64 buildbot runs  (default)"), out)
 
 	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("maintainer = \"{@ada example.org:ada} openmaintainer\"\n[cleanup]\nautomatic = false\n[serve]\nnotify = false\nsubmit_limit = 3\n[providers.tart]\ncapacity = 2\n[providers.tart.xcode]\n14 = \"16.2\"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("maintainer = \"{@ada example.org:ada} openmaintainer\"\n[cleanup]\nautomatic = false\n[serve]\nnotify = false\nsubmit_limit = 3\n[providers.tart.xcode]\n14 = \"16.2\"\n"), 0o644))
 	out, _, err = cmdtest.Dockhand(t, "config")
 	require.NoError(t, err)
 	require.Regexp(t, setting("maintainer", "{@ada example.org:ada} openmaintainer"), out)
 	require.Regexp(t, setting("cleanup.automatic", "false"), out)
 	require.Regexp(t, setting("serve.notify", "false"), out)
 	require.Regexp(t, setting("serve.submit_limit", "3"), out)
-	require.Regexp(t, setting("providers.tart.capacity", "2"), out)
+	require.NotContains(t, out, "providers.tart.capacity", "the Mac's VMs are Tart's limit, no setting")
 	require.Regexp(t, setting("providers.tart.xcode.sonoma", "16.2"), out, "by release number")
 	require.Regexp(t, setting("providers.tart.xcode.tahoe", "26.6, as MacPorts' arm64 buildbot runs  (default)"), out)
 

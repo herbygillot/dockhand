@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -25,9 +26,9 @@ func (e *Engine) capacity(provider string) int {
 
 // awaitSlot waits, before a check runs here, until each provider it builds
 // on has a slot under its capacity, as serve keeps to it: a check another
-// live process runs counts, so two foreground checks don't run on one
-// Tart host at once where providers.tart.capacity says one (the command
-// UX review's §9: the capacity governed serve alone). Where it waits, the
+// live process runs counts, so foreground checks keep to a provider's
+// capacity as serve's do (the command UX review's §9: the capacity
+// governed serve alone). Where it waits, the
 // run's journal says so, once.
 func (e *Engine) awaitSlot(ctx context.Context, session *coord.Session, id model.RunID) error {
 	run, err := e.Run(ctx, id)
@@ -110,8 +111,9 @@ func (e *Engine) fullProviders(ctx context.Context, session *coord.Session, id m
 
 // slotWords say what fills each full provider, with the process that
 // runs each check, its build, and how long the check has run, as status
-// -v's processes give them: "providers.tart.capacity is 1, and check-616
-// is using it (a foreground dockhand, pid 4242, v0.5.0-rc5, for 2 hours)".
+// -v's processes give them: "providers.command.capacity is 1, and
+// check-616 is using it (a foreground dockhand, pid 4242, v0.5.0-rc5, for
+// 2 hours)"; Tart's is the Mac's VMs, which no setting names.
 // "check-616 is using it" said nothing of whose it was (the bazel and
 // exiv2 sessions' notes, 2026-10-24).
 func slotWords(full map[string][]slotHolder, e *Engine) []string {
@@ -129,7 +131,11 @@ func slotWords(full map[string][]slotHolder, e *Engine) []string {
 			}
 			names = append(names, name)
 		}
-		words = append(words, fmt.Sprintf("providers.%s.capacity is %d, and %s %s using it", provider, e.capacity(provider), prose.And(names), map[bool]string{true: "is", false: "are"}[len(names) == 1]))
+		limit, it := fmt.Sprintf("providers.%s.capacity is %d", provider, e.capacity(provider)), "it"
+		if provider == buildenv.Tart {
+			limit, it = fmt.Sprintf("Tart takes as many checks as the Mac runs VMs, %d", e.capacity(provider)), "them"
+		}
+		words = append(words, fmt.Sprintf("%s, and %s %s using %s", limit, prose.And(names), map[bool]string{true: "is", false: "are"}[len(names) == 1], it))
 	}
 	return words
 }

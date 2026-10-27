@@ -361,9 +361,6 @@ var xcodeVersion = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
 // TartProvider builds in dockhand's Tart images, one fresh clone per
 // release and attempt.
 type TartProvider struct {
-	// Capacity is how many checks serve runs on it at once; 1 when unset,
-	// since macOS runs two VMs at most, the person's own among them.
-	Capacity int `toml:"capacity"`
 	// TestTimeout bounds a target's tests, as a duration such as "45m";
 	// 30 minutes when unset.
 	TestTimeout string `toml:"test_timeout"`
@@ -436,9 +433,7 @@ func (f File) Capacity(provider string) int {
 		}
 		return DefaultGitHubCapacity
 	case buildenv.Tart:
-		if f.Providers.Tart.Capacity > 0 {
-			return f.Providers.Tart.Capacity
-		}
+		return TartCapacity
 	}
 	return DefaultCapacity
 }
@@ -449,10 +444,15 @@ const (
 	DefaultShipTo      = "list"
 	DefaultOutdatedAt  = "07:00"
 	DefaultSubmitLimit = 10
-	// DefaultCapacity is a provider's, Tart's and a command's, apart from
-	// GitHub's: macOS runs two VMs at most, the person's own among them.
+	// DefaultCapacity is a command's, apart from GitHub's.
 	DefaultCapacity       = 1
 	DefaultGitHubCapacity = 2
+	// TartCapacity is as many checks as the Mac runs VMs, two at most, the
+	// person's own among them, no setting of its own (the person's "Let
+	// macOS be the limit. Not Dockhand.", 2026-10-26): each check's VMs
+	// wait for a free one before they start (buildenv/tart's slot), so a
+	// minmax check beside another waits for its second.
+	TartCapacity = 2
 )
 
 // Defaults are every setting's default as dockhand config shows it, keyed
@@ -480,7 +480,6 @@ func Defaults() map[string]string {
 		"serve.outdated_at":              DefaultOutdatedAt,
 		"serve.submit_limit":             strconv.Itoa(DefaultSubmitLimit),
 		"serve.notify":                   "true",
-		"providers.tart.capacity":        strconv.Itoa(DefaultCapacity),
 		"providers.tart.test_timeout":    ageWords(buildenv.DefaultTestTimeout),
 		"providers.tart.build_timeout":   ageWords(buildenv.DefaultBuildTimeout),
 		"providers.command":              "(not set up)",
@@ -654,9 +653,6 @@ func parse(path, text string) (File, error) {
 	}
 	if f.Providers.GitHub.Capacity < 0 {
 		return File{}, fmt.Errorf("%s: providers.github.capacity: %d is not a number of checks", path, f.Providers.GitHub.Capacity)
-	}
-	if f.Providers.Tart.Capacity < 0 {
-		return File{}, fmt.Errorf("%s: providers.tart.capacity: %d is not a number of checks", path, f.Providers.Tart.Capacity)
 	}
 	if timeout := f.Providers.Tart.TestTimeout; timeout != "" {
 		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {

@@ -218,6 +218,12 @@ func (s *server) lead(ctx context.Context, session *coord.Session) (*model.Lease
 // once, as Tart builds two releases in the Mac's two VMs, which "1 at a
 // time" hid (the sshuttle run).
 func capacityWords(name string, provider buildenv.Provider, checks int) string {
+	// Tart's limit is the Mac's VMs, which its checks share, not a count
+	// of checks of its own: a minmax check beside another waits for its
+	// second VM.
+	if name == buildenv.Tart {
+		return fmt.Sprintf("%s (as many checks as the Mac runs VMs, %d, each VM waiting for a free one)", name, checks)
+	}
 	words := fmt.Sprintf("%s (%s at a time", name, prose.Plural(checks, "check"))
 	if parallel, ok := provider.(buildenv.ParallelProvider); ok && parallel.Parallel() > 1 {
 		words += fmt.Sprintf(", each building up to %d of its environments at once", parallel.Parallel())

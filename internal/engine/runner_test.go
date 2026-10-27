@@ -1537,7 +1537,7 @@ func TestAnEnvironmentThatCantReuseSaysSo(t *testing.T) {
 // environments at once, as Tart builds two releases (the sshuttle run).
 func TestServeSaysHowManyChecksAndEnvironmentsAtOnce(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "tart (1 check at a time, each building up to 2 of its environments at once)", capacityWords("tart", &together{}, 1))
+	require.Equal(t, "tart (as many checks as the Mac runs VMs, 2, each VM waiting for a free one)", capacityWords("tart", &together{}, 2))
 	require.Equal(t, "command (2 checks at a time)", capacityWords("command", &scriptedProvider{}, 2))
 }
 
