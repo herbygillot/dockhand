@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -14,10 +15,14 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -89,6 +94,9 @@ type BranchStatus struct {
 	// they're recorded; status collects none.
 	Held       []model.Concern
 	Assessment AssessmentState
+	// Wider is the check a passing attended host check didn't build that
+	// the update asks for (wider).
+	Wider *branchstate.Wider
 	// Stopped is the active run recorded as running that no live process
 	// drives, once JudgeStopped has looked; nil otherwise.
 	Stopped *model.Run
@@ -246,13 +254,76 @@ func (s BranchStatus) Check() branchstate.Check {
 func (s BranchStatus) Facts() branchstate.Facts {
 	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Commits: s.Commits, Edited: s.Edited,
 		Held: s.Held, Moved: s.Moved, NotAssessed: s.Assessment == AssessmentPending, NoFork: s.NoFork, Pushed: s.Pushed(), OthersPushed: s.SomeoneElsePushed(),
-		Failing: s.Failing(), CI: s.CI, Ports: s.Scope.PortNames()}
+		Failing: s.Failing(), CI: s.CI, Ports: s.Scope.PortNames(), Wider: s.Wider}
 	if s.Evidence != nil {
 		if on, ok := OnValues(s.Evidence.Plan.Environments); ok {
 			b.CheckOn = on
 		}
 	}
 	return branchstate.Facts{Branch: b, Check: s.Check()}
+}
+
+// wider is the check a passing attended check of this Mac's release alone
+// didn't build, where the update gives a reviewer reason to ask for it
+// (the docs dig's I47): minmax where it raised a floor, the oldest macOS
+// the Portfile allows or a toolchain's, and where it changed a variant's
+// sources, that variant, since every build takes the default variants.
+// serve, bump, and ship --yes build minmax already; host stays the
+// attended default. Nil where neither, or the check built more.
+func (e *Engine) wider(ctx context.Context, status BranchStatus, changed []string) *branchstate.Wider {
+	plan := status.Evidence.Plan
+	if status.Latest.State != model.RunPassed || status.Latest.Origin == model.OriginServe || plan.Profile != string(config.RuleHost) && plan.Profile != config.ProfileLocal {
+		return nil
+	}
+	floors := floorConcerns(status.Changes)
+	var raised []string
+	for _, floor := range floors {
+		raised = append(raised, floor.Port)
+	}
+	if assessments, err := e.revisionAssessments(ctx, status.Branch.ID, status.Branch.Base, model.ObjectID(status.Tree), false); err == nil {
+		for _, a := range assessments {
+			if slices.ContainsFunc(a.Comparison.Changes, assess.RaisesFloor) && !slices.Contains(raised, a.Port) {
+				raised = append(raised, a.Port)
+			}
+		}
+	}
+	if len(raised) > 0 {
+		return &branchstate.Wider{Next: branchstate.Next{Verb: branchstate.VerbCheck, Args: []string{"--build", string(config.RuleMinMax)}},
+			Why: fmt.Sprintf("the update raises the oldest macOS %s builds on, or its toolchain's", prose.And(raised))}
+	}
+	if plan.Variants != "" {
+		return nil
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(status.Branch.Base)})
+	if err != nil {
+		return nil
+	}
+	var variants []string
+	for _, directory := range status.Scope.Ports {
+		file := path.Join(directory, "Portfile")
+		var patches []string
+		for _, file := range changed {
+			if name, ok := strings.CutPrefix(file, directory+"/files/"); ok {
+				patches = append(patches, name)
+			}
+		}
+		before, _ := e.Repo.ReadFiles(ctx, trees[string(status.Branch.Base)], []string{file})
+		after, _ := e.Repo.ReadFiles(ctx, status.Tree, []string{file})
+		for _, variant := range portfile.SourceVariants(before[file], after[file], patches) {
+			if !slices.Contains(variants, variant) {
+				variants = append(variants, variant)
+			}
+		}
+	}
+	if len(variants) == 0 {
+		return nil
+	}
+	signed := make([]string, len(variants))
+	for i, variant := range variants {
+		signed[i] = "+" + variant
+	}
+	return &branchstate.Wider{Next: branchstate.Next{Verb: branchstate.VerbCheck, Args: []string{"--variants", strings.Join(signed, "")}},
+		Why: fmt.Sprintf("the update changes the sources of %s, which a build of the default variants doesn't take", prose.And(signed))}
 }
 
 // Vocabulary words what branchstate's sentences name, as the engine words
@@ -448,6 +519,9 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 	status.Evidence = &evidence
 	if status.Current {
 		status.Moved = preparedSources(status.Evidence, edits)
+	}
+	if err == nil && status.Current {
+		status.Wider = e.wider(ctx, status, changed)
 	}
 	if err == nil && status.Current && len(evidence.Failed()) > 0 {
 		err = e.readDecisions(ctx, &status)

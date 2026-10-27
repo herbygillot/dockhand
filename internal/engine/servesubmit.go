@@ -534,6 +534,12 @@ func (e *Engine) floorHolds(ctx context.Context, branch model.BranchID, base, tr
 	if err != nil {
 		return nil
 	}
+	return floorConcerns(records)
+}
+
+// floorConcerns are the floors change records raise: a port's Darwin
+// floor from its platforms, or its macosx_deployment_target, raised.
+func floorConcerns(records map[string]model.ChangeRecord) []model.Concern {
 	directories := slices.Sorted(maps.Keys(records))
 	var held []model.Concern
 	for _, directory := range directories {
