@@ -590,3 +590,26 @@ func TestTidySaysTheLintShapedNotices(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{"license-spdx textproc/jq/Portfile:3", "unreferenced-file textproc/jq/files/stray.diff"}, codes)
 }
+
+// A saved plan is loaded with the working files as tidy takes them, its
+// lint fixes among them: one with a fix read as stale, its files edited.
+func TestASavedPlanWithLintFixesApplies(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	write(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 4.54.1\n"})
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "yq: new port")
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "yq-hand"})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"textproc/yq/Portfile": "name yq\nversion 4.54.2  \n"})
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	plan.Groups[0].SetSubject("yq: update to 4.54.2")
+	data, err := plan.Save()
+	require.NoError(t, err)
+	loaded, err := e.LoadTidyPlan(t.Context(), data)
+	require.NoError(t, err)
+	_, err = e.ApplyTidy(t.Context(), loaded)
+	require.NoError(t, err)
+}

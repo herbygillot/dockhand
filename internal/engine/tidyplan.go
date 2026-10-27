@@ -260,6 +260,17 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	if err != nil {
 		return TidyPlan{}, err
 	}
+	// The plan was saved with the working files as tidy takes them, the
+	// patches patchfiles names and its lint fixes among them.
+	trees, err := worktree.CommitTrees(ctx, []string{saved.Base})
+	if err != nil {
+		return TidyPlan{}, err
+	}
+	files, err := tidyWorkingFiles(ctx, worktree, trees[saved.Base], final)
+	if err != nil {
+		return TidyPlan{}, err
+	}
+	final = files.final
 	switch {
 	case string(branch.Base) != saved.Base:
 		return TidyPlan{}, fmt.Errorf("%w: its base moved from %s to %s; make a new plan with dockhand tidy --plan --out", ErrStalePlan, model.ObjectID(saved.Base).Short(), branch.Base.Short())
@@ -281,11 +292,8 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	if err != nil {
 		return TidyPlan{}, err
 	}
-	trees, err := worktree.CommitTrees(ctx, []string{saved.Base})
-	if err != nil {
-		return TidyPlan{}, err
-	}
-	plan := TidyPlan{Branch: branch, Base: saved.Base, Head: head, Final: final, BaseTree: trees[saved.Base], History: history, Index: saved.Index}
+	plan := TidyPlan{Branch: branch, Base: saved.Base, Head: head, Final: final, BaseTree: trees[saved.Base], History: history, Index: saved.Index,
+		Taken: files.taken, LeftOut: files.leftOut, Ignored: files.ignored, Fixed: files.words}
 	changed, err := worktree.ChangedPaths(ctx, plan.BaseTree, final)
 	if err != nil {
 		return TidyPlan{}, err
