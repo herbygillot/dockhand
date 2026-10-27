@@ -243,7 +243,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 	// The checks and the processes are -v's tables: a check shows on its
 	// branch's row, and other processes are a line (part 5, item 4).
 	if streams.Verbose() > 0 {
-		view.WriteQueue(out, queue)
+		view.WriteQueue(out, queue, serve.Running)
 		writeProcesses(out, processes)
 	} else if others := len(processes); others > 0 {
 		fmt.Fprintf(out, "\n%s working on this checkout; dockhand status -v lists %s.\n", prose.Plural(others, "other dockhand process"), map[bool]string{true: "it", false: "them"}[others == 1])

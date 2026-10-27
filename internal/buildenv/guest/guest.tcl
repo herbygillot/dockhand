@@ -278,6 +278,10 @@ proc why {log message} {
             continue
         }
         if {$line eq "" || [regexp {^(DEBUG|--->|Exit code|Executing:|:debug:)} $line]} { continue }
+        # make's and ninja's own failure lines, and a compiler's count,
+        # follow the tool's error: kept, they'd be all a compile under make
+        # says (field testing's lwan, teleport, and wails).
+        if {[regexp {^(g?make(\[[0-9]+\])?: (\*\*\*|Leaving directory|Entering directory)|ninja: build stopped|FAILED: |[0-9]+ (warnings? and [0-9]+ )?errors? generated\.|-- Configuring incomplete, errors occurred)} $line]} { continue }
         lappend recent [string range $line 0 299]
         if {[llength $recent] > 3} { set recent [lrange $recent end-2 end] }
     }

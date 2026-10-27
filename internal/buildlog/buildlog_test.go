@@ -157,6 +157,23 @@ func TestARustErrorIsReadWithWhereItIs(t *testing.T) {
 	require.Equal(t, "error[E0425]: cannot find value `x` in this scope (at src/main.rs:3:13)", cause.Line)
 }
 
+// A CMake configure's cause is its "CMake Error at" line with the one after
+// it, which says why; its "Configuring incomplete" says nothing (field
+// testing's outdated-ports session).
+func TestACMakeErrorIsReadWithItsCause(t *testing.T) {
+	log := "-- Looking for pthread.h - found\n" +
+		"CMake Error at CMakeLists.txt:20 (find_package):\n" +
+		"  Could not find a package configuration file provided by \"Qt6\" with any\n" +
+		"  of the following names:\n" +
+		"-- Configuring incomplete, errors occurred!\n"
+	cause, ok := FirstFrom(strings.NewReader(log), 1)
+	require.True(t, ok)
+	require.Equal(t, `CMake Error at CMakeLists.txt:20 (find_package): Could not find a package configuration file provided by "Qt6" with any`, cause.Line)
+	require.Equal(t, 2, cause.Number)
+	_, ok = FirstFrom(strings.NewReader("-- Configuring incomplete, errors occurred!\n"), 1)
+	require.False(t, ok)
+}
+
 // The failed tests are named from what ctest and automake's harness list,
 // each once, from where the test step began: exiv2's said only "make: ***
 // [test] Error 8" (the exiv2 field notes, 2026-10-19).

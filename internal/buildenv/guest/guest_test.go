@@ -316,6 +316,13 @@ func TestAFailuresReasonIsTheFailingSteps(t *testing.T) {
 	require.Equal(t, "Failed to build libharbor: go: github.com/spf13/pflag: cannot find package; the command was: cd /work/libharbor && go build ./...", results.Targets[0].Detail)
 	require.Empty(t, results.Targets[0].Transient, "the port's own failure")
 
+	// Under make, the compiler's line, not make's own failure lines or
+	// the compiler's count after it (field testing's lwan, teleport, and
+	// wails).
+	compile := "src/foo.c:12:3: error: use of undeclared identifier 'x'\n1 error generated.\nmake[2]: *** [src/foo.o] Error 1\nmake[1]: Leaving directory '/work/libharbor'\nmake: *** [all] Error 2"
+	results, _ = guestRun(t, twoTargets("declared"), "FAIL=install:libharbor", "COMMAND=1", "FAILSAYS="+compile)
+	require.Equal(t, "Failed to build libharbor: src/foo.c:12:3: error: use of undeclared identifier 'x'; the command was: cd /work/libharbor && go build ./...", results.Targets[0].Detail)
+
 	// A step the network failed upstream is said, for the host to try the
 	// build again: dolt's go build met proxy.golang.org's stream reset
 	// (field testing at 23c5e2aa).
