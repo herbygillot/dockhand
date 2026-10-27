@@ -66,7 +66,10 @@ func TestCompilerDependentFetchInputComesFromTheTable(t *testing.T) {
 	require.False(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
 	require.Equal(t, "host-clang++.tar.gz", got.Snapshot.Ports["host"].Options["distfiles"])
 	if e.Adapter == PreviewAdapter {
-		t.Skip("known gap on Base master: compiler and SDK queries run in the parent interpreter, unobserved (Base design, step 5)")
+		// Its SDK and tool lookups are the worker's on master too
+		// (toolchain.tcl's install_lookups), but get_clang_compilers, which
+		// reads the tree's compiler list, still runs in the parent there.
+		t.Skip("known gap on Base master: the compiler list is read in the parent interpreter, unobserved (Base design, step 5)")
 	}
 	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)

@@ -158,5 +158,87 @@ namespace eval ::dockhand {
             }
         }
         $worker eval [list set ::dockhand_dispatcher::toolchain $toolchain]
+        install_lookups $worker
+    }
+
+    # lookups are Base's SDK and developer tool lookups, by the name its
+    # port1.0 calls each and the procedure Base's master aliases it to in
+    # its own interpreter (macports.tcl's worker_init), where 2.12 ran them
+    # in the port's worker. There, their file exists, glob, and xcrun see
+    # the Mac, past the dispatcher, so a modelled macOS 12 context read the
+    # Mac's MacOSX.sdk, and their caches hold one context's answer for the
+    # next.
+    variable lookups {
+        file_exists portlib::configure::file_exists
+        find_close_sdk portlib::configure::find_close_sdk
+        _get_sdkroot portlib::configure::get_sdkroot
+        find_developer_tool portlib::configure::find_developer_tool
+        get_system_compiler_version portlib::configure::get_system_compiler_version
+        _configure_get_compiler portlib::configure::configure_get_compiler
+    }
+    # lookup_helpers are what those call of Base's own beyond each other,
+    # which 2.12 runs in this interpreter too, aliased into the worker, and
+    # so they stay, answered from the context's caches the table fills.
+    variable lookup_helpers {macports::get_tool_path macports::get_compiler_version}
+    # lookup_state are the values those read of Base's, which in a
+    # modelled context are the context's (macports::override_vars); and
+    # lookup_caches are their caches of the host's answers, each starting
+    # empty in each worker.
+    variable lookup_state {
+        macports::macos_version_major macports::macos_version macports::xcodeversion
+        macports::developer_dir macports::os_major macports::prefix_frozen
+    }
+    variable lookup_caches {portlib::configure::file_exists_cache portlib::configure::sdkroot_cache}
+
+    # install_lookups gives a modelled context's worker its own copy of
+    # each lookup Base's master aliases to its interpreter, and points the
+    # alias at the copy, so the dispatcher answers what each asks from the
+    # context's row of the table, as it does on 2.12, and its caches are
+    # the worker's. On 2.12, where they are the worker's already, and in
+    # the Mac's own context, nothing changes.
+    proc install_lookups {worker} {
+        variable toolchain
+        variable lookups
+        variable lookup_helpers
+        variable lookup_state
+        variable lookup_caches
+        if {![dict size $toolchain]} { return }
+        set moved {}
+        dict for {name target} $lookups {
+            if {[interp alias $worker portconfigure::$name] ne ""} { lappend moved $name $target }
+        }
+        if {![llength $moved]} { return }
+        foreach variable $lookup_state {
+            if {[info exists ::$variable]} {
+                $worker eval [list namespace eval ::[namespace qualifiers $variable] [list variable [namespace tail $variable] [set ::$variable]]]
+            }
+        }
+        foreach variable $lookup_caches {
+            $worker eval [list namespace eval ::[namespace qualifiers $variable] [list variable [namespace tail $variable] [dict create]]]
+        }
+        foreach procedure [dict values $lookups] {
+            copy_procedure $worker $procedure
+        }
+        foreach procedure $lookup_helpers {
+            interp alias $worker ::$procedure {} ::$procedure
+        }
+        foreach {name target} $moved {
+            interp alias $worker portconfigure::$name {}
+            interp alias $worker portconfigure::$name $worker ::$target
+        }
+    }
+
+    # copy_procedure defines a procedure of this interpreter's in a worker,
+    # in the same namespace, with the same arguments and body.
+    proc copy_procedure {worker procedure} {
+        set arguments {}
+        foreach argument [info args ::$procedure] {
+            if {[info default ::$procedure $argument default]} {
+                lappend arguments [list $argument $default]
+            } else {
+                lappend arguments $argument
+            }
+        }
+        $worker eval [list namespace eval ::[namespace qualifiers $procedure] [list proc [namespace tail $procedure] $arguments [info body ::$procedure]]]
     }
 }
