@@ -1,6 +1,7 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"maps"
@@ -29,6 +30,38 @@ type Spec struct {
 	// (macports.PortInfo.GoLinkPackages): each directory whose path is the
 	// end of one, below the top, and the top itself for package main.
 	GoPackages []string
+}
+
+// sourceFiles are the extensions of the source files a reading reads for
+// host library paths: C, C++, Objective-C, Swift, Go, and Rust.
+var sourceFiles = map[string]bool{".c": true, ".cc": true, ".cpp": true, ".cxx": true, ".h": true, ".hh": true, ".hpp": true,
+	".m": true, ".mm": true, ".swift": true, ".go": true, ".rs": true}
+
+// sourceFile reports a file a reading reads for host library paths: not a
+// manifest or build file, as Package.swift, which a reading keeps as one.
+func sourceFile(name string) bool {
+	base := path.Base(name)
+	return sourceFiles[path.Ext(name)] && !Manifest(base) && !BuildFile(base)
+}
+
+// hostPathLiteral is a string literal naming a path under a Homebrew
+// prefix's library directories.
+var hostPathLiteral = regexp.MustCompile(`"((?:/opt/homebrew/|/usr/local/lib/|/usr/local/opt/)[^"\s]*)"`)
+
+// hostPathLiterals are the host library paths a source file's literals
+// name, each once, sorted.
+func hostPathLiterals(data []byte) []string {
+	if !bytes.Contains(data, []byte("/opt/homebrew/")) && !bytes.Contains(data, []byte("/usr/local/")) {
+		return nil
+	}
+	var found []string
+	for _, match := range hostPathLiteral.FindAllSubmatch(data, -1) {
+		if literal := string(match[1]); !slices.Contains(found, literal) {
+			found = append(found, literal)
+		}
+	}
+	slices.Sort(found)
+	return found
 }
 
 // goPackageFile reports a Go source file, not a test's, in a directory one
@@ -116,6 +149,12 @@ type Reading struct {
 	// have, so the project was read at its top: an archive the port
 	// fetches beside the one it builds in, perhaps.
 	Missing string
+	// HostPaths are the library paths each source file names as string
+	// literals under /opt/homebrew/, /usr/local/lib/, or /usr/local/opt/,
+	// a Homebrew prefix's, by its path below Top, sorted: what a program
+	// may dlopen at run time outside ${prefix}, as hashcat 8.0's
+	// src/ext_zlib.c names /opt/homebrew/lib/libz.1.dylib.
+	HostPaths map[string][]string
 	// Files are what was read: the license files at the top and at the
 	// root, each there or one directory down, the root's build files,
 	// manifests, and Cargo.lock, and the package.json of each Node
@@ -273,6 +312,8 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 	libraries := map[string]string{}
 	directories := map[string]bool{}
 	programs := map[string]bool{}
+	// hostPaths are each source file's host library paths, by its path.
+	hostPaths := map[string][]string{}
 	flat := false
 	has := map[string]bool{}
 	err := archive.Walk(ctx, filename, func(member archive.Member) error {
@@ -297,6 +338,22 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 		}
 		if subdirectory != "" && strings.HasPrefix(name, subdirectory+"/") {
 			has[""] = true
+		}
+		// A source file is read for the library paths it names outside
+		// any prefix, a Homebrew one's (HostPaths), and kept where it's a
+		// named Go package's.
+		if sourceFile(name) {
+			data, err := io.ReadAll(io.LimitReader(member.Body, FileLimit+1))
+			if err != nil {
+				return err
+			}
+			if found := hostPathLiterals(data); len(found) > 0 {
+				hostPaths[name] = found
+			}
+			if goPackageFile(name, spec.GoPackages) || nested && goPackageFile(rest, spec.GoPackages) {
+				candidates[name] = File{Data: data[:min(len(data), FileLimit)], Truncated: len(data) > FileLimit}
+			}
+			return nil
 		}
 		keep := candidates
 		if path.Base(name) == "Makefile.am" {
@@ -390,6 +447,19 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 		found.Programs = append(found.Programs, rest)
 	}
 	slices.Sort(found.Programs)
+	for name, paths := range hostPaths {
+		rest := name
+		if found.Top != "" {
+			var ok bool
+			if rest, ok = strings.CutPrefix(name, found.Top+"/"); !ok {
+				continue
+			}
+		}
+		if found.HostPaths == nil {
+			found.HostPaths = map[string][]string{}
+		}
+		found.HostPaths[rest] = paths
+	}
 	found.Files = map[string]File{}
 	for name, file := range candidates {
 		rest := name

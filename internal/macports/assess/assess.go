@@ -88,8 +88,10 @@ import (
 // where update said nothing of it (L2a). 26: a C++ standard upstream's
 // CMake files raised above the Portfile's compiler.cxx_standard is said
 // (the docs dig's I20). 27: a Go port's -X target its package no longer
-// declares holds (the docs dig's I18).
-const Policy = 27
+// declares holds (the docs dig's I18). 28: the Homebrew library paths a
+// new version's source names as string literals are said (field
+// testing's outdated-ports session, hashcat 8.0).
+const Policy = 28
 
 // Input is what one port's assessment reads.
 type Input struct {

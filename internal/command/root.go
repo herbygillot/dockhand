@@ -228,6 +228,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	for _, command := range []*cobra.Command{
 		check.Command(shared, streams),
 		runcmd.LogsCommand(shared, streams),
+		runcmd.ArtifactsCommand(shared, streams),
 		shell.Command(shared, streams),
 		runcmd.RetryCommand(shared, streams),
 	} {
