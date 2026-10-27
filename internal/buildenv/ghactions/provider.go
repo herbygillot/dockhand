@@ -27,6 +27,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/cilog"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -391,7 +392,7 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		case ranFor(j, JobCap):
 			capped = fmt.Sprintf("GitHub ended the job at its %s cap on a job", JobCap)
 		}
-		runners = append(runners, runner{job: j, log: path, built: ReadLog(log), listing: ListsSubports(log), capped: capped})
+		runners = append(runners, runner{job: j, log: path, built: cilog.ReadLog(log), listing: cilog.ListsSubports(log), capped: capped})
 	}
 
 	recorded := 0
@@ -491,7 +492,7 @@ var _ buildenv.OwnTestsProvider = (*Provider)(nil)
 type runner struct {
 	job   RunnerJob
 	log   string
-	built map[string]*Built
+	built map[string]*cilog.Built
 	// listing is true when the log shows the workflow listing the
 	// subports it would build, which a runner that stopped first doesn't.
 	listing bool

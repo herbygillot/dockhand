@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/macports/cilog"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -73,15 +73,15 @@ func (e *Engine) classifyCI(ctx context.Context, branch model.Branch, next model
 // built, with its result, which MacPorts' workflow marks a port at a time
 // (Then's item 7).
 func classifiedCI(failure model.CIFailure, log []byte) model.CIFailure {
-	failure.Ports = ghactions.PortResults(log)
+	failure.Ports = cilog.PortResults(log)
 	if fetch, ok := buildlog.FetchFailed(bytes.NewReader(log)); ok {
 		failure.Cause, failure.File, failure.URL, failure.Status, failure.Reason = model.CIFetch, fetch.File, fetch.URL, fetch.Status, fetch.Reason
 		return failure
 	}
 	failure.Cause, failure.Reason = model.CIUnclassified, "its log names no cause dockhand reads"
-	if cause, ok := buildlog.FirstFrom(bytes.NewReader(ghactions.Untimed(log)), 1); ok {
+	if cause, ok := buildlog.FirstFrom(bytes.NewReader(cilog.Untimed(log)), 1); ok {
 		failure.Error = cause.Line
-	} else if line, ok := ghactions.FirstError(log); ok {
+	} else if line, ok := cilog.FirstError(log); ok {
 		failure.Error = line
 	}
 	return failure
