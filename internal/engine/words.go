@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/comparison"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
@@ -196,10 +197,10 @@ const coverageNamed = 5
 // manifests and patches went unmentioned (rust 1.99.0, batch 23). "Read
 // LICENSE, go.mod" read as an instruction (field testing, 2026-10-02).
 // Empty where the comparison recorded no coverage.
-func CoverageWords(comparison model.UpstreamComparison) string {
+func CoverageWords(compared model.UpstreamComparison) string {
 	var read, apart, unused, unported, notes []string
 	applied, unchecked := 0, 0
-	for _, c := range comparison.Coverage {
+	for _, c := range compared.Coverage {
 		if c.Source != "" && c.Policy != assess.SourceRemoved && c.Policy != assess.SourceUncertain {
 			// Where the port fetches more than one archive, each file is
 			// named in its own; an archive set apart is named itself.
@@ -222,7 +223,7 @@ func CoverageWords(comparison model.UpstreamComparison) string {
 			unused = append(unused, c.Path+" ("+c.System+")")
 		case c.Treatment == "set-apart":
 			apart = append(apart, c.Path)
-		case c.Treatment == "inspected" && (c.Policy == "" || c.Policy == notCompared) && c.Reason != "":
+		case c.Treatment == "inspected" && (c.Policy == "" || c.Policy == comparison.PolicyNotCompared) && c.Reason != "":
 			notes = append(notes, c.Reason)
 		}
 	}

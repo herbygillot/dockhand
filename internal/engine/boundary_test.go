@@ -16,6 +16,7 @@ import (
 // that do the work; it is driven by the command layer and drives the
 // providers, and imports neither.
 var engineImports = map[string]string{
+	"internal/comparison":             "what upstream's change means for a port, collected (Then's item 15)",
 	"internal/model":                  "the records it decides about",
 	"internal/store":                  "the store's contract",
 	"internal/store/sqlite":           "the store, opened with the engine",
@@ -46,7 +47,6 @@ var engineImports = map[string]string{
 	"internal/macports/depblock":      "go2port and cargo2port, found as the edits find them, for setup's report",
 	"internal/macports/cilog":         "what MacPorts' workflow's job log says of each port and its first error, for a pull request's CI",
 	"internal/macports/binaryarchive": "master's binary archive's name, files, and install names, an install finding's earlier reading",
-	"internal/macports/patchcheck":    "a revision's patches checked against its source, for its assessment",
 	"internal/macports/fidelity":      "which subports a revision changed, for its change record",
 	"internal/failpoint":              "the acceptance harness's kill steps, which a normal build hasn't",
 	"internal/macports/prdescription": "the pull request's description, as MacPorts' template has it",

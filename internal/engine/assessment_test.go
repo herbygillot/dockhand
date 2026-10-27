@@ -2,13 +2,10 @@ package engine
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
-	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -18,6 +15,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/comparison"
+	"github.com/herbygillot/dockhand/internal/comparison/comparisontest"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -25,111 +24,20 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
-// plannedPort is a port as a fake planner has it in one tree: as
-// evaluated, and its archives by name, each file's contents by path below
-// the archive's top; or a port fetched with Git, or with no source.
-type plannedPort struct {
-	info     macports.PortInfo
-	archives map[string]map[string]string
-	noSource bool
-}
+// The fake planner is comparisontest's, which the comparison's own tests
+// share.
+type (
+	fakePlanner = comparisontest.Planner
+	plannedPort = comparisontest.PlannedPort
+)
 
-// fakePlanner stands in for MacPorts' fetch plans, serving each archive
-// its ports name over HTTP, and counting what's fetched.
-type fakePlanner struct {
-	t       *testing.T
-	ports   map[model.ObjectID]map[string]plannedPort
-	server  *httptest.Server
-	served  map[string][]byte
-	fetches *atomic.Int64
-	// refusing is the status the server answers with instead, while it's
-	// set, and mirror the status its mirror answers with, where set.
-	refusing, mirror *atomic.Int64
-}
-
-func newPlanner(t *testing.T) *fakePlanner {
-	p := &fakePlanner{t: t, ports: map[model.ObjectID]map[string]plannedPort{}, served: map[string][]byte{}, fetches: &atomic.Int64{}, refusing: &atomic.Int64{}, mirror: &atomic.Int64{}}
-	p.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if status := p.mirror.Load(); status != 0 && strings.HasPrefix(r.URL.Path, "/mirror/") {
-			w.WriteHeader(int(status))
-			return
-		}
-		if status := p.refusing.Load(); status != 0 {
-			w.WriteHeader(int(status))
-			return
-		}
-		data, ok := p.served[strings.TrimPrefix(r.URL.Path, "/")]
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		p.fetches.Add(1)
-		_, _ = w.Write(data)
-	}))
-	t.Cleanup(p.server.Close)
-	return p
-}
-
-// add plans a port in a tree.
-func (p *fakePlanner) add(tree model.ObjectID, port plannedPort) {
-	if p.ports[tree] == nil {
-		p.ports[tree] = map[string]plannedPort{}
-	}
-	var checksums []string
-	for _, name := range slices.Sorted(maps.Keys(port.archives)) {
-		// An archive two ports name is made once: made again a second
-		// later, its tarball's times differ, and the first port's
-		// checksum no longer matches what's served (CI at 22336157).
-		data, made := p.served[name]
-		if script, raw := port.archives[name][""]; raw && !made {
-			// A file served as it is, no archive: a script a port copies
-			// into place.
-			data, made = []byte(script), true
-			p.served[name] = data
-		}
-		if !made {
-			path := writeTarball(p.t, p.t.TempDir(), strings.TrimSuffix(name, ".tar.gz"), port.archives[name])
-			var err error
-			data, err = os.ReadFile(path)
-			require.NoError(p.t, err)
-			p.served[name] = data
-		}
-		sum := sha256.Sum256(data)
-		checksums = append(checksums, fmt.Sprintf("%s sha256 %s size %d", name, hex.EncodeToString(sum[:]), len(data)))
-	}
-	options := map[string]string{"fetch.type": "standard", "fetch.archive_compatible": "1", "fetch.ignore_sslcert": "0", "fetch.has_credentials": "0"}
-	maps.Copy(options, port.info.Options)
-	options["checksums"] = strings.Join(checksums, " ")
-	port.info.Options = options
-	p.ports[tree][port.info.Name] = port
-}
-
-// same plans a tree's ports as another tree's, the same archives served.
-func (p *fakePlanner) same(tree, as model.ObjectID) {
-	p.ports[tree] = p.ports[as]
-}
-
-func (p *fakePlanner) ArchivePlan(_ context.Context, source model.Source, directory, name string) (macports.PortInfo, []macports.Distfile, error) {
-	port, ok := p.ports[source.Tree][name]
-	if !ok {
-		return macports.PortInfo{}, nil, fmt.Errorf("%w: %s defines no port %s", treequery.ErrNoPort, directory, name)
-	}
-	if port.noSource || port.info.GitFetched() {
-		return port.info, nil, treequery.ErrNoArchives
-	}
-	var plan []macports.Distfile
-	for _, name := range slices.Sorted(maps.Keys(port.archives)) {
-		plan = append(plan, macports.Distfile{Name: name, URLs: []string{p.server.URL + "/" + name}})
-	}
-	return port.info, plan, nil
-}
+func newPlanner(t *testing.T) *fakePlanner { return comparisontest.NewPlanner(t) }
 
 // revisionFixture is a branch on master, and a revision of it whose files
 // are master's with those given.
@@ -181,8 +89,8 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 	p := newPlanner(t)
 	e.Ports.Archives = p
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
-	p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}}})
-	p.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"LICENSE": "MIT\n", "meson.build": "project('jq')\n"}}})
+	p.Add(base, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, Archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}}})
+	p.Add(tree, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, Archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"LICENSE": "MIT\n", "meson.build": "project('jq')\n"}}})
 	gpl := &model.UpstreamComparison{Changes: []model.UpstreamChange{{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}}}
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
 		for i := range 2 {
@@ -198,7 +106,7 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, held)
 	require.Equal(t, AssessmentPending, state, "status collects nothing")
-	require.Zero(t, p.fetches.Load())
+	require.Zero(t, p.Fetches.Load())
 
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
@@ -207,7 +115,13 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 	require.Equal(t, "textproc/jq", assessments[0].Directory)
 	require.Equal(t, []string{"upstream's meson.build is new; the build may need the Portfile to follow"}, messagesOf(assessments[0].Comparison),
 		"the license is MIT at both ends, and holds nothing; what did change is said")
-	require.EqualValues(t, 2, p.fetches.Load())
+	require.EqualValues(t, 2, p.Fetches.Load())
+	// What's recorded is the collector's comparison, as it collects it
+	// (Then's item 15).
+	_, portfile, err := e.Repo.File(t.Context(), string(tree), "textproc/jq/Portfile")
+	require.NoError(t, err)
+	collected := e.collector(p).Revision(t.Context(), [2]model.Source{{Commit: branch.Base, Tree: base, Base: branch.Base}, {Tree: tree, Base: branch.Base}}, "textproc/jq", [2]string{"jq", "jq"}, true, portfile)
+	require.Equal(t, collected, assessments[0].Comparison)
 
 	held, state, err = e.assessedHolds(t.Context(), branch, tree, []string{"textproc/jq"})
 	require.NoError(t, err)
@@ -216,11 +130,11 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 
 	// A later revision that changes an unrelated file reads what was kept.
 	later := editTree(t, e, tree, map[string]string{"textproc/jq/files/patch-a.diff": "--- a\n"})
-	p.same(later, tree)
+	p.Same(later, tree)
 	assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, later, true)
 	require.NoError(t, err)
 	require.Len(t, assessments, 1)
-	require.EqualValues(t, 2, p.fetches.Load(), "nothing fetched again")
+	require.EqualValues(t, 2, p.Fetches.Load(), "nothing fetched again")
 }
 
 // messagesOf are a comparison's findings' words.
@@ -243,8 +157,8 @@ func TestANewPortIsAssessedAlone(t *testing.T) {
 	p := newPlanner(t)
 	e.Ports.Archives = p
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"sysutils/rift": {{Name: "rift"}}}})
-	p.add(tree, plannedPort{info: macports.PortInfo{Name: "rift", Version: "0.4.2", Options: map[string]string{"license": "MIT"}},
-		archives: map[string]map[string]string{"rift-0.4.2.tar.gz": {"LICENSE": "MIT\n", "Package.swift": "// swift-tools-version:6.2\n"}}})
+	p.Add(tree, plannedPort{Info: macports.PortInfo{Name: "rift", Version: "0.4.2", Options: map[string]string{"license": "MIT"}},
+		Archives: map[string]map[string]string{"rift-0.4.2.tar.gz": {"LICENSE": "MIT\n", "Package.swift": "// swift-tools-version:6.2\n"}}})
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
 	require.Len(t, assessments, 1)
@@ -270,8 +184,8 @@ func TestEachSubportIsAssessedForItself(t *testing.T) {
 			return macports.PortInfo{Name: "py" + python + "-demo", Version: version, Options: map[string]string{"dockhand.portgroups": "python"},
 				Dependencies: []macports.Dependency{{Port: "py" + python + "-tomli"}}}
 		}
-		p.add(base, plannedPort{info: port("1"), archives: map[string]map[string]string{"demo-1.tar.gz": {"requirements.txt": "click>=8\n"}}})
-		p.add(tree, plannedPort{info: port("2"), archives: map[string]map[string]string{"demo-2.tar.gz": {"requirements.txt": "click>=8\ntomli>=2; python_version < '3.13'\n"}}})
+		p.Add(base, plannedPort{Info: port("1"), Archives: map[string]map[string]string{"demo-1.tar.gz": {"requirements.txt": "click>=8\n"}}})
+		p.Add(tree, plannedPort{Info: port("2"), Archives: map[string]map[string]string{"demo-2.tar.gz": {"requirements.txt": "click>=8\ntomli>=2; python_version < '3.13'\n"}}})
 	}
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
@@ -297,9 +211,9 @@ func TestANewSubportIsComparedWithItsSibling(t *testing.T) {
 	port := func(python, version string) macports.PortInfo {
 		return macports.PortInfo{Name: "py" + python + "-sibling", Version: version, Options: map[string]string{"dockhand.portgroups": "python", "license": "MIT"}}
 	}
-	p.add(base, plannedPort{info: port("310", "1"), archives: map[string]map[string]string{"sibling-1.tar.gz": {"LICENSE": "MIT\n"}}})
+	p.Add(base, plannedPort{Info: port("310", "1"), Archives: map[string]map[string]string{"sibling-1.tar.gz": {"LICENSE": "MIT\n"}}})
 	for _, python := range []string{"310", "313"} {
-		p.add(tree, plannedPort{info: port(python, "2"), archives: map[string]map[string]string{"sibling-2.tar.gz": {"LICENSE": "MIT\n", "NOTICE": "Apache-2.0 parts\n"}}})
+		p.Add(tree, plannedPort{Info: port(python, "2"), Archives: map[string]map[string]string{"sibling-2.tar.gz": {"LICENSE": "MIT\n", "NOTICE": "Apache-2.0 parts\n"}}})
 	}
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
@@ -321,9 +235,9 @@ func TestWhatCantBeComparedSaysSo(t *testing.T) {
 	e.Ports.Archives = p
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"devel/gitty": {{Name: "gitty"}}, "devel/meta": {{Name: "meta"}}, "python/py-stub": {{Name: "py-stub"}}}})
 	for _, tree := range []model.ObjectID{base, tree} {
-		p.add(tree, plannedPort{info: macports.PortInfo{Name: "gitty", Options: map[string]string{"fetch.type": "git"}}})
-		p.add(tree, plannedPort{info: macports.PortInfo{Name: "meta"}, noSource: true})
-		p.add(tree, plannedPort{info: macports.PortInfo{Name: "py-stub", Options: map[string]string{"dockhand.metadata_only": "1"}}, noSource: true})
+		p.Add(tree, plannedPort{Info: macports.PortInfo{Name: "gitty", Options: map[string]string{"fetch.type": "git"}}})
+		p.Add(tree, plannedPort{Info: macports.PortInfo{Name: "meta"}, NoSource: true})
+		p.Add(tree, plannedPort{Info: macports.PortInfo{Name: "py-stub", Options: map[string]string{"dockhand.metadata_only": "1"}}, NoSource: true})
 	}
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
@@ -336,7 +250,7 @@ func TestWhatCantBeComparedSaysSo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, AssessmentIncomplete, state)
 	require.Empty(t, holds(byPort["meta"]))
-	require.Equal(t, []model.Coverage{{Path: "devel/meta", Relevance: "unknown", Treatment: "inspected", Policy: notCompared, Reason: "meta fetches no upstream source, so there's nothing to compare"}}, byPort["meta"].Comparison.Coverage)
+	require.Equal(t, []model.Coverage{{Path: "devel/meta", Relevance: "unknown", Treatment: "inspected", Policy: comparison.PolicyNotCompared, Reason: "meta fetches no upstream source, so there's nothing to compare"}}, byPort["meta"].Comparison.Coverage)
 	require.True(t, NothingCompared(byPort["meta"].Comparison))
 	// A python stub's subports are compared, which it says rather than
 	// read as a port with no source (the Vx port's field testing).
@@ -353,8 +267,8 @@ func TestWhatsRecordedForARevisionStands(t *testing.T) {
 	p := newPlanner(t)
 	e.Ports.Archives = p
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
-	p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}}})
-	p.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"LICENSE": "MIT\n"}}})
+	p.Add(base, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, Archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}}})
+	p.Add(tree, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, Archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"LICENSE": "MIT\n"}}})
 	marker := model.UpstreamComparison{Changes: []model.UpstreamChange{{Kind: "license", Path: "LICENSE", Message: "recorded", Hold: true}}}
 	record := func(a model.Assessment) {
 		require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.RecordAssessment(a) }))
@@ -364,13 +278,13 @@ func TestWhatsRecordedForARevisionStands(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, assessments, 1)
 	require.Equal(t, marker, assessments[0].Comparison, "what's recorded is read")
-	require.Zero(t, p.fetches.Load())
+	require.Zero(t, p.Fetches.Load())
 
 	for _, stale := range []model.Assessment{
 		{Branch: branch.ID, Tree: tree, Base: branch.Base, Port: "jq", Directory: "textproc/jq", Comparison: marker, Policy: assess.Policy + 1, At: at},
 	} {
 		other := editTree(t, e, tree, map[string]string{"textproc/jq/files/a.diff": fmt.Sprint(stale.Policy)})
-		p.same(other, tree)
+		p.Same(other, tree)
 		stale.Tree = other
 		record(stale)
 		assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, other, true)
@@ -382,7 +296,7 @@ func TestWhatsRecordedForARevisionStands(t *testing.T) {
 
 	// A later tree gets its own, though an earlier one's is recorded.
 	later := editTree(t, e, tree, map[string]string{"textproc/jq/files/b.diff": "b"})
-	p.same(later, tree)
+	p.Same(later, tree)
 	assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, later, true)
 	require.NoError(t, err)
 	require.Equal(t, later, assessments[0].Tree)
@@ -410,9 +324,9 @@ func TestAlikeArchivesPairByName(t *testing.T) {
 	e.Ports.Archives = p
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
 	manual := map[string]string{"LICENSE": "the manual's license\n"}
-	p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{
+	p.Add(base, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, Archives: map[string]map[string]string{
 		"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}, "jq-manual.tar.gz": manual}})
-	p.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, archives: map[string]map[string]string{
+	p.Add(tree, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, Archives: map[string]map[string]string{
 		"jqz-1.8.1.tar.gz": {"LICENSE": "MIT\n"}, "jq-manual.tar.gz": manual}})
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
@@ -462,10 +376,10 @@ func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
 	archives := commitArchives{t: t, files: map[string]map[string]string{v1: {"LICENSE": "MIT\n"}, v2: {"LICENSE": "GPL\n"}}, asked: &atomic.Int64{}}
 	e.SourceArchiver = archives
 	tool := func(ref string) plannedPort {
-		return plannedPort{info: macports.PortInfo{Name: "libharbor", Options: map[string]string{"fetch.type": "git", "git.url": project, "git.branch": ref}}}
+		return plannedPort{Info: macports.PortInfo{Name: "libharbor", Options: map[string]string{"fetch.type": "git", "git.url": project, "git.branch": ref}}}
 	}
-	p.add(base, tool("v1"))
-	p.add(tree, tool("v2"))
+	p.Add(base, tool("v1"))
+	p.Add(tree, tool("v2"))
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
 	require.Len(t, assessments, 1)
@@ -479,13 +393,13 @@ func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
 	require.EqualValues(t, 2, archives.asked.Load())
 
 	later := editTree(t, e, tree, map[string]string{"devel/libharbor/files/a.diff": "a"})
-	p.same(later, tree)
+	p.Same(later, tree)
 	_, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, later, true)
 	require.NoError(t, err)
 	require.EqualValues(t, 2, archives.asked.Load(), "the forge asked nothing again")
 
 	moved := editTree(t, e, tree, map[string]string{"devel/libharbor/files/b.diff": "b"})
-	p.add(moved, tool("v9"))
+	p.Add(moved, tool("v9"))
 	assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, moved, true)
 	require.NoError(t, err)
 	require.Contains(t, assessments[0].Comparison.Problem, "the revision's git.branch couldn't be resolved")
@@ -497,7 +411,7 @@ func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
 	// (C8-5: it was Failed, which lookAgain never made again).
 	unreadable := filepath.Join(t.TempDir(), "harbor")
 	elsewhere := editTree(t, e, tree, map[string]string{"devel/libharbor/files/d.diff": "d"})
-	p.add(elsewhere, plannedPort{info: macports.PortInfo{Name: "libharbor", Options: map[string]string{"fetch.type": "git", "git.url": unreadable, "git.branch": "v2"}}})
+	p.Add(elsewhere, plannedPort{Info: macports.PortInfo{Name: "libharbor", Options: map[string]string{"fetch.type": "git", "git.url": unreadable, "git.branch": "v2"}}})
 	assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, elsewhere, true)
 	require.NoError(t, err)
 	require.Contains(t, assessments[0].Comparison.Problem, "the revision's git.branch couldn't be resolved")
@@ -508,7 +422,7 @@ func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
 	require.Empty(t, assessments[0].Comparison.Problem, "made again, and read")
 
 	abbreviated := editTree(t, e, tree, map[string]string{"devel/libharbor/files/c.diff": "c"})
-	p.add(abbreviated, tool(v2[:9]))
+	p.Add(abbreviated, tool(v2[:9]))
 	assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, abbreviated, true)
 	require.NoError(t, err)
 	require.Equal(t, "the revision's git.branch is an abbreviated commit, "+v2[:9]+", which only a clone expands", assessments[0].Comparison.Problem)
@@ -577,20 +491,20 @@ func TestAnAssessmentStoppedByTheNetworkIsTriedAgain(t *testing.T) {
 		e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 		p := newPlanner(t)
 		e.Ports.Archives = p
-		e.ArchiveMirror = p.server.URL + "/mirror/"
+		e.ArchiveMirror = p.Server.URL + "/mirror/"
 		usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
-		p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}}})
-		p.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"LICENSE": "MIT\n"}}})
-		p.refusing.Store(int64(test.status))
-		p.mirror.Store(int64(test.mirror))
+		p.Add(base, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, Archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}}})
+		p.Add(tree, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, Archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"LICENSE": "MIT\n"}}})
+		p.Refusing.Store(int64(test.status))
+		p.Mirror.Store(int64(test.mirror))
 		assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 		require.NoError(t, err)
 		require.Contains(t, assessments[0].Comparison.Problem, "archives couldn't be fetched", test.status)
 		require.Equal(t, test.again, refusal.Kind(assessments[0].Comparison.ProblemKind).Transient(), test.status)
 		require.NotEmpty(t, holds(assessments[0]), "what couldn't be checked holds (D4)")
 
-		p.refusing.Store(0)
-		p.mirror.Store(0)
+		p.Refusing.Store(0)
+		p.Mirror.Store(0)
 		assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 		require.NoError(t, err)
 		if test.again {
@@ -598,7 +512,7 @@ func TestAnAssessmentStoppedByTheNetworkIsTriedAgain(t *testing.T) {
 			require.False(t, refusal.Kind(assessments[0].Comparison.ProblemKind).Transient())
 		} else {
 			require.Contains(t, assessments[0].Comparison.Problem, "archives couldn't be fetched", "a refusal stands for its files")
-			require.Zero(t, p.fetches.Load())
+			require.Zero(t, p.Fetches.Load())
 			// A day later it's fetched again, and finishes, the archive
 			// served again (v0.4.0's known issues).
 			later := time.Now().Add(refusedAgainAfter + time.Minute)
@@ -680,24 +594,10 @@ func TestAPortTheTreeHasntGotIsObservedAbsent(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"archivers/zstd": {{Name: "zstd", Version: "1.5.7"}}}})
-	lock := func(crates ...string) string {
-		text := "version = 3\n"
-		for _, crate := range crates {
-			name, version, _ := strings.Cut(crate, " ")
-			text += fmt.Sprintf("\n[[package]]\nname = %q\nversion = %q\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = %q\n", name, version, strings.Repeat("a", 64))
-		}
-		return text
-	}
-	var readings [2]project.Reading
-	for i, crates := range [][]string{{"serde 1.0.210"}, {"serde 1.0.210", "zstd-sys 2.0.13", "aws-lc-sys 0.45.0"}} {
-		reading, err := project.Read(t.Context(), testsupport.Tarball(t, fmt.Sprintf("zola-%d", i), map[string]string{"Cargo.lock": lock(crates...)}), project.Spec{})
-		require.NoError(t, err)
-		readings[i] = reading
-	}
-	input := assess.Input{Port: macports.PortInfo{Name: "zola"}, Pairs: []assess.Pair{{Archive: "zola.tar.gz", Before: readings[0], After: readings[1]}}}
-	observed := e.observeProviders(t.Context(), input, [2]model.Source{{Tree: "base"}, {Tree: "candidate"}})
-	require.Equal(t, assess.Observation{Version: "1.5.7", Directory: "archivers/zstd"}, observed[assess.Provider{Port: "zstd"}])
-	require.Equal(t, assess.Observation{Absent: true}, observed[assess.Provider{Port: "aws-lc"}])
+	observer := e.collector(nil).Observer
+	tree := model.Source{Tree: "candidate"}
+	require.Equal(t, assess.Observation{Version: "1.5.7", Directory: "archivers/zstd"}, observer.Observe(t.Context(), tree, "zstd"))
+	require.Equal(t, assess.Observation{Absent: true}, observer.Observe(t.Context(), tree, "aws-lc"))
 }
 
 // A revision's patches are checked against its source, as an update's
@@ -711,9 +611,9 @@ func TestARevisionsPatchesAreCheckedAgainstItsSource(t *testing.T) {
 	p := newPlanner(t)
 	e.Ports.Archives = p
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
-	p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"src/main.c": "int main;\n"}}})
+	p.Add(base, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, Archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"src/main.c": "int main;\n"}}})
 	options := map[string]string{"patchfiles": "patch-kept.diff patch-stale.diff", "worksrcdir": "jq-1.8.1", "patch.pre_args": "-p0", "extract.rename": "0"}
-	p.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1", Options: options}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"src/main.c": "int main;\n"}}})
+	p.Add(tree, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.8.1", Options: options}, Archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"src/main.c": "int main;\n"}}})
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
 	require.Len(t, assessments, 1)
@@ -728,41 +628,7 @@ func TestARevisionsPatchesAreCheckedAgainstItsSource(t *testing.T) {
 	require.Equal(t, "patch-stale.diff", patches[0].Subject)
 	require.Contains(t, patches[0].Message, "patch-stale.diff doesn't apply to 1.8.1's source, as dockhand read it, and a check shows whether the build's patch phase fails")
 	require.True(t, patches[0].Hold, "it holds nobody's run (the docs dig's I9)")
-	require.Equal(t, int64(2), p.fetches.Load(), "each version's archive fetched once, the patch check reading the revision's as fetched")
-}
-
-// The patches a revision drops are checked against its source too, read
-// from the base's tree: libuv's #34620 dropped patch-libuv-legacy.diff,
-// which no longer applied, and another (the libuv run's finding 2). A
-// patch whose file isn't in the tree is unchecked, with why, and an
-// archive a kept reading spared fetching is fetched for the check.
-func TestTheBasesPatchesARevisionDropsAreChecked(t *testing.T) {
-	t.Parallel()
-	e, _, base, _ := revisionFixture(t, nil)
-	p := newPlanner(t)
-	legacy := "--- src/unix/core.c\n+++ src/unix/core.c\n@@ -1 +1 @@\n-legacy\n+legacy, patched\n"
-	still := "--- src/uv.c\n+++ src/uv.c\n@@ -1 +1 @@\n-uv\n+uv, patched\n"
-	before := editTree(t, e, base, map[string]string{"devel/libuv/files/patch-legacy.diff": legacy, "devel/libuv/files/patch-still.diff": still})
-	after := editTree(t, e, base, map[string]string{"devel/libuv/Portfile": "name libuv\n"})
-	options := map[string]string{"worksrcdir": "libuv-1.52.1", "patch.pre_args": "-p0", "extract.rename": "0"}
-	p.add(after, plannedPort{info: macports.PortInfo{Name: "libuv", Version: "1.52.1", Options: options}, archives: map[string]map[string]string{"libuv-1.52.1.tar.gz": {"src/unix/core.c": "rewritten\n", "src/uv.c": "uv\n"}}})
-	info, plan, err := p.ArchivePlan(t.Context(), model.Source{Tree: after}, "devel/libuv", "libuv")
-	require.NoError(t, err)
-	had := macports.PortInfo{Name: "libuv", Options: map[string]string{"patchfiles": "patch-legacy.diff patch-still.diff patch-lost.diff"}}
-	directory := t.TempDir()
-	patches := e.patchesFor(t.Context(), patchRequest{infos: [2]macports.PortInfo{had, info}, sources: [2]model.Source{{Tree: before}, {Tree: after}}, portdir: "devel/libuv", plan: plan, scratch: directory})
-	byName := map[string]assess.Patch{}
-	for _, patch := range patches {
-		byName[patch.Name] = patch
-	}
-	require.Len(t, byName, 3)
-	require.True(t, byName["patch-legacy.diff"].Dropped)
-	require.True(t, byName["patch-legacy.diff"].Checked)
-	require.False(t, byName["patch-legacy.diff"].Applies)
-	require.True(t, byName["patch-still.diff"].Applies)
-	require.False(t, byName["patch-lost.diff"].Checked)
-	require.Equal(t, "devel/libuv/files/patch-lost.diff isn't in the tree", byName["patch-lost.diff"].Detail)
-	require.Equal(t, int64(1), p.fetches.Load(), "fetched for the check, as no reading fetched it")
+	require.Equal(t, int64(2), p.Fetches.Load(), "each version's archive fetched once, the patch check reading the revision's as fetched")
 }
 
 // A subport's fetch plan is its own, asked for by its name: libuv's
@@ -799,101 +665,25 @@ func TestASubportsArchivesArePlannedForIt(t *testing.T) {
 	require.ErrorIs(t, err, treequery.ErrNoPort)
 }
 
-// A revision's archives are paired by the port's source set: one the base
-// fetched and the candidate doesn't is represented, unfetched, where it
-// had been read and dropped, and the rest are paired by what they are,
-// never by the order the plans name them (the architecture review's
-// finding 2, its second probe).
-func TestARemovedArchiveIsRepresented(t *testing.T) {
-	t.Parallel()
-	p := newPlanner(t)
-	p.add("base", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{
-		"main-1.0.tar.gz": {"LICENSE": "MIT\n"}, "extra-1.0.tar.gz": {"LICENSE": "GPL\n"}, "aaa-docs.tar.gz": {"README": "old\n"},
-	}})
-	p.add("candidate", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{
-		"main-1.1.tar.gz": {"LICENSE": "MIT\n"}, "zzz-docs.tar.gz": {"README": "new\n"},
-	}})
-	e := &Engine{}
-	e.options.Readings = t.TempDir()
-	var infos [2]macports.PortInfo
-	var plans [2][]macports.Distfile
-	for i, tree := range []model.ObjectID{"base", "candidate"} {
-		var err error
-		infos[i], plans[i], err = p.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/demo", "demo")
-		require.NoError(t, err)
-	}
-	pairs, unpaired, _, problem, _ := e.readPlans(t.Context(), infos, plans, true, t.TempDir())
-	require.Empty(t, problem)
-	require.Len(t, pairs, 1)
-	require.Equal(t, macports.SourceMatch{Before: "main-1.0.tar.gz", After: "main-1.1.tar.gz", Status: macports.SourceMatched, Basis: macports.ByPattern}, pairs[0].Match)
-	require.Equal(t, []macports.SourceMatch{
-		{Before: "aaa-docs.tar.gz", Status: macports.SourceUncertain}, {Before: "extra-1.0.tar.gz", Status: macports.SourceUncertain},
-		{After: "zzz-docs.tar.gz", Status: macports.SourceUncertain},
-	}, unpaired, "two of the base's left and one of the candidate's: which replaces which isn't guessed")
-	require.EqualValues(t, 2, p.fetches.Load(), "only what's compared is fetched")
-
-	result := assess.Assess(assess.Input{Port: infos[1], Base: infos[0], Pairs: pairs, Unpaired: unpaired})
-	held := result.Holds()
-	require.Len(t, held, 1)
-	require.Contains(t, held[0], "zzz-docs.tar.gz corresponds to none of the base's archives (aaa-docs.tar.gz, extra-1.0.tar.gz) by name")
-}
-
 // An archive only the base fetched, with the candidate's each matched, is
 // said and set apart, and holds nothing.
 func TestAnArchiveNoLongerFetchedIsSaid(t *testing.T) {
 	t.Parallel()
 	p := newPlanner(t)
-	p.add("base", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{
+	p.Add("base", plannedPort{Info: macports.PortInfo{Name: "demo"}, Archives: map[string]map[string]string{
 		"main-1.0.tar.gz": {"LICENSE": "MIT\n"}, "extra-1.0.tar.gz": {"LICENSE": "GPL\n"},
 	}})
-	p.add("candidate", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{"main-1.1.tar.gz": {"LICENSE": "MIT\n"}}})
+	p.Add("candidate", plannedPort{Info: macports.PortInfo{Name: "demo"}, Archives: map[string]map[string]string{"main-1.1.tar.gz": {"LICENSE": "MIT\n"}}})
 	e := &Engine{}
 	e.options.Readings = t.TempDir()
-	var infos [2]macports.PortInfo
-	var plans [2][]macports.Distfile
-	for i, tree := range []model.ObjectID{"base", "candidate"} {
-		var err error
-		infos[i], plans[i], err = p.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/demo", "demo")
-		require.NoError(t, err)
-	}
-	pairs, unpaired, _, problem, _ := e.readPlans(t.Context(), infos, plans, true, t.TempDir())
-	require.Empty(t, problem)
-	require.Equal(t, []macports.SourceMatch{{Before: "extra-1.0.tar.gz", Status: macports.SourceRemoved}}, unpaired)
-	result := assess.Assess(assess.Input{Port: infos[1], Base: infos[0], Pairs: pairs, Unpaired: unpaired})
+	e.SourceArchiver = stubArchiver{}
+	result := e.collector(p).Revision(t.Context(), [2]model.Source{{Tree: "base"}, {Tree: "candidate"}}, "devel/demo", [2]string{"demo", "demo"}, true, nil)
+	require.Empty(t, result.Problem)
 	require.True(t, result.Held(), "an archive no longer fetched holds for a look (L2a)")
 	require.Contains(t, result.Changes, model.UpstreamChange{Kind: "source", Path: "extra-1.0.tar.gz", Message: "upstream: extra-1.0.tar.gz is no longer fetched; look at what the port used of it, and at its checksum lines in the Portfile",
 		Rule: assess.SourceRemoved, Hold: true, Class: model.Introduced, Source: "extra-*.tar.gz"})
 	require.Contains(t, CoverageWords(result), "not compared: extra-1.0.tar.gz")
 	require.Contains(t, CoverageWords(result), "Compared LICENSE", "the one archive compared reads as a port of one archive's")
-}
-
-// A distfile MacPorts doesn't extract is read as the file it is, and
-// compared as one, holding nothing for being no archive: bashunit fetches
-// a script, with extract.only empty, which read as "archive/tar: invalid
-// tar header" and held its update (field testing at 285a496f).
-func TestADistfileMacPortsDoesntExtractIsComparedAsAFile(t *testing.T) {
-	t.Parallel()
-	p := newPlanner(t)
-	only := map[string]string{"extract.only": ""}
-	p.add("base", plannedPort{info: macports.PortInfo{Name: "bashunit", Options: only}, archives: map[string]map[string]string{"bashunit": {"": "#!/bin/bash\necho 0.51.0\n"}}})
-	p.add("candidate", plannedPort{info: macports.PortInfo{Name: "bashunit", Options: only}, archives: map[string]map[string]string{"bashunit": {"": "#!/bin/bash\necho 0.52.0\n"}}})
-	e := &Engine{}
-	e.options.Readings = t.TempDir()
-	var infos [2]macports.PortInfo
-	var plans [2][]macports.Distfile
-	for i, tree := range []model.ObjectID{"base", "candidate"} {
-		var err error
-		infos[i], plans[i], err = p.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/bashunit", "bashunit")
-		require.NoError(t, err)
-	}
-	pairs, unpaired, fetched, problem, _ := e.readPlans(t.Context(), infos, plans, true, t.TempDir())
-	require.Empty(t, problem)
-	require.Empty(t, unpaired)
-	require.Len(t, pairs, 1)
-	require.Equal(t, project.Flat, pairs[0].After.Layout)
-	require.Empty(t, fetched, "what MacPorts doesn't extract isn't patched")
-	result := assess.Assess(assess.Input{Port: infos[1], Base: infos[0], Pairs: pairs})
-	require.False(t, result.Held())
 }
 
 // An update of a Git-fetched port compares its commits, as a revision's
@@ -937,11 +727,11 @@ func TestASubportWhoseSourceDidntChangeIsLeftOut(t *testing.T) {
 	p := newPlanner(t)
 	e.Ports.Archives = p
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"devel/libharbor": {{Name: "tool-1"}, {Name: "tool-2"}}}})
-	one := plannedPort{info: macports.PortInfo{Name: "tool-1", Version: "1.0"}, archives: map[string]map[string]string{"tool-1.0.tar.gz": {"LICENSE": "MIT\n"}}}
-	p.add(base, one)
-	p.add(tree, one)
-	p.add(base, plannedPort{info: macports.PortInfo{Name: "tool-2", Version: "2.0"}, archives: map[string]map[string]string{"tool-2.0.tar.gz": {"LICENSE": "MIT\n"}}})
-	p.add(tree, plannedPort{info: macports.PortInfo{Name: "tool-2", Version: "2.1"}, archives: map[string]map[string]string{"tool-2.1.tar.gz": {"LICENSE": "MIT\n"}}})
+	one := plannedPort{Info: macports.PortInfo{Name: "tool-1", Version: "1.0"}, Archives: map[string]map[string]string{"tool-1.0.tar.gz": {"LICENSE": "MIT\n"}}}
+	p.Add(base, one)
+	p.Add(tree, one)
+	p.Add(base, plannedPort{Info: macports.PortInfo{Name: "tool-2", Version: "2.0"}, Archives: map[string]map[string]string{"tool-2.0.tar.gz": {"LICENSE": "MIT\n"}}})
+	p.Add(tree, plannedPort{Info: macports.PortInfo{Name: "tool-2", Version: "2.1"}, Archives: map[string]map[string]string{"tool-2.1.tar.gz": {"LICENSE": "MIT\n"}}})
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
 	require.Len(t, assessments, 2)
@@ -988,4 +778,12 @@ func TestAnIncompleteAssessmentIsMadeAgainByANewerBuild(t *testing.T) {
 	require.True(t, e.lookAgain(incomplete), "one recorded before builds were")
 	complete := model.Assessment{At: time.Now(), Build: "v0.6.0-rc5"}
 	require.False(t, e.lookAgain(complete), "a complete one stands across builds")
+}
+
+// stubArchiver archives nothing, for a collector whose ports fetch no Git
+// source.
+type stubArchiver struct{}
+
+func (stubArchiver) SourceArchive(context.Context, macports.PortInfo, model.GitSource, string) (string, error) {
+	return "", errors.New("no Git source here")
 }

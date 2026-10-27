@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"maps"
@@ -17,8 +15,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	archivefile "github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/comparison/comparisontest"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
@@ -218,22 +216,9 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 }
 
 // writeTarball writes files under one top directory, as a release archive
-// has them.
+// has them (comparisontest.WriteTarball).
 func writeTarball(t *testing.T, directory, top string, files map[string]string) string {
-	name := filepath.Join(directory, top+".tar.gz")
-	out, err := os.Create(name)
-	require.NoError(t, err)
-	gz := gzip.NewWriter(out)
-	tw := tar.NewWriter(gz)
-	for path, content := range files {
-		require.NoError(t, tw.WriteHeader(&tar.Header{Name: top + "/" + path, Mode: 0o644, Size: int64(len(content)), Typeflag: tar.TypeReg}))
-		_, err := tw.Write([]byte(content))
-		require.NoError(t, err)
-	}
-	require.NoError(t, tw.Close())
-	require.NoError(t, gz.Close())
-	require.NoError(t, out.Close())
-	return name
+	return comparisontest.WriteTarball(t, directory, top, files)
 }
 
 func (f fixture) withPreparer(t *testing.T) (*Engine, *fakePreparer) {
@@ -1044,15 +1029,6 @@ func TestAnUpdatesRecordKeepsTheSubportsItCantSee(t *testing.T) {
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Equal(t, []string{"jq", "jq-legacy"}, plan.Ports)
-}
-
-// A binary distfile is said by its own name and what it is: the line read
-// "1password-cli ships source-906474379 is a macOS installer package",
-// the temporary file's name in a sentence that didn't parse (field
-// testing at 5eb101a3).
-func TestABinaryDistfileIsSaidByItsName(t *testing.T) {
-	err := fmt.Errorf("reading: %w", &archivefile.BinaryError{File: "op_apple_universal_v2.31.0.pkg", Kind: "a macOS installer package"})
-	require.Equal(t, "1password-cli ships a macOS installer package (op_apple_universal_v2.31.0.pkg), with no source to compare", binaryReason("1password-cli", err))
 }
 
 // An update gives its Portfile MacPorts' modeline: added where it has none,

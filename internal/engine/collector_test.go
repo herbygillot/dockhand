@@ -40,8 +40,8 @@ func TestAnUpdatesAssessmentChecksItsPatches(t *testing.T) {
 	planner := newPlanner(t)
 	e.Ports.Archives = planner
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}})
-	planner.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1", Options: editor.options}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": old}})
-	planner.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1", Options: editor.options}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": new}})
+	planner.Add(base, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.7.1", Options: editor.options}, Archives: map[string]map[string]string{"jq-1.7.1.tar.gz": old}})
+	planner.Add(tree, plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.8.1", Options: editor.options}, Archives: map[string]map[string]string{"jq-1.8.1.tar.gz": new}})
 	// What the record says of the patch: a coverage line where it applied,
 	// a finding where it didn't. The update's archive is the fake
 	// preparer's, at another top than the port builds in, so its patch
@@ -65,9 +65,11 @@ func TestAnUpdatesAssessmentChecksItsPatches(t *testing.T) {
 	reused, err := e.revisionAssessments(t.Context(), update.Branch.ID, update.Base, tree, true)
 	require.NoError(t, err)
 	require.Len(t, reused, 1)
-	require.Zero(t, planner.fetches.Load(), "the update's record stands, collecting nothing again")
+	require.Zero(t, planner.Fetches.Load(), "the update's record stands, collecting nothing again")
 	require.Equal(t, 1, ofPatch(reused[0].Comparison), "the update's own record checked the patch")
-	fresh := e.assessPort(t.Context(), planner, [2]model.Source{{Tree: base}, {Tree: tree}}, "textproc/jq", [2]string{"jq", "jq"}, true)
+	_, portfile, err := e.Repo.File(t.Context(), string(tree), "textproc/jq/Portfile")
+	require.NoError(t, err)
+	fresh := e.collector(planner).Revision(t.Context(), [2]model.Source{{Tree: base}, {Tree: tree}}, "textproc/jq", [2]string{"jq", "jq"}, true, portfile)
 	require.Empty(t, fresh.Problem)
 	require.Equal(t, 1, ofPatch(fresh), "as a fresh collection does")
 }
