@@ -37,6 +37,9 @@ type Forge interface {
 	// what an update asks of every release's repository, where it found
 	// by type assertion whether a repository could say (C3).
 	Describe(ctx context.Context, instance, name string) (forge.Description, error)
+	// Account reads a login as the forge has it now, for a repository
+	// move's old owner name.
+	Account(ctx context.Context, instance, login string) (forge.Account, error)
 	// FailedJobs are a head's CI jobs that failed, of each run's latest
 	// attempt; JobLog a job's log, forge.ErrNotFound where the forge no
 	// longer keeps it or won't give it; and RerunFailed runs a run's

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -910,8 +911,8 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 
 	// The same owner's rename is said as one.
 	require.Equal(t, model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: "jqlang/jq2", Hold: true, Class: model.Introduced,
-		Message: "upstream renamed: GitHub redirects jqlang/jq to jqlang/jq2. Use update --follow-moves to update github.setup"}, movedChange("jqlang/jq", "jqlang/jq2", false))
-	followed := movedChange("jqlang/jq", "jqlang/jq2", true)
+		Message: "upstream renamed: GitHub redirects jqlang/jq to jqlang/jq2. Use update --follow-moves to update github.setup"}, movedChange("jqlang/jq", "jqlang/jq2", false, ""))
+	followed := movedChange("jqlang/jq", "jqlang/jq2", true, "")
 	require.False(t, followed.Hold, "followed, the person's choice, nothing holds")
 
 	// A branch already at the release still follows the move with
@@ -1137,4 +1138,28 @@ func TestAHandEditWritesTheAttemptAsThePersons(t *testing.T) {
 	require.NoDirExists(t, update.Branch.Worktree, "status only reads")
 	require.Len(t, status.HandEdits, 1, "read from the committed files")
 	require.True(t, status.HandEdits[0].Adjusted)
+}
+
+// A repository move to another owner says what the old owner name names
+// now: free for anyone to take, or another account made after the
+// repository, as yabai's koekeishiya is (field testing's outdated-ports
+// session); a transfer to an account that stood before reads as before.
+func TestAMovesOldOwnerNameIsReadNow(t *testing.T) {
+	t.Parallel()
+	made := time.Date(2016, 5, 1, 0, 0, 0, 0, time.UTC)
+	fake := &forgetest.GitHub{Made: map[string]time.Time{"asmvik/yabai": made}, Accounts: map[string]forge.Account{
+		"koekeishiya": {Exists: true, CreatedAt: time.Date(2025, 11, 3, 0, 0, 0, 0, time.UTC)},
+		"gone":        {},
+		"elder":       {Exists: true, CreatedAt: time.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC)},
+	}}
+	e := &Engine{Forge: fake}
+	require.Equal(t, "The old name, koekeishiya, now belongs to another account, created 2025-11-03, which could publish a repository named koekeishiya/yabai in this one's place, so --follow-moves matters",
+		e.oldOwnerNow(t.Context(), "koekeishiya/yabai", "asmvik/yabai", false))
+	require.Equal(t, "The old name, gone, is free on GitHub for anyone to take, who could publish a repository named gone/yabai in this one's place, so --follow-moves matters",
+		e.oldOwnerNow(t.Context(), "gone/yabai", "asmvik/yabai", false))
+	require.Empty(t, e.oldOwnerNow(t.Context(), "elder/yabai", "asmvik/yabai", false), "an account older than the repository: a transfer, as before")
+	require.Empty(t, e.oldOwnerNow(t.Context(), "koekeishiya/yabai", "asmvik/yabai", true), "followed")
+	require.Empty(t, e.oldOwnerNow(t.Context(), "asmvik/yabai-old", "asmvik/yabai", false), "the same owner's rename")
+	moved := movedChange("koekeishiya/yabai", "asmvik/yabai", false, "The old name, koekeishiya, now belongs to another account")
+	require.Contains(t, moved.Message, "Use update --follow-moves to update github.setup. The old name, koekeishiya, now belongs to another account")
 }

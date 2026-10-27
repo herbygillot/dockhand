@@ -113,4 +113,14 @@ type Description struct {
 	Description string
 	Homepage    string
 	License     string
+	// CreatedAt is when the repository was made, where the forge said.
+	CreatedAt time.Time
+}
+
+// Account is a login as a forge has it now: whether it names an account,
+// and when that account was made, which says whether a repository's old
+// owner name now belongs to someone else.
+type Account struct {
+	Exists    bool
+	CreatedAt time.Time
 }

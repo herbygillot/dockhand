@@ -18,6 +18,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/guest/guesttest"
+	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -664,4 +665,42 @@ func TestTheGuestSaysWhatAPassedTargetsBinariesLink(t *testing.T) {
 	results, _ = guestRun(t, input)
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Nil(t, results.Targets[0].Links, "its files couldn't be listed")
+}
+
+// A Rust build linking liblzma, which xz provides, with no depends_lib on
+// it, is found from the guest's reading of its binary's load commands to
+// the link scan's finding, as rustup linked liblzma (field testing's
+// outdated-ports session): a regression test from the guest to the
+// finding, whatever the finding then holds.
+func TestAnUndeclaredLinkIsFoundFromTheGuestsReading(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	prefix := filepath.Join(root, "prefix")
+	bin, lib := filepath.Join(prefix, "bin"), filepath.Join(prefix, "lib")
+	require.NoError(t, os.MkdirAll(lib, 0o755))
+	require.NoError(t, os.MkdirAll(bin, 0o755))
+	rustup, lzma := filepath.Join(bin, "rustup-init"), filepath.Join(lib, "liblzma.5.dylib")
+	macho := []byte{0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0}
+	for _, file := range []string{rustup, lzma} {
+		require.NoError(t, os.WriteFile(file, macho, 0o755))
+	}
+	require.NoError(t, os.WriteFile(rustup+".links", []byte(rustup+":\n\t"+lzma+" (compatibility version 10.0.0, current version 10.8.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n"), 0o644))
+	input := Input{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []Target{{ID: "rustup", Name: "rustup", Portfile: "devel/rustup/Portfile", Log: buildenv.LogName("rustup")}}}
+	results, _ := guestRunIn(t, root, input, "CONTENTS="+rustup+"\\n", "PROVIDES="+lzma+"=xz")
+	require.Equal(t, "finished", results.State, results.Detail)
+
+	// As the host records the guest's report (follow.go).
+	var links []model.Link
+	for _, link := range results.Targets[0].Links {
+		links = append(links, model.Link{Binary: link.Binary, Library: link.Library, Port: link.Port})
+	}
+	result := model.TargetResult{Target: "rustup", Outcome: model.OutcomePassed, Links: links}
+	found := evidence.UndeclaredLinks([]evidence.LinkedBuild{{Result: result, Declared: []string{"cargo", "rust", "openssl"}}})
+	require.Len(t, found, 1)
+	require.Equal(t, "xz", found[0].Port)
+	require.Equal(t, lzma, found[0].Library)
+	require.Equal(t, "rustup links xz", found[0].Subject())
+
+	declared := evidence.UndeclaredLinks([]evidence.LinkedBuild{{Result: result, Declared: []string{"xz"}}})
+	require.True(t, declared[0].Clean, "a declared link finds nothing")
 }
