@@ -87,10 +87,11 @@ func (p PortInfo) BuildDirectories() []string {
 }
 
 // ReadingSpec is where a reading of the port's source looks: below its
-// worksrcdir's subdirectory (SourceSubdirectory), and in the directories
-// its build reads build files from (BuildDirectories).
+// worksrcdir's subdirectory (SourceSubdirectory), in the directories its
+// build reads build files from (BuildDirectories), and at the Go packages
+// its -X arguments set variables of (GoLinkPackages).
 func (p PortInfo) ReadingSpec() project.Spec {
-	return project.Spec{Subdirectory: SourceSubdirectory(p.Options["worksrcdir"]), Directories: p.BuildDirectories()}
+	return project.Spec{Subdirectory: SourceSubdirectory(p.Options["worksrcdir"]), Directories: p.BuildDirectories(), GoPackages: p.GoLinkPackages()}
 }
 
 // GOPATHLayout reports whether worksrcdir is the Go PortGroup's default,

@@ -22,7 +22,7 @@ var ReadOptions = []string{
 	"git.url", "git.branch",
 	"python.versions", "python.version", "python.default_version", "python.rootname", "python.pep517_backend",
 	"use_xcode", "replaced_by", "known_fail", "supported_archs", "use_configure", "configure.cmd", "macosx_deployment_target",
-	"compiler.cxx_standard",
+	"compiler.cxx_standard", "build.args",
 }
 
 // InfoOptions are the mportinfo keys dockhand's rules name; the evaluator
