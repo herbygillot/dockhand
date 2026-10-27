@@ -148,7 +148,7 @@ func (k EventKind) ChangesStatus() bool {
 func CheckpointEvent(kind CheckpointKind) EventKind { return EventKind("branch." + string(kind)) }
 
 // EventLevel is the output level at which an event is shown, as v2 defined
-// them (docs/v2/output.md).
+// them (docs/v2/output.md, at tag v2-final).
 type EventLevel string
 
 const (

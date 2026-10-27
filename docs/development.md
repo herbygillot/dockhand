@@ -16,7 +16,7 @@ The syntax package has `FuzzParse` and `FuzzSplitList` targets; their seed cases
 
 Tests that stand in for an external tool, a fake `tart`, `git`, `gh`, or `portindex`, write it with `testsupport.WriteExecutable`, never with `os.WriteFile` and an executable mode. Tests run in parallel and start commands constantly; a child forked while the program is still open for writing keeps a copy of the descriptor until it execs, and running the program then fails with "text file busy". The helper writes while holding `syscall.ForkLock`, so no fork can start in that window. A script that only an interpreter reads, such as a Tcl file passed to `tclsh`, does not need it.
 
-Engine's tests run in parallel (`t.Parallel`), and `make test` runs the command line's as `COMMAND_SHARDS` processes of its test binary (one for each three cores, at most six, `tools/shard-test.sh`) beside every other package, since its tests set package-level seams and `HOME`; a plain `go test ./...` runs them in one process, as before. On an 18-core Mac, engine went from 338 s to 115 s and command from 280 s to 61 s.
+Engine's tests run in parallel (`t.Parallel`), and `make test` runs the command line's as `COMMAND_SHARDS` processes of its test binary (one for each two cores, at least one and at most six, `tools/shard-test.sh`) beside every other package, since its tests set package-level seams and `HOME`; a plain `go test ./...` runs them in one process, as before. CI's three-core runner gets one shard and its four-core one two. On an 18-core Mac, engine went from 338 s to 115 s and command from 280 s to 61 s.
 
 New tests follow two rules, so the suite stays parallel. A new engine test runs beside any other, and calls `t.Parallel`: it calls no `t.Setenv` or `t.Chdir` and writes no package-level variable, and what differs per test goes in through the engine it builds. A new command-line test adds no package-level seam of its own, such as another `testForge` or `testHTTPS`; it uses the ones there. Tests share their stand-ins rather than writing their own: GitHub is `forgetest.GitHub`, one stateful fake whose fork is a local bare repository, which tests set up and read rather than script call by call; fixture repositories are made with `testsupport.Git`, which keeps the person's git configuration, hooks, and signing out; and asking a URL over HTTPS is `testsupport.HTTPSAnswers`. Nothing generates mocks.
 
@@ -83,10 +83,23 @@ MACPORTS_TREE=~/Source/macports-ports DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bi
 
 The first four were measured on macports-ports 324108c8883 (20,231 Portfiles), the last four on 9c3d4bd8a7c (20,233). Those four are what the measure says of a whole tree; a change says one only of the lines and files it adds.
 
+## Libraries we didn't take
+
+Dependencies are few and vendored, and the build is cgo-free, so a new module has to beat what the standard library, `vendor`, or MacPorts' and Apple's own tools already do. The library survey of 2026-10-02 checked the likely candidates, and these were declined:
+
+| Library | What dockhand uses | Why |
+| --- | --- | --- |
+| a Go Tcl interpreter, semver and RE2 for vercmp and livecheck | MacPorts' own `port-tclsh` | a reimplementation would drift from MacPorts, as RE2 does from Tcl's regular expressions |
+| `go-git` | the `git` command | about 15 times slower on `git status` over macports-ports, and behind on partial clones and worktrees |
+| `zalando/go-keyring`, `99designs/keyring` | `/usr/bin/security` | go-keyring runs the same command without a context or an output bound; 99designs needs cgo |
+| `x/crypto/ssh` | Apple's `/usr/bin/ssh` | Local Network privacy can block a Go binary's dial to a guest |
+| `gofri/go-github-ratelimit` | `internal/github`'s own wait | it retries any refused request, writes included; dockhand never retries a write |
+| `ulikunitz/xz`, `mholt/archives` | the system's `xz`, `zstd`, and `lzip` | pure-Go xz was 2.3 times slower; `klauspost/compress/zstd` is the one to take if a missing `zstd` ever comes up |
+
 ## State and service boundaries
 
 v3 keeps its records in SQLite behind the `internal/store` contract, with `internal/store/sqlite` as the implementation, in `~/.dockhand/dockhand.db` unless `--db` or `DOCKHAND_DB` says otherwise. The schema is `internal/store/sqlite/schema/NNN.sql`, applied in order and only forward: a change to it is a new file, never an edit to one already released. One database holds several ports checkouts, and every read and write names the one it is for. v2's `state.db` is never read.
 
-Two rules keep the store's writes short (the SQL study of 2026-10-13, [review](reviews/2026-10-13-sql-study.md)). Every foreign-key child column of a table that pruning deletes from has an index: a delete checks its foreign keys there, and without one `PruneHistory` went quadratic in history. And no write transaction runs past about a second at a year's scale, since a writer waiting for the lock gives up after five (`BusyTimeout`), where a transaction may run thirty: a large delete goes in chunks, as history's pruning does. Every prune and window statement has a plan test, and a correlated subquery that scans a table fails it.
+Two rules keep the store's writes short (the SQL study of 2026-10-13). Every foreign-key child column of a table that pruning deletes from has an index: a delete checks its foreign keys there, and without one `PruneHistory` went quadratic in history. And no write transaction runs past about a second at a year's scale, since a writer waiting for the lock gives up after five (`BusyTimeout`), where a transaction may run thirty: a large delete goes in chunks, as history's pruning does. Every prune and window statement has a plan test, and a correlated subquery that scans a table fails it.
 
 Help and completion open no database. [`architecture.md`](architecture.md) maps the packages, and [the roadmap](roadmap.md) says what is being built.

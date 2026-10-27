@@ -192,14 +192,15 @@ MacPorts' reason.
 
 ```toml
 [providers.tart]
-capacity = 1          # checks serve runs at once; 1 when unset
 test_timeout = "45m"  # a target's tests; 30 minutes when unset
 
 [providers.tart.xcode]  # a release's Xcode image, by name or number
 tahoe = "26.6"          # what MacPorts' arm64 buildbot runs when unset
 ```
 
-macOS runs two VMs at most, yours among them, so a check waits for a slot
+macOS runs two VMs at most, yours among them, and that is the provider's
+only limit: there is no capacity setting, and a configuration that still
+sets `providers.tart.capacity` is refused by name. A check waits for a slot
 when two are already running. A check of several releases builds two of
 them at once. Their VMs start one at a time, each once the last is
 running, so when your own VM holds one slot they take the other in turn.
@@ -284,3 +285,112 @@ logs`). When the guest's Command Line Tools, or its Xcode in an Xcode
 image, differ from the facts table's row the plan was read with, the
 check says so as a drift report, which never changes a result
 (decision 10).
+
+## Observed
+
+Facts about Tart, the guests, and the images that the provider's code works
+around, each with the date it was seen. Read them before simplifying the
+code they explain.
+
+### Tart and the Mac
+
+- **The two-VM limit is the Mac's, whatever Tart home a VM runs from.**
+  With two VMs running in dockhand's home, a start from another home was
+  refused "The number of VMs exceeds the system limit", naming no VMs; the
+  same start in dockhand's home added "(other running VMs: …)". So only
+  the message's first part is matched, and your own VMs, counted from
+  `TART_HOME` or `~/.tart`, take slots too (2026-09-24).
+- **Dockhand runs Tart with `TART_HOME` set to its own home**, never yours,
+  so a VM of yours can't block its listing. Tart makes a home's
+  directories on any command, so a command that only reads doesn't run
+  Tart on a home that isn't there yet.
+- **A clone made by another database**, a scratch `DOCKHAND_DB` or a test
+  run, is reported and kept: `clean` and serve remove only clones their
+  own database made. Remove one by hand with
+  `TART_HOME=~/.dockhand/tart tart delete <name>` (2026-09-27). Stopping
+  and deleting a clone takes about 4.4 s.
+- **`tart list` asks diskutil about each VM's disk.** It took about 30 s
+  on an M1, and hung on disks diskimagesiod had left attached and not
+  mounted (`hdiutil info` shows them), so every listing is bounded at two
+  minutes (2026-10-07).
+- **Upstream Tart issues still worked around** (as of 2026-09-27):
+  - openai/tart#1345: `tart delete` of a running VM says "does not exist"
+    and leaves it. #1350 fixed it on 2026-09-26, hours after 2.39.0 was
+    tagged; until a release carries it, a delete is trusted only by the
+    VM's absence from the listing.
+  - #1346, `tart exec` failing once its control socket does; #1347,
+    `tart exec` losing output on macOS 12 to 15 guests; and #1348, its
+    buffered input. Guests are reached over SSH, never `tart exec`, but for
+    setup's agent readiness probe.
+  - #1353: a listing that races a delete fails; it is listed again.
+  - `tart clone` onto a stopped VM's name replaces it silently, and Tart
+    renames running VMs, so dockhand refuses a destination Tart lists and
+    renames only stopped VMs.
+  - #1344, fixed by #1349 in 2.39.0: before it, `tart list` failed while
+    an ASIF VM ran, and on 2.37.0 a listing in an ASIF VM's first seconds
+    failed ten of eleven starts; on 2.39.0 eleven of eleven succeeded.
+    `tart get` now reads an ASIF disk's capacity as `null` (2026-09-27).
+- **Local Network privacy stops a Go program's direct dial to a guest**
+  ("no route to host"), whichever app launched it, but not Apple's
+  `/usr/bin/ssh`, which is why the guest channel uses it. Its
+  ControlMaster socket is under `/tmp`, since the per-user temporary
+  directory's path is too long for a socket. 64 MiB moved up in 0.9 s and
+  down in 0.4 s on Monterey (2026-09-24).
+
+### Images and guests
+
+- **A raw disk's recovery partition sits after the main container**, so
+  `tart set --disk-size` alone doesn't let the guest grow it. Setup removes
+  the partition from the stopped clone's `disk.img`, the route Tart's FAQ
+  points to and the one place dockhand edits a file inside a Tart home.
+- **Golden Gate's vanilla image** was 30.9 GB compressed, a 50 GB ASIF
+  disk taking 35 GB on the host, holding a 44.1 GB container and a 5.4 GB
+  recovery partition with 10 GB free. On a Tahoe host the disk is a
+  standalone `disk.img`, not the stacked `overlay.asif` a macOS 27 host
+  could make. It had passwordless sudo and no Tart guest agent. Its base
+  image took 2 min 40 s to set up, 41 GB on the host, and its Xcode image
+  11 min 56 s, 47 GB (2026-09-27).
+- **Reading a vanilla image's digest** from the registry takes 100 to
+  200 ms (2026-09-27).
+- **The guests' login shell is zsh, which reserves `status`**: a guest
+  script variable of that name breaks (2026-09-15).
+- **The first-boot agent bootstrap** on Sonoma and Sequoia returned exit
+  125 twice, and a retry succeeded each time; the cause is unknown, and
+  setup waits it out, bounded (2026-09-15).
+- **`tart stop` ends a guest that doesn't shut down in time**, losing what
+  it hadn't written, so the guest is told to sync first.
+- **`diskutil apfs resizeContainer` in a guest** failed once with -69606
+  on Sequoia, leaving 17 GB where 60 were needed, and a plain retry
+  passed; setup tries three times, five seconds apart (2026-10-16).
+- **Monterey's `xip --expand` fails intermittently** with "Block-compressed
+  payload operation failed": with Xcode 14.2 (2026-09-15) and with 14.0.1
+  (2026-10-16), on archives that expand on the host, an upload verified
+  byte for byte, and a guest that had expanded the same archive before. A
+  rerun passed. The cause is unknown; setup compares the guest's copy with
+  the host's by size and sha256 before expanding, and says which failed.
+- **lang/gcc15 refuses Xcode 14.0.1** at pre-fetch, so on Monterey's
+  Xcode image anything that pulls in libgcc15 fails (2026-10-18).
+
+### xcodes
+
+Observed on 2026-09-27:
+
+- it keeps your Apple ID in `configuration.json` under
+  `~/Library/Application Support/com.robotsandpencils.xcodes`, the
+  password in the Keychain, and its session under
+  `~/Library/HTTPStorages/xcodes`;
+- signed out, it exits 1 at once, writing nothing: "Apple ID: Missing
+  username or a password. Please try again.";
+- without a terminal it prints nothing until the download ends;
+- it builds the download in the system's temporary folder and moves it
+  into `--directory` only when complete; 7.5 GB took about 4 minutes;
+- it has no choice between Apple silicon's and the universal archive, and
+  names a prerelease `Xcode-27.1.0-beta.2+…`, which setup never takes.
+
+### Ports in guests
+
+- **jq's own tests fail in a guest where it built first**: its destroot
+  recompiles `src/main.o` as root, mode 0644, and the unprivileged
+  `make check` can't write it again, "Operation not permitted". Seen on
+  Monterey and Sonoma (2026-09-15, 2026-09-24) and in Tahoe's Xcode image
+  (2026-09-28); it is jq's, not dockhand's, and the tests are advisory.

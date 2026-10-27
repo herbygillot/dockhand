@@ -1,0 +1,117 @@
+# Decisions
+
+What dockhand decided and still holds to, and what it declined. Each entry gives the rule, the date, and the reason in a line or two. A change that would cross one says so and argues for reopening it. Released versions, release candidates, and the order work was done in are left to Git's history; docs/ as it stood before this file existed is at tag `docs-archive-2026-10-25`.
+
+Code comments cite entries here by number: "decision 28" is a contract decision, "D9" a decision of the 2026-09 plan. Both keep the numbers they were given.
+
+## Contract decisions
+
+From the contracts walk-through of 2026-09-23. Numbers missing here were superseded by v3 and dropped (2026-10-27).
+
+- **4. A check builds on this Mac's release unless told otherwise.** The host's release is the platform an update's evaluation reads natively, so the default build needs no split between evaluation and build platform. Other releases are asked for (`--on`, build profiles).
+- **6. A release with no image is refused, naming the command that makes it.** Xcode is an add-on (amended 2026-09-26): only a release without its base image is refused. A port that needs Xcode on a release without its Xcode image is unmet, not built, and the check names the command that makes the image.
+- **7. A build on another release records its evaluation and build platforms apart.** The build platform must fall inside what the update's evaluation covered, and each release's image choice comes from that release's modelled `use_xcode`, not the host's.
+- **9. Each macOS release has a facts table**, and a modelled context answers toolchain questions from it rather than from the host: Xcode and Command Line Tools versions, the developer directory, compilers and their versions, and SDK paths and versions.
+- **10. The facts table is checked in and harvested from real images.** An update models releases this Mac has no image for and must stay fast, so it reads the table; a check, where an image exists, builds against the image's real facts. The guest reports drift from the table without changing a verdict.
+- **11. The Tart guest runs what MacPorts CI runs, in its order.** `port lint`, then the dependencies installed and activated in a command of their own, then fetch, checksum, and install; tests after install, advisory as in CI unless `check.tests = "required"`. Each target starts from a guest with everything deactivated.
+- **12. The facts table is keyed by Darwin, architecture, and profile, and each entry records its source and date.** Harvested Tart images win for what Tart can boot; MacPorts' buildbot logs cover the other releases and architectures from Darwin 10; Base's own tables cover Darwin 8 and 9. The harvesters are checked-in tools, so the table is regenerated, never hand-edited.
+- **13. Setup installs a pinned Command Line Tools generation per release.** The table holds the generation; setup installs the newest tools of it that Software Update offers and refuses, naming what's offered, when there's none, never falling back to the newest. The generation follows MacPorts' CI pin where CI covers the release and the buildbots elsewhere.
+- **15. dockhand has one configuration file, `~/.dockhand/config.toml`.** Precedence is flags, then environment, then the file, then defaults; a list flag replaces the file's list; an unknown key or malformed value is refused with the key named; reading the file creates nothing; values are frozen when work is accepted; `DOCKHAND_CONFIG` names another file. Nothing is added without a use.
+- **16. Portfile evaluation is independent of the host's own state.** The installation is modelled as MacPorts CI sees it at its second evaluation: a first pass with nothing installed gives the dependencies, and the second, whose fetch plan counts, has their closure active. The evaluator launches with Base's kept environment only. A prefix path's existence is evaluated both ways, conclusive only when the fetch inputs agree; reading a prefix path's contents or a prefix program's output is inconclusive.
+- **17. Pre-fetch hooks are judged statically, never run.** The question is over every branch a builder can take, which one run can't show, and static judgment needs no values and costs nothing. Running a hook inside the oracle stays a possible cross-check if refusals remain.
+- **18. Programs built into macOS are profiled per release in the facts table.** Their presence and fixed behaviour (`sw_vers`, `uname -m`, `sysctl` keys, `xcrun --show-sdk-path`, `java_home` with nothing installed) are harvested per release; behaviour that depends on installed state is evaluated both ways. The fetch guard admits an `exec` of such a program whose output only lands in a variable the effect rule already judges.
+- **28. A result is reused per target, by the identity of what its build read.** The guest records each activated dependency, each tree and `_resources` file the evaluation sourced, and each name's resolution; a result is reused when every recorded input is unchanged by content identity in an environment of the same origin (source image digest, tools, MacPorts version, setup protocol). Build-time reads are bounded, not traced: distfiles by checksum, `files/` by tree, dependencies, and the environment. A passing target's archive is kept so dependents install rather than rebuild. Tart only: a GitHub Actions result is never reused (D21). `port -t` trace mode is set aside.
+- **29. No provider fallback.** The provider is chosen when work is accepted, and at capacity the work waits; nothing does "this is busy, so that", since a result would then mean two things. Switching providers is the person's explicit act. Build, lint, install, and fetch failures are never retried.
+- **30. Infrastructure failures are retried; verdicts never are.** Three attempts in all, 1 and then 5 minutes apart, only for attempts that ended as infrastructure failures; a retry covers only targets with no verdict yet. A target mid-build during two infrastructure failures stops and needs attention, since exhausting memory or disk looks like infrastructure.
+- **32. dockhand depends only on interfaces its external components document; an unavoidable exception is flagged.** For Tart: its CLI, `--format json` output, `TART_HOME`, and its documented locations, never anything inside a VM directory. Existence and running state come from `list` and `get`; a delete is confirmed by absence from `list`. Tests pin the JSON fields read, so an upgrade that changes them fails a test. Knowing exceptions are named where they're taken: the recovery-partition edit (38), MacPorts' log lines (a failed check's detail), xcodes' sign-in, and MacPorts Base internals in the evaluator.
+- **35. One repository per engine.** Each engine is bound to one registered checkout, `serve` drives one, and only cleanup reaches across. An edited pull request body is kept whole, `status` reads only what dockhand recorded, and each forge has one client.
+- **36. Cleanup is automatic.** Nothing guarantees a person runs `clean`, so bounded pruning runs at most once a day, during `serve` or after an attended command's own work, and at once when free space falls below `cleanup.min_free`. `cleanup.after` bounds everything it reaches (D6); `cleanup.automatic = false` turns it off. Open work and anything a live branch's evidence reads are never touched; a kept archive goes only when nothing references it (44).
+- **38. Two Tart findings, settled by testing.** The host-side recovery-partition edit that makes an image's 100 GB disk usable is an approved exception to 32: it runs only during setup, on dockhand's own stopped clone, as the route Tart's FAQ points to does. Everything dockhand reads back from a guest goes over SSH/SFTP and is checked against a size and sha256 computed on the other side, since `tart exec` loses output from macOS 12 to 15 guests while reporting success (openai/tart#1347).
+- **41. No direct use of Apple's Virtualization framework.** It would mean owning images, cloning, networking, disk growth, and the guest channel through every macOS release, plus an entitlement and cgo, and its vsock channel fails as `tart exec` does. Fixes go upstream to Tart, and the provider seam stays open. Reopened if Tart becomes unmaintained, a blocking bug stays unfixed across releases, or dockhand needs something Tart can't give.
+- **42. dockhand has its own Tart home, and SSH is a check's only guest channel.** A Tart home of its own (`TART_HOME`) keeps the person's VMs out of dockhand's view; the Mac's VM limit stays machine-wide, so the person's running VMs still count.
+- **43. Guests are reached through Apple's `/usr/bin/ssh`, with a dockhand key pair.** Local Network privacy can block a Go binary's dial to a guest depending on which app launched it; Apple's own binaries aren't subject to it. One multiplexed connection per guest; files through `pkg/sftp` over it; setup records each image's host keys and checks guests against that record.
+- **44. The plan and evidence model.** A target is revision-only only when its Portfile diff touches nothing but `revision` and no file under `files/` changed; unknown is substantive. A check's plan separates the changed ports, CI's eligibility per platform with a reason for each exclusion, the selection (`--only`, `--also`), and the prerequisites that selection needs; a changed prerequisite is always built, never substituted by an old binary. A result records the queries evaluation made, negative ones included, and the digest of every archive it consumed, so an amended library with unchanged coordinates is never reused through. An archive is ready for dependents only once its transfer and checksum are recorded. A baseline never unblocks submission by itself; the person accepts.
+
+## Plan decisions, D1 to D21
+
+From the 2026-09 plan's questions for the person. D15, D19's taking, and D3 are settled facts now and stay for their numbers.
+
+- **D1. A result keeps the test policy it was checked under** (2026-09-27), and is read under it, naming its check where that differs. A later `--tests required` check of some ports doesn't bind the others.
+- **D2. Modelled contexts default to the Xcode profile** (2026-09-29), as MacPorts' builders are set up. A context that states its tools is modelled with them.
+- **D3. Tahoe's Xcode image has its buildbot's Xcode** (2026-09-27), under "Xcode images follow MacPorts' buildbots" below.
+- **D4. What an update couldn't check holds a submission nobody reviews** (2026-09-27). `bump`'s and serve's submissions wait for a person's look when the update couldn't check something a passing build can't catch: archives the comparison couldn't pair or fetch, and a Go toolchain minimum left below go.mod's requirement. A patch it couldn't check is shown, not held, since the build applies every patch. A person's own `submit` shows these and doesn't hold.
+- **D5. Tidy, rebase, and restore stay in the engine** (2026-09-27). Mechanisms they share can live in `history`; the verbs don't move there.
+- **D6. How long history is kept** (2026-10-01). One setting, `cleanup.after` (15 days), bounds caches, kept archives, events, logs, and build history. Logs are gzipped when their check ends and read in place. Open branches keep everything their evidence reads. An ended branch, `cleanup.after` past its end, keeps one light row for `status --all`. Reuse is bounded by count: only the newest passed result per port, environment, and variant set keeps its archive. Assessments of a tree a branch has moved past go after 7 days.
+- **D7. `update --plan` on a branch dockhand doesn't track** (2026-09-29) plans on master unless what's checked out changes the port, and refuses only then, naming `adopt` and `--new --plan`.
+- **D8. The GitHub CLI marks a pull request ready when an organization refuses dockhand's app** (2026-09-29), where `gh` is installed and signed in, and says it did; otherwise it says how to finish.
+- **D9. The dependencies dockhand writes don't hold** (2026-09-29). `update` writes `go.vendors` and `cargo.crates` and a check builds with only what the port declares, so: Go's changes hold nothing (the `go.toolchain_min` check stays); a new Rust `-sys` crate is listed for attention without holding; a Node `package.json`'s dependencies are counted and hold nothing. A Python dependency is another port, and holds.
+- **D10. A failure's summary gives the first compiler error in the port's log** (2026-09-29), beside MacPorts' `Error:` lines, marked as read from the log.
+- **D11. `ship --passing` asks once over one plan** (2026-09-29, amended 2026-10-13): every passing branch with its holds on one plan, one answer on a terminal; a script passes `--yes`.
+- **D12. How far the comparison reads a build file** (2026-09-30, extended 2026-10-01). Holds are scoped to the build systems a port uses. A build file whose change is only the version it names doesn't hold. A CMake option off by default, and a change under an `if()` that can't be taken with every off-by-default option OFF, hold nothing; an option on by default, a flipped default, or a removed option holds. Comments and a version set in parts aren't changes. Any other change to a build file holds.
+- **D13. Failed tests hold nothing under `declared`** (2026-09-30), the default and MacPorts CI's: tests that ran and failed pass, unattended or not, and the pull request says so. `check.tests = "required"` or `--tests required` makes them fail the check.
+- **D14. An assessment assesses the net change from the base** (2026-09-30), never the edits that made it. Only what the candidate introduces, or what couldn't be checked, holds; a concern the base already had is said. A Git-fetched port is compared through its forge's archive of each commit.
+- **D15. A trailer naming a build nobody can find** (2026-10-02): submit warns of a `Generated-By` naming a build GitHub doesn't have; nothing more. Reopened only if a release build is reported unfound.
+- **D16. How long a build may run** (2026-10-01): a Tart build, the guest's install, and a GitHub Actions run end at 6 hours, GitHub's own cap on a job, set per provider in the configuration. Lint ends at 10 minutes; a stalled fetch is MacPorts' to drop.
+- **D17. Which checks make a branch ready** (2026-10-01, amended 2026-10-13): the build profile in effect, `build.default` when a person runs it and `build.unattended` for `ship --yes` and serve. Each environment takes its newest result from any check of the branch's files as they are, so a narrowed check adds to the others.
+- **D18. A kept archive is signed from a read-only map** (2026-10-02), whatever its size, once when it's kept; its `.sig` and `.rmd160` are stored beside it and removed with it.
+- **D19. `cargo.update`** (2026-10-02): update takes a port that sets `cargo.update yes` where its source ships a Cargo.lock and refuses one without; dockhand never adds or removes the line.
+- **D20. On GitHub, `logs --port` starts at the port's own steps** (2026-10-02), by the `::group::` headings of MacPorts' workflow; without them, the whole log, saying so.
+- **D21. Only Tart's results are reused** (2026-10-02). A GitHub Actions check's runner image floats and its dependencies are live. Revisited only if GitHub names an image digest and the workflow pins what it installs.
+
+## Standing decisions
+
+- **Every selection gets one policy** (2026-10-27). `outdated`, `update`, and `ship` take `--maintainer`, `--category`, and `--not-maintainer`, with `--mine` as shorthand; serve's selection defaults to the person's ports, a default and not a policy. Others' ports get the same holds and stages as the person's: a pull request on another's port goes through MacPorts' own review, its maintainer's approval, the maintainer timeout, or a reviewer's discretion for a `nomaintainer` port.
+- **Running `ship` or `bump` is the consent** (2026-09-27, settled 2026-10-27). `bump` asks nothing; `ship` without a terminal acts as `--yes`; the holds guard the path.
+- **dockhand fixes deterministic lint-shaped findings on the lines a change touches** (2026-10-27): whitespace on added lines, a version update's `github.tarball_from tarball`, a lone `openmaintainer`, and the modeline (2026-10-24, `--keep-modeline` to opt out; `tidy` leaves line 1 alone). Judgment calls are notices. A fix beyond the change, such as realignment, is opt-in (`tidy --restyle`), in a commit of its own. The objective rules are still offered to MacPorts Base.
+- **Nothing is aliased; a removed setting or flag errors naming its replacement** (2026-10-13, made explicit 2026-10-27). dockhand has few users, so no compatibility bridges between versions.
+- **Tart's limit is the Mac's VMs, not a count of checks** (2026-10-26). There is no capacity setting; dockhand counts running VMs and waits for a free one rather than starting one macOS will refuse.
+- **A Portfile comment that reads as the maintainer's instruction is highlighted** (2026-10-26) as a notice with its line. It holds and refuses nothing.
+- **The per-port hold keys are `majors`, `moves`, and `after`** (2026-10-23), under `[holds.ports."<port>"]`.
+- **Major version updates hold unless the person names them** (2026-10-06).
+- **check refuses a deleted base image and names the restore** (2026-10-16), `dockhand setup tart <release>`, since restoring writes tens of gigabytes unasked.
+- **Xcode images follow MacPorts' buildbots** (2026-09-27): a release's Xcode image has the Xcode its arm64 buildbot runs, from the facts table; `providers.tart.xcode` names another. Ports that don't need Xcode build in the Xcode image where a release has one, revisited if a pull request fails MacPorts CI for want of Xcode. With xcodes installed, setup downloads a missing Xcode (an exception to 32, chosen knowingly).
+- **Baselines are optional and dockhand's own** (2026-09-27): `--baseline` or `check.baseline = true`. MacPorts' buildbot history is never a baseline. A failure the baseline reproduces, accepted with `submit --accept`, names its baseline in the pull request.
+- **A command's JSON has one shape wherever it stops** (2026-09-27), best effort: a superset of what its steps can say, with what it didn't reach left out or empty. A command that refuses before doing anything reports only its error.
+- **A failed check's detail reads MacPorts' log** (2026-10-02): the failing step's "Command failed:" line and the tool's last lines before it, beside `Error:` lines. MacPorts documents none of them; when their wording changes, a detail says less and nothing is judged by it.
+- **The guest installs dependencies from binary archives with `port -b install`** before a target builds, which says which ones would build from source.
+- **submit doesn't run a check itself after a rebase**: its refusal says the check reuses the earlier build where a port reads the same files.
+- **`update --mine` stays** (2026-10-13): the edit-only batch.
+- **`bump` stays as ship's single-port front** (2026-10-15).
+- **`check --keep` keeps the clone whether the guest passed or failed** (2026-10-20), for `dockhand shell`.
+- **Branch worktrees go in `~/Source/macports-branches`** (2026-09-27), wherever the clone is; `worktrees` in the configuration names another.
+- **An interrupted serve never abandons work** (2026-10-04): the next serve resumes it.
+- **Release binaries for macOS 10.13 to 11 are parked** (2026-10-20) as draft PR #6 until someone on those releases asks.
+
+## Not taken
+
+Declined, with the reason. Each reopens only on the condition given, or on new evidence a person brings.
+
+- **Campaigns and reproducibility investigations** (2026-10-02): named groups of branches, and rebuilding to compare outputs, answer questions nobody's workflow asks; grouping in `status` covers several branches.
+- **Exporting state to Git notes, or rebuilding the database from Git metadata.**
+- **A full-screen terminal interface** (2026-10-02): `watch` and `status` keep their line output. bubbletea comes back only if `watch`'s panes are built.
+- **`rebase` carrying uncommitted edits** (2026-10-26): no field session hit the refusal in some 300 bumps, and a snapshot carried through a history rewrite adds risk where a bug loses work. The refusal names `dockhand tidy`. Reopens if a field session hits it on the normal path.
+- **Adding a branch's worktree to MacPorts' sources.conf** (2026-10-25): the file is root's and every `port` command reads it, and a forgotten worktree there shadows the person's ports. `port -D` or the port's directory serves.
+- **`dockhand setup prefix`, building MacPorts Base into a prefix of dockhand's own** (2026-10-25): it would follow every Base release; `local` builds in whichever prefix the person names.
+- **Field testing's scope increases** (2026-10-23): series management, tree-health signals and Trac drafts, upstream patch sourcing, and smoke-running installed binaries.
+- **The SQL study's speed work** (2026-10-13): no rewrite of the N+1 reads or polling, no ORM, query builder, or generated code, no plan or statement cache, no second durability mode.
+- **Command-package frameworks** (2026-10-15): no workflow or pipeline type, no command registry, no branch shape shared across commands.
+- **Extractions no consumer asks for** (2026-10-17, 2026-10-23): one ship driver for the command and serve, a version probe below portedit, a source-file reader, an image service, and PlanSubmit's facts split from its policy, each until someone next rewrites that code.
+- **Reuse across a test-only edit, and `--debug-cmd` after a failure** (2026-10-19): the first needs kept work trees of gigabytes each; `shell --test` serves the second.
+- **From the documentation dig** (2026-10-26):
+  - serve notifying a merge another command recorded first (that command showed it);
+  - quoting a reviewer's requested changes in `status` (GitHub shows them);
+  - an upgrade-path check over master's archive (`port upgrade` deactivates the old version first);
+  - a batch `rebase --stale` (a pull request needs a rebase only where it conflicts, which status says per branch);
+  - written rules for agreement and round-trip tests (nothing would enforce them);
+  - a Tart lock and clone cleanup across databases on one Mac (several databases are a development setup's alone);
+  - one MacPorts interpreter reused across evaluations (state could leak, and no speed pain is measured);
+  - create's other extras: SwiftPM, a long_description from the README, clap's completions, go.sum-only `go.vendors` rows, GitLab and Codeberg upstreams (each refuses cleanly today);
+  - `create --like <port>`;
+  - `check --trace` (the guest builds with the declared dependencies alone, as the buildbots do);
+  - Node and Rust toolchain floors (MacPorts' rust and node are current on every release);
+  - setup's disk report (cleanup acts on low space);
+  - a PortGroup's users in the pull request (its file list shows a PortGroup edit);
+  - serve's daily count in `status`, and pacing per host (no host has blocked dockhand);
+  - a Base canary Portfile (the scheduled CI job against Base's master catches the drift);
+  - an inbox of others' pull requests on the person's ports, and OSV advisories (MacPorts' bot mentions maintainers already).
+- **The image's Xcode read before a check** (2026-10-23): which Xcode a port refuses is knowledge dockhand doesn't have.

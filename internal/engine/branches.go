@@ -1254,7 +1254,7 @@ func (e *Engine) workingEdits(ctx context.Context, branch model.Branch) ([]strin
 	return worktree.TrackedChanges(ctx)
 }
 
-// FreeName is a name for a new branch for work on a port, per decision 37:
+// FreeName is a name for a new branch for work on a port:
 // <port>-<short ID>, such as jq-4k2p, which no branch, tracked or not, and
 // no worktree directory already uses. It holds no verb or version: it's
 // for work, such as an edit, that says nothing more specific. NameFor
@@ -1266,7 +1266,7 @@ func (e *Engine) FreeName(ctx context.Context, port string) (string, error) {
 // NameFor is a name for a new branch that says what it does, the person's
 // decision of 2026-10-02 (the command-line UX review's §1, revised):
 // <port>-<what>, such as jq-1.8.1 for an update, gdal-rebuild, or
-// mods-new, with decision 37's short ID added only where that name is
+// mods-new, with a short ID added only where that name is
 // taken, as jq-1.8.1-4k2p; with nothing to say, <port>-<short ID>. Taken
 // means it exists now: a tracked branch that isn't merged, a Git branch,
 // or a worktree directory, so a merged and cleaned branch's name is free

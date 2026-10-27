@@ -7,11 +7,10 @@ it can be built or checked in a Linux container. The design below was
 settled with the person on the Mac the same day, and replaces the five
 open decisions the scope left.
 
-Sources: the direction record's "MacPorts in a controlled room" and decisions
-9–13, 17, 18, and 35 ([contracts direction](reviews/2026-09-23-contracts-direction.md)),
-its 2026-09-23 host inventory (`~/.dockhand/surveys/2026-09-23-host-inventory/`
-on the Mac), and the [Base design prospective](macports-base-design-prospective.md)
-§§4–6.
+Sources: the 2026-09-23 direction record's "MacPorts in a controlled room",
+its host inventory, and the Base design prospective, all at tag
+`docs-archive-2026-10-25`; the decisions it rests on (10, 12, 13, 16, 18, and
+35) are in [decisions](decisions.md).
 
 ## What it is
 
@@ -311,13 +310,13 @@ ports), compared with the one before.
 
 | # | Phase | Changes results | Acceptance |
 |---|---|---|---|
-| 1 | **Done.** Dispatcher in shadow mode: hide and alias, pass the host's answers through, count each call by its source. It replaces the trace-based observation. | 13 ports, a correction | The survey matches the baseline but for 13 ports whose host reads the old traces could not see ([note](activity/2026-09-25-oracle-phase-1.md)); the cost equals the traces'. |
-| 2 | **Done.** Effects refused: writes, network, and unlisted programs, at the dispatcher in every worker, with a table of about 20 programs that only report (`macports.HostPrograms`), there for the hook grammar too. Each refusal is kept in the parent, out of `catch`'s reach, and the evaluation isn't trusted. A first comparison with a fresh Tart guest, on a sample, waits for the v3 Tart provider. | No, at this commit | No port attempts an effect that would take place ([note](activity/2026-09-25-oracle-phase-2.md)); the guest comparison's differences are explained. |
+| 1 | **Done.** Dispatcher in shadow mode: hide and alias, pass the host's answers through, count each call by its source. It replaces the trace-based observation. | 13 ports, a correction | The survey matches the baseline but for 13 ports whose host reads the old traces could not see (f04c2d1a); the cost equals the traces'. |
+| 2 | **Done.** Effects refused: writes, network, and unlisted programs, at the dispatcher in every worker, with a table of about 20 programs that only report (`macports.HostPrograms`), there for the hook grammar too. Each refusal is kept in the parent, out of `catch`'s reach, and the evaluation isn't trusted. A first comparison with a fresh Tart guest, on a sample, waits for the v3 Tart provider. | No, at this commit | No port attempts an effect that would take place (10d7a45b); the guest comparison's differences are explained. |
 | 3 | Workspace rule (decision 35): a read inside the tree materialises on demand, and a read outside it is refused. | No | Evaluation reports the complete set of files it read. |
-| 4 | **Done.** Installation `fresh`: an empty registry, the prefix holding only Base and its skeleton, programs looked up along MacPorts' `PATH` as a fresh prefix has them. The ledger records each question's subject. | Yes: 62 ports conclusive that weren't; dependencies in 2,830 contexts; no fetch field | Every changed result is explained ([note](activity/2026-09-26-oracle-phase-4.md)). |
+| 4 | **Done.** Installation `fresh`: an empty registry, the prefix holding only Base and its skeleton, programs looked up along MacPorts' `PATH` as a fresh prefix has them. The ledger records each question's subject. | Yes: 62 ports conclusive that weren't; dependencies in 2,830 contexts; no fetch field | Every changed result is explained (f54b8db5). |
 | 4b | `with-deps`, if a survey shows a registry answer reaching what a bump edits. At `abd9fff84df` none does. | Only where fetch depends on what is installed | The moved ports are covered, or inconclusive for the fields affected. |
-| 5 | **Done.** Toolchain from the facts table (step 6): Xcode and Command Line Tools versions, developer directory, compilers, and SDKs per release, in the tools profile. Replaces `ModelVariables`' fixed toolchain and the stand-in `file`. | Yes, in modelled contexts: 6 ports conclusive; fetch fields in 58 contexts of 19 Portfiles | Every changed result is explained ([note](activity/2026-09-26-oracle-phase-5.md)). |
-| 5b | **Done.** The Java PortGroup's hook admitted (decision 18): an `exec` of a program that only reports, by `HostPrograms`, and `depends_${…}` judged by its family. `java_home`'s modelled answer is still to come. | Yes: 173 Java ports input-found, none regressed | The 180 Java ports come in, confirmed by the survey ([note](activity/2026-09-26-oracle-phase-5b.md)). |
+| 5 | **Done.** Toolchain from the facts table (step 6): Xcode and Command Line Tools versions, developer directory, compilers, and SDKs per release, in the tools profile. Replaces `ModelVariables`' fixed toolchain and the stand-in `file`. | Yes, in modelled contexts: 6 ports conclusive; fetch fields in 58 contexts of 19 Portfiles | Every changed result is explained (d569bd1f). |
+| 5b | **Done.** The Java PortGroup's hook admitted (decision 18): an `exec` of a program that only reports, by `HostPrograms`, and `depends_${…}` judged by its family. `java_home`'s modelled answer is still to come. | Yes: 173 Java ports input-found, none regressed | The 180 Java ports come in, confirmed by the survey (9db60b2c). |
 | 6 | Bootstrap under the environment contract: `mportinit`'s `sw_vers`, `sysctl`, `xcodebuild`, its own `macports.conf`, a disposable `portdbpath`, and a `HOME` dockhand owns. May belong to step 6. | Possibly | — |
 
 Out of scope:
@@ -357,7 +356,7 @@ tools profile, dockhand's base images', and changed on 2026-09-29 by the
 person's D2: a context that doesn't state its tools is modelled in the
 Xcode profile, as MacPorts' builders are set up, from the facts table's
 Xcode row, and in the tools profile only where the table has no Xcode
-row ([note](activity/2026-09-29-modelled-with-xcode.md)). So is the
+row (7d44b877). So is the
 index a host that isn't a Mac builds, which a Mac builds with its own
 tools. A context that states its tools is modelled with them. Xcode is
 still an add-on for checks, as it was in v2: a release's Xcode image is
@@ -365,10 +364,9 @@ made only when asked for, and a release that has one builds there, and
 states Xcode. Without it, a check on Tart doesn't build a port whose
 `use_xcode` is yes in the release's context, or whose prerequisite's is.
 It says which command makes the image
-([note](activity/2026-09-26-xcode-add-on.md),
-[then](activity/2026-09-26-xcode-unmet.md)). A context whose tools are
+(983beb6b, then cc35d890). A context whose tools are
 stated is modelled on the Mac's own release too
-([note](activity/2026-09-26-plan-with-the-build-tools.md)).
+(58312497).
 
 ## Open questions
 
