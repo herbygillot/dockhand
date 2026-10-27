@@ -178,8 +178,8 @@ func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 // there are none (the rc10 full stage's B7).
 func TestTheDaysLookNotifiesWhenWhatItFoundChanged(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "2 ports have newer releases (dockhand outdated --mine)", lookNotice(OutdatedLook{}, OutdatedLook{Outdated: []string{"jq", "fd"}}))
-	require.Equal(t, "1 port has newer releases (dockhand outdated --mine)", lookNotice(OutdatedLook{Outdated: []string{"jq", "fd"}}, OutdatedLook{Outdated: []string{"jq"}}))
+	require.Equal(t, "2 ports with newer releases. Run dockhand outdated --mine.", lookNotice(OutdatedLook{}, OutdatedLook{Outdated: []string{"jq", "fd"}}))
+	require.Equal(t, "1 port with newer releases. Run dockhand outdated --mine.", lookNotice(OutdatedLook{Outdated: []string{"jq", "fd"}}, OutdatedLook{Outdated: []string{"jq"}}))
 	require.Empty(t, lookNotice(OutdatedLook{Outdated: []string{"jq", "fd"}}, OutdatedLook{Outdated: []string{"fd", "jq"}}), "the same ports")
 	require.Empty(t, lookNotice(OutdatedLook{Outdated: []string{"jq"}}, OutdatedLook{}), "none")
 
@@ -194,7 +194,7 @@ func TestTheDaysLookNotifiesWhenWhatItFoundChanged(t *testing.T) {
 		Notify: func(title, text string) { notified = append(notified, title+": "+text) }})
 	scanner := &outdatedScanner{s: s}
 	scanner.maybe(t.Context())
-	require.Contains(t, notified, "Your ports: 1 port has newer releases (dockhand outdated --mine)")
+	require.Contains(t, notified, "Your ports: 1 port with newer releases. Run dockhand outdated --mine.")
 }
 
 // A look shows only for the maintainers it looked for, the config's then,

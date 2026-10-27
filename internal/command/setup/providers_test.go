@@ -93,7 +93,7 @@ func TestAnIntelMacChecksOnGitHub(t *testing.T) {
 	out := providers(t)
 	require.Contains(t, out, "tart       needs Apple silicon; checks here build in a MacPorts prefix, with --on local, or on GitHub, with --on github\n")
 	_, _, err := cmdtest.Dockhand(t, "setup", "tart")
-	require.ErrorContains(t, err, "Tart's macOS images need Apple silicon, and this Mac isn't; checks here build in a MacPorts prefix, with --on local, or on GitHub, with --on github")
+	require.ErrorContains(t, err, "Tart macOS images require Apple silicon. To check on this Mac, use --on local; to use GitHub Actions, use --on github")
 }
 
 func TestProviderLinesWithoutTart(t *testing.T) {
@@ -180,7 +180,7 @@ func TestSetupTart(t *testing.T) {
 	require.Equal(t, []tart.SetupOptions{{Release: "sonoma", MacPortsVersion: "2.12.5"}}, images.asked)
 	require.Contains(t, out, "Checking Tart images for Sonoma...\n", "the provisioner's progress is shown")
 	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Made dockhand-base-sonoma: macOS 14 (Sonoma) with Command Line Tools 16.2.0.0.1.1733547573 and MacPorts "+tart.DefaultMacPorts+".\n"))
-	require.Contains(t, out, "Checks build on it with --on tart:sonoma.\n")
+	require.Contains(t, out, "To check with this image, use --on tart:sonoma.\n")
 
 	images.result.Reused = true
 	out, _, err = cmdtest.Dockhand(t, "setup", "tart", "--check")
@@ -242,7 +242,7 @@ func TestThePlanSaysWhatWontBeBuilt(t *testing.T) {
 				{Target: "harbor-cli", Environment: tahoe, Needs: model.RequiresXcode, Through: "libharbor"},
 			}}}}
 	var out bytes.Buffer
-	view.WritePlan(&out, plan, nil, nil, func(model.Unmet) string { return "make an Xcode image" })
+	view.WritePlan(&out, plan, nil, nil, func(model.Unmet) string { return "make an Xcode image" }, 8)
 	require.Contains(t, out.String(), "Provider    tart macOS 26 (Tahoe) arm64 with the Command Line Tools · tests declared\n")
 	require.Contains(t, out.String(), "Not built   libharbor on tart macOS 26 (Tahoe) arm64 with the Command Line Tools: needs Xcode\n"+
 		"Not built   harbor-cli on tart macOS 26 (Tahoe) arm64 with the Command Line Tools: needs Xcode, through libharbor\n"+
@@ -291,7 +291,7 @@ func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
 	require.ErrorIs(t, err, tart.ErrXcodes)
 	require.ErrorContains(t, err, "xcodes said:\n  Apple ID: Missing username or a password. Please try again.\n")
-	require.ErrorContains(t, err, "If it needs you to sign in, run it once at a terminal: xcodes download 15.4 --directory /Volumes/Xcodes")
+	require.ErrorContains(t, err, "If xcodes asks you to sign in, run it once at a terminal: xcodes download 15.4 --directory /Volumes/Xcodes")
 
 	images.errs, images.xcodes, images.failure = []error{missing}, false, ""
 	_, _, err = cmdtest.Dockhand(t, "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")

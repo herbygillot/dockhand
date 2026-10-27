@@ -18,18 +18,22 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "explain [code | check]",
-		Short: "Say why: a commit rule, a check's outcome, or where a branch stands",
-		Long: `Explains what dockhand printed (the command UX review's §7). A finding's
-code, the word in brackets at the end of a tidy or submit finding, such as
-[follow-up], says what dockhand checks, and the MacPorts documents behind
-it, quoted where dockhand carries their words; with nothing named, it lists
-the codes.
+		Short: "Explain a finding, check, or branch status",
+		Long: `Explains a finding code, a check, or a branch's status.
 
-A check, such as check-42, says where it failed, the last lines of the
-step it failed at, the test failures its test policy let pass, and whether
-a baseline can say more; or what it's doing, or where it passed. -b, -p,
-or --pr names a branch, and says what needs you there, what holds it, and
-what clears it, or what it's doing or waits on.`,
+A finding code is the word in brackets at the end of a tidy or submit
+finding, such as [follow-up]. Explaining it describes the rule Dockhand
+checks and the MacPorts documentation behind it, quoted where Dockhand
+carries its words. With nothing named, explain lists the codes.
+
+A check ID, such as check-42, explains the check's result or progress:
+where it failed, the last lines of the failing step, test failures the
+test policy allowed, and whether a baseline check could tell more; or
+what it is doing, or where it passed.
+
+-b, -p, or --pr selects a branch and explains its status: what needs
+attention, what is holding it, and the next steps; or what it is doing or
+waiting for.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

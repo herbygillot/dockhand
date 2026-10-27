@@ -189,6 +189,9 @@ type SubmitPlan struct {
 	// builds on, each of which holds a submission nobody looks over.
 	Majors []model.Concern
 	Floors []model.Concern
+	// Prereleases say each update that takes a port from a stable version
+	// to a prerelease (LeavesStableWords), which holds nothing.
+	Prereleases []string
 	// After are the holds of a port whose holds name ports to submit
 	// first, at the same version (afterHolds).
 	After []model.Concern
@@ -368,7 +371,8 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	plan.Ports, notes = recordedPorts(macports.ScopeOf(changed).Ports, records)
 	plan.recorded = len(notes) == 0
 	newPorts := e.newPorts(ctx, worktree, model.Source{Commit: model.ObjectID(head), Tree: model.ObjectID(plan.Tree), Base: branch.Base}, trees[string(branch.Base)], changed)
-	plan.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, model.Source{Commit: branch.Base, Base: branch.Base, Tree: model.ObjectID(trees[string(branch.Base)])}, plan.Commits))
+	plan.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, model.Source{Commit: branch.Base, Base: branch.Base, Tree: model.ObjectID(trees[string(branch.Base)])},
+		model.Source{Commit: model.ObjectID(head), Base: branch.Base, Tree: model.ObjectID(plan.Tree)}, plan.Commits))
 	portfiles, err := portfileFindings(ctx, worktree, trees[string(branch.Base)], plan.Tree, changed)
 	if err != nil {
 		return plan, err
@@ -448,6 +452,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	squashed := !slices.ContainsFunc(plan.Findings, func(f commitrules.Finding) bool { return f.Code == "follow-up" || f.Code == "merge" })
 	plan.Moved = append(append(preparedSources(plan.Evidence, edits), plan.Moved...), assessedSources(plan.Evidence, plan.Upstream)...)
 	plan.Majors = e.majorHolds(edits)
+	plan.Prereleases = prereleases(edits)
 	plan.After = e.afterHolds(ctx, edits)
 	plan.Floors = e.floorHolds(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree))
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: plan.Accepted, Types: request.Types,

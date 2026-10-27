@@ -81,11 +81,11 @@ func ChooseBranch(ctx context.Context, e *engine.Engine, streams term.Streams, w
 func SettleSelection(ctx context.Context, e *engine.Engine, streams term.Streams, selection engine.Selection, port string, work engine.Work, say bool) (ChosenBranch, error) {
 	switch {
 	case selection.ForVersion:
-		fmt.Fprintf(streams.Err, "%s is in no open branch, so this starts one for it, named for the version it moves to.\n", port)
+		fmt.Fprintf(streams.Err, "No open branch changes %s. Starting a branch named for the new version.\n", port)
 		return ChosenBranch{ForVersion: true}, nil
 	case selection.Start != nil:
 		if say {
-			fmt.Fprintf(streams.Err, "%s is in no open branch, so this starts %s for it.\n", port, engine.BranchName(selection.Start.Name))
+			fmt.Fprintf(streams.Err, "No open branch changes %s. Starting %s.\n", port, engine.BranchName(selection.Start.Name))
 		}
 		branch, err := e.Start(ctx, *selection.Start)
 		return ChosenBranch{Branch: branch, Started: err == nil}, err

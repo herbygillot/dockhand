@@ -49,7 +49,7 @@ func TestReviewAppliesTheRulesAndRemembersWhatItFound(t *testing.T) {
 	require.Equal(t, []forge.ReviewComment{{Path: "textproc/jq/Portfile", Line: 3, Body: "revision is 1 after a version update; MacPorts expects 0 [revision-after-update]"}}, report.Comments())
 	require.False(t, report.CanRequestChanges(), "no access to the repository")
 	require.Contains(t, report.Markdown(), "- ✗ commit ")
-	require.Contains(t, report.Markdown(), "Not checked here: `port lint` and the build")
+	require.Contains(t, report.Markdown(), "Not checked by Dockhand: `port lint` and the build")
 
 	_, err = e.PostReview(t.Context(), report, report.Markdown(), true)
 	require.ErrorContains(t, err, "requesting changes is left to people with write or triage access")
@@ -106,10 +106,11 @@ func TestReviewStartsAtThePullRequestsOwnBase(t *testing.T) {
 	report, err := e.Review(t.Context(), 34905)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"jq", "jqx"}, report.Ports, "php is a change ahead of master, not the pull request's")
-	require.Equal(t, [][]string{{"textproc/jq"}, {"textproc/jq"}, {"textproc/jq"}}, read.asked, "the index is read for the ports the base has, not the new one's")
+	require.Equal(t, [][]string{{"textproc/jq"}, {"textproc/jq"}, {"sysutils/jqx", "textproc/jq"}, {"textproc/jq"}}, read.asked,
+		"the base's index is read for the ports the base has, not the new one's; the head's, for the commit rules, for both (I21)")
 	require.Len(t, report.Commits, 1)
 	require.Equal(t, testsupport.Git(t, f.upstream, "rev-parse", "ahead"), report.Base)
-	require.Contains(t, report.Behind, "master here is behind #34905's base, 2 commits past it to its head where the pull request has 1 commit, so it's reviewed from ")
+	require.Contains(t, report.Behind, "The local master is behind pull request #34905's base. The pull request has 1 commit, but 2 commits separate the local master from its head. Reviewing from ")
 }
 
 func findingCodes(findings []commitrules.Finding) []string {
@@ -194,7 +195,7 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 	report, err := e.Review(t.Context(), 34905)
 	require.NoError(t, err)
 	require.Equal(t, "assessing a revision needs MacPorts' evaluator", report.UpstreamUnread, "a reader that can't plan archives")
-	require.Contains(t, report.Markdown(), "Upstream's change wasn't assessed: assessing a revision needs MacPorts' evaluator.")
+	require.Contains(t, report.Markdown(), "Could not assess upstream changes: assessing a revision needs MacPorts' evaluator.")
 
 	trees, err := e.Repo.CommitTrees(t.Context(), []string{report.Base, report.Head})
 	require.NoError(t, err)
@@ -210,8 +211,8 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 	require.Equal(t, []string{"upstream's COPYING changed; the Portfile's license line may need to follow", "Compared COPYING"}, report.UpstreamWords(), "what was read is said too (batch 23)")
 	require.Equal(t, []treequery.Dependent{{Name: "jaq", Directory: "textproc/jaq", On: []string{"jq"}, Phases: []string{"library"}}}, report.Dependents)
 	markdown := report.Markdown()
-	require.Contains(t, markdown, "What upstream's change means, comparing the source archives with the base's:\n- upstream's COPYING changed; the Portfile's license line may need to follow\n")
-	require.Contains(t, markdown, "1 dependent, from the index at "+model.ObjectID(report.Base).Short()+": jaq (library); candidates to look at.")
+	require.Contains(t, markdown, "Upstream changes found by comparing source archives with the base version:\n- upstream's COPYING changed; the Portfile's license line may need to follow\n")
+	require.Contains(t, markdown, "1 dependent from the index at "+model.ObjectID(report.Base).Short()+": jaq (library). Review these candidates.")
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		recorded, err := r.Assessments(store.AssessmentFilter{})
 		require.Empty(t, recorded, "a review records no assessment")

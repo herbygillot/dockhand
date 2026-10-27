@@ -125,8 +125,8 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	var verbosity int
 	root := &cobra.Command{
 		Use:           "dockhand",
-		Short:         "Author, check, and submit changes to MacPorts ports",
-		Long:          logo + " " + buildinfo.Current().String() + "\n\nAuthor, check, and submit changes to MacPorts ports.\n\n" + gettingStarted,
+		Short:         "Prepare, check, and submit changes to MacPorts ports",
+		Long:          logo + " " + buildinfo.Current().String() + "\n\nPrepare, check, and submit changes to MacPorts ports.\n\n" + gettingStarted,
 		Version:       buildinfo.Current().String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -145,7 +145,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
 	shared.Flags(root)
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "write the result as one JSON envelope on standard output")
-	root.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "say more of what dockhand does as it works on standard error: -v the work behind the scenes, -vv every step")
+	root.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "show progress on standard error: -v for additional detail, -vv for every step")
 	// A command that can't report as JSON is refused before it does
 	// anything, so --json never does work it can't report.
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {

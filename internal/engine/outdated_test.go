@@ -193,7 +193,7 @@ func TestShipAsksOnceWhetherItMayGoOn(t *testing.T) {
 	major := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "2.0.0", CurrentVersion: "1.7.1"}, Version: "2.0.0", Forge: "github", Tag: "jq-2.0.0"}
 	target := shipTarget{Port: "jq", Version: "2.0.0", Release: &major, Name: "jq-2.0.0"}
 	done := e.ship(t.Context(), target, shipOptions{Origin: model.OriginServe, To: ShipCommit, Answered: model.AnsweredNobody})
-	require.Equal(t, "jq is held for a look before its edit: jq moves from 1.7.1 to 2.0.0, a major version update. holds.majors requires review before an unattended update; no branch was started", done.Problem)
+	require.Equal(t, "jq needs review before Dockhand can prepare its update: jq moves from 1.7.1 to 2.0.0, a major version update. holds.majors requires review before an unattended update; no branch was started", done.Problem)
 	require.False(t, done.Update.Started, "nothing was started")
 
 	// --yes skips the question, and nobody looks after it: it holds as

@@ -143,7 +143,7 @@ func offerToTrack(ctx context.Context, e *engine.Engine, streams term.Streams, e
 		}
 		adopted, err := e.StartAtHead(ctx)
 		if err == nil {
-			fmt.Fprintf(streams.Err, "Started %s at this commit, and tracking it.\n", adopted.Branch.ShortName())
+			fmt.Fprintf(streams.Err, "Created %s at this commit and started tracking it.\n", adopted.Branch.ShortName())
 		}
 		return adopted.Branch, true, err
 	}

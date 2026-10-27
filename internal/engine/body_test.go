@@ -198,7 +198,7 @@ func TestAVariantsCheckAnswersTheVariantsItem(t *testing.T) {
 	require.Equal(t, "jq", port)
 	require.Equal(t, []string{"+tests", "+docs"}, builds)
 	body := ownedSections(bodyFacts{Evidence: &evidence})
-	require.Contains(t, body, "- [x] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken? (dockhand built jq with each of +tests, +docs over its defaults)\n")
+	require.Contains(t, body, "- [x] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken? (Dockhand built jq with each of +tests, +docs added to the default variants)\n")
 	require.Contains(t, body, "| jq +tests | ✓ |\n")
 
 	evidence.Targets[2].Passed = false

@@ -50,13 +50,13 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 		// its tool's timeout, and a session's end killed one run here.
 		pid, err := drain()
 		if err != nil {
-			fmt.Fprintf(streams.Out, "%s queued, but a background drain couldn't start (%v). Start dockhand serve to run it.\n", run.Name(), err)
+			fmt.Fprintf(streams.Out, "%s was queued, but Dockhand could not start a background worker (%v). Run dockhand serve to process it.\n", run.Name(), err)
 			return nil
 		}
-		fmt.Fprintf(streams.Out, "%s queued; a background drain (pid %d) runs it. dockhand wait %s follows it.\n", run.Name(), pid, run.Name())
+		fmt.Fprintf(streams.Out, "%s is queued; a background worker (PID %d) will run it. Follow it with dockhand wait %s.\n", run.Name(), pid, run.Name())
 		return nil
 	case enqueue:
-		fmt.Fprintf(streams.Out, "%s queued; serve (pid %d) runs it. dockhand wait %s follows it.\n", run.Name(), leader.PID, run.Name())
+		fmt.Fprintf(streams.Out, "%s is queued; serve (PID %d) will run it. Follow it with dockhand wait %s.\n", run.Name(), leader.PID, run.Name())
 		return nil
 	}
 	return Follow(ctx, e, session, run, streams, places, true, func(lead engine.Lead) {
@@ -67,17 +67,17 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 			// (the bazel and exiv2 sessions' notes, 2026-10-24).
 			switch {
 			case streams.ErrTerminal() && lead.Here():
-				streams.Status().Show(fmt.Sprintf("⋯ %s runs here; Ctrl-C stops it and keeps what finished", run.Name()))
+				streams.Status().Show(fmt.Sprintf("⋯ %s is running here; press Ctrl-C to stop it and keep completed results", run.Name()))
 			case lead.Here() && !streams.Held():
-				fmt.Fprintf(streams.Err, "%s runs here; check -d runs it in the background instead.\n", run.Name())
+				fmt.Fprintf(streams.Err, "%s is running here. Use check -d to run in the background.\n", run.Name())
 			}
 			return
 		}
 		if lead.Here() {
-			fmt.Fprintf(streams.Err, "%s runs here, since no dockhand serve is running. Ctrl-C stops it and keeps what finished; check -d runs it in the background instead.\n", run.Name())
+			fmt.Fprintf(streams.Err, "%s is running here because dockhand serve is not running. Press Ctrl-C to stop it; completed results will be saved. Use check -d to run in the background.\n", run.Name())
 			return
 		}
-		fmt.Fprintf(streams.Err, "%s handed to serve (pid %d); following it. Ctrl-C stops following, not the check.\n", run.Name(), cmp.Or(lead.Serve, lead.Holder).PID)
+		fmt.Fprintf(streams.Err, "%s was handed to serve (PID %d). Press Ctrl-C to stop watching; the check will continue.\n", run.Name(), cmp.Or(lead.Serve, lead.Holder).PID)
 	})
 }
 
@@ -225,7 +225,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 			passed = "Passed"
 		}
 		if from := evidence.ReusedAll(); len(from) > 0 {
-			fmt.Fprintf(out, "%s, reusing %s's results: the same inputs, so nothing was built (--fresh builds again).\n", passed, prose.And(from))
+			fmt.Fprintf(out, "%s, using results from %s. No builds were needed because the inputs are unchanged; use --fresh to rebuild.\n", passed, prose.And(from))
 			return nil
 		}
 		fmt.Fprintf(out, "%s.\n", passed)
@@ -236,7 +236,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		// it without a baseline.
 		if standing, err := e.StandingAccepted(ctx, evidence); err == nil {
 			for _, port := range slices.Sorted(maps.Keys(standing)) {
-				fmt.Fprintf(out, "%s's failure is accepted, %s; submit takes it.\n", port, standing[port].Words())
+				fmt.Fprintf(out, "%s's failure is accepted (%s); it can be submitted.\n", port, standing[port].Words())
 			}
 			if len(standing) > 0 {
 				fmt.Fprintln(out)
@@ -284,7 +284,7 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 			if len(evidence.Plan.Environments) > 1 {
 				where += " on " + engine.DescribeEnvironment(evidence.Plan.Environments[i])
 			}
-			fmt.Fprintf(out, "%s failed%s; the last it printed:\n", target.Target.ID, where)
+			fmt.Fprintf(out, "%s failed%s. Last output:\n", target.Target.ID, where)
 			for _, line := range lines {
 				fmt.Fprintf(out, "    %s\n", line)
 			}

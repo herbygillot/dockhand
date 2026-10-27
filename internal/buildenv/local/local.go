@@ -93,6 +93,15 @@ var (
 // restore, which a check's put-back stands on.
 const SnapshotSince = "2.9.0"
 
+// The capabilities local has, asserted, so a signature that drifts fails
+// the build rather than quietly turning one off (the docs dig's I39).
+var (
+	_ buildenv.Provider         = (*Local)(nil)
+	_ buildenv.LinkReader       = (*Local)(nil)
+	_ buildenv.ReleaseProvider  = (*Local)(nil)
+	_ buildenv.ChangingProvider = (*Local)(nil)
+)
+
 func (l *Local) Name() string { return buildenv.Local }
 
 // ReadsLinks says the guest program reads what a passed build's binaries

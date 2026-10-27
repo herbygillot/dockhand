@@ -29,7 +29,7 @@ func (p TidyPlan) Regroup(spec, author string) (TidyPlan, error) {
 	}
 	fields := strings.FieldsFunc(spec, func(r rune) bool { return r == ' ' || r == ',' })
 	if len(fields) == 0 {
-		return p, errors.New("name the commits in order, joining any to combine with +, such as \"2 1+3\"")
+		return p, errors.New("list every commit once, in the desired order; join commits to combine them with +, for example: 2 1+3")
 	}
 	used := map[int]bool{}
 	var groups []TidyGroup
@@ -56,7 +56,7 @@ func (p TidyPlan) Regroup(spec, author string) (TidyPlan, error) {
 	}
 	for n := 1; n <= len(p.Groups); n++ {
 		if !used[n] {
-			return p, fmt.Errorf("commit %d is left out; every commit is named once", n)
+			return p, fmt.Errorf("commit %d is missing; list every commit exactly once", n)
 		}
 	}
 	p.Groups = groups
@@ -101,7 +101,7 @@ func (p TidyPlan) combine(members []TidyGroup, numbers []int, chosen git.Signatu
 	for i, member := range members {
 		if member.Subject() != "" {
 			group.Message = member.Message
-			group.Notes = append(group.Notes, fmt.Sprintf("combines commits %s; message from commit %d, so check it says what all of them do", strings.Join(joined, ", "), numbers[i]))
+			group.Notes = append(group.Notes, fmt.Sprintf("combines commits %s using the message from commit %d; check that the message describes all combined changes", strings.Join(joined, ", "), numbers[i]))
 			break
 		}
 	}

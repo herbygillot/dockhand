@@ -28,35 +28,36 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "submit",
 		Short: "Open or update the pull request",
-		Long: `Pushes the branch's committed head to your fork and opens its pull request
-against macports/macports-ports, or updates the one it has. The preview shows
-the commits, where they go, the title, the checks, the commit rules, and any
-other open pull requests for the same ports.
+		Long: `Pushes the branch's committed head to your fork and opens its pull
+request against macports/macports-ports, or updates the existing one. The
+preview shows the commits, where they will be pushed, the title, the
+checks, the commit rules, and any other open pull requests for the same
+ports.
 
 The committed files must have passed a check: every changed port in every
-environment. A failed extra (--also) or revision-bump-only port can be
-acknowledged with --accept <port>, and so can a changed port whose
-baseline (check --baseline) fails it the same way, at the same phase on
-the same release: the pull request says the base fails it too. --draft
-allows unfinished or failing checks; --no-check submits without one, and
-the pull request says so.
+environment. A failed extra (--also) or revision-only port can be
+accepted with --accept <port>, and so can a changed port whose baseline
+(check --baseline) fails the same way, at the same phase on the same
+release; the pull request then says the base fails too. --draft allows
+incomplete or failing checks; --no-check submits without a check, and the
+pull request says so.
 
-dockhand ship checks the committed head first, and submits exactly that
-commit once its check passes; ship --passing, every branch whose check
-passed. --ready takes a draft pull request out of draft, once its commit
-passes as submit requires.
+dockhand ship checks the committed head first and submits exactly that
+commit once its check passes; ship --passing submits every branch whose
+check passed. --ready marks a draft pull request ready for review once
+its commit passes as submit requires.
 
---note adds your own note to the pull request's description, under its
-Description, kept with the branch and given each time dockhand writes the
-description; --note "" takes it out.
+--note adds your own note to the pull request description, under its
+Description heading. The note is kept with the branch and included each
+time Dockhand writes the description; --note "" removes it.
 
-Every push is conditional on the fork's branch being where submit last saw
-it, so nobody else's push is ever overwritten. A description you edited on
-GitHub is kept; --rewrite-description replaces it with dockhand's, as for
-a branch you adopted whose description dockhand didn't write, your --note
-kept.
+Every push happens only if the fork's branch is still where submit last
+saw it, so someone else's push is never overwritten. A description you
+edited on GitHub is preserved; --rewrite-description replaces it with
+Dockhand's, as for an adopted branch whose description Dockhand didn't
+write, keeping your --note.
 
---plan shows the preview and changes nothing, here or on GitHub.`,
+--plan shows the preview and changes nothing, locally or on GitHub.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -139,14 +140,14 @@ kept.
 	where.Register(cmd, s, "submit")
 	cmd.Flags().BoolVar(&preview, "plan", false, "show what would be pushed and opened, and change nothing")
 	cmd.Flags().BoolVar(&request.Head, "head", false, "submit the committed head, leaving uncommitted edits out")
-	cmd.Flags().BoolVar(&request.Draft, "draft", false, "open the pull request as a draft, which unfinished or failing checks allow")
+	cmd.Flags().BoolVar(&request.Draft, "draft", false, "open a draft pull request, even if checks are incomplete or failing")
 	cmd.Flags().BoolVar(&request.NoCheck, "no-check", false, "submit without a check; the pull request says no local build ran")
 	cmd.Flags().BoolVar(&ready, "ready", false, "take the pull request out of draft once it is submitted")
-	cmd.Flags().StringSliceVar(&request.Accept, "accept", nil, "acknowledge a failed extra, revision-bump-only port, or changed port its baseline fails alike, for this exact commit")
-	cmd.Flags().BoolVar(&request.Standing, "standing", false, "with --accept, accept each port's dependency failing to install for every branch, until the dependency's version or the image changes")
+	cmd.Flags().StringSliceVar(&request.Accept, "accept", nil, "accept an eligible failed extra, revision-only port, or changed port with the same baseline failure for this commit")
+	cmd.Flags().BoolVar(&request.Standing, "standing", false, "with --accept, accept an eligible dependency install failure across branches until the dependency version or image changes")
 	cmd.Flags().StringVar(&request.Title, "title", "", "the pull request's title (default: the commit subject)")
-	cmd.Flags().BoolVar(&request.Rewrite, "rewrite-description", false, "replace the pull request's description with dockhand's, a description you wrote included; your --note is kept")
-	cmd.Flags().StringVar(&note, "note", "", "your own note in the pull request's description, kept as dockhand rewrites it; \"\" takes it out")
+	cmd.Flags().BoolVar(&request.Rewrite, "rewrite-description", false, "replace the entire pull request description with Dockhand's, including a description you wrote; keep your --note")
+	cmd.Flags().StringVar(&note, "note", "", "add a note preserved when Dockhand rewrites the description; use an empty value to remove it")
 	cmd.Flags().StringSliceVar(&request.Types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for an update dockhand made)")
 	cmd.Flags().StringVar(&request.Remote, "remote", "", "the Git remote of your fork, when several could be")
 	cmd.Flags().BoolVar(&request.SkipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")
@@ -192,13 +193,13 @@ func writeReadyPreview(out io.Writer, plan engine.SubmitPlan, ready bool) {
 	}
 	switch pr := plan.Branch.PullRequest; {
 	case pr != nil && pr.Draft:
-		fmt.Fprintf(out, "Then marks #%d ready for review.\n", pr.Number)
+		fmt.Fprintf(out, "After submission, mark #%d ready for review.\n", pr.Number)
 	case pr != nil:
-		fmt.Fprintf(out, "#%d isn't a draft, so --ready has nothing to do.\n", pr.Number)
+		fmt.Fprintf(out, "#%d is already ready for review; --ready has no effect.\n", pr.Number)
 	case plan.Request.Draft:
-		fmt.Fprintln(out, "Opens it as a draft, then marks it ready for review.")
+		fmt.Fprintln(out, "Open a draft pull request, then mark it ready for review.")
 	default:
-		fmt.Fprintln(out, "It opens ready for review, not as a draft, so --ready has nothing to do.")
+		fmt.Fprintln(out, "Open the pull request ready for review; --ready has no effect.")
 	}
 }
 
@@ -306,9 +307,9 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	case submitted.Created:
 		fmt.Fprintf(streams.Out, "Opened #%d  %s\n", pr.Ref.Number, pr.Ref.URL)
 	case submitted.Pushed && plan.Replaces:
-		fmt.Fprintf(streams.Out, "Updated #%d: replaced its history with %s (confirmed the remote branch had not changed).\n", pr.Ref.Number, prose.Plural(len(plan.Commits), "commit"))
+		fmt.Fprintf(streams.Out, "Updated #%d: replaced the remote branch history with %s after confirming the remote had not changed.\n", pr.Ref.Number, prose.Plural(len(plan.Commits), "commit"))
 	case submitted.Pushed:
-		fmt.Fprintf(streams.Out, "Updated #%d: pushed up to %s\n", pr.Ref.Number, model.ObjectID(plan.Commit).Short())
+		fmt.Fprintf(streams.Out, "Updated #%d: pushed through commit %s\n", pr.Ref.Number, model.ObjectID(plan.Commit).Short())
 	default:
 		fmt.Fprintln(streams.Out, updatedWords(submitted.Edited, pr.Ref.Number))
 	}

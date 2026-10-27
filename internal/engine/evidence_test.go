@@ -64,7 +64,7 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 	require.Contains(t, submission.Blocking[0], "libharbor has changed, but these files haven't been built on command macOS 26 (Tahoe) arm64", "naming where")
 	require.Contains(t, submission.Body, "| libharbor | ! not run |", "the pull request shows what wasn't built")
 	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update", Accept: []string{"libharbor"}})
-	require.ErrorContains(t, err, "--accept libharbor: no check of these files built it")
+	require.ErrorContains(t, err, "--accept libharbor: no check of these files built this port")
 	passing, err := e.PassingBranches(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, passing.Ready, "ship --passing and serve don't count it as passing")
@@ -191,7 +191,7 @@ func TestAnIdentityThatCantBeReadFailsTheAttempt(t *testing.T) {
 	}))
 	require.Len(t, executions, 2)
 	require.Equal(t, model.ExecutionInfrastructure, executions[0].State)
-	require.Equal(t, "couldn't read what the environment is: reading the image record: unexpected end of JSON input", executions[0].Detail)
+	require.Equal(t, "could not identify the build environment: reading the image record: unexpected end of JSON input", executions[0].Detail)
 	require.Equal(t, model.ExecutionFinished, executions[1].State)
 	require.Equal(t, 2, executions[1].Attempt)
 	require.Equal(t, "origin a", executions[1].Identity, "read again, and recorded as it is")
@@ -315,13 +315,13 @@ func TestWhatEvidenceSaysReadsInWords(t *testing.T) {
 		Outcomes: []Cell{{TargetResult: model.TargetResult{Target: "harbor-tools", Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: tools, Unmet: unmet}}}
 	evidence := Evidence{Run: model.Run{ID: "run_2", Number: 2}, Plan: model.Plan{Environments: []model.Environment{tools}}, Targets: []TargetEvidence{needsXcode}}
 	require.Equal(t, "! not built: needs Xcode", EvidenceWords(evidence, needsXcode, 0, AcceptedFailure{}))
-	require.Equal(t, []string{"harbor-tools needs Xcode, which " + DescribeEnvironment(tools) + " hasn't; a check with Xcode there builds it, or share the branch as a draft (--draft)"},
+	require.Equal(t, []string{"harbor-tools needs Xcode. " + DescribeEnvironment(tools) + " does not have it; run a check in an environment with Xcode, or submit a draft with --draft"},
 		publicationProblems(evidence, nil, nil, nil))
 
 	failed := TargetEvidence{Target: model.PlanTarget{ID: "oniguruma", Target: model.Target{Name: "oniguruma"}, Kind: model.Unchanged, Role: model.Also},
 		Outcomes: []Cell{recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall})}}
 	evidence = Evidence{Run: model.Run{ID: "run_1", Number: 1}, Plan: model.Plan{Environments: []model.Environment{tahoeArm}}, Targets: []TargetEvidence{failed}}
-	require.Equal(t, []string{"oniguruma (an extra from --also) did not pass in check-1; acknowledge it with --accept oniguruma if its failure is not this branch's doing"}, publicationProblems(evidence, nil, nil, nil))
+	require.Equal(t, []string{"oniguruma (an extra from --also) did not pass in check-1. If the failure was not caused by this branch, acknowledge it with --accept oniguruma"}, publicationProblems(evidence, nil, nil, nil))
 	require.Empty(t, publicationProblems(evidence, []string{"oniguruma"}, nil, nil))
 }
 
@@ -429,7 +429,7 @@ func TestAStandingAcceptanceTakesADependencysFailureOnItsImage(t *testing.T) {
 	own.Phase, own.Dependency = model.PhaseInstall, model.FailedDependency{}
 	evidence.Targets = []TargetEvidence{changed("gfortran-tool", own)}
 	require.Empty(t, standingAccepted(evidence, []model.Decision{decision}))
-	require.ErrorContains(t, acceptanceProblem(evidence, []string{"gfortran-tool"}, nil, true), "a standing acceptance takes a dependency failing to install")
+	require.ErrorContains(t, acceptanceProblem(evidence, []string{"gfortran-tool"}, nil, true), "a standing acceptance applies only to a dependency install failure")
 	unversioned := failed
 	unversioned.Dependency.Version = ""
 	evidence.Targets = []TargetEvidence{changed("gfortran-tool", unversioned)}

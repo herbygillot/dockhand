@@ -31,9 +31,9 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "status [branch]",
-		Short: "Show your branches, and what needs you",
+		Short: "Show branches and work that needs attention",
 		Long: `Shows each open branch: its ports, its work, its checks, and its pull
-request, each in a column of its own, under a list of what needs you, each
+request, each in a column of its own, under a list of what needs attention, each
 row ending with the command that moves it forward. Inside a branch's
 worktree, or naming one, it shows that branch in detail.
 
@@ -41,7 +41,7 @@ Below the branches, the checks queued and running, each with its branch,
 what it checks, where, and its state; a check whose process ended is said
 to be stopped, for dockhand wait to resume.
 
---attention prints only what needs you, for a prompt or a script, and exits
+--attention prints only what needs attention, for a prompt or a script, and exits
 3 when anything does. -b and --pr name a branch, shown in detail; -p finds
 the branches touching a port, shown in detail where one does and listed
 where several do. --all
@@ -100,7 +100,7 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 		},
 	}
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "read your pull requests' state, reviews, and CI from GitHub first")
-	cmd.Flags().BoolVar(&attentionOnly, "attention", false, "print only what needs you; exit 3 when anything does")
+	cmd.Flags().BoolVar(&attentionOnly, "attention", false, "print only what needs attention; exit 3 when anything does")
 	cmd.Flags().BoolVar(&all, "all", false, "include merged, closed, and archived branches")
 	where.Register(cmd, s, "show")
 	cmd.Flags().Lookup("port").Usage = "show the branches touching this port: the one in detail, or several listed"
@@ -260,7 +260,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 // person, it's one line.
 func writeOverview(out io.Writer, streams term.Streams, statuses []engine.BranchStatus, rows []view.Attention, processes []engine.Process, all bool) {
 	if len(statuses) == 0 && len(rows) == 0 {
-		fmt.Fprintln(out, "No open branches. dockhand update <port> starts one for a port, and dockhand start <name> one for other work.")
+		fmt.Fprintln(out, "No open branches. Run dockhand update <port> to start a port update, or dockhand start <name> for other work.")
 		return
 	}
 	// A process that expects another schema needs you: what it records may
@@ -287,7 +287,7 @@ func writeOverview(out io.Writer, streams term.Streams, statuses []engine.Branch
 		fmt.Fprintf(out, "%s (%d)\n", heading, count)
 	}
 	if len(rows) > 0 {
-		group("Needs you", len(rows))
+		group("Needs attention", len(rows))
 		writeAttention(out, rows, streams.Width())
 	}
 	if len(working) > 0 {
@@ -308,7 +308,7 @@ func writeOverview(out io.Writer, streams term.Streams, statuses []engine.Branch
 			fmt.Fprintln(out)
 		} else {
 			// Nothing else to say is one line.
-			heading = fmt.Sprintf("Nothing needs you; %s %s on reviewers (%s)", prose.Plural(len(waiting), "pull request"), map[bool]string{true: "waits", false: "wait"}[len(waiting) == 1], ciTally(waiting))
+			heading = fmt.Sprintf("Nothing needs attention; %s %s on reviewers (%s)", prose.Plural(len(waiting), "pull request"), map[bool]string{true: "waits", false: "wait"}[len(waiting) == 1], ciTally(waiting))
 		}
 		said = true
 		if streams.Verbose() == 0 {
@@ -330,7 +330,7 @@ func writeOverview(out io.Writer, streams term.Streams, statuses []engine.Branch
 		table.Flush()
 	}
 	if !said {
-		fmt.Fprintln(out, "Nothing needs you.")
+		fmt.Fprintln(out, "Nothing needs attention.")
 	}
 	if streams.Verbose() > 0 {
 		fmt.Fprintln(out)

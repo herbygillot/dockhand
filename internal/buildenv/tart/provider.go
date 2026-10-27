@@ -57,6 +57,21 @@ const guestRoot = "/var/tmp/dockhand-check"
 // guestLabel is the launchd job the guest program runs as.
 const guestLabel = "org.dockhand.check"
 
+// The capabilities Tart has, asserted, so a signature that drifts fails
+// the build rather than quietly turning one off (the docs dig's I39).
+var (
+	_ buildenv.LinkReader        = (*Provider)(nil)
+	_ buildenv.ReleaseProvider   = (*Provider)(nil)
+	_ buildenv.Remedier          = (*Provider)(nil)
+	_ buildenv.MacPortsProvider  = (*Provider)(nil)
+	_ buildenv.IdentityProvider  = (*Provider)(nil)
+	_ buildenv.IdentityExplainer = (*Provider)(nil)
+	_ buildenv.LeftoverProvider  = (*Provider)(nil)
+	_ buildenv.ParallelProvider  = (*Provider)(nil)
+	_ buildenv.CacheProvider     = (*Provider)(nil)
+	_ buildenv.ShellProvider     = (*Provider)(nil)
+)
+
 // Provider builds on dockhand's Tart images.
 type Provider struct {
 	// Tart is dockhand's Tart installation and home, Personal the

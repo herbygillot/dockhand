@@ -36,7 +36,7 @@ func TestTestedOnSaysWhatTheEnvironmentWas(t *testing.T) {
 		{"reported, with the tools", with(tahoe(model.DeveloperToolsCommandLine), model.Observed{MacOS: "26.6.2", Build: "25G71", Architecture: "arm64", Tools: "26.6.0.0.1781586589"},
 			append([]Run{{ID: "tart_b3kq9wz0m1xv4ce7", Check: "check-10"}}, tart...)),
 			"macOS 26.6.2 25G71 arm64\nCommand Line Tools 26.6.0.0.1781586589 · tart: built in a clean VM (Run IDs: tart_b3kq9wz0m1xv4ce7 - checked in check-10; tart_7y62p4sigena6xlr - checked in check-11)\n\n"},
-		{"not reported", tahoe(model.DeveloperToolsXcode), "macOS 26 (Tahoe) arm64\nXcode, its version not recorded · tart: built in a clean VM\n\n"},
+		{"not reported", tahoe(model.DeveloperToolsXcode), "macOS 26 (Tahoe) arm64\nXcode version not recorded · tart: built in a clean VM\n\n"},
 		{"an unknown release", Report{Architecture: "arm64", Release: "Darwin 30 arm64", Provider: "tart: built in a clean VM"}, "Darwin 30 arm64\nDeveloper tools not recorded · tart: built in a clean VM\n\n"},
 		{"partly reported, a run of an unknown check", with(tahoe(model.DeveloperToolsXcode), model.Observed{MacOS: "26.6.2", Xcode: "26.6"}, []Run{{ID: "tart_q2w8e4r6t1y3u5i7"}}),
 			"macOS 26.6.2 arm64\nXcode 26.6 · tart: built in a clean VM (Run ID: tart_q2w8e4r6t1y3u5i7)\n\n"},
@@ -50,7 +50,7 @@ func TestTestedOnSaysWhatTheEnvironmentWas(t *testing.T) {
 		{"a workflow run whose runners named no release", with(workflow, model.Observed{Builders: []model.BuilderObserved{{Builder: "macos-latest"}}}, nil),
 			"Developer tools not recorded · github: MacPorts' CI workflow in the author's fork\n\n"},
 		{"a run reused in another check", with(tahoe(model.DeveloperToolsXcode), model.Observed{}, []Run{{ID: "tart_a", Check: "check-3", ReusedIn: "check-4"}}),
-			"macOS 26 (Tahoe) arm64\nXcode, its version not recorded · tart: built in a clean VM (Run ID: tart_a - checked in check-3, reused in check-4)\n\n"},
+			"macOS 26 (Tahoe) arm64\nXcode version not recorded · tart: built in a clean VM (Run ID: tart_a - checked in check-3, reused in check-4)\n\n"},
 	} {
 		require.Equal(t, test.want, test.report.lines(), test.name)
 	}
@@ -205,7 +205,7 @@ func TestTheMergedDescriptionsDescriptionIsDockhandsWhileUnchanged(t *testing.T)
 // cover (field testing, #35157).
 func TestUncoveredCIReleasesAreSaid(t *testing.T) {
 	facts := Facts{TestedOn: TestedOn{Columns: []string{"macOS 26"}, Rows: []Row{{Port: "tart", Cells: []Cell{{Words: "✓"}}}}, UncoveredCI: "14 and 15"}}
-	require.Contains(t, Owned(facts), "\nMacPorts CI also builds on macOS 14 and 15, which no check here built on.\n")
+	require.Contains(t, Owned(facts), "\nMacPorts CI also builds on macOS 14 and 15, which was not covered by these checks.\n")
 	facts.TestedOn.UncoveredCI = ""
 	require.NotContains(t, Owned(facts), "MacPorts CI also builds")
 }

@@ -171,6 +171,10 @@ type Update struct {
 	// CrossesMajor is an update to a new major version, semgrep's 0.14.0
 	// to 1.179.0, which read as a plain bump (field testing, 2026-10-02).
 	CrossesMajor bool
+	// LeavesStable is an update from a stable version to a prerelease,
+	// jq's 1.8.1 to 2.0-rc1, which only a version the person names takes
+	// (the docs dig's I32); LeavesStableWords say it.
+	LeavesStable bool
 	// ClosedBefore says an earlier update of the port to this version was
 	// closed unmerged, which an attended update goes ahead of and says,
 	// and an unattended look doesn't propose again (the docs dig's I1);
@@ -895,6 +899,7 @@ func describe(branch model.Branch, selector string, result editprep.Result) Upda
 		update.familyAfter = result.Fidelity[len(result.Fidelity)-1].After
 	}
 	update.CrossesMajor = update.Before.Version != "" && version.CrossesMajor(update.Before.Version, update.After.Version)
+	update.LeavesStable = update.Before.Version != "" && version.LeavesStable(update.Before.Version, update.After.Version)
 	for _, file := range result.Files {
 		update.Files = append(update.Files, file.Path)
 	}
@@ -1164,12 +1169,12 @@ func movedChange(from, to string, followed bool) model.UpstreamChange {
 	toOwner, _, _ := strings.Cut(to, "/")
 	switch {
 	case followed:
-		change.Message = fmt.Sprintf("upstream moved: GitHub answers %s as %s, and github.setup now names it (--follow-moves)", from, to)
+		change.Message = fmt.Sprintf("upstream moved: GitHub redirects %s to %s, and github.setup now names it (--follow-moves)", from, to)
 	case !strings.EqualFold(fromOwner, toOwner):
 		change.Rule = upstreamTransferredRule
-		change.Message = fmt.Sprintf("upstream transferred from %s to %s: GitHub answers %s as %s, by a redirect, and its release is a new owner's to trust; update --follow-moves points github.setup at it", fromOwner, toOwner, from, to)
+		change.Message = fmt.Sprintf("upstream moved from %s to %s: GitHub redirects %s to %s. Review the new owner before trusting its releases. Use update --follow-moves to update github.setup", fromOwner, toOwner, from, to)
 	default:
-		change.Message = fmt.Sprintf("upstream renamed: GitHub answers %s as %s, by a redirect; update --follow-moves points github.setup at it", from, to)
+		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s. Use update --follow-moves to update github.setup", from, to)
 	}
 	return change
 }
@@ -1192,7 +1197,7 @@ const manifestHookRule = "manifest-hook"
 
 // mirrorConflictWords says a mirror conflict and its fix.
 func mirrorConflictWords(conflict editprep.MirrorConflict) string {
-	return fmt.Sprintf("MacPorts' mirror already has a different %s under %s/, which MacPorts may fetch first and fail its checksum; dist_subdir ${name} keeps this port's apart", conflict.Name, conflict.Subdir)
+	return fmt.Sprintf("The MacPorts mirror already has a different %s under %s/. MacPorts may fetch that file first, causing a checksum failure. Set dist_subdir to ${name} to keep this port's files separate", conflict.Name, conflict.Subdir)
 }
 
 func (e *Engine) renamed(ctx context.Context, release model.Release) string {

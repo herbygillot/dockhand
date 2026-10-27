@@ -41,10 +41,10 @@ func explainCheck(ctx context.Context, e *engine.Engine, out io.Writer, run mode
 		fmt.Fprintf(out, "%s: %s\nNext: dockhand wait %s\n", heading, run.State, run.Name())
 		return nil
 	case model.RunCanceled:
-		fmt.Fprintf(out, "%s: stopped before it ended%s\nNext: dockhand retry %s\n", heading, detail(run.Detail), run.Name())
+		fmt.Fprintf(out, "%s: stopped before completion%s\nNext: dockhand retry %s\n", heading, detail(run.Detail), run.Name())
 		return nil
 	case model.RunAttention:
-		fmt.Fprintf(out, "%s: needs your look%s\nNext: dockhand logs %s\n", heading, detail(run.Detail), run.Name())
+		fmt.Fprintf(out, "%s: needs attention%s\nNext: dockhand logs %s\n", heading, detail(run.Detail), run.Name())
 		return nil
 	}
 	evidence, err := e.RunEvidence(ctx, run.ID)
@@ -75,7 +75,7 @@ func explainCheck(ctx context.Context, e *engine.Engine, out io.Writer, run mode
 	}
 	writeAdvisory(out, evidence)
 	if offer, err := e.BaselineCandidates(ctx, run); err == nil && len(offer.Ports) > 0 {
-		fmt.Fprintf(out, "A baseline says whether %s %s at master %s too: dockhand check --baseline --branch %s\n", prose.And(offer.Ports), map[bool]string{true: "fails", false: "fail"}[len(offer.Ports) == 1], offer.Base.Short(), branch.ShortName())
+		fmt.Fprintf(out, "To check whether %s also %s on master %s, run: dockhand check --baseline --branch %s\n", prose.And(offer.Ports), map[bool]string{true: "fails", false: "fail"}[len(offer.Ports) == 1], offer.Base.Short(), branch.ShortName())
 	}
 	fmt.Fprintf(out, "Next: %s\n", next)
 	return nil
@@ -131,7 +131,7 @@ func writeAdvisory(out io.Writer, evidence engine.Evidence) {
 		}
 		for i, cell := range target.Outcomes {
 			if cell.Outcome == model.OutcomePassed && cell.Tests.Failed() {
-				fmt.Fprintf(out, "  %s %s on %s: built, and its tests failed, which the test policy lets pass (advisory)\n", view.Look, target.Target.Target.Name, engine.DescribeEnvironment(evidence.Plan.Environments[i]))
+				fmt.Fprintf(out, "  %s %s on %s: built; tests failed, but the advisory test policy allows the check to pass\n", view.Look, target.Target.Target.Name, engine.DescribeEnvironment(evidence.Plan.Environments[i]))
 			}
 		}
 	}
@@ -159,7 +159,7 @@ func explainBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 	name := branch.ShortName()
 	switch branchstate.BucketOf(facts) {
 	case branchstate.BucketNeedsYou:
-		fmt.Fprintf(out, "%s needs you\n", name)
+		fmt.Fprintf(out, "%s needs attention\n", name)
 		viewed := view.AttentionFor(status)
 		for i, row := range branchstate.Attend(facts) {
 			fmt.Fprintf(out, "  %s %s  %s\n", viewed[i].Kind.Mark(), name, viewed[i].What)
@@ -169,14 +169,14 @@ func explainBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 			fmt.Fprintf(out, "Next: %s\n", view.RenderNext(row.Next, row.Reason))
 		}
 	case branchstate.BucketWorking:
-		fmt.Fprintf(out, "%s is under way: %s; nothing needs you yet\n", name, workingWords(status))
+		fmt.Fprintf(out, "%s is in progress: %s; no action needed yet\n", name, workingWords(status))
 		if next, ok := branchstate.Working(facts); ok {
 			fmt.Fprintf(out, "Next: %s\n", view.RenderNext(next, ""))
 		}
 	case branchstate.BucketWaiting:
-		fmt.Fprintf(out, "%s waits on reviewers: #%d is open, and nothing needs you\n", name, branch.PullRequest.Number)
+		fmt.Fprintf(out, "%s is waiting for review of #%d\n", name, branch.PullRequest.Number)
 	default:
-		fmt.Fprintf(out, "%s's work is over: it's %s\n", name, branch.State)
+		fmt.Fprintf(out, "%s: %s\n", name, branch.State)
 	}
 	return nil
 }

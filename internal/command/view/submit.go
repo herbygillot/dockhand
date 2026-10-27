@@ -84,6 +84,9 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 	for _, finding := range plan.Findings {
 		fmt.Fprintf(out, "  %s\n", finding)
 	}
+	for _, prerelease := range plan.Prereleases {
+		fmt.Fprintf(out, "  ! %s\n", prerelease)
+	}
 	// Said once, naming each commit, where it was a line a commit (part 5,
 	// item 3: in 69 runs).
 	if len(plan.ModifiedBuilds) > 0 {
@@ -122,10 +125,10 @@ func noteLine(plan engine.SubmitPlan) string {
 		words += "\n           kept from an earlier submit, across rewritten commits; --note \"\" clears it"
 	}
 	if plan.NoteRepeatsCommits() && !plan.NoteLeftOut {
-		words += "\n           ! it mostly repeats the commit message's body, which the Description gives above it; --note \"\" clears it"
+		words += "\n           ! the note mostly repeats the commit message body, which the pull request description already includes above it; --note \"\" clears it"
 	}
 	if plan.NoteLeftOut {
-		words += "\n           ! note omitted: the description was edited or removed on GitHub, so Dockhand preserves it"
+		words += "\n           ! note omitted: the pull request description was edited or removed on GitHub, so Dockhand will preserve it"
 	}
 	return words
 }
@@ -177,11 +180,11 @@ func UnfoundBuildWords(build engine.UnfoundBuild) string {
 	}
 	switch {
 	case build.Source.Commit != "":
-		return words + ", built from a commit dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there"
+		return words + ", built from a commit dockhand's GitHub repository doesn't have, which others cannot find until it is pushed there"
 	case build.Source.Release != "":
-		return words + ", built at a tag dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there"
+		return words + ", built at a tag dockhand's GitHub repository doesn't have, which others cannot find until it is pushed there"
 	}
-	return words + ", which recorded no commit, so nobody can find what it was built from"
+	return words + ", which recorded no commit, so its source cannot be identified"
 }
 
 func PullRequestWords(plan engine.SubmitPlan) string {
@@ -214,18 +217,18 @@ func PullRequestWords(plan engine.SubmitPlan) string {
 	yours := plan.BodyKept || plan.Sections.Description == engine.SectionKept
 	switch {
 	case plan.Theirs:
-		words += "; its title and description are theirs, and stay as they are"
+		words += "; the author wrote its title and description, and Dockhand will preserve them"
 	case plan.Request.Rewrite:
-		words += "; replaces its whole description with dockhand's (--rewrite-description)"
+		words += "; Dockhand will replace the entire pull request description with its own (--rewrite-description)"
 	case len(refreshing) == 0 && yours:
-		words += "; its description is yours, and stays as it is"
+		words += "; you wrote the pull request description, and Dockhand will preserve it"
 	case len(refreshing) == 0:
-		words += "; its description is current"
+		words += "; the pull request description is current"
 	default:
 		last := len(refreshing) - 1
 		words += "; refreshes " + strings.TrimPrefix(strings.Join(refreshing[:last], ", ")+" and "+refreshing[last], " and ")
 		if yours {
-			words += "; the rest of its description is yours"
+			words += "; the rest of the description is yours, and Dockhand will preserve it"
 		}
 	}
 	return words

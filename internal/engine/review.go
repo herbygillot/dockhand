@@ -159,7 +159,7 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 		if err != nil {
 			return report, err
 		}
-		report.Behind = fmt.Sprintf("master here is behind #%d's base, %s past it to its head where the pull request has %s, so it's reviewed from %s, before its own", number, prose.Plural(len(report.Commits), "commit"), prose.Plural(n, "commit"), model.ObjectID(own).Short())
+		report.Behind = fmt.Sprintf("The local master is behind pull request #%d's base. The pull request has %s, but %s separate the local master from its head. Reviewing from %s, the commit before the pull request's own commits.", number, prose.Plural(n, "commit"), prose.Plural(len(report.Commits), "commit"), model.ObjectID(own).Short())
 		report.Base = own
 		if report.Commits, err = e.Repo.History(ctx, report.Base, report.Head); err != nil {
 			return report, err
@@ -185,7 +185,8 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 			}
 		}
 	}
-	report.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, baseSource, report.Commits))
+	headSource := model.Source{Commit: model.ObjectID(report.Head), Base: model.ObjectID(report.Base), Tree: model.ObjectID(trees[report.Head])}
+	report.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, baseSource, headSource, report.Commits))
 	portfiles, err := portfileFindings(ctx, e.Repo, trees[report.Base], trees[report.Head], changed)
 	if err != nil {
 		return report, err
@@ -271,19 +272,19 @@ func (r ReviewReport) Markdown() string {
 	}
 	switch lines := r.UpstreamWords(); {
 	case r.UpstreamUnread != "":
-		fmt.Fprintf(&b, "\nUpstream's change wasn't assessed: %s.\n", r.UpstreamUnread)
+		fmt.Fprintf(&b, "\nCould not assess upstream changes: %s.\n", r.UpstreamUnread)
 	case len(lines) > 0:
-		b.WriteString("\nWhat upstream's change means, comparing the source archives with the base's:\n")
+		b.WriteString("\nUpstream changes found by comparing source archives with the base version:\n")
 		for _, line := range lines {
 			fmt.Fprintf(&b, "- %s\n", line)
 		}
 	case len(r.Upstream) > 0:
-		b.WriteString("\nComparing the source archives with the base's found no license, build file, dependency, or patch changes.\n")
+		b.WriteString("\nThe source archive comparison found no changes to licenses, build files, dependencies, or patches.\n")
 	}
 	if words := r.DependentsWords(); words != "" {
 		fmt.Fprintf(&b, "\n%s\n", words)
 	}
-	b.WriteString("\nNot checked here: `port lint` and the build; MacPorts CI runs both.\n")
+	b.WriteString("\nNot checked by Dockhand: `port lint` and the build; MacPorts CI runs both.\n")
 	return b.String()
 }
 
@@ -319,7 +320,7 @@ const reviewDependentsNamed = 8
 func (r ReviewReport) DependentsWords() string {
 	switch {
 	case r.DependentsUnread != "":
-		return "Dependents weren't read: " + r.DependentsUnread + "."
+		return "Could not determine dependents: " + r.DependentsUnread + "."
 	case len(r.Dependents) == 0:
 		return ""
 	}
@@ -331,7 +332,7 @@ func (r ReviewReport) DependentsWords() string {
 	if more := len(r.Dependents) - len(named); more > 0 {
 		words += fmt.Sprintf(", and %d more", more)
 	}
-	return fmt.Sprintf("%s, from the index at %s: %s; candidates to look at.", prose.Plural(len(r.Dependents), "dependent"), model.ObjectID(r.Base).Short(), words)
+	return fmt.Sprintf("%s from the index at %s: %s. Review these candidates.", prose.Plural(len(r.Dependents), "dependent"), model.ObjectID(r.Base).Short(), words)
 }
 
 // Comments are the findings on a Portfile line, as comments on that line.

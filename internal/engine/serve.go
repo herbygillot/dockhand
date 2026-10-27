@@ -340,11 +340,15 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		}
 		ended[f.run.ID] = true
 		line := fmt.Sprintf("%s %s: %s", f.run.Name(), f.branch.ShortName(), f.run.State)
+		// The notification's title names the branch, so its body is the
+		// check and its state alone; the terminal line keeps the branch.
+		body := fmt.Sprintf("%s: %s", f.run.Name(), f.run.State)
 		if f.run.Detail != "" && f.run.State != model.RunPassed {
 			line += ": " + f.run.Detail
+			body += ": " + f.run.Detail
 		}
 		s.say("%s", line)
-		s.notify(f.branch.ShortName(), line)
+		s.notify(f.branch.ShortName(), body)
 		// A check that passed may be what the submitter waits for.
 		submitter.last = time.Time{}
 	}
@@ -646,7 +650,7 @@ func (f *follower) maybe(ctx context.Context) {
 	case errors.Is(err, github.ErrLoginEnded):
 		report("serve: GitHub credentials could not be renewed, so pull request refresh is paused. Run dockhand setup github to sign in again; serve will use the new credentials automatically")
 		if f.s.loginEnded.CompareAndSwap(false, true) {
-			f.s.notify("GitHub login", "GitHub login expired or cannot be renewed. Sign in again: dockhand setup github")
+			f.s.notify("GitHub login", "GitHub credentials expired or could not be renewed. Run dockhand setup github to sign in again.")
 		}
 	case err != nil:
 		report(fmt.Sprintf("serve: could not read pull requests: %v", err))
@@ -752,11 +756,11 @@ func uncertainWords(last OutdatedLook, look OutdatedLook) string {
 	case len(fresh) == 0 && already == 0:
 		return ""
 	case len(fresh) == 0:
-		return fmt.Sprintf("serve: %s of yours may still have newer releases, as before (dockhand status lists them)", prose.Plural(already, "port"))
+		return fmt.Sprintf("serve: %s may still have newer releases; see dockhand status for the list", prose.Plural(already, "port"))
 	}
-	line := fmt.Sprintf("serve: %s may have newer releases that need review: %s. Run dockhand outdated %s for details", prose.Plural(len(fresh), "port"), strings.Join(fresh, ", "), strings.Join(fresh, " "))
+	line := fmt.Sprintf("serve: %s may have newer releases and need review: %s. Run dockhand outdated %s for details", prose.Plural(len(fresh), "port"), strings.Join(fresh, ", "), strings.Join(fresh, " "))
 	if already > 0 {
-		line += fmt.Sprintf("; %d more as before", already)
+		line += fmt.Sprintf("; %d previously reported", already)
 	}
 	return line
 }
@@ -772,7 +776,7 @@ func lookNotice(last, look OutdatedLook) string {
 	if len(look.Outdated) == 0 || slices.Equal(slices.Sorted(slices.Values(last.Outdated)), slices.Sorted(slices.Values(look.Outdated))) {
 		return ""
 	}
-	return fmt.Sprintf("%s newer releases (dockhand outdated --mine)", prose.Plural(len(look.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(look.Outdated) == 1])
+	return fmt.Sprintf("%s with newer releases. Run dockhand outdated --mine.", prose.Plural(len(look.Outdated), "port"))
 }
 
 // outdatedScanner looks for new releases of your ports once a day, at the
@@ -955,7 +959,12 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 			line += ", " + done.Run.Name() + " queued"
 		}
 		o.s.say("%s", line)
-		o.s.notify(done.Branch.ShortName(), strings.TrimPrefix(line, "serve: "))
+		// The notification's title names the branch.
+		body := fmt.Sprintf("Prepared update %s → %s", done.Update.Before, done.Update.After)
+		if done.Run != nil {
+			body += "; " + done.Run.Name() + " queued"
+		}
+		o.s.notify(done.Branch.ShortName(), body)
 	}
 }
 
@@ -1050,7 +1059,7 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 			return
 		}
 		if opened >= p.s.options.SubmitLimit {
-			p.s.say("serve: %s waits for tomorrow; today's limit of %s is reached (serve.submit_limit)", name, prose.Plural(p.s.options.SubmitLimit, "pull request"))
+			p.s.say("serve: %s will wait until tomorrow; today's limit of %s has been reached (serve.submit_limit)", name, prose.Plural(p.s.options.SubmitLimit, "pull request"))
 			return
 		}
 		submitted, err := e.SubmitForServe(ctx, candidate)
@@ -1061,9 +1070,8 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 			p.s.say("serve: submitting %s: %v", name, err)
 			continue
 		}
-		line := fmt.Sprintf("opened #%d for %s, which passed its check", submitted.PullRequest.Ref.Number, name)
-		p.s.say("serve: %s", line)
-		p.s.notify(name, line)
+		p.s.say("serve: opened #%d for %s after its check passed", submitted.PullRequest.Ref.Number, name)
+		p.s.notify(name, fmt.Sprintf("Opened pull request #%d after the check passed.", submitted.PullRequest.Ref.Number))
 	}
 }
 

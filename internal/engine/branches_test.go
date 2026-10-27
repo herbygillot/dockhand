@@ -35,14 +35,14 @@ func TestAGoneBranchSaysHowToSetItAside(t *testing.T) {
 	testsupport.Git(t, f.clone, "worktree", "prune")
 	testsupport.Git(t, f.clone, "branch", "-D", branch.Name)
 	_, err = e.Path(t.Context(), "poppler-25.09")
-	require.ErrorContains(t, err, "is gone, and so is its Git branch, so nothing of it is left: dockhand archive poppler-25.09 sets its record aside, and the name stays taken; another name starts afresh")
+	require.ErrorContains(t, err, "are both missing. Run dockhand archive poppler-25.09 to set the branch record aside; the name stays reserved, so start the work again under another name")
 	_, err = e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: branch})
 	require.NoError(t, err, "as the refusal says")
 
 	// Archived, it says the name is still held, where archive's advice read
 	// as freeing it (the rc7 full stage).
 	_, err = e.Path(t.Context(), "poppler-25.09")
-	require.ErrorContains(t, err, "its record is archived, and keeps the name: dockhand start poppler-25.09, on a terminal, offers to rename it aside and start afresh, or start the work under another name")
+	require.ErrorContains(t, err, "The branch record is already archived and keeps the name: on a terminal, dockhand start poppler-25.09 offers to rename it aside and start afresh, or start the work under another name")
 	require.NotContains(t, err.Error(), "dockhand archive")
 }
 

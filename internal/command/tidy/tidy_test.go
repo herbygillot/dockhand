@@ -157,7 +157,7 @@ func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "Review diff [d] · Change groups [g] · Edit message [e] · Apply [a] · Cancel [q]")
 	require.Contains(t, errs.String(), `Not changed: "3" is not one of the commits, 1 to 2`)
-	require.Contains(t, buffer.String(), "combines commits 1, 2; message from commit 1, so check it says what all of them do")
+	require.Contains(t, buffer.String(), "combines commits 1, 2 using the message from commit 1; check that the message describes all")
 	require.Contains(t, buffer.String(), "Created 1 commit.")
 	require.Equal(t, "github-1.0: follow harbor's releases", testsupport.Git(t, w.Clone, "log", "-1", "--format=%s"))
 	require.Equal(t, "_resources/port1.0/group/github-1.0.tcl\ntextproc/jq/Portfile", testsupport.Git(t, w.Clone, "show", "--format=", "--name-only", "HEAD"))

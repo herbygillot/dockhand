@@ -240,7 +240,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ready to submit\n")
-	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("  ! commit "+model.ObjectID(head).Short()+"'s Generated-By names dockhand "+unpushed+", built from a commit dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there\n"))
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("  ! commit "+model.ObjectID(head).Short()+"'s Generated-By names dockhand "+unpushed+", built from a commit dockhand's GitHub repository doesn't have, which others cannot find until it is pushed there\n"))
 	preview, err := cmdtest.JSONOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Equal(t, []any{map[string]any{"build": unpushed, "commits": []any{head}, "commit": "14320eb7c0de"}}, preview.Result["unfound_builds"])
@@ -272,9 +272,9 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 func TestAnUnfoundBuildIsSaidOnceForItsCommits(t *testing.T) {
 	t.Parallel()
 	commits := []string{strings.Repeat("a", 40), strings.Repeat("b", 40)}
-	require.Equal(t, "commits aaaaaaa, bbbbbbb name dockhand v0.3.0 in Generated-By, built at a tag dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there",
+	require.Equal(t, "commits aaaaaaa, bbbbbbb name dockhand v0.3.0 in Generated-By, built at a tag dockhand's GitHub repository doesn't have, which others cannot find until it is pushed there",
 		view.UnfoundBuildWords(engine.UnfoundBuild{Build: "v0.3.0", Commits: commits, Source: buildinfo.Source{Release: "v0.3.0"}}))
-	require.Equal(t, "commit aaaaaaa's Generated-By names dockhand devel, which recorded no commit, so nobody can find what it was built from",
+	require.Equal(t, "commit aaaaaaa's Generated-By names dockhand devel, which recorded no commit, so its source cannot be identified",
 		view.UnfoundBuildWords(engine.UnfoundBuild{Build: "devel", Commits: commits[:1]}))
 }
 
@@ -285,7 +285,7 @@ func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
 	plan := func(tag string) engine.TidyPlan {
 		return engine.TidyPlan{Groups: []engine.TidyGroup{{Message: "jq: update to 1.8.1\n\nGenerated-By: Dockhand " + tag + " (https://github.com/herbygillot/dockhand)"}}}
 	}
-	require.Equal(t, "! Generated-By names this dockhand, built from uncommitted source, which nobody else can find. Before submitting, tidy again with a build of a pushed commit: dockhand undo tidy-3, then dockhand tidy.",
+	require.Equal(t, "! This Dockhand build contains uncommitted source, so the Generated-By reference cannot be reproduced from a published commit. Before submitting, run dockhand undo tidy-3, then run dockhand tidy with a build from a pushed commit.",
 		view.ModifiedBuildWarning(plan("devel+1a2b3c4d5e6f.modified"), "tidy-3"))
 	require.Empty(t, view.ModifiedBuildWarning(plan("devel+1a2b3c4d5e6f"), "tidy-3"))
 }
@@ -295,10 +295,10 @@ func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
 func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
 	t.Parallel()
 	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}}, Theirs: true, Sections: engine.DescriptionSections{Types: engine.SectionRefreshed}}
-	require.Equal(t, "updates #34905; its title and description are theirs, and stay as they are", view.PullRequestWords(plan))
+	require.Equal(t, "updates #34905; the author wrote its title and description, and Dockhand will preserve them", view.PullRequestWords(plan))
 	plan.Theirs = false
 	plan.BodyKept = true
-	require.Equal(t, "updates #34905; refreshes its Type(s); the rest of its description is yours", view.PullRequestWords(plan), "types a person names, on a description they edited")
+	require.Equal(t, "updates #34905; refreshes its Type(s); the rest of the description is yours, and Dockhand will preserve it", view.PullRequestWords(plan), "types a person names, on a description they edited")
 }
 
 // A commit's body written after the pull request opened reaches its
@@ -335,7 +335,7 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 	g.PRs[34901].Body = edited
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
-	require.Regexp(t, `  PR       updates #\d+; its description is yours, and stays as it is\n`, out, "a Description a person edited is theirs")
+	require.Regexp(t, `  PR       updates #\d+; you wrote the pull request description, and Dockhand will preserve it\n`, out, "a Description a person edited is theirs")
 
 	// It stays theirs through every submit after, not the next alone:
 	// recorded merged, their text read as dockhand's on the third, which
@@ -356,7 +356,7 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 	// the v0.3.0 port's commit (#34756).
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan", "--rewrite-description")
 	require.NoError(t, err)
-	require.Regexp(t, `  PR       updates #\d+; replaces its whole description with dockhand's \(--rewrite-description\)\n`, out)
+	require.Regexp(t, `  PR       updates #\d+; Dockhand will replace the entire pull request description with its own \(--rewrite-description\)\n`, out)
 	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--rewrite-description")
 	require.NoError(t, err)
 	require.NotContains(t, g.PRs[34901].Body, "What I tested by hand.")
@@ -364,7 +364,7 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 	require.Contains(t, g.PRs[34901].Body, "- [x] enhancement")
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
-	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out, "dockhand's again, once rewritten")
+	require.Regexp(t, `  PR       updates #\d+; the pull request description is current\n`, out, "dockhand's again, once rewritten")
 }
 
 // Every part refreshed is named, in the description's order.
@@ -436,7 +436,7 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	g.PRs[34901].Body = strings.Replace(g.PRs[34901].Body, "#### Description\n\n", "#### Description\n\nWhat I tested by hand.\n\n", 1)
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan", "--note", "Fixed upstream.")
 	require.NoError(t, err)
-	require.Contains(t, out, "  Note     Fixed upstream.\n           ! note omitted: the description was edited or removed on GitHub, so Dockhand preserves it\n")
+	require.Contains(t, cmdtest.Flat(out), "Note     Fixed upstream. ! note omitted: the pull request description was edited or removed on GitHub, so Dockhand will preserve it")
 }
 
 // Submitting to a pull request with nothing to push says what it changed:
@@ -502,7 +502,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
-	require.Contains(t, out, "Nothing needs you; 1 pull request waits on reviewers (CI none 1) · dockhand status -v lists them\n\nserve: ", "the one line, with nothing else to say")
+	require.Contains(t, cmdtest.Flat(out), "Nothing needs attention; 1 pull request waits on reviewers (CI none 1) · dockhand status -v lists them\n\nserve: ", "the one line, with nothing else to say")
 	out, _, err = cmdtest.Dockhand(t, "status", "-v")
 	require.NoError(t, err)
 	require.Regexp(t, `\njq-update +1 +1 commit +— +#34901\n`, out, "-v lists it")
@@ -513,7 +513,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	out, errs, err = cmdtest.Dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 	require.Contains(t, errs, "jq-update: #34901: changes requested\n")
-	require.Contains(t, out, "Needs you (1)\n  ! jq-update  #34901 changes requested (just now)\n               dockhand edit jq\n")
+	require.Contains(t, out, "Needs attention (1)\n  ! jq-update  #34901: changes requested (just now)\n               dockhand edit jq\n")
 	require.NotContains(t, out, "Waiting on reviewers", "a review asking for changes moves it up")
 	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
 	out, _, err = cmdtest.Dockhand(t, "status")
@@ -535,7 +535,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.NoError(t, <-done)
 	out, _, err = cmdtest.Dockhand(t, "status", "--attention")
 	require.Equal(t, 3, term.ExitCode(err))
-	require.Contains(t, out, "✗ jq-update  #34901 MacPorts CI failing: macOS 26")
+	require.Contains(t, out, "✗ jq-update  #34901: MacPorts CI is failing for macOS 26")
 	require.Contains(t, out, "open https://github.com/macports/macports-ports/pull/34901/checks")
 
 	// Its failed job's log is read, once, and the failure said by what made
@@ -546,7 +546,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 		"Error: Failed to fetch jq-1.8.1.tar.gz: The requested URL returned error: 403\n"}
 	out, _, err = cmdtest.Dockhand(t, "status", "--attention", "--refresh")
 	require.Equal(t, 3, term.ExitCode(err))
-	require.Contains(t, out, "  ✗ jq-update  #34901 MacPorts CI failed fetching jq-1.8.1.tar.gz (mirror.sjtu.edu.cn answered 403)\n               on macOS 26 (just now)\n               dockhand retry --ci --branch jq-update\n")
+	require.Contains(t, cmdtest.Flat(out), "✗ jq-update  #34901: MacPorts CI failed: fetching jq-1.8.1.tar.gz (mirror.sjtu.edu.cn answered 403) on macOS 26 (just now) dockhand retry --ci --branch jq-update\n")
 	out, _, err = cmdtest.Dockhand(t, "retry", "--ci", "--branch", "jq-update")
 	require.NoError(t, err)
 	require.Equal(t, cmdtest.Flat("Asked GitHub to run #34901's failed CI again (1 workflow run); dockhand status --refresh reads how it went.\n"), cmdtest.Flat(out))
@@ -595,7 +595,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	// "Cleaning up", findings 1 and 2).
 	out, _, err = cmdtest.Dockhand(t, "status", "--all")
 	require.NoError(t, err)
-	require.NotContains(t, out, "Needs you")
+	require.NotContains(t, out, "Needs attention")
 	require.Regexp(t, `jq-update +cleaned +#34901 merged\n`, out)
 	require.NotContains(t, out, "not pushed")
 	all, err := cmdtest.JSONOf(t, "status", "--all")
@@ -646,7 +646,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	require.NoError(t, err)
 	// Without a terminal nobody looks, so it holds where serve would.
 	out, _, err = cmdtest.Dockhand(t, "ship", "--passing")
-	require.ErrorContains(t, err, "jq-update passed its check and waits for your look, so nothing was submitted: the upstream archives couldn't be compared")
+	require.ErrorContains(t, err, "jq-update passed its check and needs review, so nothing was submitted: the upstream archives couldn't be compared")
 	require.Contains(t, out, "  jq-update  its branch, where it stands, to submit\n             jq: update to 1.8.1 · passed on command for this commit's files (check-2) · opens a new\n               one\n")
 	require.Contains(t, out, "\n             Upstream ! held: archives not compared: the current version's archives could not be\n               fetched: HTTP 404\n",
 		"what upstream showed, in the plan, which holds only a submission nobody looks over")
@@ -670,7 +670,7 @@ func TestShipPassingAndSubmitReady(t *testing.T) {
 	// hugo exercise).
 	previewed, _, err := cmdtest.Dockhand(t, "submit", "--plan", "--ready")
 	require.NoError(t, err)
-	require.Contains(t, previewed, "#34901 isn't a draft, so --ready has nothing to do.\n")
+	require.Contains(t, previewed, "#34901 is already ready for review; --ready has no effect.\n")
 	require.Contains(t, previewed, "\nProposed pull request description:\n    Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**\n\n    #### Description\n")
 	require.Regexp(t, `\n    \+\d+ lines \(dockhand submit --plan -v shows it all\)\n`, previewed, "its first 8 lines")
 	require.Contains(t, previewed, "Nothing was submitted (--plan).\n")
@@ -740,7 +740,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	// The preview says whether submitting again changes the description.
 	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
-	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out)
+	require.Regexp(t, `  PR       updates #\d+; the pull request description is current\n`, out)
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan", "--tested-binaries")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; refreshes its description from Tested on down\n`, out)
@@ -754,13 +754,13 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	require.Contains(t, typed.Result["body"], "- [x] bugfix\n- [ ] enhancement\n")
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan", "--type", "enhancement")
 	require.NoError(t, err)
-	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out, "an update is already an enhancement")
+	require.Regexp(t, `  PR       updates #\d+; the pull request description is current\n`, out, "an update is already an enhancement")
 	// Type(s) a person ticked on GitHub stay theirs, unless --type names others.
 	opened := g.PRs[34901].Body
 	g.PRs[34901].Body = strings.Replace(opened, "- [ ] bugfix", "- [x] bugfix", 1)
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
-	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out, "the person's tick stays")
+	require.Regexp(t, `  PR       updates #\d+; the pull request description is current\n`, out, "the person's tick stays")
 	typed, err = cmdtest.JSONOf(t, "submit", "--no-check", "--plan", "--type", "security fix")
 	require.NoError(t, err)
 	require.Contains(t, typed.Result["body"], "- [ ] bugfix\n- [ ] enhancement\n- [x] security fix\n")
@@ -909,7 +909,7 @@ JSON
 	_, _, err = cmdtest.Dockhand(t, "ship", "--yes")
 	require.Error(t, err)
 	// What moves it on, branchstate's, is said last (R3-31).
-	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was checked; nothing was submitted, since ship binds [0-9a-f]{7}\nNext: dockhand submit --branch jq-update$`, err.Error())
+	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was being checked\. Nothing was submitted: ship was working on [0-9a-f]{7}\nNext: dockhand submit --branch jq-update$`, err.Error())
 	require.Equal(t, "jq: update to 1.8.1", g.PRs[34901].Title)
 	require.NotEqual(t, testsupport.Git(t, dir, "rev-parse", "HEAD"), testsupport.Git(t, g.Fork, "rev-parse", "dockhand/jq-update"), "the moved branch wasn't pushed")
 }
@@ -983,10 +983,10 @@ func TestTheReadyStepIsPreviewed(t *testing.T) {
 		ready bool
 		words string
 	}{
-		{draft, true, "Then marks #34901 ready for review.\n"},
-		{engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 34901}}}, true, "#34901 isn't a draft, so --ready has nothing to do.\n"},
-		{engine.SubmitPlan{Request: engine.SubmitRequest{Draft: true}}, true, "Opens it as a draft, then marks it ready for review.\n"},
-		{engine.SubmitPlan{}, true, "It opens ready for review, not as a draft, so --ready has nothing to do.\n"},
+		{draft, true, "After submission, mark #34901 ready for review.\n"},
+		{engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 34901}}}, true, "#34901 is already ready for review; --ready has no effect.\n"},
+		{engine.SubmitPlan{Request: engine.SubmitRequest{Draft: true}}, true, "Open a draft pull request, then mark it ready for review.\n"},
+		{engine.SubmitPlan{}, true, "Open the pull request ready for review; --ready has no effect.\n"},
 		{draft, false, ""},
 	} {
 		var out bytes.Buffer
@@ -1028,8 +1028,8 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	testsupport.Git(t, w.Clone, "branch", "-D", "dockhand/jq-update")
 	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
-	require.Contains(t, out, "its Git branch is gone, and its pull request, #34901, may have merged\n")
-	require.Contains(t, out, "dockhand status --refresh reads it")
+	require.Contains(t, out, "Git branch not found; pull request #34901 may have merged\n")
+	require.Contains(t, out, "dockhand status --refresh (refreshes the branch status)")
 
 	g.PRs[34901].State = forge.PullRequestMerged
 	_, _, err = cmdtest.Dockhand(t, "status", "--refresh")
@@ -1062,7 +1062,7 @@ func TestThePushLineSaysItWontPushOverAnotherPush(t *testing.T) {
 	// One that amends their commit names it, since only the branch's
 	// reflog vouches for it (the rc5 full stage, D-S1).
 	plan.OthersPushed, plan.Amended = "", model.ObjectID(strings.Repeat("d", 40))
-	require.Equal(t, "replaces ddddddd, someone else's commit, which this branch's reflog shows and 7777777 amends, only if it is still there", view.PushWords(plan))
+	require.Equal(t, "replaces ddddddd, someone else's commit, which this branch's reflog shows and 7777777 amends, only if the remote still points to ddddddd", view.PushWords(plan))
 }
 
 // The Checks line says where a port failed apart from where nothing of

@@ -43,10 +43,10 @@ func TestRegroupCombinesAndReorders(t *testing.T) {
 	e, plan := threeChanges(t)
 
 	for spec, problem := range map[string]string{
-		"1 2":       "commit 3 is left out",
+		"1 2":       "commit 3 is missing",
 		"1 1+2 3":   "commit 1 is named twice",
 		"1 2 4":     `"4" is not one of the commits, 1 to 3`,
-		"":          "name the commits in order",
+		"":          "list every commit once, in the desired order",
 		"1+x 2 3":   `"x" is not one of the commits`,
 		"1+2 3 bad": `"bad" is not one`,
 	} {

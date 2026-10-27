@@ -237,7 +237,7 @@ func AdoptCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var pr int
 	cmd := &cobra.Command{
 		Use:   "adopt [branch]",
-		Short: "Track a branch you made, as it stands",
+		Short: "Track an existing branch without changing it",
 		Long: `Tracks an existing branch, the one checked out here unless named, without
 moving or rewriting anything. Its base is where it leaves MacPorts' master,
 fetched just now. A tracked branch you renamed with Git is recognized, by
@@ -434,6 +434,6 @@ func publishing(ctx context.Context, s *settings.Settings) (string, githubLoginJ
 	case errors.Is(err, github.ErrNoCredentials):
 		return "  not set up: dockhand setup github, when you're ready to submit", githubLoginJSON{Problem: "not set up"}
 	}
-	problem := "GitHub couldn't say whose the login is: " + err.Error()
+	problem := "Could not identify the GitHub account: " + err.Error()
 	return "! " + problem, githubLoginJSON{Problem: problem}
 }

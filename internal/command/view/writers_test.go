@@ -3,12 +3,14 @@ package view
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // A plan names the subport a branch changes, its siblings on a line of
@@ -41,13 +43,13 @@ func TestAPlanNamesTheChangedSubportAndItsSiblings(t *testing.T) {
 			{Environment: tahoe, Exclusions: excluded, Order: []model.TargetID{"terraform-1.16"}},
 		}}
 	var out bytes.Buffer
-	WritePlan(&out, plan, nil, siblings, nil)
+	WritePlan(&out, plan, nil, siblings, nil, listShown)
 	require.Contains(t, out.String(), "Changed     terraform-1.16\n")
-	require.Contains(t, out.String(), "Siblings    terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3, built as MacPorts' CI builds every subport of a changed Portfile; --only narrows\n")
+	require.Contains(t, out.String(), "Siblings    terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3 (MacPorts CI builds every subport of a changed Portfile; use --only to narrow the check)\n")
 	require.Contains(t, out.String(), fmt.Sprintf("Excluded    terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3: %s\n", minmax))
 
 	out.Reset()
-	WritePlan(&out, plan, nil, nil, nil)
+	WritePlan(&out, plan, nil, nil, nil, listShown)
 	require.Contains(t, out.String(), "Changed     terraform-1.16, terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3\n", "with no record, as before")
 	require.NotContains(t, out.String(), "Siblings")
 }
@@ -86,7 +88,7 @@ func TestTheGridSaysAnEarlierChecksCellStands(t *testing.T) {
 	var out bytes.Buffer
 	WriteResults(&out, "  ", evidence, false)
 	require.Contains(t, out.String(), "(check-490)")
-	require.Contains(t, out.String(), "\n  (check-490): an earlier check's result, standing since nothing its build read has changed\n")
+	require.Contains(t, out.String(), "\n  (check-490): result reused from an earlier check; its build inputs have not changed\n")
 
 	evidence.Targets[0].Outcomes[0] = cell(twelve, "x2")
 	out.Reset()
@@ -123,4 +125,27 @@ func TestTheQueueNamesARunningChecksVMsWithTheirTartHome(t *testing.T) {
 	})
 	require.Contains(t, out.String(), "  check-616 runs in dockhand-check-run-9-tahoe-1: TART_HOME=~/.dockhand/tart tart exec dockhand-check-run-9-tahoe-1 …\n")
 	require.NotContains(t, out.String(), "check-617 runs in")
+}
+
+// A long Changed line names listShown ports and counts the rest; with -v
+// it names every one, where only --json gave them (the docs dig's I37).
+func TestVerboseNamesAWholeList(t *testing.T) {
+	t.Parallel()
+	var targets []model.PlanTarget
+	var names []string
+	for i := range 20 {
+		name := fmt.Sprintf("py3%02d-thing", i)
+		names = append(names, name)
+		targets = append(targets, model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Kind: model.Substantive, Role: model.Changed})
+	}
+	plan := model.Plan{Targets: targets, Environments: []model.Environment{{Provider: "command"}}, Tests: model.TestsDeclared}
+	var out bytes.Buffer
+	streams := term.Begin(term.Streams{Out: &out}, nil)
+	WritePlan(streams.Out, plan, nil, nil, nil, ListShown(streams))
+	require.Contains(t, out.String(), "Changed     20 ports: py300-thing, py301-thing, py302-thing, py303-thing, py304-thing, py305-thing, py306-thing, py307-thing and 12 more\n")
+
+	out.Reset()
+	streams.SetVerbosity(1)
+	WritePlan(&out, plan, nil, nil, nil, ListShown(streams))
+	require.Contains(t, out.String(), "Changed     "+strings.Join(names, ", ")+"\n", "all twenty at -v")
 }

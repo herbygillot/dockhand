@@ -150,6 +150,10 @@ type PlanRequest struct {
 	// where builds Also ports only in some environments, as a baseline
 	// rebuilds a port only where it failed; elsewhere they are left out.
 	where map[model.TargetID]planning.Limited
+	// variants are the Also targets built with variants, by the ID Also
+	// names them by ("jq +x11"), as a baseline builds a variant build
+	// that failed: each evaluated with its own variants.
+	variants map[model.TargetID]model.Target
 }
 
 // PlanCheck works out the targets of a check (Design v3 §3): every subport
@@ -258,6 +262,10 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		also = append(also, directory)
 		add(directory, model.Unchanged, model.Also)
 	}
+	if len(plan.Unresolved) > 0 {
+		return plan, nil
+	}
+	candidates = alsoVariants(ctx, reader, revision.Source, request, &plan, candidates, evaluations)
 	if len(plan.Unresolved) > 0 {
 		return plan, nil
 	}
@@ -550,6 +558,50 @@ func planVariants(ctx context.Context, reader PortReader, source model.Source, r
 		return slices.Replace(candidates, at, at+1, builds...), nil
 	}
 	return slices.Insert(candidates, at+1, builds...), nil
+}
+
+// alsoVariants adds the Also targets request.variants builds with their
+// variants (I6): a baseline of a --variants check builds master's jq
+// +x11 where the check's jq +x11 failed, not jq's defaults, nor nothing.
+// Each is evaluated with its variants, as planVariants evaluates one; an
+// environment whose port doesn't declare them leaves that build out
+// there, since it would be the defaults'.
+func alsoVariants(ctx context.Context, reader PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []planning.Evaluation) []model.PlanTarget {
+	for _, name := range request.Also {
+		target, ok := request.variants[model.TargetID(name)]
+		if !ok {
+			continue
+		}
+		directory := request.directories[name]
+		planned := model.PlanTarget{ID: target.ID(), Target: target, Directory: directory, Kind: model.Unchanged, Role: model.Also}
+		for e, environment := range plan.Environments {
+			ports, err := reader.Ports(ctx, source, directory, environment, target.Variants)
+			if err != nil {
+				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target, Reason: err.Error()})
+				continue
+			}
+			i := slices.IndexFunc(ports, func(port macports.PortInfo) bool { return port.Name == target.Name })
+			if i < 0 {
+				continue // not defined there
+			}
+			declared, err := ports[i].Variants()
+			if err != nil {
+				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target, Reason: err.Error()})
+				continue
+			}
+			if len(macports.Undeclared(target.Variants, declared)) > 0 {
+				continue // not there: the build would be its defaults'
+			}
+			evaluated, err := planning.Evaluate(ports[i], environment.Platform)
+			if err != nil {
+				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target, Reason: err.Error()})
+				continue
+			}
+			evaluations[e][planned.ID] = evaluated
+		}
+		candidates = append(candidates, planned)
+	}
+	return candidates
 }
 
 // variantsTarget is the one port --variants builds: the one --only names,

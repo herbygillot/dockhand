@@ -50,7 +50,7 @@ func TestALocalCheckIsRefusedWhereItsPortfilesArentTheirs(t *testing.T) {
 	local := model.Plan{Environments: []model.Environment{{Provider: buildenv.Local, Prefix: "/opt/local"}}}
 	adopted := model.Branch{Name: "dockhand/jq-4f2a", PullRequest: &model.PullRequest{Number: 35968, Adopted: true}}
 	e := &Engine{}
-	require.ErrorContains(t, e.localAllowed(QueueRequest{Branch: adopted, Plan: local}), "a pull request you adopted, whose Portfiles someone else wrote: a local check would run them as root on this Mac, so it checks with --on tart or --on github")
+	require.ErrorContains(t, e.localAllowed(QueueRequest{Branch: adopted, Plan: local}), "is a pull request you adopted, whose Portfiles someone else wrote. A local check would run them as root on this Mac; check it with --on tart or --on github instead")
 	require.NoError(t, e.localAllowed(QueueRequest{Branch: adopted, Plan: model.Plan{Environments: []model.Environment{{Provider: buildenv.Tart}}}}))
 	require.ErrorContains(t, e.localAllowed(QueueRequest{Plan: local, Origin: model.OriginServe}), "unless [providers.local] serve = true")
 	e.LocalServe = true

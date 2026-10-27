@@ -12,7 +12,7 @@ Dockhand helps contributors to [macports/macports-ports](https://github.com/macp
 
 Each change lives on an ordinary Git branch, with its own working directory. You can edit with your usual tools, review each step, or let Dockhand take a routine update through to a pull request. Pushes go to your fork; you do not need commit access to MacPorts.
 
-> These examples use the v0.5.0 command interface, released as v0.5.0; `main` heads for v0.6.0, and may add to it. Commands may differ in earlier releases. Run `dockhand --version` to check your build and `dockhand <command> --help` for its options.
+> These examples use the v0.6.0 command interface. The main branch may differ, and earlier releases may use different commands. Run `dockhand --version` to check your build and `dockhand <command> --help` for its options.
 
 ## Install
 
@@ -34,7 +34,7 @@ For local VM builds, install [Tart](https://tart.run) on an Apple silicon Mac:
 sudo port install tart
 ```
 
-A Mac without Tart, an Intel Mac among them, can check in a MacPorts prefix on the Mac itself with `dockhand check --on local`, or through GitHub Actions. Some Go and Rust ports also need the MacPorts `go2port` or `cargo2port` helper to regenerate their dependency lists.
+On a Mac without Tart, including an Intel Mac, you can run checks in a local MacPorts prefix with `dockhand check --on local`, or use GitHub Actions. Some Go and Rust ports also need the MacPorts `go2port` or `cargo2port` helper to regenerate their dependency lists.
 
 <details>
 <summary>Build Dockhand from source</summary>
@@ -142,7 +142,7 @@ Dockhand runs lint, fetch, checksum, installation, and declared tests. Test fail
 | Build environment | How it works |
 | --- | --- |
 | **Tart** | Builds in disposable macOS VMs on your Apple silicon Mac. The usual `host` profile selects a VM matching your Mac's macOS release. |
-| **Local** | Builds in a MacPorts prefix on this Mac, `/opt/local` or one of your own, among the ports you have active, and puts them back as they were after; `--keep` leaves the branch's versions active. Select `--on local`, or `--on local:/opt/macports-test`. See [the local provider](docs/local-provider.md). |
+| **Local** | Builds in a MacPorts prefix on this Mac, such as `/opt/local`, alongside your active ports. Afterward, Dockhand restores the prefix; `--keep` leaves the branch's versions active. Select it with `--on local` or `--on local:/opt/macports-test`. See [the local provider](docs/local-provider.md). |
 | **GitHub Actions** | Runs MacPorts' own workflow in your fork. Enable Actions in the fork and select `--on github`. |
 | **Custom command** | Runs a script you configure for a build machine or VM you manage. |
 
@@ -237,11 +237,11 @@ New Portfiles include `# dockhand: unconfirmed` markers for inferred values. Rev
 
 ## Known issues in v0.6.0
 
-Each is rough, harms nothing a look wouldn't catch, and has a workaround.
+These limitations have workarounds:
 
-- `check` builds on this Mac's release unless told otherwise, `build.default`'s `host`, and MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered; `--build macports-ci` checks on all three, and `build.default = "macports-ci"` makes it the default.
-- On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first Tart check of a Rust or Go port there builds rust and cargo, or go, from source: hours on a VM's two cores. The check says so before it builds, and a later check installs them from the archives dockhand kept, until cleanup forgets them. Check such a port first on the previous release, `--on tahoe`, or let the first check run.
-- `status --all` reads each branch in turn, close to a minute with several hundred branches, most of them archived (55 s for 683 on rc2); plain `status`, or `status <branch>`, stays quick.
+- A check covers only this Mac's macOS release unless told otherwise (`build.default`'s `host`), while MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered. To check on all three, use `--build macports-ci`; to make that the default, set `build.default = "macports-ci"`.
+- On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first Tart check of a Rust or Go port builds rust and cargo, or go, from source, which takes hours on a VM's two cores. The check says so before it builds, and later checks install them from the archives Dockhand kept, until cleanup removes them. To avoid the wait, check such a port first on the previous release with `--on tahoe`, or let the first check run.
+- `status --all` reads each branch in turn, which took close to a minute with several hundred branches, most of them archived (55 s for 683 on rc2). Plain `status`, or `status <branch>`, stays quick.
 
 ## Scope
 
@@ -257,7 +257,7 @@ dockhand <command> --help
 dockhand config
 ```
 
-For MacPorts contribution practices, see the [MacPorts contribution workflow](https://guide.macports.org/#project.github) and [commit-message guidelines](https://trac.macports.org/wiki/CommitMessages). `dockhand explain <code>` explains the rule behind a finding reported by `tidy` or `submit`; `dockhand explain check-42` says why a check ended as it did, and `dockhand explain -b <branch>` where a branch stands and what clears it.
+For MacPorts contribution practices, see the [MacPorts contribution workflow](https://guide.macports.org/#project.github) and [commit-message guidelines](https://trac.macports.org/wiki/CommitMessages). `dockhand explain <code>` explains the rule behind a finding reported by `tidy` or `submit`; `dockhand explain check-42` says why a check ended as it did, and `dockhand explain -b <branch>` explains the branch's status and suggested next steps.
 
 Report Dockhand bugs and propose improvements in [this repository](https://github.com/herbygillot/dockhand). Include your `dockhand --version`, the command you ran, and the relevant error or build log. To work on Dockhand itself, build with `make build` and run its tests with `make test`.
 

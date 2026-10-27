@@ -65,7 +65,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	out := serveUntil([]string{"--ship-to", "submit"}, "serve: opened #34901 for jq-")
 	require.Contains(t, out, "opens PRs for passing updates it prepared, at most 10 a day\n")
 	require.Contains(t, out, "serve: 1 port of yours has newer releases: jq\n")
-	require.Contains(t, out, "serve: 1 port may have newer releases that need review: yq. Run dockhand outdated yq for details\n")
+	require.Contains(t, out, "serve: 1 port may have newer releases and need review: yq. Run dockhand outdated yq for details\n")
 	require.NotContains(t, out, "prepared yq")
 	require.Regexp(t, `serve: prepared jq-1\.8\.1: 1\.7\.1 → 1\.8\.1, check-1 queued\n`, out)
 	require.Regexp(t, `check-1 jq-1\.8\.1: passed\n`, out)
@@ -77,7 +77,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 	status, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
-	require.Regexp(t, `✓ jq-1\.8\.1\s+#34901 opened by serve, without a person's review`, status)
+	require.Regexp(t, `✓ jq-1\.8\.1\s+#34901 was opened by serve without human review`, status)
 	require.Contains(t, status, "Your ports: 1 port has newer releases, as serve found ")
 	require.Regexp(t, `Your ports: 1 port may have newer releases; review needed. Last checked .* by serve\. Run dockhand outdated yq for details\.\n`, cmdtest.Flat(status))
 
@@ -124,7 +124,7 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 		done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
 	require.Eventually(t, func() bool {
-		return strings.Contains(served.String(), "waits for tomorrow; today's limit of 1 pull request is reached")
+		return strings.Contains(served.String(), "will wait until tomorrow; today's limit of 1 pull request has been reached")
 	}, cmdtest.Settle, 10*time.Millisecond, served.String())
 	stop()
 	require.NoError(t, <-done)

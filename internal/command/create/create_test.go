@@ -297,5 +297,5 @@ func TestCreateExitsForALookWhereADraftHasNoChecksums(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "create", "https://github.com/rift-dev/rift", "--new", "--category", "textproc")
 	require.Equal(t, term.ExitAttention, term.ExitCode(err), out)
 	require.Contains(t, cmdtest.Flat(out), "checksums: not generated: dependency: go.mod says 1.15, before 1.17; go.sum has the source of github.com/kr/text too, which go.vendors needs by hand: add github.com/kr/text lock v0.1.0")
-	require.Contains(t, out, "Next: resolve its checksums as said above, then dockhand checksums rift\n")
+	require.Contains(t, out, "Next: resolve the checksum problem above, then run dockhand checksums rift\n")
 }

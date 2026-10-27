@@ -110,7 +110,7 @@ type Push struct {
 func (b Block) Words(v Vocabulary) string {
 	switch b.Kind {
 	case BlockUnconfirmed:
-		return fmt.Sprintf("%s still marks %s unconfirmed (%s): confirm each, remove its %q line, and tidy", b.Path, prose.Plural(len(b.Marks), "guess"), strings.Join(b.Marks, ", "), b.Mark)
+		return fmt.Sprintf("%s contains %s marked unconfirmed (%s). Verify each item, remove its %q line, and run dockhand tidy", b.Path, prose.Plural(len(b.Marks), "guess"), strings.Join(b.Marks, ", "), b.Mark)
 	case BlockMerge:
 		return fmt.Sprintf("commit %s is a merge; MacPorts asks for a rebase instead", b.Commit.Short())
 	case BlockCheckPending:
@@ -120,7 +120,7 @@ func (b Block) Words(v Vocabulary) string {
 	case BlockNoCheck:
 		return "no check has finished for this commit's files; run dockhand check first, submit a draft with --draft, or submit without a check with --no-check, which the pull request states"
 	case BlockUnmet:
-		return fmt.Sprintf("%s %s, which %s hasn't; a check with %s there builds it, or share the branch as a draft (--draft)", b.Port, v.Unmet(b.Unmet), v.Environment(b.Unmet.Environment), b.Unmet.Needs)
+		return fmt.Sprintf("%s %s. %s does not have it; run a check in an environment with %s, or submit a draft with --draft", b.Port, v.Unmet(b.Unmet), v.Environment(b.Unmet.Environment), b.Unmet.Needs)
 	case BlockRemade:
 		return fmt.Sprintf("%s: the previous check is no longer valid because %s. Run dockhand check to rebuild in the affected environments, or share the branch with --draft", b.Port, v.Remade(*b.Target))
 	case BlockUnchecked:
@@ -134,7 +134,7 @@ func (b Block) Words(v Vocabulary) string {
 		for _, u := range b.Unbuilt {
 			place := v.Environment(u.Environment)
 			if u.PlannedIn != "" {
-				place += ", which " + u.PlannedIn + " planned and stopped before"
+				place += ", planned by " + u.PlannedIn + ", but the check stopped before building it"
 			}
 			places = append(places, place)
 		}
@@ -142,12 +142,12 @@ func (b Block) Words(v Vocabulary) string {
 	case BlockFailsAtBase:
 		return fmt.Sprintf("%s failed in %s and has the same failure at the base (%s). Use --accept %s to submit with this existing failure disclosed, fix the failure, or share the branch with --draft", b.Port, b.Run, strings.Join(b.Baselines, ", "), b.Port)
 	case BlockFailed:
-		return fmt.Sprintf("%s did not pass in %s; fix it, or share it as a draft (--draft); dockhand check --baseline sees whether master fails it the same way", b.Port, b.Run)
+		return fmt.Sprintf("%s did not pass in %s. Fix the failure, submit a draft with --draft, or run dockhand check --baseline to see whether master fails in the same way", b.Port, b.Run)
 	case BlockNotAccepted:
-		return fmt.Sprintf("%s (%s) did not pass in %s; acknowledge it with --accept %s if its failure is not this branch's doing", b.Port, kindWords(b.Planned), b.Run, b.Port)
+		return fmt.Sprintf("%s (%s) did not pass in %s. If the failure was not caused by this branch, acknowledge it with --accept %s", b.Port, kindWords(b.Planned), b.Run, b.Port)
 	case BlockOthersPushed:
 		p := b.Pushed
-		return fmt.Sprintf("someone else pushed to #%d: it is at %s, and dockhand last pushed %s. Fetch it (git fetch %s %s) and compare; a commit built on it, as one made after git reset --hard %s, submits, and nothing will be pushed over it",
+		return fmt.Sprintf("someone else pushed to #%d. The remote is at %s; Dockhand last pushed %s. Fetch it with git fetch %s %s and compare the changes, then incorporate it into your branch, for example with git merge %s, before submitting; Dockhand will not push over it",
 			p.Number, p.At.Short(), p.Last.Short(), p.Remote, p.Branch, p.At.Short())
 	case BlockMaintainerEdits:
 		p := b.Pushed

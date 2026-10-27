@@ -37,8 +37,8 @@ act() {
 assert() {
 	[ -n "${G4_BRANCH:-}" ] || return 0
 	[ -n "${G4_SNAPSHOT:-}" ] || { row_fail "status didn't name the snapshot that puts /opt/local back: $(grep -i 'local' "$ROW_DIR/status.txt" | head -2 | tr '\n' ' ')"; return; }
-	grep -q 'left /opt/local changed' "$ROW_DIR/status.txt" || { row_fail "status didn't say the check left /opt/local changed"; return; }
+	grep -q 'stopped before it could restore /opt/local' "$ROW_DIR/status.txt" || { row_fail "status didn't say the check left /opt/local changed"; return; }
 	local_same /opt/local "$ROW_DIR/active.before" "port restore --snapshot-id $G4_SNAPSHOT didn't put /opt/local back" || return
-	! grep -q 'left /opt/local changed' "$ROW_DIR/status.after" || { row_fail "status still said /opt/local was changed once it was put back"; return; }
+	! grep -q 'stopped before it could restore /opt/local' "$ROW_DIR/status.after" || { row_fail "status still said /opt/local was changed once it was put back"; return; }
 	row_pass "status named snapshot $G4_SNAPSHOT, port restore put /opt/local back, and status then said nothing of it"
 }

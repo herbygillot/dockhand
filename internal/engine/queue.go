@@ -90,10 +90,10 @@ func (e *Engine) localAllowed(request QueueRequest) error {
 		return nil
 	}
 	if pr := request.Branch.PullRequest; pr != nil && pr.Adopted {
-		return refusal.New(refusal.Failed, "%s is a pull request you adopted, whose Portfiles someone else wrote: a local check would run them as root on this Mac, so it checks with --on tart or --on github", request.Branch.ShortName())
+		return refusal.New(refusal.Failed, "%s is a pull request you adopted, whose Portfiles someone else wrote. A local check would run them as root on this Mac; check it with --on tart or --on github instead", request.Branch.ShortName())
 	}
 	if request.Origin == model.OriginServe && !e.LocalServe {
-		return refusal.New(refusal.Environment, "serve doesn't check in a MacPorts prefix on this Mac unless [providers.local] serve = true, since its Portfiles run as root there, under a sudo rule that needs no password")
+		return refusal.New(refusal.Environment, "serve does not run checks in a local MacPorts prefix unless [providers.local] serve = true. Portfiles run as root there under a passwordless sudo rule")
 	}
 	return nil
 }

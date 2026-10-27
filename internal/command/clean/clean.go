@@ -40,7 +40,7 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var merged, closed, yes, automatic, forget, plan bool
 	cmd := &cobra.Command{
 		Use:   "clean [branch...] [--merged] [--closed]",
-		Short: "Remove what merged branches leave behind",
+		Short: "Remove worktrees and branches after merging",
 		Long: `Removes a merged branch's worktree, local branch, and your fork's branch,
 each only while it still holds the merged commit. A worktree with edits or
 untracked files, and work that went on past the merge, are kept. The
@@ -262,7 +262,7 @@ func writeClean(out io.Writer, plans []engine.CleanBranch, done bool, places con
 		switch {
 		case plan.Branch.State == model.BranchMerged || branchStep:
 		case plan.Superseded != "":
-			fmt.Fprintf(out, "  look     branch %s: %s; git branch -D %s removes it once you've looked\n", plan.Branch.Name, plan.Superseded, plan.Branch.Name)
+			fmt.Fprintf(out, "  review   branch %s: %s; after review, git branch -D %s deletes it\n", plan.Branch.Name, plan.Superseded, plan.Branch.Name)
 		case slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return s.Kept == "" }):
 			fmt.Fprintf(out, "  keep     branch %s: dockhand path %s checks it out again\n", plan.Branch.Name, plan.Branch.ShortName())
 		}
@@ -401,12 +401,12 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 			fmt.Fprintf(out, "  branch %s at %s\n", plan.Branch.Name, model.ObjectID(plan.Head).Short())
 		}
 		if len(plan.Unmerged) > 0 {
-			fmt.Fprintf(out, "  ! %s master doesn't have, deleted with it:\n", prose.Plural(len(plan.Unmerged), "commit"))
+			fmt.Fprintf(out, "  ! %s not on master will be deleted with this branch:\n", prose.Plural(len(plan.Unmerged), "commit"))
 			for _, commit := range plan.Unmerged {
 				fmt.Fprintf(out, "    %s  %s\n", model.ObjectID(commit.ID).Short(), commit.Subject)
 			}
 		}
-		fmt.Fprintln(out, "  its record, but for what other branches' results reused of its checks")
+		fmt.Fprintln(out, "  branch record, except check results reused by other branches")
 	}
 	if plan {
 		fmt.Fprintln(out, "Nothing was forgotten (--plan).")

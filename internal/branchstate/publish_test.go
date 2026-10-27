@@ -20,11 +20,11 @@ func TestOneGateForEverySubmission(t *testing.T) {
 	require.Nil(t, Publish(p, asked, words{}))
 	waits := Publish(p, nobody, words{})
 	require.Equal(t, refusal.Attention, waits.Kind())
-	require.Equal(t, "jq-1.8.2 is held for a look: upstream's COPYING changed", waits.Error())
+	require.Equal(t, "jq-1.8.2 needs review before submission: upstream's COPYING changed", waits.Error())
 	require.True(t, waits.Advances(string(ActionSubmit)), "submit again, after a look")
 
 	p.Bound = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	require.Contains(t, Publish(p, asked, words{}).Error(), "moved to aaaaaaa while it was checked")
+	require.Contains(t, Publish(p, asked, words{}).Error(), "moved to aaaaaaa while it was being checked")
 	p.Blocks = []Block{{Kind: BlockNoTitle}}
 	blocked := Publish(p, asked, words{})
 	require.Equal(t, refusal.Failed, blocked.Kind())

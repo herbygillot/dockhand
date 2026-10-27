@@ -906,11 +906,11 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 	moved := slices.IndexFunc(update.Upstream.Changes, func(c model.UpstreamChange) bool { return c.Rule == upstreamTransferredRule })
 	require.GreaterOrEqual(t, moved, 0, "%+v", update.Upstream.Changes)
 	require.True(t, update.Upstream.Changes[moved].Hold)
-	require.Equal(t, "upstream transferred from returntocorp to semgrep: GitHub answers returntocorp/semgrep as semgrep/semgrep, by a redirect, and its release is a new owner's to trust; update --follow-moves points github.setup at it", update.Upstream.Changes[moved].Message)
+	require.Equal(t, "upstream moved from returntocorp to semgrep: GitHub redirects returntocorp/semgrep to semgrep/semgrep. Review the new owner before trusting its releases. Use update --follow-moves to update github.setup", update.Upstream.Changes[moved].Message)
 
 	// The same owner's rename is said as one.
 	require.Equal(t, model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: "jqlang/jq2", Hold: true, Class: model.Introduced,
-		Message: "upstream renamed: GitHub answers jqlang/jq as jqlang/jq2, by a redirect; update --follow-moves points github.setup at it"}, movedChange("jqlang/jq", "jqlang/jq2", false))
+		Message: "upstream renamed: GitHub redirects jqlang/jq to jqlang/jq2. Use update --follow-moves to update github.setup"}, movedChange("jqlang/jq", "jqlang/jq2", false))
 	followed := movedChange("jqlang/jq", "jqlang/jq2", true)
 	require.False(t, followed.Hold, "followed, the person's choice, nothing holds")
 

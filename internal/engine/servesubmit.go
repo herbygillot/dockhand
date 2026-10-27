@@ -375,7 +375,7 @@ type HeldBeforeEdit struct {
 }
 
 func (h *HeldBeforeEdit) Error() string {
-	return fmt.Sprintf("%s is held for a look before its edit: %s", h.Port, strings.Join(HoldLines(h.Held), "; "))
+	return fmt.Sprintf("%s needs review before Dockhand can prepare its update: %s", h.Port, strings.Join(HoldLines(h.Held), "; "))
 }
 
 // heldBeforeEdit looks for the port's other open pull requests before an
@@ -431,7 +431,7 @@ const (
 // saying in its description that no person reviewed it.
 func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (Submitted, error) {
 	if len(candidate.Held) > 0 {
-		return Submitted{}, fmt.Errorf("%s is held for a look: %s", candidate.Branch.ShortName(), strings.Join(HoldLines(candidate.Held), "; "))
+		return Submitted{}, fmt.Errorf("%s needs review before submission: %s", candidate.Branch.ShortName(), strings.Join(HoldLines(candidate.Held), "; "))
 	}
 	plan := candidate.Plan
 	plan.Body = plan.Body + "\n\n" + ServeNote + "\n"
@@ -594,6 +594,29 @@ func (e *Engine) majorHolds(edits []model.Edit) []model.Concern {
 		}
 	}
 	return held
+}
+
+// LeavesStableWords say an update that takes a port from a stable version
+// to a prerelease, as update and submit's preview say it, once each (the
+// docs dig's I32): automatic selection never chooses such a version, so
+// only one the person named does, and it holds nothing.
+func LeavesStableWords(port, from, to string) string {
+	return fmt.Sprintf("this takes %s out of stable (%s → %s)", port, from, to)
+}
+
+// prereleases are the LeavesStableWords of a branch's updates that take a
+// port from a stable version to a prerelease, once each.
+func prereleases(edits []model.Edit) []string {
+	var words []string
+	for _, edit := range edits {
+		if edit.Kind != model.EditUpdate || edit.Release == nil || !version.LeavesStable(edit.Release.CurrentVersion, edit.Release.Version) {
+			continue
+		}
+		if said := LeavesStableWords(edit.Port, edit.Release.CurrentVersion, edit.Release.Version); !slices.Contains(words, said) {
+			words = append(words, said)
+		}
+	}
+	return words
 }
 
 // afterHolds hold the update of a port whose holds name ports to submit

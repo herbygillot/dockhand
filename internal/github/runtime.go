@@ -73,7 +73,7 @@ func (c *Client) Allowance(ctx context.Context) (Allowance, error) {
 	}
 	core := limits.GetCore()
 	if core == nil {
-		return Allowance{}, fmt.Errorf("github: GitHub said nothing of the hour's requests")
+		return Allowance{}, fmt.Errorf("github: GitHub's response did not include the hourly request allowance")
 	}
 	return Allowance{Remaining: core.Remaining, Limit: core.Limit, Reset: core.Reset.Time}, nil
 }

@@ -44,7 +44,7 @@ func TestExplainSaysWhyACheckAndABranch(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "explain", "-b", "jq-update")
 	require.NoError(t, err)
-	require.Equal(t, "jq-update is under way: nothing has checked it yet; nothing needs you yet\nNext: dockhand check --branch jq-update\n", out)
+	require.Equal(t, "jq-update is in progress: nothing has checked it yet; no action needed yet\nNext: dockhand check --branch jq-update\n", out)
 
 	cmdtest.WithScript(t, w, "failed")
 	_, _, err = cmdtest.Dockhand(t, "check")
@@ -56,7 +56,7 @@ func TestExplainSaysWhyACheckAndABranch(t *testing.T) {
 	require.Contains(t, out, "Next: dockhand logs check-1 jq\n")
 	out, _, err = cmdtest.Dockhand(t, "explain", "-b", "jq-update")
 	require.NoError(t, err)
-	require.Contains(t, out, "jq-update needs you\n  ✗ jq-update  ")
+	require.Contains(t, out, "jq-update needs attention\n  ✗ jq-update  ")
 	require.Contains(t, out, "Next: dockhand logs check-1 jq\n")
 
 	cmdtest.WithScript(t, w, "passed")

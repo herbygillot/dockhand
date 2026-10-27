@@ -346,7 +346,7 @@ func TestPathAndResolve(t *testing.T) {
 	require.NoError(t, e.Repo.RemoveWorktree(context.Background(), branch.Worktree))
 	testsupport.Git(t, f.clone, "branch", "-D", branch.Name)
 	_, err = e.Path(t.Context(), "jq-update")
-	require.ErrorContains(t, err, "is gone, and so is its Git branch")
+	require.ErrorContains(t, err, "and Git branch dockhand/jq-update are both missing")
 }
 
 func TestUpstreamRemoteIsFoundByURL(t *testing.T) {

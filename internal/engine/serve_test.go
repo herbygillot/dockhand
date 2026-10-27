@@ -19,10 +19,10 @@ import (
 func TestAnUncertainPortIsSaidOnceForWhatWasSetAside(t *testing.T) {
 	t.Parallel()
 	first := OutdatedLook{Uncertain: []string{"dolt"}, SetAside: map[string][]string{"dolt": {"v040.15"}}}
-	require.Equal(t, "serve: 1 port may have newer releases that need review: dolt. Run dockhand outdated dolt for details", uncertainWords(OutdatedLook{}, first))
-	require.Equal(t, "serve: 1 port of yours may still have newer releases, as before (dockhand status lists them)", uncertainWords(first, first))
+	require.Equal(t, "serve: 1 port may have newer releases and need review: dolt. Run dockhand outdated dolt for details", uncertainWords(OutdatedLook{}, first))
+	require.Equal(t, "serve: 1 port may still have newer releases; see dockhand status for the list", uncertainWords(first, first))
 	next := OutdatedLook{Uncertain: []string{"dolt", "yq"}, SetAside: map[string][]string{"dolt": {"v040.15"}, "yq": {"v5.0"}}}
-	require.Equal(t, "serve: 1 port may have newer releases that need review: yq. Run dockhand outdated yq for details; 1 more as before", uncertainWords(first, next))
+	require.Equal(t, "serve: 1 port may have newer releases and need review: yq. Run dockhand outdated yq for details; 1 previously reported", uncertainWords(first, next))
 	moved := OutdatedLook{Uncertain: []string{"dolt"}, SetAside: map[string][]string{"dolt": {"v040.16"}}}
 	require.Contains(t, uncertainWords(first, moved), "need review: dolt")
 	require.Empty(t, uncertainWords(first, OutdatedLook{}))

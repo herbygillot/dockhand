@@ -288,9 +288,9 @@ func Owned(facts Facts) string {
 	tested := facts.TestedOn
 	switch {
 	case tested.NoCheck:
-		fmt.Fprintln(&b, "Not built locally: submitted with `dockhand submit --no-check`, so MacPorts CI is the only check this change has had.")
+		fmt.Fprintln(&b, "Submitted with `dockhand submit --no-check`; no Dockhand check result is included. MacPorts CI will build and test this change.")
 	case tested.Pending:
-		fmt.Fprintln(&b, "No local check has finished for this commit yet. This is a draft, so MacPorts CI starts early.")
+		fmt.Fprintln(&b, "No Dockhand check has finished for this commit. This draft lets MacPorts CI run before a Dockhand check is complete.")
 	default:
 		for _, report := range tested.Reports {
 			b.WriteString(report.lines())
@@ -318,7 +318,7 @@ func Owned(facts Facts) string {
 		}
 		b.WriteString(notes.String())
 		if tested.UncoveredCI != "" {
-			fmt.Fprintf(&b, "\nMacPorts CI also builds on macOS %s, which no check here built on.\n", tested.UncoveredCI)
+			fmt.Fprintf(&b, "\nMacPorts CI also builds on macOS %s, which was not covered by these checks.\n", tested.UncoveredCI)
 		}
 	}
 	answers := facts.Verification
@@ -365,7 +365,7 @@ func installNote(built bool) string {
 	if !built {
 		return ""
 	}
-	return "(dockhand builds from source as MacPorts CI does, without trace mode)"
+	return "(Dockhand builds from source, as MacPorts CI does, without trace mode)"
 }
 
 // lines are one environment's lines under Tested on, as MacPorts'
@@ -400,9 +400,9 @@ func (r Report) lines() string {
 	case observed.Tools != "":
 		tools = "Command Line Tools " + observed.Tools
 	case r.Tools == model.DeveloperToolsXcode:
-		tools = "Xcode, its version not recorded"
+		tools = "Xcode version not recorded"
 	case r.Tools == model.DeveloperToolsCommandLine:
-		tools = "Command Line Tools, their version not recorded"
+		tools = "Command Line Tools version not recorded"
 	default:
 		tools = "Developer tools not recorded"
 	}

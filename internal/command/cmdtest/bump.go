@@ -36,7 +36,12 @@ func (b Bumper) ResolveRelease(ctx context.Context, r editprep.Request) (model.R
 	}
 	current := regexp.MustCompile(`(?m)^version (\S+)$`).FindSubmatch(data)
 	noUpdate := current != nil && string(current[1]) == version
-	return model.Release{ReleaseSelection: model.ReleaseSelection{NoUpdate: noUpdate}, Version: version, Forge: "github", Repository: "jqlang/jq", Tag: "jq-" + version, Commit: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"}, nil
+	// As discovery does, it records the version it compared against.
+	var from string
+	if current != nil {
+		from = string(current[1])
+	}
+	return model.Release{ReleaseSelection: model.ReleaseSelection{NoUpdate: noUpdate, CurrentVersion: from}, Version: version, Forge: "github", Repository: "jqlang/jq", Tag: "jq-" + version, Commit: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"}, nil
 }
 
 func (b Bumper) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {

@@ -56,12 +56,12 @@ func TestACheckIsHandedToServe(t *testing.T) {
 
 	out, errs, err := cmdtest.Dockhand(t, "check", "-v")
 	require.NoError(t, err)
-	require.Contains(t, errs, "check-1 handed to serve (pid ")
+	require.Contains(t, errs, "check-1 was handed to serve (PID ")
 	require.Contains(t, out, "\nPassed.\n", "the check's heading named what it checks")
 
 	out, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	require.Contains(t, out, "check-2 queued; serve (pid ")
+	require.Contains(t, out, "check-2 is queued; serve (PID ")
 
 	var standby cmdtest.SyncBuffer
 	second, stopSecond := context.WithCancel(t.Context())

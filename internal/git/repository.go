@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/subprocess"
@@ -158,6 +159,36 @@ func repositoryEnv(base []string) []string {
 		}
 	}
 	return append(result, "GIT_PAGER=cat", "LC_ALL=C", "GIT_NO_REPLACE_OBJECTS=1", "GIT_NO_LAZY_FETCH=1", "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
+}
+
+// Unattended is the environment git runs in where nobody can answer it,
+// as under serve or a background worker: its ssh runs with BatchMode=yes,
+// so a key whose passphrase no agent holds fails at once, an SSH refusal
+// (sshRefused), where it would ask (the docs dig's I46), as
+// GIT_TERMINAL_PROMPT=0 keeps git's HTTPS from asking. An ssh command the
+// person chose, GIT_SSH_COMMAND or core.sshCommand where dir's
+// configuration sets it, is kept, with the option added; GIT_SSH, a
+// program that may not take ssh's options, is left as it is.
+func Unattended(ctx context.Context, program Program, dir string) []string {
+	env := slices.Clone(program.Env)
+	command := ""
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
+		switch key {
+		case "GIT_SSH":
+			return env
+		case "GIT_SSH_COMMAND":
+			command = value
+		}
+	}
+	if command == "" {
+		configured, err := (&Repository{Root: dir, Program: program}).output(ctx, "config", "--get", "core.sshCommand")
+		if err == nil {
+			command = strings.TrimSpace(string(configured))
+		}
+	}
+	env = slices.DeleteFunc(env, func(entry string) bool { return strings.HasPrefix(entry, "GIT_SSH_COMMAND=") })
+	return append(env, "GIT_SSH_COMMAND="+cmp.Or(command, "ssh")+" -o BatchMode=yes")
 }
 
 // ErrSSHRefused is a remote's SSH server refusing every key this Mac

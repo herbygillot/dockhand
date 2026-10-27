@@ -76,7 +76,7 @@ pull requests, and ship takes a port's update as far as --to says.`,
 	}
 	where.Register(cmd)
 	version.Flags(cmd)
-	cmd.Flags().BoolVar(&version.HandEdit, "hand-edit", false, "where dockhand refuses the update, write its best attempt for you to finish by hand, recorded as your edit with the refusal")
+	cmd.Flags().BoolVar(&version.HandEdit, "hand-edit", false, "write Dockhand's best attempt when an update is refused, for you to finish manually; record the refusal")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&mine, "mine", false, "update each of your ports with a newer release, in a branch of its own (config maintainer)")
 	settings.OverAllowanceFlag(cmd, s)
@@ -238,9 +238,9 @@ type VersionUpdate struct {
 // flags adds the edit's flags, which update, ship, and bump share.
 func (v *VersionUpdate) Flags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&v.KeepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
-	cmd.Flags().BoolVar(&v.Shared, "shared-release", false, "move every subport that shares the port's release")
-	cmd.Flags().BoolVar(&v.FollowMoves, "follow-moves", false, "where GitHub answers the port's repository by another name, point github.setup at it")
-	cmd.Flags().BoolVar(&v.Obsolete, "with-obsolete", false, "also move the Portfile's obsolete stub for the port, one replaced_by it, to the same version")
+	cmd.Flags().BoolVar(&v.Shared, "shared-release", false, "update every subport that shares the release")
+	cmd.Flags().BoolVar(&v.FollowMoves, "follow-moves", false, "update github.setup when GitHub redirects the repository to a new name")
+	cmd.Flags().BoolVar(&v.Obsolete, "with-obsolete", false, "also update an obsolete stub replaced by this port to the same version")
 	cmd.Flags().BoolVar(&v.Linked.Revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
 	cmd.Flags().StringSliceVar(&v.Linked.Except, "except", nil, "leave this dependent out of --revbump-dependents")
 }
@@ -248,8 +248,8 @@ func (v *VersionUpdate) Flags(cmd *cobra.Command) {
 // stageFlags adds the flags of the stages after the edit, defined once,
 // which ship and bump share: where to check, and the pull request's.
 func (v *VersionUpdate) StageFlags(cmd *cobra.Command) {
-	cmd.Flags().StringArrayVar(&v.Linked.On, "on", nil, "where to check, explicit environments (default build.default's profile, or build.unattended's where nobody looks)")
-	cmd.Flags().StringVar(&v.Linked.Build, "build", "", "where to check, by build profile (default build.default's, or build.unattended's where nobody looks)")
+	cmd.Flags().StringArrayVar(&v.Linked.On, "on", nil, "where to check, explicit environments (default: build.default's profile; build.unattended's for unattended work)")
+	cmd.Flags().StringVar(&v.Linked.Build, "build", "", "where to check, by build profile (default: build.default; build.unattended for unattended work)")
 	cmd.Flags().StringVar(&v.Linked.Tests, "tests", "", "the check's tests: declared (advisory), required, or skip (default check.tests)")
 	cmd.Flags().StringSliceVar(&v.Linked.Types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for an update dockhand made)")
 	cmd.Flags().BoolVar(&v.Linked.Draft, "draft", false, "open the pull request as a draft, even where its check fails")
@@ -425,6 +425,9 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		if update.CrossesMajor {
 			fmt.Fprintf(out, "New major version: ports that depend on %s may also need updates.\n", update.Port)
 		}
+		if update.LeavesStable {
+			fmt.Fprintf(out, "Prerelease: %s.\n", engine.LeavesStableWords(update.Port, update.Before.Version, update.After.Version))
+		}
 		if update.ClosedBefore != "" {
 			fmt.Fprintf(out, "Closed before: %s.\n", strings.TrimSuffix(update.ClosedBefore, "; a newer release lifts this"))
 		}
@@ -461,7 +464,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		writeOthers(out, update)
 		view.WritePlainHTTP(out, update.PlainHTTP)
 		if linked.Revbump {
-			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, true)
+			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, true, view.ListShown(streams))
 			streams.Emit(result)
 			return branch, update, err
 		}
@@ -581,7 +584,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	writeOthers(out, update)
 	view.WritePlainHTTP(out, update.PlainHTTP)
 	if linked.Revbump {
-		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, false); err != nil {
+		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, false, view.ListShown(streams)); err != nil {
 			return branch, update, err
 		}
 		streams.Emit(result)
@@ -628,7 +631,7 @@ func heldBeforeEdit(request engine.UpdateRequest, held []string) error {
 	if request.Version != "" {
 		next = fmt.Sprintf("dockhand update %s %s --new, then dockhand ship -p %s on a terminal", request.Port, request.Version, request.Port)
 	}
-	return term.Exitf(term.ExitAttention, "%s waits for your look, so nothing was changed: %s\nOnce it's fine: %s", request.Port, strings.Join(held, "; "), next)
+	return term.Exitf(term.ExitAttention, "%s needs review, so nothing was changed: %s\nAfter review: %s", request.Port, strings.Join(held, "; "), next)
 }
 
 // writeStealth shows each changed archive's checksums, before and after.
@@ -642,8 +645,9 @@ func writeStealth(out io.Writer, stealth *engine.Stealth) {
 }
 
 // revbumpLinked has the engine bump the revision of the ports that link
-// an updated one directly, or with plan list them, and says what it did.
-func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch, update engine.Update, except []string, plan bool) ([]string, error) {
+// an updated one directly, or with plan list them, and says what it did,
+// naming shown of them (view.ListShown).
+func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch, update engine.Update, except []string, plan bool, shown int) ([]string, error) {
 	done, err := e.RevbumpLinked(ctx, branch, update, except, plan)
 	if err != nil && len(done.Bump)+len(done.Changed)+len(done.Excepted) == 0 {
 		return nil, err
@@ -659,7 +663,7 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 			indexed = append(indexed, dependent.Name)
 		}
 	}
-	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", done.Base.Short(), view.OrNone(prose.Few(indexed, 12, "port")))
+	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", done.Base.Short(), view.OrNone(prose.Few(indexed, min(shown, 12), "port")))
 	if len(under) > 0 {
 		fmt.Fprintf(out, "    under a variant, found in the Portfile, which the index doesn't record: %s\n", strings.Join(under, ", "))
 	}

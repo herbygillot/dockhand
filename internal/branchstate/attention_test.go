@@ -81,7 +81,7 @@ func TestAnUncheckedTargetsBlockSaysWhere(t *testing.T) {
 		{Environment: model.Environment{Provider: "macOS 26"}},
 		{Environment: model.Environment{Provider: "macOS 13"}, PlannedIn: "check-4"},
 	}}
-	require.Equal(t, "ufraw has changed, but these files haven't been built on macOS 26; macOS 13, which check-4 planned and stopped before. Run dockhand check, or share the branch with --draft", block.Words(words{}))
+	require.Equal(t, "ufraw has changed, but these files haven't been built on macOS 26; macOS 13, planned by check-4, but the check stopped before building it. Run dockhand check, or share the branch with --draft", block.Words(words{}))
 }
 
 // A pull request whose CI failed fetching an archive says so, and runs
@@ -98,16 +98,16 @@ func TestFailingCISaysWhyAndWhetherAnotherRunMayPass(t *testing.T) {
 	require.Len(t, rows, 1)
 	require.Equal(t, CIFailing, rows[0].Reason)
 	require.Equal(t, Next{Verb: VerbRerunCI, Branch: "garage-2.4.1"}, rows[0].Next)
-	require.Equal(t, "#35174 MacPorts CI failed fetching jni-sys-macros-0.4.1.crate on macos-15 (1 hour ago)", rows[0].Words(words{}))
+	require.Equal(t, "#35174: MacPorts CI failed: fetching jni-sys-macros-0.4.1.crate on macos-15 (1 hour ago)", rows[0].Words(words{}))
 
 	branch.CI = append(branch.CI, model.CIFailure{Check: "macos-14", Run: 7, Attempt: 1, Job: 3, Cause: model.CIUnclassified})
 	rows = Attend(Facts{Branch: branch})
 	require.Equal(t, VerbOpenChecks, rows[0].Next.Verb, "one failure nobody read the cause of is looked at")
-	require.Equal(t, "#35174 MacPorts CI failed fetching jni-sys-macros-0.4.1.crate on macos-15 (1 hour ago)", rows[0].Words(words{}))
+	require.Equal(t, "#35174: MacPorts CI failed: fetching jni-sys-macros-0.4.1.crate on macos-15 (1 hour ago)", rows[0].Words(words{}))
 
 	branch.CI = nil
 	rows = Attend(Facts{Branch: branch})
-	require.Equal(t, "#35174 MacPorts CI failing: macos-15 (1 hour ago)", rows[0].Words(words{}), "none classified, it's as it was")
+	require.Equal(t, "#35174: MacPorts CI is failing for macos-15 (1 hour ago)", rows[0].Words(words{}), "none classified, it's as it was")
 }
 
 // A failed check whose failure a decision accepts is publishable, and goes

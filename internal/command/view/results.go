@@ -37,6 +37,8 @@ type updateJSON struct {
 	After   versionJSON   `json:"after"`
 	// CrossesMajor is an update to a new major version.
 	CrossesMajor bool `json:"crosses_major,omitempty"`
+	// LeavesStable is an update from a stable version to a prerelease.
+	LeavesStable bool `json:"leaves_stable,omitempty"`
 	// Renamed is the upstream repository's name now, where GitHub
 	// answers the Portfile's by redirect.
 	Renamed string `json:"renamed,omitempty"`
@@ -187,7 +189,7 @@ type otherJSON struct {
 }
 
 func UpdateView(branch model.Branch, started bool, update engine.Update, plan bool) updateJSON {
-	viewed := updateJSON{Branch: BranchRef(branch), Started: started, Port: update.Port, CrossesMajor: update.CrossesMajor, Renamed: update.Renamed, Followed: update.Followed,
+	viewed := updateJSON{Branch: BranchRef(branch), Started: started, Port: update.Port, CrossesMajor: update.CrossesMajor, LeavesStable: update.LeavesStable, Renamed: update.Renamed, Followed: update.Followed,
 		Before: versionJSON{update.Before.Version, update.Before.Revision}, After: versionJSON{update.After.Version, update.After.Revision},
 		Current: update.Current, Applied: update.Applied, Files: NonNil(update.Files), Distfiles: update.Distfiles, Subject: update.Subject, Patches: NonNil(update.PatchProblems), PatchesDropped: update.PatchesDropped, PatchesApplied: update.PatchesApplied,
 		Unchecked: NonNil(update.PatchesUnchecked)}

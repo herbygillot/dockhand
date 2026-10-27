@@ -171,7 +171,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timi
 		drawn = time.Now()
 		// The header, its blank line, and the prompt's line take three
 		// of the screen's rows.
-		fmt.Fprintf(streams.Out, "%sdockhand status --watch · %s · c check · l logs · t tidy · s submit, each <branch> · q quits\n\n%s\n> ",
+		fmt.Fprintf(streams.Out, "%sdockhand status --watch · %s · c check · l logs · t tidy · s submit · q quit (optional branch: c <branch>)\n\n%s\n> ",
 			clearView, drawn.Format("15:04:05"), fitHeight(strings.TrimRight(viewed.String(), "\n"), streams.Height()-3))
 	}
 	draw()

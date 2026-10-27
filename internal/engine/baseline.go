@@ -132,10 +132,15 @@ func (e *Engine) planBaseline(ctx context.Context, branch model.Branch, ports []
 	var also []string
 	directories := map[string]string{}
 	where := map[model.TargetID]planning.Limited{}
+	// A variant build is built with its variants at master too (I6).
+	variants := map[model.TargetID]model.Target{}
 	for _, target := range targets {
 		also = append(also, string(target.ID))
 		directories[string(target.ID)] = target.Directory
 		where[target.ID] = rebuildWhere(evidence, target.ID)
+		if len(target.Target.Variants) > 0 {
+			variants[target.ID] = target.Target
+		}
 	}
 	if len(also) == 0 {
 		return baseline, fmt.Errorf("%s: master %s has none of them, so there is nothing to compare", strings.Join(baseline.New, ", "), base.Short())
@@ -144,7 +149,7 @@ func (e *Engine) planBaseline(ctx context.Context, branch model.Branch, ports []
 		return baseline, err
 	}
 	baseline.Plan, err = e.PlanCheck(ctx, PlanRequest{Revision: baseline.Revision, Environments: baseline.OfPlan.Environments, Also: also, Tests: baseline.OfPlan.Tests,
-		directories: directories, alone: true, where: where})
+		directories: directories, alone: true, where: where, variants: variants})
 	if err != nil {
 		return baseline, err
 	}

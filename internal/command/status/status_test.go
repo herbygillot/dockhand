@@ -86,7 +86,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 	out, _, err = cmdtest.Dockhand(t)
 	require.NoError(t, err, "bare dockhand in a ports checkout is status")
-	require.Contains(t, out, "Needs you (1)\n  ✓ jq-update  snapshot 1 passed; commit it for review\n               dockhand tidy --branch jq-update\n")
+	require.Contains(t, out, "Needs attention (1)\n  ✓ jq-update  snapshot 1 passed; commit it for review\n               dockhand tidy --branch jq-update\n")
 	require.NotContains(t, out, "Working", "a branch that needs you is in that group alone")
 	out, _, err = cmdtest.Dockhand(t, "status", "-v")
 	require.NoError(t, err)
@@ -147,7 +147,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.EqualError(t, err, "watch is part of status now: dockhand status --watch keeps it current")
 	out, _, err = cmdtest.Dockhand(t, "check", "-d", "--replace")
 	require.NoError(t, err)
-	require.Contains(t, out, "Replaced check-1, canceled before it started.\ncheck-2 queued", "it was only queued (the hugo exercise's certigo run, finding 5)")
+	require.Contains(t, out, "Replaced check-1, canceled before it started.\ncheck-2 was queued", "it was only queued (the hugo exercise's certigo run, finding 5)")
 
 	// --follow prints a target's log as the driver copies it, until its
 	// build ends (the gnome-voice session's notes, 2026-10-20): check-2,
@@ -348,7 +348,7 @@ func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
 	rows := view.AttentionFor(status)
 	require.Len(t, rows, 1)
 	require.Equal(t, "check-3 passed, but since then "+engine.DescribeEnvironment(arm)+" was made again, from another source or with other tools; jq must be built there again", rows[0].What)
-	require.Equal(t, "passed, but needs another check", view.CheckState(status), "the table agrees")
+	require.Equal(t, "previous check passed; a new check is required", view.CheckState(status), "the table agrees")
 
 	// Where the provider can say what changed, as Tart says a new guest
 	// protocol, it's said: the image is the one it was (the s2n-tls run).
@@ -378,7 +378,7 @@ func TestStatusSaysAHoldAsSubmitTreatsIt(t *testing.T) {
 		LatestRevision: &model.Revision{Kind: model.RevisionCommit},
 		Evidence:       &engine.Evidence{Targets: []engine.TargetEvidence{{Target: model.PlanTarget{Target: model.Target{Name: "jq"}, Role: model.Changed}, Passed: true}}},
 		Held:           []model.Concern{held}}
-	require.Equal(t, "passed; upstream's COPYING changed; submit shows it for your look", view.AttentionFor(status)[0].What)
+	require.Equal(t, "passed; upstream's COPYING changed; run submit to review it", view.AttentionFor(status)[0].What)
 	status.Branch.Origin = model.OriginServe
 	require.Equal(t, "passed; submission paused for review: upstream's COPYING changed", view.AttentionFor(status)[0].What)
 
@@ -476,7 +476,7 @@ func TestAnArchivedBranchAsksNothingOfItsChecks(t *testing.T) {
 	status.Evidence = &engine.Evidence{Targets: []engine.TargetEvidence{{Target: model.PlanTarget{Target: model.Target{Name: "duckdb"}, Role: model.Changed}, Unchecked: true}}}
 	require.Equal(t, "passed (check-3)", view.CheckState(status))
 	status.Branch.State = model.BranchOpen
-	require.Equal(t, "passed, but needs another check", view.CheckState(status))
+	require.Equal(t, "previous check passed; a new check is required", view.CheckState(status))
 }
 
 // A branch whose work is on master already, landed by another route, asks
@@ -576,6 +576,6 @@ func TestSubmitJSONGivesEachBlocksKind(t *testing.T) {
 	plan := engine.SubmitPlan{Blocks: []branchstate.Block{{Kind: branchstate.BlockNoTitle}, {Kind: branchstate.BlockFailed, Port: "jq", Run: "check-2"}}}
 	require.Equal(t, []view.BlockJSON{
 		{Kind: "no-title", Words: "the pull request needs a title, since the branch changes several ports: give one with --title"},
-		{Kind: "failed", Port: "jq", Words: "jq did not pass in check-2; fix it, or share it as a draft (--draft); dockhand check --baseline sees whether master fails it the same way"},
+		{Kind: "failed", Port: "jq", Words: "jq did not pass in check-2. Fix the failure, submit a draft with --draft, or run dockhand check --baseline to see whether master fails in the same way"},
 	}, view.SubmitView(plan).Blocks)
 }
