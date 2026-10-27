@@ -226,6 +226,9 @@ type Result struct {
 	// absent where the guest couldn't read them (Then's item 9).
 	Installed []string  `json:"installed"`
 	Libraries []Library `json:"libraries"`
+	// Configure are its configure phase's summary lines, as its log said
+	// them (Then's item 10); absent where they weren't read.
+	Configure []string `json:"configure"`
 }
 
 // Library is one of a target's own dynamic libraries: its file, its
@@ -589,6 +592,9 @@ func (f *Follower) record(ctx context.Context, g Guest, job buildenv.Job, build 
 	}
 	if got.Installed != nil {
 		report.Installed = slices.Clone(got.Installed)
+	}
+	if got.Configure != nil {
+		report.Configure = slices.Clone(got.Configure)
 	}
 	if got.Libraries != nil {
 		report.Libraries = make([]model.Library, len(got.Libraries))

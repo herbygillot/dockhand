@@ -23,6 +23,11 @@ type InstallChange struct {
 	Libraries   []LibraryChange
 	Removed     []string
 	Added       []string
+	// Found and Lost are the configure summary's lines this build's has
+	// and the earlier's didn't, and the other way about (Then's item 10):
+	// duckdb's LINK_CORE_EXTENSIONS dropping two, libxkbcommon's optional
+	// ICU.
+	Found, Lost []string
 }
 
 // LibraryChange is one of a target's libraries whose install name or
@@ -43,7 +48,29 @@ func (c LibraryChange) Words() string {
 
 // Empty reports a change that changes nothing.
 func (c InstallChange) Empty() bool {
-	return len(c.Libraries)+len(c.Removed)+len(c.Added) == 0
+	return len(c.Libraries)+len(c.Removed)+len(c.Added)+len(c.Found)+len(c.Lost) == 0
+}
+
+// CompareConfigure diffs a build's configure summary with an earlier
+// build's, purely: the lines found now, and those lost; ok is false where
+// either wasn't read, which says nothing, unknown and never equal. A line
+// whose answer moved, "checking for icu... no" from "... yes", is one lost
+// and one found.
+func CompareConfigure(before, after model.TargetResult) (found, lost []string, ok bool) {
+	if before.Configure == nil || after.Configure == nil {
+		return nil, nil, false
+	}
+	for _, line := range after.Configure {
+		if !slices.Contains(before.Configure, line) {
+			found = append(found, line)
+		}
+	}
+	for _, line := range before.Configure {
+		if !slices.Contains(after.Configure, line) {
+			lost = append(lost, line)
+		}
+	}
+	return found, lost, true
 }
 
 // CompareInstalled compares a build's installed files and libraries with

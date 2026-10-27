@@ -103,7 +103,7 @@ set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 	portLog := filepath.Join(root, "port.log")
 	otool := filepath.Join(root, "otool")
 	require.NoError(t, os.WriteFile(otool, []byte(guesttest.FakeOtool), 0o755))
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "CONFIGURESAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	return command
 }
 
@@ -127,8 +127,8 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 	require.Equal(t, "finished", results.State, results.Detail)
 	steps := []Step{{"clean", 1}, {"lint", 2}, {"dependencies", 3}, {"fetch", 4}, {"checksum", 5}, {"install", 6}}
 	require.Equal(t, []Result{
-		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "libharbor.log", Active: []Port{}, Steps: append(slices.Clone(steps), Step{"test", 7})},
-		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log", Active: []Port{}, Steps: steps},
+		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "libharbor.log", Active: []Port{}, Configure: []string{}, Steps: append(slices.Clone(steps), Step{"test", 7})},
+		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log", Active: []Port{}, Configure: []string{}, Steps: steps},
 	}, results.Targets)
 	// The guest says what uname -m says, here the Mac running the test's.
 	require.Equal(t, map[string]string{"arm64": "arm64", "amd64": "x86_64"}[runtime.GOARCH], results.Environment["architecture"])
@@ -724,8 +724,10 @@ func TestAPassedBuildKeepsWhatItInstalledAndItsLibrariesNames(t *testing.T) {
 	}
 	require.NoError(t, os.WriteFile(library+".loads", []byte("Load command 3\n          cmd LC_ID_DYLIB\n      cmdsize 56\n         name "+library+" (offset 24)\n   time stamp 1 Thu Jan  1 00:00:01 1970\n      current version 28.0.2\ncompatibility version 28.0.0\nLoad command 4\n          cmd LC_LOAD_DYLIB\n"), 0o644))
 	input := Input{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []Target{{ID: "exiv2", Name: "exiv2", Portfile: "graphics/exiv2/Portfile", Log: buildenv.LogName("exiv2")}}}
-	results, _ := guestRunIn(t, root, input, "CONTENTS="+tool+"\\n"+library+"\\n")
+	says := "checking for icu-uc... yes\\n-- Found ZLIB: /opt/local/lib/libz.dylib (found version \"1.3.1\")\\n-- Could NOT find LibArchive (missing: LibArchive_LIBRARY)\\nDependency libxml-2.0 found: YES 2.13.5 (cached)\\nchecking for icu-uc... yes\\n"
+	results, _ := guestRunIn(t, root, input, "CONTENTS="+tool+"\\n"+library+"\\n", "CONFIGURESAYS="+says)
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Equal(t, []string{tool, library}, results.Targets[0].Installed)
+	require.Equal(t, []string{"checking for icu-uc... yes", "-- Found ZLIB", "-- Could NOT find LibArchive", "Dependency libxml-2.0 found: YES"}, results.Targets[0].Configure, "each once, as found and not where")
 	require.Equal(t, []Library{{File: library, Name: library, Compatibility: "28.0.0"}}, results.Targets[0].Libraries)
 }

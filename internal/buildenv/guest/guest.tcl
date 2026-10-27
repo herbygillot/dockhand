@@ -58,7 +58,7 @@ proc save {state {detail ""}} {
     foreach result $results {
         set fields {}
         dict for {key value} $result {
-            if {$key eq "installed"} {
+            if {$key in {installed configure}} {
                 lappend fields $key [json::write array {*}[lmap file $value { json::write string $file }]]
             } elseif {$key in {active links libraries}} {
                 set ports {}
@@ -486,6 +486,33 @@ proc links {contents} {
         if {[dict exists $owners $library]} { set owner [dict get $owners $library] }
         dict create binary $file library $library port $owner
     }]
+}
+
+# summary are the configure phase's summary lines in a build's log, each
+# once, in order (Then's item 10): autoconf's "checking for …", CMake's
+# "-- Found …" and "-- Could NOT find …", and meson's "Dependency … found",
+# each said as it says what it found and not where or at what version, as
+# a CMake path or a meson version moves with every build: what an update
+# found, or stopped finding, against the port's previous build.
+proc summary {log} {
+    set found {}
+    if {[catch {open $log r} fd]} { error "can't read $log: $fd" }
+    while {[gets $fd line] >= 0} {
+        set line [string trim $line]
+        set said ""
+        if {[regexp {^checking (for |whether |if ).*\.\.\. } $line]} {
+            set said $line
+        } elseif {[regexp {^-- (Found [^:]+?)(:| \(|$)} $line -> what]} {
+            set said "-- $what"
+        } elseif {[regexp {^-- (Could NOT find \S+)} $line -> what]} {
+            set said "-- $what"
+        } elseif {[regexp {^(Run-time dependency|Dependency|Found pkg-config|Library) (\S+) found: (YES|NO)} $line -> kind what answer]} {
+            set said "$kind $what found: $answer"
+        }
+        if {$said ne "" && $said ni $found} { lappend found $said }
+    }
+    close $fd
+    return $found
 }
 
 # contents are the files a target installed, as port contents lists them,
@@ -1056,6 +1083,10 @@ foreach target [dict get $input targets] {
             } else {
                 dict set result libraries $own
             }
+        }
+        # And what its configure found, from its log (Then's item 10).
+        if {![catch {summary $root/[dict get $result log]} said]} {
+            dict set result configure $said
         }
     }
     lappend results $result

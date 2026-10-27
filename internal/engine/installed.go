@@ -41,7 +41,7 @@ func (e *Engine) InstallChanges(ctx context.Context, run model.Run) ([]InstallFi
 		for _, target := range checked.Targets {
 			for _, cell := range target.Outcomes {
 				result := cell.TargetResult
-				if cell.Kind != evidence.CellRecorded || result.Outcome != model.OutcomePassed || result.ReusedFrom != "" || result.Installed == nil {
+				if cell.Kind != evidence.CellRecorded || result.Outcome != model.OutcomePassed || result.ReusedFrom != "" || result.Installed == nil && result.Configure == nil {
 					continue
 				}
 				if execution, ok := checked.Executions[result.Execution]; !ok || execution.Run != run.ID {
@@ -51,12 +51,17 @@ func (e *Engine) InstallChanges(ctx context.Context, run model.Run) ([]InstallFi
 				if err != nil {
 					return err
 				}
-				i := slices.IndexFunc(earlier, func(b store.Build) bool { return b.Execution.Run != run.ID && b.Result.Installed != nil })
+				i := slices.IndexFunc(earlier, func(b store.Build) bool {
+					return b.Execution.Run != run.ID && (b.Result.Installed != nil || b.Result.Configure != nil)
+				})
 				if i < 0 {
 					continue
 				}
-				change, ok := evidence.CompareInstalled(earlier[i].Result, result)
-				if !ok || change.Empty() {
+				change, _ := evidence.CompareInstalled(earlier[i].Result, result)
+				// And what its configure found, against the same build
+				// (Then's item 10).
+				change.Found, change.Lost, _ = evidence.CompareConfigure(earlier[i].Result, result)
+				if change.Empty() {
 					continue
 				}
 				change.Target, change.Environment = target.Target.ID, cell.Environment
