@@ -107,18 +107,18 @@ func TestCheckAndProviderSettings(t *testing.T) {
 	_, err = parse("config.toml", "[providers.local]\nbuild_timeout = \"soon\"\n")
 	require.ErrorContains(t, err, "providers.local.build_timeout")
 
-	f, err = parse("config.toml", "[providers.tart]\ncapacity = 2\ntest_timeout = \"45m\"\n")
+	f, err = parse("config.toml", "[providers.tart]\ntest_timeout = \"45m\"\n")
 	require.NoError(t, err)
-	require.Equal(t, 2, f.Capacity("tart"))
+	require.Equal(t, 2, f.Capacity("tart"), "as many checks as the Mac runs VMs")
 	require.Equal(t, 45*time.Minute, f.Providers.Tart.Timeout())
 	f, err = parse("config.toml", "")
 	require.NoError(t, err)
-	require.Equal(t, 1, f.Capacity("tart"), "macOS runs two VMs, the person's own among them")
+	require.Equal(t, TartCapacity, f.Capacity("tart"), "no setting: the Mac's VMs are the limit")
 	require.Zero(t, f.Providers.Tart.Timeout())
 	_, err = parse("config.toml", "[providers.tart]\ntest_timeout = \"soon\"\n")
 	require.ErrorContains(t, err, "providers.tart.test_timeout")
-	_, err = parse("config.toml", "[providers.tart]\ncapacity = -1\n")
-	require.ErrorContains(t, err, "providers.tart.capacity")
+	_, err = parse("config.toml", "[providers.tart]\ncapacity = 2\n")
+	require.ErrorContains(t, err, "providers.tart.capacity", "the key is gone, refused by name as any unknown key is")
 }
 
 func TestCleanupSettings(t *testing.T) {
@@ -279,7 +279,6 @@ func TestDefaultsAreWhatTheAccessorsFallBackOn(t *testing.T) {
 	require.Equal(t, defaults["serve.submit_limit"], strconv.Itoa(f.Serve.Limit()))
 	require.Equal(t, defaults["cleanup.after"], ageWords(f.Cleanup.Age()))
 	require.Equal(t, "15d", defaults["cleanup.after"])
-	require.Equal(t, defaults["providers.tart.capacity"], strconv.Itoa(f.Capacity("tart")))
 	require.Equal(t, defaults["providers.command.capacity"], strconv.Itoa(f.Capacity("command")))
 	require.Equal(t, defaults["providers.github.capacity"], strconv.Itoa(f.Capacity("github")))
 	require.Equal(t, "30m", defaults["providers.tart.test_timeout"])
