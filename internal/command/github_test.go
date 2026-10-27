@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -42,6 +43,11 @@ type fakeActions struct {
 	// hold keeps a run in progress, calling hold at each look, until it
 	// returns false.
 	hold func() bool
+	// workflow is the fork's workflow's state, active when empty.
+	workflow string
+	// untaken are the jobs GitHub cancelled before any runner took them,
+	// which have no runner and no log.
+	untaken map[string]bool
 }
 
 // fakeRun is a run, and the branch and commit whose push started it.
@@ -157,6 +163,10 @@ func (f *fakeActions) Jobs(_ context.Context, _ string, id int64, attempt int) (
 		if _, ok := f.logs[attempt-1][name]; ok {
 			// Each job ran on a runner of the label its name gives.
 			label := strings.TrimSuffix(strings.TrimPrefix(name, "build ("), ")")
+			if f.untaken[name] {
+				jobs = append(jobs, ghactions.RunnerJob{ID: int64(attempt*10 + i), Name: name, Status: "completed", Conclusion: "cancelled", Labels: []string{label}})
+				continue
+			}
 			jobs = append(jobs, ghactions.RunnerJob{ID: int64(attempt*10 + i), Name: name, Status: "completed", Labels: []string{label}, RunnerName: fmt.Sprint("GitHub Actions ", 1000+i)})
 		}
 	}
@@ -165,8 +175,20 @@ func (f *fakeActions) Jobs(_ context.Context, _ string, id int64, attempt int) (
 	return jobs, nil
 }
 
+// WorkflowState says the fork's workflow's state, active, as Actions
+// enabled leave it, unless the test says otherwise.
+func (f *fakeActions) WorkflowState(context.Context, string) (string, error) {
+	if f.workflow == "" {
+		return "active", nil
+	}
+	return f.workflow, nil
+}
+
 func (f *fakeActions) JobLog(_ context.Context, _ string, job int64) ([]byte, error) {
 	name := []string{"build (macos-14)", "build (macos-15)"}[job%10]
+	if f.untaken[name] {
+		return nil, errors.New("job log: fetch: HTTP 404")
+	}
 	return []byte(f.logs[job/10-1][name]), nil
 }
 
@@ -246,6 +268,52 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 	logs, _, err = cmdtest.Dockhand(t, "logs", "https://github.com/ada/macports-ports/actions/runs/7")
 	require.NoError(t, err)
 	require.Regexp(t, `github, attempt 1, run github_[a-z0-9]{16}: finished`, logs)
+}
+
+// A fork whose workflow won't run is said at once, before anything is
+// pushed, with its Actions page, where the check waited ten minutes for a
+// run that never came, and a retry ten more (the docs dig's I24).
+func TestAGitHubCheckRefusesAtOnceWhereTheForksWorkflowWontRun(t *testing.T) {
+	t.Parallel()
+	f, _ := githubBranch(t)
+	f.workflow = "disabled_manually"
+	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github")
+	require.Error(t, err)
+	require.Contains(t, errs+err.Error(), "ada/macports-ports's main.yml workflow is disabled_manually, so GitHub won't start a check's run; enable the fork's Actions: https://github.com/ada/macports-ports/actions")
+	require.Empty(t, f.runs)
+	require.Empty(t, checkBranches(t, f), "nothing was pushed")
+
+	// setup's github line reads the same, signed in.
+	cmdtest.Setenv(t, "GH_TOKEN", "ghp_"+strings.Repeat("a", 36))
+	out, _, _ := cmdtest.Dockhand(t, "setup", "--yes")
+	require.Contains(t, cmdtest.Flat(out), "ada/macports-ports's main.yml workflow is disabled_manually")
+	f.workflow = "active"
+	out, _, _ = cmdtest.Dockhand(t, "setup", "--yes")
+	require.Contains(t, cmdtest.Flat(out), "ada/macports-ports's Actions are enabled")
+}
+
+// A job GitHub cancelled before any runner took it has no log, so none is
+// asked for: the other job's results are read, and where it alone was
+// the run, the reason says so, where it read "job log: fetch: HTTP 404"
+// (the M1's B9 on rc4, while GitHub's macOS runners were down).
+func TestAJobNoRunnerTookIsSaid(t *testing.T) {
+	t.Parallel()
+	f, _ := githubBranch(t)
+	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": ""}}
+	f.untaken = map[string]bool{"build (macos-15)": true}
+	f.conclusion = []string{"failure"}
+	out, errs, err := cmdtest.Dockhand(t, "check", "--on", "github")
+	require.NotContains(t, errs+out, "HTTP 404")
+	require.Contains(t, out, "  jq  ✓ tests passed", "macos-14's result is read: %v", err)
+
+	f, _ = githubBranch(t)
+	f.logs = []map[string]string{{"build (macos-15)": ""}, {"build (macos-15)": ""}, {"build (macos-15)": ""}}
+	f.untaken = map[string]bool{"build (macos-15)": true}
+	f.conclusion = []string{"cancelled", "cancelled", "cancelled"}
+	_, errs, err = cmdtest.Dockhand(t, "check", "--on", "github")
+	require.Error(t, err)
+	require.Contains(t, errs+err.Error(), "GitHub cancelled macos-15's job before any runner took it; see https://github.com/ada/macports-ports/actions/runs/")
+	require.NotContains(t, errs+err.Error(), "HTTP 404")
 }
 
 func TestGitHubRunsAFailureNoPortExplainsAgain(t *testing.T) {

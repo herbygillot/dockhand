@@ -313,9 +313,9 @@ func (t *tx) RecordAssessment(a model.Assessment) error {
 	if err != nil {
 		return err
 	}
-	_, err = t.exec("INSERT INTO assessments(repository_id, branch_id, tree, base, port, directory, comparison, policy, at) VALUES(?,?,?,?,?,?,?,?,?) "+
-		"ON CONFLICT(repository_id, branch_id, tree, base, port) DO UPDATE SET directory=excluded.directory, comparison=excluded.comparison, policy=excluded.policy, at=excluded.at",
-		t.repo, a.Branch, a.Tree, a.Base, a.Port, a.Directory, string(comparison), a.Policy, millis(a.At))
+	_, err = t.exec("INSERT INTO assessments(repository_id, branch_id, tree, base, port, directory, comparison, policy, build, at) VALUES(?,?,?,?,?,?,?,?,?,?) "+
+		"ON CONFLICT(repository_id, branch_id, tree, base, port) DO UPDATE SET directory=excluded.directory, comparison=excluded.comparison, policy=excluded.policy, build=excluded.build, at=excluded.at",
+		t.repo, a.Branch, a.Tree, a.Base, a.Port, a.Directory, string(comparison), a.Policy, a.Build, millis(a.At))
 	return err
 }
 
@@ -377,7 +377,7 @@ func (t *tx) ChangeRecords(filter store.AssessmentFilter) ([]model.ChangeRecord,
 // assessment_branch, every one the branch had, to spare itself sorting
 // the revision's few.
 func assessmentsQuery(repository model.RepositoryID, filter store.AssessmentFilter) (string, []any) {
-	query, args := "SELECT branch_id, tree, base, port, directory, comparison, policy, at FROM assessments WHERE repository_id=?", []any{repository}
+	query, args := "SELECT branch_id, tree, base, port, directory, comparison, policy, build, at FROM assessments WHERE repository_id=?", []any{repository}
 	if filter.Branch != "" {
 		query += " AND branch_id=?"
 		args = append(args, filter.Branch)
@@ -405,7 +405,7 @@ func (t *tx) Assessments(filter store.AssessmentFilter) ([]model.Assessment, err
 		var a model.Assessment
 		var comparison string
 		var at int64
-		if err := rows.Scan(&a.Branch, &a.Tree, &a.Base, &a.Port, &a.Directory, &comparison, &a.Policy, &at); err != nil {
+		if err := rows.Scan(&a.Branch, &a.Tree, &a.Base, &a.Port, &a.Directory, &comparison, &a.Policy, &a.Build, &at); err != nil {
 			return nil, storageError(err)
 		}
 		if err := json.Unmarshal([]byte(comparison), &a.Comparison); err != nil {

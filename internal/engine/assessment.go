@@ -13,6 +13,7 @@ import (
 	"time"
 
 	archivefile "github.com/herbygillot/dockhand/internal/archive"
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
@@ -176,7 +177,7 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 			continue
 		}
 		if err != nil {
-			made = append(made, model.Assessment{Branch: branch, Tree: tree, Base: base, Port: directory, Directory: directory, Policy: assess.Policy, At: e.now(),
+			made = append(made, model.Assessment{Branch: branch, Tree: tree, Base: base, Port: directory, Directory: directory, Policy: assess.Policy, Build: assessmentBuild(), At: e.now(),
 				Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}, Problem: "its ports couldn't be read: " + err.Error()}})
 			continue
 		}
@@ -205,7 +206,7 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 				found = append(found, a)
 				continue
 			}
-			made = append(made, model.Assessment{Branch: branch, Tree: tree, Base: base, Port: port.Name, Directory: directory, Policy: assess.Policy, At: e.now(),
+			made = append(made, model.Assessment{Branch: branch, Tree: tree, Base: base, Port: port.Name, Directory: directory, Policy: assess.Policy, Build: assessmentBuild(), At: e.now(),
 				Comparison: e.assessPort(ctx, planner, sources, directory, [2]string{macports.CounterpartIn(basePorts, port.Name), port.Name}, exists[0])})
 		}
 	}
@@ -218,11 +219,21 @@ const refusedAgainAfter = 24 * time.Hour
 
 // lookAgain reports whether a recorded assessment is made again rather
 // than reused: one that couldn't compare for what another try may meet
-// at once, or for a server's refusal a day old.
+// at once, or for a server's refusal a day old, and one another build
+// made that couldn't compare at all, since most of what field testing
+// fixes turns such a refusal into a reading, which raising assess.Policy
+// for it was a habit rather than a rule to bring (the docs dig's I26). A
+// complete one stands across builds.
 func (e *Engine) lookAgain(a model.Assessment) bool {
 	kind := refusal.Kind(a.Comparison.ProblemKind)
+	if a.Comparison.Problem != "" && a.Build != assessmentBuild() {
+		return true
+	}
 	return kind.Transient() || kind == refusal.UpstreamMissing && e.now().Sub(a.At) >= refusedAgainAfter
 }
+
+// assessmentBuild is this dockhand's build, as an assessment records it.
+func assessmentBuild() string { return buildinfo.Current().String() }
 
 // binaryPackage starts what reading a revision's archives says of one
 // that's a binary package, which the assessment says as nothing to

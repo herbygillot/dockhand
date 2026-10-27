@@ -36,7 +36,7 @@ var commandImports = map[string]string{
 	"internal/macports/commitrules": "vocabulary in engine results, and explain's text",
 	"internal/compose":              "the engine, its providers, and its GitHub runtime, assembled for the command",
 	"internal/buildenv":             "vocabulary: the providers' names, which check's and logs' words say, and what a check changed of the person's, which status says",
-	"internal/buildenv/ghactions":   "vocabulary: the branch prefix check's preview names",
+	"internal/buildenv/ghactions":   "vocabulary: the branch prefix check's preview names, and setup's word on the fork's workflow",
 	"internal/buildenv/tart":        "setup's, until part 4.2: Tart's images and readiness, and config's Xcodes",
 	"internal/buildenv/local":       "setup's: whether the local provider builds on this Mac",
 	"internal/github":               "setup's, until part 4.2: the login and its source; and GitHub's pull request URLs, the spend log, and the allowance",

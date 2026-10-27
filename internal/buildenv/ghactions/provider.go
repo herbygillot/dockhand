@@ -28,6 +28,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // Workflow is MacPorts' workflow, the one that builds a branch's changed
@@ -107,6 +109,36 @@ type API interface {
 	Cancel(ctx context.Context, repository string, id int64) error
 	Jobs(ctx context.Context, repository string, id int64, attempt int) ([]RunnerJob, error)
 	JobLog(ctx context.Context, repository string, job int64) ([]byte, error)
+	// WorkflowState is the fork's workflow's state, active where its runs
+	// start, or ErrNoWorkflow where it has none.
+	WorkflowState(ctx context.Context, repository string) (string, error)
+}
+
+// ErrNoWorkflow is a fork with no workflow named Workflow.
+var ErrNoWorkflow = errors.New("the fork has no " + Workflow + " workflow")
+
+// WorkflowWords say why the fork's workflow won't run a push, where it
+// won't: missing, or in a state other than active, as GitHub leaves a new
+// fork's until its Actions are enabled; empty where it will.
+func WorkflowWords(repository, state string, err error) string {
+	switch {
+	case errors.Is(err, ErrNoWorkflow):
+		return fmt.Sprintf("%s has no %s workflow, so GitHub won't start a check's run; sync the fork with macports/macports-ports", repository, Workflow)
+	case err == nil && state != "active":
+		return fmt.Sprintf("%s's %s workflow is %s, so GitHub won't start a check's run; enable the fork's Actions: https://github.com/%s/actions", repository, Workflow, state, repository)
+	}
+	return ""
+}
+
+// ForkWorkflow is the fork and its workflow's state, which setup says
+// and a check reads before it pushes.
+func (p *Provider) ForkWorkflow(ctx context.Context) (string, string, error) {
+	fork, err := p.Fork(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	state, err := p.API.WorkflowState(ctx, fork.Repository)
+	return fork.Repository, state, err
 }
 
 // Provider builds in your fork's Actions.
@@ -155,6 +187,14 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	fork, err := p.Fork(ctx)
 	if err != nil {
 		return buildenv.Infrastructure("%w", err)
+	}
+	// A fork whose workflow won't run is said before anything is pushed,
+	// where it was ten minutes of waiting for a run that never came, and
+	// each retry ten more (the docs dig's I24): GitHub leaves a new fork's
+	// Actions off. One that can't be read is waited out as before.
+	state, err := p.API.WorkflowState(ctx, fork.Repository)
+	if words := WorkflowWords(fork.Repository, state, err); words != "" {
+		return refusal.New(refusal.Environment, "%s", words)
 	}
 	branch := BranchPrefix + job.Commit[:12]
 	head, err := p.Repo.RemoteHead(ctx, fork.PushURL, branch)
@@ -321,8 +361,16 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		return err
 	}
 	var runners []runner
+	// untaken are the jobs GitHub cancelled before any runner took them,
+	// as while its macOS runners were down during the M1's B9: no runner,
+	// no log, where asking for one read "job log: fetch: HTTP 404".
+	var untaken []string
 	for _, j := range jobs {
 		if j.Conclusion == "skipped" {
+			continue
+		}
+		if j.RunnerName == "" {
+			untaken = append(untaken, j.Name)
 			continue
 		}
 		log, err := p.API.JobLog(ctx, repository, j.ID)
@@ -372,9 +420,25 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		build.Progress(fmt.Sprintf("the workflow did not build %s; it builds only the ports a commit changes", strings.Join(unbuilt, ", ")))
 	}
 	if recorded == 0 && run.Conclusion != "success" {
+		if len(untaken) > 0 {
+			return buildenv.Infrastructure("GitHub cancelled %s before any runner took %s; see %s", prose.And(jobWords(untaken)), map[bool]string{true: "it", false: "them"}[len(untaken) == 1], run.URL)
+		}
 		return buildenv.Infrastructure("%s ended %s without building a port; see %s", run.URL, run.Conclusion, job.Directory)
 	}
 	return nil
+}
+
+// jobWords name jobs by their runner's label, as a person reads them,
+// "macos-15's job".
+func jobWords(names []string) []string {
+	words := make([]string, len(names))
+	for i, name := range names {
+		if open, close := strings.Index(name, "("), strings.LastIndex(name, ")"); open >= 0 && close > open {
+			name = name[open+1 : close]
+		}
+		words[i] = name + "'s job"
+	}
+	return words
 }
 
 // observe records the macOS release of each of the run's runners, as its

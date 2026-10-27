@@ -66,6 +66,8 @@ func TestTheActionsAPIAsDockhandAsksIt(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/repos/ada/macports-ports/actions/runs/11/rerun-failed-jobs":
 			w.WriteHeader(http.StatusCreated)
 			w.Write([]byte(`{}`))
+		case r.URL.Path == "/api/repos/ada/macports-ports/actions/workflows/"+Workflow:
+			w.Write([]byte(`{"id":5,"name":"CI","path":".github/workflows/main.yml","state":"disabled_manually"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/repos/ada/macports-ports/actions/runs/12/cancel":
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{}`))
@@ -99,6 +101,13 @@ func TestTheActionsAPIAsDockhandAsksIt(t *testing.T) {
 	require.NoError(t, api.Rerun(t.Context(), "ada/macports-ports", 11))
 	require.NoError(t, api.Cancel(t.Context(), "ada/macports-ports", 12), "202 is the run stopping")
 	require.ErrorContains(t, api.Cancel(t.Context(), "ada/macports-ports", 13), "404")
+	// The fork's workflow's state, and a fork with none (the docs dig's
+	// I24).
+	state, err := api.WorkflowState(t.Context(), "ada/macports-ports")
+	require.NoError(t, err)
+	require.Equal(t, "disabled_manually", state)
+	_, err = api.WorkflowState(t.Context(), "bob/macports-ports")
+	require.ErrorIs(t, err, ErrNoWorkflow)
 	_, err = api.Runs(t.Context(), "not a repository", "b", "c")
 	require.ErrorContains(t, err, "invalid repository")
 }
