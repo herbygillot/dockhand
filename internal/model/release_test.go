@@ -45,3 +45,19 @@ func TestAReleaseNamesTheGitSourceItsForgeClones(t *testing.T) {
 	untagged.Tag, untagged.Commit = "", ""
 	require.False(t, untagged.Names(source("https://github.com/harbor/libharbor.git", "")), "no tag is no ref")
 }
+
+// An update's commit body names the version it updates from and links the
+// release's page, else the compare page between the two tags, as far as
+// they're known, and is empty where nothing is (the docs dig's I11).
+func TestAnUpdatesCommitBodyNamesItsRelease(t *testing.T) {
+	release := Release{ReleaseSelection: ReleaseSelection{CurrentVersion: "1.7.1"}, Version: "1.8.1", Forge: "github", Instance: "https://github.com", Repository: "jqlang/jq", Tag: "jq-1.8.1",
+		Page: "https://github.com/jqlang/jq/releases/tag/jq-1.8.1", FromTag: "jq-1.7.1"}
+	require.Equal(t, "Updates from 1.7.1.\nRelease: https://github.com/jqlang/jq/releases/tag/jq-1.8.1", release.CommitBody())
+	release.Page = ""
+	require.Equal(t, "Updates from 1.7.1.\nChanges: https://github.com/jqlang/jq/compare/jq-1.7.1...jq-1.8.1", release.CommitBody(), "no page: the compare link")
+	release.Forge, release.Instance = "gitlab", "https://gitlab.gnome.org"
+	require.Equal(t, "Updates from 1.7.1.\nChanges: https://gitlab.gnome.org/jqlang/jq/-/compare/jq-1.7.1...jq-1.8.1", release.CommitBody())
+	release.FromTag = ""
+	require.Equal(t, "Updates from 1.7.1.", release.CommitBody(), "no tag to compare from: the version alone")
+	require.Empty(t, Release{Version: "1.8.1"}.CommitBody(), "nothing known: nothing said")
+}

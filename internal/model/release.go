@@ -1,6 +1,7 @@
 package model
 
 import (
+	"net/url"
 	"strings"
 	"time"
 )
@@ -69,6 +70,46 @@ type Release struct {
 	Tag        string
 	Commit     string
 	ObservedAt time.Time
+	// Page is the forge's page of the release, where its listing gave one,
+	// and FromTag the tag of the version it updates from, where the
+	// listing names it: what an update's commit body links (CommitBody).
+	Page    string `json:",omitempty"`
+	FromTag string `json:",omitempty"`
+}
+
+// CommitBody is what an update's commit says of its release beyond its
+// subject, at best effort: the version it updates from, and a link to the
+// release's page, else to the compare page between the two tags where
+// both are known; empty where none of it is (the docs dig's I11). A
+// reviewer looked each up by hand.
+func (r Release) CommitBody() string {
+	var lines []string
+	if r.CurrentVersion != "" && r.CurrentVersion != r.Version {
+		lines = append(lines, "Updates from "+r.CurrentVersion+".")
+	}
+	switch compare := r.compareURL(); {
+	case r.Page != "":
+		lines = append(lines, "Release: "+r.Page)
+	case compare != "":
+		lines = append(lines, "Changes: "+compare)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// compareURL is the forge's page comparing the two tags, on GitHub or a
+// GitLab instance; empty where either tag or the repository isn't known.
+func (r Release) compareURL() string {
+	if r.FromTag == "" || r.Tag == "" || r.Instance == "" || r.Repository == "" {
+		return ""
+	}
+	base := strings.TrimRight(r.Instance, "/") + "/" + r.Repository
+	switch r.Forge {
+	case "github":
+		return base + "/compare/" + url.PathEscape(r.FromTag) + "..." + url.PathEscape(r.Tag)
+	case "gitlab":
+		return base + "/-/compare/" + url.PathEscape(r.FromTag) + "..." + url.PathEscape(r.Tag)
+	}
+	return ""
 }
 
 // ReleaseListing retains compact discovery evidence; source archives are

@@ -147,7 +147,7 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		seen[observation.Tag] = true
 	}
 	var candidates []macports.VersionCandidate
-	var tags []string
+	var tags, pages []string
 	for _, release := range observations {
 		if release.Draft || release.Prerelease && !followsPrereleases {
 			continue
@@ -162,6 +162,7 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		}
 		candidates = append(candidates, macports.VersionCandidate{Version: version, MatchText: subject, CaptureVersion: version})
 		tags = append(tags, release.Tag)
+		pages = append(pages, release.URL)
 	}
 	filters := make([]macports.VersionCandidate, len(candidates))
 	copy(filters, candidates)
@@ -261,7 +262,14 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
 	catalog := catalogWords(spec.Catalog)
-	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: candidates[index].Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt}
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: candidates[index].Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt,
+		// The release's page and the current version's tag, where the
+		// listing has them, for the update's commit to link (the docs
+		// dig's I11).
+		Page: pages[index]}
+	if seen[current] {
+		release.FromTag = current
+	}
 	result.finish(release, port.Version, "Selected "+tag.Name+" from "+catalog, " among "+catalog)
 	if len(setAside) > 0 {
 		result.SetAside = setAside
