@@ -9,8 +9,17 @@
   before reads "#4711's author's".
 - **Who's watching**: `engine.Unattended(ctx)` marks work nobody watches:
   - serve's loop (`Serve`);
-  - ship and bump where nobody was asked or --yes answered (`ship`);
-  - any command with no terminal, a script's (the root command).
+  - ship and bump where nobody was asked or --yes answered (`ship`,
+    `shipOptions.within`).
+
+  This is how dockhand reads unattended everywhere: the holds, the hand
+  edit, the fuzz refresh. A command with no terminal is a person's, or an
+  agent's at their word, and says it as any attended command does. The
+  first cut took a run with no terminal as unattended. The prioritization
+  thread dropped that at its card's recommendation (2026-10-27), pending
+  the person's word: it would refuse every agent's check of an adopted
+  pull request, and the evaluator can't write, reach the network, or run
+  programs either way.
 - **The gate**: `mayEvaluate`, and `mayEvaluateOthers` for review's
   pull request. It is placed at each evaluation of a branch's Portfiles
   on this Mac:
@@ -31,6 +40,13 @@
   journals it (`branch.trust-skipped`).
 - The experimental notice of review and adopt --pr is gone. The README
   and docs/usage.md say the rule instead.
-- Not yet: `review <pr> --check`. `trust.others = "guest"` waits in Later.
+- **`review <pr> --check`** adopts the pull request as adopt --pr does,
+  or takes the branch it was adopted as, and checks it in Tart, or where
+  --on says, reporting as check does. Its plan evaluates the author's
+  Portfiles on this Mac, which it says; the builds run in the guests. A
+  script that posts nothing ends with the check's answer.
+  `trust.others = "guest"` waits in Later.
 - Tests: TestAnAdoptedPullRequestsRecordWaitsForAPerson,
-  TestNothingUnattendedChecksAnAdoptedPullRequest, and review's two.
+  TestNothingUnattendedChecksAnAdoptedPullRequest,
+  TestShipIsUnattendedWhereNobodyLooks, TestReviewCheckAdoptsAndChecks,
+  and review's two others.

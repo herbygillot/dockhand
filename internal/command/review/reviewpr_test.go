@@ -32,7 +32,7 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 	_, _, err := cmdtest.Dockhand(t, "review", "x")
 	require.ErrorContains(t, err, `"x" is not a pull request number`)
 	out, said, err := cmdtest.Dockhand(t, "review", "34905")
-	require.Contains(t, said, "#34905's Portfile rules skipped: nothing unattended evaluates #34905's author's Portfiles on this Mac", "a script's review evaluates none (the trust rule)")
+	require.Contains(t, said, "Evaluating #34905's author's Portfiles on this Mac, for #34905", "a command with no terminal is a person's, and says it (the trust rule)")
 	require.EqualError(t, err, "No review was posted. In a script, use --comment or --request-changes to post it.")
 	require.Contains(t, out, "review of #34905 \"Update jq docs\", as @ada (read access to macports/macports-ports)\n  1 commit changing jq\n")
 	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat(`should start with the port it changes: "jq: …" [subject-port]`))
@@ -99,4 +99,30 @@ func TestAReviewSaysTheAssessmentAndTheDependents(t *testing.T) {
 	writeReview(&out, report)
 	require.Contains(t, out.String(), "  ! Upstream changes could not be assessed: assessing a revision needs MacPorts' evaluator\n")
 	require.Contains(t, out.String(), "  Could not determine dependents: reading the port index: no index.\n")
+}
+
+// review --check adopts the pull request and checks it, saying whose
+// Portfiles its plan evaluates on this Mac (the trust rule, Then's item
+// 12); again, it checks the branch it was adopted as.
+func TestReviewCheckAdoptsAndChecks(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	testsupport.Git(t, w.Upstream, "switch", "-q", "-c", "contrib")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\n# docs\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document the options")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	g.Theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905},
+		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", Title: "jq: document the options", State: forge.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
+
+	out, said, err := cmdtest.Dockhand(t, "review", "34905", "--check", "--on", "command")
+	require.NoError(t, err, said)
+	require.Contains(t, out, "Adopted #34905 as pr-34905; checking it.")
+	require.Contains(t, out, "Passed")
+	require.Contains(t, said, "Evaluating @newcontrib's Portfiles on this Mac, for pr-34905")
+	require.FileExists(t, filepath.Join(w.Home, "Source", "macports-branches", "pr-34905", "textproc/jq/Portfile"))
+	out, _, _ = cmdtest.Dockhand(t, "review", "34905", "--check", "--on", "command")
+	require.Contains(t, out, "#34905 is tracked as pr-34905; checking it.")
 }

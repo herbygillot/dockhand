@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"errors"
 
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/checkrun"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -21,7 +23,8 @@ import (
 )
 
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
-	var comment, requestChanges, markdown bool
+	var comment, requestChanges, markdown, check bool
+	var on []string
 	cmd := &cobra.Command{
 		Use:   "review <pr>",
 		Short: "Review a pull request against MacPorts' rules",
@@ -33,7 +36,12 @@ resolved. port lint and the build are left to MacPorts CI.
 It posts nothing unless asked: on a terminal it shows the text and asks;
 --comment posts it as a comment, and --request-changes as a request for
 changes, which MacPorts honors only from people with write or triage
-access. --markdown prints the text for pasting.`,
+access. --markdown prints the text for pasting.
+
+--check also builds it: it adopts the pull request as adopt --pr does,
+as pr-<number>, and checks it in Tart, or where --on says, reporting as
+check does. Planning the check evaluates its author's Portfiles with
+MacPorts on this Mac, which it says; the builds run in the guests.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -59,6 +67,17 @@ access. --markdown prints the text for pasting.`,
 				return e.RecordReview(ctx, report, "")
 			}
 			writeReview(streams.Out, report)
+			// --check adopts it and builds it, and a script that posts
+			// nothing ends with the check's answer (Then's item 12).
+			if check {
+				checked := checkPullRequest(ctx, e, s, streams, number, on)
+				if !comment && !requestChanges && !streams.Terminal() {
+					return errors.Join(checked, e.RecordReview(ctx, report, ""))
+				}
+				if checked != nil {
+					fmt.Fprintf(streams.Err, "check: %v\n", checked)
+				}
+			}
 			switch {
 			case comment || requestChanges:
 				return postReview(ctx, e, streams, report, body, requestChanges)
@@ -103,9 +122,55 @@ access. --markdown prints the text for pasting.`,
 	cmd.Flags().BoolVar(&comment, "comment", false, "post the review as a comment")
 	cmd.Flags().BoolVar(&requestChanges, "request-changes", false, "post the review as a request for changes")
 	cmd.Flags().BoolVar(&markdown, "markdown", false, "print the review's text, for pasting, and post nothing")
+	cmd.Flags().BoolVar(&check, "check", false, "adopt the pull request and check it in Tart, as check does")
+	cmd.Flags().StringArrayVar(&on, "on", nil, "with --check, where it builds, as check --on takes it; tart where none is given")
 	cmd.MarkFlagsMutuallyExclusive("comment", "request-changes", "markdown")
+	cmd.MarkFlagsMutuallyExclusive("check", "markdown")
 	settings.SupportsJSON(cmd)
 	return cmd
+}
+
+// checkPullRequest adopts a pull request, or takes the branch it was
+// adopted as, and checks its commits where on says, Tart where it says
+// nothing, reporting as check does.
+func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Settings, streams term.Streams, number int, on []string) error {
+	adoption, err := e.AdoptPullRequest(ctx, number)
+	if err != nil {
+		return err
+	}
+	branch := adoption.Branch
+	if adoption.Already {
+		fmt.Fprintf(streams.Out, "#%d is tracked as %s; checking it.\n", number, branch.ShortName())
+	} else {
+		fmt.Fprintf(streams.Out, "Adopted #%d as %s; checking it.\n", number, branch.ShortName())
+	}
+	if err := e.MayCheck(ctx, branch); err != nil {
+		return err
+	}
+	if len(on) == 0 {
+		on = []string{"tart"}
+	}
+	place, err := e.Where(ctx, engine.WhereRequest{On: on})
+	if err != nil {
+		return err
+	}
+	proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: engine.CaptureHead, Named: true}, Where: place})
+	if err != nil {
+		return err
+	}
+	view.WritePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
+	if err := engine.Runnable(proposal.Plan); err != nil {
+		return fmt.Errorf("nothing was checked: %w", err)
+	}
+	queued, err := e.QueueCheck(ctx, engine.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: model.OriginPerson, Beside: engine.BesideRefuse})
+	if active := new(engine.ActiveRunError); errors.As(err, &active) && active.SameRevision && !active.Stopped {
+		fmt.Fprintf(streams.Err, "%s is already %s for these files; following it.\n", active.Run.Name(), active.Run.State)
+		return checkrun.Wait(ctx, e, active.Run, streams, s.Places())
+	}
+	if err != nil {
+		return err
+	}
+	return checkrun.RunQueued(ctx, e, queued.Run, streams, false, s.Places(), s.Drain)
 }
 
 func postReview(ctx context.Context, e *engine.Engine, streams term.Streams, report engine.ReviewReport, body string, requestChanges bool) error {

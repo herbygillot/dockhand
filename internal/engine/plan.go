@@ -18,7 +18,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -61,11 +60,8 @@ type Proposal struct {
 // empty: the one pipeline check, ship, and serve take (the command package
 // review), which Enqueue then queues.
 func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Proposal, error) {
-	// Planning evaluates the branch's Portfiles on this Mac, which the
-	// trust rule lets unattended work do of the person's alone.
-	if !e.mayEvaluate(ctx, request.Capture.Branch, "check") {
-		whose, _ := OthersPortfiles(request.Capture.Branch)
-		return Proposal{}, refusal.New(refusal.Attention, "%s holds %s Portfiles, which nothing unattended evaluates on this Mac; check it yourself, as dockhand check %s does", request.Capture.Branch.ShortName(), whose, request.Capture.Branch.ShortName())
+	if err := e.MayCheck(ctx, request.Capture.Branch); err != nil {
+		return Proposal{}, err
 	}
 	capture, err := e.Capture(ctx, request.Capture)
 	if err != nil {
