@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -185,6 +186,14 @@ func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
 	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Equal(t, "yq: rebuild for jq 1.8.1", plan.Groups[0].Subject())
+	// The rebuild's edit keeps what --except left out, which the pull
+	// request's description lists (the docs dig's I41).
+	var edits []model.Edit
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		edits, err = r.Edits(branch.ID)
+		return err
+	}))
+	require.Equal(t, []string{"Left out of the rebuild for jq 1.8.1 with `--except`: **gojq**."}, leftOut(edits))
 }
 
 // Impact's dependents to build first are one of each kind there is,

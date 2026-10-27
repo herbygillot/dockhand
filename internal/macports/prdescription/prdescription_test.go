@@ -1,6 +1,7 @@
 package prdescription
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -294,4 +295,54 @@ func TestAHandEditIsSaidInTheDescription(t *testing.T) {
 	require.Less(t, strings.Index(body, "hand edit ("), strings.Index(body, "Checked the build by hand."))
 	facts.Note = ""
 	require.False(t, SaysNothing(facts), "the hand edit says something")
+}
+
+// GitHub refuses a body past 65,536 characters after the push, so no pull
+// request opens: a description past it is trimmed under it, the table's
+// rows first, then the runs' names, then the commits' rows, each saying
+// what it left out and where the rest is. One within it is untouched (the
+// docs dig's I41).
+func TestADescriptionPastGitHubsLimitIsTrimmedUnderIt(t *testing.T) {
+	t.Parallel()
+	columns := []string{"macOS 14 arm64", "macOS 15 arm64", "macOS 26 arm64", "macOS 14 x86_64", "macOS 15 x86_64", "macOS 26 x86_64"}
+	var rows []Row
+	for i := range 900 {
+		row := Row{Port: "py313-dependent-number-" + strings.Repeat("x", i%7)}
+		for range columns {
+			row.Cells = append(row.Cells, Cell{Words: "built, tests passed"})
+		}
+		rows = append(rows, row)
+	}
+	commits := []Commit{{ID: "abc1234", Message: "jq: update to 1.8.1"}, {ID: "def5678", Message: "yq: rebuild for jq 1.8.1"}}
+	facts := Facts{Commits: commits, TestedOn: TestedOn{Columns: columns, Rows: rows,
+		Reports: []Report{{Release: "macOS 26 (Tahoe) arm64", Provider: "tart: built in a clean VM", Runs: []Run{{ID: "tart_1"}}}}}}
+	require.False(t, Fits(compose(facts)), "the case is past the limit")
+	body := Compose(facts)
+	require.True(t, Fits(body))
+	require.Regexp(t, `\| \d+ more ports are left out to keep within GitHub's limit on a description \|( \|){6}\n`, body)
+	require.Contains(t, body, "(Run ID: tart_1)", "the runs stay where the rows alone fit")
+
+	var many []Commit
+	for i := range 3000 {
+		many = append(many, Commit{ID: "abc1234", Message: fmt.Sprintf("py-dependent-%04d: rebuild for python 3.13.9 with a subject long enough to count", i)})
+	}
+	facts = Facts{Commits: many, TestedOn: TestedOn{Columns: columns, Rows: rows,
+		Reports: []Report{{Release: "macOS 26 (Tahoe) arm64", Provider: "tart: built in a clean VM", Runs: []Run{{ID: "tart_1"}}}}}}
+	body = Compose(facts)
+	require.True(t, Fits(body))
+	require.Contains(t, body, "| 900 more ports are left out")
+	require.Contains(t, body, "1 run behind these results is left out to keep within GitHub's limit on a description; the author's `dockhand logs` has them.")
+	require.Regexp(t, `\d+ more commits are left out of this table to keep within GitHub's limit on a description; the Commits tab lists every one\.`, body)
+
+	small := Facts{Commits: commits[:1], TestedOn: TestedOn{Columns: columns, Rows: rows[:3]}}
+	require.Equal(t, compose(small), Compose(small), "one within the limit is as composed")
+}
+
+// The dependents a rebuild left out with --except are listed with the
+// hand edits, for a reviewer to disagree with (the docs dig's I41).
+func TestTheDependentsLeftOutAreListed(t *testing.T) {
+	t.Parallel()
+	body := Compose(Facts{Commits: []Commit{{ID: "abc1234", Message: "jq: update to 1.8.1"}, {ID: "def5678", Message: "yq: rebuild for jq 1.8.1"}},
+		LeftOut: []string{"Left out of the rebuild for jq 1.8.1 with `--except`: **gojq**."}})
+	require.Contains(t, body, "\n- Left out of the rebuild for jq 1.8.1 with `--except`: **gojq**.\n\n")
 }

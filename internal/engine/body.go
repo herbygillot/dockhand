@@ -66,13 +66,42 @@ type bodyFacts struct {
 	// HandEdits are the branch's hand edits, as its submitted tree has
 	// them (Engine.handEdits).
 	HandEdits []HandEdit
+	// LeftOut are the dependents each rebuild left out with --except
+	// (leftOut).
+	LeftOut []string
+}
+
+// leftOut are the lines naming the dependents each rebuild of the
+// branch's edits left out with --except, a line a rebuild, as its
+// revision bumps recorded them: "Left out of the rebuild for jq 1.8.1
+// with `--except`: **gron**." Only the terminal said them before (the
+// docs dig's I41).
+func leftOut(edits []model.Edit) []string {
+	var lines []string
+	said := map[string]bool{}
+	for _, edit := range edits {
+		if edit.Kind != model.EditRevbump || len(edit.Excepted) == 0 {
+			continue
+		}
+		_, rebuild, _ := strings.Cut(edit.Subject, ": ")
+		if said[rebuild] {
+			continue
+		}
+		said[rebuild] = true
+		var names []string
+		for _, name := range edit.Excepted {
+			names = append(names, "**"+name+"**")
+		}
+		lines = append(lines, fmt.Sprintf("Left out of the %s with `--except`: %s.", rebuild, prose.And(names)))
+	}
+	return lines
 }
 
 // description is what the facts let the description claim, as
 // prdescription composes it: the evidence's reports and table, in the
 // engine's words, and the checklist's answers.
 func (facts bodyFacts) description() prdescription.Facts {
-	described := prdescription.Facts{Note: facts.Note, Types: facts.Types, Updated: facts.Updated, NewPorts: facts.NewPorts,
+	described := prdescription.Facts{Note: facts.Note, Types: facts.Types, Updated: facts.Updated, NewPorts: facts.NewPorts, LeftOut: facts.LeftOut,
 		SkipNotification: facts.SkipNotification, Version: buildinfo.Current().Tag()}
 	for _, hand := range facts.HandEdits {
 		described.HandEdits = append(described.HandEdits, "**"+hand.Directory+"**: "+hand.Line())

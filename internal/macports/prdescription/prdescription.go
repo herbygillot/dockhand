@@ -15,10 +15,12 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // The MacPorts pull request template's headings.
@@ -54,6 +56,13 @@ type Facts struct {
 	// update it refused, each a line with the refusal (update --hand-edit),
 	// which the Description gives before the note.
 	HandEdits []string
+	// LeftOut are the dependents a rebuild left out with --except, each a
+	// line naming the rebuild and them, which the Description gives with
+	// the hand edits, so a reviewer can disagree (the docs dig's I41).
+	LeftOut []string
+	// CommitsLeftOut is how many commits' rows the commits' table leaves
+	// out to keep the description within GitHub's limit (Compose).
+	CommitsLeftOut int
 	// Types are the Type(s) the person named; Updated is true when
 	// dockhand wrote every commit and one is an update it made, a new
 	// release, which the template calls an enhancement unless Types says
@@ -99,7 +108,35 @@ type TestedOn struct {
 	// check here built on, in words, "14 and 15", which a note under the
 	// table says.
 	UncoveredCI string
+	// RowsLeftOut and RunsLeftOut are how many of the table's rows, and
+	// of the reports' run names, are left out to keep the description
+	// within GitHub's limit (Compose).
+	RowsLeftOut, RunsLeftOut int
 }
+
+// Limit is the most characters GitHub takes in a pull request's body: one
+// longer is refused, so the push succeeds and no pull request opens.
+const Limit = 65536
+
+// more is a count of more of a noun, with its verb: "1 more port is",
+// "508 more ports are".
+func more(n int, noun string) string {
+	_, nouns, _ := strings.Cut(prose.Plural(n, noun), " ")
+	return fmt.Sprintf("%s more %s %s", prose.Count(n), nouns, isAre(n))
+}
+
+// isAre is the verb for a count of things.
+func isAre(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
+}
+
+// Fits reports a body within Limit, counted in characters: Compose's
+// always is, and a merged one may not be, where a person's own part is
+// long.
+func Fits(body string) bool { return utf8.RuneCountInString(body) <= Limit }
 
 // Report is one environment's report: what it observed of itself, its
 // architecture and its release and tools as the environment states them,
@@ -154,8 +191,61 @@ type Verification struct {
 }
 
 // Compose writes the description in the template's sections, ticking only
-// what the facts establish.
+// what the facts establish. One past GitHub's Limit, as a large revbump
+// checked on six releases can be, is trimmed under it, the generated parts
+// first and each saying what it left out and where the rest is: the
+// table's rows, then the reports' run names, then the commits' rows.
 func Compose(facts Facts) string {
+	body := compose(facts)
+	if Fits(body) {
+		return body
+	}
+	tested := &facts.TestedOn
+	if rows := len(tested.Rows); rows > 0 {
+		all := tested.Rows
+		kept := keepWithin(rows, func(n int) bool {
+			tested.Rows, tested.RowsLeftOut = all[:n], rows-n
+			return Fits(compose(facts))
+		})
+		tested.Rows, tested.RowsLeftOut = all[:kept], rows-kept
+		if body = compose(facts); Fits(body) {
+			return body
+		}
+	}
+	for i := range tested.Reports {
+		tested.RunsLeftOut += len(tested.Reports[i].Runs)
+		tested.Reports[i].Runs = nil
+	}
+	if body = compose(facts); Fits(body) || len(facts.Commits) < 2 {
+		return body
+	}
+	all := facts.Commits
+	kept := keepWithin(len(all), func(n int) bool {
+		facts.Commits, facts.CommitsLeftOut = all[:n], len(all)-n
+		return Fits(compose(facts))
+	})
+	// The table stays a table, a commit in it at least.
+	kept = max(kept, 2)
+	facts.Commits, facts.CommitsLeftOut = all[:kept], len(all)-kept
+	return compose(facts)
+}
+
+// keepWithin is the most of n things kept that within reports fits, by
+// halving; none where even none doesn't.
+func keepWithin(n int, within func(int) bool) int {
+	low, high := 0, n
+	for low < high {
+		mid := (low + high + 1) / 2
+		if within(mid) {
+			low = mid
+		} else {
+			high = mid - 1
+		}
+	}
+	return low
+}
+
+func compose(facts Facts) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n%s\n\n", submittedBy, descriptionHeading)
 	// A new port is said as its Portfile says it, for a reviewer who has
@@ -193,11 +283,17 @@ func Compose(facts Facts) string {
 			fmt.Fprintf(&b, "| %s | %s | %s |\n", model.ObjectID(commit.ID).Short(), escape(ports), escape(change))
 		}
 		fmt.Fprintln(&b)
+		if facts.CommitsLeftOut > 0 {
+			fmt.Fprintf(&b, "%s left out of this table to keep within GitHub's limit on a description; the Commits tab lists every one.\n\n", more(facts.CommitsLeftOut, "commit"))
+		}
 	}
 	for _, line := range facts.HandEdits {
 		fmt.Fprintf(&b, "- %s\n", line)
 	}
-	if len(facts.HandEdits) > 0 {
+	for _, line := range facts.LeftOut {
+		fmt.Fprintf(&b, "- %s\n", line)
+	}
+	if len(facts.HandEdits)+len(facts.LeftOut) > 0 {
 		b.WriteString("\n")
 	}
 	switch {
@@ -316,7 +412,13 @@ func Owned(facts Facts) string {
 			}
 			fmt.Fprintln(&b)
 		}
+		if tested.RowsLeftOut > 0 {
+			fmt.Fprintf(&b, "| %s left out to keep within GitHub's limit on a description |%s\n", more(tested.RowsLeftOut, "port"), strings.Repeat(" |", len(tested.Columns)))
+		}
 		b.WriteString(notes.String())
+		if tested.RunsLeftOut > 0 {
+			fmt.Fprintf(&b, "\n%s behind these results %s left out to keep within GitHub's limit on a description; the author's `dockhand logs` has them.\n", prose.Plural(tested.RunsLeftOut, "run"), isAre(tested.RunsLeftOut))
+		}
 		if tested.UncoveredCI != "" {
 			fmt.Fprintf(&b, "\nMacPorts CI also builds on macOS %s, which was not covered by these checks.\n", tested.UncoveredCI)
 		}

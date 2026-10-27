@@ -56,6 +56,9 @@ type Edit struct {
 	// repository, tag, and upstream commit, or its distfiles. Nil for
 	// other edits.
 	Release *Release `json:",omitempty"`
+	// Excepted are, for a revision bump, the dependents --except left out
+	// of the same rebuild, which the pull request's description lists.
+	Excepted []string `json:",omitempty"`
 }
 
 // UpstreamComparison is what an update's upstream archives showed: an
