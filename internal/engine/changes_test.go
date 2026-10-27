@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -252,20 +254,35 @@ func TestTidyNamesTheSubportAHandEditChanges(t *testing.T) {
 	require.Equal(t, "zdemo-devel: update to 2.1", plan.Groups[0].Subject())
 }
 
-// An adopted pull request's Portfile isn't the person's, so nothing
-// evaluates it for a record (the trust rule), and its directories keep
-// their text scope.
-func TestAnAdoptedPullRequestHasNoRecord(t *testing.T) {
+// An adopted pull request's Portfile isn't the person's (the trust rule,
+// Then's item 12): nothing unattended evaluates it for a record, which is
+// skipped, said, and journaled, and its directories keep their text
+// scope; a person's command evaluates it, saying once whose it is.
+func TestAnAdoptedPullRequestsRecordWaitsForAPerson(t *testing.T) {
 	t.Parallel()
 	e, branch, _, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
-	branch.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 4711, Head: "someone:feature", Adopted: true}
+	branch.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 4711, Head: "alice:feature", Adopted: true, Author: "alice"}
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
-	records, err := e.revisionChanges(t.Context(), branch.ID, branch.Base, tree, true)
+	var said []string
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { said = append(said, update.Message) })
+	records, err := e.revisionChanges(Unattended(ctx), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
 	require.Empty(t, records)
 	_, ok := changedSubports(records, "devel/libharbor")
 	require.False(t, ok)
 	require.True(t, recordedChange(records, "devel/libharbor", "libharbor"), "its text scope")
+	require.Equal(t, []string{"assessed's change records skipped: nothing unattended evaluates @alice's Portfiles on this Mac"}, said)
+	events, err := e.Events(t.Context(), 0, model.LevelInfo)
+	require.NoError(t, err)
+	require.True(t, slices.ContainsFunc(events, func(event model.Event) bool {
+		return event.Kind == model.EventTrustSkipped && event.Branch == branch.ID
+	}), "journaled")
+
+	said = nil
+	records, err = e.revisionChanges(ctx, branch.ID, branch.Base, tree, true)
+	require.NoError(t, err)
+	require.Contains(t, records, "devel/libharbor", "a person's command makes it")
+	require.Equal(t, []string{"Evaluating @alice's Portfiles on this Mac, for assessed"}, said)
 }
 
 func portNames(ports []model.SubportChange) []string {
@@ -332,4 +349,16 @@ func TestAPlanOfNewFilesNamesItsSiblings(t *testing.T) {
 	}
 	plan := model.Plan{Revision: capture.Revision.ID, Targets: []model.PlanTarget{target("zdemo"), target("zdemo-devel"), target("zdemo-legacy")}}
 	require.Equal(t, map[model.TargetID]bool{"zdemo": true, "zdemo-legacy": true}, e.PlanSiblings(t.Context(), plan))
+}
+
+// Nothing unattended plans a check of an adopted pull request, which
+// evaluates its author's Portfiles on this Mac; the refusal says how a
+// person checks it (the trust rule, Then's item 12).
+func TestNothingUnattendedChecksAnAdoptedPullRequest(t *testing.T) {
+	t.Parallel()
+	e, branch, _, _ := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	branch.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 4711, Head: "alice:feature", Adopted: true, Author: "alice"}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+	_, err := e.ProposeCheck(Unattended(t.Context()), CheckRequest{Capture: CaptureRequest{Branch: branch}})
+	require.ErrorContains(t, err, "assessed holds @alice's Portfiles, which nothing unattended evaluates on this Mac; check it yourself, as dockhand check assessed does")
 }

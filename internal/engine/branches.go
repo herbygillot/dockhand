@@ -983,7 +983,7 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 	adoption.Branch = model.Branch{
 		ID: model.BranchID(store.NewID("br")), Repository: e.Repository, Name: name, Base: model.ObjectID(base), Worktree: directory, Managed: true,
 		Title: pr.Title, State: model.BranchOpen, CreatedAt: e.now(),
-		PullRequest: &model.PullRequest{Repository: e.PullRequestRepository(), Number: number, Head: pr.HeadRepository + ":" + pr.HeadBranch, Pushed: model.ObjectID(head), Body: pr.Body, Adopted: true},
+		PullRequest: &model.PullRequest{Repository: e.PullRequestRepository(), Number: number, Head: pr.HeadRepository + ":" + pr.HeadBranch, Pushed: model.ObjectID(head), Body: pr.Body, Adopted: true, Author: pr.Author},
 	}
 	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddBranch(adoption.Branch); err != nil {

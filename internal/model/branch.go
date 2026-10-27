@@ -69,6 +69,10 @@ type PullRequest struct {
 	// Portfile isn't the person's, so nothing evaluates it for a change
 	// record until the trust rule is in code.
 	Adopted bool
+	// Author is the login of the pull request's author, for an adopted
+	// one, whose Portfiles the trust rule names as theirs (Then's item
+	// 12); empty for one adopted before it was kept.
+	Author string `json:",omitempty"`
 	// Observed is what the forge last reported about it; nil until then.
 	Observed *PullRequestObservation `json:",omitempty"`
 }
