@@ -502,7 +502,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			return nil
 		}
 		if attempt >= model.MaxAttempts {
-			d.problem(fmt.Sprintf("%s failed %d times for reasons of its own; see dockhand logs %s", DescribeEnvironment(environment), attempt, d.run.Name()))
+			d.problem(fmt.Sprintf("%s failed %d times because of an environment error. See dockhand logs %s", DescribeEnvironment(environment), attempt, d.run.Name()))
 			return nil
 		}
 		// The environment's identity is read once for the attempt. Reuse
@@ -693,7 +693,7 @@ func (d *driver) unreadIdentity(ctx context.Context, environment model.Environme
 	if err := d.fenced(ctx, func(tx store.Tx) error { return tx.AddExecution(execution) }); err != nil {
 		return err
 	}
-	detail := "couldn't read what the environment is: " + cause.Error()
+	detail := "could not identify the build environment: " + cause.Error()
 	d.emit(ctx, model.EventExecutionRetry, fmt.Sprintf("%s: %s", DescribeEnvironment(environment), detail))
 	return d.endExecution(ctx, execution, model.ExecutionInfrastructure, detail)
 }
@@ -770,7 +770,7 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 		// Its logs are kept compressed from now on (D6); one that can't be
 		// is said, and cleanup tries again.
 		if _, compressErr := buildlog.CompressAll(filepath.Join(d.e.LogDirectory(), d.run.Name())); compressErr != nil {
-			d.emit(ctx, model.EventProgress, fmt.Sprintf("%s's logs couldn't be compressed, which cleanup tries again: %v", d.run.Name(), compressErr))
+			d.emit(ctx, model.EventProgress, fmt.Sprintf("Could not compress %s's logs; cleanup will retry: %v", d.run.Name(), compressErr))
 		}
 	}
 	return d.run, err

@@ -90,7 +90,7 @@ func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 		}
 	}
 	if builds := plan.OlderBuilds(); len(builds) > 0 && !saved {
-		fmt.Fprintf(out, "    the branch's commits name an older dockhand in Generated-By, %s: a commit tidy leaves as it is keeps it, and one it writes names this build\n", strings.Join(builds, ", "))
+		fmt.Fprintf(out, "    These commits name an older Dockhand build in Generated-By: %s. Commits left unchanged keep that value; rewritten commits name this build.\n", strings.Join(builds, ", "))
 	}
 	WriteFindings(out, plan)
 	fmt.Fprintln(out)
@@ -110,13 +110,13 @@ func WriteFindings(out io.Writer, plan engine.TidyPlan) {
 // writeUntracked says the untracked files a plan takes in and leaves out.
 func writeUntracked(out io.Writer, plan engine.TidyPlan) {
 	if len(plan.Taken) > 0 {
-		fmt.Fprintf(out, "Taken in, untracked, since patchfiles names them: %s\n", strings.Join(plan.Taken, ", "))
+		fmt.Fprintf(out, "Included untracked files named in patchfiles: %s\n", strings.Join(plan.Taken, ", "))
 	}
 	if len(plan.LeftOut) > 0 {
-		fmt.Fprintf(out, "Left out, since Git doesn't track them (git add one to commit it): %s\n", strings.Join(plan.LeftOut, ", "))
+		fmt.Fprintf(out, "Excluded untracked files: %s. Use git add to include them.\n", strings.Join(plan.LeftOut, ", "))
 	}
 	for _, path := range plan.Ignored {
-		fmt.Fprintf(out, "Left out, though patchfiles names it, since Git ignores it as git add would: %s; git check-ignore -v %s names the rule\n", path, path)
+		fmt.Fprintf(out, "Excluded ignored file named in patchfiles: %s. Run git check-ignore -v %s to see the rule.\n", path, path)
 	}
 }
 
@@ -127,5 +127,5 @@ func ModifiedBuildWarning(plan engine.TidyPlan, checkpoint string) string {
 	if !plan.ModifiedBuild() {
 		return ""
 	}
-	return fmt.Sprintf("! Generated-By names this dockhand, built from uncommitted source, which nobody else can find. Before submitting, tidy again with a build of a pushed commit: dockhand undo %s, then dockhand tidy.", checkpoint)
+	return fmt.Sprintf("! This Dockhand build contains uncommitted source, so the Generated-By reference cannot be reproduced from a published commit. Before submitting, run dockhand undo %s, then run dockhand tidy with a build from a pushed commit.", checkpoint)
 }

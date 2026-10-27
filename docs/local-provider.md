@@ -49,7 +49,7 @@ A prefix listed in `clean` is one that's dockhand's own to clean. There each tar
 A check you stop, with Ctrl-C or `dockhand cancel`, puts the prefix back as it ends. One whose process ended first, the Mac shut down mid-build, say, leaves the prefix changed. `dockhand status` says so:
 
 ```
-check-12 left /opt/local changed, ending before it could put it back: sudo port restore --snapshot-id 7 puts it back, or the next check there does.
+check-12 stopped before it could restore /opt/local. Run sudo port restore --snapshot-id 7 to restore it, or let the next check there restore it.
 ```
 
 The next check in that prefix puts it back before it builds.

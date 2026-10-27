@@ -24,16 +24,16 @@ func AcceptanceProblem(ev evidence.Evidence, accept []string, atBase map[string]
 		}
 		switch {
 		case i < 0:
-			return fmt.Errorf("--accept %s: %s checked no port %s", port, ev.Run.Name(), port)
+			return fmt.Errorf("--accept %s: %s did not check this port", port, ev.Run.Name())
 		case ev.Targets[i].Passed:
-			return fmt.Errorf("--accept %s: it passed in %s; there is nothing to accept", port, ev.Run.Name())
+			return fmt.Errorf("--accept %s: this port passed in %s; there is no failure to accept", port, ev.Run.Name())
 		case ev.Targets[i].Missing() || !ev.Targets[i].Failing():
-			return fmt.Errorf("--accept %s: no check of these files built it, so there is no failure to accept; dockhand check builds it", port)
+			return fmt.Errorf("--accept %s: no check of these files built this port, so there is no failure to accept. Run dockhand check", port)
 		case standing:
 			// A standing acceptance takes a dependency's failure in an
 			// environment, whatever port needs it, and nothing else.
 			if _, ok := EnvironmentFailures(ev, ev.Targets[i]); !ok {
-				return fmt.Errorf("--accept %s --standing: a standing acceptance takes a dependency failing to install, named with its version, and %s failed otherwise in %s", port, port, ev.Run.Name())
+				return fmt.Errorf("--accept %s --standing: a standing acceptance applies only to a dependency install failure with a recorded dependency version, and %s failed otherwise in %s", port, port, ev.Run.Name())
 			}
 		case !ev.Targets[i].Acceptable() && len(atBase[port]) == 0:
 			return fmt.Errorf("--accept %s: %s has changed. Its failure can be accepted only if the baseline fails the same way. Run dockhand check --baseline to compare, or use --draft to share the failing change", port, port)

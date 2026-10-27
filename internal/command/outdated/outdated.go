@@ -47,13 +47,14 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "outdated [port...]",
 		Short: "Show which ports have newer releases upstream",
-		Long: `Looks up the newest release of each port named, or with --mine each port
-whose maintainers line names you (the config's maintainer), at MacPorts'
-master as fetched now. It lists the ports with newer releases, and counts
-the rest; --current lists every port, with why any couldn't be checked.
+		Long: `Looks up the newest release of each named port, or with --mine of each
+port whose maintainers line names you (the config's maintainer), using
+MacPorts' master as fetched now. It lists the ports with newer releases
+and counts the rest; --current lists every port, including why any could
+not be checked.
 
-update --mine starts on them, a branch for each; ship --mine --to check
-checks them too.`,
+To start updating them, run update --mine, which creates a branch for
+each; ship --mine --to check also checks them.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.Open(ctx)
@@ -70,7 +71,7 @@ checks them too.`,
 			if err != nil {
 				if looked.cutShort(ctx, report) {
 					streams.Emit(view.OutdatedView(report))
-					fmt.Fprintf(streams.Out, "Interrupted after looking up %d of %d ports; what those found:\n", len(report.Ports), looked.total.Load())
+					fmt.Fprintf(streams.Out, "Interrupted after looking up %d of %d ports. Results so far:\n", len(report.Ports), looked.total.Load())
 					_ = writeOutdated(context.WithoutCancel(ctx), e, streams.Out, report, all)
 				}
 				return err
@@ -149,14 +150,14 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			// Neither current nor outdated for sure, so it's held for a
 			// look, with the update that takes it.
 			row.newest += "?"
-			row.note = fmt.Sprintf("update %s %s after a look: %s", port.Port, port.Uncertain[0].Source, engine.SetAsideWords(port.Uncertain))
+			row.note = fmt.Sprintf("review before running update %s %s: %s", port.Port, port.Uncertain[0].Source, engine.SetAsideWords(port.Uncertain))
 			held = append(held, row)
 		case class == engine.OutdatedAhead:
 			// Checked, and ahead of everything upstream lists: its
 			// releases may be elsewhere now, so it's held for a look
 			// (field testing's mergestat, 2026-10-23).
 			row.newest += "?"
-			row.note = fmt.Sprintf("update %s <version> after a look: %s", port.Port, engine.AheadWords(port.Current, port.Ahead))
+			row.note = fmt.Sprintf("review before running update %s <version>: %s", port.Port, engine.AheadWords(port.Current, port.Ahead))
 			held = append(held, row)
 		case class == engine.OutdatedUnpublished:
 			// Newer, but update would refuse it until its release has
@@ -180,7 +181,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			// A major version bump, which serve would hold
 			// (holds.majors).
 			if e.HoldsMajor(port.Port, port.Current, port.Newest) {
-				row.note = "a new major version, held for a look unattended; " + row.note
+				row.note = "new major version; unattended update requires review; " + row.note
 				held = append(held, row)
 				continue
 			}
@@ -238,7 +239,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		line = fmt.Sprintf("%d of %s have newer releases, at master %s", newer, ports, master)
 	}
 	if uncertain > 0 && !alone {
-		line += fmt.Sprintf(" · %d may have one, for a look", uncertain)
+		line += fmt.Sprintf(" · %d may have a newer release; review needed", uncertain)
 	}
 	switch {
 	case unready == 1:
@@ -265,7 +266,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	if summary[engine.OutdatedUncertain] > 0 {
 		// Serve says such a port once, but outdated every time it's asked:
 		// the port's own livecheck can settle it for good.
-		fmt.Fprintln(out, "Where a tag set aside is an old one spelled oddly rather than a release, a livecheck.regex that skips it keeps it out of later looks.")
+		fmt.Fprintln(out, "If a skipped tag is an oddly named old tag rather than a release, add a livecheck.regex that excludes it from future checks.")
 	}
 	// Exit 3, attention: a script can't take an incomplete look for a
 	// whole one. What's said is above, so the exit says nothing more.
@@ -368,7 +369,7 @@ func Batch(ctx context.Context, s *settings.Settings, e *engine.Engine, streams 
 	looked.stop()
 	if err != nil {
 		if looked.cutShort(ctx, report) {
-			fmt.Fprintf(streams.Out, "Interrupted after looking up %d of %d ports, so nothing was started; what those found:\n", len(report.Ports), looked.total.Load())
+			fmt.Fprintf(streams.Out, "Interrupted after looking up %d of %d ports; no updates were started. Results so far:\n", len(report.Ports), looked.total.Load())
 			_ = writeOutdated(context.WithoutCancel(ctx), e, streams.Out, report, false)
 		}
 		return engine.OutdatedPlan{}, err
@@ -382,7 +383,7 @@ func Batch(ctx context.Context, s *settings.Settings, e *engine.Engine, streams 
 	}
 	skipped := []view.SkippedJSON{}
 	for _, skip := range plan.Skipped {
-		fmt.Fprintf(streams.Out, "  %s: left as it is: %s\n", skip.Port, skip.Reason)
+		fmt.Fprintf(streams.Out, "  %s: skipped: %s\n", skip.Port, skip.Reason)
 		skipped = append(skipped, view.SkippedJSON{Port: skip.Port, Reason: skip.Reason})
 	}
 	streams.Emit(skipped)
@@ -413,8 +414,8 @@ func restWords(report engine.OutdatedReport, plan engine.OutdatedPlan) string {
 	}{
 		{engine.OutdatedCurrent, "%d current"},
 		{engine.OutdatedUnpublished, "%d with a newer release not published yet"},
-		{engine.OutdatedUncertain, "%d that may have one, for your look"},
-		{engine.OutdatedAhead, "%d ahead of every version upstream lists, for your look"},
+		{engine.OutdatedUncertain, "%d that may have one; review needed"},
+		{engine.OutdatedAhead, "%d ahead of every version upstream lists; review needed"},
 		{engine.OutdatedMoved, "%d pinned to a commit its branch has moved past, for update"},
 		{engine.OutdatedUnchecked, "%d that couldn't be checked"},
 	} {

@@ -46,32 +46,34 @@ func setupTartCommand(s *settings.Settings, streams term.Streams) *cobra.Command
 	var options tart.SetupOptions
 	cmd := &cobra.Command{
 		Use:   "tart [release]",
-		Short: "Make the Tart image a release's checks build in",
-		Long: `Makes dockhand-base-<release>, the image check --on tart clones for each
-build, in dockhand's Tart home, ~/.dockhand/tart ($DOCKHAND_TART_HOME). The
-release is this Mac's macOS unless named, such as tahoe or 15.
+		Short: "Create a Tart image for a macOS release",
+		Long: `Creates dockhand-base-<release>, the image check --on tart clones for
+each build, in Dockhand's Tart home, ~/.dockhand/tart
+($DOCKHAND_TART_HOME). The release is this Mac's macOS unless named, such
+as tahoe or 15.
 
-The image starts from Cirrus Labs' vanilla macOS image and holds the Command
-Line Tools of the release's pinned generation and MacPorts. Making one
-downloads the vanilla image the first time and takes up to ` + tart.SetupDisk + ` of disk.
+The image starts from Cirrus Labs' vanilla macOS image and contains the
+release's pinned Command Line Tools and MacPorts. Creating one downloads
+the vanilla image the first time and uses up to ` + tart.SetupDisk + ` of disk.
 A golden copy is kept beside it, and a lost image is restored from it.
 
-Xcode is an add-on. --xcode, given an Xcode .xip from Apple or a folder of
-them, makes dockhand-xcode-<release> beside the release's base image, which
-it needs first, the same with Xcode too, in up to ` + tart.XcodeDisk + ` more. Its Xcode is the one MacPorts' arm64
-buildbot for the release runs, so ports are built as MacPorts builds its
-packages; providers.tart.xcode in the configuration names another for a
-release. The archive of that version is required, never a newer one in its
-place, nor a beta. A check builds a port that needs Xcode only there;
-without it, the port isn't built, and the check says so.
+Xcode is an add-on. Given an Xcode .xip from Apple, or a folder of them,
+--xcode creates dockhand-xcode-<release>: the release's base image, which
+must exist first, with Xcode added, using up to ` + tart.XcodeDisk + ` more. It installs
+the Xcode MacPorts' arm64 buildbot for the release runs, so ports build as
+MacPorts builds its packages; providers.tart.xcode in the configuration
+names another version for a release. The archive of that exact version is
+required, never a newer one or a beta. A port that needs Xcode is built
+only in that image; without it, the port isn't built, and the check says
+so.
 
-When the image exists, setup checks it in a disposable clone and leaves it
-as it is. --rebuild makes a replacement, and keeps the old one until the
-new one has passed.`,
+If the image exists, setup checks it in a disposable clone and leaves it
+unchanged. --rebuild creates a replacement and keeps the old image until
+the new one passes.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !s.Host.TartSupported() {
-				return errors.New("Tart's macOS images need Apple silicon, and this Mac isn't; checks here build in a MacPorts prefix, with --on local, or on GitHub, with --on github")
+				return errors.New("Tart macOS images require Apple silicon. To check on this Mac, use --on local; to use GitHub Actions, use --on github")
 			}
 			if len(args) == 1 {
 				options.Release = args[0]
@@ -105,7 +107,7 @@ new one has passed.`,
 				fmt.Fprintf(streams.Out, "Made %s: %s.\n", result.Image, made)
 			}
 			if mac := result.HostMacPorts; mac != "" {
-				fmt.Fprintf(streams.Out, "This Mac has MacPorts %s. Checks read ports with it and build them with the image's %s; --rebuild --macports-version %s makes them the same.\n",
+				fmt.Fprintf(streams.Out, "This Mac has MacPorts %s; the image has %s. Dockhand evaluates ports with the host version and builds them with the image version. To match them, run setup with --rebuild --macports-version %s.\n",
 					mac, result.MacPorts, mac)
 			}
 			// An Xcode image is an add-on beside the release's base image,
@@ -124,14 +126,14 @@ new one has passed.`,
 			}
 			// Not a Next: line, which names only what the branch as it
 			// stands would accept, and setup has no branch.
-			fmt.Fprintf(streams.Out, "Checks build on it with --on tart:%s.\n", result.Release.Slug)
+			fmt.Fprintf(streams.Out, "To check with this image, use --on tart:%s.\n", result.Release.Slug)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&options.Check, "check", false, "check the image in a disposable clone, making nothing")
-	cmd.Flags().BoolVar(&options.Rebuild, "rebuild", false, "make a replacement even when the image exists")
-	cmd.Flags().StringVar(&options.MacPortsVersion, "macports-version", "", "the MacPorts the image installs (default this Mac's, at least "+tart.DefaultMacPorts+")")
-	cmd.Flags().StringVar(&options.Xcode, "xcode", "", "make the release's Xcode image, from an Xcode .xip or a folder of them")
+	cmd.Flags().BoolVar(&options.Check, "check", false, "check the existing image in a disposable clone without creating one")
+	cmd.Flags().BoolVar(&options.Rebuild, "rebuild", false, "replace the image even if it already exists")
+	cmd.Flags().StringVar(&options.MacPortsVersion, "macports-version", "", "MacPorts version to install in the image (default: this Mac's version, at least "+tart.DefaultMacPorts+")")
+	cmd.Flags().StringVar(&options.Xcode, "xcode", "", "create an Xcode image from an Xcode .xip archive or a folder of archives")
 	return cmd
 }
 
@@ -384,7 +386,7 @@ func offerXcode(ctx context.Context, images host.TartImages, streams term.Stream
 		var said bytes.Buffer
 		path, err = images.DownloadXcode(ctx, missing, nil, &said, &said)
 		if errors.Is(err, tart.ErrXcodes) {
-			return fmt.Errorf("%w; xcodes said:\n%s\nIf it needs you to sign in, run it once at a terminal: xcodes download %s --directory %s",
+			return fmt.Errorf("%w; xcodes said:\n%s\nIf xcodes asks you to sign in, run it once at a terminal: xcodes download %s --directory %s",
 				err, "  "+strings.Join(prose.LastLines(said.String(), 10), "\n  "), missing.Version, missing.Folder)
 		}
 		if err != nil {

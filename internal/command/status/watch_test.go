@@ -54,7 +54,7 @@ func TestWatchRedrawsAndRunsWhatIsTyped(t *testing.T) {
 	draws := func() int { return strings.Count(viewed.String(), "dockhand status --watch · ") }
 	require.Eventually(t, func() bool { return draws() == 1 }, cmdtest.Settle, 10*time.Millisecond)
 	require.True(t, strings.HasPrefix(viewed.String(), enterView), "the view has a screen of its own")
-	require.Contains(t, viewed.String(), "c check · l logs · t tidy · s submit, each <branch> · q quits")
+	require.Contains(t, viewed.String(), "c check · l logs · t tidy · s submit · q quit (optional branch: c <branch>)")
 
 	send := func(text string) {
 		_, err := io.WriteString(typing, text+"\n")

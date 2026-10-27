@@ -377,12 +377,12 @@ func (a Attention) Words(v Vocabulary) string {
 	}
 	switch a.Reason {
 	case PullRequestMaybeMerged:
-		return fmt.Sprintf("its Git branch is gone, and its pull request, #%d, may have merged", pr.Number)
+		return fmt.Sprintf("Git branch not found; pull request #%d may have merged", pr.Number)
 	case BranchGone:
-		return "its Git branch is gone"
+		return "Git branch not found"
 	case StoppedCheck:
 		// The row's command resumes it, said once (part 5, item 4).
-		return a.Run.Name() + " stopped: the process running it ended; the command below resumes it, and dockhand cancel --branch " + a.Branch + " ends it instead"
+		return a.Run.Name() + " stopped because its process ended. Use the command below to resume it, or dockhand cancel --branch " + a.Branch + " to cancel it"
 	case SomeoneElsePushed:
 		return fmt.Sprintf("someone else pushed to #%d%s", pr.Number, age(pr.Observed.At))
 	case ChangesRequested:
@@ -390,7 +390,7 @@ func (a Attention) Words(v Vocabulary) string {
 		if !pr.Observed.ReviewedAt.IsZero() {
 			at = pr.Observed.ReviewedAt
 		}
-		return fmt.Sprintf("#%d changes requested%s", pr.Number, age(at))
+		return fmt.Sprintf("#%d: changes requested%s", pr.Number, age(at))
 	case CIFailing:
 		var classified []string
 		for _, failure := range a.CI {
@@ -399,11 +399,11 @@ func (a Attention) Words(v Vocabulary) string {
 			}
 		}
 		if len(classified) > 0 {
-			return fmt.Sprintf("#%d MacPorts CI failed %s%s", pr.Number, strings.Join(classified, "; "), age(pr.Observed.At))
+			return fmt.Sprintf("#%d: MacPorts CI failed: %s%s", pr.Number, strings.Join(classified, "; "), age(pr.Observed.At))
 		}
-		return fmt.Sprintf("#%d MacPorts CI failing: %s%s", pr.Number, strings.Join(a.Ports, ", "), age(pr.Observed.At))
+		return fmt.Sprintf("#%d: MacPorts CI is failing for %s%s", pr.Number, strings.Join(a.Ports, ", "), age(pr.Observed.At))
 	case OpenedByServe:
-		return fmt.Sprintf("#%d opened by serve, without a person's review", pr.Number)
+		return fmt.Sprintf("#%d was opened by serve without human review", pr.Number)
 	case OnMaster:
 		return "its changes are on master already, as of " + a.Detail
 	case FilesChangedSince:
@@ -426,7 +426,7 @@ func (a Attention) Words(v Vocabulary) string {
 	case Unbuilt:
 		return fmt.Sprintf("%s passed, but no check of these files built %s", a.Run.Name(), strings.Join(a.Ports, ", "))
 	case ExtraFailed:
-		return fmt.Sprintf("%s passed what submission needs, but %s didn't pass; submit accepts it once you've looked", a.Run.Name(), strings.Join(a.Ports, ", "))
+		return fmt.Sprintf("%s passed the checks required for submission, but %s did not pass. Review the failure before accepting it for submission", a.Run.Name(), strings.Join(a.Ports, ", "))
 	case CommitForReview:
 		return v.Revision(*a.Revision) + " passed; commit it for review"
 	case Held, SourceMoved:
@@ -442,11 +442,11 @@ func (a Attention) Words(v Vocabulary) string {
 			first += fmt.Sprintf(" (and %d more: dockhand status %s)", len(lines)-1, a.Branch)
 		}
 		if a.Reason == Held && !a.Serve {
-			return paused(first + "; submit shows it for your look")
+			return paused(first + "; run submit to review it")
 		}
 		return paused(first)
 	case NotAssessed:
-		return "passed; what upstream's change means isn't assessed yet, which submitting does"
+		return "passed; the upstream changes have not yet been assessed. Submit will assess them"
 	case WaitingToSubmit:
 		return "passed; waiting for you to submit"
 	case AcceptedToSubmit:

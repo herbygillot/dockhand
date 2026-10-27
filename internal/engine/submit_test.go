@@ -96,7 +96,7 @@ func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 	require.Equal(t, []string{"jq"}, plan.Ports)
 	require.False(t, plan.Replaces)
 	require.Contains(t, plan.Body, "#### Description\n\n###### Type(s)\n\n- [ ] bugfix\n- [x] enhancement\n- [ ] security fix\n")
-	require.Contains(t, plan.Body, "Not built locally: submitted with `dockhand submit --no-check`")
+	require.Contains(t, plan.Body, "Submitted with `dockhand submit --no-check`; no Dockhand check result is included.")
 	require.Contains(t, plan.Body, "- [x] followed our [Commit Message Guidelines]")
 	require.Contains(t, plan.Body, "- [x] checked that there aren't other open [pull requests]")
 	require.Contains(t, plan.Body, "- [ ] checked your Portfile with `port lint`?")
@@ -431,9 +431,9 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Len(t, plan.Blocking, 1)
-	require.Contains(t, plan.Blocking[0], "harbor-viewer (an extra from --also) did not pass in check-1; acknowledge it with --accept harbor-viewer")
+	require.Contains(t, plan.Blocking[0], "harbor-viewer (an extra from --also) did not pass in check-1. If the failure was not caused by this branch, acknowledge it with --accept harbor-viewer")
 	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
-	require.ErrorContains(t, err, "it passed in check-1")
+	require.ErrorContains(t, err, "this port passed in check-1; there is no failure to accept")
 
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"harbor-viewer"}})
 	require.NoError(t, err)
@@ -446,7 +446,7 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	require.Regexp(t, "\n- \\[ \\] checked that the Portfile's most important .+\n\n<!-- dockhand -->\n\n- \\[dockhand\\]", plan.Body,
 		"a comment GitHub doesn't show ends the checklist, so dockhand's line isn't taken for its last item")
 	require.Contains(t, plan.Body, "| jq | ✓ tests passed |\n| harbor-viewer | ✗ failed at install, accepted: cause not established |\n")
-	require.Contains(t, plan.Body, "- [x] tried a full install with `sudo port -vst install`? (dockhand builds from source as MacPorts CI does, without trace mode)")
+	require.Contains(t, plan.Body, "- [x] tried a full install with `sudo port -vst install`? (Dockhand builds from source, as MacPorts CI does, without trace mode)")
 	require.Contains(t, plan.Body, "- [x] tried existing tests with `sudo port test`?")
 	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
@@ -469,7 +469,7 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, strings.Join(plan.Blocking, "\n"), "harbor-viewer")
 	_, err = e3.PlanSubmit(t.Context(), SubmitRequest{Branch: branch3, Accept: []string{"harbor-viewer"}})
-	require.ErrorContains(t, err, "--accept harbor-viewer: no check of these files built it, so there is no failure to accept")
+	require.ErrorContains(t, err, "--accept harbor-viewer: no check of these files built this port, so there is no failure to accept")
 
 	// A changed port that fails goes out only as a draft.
 	g := setup(t)
@@ -481,7 +481,7 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	require.ErrorContains(t, err, "can be accepted only if the baseline fails the same way")
 	plan, err = e2.PlanSubmit(t.Context(), SubmitRequest{Branch: branch2})
 	require.NoError(t, err)
-	require.Contains(t, strings.Join(plan.Blocking, "\n"), "jq did not pass in check-1; fix it, or share it as a draft (--draft); dockhand check --baseline sees whether master fails it the same way")
+	require.Contains(t, strings.Join(plan.Blocking, "\n"), "jq did not pass in check-1. Fix the failure, submit a draft with --draft, or run dockhand check --baseline to see whether master fails in the same way")
 	plan, err = e2.PlanSubmit(t.Context(), SubmitRequest{Branch: branch2, Draft: true})
 	require.NoError(t, err)
 	require.Empty(t, plan.Blocking)
@@ -520,7 +520,7 @@ func TestAFailureTheBaseHasTooIsAccepted(t *testing.T) {
 			blocking := strings.Join(plan.Blocking, "\n")
 			_, acceptErr := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
 			if !test.alike {
-				require.Contains(t, blocking, "jq did not pass in check-1; fix it")
+				require.Contains(t, blocking, "jq did not pass in check-1. Fix the failure")
 				require.ErrorContains(t, acceptErr, "can be accepted only if the baseline fails the same way")
 				return
 			}
@@ -862,7 +862,7 @@ func TestSubmitHoldsWhatsMarkedUnconfirmed(t *testing.T) {
 
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	require.Contains(t, plan.Blocking, `textproc/jq/Portfile still marks 1 guess unconfirmed (license): confirm each, remove its "# dockhand: unconfirmed," line, and tidy`)
+	require.Contains(t, plan.Blocking, `textproc/jq/Portfile contains 1 guess marked unconfirmed (license). Verify each item, remove its "# dockhand: unconfirmed," line, and run dockhand tidy`)
 }
 
 // A standing acceptance is one eligibility: what submit takes, serve's

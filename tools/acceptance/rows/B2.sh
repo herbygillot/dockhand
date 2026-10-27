@@ -104,8 +104,8 @@ assert() {
 	fi
 	case "$status" in
 	0) row_pass "bumped to its pull request${B2_REUSED:+; $B2_REUSED}" ;;
-	3) if grep -q '^Once it.s fine: dockhand submit' "$ROW_DIR/out.log" || printf '%s' "$error" | matches 'dockhand submit'; then
-		row_pass "held for a look, naming the submit that finishes it"
+	3) if grep -q '^After review: dockhand submit' "$ROW_DIR/out.log" || printf '%s' "$error" | matches 'dockhand submit'; then
+		row_pass "held for review, naming the submit that finishes it"
 	else
 		row_fail "held without naming the command that finishes it: $error"
 	fi ;;

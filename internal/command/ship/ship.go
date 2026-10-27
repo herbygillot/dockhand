@@ -35,30 +35,36 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var yes, mine, passing, plan bool
 	cmd := &cobra.Command{
 		Use:   "ship [<port>...]",
-		Short: "Carry a change on to its pull request: update, commit, check, submit",
-		Long: `Carries each change as far as --to says, commit, check, or submit, the
-default, from wherever it is now. A port names a version update from fresh
-master, in a branch of its own, or the open branch already changing it,
-which goes on from where it stands; -b, -p, and --pr name a branch; with
-neither, the branch checked out here. Run again, it resumes: a change
-already past --to is left as it is, and a check still queued or running
-for the same files is followed, not started again.
+		Short: "Update, commit, check, and submit changes",
+		Long: `Takes each selected change through update, commit, check, and submit.
 
-Each change is carried to its check, queued, before any check is seen
-through, and each is submitted as its check passes: serve runs them side
-by side where it runs, and they run here one by one where it doesn't.
+Select ports or a branch. A port name starts a version update from the
+latest master in a branch of its own, or continues the open branch that
+already changes the port. -b, -p, and --pr select a branch; with none, the
+branch checked out here is used.
 
-It shows one plan, a row a change, and asks once on a terminal; --yes
-skips the question, and without a terminal running it is the decision.
---plan shows the plan and changes nothing.
-With --yes or without a terminal nobody looks along the way, so it holds
-where serve would: a new major version before anything is prepared, a
-commit that isn't dockhand's own edits, and what holds a submission. A
-check builds where build.unattended's profile says then, and else where
-build.default's does; --build or --on names another.
+--to stops each change at commit, check, or submit (the default). Running
+ship again resumes: a stage already completed is not repeated, and a check
+still queued or running for the same files is followed rather than
+started again.
 
-Each change stops where its stage would, and the others go on; the exit
-says whether any went through: 1 where none did, 3 where some need a look.`,
+Every change's check is queued before any check is followed, and each
+change is submitted as soon as its check passes. If serve is running, the
+checks run side by side; otherwise they run here one at a time.
+
+ship shows one plan, with a row for each change, and asks once on a
+terminal. --yes skips the question; running without a terminal is the
+same decision. --plan shows the plan and changes nothing. With --yes or
+without a terminal, ship runs unattended and applies the same holds serve
+does: a new major version is held before anything is prepared, and a
+commit that isn't Dockhand's own edits, or anything that would hold a
+submission, is held for review. Unattended checks build where
+build.unattended's profile says, else where build.default's does; --build
+or --on selects another.
+
+Each change stops at the stage that holds it, and the others continue. The
+exit code is 0 when changes went through, 1 when none did, and 3 when some
+need review.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			stage := engine.ShipStage(to)
@@ -381,7 +387,7 @@ func writeRows(streams term.Streams, rows []*shipRow) {
 	if len(stopped) == 0 {
 		return
 	}
-	fmt.Fprintln(streams.Out, "Needs you")
+	fmt.Fprintln(streams.Out, "Needs attention")
 	for _, row := range stopped {
 		fmt.Fprintf(streams.Out, "  %-*s  %v\n", width, row.name, view.SayNext(row.why))
 	}
@@ -640,7 +646,7 @@ func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, s
 		viewed.Held = held
 		streams.Emit(viewed)
 		name := plan.Branch.ShortName()
-		return submitted, term.Exitf(term.ExitAttention, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: %s", name, strings.Join(held, "; "), strings.Join(view.RenderSteps(refused.Next), "; then "))
+		return submitted, term.Exitf(term.ExitAttention, "%s passed its check and needs review, so nothing was submitted: %s\nAfter review: %s", name, strings.Join(held, "; "), strings.Join(view.RenderSteps(refused.Next), "; then "))
 	}
 	return submitted, err
 }

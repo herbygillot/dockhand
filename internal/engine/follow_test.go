@@ -113,7 +113,7 @@ func TestServeSaysAnEndedLoginOnce(t *testing.T) {
 		follow.maybe(t.Context())
 	}
 	require.Equal(t, []string{"serve: GitHub credentials could not be renewed, so pull request refresh is paused. Run dockhand setup github to sign in again; serve will use the new credentials automatically"}, said)
-	require.Equal(t, []string{"GitHub login: GitHub login expired or cannot be renewed. Sign in again: dockhand setup github"}, notified)
+	require.Equal(t, []string{"GitHub login: GitHub credentials expired or could not be renewed. Run dockhand setup github to sign in again."}, notified)
 }
 
 // A credential GitHub rejects fails the read once, as its error, not each
@@ -326,7 +326,7 @@ func TestASignedOutRefreshReadsOpenPullRequestsNewestFirst(t *testing.T) {
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, 1, refreshed.Unread)
-	require.Equal(t, "GitHub’s rate limit left 1 pull request unread. Reading again after "+time.Date(2026, 10, 23, 15, 4, 0, 0, time.UTC).Local().Format("15:04 MST"), refreshed.UnreadWords())
+	require.Equal(t, "GitHub's rate limit prevented refresh of 1 pull request. Dockhand will retry after "+time.Date(2026, 10, 23, 15, 4, 0, 0, time.UTC).Local().Format("15:04 MST"), refreshed.UnreadWords())
 
 	// Each read is one request, the state and head alone, the review and
 	// checks recorded kept; and it stops 10 short of the hour's allowance

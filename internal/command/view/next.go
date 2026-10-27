@@ -33,9 +33,9 @@ func RenderNext(next branchstate.Next, reason branchstate.Reason) string {
 	var line string
 	switch next.Verb {
 	case branchstate.VerbRefresh:
-		return "dockhand status --refresh reads it; dockhand adopt <new name>, if you renamed the branch"
+		return "dockhand status --refresh (refreshes the branch status); dockhand adopt <new name> (if you renamed the branch)"
 	case branchstate.VerbAdopt:
-		return "dockhand adopt <new name>, if you renamed it"
+		return "dockhand adopt <new name> (if you renamed the branch)"
 	case branchstate.VerbStatus, branchstate.VerbArchive:
 		line = "dockhand " + string(next.Verb) + " " + next.Branch
 	case branchstate.VerbWait, branchstate.VerbLogs, branchstate.VerbEdit, refusal.VerbExplain:
@@ -83,14 +83,14 @@ func CheckState(s engine.BranchStatus) string {
 		if s.Branch.State == model.BranchArchived {
 			return fmt.Sprintf("passed (%s)", s.Latest.Name())
 		}
-		return "passed, but needs another check"
+		return "previous check passed; a new check is required"
 	case branchstate.CheckedOlder:
-		return "passed for older work"
+		return "passed for an earlier version of the files"
 	case branchstate.CheckPassed:
 		// Untracked files a check took in with --include are compared as
 		// it had them, and said: they're in no commit yet.
 		if len(s.Included) > 0 {
-			return fmt.Sprintf("passed for %s, with %s included, untracked", engine.Describe(*s.LatestRevision), prose.And(s.Included))
+			return fmt.Sprintf("passed for %s, including untracked %s", engine.Describe(*s.LatestRevision), prose.And(s.Included))
 		}
 		// A check of the working files that tidy then committed unchanged
 		// checked the commit's files, as submit credits it.

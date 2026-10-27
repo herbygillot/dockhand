@@ -36,10 +36,10 @@ func Publish(p Publication, mode Mode, v Vocabulary) *refusal.Refusal {
 		next.After = AfterEdit
 		return refusal.New(refusal.Failed, "can't submit yet: %s", strings.Join(words, "; ")).Then(next)
 	case p.Bound != "" && p.Commit != p.Bound:
-		return refusal.New(refusal.Failed, "%s moved to %s while it was checked; nothing was submitted, since ship binds %s", p.Branch, p.Commit.Short(), p.Bound.Short()).Then(next)
+		return refusal.New(refusal.Failed, "%s moved to %s while it was being checked. Nothing was submitted: ship was working on %s", p.Branch, p.Commit.Short(), p.Bound.Short()).Then(next)
 	case mode.Unattended() && len(p.Holds) > 0:
 		next.After = AfterLook
-		return refusal.New(refusal.Attention, "%s is held for a look: %s", p.Branch, strings.Join(v.Holds(p.Holds), "; ")).Then(next)
+		return refusal.New(refusal.Attention, "%s needs review before submission: %s", p.Branch, strings.Join(v.Holds(p.Holds), "; ")).Then(next)
 	}
 	return nil
 }

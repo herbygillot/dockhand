@@ -28,43 +28,44 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "check",
 		Short: "Build and test what you have, committed or not",
-		Long: `Captures the branch's files, the tracked ones as they are on disk unless
---staged or --head says otherwise, as a numbered snapshot, and builds every
-port the branch changes by MacPorts CI's rule: lint, fetch and checksum,
-install, and declared tests (advisory unless --tests required).
+		Long: `Captures the branch's files as a numbered snapshot, the tracked files as
+they are on disk unless --staged or --head says otherwise, and builds
+every port the branch changes as MacPorts CI does: lint, fetch and
+checksum, install, and declared tests (advisory unless --tests required).
 
-It builds where a build profile says: --build names one, and build.default
-is the profile otherwise, host, this Mac's macOS, unless set. dockhand's
-own are host, minmax (each port on its oldest and newest release dockhand
-runs, macOS 12 at the earliest), macports-ci (the releases MacPorts' CI
-builds on), and all; yours go under [build.profiles]. --on names explicit
-environments instead, tart:15,26, github, or command. Every environment
-must pass. --only narrows the
-check to some changed ports and adds back the changed ones they need;
---also builds unchanged ports against the branch. --plan shows what would
-be built and changes nothing.
+Where it builds comes from a build profile. --build selects one;
+otherwise build.default is used, which is host, this Mac's macOS, unless
+set. Dockhand's own profiles are host, minmax (each port on the oldest
+and newest releases Dockhand runs, macOS 12 at the earliest), macports-ci
+(the releases MacPorts' CI builds on), and all; your own go under
+[build.profiles]. --on selects explicit environments instead, such as
+tart:15,26, github, local, or command. Every environment must pass.
 
-Where every port an environment would build reads what an earlier build of
-it read, recorded with its result, that result is reused and nothing is
-built there; --fresh builds everything.
+--only narrows the check to some changed ports and adds back the changed
+ports they need; --also builds unchanged ports against the branch. --plan
+shows what would be built and changes nothing.
+
+If every port an environment would build has inputs identical to an
+earlier recorded build, that result is reused and nothing is built there;
+--fresh builds everything.
 
 Without dockhand serve, the check runs here and says so; Ctrl-C stops it
-and keeps what finished. With serve running, it is handed to serve and
-followed here; Ctrl-C then only stops following. -d queues it and returns:
-serve runs it, or, with no serve running, a drain dockhand starts in the
-background, so -d runs a check in the background either way; dockhand
-wait follows it.
+and keeps completed results. With serve running, the check is handed to
+serve and followed here; Ctrl-C then only stops following. -d queues the
+check and returns: serve runs it, or, with no serve running, Dockhand
+starts a background worker for it, so -d runs a check in the background
+either way. dockhand wait follows it.
 
-One check of a branch runs at a time: while one is queued or running,
-check refuses, and --replace stops it, keeping what it finished, and checks
-the files now, on what --on names (decision 29: switching is explicit).
+A branch runs one check at a time. While one is queued or running, check
+refuses; --replace stops it, keeping completed results, and checks the
+files as they are now, where --on says (switching is always explicit).
 
---baseline builds the ports that failed at install or test in the branch's
-latest check, or the --only ones, at the master that check started from,
-planned there as a check would be, and reports each beside the branch's
-result. It says what happened in each run and nothing more. A failed check
-points to it when a baseline can answer something; with check.baseline =
-true, it runs that baseline by itself.`,
+--baseline builds the ports that failed at install or test in the
+branch's latest check, or the --only ones, at the master that check
+started from, planned as a check would be, and reports each beside the
+branch's result. It reports what happened in each run and nothing more. A
+failed check suggests a baseline when one could tell more; with
+check.baseline = true, it runs that baseline automatically.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -120,7 +121,7 @@ true, it runs that baseline by itself.`,
 				fmt.Fprintf(out, "! %s is untracked and excluded from this check. Use --include %s for this check only, or git add %s to track it.\n", path, path, path)
 			}
 			if len(capture.Untracked) > 0 {
-				fmt.Fprintf(out, "Left out, not tracked: %s (--include adds one)\n", strings.Join(capture.Untracked, ", "))
+				fmt.Fprintf(out, "Untracked files excluded: %s. Use --include to add a file to this check.\n", strings.Join(capture.Untracked, ", "))
 				// A Portfile written by hand in a new port's directory is
 				// one Git doesn't track yet, and the worktree's sparse
 				// checkout keeps git add from taking it: the commands are
@@ -287,7 +288,7 @@ func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Bas
 	}
 	fmt.Fprintf(out, "%s · baseline at master %s: %s\n", branch.ShortName(), baseline.Revision.Source.Commit.Short(), strings.Join(names, ", "))
 	if len(baseline.New) > 0 {
-		fmt.Fprintf(out, "    left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
+		fmt.Fprintf(out, "    Excluded from the baseline: %s. These ports are new on the branch and do not exist on master.\n", strings.Join(baseline.New, ", "))
 	}
 	if len(baseline.Unchanged) > 0 {
 		fmt.Fprintf(out, "    %s. Use --only to include them.\n", engine.UnchangedWords(baseline.Unchanged, baseline.Of))

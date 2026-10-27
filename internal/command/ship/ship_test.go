@@ -129,7 +129,7 @@ func TestShipMineAndPassing(t *testing.T) {
 	out, errs, err := cmdtest.Dockhand(t, "ship", "--mine", "--to", "check")
 	require.NoError(t, err, errs)
 	require.Equal(t, []string{"@ada"}, reader.Asked[0].Maintainers)
-	require.Contains(t, out, "  lost: left as it is: no forge could be found for it\n")
+	require.Contains(t, out, "  lost: skipped: no forge could be found for it\n")
 	require.Contains(t, out, "  jq  a version update from master, to check\n")
 	require.Contains(t, out, "jq 1.7.1 → 1.8.1")
 	require.Empty(t, g.PRs)
@@ -170,9 +170,9 @@ func TestShipBatchIsARowAChange(t *testing.T) {
 	var out, errs bytes.Buffer
 	err := cmdtest.RunFor(t, t.Context(), []string{"ship", "jq", "yq", "--yes"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.Equal(t, 3, term.ExitCode(err), out.String())
-	require.Contains(t, out.String(), "  jq  ✓ ✓ ✓ #34901\n  yq  ✓ ✓ ✓ !\nNeeds you\n  yq  yq-1.8.1 passed its check and waits for your look")
+	require.Contains(t, out.String(), "  jq  ✓ ✓ ✓ #34901\n  yq  ✓ ✓ ✓ !\nNeeds attention\n  yq  yq-1.8.1 passed its check and needs review, so nothing was submitted")
 	require.NotContains(t, out.String(), "checking commit ")
-	require.NotContains(t, errs.String(), "yq: ", "said under Needs you")
+	require.NotContains(t, errs.String(), "yq: ", "said under Needs attention")
 	require.Len(t, g.PRs, 1)
 }
 
@@ -189,9 +189,9 @@ func TestShipQueuesABatchsChecksFirst(t *testing.T) {
 	out := both.String()
 	require.Equal(t, 3, term.ExitCode(err), out)
 	require.EqualError(t, err, "yq-1.8.1 stopped; the rest went on")
-	jq, yq, ran := strings.Index(out, "jq-1.8.1 · checking commit "), strings.Index(out, "yq-1.8.1 · checking commit "), strings.Index(out, "check-1 runs here")
+	jq, yq, ran := strings.Index(out, "jq-1.8.1 · checking commit "), strings.Index(out, "yq-1.8.1 · checking commit "), strings.Index(out, "check-1 is running here")
 	require.True(t, jq >= 0 && yq > jq && ran > yq, "both queued before either ran:\n%s", out)
-	require.Contains(t, out, "yq-1.8.1: yq-1.8.1 passed its check and waits for your look")
+	require.Contains(t, out, "yq-1.8.1: yq-1.8.1 passed its check and needs review, so nothing was submitted")
 	require.Len(t, g.PRs, 1)
 }
 
@@ -235,7 +235,7 @@ func TestShipWithYesHoldsWhatServeWould(t *testing.T) {
 	// Another open pull request: held before the edit, no branch started.
 	g.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
 	_, _, err := cmdtest.Dockhand(t, "ship", "jq", "--yes")
-	require.ErrorContains(t, err, "jq waits for your look, so nothing was changed: #34777 is open for the same port: jq: update to 1.8.0\nOnce it's fine: dockhand ship jq, on a terminal")
+	require.ErrorContains(t, err, "jq needs review, so nothing was changed: #34777 is open for the same port: jq: update to 1.8.0\nAfter review: dockhand ship jq, on a terminal")
 	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")
 	g.Others = nil
 

@@ -27,26 +27,29 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var shipTo string
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run queued checks, and keep running them",
-		Long: `Runs the checks that are queued, people's first, and keeps running new
-ones as they are queued. One serve leads; a second stands by and takes over
-if the leader dies. Stopping serve leaves the check it was running for the
-next serve, which picks it up where it stopped; finished results are kept.
+		Short: "Run queued checks and watch for new work",
+		Long: `Runs queued checks, people's first, and keeps running new ones as they
+are queued. One serve leads; a second stands by and takes over if the
+leader dies. Stopping serve leaves the check it was running for the next
+serve, which resumes it; completed results are kept.
 
-serve checks, and by default opens no pull requests. It also reads your
-open pull requests every few minutes, so status shows their reviews and CI,
-and a merged one marks its branch merged, and it cleans up once a day.
+serve runs checks and by default opens no pull requests. Every few
+minutes it also reads your open pull requests, so status shows their
+reviews and CI, and a merged one marks its branch merged. It cleans up
+once a day.
 
-Once a day, at serve.outdated_at, it looks for new releases of your ports
-(the config's maintainer), and carries them as far as serve.ship_to says, as
-ship --to does: list counts them for status; commit prepares a branch with
-one commit for each; check also checks each, on build.unattended's profile.
+Once a day, at serve.outdated_at, it looks up new releases of your ports
+(the config's maintainer) and takes them as far as serve.ship_to says, as
+ship --to does: list counts them for status; commit prepares a branch
+with one commit for each; check also checks each, with
+build.unattended's profile.
 
-submit also opens a pull request for each branch serve prepared whose check
-passed, at most serve.submit_limit a day, and never one with an upstream or
-commit-rule finding, or one needing --accept: those wait on the attention
-list. The passing branches you started are yours: it names them, for you
-to ship. --ship-to sets serve.ship_to for one run.
+submit also opens a pull request for each branch serve prepared whose
+check passed, at most serve.submit_limit a day, and never for one with an
+upstream or commit-rule finding or one needing --accept: those wait on
+the attention list for review. Passing branches you started are yours:
+serve names them for you to ship. --ship-to sets serve.ship_to for one
+run.
 
 serve.notify posts macOS notifications as checks finish and pull requests
 change; --no-notify turns them off for one run. They are posted through

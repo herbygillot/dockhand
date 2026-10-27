@@ -1164,12 +1164,12 @@ func movedChange(from, to string, followed bool) model.UpstreamChange {
 	toOwner, _, _ := strings.Cut(to, "/")
 	switch {
 	case followed:
-		change.Message = fmt.Sprintf("upstream moved: GitHub answers %s as %s, and github.setup now names it (--follow-moves)", from, to)
+		change.Message = fmt.Sprintf("upstream moved: GitHub redirects %s to %s, and github.setup now names it (--follow-moves)", from, to)
 	case !strings.EqualFold(fromOwner, toOwner):
 		change.Rule = upstreamTransferredRule
-		change.Message = fmt.Sprintf("upstream transferred from %s to %s: GitHub answers %s as %s, by a redirect, and its release is a new owner's to trust; update --follow-moves points github.setup at it", fromOwner, toOwner, from, to)
+		change.Message = fmt.Sprintf("upstream moved from %s to %s: GitHub redirects %s to %s. Review the new owner before trusting its releases. Use update --follow-moves to update github.setup", fromOwner, toOwner, from, to)
 	default:
-		change.Message = fmt.Sprintf("upstream renamed: GitHub answers %s as %s, by a redirect; update --follow-moves points github.setup at it", from, to)
+		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s. Use update --follow-moves to update github.setup", from, to)
 	}
 	return change
 }
@@ -1192,7 +1192,7 @@ const manifestHookRule = "manifest-hook"
 
 // mirrorConflictWords says a mirror conflict and its fix.
 func mirrorConflictWords(conflict editprep.MirrorConflict) string {
-	return fmt.Sprintf("MacPorts' mirror already has a different %s under %s/, which MacPorts may fetch first and fail its checksum; dist_subdir ${name} keeps this port's apart", conflict.Name, conflict.Subdir)
+	return fmt.Sprintf("The MacPorts mirror already has a different %s under %s/. MacPorts may fetch that file first, causing a checksum failure. Set dist_subdir to ${name} to keep this port's files separate", conflict.Name, conflict.Subdir)
 }
 
 func (e *Engine) renamed(ctx context.Context, release model.Release) string {

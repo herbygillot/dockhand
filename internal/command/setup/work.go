@@ -434,6 +434,6 @@ func publishing(ctx context.Context, s *settings.Settings) (string, githubLoginJ
 	case errors.Is(err, github.ErrNoCredentials):
 		return "  not set up: dockhand setup github, when you're ready to submit", githubLoginJSON{Problem: "not set up"}
 	}
-	problem := "GitHub couldn't say whose the login is: " + err.Error()
+	problem := "Could not identify the GitHub account: " + err.Error()
 	return "! " + problem, githubLoginJSON{Problem: problem}
 }

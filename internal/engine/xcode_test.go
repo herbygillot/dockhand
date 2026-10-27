@@ -107,7 +107,7 @@ func TestATargetThatNeedsXcodeIsUnmetWithoutIt(t *testing.T) {
 		}
 	}
 	problems := publicationProblems(evidence, nil, nil, nil)
-	require.Contains(t, problems, "libharbor needs Xcode, which command macOS 26 (Tahoe) arm64 with the Command Line Tools hasn't; a check with Xcode there builds it, or share the branch as a draft (--draft)")
+	require.Contains(t, problems, "libharbor needs Xcode. command macOS 26 (Tahoe) arm64 with the Command Line Tools does not have it; run a check in an environment with Xcode, or submit a draft with --draft")
 
 	usePorts(e, xcodeOnArm{fakePorts: harborPorts(), broken: true})
 	unresolved, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{armTools}, Also: []string{"harbor-tools"}})

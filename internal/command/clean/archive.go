@@ -71,26 +71,26 @@ closes it.`,
 			}
 			switch {
 			case archived.Removed != "":
-				fmt.Fprintf(out, "Archived %s, and removed its worktree; its Git branch and pull request stay. dockhand archive --undo %s brings it back.\n", branch.ShortName(), branch.ShortName())
+				fmt.Fprintf(out, "Archived %s and removed its worktree. The Git branch and pull request remain. Run dockhand archive --undo %s to restore the archived branch.\n", branch.ShortName(), branch.ShortName())
 				// What Git ignores goes with the worktree, and no branch
 				// keeps it: said, as nothing else lists it.
 				if ignored := archived.IgnoredRemoved; len(ignored) > 0 {
 					fmt.Fprintf(out, "Its ignored files went with it: %s\n", prose.Few(ignored, 5, "file"))
 				}
 			case archived.Kept != "":
-				fmt.Fprintf(out, "Archived %s; its worktree stays, since %s. dockhand archive --discard %s removes it, edits and all.\n", branch.ShortName(), archived.Kept, branch.ShortName())
+				fmt.Fprintf(out, "Archived %s; its worktree was kept because %s. dockhand archive --discard %s removes the worktree and its edits.\n", branch.ShortName(), archived.Kept, branch.ShortName())
 			default:
-				fmt.Fprintf(out, "Archived %s; its files, Git branch, and pull request are untouched. dockhand archive --undo %s brings it back.\n", branch.ShortName(), branch.ShortName())
+				fmt.Fprintf(out, "Archived %s; its files, Git branch, and pull request are unchanged. Run dockhand archive --undo %s to restore the archived branch.\n", branch.ShortName(), branch.ShortName())
 			}
 			if pr := branch.PullRequest; pr != nil && archived.PullRequestOpen {
-				fmt.Fprintf(out, "#%d is still open; archive doesn't close it. Close it on GitHub, or with: gh pr close %d --repo %s\n", pr.Number, pr.Number, pr.Repository)
+				fmt.Fprintf(out, "Pull request #%d is still open; archiving does not close it. Close it on GitHub or run: gh pr close %d --repo %s\n", pr.Number, pr.Number, pr.Repository)
 			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&undo, "undo", false, "bring an archived branch back")
 	cmd.Flags().BoolVar(&keep, "keep-worktree", false, "keep the worktree")
-	cmd.Flags().BoolVar(&discard, "discard", false, "remove the worktree though it has uncommitted edits or untracked files, which go")
+	cmd.Flags().BoolVar(&discard, "discard", false, "remove the worktree, including any uncommitted edits and untracked files")
 	cmd.MarkFlagsMutuallyExclusive("keep-worktree", "discard")
 	where.Register(cmd, s, "archive")
 	settings.SupportsJSON(cmd)

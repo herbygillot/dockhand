@@ -59,7 +59,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 
 	out, errs, err := cmdtest.Dockhand(t, "check", "-v")
 	require.NoError(t, err)
-	require.Contains(t, errs, "check-1 runs here, since no dockhand serve is running.")
+	require.Contains(t, errs, "check-1 is running here because dockhand serve is not running.")
 	require.Contains(t, errs, "command: jq passed")
 	require.Contains(t, out, "jq-update · captured working files as snapshot 1\n", "the plan recorded nothing for the check to reuse")
 	require.Contains(t, out, "  jq  ✓\n\nPassed.\nNext: dockhand tidy --branch jq-update\n", "what moves the branch on, as status says it")
@@ -74,7 +74,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	cmdtest.Hosted(t).StartDrain = func(options engine.Options) (int, error) { drained = options; return 4242, nil }
 	out, _, err = cmdtest.Dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	require.Contains(t, out, "check-2 queued; a background drain (pid 4242) runs it. dockhand wait check-2 follows it.\n")
+	require.Contains(t, out, "check-2 is queued; a background worker (PID 4242) will run it. Follow it with dockhand wait check-2.\n")
 	require.NotEmpty(t, drained.Database)
 	require.NotEmpty(t, drained.Env, "in the command line's environment")
 
@@ -87,12 +87,12 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	// naming -d, and each step its redrawn line would show: rc5 said
 	// nothing between its plan and its report (the bazel session's notes,
 	// 2026-10-24).
-	require.Contains(t, errs, "check-3 runs here; check -d runs it in the background instead.\n")
+	require.Contains(t, errs, "check-3 is running here. Use check -d to run in the background.\n")
 	require.Contains(t, errs, "  ⋯ command: jq failed")
 	require.Equal(t, 2, term.ExitCode(err), "a failed check exits 2")
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass\nNext: dockhand explain check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
-	require.Contains(t, out, "jq failed at install; the last it printed:\n    building from\n      ", "what no reading of its log explained (the Vx port's field testing)")
+	require.Contains(t, out, "jq failed at install. Last output:\n    building from\n      ", "what no reading of its log explained (the Vx port's field testing)")
 	// Where each failure's log is, by environment and attempt, where it
 	// said only dockhand logs check-N (the exiv2 field notes, 2026-10-19).
 	require.Regexp(t, `\nLogs:\n  jq on command, attempt 1: ~/\.dockhand/logs/check-3/command-1/command\.log(\.gz)?\n`, out)
@@ -123,7 +123,7 @@ func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
 		Omitted:      []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Kind: model.Substantive, Role: model.Changed}},
 		Tests:        model.TestsDeclared,
 	}, nil, nil, nil)
-	require.Contains(t, out.String(), "Changed     jq\nLeft out    libharbor, by --only; submit still needs them checked\n")
+	require.Contains(t, out.String(), "Changed     jq\nLeft out    libharbor (excluded by --only; submission still requires checks for these ports)\n")
 }
 
 // A plan says what each Git-fetched target's build must fetch: the commit
@@ -492,7 +492,7 @@ func TestStatusComparesTheFilesACheckIncluded(t *testing.T) {
 	require.NoError(t, err)
 	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
-	require.Contains(t, out, "with textproc/jq/files/fix.diff included, untracked")
+	require.Contains(t, out, "including untracked textproc/jq/files/fix.diff")
 	require.NotContains(t, out, "changed since")
 	result, err := cmdtest.JSONOf(t, "status")
 	require.NoError(t, err)

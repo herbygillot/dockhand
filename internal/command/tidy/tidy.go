@@ -24,7 +24,7 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var squash, plan, yes bool
 	cmd := &cobra.Command{
 		Use:   "tidy",
-		Short: "Shape the branch's commits for review",
+		Short: "Prepare the branch's commits for review",
 		Long: `Proposes the commits a reviewer should see: by default one per port
 directory, with the subject dockhand's commands wrote or the one your own
 commits give, and every uncommitted edit included. The final files are
@@ -183,7 +183,7 @@ func UndoCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 		Use: "undo [<checkpoint>]",
 		// v0.3.0's restore points here, not run as an alias.
 		SuggestFor: []string{"restore"},
-		Short:      "Put back the history the latest tidy or rebase replaced",
+		Short:      "Restore history from before the latest tidy or rebase",
 		Long: `Puts a branch's commits back as they were before its latest tidy or
 rebase, or the checkpoint named, such as tidy-3 or rebase-4, when nothing
 has been committed since. After a tidy, the files are not touched: edits

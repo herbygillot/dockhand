@@ -43,7 +43,7 @@ func (r RefreshResult) UnreadWords() string {
 	if r.Unread == 0 {
 		return ""
 	}
-	return fmt.Sprintf("GitHub’s rate limit left %s unread. Reading again after %s", prose.Plural(r.Unread, "pull request"), r.RetryAt.Local().Format("15:04 MST"))
+	return fmt.Sprintf("GitHub's rate limit prevented refresh of %s. Dockhand will retry after %s", prose.Plural(r.Unread, "pull request"), r.RetryAt.Local().Format("15:04 MST"))
 }
 
 // PullRequestRefresh is how often serve reads the pull requests, and how

@@ -49,7 +49,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	out, errs, err := cmdtest.Dockhand(t, "retry", "check-1", "-v")
 	require.NoError(t, err)
 	require.Contains(t, out, "check-2 repeats check-1: snapshot 1\n")
-	require.Contains(t, errs, "check-2 runs here")
+	require.Contains(t, errs, "check-2 is running here")
 	require.Contains(t, out, "\nPassed.\n", "the check's heading named what it checks")
 
 	_, _, err = cmdtest.Dockhand(t, "rebase")
@@ -86,7 +86,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 
 	out, _, err = cmdtest.Dockhand(t, "archive")
 	require.NoError(t, err)
-	require.Contains(t, out, "Archived notes, and removed its worktree;")
+	require.Contains(t, out, "Archived notes and removed its worktree.")
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)

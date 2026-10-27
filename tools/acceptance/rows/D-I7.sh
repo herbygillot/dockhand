@@ -45,7 +45,7 @@ assert() {
 	[ -f "$ROW_DIR/check.fault.exit" ] || return 0
 	local kind
 	for kind in fault error infrastructure; do
-		grep -q 'runs here' "$ROW_DIR/check.$kind" ||
+		grep -q 'running here' "$ROW_DIR/check.$kind" ||
 			{ row_fail "harness: the $kind check didn't run here, so the failpoint wasn't in its process: $(head -2 "$ROW_DIR/check.$kind" | tr '\n' ' ')"; return; }
 	done
 	local fault=$ROW_DIR/check.fault

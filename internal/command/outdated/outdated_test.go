@@ -55,16 +55,16 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	// Nor is one whose newest release is uncertain, which is listed, with
 	// why and the update that takes it (the update-workflow review's
 	// finding 6).
-	row := "Held (1)\n  yq  4.44.1 → 5.0?  update yq 5.0 after a look: v5.0 compares newer, but its commit is older than v4.44.1's\n"
-	settle := "Where a tag set aside is an old one spelled oddly rather than a release, a livecheck.regex that skips it keeps it out of later looks.\n"
+	row := "Held (1)\n  yq  4.44.1 → 5.0?  review before running update yq 5.0: v5.0 compares newer, but its commit is older than v4.44.1's\n"
+	settle := "If a skipped tag is an oddly named old tag rather than a release, add a livecheck.regex that excludes it from future checks.\n"
 	require.Equal(t, row+"yq may have a newer release, at master 1bb30d5\n"+settle, said(cmdtest.YqMayBeOutdated))
-	require.Equal(t, row+"None of 2 ports has a newer release, at master 1bb30d5 · 1 may have one, for a look\n"+settle, said(cmdtest.YqMayBeOutdated, current("jq")))
+	require.Equal(t, row+"None of 2 ports has a newer release, at master 1bb30d5 · 1 may have a newer release; review needed\n"+settle, said(cmdtest.YqMayBeOutdated, current("jq")))
 
 	// One ahead of every version upstream lists, its own tag not among
 	// them, is held for a look, never current (field testing's mergestat,
 	// 2026-10-23).
 	ahead := engine.OutdatedPort{Port: "mergestat", Current: "0.5.4", Newest: "0.1.0", Ahead: "v0.1.0"}
-	require.Equal(t, "Held (1)\n  mergestat  0.5.4 → 0.1.0?  update mergestat <version> after a look: its 0.5.4 isn't among upstream's tags; the newest is v0.1.0; the repository may have moved\n"+
+	require.Equal(t, "Held (1)\n  mergestat  0.5.4 → 0.1.0?  review before running update mergestat <version>: its 0.5.4 isn't among upstream's tags; the newest is v0.1.0; the repository may have moved\n"+
 		"mergestat may have a newer release, at master 1bb30d5\n", said(ahead))
 	require.Equal(t, engine.OutdatedAhead, ahead.Class())
 
@@ -131,7 +131,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	// --plan starts none.
 	out, _, err = cmdtest.Dockhand(t, "update", "--mine", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "  lost: left as it is: no forge could be found for it\n")
+	require.Contains(t, out, "  lost: skipped: no forge could be found for it\n")
 	require.Contains(t, out, "Will start 1 branch, one per port:\n  dockhand/jq-1.8.1  jq 1.7.1 → 1.8.1\n", "a row a port, with the name the run uses")
 	require.Contains(t, out, "Nothing was started (--plan).\n")
 
@@ -150,7 +150,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	require.Contains(t, out, "  jq  1.7.1 → 1.8.1  already in jq-1.8.1\n")
 	out, _, err = cmdtest.Dockhand(t, "update", "--mine", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "  jq: left as it is: already in jq-")
+	require.Contains(t, out, "  jq: skipped: already in jq-")
 	require.Contains(t, out, "Nothing to update: no newer releases remain outside your existing branches.\n")
 
 	_, _, err = cmdtest.Dockhand(t, "update", "--mine", "jq")
@@ -174,7 +174,7 @@ func TestUpdateMineLeavesAnUncertainPortForALook(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "update", "--mine", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "Will start 1 branch, one per port:\n  dockhand/jq-")
-	require.Contains(t, out, "1 that may have one, for your look")
+	require.Contains(t, out, "1 that may have one; review needed")
 
 	result, err := cmdtest.JSONOf(t, "outdated", "jq", "lost", "yq")
 	require.Equal(t, 3, term.ExitCode(err), "lost couldn't be checked")

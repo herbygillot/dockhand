@@ -66,7 +66,7 @@ func (s *Settings) Places() config.Places { return s.ComposeOptions().Places() }
 // OverAllowanceFlag registers --over-allowance on a command that looks up
 // ports' newest releases.
 func OverAllowanceFlag(cmd *cobra.Command, s *Settings) {
-	cmd.Flags().BoolVar(&s.OverAllowance, "over-allowance", false, "look up the ports though the look's estimate passes what's left of the hour's GitHub allowance")
+	cmd.Flags().BoolVar(&s.OverAllowance, "over-allowance", false, "look up ports even if the estimated requests exceed the remaining GitHub rate limit")
 }
 
 // KeepModelineFlag registers --keep-modeline on a command whose edits

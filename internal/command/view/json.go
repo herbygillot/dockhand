@@ -546,9 +546,9 @@ func ChangesView(changes []buildenv.Change) []changeJSON {
 // back.
 func ChangeWords(change buildenv.Change) string {
 	if change.Building {
-		return fmt.Sprintf("%s is building in %s: your own port commands there wait for it, and what you upgrade there meanwhile is undone when it puts the prefix back.", change.Check, change.Place)
+		return fmt.Sprintf("%s is building in %s. Your port commands targeting this prefix must wait; upgrades made there in the meantime will be undone when the prefix is restored.", change.Check, change.Place)
 	}
-	return fmt.Sprintf("%s left %s changed, ending before it could put it back: %s puts it back, or the next check there does.", change.Check, change.Place, change.Remedy)
+	return fmt.Sprintf("%s stopped before it could restore %s. Run %s to restore it, or let the next check there restore it.", change.Check, change.Place, change.Remedy)
 }
 
 // processJSON is a dockhand process working on the checkout.

@@ -19,7 +19,7 @@ func RetryCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "retry [check]",
-		Short: "Run a finished check's exact request again",
+		Short: "Repeat a finished check with the same files and plan",
 		Long: `Queues a finished check again, such as check-42: the same files, the same
 plan, and the same environments, whatever the branch holds now. check
 captures newer edits instead. Until results are reused port by port, the

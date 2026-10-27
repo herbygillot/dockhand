@@ -24,7 +24,7 @@ func DiffCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var stat, archives bool
 	cmd := &cobra.Command{
 		Use:   "diff [<path>...]",
-		Short: "Show the branch's change from master, edits included",
+		Short: "Show changes from master, including uncommitted edits",
 		Long: `Shows what the branch changes from the master it starts from, with the
 files as they are now: commits and uncommitted edits alike, which is what
 check captures and what a pull request would show. It first lists the
@@ -206,7 +206,7 @@ func ImpactCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "impact [<port>...]",
-		Short: "Show what the branch's change reaches beyond its ports",
+		Short: "Show ports affected by the branch's changes",
 		Long: `Lists the ports the branch changes, the other ports that depend on them
 directly, and the shared files it changes with the ports that load them.
 Dependents come from the port index at the branch's base, and are looked

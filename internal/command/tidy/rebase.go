@@ -16,7 +16,7 @@ func RebaseCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "rebase",
-		Short: "Move the branch's commits onto fresh master",
+		Short: "Rebase the branch onto the latest master",
 		Long: `Fetches MacPorts' master and replays the branch's commits on it, in the
 branch's worktree, keeping the old history as a checkpoint that dockhand
 restore brings back. A branch with uncommitted edits is refused, and a
@@ -50,10 +50,10 @@ rebase that conflicts is abandoned with the branch as it was.`,
 			fmt.Fprintf(streams.Out, "Rebased %s (%s) from master %s onto %s.\nCheckpoint %s keeps the old history (dockhand undo %s).\n",
 				branch.ShortName(), prose.Plural(rebased.Commits, "commit"), rebased.From.Short(), rebased.To.Short(), name, name)
 			if len(rebased.OlderBuilds) > 0 {
-				fmt.Fprintf(streams.Out, "The rebased commits keep their Generated-By, naming an older dockhand, %s; tidy names this build in a commit it writes again.\n", strings.Join(rebased.OlderBuilds, ", "))
+				fmt.Fprintf(streams.Out, "The rebased commits retain Generated-By values for older Dockhand builds: %s. A commit rewritten by tidy will name this build.\n", strings.Join(rebased.OlderBuilds, ", "))
 			}
 			if branch.PullRequest != nil {
-				fmt.Fprintf(streams.Out, "#%d still has the old commits; dockhand submit replaces them, if no one else has pushed.\n", branch.PullRequest.Number)
+				fmt.Fprintf(streams.Out, "Pull request #%d still has the old commits. dockhand submit will replace them only if no one else has pushed.\n", branch.PullRequest.Number)
 			}
 			// A check of the rebased files can already stand, as one does
 			// after a second rebase onto the same master: status says what

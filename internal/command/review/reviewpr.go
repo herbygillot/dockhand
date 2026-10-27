@@ -25,15 +25,15 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "review <pr>",
 		Short: "Review a pull request against MacPorts' rules",
-		Long: `Fetches a macports-ports pull request, such as 34905, and applies MacPorts'
-commit rules to its commits and Portfiles, as tidy and submit do. Reviewing
-it again after it changes says which findings are resolved. port lint and
-the build are left to MacPorts CI.
+		Long: `Fetches a macports-ports pull request, such as 34905, and applies
+MacPorts' commit rules to its commits and Portfiles, as tidy and submit
+do. Reviewing it again after it changes shows which findings were
+resolved. port lint and the build are left to MacPorts CI.
 
 It posts nothing unless asked: on a terminal it shows the text and asks;
 --comment posts it as a comment, and --request-changes as a request for
-changes, which MacPorts reads only from people with write or triage
-access. --markdown prints the text, for pasting.`,
+changes, which MacPorts honors only from people with write or triage
+access. --markdown prints the text for pasting.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -146,7 +146,7 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 	}
 	switch lines := view.ComparisonLines(report.Upstream); {
 	case report.UpstreamUnread != "":
-		fmt.Fprintf(out, "  ! upstream's change wasn't assessed: %s\n", report.UpstreamUnread)
+		fmt.Fprintf(out, "  ! Upstream changes could not be assessed: %s\n", report.UpstreamUnread)
 	case len(lines) > 0:
 		// What MacPorts has of a dependency is read at the pull request's
 		// commits, which master may have moved past, as it had for an
@@ -168,10 +168,10 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 			fmt.Fprintf(out, "    %s\n", line)
 		}
 	case len(report.Upstream) > 0:
-		fmt.Fprintln(out, "  ✓ upstream: no license, build file, dependency, or patch changes")
+		fmt.Fprintln(out, "  ✓ Upstream comparison: no license, build file, dependency, or patch changes")
 	}
 	if words := report.DependentsWords(); words != "" {
 		fmt.Fprintf(out, "  %s\n", words)
 	}
-	fmt.Fprintln(out, "    not checked here: port lint and the build; MacPorts CI runs both")
+	fmt.Fprintln(out, "    Not checked by Dockhand: port lint and the build; MacPorts CI runs both")
 }

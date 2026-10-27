@@ -122,7 +122,7 @@ func (facts bodyFacts) description() prdescription.Facts {
 	// says which it built; otherwise it's the person's statement.
 	if evidence != nil && !facts.NoCheck {
 		if port, builds, passed := evidence.VariantsBuilt(); passed {
-			answers.Variants, answers.VariantsNote = true, fmt.Sprintf("(dockhand built %s with each of %s over its defaults)", port, strings.Join(builds, ", "))
+			answers.Variants, answers.VariantsNote = true, fmt.Sprintf("(Dockhand built %s with each of %s added to the default variants)", port, strings.Join(builds, ", "))
 		}
 	}
 	described.Verification = answers

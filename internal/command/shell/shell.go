@@ -16,23 +16,25 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var test bool
 	cmd := &cobra.Command{
 		Use:   "shell <check> [-- <command>...]",
-		Short: "Run a command, or open a shell, in a clone a check kept",
-		Long: `Starts a clone check --keep kept, runs the command in the port's work
-directory, its staged directory where MacPorts' work is gone, streams what
-it says, exits with its code, and stops the clone again; the clone stays
-kept. With no command, on a terminal, it opens a shell there.
+		Short: "Run a command or open a shell in a retained check VM",
+		Long: `Starts the VM a check retained with check --keep and runs the command in
+the port's work directory, or in its staged directory if MacPorts' work
+directory is gone. The command's output is streamed, Dockhand exits with
+its exit code, and the VM is stopped afterward but stays retained. With
+no command, on a terminal, it opens a shell there.
 
-A check that kept a clone on several releases needs --on to choose one, and
-a check of several ports builds in the first port it changed's directory
-unless --port names another. The command form is the one a script or an
-agent can use:
+If the check retained VMs for several releases, use --on to choose one.
+For a check of several ports, the command runs in the first changed
+port's directory unless --port names another. Scripts and agents can use
+the command form:
 
   dockhand shell check-12 -- otool -L /opt/local/bin/harbor
 
---test copies the port's directory as it is in the branch now to where the
-check staged it, and runs the test phase alone again with port -o, which
-keeps the build though the Portfile changed. An edit outside the test
-phase doesn't apply, and the run is never a result or evidence.`,
+--test copies the port's current branch files to where the check staged
+them and reruns only the test phase with port -o, which keeps the
+existing build even though the Portfile changed. Changes outside the test
+phase are not applied, and the run never counts as a check result or as
+evidence.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if at := cmd.ArgsLenAtDash(); at > 1 || (at < 0 && len(args) > 1) {
@@ -56,7 +58,7 @@ phase doesn't apply, and the run is never a result or evidence.`,
 				return err
 			}
 			if test {
-				fmt.Fprintln(streams.Err, "Running the test phase again with the port as it is in the branch now, on the build as it stands: an edit outside the test phase doesn't apply, and the run is no check's result.")
+				fmt.Fprintln(streams.Err, "Rerunning the test phase using the current port files and the existing build. Changes outside the test phase are not applied. This run does not count as a check result.")
 			}
 			code, err := e.Shell(ctx, engine.ShellRequest{Run: run, Release: on, Port: port, Command: command, Test: test, Input: streams.In, Output: streams.Out, Terminal: len(command) == 0 && !test})
 			if err != nil {
@@ -68,8 +70,8 @@ phase doesn't apply, and the run is never a result or evidence.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&on, "on", "", "the release whose clone to start, as tahoe or 26, where the check kept several")
-	cmd.Flags().BoolVar(&test, "test", false, "copy the port's directory, as it is in the branch now, into the clone, and run its test phase again on the build")
-	cmd.Flags().StringVar(&port, "port", "", "the port whose work directory the command runs in, the first the check changed where it's empty")
+	cmd.Flags().StringVar(&on, "on", "", "select a release when the check retained more than one clone, for example tahoe or 26")
+	cmd.Flags().BoolVar(&test, "test", false, "copy the port's current branch files into the clone and rerun the test phase against the existing build")
+	cmd.Flags().StringVar(&port, "port", "", "port whose work directory to use (default: the first changed port in the check)")
 	return cmd
 }

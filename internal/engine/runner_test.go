@@ -433,7 +433,7 @@ func TestOnlyWhatAnotherAttemptCouldFixIsTriedAgain(t *testing.T) {
 		attempts int
 		detail   string
 	}{
-		{"infrastructure", buildenv.Infrastructure("the VM stopped"), model.MaxAttempts, "failed 3 times for reasons of its own"},
+		{"infrastructure", buildenv.Infrastructure("the VM stopped"), model.MaxAttempts, "failed 3 times because of an environment error"},
 		{"unclassified", errors.New("release 30 isn't one this dockhand knows"), 1,
 			"dockhand: command macOS 26 (Tahoe) arm64: release 30 isn't one this dockhand knows; the provider didn't mark it as trouble another attempt could clear, so none was made"},
 		{"dockhand's own", buildenv.ErrDockhandFault.Because("the guest reported %q, which this job didn't ask for", "fd"), 1,

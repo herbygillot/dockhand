@@ -43,7 +43,7 @@ func TestAPlanNamesTheChangedSubportAndItsSiblings(t *testing.T) {
 	var out bytes.Buffer
 	WritePlan(&out, plan, nil, siblings, nil)
 	require.Contains(t, out.String(), "Changed     terraform-1.16\n")
-	require.Contains(t, out.String(), "Siblings    terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3, built as MacPorts' CI builds every subport of a changed Portfile; --only narrows\n")
+	require.Contains(t, out.String(), "Siblings    terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3 (MacPorts CI builds every subport of a changed Portfile; use --only to narrow the check)\n")
 	require.Contains(t, out.String(), fmt.Sprintf("Excluded    terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3: %s\n", minmax))
 
 	out.Reset()
@@ -86,7 +86,7 @@ func TestTheGridSaysAnEarlierChecksCellStands(t *testing.T) {
 	var out bytes.Buffer
 	WriteResults(&out, "  ", evidence, false)
 	require.Contains(t, out.String(), "(check-490)")
-	require.Contains(t, out.String(), "\n  (check-490): an earlier check's result, standing since nothing its build read has changed\n")
+	require.Contains(t, out.String(), "\n  (check-490): result reused from an earlier check; its build inputs have not changed\n")
 
 	evidence.Targets[0].Outcomes[0] = cell(twelve, "x2")
 	out.Reset()

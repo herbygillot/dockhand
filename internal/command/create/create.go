@@ -198,7 +198,7 @@ its go-get answer.`,
 			// A draft with no checksums isn't done: it exits 3, for a look,
 			// where it exited 0 (v0.4.0's known issues).
 			if created.ChecksumsProblem != "" {
-				fmt.Fprintln(out, "Next: resolve its checksums as said above, then dockhand checksums "+created.Port)
+				fmt.Fprintln(out, "Next: resolve the checksum problem above, then run dockhand checksums "+created.Port)
 				return &term.ExitError{Code: term.ExitAttention}
 			}
 			fmt.Fprintln(out, "Next: "+branchflags.NextIn(ctx, e, branch, "dockhand edit "+created.Port, "dockhand check"))

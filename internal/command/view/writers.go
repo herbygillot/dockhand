@@ -53,7 +53,7 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 	// does, and said as that, where "Changed 19 ports" read as the change
 	// being that broad (field testing's terraform replay, 2026-10-22).
 	if len(built) > 0 {
-		fmt.Fprintf(out, "Siblings    %s, built as MacPorts' CI builds every subport of a changed Portfile; --only narrows\n", prose.Few(built, listShown, "port"))
+		fmt.Fprintf(out, "Siblings    %s (MacPorts CI builds every subport of a changed Portfile; use --only to narrow the check)\n", prose.Few(built, listShown, "port"))
 	}
 	if len(extra) > 0 {
 		fmt.Fprintf(out, "Also        %s\n", prose.Few(extra, listShown, "port"))
@@ -63,7 +63,7 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 		for _, target := range plan.Omitted {
 			omitted = append(omitted, string(target.ID))
 		}
-		fmt.Fprintf(out, "Left out    %s, by --only; submit still needs them checked\n", strings.Join(omitted, ", "))
+		fmt.Fprintf(out, "Left out    %s (excluded by --only; submission still requires checks for these ports)\n", strings.Join(omitted, ", "))
 	}
 	var on []string
 	for _, environment := range plan.Environments {
@@ -278,9 +278,9 @@ func writeStanding(out io.Writer, indent string, evidence engine.Evidence) {
 	switch len(checks) {
 	case 0:
 	case 1:
-		fmt.Fprintf(out, "%s(%s): an earlier check's result, standing since nothing its build read has changed\n", indent, checks[0])
+		fmt.Fprintf(out, "%s(%s): result reused from an earlier check; its build inputs have not changed\n", indent, checks[0])
 	default:
-		fmt.Fprintf(out, "%s(%s): earlier checks' results, standing since nothing their builds read has changed\n", indent, strings.Join(checks, ", "))
+		fmt.Fprintf(out, "%s(%s): results reused from earlier checks; their build inputs have not changed\n", indent, strings.Join(checks, ", "))
 	}
 }
 

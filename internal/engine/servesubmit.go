@@ -375,7 +375,7 @@ type HeldBeforeEdit struct {
 }
 
 func (h *HeldBeforeEdit) Error() string {
-	return fmt.Sprintf("%s is held for a look before its edit: %s", h.Port, strings.Join(HoldLines(h.Held), "; "))
+	return fmt.Sprintf("%s needs review before Dockhand can prepare its update: %s", h.Port, strings.Join(HoldLines(h.Held), "; "))
 }
 
 // heldBeforeEdit looks for the port's other open pull requests before an
@@ -431,7 +431,7 @@ const (
 // saying in its description that no person reviewed it.
 func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (Submitted, error) {
 	if len(candidate.Held) > 0 {
-		return Submitted{}, fmt.Errorf("%s is held for a look: %s", candidate.Branch.ShortName(), strings.Join(HoldLines(candidate.Held), "; "))
+		return Submitted{}, fmt.Errorf("%s needs review before submission: %s", candidate.Branch.ShortName(), strings.Join(HoldLines(candidate.Held), "; "))
 	}
 	plan := candidate.Plan
 	plan.Body = plan.Body + "\n\n" + ServeNote + "\n"

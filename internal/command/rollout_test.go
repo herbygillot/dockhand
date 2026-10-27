@@ -90,7 +90,7 @@ func TestCheckOffersToTrackAnUntrackedCheckout(t *testing.T) {
 	errs.Reset()
 	err = cmdtest.RunFor(t, t.Context(), []string{"check", "--plan"}, term.Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err, errs.String())
-	require.Regexp(t, `Started jq-[a-z0-9]{4} at this commit, and tracking it\.\n`, errs.String(), "named for its port")
+	require.Regexp(t, `Created jq-[a-z0-9]{4} at this commit and started tracking it\.\n`, errs.String(), "named for its port")
 	require.Regexp(t, `^dockhand/jq-[a-z0-9]{4}$`, testsupport.Git(t, w.Clone, "branch", "--show-current"))
 }
 

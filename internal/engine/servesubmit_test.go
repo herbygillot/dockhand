@@ -106,7 +106,7 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true, Rule: assess.LicenseChanged, Class: model.Introduced}},
 		candidates[0].Plan.Upstream[0].Comparison.Changes, "the plan says what was found, for a person's submission to show")
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
-	require.ErrorContains(t, err, "is held for a look: upstream's LICENSE changed")
+	require.ErrorContains(t, err, "needs review before submission: upstream's LICENSE changed")
 }
 
 // Archives the update couldn't compare hold serve's submission as a
@@ -130,7 +130,7 @@ func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
 	require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{},
 		Problem: "new.tar.gz replaces no archive dockhand could find, so it wasn't compared"}}}, candidates[0].Plan.Upstream)
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
-	require.ErrorContains(t, err, "is held for a look: the upstream archives couldn't be compared")
+	require.ErrorContains(t, err, "needs review before submission: the upstream archives couldn't be compared")
 	require.Empty(t, fake.Created)
 }
 
@@ -211,7 +211,7 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	require.NoError(t, err)
 	early := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: model.OriginServe, Answered: model.AnsweredNobody, To: ShipCheck, Where: Where{Environments: []model.Environment{{Provider: "command"}}}, Tests: model.TestsDeclared})
 	require.Len(t, early, 1)
-	require.Equal(t, "jq is held for a look before its edit: #34777 is open for the same port: jq: update to 1.8.1; no branch was started", early[0].Problem)
+	require.Equal(t, "jq needs review before Dockhand can prepare its update: #34777 is open for the same port: jq: update to 1.8.1; no branch was started", early[0].Problem)
 	require.Nil(t, early[0].Run, "nothing is checked")
 
 	fake.Others = nil
@@ -221,7 +221,7 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"#34777 is open for the same port: jq: update to 1.8.1"}, HoldLines(candidates[0].Held))
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
-	require.ErrorContains(t, err, "is held for a look: #34777 is open")
+	require.ErrorContains(t, err, "needs review before submission: #34777 is open")
 	require.Empty(t, fake.Created)
 
 	held := SubmitPlan{SearchProblem: "rate limited"}.Held()
@@ -504,7 +504,7 @@ func TestAMajorVersionHoldsAnUnattendedUpdate(t *testing.T) {
 	// architecture review of 5897a82, R3-36).
 	planned := PlannedUpdate{Port: OutdatedPort{Port: "jq", Current: "1.7.1", Newest: "2.0.0", Release: &major}, Name: "jq-2.0.0"}
 	done := e.prepareOne(t.Context(), planned, PrepareOptions{Origin: model.OriginPerson, Answered: model.AnsweredNobody})
-	require.Contains(t, done.Problem, "jq is held for a look before its edit")
+	require.Contains(t, done.Problem, "jq needs review before Dockhand can prepare its update")
 
 	e.options.AllowMajors = true
 	require.Nil(t, e.majorHold("jq", "1.7.1", "2.0.0"), "holds.majors = \"allow\"")

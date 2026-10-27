@@ -95,7 +95,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	var out, errs bytes.Buffer
 	err = cmdtest.RunFor(t, t.Context(), []string{"update", "jq"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.NoError(t, err)
-	require.Regexp(t, `^jq is in no open branch, so this starts one for it, named for the version it moves to\.\n`, errs.String())
+	require.Regexp(t, `^No open branch changes jq\. Starting a branch named for the new version\.\n`, errs.String())
 	started := regexp.MustCompile(`Started dockhand/(jq-1\.8\.1) from master `).FindStringSubmatch(out.String())
 	require.NotNil(t, started, out.String())
 	name := started[1]
@@ -213,7 +213,7 @@ func TestAnUntrackedBranchHereIsTheirsToAdopt(t *testing.T) {
 	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\), since mine doesn't change jq; --new without --plan starts the branch\n`, cmdtest.Flat(planned))
 	_, said, err := cmdtest.Dockhand(t, "update", "jq", "1.8.1")
 	require.NoError(t, err)
-	require.Contains(t, said, "jq is in no open branch, so this starts one for it, named for the version it moves to.", "mine is no context, as master isn't")
+	require.Contains(t, said, "No open branch changes jq. Starting a branch named for the new version.", "mine is no context, as master isn't")
 
 	refused := func(why string) {
 		t.Helper()

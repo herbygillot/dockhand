@@ -30,7 +30,7 @@ func WaitCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "wait [check]",
-		Short: "Follow a check until it ends",
+		Short: "Wait for a check and show its result",
 		Long: `Follows a check, such as check-42, until it ends, and reports it; in a
 branch's worktree, with no check named, the branch's latest; -b, -p, or
 --pr names a branch, for its latest check from anywhere. With serve
@@ -74,7 +74,7 @@ func CancelCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "cancel [check]",
-		Short: "Stop a check, keeping what finished",
+		Short: "Cancel a check and keep completed results",
 		Long: `Stops a check, such as check-42, keeping what it finished; in a branch's
 worktree, with no check named, the branch's latest; -b, -p, or --pr names a
 branch, for its latest check from anywhere.`,
@@ -128,7 +128,7 @@ func LogsCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "logs [check or provider run] [port]",
-		Short: "Show where a check's logs are, or one port's log",
+		Short: "Show a check's log locations or a port's log",
 		Long: `Shows a check's provider runs, check-42's, and where each port's log is, or
 one provider run's alone, by the ID a pull request's Tested on names,
 tart_7y62p4sigena6xlr, or by its provider's own reference, such as a workflow
