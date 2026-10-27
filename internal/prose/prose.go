@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -20,6 +21,21 @@ func Count(n int) string {
 		digits = digits[:i] + "," + digits[i:]
 	}
 	return digits
+}
+
+// Took is how long something took, short enough for a table's cell, to
+// the second under an hour and the minute past it: "38s", "4m 12s",
+// "1h 3m".
+func Took(d time.Duration) string {
+	d = d.Round(time.Second)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d/time.Second))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm %ds", int(d/time.Minute), int(d%time.Minute/time.Second))
+	}
+	d = d.Round(time.Minute)
+	return fmt.Sprintf("%dh %dm", int(d/time.Hour), int(d%time.Hour/time.Minute))
 }
 
 // Plural is a count of a noun: "1 port", "2 ports", "3 patches".

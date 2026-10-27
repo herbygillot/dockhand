@@ -124,6 +124,17 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 	} else {
 		field("Authoring", "! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports")
 	}
+	for i, tool := range report.Vendoring {
+		label := ""
+		if i == 0 {
+			label = "Vendoring"
+		}
+		if tool.Path != "" {
+			field(label, fmt.Sprintf("✓ %s at %s, for %s", tool.Name, s.Places().Tilde(tool.Path), tool.For))
+		} else {
+			field(label, fmt.Sprintf("! %s is not on PATH; %s need it, as create and update write them: sudo port install %s", tool.Name, tool.For, tool.Name))
+		}
+	}
 	for i, line := range providerLines(cmd.Context(), s, file) {
 		report.Providers = append(report.Providers, line)
 		label := ""

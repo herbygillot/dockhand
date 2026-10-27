@@ -43,6 +43,7 @@ var engineImports = map[string]string{
 	"internal/fetch":                  "asking a URL whether it answers over HTTPS, as fetching follows redirects",
 	"internal/sourcecompare":          "what upstream's source changed, for update",
 	"internal/macports/assess":        "what upstream's change means for the port, for update",
+	"internal/macports/depblock":      "go2port and cargo2port, found as the edits find them, for setup's report",
 	"internal/macports/patchcheck":    "a revision's patches checked against its source, for its assessment",
 	"internal/macports/fidelity":      "which subports a revision changed, for its change record",
 	"internal/failpoint":              "the acceptance harness's kill steps, which a normal build hasn't",

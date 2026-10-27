@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
@@ -231,8 +232,10 @@ func writeExclusions(out io.Writer, plan model.Plan, shown int) {
 // it is a line each, "jq  ✓", the environment named when where says so.
 // On several it is a grid, a row per target and a column per environment
 // headed by its release, macOS 26, since the plan named the environments
-// in full.
+// in full. Each target built says how long it took, and each release how
+// long the check ran there, under the results (the docs dig's I38).
 func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where bool) {
+	defer writeTook(out, indent, evidence)
 	defer writeStanding(out, indent, evidence)
 	environments := evidence.Plan.Environments
 	// The releases a profile chose not to build on are left out, as the
@@ -248,7 +251,7 @@ func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where 
 		for _, target := range evidence.Targets {
 			var cells []string
 			for _, i := range shown {
-				cell := resultWords(evidence, target, i)
+				cell := resultWords(evidence, target, i) + targetTook(evidence, target, i)
 				if where {
 					cell = engine.DescribeEnvironment(environments[i]) + " " + cell
 				}
@@ -267,11 +270,40 @@ func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where 
 	for _, target := range evidence.Targets {
 		fmt.Fprintf(grid, "%s%s", indent, target.Target.ID)
 		for _, i := range shown {
-			fmt.Fprintf(grid, "\t%s", resultWords(evidence, target, i))
+			fmt.Fprintf(grid, "\t%s", resultWords(evidence, target, i)+targetTook(evidence, target, i))
 		}
 		fmt.Fprintln(grid)
 	}
 	_ = grid.Flush()
+}
+
+// targetTook is how long a target's build took, as " (4m 12s)", or empty
+// where it wasn't this check's, or took under a second, as a result
+// recorded without a build does.
+func targetTook(evidence engine.Evidence, target engine.TargetEvidence, environment int) string {
+	took, ok := evidence.TargetTook(target, environment)
+	if !ok || took < time.Second {
+		return ""
+	}
+	return " (" + prose.Took(took) + ")"
+}
+
+// writeTook says how long the check ran in each release it ran in, a line
+// under the results: "Took 12m 3s on macOS 26 arm64; 9m 41s on macOS 14
+// arm64."
+func writeTook(out io.Writer, indent string, evidence engine.Evidence) {
+	environments := evidence.Plan.Environments
+	var parts []string
+	for _, i := range evidence.Checked() {
+		took, ok := evidence.Took(i)
+		if !ok || took < time.Second {
+			continue
+		}
+		parts = append(parts, prose.Took(took)+" on "+engine.DescribeEnvironment(environments[i]))
+	}
+	if len(parts) > 0 {
+		fmt.Fprintf(out, "%sTook %s.\n", indent, strings.Join(parts, "; "))
+	}
 }
 
 // writeStanding says, once under the results, that a cell marked with an
