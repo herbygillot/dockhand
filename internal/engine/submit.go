@@ -191,6 +191,10 @@ type SubmitPlan struct {
 	// builds on, each of which holds a submission nobody looks over.
 	Majors []model.Concern
 	Floors []model.Concern
+	// Undeclared are the libraries its check's builds link from a port
+	// they don't declare in depends_lib, each of which holds a submission
+	// nobody looks over (linkHolds).
+	Undeclared []model.Concern
 	// Prereleases say each update that takes a port from a stable version
 	// to a prerelease (LeavesStableWords), which holds nothing.
 	Prereleases []string
@@ -457,6 +461,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	plan.Prereleases = prereleases(edits)
 	plan.After = e.afterHolds(ctx, edits)
 	plan.Floors = e.floorHolds(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree))
+	plan.Undeclared = e.linkHolds(ctx, plan.Evidence)
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: plan.Accepted, Types: request.Types,
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,

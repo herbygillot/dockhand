@@ -162,6 +162,9 @@ func (p SubmitPlan) Concerns() []model.Concern {
 	for _, after := range p.After {
 		add(after)
 	}
+	for _, link := range p.Undeclared {
+		add(link)
+	}
 	// A commit-rule error holds, as tidy rewrites the commits it's in; a
 	// warning is said and holds nothing, as tidy keeps the commits it's
 	// in: serve held a branch for a body line over 72 characters that tidy
@@ -462,7 +465,7 @@ const afterRule = "after"
 func HoldRules() []string {
 	rules := slices.Concat(assess.Rules(), commitrules.ErrorCodes(), []string{majorRule, darwinFloorRule, deploymentTargetRule,
 		"source-moved", "tag-moved", "release-moved", "assessment-moved", "open", "search-failed",
-		upstreamMovedRule, upstreamTransferredRule, mirrorConflictRule, manifestHookRule, afterRule})
+		upstreamMovedRule, upstreamTransferredRule, mirrorConflictRule, manifestHookRule, afterRule, linkUndeclaredRule})
 	slices.Sort(rules)
 	return slices.Compact(rules)
 }
@@ -563,6 +566,38 @@ func floorConcerns(records map[string]model.ChangeRecord) []model.Concern {
 				}
 			}
 		}
+	}
+	return held
+}
+
+// linkUndeclaredRule is the hold of a build that links a library from a
+// port its Portfile doesn't declare (the person's "Hold it", 2026-10-27
+// 12:53Z): rustup linked liblzma with no depends_lib on xz.
+const linkUndeclaredRule = "link-undeclared"
+
+// linkHolds are the undeclared links of the check a submission rests on
+// (UndeclaredLinks), each a hold for the port that links it, naming the
+// port it links; a declared link, or a build whose links weren't read,
+// holds nothing, as the scan says them.
+func (e *Engine) linkHolds(ctx context.Context, checked *Evidence) []model.Concern {
+	if checked == nil {
+		return nil
+	}
+	findings, err := e.UndeclaredLinks(ctx, checked.Run)
+	if err != nil {
+		return nil
+	}
+	var held []model.Concern
+	for _, finding := range findings {
+		if finding.Unread || finding.Clean || finding.Port == "" {
+			continue
+		}
+		port := string(finding.Target)
+		if i := slices.IndexFunc(checked.Targets, func(t TargetEvidence) bool { return t.Target.ID == finding.Target }); i >= 0 {
+			port = checked.Targets[i].Target.Target.Name
+		}
+		held = append(held, model.Concern{Origin: model.FromHolds, Port: port, Rule: linkUndeclaredRule, Subject: finding.Port,
+			Detail: fmt.Sprintf("%s links %s from %s, which it doesn't declare in depends_lib; review is required before automatic submission", port, path.Base(finding.Library), finding.Port)})
 	}
 	return held
 }

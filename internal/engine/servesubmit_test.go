@@ -31,9 +31,15 @@ func servePrepared(t *testing.T, e *Engine) model.Branch {
 // preparedBy is servePrepared for a branch of the origin given.
 func preparedBy(t *testing.T, e *Engine, origin model.Origin) model.Branch {
 	t.Helper()
+	return preparedWith(t, e, origin, &scriptedProvider{}, port("jq"))
+}
+
+// preparedWith is preparedBy with the provider and jq's evaluation given.
+func preparedWith(t *testing.T, e *Engine, origin model.Origin, provider *scriptedProvider, jq macports.PortInfo) model.Branch {
+	t.Helper()
 	e.OutdatedReader = &newReleases{}
-	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
-	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {jq}}})
+	e.Providers = map[string]buildenv.Provider{"command": provider}
 	report, err := e.Outdated(t.Context(), OutdatedRequest{Maintainers: []string{"@ada"}})
 	require.NoError(t, err)
 	plan, err := e.PlanOutdated(t.Context(), report)
@@ -590,4 +596,43 @@ func TestAPortWaitsForThePortItsHoldsNameFirst(t *testing.T) {
 	fake.Others = []forge.PullRequestSummary{{Number: 35100, Title: "harfbuzz-devel: update to 11.2.0"}}
 	require.Empty(t, e.afterHolds(t.Context(), edits), "it goes once harfbuzz-devel's pull request is open")
 	require.Empty(t, e.afterHolds(t.Context(), []model.Edit{{Kind: model.EditUpdate, Port: "harfbuzz-devel", Release: &release}}), "only the port whose holds say so waits")
+}
+
+// A build that links a library from a port its Portfile doesn't declare
+// holds a submission nobody looks over, naming the port, unless
+// holds.allow names link-undeclared; a declared link holds nothing (the
+// person's "Hold it", 2026-10-27 12:53Z: rustup linked liblzma with no
+// depends_lib on xz).
+func TestAnUndeclaredLinkHoldsAnUnattendedSubmission(t *testing.T) {
+	t.Parallel()
+	lzma := map[model.TargetID][]model.Link{"jq": {{Binary: "/opt/local/bin/jq", Library: "/opt/local/lib/liblzma.5.dylib", Port: "xz"}}}
+	held := []string{"jq links liblzma.5.dylib from xz, which it doesn't declare in depends_lib; review is required before automatic submission"}
+
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	preparedWith(t, e, model.OriginServe, &scriptedProvider{active: []model.ActivePort{}, readsLinks: true, links: lzma}, port("jq"))
+	candidates, _, err := e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	require.Equal(t, held, HoldLines(candidates[0].Held))
+	require.Equal(t, "xz", candidates[0].Held[0].Subject)
+	_, err = e.SubmitForServe(t.Context(), candidates[0])
+	require.ErrorContains(t, err, "needs review before submission: jq links liblzma.5.dylib from xz")
+	require.Empty(t, fake.Created)
+	require.Contains(t, HoldRules(), "link-undeclared")
+
+	e.options.AllowHolds = []string{"link-undeclared"}
+	candidates, _, err = e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, candidates[0].Held, "holds.allow lets it go")
+	require.Equal(t, held, HoldLines(candidates[0].Plan.Concerns()), "and it's still said")
+
+	declared := setup(t)
+	d, _ := declared.withPreparer(t)
+	declared.withFork(t, d)
+	preparedWith(t, d, model.OriginServe, &scriptedProvider{active: []model.ActivePort{}, readsLinks: true, links: lzma}, port("jq", "xz"))
+	candidates, _, err = d.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, candidates[0].Held, "a declared link holds nothing")
 }
