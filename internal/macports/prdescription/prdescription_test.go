@@ -346,3 +346,12 @@ func TestTheDependentsLeftOutAreListed(t *testing.T) {
 		LeftOut: []string{"Left out of the rebuild for jq 1.8.1 with `--except`: **gojq**."}})
 	require.Contains(t, body, "\n- Left out of the rebuild for jq 1.8.1 with `--except`: **gojq**.\n\n")
 }
+
+// What the check's builds installed against the port's earlier build is
+// said under Tested on, for a reviewer to weigh (Then's item 9).
+func TestInstalledFindingsAreSaidUnderTestedOn(t *testing.T) {
+	t.Parallel()
+	body := Compose(Facts{Commits: []Commit{{ID: "abc1234", Message: "exiv2: update to 0.28.3"}}, TestedOn: TestedOn{Columns: []string{"macOS 26"}, Rows: []Row{{Port: "exiv2", Cells: []Cell{{Words: "✓"}}}},
+		Installed: []string{"exiv2: libexiv2.27.dylib is libexiv2.28.dylib now on macOS 26 arm64 against check-12; darktable, gpsbabel link it, and this branch rebuilds each"}}})
+	require.Contains(t, body, "\nAgainst the port's earlier build:\n\n- exiv2: libexiv2.27.dylib is libexiv2.28.dylib now on macOS 26 arm64 against check-12; darktable, gpsbabel link it, and this branch rebuilds each\n")
+}

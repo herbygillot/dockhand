@@ -108,6 +108,11 @@ type TestedOn struct {
 	// check here built on, in words, "14 and 15", which a note under the
 	// table says.
 	UncoveredCI string
+	// Installed are what the check's builds installed and configure found
+	// against the port's earlier build, a line each, as the check's
+	// report says them (Then's item 9): a moved library with its
+	// dependents and which of them the branch rebuilds.
+	Installed []string
 	// RowsLeftOut and RunsLeftOut are how many of the table's rows, and
 	// of the reports' run names, are left out to keep the description
 	// within GitHub's limit (Compose).
@@ -421,6 +426,12 @@ func Owned(facts Facts) string {
 		}
 		if tested.UncoveredCI != "" {
 			fmt.Fprintf(&b, "\nMacPorts CI also builds on macOS %s, which was not covered by these checks.\n", tested.UncoveredCI)
+		}
+		if len(tested.Installed) > 0 {
+			fmt.Fprint(&b, "\nAgainst the port's earlier build:\n\n")
+			for _, line := range tested.Installed {
+				fmt.Fprintf(&b, "- %s\n", escape(line))
+			}
 		}
 	}
 	answers := facts.Verification
