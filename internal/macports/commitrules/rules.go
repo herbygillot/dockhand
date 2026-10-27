@@ -109,9 +109,12 @@ var (
 	followUp   = regexp.MustCompile(`(?i)^(fixup!|squash!|amend!)|\b(oops|typo|address(ed)? (review|comments|feedback)|review (comments|feedback)|fix (checksums?|the build|lint|previous|last commit|revision))\b`)
 	bareTicket = regexp.MustCompile(`(^|[\s(])#(\d{4,})\b`)
 	// tracTicket is a Trac ticket cited by its URL, and ticketTrailer a
-	// trailer line that cites one, as Closes: or See: does.
+	// trailer line that cites one, as Closes: or See: does, or a line
+	// written as one, in a list or without its colon, "* Fixes: …" and
+	// "Fixes …", which already says what the ticket is to the commit (the
+	// measure over the Mac's tree).
 	tracTicket    = regexp.MustCompile(`https?://trac\.macports\.org/ticket/(\d+)\b`)
-	ticketTrailer = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*:\s+\S*https?://trac\.macports\.org/ticket/\d+`)
+	ticketTrailer = regexp.MustCompile(`^(?:[-*]\s+)?(?:[A-Za-z][A-Za-z0-9-]*:|(?i:closes|fixes|fix|see|refs?|references))\s+\S*https?://trac\.macports\.org/ticket/\d+`)
 	longURL       = regexp.MustCompile(`^\S*https?://\S+$`)
 	// urlTrailer is a trailer whose value ends in a URL, as Closes:
 	// https://trac.macports.org/ticket/71234, or Generated-By's "Dockhand
@@ -174,15 +177,28 @@ func CheckCommits(commits []Commit) []Finding {
 // its subject, or in its body outside a trailer line such as Closes: or
 // See:, where reviewers ask for it as a trailer (the review survey's
 // §3, 6 PRs: "The Trac ticket should not be in the short summary",
-// #31382); empty where every one it cites is a trailer's.
+// #31382); empty where every one it cites a trailer cites too, as
+// commons-lang3's sentence did beside its See: lines (the measure over the
+// Mac's tree).
 func untrailedTicket(subject, body string) string {
+	trailed := map[string]bool{}
+	var cited []string
 	if m := tracTicket.FindStringSubmatch(subject); m != nil {
-		return m[1]
+		cited = append(cited, m[1])
 	}
 	for line := range strings.SplitSeq(body, "\n") {
 		line = strings.TrimSpace(line)
-		if m := tracTicket.FindStringSubmatch(line); m != nil && !ticketTrailer.MatchString(line) {
-			return m[1]
+		for _, m := range tracTicket.FindAllStringSubmatch(line, -1) {
+			if ticketTrailer.MatchString(line) {
+				trailed[m[1]] = true
+			} else {
+				cited = append(cited, m[1])
+			}
+		}
+	}
+	for _, ticket := range cited {
+		if !trailed[ticket] {
+			return ticket
 		}
 	}
 	return ""
@@ -337,20 +353,19 @@ func epochs(old, next []byte) (before, after int, ok bool) {
 // Providers are the other ports that can satisfy a dependency on a port,
 // as the caller found them by evaluating each: a port whose conflicts
 // names it, as pkgconf's names pkgconfig and OpenBLAS-devel's OpenBLAS,
-// installs the same files. Nil where none can be read.
-type Providers func(port string) []string
-
-// knownPaths are the files the tree's path-style dependencies name for the
-// ports the review survey found asked of (§5): pkg-config for pkgconfig,
-// so pkgconf satisfies it, and OpenBLAS's library, so OpenBLAS-devel does.
-var knownPaths = map[string]string{"pkgconfig": "bin/pkg-config", "OpenBLAS": "lib/libopenblas.dylib"}
+// installs the same files. Spec is the path-style dependency on the port
+// the tree writes most, path:bin/pkg-config:pkgconfig; empty where the
+// tree writes none, as for libffi, whose 1,562 dependencies are all
+// port:libffi though libffi-devel conflicts with it (the measure over the
+// Mac's tree). Nil where none can be read.
+type Providers func(port string) (others []string, spec string)
 
 // CheckDependencies offers a path-style dependency for each port:
 // dependency a change adds where another port can satisfy it, as reviewers
 // ask (the review survey's §5, 8 PRs: path:bin/pkg-config:pkgconfig, so
-// pkgconf does): a notice, holding nothing, on the lines the change
-// touched alone, and its claim that another port provides the files the
-// providers' evaluation's to make.
+// pkgconf does), and the tree writes it so: a notice, holding nothing, on
+// the lines the change touched alone, and its claim that another port
+// provides the files the providers' evaluation's to make.
 func CheckDependencies(portfiles []Portfile, providers Providers) []Finding {
 	if providers == nil {
 		return nil
@@ -365,17 +380,13 @@ func CheckDependencies(portfiles []Portfile, providers Providers) []Finding {
 			if offered[dependency.Port] {
 				continue
 			}
-			others := providers(dependency.Port)
-			if len(others) == 0 {
+			others, spec := providers(dependency.Port)
+			if len(others) == 0 || spec == "" {
 				continue
 			}
 			offered[dependency.Port] = true
-			form := "path:<a file both install>:" + dependency.Port
-			if file, ok := knownPaths[dependency.Port]; ok {
-				form = "path:" + file + ":" + dependency.Port
-			}
 			findings = append(findings, Finding{Code: "path-style", Severity: Warning, Where: fmt.Sprintf("%s:%d", p.Path, dependency.Line),
-				Message: fmt.Sprintf("%s takes port:%s, which %s can satisfy too; a path-style dependency, %s, lets either", dependency.Option, dependency.Port, strings.Join(others, " or "), form)})
+				Message: fmt.Sprintf("%s takes port:%s, which %s can satisfy too; the tree writes it path-style, %s, which lets either", dependency.Option, dependency.Port, strings.Join(others, " or "), spec)})
 		}
 	}
 	return findings

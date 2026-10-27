@@ -30,7 +30,7 @@ func TestEveryRuleIsExplained(t *testing.T) {
 		{Path: "devel/xq/Portfile", Before: "version 1\ndepends_build port:a\n", After: "version 1\nrevision 1\ndepends_build port:b\n"},
 	}, lower)...)
 	findings = append(findings, CheckDependencies([]Portfile{{Path: "devel/wq/Portfile", After: "depends_build port:pkgconfig\n"}},
-		func(port string) []string { return []string{"pkgconf"} })...)
+		func(port string) ([]string, string) { return []string{"pkgconf"}, "path:bin/pkg-config:pkgconfig" })...)
 	findings = append(findings, CheckRestated([]Portfile{{Path: "devel/vq/Portfile", After: "use_configure no\n"}},
 		func(string, []byte) (macports.PortInfo, bool) {
 			return macports.PortInfo{Options: map[string]string{"use_configure": "no"}}, true

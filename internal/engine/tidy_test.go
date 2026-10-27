@@ -499,7 +499,8 @@ func TestASubjectMayNameTheSubportTheBranchAdds(t *testing.T) {
 
 // A port can satisfy a dependency on another where MacPorts evaluates its
 // conflicts as naming it: a -devel sibling, or one the survey names, as
-// pkgconf for pkgconfig (the review survey's §5).
+// pkgconf for pkgconfig (the review survey's §5); with the path-style
+// spec the tree writes most for it, and nothing where it writes none.
 func TestAProviderIsAPortWhoseConflictsNameIt(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
@@ -515,10 +516,23 @@ func TestAProviderIsAPortWhoseConflictsNameIt(t *testing.T) {
 		"devel/libbar":  {port("libbar"), port("libbar-devel")},
 		"devel/gettext": {port("gettext")},
 	}})
+	write(t, f.clone, map[string]string{
+		"devel/wharf/Portfile": "name wharf\ndepends_build path:bin/pkg-config:pkgconfig\ndepends_lib path:lib/libfoo.dylib:libfoo path:lib/libbar.dylib:libbar\n",
+		"devel/dock/Portfile":  "name dock\ndepends_build path:bin/pkg-config:pkgconfig\n",
+		"devel/pier/Portfile":  "name pier\ndepends_build path:lib/pkgconfig/x.pc:pkgconfig\n",
+	})
+	testsupport.Git(t, f.clone, "add", "-A")
+	testsupport.Git(t, f.clone, "commit", "-q", "-m", "ports")
 	tree := testsupport.Git(t, f.clone, "rev-parse", "HEAD^{tree}")
 	providers := e.providers(t.Context(), tree)
-	require.Equal(t, []string{"pkgconf"}, providers("pkgconfig"))
-	require.Equal(t, []string{"libfoo-devel"}, providers("libfoo"))
-	require.Empty(t, providers("libbar"), "a sibling that doesn't conflict provides nothing it says")
-	require.Empty(t, providers("gettext"))
+	others, spec := providers("pkgconfig")
+	require.Equal(t, []string{"pkgconf"}, others)
+	require.Equal(t, "path:bin/pkg-config:pkgconfig", spec, "the one the tree writes most")
+	others, spec = providers("libfoo")
+	require.Equal(t, []string{"libfoo-devel"}, others)
+	require.Equal(t, "path:lib/libfoo.dylib:libfoo", spec)
+	others, _ = providers("libbar")
+	require.Empty(t, others, "a sibling that doesn't conflict provides nothing it says")
+	_, spec = providers("gettext")
+	require.Empty(t, spec, "the tree writes it path-style nowhere")
 }
