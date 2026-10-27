@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 func codes(findings []Finding) []string {
@@ -134,4 +136,71 @@ func TestARevisionBumpIsReadFromTheDiff(t *testing.T) {
 	require.Equal(t, []string{"revbump-build-only"}, codes("version 1\nrevision 1\ndepends_build port:a\n", "version 1\nrevision 2\ndepends_build port:b\n"))
 	require.Empty(t, codes("version 1\nrevision 1\n", "version 1\nrevision 2\n"), "a bare revbump, for a dependency's rebuild")
 	require.Empty(t, codes("version 1\ndepends_build port:a\n", "version 1\ndepends_build port:b\n"), "build-time alone, unbumped")
+}
+
+// A Trac ticket cited by its URL in the subject or a sentence is offered
+// as a trailer; one a trailer cites already, as Closes: or See:, is said
+// nothing of (the review survey's §3).
+func TestATicketOutsideATrailerIsOfferedAsOne(t *testing.T) {
+	ticket := func(message string) []Finding {
+		var found []Finding
+		for _, finding := range CheckCommits([]Commit{{ID: "a", Message: message, Ports: []string{"jq"}}}) {
+			if finding.Code == "ticket-trailer" {
+				found = append(found, finding)
+			}
+		}
+		return found
+	}
+	found := ticket("jq: update to 1.8.1\n\nThis fixes https://trac.macports.org/ticket/71234.\n")
+	require.Len(t, found, 1)
+	require.Equal(t, Warning, found[0].Severity)
+	require.Contains(t, found[0].Message, "Closes: https://trac.macports.org/ticket/71234")
+	require.Len(t, ticket("jq: update to 1.8.1, https://trac.macports.org/ticket/71234\n"), 1, "in the subject")
+	require.Empty(t, ticket("jq: update to 1.8.1\n\nCloses: https://trac.macports.org/ticket/71234\n"))
+	require.Empty(t, ticket("jq: update to 1.8.1\n\nSee: https://trac.macports.org/ticket/71234\n"))
+	require.Empty(t, ticket("jq: update to 1.8.1\n"))
+}
+
+// A port: dependency the change adds that another port can satisfy is
+// offered path-style; one the Portfile had, or one nothing else provides,
+// is said nothing of (the review survey's §5).
+func TestADependencyAnotherPortProvidesIsOfferedPathStyle(t *testing.T) {
+	providers := func(port string) []string {
+		return map[string][]string{"pkgconfig": {"pkgconf"}, "libfoo": {"libfoo-devel"}}[port]
+	}
+	findings := CheckDependencies([]Portfile{
+		{Path: "devel/harbor/Portfile", Before: "name harbor\ndepends_lib port:libfoo\n", After: "name harbor\ndepends_lib port:libfoo\ndepends_build-append port:pkgconfig port:cmake\n"},
+		{Path: "devel/wharf/Portfile", After: "name wharf\ndepends_lib port:libfoo\n"},
+	}, providers)
+	require.Equal(t, []Finding{
+		{Code: "path-style", Severity: Warning, Where: "devel/harbor/Portfile:3", Message: "depends_build-append takes port:pkgconfig, which pkgconf can satisfy too; a path-style dependency, path:bin/pkg-config:pkgconfig, lets either"},
+		{Code: "path-style", Severity: Warning, Where: "devel/wharf/Portfile:2", Message: "depends_lib takes port:libfoo, which libfoo-devel can satisfy too; a path-style dependency, path:<a file both install>:libfoo, lets either"},
+	}, findings, "a new port's every dependency is one it adds")
+	require.Empty(t, CheckDependencies([]Portfile{{Path: "devel/wharf/Portfile", After: "depends_lib port:libfoo\n"}}, nil))
+}
+
+// A line a change adds that sets what the port's PortGroups or MacPorts
+// set already is said, as its Portfile without it evaluates the same; one
+// that changes the evaluation, or one the change kept, isn't (the review
+// survey's §1).
+func TestALineAPortGroupAlreadySetsIsSaid(t *testing.T) {
+	// The evaluation stands in for MacPorts': github.setup sets version,
+	// and the python PortGroup adds py-setuptools; the line setting
+	// homepage is the port's own.
+	evaluate := func(_ string, text []byte) (macports.PortInfo, bool) {
+		info := macports.PortInfo{Name: "py-harbor", Version: "1.8.1", Options: map[string]string{"homepage": "https://pypi.org/project/harbor", "use_configure": "yes"},
+			Dependencies: []macports.Dependency{{Port: "py-setuptools", Phase: "build"}}}
+		if strings.Contains(string(text), "homepage https://harbor.dev") {
+			info.Options["homepage"] = "https://harbor.dev"
+		}
+		return info, true
+	}
+	before := "PortGroup python 1.0\nname py-harbor\n"
+	after := before + "version 1.8.1\nhomepage https://harbor.dev\ndepends_build-append port:py-setuptools\ndepends_lib-append port:py-click\n"
+	findings := CheckRestated([]Portfile{{Path: "python/py-harbor/Portfile", Before: before, After: after}}, evaluate)
+	require.Equal(t, []Finding{
+		{Code: "restated", Severity: Warning, Where: "python/py-harbor/Portfile:3", Message: `"version 1.8.1" restates what its PortGroups or MacPorts set already: without it, the port evaluates the same`},
+		{Code: "restated", Severity: Warning, Where: "python/py-harbor/Portfile:5", Message: `"depends_build-append port:py-setuptools" restates what its PortGroups or MacPorts set already: without it, the port evaluates the same`},
+	}, findings, "homepage changes the evaluation; py-click isn't declared without its line; name was there")
+	require.Empty(t, CheckRestated([]Portfile{{Path: "python/py-harbor/Portfile", Before: before, After: after}}, func(string, []byte) (macports.PortInfo, bool) { return macports.PortInfo{}, false }))
 }

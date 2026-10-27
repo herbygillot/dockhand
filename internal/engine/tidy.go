@@ -842,7 +842,76 @@ func (e *Engine) portfileFindings(ctx context.Context, repo *git.Repository, bef
 		}
 		portfiles = append(portfiles, commitrules.Portfile{Path: path, Before: string(old), After: string(current)})
 	}
-	return commitrules.CheckPortfiles(portfiles, e.versionOrder(ctx)), nil
+	findings := commitrules.CheckPortfiles(portfiles, e.versionOrder(ctx))
+	findings = append(findings, commitrules.CheckDependencies(portfiles, e.providers(ctx, after))...)
+	return append(findings, commitrules.CheckRestated(portfiles, e.evaluateText(ctx, repo, after))...), nil
+}
+
+// evaluateText evaluates a text of a Portfile in tree, as the tree with
+// that file replaced, for the restated rule's alternative: the main port
+// as MacPorts reads it on this Mac; nil where ports can't be read.
+func (e *Engine) evaluateText(ctx context.Context, repo *git.Repository, tree string) commitrules.Evaluate {
+	reader, err := e.portReader()
+	if err != nil {
+		return nil
+	}
+	return func(file string, text []byte) (macports.PortInfo, bool) {
+		state, current, err := repo.File(ctx, tree, file)
+		if err != nil || !state.Exists {
+			return macports.PortInfo{}, false
+		}
+		edited := tree
+		if string(current) != string(text) {
+			if edited, err = repo.EditTree(ctx, tree, []git.FileEdit{{Path: file, Before: state, After: text, Mode: state.Mode}}); err != nil {
+				return macports.PortInfo{}, false
+			}
+		}
+		infos, err := reader.Ports(ctx, model.Source{Tree: model.ObjectID(edited)}, path.Dir(file), model.Environment{}, nil)
+		if err != nil || len(infos) == 0 {
+			return macports.PortInfo{}, false
+		}
+		return infos[0], true
+	}
+}
+
+// otherProviders are the ports, beside a port's -devel sibling, the review
+// survey found able to satisfy a dependency on it (§5).
+var otherProviders = map[string][]string{"pkgconfig": {"pkgconf"}}
+
+// providers are, for the path-style rule, the ports in tree that can
+// satisfy a dependency on a port: its -devel sibling and the survey's
+// others, each kept where MacPorts evaluates its conflicts as naming the
+// port, as one installing the same files does; nil where ports can't be
+// read. Each port is asked once.
+func (e *Engine) providers(ctx context.Context, tree string) commitrules.Providers {
+	reader, err := e.portReader()
+	if err != nil {
+		return nil
+	}
+	asked := map[string][]string{}
+	return func(port string) []string {
+		if found, ok := asked[port]; ok {
+			return found
+		}
+		var found []string
+		for _, candidate := range append([]string{port + "-devel"}, otherProviders[port]...) {
+			directory, err := e.findDirectory(ctx, tree, candidate)
+			if err != nil {
+				continue
+			}
+			infos, err := reader.Ports(ctx, model.Source{Tree: model.ObjectID(tree)}, directory, model.Environment{}, nil)
+			if err != nil {
+				continue
+			}
+			for _, info := range infos {
+				if info.Name == candidate && slices.Contains(strings.Fields(info.Options["conflicts"]), port) {
+					found = append(found, candidate)
+				}
+			}
+		}
+		asked[port] = found
+		return found
+	}
 }
 
 // versionOrder orders versions with MacPorts' own vercmp, for the commit

@@ -496,3 +496,29 @@ func TestASubjectMayNameTheSubportTheBranchAdds(t *testing.T) {
 	}
 	require.Equal(t, []string{"2222222"}, flagged, "terraform-1.17 is the head's, and terraform-2.0 is nobody's")
 }
+
+// A port can satisfy a dependency on another where MacPorts evaluates its
+// conflicts as naming it: a -devel sibling, or one the survey names, as
+// pkgconf for pkgconfig (the review survey's §5).
+func TestAProviderIsAPortWhoseConflictsNameIt(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	conflicts := func(name, of string) macports.PortInfo {
+		info := port(name)
+		info.Options["conflicts"] = of
+		return info
+	}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
+		"devel/pkgconf": {conflicts("pkgconf", "pkgconfig")},
+		"devel/libfoo":  {port("libfoo"), conflicts("libfoo-devel", "libfoo")},
+		"devel/libbar":  {port("libbar"), port("libbar-devel")},
+		"devel/gettext": {port("gettext")},
+	}})
+	tree := testsupport.Git(t, f.clone, "rev-parse", "HEAD^{tree}")
+	providers := e.providers(t.Context(), tree)
+	require.Equal(t, []string{"pkgconf"}, providers("pkgconfig"))
+	require.Equal(t, []string{"libfoo-devel"}, providers("libfoo"))
+	require.Empty(t, providers("libbar"), "a sibling that doesn't conflict provides nothing it says")
+	require.Empty(t, providers("gettext"))
+}
