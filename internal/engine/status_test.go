@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -148,4 +149,41 @@ func TestStatusReadsTheRemotesOnce(t *testing.T) {
 	data, err := os.ReadFile(trace)
 	require.NoError(t, err)
 	require.Equal(t, 2, strings.Count(string(data), "git remote get-url"), "origin's fetch and push URLs, once")
+}
+
+// A passing check of this Mac's release alone names the check it didn't
+// build where the update asks for it: minmax for a floor it raised, a
+// variant whose sources it changed, and neither where it raises neither;
+// a check that built minmax names none (the docs dig's I47).
+func TestAPassingHostCheckNamesTheWiderCheck(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := committedUpdate(t, e)
+	checked(t, e, branch, model.OutcomePassed, model.OutcomePassed)
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	status.Evidence.Plan.Profile = "host"
+	require.Nil(t, e.wider(t.Context(), status, nil), "an update raising neither")
+
+	raised := status
+	raised.Changes = map[string]model.ChangeRecord{"textproc/jq": {Ports: []model.SubportChange{{Port: "jq", Fields: []model.FieldChange{{Field: "platforms", From: "darwin", To: "{darwin >= 20}"}}}}}}
+	wider := e.wider(t.Context(), raised, nil)
+	require.NotNil(t, wider)
+	require.Equal(t, branchstate.Next{Verb: branchstate.VerbCheck, Args: []string{"--build", "minmax"}}, wider.Next)
+	raised.Evidence.Plan.Profile = "minmax"
+	require.Nil(t, e.wider(t.Context(), raised, nil), "minmax built it")
+	raised.Evidence.Plan.Profile = "host"
+
+	portfile := read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile"))
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": portfile + "\nvariant docs description {Docs} {\n    patchfiles-append docs.patch\n}\n", "textproc/jq/files/docs.patch": "--- a\n+++ b\n"})
+	testsupport.Git(t, branch.Worktree, "add", "-A")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "jq: update to 1.8.1, with docs")
+	status, err = e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	status.Evidence.Plan.Profile = "host"
+	wider = e.wider(t.Context(), status, []string{"textproc/jq/Portfile", "textproc/jq/files/docs.patch"})
+	require.NotNil(t, wider)
+	require.Equal(t, branchstate.Next{Verb: branchstate.VerbCheck, Args: []string{"--variants", "+docs"}}, wider.Next)
+	require.Equal(t, "the update changes the sources of +docs, which a build of the default variants doesn't take", wider.Why)
 }

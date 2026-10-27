@@ -50,6 +50,7 @@ const (
 	SourceMoved            Reason = "source-moved"
 	NotAssessed            Reason = "not-assessed"
 	WaitingToSubmit        Reason = "waiting-to-submit"
+	CheckWider             Reason = "check-wider"
 	AcceptedToSubmit       Reason = "accepted-to-submit"
 	NotPushed              Reason = "not-pushed"
 )
@@ -107,6 +108,16 @@ type Branch struct {
 	// CheckOn is what a check that builds again where the latest one did
 	// names, its --on values; none where build.default covers it.
 	CheckOn []string
+	// Wider is the check a passing attended check didn't build, where the
+	// update gives a reviewer reason to ask for it: minmax for a floor it
+	// raised, or a variant whose sources it changed (the docs dig's I47).
+	Wider *Wider
+}
+
+// Wider is a check beyond the passing one, and why the update asks it.
+type Wider struct {
+	Next Next
+	Why  string
 }
 
 // Attention is one row of what a branch needs: its kind, why, and what
@@ -325,6 +336,8 @@ func Attend(facts Facts) []Attention {
 			return row(Ready, NotAssessed, submitNext(b), nil)
 		case b.Record.PullRequest == nil && accepted:
 			return row(Ready, AcceptedToSubmit, submitNext(b), func(a *Attention) { a.Run = run })
+		case b.Record.PullRequest == nil && b.Wider != nil:
+			return row(Ready, CheckWider, b.Wider.Next, func(a *Attention) { a.Detail = b.Wider.Why })
 		case b.Record.PullRequest == nil:
 			return row(Ready, WaitingToSubmit, submitNext(b), nil)
 		case !b.Pushed:
@@ -472,6 +485,8 @@ func (a Attention) Words(v Vocabulary) string {
 		return "passed; the upstream changes have not yet been assessed. Submit will assess them"
 	case WaitingToSubmit:
 		return "passed; waiting for you to submit"
+	case CheckWider:
+		return "passed on this Mac's release alone; " + a.Detail + ", so a wider check comes first; submit still goes on as it stands"
 	case AcceptedToSubmit:
 		return a.Run.Name() + "'s failures are accepted; waiting for you to submit"
 	case NotPushed:

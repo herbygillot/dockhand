@@ -6,6 +6,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // archiveOptions are the options whose declaration in a variant's body
@@ -97,5 +98,63 @@ func DependencyVariants(src []byte, port string) []string {
 			variants = append(variants, variant)
 		}
 	})
+	return variants
+}
+
+// sourceOptions are the options whose declaration in a variant's body
+// changes what it builds from: what it fetches, and the patches it
+// applies.
+var sourceOptions = append([]string{"patchfiles"}, archiveOptions...)
+
+// SourceVariants are the variants whose sources two versions of a
+// Portfile change, sorted: a variant whose own body declares its
+// distfiles, checksums, master_sites, or patchfiles on a line the versions
+// differ in, or whose patchfiles name a patch in changed, the files
+// changed beside the Portfile, by their names under files/. Every build
+// takes the default variants, so a check passing says nothing of these
+// (the docs dig's I47). Like ArchiveVariants it reads the text alone; a
+// version that doesn't parse names none.
+func SourceVariants(before, after []byte, changed []string) []string {
+	lines := changedLines(before, after)
+	var variants []string
+	for i, src := range [2][]byte{before, after} {
+		script, errs := syntax.Parse(src)
+		if len(errs) > 0 {
+			return nil
+		}
+		commands(src, script, false, func(cmd syntax.Command, _ bool) {
+			if name, _ := cmd.Name(src); name != "variant" || len(cmd.Words) < 3 {
+				return
+			}
+			variant, ok := cmd.Words[1].Literal(src)
+			body, braced := cmd.Words[len(cmd.Words)-1].BracedScript(src)
+			if !ok || !braced || slices.Contains(variants, variant) {
+				return
+			}
+			touched := false
+			commands(src, body, true, func(inner syntax.Command, _ bool) {
+				name, _ := inner.Name(src)
+				option, _, _ := strings.Cut(name, "-")
+				if !slices.Contains(sourceOptions, option) {
+					return
+				}
+				touched = touched || slices.ContainsFunc(lines[i], func(line textedit.Span) bool {
+					return line.Start < inner.Span.End && inner.Span.Start < line.End
+				})
+				if option != "patchfiles" {
+					return
+				}
+				for _, word := range inner.Words[1:] {
+					if patch, literal := word.Literal(src); literal && slices.Contains(changed, patch) {
+						touched = true
+					}
+				}
+			})
+			if touched {
+				variants = append(variants, variant)
+			}
+		})
+	}
+	slices.Sort(variants)
 	return variants
 }

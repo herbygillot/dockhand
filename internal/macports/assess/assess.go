@@ -203,6 +203,19 @@ func Rules() []string {
 		SourceUncertain, WorksrcPathGone, GitHubTarball, CXXStandardRule, GoLinkTargetRule}
 }
 
+// floorRules raise a toolchain's floor upstream: a Go toolchain, a Python,
+// or a C++ standard newer than before, which an older macOS's compilers
+// and ports may not have.
+var floorRules = []string{GoToolchainRule, RequiresPythonRule, CXXStandardRule}
+
+// RaisesFloor reports a finding that a new release asks more of its
+// toolchain than the old did, a floor that a check on this Mac's release
+// alone says nothing of below it (the docs dig's I47): introduced, by one
+// of floorRules.
+func RaisesFloor(change model.UpstreamChange) bool {
+	return change.Class == model.Introduced && slices.Contains(floorRules, change.Rule)
+}
+
 // proven are the manifests whose dependencies a check proves (D9). A Go
 // module or a Rust crate is compiled into what the port builds, and a
 // check builds with only what the port declares, so one needing a library

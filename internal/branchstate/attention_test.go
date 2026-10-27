@@ -44,6 +44,15 @@ func TestAttentionReadsTheChecksStanding(t *testing.T) {
 	require.Equal(t, "passed; waiting for you to submit", rows[0].Words(words{}))
 	require.Equal(t, Next{Verb: VerbSubmit, Branch: "jq-1.8.2"}, rows[0].Next)
 
+	// A pass of this Mac's release alone on an update that raised a floor
+	// names minmax next, and says why (the docs dig's I47).
+	facts.Branch.Wider = &Wider{Next: Next{Verb: VerbCheck, Args: []string{"--build", "minmax"}}, Why: "the update raises the oldest macOS jq builds on"}
+	rows = Attend(facts)
+	require.Equal(t, CheckWider, rows[0].Reason)
+	require.Equal(t, Next{Verb: VerbCheck, Branch: "jq-1.8.2", Args: []string{"--build", "minmax"}}, rows[0].Next)
+	require.Equal(t, "passed on this Mac's release alone; the update raises the oldest macOS jq builds on, so a wider check comes first; submit still goes on as it stands", rows[0].Words(words{}))
+	facts.Branch.Wider = nil
+
 	extra := evidence.TargetEvidence{Target: model.PlanTarget{ID: "oniguruma", Target: model.Target{Name: "oniguruma"}, Kind: model.Unchanged, Role: model.Also},
 		Outcomes: []evidence.Cell{{TargetResult: model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}, Kind: evidence.CellRecorded}}}
 	facts.Check.Evidence = &evidence.Evidence{Targets: []evidence.TargetEvidence{changed, extra}}

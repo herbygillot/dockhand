@@ -1,6 +1,7 @@
 package portfile_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
@@ -90,4 +91,19 @@ variant quoted {
 	require.Equal(t, []string{"hunspell"}, portfile.DependencyVariants(src, "hunspell"))
 	require.Empty(t, portfile.DependencyVariants(src, "glib2"), "a default dependency is the index's")
 	require.Empty(t, portfile.DependencyVariants([]byte("variant x {"), "nuspell"), "unparseable")
+}
+
+// The variants whose sources an update changes are those whose own body
+// declares a source on a changed line, or names a patch changed beside
+// the Portfile; a change outside every variant names none (the docs dig's
+// I47).
+func TestTheVariantsWhoseSourcesChanged(t *testing.T) {
+	t.Parallel()
+	before := []byte("name foo\nversion 1.0\nchecksums sha256 aaa\n\nvariant doc description {Docs} {\n    patchfiles-append doc.patch\n}\n\nvariant gui description {GUI} {\n    distfiles-append foo-gui-1.0.tar.gz\n    checksums-append foo-gui-1.0.tar.gz sha256 bbb\n}\n\nvariant quiet description {Quiet} {\n    configure.args-append --quiet\n}\n")
+	after := []byte("name foo\nversion 1.1\nchecksums sha256 ccc\n\nvariant doc description {Docs} {\n    patchfiles-append doc.patch\n}\n\nvariant gui description {GUI} {\n    distfiles-append foo-gui-1.1.tar.gz\n    checksums-append foo-gui-1.1.tar.gz sha256 ddd\n}\n\nvariant quiet description {Quiet} {\n    configure.args-append --quiet\n}\n")
+	require.Equal(t, []string{"gui"}, portfile.SourceVariants(before, after, nil), "its distfiles moved with the version")
+	require.Equal(t, []string{"doc", "gui"}, portfile.SourceVariants(before, after, []string{"doc.patch"}), "and doc's patch changed beside it")
+	require.Empty(t, portfile.SourceVariants(before, before, []string{"other.patch"}), "nothing a variant fetches or applies")
+	outside := []byte(strings.Replace(string(before), "version 1.0", "version 1.1", 1))
+	require.Empty(t, portfile.SourceVariants(before, outside, nil), "a change outside every variant")
 }
