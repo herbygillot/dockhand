@@ -1,4 +1,4 @@
-package ghactions
+package cilog
 
 import (
 	"strings"

@@ -83,7 +83,7 @@ func (s *Service) dropMergedPatches(ctx context.Context, input *sourceInput, res
 	name := input.target.Name
 	info := result.Prepared.Ports[name]
 	directory := path.Dir(input.target.Portfile)
-	contents := result.Files[0].After
+	contents := result.portfileAfter()
 	var dropped, files []string
 	for _, patch := range result.Patches {
 		if !patch.Merged {

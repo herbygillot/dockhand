@@ -71,7 +71,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 		outcome(GoToolchainCovered)
 		return nil
 	}
-	contents, err := portfile.RewriteLiteralDeclaration(result.Files[0].After, "go.toolchain_min", current, required)
+	contents, err := portfile.RewriteLiteralDeclaration(result.portfileAfter(), "go.toolchain_min", current, required)
 	if errors.Is(err, ErrUnsupported) {
 		progress.Report(ctx, "Warning: %s requires Go %s in go.mod; go.toolchain_min is %s and cannot be updated automatically. Raise it manually", input.target.Name, required, current)
 		outcome(GoToolchainByHand)

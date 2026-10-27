@@ -53,7 +53,7 @@ func (s *Service) HandAttempt(ctx context.Context, request Request, refused Resu
 		refreshed, refreshErr := s.refreshChecksums(ctx, request, input.derive(contents, evaluated.after))
 		err = refreshErr
 		if err == nil && len(refreshed.Files) > 0 {
-			contents = refreshed.Files[0].After
+			contents = refreshed.portfileAfter()
 		}
 		result.Downloads, result.Left = refreshed.Downloads, append(result.Left, refreshed.Left...)
 	}

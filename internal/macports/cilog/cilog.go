@@ -1,4 +1,9 @@
-package ghactions
+// Package cilog reads a job's log from MacPorts' CI workflow
+// (.github/workflows/main.yml) for what it says of each port it built, by
+// the markers the workflow writes, as macports' ci.go reads the workflow's
+// matrix: the github provider reads its runners' logs with it, and the
+// engine a pull request's failed jobs'.
+package cilog
 
 import (
 	"bytes"

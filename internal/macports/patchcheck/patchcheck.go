@@ -270,16 +270,20 @@ func decompress(patch Patch) ([]byte, error) {
 }
 
 // targets lists the paths a patch names after stripping leading components,
-// the way patch -pN resolves them; /dev/null and unstrippable names are skipped.
+// the way patch -pN resolves them; /dev/null and unstrippable names are
+// skipped. A name git quoted, as it quotes one with a space, a tab, or a
+// byte past ASCII, "a/my file.c", is unquoted: it was skipped, so its
+// file wasn't extracted and the patch read as not applying (the docs dig's
+// I30).
 func targets(data []byte, strip int) []string {
 	var names []string
 	for _, line := range strings.Split(string(data), "\n") {
 		var candidates []string
 		switch {
 		case strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "*** "):
-			candidates = []string{line[4:]}
+			candidates = headerName(line[4:])
 		case strings.HasPrefix(line, "diff --git "):
-			candidates = strings.Fields(line[len("diff --git "):])
+			candidates = gitNames(line[len("diff --git "):])
 		case strings.HasPrefix(line, "Index: "):
 			candidates = []string{line[len("Index: "):]}
 		}
@@ -303,6 +307,54 @@ func targets(data []byte, strip int) []string {
 		}
 	}
 	return names
+}
+
+// headerName is the name a ---, +++, or *** line gives: git's quoted form
+// unquoted, else the text before its tab and date.
+func headerName(rest string) []string {
+	if strings.HasPrefix(rest, "\"") {
+		if name, _, ok := quotedName(rest); ok {
+			return []string{name}
+		}
+		return nil
+	}
+	return []string{rest}
+}
+
+// gitNames are the two names of a diff --git line, each bare or in git's
+// quoted form; a bare pair splits at its space, which a bare name has
+// none of, as git quotes one that does.
+func gitNames(rest string) []string {
+	var names []string
+	for rest = strings.TrimSpace(rest); rest != ""; rest = strings.TrimSpace(rest) {
+		if strings.HasPrefix(rest, "\"") {
+			name, after, ok := quotedName(rest)
+			if !ok {
+				return names
+			}
+			names, rest = append(names, name), after
+			continue
+		}
+		name, after, _ := strings.Cut(rest, " ")
+		names, rest = append(names, name), after
+	}
+	return names
+}
+
+// quotedName is git's quoted name at the start of text, unquoted, as Go
+// reads a quoted string with C's escapes and octal bytes, and what
+// follows it.
+func quotedName(text string) (name, rest string, ok bool) {
+	for i := 1; i < len(text); i++ {
+		switch text[i] {
+		case '\\':
+			i++
+		case '"':
+			name, err := strconv.Unquote(text[:i+1])
+			return name, text[i+1:], err == nil
+		}
+	}
+	return "", "", false
 }
 
 // extract writes the wanted members of every archive under directory,

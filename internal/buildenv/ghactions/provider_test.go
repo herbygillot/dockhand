@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/macports/cilog"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -18,12 +19,12 @@ import (
 // support; a runner that stopped before listing, or never reached it,
 // leaves no verdict yet.
 func TestAPortsVerdictIsItsRunnersTogether(t *testing.T) {
-	passed := map[string]*Built{"jq": {Listed: true, Installing: true, Installed: true, Tested: true}}
-	failed := map[string]*Built{"jq": {Listed: true, Installing: true, Installed: true, Install: true}}
-	unreached := map[string]*Built{"jq": {Listed: true}}
-	elsewhere := map[string]*Built{"harbor": {Listed: true, Installing: true, Installed: true}}
-	cut := map[string]*Built{"jq": {Listed: true, Installing: true}}
-	on := func(name, log string, built map[string]*Built) runner {
+	passed := map[string]*cilog.Built{"jq": {Listed: true, Installing: true, Installed: true, Tested: true}}
+	failed := map[string]*cilog.Built{"jq": {Listed: true, Installing: true, Installed: true, Install: true}}
+	unreached := map[string]*cilog.Built{"jq": {Listed: true}}
+	elsewhere := map[string]*cilog.Built{"harbor": {Listed: true, Installing: true, Installed: true}}
+	cut := map[string]*cilog.Built{"jq": {Listed: true, Installing: true}}
+	on := func(name, log string, built map[string]*cilog.Built) runner {
 		return runner{job: RunnerJob{Name: name}, log: log, built: built, listing: true}
 	}
 
@@ -59,7 +60,7 @@ func TestAPortsVerdictIsItsRunnersTogether(t *testing.T) {
 	require.Equal(t, model.OutcomeFailed, result.Outcome)
 	require.Equal(t, model.PhaseInstall, result.Phase)
 	require.Equal(t, "on macos-15: GitHub ended the job at its 6h0m0s cap on a job", result.Detail, "what it was installing when its time ended failed")
-	_, ok = verdict("jq", []runner{on("macos-14", "14.log", passed), {job: RunnerJob{Name: "macos-15"}, built: map[string]*Built{}}})
+	_, ok = verdict("jq", []runner{on("macos-14", "14.log", passed), {job: RunnerJob{Name: "macos-15"}, built: map[string]*cilog.Built{}}})
 	require.False(t, ok, "a runner that stopped before listing the subports leaves no verdict")
 	_, ok = verdict("jq", []runner{on("macos-14", "14.log", elsewhere)})
 	require.False(t, ok, "no runner built it")

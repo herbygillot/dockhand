@@ -105,7 +105,7 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 	}
 	result.Stealth = found
 	previous := result.Prepared
-	contents := result.Files[0].After
+	contents := result.portfileAfter()
 	// What changed decides the revision, where nobody already has: a
 	// regenerated archive whose files are the ones MacPorts shipped, as
 	// gitea-tea's renamed root and 24 bytes of tar metadata, isn't a new
@@ -127,7 +127,7 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 	} else {
 		contents = after
 	}
-	if bytes.Equal(contents, result.Files[0].After) {
+	if bytes.Equal(contents, result.portfileAfter()) {
 		return nil
 	}
 	report, applied, err := s.correct(ctx, input, result, distSubdirCorrection(contents, name, found.Revbumped))
@@ -211,7 +211,7 @@ func (s *Service) dropStealthDistSubdir(ctx context.Context, input *sourceInput,
 	if len(result.Files) != 1 || result.Prepared.Ports == nil {
 		return nil
 	}
-	contents, removed, err := portfile.RemoveStealthDistSubdir(result.Files[0].After)
+	contents, removed, err := portfile.RemoveStealthDistSubdir(result.portfileAfter())
 	if err != nil || !removed {
 		return nil
 	}

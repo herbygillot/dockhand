@@ -363,7 +363,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if len(generated.Online) > 0 {
 		progress.Report(ctx, "Leaving %d Git-pinned crates to Cargo's online resolution at build time, since its build resolves Git sources online: %s", len(generated.Online), depblock.GitSummary(generated.Online))
 	}
-	values, gitDownloads, err := s.gitCrateChecksums(ctx, request, input, plan, result.Files[0].After, generated)
+	values, gitDownloads, err := s.gitCrateChecksums(ctx, request, input, plan, result.portfileAfter(), generated)
 	if err != nil {
 		return Result{}, err
 	}
@@ -401,7 +401,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		}
 		dropped = append(dropped, Override{Name: override.Name, Pinned: override.Declared, Was: override.Generated, Locked: locked})
 	}
-	contents, err := plan.Apply(result.Files[0].After, values)
+	contents, err := plan.Apply(result.portfileAfter(), values)
 	if err != nil {
 		return Result{}, err
 	}
