@@ -69,3 +69,25 @@ func TestChangedPathsNamesEveryKindOfChange(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"added\tname", "deleted", "mode", "modified", "new-name", "old-name", "type"}, paths)
 }
+
+// ChangedPathsOf reads each pair's changes in one process, as
+// ChangedPaths reads one: a pair that differs in nothing, and the same
+// pair twice, among them (Then's item 6).
+func TestChangedPathsOfReadsEachPairAsChangedPaths(t *testing.T) {
+	t.Parallel()
+	repo := snapshotRepo(t)
+	before := snapshotTree(t, repo, snapshotBlob(t, repo, "a", "one", 0o100644), snapshotBlob(t, repo, "b", "keep", 0o100644))
+	after := snapshotTree(t, repo, snapshotBlob(t, repo, "a", "two", 0o100644), snapshotBlob(t, repo, "b", "keep", 0o100644), snapshotBlob(t, repo, "new\nline", "x", 0o100644))
+	pairs := [][2]string{{before, after}, {after, after}, {before, after}, {after, before}}
+	changed, err := repo.ChangedPathsOf(t.Context(), pairs)
+	require.NoError(t, err)
+	require.Len(t, changed, len(pairs))
+	for i, pair := range pairs {
+		one, err := repo.ChangedPaths(t.Context(), pair[0], pair[1])
+		require.NoError(t, err)
+		require.Equal(t, one, changed[i], "pair %d", i)
+	}
+	none, err := repo.ChangedPathsOf(t.Context(), nil)
+	require.NoError(t, err)
+	require.Empty(t, none)
+}

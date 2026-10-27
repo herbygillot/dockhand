@@ -190,8 +190,10 @@ check.baseline = true, it runs that baseline automatically.`,
 			// A check that passed says what moves the branch on now, as
 			// status would; one run for submit leaves that to submit.
 			if err == nil && !enqueue {
-				if nextErr := view.WriteNextFor(ctx, e, streams.Out, branch.ID); nextErr != nil {
+				if status, nextErr := e.BranchStatusOf(ctx, branch.ID); nextErr != nil {
 					fmt.Fprintf(streams.Err, "next: %v\n", nextErr)
+				} else {
+					view.WriteNext(streams.Out, status)
 				}
 			}
 			// check.baseline runs the baseline the failed check pointed to,

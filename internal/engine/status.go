@@ -173,32 +173,29 @@ func (e *Engine) JudgeStopped(ctx context.Context, session *coord.Session, statu
 // commits, the files as they are now, the edits not yet committed, what
 // they change, and their change records; Missing where its Git branch is
 // gone. It returns the paths changed, and the worktree where there is one.
-func (e *Engine) readFiles(ctx context.Context, status *BranchStatus) ([]string, *git.Repository, error) {
+func (e *Engine) readFiles(ctx context.Context, status *BranchStatus, reads *statusReads) ([]string, *git.Repository, error) {
 	branch := status.Branch
-	head, _, err := e.Repo.Branch(ctx, branch.Name)
-	if errors.Is(err, git.ErrBranchMissing) {
+	if reads == nil {
+		var err error
+		if reads, err = e.readBranches(ctx, []model.Branch{branch}); err != nil {
+			return nil, nil, err
+		}
+	}
+	head, ok := reads.heads[branch.Name]
+	if !ok {
 		status.Missing = true
 		status.WorktreeStays = branch.Managed && exists(branch.Worktree)
 		return nil, nil, nil
 	}
-	if err != nil {
-		return nil, nil, err
-	}
 	status.Head = head
-	if status.Commits, err = e.Repo.CountCommits(ctx, string(branch.Base), head); err != nil {
+	var err error
+	if status.Commits, err = reads.count(ctx, e, branch, head); err != nil {
 		return nil, nil, err
 	}
-	trees, err := e.Repo.CommitTrees(ctx, []string{head, string(branch.Base)})
-	if err != nil {
-		return nil, nil, err
-	}
-	status.Tree = trees[head]
+	status.Tree = reads.trees[head]
 	// Status only reads: a worktree clean removed isn't checked out again
 	// for it, so its files are the branch's committed ones.
-	worktree, err := e.openWorktree(ctx, branch)
-	if err != nil {
-		worktree = nil
-	}
+	worktree := reads.worktree(e, branch)
 	if worktree != nil {
 		if status.Edited, err = worktree.TrackedChanges(ctx); err != nil {
 			return nil, nil, err
@@ -218,13 +215,143 @@ func (e *Engine) readFiles(ctx context.Context, status *BranchStatus) ([]string,
 	return analysis.Paths, worktree, err
 }
 
+// statusReads are what status reads of every branch's Git branch at once
+// (Then's item 6): their heads by one for-each-ref, their commits' trees
+// by one cat-file, the worktrees each is checked out in by one worktree
+// list, and their commit counts by one for-each-ref a base, where the Git
+// counts so; status ran some ten git processes a branch, 3,962 over
+// dhtest's 683 on rc2.
+type statusReads struct {
+	heads     map[string]string
+	trees     map[string]string
+	checkouts map[string][]string
+	// counts are each branch's commits beyond its base, by its name,
+	// where for-each-ref counted them; a branch not here is counted alone.
+	counts map[string]int
+	// master is the master dockhand last fetched, whose tree is in trees;
+	// empty where none was. fromMaster are what each open branch's head
+	// tree changes from master's, by the tree, read for landedOnMaster.
+	master     model.ObjectID
+	fromMaster map[string][]string
+}
+
+// readBranches reads what status reads of the branches' Git branches.
+func (e *Engine) readBranches(ctx context.Context, branches []model.Branch) (*statusReads, error) {
+	reads := &statusReads{heads: map[string]string{}, counts: map[string]int{}}
+	refs, err := e.Repo.ReadRefs(ctx, "refs/heads/")
+	if err != nil {
+		return nil, err
+	}
+	var commits []string
+	seen := map[string]bool{}
+	add := func(commit string) {
+		if commit != "" && !seen[commit] {
+			seen[commit] = true
+			commits = append(commits, commit)
+		}
+	}
+	bases := map[string][]string{}
+	if master, ok := e.lastMaster(ctx); ok {
+		reads.master = master
+		add(string(master))
+	}
+	for _, branch := range branches {
+		ref, ok := refs["refs/heads/"+branch.Name]
+		if !ok || !ref.Exists {
+			continue
+		}
+		reads.heads[branch.Name] = ref.Object
+		add(ref.Object)
+		add(string(branch.Base))
+		bases[string(branch.Base)] = append(bases[string(branch.Base)], branch.Name)
+	}
+	if reads.trees, err = e.Repo.CommitTrees(ctx, commits); err != nil {
+		return nil, err
+	}
+	if reads.checkouts, err = e.Repo.AllCheckouts(ctx); err != nil {
+		return nil, err
+	}
+	// What each head changes from its base, and an open one's from
+	// master, is one diff-tree for them all; the analyses are kept as
+	// analyze keeps its own, by base and tree.
+	var pairs [][2]string
+	var analyzed []model.Branch
+	var landed []string
+	masterTree := reads.trees[string(reads.master)]
+	for _, branch := range branches {
+		head, ok := reads.heads[branch.Name]
+		if !ok || reads.trees[string(branch.Base)] == "" || reads.trees[head] == "" {
+			continue
+		}
+		pairs = append(pairs, [2]string{reads.trees[string(branch.Base)], reads.trees[head]})
+		analyzed = append(analyzed, branch)
+		if branch.State == model.BranchOpen && masterTree != "" {
+			landed = append(landed, reads.trees[head])
+		}
+	}
+	for _, tree := range landed {
+		pairs = append(pairs, [2]string{masterTree, tree})
+	}
+	if len(pairs) > 1 {
+		changed, err := e.Repo.ChangedPathsOf(ctx, pairs)
+		if err != nil {
+			return nil, err
+		}
+		for i, branch := range analyzed {
+			tree := model.ObjectID(reads.trees[reads.heads[branch.Name]])
+			e.keepAnalysis(RevisionAnalysis{Base: branch.Base, BaseTree: model.ObjectID(pairs[i][0]), Tree: tree, Paths: changed[i], Scope: macports.ScopeOf(changed[i])})
+		}
+		reads.fromMaster = map[string][]string{}
+		for i, tree := range landed {
+			reads.fromMaster[tree] = changed[len(analyzed)+i]
+		}
+	}
+	// Several branches are counted by base, where the Git says counts:
+	// most share a few bases, master as each started from it.
+	if len(reads.heads) > 1 {
+		if version, err := git.ExecutableVersion(ctx, e.options.git()); err == nil && version.AtLeast(git.AheadBehindVersion) {
+			for base, names := range bases {
+				counts, err := e.Repo.CountsFrom(ctx, base, names)
+				if err != nil {
+					return nil, err
+				}
+				maps.Copy(reads.counts, counts)
+			}
+		}
+	}
+	return reads, nil
+}
+
+// count is a branch's commits beyond its base, as read for every branch,
+// else counted for it alone.
+func (r *statusReads) count(ctx context.Context, e *Engine, branch model.Branch, head string) (int, error) {
+	if n, ok := r.counts[branch.Name]; ok {
+		return n, nil
+	}
+	return e.Repo.CountCommits(ctx, string(branch.Base), head)
+}
+
+// worktree is the branch's worktree, where dockhand manages one and the
+// branch is checked out in it, as openWorktree finds it; nil otherwise.
+func (r *statusReads) worktree(e *Engine, branch model.Branch) *git.Repository {
+	if branch.Worktree == "" || !exists(branch.Worktree) {
+		return nil
+	}
+	for _, checkout := range r.checkouts[branch.Name] {
+		if samePath(checkout, branch.Worktree) {
+			return e.Repo.Worktree(checkout)
+		}
+	}
+	return nil
+}
+
 // BranchPort is the one port a branch is about (OnlyPort), for a command
 // run in it that names none, read from its files and change records alone:
 // branchPort ran a whole status, its checks and evidence among it, to read
 // one port's name (the architecture review of 5897a82, R3-37).
 func (e *Engine) BranchPort(ctx context.Context, branch model.Branch) (string, bool, error) {
 	status := BranchStatus{Branch: branch}
-	if _, _, err := e.readFiles(ctx, &status); err != nil {
+	if _, _, err := e.readFiles(ctx, &status, nil); err != nil {
 		return "", false, err
 	}
 	port, ok := status.OnlyPort()
@@ -405,8 +532,12 @@ func (e *Engine) Status(ctx context.Context, states ...model.BranchState) ([]Bra
 	// where each branch ran five git processes for them, 3,415 of
 	// status --all's 7,372 over 683 branches (the M1's rc1 measure).
 	noFork := !e.hasForkRemote(ctx)
+	reads, err := e.readBranches(ctx, branches)
+	if err != nil {
+		return nil, err
+	}
 	for _, branch := range branches {
-		status, err := e.branchStatus(ctx, branch, noFork)
+		status, err := e.branchStatus(ctx, branch, noFork, reads)
 		if err != nil {
 			return nil, err
 		}
@@ -416,60 +547,44 @@ func (e *Engine) Status(ctx context.Context, states ...model.BranchState) ([]Bra
 	return all, nil
 }
 
+// BranchStatusOf is the status of the branch an ID names, its record read
+// again, as after a check that moved it on, for what moves it on next:
+// view read and judged a branch itself (Then's item 6).
+func (e *Engine) BranchStatusOf(ctx context.Context, id model.BranchID) (BranchStatus, error) {
+	branch, err := e.Branch(ctx, id)
+	if err != nil {
+		return BranchStatus{}, err
+	}
+	return e.BranchStatus(ctx, branch)
+}
+
 // BranchStatus gathers one branch's status.
 func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchStatus, error) {
-	return e.branchStatus(ctx, branch, !e.hasForkRemote(ctx))
+	return e.branchStatus(ctx, branch, !e.hasForkRemote(ctx), nil)
 }
 
 // branchStatus is BranchStatus, with whether the checkout has a fork
 // remote read already.
-func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork bool) (BranchStatus, error) {
+func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork bool, reads *statusReads) (BranchStatus, error) {
 	status := BranchStatus{Branch: branch, NoFork: noFork}
-	changed, worktree, err := e.readFiles(ctx, &status)
+	if reads == nil {
+		var err error
+		if reads, err = e.readBranches(ctx, []model.Branch{branch}); err != nil {
+			return status, err
+		}
+	}
+	changed, worktree, err := e.readFiles(ctx, &status, reads)
 	if err != nil || status.Missing {
 		return status, err
 	}
 	if branch.State == model.BranchOpen {
-		if status.OnMaster, err = e.landedOnMaster(ctx, changed, status.Tree); err != nil {
+		if status.OnMaster, err = e.landedOnMaster(ctx, changed, status.Tree, reads); err != nil {
+			return status, err
+		}
+		if err := e.readOpen(ctx, &status, worktree); err != nil {
 			return status, err
 		}
 	}
-	// What holds a branch is read for every branch, as status says it for
-	// each: paused where serve prepared it, and for a person's own, what
-	// submit shows (C2, where it was serve's alone).
-	if status.Held, status.Assessment, err = e.assessedHolds(ctx, branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
-		return status, err
-	}
-	// A hand edit says why it's the person's, as its working files have
-	// it, written or committed (Then's item 3). The worktree is opened,
-	// never checked out again: status only reads, and a worktree gone
-	// stays gone, its committed files standing for it (openWorktree's
-	// rule; rc1 checked removed ones out again).
-	hands, err := e.handEditsIn(ctx, branch.ID, string(branch.Base), func() string {
-		if worktree, err := e.openWorktree(ctx, branch); err == nil {
-			if _, final, err := worktree.WorkingTree(ctx); err == nil {
-				return final
-			}
-		}
-		return status.Tree
-	})
-	if err != nil {
-		return status, err
-	}
-	for _, directory := range slices.Sorted(maps.Keys(hands)) {
-		status.HandEdits = append(status.HandEdits, hands[directory])
-	}
-	// And what the last submission plan of these files found that took
-	// the network, another pull request or a moved source, as it found
-	// them (C2's rest), since status reads no network itself.
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		network, at, err := r.NetworkHolds(branch.ID, model.ObjectID(status.Tree))
-		status.Held, status.NetworkHeldAt = append(status.Held, holding(network, e.allowedFor)...), at
-		return err
-	}); err != nil {
-		return status, err
-	}
-
 	var checks []model.Run
 	var edits []model.Edit
 	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
@@ -561,6 +676,48 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 	return status, err
 }
 
+// readOpen reads what status says of an open branch beside its files:
+// what holds it, its hand edits, and what its last submission plan found
+// that took the network. An ended branch, merged, closed, or archived,
+// has nothing submitted from it, so they say nothing of it, and status
+// --all skips them (Then's item 6).
+func (e *Engine) readOpen(ctx context.Context, status *BranchStatus, worktree *git.Repository) error {
+	// What holds a branch is read for every open branch, as status says it
+	// for each: paused where serve prepared it, and for a person's own, what
+	// submit shows (C2, where it was serve's alone).
+	var err error
+	if status.Held, status.Assessment, err = e.assessedHolds(ctx, status.Branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
+		return err
+	}
+	// A hand edit says why it's the person's, as its working files have
+	// it, written or committed (Then's item 3). The worktree is opened,
+	// never checked out again: status only reads, and a worktree gone
+	// stays gone, its committed files standing for it (openWorktree's
+	// rule; rc1 checked removed ones out again).
+	hands, err := e.handEditsIn(ctx, status.Branch.ID, string(status.Branch.Base), func() string {
+		if worktree != nil {
+			if _, final, err := worktree.WorkingTree(ctx); err == nil {
+				return final
+			}
+		}
+		return status.Tree
+	})
+	if err != nil {
+		return err
+	}
+	for _, directory := range slices.Sorted(maps.Keys(hands)) {
+		status.HandEdits = append(status.HandEdits, hands[directory])
+	}
+	// And what the last submission plan of these files found that took
+	// the network, another pull request or a moved source, as it found
+	// them (C2's rest), since status reads no network itself.
+	return e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		network, at, err := r.NetworkHolds(status.Branch.ID, model.ObjectID(status.Tree))
+		status.Held, status.NetworkHeldAt = append(status.Held, holding(network, e.allowedFor)...), at
+		return err
+	})
+}
+
 // readDecisions reads what publication reads of a branch beside its
 // failed check, as submit does: the failures a person accepted at its
 // head, those a baseline fails alike, and the standing decisions, so
@@ -621,16 +778,16 @@ func (e *Engine) compareIncluded(ctx context.Context, worktree *git.Repository, 
 // landedOnMaster is the master dockhand last fetched where, for each path
 // a branch's files change, its file is the branch's: the branch's work is
 // on master already. Status reads the master kept, never fetching one.
-func (e *Engine) landedOnMaster(ctx context.Context, changed []string, tree string) (model.ObjectID, error) {
-	master, ok := e.lastMaster(ctx)
-	if !ok || len(changed) == 0 {
+func (e *Engine) landedOnMaster(ctx context.Context, changed []string, tree string, reads *statusReads) (model.ObjectID, error) {
+	master := reads.master
+	if master == "" || len(changed) == 0 {
 		return "", nil
 	}
-	trees, err := e.Repo.CommitTrees(ctx, []string{string(master)})
-	if err != nil {
-		return "", err
+	differ, ok := reads.fromMaster[tree]
+	var err error
+	if !ok {
+		differ, err = e.Repo.ChangedPaths(ctx, reads.trees[string(master)], tree)
 	}
-	differ, err := e.Repo.ChangedPaths(ctx, trees[string(master)], tree)
 	if err != nil {
 		return "", err
 	}

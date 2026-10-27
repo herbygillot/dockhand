@@ -32,11 +32,17 @@ func (e *Engine) followRenames(ctx context.Context, name string) (map[model.Bran
 		tracked[branch.Name] = true
 	}
 	followed := map[model.BranchID]string{}
+	// Every branch's Git branch is looked for in one read, where each was
+	// two git processes a branch (Then's item 6).
+	heads, err := e.Repo.ReadRefs(ctx, "refs/heads/")
+	if err != nil {
+		return nil, err
+	}
 	for _, branch := range branches {
 		if branch.Worktree == "" || !exists(branch.Worktree) {
 			continue
 		}
-		if _, _, err := e.Repo.Branch(ctx, branch.Name); !errors.Is(err, git.ErrBranchMissing) {
+		if head, ok := heads["refs/heads/"+branch.Name]; ok && head.Exists {
 			continue
 		}
 		worktree, err := git.Open(ctx, branch.Worktree, e.options.git())

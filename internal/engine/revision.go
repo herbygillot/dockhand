@@ -48,13 +48,20 @@ func (e *Engine) analyze(ctx context.Context, base, tree model.ObjectID) (Revisi
 		return RevisionAnalysis{}, err
 	}
 	analysis.Scope = macports.ScopeOf(analysis.Paths)
+	e.keepAnalysis(analysis)
+	return analysis.copy(), nil
+}
+
+// keepAnalysis keeps a revision's analysis for analyze, by its base and
+// tree, which never change: status read every branch's in one diff-tree
+// (Then's item 6).
+func (e *Engine) keepAnalysis(analysis RevisionAnalysis) {
 	e.lazy.Lock()
+	defer e.lazy.Unlock()
 	if e.analyses == nil {
 		e.analyses = map[revisionKey]RevisionAnalysis{}
 	}
-	e.analyses[key] = analysis
-	e.lazy.Unlock()
-	return analysis.copy(), nil
+	e.analyses[revisionKey{analysis.Base, analysis.Tree}] = analysis
 }
 
 // copy is the analysis with slices of its own, so a reader that changes

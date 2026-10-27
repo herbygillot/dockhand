@@ -223,6 +223,51 @@ func (r *Repository) ChangedPaths(ctx context.Context, before, after string) ([]
 	return strings.Split(string(out[:len(out)-1]), "\x00"), nil
 }
 
+// ChangedPathsOf is ChangedPaths for each pair of trees, in one git
+// process: diff-tree reads the pairs on its input, and writes each pair's
+// line before its paths. status read each branch's in one of its own
+// (Then's item 6).
+func (r *Repository) ChangedPathsOf(ctx context.Context, pairs [][2]string) ([][]string, error) {
+	changed := make([][]string, len(pairs))
+	if len(pairs) == 0 {
+		return changed, nil
+	}
+	var input strings.Builder
+	for _, pair := range pairs {
+		if !ValidObjectID(pair[0]) || !ValidObjectID(pair[1]) {
+			return nil, fmt.Errorf("git: changed paths require literal object IDs")
+		}
+		fmt.Fprintf(&input, "%s %s\n", pair[0], pair[1])
+	}
+	out, err := r.run(ctx, []byte(input.String()), nil, "diff-tree", "--stdin", "--no-commit-id", "--name-only", "--no-ext-diff", "--no-textconv", "--no-relative", "--ignore-submodules=none", "-r", "-z", "--no-renames")
+	if err != nil {
+		return nil, err
+	}
+	rest := string(out)
+	for i, pair := range pairs {
+		header := pair[0] + " " + pair[1] + "\n"
+		if !strings.HasPrefix(rest, header) {
+			return nil, fmt.Errorf("git: diff-tree --stdin didn't give %s's changes where expected", header[:len(header)-1])
+		}
+		rest = rest[len(header):]
+		next := len(rest)
+		if i+1 < len(pairs) {
+			// The next pair's line follows the last path's terminator.
+			following := pairs[i+1][0] + " " + pairs[i+1][1] + "\n"
+			if strings.HasPrefix(rest, following) {
+				next = 0
+			} else if at := strings.Index(rest, "\x00"+following); at >= 0 {
+				next = at + 1
+			}
+		}
+		if paths := strings.TrimSuffix(rest[:next], "\x00"); paths != "" {
+			changed[i] = strings.Split(paths, "\x00")
+		}
+		rest = rest[next:]
+	}
+	return changed, nil
+}
+
 // DiffDirectories is the patch from root/a to root/b, two directories
 // outside any repository, as git diff --no-index makes it: a/ and b/ paths,
 // and binary files named, not encoded.
