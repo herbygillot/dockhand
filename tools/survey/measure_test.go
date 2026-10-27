@@ -23,7 +23,9 @@ import (
 
 // The notices of Then's item 11, measured over a whole tree, for their
 // false positives: I7's scan of a Portfile's comments, and the survey
-// rules, restated, path-style, and ticket-trailer, each match printed, so
+// rules, restated, path-style, and ticket-trailer, and the survey's other
+// lint-shaped notices, license-spdx, noarch-platforms, commented-code,
+// and unreferenced-file, each match printed, so
 // a person reads them (the roadmap's measure; no snapshot is kept). It runs
 // only where MACPORTS_TREE names a ports tree, a Git checkout:
 //
@@ -171,6 +173,25 @@ func TestTheNoticesOverATree(t *testing.T) {
 		require.NoError(t, os.RemoveAll(directory))
 	}
 
+	// The survey's other lint-shaped notices, each Portfile with every
+	// file under its files/ as ones the change adds.
+	notices := map[string]int{}
+	for _, path := range paths {
+		var added []string
+		directory := filepath.Join(root, filepath.Dir(path), "files")
+		_ = filepath.WalkDir(directory, func(file string, entry os.DirEntry, err error) error {
+			if err == nil && !entry.IsDir() {
+				rel, _ := filepath.Rel(directory, file)
+				added = append(added, filepath.ToSlash(rel))
+			}
+			return nil
+		})
+		for _, finding := range commitrules.CheckNotices([]commitrules.Portfile{{Path: path, After: string(texts[path]), Files: added}}) {
+			notices[finding.Code]++
+			t.Logf("%s %s", finding.Code, finding)
+		}
+	}
+
 	// ticket-trailer, over the tree's last commits.
 	commits := "20000"
 	if given := os.Getenv("DOCKHAND_MEASURE_COMMITS"); given != "" {
@@ -194,4 +215,6 @@ func TestTheNoticesOverATree(t *testing.T) {
 	}
 	fmt.Printf("instructions %d of %d Portfiles; path-style %d; restated %d of %d evaluated; ticket-trailer %d of %d commits\n",
 		instructions, len(paths), pathStyle, restated, evaluated, ticketed, read)
+	fmt.Printf("license-spdx %d; noarch-platforms %d; commented-code %d; unreferenced-file %d\n",
+		notices["license-spdx"], notices["noarch-platforms"], notices["commented-code"], notices["unreferenced-file"])
 }

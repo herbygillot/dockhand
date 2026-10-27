@@ -31,6 +31,9 @@ var (
 	guidePortGroups   = Source{Title: "The MacPorts Guide, PortGroups", URL: "https://guide.macports.org/#reference.portgroup"}
 	guideDependencies = Source{Title: "The MacPorts Guide, Dependencies", URL: "https://guide.macports.org/#reference.dependencies"}
 	guidelines        = Source{Title: "MacPorts' Commit Message Guidelines", URL: "https://trac.macports.org/wiki/CommitMessages"}
+	guideLicense      = Source{Title: "The MacPorts Guide, Portfile keywords: license", URL: "https://guide.macports.org/#reference.keywords.license"}
+	guidePlatforms    = Source{Title: "The MacPorts Guide, Portfile keywords: platforms", URL: "https://guide.macports.org/#reference.keywords.platforms"}
+	guideFiles        = Source{Title: "The MacPorts Guide, Port files", URL: "https://guide.macports.org/#development.patches"}
 )
 
 func quoted(source Source, quote string) Source {
@@ -57,6 +60,14 @@ var explanations = []Explanation{
 		Sources: []Source{guidePortGroups}},
 	{Code: "path-style", Rule: "A dependency another port can satisfy is written path-style, on a file both install, so either does: path:bin/pkg-config:pkgconfig, which pkgconf satisfies too, and path:lib/libopenblas.dylib:OpenBLAS, which OpenBLAS-devel does. A port that can is one whose conflicts names the port depended on, and the form offered is the one the tree writes most; a port the tree never writes path-style, as libffi, isn't said. Only dependencies the change adds are said, as a notice holding nothing.",
 		Sources: []Source{guideDependencies}},
+	{Code: "license-spdx", Rule: "A license line names each license as MacPorts does, a name, a hyphen, and its version with any \".0\" dropped: BSD for BSD-3-Clause, Apache-2 for Apache-2.0, GPL-3+ for GPL-3.0-or-later. Only a line the change adds or alters is said, as a notice holding nothing.",
+		Sources: []Source{guideLicense}},
+	{Code: "noarch-platforms", Rule: "A port with supported_archs noarch builds nothing for an architecture, so its platforms say any, {darwin any} for a Python port, and MacPorts' buildbots build it once rather than on each macOS. Said where the change adds the port or alters either line, as a notice holding nothing.",
+		Sources: []Source{guidePlatforms}},
+	{Code: "commented-code", Rule: "A line a change adds isn't commented-out code, a # before an option or a command, as \"# depends_lib-append port:zlib\": reviewers ask for it to go, or for a comment saying why it stays. A notice, holding nothing.",
+		Sources: []Source{guideGitHub}},
+	{Code: "unreferenced-file", Rule: "A file a change adds under a port's files/ is one its Portfile names, as patchfiles names a patch: one nothing names is left over. A notice, holding nothing.",
+		Sources: []Source{guideFiles}},
 	{Code: "follow-up", Rule: "A commit that only corrects an earlier one in the branch, such as \"fix checksums\" or \"address review\", is squashed into it. dockhand tidy proposes that.",
 		Sources: []Source{
 			quoted(guideGitHub, minimize+" (There are exceptions. If you have several unrelated fixes, or you're changing multiple packages, etc., you might need more than one commit. The point is to minimize them, ideally with one commit per logical change.)"),
