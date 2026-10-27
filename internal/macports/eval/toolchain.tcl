@@ -161,13 +161,14 @@ namespace eval ::dockhand {
         install_lookups $worker
     }
 
-    # lookups are Base's SDK and developer tool lookups, by the name its
-    # port1.0 calls each and the procedure Base's master aliases it to in
-    # its own interpreter (macports.tcl's worker_init), where 2.12 ran them
-    # in the port's worker. There, their file exists, glob, and xcrun see
-    # the Mac, past the dispatcher, so a modelled macOS 12 context read the
-    # Mac's MacOSX.sdk, and their caches hold one context's answer for the
-    # next.
+    # lookups are Base's SDK, developer tool, and clang compiler list
+    # lookups, by the name its port1.0 calls each and the procedure Base's
+    # master aliases it to in its own interpreter (macports.tcl's
+    # worker_init), where 2.12 ran them in the port's worker. There, their
+    # file exists, glob, and xcrun see the Mac, past the dispatcher, so a
+    # modelled macOS 12 context read the Mac's MacOSX.sdk, and their caches
+    # hold one context's answer for the next, the compiler list's keyed by
+    # its file alone.
     variable lookups {
         file_exists portlib::configure::file_exists
         find_close_sdk portlib::configure::find_close_sdk
@@ -175,20 +176,21 @@ namespace eval ::dockhand {
         find_developer_tool portlib::configure::find_developer_tool
         get_system_compiler_version portlib::configure::get_system_compiler_version
         _configure_get_compiler portlib::configure::configure_get_compiler
+        get_clang_compilers portlib::configure::get_clang_compilers
     }
     # lookup_helpers are what those call of Base's own beyond each other,
     # which 2.12 runs in this interpreter too, aliased into the worker, and
     # so they stay, answered from the context's caches the table fills.
-    variable lookup_helpers {macports::get_tool_path macports::get_compiler_version}
+    variable lookup_helpers {macports::get_tool_path macports::get_compiler_version macports::getportresourcepath}
     # lookup_state are the values those read of Base's, which in a
     # modelled context are the context's (macports::override_vars); and
     # lookup_caches are their caches of the host's answers, each starting
     # empty in each worker.
     variable lookup_state {
         macports::macos_version_major macports::macos_version macports::xcodeversion
-        macports::developer_dir macports::os_major macports::prefix_frozen
+        macports::developer_dir macports::os_major macports::os_platform macports::prefix_frozen
     }
-    variable lookup_caches {portlib::configure::file_exists_cache portlib::configure::sdkroot_cache}
+    variable lookup_caches {portlib::configure::file_exists_cache portlib::configure::sdkroot_cache portlib::configure::clang_compilers_cache}
 
     # install_lookups gives a modelled context's worker its own copy of
     # each lookup Base's master aliases to its interpreter, and points the
@@ -202,7 +204,10 @@ namespace eval ::dockhand {
         variable lookup_helpers
         variable lookup_state
         variable lookup_caches
-        if {![dict size $toolchain]} { return }
+        # Every modelled context, whether or not the table has its tools,
+        # as Darwin 9's hasn't: a host read there is a gap the dispatcher
+        # must see, as it does on 2.12.
+        if {![dict size $toolchain] && !$::dockhand::modeled && !$::dockhand::session_modeled} { return }
         set moved {}
         dict for {name target} $lookups {
             if {[interp alias $worker portconfigure::$name] ne ""} { lappend moved $name $target }

@@ -65,12 +65,6 @@ func TestCompilerDependentFetchInputComesFromTheTable(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
 	require.Equal(t, "host-clang++.tar.gz", got.Snapshot.Ports["host"].Options["distfiles"])
-	if e.Adapter == PreviewAdapter {
-		// Its SDK and tool lookups are the worker's on master too
-		// (toolchain.tcl's install_lookups), but get_clang_compilers, which
-		// reads the tree's compiler list, still runs in the parent there.
-		t.Skip("known gap on Base master: the compiler list is read in the parent interpreter, unobserved (Base design, step 5)")
-	}
 	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.True(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
@@ -173,4 +167,38 @@ func TestSourceDateEpochIsReadFromTheCapturedTree(t *testing.T) {
 	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.True(t, got.Ports["host"].ModeledHostAccess, "a directory outside the captured tree is the host's")
+}
+
+// Base's master keeps the clang compiler list in its parent interpreter,
+// cached by the list's file alone, so a second context one process
+// observes would get the first's; each modelled worker keeps its own
+// (toolchain.tcl's install_lookups), so each context gets its own list,
+// the same as a process of its own gives it.
+func TestEachContextGetsItsOwnCompilerList(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/host/Portfile", "PortSystem 1.0\nname host\nversion 1\ndistfiles [join ${compiler.fallback} +].tar.gz\n")
+	bound, err := tree.Select(model.Target{Name: "host", Portfile: "devel/host/Portfile"})
+	require.NoError(t, err)
+	platforms := []model.Platform{{OS: "darwin", Version: "25", Architecture: "arm64"}, {OS: "darwin", Version: "16", Architecture: "x86_64"}}
+	alone := map[model.Platform]string{}
+	for _, platform := range platforms {
+		got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: platform, Declarations: true})
+		require.NoError(t, err)
+		alone[platform] = got.Snapshot.Ports["host"].Options["distfiles"]
+	}
+	require.NotEqual(t, alone[platforms[0]], alone[platforms[1]], "the two contexts' lists differ")
+
+	checked, err := bound.Tree.Select(bound.Target())
+	require.NoError(t, err)
+	session, runtime, err := e.start(t.Context(), checked.Tree)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, session.Close()) }()
+	for _, platform := range platforms {
+		request := macports.ObservationRequest{Platform: platform, Declarations: true}
+		got, err := evaluateIn(t.Context(), session, runtime, checked, bound, &request, false)
+		require.NoError(t, err)
+		require.Equal(t, alone[platform], got.Snapshot.Ports["host"].Options["distfiles"], "%+v, observed second in one process", platform)
+	}
 }
