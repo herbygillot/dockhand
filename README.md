@@ -245,9 +245,17 @@ These limitations have workarounds:
 
 ## Scope
 
-Dockhand currently supports updating GitHub-hosted Go and Rust ports, individually and in batches. Other port types, shared subport releases, library rebuilds, and variant-by-variant checks are outside the supported scope. They may work, but require closer review of plans and diffs. If Dockhand cannot prepare an edit automatically, it explains the limitation and any manual steps available.
+Dockhand is built for routine port maintenance, and is used for it every day:
 
-A pull request someone else wrote, which `review` reads and `adopt --pr` brings into a branch, holds their Portfiles. When a command you run evaluates them with MacPorts on your Mac, it says so once, naming whose they are: "Evaluating @alice's Portfiles on this Mac". Nothing unattended reaches them: serve submits only the branches it prepared, ship and bump start their own, and a local check of an adopted branch, which would run its Portfile as root, is refused. `review <pr> --check` adopts a pull request and checks it in Tart: its plan evaluates the Portfiles on your Mac, which it says, and the builds run in the guests.
+- **Version updates from GitHub releases.** Go and Rust ports, with `go.vendors` and `cargo.crates` regenerated, are the most exercised; C and C++ ports building with CMake, Meson, or autotools are updated the same way, such as fluent-bit, cglm, wasm3, and exiv2.
+- **Many ports at once.** Your own ports, or any selection by maintainer or category, through `outdated`, `ship`, and `serve`, under the same holds.
+- **Library updates** with `--revbump-dependents`, such as libuv's.
+- **New ports** with `create`, from a GitHub URL, `pypi:`, `crates:`, or `go:`.
+- **Revision bumps** with `revbump`.
+
+Some ports get a correct plan or a clear refusal rather than an update: subports sharing one Portfile (py-lmdb, terraform-1.16), Python ports, upstreams outside GitHub such as GitLab's, Git-fetched ports, and Portfiles that compute their version in ways the evaluation can't follow. A refusal says what Dockhand couldn't do and the manual steps available. Read the plan and diff of anything outside the list above more closely.
+
+A pull request someone else wrote, which `review` reads and `adopt --pr` brings into a branch, holds their Portfiles. When a command you run evaluates them on your Mac, it says so once, naming whose they are: "Evaluating @alice's Portfiles on this Mac". A local check of an adopted branch, which would run its Portfile as root, is refused; `review <pr> --check` builds it in Tart.
 
 ## Help and contributing
 
