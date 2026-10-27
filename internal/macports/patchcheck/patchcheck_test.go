@@ -57,7 +57,7 @@ func TestCheckReportsEachPatch(t *testing.T) {
 	// Apple's patch says "hunks failed" and GNU patch "hunk FAILED".
 	require.Regexp(t, staleHunk, results[1].Detail)
 	require.False(t, results[2].Applies)
-	require.Contains(t, results[2].Detail, "No file to patch")
+	require.Equal(t, "the source has no dir/gone.txt, which it patches", results[2].Detail, "the file named, where patch said none")
 	require.True(t, results[3].Applies, "gzip-compressed patches are decompressed")
 	require.False(t, results[4].Checked)
 	require.Contains(t, results[4].Detail, "xz compression is not modeled")

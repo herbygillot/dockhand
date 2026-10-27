@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
@@ -120,9 +121,12 @@ type Attention struct {
 	Run         *model.Run
 	Port        string
 	Environment model.Environment
-	PullRequest *model.PullRequest
-	Detail      string
-	Ports       []string
+	// Environments are where the latest check built, which files changed
+	// since have no pass on.
+	Environments []model.Environment
+	PullRequest  *model.PullRequest
+	Detail       string
+	Ports        []string
 	// CI are the failed CI jobs it says, each check's latest.
 	CI []model.CIFailure
 	// Revision is the latest check's revision, and Holds what holds it,
@@ -211,7 +215,19 @@ func Attend(facts Facts) []Attention {
 		if b.Revision == nil || run == nil || !run.State.Finished() {
 			return nil
 		}
-		return row(NeedsYou, FilesChangedSince, Next{Verb: VerbCheck}, func(a *Attention) { a.Run, a.Revision = run, b.Revision })
+		// It names where that check built, and its Next checks there, as
+		// BuildAgain's does, where build.default's platforms were
+		// suggested after an amend of a pass on two releases (field
+		// testing's outdated-ports session).
+		again := Next{Verb: VerbCheck}
+		for _, on := range b.CheckOn {
+			again.Args = append(again.Args, "--on", on)
+		}
+		var built []model.Environment
+		if check.Evidence != nil {
+			built = check.Evidence.Plan.Environments
+		}
+		return row(NeedsYou, FilesChangedSince, again, func(a *Attention) { a.Run, a.Revision, a.Environments = run, b.Revision, built })
 	}
 	if check.Evidence == nil {
 		return nil
@@ -410,6 +426,13 @@ func (a Attention) Words(v Vocabulary) string {
 		ended := string(a.Run.State)
 		if a.Run.State == model.RunAttention {
 			ended = "needed attention"
+		}
+		if len(a.Environments) > 0 {
+			var where []string
+			for _, environment := range a.Environments {
+				where = append(where, v.Environment(environment))
+			}
+			return v.Revision(*a.Revision) + " " + ended + " on " + prose.And(where) + "; the files have changed since, with no check there"
 		}
 		return v.Revision(*a.Revision) + " " + ended + "; the files have changed since"
 	case DependencyFailed:
