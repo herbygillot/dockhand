@@ -29,8 +29,8 @@ func (s Scope) Holds(directory string) bool {
 	return s.All || slices.Contains(s.Ports, directory)
 }
 
-// Workspace is one projection of a tree. A base owns its directory, its
-// session, and its overlays; an overlay shares the base's tracked files and
+// Workspace is one projection of a tree. A base owns its directory and its
+// overlays; an overlay shares the base's tracked files and
 // replaces the edited ones.
 type Workspace struct {
 	repo      *git.Repository
@@ -439,7 +439,7 @@ func (w *Workspace) linkNew() error {
 	return nil
 }
 
-// Close closes the session, then removes the directory. Overlays close
+// Close removes the directory. Overlays close
 // before their base; closing a base with open overlays leaves their files
 // intact, since hardlinks survive their source.
 func (w *Workspace) Close() error {
