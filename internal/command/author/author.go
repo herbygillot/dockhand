@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"text/tabwriter"
 
@@ -236,7 +237,10 @@ type VersionUpdate struct {
 	KeepOld, Shared, Obsolete, FollowMoves bool
 	// HandEdit is update's --hand-edit alone: ship and bump never take it.
 	HandEdit bool
-	Linked   LinkedOptions
+	// Closes are --closes's Trac tickets, which the branch keeps for
+	// tidy's Closes: trailer (the docs dig's I41).
+	Closes []string
+	Linked LinkedOptions
 }
 
 // flags adds the edit's flags, which update, ship, and bump share.
@@ -247,6 +251,7 @@ func (v *VersionUpdate) Flags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&v.Obsolete, "with-obsolete", false, "also update an obsolete stub replaced by this port to the same version")
 	cmd.Flags().BoolVar(&v.Linked.Revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
 	cmd.Flags().StringSliceVar(&v.Linked.Except, "except", nil, "leave this dependent out of --revbump-dependents")
+	cmd.Flags().StringSliceVar(&v.Closes, "closes", nil, "the Trac ticket the update closes, by number, written as the commit's Closes: trailer with its URL; repeat for more")
 }
 
 // stageFlags adds the flags of the stages after the edit, defined once,
@@ -280,12 +285,21 @@ func (v VersionUpdate) Request(args []string, plan bool) (engine.UpdateRequest, 
 	if len(v.Linked.Except) > 0 && !v.Linked.Revbump {
 		return engine.UpdateRequest{}, errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
 	}
-	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], EditIntent: model.EditIntent{KeepOldChecksums: v.KeepOld, SharedRelease: v.Shared}, WithObsolete: v.Obsolete, FollowMoves: v.FollowMoves, HandEdit: v.HandEdit, Plan: plan, CompareUpstream: true, LookForOthers: true}
+	for _, ticket := range v.Closes {
+		if !tickets.MatchString(ticket) {
+			return engine.UpdateRequest{}, fmt.Errorf("--closes %s: a Trac ticket is its number, as 71234", ticket)
+		}
+	}
+	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], EditIntent: model.EditIntent{KeepOldChecksums: v.KeepOld, SharedRelease: v.Shared}, WithObsolete: v.Obsolete, FollowMoves: v.FollowMoves, HandEdit: v.HandEdit, Plan: plan, CompareUpstream: true, LookForOthers: true, Closes: v.Closes}
 	if len(args) == 2 {
 		request.Version = args[1]
 	}
 	return request, nil
 }
+
+// tickets are what --closes takes: a Trac ticket's number, a # before it
+// taken off by the shell's word as given.
+var tickets = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 // linkedOptions are the edit's --revbump-dependents and --except, and what
 // ship and bump pass on to the stages after it: where to check, the tests,

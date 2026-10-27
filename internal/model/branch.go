@@ -229,6 +229,10 @@ type Branch struct {
 	// for jq is jq's before it changes jq (the command-line UX second
 	// look's §1).
 	Ports []string
+	// Closes are the Trac tickets update, ship, or bump's --closes named,
+	// by number, which tidy writes as Closes: trailers with each one's URL
+	// (the docs dig's I41).
+	Closes []string
 	// EndedAt is when it left open, merged, closed, or archived, which
 	// cleanup times what it keeps of its checks from (D6); zero while it's
 	// open. The store records the moment it leaves open where it's zero.
