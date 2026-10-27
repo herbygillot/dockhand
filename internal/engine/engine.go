@@ -86,6 +86,10 @@ type Options struct {
 	// needs; IndexMirror is the directory a cache with no generation near
 	// enough is seeded from, MacPorts' own when empty.
 	Indexes, IndexMirror string
+	// Packages is the site master's binary archives are read from, for an
+	// install finding's earlier reading (masterArchive);
+	// packages.macports.org where empty.
+	Packages string
 	// AllowMajors lets an update nobody looks over move a port's major
 	// version without a look; holds.majors = "allow". Held otherwise.
 	AllowMajors bool

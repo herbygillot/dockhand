@@ -3,11 +3,18 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/evidence"
+	"github.com/herbygillot/dockhand/internal/fetch"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -41,12 +48,21 @@ type InstallFinding struct {
 // passed build of another check: what moved of its own libraries, and the
 // files gone or added. A target with no earlier reading says nothing,
 // unknown and never equal. Each is a notice, holding nothing.
-func (e *Engine) InstallChanges(ctx context.Context, run model.Run) ([]InstallFinding, error) {
+//
+// fetch lets it fetch master's archive where none is kept yet; status,
+// which reads no network itself, reads only an archive kept.
+func (e *Engine) InstallChanges(ctx context.Context, run model.Run, fetch bool) ([]InstallFinding, error) {
 	checked, err := e.RunEvidence(ctx, run.ID)
 	if err != nil {
 		return nil, err
 	}
 	var found []InstallFinding
+	type pending struct {
+		target      model.PlanTarget
+		environment model.Environment
+		result      model.TargetResult
+	}
+	var missing []pending
 	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		for _, target := range checked.Targets {
 			for _, cell := range target.Outcomes {
@@ -65,6 +81,9 @@ func (e *Engine) InstallChanges(ctx context.Context, run model.Run) ([]InstallFi
 					return b.Execution.Run != run.ID && (b.Result.Installed != nil || b.Result.Configure != nil)
 				})
 				if i < 0 {
+					// Never checked there: master's archive, read on the
+					// host, is the earlier reading, its configure unknown.
+					missing = append(missing, pending{target: target.Target, environment: cell.Environment, result: result})
 					continue
 				}
 				change, _ := evidence.CompareInstalled(earlier[i].Result, result)
@@ -87,8 +106,23 @@ func (e *Engine) InstallChanges(ctx context.Context, run model.Run) ([]InstallFi
 		}
 		return nil
 	})
-	if err != nil || len(found) == 0 {
+	if err != nil {
 		return found, err
+	}
+	for _, p := range missing {
+		earlier, name, ok := e.masterArchive(ctx, p.target, p.environment, fetch)
+		if !ok {
+			continue
+		}
+		change, ok := evidence.CompareInstalled(earlier, p.result)
+		if !ok || change.Empty() {
+			continue
+		}
+		change.Target, change.Environment = p.target.ID, p.environment
+		found = append(found, InstallFinding{InstallChange: change, Check: "master's archive " + name})
+	}
+	if len(found) == 0 {
+		return found, nil
 	}
 	// The ports that link one whose libraries moved, as the port index at
 	// the check's revision has them.
@@ -152,6 +186,124 @@ func (e *Engine) InstallChanges(ctx context.Context, run model.Run) ([]InstallFi
 	return found, nil
 }
 
+// masterArchive is the earlier reading of a target never checked in an
+// environment: the archive packages.macports.org serves for master's
+// version, revision, and default variants on that release and arch, read
+// on the host (binaryarchive.Contents), its files under the
+// environment's prefix. It's fetched once and kept by its name, an
+// archive not served marked so, for a license MacPorts doesn't
+// distribute or a release its buildbots don't build; false there, which
+// says nothing.
+func (e *Engine) masterArchive(ctx context.Context, target model.PlanTarget, environment model.Environment, fetch bool) (model.TargetResult, string, bool) {
+	darwin, err := strconv.Atoi(environment.Platform.Version)
+	arch := environment.Platform.Architecture
+	master, ok := e.lastMaster(ctx)
+	if err != nil || arch == "" || environment.Platform.OS != "darwin" || !ok {
+		return model.TargetResult{}, "", false
+	}
+	reader, err := e.portReader()
+	if err != nil {
+		return model.TargetResult{}, "", false
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(master)})
+	if err != nil {
+		return model.TargetResult{}, "", false
+	}
+	infos, err := reader.Ports(ctx, model.Source{Commit: master, Base: master, Tree: model.ObjectID(trees[string(master)])}, target.Directory, environment, nil)
+	if err != nil {
+		return model.TargetResult{}, "", false
+	}
+	i := slices.IndexFunc(infos, func(info macports.PortInfo) bool { return info.Name == target.Target.Name })
+	if i < 0 {
+		return model.TargetResult{}, "", false
+	}
+	info := infos[i]
+	var defaults []string
+	if variants, err := info.Variants(); err == nil {
+		for _, variant := range variants {
+			if variant.Default {
+				defaults = append(defaults, variant.Name)
+			}
+		}
+	}
+	name := binaryarchive.ArchiveName(info.Name, info.Version, strconv.Itoa(info.Revision), defaults, darwin, arch)
+	if !binaryarchive.Installable(info.Name, name) {
+		return model.TargetResult{}, "", false
+	}
+	path := filepath.Join(e.ArchiveDirectory(), "master", name)
+	if _, err := os.Stat(path + ".none"); err == nil {
+		return model.TargetResult{}, "", false
+	}
+	if _, err := os.Stat(path); err != nil {
+		if !fetch || !e.fetchArchive(ctx, binaryarchive.URL(info.Name, name), path) {
+			return model.TargetResult{}, "", false
+		}
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return model.TargetResult{}, "", false
+	}
+	defer file.Close()
+	files, libraries, err := binaryarchive.Contents(file)
+	if err != nil {
+		return model.TargetResult{}, "", false
+	}
+	// The archive's prefix is the buildbots', /opt/local; a check in a
+	// prefix of the person's has its own.
+	if prefix := environment.Prefix; prefix != "" && prefix != macports.DefaultPrefix {
+		moved := func(p string) string {
+			if rest, ok := strings.CutPrefix(p, macports.DefaultPrefix+"/"); ok {
+				return prefix + "/" + rest
+			}
+			return p
+		}
+		for i := range files {
+			files[i] = moved(files[i])
+		}
+		for i := range libraries {
+			libraries[i].File, libraries[i].Name = moved(libraries[i].File), moved(libraries[i].Name)
+		}
+	}
+	return model.TargetResult{Target: target.ID, Installed: files, Libraries: libraries}, name, true
+}
+
+// fetchArchive fetches an archive to path, whole or not at all; one the
+// site doesn't serve is marked, path.none, so it isn't asked for again.
+func (e *Engine) fetchArchive(ctx context.Context, url, path string) bool {
+	if base := e.options.Packages; base != "" {
+		url = base + strings.TrimPrefix(url, binaryarchive.Packages)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false
+	}
+	response, err := fetch.Client.Do(request)
+	if err != nil {
+		return false
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		_ = os.WriteFile(path+".none", nil, 0o644)
+		return false
+	}
+	if response.StatusCode != http.StatusOK {
+		return false
+	}
+	partial := path + ".part"
+	out, err := os.Create(partial)
+	if err != nil {
+		return false
+	}
+	if _, err := io.Copy(out, response.Body); err != nil || out.Close() != nil {
+		_ = os.Remove(partial)
+		return false
+	}
+	return os.Rename(partial, path) == nil
+}
+
 // installedLines are the install findings of the check a submission
 // rests on as the description says them, naming the dependents the
 // branch's revision bumps rebuild; none where it rests on none.
@@ -159,7 +311,7 @@ func (e *Engine) installedLines(ctx context.Context, checked *Evidence, edits []
 	if checked == nil || checked.Run.ID == "" {
 		return nil
 	}
-	findings, err := e.InstallChanges(ctx, checked.Run)
+	findings, err := e.InstallChanges(ctx, checked.Run, true)
 	if err != nil {
 		return nil
 	}
