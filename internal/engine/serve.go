@@ -1037,6 +1037,11 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 			line += ", " + done.Run.Name() + " queued"
 		}
 		o.s.say("%s", line)
+		// A maintainer's instruction in its Portfile's comments is said
+		// for a look; it holds nothing (the docs dig's I7).
+		for _, instruction := range done.Update.Instructions {
+			o.s.say("serve: %s: the Portfile's comment says, at %s", done.Branch.ShortName(), instruction)
+		}
 		// The notification's title names the branch.
 		body := fmt.Sprintf("Prepared update %s → %s", done.Update.Before, done.Update.After)
 		if done.Run != nil {

@@ -778,6 +778,11 @@ func writePatches(out io.Writer, update engine.Update) {
 }
 
 func writeOthers(out io.Writer, update engine.Update) {
+	// A maintainer's instruction in the Portfile's comments, quoted for a
+	// look, never read for intent (the docs dig's I7).
+	for _, line := range update.Instructions {
+		fmt.Fprintf(out, "! The Portfile's comment says, at %s\n", line)
+	}
 	if update.OthersProblem != "" {
 		fmt.Fprintf(out, "Couldn't look for other open pull requests for %s: %s\n", update.Port, update.OthersProblem)
 		return

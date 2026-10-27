@@ -39,3 +39,13 @@ func TestAnUpdateClosesTheTicketItNames(t *testing.T) {
 	require.Contains(t, committed, "Closes: https://trac.macports.org/ticket/71234")
 	require.Equal(t, 1, strings.Count(committed, "Closes:"), "once")
 }
+
+// A Portfile's comment that reads as a maintainer's instruction is quoted
+// with its place, as update, status, and serve say it (the docs dig's I7).
+func TestAPortfilesInstructionIsQuotedWithItsPlace(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	write(t, root, map[string]string{"sysutils/osxfuse/Portfile": "name osxfuse\n# Do not update past 3.8.3.\nversion 3.8.3\n"})
+	require.Equal(t, []string{"sysutils/osxfuse/Portfile:2: Do not update past 3.8.3."}, instructionLines(root, "sysutils/osxfuse", "osxfuse"))
+	require.Empty(t, instructionLines(root, "sysutils/gone", "gone"))
+}

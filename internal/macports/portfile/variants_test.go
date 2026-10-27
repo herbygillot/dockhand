@@ -107,3 +107,17 @@ func TestTheVariantsWhoseSourcesChanged(t *testing.T) {
 	outside := []byte(strings.Replace(string(before), "version 1.0", "version 1.1", 1))
 	require.Empty(t, portfile.SourceVariants(before, outside, nil), "a change outside every variant")
 }
+
+// A comment that reads as a maintainer's instruction about updating is
+// found, at its line, a comment of several lines joined, the subport's own
+// block's too; others aren't (the docs dig's I7).
+func TestAMaintainersInstructionInACommentIsFound(t *testing.T) {
+	t.Parallel()
+	src := []byte("# Generated, do not edit by hand.\nPortSystem 1.0\nname osxfuse\n# Do not update past 3.8.3: later versions\n# need a kernel extension this can't ship.\nversion 3.8.3\n\nsubport dav1d {\n    # Increase the revision of libheif, ffmpeg when this changes.\n    version 1.4\n}\n")
+	require.Equal(t, []portfile.Instruction{{Line: 4, Text: "Do not update past 3.8.3: later versions need a kernel extension this can't ship."}}, portfile.Instructions(src, ""))
+	require.Equal(t, []portfile.Instruction{
+		{Line: 4, Text: "Do not update past 3.8.3: later versions need a kernel extension this can't ship."},
+		{Line: 9, Text: "Increase the revision of libheif, ffmpeg when this changes."},
+	}, portfile.Instructions(src, "dav1d"))
+	require.Empty(t, portfile.Instructions([]byte("name jq\n# Thanks to the maintainer.\n"), ""))
+}

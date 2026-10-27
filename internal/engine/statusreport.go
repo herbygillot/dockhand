@@ -2,10 +2,12 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -36,10 +38,14 @@ type StatusReport struct {
 	// found against the port's earlier build (InstallChanges), by the
 	// check, for the branches named alone.
 	Installed map[model.RunID][]InstallFinding
-	Serve     ServeState
-	Queue     []QueuedCheck
-	Processes []Process
-	Changes   []buildenv.Change
+	// Instructions are each branch shown in detail's Portfiles' comments
+	// that read as a maintainer's instruction (portfile.Instructions), by
+	// the branch, quoted (the docs dig's I7).
+	Instructions map[model.BranchID][]string
+	Serve        ServeState
+	Queue        []QueuedCheck
+	Processes    []Process
+	Changes      []buildenv.Change
 	// Look is serve's last daily look under the selection configured now,
 	// where it found any port to say (LastOutdatedLook); nil otherwise.
 	Look *OutdatedLook
@@ -69,8 +75,19 @@ func (e *Engine) StatusReport(ctx context.Context, session *coord.Session, reque
 	if err := e.JudgeStopped(ctx, session, report.Statuses); err != nil {
 		return report, err
 	}
-	report.Links, report.Installed = map[model.RunID][]LinkFinding{}, map[model.RunID][]InstallFinding{}
+	report.Links, report.Installed, report.Instructions = map[model.RunID][]LinkFinding{}, map[model.RunID][]InstallFinding{}, map[model.BranchID][]string{}
 	for _, status := range report.Statuses {
+		if len(request.Branches) > 0 && !status.Missing && status.Tree != "" {
+			for _, directory := range status.Scope.Ports {
+				_, data, err := e.Repo.File(ctx, status.Tree, directory+"/Portfile")
+				if err != nil {
+					continue
+				}
+				for _, found := range portfile.Instructions(data, "") {
+					report.Instructions[status.Branch.ID] = append(report.Instructions[status.Branch.ID], fmt.Sprintf("%s/Portfile:%d: %s", directory, found.Line, found.Text))
+				}
+			}
+		}
 		if len(request.Branches) > 0 && status.Latest != nil && !status.Cleaned() {
 			if links, err := e.UndeclaredLinks(ctx, *status.Latest); err == nil {
 				report.Links[status.Latest.ID] = links
