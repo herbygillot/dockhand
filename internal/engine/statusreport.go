@@ -75,7 +75,7 @@ func (e *Engine) StatusReport(ctx context.Context, session *coord.Session, reque
 			if links, err := e.UndeclaredLinks(ctx, *status.Latest); err == nil {
 				report.Links[status.Latest.ID] = links
 			}
-			if installed, err := e.InstallChanges(ctx, *status.Latest); err == nil {
+			if installed, err := e.InstallChanges(ctx, *status.Latest, false); err == nil {
 				report.Installed[status.Latest.ID] = installed
 			}
 		}
