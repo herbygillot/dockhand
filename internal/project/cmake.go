@@ -4,6 +4,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -26,6 +27,8 @@ type CMakeDocument struct {
 	// include()s, by its path; included are those files' paths.
 	source   []string
 	included []string
+	// texts are each file's text, by its path, the root's under "".
+	texts map[string]string
 }
 
 // cmakeNode is a command, or an if() block.
@@ -104,7 +107,7 @@ func (r Reading) CMakeDocument(name string) CMakeDocument {
 // parseCMake reads a CMake file whose directory is dir, below the
 // archive's top, splicing in what include() reads, where read finds it.
 func parseCMake(text, dir string, read func(string) (string, bool)) CMakeDocument {
-	var d CMakeDocument
+	d := CMakeDocument{texts: map[string]string{"": text}}
 	d.source = append(d.source, text)
 	seen := map[string]bool{}
 	var splice func(text, file string, depth int)
@@ -125,6 +128,7 @@ func parseCMake(text, dir string, read func(string) (string, bool)) CMakeDocumen
 				if data, ok := read(candidate); ok {
 					seen[candidate] = true
 					d.source = append(d.source, candidate+"\n"+data)
+					d.texts[candidate] = data
 					d.included = append(d.included, candidate)
 					splice(data, candidate, depth+1)
 					break
@@ -481,6 +485,79 @@ func (d CMakeDocument) Rest(off map[string]bool) []CMakeStatement {
 // anything of it changed.
 func (d CMakeDocument) Source() string {
 	return strings.Join(d.source, "\n")
+}
+
+// CXXStandard is the C++ standard a CMake document asks for, as a year,
+// C++20's 2020, as compiler.cxx_standard writes it, with the file it's
+// named in, empty for the CMakeLists.txt itself, and its line.
+type CXXStandard struct {
+	Year int
+	File string
+	Line int
+}
+
+// CXXFloor is the lowest C++ standard the document names, wherever it
+// names one, in any branch: CMAKE_CXX_STANDARD set, a target's
+// CXX_STANDARD property, a cxx_std_NN compile feature, or a -std=c++NN or
+// gnu++NN flag, as i2pd 3.0.0's build/CMakeLists.txt probes -std=c++23
+// and -std=c++20 and sets the result (the docs dig's I20); false where it
+// names none.
+func (d CMakeDocument) CXXFloor() (CXXStandard, bool) {
+	var floor CXXStandard
+	found := false
+	d.walk(d.nodes, nil, nil, func(command cmakeCommand, _ []CMakeCondition) {
+		for i, arg := range command.args {
+			year := 0
+			switch {
+			case (arg == "CMAKE_CXX_STANDARD" && command.name == "set" && i == 0) || arg == "CXX_STANDARD":
+				if i+1 < len(command.args) {
+					year = cxxYear(command.args[i+1])
+				}
+			default:
+				if m := cxxFlag.FindStringSubmatch(arg); m != nil {
+					year = cxxYear(m[1])
+				}
+			}
+			if year == 0 || found && year >= floor.Year {
+				continue
+			}
+			text := d.texts[command.file]
+			floor = CXXStandard{Year: year, File: command.file, Line: strings.Count(text[:min(command.start, len(text))], "\n") + 1}
+			found = true
+		}
+	})
+	return floor, found
+}
+
+// cxxFlag is a standard named as a compile feature or a compiler flag.
+var cxxFlag = regexp.MustCompile(`^(?:cxx_std_|-std=(?:c|gnu)\+\+)([0-9][0-9a-z])$`)
+
+// cxxYear is a C++ standard's year from its two characters: 98, 11, 2a,
+// 1z, 0x; 0 where it isn't one.
+func cxxYear(short string) int {
+	switch short {
+	case "98":
+		return 1998
+	case "03":
+		return 2003
+	case "0x":
+		return 2011
+	case "1y":
+		return 2014
+	case "1z":
+		return 2017
+	case "2a":
+		return 2020
+	case "2b":
+		return 2023
+	case "2c":
+		return 2026
+	}
+	n, err := strconv.Atoi(short)
+	if err != nil || n < 11 || n > 99 {
+		return 0
+	}
+	return 2000 + n
 }
 
 // StatementsText are statements one to a line.

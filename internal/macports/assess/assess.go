@@ -85,8 +85,10 @@ import (
 // so a stale "no build file changes" is made again (field testing at
 // c643559a). 25: an archive the new version no longer fetches holds, its
 // checksum lines and what the port used of it for a person to look at,
-// where update said nothing of it (L2a).
-const Policy = 25
+// where update said nothing of it (L2a). 26: a C++ standard upstream's
+// CMake files raised above the Portfile's compiler.cxx_standard is said
+// (the docs dig's I20).
+const Policy = 26
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -185,6 +187,7 @@ const (
 	SourceUncertain     = "source-uncertain"
 	WorksrcPathGone     = "worksrc-path-gone"
 	GitHubTarball       = "github-tarball"
+	CXXStandardRule     = "cxx-standard"
 )
 
 // Rules are every rule an assessment's finding is raised by, for a hold
@@ -193,7 +196,7 @@ func Rules() []string {
 	return []string{LicenseChanged, LicenseYears, LicenseParty, LicenseMoved, BuildFileChanged, BuildFileVersion, BuildFileOptions, DependencyAdded, DependencyDropped,
 		DependencyMoved, DependenciesCounted, NativeLibrary, NativeLibraryLeft, Unread, LayoutAmbiguous, RequirementUnmet, RequirementUnknown,
 		ProviderUnresolved, ProviderRemoved, GoToolchainRule, GoModuleMoved, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, SourceRemoved,
-		SourceUncertain, WorksrcPathGone, GitHubTarball}
+		SourceUncertain, WorksrcPathGone, GitHubTarball, CXXStandardRule}
 }
 
 // proven are the manifests whose dependencies a check proves (D9). A Go
@@ -249,6 +252,9 @@ func Assess(input Input) model.UpstreamComparison {
 		a.add(found)
 	}
 	if found, ok := a.requiresPython(); ok {
+		a.add(found)
+	}
+	if found, ok := a.cxxStandard(); ok {
 		a.add(found)
 	}
 	if found, ok := a.pythonPin(); ok {
