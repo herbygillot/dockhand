@@ -10,9 +10,9 @@ import (
 )
 
 // Registry hands out one workspace per source within a process and closes
-// it when the last holder releases it. Tart staging and dependent discovery
-// both work on the prepared tree, and share one whole-tree workspace
-// through it rather than materializing the tree twice; overlays are not
+// it when the last holder releases it. The providers, staging, treequery,
+// the survey, and editprep work on the same tree, and share one whole-tree
+// workspace through it rather than materializing the tree twice; overlays are not
 // registered. A nil Registry shares nothing: Acquire opens a workspace of
 // its own and release closes it.
 type Registry struct {
