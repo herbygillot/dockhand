@@ -16,6 +16,7 @@ import (
 // that do the work; it is driven by the command layer and drives the
 // providers, and imports neither.
 var engineImports = map[string]string{
+	"internal/comparison":             "what upstream's change means for a port, collected (Then's item 15)",
 	"internal/model":                  "the records it decides about",
 	"internal/store":                  "the store's contract",
 	"internal/store/sqlite":           "the store, opened with the engine",
@@ -46,7 +47,6 @@ var engineImports = map[string]string{
 	"internal/macports/depblock":      "go2port and cargo2port, found as the edits find them, for setup's report",
 	"internal/macports/cilog":         "what MacPorts' workflow's job log says of each port and its first error, for a pull request's CI",
 	"internal/macports/binaryarchive": "master's binary archive's name, files, and install names, an install finding's earlier reading",
-	"internal/macports/patchcheck":    "a revision's patches checked against its source, for its assessment",
 	"internal/macports/fidelity":      "which subports a revision changed, for its change record",
 	"internal/failpoint":              "the acceptance harness's kill steps, which a normal build hasn't",
 	"internal/macports/prdescription": "the pull request's description, as MacPorts' template has it",
@@ -56,18 +56,15 @@ var engineImports = map[string]string{
 	"internal/upstream":               "upstream projects' releases",
 	"internal/forge":                  "the forge's contract: pull requests, releases, tags",
 	"internal/forge/github":           "GitHub as a forge",
-	"internal/forge/gitlab":           "GitLab as a forge, for releases",
 	"internal/github":                 "GitHub's client, which the forge and create use",
 	// MacPorts itself: evaluating Portfiles, and what MacPorts asks.
 	"internal/macports":             "ports as MacPorts evaluates them",
 	"internal/macports/eval":        "MacPorts' evaluator",
 	"internal/macports/portindex":   "a port index of a revision",
 	"internal/macports/selection":   "reading ports from a checkout",
-	"internal/macports/portsource":  "the forges a Portfile's upstream conventions name, for preparation",
 	"internal/macports/workspace":   "a revision's files for MacPorts to read",
 	"internal/macports/portfile":    "Portfile vocabulary",
 	"internal/macports/version":     "how versions read, for an update crossing a major version",
-	"internal/macports/distfetch":   "a Portfile's archives as MacPorts shipped them, for diff --source and stealth updates, and MacPorts' mirror",
 	"internal/macports/portcreate":  "new Portfiles, for create, and the guesses submit holds for",
 	"internal/macports/commitmsg":   "commit messages, for tidy",
 	"internal/macports/commitrules": "the commit rules, for tidy, submit, and review",

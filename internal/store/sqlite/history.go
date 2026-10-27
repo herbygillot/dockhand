@@ -160,11 +160,13 @@ func (t *tx) AddDecision(d model.Decision) error {
 		return err
 	}
 	// A standing decision is no branch's, which the column says as null.
+	// One made again on the same evidence replaces it, as a person's
+	// "awaiting" becomes "acceptable because…".
 	var branch any
 	if d.Branch != "" {
 		branch = d.Branch
 	}
-	_, err := t.exec("INSERT INTO decisions(repository_id, branch_id, finding, subject, evidence, answer, words, at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+	_, err := t.exec("INSERT INTO decisions(repository_id, branch_id, finding, subject, evidence, answer, words, at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(repository_id, ifnull(branch_id, ''), finding, subject, evidence) DO UPDATE SET answer=excluded.answer, words=excluded.words, at=excluded.at",
 		t.repo, branch, d.Finding, d.Subject, d.Evidence, d.Answer, d.Words, millis(d.At))
 	return err
 }

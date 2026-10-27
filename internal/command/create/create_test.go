@@ -299,3 +299,19 @@ func TestCreateExitsForALookWhereADraftHasNoChecksums(t *testing.T) {
 	require.Contains(t, cmdtest.Flat(out), "checksums: not generated: dependency: go.mod says 1.15, before 1.17; go.sum has the source of github.com/kr/text too, which go.vendors needs by hand: add github.com/kr/text lock v0.1.0")
 	require.Contains(t, out, "Next: resolve the checksum problem above, then run dockhand checksums rift\n")
 }
+
+// create --plan prints the Portfile create would write, and writes
+// nothing, starting no branch (Then's item 14).
+func TestCreatePlanPrintsThePortfileAndWritesNothing(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).ProjectReader = riftProject{}
+	out, _, err := cmdtest.Dockhand(t, "create", "https://github.com/rift-dev/rift", "--plan", "--category", "textproc")
+	require.NoError(t, err)
+	require.Contains(t, out, "Would write textproc/rift/Portfile:\n")
+	require.Contains(t, out, "github.setup        rift-dev rift 0.4.2 v\n")
+	require.Contains(t, out, "    anyhow  1.0.89  86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6\n")
+	require.Contains(t, out, "Nothing was written (--plan)")
+	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")
+}

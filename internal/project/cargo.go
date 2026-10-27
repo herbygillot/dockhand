@@ -52,6 +52,37 @@ func (m CargoManifest) Programs(conventional bool) []string {
 	return programs
 }
 
+// CargoPrograms are the programs a Cargo project builds, by name, sorted:
+// each package's in files, its root's and its members', as Programs reads
+// them, given whether a package's directory has a program by Cargo's
+// conventions. It's the one reading create's destroot and comparison's
+// binaries rest on (CX-7, where create read the root package alone, a
+// program wherever no [[bin]] was declared). A manifest that doesn't
+// parse names none.
+func CargoPrograms(files map[string][]byte, conventional func(dir string) bool) []string {
+	var names []string
+	for name, data := range files {
+		if path.Base(name) != "Cargo.toml" {
+			continue
+		}
+		manifest, err := ReadCargoManifest(data)
+		if err != nil {
+			continue
+		}
+		dir := path.Dir(name)
+		if dir == "." {
+			dir = ""
+		}
+		for _, program := range manifest.Programs(conventional(dir)) {
+			if !slices.Contains(names, program) {
+				names = append(names, program)
+			}
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
 // CargoPackageInfo is a Cargo.toml's [package], or a workspace's
 // [workspace.package].
 type CargoPackageInfo struct {

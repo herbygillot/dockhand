@@ -112,7 +112,7 @@ func (p SubmitPlan) Held() []model.Concern {
 	for _, blocking := range p.Blocking {
 		held = append(held, model.Concern{Origin: model.FromSubmission, Rule: "blocking", Detail: blocking})
 	}
-	return append(held, holding(p.Concerns(), p.allowed)...)
+	return append(held, undecided(holding(p.Concerns(), p.allowed), p.Decided)...)
 }
 
 // HoldLines are concerns as they're said, a line each, the same finding of

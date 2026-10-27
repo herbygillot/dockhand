@@ -35,6 +35,11 @@ type Project struct {
 	// Assets are the files the release carries.
 	Assets []string
 	Files  map[string][]byte
+	// Directory is where a Go module is below the repository's root, its
+	// files read there and its port built there, and Package the module
+	// path of that root, which go.setup takes (the docs dig's I33); empty
+	// for a project at its root.
+	Directory, Package string
 }
 
 // ProjectReader observes an upstream project from its URL.
@@ -95,7 +100,7 @@ func (e *Engine) ObserveProject(ctx context.Context, address string) (Observed, 
 // its license and one line, which its own manifest says nearer MacPorts'
 // words than the forge does, the forge's being the fallback.
 func observe(project Project) (Observed, error) {
-	_, version, ok := portcreate.SplitTag(project.Tag)
+	_, version, ok := portcreate.SplitTag(strings.TrimPrefix(project.Tag, directoryTag(project)))
 	if !ok {
 		return Observed{}, fmt.Errorf("%s's latest release is tagged %q, which names no version", project.Owner+"/"+project.Name, project.Tag)
 	}
@@ -118,6 +123,11 @@ func observe(project Project) (Observed, error) {
 // Python modules.
 func defaultName(project Project, build portcreate.Build) string {
 	name := strings.ToLower(project.Name)
+	if project.Directory != "" {
+		// A module below its root is named for its own directory, as
+		// golang.org/x/tools/gopls is gopls.
+		name = strings.ToLower(path.Base(project.Directory))
+	}
 	if build.System == "python" && !strings.HasPrefix(name, "py-") {
 		name = "py-" + name
 	}
@@ -169,7 +179,8 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 		return Created{}, err
 	}
 	project, build, version := observed.Project, observed.Build, observed.Version
-	prefix, _, _ := portcreate.SplitTag(project.Tag)
+	prefix, _, _ := portcreate.SplitTag(strings.TrimPrefix(project.Tag, directoryTag(project)))
+	prefix = directoryTag(project) + prefix
 	name := request.Name
 	if name == "" {
 		name = defaultName(project, build)
@@ -186,32 +197,11 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 		}
 		return e.moveCreated(ctx, worktree, request.Branch, created, request.Category)
 	}
-	spec := portcreate.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
-		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, Maintainer: request.Maintainer, Build: build,
-		Binaries: portcreate.Binaries(project.Files, build), ReleaseAsset: portcreate.HasReleaseArchive(project.Assets, project.Name, version)}
-	if spec.Category == "" {
-		categories, err := treeCategories(ctx, worktree)
-		if err != nil {
-			return Created{}, err
-		}
-		spec.Category, spec.CategoryFrom = portcreate.GuessCategory(build, observed.Description, categories)
-		spec.CategoryGuessed = true
+	spec, homepageFrom, err := e.createSpec(ctx, worktree, observed, request, name, prefix)
+	if err != nil {
+		return Created{}, err
 	}
-	// MacPorts prefers HTTPS: a forge's plain-HTTP homepage is written as
-	// its https form where that answers.
-	var homepageFrom string
 	answered := map[string]bool{}
-	if plain := e.plainHTTP(ctx, homepageOnly(spec.Homepage), answered); len(plain) > 0 && plain[0].Answers {
-		homepageFrom, spec.Homepage = spec.Homepage, plain[0].HTTPS
-	}
-	if !macports.ValidCategory(spec.Category) {
-		return Created{}, fmt.Errorf("%q is not a category", spec.Category)
-	}
-	if lock, ok := project.Files["Cargo.lock"]; ok && build.System == "cargo" {
-		if spec.Crates, spec.Unfetched, err = portcreate.CargoCrates(lock); err != nil {
-			return Created{}, err
-		}
-	}
 	directory := spec.Category + "/" + name
 	if err := e.refuseExisting(ctx, worktree, name); err != nil {
 		return Created{}, err
@@ -485,13 +475,13 @@ type githubProjects struct {
 const projectFileLimit = 4 << 20
 
 func (g githubProjects) Project(ctx context.Context, address string) (Project, error) {
-	var published string
+	var published, directory, pkg string
 	if registry.Named(address) {
 		found, err := g.registry.Find(ctx, address)
 		if err != nil {
 			return Project{}, err
 		}
-		address, published = found.Source, found.Version
+		address, published, directory, pkg = found.Source, found.Version, found.Directory, found.Package
 	}
 	name, err := githubName(address)
 	if err != nil {
@@ -502,7 +492,7 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 		return Project{}, err
 	}
 	owner, project, _ := strings.Cut(repository.Name(), "/")
-	found := Project{Owner: owner, Name: project, Files: map[string][]byte{}}
+	found := Project{Owner: owner, Name: project, Files: map[string][]byte{}, Directory: directory, Package: pkg}
 	description, err := g.client.Describe(ctx, "https://github.com", name)
 	if err != nil {
 		return Project{}, err
@@ -525,6 +515,12 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 			latest = &all[i]
 		}
 	}
+	// A module below the root is tagged for its directory, gopls/v0.20.0,
+	// at the version the module proxy has, whatever the repository's
+	// releases are.
+	if directory != "" {
+		latest = nil
+	}
 	var tag forge.Tag
 	switch {
 	case latest != nil:
@@ -541,7 +537,7 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 		// A project published to its registry and only tagged on GitHub
 		// is created at the tag of the version its registry has (the Vx
 		// port's field testing, 2026-10-03).
-		if tag, found.Tag, err = publishedTag(ctx, repository, published); err != nil {
+		if tag, found.Tag, err = publishedTag(ctx, repository, directoryTag(found), published); err != nil {
 			return Project{}, fmt.Errorf("%s has no release on GitHub, and %w", name, err)
 		}
 	default:
@@ -552,7 +548,7 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 		return found, nil
 	}
 	for _, file := range portcreate.Files() {
-		data, err := files.File(ctx, tag.Commit, file, projectFileLimit)
+		data, err := files.File(ctx, tag.Commit, path.Join(directory, file), projectFileLimit)
 		switch {
 		case errors.Is(err, forge.ErrNotFound):
 		case err != nil:
@@ -561,13 +557,29 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 			found.Files[file] = data
 		}
 	}
+	// A Cargo project's programs are its packages', the root's and its
+	// workspace members', each building one where it has src/main.rs, as
+	// a comparison reads them (portcreate.Binaries, CX-7).
+	if root, ok := found.Files["Cargo.toml"]; ok {
+		for _, file := range portcreate.CargoFiles(root) {
+			data, err := files.File(ctx, tag.Commit, path.Join(directory, file), projectFileLimit)
+			switch {
+			case errors.Is(err, forge.ErrNotFound):
+			case err != nil:
+				return Project{}, fmt.Errorf("reading %s at %s: %w", file, found.Tag, err)
+			default:
+				found.Files[file] = data
+			}
+		}
+	}
 	return found, nil
 }
 
 // publishedTag is a repository's tag of a version its registry has
-// published: v1.2.3 or 1.2.3, as projects tag them.
-func publishedTag(ctx context.Context, repository forge.Repository, version string) (forge.Tag, string, error) {
-	names := []string{"v" + version, version}
+// published: v1.2.3 or 1.2.3, as projects tag them, after prefix, as a
+// module below the root is tagged gopls/v0.20.0 (directoryTag).
+func publishedTag(ctx context.Context, repository forge.Repository, prefix, version string) (forge.Tag, string, error) {
+	names := []string{prefix + "v" + version, prefix + version}
 	for _, name := range names {
 		tag, err := repository.Tag(ctx, name)
 		switch {
@@ -578,6 +590,92 @@ func publishedTag(ctx context.Context, repository forge.Repository, version stri
 		}
 	}
 	return forge.Tag{}, "", fmt.Errorf("no tag %s for the version its registry has", strings.Join(names, " or "))
+}
+
+// createSpec is the new port's Portfile as create writes it from what it
+// observed: the category given, or guessed from the description among
+// repo's categories and marked; a plain-HTTP homepage written as its
+// https form where that answers, with the homepage it replaced; and a
+// Rust project's crates from its Cargo.lock.
+func (e *Engine) createSpec(ctx context.Context, repo *git.Repository, observed Observed, request CreateRequest, name, prefix string) (portcreate.Spec, string, error) {
+	project, build, version := observed.Project, observed.Build, observed.Version
+	spec := portcreate.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
+		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, Maintainer: request.Maintainer, Build: build,
+		Binaries: portcreate.Binaries(project.Files, build), ReleaseAsset: portcreate.HasReleaseArchive(project.Assets, project.Name, version),
+		Directory: project.Directory, Package: project.Package}
+	if spec.Category == "" {
+		categories, err := treeCategories(ctx, repo)
+		if err != nil {
+			return spec, "", err
+		}
+		spec.Category, spec.CategoryFrom = portcreate.GuessCategory(build, observed.Description, categories)
+		spec.CategoryGuessed = true
+	}
+	// MacPorts prefers HTTPS: a forge's plain-HTTP homepage is written as
+	// its https form where that answers.
+	var homepageFrom string
+	if plain := e.plainHTTP(ctx, homepageOnly(spec.Homepage), map[string]bool{}); len(plain) > 0 && plain[0].Answers {
+		homepageFrom, spec.Homepage = spec.Homepage, plain[0].HTTPS
+	}
+	if !macports.ValidCategory(spec.Category) {
+		return spec, "", fmt.Errorf("%q is not a category", spec.Category)
+	}
+	if lock, ok := project.Files["Cargo.lock"]; ok && build.System == "cargo" {
+		var err error
+		if spec.Crates, spec.Unfetched, err = portcreate.CargoCrates(lock); err != nil {
+			return spec, "", err
+		}
+	}
+	return spec, homepageFrom, nil
+}
+
+// PlannedCreate is what create would write, without writing it: the
+// port's directory, its Portfile with placeholder checksums, and what it
+// marks as guessed.
+type PlannedCreate struct {
+	Directory   string
+	Portfile    []byte
+	Unconfirmed []string
+}
+
+// PlanCreate is the Portfile create would write for a project, as create
+// writes it, from what the person's checkout's categories say, with no
+// branch started, nothing written, and no checksums fetched (create
+// --plan, Then's item 14).
+func (e *Engine) PlanCreate(ctx context.Context, request CreateRequest) (PlannedCreate, error) {
+	var observed Observed
+	var err error
+	if request.Project != nil {
+		observed, err = observe(*request.Project)
+	} else {
+		observed, err = e.ObserveProject(ctx, request.URL)
+	}
+	if err != nil {
+		return PlannedCreate{}, err
+	}
+	name := request.Name
+	if name == "" {
+		name = observed.Name
+	}
+	if !macports.ValidName(name) {
+		return PlannedCreate{}, fmt.Errorf("%q is not a port name; name it with --name", name)
+	}
+	prefix, _, _ := portcreate.SplitTag(strings.TrimPrefix(observed.Project.Tag, directoryTag(observed.Project)))
+	spec, _, err := e.createSpec(ctx, e.Repo, observed, request, name, directoryTag(observed.Project)+prefix)
+	if err != nil {
+		return PlannedCreate{}, err
+	}
+	return PlannedCreate{Directory: spec.Category + "/" + name, Portfile: portcreate.Write(spec), Unconfirmed: spec.Unconfirmed()}, nil
+}
+
+// directoryTag is what a module below its repository's root's tags begin
+// with, its directory and a slash, as Go's modules reference has it:
+// gopls/v0.20.0; empty for a project at its root.
+func directoryTag(project Project) string {
+	if project.Directory == "" {
+		return ""
+	}
+	return project.Directory + "/"
 }
 
 // githubName is the owner/name of the GitHub project an address names,

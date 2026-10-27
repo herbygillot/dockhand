@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -195,6 +196,11 @@ type SubmitPlan struct {
 	// they don't declare in depends_lib, each of which holds a submission
 	// nobody looks over (linkHolds).
 	Undeclared []model.Concern
+	// Decided are the person's decisions on its concerns that stand for
+	// its files, by subject (the person's voice): an acceptance lets its
+	// concern go for a submission nobody looks over, said, and given in
+	// the description; one awaiting something blocks it.
+	Decided map[string]model.Decision
 	// Prereleases say each update that takes a port from a stable version
 	// to a prerelease (LeavesStableWords), which holds nothing.
 	Prereleases []string
@@ -462,12 +468,22 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	plan.After = e.afterHolds(ctx, edits)
 	plan.Floors = e.floorHolds(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree))
 	plan.Undeclared = e.linkHolds(ctx, plan.Evidence)
+	plan.Decided = e.decided(ctx, branch.ID, plan.Tree)
+	var reviewed []string
+	for _, subject := range slices.Sorted(maps.Keys(plan.Decided)) {
+		decision := plan.Decided[subject]
+		if decision.Answer == model.Accepted {
+			reviewed = append(reviewed, DecisionWords(decision))
+		} else if !request.Draft {
+			plan.block(branchstate.Block{Kind: branchstate.BlockAwaiting, Port: subject, Awaited: decision.Words})
+		}
+	}
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: plan.Accepted, Types: request.Types,
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
 		Note: plan.Note, UncoveredCI: plan.UncoveredCI, HandEdits: e.submittedHandEdits(ctx, branch, plan.Tree), LeftOut: leftOut(edits),
-		Installed: e.installedLines(ctx, plan.Evidence, edits)}
+		Installed: e.installedLines(ctx, plan.Evidence, edits), Reviewed: reviewed}
 	plan.facts = facts
 	plan.allowed = e.allowedFor
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
@@ -885,7 +901,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	// The one gate of a submission, whoever submits it: what blocks it,
 	// the commit it was bound to, and, where nobody looks, what holds it
 	// (branchstate.Publish; R3-10, where ship and serve each held it).
-	publication := branchstate.Publication{Branch: plan.Branch.ShortName(), Blocks: plan.Blocks, Holds: holding(plan.Concerns(), plan.allowed),
+	publication := branchstate.Publication{Branch: plan.Branch.ShortName(), Blocks: plan.Blocks, Holds: undecided(holding(plan.Concerns(), plan.allowed), plan.Decided),
 		Commit: model.ObjectID(plan.Commit), Bound: model.ObjectID(plan.Request.Bound)}
 	if refusal := branchstate.Publish(publication, branchstate.Mode{Answered: answered}, Vocabulary{}); refusal != nil {
 		return Submitted{}, refusal

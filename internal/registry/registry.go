@@ -19,6 +19,8 @@ import (
 	"regexp"
 	"strings"
 
+	"golang.org/x/mod/module"
+
 	"github.com/herbygillot/dockhand/internal/fetch"
 )
 
@@ -39,10 +41,11 @@ func Named(argument string) bool {
 // Client asks the registries.
 type Client struct {
 	HTTP *http.Client
-	// PyPI, Crates, and GoGet are where each answers, the registry's own
-	// unless a test sets another; GoGet is the scheme and host before a
-	// module path, https:// where empty.
-	PyPI, Crates, GoGet string
+	// PyPI, Crates, GoGet, and GoProxy are where each answers, the
+	// registry's own unless a test sets another; GoGet is the scheme and
+	// host before a module path, https:// where empty, and GoProxy Go's
+	// module proxy, https://proxy.golang.org where empty.
+	PyPI, Crates, GoGet, GoProxy string
 }
 
 // maxAnswer bounds what a registry's answer is read of.
@@ -52,17 +55,17 @@ const maxAnswer = 8 << 20
 // project.
 var ErrNoSource = errors.New("registry: no source repository named")
 
-// ErrSubdirectory is a module path below its repository's root: a module
-// in a subdirectory, whose port builds there, which create can't yet start
-// from (Codex's review of 386ac2cc, finding 3).
-var ErrSubdirectory = errors.New("registry: the module is below its repository's root")
-
 // Found is what a registry says of a project: the address of the source
 // repository it names, and its latest version there, where the registry
 // says one (Go's doesn't, here).
 type Found struct {
 	Source  string
 	Version string
+	// Directory is where a Go module is below its repository's root, as
+	// gopls is in golang.org/x/tools; empty at the root. Package is the
+	// module path of that root, golang.org/x/tools, which the golang
+	// PortGroup's go.setup takes.
+	Directory, Package string
 }
 
 // Find is what a registry name's registry says of its project: the
@@ -77,8 +80,17 @@ func (c Client) Find(ctx context.Context, argument string) (Found, error) {
 	case strings.HasPrefix(argument, "crates:"):
 		return c.crate(ctx, strings.TrimPrefix(argument, "crates:"))
 	case strings.HasPrefix(argument, "go:"):
-		source, err := c.module(ctx, strings.TrimPrefix(argument, "go:"))
-		return Found{Source: source}, err
+		path := strings.TrimPrefix(argument, "go:")
+		source, root, err := c.module(ctx, path)
+		directory := below(path, root)
+		if err != nil || directory == "" {
+			return Found{Source: source, Package: root}, err
+		}
+		// A module below its repository's root is tagged as
+		// <directory>/v<version>, which a repository's releases rarely
+		// name, so its version is the module proxy's (the docs dig's I33).
+		version, err := c.latestModule(ctx, path)
+		return Found{Source: source, Version: version, Directory: directory, Package: root}, err
 	}
 	return Found{Source: argument}, nil
 }
@@ -161,17 +173,22 @@ func (c Client) crate(ctx context.Context, name string) (Found, error) {
 // control system, and the repository's root.
 var goImport = regexp.MustCompile(`(?i)<meta\s+name=["']go-import["']\s+content=["']([^"']+)["']`)
 
-func (c Client) module(ctx context.Context, path string) (string, error) {
+// module is the repository a module path is in, and the module path of
+// its root.
+func (c Client) module(ctx context.Context, path string) (string, string, error) {
 	if !modulePath.MatchString(path) {
-		return "", fmt.Errorf("registry: %q is not a module path", path)
+		return "", "", fmt.Errorf("registry: %q is not a module path", path)
 	}
 	// A module path that names its forge is its repository's address.
 	if parts := strings.Split(path, "/"); len(parts) >= 3 && forge("https://"+path) {
 		root := strings.Join(parts[:3], "/")
-		if err := atRoot(path, root); err != nil {
-			return "", err
-		}
-		return "https://" + root, nil
+		return "https://" + root, root, nil
+	}
+	// golang.org/x's repositories are read from their GitHub mirror,
+	// github.com/golang/<repository>, which the golang PortGroup fetches
+	// from (golang-1.0.tcl's go._translate_package_id).
+	if parts := strings.Split(path, "/"); len(parts) >= 3 && parts[0] == "golang.org" && parts[1] == "x" {
+		return "https://github.com/golang/" + parts[2], strings.Join(parts[:3], "/"), nil
 	}
 	base := c.GoGet
 	if base == "" {
@@ -183,34 +200,54 @@ func (c Client) module(ctx context.Context, path string) (string, error) {
 		page, err = io.ReadAll(body)
 		return err
 	}); err != nil {
-		return "", fmt.Errorf("go:%s: %w", path, err)
+		return "", "", fmt.Errorf("go:%s: %w", path, err)
 	}
 	for _, match := range goImport.FindAllStringSubmatch(string(page), -1) {
 		fields := strings.Fields(match[1])
 		if len(fields) == 3 && fields[1] == "git" && (path == fields[0] || strings.HasPrefix(path, fields[0]+"/")) {
-			if err := atRoot(path, fields[0]); err != nil {
-				return "", err
-			}
-			return strings.TrimSuffix(fields[2], ".git"), nil
+			return strings.TrimSuffix(fields[2], ".git"), fields[0], nil
 		}
 	}
-	return "", fmt.Errorf("go:%s: %w", path, ErrNoSource)
+	return "", "", fmt.Errorf("go:%s: %w", path, ErrNoSource)
 }
 
-// atRoot refuses a module path below its repository's root, naming the
-// subdirectory. A major version's suffix, /v2 and on, is the module's,
-// not a directory, as Go's modules reference has it.
-func atRoot(path, root string) error {
-	below := strings.TrimPrefix(strings.TrimPrefix(path, root), "/")
-	if majorSuffix.MatchString(below) {
-		below = ""
-	} else if i := strings.LastIndex(below, "/"); i >= 0 && majorSuffix.MatchString(below[i+1:]) {
-		below = below[:i]
+// below is the directory a module path names below its repository's
+// root; empty at the root. A major version's suffix, /v2 and on, is the
+// module's, not a directory, as Go's modules reference has it.
+func below(path, root string) string {
+	under := strings.TrimPrefix(strings.TrimPrefix(path, root), "/")
+	if majorSuffix.MatchString(under) {
+		return ""
 	}
-	if below == "" {
-		return nil
+	if i := strings.LastIndex(under, "/"); i >= 0 && majorSuffix.MatchString(under[i+1:]) {
+		under = under[:i]
 	}
-	return fmt.Errorf("go:%s is in %s's subdirectory %s, and create starts a port only from a module at its repository's root: %w", path, root, below, ErrSubdirectory)
+	return under
+}
+
+// latestModule is a module's latest version, without its v, as Go's
+// module proxy answers for it (the GOPROXY protocol's $module/@latest).
+func (c Client) latestModule(ctx context.Context, path string) (string, error) {
+	base := c.GoProxy
+	if base == "" {
+		base = "https://proxy.golang.org"
+	}
+	escaped, err := module.EscapePath(path)
+	if err != nil {
+		return "", fmt.Errorf("go:%s: %w", path, err)
+	}
+	var answer struct {
+		Version string `json:"Version"`
+	}
+	if err := c.get(ctx, strings.TrimRight(base, "/")+"/"+escaped+"/@latest", func(body io.Reader) error {
+		return json.NewDecoder(body).Decode(&answer)
+	}); err != nil {
+		return "", fmt.Errorf("go:%s: the module proxy: %w", path, err)
+	}
+	if !strings.HasPrefix(answer.Version, "v") {
+		return "", fmt.Errorf("go:%s: the module proxy names no version", path)
+	}
+	return strings.TrimPrefix(answer.Version, "v"), nil
 }
 
 var (

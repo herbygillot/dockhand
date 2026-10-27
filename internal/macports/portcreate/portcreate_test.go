@@ -194,9 +194,15 @@ func TestAProjectsManifestSaysItsLicenseAndItsLine(t *testing.T) {
 // finding 2).
 func TestANewPortInstallsWhatItsManifestNames(t *testing.T) {
 	cargo, golang := Build{System: "cargo", Evidence: "Cargo.toml"}, Build{System: "go", Evidence: "go.mod"}
-	require.Equal(t, []string{"txt"}, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"txt\"\n")}, cargo))
+	require.Equal(t, []string{"txt"}, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"txt\"\n"), "src/main.rs": nil}, cargo))
+	require.Empty(t, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"txt\"\n")}, cargo), "a library, with no src/main.rs, as a comparison reads it (CX-7)")
 	require.Equal(t, []string{"a", "b"}, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"x\"\n[[bin]]\nname = \"a\"\n[[bin]]\nname = \"b\"\n")}, cargo))
 	require.Empty(t, Binaries(map[string][]byte{"Cargo.toml": []byte("[workspace]\nmembers = [\"a\"]\n")}, cargo))
+	// A workspace's members' programs, as its destroot installs them.
+	workspace := map[string][]byte{"Cargo.toml": []byte("[workspace]\nmembers = [\"cli\", \"core\", \"crates/*\"]\n"),
+		"cli/Cargo.toml": []byte("[package]\nname = \"harbor\"\n"), "cli/src/main.rs": nil, "core/Cargo.toml": []byte("[package]\nname = \"harbor-core\"\n")}
+	require.Equal(t, []string{"harbor"}, Binaries(workspace, cargo), "core is a library")
+	require.Equal(t, []string{"src/main.rs", "cli/Cargo.toml", "cli/src/main.rs", "core/Cargo.toml", "core/src/main.rs"}, CargoFiles(workspace["Cargo.toml"]), "a glob's members can't be read file by file")
 	require.Equal(t, []string{"lazysql"}, Binaries(map[string][]byte{"go.mod": []byte("module github.com/jorgerojas26/lazysql\n\ngo 1.24\n")}, golang))
 	require.Equal(t, []string{"tool"}, Binaries(map[string][]byte{"go.mod": []byte("module example.org/tool/v3\n")}, golang))
 	require.Empty(t, Binaries(map[string][]byte{"go.mod": []byte("go 1.24\n")}, golang))
@@ -245,4 +251,24 @@ func TestTheReleasesOwnArchiveIsFetchedWhereThereIsOne(t *testing.T) {
 	require.Contains(t, string(Write(spec)), "github.tarball_from archive\n")
 	spec.ReleaseAsset = true
 	require.Contains(t, string(Write(spec)), "github.tarball_from releases\n")
+}
+
+// A Go module below its repository's root builds in its directory, from
+// the root's archive at the module's tag, kept in a dist_subdir of its
+// own, as devel/gopls does; golang.org/x's packages go.setup takes as
+// they are, translating them to their GitHub mirror (the docs dig's I33).
+func TestAModuleBelowItsRootBuildsInItsDirectory(t *testing.T) {
+	text := string(Write(Spec{Name: "gopls", Category: "devel", Owner: "golang", Project: "tools", Version: "0.20.0", TagPrefix: "gopls/v",
+		Build: Build{System: "go", Evidence: "go.mod"}, Binaries: []string{"gopls"}, Directory: "gopls", Package: "golang.org/x/tools"}))
+	require.Contains(t, text, "go.setup            golang.org/x/tools 0.20.0 gopls/v\n")
+	require.Contains(t, text, "name                gopls\n")
+	require.Contains(t, text, "dist_subdir         ${name}\nbuild.dir           ${worksrcpath}/gopls\n")
+	require.Contains(t, text, "go.offline_build    no\n")
+	require.NotContains(t, text, "\ngo.vendors\n", "go2port reads a module at its root")
+	require.Contains(t, text, "xinstall -m 0755 ${build.dir}/${name} ${destroot}${prefix}/bin/\n")
+
+	root := string(Write(Spec{Name: "jq", Category: "devel", Owner: "jqlang", Project: "jq", Version: "1.8.1", TagPrefix: "v", Build: Build{System: "go", Evidence: "go.mod"}, Package: "github.com/jqlang/jq"}))
+	require.Contains(t, root, "go.setup            github.com/jqlang/jq 1.8.1 v\n")
+	require.Contains(t, root, "\ngo.vendors\n")
+	require.NotContains(t, root, "build.dir")
 }

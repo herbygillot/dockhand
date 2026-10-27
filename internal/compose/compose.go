@@ -25,13 +25,20 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/fetch"
+	forgegitlab "github.com/herbygillot/dockhand/internal/forge/gitlab"
 	gitprogram "github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
+	"github.com/herbygillot/dockhand/internal/macports/portsource"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
+	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 // Options are the command line's selections, each its flag's value, empty
@@ -381,6 +388,17 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	e.GitHubCLI = dependencies.GitHubCLI
 	if e.GitHubCLI == nil {
 		e.GitHubCLI = github.CLI{Path: options.LookPath("gh")}
+	}
+	// The readers built over MacPorts' evaluator, composed here, in order:
+	// the evaluator's selection reader, upstream discovery over it, and
+	// the port editor and forge archiver over both (Then's item 15). Where
+	// the evaluator can't be had, they're left unset, and the engine says
+	// so where it needs one.
+	if ports, err := e.SelectionReader(); err == nil {
+		discovery := &upstream.Service{Ports: ports, HTTP: fetch.Client, Versions: ports, Git: e.GitProgram(),
+			Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: e.GitHubClient(), portsource.GitLab: &forgegitlab.Client{HTTP: fetch.Client}}}
+		e.Discovery, e.SourceArchiver = discovery, discovery
+		e.Preparer = &editprep.Service{Repo: e.Repo, Ports: ports, Upstream: discovery, HTTP: fetch.Client, Mirror: distfetch.MacPortsMirror, Workspaces: &workspace.Registry{}}
 	}
 	if dependencies.Preparer != nil {
 		e.Preparer = dependencies.Preparer(e)

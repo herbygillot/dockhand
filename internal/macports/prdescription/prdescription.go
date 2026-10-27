@@ -49,6 +49,11 @@ var cve = regexp.MustCompile(`\bCVE-\d{4}-\d{4,}\b`)
 type Facts struct {
 	Commits  []Commit
 	NewPorts []NewPort
+	// Reviewed are the person's decisions on what held the submission,
+	// each "jq license-changed: acceptable because …", which the
+	// Description gives after the note, quoted as it is (the person's
+	// voice, Then's item 13).
+	Reviewed []string
 	// Note is the person's own note, which the Description gives after
 	// what dockhand wrote there.
 	Note string
@@ -272,7 +277,7 @@ func compose(facts Facts) string {
 	}
 	// Where nothing else would be said, the note is the Description
 	// itself, unquoted (field testing, 2026-10-20).
-	alone := facts.Note != "" && len(facts.NewPorts) == 0 && len(facts.HandEdits) == 0 && len(facts.Commits) == 1 && commitBody(facts.Commits[0].Message) == ""
+	alone := facts.Note != "" && len(facts.Reviewed) == 0 && len(facts.NewPorts) == 0 && len(facts.HandEdits) == 0 && len(facts.Commits) == 1 && commitBody(facts.Commits[0].Message) == ""
 	if len(facts.Commits) == 1 {
 		if text := commitBody(facts.Commits[0].Message); text != "" {
 			fmt.Fprintf(&b, "%s\n\n", text)
@@ -307,6 +312,7 @@ func compose(facts Facts) string {
 	case facts.Note != "":
 		b.WriteString(noteWords(facts.Note))
 	}
+	b.WriteString(reviewedWords(facts.Reviewed))
 	ticked := slices.Clone(facts.Types)
 	if len(ticked) == 0 && facts.Updated {
 		ticked = append(ticked, "enhancement")
@@ -333,6 +339,23 @@ func noteWords(note string) string {
 			line = "**Author's note:** " + line
 		}
 		fmt.Fprintln(&b, strings.TrimRight("> "+line, " \t"))
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+// reviewedWords are the person's decisions on what held the submission, a
+// quote led by "Reviewed:", as the note is, so a reviewer reads them as
+// the person's and none of their lines begins a heading; nothing where
+// there are none.
+func reviewedWords(reviewed []string) string {
+	if len(reviewed) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("> **Reviewed:**\n")
+	for _, line := range reviewed {
+		fmt.Fprintf(&b, "> - %s\n", strings.ReplaceAll(strings.TrimSpace(line), "\n", " "))
 	}
 	b.WriteString("\n")
 	return b.String()
@@ -678,7 +701,7 @@ var trailer = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*: \S`)
 // field testing, 2026-10-04: py-coremltools' Description held its
 // Assisted-by trailer alone).
 func SaysNothing(facts Facts) bool {
-	if len(facts.NewPorts) > 0 || facts.Note != "" || len(facts.HandEdits) > 0 || len(facts.Commits) != 1 {
+	if len(facts.NewPorts) > 0 || facts.Note != "" || len(facts.Reviewed) > 0 || len(facts.HandEdits) > 0 || len(facts.Commits) != 1 {
 		return false
 	}
 	for _, line := range strings.Split(commitBody(facts.Commits[0].Message), "\n") {

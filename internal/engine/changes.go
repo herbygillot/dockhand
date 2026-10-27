@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"maps"
 	"path"
 	"slices"
 
@@ -32,19 +33,14 @@ type FamilyReader interface {
 // work evaluate its author's Portfiles (mayEvaluate), and a revision no
 // evaluator can read gets none.
 func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, tree model.ObjectID, collect bool) (map[string]model.ChangeRecord, error) {
-	records := map[string]model.ChangeRecord{}
 	var branch model.Branch
+	var records map[string]model.ChangeRecord
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		if branch, err = r.Branch(id); err != nil {
 			return err
 		}
-		recorded, err := r.ChangeRecords(store.AssessmentFilter{Branch: id, Tree: tree, Base: base})
-		for _, record := range recorded {
-			if _, ok := records[record.Directory]; !ok && record.Policy == fidelity.ChangePolicy {
-				records[record.Directory] = record
-			}
-		}
+		records, err = recordedChanges(r, id, base, tree)
 		return err
 	}); err != nil {
 		return nil, err
@@ -52,6 +48,56 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 	if !collect {
 		return records, nil
 	}
+	read := maps.Clone(records)
+	made, err := e.makeChanges(ctx, branch, base, tree, records)
+	if err != nil || len(made) == 0 {
+		return records, err
+	}
+	return records, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return recordChanges(tx, id, base, tree, read, made) })
+}
+
+// recordedChanges are a revision's change records made under this policy,
+// by directory, the first of each.
+func recordedChanges(r store.Reader, id model.BranchID, base, tree model.ObjectID) (map[string]model.ChangeRecord, error) {
+	records := map[string]model.ChangeRecord{}
+	recorded, err := r.ChangeRecords(store.AssessmentFilter{Branch: id, Tree: tree, Base: base})
+	for _, record := range recorded {
+		if _, ok := records[record.Directory]; !ok && record.Policy == fidelity.ChangePolicy {
+			records[record.Directory] = record
+		}
+	}
+	return records, err
+}
+
+// recordChanges records change records made, in the transaction given,
+// each where the revision's record of its directory is still the one read
+// before it was made, absent or failed: another process on the shared
+// database may have recorded one meanwhile, which stands (the
+// architecture thread's rule for SQL-O7, 2026-10-27). Making one reads the
+// evaluator, outside any transaction.
+func recordChanges(tx store.Tx, id model.BranchID, base, tree model.ObjectID, read map[string]model.ChangeRecord, made []model.ChangeRecord) error {
+	now, err := recordedChanges(tx, id, base, tree)
+	if err != nil {
+		return err
+	}
+	for _, record := range made {
+		if current, ok := now[record.Directory]; ok && !current.At.Equal(read[record.Directory].At) {
+			continue
+		}
+		if err := tx.RecordChange(record); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// makeChanges makes the change records a revision's directories lack, and
+// again those whose record couldn't be made, into records, and returns
+// those it made, for its caller to record; none where nothing here
+// evaluates a port's family, or the trust rule keeps the work from
+// evaluating the branch's Portfiles (mayEvaluate).
+func (e *Engine) makeChanges(ctx context.Context, branch model.Branch, base, tree model.ObjectID, records map[string]model.ChangeRecord) ([]model.ChangeRecord, error) {
+	id := branch.ID
 	ports, err := e.capabilities()
 	if err != nil {
 		return nil, err
@@ -59,7 +105,7 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 	family := ports.Families
 	if family == nil {
 		progress.VerboseReport(ctx, "no change records are made: nothing here evaluates a port's family")
-		return records, nil
+		return nil, nil
 	}
 	analysis, err := e.analyze(ctx, base, tree)
 	if err != nil {
@@ -100,17 +146,7 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 		made = append(made, record)
 		records[directory] = record
 	}
-	if len(made) == 0 {
-		return records, nil
-	}
-	return records, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		for _, record := range made {
-			if err := tx.RecordChange(record); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	return made, nil
 }
 
 // sideWords say which side of a change record couldn't be evaluated.

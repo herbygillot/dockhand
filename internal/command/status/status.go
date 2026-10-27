@@ -570,6 +570,15 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 			}
 			fmt.Fprintf(out, "  %s! %s\n", label, line)
 		}
+		// The person's decisions on them, which stand for these files (the
+		// person's voice).
+		for i, decision := range status.Decided {
+			label := "         "
+			if i == 0 {
+				label = "Decided  "
+			}
+			fmt.Fprintf(out, "  %s%s\n", label, engine.DecisionWords(decision))
+		}
 		// A hand edit, with why dockhand left it to the person (Then's
 		// item 3).
 		for i, hand := range status.HandEdits {

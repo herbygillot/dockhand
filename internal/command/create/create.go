@@ -19,6 +19,7 @@ import (
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchChoice
 	var name, category string
+	var plan bool
 	cmd := &cobra.Command{
 		Use:   "create <url | pypi:NAME | crates:NAME | go:MODULE>",
 		Short: "Write a new port's first Portfile from its project's URL or registry name",
@@ -41,6 +42,8 @@ Portfile is staged, so the next check includes it. Nothing is committed.
 
 The branch is --branch, else the one checked out here; --new starts one.
 --name names the port when the project's name is not what it should be.
+--plan prints the Portfile create would write, its checksums still to
+fill in, and writes nothing, starting no branch.
 
 In place of the URL, a registry name reads the project from where its
 registry says its source is: pypi:NAME from PyPI's project URLs, crates:NAME
@@ -75,6 +78,16 @@ its go-get answer.`,
 				header += fmt.Sprintf(" · %q", observed.Description)
 			}
 			fmt.Fprintln(out, header)
+			if plan {
+				planned, err := e.PlanCreate(ctx, engine.CreateRequest{URL: args[0], Name: name, Category: category, Maintainer: s.File.Maintainer, Project: &project})
+				if err != nil {
+					return err
+				}
+				streams.Emit(map[string]any{"directory": planned.Directory, "portfile": string(planned.Portfile), "unconfirmed": view.NonNil(planned.Unconfirmed)})
+				fmt.Fprintf(out, "Would write %s/Portfile:\n\n%s\n", planned.Directory, planned.Portfile)
+				fmt.Fprintln(out, "Nothing was written (--plan); create writes it, then fills in its checksums.")
+				return nil
+			}
 
 			var branch model.Branch
 			switch {
@@ -207,6 +220,7 @@ its go-get answer.`,
 	}
 	where.Register(cmd)
 	cmd.Flags().StringVar(&name, "name", "", "the port's name (default: the project's, in lower case)")
+	cmd.Flags().BoolVar(&plan, "plan", false, "print the Portfile create would write, and write nothing")
 	cmd.Flags().StringVar(&category, "category", "", "port category (prompts in a terminal; otherwise uses a marked guess)")
 	settings.SupportsJSON(cmd)
 	return cmd

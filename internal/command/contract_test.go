@@ -41,6 +41,7 @@ var noPlan = map[string]string{
 	"archive":      "sets a branch aside, which archive --undo brings back",
 	"cancel":       "stops a check, keeping what it finished",
 	"config":       "shows or sets one setting, which it names",
+	"decide":       "records one decision, which deciding again replaces",
 	"diff":         "reads only",
 	"edit":         "opens the Portfile in your editor",
 	"explain":      "reads only",
@@ -61,7 +62,6 @@ var noPlan = map[string]string{
 	"status":       "reads only",
 	"undo":         "restores a checkpoint, keeping the one it replaces",
 	"wait":         "follows a check",
-	"create":       "Later: a plan of what it would write; its branch is archived to undo it",
 	"rebase":       "Later: a plan of the commits it would replay; its checkpoint undoes it",
 }
 

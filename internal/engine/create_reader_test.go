@@ -82,3 +82,18 @@ func TestCreateReadsAGitHubProject(t *testing.T) {
 	_, err = reader.Project(t.Context(), "https://gitlab.com/erik/txt")
 	require.ErrorContains(t, err, "create reads projects on GitHub so far")
 }
+
+// A Go module below its repository's root is observed at its own tag,
+// gopls/v0.20.0, for its version, and named for its directory (the docs
+// dig's I33).
+func TestAModuleBelowItsRootIsObservedAtItsTag(t *testing.T) {
+	t.Parallel()
+	project := Project{Owner: "golang", Name: "tools", Tag: "gopls/v0.20.0", Directory: "gopls", Package: "golang.org/x/tools",
+		Files: map[string][]byte{"go.mod": []byte("module golang.org/x/tools/gopls\n\ngo 1.24\n")}}
+	observed, err := observe(project)
+	require.NoError(t, err)
+	require.Equal(t, "0.20.0", observed.Version)
+	require.Equal(t, "gopls", observed.Name)
+	require.Equal(t, "go", observed.Build.System)
+	require.Equal(t, "gopls/", directoryTag(project))
+}

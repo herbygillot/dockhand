@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 
@@ -61,6 +62,15 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 			label = "           "
 		}
 		fmt.Fprintf(out, "%s%s\n", label, hold)
+	}
+	// The person's decisions on what holds it, which the description
+	// gives under Reviewed (the person's voice).
+	for i, subject := range slices.Sorted(maps.Keys(plan.Decided)) {
+		label := "           "
+		if i == 0 {
+			label = "  Decided  "
+		}
+		fmt.Fprintf(out, "%s%s\n", label, engine.DecisionWords(plan.Decided[subject]))
 	}
 	fmt.Fprintf(out, "  Other PRs  %s\n", otherWords(plan))
 	fmt.Fprintf(out, "  PR       %s\n", PullRequestWords(plan))
@@ -244,14 +254,20 @@ func loginWords(plan engine.SubmitPlan) string {
 }
 
 // ServeHolds are the words of each hold serve's submission of the branch
-// would wait on, its majors, floors, and holds naming ports first, a line
-// each, once each; none hold a person's own submission.
+// would wait on, its majors, floors, holds naming ports first, and
+// undeclared links, a line each, once each, with the decision that
+// answers it (the person's voice); one the person accepted holds nothing,
+// and none hold a person's own submission.
 func ServeHolds(plan engine.SubmitPlan) []string {
 	var words []string
-	for _, holds := range [][]model.Concern{plan.Majors, plan.Floors, plan.After} {
+	for _, holds := range [][]model.Concern{plan.Majors, plan.Floors, plan.After, plan.Undeclared} {
 		for _, hold := range holds {
-			if hold.Detail != "" && !slices.Contains(words, hold.Detail) {
-				words = append(words, hold.Detail)
+			if hold.Detail == "" || slices.Contains(words, hold.Detail) || plan.Decided[model.ConcernSubject(hold)].Answer == model.Accepted {
+				continue
+			}
+			words = append(words, hold.Detail)
+			if hold.Rule != "" && hold.Port != "" {
+				words = append(words, "  answer it: "+engine.DecideCommand(hold))
 			}
 		}
 	}

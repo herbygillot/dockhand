@@ -14,21 +14,16 @@ import (
 	"slices"
 	"strings"
 
-	archivefile "github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
-	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
-	"github.com/herbygillot/dockhand/internal/macports/portindex"
-	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
@@ -965,216 +960,20 @@ func expandFor(ctx context.Context, worktree *git.Repository, files []string) er
 }
 
 // assessUpstream assesses what upstream's change means for the port an
-// update prepared (the assessment design, C): each archive the update
-// replaced beside the one that replaces it, in every context that fetches
-// them, as gh's source tarball and the prebuilt zip older macOS fetches
-// each have their own, read where the port builds there; what the new
-// version's Python requirements ask of the ports that provide them, whose
-// versions are observed in the tree before the edit and after, as the
-// assessment asks; and what its go.mod asks of go.toolchain_min, whether
-// or not archives are compared. Not being able to compare is reported,
-// never a reason to refuse the update. Nil where nothing was compared or
-// said.
+// update prepared, as the collector compares it (comparison.Collector's
+// Update), with the candidate's Portfile as the update left it. Nil where
+// nothing was compared or said.
 func (e *Engine) assessUpstream(ctx context.Context, result editprep.Result, versions sourcecompare.Versions, trees [2]model.Source, compare bool) *model.UpstreamComparison {
-	input := assess.Input{Versions: versions}
-	input.Base, _ = result.PortBefore(result.Target.Name)
-	input.Port, _ = result.PortAfter(result.Target.Name)
-	if t := result.GoToolchain; t != nil {
-		input.Toolchain = &assess.Toolchain{Required: t.Required, Declared: t.Declared, Outcome: toolchainOutcomes[t.Outcome], Problem: t.Problem}
+	planner, _ := e.archivePlanner()
+	var portfile []byte
+	if file, data, err := e.Repo.File(ctx, string(trees[1].Tree), result.Target.Portfile); err == nil && file.Exists {
+		portfile = data
 	}
-	problem := ""
-	// read is how the source was read where it wasn't from the update's
-	// archives: a Git-fetched port's commits through its forge, as a
-	// revision's assessment reads them, or nothing, for a port that
-	// fetches nothing. Either is said, never left silent: semgrep's
-	// update compared nothing and said nothing (field testing, 2026-10-02).
-	var read []model.Coverage
-	var kind refusal.Kind
-	viaGit := false
-	switch {
-	case !compare:
-	case result.PreviousProblem != "":
-		// A mirror's outage or a rate limit is transient, as the revision's
-		// assessment has it, so a later look fetches them again rather
-		// than hold on a stale reason until a file is edited (the
-		// architecture review's L2b).
-		problem = "the current version's archives could not be fetched: " + result.PreviousProblem
-		kind = result.PreviousKind
-	case len(result.Downloads) == 0 && input.Port.GitFetched():
-		viaGit = true
-		input.Pairs, read, problem, kind = e.readCommits(ctx, [2]macports.PortInfo{input.Base, input.Port}, true)
-	case len(result.Downloads) == 0:
-		read = []model.Coverage{{Path: path.Dir(result.Target.Portfile), Relevance: "unknown", Treatment: "inspected", Policy: notCompared, Reason: result.Target.Name + " fetches no upstream source, so there's nothing to compare"}}
-	default:
-		for _, download := range result.Downloads {
-			if !slices.ContainsFunc(result.Pairs, func(pair editprep.ArchivePair) bool { return pair.Next.Name == download.Name }) {
-				problem = download.Name + " replaces no archive dockhand could find, so it wasn't compared"
-				break
-			}
-		}
-	}
-	if compare && problem == "" && len(result.Downloads) > 0 {
-		pairs, err := e.readPairs(ctx, result.Pairs, input.Base, input.Port)
-		switch {
-		case errors.Is(err, archivefile.ErrBinary):
-			// A binary package holds no source: said, holding nothing,
-			// as for a port that fetches none (field testing's batch 10,
-			// finding 2: 1password-cli).
-			read = append(read, model.Coverage{Path: path.Dir(result.Target.Portfile), Relevance: "unknown", Treatment: "inspected", Policy: notCompared,
-				Reason: binaryReason(result.Target.Name, err)})
-			pairs = nil
-		case err != nil:
-			problem = err.Error()
-		}
-		input.Pairs = pairs
-	}
-	if compare && problem == "" && len(result.Downloads) > 0 {
-		// Its patches are checked as a revision's are, the preparation's
-		// own results taken as they stand, against the archives it kept:
-		// update's assessment had none, and stood as the revision's whole
-		// one (the architecture review's finding 1).
-		fetched := map[string]string{}
-		for _, download := range result.Downloads {
-			if download.Path != "" {
-				fetched[download.Name] = download.Path
-			}
-		}
-		input.Patches = e.patchesFor(ctx, patchRequest{infos: [2]macports.PortInfo{input.Base, input.Port}, sources: trees,
-			portdir: path.Dir(result.Target.Portfile), fetched: fetched, checked: result.Patches})
-	}
-	comparison := e.collect(ctx, input, trees, result.Target.Portfile, problem == "")
-	comparison.Problem = problem
-	if problem != "" {
-		comparison.ProblemKind = string(kind)
-	}
-	if viaGit && problem == "" && len(input.Pairs) == 1 {
-		comparison.Commit = input.Pairs[0].Archive
-	}
-	comparison.Coverage = append(comparison.Coverage, read...)
+	comparison := e.collector(planner).Update(ctx, result, versions, trees, compare, portfile)
 	if !compare && len(comparison.Changes) == 0 {
 		return nil
 	}
 	return &comparison
-}
-
-// readings is where readings of upstream's archives are kept; none are
-// where the engine wasn't given a place.
-func (e *Engine) readings() project.Cache {
-	return project.Cache{Directory: e.options.Readings}
-}
-
-// toolchainOutcomes are what the editor did about go.toolchain_min, as the
-// assessment words them.
-var toolchainOutcomes = map[editprep.GoToolchainOutcome]string{
-	editprep.GoToolchainCovered: assess.ToolchainCovered, editprep.GoToolchainRaised: assess.ToolchainRaised,
-	editprep.GoToolchainUndeclared: assess.ToolchainUndeclared, editprep.GoToolchainByHand: assess.ToolchainByHand,
-	editprep.GoToolchainUnchecked: assess.ToolchainUnchecked,
-}
-
-// readPairs reads each pair of archives, each version where its port
-// builds in the context that fetches it (the assessment design's step 1):
-// a monorepo's Python bindings in bindings/python. A pair a context didn't
-// name the port for is read with the update's own. What's read is kept,
-// by the archive's content, for an assessment made again. Each pair is the
-// editor's observed replacement, its entry in the port's source set as a
-// revision's assessment's are (macports.MatchSources).
-func (e *Engine) readPairs(ctx context.Context, pairs []editprep.ArchivePair, base, port macports.PortInfo) ([]assess.Pair, error) {
-	var before, after []string
-	var observed [][2]string
-	for _, pair := range pairs {
-		before, after = append(before, pair.Previous.Name), append(after, pair.Next.Name)
-		observed = append(observed, [2]string{pair.Previous.Name, pair.Next.Name})
-	}
-	matches := macports.MatchSources(before, after, observed)
-	var read []assess.Pair
-	for _, pair := range pairs {
-		if pair.Previous.Path == "" || pair.Next.Path == "" {
-			return nil, errors.New("the archives were not kept to compare")
-		}
-		ports := [2]macports.PortInfo{pair.Base, pair.Port}
-		for i, fallback := range []macports.PortInfo{base, port} {
-			if ports[i].Name == "" {
-				ports[i] = fallback
-			}
-		}
-		var readings [2]project.Reading
-		for i, archive := range []distfetch.Download{pair.Previous, pair.Next} {
-			reading, err := e.readDistfile(ctx, ports[i], archive.Name, archive.Path, archive.SHA256, ports[i].ReadingSpec())
-			// Named for the distfile, not the temporary file it was
-			// fetched to: "ships source-906474379 is a macOS installer
-			// package" (field testing at 5eb101a3, 1password-cli).
-			if binary := new(archivefile.BinaryError); errors.As(err, &binary) {
-				binary.File = archive.Name
-				return nil, binary
-			}
-			if err != nil {
-				return nil, fmt.Errorf("reading %s: %v", path.Base(archive.Path), err)
-			}
-			readings[i] = reading
-		}
-		var match macports.SourceMatch
-		if i := slices.IndexFunc(matches, func(m macports.SourceMatch) bool { return m.After == pair.Next.Name }); i >= 0 {
-			match = matches[i]
-		}
-		read = append(read, assess.Pair{Archive: pair.Next.Name, Before: readings[0], After: readings[1], Port: pair.Port, Match: match})
-	}
-	return read, nil
-}
-
-// observeProviders observes what an assessment wants, until it wants
-// nothing more: the version of each port that provides a Python
-// requirement in question, evaluated in the tree before the edit or after.
-// What can't be observed is said as such, which the assessment weighs as
-// not knowing.
-func (e *Engine) observeProviders(ctx context.Context, input assess.Input, trees [2]model.Source) map[assess.Provider]assess.Observation {
-	observed := map[assess.Provider]assess.Observation{}
-	input.Observed = observed
-	reader, unreadable := e.portReader()
-	for {
-		wanted := assess.Wanted(input)
-		if len(wanted) == 0 {
-			return observed
-		}
-		for _, provider := range wanted {
-			if unreadable != nil {
-				observed[provider] = assess.Observation{Problem: "couldn't read the ports: " + unreadable.Error()}
-				continue
-			}
-			tree := trees[1]
-			if provider.Base {
-				tree = trees[0]
-			}
-			port, directory, err := providerPort(ctx, reader, tree, provider.Port)
-			switch {
-			case errors.Is(err, treequery.ErrNoPort) || errors.Is(err, portindex.ErrNotIndexed):
-				observed[provider] = assess.Observation{Absent: true}
-			case err != nil:
-				observed[provider] = assess.Observation{Problem: err.Error()}
-			default:
-				observed[provider] = assess.Observation{Version: port.Version, Directory: directory, Packages: port.PythonProjects()}
-			}
-		}
-	}
-}
-
-// providerPort is a port in a tree, as MacPorts evaluates it on this Mac,
-// and its directory; ErrNoPort, or the index's ErrNotIndexed, where the
-// tree has no such port.
-func providerPort(ctx context.Context, reader PortReader, source model.Source, name string) (macports.PortInfo, string, error) {
-	directory, err := reader.Directory(ctx, source, name)
-	if err != nil {
-		return macports.PortInfo{}, "", err
-	}
-	ports, err := reader.Ports(ctx, source, directory, model.Environment{}, nil)
-	if err != nil {
-		return macports.PortInfo{}, "", err
-	}
-	for _, port := range ports {
-		if port.Name == name {
-			return port, directory, nil
-		}
-	}
-	return macports.PortInfo{}, "", fmt.Errorf("%w: %s defines no port %s", treequery.ErrNoPort, directory, name)
 }
 
 // editRecorded witnesses an edit's record (store.Recorded).
@@ -1277,16 +1076,6 @@ func (e *Engine) renamed(ctx context.Context, release model.Release) string {
 		return ""
 	}
 	return description.Name
-}
-
-// binaryReason says a port ships a binary, not source: "1password-cli
-// ships a macOS installer package (op_apple_universal_v2.31.0.pkg), with
-// no source to compare".
-func binaryReason(port string, err error) string {
-	if binary := new(archivefile.BinaryError); errors.As(err, &binary) {
-		return fmt.Sprintf("%s ships %s (%s), with no source to compare", port, binary.Kind, binary.File)
-	}
-	return port + " ships a binary package, with no source to compare"
 }
 
 // withModelines gives each Portfile an edit writes MacPorts' modeline as

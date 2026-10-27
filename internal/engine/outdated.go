@@ -3,6 +3,7 @@ package engine
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -271,14 +272,18 @@ func (e *Engine) Outdated(ctx context.Context, request OutdatedRequest) (Outdate
 }
 
 // outdatedReader is the engine's OutdatedReader: the one it was given, or
-// MacPorts' evaluator with upstream discovery.
+// MacPorts' evaluator with the upstream discovery compose gave it
+// (Discovery).
 func (e *Engine) outdatedReader() (OutdatedReader, error) {
 	return assemble(e, &e.OutdatedReader, func() (OutdatedReader, error) {
 		ports, err := e.selectionReader()
 		if err != nil {
 			return nil, err
 		}
-		return &surveyedPorts{service: &outdated.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), Index: ports.Index, Workspaces: &workspace.Registry{}}}, nil
+		if e.Discovery == nil {
+			return nil, errors.New("no upstream discovery is set up")
+		}
+		return &surveyedPorts{service: &outdated.Service{Repo: e.Repo, Ports: ports, Upstream: e.Discovery, Index: ports.Index, Workspaces: &workspace.Registry{}}}, nil
 	})
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -635,4 +636,52 @@ func TestAnUndeclaredLinkHoldsAnUnattendedSubmission(t *testing.T) {
 	candidates, _, err = d.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, candidates[0].Held, "a declared link holds nothing")
+}
+
+// A person's decision on one concern, with their reason: acceptable lets
+// it go for serve, still said, and the pull request gives the reason
+// under Reviewed; awaiting blocks the submission; a change to the port's
+// own files lapses it (the person's voice, Then's item 13).
+func TestADecisionOnAConcernCarriesThePersonsReason(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	f.withFork(t, e)
+	p.upstream = [2]map[string]string{{"LICENSE": "MIT\n"}, {"LICENSE": "GPL-3\n"}}
+	branch := servePrepared(t, e)
+
+	_, err := e.Decide(t.Context(), DecideRequest{Branch: branch, Rule: "no-such-rule", Answer: model.Accepted, Words: "fine"})
+	require.ErrorContains(t, err, "is not a hold dockhand raises")
+	decision, err := e.Decide(t.Context(), DecideRequest{Branch: branch, Rule: assess.LicenseChanged, Answer: model.Waiting, Words: "upstream's word on the COPYING change"})
+	require.NoError(t, err)
+	require.Equal(t, "jq license-changed", decision.Subject)
+	candidates, _, err := e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(candidates[0].Plan.Blocking, "\n"), "jq license-changed: you're awaiting upstream's word on the COPYING change")
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Len(t, status.Awaiting, 1)
+	rows := branchstate.Attend(status.Facts())
+	require.Equal(t, branchstate.Awaiting, rows[0].Reason)
+	require.Equal(t, branchstate.Next{Verb: branchstate.VerbDecide, Branch: "jq-1.8.1", Args: []string{"license-changed", "jq", "--because", `"…"`}}, rows[0].Next)
+
+	_, err = e.Decide(t.Context(), DecideRequest{Branch: branch, Rule: assess.LicenseChanged, Answer: model.Accepted, Words: "the new license is still free, and the Portfile says GPL-3"})
+	require.NoError(t, err)
+	candidates, _, err = e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, candidates[0].Held, "a person looked, and said why")
+	require.Empty(t, candidates[0].Plan.Blocking)
+	require.Contains(t, candidates[0].Plan.Body, "> **Reviewed:**\n> - jq license-changed: acceptable because the new license is still free, and the Portfile says GPL-3\n")
+	status, err = e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Empty(t, status.Held)
+	require.Equal(t, []string{"jq license-changed: acceptable because the new license is still free, and the Portfile says GPL-3"}, []string{DecisionWords(status.Decided[0])})
+
+	// A change to the port's own files lapses it.
+	write(t, branch.Worktree, map[string]string{"textproc/jq/files/patch-x.diff": "--- a\n+++ b\n"})
+	testsupport.Git(t, branch.Worktree, "add", "-A")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "jq: add a patch")
+	status, err = e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Empty(t, status.Decided, "its evidence changed")
 }

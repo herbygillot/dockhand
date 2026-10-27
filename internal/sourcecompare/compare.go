@@ -876,28 +876,17 @@ func libraryVersions(old, now map[string]string) []Change {
 // settles.
 func cargoBinaries(old, now project.Reading) []Change {
 	binaries := func(reading project.Reading) []string {
-		var names []string
+		files := map[string][]byte{}
 		for name, file := range reading.Files {
-			if path.Base(name) != "Cargo.toml" || file.Truncated {
-				continue
-			}
-			manifest, err := project.ReadCargoManifest(file.Data)
-			if err != nil {
-				continue
-			}
-			// A package builds a program of its name only where it has
-			// src/main.rs or src/bin; otherwise it's a library, which
-			// installs nothing a destroot names (mise's mise-dotenv, field
-			// testing's batch 13).
-			found := manifest.Programs(reading.CargoProgram(path.Dir(name)))
-			for _, binary := range found {
-				if !slices.Contains(names, binary) {
-					names = append(names, binary)
-				}
+			if !file.Truncated {
+				files[name] = file.Data
 			}
 		}
-		slices.Sort(names)
-		return names
+		// A package builds a program of its name only where it has
+		// src/main.rs or src/bin; otherwise it's a library, which installs
+		// nothing a destroot names (mise's mise-dotenv, field testing's
+		// batch 13).
+		return project.CargoPrograms(files, reading.CargoProgram)
 	}
 	before, after := binaries(old), binaries(now)
 	if len(before) == 0 || len(after) == 0 || slices.Equal(before, after) {

@@ -188,6 +188,11 @@ type Spec struct {
 	// github PortGroup's releases fetch names, project-version.tar.gz,
 	// which a port fetches rather than GitHub's generated archive.
 	ReleaseAsset bool
+	// Directory is where a Go module is below its repository's root,
+	// where the port builds, and Package the module path of that root,
+	// which go.setup takes where the golang PortGroup translates it, as
+	// golang.org/x/tools (the docs dig's I33); empty at the root.
+	Directory, Package string
 	// PythonVersion is the Python the python PortGroup defaults to, as
 	// MacPorts evaluates it, which a Python project's python.versions
 	// starts from; empty where it couldn't be read.
@@ -244,7 +249,14 @@ func Write(s Spec) []byte {
 	b.WriteString("\n")
 	setup := strings.TrimSpace(fmt.Sprintf("%s %s %s %s", s.Owner, s.Project, s.Version, s.TagPrefix))
 	if s.Build.System == "go" {
-		line("go.setup", strings.TrimSpace(fmt.Sprintf("github.com/%s/%s %s %s", s.Owner, s.Project, s.Version, s.TagPrefix)))
+		// golang.org/x's packages go.setup translates to their GitHub
+		// mirror (golang-1.0.tcl's go._translate_package_id), as
+		// devel/gopls names golang.org/x/tools.
+		pkg := "github.com/" + s.Owner + "/" + s.Project
+		if strings.HasPrefix(s.Package, "golang.org/x/") {
+			pkg = s.Package
+		}
+		line("go.setup", strings.TrimSpace(fmt.Sprintf("%s %s %s", pkg, s.Version, s.TagPrefix)))
 	} else {
 		line("github.setup", setup)
 		// The release's own archive where it carries one, as the
@@ -260,6 +272,16 @@ func Write(s Spec) []byte {
 		line("name", s.Name)
 	}
 	line("revision", "0")
+	if s.Build.System == "go" && s.Directory != "" {
+		// A module below its repository's root builds in its directory,
+		// and its archive, named for the repository and the version, is
+		// kept apart from the repository's own releases' (devel/gopls).
+		b.WriteString("\n")
+		line("dist_subdir", "${name}")
+		line("build.dir", "${worksrcpath}/"+s.Directory)
+		mark("go2port reads a module at its repository's root, so this one's modules are fetched as it builds; write go.vendors where they can be")
+		line("go.offline_build", "no")
+	}
 	b.WriteString("\n")
 	if s.CategoryGuessed {
 		from := s.CategoryFrom
@@ -336,7 +358,7 @@ func Write(s Spec) []byte {
 	// its source's go.mod and go.sum, into the block left here empty
 	// (portedit's fillEmptyBlock): they're the module zips' checksums,
 	// which only fetching them gives.
-	if s.Build.System == "go" {
+	if s.Build.System == "go" && s.Directory == "" {
 		b.WriteString("\ngo.vendors\n")
 	}
 	if s.Build.System == "cargo" {
@@ -384,6 +406,8 @@ func (s Spec) writeDestroot(b *strings.Builder) {
 		}
 		if s.Build.System == "cargo" {
 			fmt.Fprintf(b, "    xinstall -m 0755 \\\n        ${worksrcpath}/target/[cargo.rust_platform]/release/%s \\\n        ${destroot}${prefix}/bin/\n", binary)
+		} else if s.Directory != "" {
+			fmt.Fprintf(b, "    xinstall -m 0755 ${build.dir}/%s ${destroot}${prefix}/bin/\n", binary)
 		} else {
 			fmt.Fprintf(b, "    xinstall -m 0755 ${worksrcpath}/%s ${destroot}${prefix}/bin/\n", binary)
 		}

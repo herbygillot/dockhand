@@ -201,8 +201,8 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 	require.NoError(t, err)
 	p := newPlanner(t)
 	e.Ports.Archives = p
-	p.add(model.ObjectID(trees[report.Base]), plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"COPYING": "MIT\n"}}})
-	p.add(model.ObjectID(trees[report.Head]), plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"COPYING": "GPL\n"}}})
+	p.Add(model.ObjectID(trees[report.Base]), plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, Archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"COPYING": "MIT\n"}}})
+	p.Add(model.ObjectID(trees[report.Head]), plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, Archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"COPYING": "GPL\n"}}})
 
 	report, err = e.Review(t.Context(), 34905)
 	require.NoError(t, err)
