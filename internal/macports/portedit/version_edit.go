@@ -306,6 +306,13 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 			}
 		}
 		if checkFidelity {
+			// A version vercmp orders lower is taken by `port upgrade`
+			// only where the epoch rises (the docs dig's I3).
+			if lowers(request) {
+				if contents, err = portfile.RaiseEpoch(contents, input.target.Subport, input.info.Epoch); err != nil {
+					return nil, snapshot, ErrUnsupported.Because("the version is lower, so the epoch must rise: %w", err)
+				}
+			}
 			contents, err = s.resetRevision(ctx, request, input, contents)
 			if err != nil {
 				return nil, snapshot, ErrUnsupported.Because("%w", err)
@@ -328,6 +335,10 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		}
 		if checkFidelity && next.Version == input.info.Version {
 			rejected = ErrUnsupported.Because("candidate did not change the evaluated version")
+			continue
+		}
+		if checkFidelity && next.Epoch != input.info.Epoch+epochRise(request) {
+			rejected = ErrFidelity.Because("candidate evaluates to epoch %d, where the update writes %d", next.Epoch, input.info.Epoch+epochRise(request))
 			continue
 		}
 		if checkFidelity {
@@ -453,6 +464,19 @@ func (s *Service) followObsolete(ctx context.Context, reader snapshotEvaluator, 
 		contents, after = next, evaluated.after
 	}
 	return contents, after, nil
+}
+
+// lowers reports whether the update moves to a version vercmp orders
+// lower than the current one (model.ReleaseSelection.Lowers).
+func lowers(request Request) bool { return request.Release != nil && request.Release.Lowers }
+
+// epochRise is how much the update raises the epoch: one for a lower
+// version, else none.
+func epochRise(request Request) int {
+	if lowers(request) {
+		return 1
+	}
+	return 0
 }
 
 // samePort compares two evaluations of a port from different projections,

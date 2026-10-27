@@ -327,11 +327,10 @@ func (s *Service) underPortsDeclaration(ctx context.Context, input *sourceInput,
 		if artifact.Group.Name != "" {
 			continue
 		}
-		ordinal, err := strconv.Atoi(artifact.Group.Owner[:strings.IndexByte(artifact.Group.Owner, '/')])
-		if err != nil {
+		if artifact.Group.Command < 0 {
 			continue
 		}
-		place := portfile.SubportPlace(input.data, subport, ordinal)
+		place := portfile.SubportPlace(input.data, subport, artifact.Group.Command)
 		if place != portfile.PlaceBeforeBlock && place != portfile.PlaceAfterBlock {
 			continue
 		}

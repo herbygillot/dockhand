@@ -1,16 +1,19 @@
 // Package commitrules checks commits against what MacPorts asks of them
 // (Design v3 §8): subjects that name the port, short and specific; bodies
-// wrapped at 72; tickets as full URLs; no follow-up or merge commits; and
-// a revision reset to 0 when the version changes. tidy writes by these
-// rules, and submit's preview applies them. The rules that need MacPorts
-// (lint, version order) or GitHub (other open pull requests, maintainers)
-// are not here.
+// wrapped at 72; tickets as full URLs; no follow-up or merge commits; a
+// revision reset to 0 when the version changes, an epoch raised when it
+// goes lower, by MacPorts' version order the caller gives (Order), and a
+// replaced_by that changes the version, revision, or epoch. tidy writes by
+// these rules, and submit's preview applies them. The rules that need
+// MacPorts to run (lint) or GitHub (other open pull requests,
+// maintainers) are not here.
 package commitrules
 
 import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -177,25 +180,70 @@ type Portfile struct {
 	Before, After string
 }
 
+// Order orders two versions as MacPorts' vercmp does, negative where a is
+// lower; false where it couldn't tell.
+type Order func(a, b string) (int, bool)
+
 // CheckPortfiles applies the content rules to the Portfiles a branch
-// changes. It reads the main port's version and revision as the Portfile
-// proves them (portfile.DeclaredVersion); subports that declare their own
-// are not checked, nor is a version the source can't prove.
-func CheckPortfiles(portfiles []Portfile) []Finding {
+// changes. It reads the main port's version, revision, and epoch as the
+// Portfile proves them (portfile.DeclaredVersion); subports that declare
+// their own are not checked, nor is a version the source can't prove.
+// order is vercmp's, for the version-order rule, which a nil order or one
+// that can't tell leaves unchecked.
+func CheckPortfiles(portfiles []Portfile, order Order) []Finding {
 	var findings []Finding
 	for _, p := range portfiles {
 		if p.Before == "" || p.After == "" {
 			continue
 		}
-		before, knownBefore := portfile.DeclaredVersion([]byte(p.Before), "")
-		after, knownAfter := portfile.DeclaredVersion([]byte(p.After), "")
-		if !knownBefore || !knownAfter || before == after {
-			continue
+		old, next := []byte(p.Before), []byte(p.After)
+		before, knownBefore := portfile.DeclaredVersion(old, "")
+		after, knownAfter := portfile.DeclaredVersion(next, "")
+		epochBefore, epochAfter, knownEpochs := epochs(old, next)
+		if knownBefore && knownAfter && before != after {
+			if value, line, ok := portfile.DeclaredRevision(next); ok && value != "0" {
+				findings = append(findings, Finding{Code: "revision-after-update", Severity: Error, Where: fmt.Sprintf("%s:%d", p.Path, line),
+					Message: fmt.Sprintf("revision is %s after a version update; MacPorts expects 0", value)})
+			}
+			// port upgrade takes a lower version only where the epoch
+			// rises (macports::_plan_upgrade): the docs dig's I3.
+			if order != nil && knownEpochs && epochAfter <= epochBefore {
+				if lower, ok := order(after, before); ok && lower < 0 {
+					findings = append(findings, Finding{Code: "version-order", Severity: Error, Where: p.Path,
+						Message: fmt.Sprintf("version goes from %s to %s, which MacPorts orders lower, without raising epoch; port upgrade never takes it", before, after)})
+				}
+			}
 		}
-		if value, line, ok := portfile.DeclaredRevision([]byte(p.After)); ok && value != "0" {
-			findings = append(findings, Finding{Code: "revision-after-update", Severity: Error, Where: fmt.Sprintf("%s:%d", p.Path, line),
-				Message: fmt.Sprintf("revision is %s after a version update; MacPorts expects 0", value)})
+		// An obsoleting replaced_by moves an install to its replacement
+		// only through an upgrade, which nothing triggers where the
+		// version, revision, and epoch all stand.
+		if portfile.Declares(next, "replaced_by") && !portfile.Declares(old, "replaced_by") && knownBefore && knownAfter && before == after && knownEpochs && epochBefore == epochAfter {
+			revisionBefore, _, _ := portfile.DeclaredRevision(old)
+			revisionAfter, _, _ := portfile.DeclaredRevision(next)
+			if revisionBefore == revisionAfter {
+				findings = append(findings, Finding{Code: "replaced-by-unchanged", Severity: Error, Where: p.Path,
+					Message: "replaced_by is added with no version, revision, or epoch change, so port upgrade never replaces installed copies; raise the revision"})
+			}
 		}
 	}
 	return findings
+}
+
+// epochs are the epochs two Portfiles declare, 0 where none is; false
+// where either is one the source can't prove.
+func epochs(old, next []byte) (before, after int, ok bool) {
+	read := func(src []byte) (int, bool) {
+		if !portfile.Declares(src, "epoch") {
+			return 0, true
+		}
+		value, _, ok := portfile.DeclaredEpoch(src)
+		if !ok {
+			return 0, false
+		}
+		n, err := strconv.Atoi(value)
+		return n, err == nil
+	}
+	before, knownBefore := read(old)
+	after, knownAfter := read(next)
+	return before, after, knownBefore && knownAfter
 }

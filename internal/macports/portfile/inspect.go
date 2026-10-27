@@ -211,6 +211,28 @@ func subportBody(src []byte, script *syntax.Script, subport string) (*syntax.Scr
 // literally and unconditionally, and the line it's on; false where it
 // declares none it can prove.
 func DeclaredRevision(src []byte) (value string, line int, ok bool) {
+	return declaredLiteral(src, "revision")
+}
+
+// DeclaredEpoch is DeclaredRevision for the epoch.
+func DeclaredEpoch(src []byte) (value string, line int, ok bool) {
+	return declaredLiteral(src, "epoch")
+}
+
+// Declares reports whether the Portfile's top level runs a command of the
+// name, as replaced_by.
+func Declares(src []byte, name string) bool {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return false
+	}
+	_, ok := lastCommand(src, script, name)
+	return ok
+}
+
+// declaredLiteral is the literal value of the last top-level command of the
+// name with one argument, and its line.
+func declaredLiteral(src []byte, command string) (value string, line int, ok bool) {
 	script, errs := syntax.Parse(src)
 	if len(errs) > 0 {
 		return "", 0, false
@@ -218,7 +240,7 @@ func DeclaredRevision(src []byte) (value string, line int, ok bool) {
 	var found []syntax.Command
 	for _, item := range script.Items {
 		if cmd, isCommand := item.(syntax.Command); isCommand {
-			if name, _ := cmd.Name(src); name == "revision" && len(cmd.Words) == 2 {
+			if name, _ := cmd.Name(src); name == command && len(cmd.Words) == 2 {
 				found = append(found, cmd)
 			}
 		}

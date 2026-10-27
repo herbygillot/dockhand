@@ -36,6 +36,10 @@ type ReleaseSelection struct {
 	NoUpdate       bool   `json:",omitempty"`
 	Stability      string `json:",omitempty"`
 	LeavesStable   bool   `json:",omitempty"`
+	// Lowers marks a version MacPorts' vercmp orders below the current
+	// one, which `port upgrade` takes only where the epoch rises
+	// (macports::_plan_upgrade), so the update raises it.
+	Lowers bool `json:",omitempty"`
 }
 
 // Release identifies the upstream source selected for a version bump: the

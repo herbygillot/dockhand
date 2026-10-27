@@ -26,11 +26,11 @@ func (e *Evaluator) Inspect(ctx context.Context) (macports.Runtime, error) {
 // PreviewAdapter is the Evaluator.Adapter that admits a development build
 // of MacPorts Base, which reports an x.y.99 version. It is for developing
 // dockhand against Base master: master asks the host questions from its
-// parent interpreter, its SDK and tool lookups among them, which a
-// modelled context's worker answers from its own copies
-// (toolchain.tcl's install_lookups), but others, as the tree's compiler
-// lists, this dockhand does not observe, so preparation with it would be
-// judged on answers dockhand never saw.
+// parent interpreter, its SDK, tool, and clang compiler list lookups among
+// them, which a modelled context's worker answers from its own copies
+// (toolchain.tcl's install_lookups), but master may move more, which this
+// dockhand would not observe, so preparation with it could be judged on
+// answers dockhand never saw.
 const PreviewAdapter = "preview"
 
 // supportedFamilies are the released Base families this dockhand

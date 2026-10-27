@@ -15,7 +15,10 @@ import (
 )
 
 type Token struct {
-	Owner   string
+	Owner string
+	// Command is the index among the Portfile's commands of the one the
+	// token is written in, -1 where it couldn't be found.
+	Command int
 	Value   string
 	Span    textedit.Span
 	Literal bool
@@ -75,8 +78,12 @@ type Group struct {
 	Kinds []string
 	Pairs []portfile.ChecksumWords
 	// Owner is the first algorithm's owner, "<declaration>/<word>", and
-	// identifies the group across observed contexts.
-	Owner string
+	// identifies the group across observed contexts and across edits
+	// that add other commands, as an epoch line (the docs dig's I3):
+	// <declaration> counts checksum declarations alone. Command is that
+	// declaration's index among all the Portfile's commands.
+	Owner   string
+	Command int
 }
 
 func (g Group) ID() string { return g.Owner }
@@ -138,25 +145,28 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 		if ambiguous := new(portfile.AmbiguousDeclaration); resolve != nil && errors.As(err, &ambiguous) {
 			cmd, err = resolve(ambiguous.Matches)
 		}
-		ordinal := -1
+		ordinal, declared := -1, -1
 		if err == nil {
 			script, _ := syntax.Parse(src)
-			index := 0
+			index, checksums := 0, 0
 			for candidate := range script.Commands(src, func(syntax.Command) bool { return true }) {
 				if candidate.Span == cmd.Span {
-					ordinal = index
+					ordinal, declared = index, checksums
 					break
 				}
 				index++
+				if name, _ := candidate.Name(src); strings.HasPrefix(name, "checksums") {
+					checksums++
+				}
 			}
 		}
 		tokens := make([]Token, len(declaration.Values))
 		for i, value := range declaration.Values {
-			tokens[i].Value, tokens[i].Unlocated = value, err
+			tokens[i].Value, tokens[i].Unlocated, tokens[i].Command = value, err, ordinal
 			if err == nil && len(cmd.Words) == len(tokens)+1 {
 				word := cmd.Words[i+1]
 				literal, ok := word.Literal(src)
-				tokens[i].Owner = fmt.Sprintf("%d/%d", ordinal, i)
+				tokens[i].Owner = fmt.Sprintf("%d/%d", declared, i)
 				tokens[i].Span = word.Span
 				tokens[i].Literal = ok && literal == value && !word.Expand
 				if !tokens[i].Literal && !portfile.IsChecksumKind(value) && digestLike(value) {
@@ -209,7 +219,7 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 				return result, portfile.ErrUnsupported.Because("duplicate checksum algorithm")
 			}
 			if group.Owner == "" {
-				group.Owner = kind.Owner
+				group.Owner, group.Command = kind.Owner, kind.Command
 			} else if declarationOf(kind.Owner) != declarationOf(group.Owner) && portfile.LegacyChecksums(append(group.Kinds, kind.Value)) {
 				return result, portfile.ErrUnsupported.Because("legacy checksum group spans declarations")
 			}

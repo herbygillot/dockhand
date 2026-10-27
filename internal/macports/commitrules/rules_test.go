@@ -49,9 +49,44 @@ func TestRevisionAfterAnUpdate(t *testing.T) {
 		{Path: "textproc/jq/Portfile", Before: "name jq\nversion 1.7.1\nrevision 2\n", After: "name jq\nversion 1.8.1\nrevision 1\n"},
 		{Path: "sysutils/fd/Portfile", Before: "github.setup sharkdp fd 10.2.0 v\nrevision 1\n", After: "github.setup sharkdp fd 10.3.0 v\nrevision 0\n"},
 		{Path: "net/croc/Portfile", Before: "version 10.2.4\nrevision 0\n", After: "version 10.2.4\nrevision 1\n"},
-	})
+	}, nil)
 	require.Len(t, findings, 1)
 	require.Equal(t, "✗ textproc/jq/Portfile:3: revision is 1 after a version update; MacPorts expects 0 [revision-after-update]", findings[0].String())
+}
+
+// A version MacPorts orders lower than the one it replaces raises the
+// epoch, which port upgrade needs to take it; one vercmp orders forward,
+// as a scheme change, needs none, and an epoch raised at the same time is
+// fine. An obsoleting replaced_by changes the version, revision, or epoch,
+// or no upgrade ever replaces an install (the docs dig's I3).
+func TestALowerVersionOwesAnEpoch(t *testing.T) {
+	// The order of the test: 1.6 is below 1.7, and 2026.1 above 1.7, as
+	// vercmp has them; anything else can't be told.
+	order := func(a, b string) (int, bool) {
+		rank := map[string]int{"1.6": 1, "1.7": 2, "2026.1": 3}
+		x, okA := rank[a]
+		y, okB := rank[b]
+		return x - y, okA && okB
+	}
+	findings := CheckPortfiles([]Portfile{
+		{Path: "textproc/jq/Portfile", Before: "version 1.7\n", After: "version 1.6\n"},
+		{Path: "textproc/yq/Portfile", Before: "version 1.7\n", After: "version 1.6\nepoch 1\n"},
+		{Path: "textproc/oq/Portfile", Before: "version 1.7\nepoch 1\n", After: "version 1.6\nepoch 1\n"},
+		{Path: "textproc/xq/Portfile", Before: "version 1.7\n", After: "version 2026.1\n"},
+		{Path: "textproc/zq/Portfile", Before: "version 1.7\n", After: "version 0.9\n"},
+	}, order)
+	require.Equal(t, []string{"version-order", "version-order"}, codes(findings))
+	require.Equal(t, "✗ textproc/jq/Portfile: version goes from 1.7 to 1.6, which MacPorts orders lower, without raising epoch; port upgrade never takes it [version-order]", findings[0].String())
+	require.Equal(t, "textproc/oq/Portfile", findings[1].Where, "an epoch that stands raises nothing")
+	require.Empty(t, CheckPortfiles([]Portfile{{Path: "textproc/jq/Portfile", Before: "version 1.7\n", After: "version 1.6\n"}}, nil), "no order, no check")
+
+	findings = CheckPortfiles([]Portfile{
+		{Path: "textproc/jq/Portfile", Before: "version 1.7\n", After: "version 1.7\nreplaced_by gojq\n"},
+		{Path: "textproc/yq/Portfile", Before: "version 1.7\n", After: "version 1.7\nrevision 1\nreplaced_by gojq\n"},
+		{Path: "textproc/oq/Portfile", Before: "version 1.7\nreplaced_by gojq\n", After: "version 1.7\nreplaced_by gojq\n"},
+	}, nil)
+	require.Equal(t, []string{"replaced-by-unchanged"}, codes(findings))
+	require.Equal(t, "textproc/jq/Portfile", findings[0].Where)
 }
 
 // A subject may name the subport it changes, which tidy writes: the rules

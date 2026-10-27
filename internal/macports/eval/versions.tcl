@@ -24,6 +24,12 @@ proc ::dockhand::select_version {current expression args} {
 }
 ::tclrpc::register select-version ::dockhand::select_version
 
+# compare_versions orders two versions as MacPorts' vercmp does.
+proc ::dockhand::compare_versions {a b} {
+    return [vercmp $a $b]
+}
+::tclrpc::register compare-versions ::dockhand::compare_versions
+
 proc ::dockhand::extract_versions {expression page {mode line}} {
     set regex [join $expression]
     if {$regex eq ""} {error "empty livecheck expression"}

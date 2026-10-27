@@ -23,10 +23,12 @@ type Explanation struct {
 // 2026-09-25; the Trac wiki could not be read then, so the Commit Message
 // Guidelines are linked, not quoted.
 var (
-	guideGitHub   = Source{Title: "The MacPorts Guide, Contributing to MacPorts", URL: "https://guide.macports.org/#project.github"}
-	guideRevision = Source{Title: "The MacPorts Guide, Portfile keywords: revision", URL: "https://guide.macports.org/#reference.keywords.revision"}
-	template      = Source{Title: "macports-ports' pull request template", URL: "https://github.com/macports/macports-ports/blob/master/.github/PULL_REQUEST_TEMPLATE.md"}
-	guidelines    = Source{Title: "MacPorts' Commit Message Guidelines", URL: "https://trac.macports.org/wiki/CommitMessages"}
+	guideGitHub     = Source{Title: "The MacPorts Guide, Contributing to MacPorts", URL: "https://guide.macports.org/#project.github"}
+	guideRevision   = Source{Title: "The MacPorts Guide, Portfile keywords: revision", URL: "https://guide.macports.org/#reference.keywords.revision"}
+	guideEpoch      = Source{Title: "The MacPorts Guide, Portfile keywords: epoch", URL: "https://guide.macports.org/#reference.keywords.epoch"}
+	guideReplacedBy = Source{Title: "The MacPorts Guide, Portfile keywords: replaced_by", URL: "https://guide.macports.org/#reference.keywords.replaced_by"}
+	template        = Source{Title: "macports-ports' pull request template", URL: "https://github.com/macports/macports-ports/blob/master/.github/PULL_REQUEST_TEMPLATE.md"}
+	guidelines      = Source{Title: "MacPorts' Commit Message Guidelines", URL: "https://trac.macports.org/wiki/CommitMessages"}
 )
 
 func quoted(source Source, quote string) Source {
@@ -57,6 +59,10 @@ var explanations = []Explanation{
 		Sources: []Source{quoted(guideGitHub, minimize)}},
 	{Code: "revision-after-update", Rule: "When a port's version changes, its revision goes back to 0: the revision counts changes made within one version of the software.",
 		Sources: []Source{quoted(guideRevision, "An optional integer (the default is 0) that is incremented when a port is updated independently of the version of the software.")}},
+	{Code: "version-order", Rule: "A version MacPorts orders lower than the one it replaces raises the epoch by one; otherwise port upgrade never installs it, and every install stays at the old version.",
+		Sources: []Source{guideEpoch}},
+	{Code: "replaced-by-unchanged", Rule: "Adding replaced_by also raises the revision, or changes the version or epoch, so port upgrade moves installed copies to the replacement.",
+		Sources: []Source{guideReplacedBy}},
 }
 
 // Explain is what dockhand explain says about a rule's code.

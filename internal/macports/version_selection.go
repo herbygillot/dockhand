@@ -12,6 +12,8 @@ type VersionSelection struct {
 // interpreter kept for the calls: a port's discovery makes several.
 type VersionSession interface {
 	SelectVersion(ctx context.Context, current, expression string, candidates []VersionCandidate) (VersionSelection, error)
+	// CompareVersions orders two versions as vercmp does, its sign alone.
+	CompareVersions(ctx context.Context, a, b string) (int, error)
 	ExtractVersions(ctx context.Context, expression, page string, multiline bool) ([]string, error)
 	Close() error
 }
