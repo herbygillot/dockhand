@@ -96,6 +96,11 @@ type Capture struct {
 	// a port written by hand, which the worktree's sparse checkout keeps
 	// git add from taking (the Vx port's field testing, 2026-10-03).
 	NewPorts []string
+	// Fixed are the lint findings the capture fixed in the working files
+	// first, as tidy's plan fixes them (lintFixes), each in words; a
+	// plan's are said, and its capture holds them, but nothing is
+	// written.
+	Fixed []string
 }
 
 // Describe names the revision for people: "snapshot 3" or "commit 7e3f1a2".
@@ -169,6 +174,31 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 		}
 	}
 
+	// The working files get the lint fixes tidy's plan would make before
+	// they're read, so the check builds what tidy commits: a hand edit's
+	// trailing space, checked and then tidied, needed a check again,
+	// which can take hours (implementation's finding on 652d5e05).
+	var fixes []git.FileEdit
+	working := request.Mode == CaptureWorking || request.Mode == ""
+	if working {
+		bases, err := worktree.CommitTrees(ctx, []string{string(branch.Base)})
+		if err != nil {
+			return Capture{}, err
+		}
+		_, files, err := worktree.WorkingTree(ctx)
+		if err != nil {
+			return Capture{}, err
+		}
+		if fixes, capture.Fixed, err = lintFixes(ctx, worktree, bases[string(branch.Base)], files); err != nil {
+			return Capture{}, err
+		}
+		if len(fixes) > 0 && !request.Plan {
+			if err := worktree.ApplyToWorkingFiles(ctx, fixes); err != nil {
+				return Capture{}, err
+			}
+		}
+	}
+
 	var tree string
 	switch request.Mode {
 	case CaptureHead:
@@ -191,7 +221,7 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 	}
 	// The capture stands only if the files did not move while it read them:
 	// read again, the files --include adds too, the trees must agree.
-	if request.Mode == CaptureWorking || request.Mode == "" {
+	if working {
 		if e.betweenReads != nil {
 			e.betweenReads()
 		}
@@ -204,6 +234,13 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 		}
 		if again != tree {
 			return Capture{}, errors.New("the files changed while they were read; check again once they settle")
+		}
+		// A plan writes nothing, and captures the files as the check
+		// would, fixed.
+		if request.Plan && len(fixes) > 0 {
+			if tree, err = worktree.EditTree(ctx, tree, fixes); err != nil {
+				return Capture{}, err
+			}
 		}
 	}
 

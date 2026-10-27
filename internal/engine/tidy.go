@@ -564,47 +564,62 @@ func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, f
 			return tidyFiles{}, err
 		}
 	}
-	return files, tidyLintFixes(ctx, worktree, baseTree, changed, &files)
+	return files, tidyLintFixes(ctx, worktree, baseTree, &files)
 }
 
 // tidyLintFixes fixes, in each Portfile the branch changes, the lint
 // findings dockhand fixes itself on the lines the branch adds or alters
-// since its base (portfile.FixTouched, the person's "we should have
-// Dockhand do those", 2026-10-27), as dockhand's own edits: a hand edit's
+// since its base, as dockhand's own edits (lintFixes): a hand edit's
 // trailing spaces and swallowing \ are committed fixed, their untouched
-// neighbours as they were. Line 1 is left as it was, as tidy leaves the
-// modeline.
-func tidyLintFixes(ctx context.Context, worktree *git.Repository, baseTree string, changed []string, files *tidyFiles) error {
+// neighbours as they were.
+func tidyLintFixes(ctx context.Context, worktree *git.Repository, baseTree string, files *tidyFiles) error {
+	var err error
+	if files.fixed, files.words, err = lintFixes(ctx, worktree, baseTree, files.final); err != nil || len(files.fixed) == 0 {
+		return err
+	}
+	files.final, err = worktree.EditTree(ctx, files.final, files.fixed)
+	return err
+}
+
+// lintFixes are the fixes, as edits of tree's files, of the lint findings
+// dockhand fixes itself on the lines each Portfile tree changes since
+// baseTree adds or alters (portfile.FixTouched, the person's "we should
+// have Dockhand do those", 2026-10-27), and what each fixed, with its
+// Portfile. tidy's plan and check's capture make the same ones, so a
+// check of the working files builds what tidy commits. Line 1 is left as
+// it was, as tidy leaves the modeline.
+func lintFixes(ctx context.Context, worktree *git.Repository, baseTree, tree string) ([]git.FileEdit, []string, error) {
+	changed, err := worktree.ChangedPaths(ctx, baseTree, tree)
+	if err != nil {
+		return nil, nil, err
+	}
+	var edits []git.FileEdit
+	var words []string
 	for _, name := range changed {
 		if path.Base(name) != "Portfile" {
 			continue
 		}
-		state, after, err := worktree.File(ctx, files.final, name)
+		state, after, err := worktree.File(ctx, tree, name)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		if !state.Exists {
 			continue
 		}
 		_, before, err := worktree.File(ctx, baseTree, name)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		fixed, fixes := portfile.FixTouched(before, after)
 		if len(fixes) == 0 {
 			continue
 		}
-		files.fixed = append(files.fixed, git.FileEdit{Path: name, Before: state, After: fixed, Mode: state.Mode})
+		edits = append(edits, git.FileEdit{Path: name, Before: state, After: fixed, Mode: state.Mode})
 		for _, fix := range fixes {
-			files.words = append(files.words, name+": "+fix.Words())
+			words = append(words, name+": "+fix.Words())
 		}
 	}
-	if len(files.fixed) == 0 {
-		return nil
-	}
-	final, err := worktree.EditTree(ctx, files.final, files.fixed)
-	files.final = final
-	return err
+	return edits, words, nil
 }
 
 func groupOf(path string) string {
