@@ -57,6 +57,9 @@ namespace eval ::dockhand {
                 # the developer tools, as fresh's are; or nothing.
                 proc modelled {name arguments} {
                     variable toolchain
+                    # Whether a directory of the snapshot is in a work tree
+                    # has one answer in every context, git's own there.
+                    if {$name eq "exec"} { return [work_tree $arguments] }
                     if {![dict size $toolchain]} { return }
                     switch -- $name {
                         file {
@@ -72,6 +75,35 @@ namespace eval ::dockhand {
                             return [list "" 0 $answer {-code 0}]
                         }
                         glob { return [sdks $arguments] }
+                    }
+                }
+                # work_tree answers base's first question of when a port last
+                # changed, source_date_epoch's default (portmain.tcl's
+                # get_source_date_epoch): `git -c safe.directory=* -C <dir>
+                # rev-parse --is-inside-work-tree` of the port's directory or
+                # a PortGroup's. A tree dockhand evaluates is a snapshot with
+                # no .git (workspace.Open), so where the directory is in it,
+                # the answer is git's there, not a work tree, given without a
+                # process, and base reads the files' modification times, as
+                # in the Mac's own context; syft's update refused on the
+                # process (Link Dupont's report on macports-dev). Any other
+                # command line is no question of this.
+                proc work_tree {arguments} {
+                    variable ::dockhand_dispatcher::source_root
+                    variable ::dockhand_dispatcher::base_root
+                    if {[lindex $arguments 0] eq "-ignorestderr"} { set arguments [lrange $arguments 1 end] }
+                    if {[lindex $arguments end-1] eq "2>" && [lindex $arguments end] eq "/dev/null"} { set arguments [lrange $arguments 0 end-2] }
+                    if {[llength $arguments] != 7 || [file tail [lindex $arguments 0]] ne "git"
+                        || [lrange $arguments 1 3] ne {-c safe.directory=* -C} || [lrange $arguments 5 end] ne {rev-parse --is-inside-work-tree}} {
+                        return
+                    }
+                    if {[catch {file normalize [lindex $arguments 4]} directory]} { return }
+                    foreach root [list $source_root $base_root] {
+                        if {$root eq ""} { continue }
+                        set root [file normalize $root]
+                        if {$directory eq $root || [string first "${root}/" $directory] == 0} {
+                            return [list git 1 "fatal: not a git repository (or any of the parent directories): .git" {-code 1 -errorcode NONE}]
+                        }
                     }
                 }
                 # sdks answers a glob of the tools' SDK directory, as Base's

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -138,4 +139,35 @@ func TestTheDispatcherCountsEveryCallByItsSource(t *testing.T) {
 	require.GreaterOrEqual(t, counted["source tree"], 1, "the Portfile itself: %v", counted)
 	require.GreaterOrEqual(t, counted["source base"], 1, "Base's own port1.0 is Base's, not the host's: %v", counted)
 	require.True(t, got.Ports["ledger"].HostAccess, "the host read is still an event")
+}
+
+// Base's own reading of when a port last changed, source_date_epoch's
+// default, first asks git whether the port's directory is in a work tree,
+// which in the captured tree, a snapshot with no .git, is answered as git
+// answers there, without a process, so base takes the files' modification
+// times, as in the Mac's own context; and formatting the time reads Tcl's
+// clock in UTC, not the Mac's zone. syft reads it in its build arguments,
+// uv and cloudflared format it, and each update refused as reading the
+// host (Link Dupont's report on macports-dev). The same question of a
+// directory outside the tree is still the host's.
+func TestSourceDateEpochIsReadFromTheCapturedTree(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/host/Portfile", "PortSystem 1.0\nname host\nversion 1\n"+
+		"set built [clock format ${source_date_epoch} -format %Y-%m-%dT%H:%M:%SZ]\ndistfiles host-${source_date_epoch}-${built}.tar.gz\n")
+	when := time.Unix(1700000000, 0)
+	require.NoError(t, os.Chtimes(filepath.Join(tree.Root(), "devel/host/Portfile"), when, when))
+	bound, err := tree.Select(model.Target{Name: "host", Portfile: "devel/host/Portfile"})
+	require.NoError(t, err)
+	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	require.NoError(t, err)
+	require.False(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
+	require.Equal(t, "host-1700000000-2023-11-14T22:13:20Z.tar.gz", got.Snapshot.Ports["host"].Options["distfiles"], "the Portfile's time, in UTC")
+
+	// The same question of a directory outside the captured tree.
+	putFile(t, tree.Root(), "devel/host/Portfile", "PortSystem 1.0\nname host\nversion 1\ncatch {exec git -c safe.directory=* -C "+t.TempDir()+" rev-parse --is-inside-work-tree}\n")
+	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	require.NoError(t, err)
+	require.True(t, got.Ports["host"].ModeledHostAccess, "a directory outside the captured tree is the host's")
 }
