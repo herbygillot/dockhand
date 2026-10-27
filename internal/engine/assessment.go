@@ -52,14 +52,24 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 	if err != nil {
 		return nil, err
 	}
-	var recorded []model.Assessment
+	// A revision's change records and assessments are read in one view,
+	// and what's made of them is written in one transaction (SQL-O7's
+	// remainder, the docs dig's I44).
+	// seen are every assessment of the revision read, under any policy,
+	// recorded those under this one.
+	var recorded, seen []model.Assessment
 	var owner model.Branch
+	var records map[string]model.ChangeRecord
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		if owner, err = r.Branch(branch); err != nil {
 			return err
 		}
+		if records, err = recordedChanges(r, branch, base, tree); err != nil {
+			return err
+		}
 		revision, err := r.Assessments(store.AssessmentFilter{Branch: branch, Tree: tree, Base: base})
+		seen = revision
 		for _, a := range revision {
 			if a.Policy == assess.Policy {
 				recorded = append(recorded, a)
@@ -74,7 +84,8 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 	if !collect || !e.mayEvaluate(ctx, owner, "assessment") {
 		return recorded, nil
 	}
-	records, err := e.revisionChanges(ctx, branch, base, tree, true)
+	read := maps.Clone(records)
+	changes, err := e.makeChanges(ctx, owner, base, tree, records)
 	if err != nil {
 		return nil, err
 	}
@@ -82,14 +93,30 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 	switch {
 	case errors.Is(err, errNoPlanner):
 		// Only an engine given no evaluator can't plan archives: it
-		// collects nothing, and reads what's recorded.
-		return recorded, nil
+		// collects nothing, and reads what's recorded, the change records
+		// it made kept.
+		found, made = recorded, nil
 	case err != nil:
 		return nil, err
 	}
-	if len(made) > 0 {
+	if len(changes)+len(made) > 0 {
 		if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+			if err := recordChanges(tx, branch, base, tree, read, changes); err != nil {
+				return err
+			}
+			// An assessment is recorded where the revision's of its port
+			// is still the one read before it was made, as a change record
+			// is (recordChanges).
+			now, err := tx.Assessments(store.AssessmentFilter{Branch: branch, Tree: tree, Base: base})
+			if err != nil {
+				return err
+			}
 			for _, a := range made {
+				i := slices.IndexFunc(now, func(c model.Assessment) bool { return c.Port == a.Port })
+				j := slices.IndexFunc(seen, func(c model.Assessment) bool { return c.Port == a.Port })
+				if i >= 0 && (j < 0 || !now[i].At.Equal(seen[j].At)) {
+					continue
+				}
 				if err := tx.RecordAssessment(a); err != nil {
 					return err
 				}

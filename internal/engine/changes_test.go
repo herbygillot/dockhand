@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -373,4 +374,33 @@ func TestShipIsUnattendedWhereNobodyLooks(t *testing.T) {
 	require.True(t, unattended(shipOptions{Answered: model.AnsweredNobody}.within(t.Context())))
 	require.False(t, unattended(shipOptions{Answered: model.AnsweredAsked}.within(t.Context())))
 	require.False(t, unattended(t.Context()), "nothing marks a command unattended for having no terminal")
+}
+
+// A change record another process recorded after this one read none
+// stands: what's made is written only where the revision's record is the
+// one read before it was made (SQL-O7, the architecture thread's rule).
+func TestARecordMadeMeanwhileStands(t *testing.T) {
+	t.Parallel()
+	e, branch, _, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	theirs := model.ChangeRecord{Branch: branch.ID, Tree: tree, Base: branch.Base, Directory: "devel/libharbor", Policy: fidelity.ChangePolicy, At: at.Add(time.Minute)}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.RecordChange(theirs) }))
+	ours := theirs
+	ours.At, ours.Problem = at.Add(2*time.Minute), "ours"
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		return recordChanges(tx, branch.ID, branch.Base, tree, map[string]model.ChangeRecord{}, []model.ChangeRecord{ours})
+	}))
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		records, err := recordedChanges(r, branch.ID, branch.Base, tree)
+		require.Empty(t, records["devel/libharbor"].Problem, "theirs stands")
+		return err
+	}))
+	// One that replaces the failed record it read is written.
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		return recordChanges(tx, branch.ID, branch.Base, tree, map[string]model.ChangeRecord{"devel/libharbor": theirs}, []model.ChangeRecord{ours})
+	}))
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		records, err := recordedChanges(r, branch.ID, branch.Base, tree)
+		require.Equal(t, "ours", records["devel/libharbor"].Problem)
+		return err
+	}))
 }
