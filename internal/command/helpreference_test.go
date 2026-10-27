@@ -83,16 +83,12 @@ func referenceDocs(t *testing.T) []string {
 }
 
 // designRecords are docs/*.md that record a design rather than teach the
-// commands: the roadmap; Design v3, whose sketches name info, db, logs
-// --errors, and setup prefix, never built, and whose v2 table names old
-// spellings on purpose; and the directions and v2-era notes, which name
-// verify, publish, doctor, and why.
+// commands: the roadmap; Design v3, whose sketches and v2 table name old
+// spellings on purpose; and the decisions, which name what was declined.
 var designRecords = map[string]bool{
-	"roadmap.md":         true,
-	"design-v3.md":       true,
-	"directions.md":      true,
-	"build-platforms.md": true,
-	"bump-coverage.md":   true,
+	"roadmap.md":   true,
+	"design-v3.md": true,
+	"decisions.md": true,
 }
 
 // pastReferences are a doc's references to a command of an earlier

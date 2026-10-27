@@ -92,7 +92,7 @@ mutate:
 	GOFLAGS= GOBIN="$$bin" GOTOOLCHAIN=$$($(GO) env GOVERSION) $(GO) install $(GO_MUTESTING) && \
 	GOFLAGS="$(GOFLAGS)$(if $(MUTATE_RUN), -run=$(MUTATE_RUN))" "$$bin/go-mutesting" --quiet --exec-timeout=$(MUTATE_TIMEOUT) $(MUTATE)
 
-# Whole-program reachability including tests; see docs/reviews/2026-09-17-exported-surface-audit.md.
+# Whole-program reachability including tests; see the exported-surface audit of 2026-09-17 (docs/reviews/, tag docs-archive-2026-10-25).
 # A tool run by version is fetched as a module of its own, which the vendor mode forbids.
 # The tool exits 0 whatever it reports, so anything it prints fails the target.
 deadcode:
