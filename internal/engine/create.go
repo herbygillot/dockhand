@@ -197,33 +197,11 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 		}
 		return e.moveCreated(ctx, worktree, request.Branch, created, request.Category)
 	}
-	spec := portcreate.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
-		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, Maintainer: request.Maintainer, Build: build,
-		Binaries: portcreate.Binaries(project.Files, build), ReleaseAsset: portcreate.HasReleaseArchive(project.Assets, project.Name, version),
-		Directory: project.Directory, Package: project.Package}
-	if spec.Category == "" {
-		categories, err := treeCategories(ctx, worktree)
-		if err != nil {
-			return Created{}, err
-		}
-		spec.Category, spec.CategoryFrom = portcreate.GuessCategory(build, observed.Description, categories)
-		spec.CategoryGuessed = true
+	spec, homepageFrom, err := e.createSpec(ctx, worktree, observed, request, name, prefix)
+	if err != nil {
+		return Created{}, err
 	}
-	// MacPorts prefers HTTPS: a forge's plain-HTTP homepage is written as
-	// its https form where that answers.
-	var homepageFrom string
 	answered := map[string]bool{}
-	if plain := e.plainHTTP(ctx, homepageOnly(spec.Homepage), answered); len(plain) > 0 && plain[0].Answers {
-		homepageFrom, spec.Homepage = spec.Homepage, plain[0].HTTPS
-	}
-	if !macports.ValidCategory(spec.Category) {
-		return Created{}, fmt.Errorf("%q is not a category", spec.Category)
-	}
-	if lock, ok := project.Files["Cargo.lock"]; ok && build.System == "cargo" {
-		if spec.Crates, spec.Unfetched, err = portcreate.CargoCrates(lock); err != nil {
-			return Created{}, err
-		}
-	}
 	directory := spec.Category + "/" + name
 	if err := e.refuseExisting(ctx, worktree, name); err != nil {
 		return Created{}, err
@@ -579,6 +557,21 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 			found.Files[file] = data
 		}
 	}
+	// A Cargo project's programs are its packages', the root's and its
+	// workspace members', each building one where it has src/main.rs, as
+	// a comparison reads them (portcreate.Binaries, CX-7).
+	if root, ok := found.Files["Cargo.toml"]; ok {
+		for _, file := range portcreate.CargoFiles(root) {
+			data, err := files.File(ctx, tag.Commit, path.Join(directory, file), projectFileLimit)
+			switch {
+			case errors.Is(err, forge.ErrNotFound):
+			case err != nil:
+				return Project{}, fmt.Errorf("reading %s at %s: %w", file, found.Tag, err)
+			default:
+				found.Files[file] = data
+			}
+		}
+	}
 	return found, nil
 }
 
@@ -597,6 +590,82 @@ func publishedTag(ctx context.Context, repository forge.Repository, prefix, vers
 		}
 	}
 	return forge.Tag{}, "", fmt.Errorf("no tag %s for the version its registry has", strings.Join(names, " or "))
+}
+
+// createSpec is the new port's Portfile as create writes it from what it
+// observed: the category given, or guessed from the description among
+// repo's categories and marked; a plain-HTTP homepage written as its
+// https form where that answers, with the homepage it replaced; and a
+// Rust project's crates from its Cargo.lock.
+func (e *Engine) createSpec(ctx context.Context, repo *git.Repository, observed Observed, request CreateRequest, name, prefix string) (portcreate.Spec, string, error) {
+	project, build, version := observed.Project, observed.Build, observed.Version
+	spec := portcreate.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
+		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, Maintainer: request.Maintainer, Build: build,
+		Binaries: portcreate.Binaries(project.Files, build), ReleaseAsset: portcreate.HasReleaseArchive(project.Assets, project.Name, version),
+		Directory: project.Directory, Package: project.Package}
+	if spec.Category == "" {
+		categories, err := treeCategories(ctx, repo)
+		if err != nil {
+			return spec, "", err
+		}
+		spec.Category, spec.CategoryFrom = portcreate.GuessCategory(build, observed.Description, categories)
+		spec.CategoryGuessed = true
+	}
+	// MacPorts prefers HTTPS: a forge's plain-HTTP homepage is written as
+	// its https form where that answers.
+	var homepageFrom string
+	if plain := e.plainHTTP(ctx, homepageOnly(spec.Homepage), map[string]bool{}); len(plain) > 0 && plain[0].Answers {
+		homepageFrom, spec.Homepage = spec.Homepage, plain[0].HTTPS
+	}
+	if !macports.ValidCategory(spec.Category) {
+		return spec, "", fmt.Errorf("%q is not a category", spec.Category)
+	}
+	if lock, ok := project.Files["Cargo.lock"]; ok && build.System == "cargo" {
+		var err error
+		if spec.Crates, spec.Unfetched, err = portcreate.CargoCrates(lock); err != nil {
+			return spec, "", err
+		}
+	}
+	return spec, homepageFrom, nil
+}
+
+// PlannedCreate is what create would write, without writing it: the
+// port's directory, its Portfile with placeholder checksums, and what it
+// marks as guessed.
+type PlannedCreate struct {
+	Directory   string
+	Portfile    []byte
+	Unconfirmed []string
+}
+
+// PlanCreate is the Portfile create would write for a project, as create
+// writes it, from what the person's checkout's categories say, with no
+// branch started, nothing written, and no checksums fetched (create
+// --plan, Then's item 14).
+func (e *Engine) PlanCreate(ctx context.Context, request CreateRequest) (PlannedCreate, error) {
+	var observed Observed
+	var err error
+	if request.Project != nil {
+		observed, err = observe(*request.Project)
+	} else {
+		observed, err = e.ObserveProject(ctx, request.URL)
+	}
+	if err != nil {
+		return PlannedCreate{}, err
+	}
+	name := request.Name
+	if name == "" {
+		name = observed.Name
+	}
+	if !macports.ValidName(name) {
+		return PlannedCreate{}, fmt.Errorf("%q is not a port name; name it with --name", name)
+	}
+	prefix, _, _ := portcreate.SplitTag(strings.TrimPrefix(observed.Project.Tag, directoryTag(observed.Project)))
+	spec, _, err := e.createSpec(ctx, e.Repo, observed, request, name, directoryTag(observed.Project)+prefix)
+	if err != nil {
+		return PlannedCreate{}, err
+	}
+	return PlannedCreate{Directory: spec.Category + "/" + name, Portfile: portcreate.Write(spec), Unconfirmed: spec.Unconfirmed()}, nil
 }
 
 // directoryTag is what a module below its repository's root's tags begin

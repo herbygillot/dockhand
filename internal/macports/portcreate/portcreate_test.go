@@ -194,9 +194,15 @@ func TestAProjectsManifestSaysItsLicenseAndItsLine(t *testing.T) {
 // finding 2).
 func TestANewPortInstallsWhatItsManifestNames(t *testing.T) {
 	cargo, golang := Build{System: "cargo", Evidence: "Cargo.toml"}, Build{System: "go", Evidence: "go.mod"}
-	require.Equal(t, []string{"txt"}, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"txt\"\n")}, cargo))
+	require.Equal(t, []string{"txt"}, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"txt\"\n"), "src/main.rs": nil}, cargo))
+	require.Empty(t, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"txt\"\n")}, cargo), "a library, with no src/main.rs, as a comparison reads it (CX-7)")
 	require.Equal(t, []string{"a", "b"}, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"x\"\n[[bin]]\nname = \"a\"\n[[bin]]\nname = \"b\"\n")}, cargo))
 	require.Empty(t, Binaries(map[string][]byte{"Cargo.toml": []byte("[workspace]\nmembers = [\"a\"]\n")}, cargo))
+	// A workspace's members' programs, as its destroot installs them.
+	workspace := map[string][]byte{"Cargo.toml": []byte("[workspace]\nmembers = [\"cli\", \"core\", \"crates/*\"]\n"),
+		"cli/Cargo.toml": []byte("[package]\nname = \"harbor\"\n"), "cli/src/main.rs": nil, "core/Cargo.toml": []byte("[package]\nname = \"harbor-core\"\n")}
+	require.Equal(t, []string{"harbor"}, Binaries(workspace, cargo), "core is a library")
+	require.Equal(t, []string{"src/main.rs", "cli/Cargo.toml", "cli/src/main.rs", "core/Cargo.toml", "core/src/main.rs"}, CargoFiles(workspace["Cargo.toml"]), "a glob's members can't be read file by file")
 	require.Equal(t, []string{"lazysql"}, Binaries(map[string][]byte{"go.mod": []byte("module github.com/jorgerojas26/lazysql\n\ngo 1.24\n")}, golang))
 	require.Equal(t, []string{"tool"}, Binaries(map[string][]byte{"go.mod": []byte("module example.org/tool/v3\n")}, golang))
 	require.Empty(t, Binaries(map[string][]byte{"go.mod": []byte("go 1.24\n")}, golang))
