@@ -32,7 +32,8 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var version author.VersionUpdate
 	var where branchflags.BranchFlags
 	var to string
-	var yes, mine, passing, plan bool
+	var yes, passing, plan bool
+	var selectors outdated.Selectors
 	cmd := &cobra.Command{
 		Use:   "ship [<port>...]",
 		Short: "Update, commit, check, and submit changes",
@@ -41,7 +42,9 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 Select ports or a branch. A port name starts a version update from the
 latest master in a branch of its own, or continues the open branch that
 already changes the port. -b, -p, and --pr select a branch; with none, the
-branch checked out here is used.
+branch checked out here is used. --mine, --maintainer, --category, and
+--not-maintainer select the ports with newer releases as outdated finds
+them, as ship --maintainer nomaintainer --category devel --to check.
 
 --to stops each change at commit, check, or submit (the default). Running
 ship again resumes: a stage already completed is not repeated, and a check
@@ -76,8 +79,9 @@ need review.`,
 			if err := version.StageReady(); err != nil {
 				return err
 			}
+			mine := selectors.Chosen()
 			if chosen := len(args) > 0 || mine || passing; chosen && where.Explicit() || len(args) > 0 && (mine || passing) || mine && passing {
-				return errors.New("choose one target source: port names, --mine, --passing, or a branch")
+				return errors.New("choose one target source: port names, a selection (--mine, --maintainer, --category), --passing, or a branch")
 			}
 			whole := &view.BatchJSON{}
 			streams.LinkSteps(whole)
@@ -88,7 +92,7 @@ need review.`,
 			var targets []shipTarget
 			switch {
 			case mine:
-				targets, err = mineTargets(ctx, s, e, streams)
+				targets, err = mineTargets(ctx, s, e, streams, selectors)
 			case passing:
 				targets, err = passingTargets(ctx, e)
 			default:
@@ -132,7 +136,7 @@ need review.`,
 	version.Flags(cmd)
 	version.StageFlags(cmd)
 	cmd.Flags().StringVar(&to, "to", string(engine.ShipSubmit), "how far to carry each change: commit, check, or submit")
-	cmd.Flags().BoolVar(&mine, "mine", false, "your ports with newer releases, as outdated --mine finds them")
+	selectors.Register(cmd, "ship, with newer releases,")
 	settings.OverAllowanceFlag(cmd, s)
 	cmd.Flags().BoolVar(&passing, "passing", false, "the branches whose check passed for their commits, with no pull request of those commits yet")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "ship without asking, holding where serve would")
@@ -202,10 +206,10 @@ func ShipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, po
 	return targets, nil
 }
 
-// mineTargets are the person's ports with newer releases, as outdated
-// --mine finds them, each at the release it found.
-func mineTargets(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams) ([]shipTarget, error) {
-	plan, err := outdated.Batch(ctx, s, e, streams)
+// mineTargets are the selection's ports with newer releases, as outdated
+// finds them, each at the release it found.
+func mineTargets(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, selectors outdated.Selectors) ([]shipTarget, error) {
+	plan, err := outdated.Batch(ctx, s, e, streams, selectors)
 	if err != nil {
 		return nil, err
 	}

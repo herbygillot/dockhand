@@ -21,37 +21,46 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-// outdatedRequest is what --mine and the ports named choose.
-func outdatedRequest(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, ports []string, mine bool) (engine.OutdatedRequest, *lookups, error) {
+// outdatedRequest is what the selectors and the ports named choose.
+func outdatedRequest(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, ports []string, selectors Selectors) (engine.OutdatedRequest, *lookups, error) {
 	looked := newLookups(streams)
 	request := engine.OutdatedRequest{Ports: ports, Progress: looked.progress, Allow: allowLook(e.GitHubAllowance, streams, s.OverAllowance)}
-	if !mine {
+	if !selectors.Chosen() {
 		if len(ports) == 0 {
-			return request, looked, errors.New("name ports, or choose yours with --mine")
+			return request, looked, errors.New("name ports, or choose them with --mine, --maintainer, or --category")
 		}
 		return request, looked, nil
 	}
 	if len(ports) > 0 {
-		return request, looked, errors.New("--mine chooses your ports; name ports or use --mine, not both")
+		return request, looked, errors.New("--mine, --maintainer, --category, and --not-maintainer choose ports; name ports or choose them, not both")
 	}
-	if request.Maintainers = s.File.Maintainers(); len(request.Maintainers) == 0 {
+	mine := s.File.Maintainers()
+	if selectors.Mine && len(mine) == 0 {
 		// The person's own line, as master's ports write their GitHub
 		// login, where it can be found, as serve suggests it.
 		return request, looked, fmt.Errorf("--mine needs to know who you are, as your ports' maintainers lines name you: %s", e.MaintainerHint(ctx))
+	}
+	request.Maintainers, request.Categories, request.NotMaintainers = selectors.maintainers(mine), selectors.Categories, selectors.NotMaintainers
+	if len(request.Maintainers)+len(request.Categories) == 0 {
+		return request, looked, errors.New("--not-maintainer leaves ports out of a selection: choose them with --maintainer, --category, or --mine beside it")
 	}
 	return request, looked, nil
 }
 
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
-	var mine, all bool
+	var selectors Selectors
+	var all bool
 	cmd := &cobra.Command{
 		Use:   "outdated [port...]",
 		Short: "Show which ports have newer releases upstream",
 		Long: `Looks up the newest release of each named port, or with --mine of each
 port whose maintainers line names you (the config's maintainer), using
-MacPorts' master as fetched now. It lists the ports with newer releases
-and counts the rest; --current lists every port, including why any could
-not be checked.
+MacPorts' master as fetched now. --maintainer, --category, and
+--not-maintainer choose ports by master's index as port echo does:
+alternatives within a flag, and all of the flags together, as
+outdated --maintainer nomaintainer --category devel. It lists the ports
+with newer releases and counts the rest; --current lists every port,
+including why any could not be checked.
 
 To start updating them, run update --mine, which creates a branch for
 each; ship --mine --to check also checks them.`,
@@ -62,7 +71,7 @@ each; ship --mine --to check also checks them.`,
 				return err
 			}
 			defer e.Close()
-			request, looked, err := outdatedRequest(ctx, s, e, streams, args, mine)
+			request, looked, err := outdatedRequest(ctx, s, e, streams, args, selectors)
 			if err != nil {
 				return err
 			}
@@ -80,7 +89,7 @@ each; ship --mine --to check also checks them.`,
 			return writeOutdated(ctx, e, streams.Out, report, all)
 		},
 	}
-	cmd.Flags().BoolVar(&mine, "mine", false, "the ports whose maintainers line names you (config maintainer)")
+	selectors.Register(cmd, "look up")
 	settings.OverAllowanceFlag(cmd, s)
 	cmd.Flags().BoolVar(&all, "current", false, "list current ports and those that couldn't be checked too")
 	settings.SupportsJSON(cmd)
@@ -356,12 +365,12 @@ func allowLook(allowed func(context.Context) (github.Allowance, error), streams 
 // GitHub, at about 2.6 a port, rounded to a hundred (costlyLook).
 func lookCost(lookups int) int { return (lookups*26/10 + 50) / 100 * 100 }
 
-// outdatedBatch is your ports with newer releases, as outdated --mine
-// finds them, split one branch a port: the updates ship --mine and update
-// --mine make. What it leaves is said, each port the plan skipped with
+// Batch is the selection's ports with newer releases, as outdated finds
+// them, split one branch a port: the updates ship --mine and update
+// --mine, or another selection, make. What it leaves is said, each port the plan skipped with
 // why, and the rest counted by what the look found of them.
-func Batch(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams) (engine.OutdatedPlan, error) {
-	request, looked, err := outdatedRequest(ctx, s, e, streams, nil, true)
+func Batch(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, selectors Selectors) (engine.OutdatedPlan, error) {
+	request, looked, err := outdatedRequest(ctx, s, e, streams, nil, selectors)
 	if err != nil {
 		return engine.OutdatedPlan{}, err
 	}
@@ -387,16 +396,16 @@ func Batch(ctx context.Context, s *settings.Settings, e *engine.Engine, streams 
 		skipped = append(skipped, view.SkippedJSON{Port: skip.Port, Reason: skip.Reason})
 	}
 	streams.Emit(skipped)
-	if line := restWords(report, plan); line != "" {
+	if line := restWords(report, plan, selectors.flags()); line != "" {
 		fmt.Fprintln(streams.Out, line)
 	}
 	return plan, nil
 }
 
 // restWords counts the ports a look found no update to make of, and the
-// plan didn't skip by name, by what it found, naming outdated, which says
-// each.
-func restWords(report engine.OutdatedReport, plan engine.OutdatedPlan) string {
+// plan didn't skip by name, by what it found, naming outdated over the
+// selection, its flags, which says each.
+func restWords(report engine.OutdatedReport, plan engine.OutdatedPlan, flags string) string {
 	summary := report.Summary()
 	said := map[string]bool{}
 	for _, skip := range plan.Skipped {
@@ -426,7 +435,7 @@ func restWords(report engine.OutdatedReport, plan engine.OutdatedPlan) string {
 	if len(words) == 0 {
 		return ""
 	}
-	return "Of the rest, " + strings.Join(words, ", ") + " (dockhand outdated --mine --current says each)."
+	return "Of the rest, " + strings.Join(words, ", ") + " (dockhand outdated " + flags + " --current says each)."
 }
 
 // lookups follows outdated's lookups: on a terminal it redraws their count

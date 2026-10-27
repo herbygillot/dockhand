@@ -83,7 +83,7 @@ func TestShipStopsWhereToSays(t *testing.T) {
 	require.NotContains(t, out, "checking commit ")
 	require.Empty(t, g.PRs)
 	_, _, err = cmdtest.Dockhand(t, "ship", "jq", "-b", "jq-1.8.1")
-	require.EqualError(t, err, "choose one target source: port names, --mine, --passing, or a branch")
+	require.EqualError(t, err, "choose one target source: port names, a selection (--mine, --maintainer, --category), --passing, or a branch")
 }
 
 // ship <port> finds the port's branch as every authoring command does,
@@ -125,7 +125,9 @@ func TestShipMineAndPassing(t *testing.T) {
 	cmdtest.AsMaintainer(t, w)
 
 	_, _, err := cmdtest.Dockhand(t, "ship", "--mine", "jq")
-	require.EqualError(t, err, "choose one target source: port names, --mine, --passing, or a branch")
+	require.EqualError(t, err, "choose one target source: port names, a selection (--mine, --maintainer, --category), --passing, or a branch")
+	_, _, err = cmdtest.Dockhand(t, "ship", "--not-maintainer", "@bob")
+	require.EqualError(t, err, "--not-maintainer leaves ports out of a selection: choose them with --maintainer, --category, or --mine beside it")
 	out, errs, err := cmdtest.Dockhand(t, "ship", "--mine", "--to", "check")
 	require.NoError(t, err, errs)
 	require.Equal(t, []string{"@ada"}, reader.Asked[0].Maintainers)
@@ -133,6 +135,18 @@ func TestShipMineAndPassing(t *testing.T) {
 	require.Contains(t, out, "  jq  a version update from master, to check\n")
 	require.Contains(t, out, "jq 1.7.1 → 1.8.1")
 	require.Empty(t, g.PRs)
+
+	// Another selection selects by master's index as port echo does, and
+	// goes the same way (the dig's I38a); --mine beside one adds yours.
+	_, errs, err = cmdtest.Dockhand(t, "ship", "--maintainer", "nomaintainer", "--category", "devel", "--not-maintainer", "@bob", "--to", "check", "--plan")
+	require.NoError(t, err, errs)
+	asked := reader.Asked[len(reader.Asked)-1]
+	require.Equal(t, []string{"nomaintainer"}, asked.Maintainers)
+	require.Equal(t, []string{"devel"}, asked.Categories)
+	require.Equal(t, []string{"@bob"}, asked.NotMaintainers)
+	_, errs, err = cmdtest.Dockhand(t, "ship", "--mine", "--maintainer", "nomaintainer,@ada", "--to", "check", "--plan")
+	require.NoError(t, err, errs)
+	require.Equal(t, []string{"@ada", "nomaintainer"}, reader.Asked[len(reader.Asked)-1].Maintainers, "each once")
 
 	out, errs, err = cmdtest.Dockhand(t, "ship", "--passing", "--to", "commit")
 	require.NoError(t, err, errs)

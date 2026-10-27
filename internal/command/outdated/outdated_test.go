@@ -154,7 +154,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	require.Contains(t, out, "Nothing to update: no newer releases remain outside your existing branches.\n")
 
 	_, _, err = cmdtest.Dockhand(t, "update", "--mine", "jq")
-	require.EqualError(t, err, "--mine starts a branch for each of your ports; it takes no port, --branch, or --new")
+	require.EqualError(t, err, "a selection starts a branch for each port it chooses; it takes no port, --branch, or --new")
 	_, _, err = cmdtest.Dockhand(t, "update")
 	require.ErrorContains(t, err, "name the port to update, or update your outdated ports with --mine")
 }
@@ -256,10 +256,10 @@ func TestABatchCountsWhatItLeaves(t *testing.T) {
 		{Port: "tokei", Current: "14.0.0", Newest: "14.0.0"},
 		{Port: "lost", Problem: "no forge could be found for it"},
 	}}
-	require.Equal(t, "Of the rest, 2 current, 1 that couldn't be checked (dockhand outdated --mine --current says each).", restWords(report, engine.OutdatedPlan{}))
+	require.Equal(t, "Of the rest, 2 current, 1 that couldn't be checked (dockhand outdated --mine --current says each).", restWords(report, engine.OutdatedPlan{}, "--mine"))
 	skipped := engine.OutdatedPlan{Skipped: []engine.SkippedUpdate{{Port: "lost", Reason: "no forge could be found for it"}}}
-	require.Equal(t, "Of the rest, 2 current (dockhand outdated --mine --current says each).", restWords(report, skipped), "what the plan skipped is said by name, and not counted again")
-	require.Empty(t, restWords(engine.OutdatedReport{}, engine.OutdatedPlan{}))
+	require.Equal(t, "Of the rest, 2 current (dockhand outdated --mine --current says each).", restWords(report, skipped, "--mine"), "what the plan skipped is said by name, and not counted again")
+	require.Empty(t, restWords(engine.OutdatedReport{}, engine.OutdatedPlan{}, "--mine"))
 }
 
 // A batch's exit says whether anything worked: 1 where none could be

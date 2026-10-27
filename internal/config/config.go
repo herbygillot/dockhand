@@ -125,6 +125,14 @@ type Serve struct {
 	// Notify posts macOS notifications when a check finishes or a pull
 	// request changes; on when unset.
 	Notify *bool `toml:"notify"`
+	// Maintainers and Categories choose the ports the daily look is for,
+	// by master's index as outdated --maintainer and --category do; your
+	// ports, the maintainer line's, when neither is set. NotMaintainers
+	// leaves out the ports a maintainer keeps, either way. A selection
+	// goes under the same holds, submit_limit, and stages as your ports.
+	Maintainers    []string `toml:"maintainers"`
+	Categories     []string `toml:"categories"`
+	NotMaintainers []string `toml:"not_maintainers"`
 }
 
 // Stage is ship_to, list when unset.
@@ -480,6 +488,9 @@ func Defaults() map[string]string {
 		"serve.outdated_at":              DefaultOutdatedAt,
 		"serve.submit_limit":             strconv.Itoa(DefaultSubmitLimit),
 		"serve.notify":                   "true",
+		"serve.maintainers":              "(none: your ports, as maintainer names you)",
+		"serve.categories":               "(none)",
+		"serve.not_maintainers":          "(none)",
 		"providers.tart.test_timeout":    ageWords(buildenv.DefaultTestTimeout),
 		"providers.tart.build_timeout":   ageWords(buildenv.DefaultBuildTimeout),
 		"providers.command":              "(not set up)",
