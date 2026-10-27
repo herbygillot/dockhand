@@ -149,6 +149,9 @@ type stealthJSON struct {
 	RevbumpProblem string                `json:"revbump_problem,omitempty"`
 	DistSubdir     string                `json:"dist_subdir,omitempty"`
 	Problem        string                `json:"problem,omitempty"`
+	Unchanged      bool                  `json:"unchanged,omitempty"`
+	Differ         []string              `json:"differ,omitempty"`
+	CompareProblem string                `json:"compare_problem,omitempty"`
 }
 
 type stealthDistfileJSON struct {
@@ -215,7 +218,7 @@ func UpdateView(branch model.Branch, started bool, update engine.Update, plan bo
 		viewed.PlainHTTP = append(viewed.PlainHTTP, plainHTTPJSON{Option: url.Option, URL: url.URL, HTTPS: url.HTTPS, Answers: url.Answers})
 	}
 	if stealth := update.Stealth; stealth != nil {
-		viewed.Stealth = &stealthJSON{Revbumped: stealth.Revbumped, RevbumpProblem: stealth.RevbumpProblem, DistSubdir: stealth.DistSubdir, Problem: stealth.Problem, Distfiles: []stealthDistfileJSON{}}
+		viewed.Stealth = &stealthJSON{Revbumped: stealth.Revbumped, RevbumpProblem: stealth.RevbumpProblem, DistSubdir: stealth.DistSubdir, Problem: stealth.Problem, Unchanged: stealth.Unchanged, Differ: stealth.Differ, CompareProblem: stealth.CompareProblem, Distfiles: []stealthDistfileJSON{}}
 		for _, d := range stealth.Distfiles {
 			viewed.Stealth.Distfiles = append(viewed.Stealth.Distfiles, stealthDistfileJSON{Name: d.Name,
 				Was: checksumJSON{d.Was.RMD160, d.Was.SHA256, d.Was.Size}, Now: checksumJSON{d.Now.RMD160, d.Now.SHA256, d.Now.Size}})

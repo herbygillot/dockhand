@@ -1,13 +1,23 @@
 package portedit
 
 import (
+	"crypto/sha256"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // stealthPortfile declares checksums its served archive no longer matches:
@@ -182,4 +192,74 @@ func TestARefreshOfAHandEditedVersionWithTheOldCratesIsRefused(t *testing.T) {
 	require.NoError(t, staleVendored(asked("1.2.3", "serde 0.9.0 bbbb"), input, plan), "the crates were edited too")
 	require.NoError(t, staleVendored(asked("1.2.4", "serde 1.0.0 aaaa"), input, plan), "the version is the base's")
 	require.NoError(t, staleVendored(asked("1.2.3", "serde 1.0.0 aaaa"), input, nil), "no crates")
+}
+
+// stealthArchives is a stealth update whose archives are real: upstream
+// serves now, and MacPorts' mirror the one shipped, which the Portfile's
+// checksums declare, or none where shipped is empty.
+func stealthArchives(t *testing.T, shipped, now string) (*Service, Request) {
+	t.Helper()
+	executable := testsupport.MacPortsTclsh(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/1.2.3/fixture.tar.gz":
+			http.ServeFile(w, r, now)
+		case r.URL.Path == "/mirror/fixture/fixture.tar.gz" && shipped != "":
+			http.ServeFile(w, r, shipped)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	declared := now
+	if shipped != "" {
+		declared = shipped
+	}
+	data, err := os.ReadFile(declared)
+	require.NoError(t, err)
+	if shipped == "" {
+		data = append(data, '!')
+	}
+	sum := sha256.Sum256(data)
+	root := t.TempDir()
+	path := filepath.Join(root, "devel/fixture/Portfile")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	src := fmt.Sprintf("PortSystem 1.0\nname fixture\ncategories devel\nversion 1.2.3\nrevision 2\nmaster_sites %s/${version}\ndistfiles fixture.tar.gz\nchecksums sha256 %x size %d\n", server.URL, sum, len(data))
+	require.NoError(t, os.WriteFile(path, []byte(src), 0o600))
+	s := &Service{Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}, Archives: distfetch.Client{HTTP: server.Client(), Mirror: server.URL + "/mirror/"}}
+	r := Request{Action: model.EditChecksums, Source: model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}, Stealth: &StealthRequest{}}
+	return s, r
+}
+
+// A stealth update compares the archive with the one MacPorts shipped, from
+// its mirror: the same files under a renamed root, as gitea-tea's
+// regenerated archive was, get dist_subdir and no revbump, saying so; a
+// changed file is named and revbumps; and where the shipped archive can't
+// be had, it revbumps as before, saying it couldn't compare (the docs dig's
+// I19).
+func TestAStealthUpdateSaysWhetherTheContentsChanged(t *testing.T) {
+	t.Parallel()
+	shipped := testsupport.Tarball(t, "fixture-1.2.3", map[string]string{"src/main.c": "int main(void) { return 0; }\n", "README": "fixture\n"})
+	repackaged := testsupport.Tarball(t, "fixture-v1.2.3", map[string]string{"src/main.c": "int main(void) { return 0; }\n", "README": "fixture\n"})
+	s, r := stealthArchives(t, shipped, repackaged)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.NotNil(t, result.Stealth)
+	require.True(t, result.Stealth.Unchanged, "%+v", result.Stealth)
+	require.False(t, result.Stealth.Revbumped, "only the packaging differs")
+	require.Equal(t, "fixture/1.2.3_1", result.Stealth.DistSubdir, "numbered, since the revision stands")
+	require.Contains(t, string(result.Files[0].After), "revision 2")
+
+	changed := testsupport.Tarball(t, "fixture-1.2.3", map[string]string{"src/main.c": "int main(void) { return 1; }\n", "README": "fixture\n"})
+	s, r = stealthArchives(t, shipped, changed)
+	result, err = s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Equal(t, []string{"src/main.c"}, result.Stealth.Differ)
+	require.True(t, result.Stealth.Revbumped)
+
+	s, r = stealthArchives(t, "", changed)
+	result, err = s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Contains(t, result.Stealth.CompareProblem, "the archive MacPorts shipped couldn't be fetched")
+	require.True(t, result.Stealth.Revbumped, "as before")
 }

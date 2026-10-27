@@ -570,12 +570,26 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		if stealth.Problem != "" {
 			fmt.Fprintf(out, "! dist_subdir was not set: %s. Set it yourself, so mirrors keep both archives: dist_subdir ${name}/${version}_${revision} with a revision bump, else ${name}/${version}_1\n", stealth.Problem)
 		}
-		if stealth.Revbumped {
+		// What the comparison with the archive MacPorts shipped found
+		// decided the revision (the docs dig's I19).
+		switch {
+		case stealth.Unchanged:
+			fmt.Fprintln(out, "Its contents are unchanged; only the archive's packaging differs, so the revision was not bumped.")
+		case len(stealth.Differ) > 0:
+			fmt.Fprintf(out, "Its contents changed: %s.\n", prose.Few(stealth.Differ, 5, "file"))
+		case stealth.CompareProblem != "":
+			fmt.Fprintf(out, "! Could not compare it with the archive MacPorts shipped: %s.\n", stealth.CompareProblem)
+		}
+		switch {
+		case stealth.Unchanged:
+		case stealth.Revbumped:
 			fmt.Fprintln(out, "Bumped the revision because the source changed. Use --no-revbump only if the change needs no rebuild.")
-		} else if stealth.RevbumpProblem == "" {
+		case stealth.RevbumpProblem == "":
 			fmt.Fprintln(out, "Inspect the source change before deciding whether it needs a revision bump.")
 		}
-		fmt.Fprintln(out, "dockhand diff --source shows what changed inside the archive.")
+		if !stealth.Unchanged {
+			fmt.Fprintln(out, "dockhand diff --source shows what changed inside the archive.")
+		}
 	}
 	if update.DistSubdirRemoved {
 		fmt.Fprintln(out, "Removed "+distSubdirRemoved)
