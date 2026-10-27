@@ -362,3 +362,15 @@ func TestNothingUnattendedChecksAnAdoptedPullRequest(t *testing.T) {
 	_, err := e.ProposeCheck(Unattended(t.Context()), CheckRequest{Capture: CaptureRequest{Branch: branch}})
 	require.ErrorContains(t, err, "assessed holds @alice's Portfiles, which nothing unattended evaluates on this Mac; check it yourself, as dockhand check assessed does")
 }
+
+// Ship's work is unattended as dockhand reads it everywhere, where nobody
+// was asked or --yes answered, and a person's asked ship is attended; a
+// command with no terminal is a person's (the trust rule's reading, the
+// prioritization thread's ruling, 2026-10-27).
+func TestShipIsUnattendedWhereNobodyLooks(t *testing.T) {
+	t.Parallel()
+	require.True(t, unattended(shipOptions{Answered: model.AnsweredYes}.within(t.Context())))
+	require.True(t, unattended(shipOptions{Answered: model.AnsweredNobody}.within(t.Context())))
+	require.False(t, unattended(shipOptions{Answered: model.AnsweredAsked}.within(t.Context())))
+	require.False(t, unattended(t.Context()), "nothing marks a command unattended for having no terminal")
+}

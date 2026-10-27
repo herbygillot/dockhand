@@ -6,6 +6,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -21,9 +22,12 @@ import (
 
 type unattendedKey struct{}
 
-// Unattended marks the work under ctx as a command nobody watches,
-// serve's, or one run with nobody there to ask or with --yes: none of it
-// evaluates on this Mac a Portfile the person didn't author.
+// Unattended marks the work under ctx as a command nobody watches, as
+// dockhand reads it everywhere: serve's loop, and ship or bump with
+// nobody asked or --yes. None of it evaluates on this Mac a Portfile the
+// person didn't author. A command with no terminal is a person's, an
+// agent's at their word, which says it as any attended command does (the
+// prioritization thread's ruling, 2026-10-27).
 func Unattended(ctx context.Context) context.Context {
 	return context.WithValue(ctx, unattendedKey{}, true)
 }
@@ -60,6 +64,17 @@ func (e *Engine) mayEvaluate(ctx context.Context, branch model.Branch, step stri
 		return true
 	}
 	return e.mayEvaluateOthers(ctx, whose, branch.ShortName(), branch.ID, step)
+}
+
+// MayCheck refuses a check of a branch the work under ctx may not plan,
+// since planning evaluates its Portfiles on this Mac: another's,
+// unattended (mayEvaluate). The refusal says how a person checks it.
+func (e *Engine) MayCheck(ctx context.Context, branch model.Branch) error {
+	if e.mayEvaluate(ctx, branch, "check") {
+		return nil
+	}
+	whose, _ := OthersPortfiles(branch)
+	return refusal.New(refusal.Attention, "%s holds %s Portfiles, which nothing unattended evaluates on this Mac; check it yourself, as dockhand check %s does", branch.ShortName(), whose, branch.ShortName())
 }
 
 // mayEvaluateOthers is mayEvaluate for Portfiles whose they are, of what,
