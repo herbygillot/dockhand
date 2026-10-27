@@ -133,3 +133,19 @@ func TestAnAcceptedFailureGoesOnAsAPass(t *testing.T) {
 	require.Equal(t, "check-3's failures are accepted; waiting for you to submit", rows[0].Words(words{}))
 	require.Equal(t, SubmitReady, SubmitReadiness(facts))
 }
+
+// After an amend, the files' missing pass names where the latest check
+// built, and its Next checks there, where it suggested build.default's
+// platforms after a pass on two releases (field testing's outdated-ports
+// session).
+func TestAnAmendNamesWhereItsPassWas(t *testing.T) {
+	passed := &model.Run{Number: 12, State: model.RunPassed}
+	branch := Branch{Record: model.Branch{Name: "dockhand/jq-1.8.2", State: model.BranchOpen}, Revision: &model.Revision{Kind: model.RevisionCommit},
+		CheckOn: []string{"tart:sonoma,tahoe"}}
+	plan := model.Plan{Environments: []model.Environment{{Provider: "macOS 14"}, {Provider: "macOS 26"}}}
+	rows := Attend(Facts{Branch: branch, Check: Check{Latest: passed, Current: false, Evidence: &evidence.Evidence{Plan: plan}}})
+	require.Len(t, rows, 1)
+	require.Equal(t, FilesChangedSince, rows[0].Reason)
+	require.Equal(t, "snapshot 1 passed on macOS 14 and macOS 26; the files have changed since, with no check there", rows[0].Words(words{}))
+	require.Equal(t, Next{Verb: VerbCheck, Branch: "jq-1.8.2", Args: []string{"--on", "tart:sonoma,tahoe"}}, rows[0].Next)
+}

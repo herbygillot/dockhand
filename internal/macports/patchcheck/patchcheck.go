@@ -201,6 +201,15 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 			return nil, err
 		}
 		results[i].Detail = describe(output.Output)
+		// A file the patch targets that the source doesn't have is named,
+		// where patch's "No file to patch" said none, as hashcat 8.0's
+		// lacks bridge_python_generic_hash_mp.c (field testing's
+		// outdated-ports session).
+		if strings.Contains(results[i].Detail, "No file to patch") || strings.Contains(results[i].Detail, "can't find file") {
+			if missing := absent(dir, targets(contents[i], strip)); len(missing) > 0 {
+				results[i].Detail = "the source has no " + strings.Join(missing, ", ") + ", which it patches"
+			}
+		}
 		// One the source already holds applies in reverse, every hunk:
 		// upstream merged it, and the port can drop it.
 		reverse := append([]string{flag, "-t", "-R", "-p" + strconv.Itoa(strip)}, extra...)
@@ -407,6 +416,17 @@ func checkFlag(ctx context.Context, command string) (string, error) {
 		}
 	})
 	return flagName, flagErr
+}
+
+// absent are the files of names a directory doesn't have.
+func absent(dir string, names []string) []string {
+	var missing []string
+	for _, name := range names {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(name))); errors.Is(err, os.ErrNotExist) && !slices.Contains(missing, name) {
+			missing = append(missing, name)
+		}
+	}
+	return missing
 }
 
 func describe(output []byte) string {

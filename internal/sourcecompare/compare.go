@@ -394,6 +394,9 @@ func licenseWords(change Change, old, now []byte) string {
 	case was.Known() && is.Known() && drops:
 		return fmt.Sprintf("is still %s by its text, and only drops text beside it, %s", is, dropped)
 	case was.Known() && is.Known():
+		if said, ok := linesAdded(old, now); ok {
+			return fmt.Sprintf("is still %s by its text, with %s", is, said)
+		}
 		return fmt.Sprintf("is still %s by its text, and changed beside it", is)
 	case was.Known() && was.Same(is):
 		// The licenses are the ones it had, and less of the text is theirs:
@@ -402,6 +405,12 @@ func licenseWords(change Change, old, now []byte) string {
 		// ruling, 2026-10-19).
 		if added := addedTerms(old, is); added != "" {
 			return fmt.Sprintf("is still %s by what its text matches, and adds terms no license that's known has: %q", is, added)
+		}
+		// Lines added alone are said by their count and the first, where
+		// "they cover less of it, 73% of its words" said nothing of what
+		// changed (field testing's outdated-ports session).
+		if said, ok := linesAdded(old, now); ok {
+			return fmt.Sprintf("is still %s by what its text matches, with %s", is, said)
 		}
 		return fmt.Sprintf("is still %s by what its text matches, and they cover less of it, %.0f%% of its words", is, is.Percent)
 	case was.Known():
@@ -417,6 +426,52 @@ func licenseWords(change Change, old, now []byte) string {
 // addedTerms is the first line of the terms a license file's new text has
 // beside its licenses (project.LicenseText.Terms) that the old text
 // didn't, as a quote. Empty where there's none.
+// linesAdded says a text's lines added, where it only adds: "2 lines
+// added, none removed, the first \"…\"".
+func linesAdded(old, now []byte) (string, bool) {
+	added, first, removed := lineChanges(old, now)
+	if added == 0 || removed > 0 {
+		return "", false
+	}
+	lines := "lines"
+	if added == 1 {
+		lines = "line"
+	}
+	return fmt.Sprintf("%d %s added, none removed, the first %q", added, lines, first), true
+}
+
+// lineChanges count the non-blank lines one text has that the other
+// doesn't, each way, with the first added.
+func lineChanges(old, now []byte) (added int, first string, removed int) {
+	count := func(text []byte) map[string]int {
+		lines := map[string]int{}
+		for _, line := range strings.Split(string(text), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				lines[line]++
+			}
+		}
+		return lines
+	}
+	had, has := count(old), count(now)
+	for line, n := range had {
+		removed += max(0, n-has[line])
+	}
+	extra := map[string]int{}
+	for line, n := range has {
+		extra[line] = max(0, n-had[line])
+	}
+	for _, line := range strings.Split(string(now), "\n") {
+		if line = strings.TrimSpace(line); extra[line] > 0 {
+			if added == 0 {
+				first = line
+			}
+			added++
+			extra[line]--
+		}
+	}
+	return added, first, removed
+}
+
 func addedTerms(old []byte, now project.LicenseText) string {
 	had := map[string]bool{}
 	for _, line := range strings.Split(string(old), "\n") {

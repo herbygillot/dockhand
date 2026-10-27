@@ -95,7 +95,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# more\n"), 0o644))
 	out, _, err = cmdtest.Dockhand(t, "status", "--attention")
 	require.Equal(t, 3, term.ExitCode(err), "attention needed exits 3")
-	require.Equal(t, "  ! jq-update  snapshot 1 passed; the files have changed since\n               dockhand check --branch jq-update\n", out)
+	require.Equal(t, "  ! jq-update  snapshot 1 passed on command; the files have changed since, with no check there\n               dockhand check --branch jq-update --on command\n", out)
 
 	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
 	_, _, err = cmdtest.Dockhand(t, "tidy")

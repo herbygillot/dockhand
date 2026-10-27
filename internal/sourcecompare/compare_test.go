@@ -571,3 +571,17 @@ func TestALicensesRenamedPartyIsSaid(t *testing.T) {
 	_, _, _, ok := partyOnly([]byte("Copyright Ada\nMIT terms here.\n"), []byte("Copyright Ada\nMIT terms here, and more.\n"))
 	require.False(t, ok, "an added term, no party")
 }
+
+// A license file whose licenses stand, with lines added and none removed,
+// says how many and quotes the first, where "they cover less of it, 73% of
+// its words" said nothing of what changed (field testing's outdated-ports
+// session).
+func TestALicenseWithLinesAddedSaysThem(t *testing.T) {
+	mit := "Copyright (c) 2020 Ann Author\n\n" + testsupport.MITText
+	added := mit + "\nThe bundled third_party/ directory keeps its own notices.\nSee third_party/README for them.\n"
+	changes, err := compareArchives(t, testsupport.Tarball(t, "demo-1", map[string]string{"LICENSE": mit}),
+		testsupport.Tarball(t, "demo-2", map[string]string{"LICENSE": added}), Versions{})
+	require.NoError(t, err)
+	require.Len(t, changes, 1)
+	require.Equal(t, `upstream's LICENSE is still MIT by its text, with 2 lines added, none removed, the first "The bundled third_party/ directory keeps its own notices."`, changes[0].Message)
+}
