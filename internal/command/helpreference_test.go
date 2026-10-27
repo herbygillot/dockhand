@@ -135,6 +135,11 @@ func sourceLiterals(t *testing.T) map[string]string {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
 		}
+		// The removed flags' words name the flags they replace, which
+		// exist no longer by design (removedFlags).
+		if filepath.ToSlash(path) == "../../internal/command/removed.go" {
+			return nil
+		}
 		files := token.NewFileSet()
 		file, err := parser.ParseFile(files, path, nil, 0)
 		if err != nil {

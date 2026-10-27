@@ -63,7 +63,7 @@ func TestBumpPassesSubmitsWordsOn(t *testing.T) {
 	require.Contains(t, g.PRs[34901].Body, "[skip notification]")
 
 	_, _, err = cmdtest.Dockhand(t, "update", "jq", "--title", "x")
-	require.ErrorContains(t, err, "unknown flag: --title", "update is the edit alone")
+	require.ErrorContains(t, err, "update --title is gone: update edits alone", "update is the edit alone")
 }
 
 // What would stop bump before the edit stops it with nothing changed.

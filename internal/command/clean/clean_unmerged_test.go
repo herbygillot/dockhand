@@ -138,7 +138,7 @@ func TestArchiveAsksCommitOrDiscard(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "clean", "--merged=false")
 	require.ErrorContains(t, err, "nothing to clean: --merged or --closed names what")
 	_, _, err = cmdtest.Dockhand(t, "clean", "--legacy")
-	require.ErrorContains(t, err, "unknown flag: --legacy", "bridge 1 is gone")
+	require.ErrorContains(t, err, "clean --legacy is gone, and nothing replaced it", "bridge 1 is gone")
 }
 
 // clean --delete forgets an archived branch: its Git branch, with the

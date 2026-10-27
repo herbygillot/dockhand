@@ -305,6 +305,7 @@ func TestBuildProfiles(t *testing.T) {
 
 	for text, refusal := range map[string]string{
 		"[check]\non = [\"tart\"]\n":                                               "check.on is gone: build.default names a build profile",
+		"[providers.tart]\ncapacity = 2\n":                                         "providers.tart.capacity is gone: Tart takes as many checks as the Mac runs VMs",
 		"[build]\ndefault = \"elsewhere\"\n":                                       `build.default: "elsewhere" names no profile`,
 		"[build.profiles]\nhost = { releases = [\"15\"] }\n":                       "host is dockhand's own profile",
 		"[build.profiles]\nbox = { provider = \"vm\" }\n":                          `"vm" is not tart, github, or command`,
