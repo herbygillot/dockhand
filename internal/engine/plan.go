@@ -208,7 +208,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	// candidates are every port some environment defined, as the branch
 	// sees it, in the order the scope and --also name them.
 	var candidates []model.PlanTarget
-	add := func(directory string, kind model.TargetKind, role model.TargetRole) {
+	add := func(directory string, kind model.TargetKind, role model.TargetRole, added bool) {
 		for e, environment := range plan.Environments {
 			ports, err := reader.Ports(ctx, revision.Source, directory, environment, nil)
 			if err != nil {
@@ -230,7 +230,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 					return
 				}
 				if !slices.ContainsFunc(candidates, func(c model.PlanTarget) bool { return c.ID == id }) {
-					candidates = append(candidates, model.PlanTarget{ID: id, Target: target, Directory: directory, Kind: kind, Role: role})
+					candidates = append(candidates, model.PlanTarget{ID: id, Target: target, Directory: directory, Kind: kind, Role: role, Added: added})
 				}
 				evaluations[e][id], infos[e][id] = evaluated, port
 			}
@@ -241,7 +241,12 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		if err != nil {
 			return plan, err
 		}
-		add(directory, kind, model.Changed)
+		// A port whose Portfile the base hasn't is one the branch adds,
+		// which lint checks with --nitpick (the docs dig's I13); one the
+		// base can't be read for is taken as not added, as targetKind
+		// takes it as substantive.
+		before, _, err := e.Repo.File(ctx, baseTree, directory+"/Portfile")
+		add(directory, kind, model.Changed, err == nil && !before.Exists)
 	}
 	// A directory is evaluated once, however many of its ports are named:
 	// twice would count its exclusions twice.
@@ -260,7 +265,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 			continue
 		}
 		also = append(also, directory)
-		add(directory, model.Unchanged, model.Also)
+		add(directory, model.Unchanged, model.Also, false)
 	}
 	if len(plan.Unresolved) > 0 {
 		return plan, nil

@@ -44,6 +44,9 @@ const (
 	// BlockNotAccepted is a failed extra or revision-only target not yet
 	// accepted.
 	BlockNotAccepted BlockKind = "not-accepted"
+	// BlockLint is a port the branch adds that lint warned of, not yet
+	// accepted (the docs dig's I13).
+	BlockLint BlockKind = "lint"
 	// BlockOthersPushed is someone else's push to the pull request since
 	// dockhand's.
 	BlockOthersPushed BlockKind = "others-pushed"
@@ -77,6 +80,8 @@ type Block struct {
 	Unbuilt   []Place
 	Baselines []string
 	Planned   model.PlanTarget
+	// Lint are what lint warned of, for BlockLint.
+	Lint []string
 	// Path and Marks are a Portfile and the guesses it still marks, for
 	// BlockUnconfirmed; Mark the line that marks them.
 	Path  string
@@ -145,6 +150,8 @@ func (b Block) Words(v Vocabulary) string {
 		return fmt.Sprintf("%s did not pass in %s. Fix the failure, submit a draft with --draft, or run dockhand check --baseline to see whether master fails in the same way", b.Port, b.Run)
 	case BlockNotAccepted:
 		return fmt.Sprintf("%s (%s) did not pass in %s. If the failure was not caused by this branch, acknowledge it with --accept %s", b.Port, kindWords(b.Planned), b.Run, b.Port)
+	case BlockLint:
+		return fmt.Sprintf("%s is a new port, and lint --nitpick warned in %s: %s. Fix %s and check again, or take %s with --accept %s", b.Port, b.Run, strings.Join(b.Lint, "; "), map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], b.Port)
 	case BlockOthersPushed:
 		p := b.Pushed
 		return fmt.Sprintf("someone else pushed to #%d. The remote is at %s; Dockhand last pushed %s. Fetch it with git fetch %s %s and compare the changes, then incorporate it into your branch, for example with git merge %s, before submitting; Dockhand will not push over it",

@@ -51,6 +51,9 @@ type PlanTarget struct {
 	Directory string
 	Kind      TargetKind
 	Role      TargetRole
+	// Added is a port whose Portfile the branch adds: lint checks it with
+	// --nitpick, and its warnings hold submit (the docs dig's I13).
+	Added bool `json:",omitempty"`
 }
 
 // Exclusion is a port a plan doesn't build in one environment, and needn't

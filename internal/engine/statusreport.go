@@ -34,6 +34,9 @@ type StatusReport struct {
 	// declare, by the check; a check whose links couldn't be read has
 	// none.
 	Links map[model.RunID][]LinkFinding
+	// Lint are what lint warned of in each branch's latest check, for the
+	// branches status details (the docs dig's I13).
+	Lint map[model.RunID][]LintFinding
 	// Installed are what each such check's builds installed and configure
 	// found against the port's earlier build (InstallChanges), by the
 	// check, for the branches named alone.
@@ -75,7 +78,7 @@ func (e *Engine) StatusReport(ctx context.Context, session *coord.Session, reque
 	if err := e.JudgeStopped(ctx, session, report.Statuses); err != nil {
 		return report, err
 	}
-	report.Links, report.Installed, report.Instructions = map[model.RunID][]LinkFinding{}, map[model.RunID][]InstallFinding{}, map[model.BranchID][]string{}
+	report.Links, report.Installed, report.Instructions, report.Lint = map[model.RunID][]LinkFinding{}, map[model.RunID][]InstallFinding{}, map[model.BranchID][]string{}, map[model.RunID][]LintFinding{}
 	for _, status := range report.Statuses {
 		if len(request.Branches) > 0 && !status.Missing && status.Tree != "" {
 			for _, directory := range status.Scope.Ports {
@@ -91,6 +94,9 @@ func (e *Engine) StatusReport(ctx context.Context, session *coord.Session, reque
 		if len(request.Branches) > 0 && status.Latest != nil && !status.Cleaned() {
 			if links, err := e.UndeclaredLinks(ctx, *status.Latest); err == nil {
 				report.Links[status.Latest.ID] = links
+			}
+			if checked, err := e.RunEvidence(ctx, status.Latest.ID); err == nil {
+				report.Lint[status.Latest.ID] = LintFindings(checked)
 			}
 			if installed, err := e.InstallChanges(ctx, *status.Latest, false); err == nil {
 				report.Installed[status.Latest.ID] = installed

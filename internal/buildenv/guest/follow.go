@@ -157,6 +157,9 @@ type Target struct {
 	Git *Git `json:"git,omitempty"`
 	// Log is the name of its log, by its target (logName).
 	Log string `json:"log"`
+	// Added is a port the branch adds, which lint checks with --nitpick
+	// (the docs dig's I13).
+	Added bool `json:"added,omitempty"`
 }
 
 // Git is what a Git-fetched target's fetch must check out (batch 20):
@@ -229,6 +232,10 @@ type Result struct {
 	// Configure are its configure phase's summary lines, as its log said
 	// them (Then's item 10); absent where they weren't read.
 	Configure []string `json:"configure"`
+	// Lint is what lint warned of, and Nitpick says it ran with
+	// --nitpick (the docs dig's I13); Lint is absent where it wasn't read.
+	Lint    []string `json:"lint"`
+	Nitpick bool     `json:"nitpick"`
 }
 
 // Library is one of a target's own dynamic libraries: its file, its
@@ -274,7 +281,7 @@ func Targets(job buildenv.Job, build buildenv.Build) []Target {
 		if target.Target.Subport != "" {
 			name = target.Target.Subport
 		}
-		t := Target{ID: string(target.ID), Name: name, Portfile: target.Target.Portfile, Variants: target.Target.Variants, Log: buildenv.LogName(target.ID)}
+		t := Target{ID: string(target.ID), Name: name, Portfile: target.Target.Portfile, Variants: target.Target.Variants, Log: buildenv.LogName(target.ID), Added: target.Added}
 		for _, dependency := range target.DependsOn {
 			t.DependsOn = append(t.DependsOn, string(dependency))
 		}
@@ -558,6 +565,10 @@ func (f *Follower) record(ctx context.Context, g Guest, job buildenv.Job, build 
 	if result.Outcome != model.OutcomeFailed {
 		result.Phase = ""
 	}
+	if got.Lint != nil {
+		result.Lint = slices.Clone(got.Lint)
+	}
+	result.Nitpicked = got.Nitpick
 	if result.Phase == model.PhaseDependencies {
 		result.Dependency = model.FailedDependency{Name: got.Dependency, Version: got.DependencyVersion}
 	}

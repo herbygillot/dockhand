@@ -12,8 +12,9 @@ import (
 )
 
 // AcceptanceProblem is why a port submit --accept names can't be
-// accepted: it wasn't checked, it passed, no check of these files built
-// it, or it's a changed port, whose failure is shared as a draft. A port
+// accepted: it wasn't checked, it passed with nothing lint warned of a new
+// port, no check of these files built it, or it's a changed port, whose
+// failure is shared as a draft. A port
 // may have several builds, its variant builds beside its default one: the
 // one to accept is one that failed.
 func AcceptanceProblem(ev evidence.Evidence, accept []string, atBase map[string][]string, standing bool) error {
@@ -25,6 +26,9 @@ func AcceptanceProblem(ev evidence.Evidence, accept []string, atBase map[string]
 		switch {
 		case i < 0:
 			return fmt.Errorf("--accept %s: %s did not check this port", port, ev.Run.Name())
+		case ev.Targets[i].Passed && ev.Targets[i].LintHolds() && !standing:
+			// A new port's lint warnings, which --accept takes (the docs
+			// dig's I13).
 		case ev.Targets[i].Passed:
 			return fmt.Errorf("--accept %s: this port passed in %s; there is no failure to accept", port, ev.Run.Name())
 		case ev.Targets[i].Missing() || !ev.Targets[i].Failing():
@@ -77,6 +81,34 @@ func PublicationBlocks(ev evidence.Evidence, accepted []string, atBase map[strin
 		case !slices.Contains(accepted, name):
 			blocks = append(blocks, Block{Kind: BlockNotAccepted, Port: name, Run: run, Planned: target.Target})
 		}
+	}
+	return append(blocks, LintBlocks(ev, accepted)...)
+}
+
+// LintBlocks are the ports the branch adds that lint warned of and a
+// person hasn't accepted at this commit, each a block with what lint said
+// once: a new port has no baseline, so its warnings count as ✗, its build
+// answering all the same (the docs dig's I13). A port that failed is
+// refused for its failure first.
+func LintBlocks(ev evidence.Evidence, accepted []string) []Block {
+	var blocks []Block
+	for _, finding := range evidence.LintFindings(ev) {
+		if !finding.Holds || slices.Contains(accepted, finding.Port) {
+			continue
+		}
+		i := slices.IndexFunc(ev.Targets, func(t evidence.TargetEvidence) bool { return t.Target.ID == finding.Target })
+		if ev.Targets[i].Failing() {
+			continue
+		}
+		if j := slices.IndexFunc(blocks, func(b Block) bool { return b.Port == finding.Port }); j >= 0 {
+			for _, line := range finding.Lines {
+				if !slices.Contains(blocks[j].Lint, line) {
+					blocks[j].Lint = append(blocks[j].Lint, line)
+				}
+			}
+			continue
+		}
+		blocks = append(blocks, Block{Kind: BlockLint, Port: finding.Port, Run: ev.Run.Name(), Lint: slices.Clone(finding.Lines)})
 	}
 	return blocks
 }

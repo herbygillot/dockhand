@@ -19,7 +19,7 @@ import (
 // support; a runner that stopped before listing, or never reached it,
 // leaves no verdict yet.
 func TestAPortsVerdictIsItsRunnersTogether(t *testing.T) {
-	passed := map[string]*cilog.Built{"jq": {Listed: true, Installing: true, Installed: true, Tested: true}}
+	passed := map[string]*cilog.Built{"jq": {Listed: true, Installing: true, Installed: true, Tested: true, LintWarnings: []string{"no license set"}}}
 	failed := map[string]*cilog.Built{"jq": {Listed: true, Installing: true, Installed: true, Install: true}}
 	unreached := map[string]*cilog.Built{"jq": {Listed: true}}
 	elsewhere := map[string]*cilog.Built{"harbor": {Listed: true, Installing: true, Installed: true}}
@@ -30,7 +30,7 @@ func TestAPortsVerdictIsItsRunnersTogether(t *testing.T) {
 
 	result, ok := verdict("jq", []runner{on("macos-14", "14.log", passed), on("macos-15", "15.log", failed)})
 	require.True(t, ok)
-	require.Equal(t, model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, Tests: model.TestsNone, Log: "15.log", Detail: "on macos-15",
+	require.Equal(t, model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, Tests: model.TestsNone, Log: "15.log", Detail: "on macos-15", Lint: []string{"no license set"},
 		Builders: []model.BuilderResult{
 			{Builder: "macos-14", Outcome: model.OutcomePassed, Tests: model.TestsPassed, Log: "14.log"},
 			{Builder: "macos-15", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, Tests: model.TestsNone, Log: "15.log"},
@@ -42,6 +42,8 @@ func TestAPortsVerdictIsItsRunnersTogether(t *testing.T) {
 	require.Equal(t, model.TestsPassed, result.Tests)
 	require.Equal(t, "14.log", result.Log)
 	require.Len(t, result.Builders, 2)
+	require.Equal(t, []string{"no license set"}, result.Lint, "what lint warned of on any runner, once (the docs dig's I13)")
+	require.False(t, result.Nitpicked, "the workflow lints without --nitpick")
 
 	result, ok = verdict("jq", []runner{on("macos-14", "14.log", elsewhere), on("macos-15", "15.log", passed)})
 	require.True(t, ok, "a runner that listed the subports without it didn't build it")

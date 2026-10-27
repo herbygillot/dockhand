@@ -39,7 +39,8 @@ type Check struct {
 func (c Check) Publishable() bool {
 	switch c.Standing() {
 	case CheckPassed:
-		return c.Evidence != nil
+		// A new port lint warned of waits for its acceptance (LintBlocks).
+		return c.Evidence != nil && len(LintBlocks(*c.Evidence, c.Accepted)) == 0
 	case CheckFailed:
 		return c.Evidence != nil && len(PublicationBlocks(*c.Evidence, c.Accepted, c.AtBase, StandingAccepted(*c.Evidence, c.Decisions))) == 0
 	}

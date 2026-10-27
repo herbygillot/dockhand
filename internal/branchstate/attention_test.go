@@ -177,3 +177,44 @@ func TestAnAmendNamesWhereItsPassWas(t *testing.T) {
 	require.Equal(t, "snapshot 1 passed on macOS 14 and macOS 26; the files have changed since, with no check there", rows[0].Words(words{}))
 	require.Equal(t, Next{Verb: VerbCheck, Branch: "jq-1.8.2", Args: []string{"--on", "tart:sonoma,tahoe"}}, rows[0].Next)
 }
+
+// A new port lint warned of counts as ✗: its check passed, yet submit
+// refuses it until it's fixed or accepted for this commit, and status asks
+// for that; an update's warnings hold nothing (the docs dig's I13).
+func TestANewPortsLintWarningsHoldUntilAccepted(t *testing.T) {
+	passed := &model.Run{Number: 4, State: model.RunPassed}
+	branch := Branch{Record: model.Branch{Name: "dockhand/harbor-1.0", State: model.BranchOpen}, Commits: 1, Revision: &model.Revision{Kind: model.RevisionCommit}}
+	environment := model.Environment{Provider: "tart"}
+	harbor := evidence.TargetEvidence{Target: model.PlanTarget{ID: "harbor", Target: model.Target{Name: "harbor"}, Kind: model.Substantive, Role: model.Changed, Added: true}, Passed: true,
+		Outcomes: []evidence.Cell{{TargetResult: model.TargetResult{Outcome: model.OutcomePassed, Lint: []string{"Line 3 has trailing whitespace"}, Nitpicked: true}, Kind: evidence.CellRecorded, Environment: environment}}}
+	ev := evidence.Evidence{Run: *passed, Plan: model.Plan{Environments: []model.Environment{environment}}, Targets: []evidence.TargetEvidence{harbor}}
+	check := Check{Latest: passed, Current: true, Evidence: &ev}
+	facts := Facts{Branch: branch, Check: check}
+	require.Equal(t, CheckPassed, check.Standing())
+	require.False(t, check.Publishable())
+	blocks := PublicationBlocks(ev, nil, nil, nil)
+	require.Equal(t, []Block{{Kind: BlockLint, Port: "harbor", Run: "check-4", Lint: []string{"Line 3 has trailing whitespace"}}}, blocks)
+	require.Equal(t, "harbor is a new port, and lint --nitpick warned in check-4: Line 3 has trailing whitespace. Fix it and check again, or take it with --accept harbor", blocks[0].Words(words{}))
+	rows := Attend(facts)
+	require.Equal(t, LintWarned, rows[0].Reason)
+	require.Equal(t, Next{Verb: VerbSubmit, Branch: "harbor-1.0", Args: []string{"--accept", "harbor"}}, rows[0].Next)
+	require.Equal(t, "check-4 passed, but lint --nitpick warned of the new port harbor. Fix what it says (dockhand status harbor-1.0), or accept it for submission", rows[0].Words(words{}))
+
+	require.NoError(t, AcceptanceProblem(ev, []string{"harbor"}, nil, false), "--accept takes a passed new port's warnings")
+	require.Empty(t, PublicationBlocks(ev, []string{"harbor"}, nil, nil))
+	facts.Check.Accepted = []string{"harbor"}
+	require.True(t, facts.Check.Publishable())
+	require.Equal(t, WaitingToSubmit, Attend(facts)[0].Reason)
+
+	// An update's are notices, which hold nothing, and --accept has no
+	// failure of it to take.
+	ev.Targets[0].Target.Added = false
+	require.Empty(t, PublicationBlocks(ev, nil, nil, nil))
+	require.Error(t, AcceptanceProblem(ev, []string{"harbor"}, nil, false))
+	require.Equal(t, []evidence.LintFinding{{Target: "harbor", Port: "harbor", Environment: environment, Lines: []string{"Line 3 has trailing whitespace"}}}, evidence.LintFindings(ev))
+
+	// A new port linted without --nitpick, as on GitHub, says so.
+	ev.Targets[0].Target.Added, ev.Targets[0].Outcomes[0].Lint, ev.Targets[0].Outcomes[0].Nitpicked = true, []string{}, false
+	require.Equal(t, []evidence.LintFinding{{Target: "harbor", Port: "harbor", Environment: environment, Lines: []string{}, NotNitpicked: true}}, evidence.LintFindings(ev))
+	require.Empty(t, PublicationBlocks(ev, nil, nil, nil))
+}

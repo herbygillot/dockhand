@@ -374,6 +374,7 @@ func TestExecutionsAndCheckpoints(t *testing.T) {
 	}
 	passed := result("libharbor", model.OutcomePassed, "")
 	passed.Links = []model.Link{{Binary: "/opt/local/bin/harbor", Library: "/opt/local/lib/libz.1.dylib", Port: "zlib"}}
+	passed.Lint, passed.Nitpicked = []string{"Line 3 has trailing whitespace"}, true
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(passed) }))
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(result("harbor-cli", model.OutcomeNotRun, "")) }))
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(result("harbor-cli", model.OutcomeInterrupted, "")) }))
@@ -406,6 +407,8 @@ func TestExecutionsAndCheckpoints(t *testing.T) {
 		for _, got := range results {
 			if got.Target == "libharbor" {
 				require.Equal(t, passed.Links, got.Links, "what its binaries link")
+				require.Equal(t, passed.Lint, got.Lint, "what lint warned of (schema 48)")
+				require.True(t, got.Nitpicked)
 			} else {
 				require.Nil(t, got.Links, "not read is nil, never none (schema 39)")
 			}

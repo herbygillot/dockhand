@@ -127,8 +127,8 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 	require.Equal(t, "finished", results.State, results.Detail)
 	steps := []Step{{"clean", 1}, {"lint", 2}, {"dependencies", 3}, {"fetch", 4}, {"checksum", 5}, {"install", 6}}
 	require.Equal(t, []Result{
-		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "libharbor.log", Active: []Port{}, Configure: []string{}, Steps: append(slices.Clone(steps), Step{"test", 7})},
-		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log", Active: []Port{}, Configure: []string{}, Steps: steps},
+		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "libharbor.log", Active: []Port{}, Configure: []string{}, Lint: []string{}, Steps: append(slices.Clone(steps), Step{"test", 7})},
+		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log", Active: []Port{}, Configure: []string{}, Lint: []string{}, Steps: steps},
 	}, results.Targets)
 	// The guest says what uname -m says, here the Mac running the test's.
 	require.Equal(t, map[string]string{"arm64": "arm64", "amd64": "x86_64"}[runtime.GOARCH], results.Environment["architecture"])
@@ -730,4 +730,28 @@ func TestAPassedBuildKeepsWhatItInstalledAndItsLibrariesNames(t *testing.T) {
 	require.Equal(t, []string{tool, library}, results.Targets[0].Installed)
 	require.Equal(t, []string{"checking for icu-uc... yes", "-- Found ZLIB", "-- Could NOT find LibArchive", "Dependency libxml-2.0 found: YES"}, results.Targets[0].Configure, "each once, as found and not where")
 	require.Equal(t, []Library{{File: library, Name: library, Compatibility: "28.0.0"}}, results.Targets[0].Libraries)
+}
+
+// A port the branch adds is linted with --nitpick, and each target keeps
+// what lint warned of, which a passed lint said and went on past (the docs
+// dig's I13).
+func TestLintsWarningsAreKeptAndANewPortIsNitpicked(t *testing.T) {
+	t.Parallel()
+	input := twoTargets("declared")
+	input.Targets[1].Added = true
+	results, commands := guestRun(t, input, "LINTSAYS=Warning: Line 3 has trailing whitespace")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, []string{"Line 3 has trailing whitespace"}, results.Targets[0].Lint)
+	require.False(t, results.Targets[0].Nitpick)
+	require.Equal(t, "passed", results.Targets[1].Outcome, "a warning fails nothing")
+	require.True(t, results.Targets[1].Nitpick)
+	var linted []string
+	for _, command := range commands {
+		if strings.Contains(command, " lint ") {
+			linted = append(linted, command)
+		}
+	}
+	require.Len(t, linted, 2)
+	require.NotContains(t, linted[0], "--nitpick")
+	require.Contains(t, linted[1], "lint --nitpick")
 }

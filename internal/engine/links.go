@@ -16,6 +16,9 @@ import (
 // to word.
 type LinkFinding = evidence.LinkFinding
 
+// LintFinding is evidence's (evidence.LintFinding), for the command line.
+type LintFinding = evidence.LintFinding
+
 // UndeclaredLinks are what a check's passed builds link that their ports
 // don't declare in depends_lib (v0.5.0 part 6), the rule evidence's
 // (evidence.UndeclaredLinks): this gathers its results' links, from the
@@ -100,3 +103,7 @@ func builtPort(target model.Target) string {
 	}
 	return target.Name
 }
+
+// LintFindings are what lint warned of in a check's evidence
+// (evidence.LintFindings).
+func LintFindings(checked Evidence) []LintFinding { return evidence.LintFindings(checked) }

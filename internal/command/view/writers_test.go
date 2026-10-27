@@ -192,3 +192,22 @@ func TestTheReportSaysHowLongEachPartTook(t *testing.T) {
 	WriteResults(&out, "  ", evidence, false)
 	require.NotContains(t, out.String(), "(6m 0s)", "a reused result took no time here")
 }
+
+// What lint warned of is a line each, a new port's marked ✗, an update's
+// a notice, and a new port lint didn't nitpick says so (the docs dig's
+// I13).
+func TestWriteLint(t *testing.T) {
+	var out bytes.Buffer
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	WriteLint(&out, []engine.LintFinding{
+		{Target: "harbor", Port: "harbor", Environment: tahoe, Lines: []string{"Line 3 has trailing whitespace"}, Holds: true},
+		{Target: "jq", Port: "jq", Environment: tahoe, Lines: []string{"no license set"}},
+		{Target: "harbor-cli", Port: "harbor-cli", Environment: model.Environment{Provider: "github"}, Lines: []string{}, NotNitpicked: true},
+	})
+	on := engine.DescribeEnvironment(tahoe)
+	require.Equal(t, "Lint\n  ✗ harbor: Line 3 has trailing whitespace on "+on+"\n  ! jq: no license set on "+on+"\n"+
+		"    harbor-cli: a new port, linted without --nitpick on "+engine.DescribeEnvironment(model.Environment{Provider: "github"})+", so its nitpicks weren't read\n", out.String())
+	out.Reset()
+	WriteLint(&out, nil)
+	require.Empty(t, out.String())
+}
