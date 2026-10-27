@@ -56,9 +56,12 @@ check and returns: serve runs it, or, with no serve running, Dockhand
 starts a background worker for it, so -d runs a check in the background
 either way. dockhand wait follows it.
 
-A branch runs one check at a time. While one is queued or running, check
-refuses; --replace stops it, keeping completed results, and checks the
-files as they are now, where --on says (switching is always explicit).
+A branch runs one check at a time. While one is queued or running for the
+same files, check follows it to its result, as dockhand wait does; with
+-d, it says so and leaves it running. While one is checking other files,
+or stopped, check refuses; --replace stops it, keeping completed results,
+and checks the files as they are now, where --on says (switching is
+always explicit).
 
 --baseline builds the ports that failed at install or test in the
 branch's latest check, or the --only ones, at the master that check
@@ -163,6 +166,14 @@ check.baseline = true, it runs that baseline automatically.`,
 					return ok, err
 				}})
 			replaced := replacedWords(queued)
+			// A check already queued or running for these files is followed
+			// to its result, as wait follows it, where check refused for the
+			// person to type the wait it printed (the docs dig's I10). -d
+			// leaves it running.
+			if active := new(engine.ActiveRunError); errors.As(err, &active) && active.SameRevision && !active.Stopped && !enqueue {
+				fmt.Fprintf(streams.Err, "%s is already %s for these files; following it.\n", active.Run.Name(), active.Run.State)
+				return checkrun.Wait(ctx, e, active.Run, streams, s.Places())
+			}
 			if err != nil {
 				for _, words := range replaced {
 					fmt.Fprintf(streams.Out, "%s.\n", prose.Sentence(words))
