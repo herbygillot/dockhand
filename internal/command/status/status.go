@@ -128,7 +128,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			viewed := view.BranchView(status)
 			streams.Emit(view.StatusJSON{Attention: view.AttentionView(view.AttentionFor(status)), Branches: []view.BranchJSON{viewed}})
 		}
-		showBranch(streams.Out, places, status, report.Links)
+		showBranch(streams.Out, places, status, report)
 		return nil
 	}
 	// A read reaches a merged branch's record, as path does.
@@ -523,7 +523,7 @@ func prWords(s engine.BranchStatus) string {
 
 // showBranch writes one branch's status in detail, its latest check's
 // links from what the report gathered.
-func showBranch(out io.Writer, places config.Places, status engine.BranchStatus, links map[model.RunID][]engine.LinkFinding) {
+func showBranch(out io.Writer, places config.Places, status engine.BranchStatus, report engine.StatusReport) {
 	branch := status.Branch
 	head := branch.ShortName()
 	if branch.Worktree != "" && !status.Cleaned() {
@@ -582,7 +582,7 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 		// What the latest check's builds link and don't declare, a notice
 		// (v0.5.0 part 6).
 		if status.Latest != nil {
-			if links, ok := links[status.Latest.ID]; ok {
+			if links, ok := report.Links[status.Latest.ID]; ok {
 				for i, line := range view.LinkLines(links) {
 					label := "         "
 					if i == 0 {
@@ -590,6 +590,15 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 					}
 					fmt.Fprintf(out, "  %s%s %s\n", label, line.Mark, line.Words)
 				}
+			}
+			// And what it installed and configure found against the port's
+			// earlier build, as the check's report says (Then's item 9).
+			for i, line := range view.InstalledLines(report.Installed[status.Latest.ID]) {
+				label := "         "
+				if i == 0 {
+					label = "Against  "
+				}
+				fmt.Fprintf(out, "  %s%s %s\n", label, line.Mark, line.Words)
 			}
 		}
 	}

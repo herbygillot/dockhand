@@ -31,7 +31,11 @@ type StatusReport struct {
 	// Links are what each branch's latest check's builds link and don't
 	// declare, by the check; a check whose links couldn't be read has
 	// none.
-	Links     map[model.RunID][]LinkFinding
+	Links map[model.RunID][]LinkFinding
+	// Installed are what each such check's builds installed and configure
+	// found against the port's earlier build (InstallChanges), by the
+	// check, for the branches named alone.
+	Installed map[model.RunID][]InstallFinding
 	Serve     ServeState
 	Queue     []QueuedCheck
 	Processes []Process
@@ -65,11 +69,14 @@ func (e *Engine) StatusReport(ctx context.Context, session *coord.Session, reque
 	if err := e.JudgeStopped(ctx, session, report.Statuses); err != nil {
 		return report, err
 	}
-	report.Links = map[model.RunID][]LinkFinding{}
+	report.Links, report.Installed = map[model.RunID][]LinkFinding{}, map[model.RunID][]InstallFinding{}
 	for _, status := range report.Statuses {
 		if len(request.Branches) > 0 && status.Latest != nil && !status.Cleaned() {
 			if links, err := e.UndeclaredLinks(ctx, *status.Latest); err == nil {
 				report.Links[status.Latest.ID] = links
+			}
+			if installed, err := e.InstallChanges(ctx, *status.Latest); err == nil {
+				report.Installed[status.Latest.ID] = installed
 			}
 		}
 	}

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/config"
@@ -144,63 +143,34 @@ func LinkMark(finding engine.LinkFinding) string {
 
 // WriteInstalled says what a check's builds installed and configure found
 // against the port's previous result in each environment (Then's items 9
-// and 10): its own libraries whose install names moved, with the ports
-// that link it, and what configure no longer or now finds, each marked
-// for a look, and the files gone or added, for information; nothing where
-// it has none.
+// and 10), a line each under a heading (InstalledLines); nothing where it
+// has none.
 func WriteInstalled(out io.Writer, findings []engine.InstallFinding) {
-	if len(findings) == 0 {
+	lines := InstalledLines(findings)
+	if len(lines) == 0 {
 		return
 	}
 	fmt.Fprintln(out, "Against the earlier build")
-	for _, finding := range findings {
-		against := ""
-		if finding.Check != "" {
-			against = " against " + finding.Check
-		}
-		where := engine.DescribeEnvironment(finding.Environment)
-		for _, library := range finding.Libraries {
-			words := fmt.Sprintf("%s: %s on %s%s", finding.Target, library.Words(), where, against)
-			switch {
-			case len(finding.Dependents) > 0:
-				words += fmt.Sprintf("; %s link it, which update --revbump-dependents rebuilds", prose.Few(finding.Dependents, 6, "port"))
-			default:
-				words += "; no port links it"
-			}
-			fmt.Fprintf(out, "  %s %s\n", Look, words)
-		}
-		var files []string
-		if len(finding.Removed) > 0 {
-			files = append(files, "no longer installs "+prose.Few(finding.Removed, 4, "file"))
-		}
-		if len(finding.Added) > 0 {
-			files = append(files, "now installs "+prose.Few(finding.Added, 4, "file"))
-		}
-		if len(finding.Found)+len(finding.Lost) > 0 {
-			var said []string
-			if len(finding.Lost) > 0 {
-				said = append(said, "configure no longer says "+prose.FewJoined(quotedAll(finding.Lost), 3, "line", ", "))
-			}
-			if len(finding.Found) > 0 {
-				said = append(said, "now says "+prose.FewJoined(quotedAll(finding.Found), 3, "line", ", "))
-			}
-			fmt.Fprintf(out, "  %s %s: %s on %s%s\n", Look, finding.Target, strings.Join(said, "; "), where, against)
-		}
-		if len(files) > 0 && finding.Unbumped {
-			fmt.Fprintf(out, "  %s %s: %s on %s%s, with neither the version nor the revision raised, so installed copies keep the old files; raise the revision\n", Look, finding.Target, strings.Join(files, "; "), where, against)
-		} else if len(files) > 0 {
-			fmt.Fprintf(out, "  %s %s: %s on %s%s\n", Unmarked, finding.Target, strings.Join(files, "; "), where, against)
-		}
+	for _, line := range lines {
+		fmt.Fprintf(out, "  %s %s\n", line.Mark, line.Words)
 	}
 }
 
-// quotedAll are lines quoted, as a sentence names what a log said.
-func quotedAll(lines []string) []string {
-	quoted := make([]string, len(lines))
-	for i, line := range lines {
-		quoted[i] = strconv.Quote(line)
+// InstalledLines are a check's install findings as status and the report
+// say them (engine.InstallFinding.Lines), each marked for a look where it
+// asks one.
+func InstalledLines(findings []engine.InstallFinding) []LinkLine {
+	var lines []LinkLine
+	for _, finding := range findings {
+		for _, line := range finding.Lines(nil) {
+			mark := Unmarked
+			if line.Look {
+				mark = Look
+			}
+			lines = append(lines, LinkLine{mark, line.Words})
+		}
 	}
-	return quoted
+	return lines
 }
 
 // WriteLinks says a check's link findings, each a notice under a heading;

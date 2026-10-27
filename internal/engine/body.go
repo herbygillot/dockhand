@@ -69,6 +69,9 @@ type bodyFacts struct {
 	// LeftOut are the dependents each rebuild left out with --except
 	// (leftOut).
 	LeftOut []string
+	// Installed are the check's install findings as lines, with the
+	// dependents the branch rebuilds (InstallFinding.Lines).
+	Installed []string
 }
 
 // leftOut are the lines naming the dependents each rebuild of the
@@ -122,6 +125,7 @@ func (facts bodyFacts) description() prdescription.Facts {
 		described.TestedOn.Pending = true
 	default:
 		described.TestedOn.UncoveredCI = prose.And(facts.UncoveredCI)
+		described.TestedOn.Installed = facts.Installed
 		checks := evidence.Checks()
 		// An environment where nothing was built or reused, as one where
 		// every port is excluded, has no report, and isn't named: it

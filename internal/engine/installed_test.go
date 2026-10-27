@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -58,4 +59,22 @@ func TestACheckSaysWhatMovedOfWhatItInstalled(t *testing.T) {
 	require.Empty(t, found[0].Added, "a new soname is the same file")
 	require.Equal(t, []string{"checking for libjq.2.dylib... yes"}, found[0].Found, "and configure's drift (Then's item 10)")
 	require.Equal(t, []string{"checking for libjq.1.dylib... yes"}, found[0].Lost)
+}
+
+// A moved library's line names its dependents, and says which of them the
+// branch rebuilds, as the description says it (Then's item 9).
+func TestAMovedLibraryNamesTheDependentsTheBranchRebuilds(t *testing.T) {
+	t.Parallel()
+	finding := InstallFinding{Check: "check-12", Dependents: []string{"darktable", "gpsbabel"}}
+	finding.Target = "exiv2"
+	finding.Environment = model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	finding.Libraries = []evidence.LibraryChange{{Was: model.Library{Name: "/opt/local/lib/libexiv2.27.dylib"}, Now: model.Library{Name: "/opt/local/lib/libexiv2.28.dylib"}}}
+	where := DescribeEnvironment(finding.Environment)
+	require.Equal(t, []InstallLine{{true, "exiv2: libexiv2.27.dylib is libexiv2.28.dylib now on " + where + " against check-12; darktable, gpsbabel link it, which update --revbump-dependents rebuilds"}}, finding.Lines(nil))
+	require.Equal(t, "exiv2: libexiv2.27.dylib is libexiv2.28.dylib now on "+where+" against check-12; darktable, gpsbabel link it, and this branch rebuilds gpsbabel", finding.Lines([]string{"gpsbabel"})[0].Words)
+	require.Equal(t, "exiv2: libexiv2.27.dylib is libexiv2.28.dylib now on "+where+" against check-12; darktable, gpsbabel link it, and this branch rebuilds each", finding.Lines([]string{"gpsbabel", "darktable"})[0].Words)
+
+	// An earlier build older than master's says its version.
+	finding.Version, finding.Master = "0.27.7", "0.28.2"
+	require.Contains(t, finding.Lines(nil)[0].Words, " against check-12 (0.27.7, older than master's 0.28.2);")
 }
