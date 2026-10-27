@@ -48,8 +48,9 @@ set local {}
 if {[dict exists $input local]} { set local [dict get $input local] }
 
 # save writes the results so far, replacing the file whole. A result's
-# fields are strings, but for the ports active as it built, and what its
-# binaries link, lists of them, and for where each step of its build began
+# fields are strings, but for the ports active as it built, what its
+# binaries link, and its own libraries, lists of them, the files it
+# installed, a list of paths, and for where each step of its build began
 # in its log, a list of each step's name and line.
 proc save {state {detail ""}} {
     global root input results building phase fromsource environment
@@ -57,7 +58,9 @@ proc save {state {detail ""}} {
     foreach result $results {
         set fields {}
         dict for {key value} $result {
-            if {$key in {active links}} {
+            if {$key eq "installed"} {
+                lappend fields $key [json::write array {*}[lmap file $value { json::write string $file }]]
+            } elseif {$key in {active links libraries}} {
                 set ports {}
                 foreach entry $value {
                     set object {}
@@ -461,11 +464,10 @@ proc consumed {name} {
 # libraries, its LC_RPATHs resolving an @rpath one, and port provides each
 # library's port, asked once for all of them. A list that can't be read is
 # an error, which leaves the links unknown, never none.
-proc links {name} {
+proc links {contents} {
     global port prefix
     set found {}
-    foreach file [split [known $port -q contents $name] \n] {
-        set file [string trim $file]
+    foreach file $contents {
         if {$file eq "" || [catch {file type $file} type] || $type ne "file" || ![macho $file]} { continue }
         foreach library [linked $file] {
             if {[string first $prefix/ $library] == 0} { lappend found [list $file $library] }
@@ -484,6 +486,44 @@ proc links {name} {
         if {[dict exists $owners $library]} { set owner [dict get $owners $library] }
         dict create binary $file library $library port $owner
     }]
+}
+
+# contents are the files a target installed, as port contents lists them,
+# which the link scan and the install names read, and which its result
+# keeps (Then's item 9, the docs dig's I14).
+proc contents {name} {
+    global port
+    set files {}
+    foreach file [split [known $port -q contents $name] \n] {
+        set file [string trim $file]
+        if {$file ne ""} { lappend files $file }
+    }
+    return $files
+}
+
+# libraries are the target's own dynamic libraries, each with its
+# LC_ID_DYLIB install name and compatibility version as otool -l lists
+# them (the reflections' E): what its dependents link, which a change of
+# breaks them until they're rebuilt.
+proc libraries {contents} {
+    global otool
+    set found {}
+    foreach file $contents {
+        if {[catch {file type $file} type] || $type ne "file" || ![macho $file]} { continue }
+        set name ""
+        set compatibility ""
+        set inid 0
+        foreach line [split [known $otool -l $file] \n] {
+            set line [string trim $line]
+            if {$line eq "cmd LC_ID_DYLIB"} { set inid 1; continue }
+            if {!$inid} { continue }
+            if {[regexp {^name (.+) \(offset \d+\)$} $line -> name]} { continue }
+            if {[regexp {^compatibility version (\S+)$} $line -> compatibility]} { break }
+            if {[string match "cmd *" $line]} { break }
+        }
+        if {$name ne ""} { lappend found [dict create file $file name $name compatibility $compatibility] }
+    }
+    return $found
 }
 
 # macho reports whether a file is a Mach-O, thin or universal, by its
@@ -992,13 +1032,30 @@ foreach target [dict get $input targets] {
     }
     # What a passed build's binaries link is an observation beside its
     # result, unknown where it can't be read.
+    # So are the files it installed, and its own libraries' install
+    # names, which a later check of its next version compares (Then's
+    # item 9).
     if {[dict get $result outcome] eq "passed"} {
-        if {[catch {links [dict get $target name]} linked]} {
+        if {[catch {contents [dict get $target name]} installed]} {
             set log [open $root/[dict get $result log] a]
-            puts $log "dockhand: what this build's binaries link wasn't read: $linked"
+            puts $log "dockhand: what this build installed wasn't read: $installed"
             close $log
         } else {
-            dict set result links $linked
+            dict set result installed $installed
+            if {[catch {links $installed} linked]} {
+                set log [open $root/[dict get $result log] a]
+                puts $log "dockhand: what this build's binaries link wasn't read: $linked"
+                close $log
+            } else {
+                dict set result links $linked
+            }
+            if {[catch {libraries $installed} own]} {
+                set log [open $root/[dict get $result log] a]
+                puts $log "dockhand: this build's libraries' install names weren't read: $own"
+                close $log
+            } else {
+                dict set result libraries $own
+            }
         }
     }
     lappend results $result

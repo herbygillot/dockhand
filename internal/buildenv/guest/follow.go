@@ -221,6 +221,19 @@ type Result struct {
 	// the prefix; absent where the guest couldn't read them, and empty
 	// where nothing links.
 	Links []Link `json:"links"`
+	// Installed are the files a passed target installed, as port contents
+	// lists them, and Libraries its own dynamic libraries' install names;
+	// absent where the guest couldn't read them (Then's item 9).
+	Installed []string  `json:"installed"`
+	Libraries []Library `json:"libraries"`
+}
+
+// Library is one of a target's own dynamic libraries: its file, its
+// LC_ID_DYLIB install name, and its compatibility version.
+type Library struct {
+	File          string `json:"file"`
+	Name          string `json:"name"`
+	Compatibility string `json:"compatibility"`
 }
 
 // Link is a library a target's binary links, as the guest saw it,
@@ -572,6 +585,15 @@ func (f *Follower) record(ctx context.Context, g Guest, job buildenv.Job, build 
 		report.Links = make([]model.Link, len(got.Links))
 		for i, link := range got.Links {
 			report.Links[i] = model.Link{Binary: link.Binary, Library: link.Library, Port: link.Port}
+		}
+	}
+	if got.Installed != nil {
+		report.Installed = slices.Clone(got.Installed)
+	}
+	if got.Libraries != nil {
+		report.Libraries = make([]model.Library, len(got.Libraries))
+		for i, library := range got.Libraries {
+			report.Libraries[i] = model.Library{File: library.File, Name: library.Name, Compatibility: library.Compatibility}
 		}
 	}
 	result.Archive, result.Detail = got.Archive, got.Detail

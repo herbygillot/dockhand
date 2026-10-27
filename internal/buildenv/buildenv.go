@@ -156,6 +156,12 @@ type TargetReport struct {
 	// so an unknown stops no reuse. Nil where the provider couldn't read
 	// them, empty where nothing links.
 	Links []model.Link
+	// Installed are the files a passed target installed, and Libraries its
+	// own dynamic libraries' install names (model.TargetResult's): an
+	// observation, which a later check of its next version compares. Nil
+	// where the provider couldn't read them.
+	Installed []string
+	Libraries []model.Library
 }
 
 // Reported is a result as a report with nothing seen beside it, as for a

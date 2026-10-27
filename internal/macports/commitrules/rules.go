@@ -214,6 +214,27 @@ func CheckPortfiles(portfiles []Portfile, order Order) []Finding {
 				}
 			}
 		}
+		// The revbump classifier's non-ABI half, read from the diff alone
+		// (Then's item 9): a runtime dependency changed with neither the
+		// version nor the revision raised leaves installed copies on the
+		// old one, and a revision raised for a change to build-time
+		// dependencies alone rebuilds them for nothing.
+		if knownBefore && knownAfter && before == after {
+			revisionBefore, _, _ := portfile.DeclaredRevision(old)
+			revisionAfter, _, _ := portfile.DeclaredRevision(next)
+			changed := changedOptions(p.Before, p.After)
+			runtime := slices.ContainsFunc(changed, func(option string) bool { return option == "depends_lib" || option == "depends_run" })
+			switch {
+			case revisionBefore == revisionAfter && runtime:
+				findings = append(findings, Finding{Code: "dependencies-unbumped", Severity: Warning, Where: p.Path,
+					Message: "depends_lib or depends_run changes with neither the version nor the revision raised, so installed copies keep the old dependencies until rebuilt; raise the revision"})
+			case revisionBefore != revisionAfter && len(changed) > 0 && !slices.ContainsFunc(changed, func(option string) bool {
+				return option != "revision" && option != "depends_build" && option != "depends_fetch" && option != "depends_extract"
+			}) && slices.ContainsFunc(changed, func(option string) bool { return option != "revision" }):
+				findings = append(findings, Finding{Code: "revbump-build-only", Severity: Warning, Where: p.Path,
+					Message: "revision is raised for a change to build-time dependencies alone, which installed copies don't need a rebuild for"})
+			}
+		}
 		// An obsoleting replaced_by moves an install to its replacement
 		// only through an upgrade, which nothing triggers where the
 		// version, revision, and epoch all stand.
@@ -227,6 +248,46 @@ func CheckPortfiles(portfiles []Portfile, order Order) []Finding {
 		}
 	}
 	return findings
+}
+
+// changedOptions are the options whose lines two Portfiles differ in, by
+// each logical line's first word, its continuations joined and -append,
+// -delete, and -replace taken for the option: depends_lib for
+// "depends_lib-append port:zlib". A line that isn't an option's, as a
+// comment or a block's brace, is "".
+func changedOptions(before, after string) []string {
+	lines := func(text string) map[string]int {
+		counts := map[string]int{}
+		joined := strings.ReplaceAll(text, "\\\n", " ")
+		for _, line := range strings.Split(joined, "\n") {
+			line = strings.Join(strings.Fields(line), " ")
+			if line != "" && !strings.HasPrefix(line, "#") {
+				counts[line]++
+			}
+		}
+		return counts
+	}
+	was, now := lines(before), lines(after)
+	var changed []string
+	note := func(line string) {
+		option, _, _ := strings.Cut(line, " ")
+		option, _, _ = strings.Cut(option, "-")
+		if !slices.Contains(changed, option) {
+			changed = append(changed, option)
+		}
+	}
+	for line, n := range now {
+		if was[line] != n {
+			note(line)
+		}
+	}
+	for line, n := range was {
+		if now[line] != n {
+			note(line)
+		}
+	}
+	slices.Sort(changed)
+	return changed
 }
 
 // epochs are the epochs two Portfiles declare, 0 where none is; false

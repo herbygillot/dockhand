@@ -229,6 +229,12 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		fmt.Fprintln(out)
 		view.WriteLinks(out, links)
 	}
+	// And what it installed against the port's previous build there, its
+	// libraries' install names and its files (Then's item 9).
+	if installed, err := e.InstallChanges(ctx, run); err == nil && len(installed) > 0 {
+		fmt.Fprintln(out)
+		view.WriteInstalled(out, installed)
+	}
 	revision, err := e.Revision(ctx, run.Revision)
 	if err != nil {
 		return err

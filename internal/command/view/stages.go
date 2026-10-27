@@ -141,6 +141,47 @@ func LinkMark(finding engine.LinkFinding) string {
 	return Look
 }
 
+// WriteInstalled says what a check's builds installed against the port's
+// previous result in each environment (Then's item 9): its own libraries
+// whose install names moved, with the ports that link it, marked for a
+// look, and the files gone or added, for information; nothing where it
+// has none.
+func WriteInstalled(out io.Writer, findings []engine.InstallFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "Installed")
+	for _, finding := range findings {
+		against := ""
+		if finding.Check != "" {
+			against = " against " + finding.Check
+		}
+		where := engine.DescribeEnvironment(finding.Environment)
+		for _, library := range finding.Libraries {
+			words := fmt.Sprintf("%s: %s on %s%s", finding.Target, library.Words(), where, against)
+			switch {
+			case len(finding.Dependents) > 0:
+				words += fmt.Sprintf("; %s link it, which update --revbump-dependents rebuilds", prose.Few(finding.Dependents, 6, "port"))
+			default:
+				words += "; no port links it"
+			}
+			fmt.Fprintf(out, "  %s %s\n", Look, words)
+		}
+		var files []string
+		if len(finding.Removed) > 0 {
+			files = append(files, "no longer installs "+prose.Few(finding.Removed, 4, "file"))
+		}
+		if len(finding.Added) > 0 {
+			files = append(files, "now installs "+prose.Few(finding.Added, 4, "file"))
+		}
+		if len(files) > 0 && finding.Unbumped {
+			fmt.Fprintf(out, "  %s %s: %s on %s%s, with neither the version nor the revision raised, so installed copies keep the old files; raise the revision\n", Look, finding.Target, strings.Join(files, "; "), where, against)
+		} else if len(files) > 0 {
+			fmt.Fprintf(out, "  %s %s: %s on %s%s\n", Unmarked, finding.Target, strings.Join(files, "; "), where, against)
+		}
+	}
+}
+
 // WriteLinks says a check's link findings, each a notice under a heading;
 // nothing where it has none.
 func WriteLinks(out io.Writer, findings []engine.LinkFinding) {

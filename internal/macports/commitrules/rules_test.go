@@ -113,3 +113,25 @@ func TestALongLineBesideAURLIsFlagged(t *testing.T) {
 		"Generated-By: Dockhand v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480 (https://github.com/herbygillot/dockhand)\n"
 	require.Empty(t, CheckCommits([]Commit{{ID: "b", Message: spared}}))
 }
+
+// The revbump classifier's non-ABI half, read from the diff alone (Then's
+// item 9): a runtime dependency changed with neither the version nor the
+// revision raised, and a revision raised for build-time dependencies
+// alone, are each a warning; a runtime change with the revision raised,
+// and one with a new version, are neither.
+func TestARevisionBumpIsReadFromTheDiff(t *testing.T) {
+	t.Parallel()
+	codes := func(before, after string) []string {
+		var found []string
+		for _, finding := range CheckPortfiles([]Portfile{{Path: "devel/zq/Portfile", Before: before, After: after}}, nil) {
+			found = append(found, finding.Code)
+		}
+		return found
+	}
+	require.Equal(t, []string{"dependencies-unbumped"}, codes("version 1\ndepends_lib-append \\\n    port:a\n", "version 1\ndepends_lib-append \\\n    port:a port:b\n"))
+	require.Empty(t, codes("version 1\ndepends_lib port:a\n", "version 1\nrevision 1\ndepends_lib port:b\n"), "the revision raised")
+	require.Empty(t, codes("version 1\ndepends_run port:a\n", "version 2\ndepends_run port:b\n"), "a new version")
+	require.Equal(t, []string{"revbump-build-only"}, codes("version 1\nrevision 1\ndepends_build port:a\n", "version 1\nrevision 2\ndepends_build port:b\n"))
+	require.Empty(t, codes("version 1\nrevision 1\n", "version 1\nrevision 2\n"), "a bare revbump, for a dependency's rebuild")
+	require.Empty(t, codes("version 1\ndepends_build port:a\n", "version 1\ndepends_build port:b\n"), "build-time alone, unbumped")
+}

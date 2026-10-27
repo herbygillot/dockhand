@@ -126,7 +126,12 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // Since field testing's outdated-ports notes, a failure's detail passes
 // over make's and ninja's own failure lines and a compiler's count for the
 // tool's error: its words alone, so the protocol stays 3.
-const guestPin = "6891615336fe5750e6140c8a258f61980e70787dd7e92a5d7ccffc1280fa7ef9"
+//
+// Since Then's item 9, a passed target's result keeps what port contents
+// listed, which the link scan read and discarded, and its own libraries'
+// install names and compatibility versions, from otool -l: observations,
+// which build and judge nothing otherwise, so the protocol stays 3.
+const guestPin = "c0123e229ce8d2fd858ab8fe629752bcc3e3246b2dfaafd9600c558e1fda4ac9"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this
