@@ -118,6 +118,15 @@ check.baseline = true, it runs that baseline automatically.`,
 				}
 			}
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), what)
+			// The lint fixes tidy would commit are made first, so this
+			// check builds what tidy commits.
+			for _, fixed := range capture.Fixed {
+				label := "Fixed"
+				if plan {
+					label = "Fixes"
+				}
+				fmt.Fprintf(out, "%s: %s\n", label, fixed)
+			}
 			// A file the check leaves out in a port it builds is said with
 			// a mark, and how to take it in (Codex's gcc15 group update).
 			for _, path := range engine.UntrackedInChanged(capture, proposed) {

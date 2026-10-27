@@ -162,3 +162,36 @@ func TestUntrackedFilesInChangedPortsAreSaid(t *testing.T) {
 	}}
 	require.Equal(t, []string{"textproc/jq/files/fix.diff"}, UntrackedInChanged(capture, plan))
 }
+
+// A check's capture makes the lint fixes tidy's plan would first, so the
+// files it builds are the ones tidy commits and a check needn't run again;
+// a plan says them, captures them fixed, and writes nothing.
+func TestACaptureMakesTidysLintFixesFirst(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-hand", Here: true})
+	require.NoError(t, err)
+	portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1  \n"})
+
+	plan, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Plan: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{"textproc/jq/Portfile: removed trailing whitespace on line 2"}, plan.Fixed)
+	data, err := os.ReadFile(portfile)
+	require.NoError(t, err)
+	require.Equal(t, "name jq\nversion 1.8.1  \n", string(data), "a plan writes nothing")
+
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, plan.Fixed, capture.Fixed)
+	require.Equal(t, plan.Revision.Source.Tree, capture.Revision.Source.Tree, "the plan captured the files as the check does")
+	data, err = os.ReadFile(portfile)
+	require.NoError(t, err)
+	require.Equal(t, "name jq\nversion 1.8.1\n", string(data))
+
+	tidy, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Empty(t, tidy.Fixed)
+	require.Equal(t, string(capture.Revision.Source.Tree), tidy.Final, "tidy commits what the check built")
+}
