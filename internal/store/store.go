@@ -309,6 +309,9 @@ type Tx interface {
 	PruneJournal(before time.Time) (events, sessions int, err error)
 
 	AddEdit(edit model.Edit) error
+	// SetExcepted records the dependents --except left out of an update's
+	// rebuild on its edit, where no revision bump's edit keeps them.
+	SetExcepted(edit model.EditID, excepted []string) error
 	// RecordAssessment records a revision's assessment of a port,
 	// replacing one recorded for the same revision, base, and port.
 	RecordAssessment(assessment model.Assessment) error

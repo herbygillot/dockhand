@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // PortDiff is how a branch changes one port directory.
@@ -513,6 +514,23 @@ type LinkedRevbump struct {
 	Bumped []string
 }
 
+// keepExcepted records the dependents left out on the port's latest
+// version update edit in the branch.
+func (e *Engine) keepExcepted(ctx context.Context, branch model.Branch, port string, excepted []string) error {
+	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		edits, err := tx.Edits(branch.ID)
+		if err != nil {
+			return err
+		}
+		for i := len(edits) - 1; i >= 0; i-- {
+			if edits[i].Kind == model.EditUpdate && edits[i].Port == port {
+				return tx.SetExcepted(edits[i].ID, excepted)
+			}
+		}
+		return nil
+	})
+}
+
 // RevbumpLinked bumps the revision of the ports that link an updated one
 // directly (LinkedPorts), or with plan only finds them. It stops at the
 // first port it can't bump, naming it; the ports before it stay bumped,
@@ -522,6 +540,14 @@ func (e *Engine) RevbumpLinked(ctx context.Context, branch model.Branch, update 
 	result := LinkedRevbump{LinkedPorts: linked, Subject: fmt.Sprintf("rebuild for %s %s", update.Port, update.After.Version)}
 	if err != nil || plan {
 		return result, err
+	}
+	// With no bump to keep them on, the update's own edit keeps those left
+	// out, the rebuild a reviewer most needs to weigh (roadmap's "A
+	// rebuild whose every dependent was left out is listed too").
+	if len(linked.Bump) == 0 && len(linked.Excepted) > 0 {
+		if err := e.keepExcepted(ctx, branch, update.Port, linked.Excepted); err != nil {
+			return result, err
+		}
 	}
 	for _, dependent := range linked.Bump {
 		if _, err := e.Update(ctx, UpdateRequest{Branch: branch, Action: model.EditRevbump, Port: dependent.Name, Subject: result.Subject, Excepted: linked.Excepted}); err != nil {
