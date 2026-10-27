@@ -74,10 +74,11 @@ type CleanBranch struct {
 // that went on past the merge, are kept. The branch's record stays, so it
 // is still searchable.
 //
-// Closed branches, when asked for (clean --closed), lose only their
-// worktree: their work isn't merged, so the Git branch, the fork's branch,
-// and dockhand's checkpoints stay, and the worktree is checked out again
-// when it is next needed. An archived branch is cleaned by name, clean
+// Closed branches, when asked for (clean --closed), lose their worktree,
+// and what they left on your fork, the pull request's head while it holds
+// what dockhand pushed and the checks' branches: their work isn't merged,
+// so a Git branch with work of its own and dockhand's checkpoints stay,
+// and the worktree is checked out again when it is next needed. An archived branch is cleaned by name, clean
 // <name> (PlanCleanBranches).
 func (e *Engine) PlanClean(ctx context.Context, states ...model.BranchState) ([]CleanBranch, error) {
 	if len(states) == 0 {
@@ -155,13 +156,7 @@ func (e *Engine) changesOnMaster(ctx context.Context, branch model.Branch, head 
 }
 
 func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (CleanBranch, error) {
-	plan := CleanBranch{Branch: branch}
-	if pr := branch.PullRequest; pr != nil {
-		plan.Merged = pr.Pushed
-		if pr.Observed != nil && pr.Observed.Head != "" {
-			plan.Merged = pr.Observed.Head
-		}
-	}
+	plan := CleanBranch{Branch: branch, Merged: pushedHead(branch)}
 	head, _, err := e.Repo.Branch(ctx, branch.Name)
 	hasBranch := err == nil
 	if err != nil && !errors.Is(err, git.ErrBranchMissing) {
@@ -217,11 +212,46 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 		}
 		plan.Steps = append(plan.Steps, step)
 	}
-	if pr := branch.PullRequest; pr != nil && pr.Head != "" && plan.Merged != "" {
+	if plan.Merged != "" {
+		remote, err := e.planCleanFork(ctx, branch, plan.Merged, "it has moved since the merge")
+		if err != nil {
+			return plan, err
+		}
+		plan.Steps = append(plan.Steps, remote...)
+	}
+	return plan, nil
+}
+
+// pushedHead is the commit dockhand last pushed to a branch's pull
+// request, or the head it was last seen at; empty with no pull request.
+func pushedHead(branch model.Branch) model.ObjectID {
+	pr := branch.PullRequest
+	if pr == nil {
+		return ""
+	}
+	if pr.Observed != nil && pr.Observed.Head != "" {
+		return pr.Observed.Head
+	}
+	return pr.Pushed
+}
+
+// planCleanFork plans removing what a branch left on your fork: its pull
+// request's head, while it still holds pushed, the commit dockhand pushed
+// (moved says why one that doesn't is kept), and the dockhand-check
+// branches its GitHub checks left. A merged branch's, and a closed,
+// archived, or forgotten one's alike: only the merged path reached them,
+// so a pull request closed unmerged and a canceled check left theirs for
+// good (the dig's I31).
+func (e *Engine) planCleanFork(ctx context.Context, branch model.Branch, pushed model.ObjectID, moved string) ([]CleanStep, error) {
+	var steps []CleanStep
+	repositories := []string{}
+	if pr := branch.PullRequest; pr != nil && pr.Head != "" {
 		repository, name := pr.HeadParts()
-		step := CleanStep{What: pr.Head, Kind: CleanFork, expected: string(plan.Merged)}
+		repositories = append(repositories, repository)
+		step := CleanStep{What: pr.Head, Kind: CleanFork, expected: string(pushed)}
 		remote, err := e.remoteFor(ctx, repository)
 		switch {
+		case pushed == "":
 		case err != nil:
 			step.Kept = err.Error()
 			step.Said = errors.Is(err, errNoRemote) && strings.Contains(branch.CleanKept, cleanKindWords[CleanFork]+" kept: "+step.Kept)
@@ -233,28 +263,56 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 				step.Kept = "it could not be read: " + err.Error()
 			case !value.Exists:
 				step = CleanStep{}
-			case value.Object != string(plan.Merged):
-				step.Kept = "it has moved since the merge"
+			case value.Object != string(pushed):
+				step.Kept = moved
 			}
 		}
-		if step.What != "" {
-			plan.Steps = append(plan.Steps, step)
+		if step.What != "" && pushed != "" {
+			steps = append(steps, step)
 		}
-		checks, err := e.planCleanChecks(ctx, branch, repository)
+	} else {
+		// With no pull request, its checks pushed to a fork of yours: each
+		// remote's that pushes to one is looked at.
+		forks, err := e.forkRepositories(ctx)
 		if err != nil {
-			return plan, err
+			return nil, err
 		}
-		plan.Steps = append(plan.Steps, checks...)
+		repositories = forks
 	}
-	return plan, nil
+	for _, repository := range repositories {
+		checks, err := e.planCleanChecks(ctx, branch, repository, len(repositories) > 1)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, checks...)
+	}
+	return steps, nil
+}
+
+// forkRepositories are the GitHub repositories, other than MacPorts' own,
+// the checkout's remotes push to, as hasForkRemote reads them.
+func (e *Engine) forkRepositories(ctx context.Context) ([]string, error) {
+	remotes, err := e.Repo.Remotes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var repositories []string
+	for _, remote := range remotes {
+		name, err := e.forge().NameFromRemote(remote.PushURL)
+		if err == nil && !strings.EqualFold(name, UpstreamRepository) && !slices.ContainsFunc(repositories, func(seen string) bool { return strings.EqualFold(seen, name) }) {
+			repositories = append(repositories, name)
+		}
+	}
+	return repositories, nil
 }
 
 // planCleanChecks finds the branches the github provider pushed to your
 // fork for the branch's checks, one per commit checked, each removed only
 // while it still holds that commit. The provider removes each once its
 // check is done with the run, so these are the ones it left: one it
-// couldn't remove, or a canceled check's.
-func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repository string) ([]CleanStep, error) {
+// couldn't remove, or a canceled check's. Where it may be one of several
+// forks, absent says nothing of a remote that can't be read.
+func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repository string, maybe bool) ([]CleanStep, error) {
 	var revisions []model.Revision
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		runs, err := r.Runs(store.RunFilter{Branch: branch.ID})
@@ -310,6 +368,8 @@ func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repos
 		step.remote = remote
 		value, err := e.Repo.RemoteHead(ctx, remote, name)
 		switch {
+		case err != nil && maybe:
+			continue
 		case err != nil:
 			step.Kept = "it could not be read: " + err.Error()
 		case !value.Exists:
@@ -355,12 +415,30 @@ func samePath(a, b string) bool {
 	return resolved(a) == resolved(b)
 }
 
-// planCleanWorktree plans removing an unmerged branch's worktree, and
-// nothing else, unless it holds work of its own. A branch with no worktree
-// of dockhand's, as an adopted one may have none, is read all the same:
+// planCleanWorktree plans removing an unmerged branch's worktree, and its
+// Git branch unless it holds work of its own, and what it left on your
+// fork, its pull request's head while that holds the commit dockhand
+// pushed and its checks' branches (planCleanFork): the Git branch keeps
+// its commits either way.
+func (e *Engine) planCleanWorktree(ctx context.Context, branch model.Branch) (CleanBranch, error) {
+	plan, err := e.planCleanLocal(ctx, branch)
+	if err != nil {
+		return plan, err
+	}
+	remote, err := e.planCleanFork(ctx, branch, pushedHead(branch), "it has moved since dockhand pushed it")
+	if err != nil {
+		return plan, err
+	}
+	plan.Steps = append(plan.Steps, remote...)
+	return plan, nil
+}
+
+// planCleanLocal plans removing an unmerged branch's worktree, and its Git
+// branch, unless it holds work of its own. A branch with no worktree of
+// dockhand's, as an adopted one may have none, is read all the same:
 // clean --archived skipped the adopted pre-v3 zola branch before asking
 // whether master supersedes it (the dogfood run with bf711891).
-func (e *Engine) planCleanWorktree(ctx context.Context, branch model.Branch) (CleanBranch, error) {
+func (e *Engine) planCleanLocal(ctx context.Context, branch model.Branch) (CleanBranch, error) {
 	plan := CleanBranch{Branch: branch}
 	removing := ""
 	if branch.Managed && exists(branch.Worktree) {

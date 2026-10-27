@@ -47,10 +47,13 @@ untracked files, and work that went on past the merge, are kept. The
 branch's record stays: status --all lists it as cleaned, and status
 <branch> still finds it.
 
---closed also takes the worktrees of branches whose pull request was
-closed without merging, and only their worktrees: their work isn't merged,
-so the Git branch, your fork's branch, and the checkpoints stay, and
-dockhand path or any command that needs the worktree checks it out again.
+--closed also takes branches whose pull request was closed without
+merging: their worktree, and your fork's branch while it still holds what
+dockhand pushed. Their work isn't merged, so a Git branch with commits of
+its own and the checkpoints stay, and dockhand path or any command that
+needs the worktree checks it out again. Any branch's check branches
+(dockhand-check/<commit>) on your fork go with it, each while it holds the
+commit checked.
 A worktree with edits or untracked files is kept. Merged branches are
 cleaned with them; --merged=false leaves those.
 
@@ -73,9 +76,9 @@ passes --yes. archive hides a branch; clean removes a merged one's files;
 cancel stops a check. None means another.
 
 --delete forgets merged, closed, or archived branches named: it deletes each one's Git branch,
-unmerged commits included, which it lists first, and its worktree, and
-forgets its record, keeping of its checks only what another branch's
-results were reused from. It asks, and without a terminal needs --yes.
+unmerged commits included, which it lists first, its worktree, and what it
+left on your fork, as clean offers it, and forgets its record, keeping of
+its checks only what another branch's results were reused from. It asks, and without a terminal needs --yes.
 
 --plan shows what it would remove, or forget, and removes nothing.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -171,7 +174,7 @@ results were reused from. It asks, and without a terminal needs --yes.
 		},
 	}
 	cmd.Flags().BoolVar(&merged, "merged", true, "merged branches: their worktree, local branch, and fork branch")
-	cmd.Flags().BoolVar(&closed, "closed", false, "also branches whose pull request closed unmerged: their worktree only")
+	cmd.Flags().BoolVar(&closed, "closed", false, "also branches whose pull request closed unmerged: their worktree and fork branches")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what it would remove and change nothing")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
@@ -266,7 +269,7 @@ func writeClean(out io.Writer, plans []engine.CleanBranch, done bool, places con
 		case plan.Branch.State == model.BranchMerged || branchStep:
 		case plan.Superseded != "":
 			fmt.Fprintf(out, "  review   branch %s: %s; after review, git branch -D %s deletes it\n", plan.Branch.Name, plan.Superseded, plan.Branch.Name)
-		case slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return s.Kept == "" }):
+		case slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return s.Kind == engine.CleanWorktree && s.Kept == "" }):
 			fmt.Fprintf(out, "  keep     branch %s: dockhand path %s checks it out again\n", plan.Branch.Name, plan.Branch.ShortName())
 		}
 	}
@@ -409,6 +412,16 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 				fmt.Fprintf(out, "    %s  %s\n", model.ObjectID(commit.ID).Short(), commit.Subject)
 			}
 		}
+		for _, step := range plan.Fork {
+			if step.Said {
+				continue
+			}
+			if step.Kept != "" {
+				fmt.Fprintf(out, "  keep %s: %s\n", step.What, step.Kept)
+				continue
+			}
+			fmt.Fprintf(out, "  %s %s\n", step.Kind.Words(), step.What)
+		}
 		fmt.Fprintln(out, "  branch record, except check results reused by other branches")
 	}
 	if plan {
@@ -424,10 +437,15 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 	}
 	var forgotten []string
 	for _, plan := range plans {
-		if _, err := e.Forget(ctx, plan); err != nil {
+		if _, err := e.Forget(ctx, &plan); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "Forgot %s.\n", plan.Branch.ShortName())
+		for _, step := range plan.Fork {
+			if step.Kept != "" && !step.Said {
+				fmt.Fprintf(out, "  kept %s: %s\n", step.What, step.Kept)
+			}
+		}
 		forgotten = append(forgotten, plan.Branch.ShortName())
 	}
 	streams.Emit(map[string]any{"forgotten": forgotten})

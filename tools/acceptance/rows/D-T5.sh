@@ -1,11 +1,15 @@
 # stages: quick full
 # D-T5: a truncated, and a corrupted, dockhand.db: refused clearly, with
 # the file kept as it is, never a panic, and never overwritten. A
-# corruption SQLite reads past, in pages nothing uses, may be read.
+# corruption SQLite reads past, in pages nothing uses, may be read. The
+# copies are consistent ones, .backup's: a plain cp of the main file left
+# behind what its -wal held, and rc6's quick stage truncated an empty
+# 4096-byte database, which read as a new one (Prime-time, 2026-10-27).
 . "${ROW_LIB:?}/fault.sh"
 act() {
-	cp "${DOCKHAND_DB:?}" "$ROW_DIR/truncated.db"
-	cp "$DOCKHAND_DB" "$ROW_DIR/corrupt.db"
+	sqlite3 "${DOCKHAND_DB:?}" ".backup '$ROW_DIR/truncated.db'" || return 1
+	sqlite3 "$DOCKHAND_DB" ".backup '$ROW_DIR/corrupt.db'" || return 1
+	wc -c <"$ROW_DIR/truncated.db" | tr -d ' ' >"$ROW_DIR/size"
 	fault_truncate "$ROW_DIR/truncated.db" 4096
 	local n
 	for n in 200 300 400 500 600 700 800; do fault_flip "$ROW_DIR/corrupt.db" "$((n * 16))"; done
@@ -15,7 +19,9 @@ act() {
 	shasum -a 256 "$ROW_DIR/truncated.db" "$ROW_DIR/corrupt.db" >"$ROW_DIR/after.sums"
 }
 assert() {
-	if grep -q '^panic:' "$ROW_DIR/out.log"; then
+	if [ "$(cat "$ROW_DIR/size")" -le 4096 ]; then
+		row_result "not run" "the stage's database is $(cat "$ROW_DIR/size") bytes, no bigger than the truncation, so truncating it breaks nothing"
+	elif grep -q '^panic:' "$ROW_DIR/out.log"; then
 		row_fail "a panic"
 	elif [ "$(grep truncated "$ROW_DIR/before.sums")" != "$(grep truncated "$ROW_DIR/after.sums")" ]; then
 		row_fail "the truncated database was changed"

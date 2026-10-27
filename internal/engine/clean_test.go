@@ -126,7 +126,7 @@ func TestAnUnreachableForkBranchIsSaidOnce(t *testing.T) {
 
 	plan, err := e.PlanForget(t.Context(), merged[0].Branch)
 	require.NoError(t, err)
-	_, err = e.Forget(t.Context(), plan)
+	_, err = e.Forget(t.Context(), &plan)
 	require.NoError(t, err)
 	left, err := e.Status(t.Context(), model.BranchMerged)
 	require.NoError(t, err)

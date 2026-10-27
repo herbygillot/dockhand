@@ -20,6 +20,10 @@ type ForgetPlan struct {
 	Worktree string
 	Head     string
 	Unmerged []git.CherryCommit
+	// Fork is what the branch left on your fork, as clean offers it
+	// (planCleanFork): removed before the record, whose checks name the
+	// check branches, is forgotten; a step kept is said and left.
+	Fork []CleanStep
 }
 
 // PlanForget is what forgetting branch would remove; a merged, closed, or
@@ -33,6 +37,10 @@ func (e *Engine) PlanForget(ctx context.Context, branch model.Branch) (ForgetPla
 	}
 	if branch.Worktree != "" && exists(branch.Worktree) {
 		plan.Worktree = branch.Worktree
+	}
+	var err error
+	if plan.Fork, err = e.planCleanFork(ctx, branch, pushedHead(branch), "it has moved since dockhand pushed it"); err != nil {
+		return plan, err
 	}
 	head, _, err := e.Repo.Branch(ctx, branch.Name)
 	switch {
@@ -61,7 +69,14 @@ func (e *Engine) PlanForget(ctx context.Context, branch model.Branch) (ForgetPla
 // Forget removes what plan says, worktree, Git branch, then record, the
 // Git branch only while it's still at the commit planned, so one someone
 // moved since stays, and the record isn't forgotten.
-func (e *Engine) Forget(ctx context.Context, plan ForgetPlan) (store.Pruned, error) {
+func (e *Engine) Forget(ctx context.Context, plan *ForgetPlan) (store.Pruned, error) {
+	if len(plan.Fork) > 0 {
+		cleaned, err := e.ApplyClean(ctx, []CleanBranch{{Branch: plan.Branch, Steps: plan.Fork}})
+		if err != nil {
+			return store.Pruned{}, err
+		}
+		plan.Fork = cleaned[0].Steps
+	}
 	if plan.Worktree != "" {
 		if err := e.Repo.RemoveWorktree(ctx, plan.Worktree); err != nil {
 			return store.Pruned{}, fmt.Errorf("removing %s's worktree: %w", plan.Branch.ShortName(), err)
