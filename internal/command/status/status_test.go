@@ -140,7 +140,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.ErrorContains(t, err, "check-1 is already queued for these files")
 	out, _, err := cmdtest.Dockhand(t, "status", "--all", "-v")
 	require.NoError(t, err)
-	require.Contains(t, out, "\nChecks queued and running\n  RUN      BRANCH     SOURCE      ON       STATE   DETAIL\n  check-1  jq-update  snapshot 1  command  queued  \n\nserve: not running · queue: 1 run\n")
+	require.Contains(t, out, "\nChecks queued and running\n  RUN      BRANCH     SOURCE      ON       STATE   DETAIL\n  check-1  jq-update  snapshot 1  command  queued  nothing is running the queue; dockhand wait check-1 runs it here, dockhand serve --drain runs the queue, cancel ends it\n\nserve: not running · queue: 1 run\n")
 	_, _, err = cmdtest.Dockhand(t, "queue")
 	require.EqualError(t, err, "queue is part of status now: dockhand status lists the checks queued and running")
 	_, _, err = cmdtest.Dockhand(t, "watch")

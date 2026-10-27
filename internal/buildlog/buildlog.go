@@ -22,6 +22,8 @@ type Cause struct {
 	Line string
 	// Number is where it is in the log, counting from 1.
 	Number int
+	// cmake is a CMake error waiting for the line that says its cause.
+	cmake bool
 }
 
 // compilerError is a compiler's error at a place in a file, in the format
@@ -40,6 +42,12 @@ var (
 	rustError    = regexp.MustCompile(`^error(\[E\d{4}\])?: \S`)
 	rustLocation = regexp.MustCompile(`^\s*--> (\S+:\d+:\d+)$`)
 )
+
+// cmakeError is CMake's error at a place in its files, "CMake Error at
+// CMakeLists.txt:20 (find_package):", which the next line says the cause
+// of, as CMake prints a message; a configure ends after it with "--
+// Configuring incomplete, errors occurred!", which says nothing of why.
+var cmakeError = regexp.MustCompile(`^CMake Error at \S+:\d+`)
 
 // FirstFrom reads a log, from a line on, counting from 1, for the first
 // line a reading takes as a failure's likely cause: in a C or C++ build,
@@ -68,14 +76,20 @@ func FirstFrom(log io.Reader, from int) (Cause, bool) {
 				return Cause{Line: strings.TrimSpace(text), Number: number}, true
 			}
 			if pending.Line != "" {
+				if pending.cmake {
+					if said := strings.TrimSpace(text); said != "" {
+						return Cause{Line: pending.Line + " " + said, Number: pending.Number}, true
+					}
+					continue
+				}
 				if m := rustLocation.FindStringSubmatch(text); m != nil {
 					pending.Line += " (at " + m[1] + ")"
 					return pending, true
 				}
 				pending = Cause{}
 			}
-			if rustError.MatchString(text) {
-				pending = Cause{Line: strings.TrimSpace(text), Number: number}
+			if rustError.MatchString(text) || cmakeError.MatchString(text) {
+				pending = Cause{Line: strings.TrimSpace(text), Number: number, cmake: cmakeError.MatchString(text)}
 			}
 		}
 		if err != nil {

@@ -122,7 +122,11 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // prefix of the person's, where input's local says so: there it builds
 // as-is, snapshots the prefix, and puts it back. In a clone, where local
 // is absent, it builds and judges as it did, so the protocol stays 3.
-const guestPin = "ffdf860ecab3242a90f7a6eba2e660e4709d3f4d0516cba2de5596445bfca92f"
+//
+// Since field testing's outdated-ports notes, a failure's detail passes
+// over make's and ninja's own failure lines and a compiler's count for the
+// tool's error: its words alone, so the protocol stays 3.
+const guestPin = "6891615336fe5750e6140c8a258f61980e70787dd7e92a5d7ccffc1280fa7ef9"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

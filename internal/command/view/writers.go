@@ -336,7 +336,9 @@ func WriteVariants(out io.Writer, plan model.Plan) {
 // WriteQueue is status's list of the checks queued and running, oldest
 // first, where queue listed them: each with its branch, what it checks,
 // where, and its state, a run whose process ended said to be stopped.
-func WriteQueue(out io.Writer, queue []engine.QueuedCheck) {
+// WriteQueue lists the checks queued and running; led is whether a serve
+// or a drain leads, which a queued check waits on.
+func WriteQueue(out io.Writer, queue []engine.QueuedCheck, led bool) {
 	if len(queue) == 0 {
 		return
 	}
@@ -359,6 +361,12 @@ func WriteQueue(out io.Writer, queue []engine.QueuedCheck) {
 		}
 		if queued.Stopped {
 			state, detail = "stopped", "the process running it ended; dockhand wait "+run.Name()+" resumes it, cancel ends it"
+		}
+		// A queued check nothing leads waits for nothing: the session that
+		// killed its wrapper left check-660 so (field testing's
+		// outdated-ports session).
+		if run.State == model.RunQueued && !queued.Stopped && !led {
+			detail = "nothing is running the queue; dockhand wait " + run.Name() + " runs it here, dockhand serve --drain runs the queue, cancel ends it"
 		}
 		fmt.Fprintf(table, "  %s\t%s\t%s\t%s\t%s\t%s\n", run.Name(), queued.Branch.ShortName(), engine.Describe(queued.Revision), strings.Join(on, ", "), state, detail)
 	}

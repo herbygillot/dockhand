@@ -122,9 +122,19 @@ func TestTheQueueNamesARunningChecksVMsWithTheirTartHome(t *testing.T) {
 	WriteQueue(&out, []engine.QueuedCheck{
 		{Run: model.Run{ID: "r1", Number: 616, State: model.RunRunning}, VMs: []string{"dockhand-check-run-9-tahoe-1"}, TartHome: "~/.dockhand/tart"},
 		{Run: model.Run{ID: "r2", Number: 617, State: model.RunQueued}},
-	})
+	}, true)
 	require.Contains(t, out.String(), "  check-616 runs in dockhand-check-run-9-tahoe-1: TART_HOME=~/.dockhand/tart tart exec dockhand-check-run-9-tahoe-1 …\n")
 	require.NotContains(t, out.String(), "check-617 runs in")
+	require.NotContains(t, out.String(), "nothing is running the queue", "serve leads")
+}
+
+// A queued check nothing leads says so, and how to run it, where it said
+// its state alone (field testing's outdated-ports session's check-660).
+func TestAQueuedCheckNothingRunsSaysSo(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	WriteQueue(&out, []engine.QueuedCheck{{Run: model.Run{ID: "r1", Number: 660, State: model.RunQueued}}}, false)
+	require.Contains(t, out.String(), "nothing is running the queue; dockhand wait check-660 runs it here, dockhand serve --drain runs the queue, cancel ends it")
 }
 
 // A long Changed line names listShown ports and counts the rest; with -v
