@@ -68,6 +68,9 @@ type UpdateRequest struct {
 	// values in place (the architecture review's C4c: embedded, not
 	// copied field by field).
 	model.EditIntent
+	// Closes are the Trac tickets the update closes, by number, which the
+	// branch keeps for tidy's Closes: trailer (the docs dig's I41).
+	Closes []string
 	// Subject is the reason for a revision bump, the commit subject after
 	// the port's name: "rebuild for poppler 25.09.0"; Excepted are the
 	// dependents --except left out of the same rebuild, which its edit
@@ -626,6 +629,21 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddEdit(edit); err != nil {
 			return err
+		}
+		// The tickets it closes join the branch's, each once.
+		if len(request.Closes) > 0 {
+			current, err := tx.Branch(branch.ID)
+			if err != nil {
+				return err
+			}
+			for _, ticket := range request.Closes {
+				if !slices.Contains(current.Closes, ticket) {
+					current.Closes = append(current.Closes, ticket)
+				}
+			}
+			if err := tx.UpdateBranch(current); err != nil {
+				return err
+			}
 		}
 		if primed != nil {
 			if err := tx.RecordAssessment(*primed); err != nil {

@@ -114,8 +114,8 @@ func TestComposeKeepsTheCombinedCommitsTrailers(t *testing.T) {
 		"jq: fix the build\n\nGenerated-By: Dockhand v0.3.0 (https://github.com/herbygillot/dockhand)\nCloses: https://trac.macports.org/ticket/2\nReported-by: Ada\n",
 	}
 	require.Equal(t, "jq: update to 1.8.1\n\nThe body.\n\nCloses: https://trac.macports.org/ticket/2\nSee: https://trac.macports.org/ticket/1\nReported-by: Ada\n"+commitmsg.GeneratedBy()+"\n",
-		commitmsg.Compose("jq: update to 1.8.1", "The body.", combined, true))
-	require.Equal(t, "jq: update to 1.8.1\n", commitmsg.Compose("jq: update to 1.8.1", "", nil, false))
+		commitmsg.Compose("jq: update to 1.8.1", "The body.", combined, nil, true))
+	require.Equal(t, "jq: update to 1.8.1\n", commitmsg.Compose("jq: update to 1.8.1", "", nil, nil, false))
 	text, trailers := commitmsg.SplitTrailers("The body.\n\nSee: x\nCloses: y")
 	require.Equal(t, "The body.", text)
 	require.Equal(t, []string{"See: x", "Closes: y"}, trailers)
@@ -130,7 +130,7 @@ func TestComposeWritesAGivenTrailerOnce(t *testing.T) {
 	t.Parallel()
 	combined := []string{"gnome-voice: wip\n\nfirst pass\n\nAssisted-by: Claude:claude-opus-5"}
 	require.Equal(t, "gnome-voice: fix destroot\n\nAssisted-by: Claude:claude-opus-5\n",
-		commitmsg.Compose("gnome-voice: fix destroot", "Assisted-by: Claude:claude-opus-5", combined, false))
+		commitmsg.Compose("gnome-voice: fix destroot", "Assisted-by: Claude:claude-opus-5", combined, nil, false))
 	require.Equal(t, "gnome-voice: fix destroot\n\nWhy it moved.\n\nCloses: https://trac.macports.org/ticket/1\nAssisted-by: Claude:claude-opus-5\n",
-		commitmsg.Compose("gnome-voice: fix destroot", "Why it moved.\n\nCloses: https://trac.macports.org/ticket/1", combined, false))
+		commitmsg.Compose("gnome-voice: fix destroot", "Why it moved.\n\nCloses: https://trac.macports.org/ticket/1", combined, nil, false))
 }

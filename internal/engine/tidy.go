@@ -371,7 +371,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 		} else if chained {
 			chosenBody = chainBody(edits, directory)
 		}
-		group.Message = commitmsg.Compose(subject, chosenBody, commitMessages(group.Combines), chained)
+		group.Message = commitmsg.Compose(subject, chosenBody, commitMessages(group.Combines), closesFor(branch, edits, directory), chained)
 		group.Author, err = groupAuthor(group, person, author)
 		if err != nil {
 			return TidyPlan{}, err
@@ -388,7 +388,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	}
 
 	if request.Squash {
-		plan.Groups = []TidyGroup{squash(plan.Groups, changed, history, request.Message, person, author)}
+		plan.Groups = []TidyGroup{squash(plan.Groups, changed, history, request.Message, branch.Closes, person, author)}
 	}
 	return plan, nil
 }
@@ -407,8 +407,32 @@ func reproduces(groups []TidyGroup, history []git.HistoryCommit) bool {
 	return true
 }
 
+// closesFor are the tickets a branch closes, for the commit of the
+// directory its version update changed: --closes names what the update
+// fixes (the docs dig's I41). With no update edit, the branch's first
+// directory's commit takes them.
+func closesFor(branch model.Branch, edits []model.Edit, directory string) []string {
+	if len(branch.Closes) == 0 {
+		return nil
+	}
+	updated := ""
+	for _, edit := range edits {
+		if edit.Kind == model.EditUpdate {
+			updated = edit.Directory
+			break
+		}
+	}
+	if updated == "" && len(edits) > 0 {
+		updated = edits[0].Directory
+	}
+	if directory != updated {
+		return nil
+	}
+	return branch.Closes
+}
+
 // squash makes one commit of the whole branch.
-func squash(groups []TidyGroup, changed []string, history []git.HistoryCommit, message string, person, author git.Signature) TidyGroup {
+func squash(groups []TidyGroup, changed []string, history []git.HistoryCommit, message string, tickets []string, person, author git.Signature) TidyGroup {
 	group := TidyGroup{Paths: changed, Combines: history}
 	for _, g := range groups {
 		group.Ports = append(group.Ports, g.Ports...)
@@ -417,7 +441,7 @@ func squash(groups []TidyGroup, changed []string, history []git.HistoryCommit, m
 	switch {
 	case strings.TrimSpace(message) != "":
 		subject, rest, _ := strings.Cut(strings.TrimSpace(message), "\n")
-		group.Message = commitmsg.Compose(subject, strings.TrimSpace(rest), commitMessages(history), false)
+		group.Message = commitmsg.Compose(subject, strings.TrimSpace(rest), commitMessages(history), tickets, false)
 	case len(groups) == 1 && len(groups[0].Blocking) == 0:
 		group.Message = groups[0].Message
 		group.Notes = append(group.Notes, "subject from the only commit it proposes")

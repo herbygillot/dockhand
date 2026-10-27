@@ -15,6 +15,11 @@ func Body(message string) string {
 	return text
 }
 
+// TicketURL is a Trac ticket's URL, as a Closes: trailer cites it.
+func TicketURL(number string) string {
+	return "https://trac.macports.org/ticket/" + number
+}
+
 // SplitTrailers separates a body's final paragraph when every line of it
 // is a trailer.
 func SplitTrailers(text string) (string, []string) {
@@ -34,7 +39,10 @@ func SplitTrailers(text string) (string, []string) {
 // wrote the edit, an earlier one left out. It's
 // tidy's composer, here beside the rules it writes to, where engine/tidy.go
 // held it (the code-organization review's finding 9).
-func Compose(subject, text string, combined []string, generated bool) string {
+//
+// tickets are Trac tickets the branch was told it closes, by number, each
+// a Closes: trailer with its URL (TicketURL), once whatever else names it.
+func Compose(subject, text string, combined, tickets []string, generated bool) string {
 	var closes, see, other []string
 	add := func(list *[]string, line string) {
 		if !slices.Contains(*list, line) {
@@ -51,6 +59,9 @@ func Compose(subject, text string, combined []string, generated bool) string {
 		_, rest, _ := strings.Cut(strings.TrimSpace(message), "\n")
 		_, trailers := SplitTrailers(strings.TrimSpace(rest))
 		lists = append(lists, trailers)
+	}
+	for _, ticket := range tickets {
+		add(&closes, "Closes: "+TicketURL(ticket))
 	}
 	for _, trailers := range lists {
 		for _, line := range trailers {
