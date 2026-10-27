@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -193,7 +194,24 @@ func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
 		edits, err = r.Edits(branch.ID)
 		return err
 	}))
-	require.Equal(t, []string{"Left out of the rebuild for jq 1.8.1 with `--except`: **gojq**."}, leftOut(edits))
+	require.Equal(t, []string{"Left out of the rebuild for jq 1.8.1 with `--except`: **gojq**."}, leftOut(edits), "once, on the bump's edit")
+
+	// Every dependent left out: with no bump to keep them on, the
+	// update's own edit keeps them, and they're listed all the same.
+	other, err := e.Start(t.Context(), StartRequest{Name: "jq-alone"})
+	require.NoError(t, err)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		return tx.AddEdit(model.Edit{ID: "ed_alone", Branch: other.ID, Kind: model.EditUpdate, Port: "jq", Directory: "textproc/jq", Subject: "jq: update to 1.8.1",
+			Files: []model.EditedFile{{Path: "textproc/jq/Portfile", Before: "b1", After: "b2"}}, At: time.Now()})
+	}))
+	alone, err := e.RevbumpLinked(t.Context(), other, update, []string{"gojq", "yq"}, false)
+	require.NoError(t, err)
+	require.Empty(t, alone.Bumped)
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		edits, err = r.Edits(other.ID)
+		return err
+	}))
+	require.Equal(t, []string{"Left out of the rebuild for jq 1.8.1 with `--except`: **gojq** and **yq**."}, leftOut(edits))
 }
 
 // Impact's dependents to build first are one of each kind there is,

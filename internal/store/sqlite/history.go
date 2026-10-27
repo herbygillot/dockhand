@@ -40,6 +40,10 @@ func (t *tx) AddEdit(e model.Edit) error {
 	return err
 }
 
+func (t *tx) SetExcepted(edit model.EditID, excepted []string) error {
+	return t.update("edit "+string(edit), "UPDATE edits SET excepted=? WHERE repository_id=? AND id=?", strings.Join(excepted, " "), t.repo, edit)
+}
+
 func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
 	rows, err := t.conn.QueryContext(t.ctx, "SELECT id, branch_id, kind, port, directory, subject, files, at, upstream, release, excepted FROM edits WHERE repository_id=? AND branch_id=? ORDER BY at, rowid", t.repo, branch)
 	if err != nil {

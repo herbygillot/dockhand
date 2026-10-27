@@ -80,10 +80,15 @@ func leftOut(edits []model.Edit) []string {
 	var lines []string
 	said := map[string]bool{}
 	for _, edit := range edits {
-		if edit.Kind != model.EditRevbump || len(edit.Excepted) == 0 {
+		if len(edit.Excepted) == 0 {
 			continue
 		}
+		// A bump's subject names its rebuild; an update's own edit keeps
+		// them where every dependent was left out, "jq: update to 1.8.1".
 		_, rebuild, _ := strings.Cut(edit.Subject, ": ")
+		if edit.Kind == model.EditUpdate {
+			rebuild = "rebuild for " + edit.Port + " " + strings.TrimPrefix(rebuild, "update to ")
+		}
 		if said[rebuild] {
 			continue
 		}
