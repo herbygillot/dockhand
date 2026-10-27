@@ -57,6 +57,9 @@ type bodyFacts struct {
 	// NewPorts are the ports the branch adds, as its Portfiles say them,
 	// for a reviewer who has never heard of one.
 	NewPorts []NewPort
+	// Reviewed are the person's acceptances of what held the submission,
+	// as DecisionWords says each (the person's voice).
+	Reviewed []string
 	// Note is the person's own note (model.Branch.Note), which the
 	// Description gives after what dockhand wrote there.
 	Note string
@@ -109,7 +112,7 @@ func leftOut(edits []model.Edit) []string {
 // prdescription composes it: the evidence's reports and table, in the
 // engine's words, and the checklist's answers.
 func (facts bodyFacts) description() prdescription.Facts {
-	described := prdescription.Facts{Note: facts.Note, Types: facts.Types, Updated: facts.Updated, NewPorts: facts.NewPorts, LeftOut: facts.LeftOut,
+	described := prdescription.Facts{Note: facts.Note, Reviewed: facts.Reviewed, Types: facts.Types, Updated: facts.Updated, NewPorts: facts.NewPorts, LeftOut: facts.LeftOut,
 		SkipNotification: facts.SkipNotification, Version: buildinfo.Current().Tag()}
 	for _, hand := range facts.HandEdits {
 		described.HandEdits = append(described.HandEdits, "**"+hand.Directory+"**: "+hand.Line())

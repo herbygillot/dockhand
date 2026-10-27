@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/clean"
 	"github.com/herbygillot/dockhand/internal/command/config"
 	"github.com/herbygillot/dockhand/internal/command/create"
+	"github.com/herbygillot/dockhand/internal/command/decide"
 	"github.com/herbygillot/dockhand/internal/command/explain"
 	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/command/outdated"
@@ -260,6 +261,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		clean.ArchiveCommand(shared, streams),
 		clean.Command(shared, streams),
 		explain.Command(shared, streams),
+		decide.Command(shared, streams),
 		config.Command(shared, streams),
 	} {
 		command.GroupID = "occasional"

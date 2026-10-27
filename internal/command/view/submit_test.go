@@ -26,8 +26,18 @@ func TestThePreviewSaysWhatServeWouldHold(t *testing.T) {
 	WriteSubmitPlan(&out, plan, false)
 	require.Contains(t, out.String(), "  Serve    would hold it:\n"+
 		"           opkssh moves from 0.16.0 to a new major version, 1.0.0\n"+
+		"             answer it: dockhand decide major -p opkssh --because \"…\"\n"+
 		"           opkssh now needs macOS 13 or later\n"+
-		"           "+after.Detail+"\n")
+		"             answer it: dockhand decide floor -p opkssh --because \"…\"\n"+
+		"           "+after.Detail+"\n"+
+		"             answer it: dockhand decide after -p opkssh --because \"…\"\n", "each with the decision that answers it (the person's voice)")
+
+	// One the person accepted holds nothing, and is said as decided.
+	plan.Decided = map[string]model.Decision{"opkssh floor": {Subject: "opkssh floor", Answer: model.Accepted, Words: "macOS 12 is past its support"}}
+	out.Reset()
+	WriteSubmitPlan(&out, plan, false)
+	require.NotContains(t, out.String(), "opkssh now needs macOS 13 or later")
+	require.Contains(t, out.String(), "  Decided  opkssh floor: acceptable because macOS 12 is past its support\n")
 	require.Equal(t, 1, strings.Count(out.String(), "waits for acceptance-first's update to"))
 	require.Contains(t, out.String(), "ready to submit", "a person's own submission goes ahead")
 

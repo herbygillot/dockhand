@@ -41,6 +41,7 @@ var noPlan = map[string]string{
 	"archive":      "sets a branch aside, which archive --undo brings back",
 	"cancel":       "stops a check, keeping what it finished",
 	"config":       "shows or sets one setting, which it names",
+	"decide":       "records one decision, which deciding again replaces",
 	"diff":         "reads only",
 	"edit":         "opens the Portfile in your editor",
 	"explain":      "reads only",

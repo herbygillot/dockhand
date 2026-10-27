@@ -94,6 +94,10 @@ type BranchStatus struct {
 	// they're recorded; status collects none.
 	Held       []model.Concern
 	Assessment AssessmentState
+	// Decided are the person's decisions on its concerns that stand for
+	// its files, each said by status, and Awaiting those waiting on
+	// something, which block its submission (the person's voice).
+	Decided, Awaiting []model.Decision
 	// Wider is the check a passing attended host check didn't build that
 	// the update asks for (wider).
 	Wider *branchstate.Wider
@@ -383,7 +387,7 @@ func (s BranchStatus) Check() branchstate.Check {
 // (branchstate.Facts).
 func (s BranchStatus) Facts() branchstate.Facts {
 	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Commits: s.Commits, Edited: s.Edited,
-		Held: s.Held, Moved: s.Moved, NotAssessed: s.Assessment == AssessmentPending, NoFork: s.NoFork, Pushed: s.Pushed(), OthersPushed: s.SomeoneElsePushed(),
+		Held: s.Held, Moved: s.Moved, Awaiting: s.Awaiting, NotAssessed: s.Assessment == AssessmentPending, NoFork: s.NoFork, Pushed: s.Pushed(), OthersPushed: s.SomeoneElsePushed(),
 		Failing: s.Failing(), CI: s.CI, Ports: s.Scope.PortNames(), Wider: s.Wider, PastMerge: s.PastMerge}
 	if s.Evidence != nil {
 		if on, ok := OnValues(s.Evidence.Plan.Environments); ok {
@@ -722,11 +726,24 @@ func (e *Engine) readOpen(ctx context.Context, status *BranchStatus, worktree *g
 	// And what the last submission plan of these files found that took
 	// the network, another pull request or a moved source, as it found
 	// them (C2's rest), since status reads no network itself.
-	return e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		network, at, err := r.NetworkHolds(status.Branch.ID, model.ObjectID(status.Tree))
 		status.Held, status.NetworkHeldAt = append(status.Held, holding(network, e.allowedFor)...), at
 		return err
-	})
+	}); err != nil {
+		return err
+	}
+	// The person's decisions on its concerns: an acceptance lets its
+	// concern go, said; one waiting on something blocks it.
+	decided := e.decided(ctx, status.Branch.ID, status.Tree)
+	status.Held = undecided(status.Held, decided)
+	for _, subject := range slices.Sorted(maps.Keys(decided)) {
+		status.Decided = append(status.Decided, decided[subject])
+		if decided[subject].Answer == model.Waiting {
+			status.Awaiting = append(status.Awaiting, decided[subject])
+		}
+	}
+	return nil
 }
 
 // readDecisions reads what publication reads of a branch beside its

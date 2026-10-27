@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -355,7 +356,20 @@ const (
 	// attempted files, its words the refusal (HandRefusal), and its answer
 	// ByHand.
 	FindingHandEdit FindingKind = "hand-edit"
+	// FindingConcern is a concern that holds a submission nobody looks
+	// over, one finding the person answered with their reason (the
+	// person's voice, Then's item 13): its subject the concern's
+	// (ConcernSubject), its evidence the branch's files, the tree it was
+	// decided on, its words the reason, and its answer Accepted,
+	// "acceptable because…", or Waiting, "awaiting…".
+	FindingConcern FindingKind = "concern"
 )
+
+// ConcernSubject is what a decision on a concern names: its port and
+// rule, as "jq license-changed", one decision for each.
+func ConcernSubject(c Concern) string {
+	return strings.TrimSpace(c.Port + " " + c.Rule)
+}
 
 // EnvironmentEvidence is what a standing acceptance of a dependency's
 // failure rests on: the dependency's version and revision as the tree has
@@ -376,18 +390,25 @@ const Accepted DecisionAnswer = "accepted"
 // dockhand's attempt (FindingHandEdit).
 const ByHand DecisionAnswer = "by-hand"
 
+// Waiting leaves a concern for later, awaiting what its words say, as
+// upstream's answer: it blocks the submission until decided otherwise
+// (FindingConcern).
+const Waiting DecisionAnswer = "waiting"
+
 // Validate checks the rules every stored decision keeps.
 func (d Decision) Validate() error {
 	switch {
 	case d.Subject == "" || d.Evidence == "" || d.At.IsZero():
 		return invalid("decision on %q is incomplete", d.Subject)
-	case d.Finding != FindingFailure && d.Finding != FindingEnvironmentFailure && d.Finding != FindingHandEdit:
+	case d.Finding != FindingFailure && d.Finding != FindingEnvironmentFailure && d.Finding != FindingHandEdit && d.Finding != FindingConcern:
 		return invalid("decision on %s answers an unknown kind of finding %q", d.Subject, d.Finding)
 	case d.Finding == FindingEnvironmentFailure && d.Branch != "":
 		return invalid("a dependency's failure in an environment is accepted standing, on no branch: %s", d.Subject)
 	case d.Finding == FindingHandEdit && (d.Branch == "" || d.Answer != ByHand || d.Words == ""):
 		return invalid("a hand edit of %s is taken by hand on a branch, with dockhand's refusal", d.Subject)
-	case d.Finding != FindingHandEdit && d.Answer != Accepted:
+	case d.Finding == FindingConcern && (d.Branch == "" || d.Words == "" || d.Answer != Accepted && d.Answer != Waiting):
+		return invalid("a decision on %s is a branch's, accepted or waiting, with its reason", d.Subject)
+	case d.Finding != FindingHandEdit && d.Finding != FindingConcern && d.Answer != Accepted:
 		return invalid("decision on %s has an unknown answer %q", d.Subject, d.Answer)
 	}
 	return nil

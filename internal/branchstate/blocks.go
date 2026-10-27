@@ -44,6 +44,9 @@ const (
 	// BlockNotAccepted is a failed extra or revision-only target not yet
 	// accepted.
 	BlockNotAccepted BlockKind = "not-accepted"
+	// BlockAwaiting is a concern the person decided to wait on, its
+	// subject in Port and what for in Words (the person's voice).
+	BlockAwaiting BlockKind = "awaiting"
 	// BlockLint is a port the branch adds that lint warned of, not yet
 	// accepted (the docs dig's I13).
 	BlockLint BlockKind = "lint"
@@ -82,6 +85,8 @@ type Block struct {
 	Planned   model.PlanTarget
 	// Lint are what lint warned of, for BlockLint.
 	Lint []string
+	// Awaited is what the person awaits, for BlockAwaiting.
+	Awaited string
 	// Path and Marks are a Portfile and the guesses it still marks, for
 	// BlockUnconfirmed; Mark the line that marks them.
 	Path  string
@@ -150,6 +155,9 @@ func (b Block) Words(v Vocabulary) string {
 		return fmt.Sprintf("%s did not pass in %s. Fix the failure, submit a draft with --draft, or run dockhand check --baseline to see whether master fails in the same way", b.Port, b.Run)
 	case BlockNotAccepted:
 		return fmt.Sprintf("%s (%s) did not pass in %s. If the failure was not caused by this branch, acknowledge it with --accept %s", b.Port, kindWords(b.Planned), b.Run, b.Port)
+	case BlockAwaiting:
+		port, rule, _ := strings.Cut(b.Port, " ")
+		return fmt.Sprintf("%s: you're awaiting %s. Decide it once you have it, dockhand decide %s -p %s --because \"…\", or share the branch with --draft", b.Port, b.Awaited, rule, port)
 	case BlockLint:
 		return fmt.Sprintf("%s is a new port, and lint --nitpick warned in %s: %s. Fix %s and check again, or take %s with --accept %s", b.Port, b.Run, strings.Join(b.Lint, "; "), map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], b.Port)
 	case BlockOthersPushed:

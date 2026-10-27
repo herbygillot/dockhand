@@ -47,9 +47,12 @@ const (
 	ExtraFailed            Reason = "extra-failed"
 	// LintWarned is a new port lint warned of, which submit asks to fix
 	// or accept (the docs dig's I13).
-	LintWarned       Reason = "lint-warned"
-	CommitForReview  Reason = "commit-for-review"
-	Held             Reason = "held"
+	LintWarned      Reason = "lint-warned"
+	CommitForReview Reason = "commit-for-review"
+	Held            Reason = "held"
+	// Awaiting is a concern the person decided to wait on, which blocks
+	// its submission (the person's voice).
+	Awaiting         Reason = "awaiting"
 	SourceMoved      Reason = "source-moved"
 	NotAssessed      Reason = "not-assessed"
 	WaitingToSubmit  Reason = "waiting-to-submit"
@@ -76,6 +79,7 @@ const (
 	VerbRerunCI    = refusal.VerbRerunCI
 	VerbStart      = refusal.VerbStart
 	VerbRebase     = refusal.VerbRebase
+	VerbDecide     = refusal.VerbDecide
 )
 
 // Branch is what's recorded of a branch beside its checks, as attention
@@ -97,6 +101,9 @@ type Branch struct {
 	// Held are what holds its submission, from its recorded assessments;
 	// Moved the Git sources whose tag moved before its check.
 	Held, Moved []model.Concern
+	// Awaiting are the person's decisions to wait on a concern, which
+	// block its submission until decided otherwise (the person's voice).
+	Awaiting []model.Decision
 	// NotAssessed is a branch some of whose files' assessments aren't
 	// recorded yet, which submitting collects.
 	NotAssessed bool
@@ -352,11 +359,23 @@ func Attend(facts Facts) []Attention {
 				accept.Args = append(accept.Args, "--accept", port)
 			}
 			return row(NeedsYou, LintWarned, accept, func(a *Attention) { a.Run, a.Ports = run, linted })
+		case b.Record.PullRequest == nil && len(b.Awaiting) > 0:
+			// The person is waiting on something for one of its
+			// concerns, which submit refuses until it's decided.
+			waiting := b.Awaiting[0]
+			return row(NeedsYou, Awaiting, decideNext(waiting.Subject), func(a *Attention) { a.Detail = waiting.Subject + ": awaiting " + waiting.Words })
 		case b.Record.PullRequest == nil && len(b.Held) > 0:
 			// Paused where serve prepared it, as serve holds it; a person's
 			// own submission shows it and goes on, as submit does (the
-			// direction synthesis's third contradiction).
-			return row(NeedsYou, Held, submitNext(b), func(a *Attention) { a.Holds, a.Serve = b.Held, b.Record.Origin == model.OriginServe })
+			// direction synthesis's third contradiction). Its Next is the
+			// decision that answers the first, where a rule raised it, so
+			// its rule's name is found where it holds (the prioritization
+			// thread's word, 2026-10-27).
+			next := submitNext(b)
+			if i := slices.IndexFunc(b.Held, func(c model.Concern) bool { return c.Rule != "" && c.Port != "" && c.Origin != model.FromSubmission }); i >= 0 {
+				next = decideNext(model.ConcernSubject(b.Held[i]))
+			}
+			return row(NeedsYou, Held, next, func(a *Attention) { a.Holds, a.Serve = b.Held, b.Record.Origin == model.OriginServe })
 		case b.Record.PullRequest == nil && len(b.Moved) > 0:
 			// The check built another source than the update chose: serve
 			// waits for a look, and a person's submission shows it.
@@ -377,6 +396,13 @@ func Attend(facts Facts) []Attention {
 		}
 	}
 	return nil
+}
+
+// decideNext is the decision that answers a concern, by its subject,
+// "jq license-changed": dockhand decide license-changed jq --because "…".
+func decideNext(subject string) Next {
+	port, rule, _ := strings.Cut(subject, " ")
+	return Next{Verb: VerbDecide, Args: []string{rule, port, "--because", `"…"`}}
 }
 
 // submitNext is the submit a branch is ready for, with the fork it needs
@@ -526,6 +552,8 @@ func (a Attention) Words(v Vocabulary) string {
 		return paused(first)
 	case NotAssessed:
 		return "passed; the upstream changes have not yet been assessed. Submit will assess them"
+	case Awaiting:
+		return "awaiting your decision on " + a.Detail
 	case WaitingToSubmit:
 		return "passed; waiting for you to submit"
 	case Conflicting:
