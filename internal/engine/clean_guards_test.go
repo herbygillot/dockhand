@@ -3,11 +3,13 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -183,4 +185,89 @@ func TestAMergedBranchIsSaidFromItsRecord(t *testing.T) {
 	require.EqualError(t, err, "no tracked branch named jq-update: jq-update was merged as #34901 and cleaned")
 	_, err = e.Path(t.Context(), "jq-update")
 	require.EqualError(t, err, "jq-update was merged as #34901 and cleaned; nothing of it is checked out")
+}
+
+// A branch whose pull request closed unmerged, an archived one never
+// submitted, and one forgotten leave nothing on the fork: clean offers the
+// pull request's head while it holds what dockhand pushed, and the check
+// branches its GitHub checks left, as a merged branch's; one moved since
+// is kept, said (the dig's I31).
+func TestCleanOffersWhatClosedWorkLeftOnTheFork(t *testing.T) {
+	t.Parallel()
+	checkBranch := func(t *testing.T, e *Engine, fork string, branch model.Branch) string {
+		t.Helper()
+		usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
+		e.Providers = map[string]buildenv.Provider{"github": &scriptedProvider{}}
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+		require.NoError(t, err)
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{{Provider: "github", Platform: tahoeArm.Platform}}})
+		require.NoError(t, err)
+		_, err = e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		commit := string(capture.Revision.Source.Commit)
+		name := buildenv.CheckBranchPrefix + commit[:12]
+		testsupport.Git(t, e.Repo.Root, "push", "-q", fork, commit+":refs/heads/"+name)
+		return "ada/macports-ports:" + name
+	}
+
+	// Closed unmerged: its fork head and its check branch, beside its
+	// worktree.
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	check := checkBranch(t, e, fake.Fork, branch)
+	submit, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), submit, model.AnsweredAsked)
+	require.NoError(t, err)
+	fake.PRs[submitted.PullRequest.Ref.Number].State = forge.PullRequestClosed
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	plans, err := e.PlanClean(t.Context(), model.BranchMerged, model.BranchClosed)
+	require.NoError(t, err)
+	require.Equal(t, "", whats(plans)["ada/macports-ports:dockhand/jq-update"], "its fork head holds what dockhand pushed")
+	require.Equal(t, "", whats(plans)[check])
+	done, err := e.ApplyClean(t.Context(), plans)
+	require.NoError(t, err)
+	require.Empty(t, fake.ForkHead("dockhand/jq-update"))
+	require.Empty(t, fake.ForkHead(strings.TrimPrefix(check, "ada/macports-ports:")))
+	require.Equal(t, "", whats(done)[check])
+	head, _, err := e.Repo.Branch(t.Context(), "dockhand/jq-update")
+	require.NoError(t, err, "the Git branch, with work master lacks, stays")
+	require.NotEmpty(t, head)
+
+	// One moved since dockhand pushed it is kept.
+	f = setup(t)
+	e, _ = f.withPreparer(t)
+	fake = f.withFork(t, e)
+	branch = committedUpdate(t, e)
+	submit, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err = e.ApplySubmit(t.Context(), submit, model.AnsweredAsked)
+	require.NoError(t, err)
+	fake.PRs[submitted.PullRequest.Ref.Number].State = forge.PullRequestClosed
+	refreshed, err := e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	other := testsupport.Git(t, fake.Fork, "rev-parse", "master")
+	testsupport.Git(t, fake.Fork, "update-ref", "refs/heads/dockhand/jq-update", other)
+	plans, err = e.PlanCleanBranches(t.Context(), []model.Branch{refreshed.Branches[0].Branch})
+	require.NoError(t, err)
+	require.Equal(t, "it has moved since dockhand pushed it", whats(plans)["ada/macports-ports:dockhand/jq-update"])
+
+	// Never submitted, then forgotten: its check branch, read from the
+	// remotes that push to a fork, goes with it.
+	f = setup(t)
+	e, _ = f.withPreparer(t)
+	fake = f.withFork(t, e)
+	branch = committedUpdate(t, e)
+	check = checkBranch(t, e, fake.Fork, branch)
+	branch, err = e.Archive(t.Context(), branch, false)
+	require.NoError(t, err)
+	forget, err := e.PlanForget(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, "", whats([]CleanBranch{{Steps: forget.Fork}})[check])
+	_, err = e.Forget(t.Context(), &forget)
+	require.NoError(t, err)
+	require.Empty(t, fake.ForkHead(strings.TrimPrefix(check, "ada/macports-ports:")), "removed as it was forgotten")
 }
