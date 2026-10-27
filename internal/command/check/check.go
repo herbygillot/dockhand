@@ -130,7 +130,7 @@ check.baseline = true, it runs that baseline automatically.`,
 					fmt.Fprintf(out, "  New port directory %s: run dockhand check --include %s/Portfile to build it. Run git sparse-checkout add %s before staging its files.\n", directory, directory, directory)
 				}
 			}
-			view.WritePlan(out, proposed, e.PlanNotes(ctx, proposed), e.PlanSiblings(ctx, proposed), e.Remedy)
+			view.WritePlan(out, proposed, e.PlanNotes(ctx, proposed), e.PlanSiblings(ctx, proposed), e.Remedy, view.ListShown(streams))
 			view.WritePushes(out, proposed)
 			revision, planned := view.RevisionView(capture.Revision), view.PlanView(proposed)
 			streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []view.TargetJSON{}})
@@ -254,7 +254,7 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 		return err
 	}
 	writeBaselineHeader(streams.Out, branch, baseline)
-	view.WritePlan(streams.Out, baseline.Plan, e.PlanNotes(ctx, baseline.Plan), nil, e.Remedy)
+	view.WritePlan(streams.Out, baseline.Plan, e.PlanNotes(ctx, baseline.Plan), nil, e.Remedy, view.ListShown(streams))
 	planned := view.PlanView(baseline.Plan)
 	streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Plan: &planned, Targets: []view.TargetJSON{}})
 	return nil

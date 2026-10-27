@@ -236,6 +236,37 @@ func TestABaselineRebuildsAPortOnlyWhereItFailed(t *testing.T) {
 	}
 }
 
+// A baseline of a --variants check builds each failed variant build with
+// its variants at master, and a failed default build with its defaults:
+// it planned master with the IDs as port names, which a variant build's
+// matches none of (the docs dig's I6).
+func TestABaselineKeepsTheChecksVariants(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	revision := harborBranch(t, e)
+	usePorts(e, harborVariants())
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeX86}, Only: []string{"libharbor"}, EachVariant: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{"libharbor:substantive:changed", "libharbor +tests:substantive:changed", "libharbor +docs:substantive:changed"}, names(plan.Targets))
+	branch, err := e.Branch(t.Context(), revision.Branch)
+	require.NoError(t, err)
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed, "libharbor +docs": model.OutcomeFailed}}}
+	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+	require.NoError(t, err)
+	checked, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunFailed, checked.State)
+
+	baseline, err := e.PlanBaseline(t.Context(), branch, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"libharbor:unchanged:also", "libharbor +docs:unchanged:also"}, names(baseline.Plan.Targets), "each failed build, with its own variants, and not +tests, which passed")
+	require.Equal(t, map[string]bool{"docs": true}, baseline.Plan.Targets[1].Target.Variants)
+	x86, _ := baseline.Plan.In(tahoeX86)
+	require.Equal(t, []model.TargetID{"libharbor", "libharbor +docs"}, x86.Order)
+	require.Equal(t, []model.TargetID{"libharbor +docs"}, x86.NeedsXcode, "evaluated with +docs, which uses Xcode")
+}
+
 // A port whose only failures are its tests', where its change record says
 // the branch declares tests master doesn't, is no baseline's to compare:
 // exiv2's check offered one (the exiv2 field notes, 2026-10-19). A failed

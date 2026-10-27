@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -8,7 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/commitrules"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -457,4 +461,38 @@ func TestTidyTakesInThePatchesThePortfileNames(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, again.Keep)
 	require.Equal(t, []string{"textproc/jq/files/notes.txt"}, again.LeftOut, "still uncommitted, and said")
+}
+
+// definedAt names the ports textproc/terraform defines at each commit, as
+// each one's index would: the branch's head adds terraform-1.17.
+type definedAt map[model.ObjectID][]string
+
+func (definedAt) Dependents(context.Context, model.Source, []string) ([]treequery.Dependent, error) {
+	return nil, nil
+}
+
+func (d definedAt) PortsDefined(_ context.Context, source model.Source, _ []string) (map[string][]string, error) {
+	return map[string][]string{"sysutils/terraform": d[source.Commit]}, nil
+}
+
+// subject-port reads the ports a directory defines at the branch's head
+// too, so a commit naming the subport it adds names its port; one naming
+// no port of the directory is still flagged (the docs dig's I21).
+func TestASubjectMayNameTheSubportTheBranchAdds(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	useDependents(e, definedAt{"base": {"terraform", "terraform-1.16"}, "head": {"terraform", "terraform-1.16", "terraform-1.17"}})
+	history := []git.HistoryCommit{
+		{ID: "1111111", Message: "terraform-1.17: new subport\n", Paths: []string{"sysutils/terraform/Portfile"}},
+		{ID: "2222222", Message: "terraform-2.0: new subport\n", Paths: []string{"sysutils/terraform/Portfile"}},
+	}
+	findings := commitrules.CheckCommits(e.ruleCommits(t.Context(), model.Source{Commit: "base"}, model.Source{Commit: "head"}, history))
+	var flagged []string
+	for _, finding := range findings {
+		if finding.Code == "subject-port" {
+			flagged = append(flagged, finding.Commit)
+		}
+	}
+	require.Equal(t, []string{"2222222"}, flagged, "terraform-1.17 is the head's, and terraform-2.0 is nobody's")
 }

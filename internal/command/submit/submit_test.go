@@ -240,7 +240,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ready to submit\n")
-	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("  ! commit "+model.ObjectID(head).Short()+"'s Generated-By names dockhand "+unpushed+", built from a commit dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there\n"))
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("  ! commit "+model.ObjectID(head).Short()+"'s Generated-By names dockhand "+unpushed+", built from a commit dockhand's GitHub repository doesn't have, which others cannot find until it is pushed there\n"))
 	preview, err := cmdtest.JSONOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Equal(t, []any{map[string]any{"build": unpushed, "commits": []any{head}, "commit": "14320eb7c0de"}}, preview.Result["unfound_builds"])
@@ -272,9 +272,9 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 func TestAnUnfoundBuildIsSaidOnceForItsCommits(t *testing.T) {
 	t.Parallel()
 	commits := []string{strings.Repeat("a", 40), strings.Repeat("b", 40)}
-	require.Equal(t, "commits aaaaaaa, bbbbbbb name dockhand v0.3.0 in Generated-By, built at a tag dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there",
+	require.Equal(t, "commits aaaaaaa, bbbbbbb name dockhand v0.3.0 in Generated-By, built at a tag dockhand's GitHub repository doesn't have, which others cannot find until it is pushed there",
 		view.UnfoundBuildWords(engine.UnfoundBuild{Build: "v0.3.0", Commits: commits, Source: buildinfo.Source{Release: "v0.3.0"}}))
-	require.Equal(t, "commit aaaaaaa's Generated-By names dockhand devel, which recorded no commit, so nobody can find what it was built from",
+	require.Equal(t, "commit aaaaaaa's Generated-By names dockhand devel, which recorded no commit, so its source cannot be identified",
 		view.UnfoundBuildWords(engine.UnfoundBuild{Build: "devel", Commits: commits[:1]}))
 }
 

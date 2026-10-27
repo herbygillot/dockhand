@@ -185,7 +185,8 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 			}
 		}
 	}
-	report.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, baseSource, report.Commits))
+	headSource := model.Source{Commit: model.ObjectID(report.Head), Base: model.ObjectID(report.Base), Tree: model.ObjectID(trees[report.Head])}
+	report.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, baseSource, headSource, report.Commits))
 	portfiles, err := portfileFindings(ctx, e.Repo, trees[report.Base], trees[report.Head], changed)
 	if err != nil {
 		return report, err

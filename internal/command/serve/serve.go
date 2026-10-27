@@ -86,6 +86,8 @@ line, unless --keep-modeline.`,
 				}
 				return serveAgent(ctx, s, streams, install, flags)
 			}
+			// Nobody answers git's ssh under serve, at a terminal or not.
+			s.Unattended = true
 			e, err := s.Open(ctx)
 			if err != nil {
 				return err

@@ -84,6 +84,9 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 	for _, finding := range plan.Findings {
 		fmt.Fprintf(out, "  %s\n", finding)
 	}
+	for _, prerelease := range plan.Prereleases {
+		fmt.Fprintf(out, "  ! %s\n", prerelease)
+	}
 	// Said once, naming each commit, where it was a line a commit (part 5,
 	// item 3: in 69 runs).
 	if len(plan.ModifiedBuilds) > 0 {
@@ -177,11 +180,11 @@ func UnfoundBuildWords(build engine.UnfoundBuild) string {
 	}
 	switch {
 	case build.Source.Commit != "":
-		return words + ", built from a commit dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there"
+		return words + ", built from a commit dockhand's GitHub repository doesn't have, which others cannot find until it is pushed there"
 	case build.Source.Release != "":
-		return words + ", built at a tag dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there"
+		return words + ", built at a tag dockhand's GitHub repository doesn't have, which others cannot find until it is pushed there"
 	}
-	return words + ", which recorded no commit, so nobody can find what it was built from"
+	return words + ", which recorded no commit, so its source cannot be identified"
 }
 
 func PullRequestWords(plan engine.SubmitPlan) string {

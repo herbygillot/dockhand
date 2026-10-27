@@ -237,7 +237,7 @@ func AdoptCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var pr int
 	cmd := &cobra.Command{
 		Use:   "adopt [branch]",
-		Short: "Track a branch you made, as it stands",
+		Short: "Track an existing branch without changing it",
 		Long: `Tracks an existing branch, the one checked out here unless named, without
 moving or rewriting anything. Its base is where it leaves MacPorts' master,
 fetched just now. A tracked branch you renamed with Git is recognized, by

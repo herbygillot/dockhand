@@ -106,7 +106,8 @@ func TestReviewStartsAtThePullRequestsOwnBase(t *testing.T) {
 	report, err := e.Review(t.Context(), 34905)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"jq", "jqx"}, report.Ports, "php is a change ahead of master, not the pull request's")
-	require.Equal(t, [][]string{{"textproc/jq"}, {"textproc/jq"}, {"textproc/jq"}}, read.asked, "the index is read for the ports the base has, not the new one's")
+	require.Equal(t, [][]string{{"textproc/jq"}, {"textproc/jq"}, {"sysutils/jqx", "textproc/jq"}, {"textproc/jq"}}, read.asked,
+		"the base's index is read for the ports the base has, not the new one's; the head's, for the commit rules, for both (I21)")
 	require.Len(t, report.Commits, 1)
 	require.Equal(t, testsupport.Git(t, f.upstream, "rev-parse", "ahead"), report.Base)
 	require.Contains(t, report.Behind, "The local master is behind pull request #34905's base. The pull request has 1 commit, but 2 commits separate the local master from its head. Reviewing from ")

@@ -32,6 +32,9 @@ type Settings struct {
 	// NamesBranch is a command naming a branch, by -b, -p, or --pr or by
 	// its name, which run outside any checkout finds the registered one.
 	NamesBranch bool
+	// Unattended is serve's: nobody answers git's ssh there, at a terminal
+	// or not (compose.Options.Unattended), as nobody does without one.
+	Unattended bool
 	// OverAllowance is --over-allowance: a look goes on past what's left
 	// of the hour's GitHub allowance (allowLook).
 	OverAllowance bool
@@ -87,7 +90,7 @@ const PullRequestsVariable = compose.PullRequestsVariable
 
 // ComposeOptions are the command line's selections, as compose takes them.
 func (s *Settings) ComposeOptions() compose.Options {
-	return compose.Options{Tree: s.Tree, Database: s.Database, Git: s.Git, NamesBranch: s.NamesBranch, Env: s.Env, Dir: s.Dir}
+	return compose.Options{Tree: s.Tree, Database: s.Database, Git: s.Git, NamesBranch: s.NamesBranch, Unattended: s.Unattended || !s.Streams.Terminal(), Env: s.Env, Dir: s.Dir}
 }
 
 // Options resolves the engine's options, reading the configuration file

@@ -425,6 +425,9 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		if update.CrossesMajor {
 			fmt.Fprintf(out, "New major version: ports that depend on %s may also need updates.\n", update.Port)
 		}
+		if update.LeavesStable {
+			fmt.Fprintf(out, "Prerelease: %s.\n", engine.LeavesStableWords(update.Port, update.Before.Version, update.After.Version))
+		}
 		if update.ClosedBefore != "" {
 			fmt.Fprintf(out, "Closed before: %s.\n", strings.TrimSuffix(update.ClosedBefore, "; a newer release lifts this"))
 		}
@@ -461,7 +464,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		writeOthers(out, update)
 		view.WritePlainHTTP(out, update.PlainHTTP)
 		if linked.Revbump {
-			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, true)
+			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, true, view.ListShown(streams))
 			streams.Emit(result)
 			return branch, update, err
 		}
@@ -581,7 +584,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	writeOthers(out, update)
 	view.WritePlainHTTP(out, update.PlainHTTP)
 	if linked.Revbump {
-		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, false); err != nil {
+		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, false, view.ListShown(streams)); err != nil {
 			return branch, update, err
 		}
 		streams.Emit(result)
@@ -642,8 +645,9 @@ func writeStealth(out io.Writer, stealth *engine.Stealth) {
 }
 
 // revbumpLinked has the engine bump the revision of the ports that link
-// an updated one directly, or with plan list them, and says what it did.
-func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch, update engine.Update, except []string, plan bool) ([]string, error) {
+// an updated one directly, or with plan list them, and says what it did,
+// naming shown of them (view.ListShown).
+func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch, update engine.Update, except []string, plan bool, shown int) ([]string, error) {
 	done, err := e.RevbumpLinked(ctx, branch, update, except, plan)
 	if err != nil && len(done.Bump)+len(done.Changed)+len(done.Excepted) == 0 {
 		return nil, err
@@ -659,7 +663,7 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 			indexed = append(indexed, dependent.Name)
 		}
 	}
-	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", done.Base.Short(), view.OrNone(prose.Few(indexed, 12, "port")))
+	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", done.Base.Short(), view.OrNone(prose.Few(indexed, min(shown, 12), "port")))
 	if len(under) > 0 {
 		fmt.Fprintf(out, "    under a variant, found in the Portfile, which the index doesn't record: %s\n", strings.Join(under, ", "))
 	}

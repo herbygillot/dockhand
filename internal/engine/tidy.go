@@ -220,7 +220,8 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	// submit says it, with their plan to rewrite the message from: tidy
 	// said "nothing to tidy" where submit warned of a body line over 72
 	// characters, and saved no plan to fix it in (the rust and cargo run).
-	rules := commitrules.CheckCommits(e.ruleCommits(ctx, model.Source{Commit: model.ObjectID(base), Base: model.ObjectID(base), Tree: model.ObjectID(trees[base])}, history))
+	rules := commitrules.CheckCommits(e.ruleCommits(ctx, model.Source{Commit: model.ObjectID(base), Base: model.ObjectID(base), Tree: model.ObjectID(trees[base])},
+		model.Source{Commit: model.ObjectID(head), Base: model.ObjectID(base), Tree: model.ObjectID(trees[head])}, history))
 	if len(working) == 0 && !request.Squash && !commitrules.Errors(rules) {
 		plan.Keep = true
 		if len(rules) == 0 {
@@ -747,9 +748,10 @@ func parseAuthor(value string, when time.Time) (git.Signature, error) {
 }
 
 // ruleCommits are a branch's commits as the commit rules read them, each
-// with the ports its directories define at base, as base's index names
-// them, so a subject may name the subport it changes.
-func (e *Engine) ruleCommits(ctx context.Context, base model.Source, history []git.HistoryCommit) []commitrules.Commit {
+// with the ports its directories define at base or at head, as each
+// one's index names them, so a subject may name the subport it changes
+// or adds.
+func (e *Engine) ruleCommits(ctx context.Context, base, head model.Source, history []git.HistoryCommit) []commitrules.Commit {
 	var directories []string
 	for _, commit := range history {
 		for _, directory := range macports.ScopeOf(commit.Paths).Ports {
@@ -758,7 +760,19 @@ func (e *Engine) ruleCommits(ctx context.Context, base model.Source, history []g
 			}
 		}
 	}
+	// A port the branch adds, as a subport, is one its subject may name
+	// (I21): terraform-1.17's commit adding it names its port.
 	defined := e.portsDefined(ctx, base, directories)
+	for directory, names := range e.portsDefined(ctx, head, directories) {
+		for _, name := range names {
+			if !slices.Contains(defined[directory], name) {
+				if defined == nil {
+					defined = map[string][]string{}
+				}
+				defined[directory] = append(defined[directory], name)
+			}
+		}
+	}
 	var commits []commitrules.Commit
 	for _, commit := range history {
 		scope := macports.ScopeOf(commit.Paths)

@@ -125,7 +125,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 		// What's wrong, what dockhand did with it, which is nothing, and
 		// what a person can do, rather than SQLite's words alone (the rc6
 		// full stage, D-T5): never to delete it, which nothing restores.
-		return nil, fmt.Errorf("%w: %s can't be read as dockhand's database (%v); dockhand left it as it is. Restore it from a backup, or move it aside and dockhand starts a new one, which won't know this one's branches, checks, or kept archives", store.ErrUnavailable, path, err)
+		return nil, fmt.Errorf("%w: %s can't be read as dockhand's database (%v); dockhand left it as it is. Restore it from a backup, such as one sqlite3 %s \".backup <file>\" made, or move it aside and dockhand starts a new one, which won't know this one's branches, checks, or kept archives", store.ErrUnavailable, path, err, path)
 	}
 	return s, err
 }

@@ -354,7 +354,7 @@ type ReleaseUnderMigrationError struct {
 }
 
 func (e *ReleaseUnderMigrationError) Error() string {
-	return e.ReleaseUnderMigrationError.Error() + fmt.Sprintf(". To try this build without touching it, copy the database and point DOCKHAND_DB at the copy; run on a terminal, it asks, keeping its schema %d form at %s", e.From, e.Copy)
+	return e.ReleaseUnderMigrationError.Error() + fmt.Sprintf(". To try this build without touching it, copy the database with sqlite3 <database> \".backup <file>\", since a plain copy of a database in use can miss its last writes, and point DOCKHAND_DB at the copy; run on a terminal, it asks, keeping its schema %d form at %s", e.From, e.Copy)
 }
 
 func (e *ReleaseUnderMigrationError) Unwrap() error { return e.ReleaseUnderMigrationError }

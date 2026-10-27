@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -98,4 +99,38 @@ func TestMissingHTTPSCredentialsAreSaidPlainly(t *testing.T) {
 	require.ErrorIs(t, err, git.ErrNoHTTPSCredentials)
 	require.ErrorContains(t, err, "set up a credential helper")
 	require.ErrorContains(t, err, "could not read Username")
+}
+
+// Where nobody can answer, git's ssh runs with BatchMode=yes, so a key
+// whose passphrase no agent holds fails at once, said as an SSH refusal,
+// where it would wait on a question; the ssh command the person chose is
+// kept, the option added, and with an answer at hand it asks as ever (the
+// docs dig's I46).
+func TestUnattendedSSHNeverAsks(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	dir := t.TempDir()
+	ssh := filepath.Join(dir, "ssh")
+	// Asked in batch mode, it refuses as ssh does a key it can't unlock;
+	// otherwise it waits for a passphrase nobody types.
+	require.NoError(t, os.WriteFile(ssh, []byte("#!/bin/sh\ncase \"$*\" in *BatchMode=yes*) echo 'git@github.com: Permission denied (publickey).' >&2; exit 255;; esac\necho asked > "+filepath.Join(dir, "asked")+"\nsleep 30\n"), 0o755))
+	t.Setenv("GIT_SSH_COMMAND", ssh)
+	repo := snapshotRepo(t)
+
+	unattended := *repo
+	unattended.Env = git.Unattended(t.Context(), repo.Program, repo.Root)
+	require.Contains(t, unattended.Env, "GIT_SSH_COMMAND="+ssh+" -o BatchMode=yes")
+	_, err := unattended.RemoteHead(t.Context(), "git@github.com:someone/macports-ports.git", "candidate")
+	require.ErrorIs(t, err, git.ErrSSHRefused)
+	require.ErrorContains(t, err, "git@github.com: Permission denied (publickey)")
+	require.NoFileExists(t, filepath.Join(dir, "asked"))
+
+	t.Setenv("GIT_SSH_COMMAND", "")
+	configured := snapshotRepo(t)
+	testsupport.Git(t, configured.Root, "config", "core.sshCommand", ssh+" -i key")
+	env := git.Unattended(t.Context(), git.Program{Env: os.Environ()}, configured.Root)
+	require.Contains(t, env, "GIT_SSH_COMMAND="+ssh+" -i key -o BatchMode=yes", "core.sshCommand is kept")
+
+	t.Setenv("GIT_SSH", ssh)
+	require.NotContains(t, strings.Join(git.Unattended(t.Context(), git.Program{Env: os.Environ()}, configured.Root), "\n"), "BatchMode", "GIT_SSH's program is the person's")
 }

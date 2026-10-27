@@ -574,3 +574,29 @@ func TestAPortAheadOfUpstreamIsNamedNotChosen(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "jq: 1.7.1 → 1.9.0")
 }
+
+// A version the person names that takes a stable port to a prerelease is
+// said, by update and again by submit's preview, and holds nothing; a
+// stable one says nothing (the docs dig's I32).
+func TestAnUpdateOutOfStableIsSaid(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	out, _, err := cmdtest.Dockhand(t, "update", "jq", "1.8.1", "--plan")
+	require.NoError(t, err)
+	require.NotContains(t, out, "out of stable")
+	out, _, err = cmdtest.Dockhand(t, "update", "jq", "2.0-rc1")
+	require.NoError(t, err)
+	require.Contains(t, out, "Prerelease: this takes jq out of stable (1.7.1 → 2.0-rc1).\n")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, 1, strings.Count(out, "this takes jq out of stable"), out)
+	require.Contains(t, out, "  ! this takes jq out of stable (1.7.1 → 2.0-rc1)\n")
+}

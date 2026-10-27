@@ -48,6 +48,9 @@ type Options struct {
 	// NamesBranch is a command naming a branch, which run outside any
 	// checkout finds the one the database registered (registeredCheckout).
 	NamesBranch bool
+	// Unattended is a command nobody can answer, serve's or one with no
+	// terminal: git's ssh never asks it (git.Unattended).
+	Unattended bool
 	// Env is the command line's environment, as os.Environ gives one, and
 	// Dir its working directory, which compose reads in place of the
 	// process's.
@@ -255,12 +258,16 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 	if tree, err = places.Absolute(tree); err != nil {
 		return engine.Options{}, config.File{}, "", err
 	}
+	env := options.Env
+	if options.Unattended {
+		env = gitprogram.Unattended(ctx, gitprogram.Program{Executable: git, Env: env}, tree)
+	}
 	readings, _ := options.cacheDirectory("DOCKHAND_READING_CACHE", "readings")
 	indexes, _ := options.cacheDirectory("DOCKHAND_INDEX_CACHE", "indexes")
 	return engine.Options{
 		Tree: tree,
 		Git:  git,
-		Env:  options.Env,
+		Env:  env,
 		// port-tclsh on the command line's PATH, else under MacPorts'
 		// default prefix.
 		Tclsh:     macports.FindTclsh(func(name string) (string, error) { return subprocess.LookPath(name, options.Env) }),

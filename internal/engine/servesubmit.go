@@ -596,6 +596,29 @@ func (e *Engine) majorHolds(edits []model.Edit) []model.Concern {
 	return held
 }
 
+// LeavesStableWords say an update that takes a port from a stable version
+// to a prerelease, as update and submit's preview say it, once each (the
+// docs dig's I32): automatic selection never chooses such a version, so
+// only one the person named does, and it holds nothing.
+func LeavesStableWords(port, from, to string) string {
+	return fmt.Sprintf("this takes %s out of stable (%s → %s)", port, from, to)
+}
+
+// prereleases are the LeavesStableWords of a branch's updates that take a
+// port from a stable version to a prerelease, once each.
+func prereleases(edits []model.Edit) []string {
+	var words []string
+	for _, edit := range edits {
+		if edit.Kind != model.EditUpdate || edit.Release == nil || !version.LeavesStable(edit.Release.CurrentVersion, edit.Release.Version) {
+			continue
+		}
+		if said := LeavesStableWords(edit.Port, edit.Release.CurrentVersion, edit.Release.Version); !slices.Contains(words, said) {
+			words = append(words, said)
+		}
+	}
+	return words
+}
+
 // afterHolds hold the update of a port whose holds name ports to submit
 // first, holds.ports."<port>".after, until each named port is at the same
 // version on master, as dockhand last fetched it, or has a pull request

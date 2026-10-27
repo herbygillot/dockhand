@@ -171,6 +171,10 @@ type Update struct {
 	// CrossesMajor is an update to a new major version, semgrep's 0.14.0
 	// to 1.179.0, which read as a plain bump (field testing, 2026-10-02).
 	CrossesMajor bool
+	// LeavesStable is an update from a stable version to a prerelease,
+	// jq's 1.8.1 to 2.0-rc1, which only a version the person names takes
+	// (the docs dig's I32); LeavesStableWords say it.
+	LeavesStable bool
 	// ClosedBefore says an earlier update of the port to this version was
 	// closed unmerged, which an attended update goes ahead of and says,
 	// and an unattended look doesn't propose again (the docs dig's I1);
@@ -895,6 +899,7 @@ func describe(branch model.Branch, selector string, result editprep.Result) Upda
 		update.familyAfter = result.Fidelity[len(result.Fidelity)-1].After
 	}
 	update.CrossesMajor = update.Before.Version != "" && version.CrossesMajor(update.Before.Version, update.After.Version)
+	update.LeavesStable = update.Before.Version != "" && version.LeavesStable(update.Before.Version, update.After.Version)
 	for _, file := range result.Files {
 		update.Files = append(update.Files, file.Path)
 	}

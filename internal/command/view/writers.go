@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -12,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // WritePushes says where a check pushes: "only checking" never hides a
@@ -26,8 +28,9 @@ func WritePushes(out io.Writer, plan model.Plan) {
 }
 
 // WritePlan shows a plan, with remedy saying how to give an environment
-// what a target it can't build needs.
-func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[model.TargetID]bool, remedy func(model.Unmet) string) {
+// what a target it can't build needs, and shown how many of a long list
+// a line names (ListShown).
+func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[model.TargetID]bool, remedy func(model.Unmet) string, shown int) {
 	var changed, built, extra []string
 	for _, target := range plan.Targets {
 		name := string(target.ID)
@@ -46,17 +49,17 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 		}
 	}
 	if len(changed) > 0 {
-		fmt.Fprintf(out, "Changed     %s\n", prose.Few(changed, listShown, "port"))
+		fmt.Fprintf(out, "Changed     %s\n", prose.Few(changed, shown, "port"))
 	}
 	// The subports a change record finds unchanged are built too, since a
 	// check builds every subport of a changed Portfile as MacPorts' CI
 	// does, and said as that, where "Changed 19 ports" read as the change
 	// being that broad (field testing's terraform replay, 2026-10-22).
 	if len(built) > 0 {
-		fmt.Fprintf(out, "Siblings    %s (MacPorts CI builds every subport of a changed Portfile; use --only to narrow the check)\n", prose.Few(built, listShown, "port"))
+		fmt.Fprintf(out, "Siblings    %s (MacPorts CI builds every subport of a changed Portfile; use --only to narrow the check)\n", prose.Few(built, shown, "port"))
 	}
 	if len(extra) > 0 {
-		fmt.Fprintf(out, "Also        %s\n", prose.Few(extra, listShown, "port"))
+		fmt.Fprintf(out, "Also        %s\n", prose.Few(extra, shown, "port"))
 	}
 	if len(plan.Omitted) > 0 {
 		var omitted []string
@@ -102,9 +105,9 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 	for _, note := range notes {
 		fmt.Fprintf(out, "            %s\n", note)
 	}
-	writeOrder(out, plan)
+	writeOrder(out, plan, shown)
 	writeGitSources(out, plan)
-	writeExclusions(out, plan)
+	writeExclusions(out, plan, shown)
 	// Each environment's remedy follows its last target it can't build.
 	for _, planned := range plan.Builds {
 		for i, unmet := range planned.Unmet {
@@ -158,13 +161,23 @@ func writeGitSources(out io.Writer, plan model.Plan) {
 }
 
 // listShown is how many of a long list a line names before it counts the
-// rest; --json carries every one (the command-line UX review's §10).
+// rest; --json carries every one (the command-line UX review's §10), and
+// -v names every one (ListShown).
 const listShown = 8
+
+// ListShown is how many of a long list a line names: listShown, or every
+// one with -v, where only --json gave the rest (the docs dig's I37).
+func ListShown(streams term.Streams) int {
+	if streams.Verbose() > 0 {
+		return math.MaxInt
+	}
+	return listShown
+}
 
 // writeOrder shows the order the plan builds in: one line where every
 // environment builds in the plan's order, and a line for each where
 // their dependencies put them in different orders.
-func writeOrder(out io.Writer, plan model.Plan) {
+func writeOrder(out io.Writer, plan model.Plan, shown int) {
 	if len(plan.Targets) < 2 {
 		return
 	}
@@ -173,7 +186,7 @@ func writeOrder(out io.Writer, plan model.Plan) {
 		for _, id := range ids {
 			words = append(words, string(id))
 		}
-		return prose.FewJoined(words, listShown, "port", " → ")
+		return prose.FewJoined(words, shown, "port", " → ")
 	}
 	if plan.SameOrder() {
 		var order []model.TargetID
@@ -195,13 +208,13 @@ func writeOrder(out io.Writer, plan model.Plan) {
 // writeExclusions shows what the plan doesn't build where, and why: a
 // line a reason and the environments that say it, its ports named as the
 // Changed line names them, and the environments where only some do.
-func writeExclusions(out io.Writer, plan model.Plan) {
+func writeExclusions(out io.Writer, plan model.Plan, shown int) {
 	for _, x := range plan.GroupedExclusions() {
 		var ports []string
 		for _, target := range x.Targets {
 			ports = append(ports, string(target))
 		}
-		named := prose.Few(ports, listShown, "port")
+		named := prose.Few(ports, shown, "port")
 		if x.Everywhere(plan) {
 			fmt.Fprintf(out, "Excluded    %s: %s\n", named, x.Reason)
 			continue
