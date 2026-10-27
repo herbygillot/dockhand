@@ -72,7 +72,7 @@ It shows what it would remove first; on a terminal it asks, and a script
 passes --yes. archive hides a branch; clean removes a merged one's files;
 cancel stops a check. None means another.
 
---delete forgets archived branches named: it deletes each one's Git branch,
+--delete forgets merged, closed, or archived branches named: it deletes each one's Git branch,
 unmerged commits included, which it lists first, and its worktree, and
 forgets its record, keeping of its checks only what another branch's
 results were reused from. It asks, and without a terminal needs --yes.
@@ -175,7 +175,7 @@ results were reused from. It asks, and without a terminal needs --yes.
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what it would remove and change nothing")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
-	cmd.Flags().BoolVar(&forget, "delete", false, "forget the archived branches named: their Git branch, worktree, and record")
+	cmd.Flags().BoolVar(&forget, "delete", false, "forget the merged, closed, or archived branches named: their Git branch, worktree, and record")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
 	_ = cmd.Flags().MarkHidden("automatic")
 	settings.SupportsJSON(cmd)
@@ -241,6 +241,9 @@ func writeClean(out io.Writer, plans []engine.CleanBranch, done bool, places con
 		}
 		fmt.Fprintln(out, line)
 		for _, step := range plan.Steps {
+			if step.Said {
+				continue
+			}
 			why := ""
 			if step.Why != "" {
 				why = ": " + step.Why
@@ -373,11 +376,11 @@ func writeCleanDone(out io.Writer, plans []engine.CleanBranch, places config.Pla
 	}
 }
 
-// forgetBranches is clean --delete: the archived branches named, each said
+// forgetBranches is clean --delete: the ended branches named, each said
 // with what goes, its unmerged commits listed, then forgotten once asked.
 func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams, names []string, yes, plan bool) error {
 	if len(names) == 0 {
-		return errors.New("--delete forgets archived branches named; name each")
+		return errors.New("--delete forgets merged, closed, or archived branches named; name each")
 	}
 	var plans []engine.ForgetPlan
 	for _, name := range names {

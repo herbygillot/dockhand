@@ -10,7 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
-// ForgetPlan is what forgetting an archived branch removes (clean
+// ForgetPlan is what forgetting an ended branch removes (clean
 // --delete): its worktree, where one is left; its Git branch at Head,
 // where it has one, with the commits on it the master last fetched lacks,
 // Unmerged, which go with it; and its record, but for what other
@@ -22,12 +22,14 @@ type ForgetPlan struct {
 	Unmerged []git.CherryCommit
 }
 
-// PlanForget is what forgetting branch would remove; only an archived
-// branch is forgotten.
+// PlanForget is what forgetting branch would remove; a merged, closed, or
+// archived branch is forgotten, so a person can end a merged branch's
+// listing that clean keeps (field testing's xapian-core-dsq3), but not an
+// open one, which dockhand archive sets aside first.
 func (e *Engine) PlanForget(ctx context.Context, branch model.Branch) (ForgetPlan, error) {
 	plan := ForgetPlan{Branch: branch}
-	if branch.State != model.BranchArchived {
-		return plan, fmt.Errorf("%s is %s; clean --delete forgets an archived branch, which dockhand archive sets aside", branch.ShortName(), branch.State)
+	if branch.State == model.BranchOpen {
+		return plan, fmt.Errorf("%s is open; clean --delete forgets a merged, closed, or archived branch, and dockhand archive sets an open one aside", branch.ShortName())
 	}
 	if branch.Worktree != "" && exists(branch.Worktree) {
 		plan.Worktree = branch.Worktree

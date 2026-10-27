@@ -76,6 +76,63 @@ func TestCleanRemovesWhatAMergedBranchLeaves(t *testing.T) {
 	require.Len(t, merged, 1, "the record stays")
 }
 
+// A merged branch retidied after its submit, whose tip isn't the merged
+// commit but whose every changed file master has as it has it, goes, saying
+// its changes are on master: xapian-core-dsq3 and the others were kept on
+// every clean (field testing). One with a change master lacks stays
+// (TestCleanKeepsWorkOfItsOwn).
+func TestCleanRemovesARetidiedBranchWhoseChangesAreOnMaster(t *testing.T) {
+	t.Parallel()
+	f, e, _, branch := mergedBranch(t)
+	portfile := testsupport.Git(t, branch.Worktree, "show", "HEAD:textproc/jq/Portfile")
+	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": portfile + "\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1")
+	_, err := e.fetchMaster(t.Context())
+	require.NoError(t, err)
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "--amend", "-m", "jq: update to 1.8.1\n\nRetidied after the submit.")
+
+	plans, err := e.PlanClean(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "", whats(plans)["worktree "+branch.Worktree])
+	require.Equal(t, "", whats(plans)["branch dockhand/jq-update"])
+	for _, step := range plans[0].Steps[:2] {
+		require.Equal(t, "its changes are on master", step.Why, step.What)
+	}
+	_, err = e.ApplyClean(t.Context(), plans)
+	require.NoError(t, err)
+	require.NoDirExists(t, branch.Worktree)
+}
+
+// A fork branch no remote pushes to is a step no clean can take: the clean
+// that first keeps it says so and records it, and later cleans don't list
+// it again, as pr-34539's was on every one (field testing). clean --delete
+// then forgets the merged branch, so a person can end its listing.
+func TestAnUnreachableForkBranchIsSaidOnce(t *testing.T) {
+	t.Parallel()
+	f, e, _, _ := mergedBranch(t)
+	testsupport.Git(t, f.clone, "remote", "remove", "fork")
+	plans, err := e.PlanClean(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "no Git remote pushes to ada/macports-ports", whats(plans)["ada/macports-ports:dockhand/jq-update"])
+	_, err = e.ApplyClean(t.Context(), plans)
+	require.NoError(t, err)
+
+	again, err := e.PlanClean(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, again, "said once, kept, and not listed again")
+	merged, err := e.Status(t.Context(), model.BranchMerged)
+	require.NoError(t, err)
+	require.Equal(t, "fork branch kept: no Git remote pushes to ada/macports-ports", merged[0].Branch.CleanKept, "status --all still says it")
+
+	plan, err := e.PlanForget(t.Context(), merged[0].Branch)
+	require.NoError(t, err)
+	_, err = e.Forget(t.Context(), plan)
+	require.NoError(t, err)
+	left, err := e.Status(t.Context(), model.BranchMerged)
+	require.NoError(t, err)
+	require.Empty(t, left, "forgotten")
+}
+
 func TestCleanKeepsWorkOfItsOwn(t *testing.T) {
 	t.Parallel()
 	_, e, _, branch := mergedBranch(t)

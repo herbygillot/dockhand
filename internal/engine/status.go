@@ -42,6 +42,9 @@ type BranchStatus struct {
 	HandEdits []HandEdit
 	// Missing is true when the Git branch is gone.
 	Missing bool
+	// WorktreeStays is a Git branch gone whose worktree dockhand made is
+	// still there, which isn't cleaned.
+	WorktreeStays bool
 	// Renamed is the branch's name before a rename by hand that this
 	// status followed (followRenames), said once.
 	Renamed string
@@ -167,6 +170,7 @@ func (e *Engine) readFiles(ctx context.Context, status *BranchStatus) ([]string,
 	head, _, err := e.Repo.Branch(ctx, branch.Name)
 	if errors.Is(err, git.ErrBranchMissing) {
 		status.Missing = true
+		status.WorktreeStays = branch.Managed && exists(branch.Worktree)
 		return nil, nil, nil
 	}
 	if err != nil {
@@ -223,9 +227,11 @@ func (e *Engine) BranchPort(ctx context.Context, branch model.Branch) (string, b
 // it: a merged branch's, once its work is in master, or an archived or
 // closed one's that held nothing master lacks: nothing about it needs
 // anyone. An open branch whose Git branch is gone was lost, as to a
-// rename.
+// rename. A worktree that stays is no clean's, whatever its Git branch:
+// status said "cleaned" of branches whose worktrees clean kept (field
+// testing's xapian-core-dsq3).
 func (s BranchStatus) Cleaned() bool {
-	return s.Missing && s.Branch.State != model.BranchOpen
+	return s.Missing && !s.WorktreeStays && s.Branch.State != model.BranchOpen
 }
 
 // Check is what's recorded of the branch's checks, as the verdict reads

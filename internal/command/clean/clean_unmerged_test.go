@@ -159,7 +159,7 @@ func TestCleanDeleteForgetsAnArchivedBranch(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 
 	_, _, err = cmdtest.Dockhand(t, "clean", "--delete", "--yes", "jq-update")
-	require.ErrorContains(t, err, "jq-update is open; clean --delete forgets an archived branch")
+	require.ErrorContains(t, err, "jq-update is open; clean --delete forgets a merged, closed, or archived branch")
 	_, _, err = cmdtest.Dockhand(t, "archive", "jq-update")
 	require.NoError(t, err)
 

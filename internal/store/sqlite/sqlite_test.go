@@ -1667,7 +1667,7 @@ func TestAForgottenBranchKeepsOnlyWhatOthersName(t *testing.T) {
 	open.ID = "br_3"
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
 		_, err := tx.ForgetBranch(other.ID, at)
-		require.ErrorIs(t, err, store.ErrConflict, "only an archived branch is forgotten")
+		require.ErrorIs(t, err, store.ErrConflict, "an open branch is not forgotten")
 		pruned, err := tx.ForgetBranch(a.ID, at.Add(time.Hour))
 		require.Equal(t, 1, pruned.Executions, "ex_lone; ex_built is another's result's origin")
 		require.Equal(t, 1, pruned.Runs)
