@@ -481,6 +481,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		if update.DistSubdirRemoved {
 			fmt.Fprintln(out, "Removes "+distSubdirRemoved)
 		}
+		writeFixed(out, update, "Fixes")
 		// What a reviewer would ask about is part of the look before.
 		view.WriteUpstream(out, update.Upstream)
 		writePatches(out, update)
@@ -612,6 +613,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	if update.DistSubdirRemoved {
 		fmt.Fprintln(out, "Removed "+distSubdirRemoved)
 	}
+	writeFixed(out, update, "Fixed")
 	// A port with nothing upstream to compare says so at -v alone (part
 	// 5, item 3: said again by the submission's Upstream row).
 	if update.Upstream == nil || !engine.NothingCompared(*update.Upstream) || streams.Verbose() > 0 {
@@ -630,6 +632,14 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		fmt.Fprintln(out, "Next: "+nextAfterEdit(ctx, e, branch))
 	}
 	return branch, update, nil
+}
+
+// writeFixed says each lint finding the edit fixed on the lines it wrote,
+// under a plan's "Fixes" or an edit's "Fixed".
+func writeFixed(out io.Writer, update engine.Update, label string) {
+	for _, fixed := range update.Fixed {
+		fmt.Fprintf(out, "%s: %s\n", label, fixed)
+	}
 }
 
 // distSubdirRemoved is why a version update removes a stealth update's

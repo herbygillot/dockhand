@@ -511,3 +511,32 @@ func TestAPatchWhoseRemovalChangesMoreStays(t *testing.T) {
 	require.Len(t, result.Files, 1, "its file stays")
 	require.Contains(t, strings.Join(said, "\n"), "Kept fix.diff, which the new source already holds: dropping it also changes fixture.use_configure changed")
 }
+
+// A version update of a port that fetches GitHub's tarball moves it to
+// the archive, whose checksums it makes; one the Portfile sets otherwise
+// than by one literal stays, for the maintainer (the person's "we should
+// have Dockhand do those", 2026-10-27).
+func TestAnUpdateMovesGitHubsTarballToTheArchive(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		why, set, path string
+		moved          bool
+	}{
+		{"one literal", "github.tarball_from tarball", "/archive/2.0/fixture-2.0.tar.gz", true},
+		{"in an if", "if {1} {\n    github.tarball_from tarball\n}", "/releases/2.0/fixture-2.0.tar.gz", false},
+	} {
+		extra := "options github.tarball_from\n" + c.set + "\nif {${github.tarball_from} eq \"archive\"} {\n    master_sites [string map {/releases/ /archive/} ${master_sites}]\n}\n"
+		service, request := versionFixture(t, "setup", extra, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != c.path {
+				w.WriteHeader(404)
+				return
+			}
+			fmt.Fprint(w, "fixture archive bytes")
+		})
+		result, err := service.Prepare(t.Context(), request)
+		require.NoError(t, err, c.why)
+		require.Equal(t, c.moved, result.TarballMoved, c.why)
+		require.Equal(t, c.moved, strings.Contains(string(result.Files[0].After), "github.tarball_from archive"), c.why)
+		require.Contains(t, string(result.Files[0].After), "size 21", c.why)
+	}
+}

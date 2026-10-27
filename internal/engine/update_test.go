@@ -1143,3 +1143,18 @@ func TestAMovesOldOwnerNameIsReadNow(t *testing.T) {
 	moved := movedChange("koekeishiya/yabai", "asmvik/yabai", false, "The old name, koekeishiya, now belongs to another account")
 	require.Contains(t, moved.Message, "Use update --follow-moves to update github.setup. The old name, koekeishiya, now belongs to another account")
 }
+
+// The lint findings on the lines an update writes are fixed, and said
+// (the person's "we should have Dockhand do those", 2026-10-27).
+func TestAnUpdateFixesTheLintFindingsOnItsLines(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	p.rewrite = func(after string) string { return after + "depends_lib port:oniguruma \t\n" }
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"textproc/jq/Portfile: removed trailing whitespace on line 5"}, update.Fixed)
+	require.Equal(t, modelineHead+"name jq\nversion 1.8.1\ndepends_lib port:oniguruma\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
+}

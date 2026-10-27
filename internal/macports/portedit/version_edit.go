@@ -102,7 +102,24 @@ func sameRepository(a, b portsource.Spec) bool {
 }
 
 func (s *Service) probeVersion(ctx context.Context, request Request, input *sourceInput, carriers versionInputs, sourceVersion string) ([]byte, macports.Snapshot, error) {
-	return s.evaluateVersion(ctx, input.native(ctx, s.Ports), request, input, carriers, sourceVersion, true)
+	reader := input.native(ctx, s.Ports)
+	// A port that fetches GitHub's tarball moves to its archive with the
+	// version, since the checksums are made anew anyway (the person's "we
+	// should have Dockhand do those", 2026-10-27). Where the move can't be
+	// made, or the update doesn't evaluate with it, the update is made as
+	// it was, and the assessment's notice says the tarball.
+	input.tarballMoved = false
+	if input.info.Options["github.tarball_from"] == "tarball" && !input.info.GitFetched() {
+		contents, snapshot, err := s.evaluateVersion(ctx, reader, request, input, carriers, sourceVersion, true, true)
+		if err == nil {
+			input.tarballMoved = true
+			return contents, snapshot, nil
+		}
+		if ctx.Err() != nil {
+			return nil, snapshot, ctx.Err()
+		}
+	}
+	return s.evaluateVersion(ctx, reader, request, input, carriers, sourceVersion, true, false)
 }
 
 // versionInputs is the set of proven relations between Portfile literals and
@@ -285,8 +302,10 @@ func splitOnce(value string, fixed []string) ([]string, bool) {
 // evaluateVersion evaluates every distinct edit that could select sourceVersion
 // and accepts exactly one that selects the requested source. With
 // checkFidelity it also resets the revision, requires a changed version, and
-// refuses unexpected sibling changes, as an actual bump must.
-func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator, request Request, input *sourceInput, inputs versionInputs, sourceVersion string, checkFidelity bool) ([]byte, macports.Snapshot, error) {
+// refuses unexpected sibling changes, as an actual bump must. With
+// moveTarball each edit also moves github.tarball_from tarball to archive
+// (portfile.ArchiveFromTarball), and is taken only where it evaluates so.
+func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator, request Request, input *sourceInput, inputs versionInputs, sourceVersion string, checkFidelity, moveTarball bool) ([]byte, macports.Snapshot, error) {
 	spec, err := portsource.Interpret(input.info, portsource.Edit)
 	if err != nil {
 		return nil, macports.Snapshot{}, err
@@ -318,6 +337,13 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 				return nil, snapshot, ErrUnsupported.Because("%w", err)
 			}
 		}
+		if moveTarball {
+			moved, ok := portfile.ArchiveFromTarball(contents, input.target.Subport)
+			if !ok {
+				return nil, snapshot, ErrUnsupported.Because("github.tarball_from tarball isn't set by one literal command")
+			}
+			contents = moved
+		}
 		evaluated, err := s.evaluateContents(ctx, reader, input, contents, !checkFidelity)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -331,6 +357,10 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		observed, err := portsource.Interpret(next, portsource.Edit)
 		if err != nil || !sameRepository(spec, observed) || observed.SourceVersion != sourceVersion || spec.Forge != "" && next.Options["git.branch"] != spec.Pattern.Tag(sourceVersion) {
 			rejected = ErrFidelity.Because("candidate did not select the requested source tag")
+			continue
+		}
+		if moveTarball && next.Options["github.tarball_from"] != "archive" {
+			rejected = ErrUnsupported.Because("candidate did not evaluate github.tarball_from archive")
 			continue
 		}
 		if checkFidelity && next.Version == input.info.Version {

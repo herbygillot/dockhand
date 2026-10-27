@@ -84,7 +84,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		return s.planGitVersion(ctx, request, input, contents, versioned)
 	}
 	observed, err := s.planObservedArchives(ctx, request, input, contents)
-	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release}
+	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, TarballMoved: input.tarballMoved}
 	result.report(fidelity.ScopedVersion(request.SharedRelease, family, versioned, input.target.Name, *release, versioned.Ports[input.target.Name].Options["checksums"]))
 	if observed != nil {
 		for _, frame := range observed.contexts {

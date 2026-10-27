@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -535,4 +536,33 @@ func TestAProviderIsAPortWhoseConflictsNameIt(t *testing.T) {
 	require.Empty(t, others, "a sibling that doesn't conflict provides nothing it says")
 	_, spec = providers("gettext")
 	require.Empty(t, spec, "the tree writes it path-style nowhere")
+}
+
+// A hand edit's trailing spaces and swallowing \ are committed fixed by
+// tidy, as dockhand's own edits, and the working files with them; its
+// untouched neighbours stay as they were (the person's "we should have
+// Dockhand do those", 2026-10-27).
+func TestTidyFixesTheLintFindingsOnTheLinesABranchTouches(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	write(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq \nversion 4.54.1\n"})
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "yq: new port")
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "yq-hand"})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"textproc/yq/Portfile": "name yq \nversion 4.54.2  \ndepends_lib port:jq \\\nuse_configure no\n"})
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, []string{"textproc/yq/Portfile: removed trailing whitespace on line 2",
+		`textproc/yq/Portfile: dropped the \ ending line 3, which carried the next line's option into its command`}, plan.Fixed)
+	_, err = e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	want := "name yq \nversion 4.54.2\ndepends_lib port:jq\nuse_configure no\n"
+	require.Equal(t, strings.TrimSuffix(want, "\n"), testsupport.Git(t, branch.Worktree, "show", "HEAD:textproc/yq/Portfile"))
+	written, err := os.ReadFile(filepath.Join(branch.Worktree, "textproc/yq/Portfile"))
+	require.NoError(t, err)
+	require.Equal(t, want, string(written))
+	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"))
 }

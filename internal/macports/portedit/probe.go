@@ -89,7 +89,7 @@ func (p *VersionProbe) EvaluateVersion(ctx context.Context, value string) (strin
 	if err := p.prepare(ctx); err != nil {
 		return "", err
 	}
-	_, snapshot, err := p.editor.evaluateVersion(ctx, p.input.native(ctx, p.editor.Ports), p.request, p.input, p.carriers, value, false)
+	_, snapshot, err := p.editor.evaluateVersion(ctx, p.input.native(ctx, p.editor.Ports), p.request, p.input, p.carriers, value, false, false)
 	if err != nil {
 		return "", err
 	}
@@ -115,7 +115,7 @@ func (p *VersionProbe) EvaluateVersions(ctx context.Context, values []string) ([
 	reader := p.input.native(ctx, p.editor.Ports)
 	results := make([]string, len(values))
 	for i, value := range values {
-		_, snapshot, err := p.editor.evaluateVersion(ctx, reader, p.request, p.input, p.carriers, value, false)
+		_, snapshot, err := p.editor.evaluateVersion(ctx, reader, p.request, p.input, p.carriers, value, false, false)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", value, err)
 		}

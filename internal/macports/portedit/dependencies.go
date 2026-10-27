@@ -527,6 +527,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	result.Crates = gitDownloads
 	result.Regenerated = regenerated
 	result.ManifestHook = hookUnchecked
+	result.TarballMoved = archivePlan.result.TarballMoved
 	switch {
 	case kept && previousProblem != nil:
 		result.previousFailed(previousProblem)
