@@ -41,5 +41,24 @@ architecture thread gave (the coordinator's relay, 14:42Z).
   - The engine's tests go through the collector.
   - TestARevisionIsAssessedByItsNetChange now also asserts that the
     recorded assessment is the collector's comparison.
-- Not yet: compose builds the collector and the preparer, with
-  `discovery()`, where the evaluator exists (the shape's point 4).
+- **compose composes them** (the shape's point 4, architecture's (b) on
+  2026-10-27: not engine-held defaults, which would keep construction
+  with two owners). compose builds, in order:
+  - the evaluator's selection reader (`Engine.SelectionReader`);
+  - upstream discovery over it, `upstream.Service` with GitHub's catalog
+    (`Engine.GitHubClient`) and GitLab's;
+  - the port editor, `editprep.Service`, and the forge archiver, which
+    is discovery.
+
+  It sets `e.Discovery`, `e.Preparer`, and `e.SourceArchiver`. Where the
+  evaluator can't be had, it leaves them unset.
+- The engine's lazy assembly of the three is gone: `preparer()`,
+  `discovery()`, and `sourceArchiver()` now return what compose gave, or
+  say none is set up, at the point of use. outdated reads
+  `e.Discovery`. A test that needs one gives it, as
+  TestWhatCantBeComparedSaysSo gives a stub archiver.
+- Kept: the per-call `collector(planner)` builds the Collector from what
+  the engine holds, since a planner is the engine's capability (Ports)
+  and the Git resolver and tree files are its adapters. The selection
+  reader's own lazy assembly stays in the engine, which every reading
+  uses.

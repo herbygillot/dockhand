@@ -233,6 +233,9 @@ func TestWhatCantBeComparedSaysSo(t *testing.T) {
 	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/gitty/Portfile": "name gitty\n", "devel/meta/Portfile": "name meta\n", "python/py-stub/Portfile": "name py-stub\n"})
 	p := newPlanner(t)
 	e.Ports.Archives = p
+	// An archiver compose would give; the Git source fails before it's
+	// asked.
+	e.SourceArchiver = stubArchiver{}
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"devel/gitty": {{Name: "gitty"}}, "devel/meta": {{Name: "meta"}}, "python/py-stub": {{Name: "py-stub"}}}})
 	for _, tree := range []model.ObjectID{base, tree} {
 		p.Add(tree, plannedPort{Info: macports.PortInfo{Name: "gitty", Options: map[string]string{"fetch.type": "git"}}})

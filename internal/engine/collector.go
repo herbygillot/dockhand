@@ -44,17 +44,13 @@ func (e *Engine) readings() project.Cache {
 	return project.Cache{Directory: e.options.Readings}
 }
 
-// sourceArchiver is the one the engine was given, or upstream discovery's
-// forges.
+// sourceArchiver is the one compose gave the engine, upstream
+// discovery's forges (Then's item 15).
 func (e *Engine) sourceArchiver() (SourceArchiver, error) {
-	if e.SourceArchiver != nil {
-		return e.SourceArchiver, nil
+	if e.SourceArchiver == nil {
+		return nil, errors.New("no forge archiver is set up: MacPorts' evaluator, port-tclsh, couldn't be read")
 	}
-	ports, err := e.selectionReader()
-	if err != nil {
-		return nil, err
-	}
-	return e.discovery(ports), nil
+	return e.SourceArchiver, nil
 }
 
 // gitResolver resolves a Git source's ref as a check's plan does

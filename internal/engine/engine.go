@@ -29,6 +29,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
+	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 // UpstreamURL is where master is fetched from, whatever the checkout's
@@ -146,6 +147,10 @@ type Engine struct {
 	// SourceArchiver writes a Git-fetched port's forge's archive of a
 	// commit, for its assessment; upstream discovery's forges when nil.
 	SourceArchiver SourceArchiver
+	// Discovery finds ports' newest releases, on GitHub and GitLab, which
+	// outdated reads; compose composes it with the preparer and the
+	// archiver (Then's item 15).
+	Discovery *upstream.Service
 	// Capacity is how many checks each provider takes at once, by its
 	// name, from providers.<name>.capacity: serve keeps to it, and so does
 	// a check run here (awaitSlot).
