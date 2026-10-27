@@ -125,7 +125,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if err := s.raiseGoToolchain(ctx, request, input, &result); err != nil {
 		return result, err
 	}
-	if err := s.checkPatches(ctx, input, &result); err != nil {
+	if err := s.checkPatches(ctx, input, &result, request.Attended); err != nil {
 		return result, err
 	}
 	if err := s.dropMergedPatches(ctx, input, &result); err != nil {

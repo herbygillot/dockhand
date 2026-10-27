@@ -25,7 +25,7 @@ func patched(info macports.PortInfo) bool {
 // downloaded candidate archives. It needs archives whose bytes were kept and
 // the final evaluation, so callers run it while their archive store exists.
 // A rejected patch is a finding on the result, never a preparation error.
-func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *Result) error {
+func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *Result, attended bool) error {
 	if result.Prepared.Ports == nil {
 		return nil
 	}
@@ -57,7 +57,7 @@ func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *
 		}
 		patches = append(patches, patchcheck.Patch{Name: name, Data: data})
 	}
-	results, err := patchcheck.Port(ctx, info, archives, patches)
+	results, err := patchcheck.Port(ctx, info, archives, patches, attended)
 	if err != nil {
 		return err
 	}
@@ -150,8 +150,9 @@ type RefreshedPatch struct {
 // I22). patchcheck's prediction is exact, the source with the refreshed
 // patch equal to the source as the old one made it, and the patch is in
 // the pull request's diff for review. The Portfile is as it was. A
-// fuzzed patch isn't refreshed: fuzz is never taken unattended, and holds
-// (patch-fuzz). Only a patch in files/ is written.
+// fuzzed patch is refreshed for an attended edit alone, its fuzzed hunks
+// said for the person to look over: fuzz is never taken unattended, and
+// holds there (patch-fuzz), unwritten. Only a patch in files/ is written.
 func (s *Service) refreshPatches(ctx context.Context, input *sourceInput, result *Result) error {
 	if len(result.Files) == 0 || result.Prepared.Ports == nil {
 		return nil

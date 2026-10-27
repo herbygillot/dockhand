@@ -538,7 +538,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err := s.raiseGoToolchain(ctx, request, input, &result); err != nil {
 		return Result{}, err
 	}
-	if err := s.checkPatches(ctx, input, &result); err != nil {
+	if err := s.checkPatches(ctx, input, &result, request.Attended); err != nil {
 		return Result{}, err
 	}
 	if err := s.dropMergedPatches(ctx, input, &result); err != nil {

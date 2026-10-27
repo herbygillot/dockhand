@@ -26,9 +26,10 @@ import (
 // patch made it, which Check verifies before it gives one.
 type Refresh struct {
 	Data []byte
-	// Moved are the hunks moved, and Dropped those left out, as
-	// "file.c hunk 2".
-	Moved, Dropped []string
+	// Moved are the hunks moved, Dropped those left out, and Fuzzed those
+	// that landed only with fuzz, re-emitted where patch put them for a
+	// person to look over, as "hunk 2 of file.c with fuzz 1".
+	Moved, Dropped, Fuzzed []string
 	// Generated are the files the patch changes that a build generates,
 	// by a path rule, configure or Makefile.in, which a person looks at
 	// where it changes: a hunk there that moved may be against output
@@ -42,6 +43,9 @@ func (r Refresh) Words() string {
 	var parts []string
 	if len(r.Moved) > 0 {
 		parts = append(parts, strings.Join(r.Moved, ", ")+" moved to where it now applies")
+	}
+	if len(r.Fuzzed) > 0 {
+		parts = append(parts, strings.Join(r.Fuzzed, ", ")+" written where patch put it: look it over in the diff")
 	}
 	if len(r.Dropped) > 0 {
 		parts = append(parts, strings.Join(r.Dropped, ", ")+" left out, the new source carries it")
@@ -158,7 +162,10 @@ func occurrences(file []byte, block []string) int {
 // in dir; none for one that applies as written, takes fuzz, or fails a
 // hunk. A moved hunk is moved only where its before block occurs once in
 // the file, so where it landed is the one place it could.
-func refresh(ctx context.Context, command string, args []string, dir string, data []byte, strip int) (*Refresh, error) {
+//
+// fuzz re-emits a hunk that landed only with fuzz too, where patch put
+// it, for a person to look over: an attended edit's.
+func refresh(ctx context.Context, command string, args []string, dir string, data []byte, strip int, fuzz bool) (*Refresh, error) {
 	comment, files, ok := sections(data, strip)
 	if !ok {
 		return nil, nil
@@ -223,10 +230,14 @@ func refresh(ctx context.Context, command string, args []string, dir string, dat
 		original, _ := os.ReadFile(filepath.Join(old, filepath.FromSlash(f.name)))
 		for _, h := range hunks[f.name] {
 			// patch numbers the hunks it was given, the carried left out.
-			if h.Fuzz > 0 || h.Number < 1 || h.Number > len(numbers[f.name]) {
+			if h.Fuzz > 0 && !fuzz || h.Number < 1 || h.Number > len(numbers[f.name]) {
 				return nil, nil
 			}
 			index := numbers[f.name][h.Number-1]
+			if h.Fuzz > 0 {
+				result.Fuzzed = append(result.Fuzzed, fmt.Sprintf("hunk %d of %s with fuzz %d", index+1, f.name, h.Fuzz))
+				continue
+			}
 			if occurrences(original, f.hunks[index].before) != 1 {
 				return nil, nil
 			}
@@ -236,7 +247,7 @@ func refresh(ctx context.Context, command string, args []string, dir string, dat
 			result.Generated = append(result.Generated, f.name)
 		}
 	}
-	if len(result.Moved) == 0 && len(result.Dropped) == 0 {
+	if len(result.Moved)+len(result.Dropped)+len(result.Fuzzed) == 0 {
 		return nil, nil
 	}
 	// The new patch: the comment, then each file's header and the hunks

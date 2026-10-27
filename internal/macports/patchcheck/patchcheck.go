@@ -44,6 +44,9 @@ type Request struct {
 	// PreArgs are the evaluated patch.pre_args tokens, normally -t -N -p0.
 	PreArgs []string
 	Patches []Patch
+	// Fuzz refreshes a patch that applies only with fuzz too, for a
+	// person to look over: an attended edit's (Refresh.Fuzzed).
+	Fuzz bool
 }
 
 // Result is the verdict for one patch. Checked is false when the check could
@@ -123,7 +126,9 @@ func HunkWords(hunks []Hunk) string {
 // command line gives after them, so herdr's patch.args -p1 is the strip
 // level (field testing at 5eb101a3). A patch.dir that leaves the source
 // directory can't be modelled, so each patch is unchecked there.
-func Port(ctx context.Context, info macports.PortInfo, archives []string, patches []Patch) ([]Result, error) {
+//
+// fuzz refreshes a patch that applies only with fuzz too (Request.Fuzz).
+func Port(ctx context.Context, info macports.PortInfo, archives []string, patches []Patch, fuzz bool) ([]Result, error) {
 	dir := info.Options["patch.dir"]
 	if dir != "" && dir != "@worksrc@" && !strings.HasPrefix(dir, "@worksrc@/") {
 		results := make([]Result, 0, len(patches))
@@ -141,7 +146,7 @@ func Port(ctx context.Context, info macports.PortInfo, archives []string, patche
 	}
 	return Check(ctx, Request{
 		Archives: archives, Worksrcdir: filepath.ToSlash(info.Options["worksrcdir"]), Rename: rename,
-		PatchDir: strings.TrimPrefix(strings.TrimPrefix(dir, "@worksrc@"), "/"), PreArgs: pre, Patches: patches,
+		PatchDir: strings.TrimPrefix(strings.TrimPrefix(dir, "@worksrc@"), "/"), PreArgs: pre, Patches: patches, Fuzz: fuzz,
 	})
 }
 
@@ -254,11 +259,15 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 		if err == nil {
 			results[i].Applies = true
 			results[i].Detail = "applies"
-			if results[i].Hunks = placed(output.Output); results[i].Fuzzed() {
+			results[i].Hunks = placed(output.Output)
+			switch {
+			case results[i].Fuzzed():
 				results[i].Detail = "applies only with fuzz: " + HunkWords(results[i].Hunks)
-			} else if len(results[i].Hunks) > 0 {
+			case len(results[i].Hunks) > 0:
 				results[i].Detail = "applies, " + HunkWords(results[i].Hunks)
-				if results[i].Refresh, err = refresh(ctx, command, apply, dir, contents[i], strip); err != nil {
+			}
+			if len(results[i].Hunks) > 0 && (!results[i].Fuzzed() || request.Fuzz) {
+				if results[i].Refresh, err = refresh(ctx, command, apply, dir, contents[i], strip, request.Fuzz); err != nil {
 					return nil, err
 				}
 			}
@@ -293,7 +302,7 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 			results[i].Detail = "is already in the source: it applies in reverse"
 		} else if ctx.Err() != nil {
 			return nil, ctx.Err()
-		} else if results[i].Refresh, err = refresh(ctx, command, apply, dir, contents[i], strip); err != nil {
+		} else if results[i].Refresh, err = refresh(ctx, command, apply, dir, contents[i], strip, false); err != nil {
 			// One with some hunks the source carries applies without them.
 			return nil, err
 		}
