@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -219,6 +220,10 @@ type Update struct {
 	PatchProblems    []string
 	PatchesUnchecked []string
 	PatchesApplied   int
+	// Instructions are the Portfile's comments that read as a maintainer's
+	// instruction about updating it (portfile.Instructions), each with its
+	// line: quoted, never read for intent (the docs dig's I7).
+	Instructions []string
 	// PatchesDropped are the patches the update took out, with their
 	// files, since the new source already holds them; PatchesRefreshed
 	// those it re-emitted to apply as written, each with what it did.
@@ -623,6 +628,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	if err != nil {
 		return update, err
 	}
+	update.Instructions = instructionLines(worktree.Root, edit.Directory, update.Port)
 	// The files are written; a record that landed though its commit's
 	// outcome is unknown stands, where saying the update failed would
 	// leave the person to edit again what's there (store.Recorded).
@@ -1346,4 +1352,19 @@ func attemptDigest(files []git.FileEdit) string {
 		sum.Write(file.After)
 	}
 	return hex.EncodeToString(sum.Sum(nil))
+}
+
+// instructionLines are a port's Portfile's comments that read as a
+// maintainer's instruction, as update, status, and serve quote them:
+// "textproc/jq/Portfile:4: Do not update past 3.8.3".
+func instructionLines(root, directory, port string) []string {
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(directory), "Portfile"))
+	if err != nil {
+		return nil
+	}
+	var lines []string
+	for _, found := range portfile.Instructions(data, port) {
+		lines = append(lines, fmt.Sprintf("%s/Portfile:%d: %s", directory, found.Line, found.Text))
+	}
+	return lines
 }

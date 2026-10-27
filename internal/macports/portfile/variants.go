@@ -1,6 +1,7 @@
 package portfile
 
 import (
+	"bytes"
 	"slices"
 	"strings"
 
@@ -157,4 +158,86 @@ func SourceVariants(before, after []byte, changed []string) []string {
 	}
 	slices.Sort(variants)
 	return variants
+}
+
+// instructionPhrases are a maintainer's words for an instruction about
+// updating a port, as Portfiles' comments write them: osxfuse's "do not
+// update past 3.8.3", dav1d's "increase the revision of libheif, ffmpeg…"
+// (the docs dig's I7).
+var instructionPhrases = []string{"do not update", "don't update", "do not upgrade", "don't upgrade", "increase the revision of", "bump the revision of", "keep in sync with"}
+
+// Instruction is a comment of a Portfile's that reads as a maintainer's
+// instruction: its first line's number, counting from 1, and its text,
+// the comment's lines joined.
+type Instruction struct {
+	Line int
+	Text string
+}
+
+// Instructions are the comments at a Portfile's top, and in the subport's
+// own block where subport names one, whose words read as an instruction
+// about updating it, by a short phrase list: a scan of the text alone,
+// quoted for a person, never read for intent or a version's ceiling. A
+// comment of several lines is one, its lines joined. None where the
+// Portfile doesn't parse.
+func Instructions(src []byte, subport string) []Instruction {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return nil
+	}
+	var found []Instruction
+	scan := func(script *syntax.Script) {
+		var lines []string
+		first, last := 0, 0
+		flush := func() {
+			text := strings.Join(lines, " ")
+			lower := strings.ToLower(text)
+			if slices.ContainsFunc(instructionPhrases, func(phrase string) bool { return strings.Contains(lower, phrase) }) {
+				found = append(found, Instruction{Line: first, Text: text})
+			}
+			lines = nil
+		}
+		for _, item := range script.Items {
+			comment, ok := item.(syntax.Comment)
+			if !ok {
+				if len(lines) > 0 {
+					flush()
+				}
+				continue
+			}
+			line := 1 + bytes.Count(src[:comment.Span.Start], []byte("\n"))
+			if len(lines) > 0 && line != last+1 {
+				flush()
+			}
+			if len(lines) == 0 {
+				first = line
+			}
+			last = line
+			text := strings.TrimSpace(strings.TrimLeft(string(src[comment.Span.Start:comment.Span.End]), "#"))
+			if text != "" {
+				lines = append(lines, text)
+			}
+		}
+		if len(lines) > 0 {
+			flush()
+		}
+	}
+	scan(script)
+	if subport != "" {
+		for _, item := range script.Items {
+			cmd, ok := item.(syntax.Command)
+			if !ok {
+				continue
+			}
+			if name, _ := cmd.Name(src); name != "subport" || len(cmd.Words) != 3 {
+				continue
+			}
+			if literal, ok := cmd.Words[1].Literal(src); ok && literal == subport {
+				if body, braced := cmd.Words[2].BracedScript(src); braced {
+					scan(body)
+				}
+			}
+		}
+	}
+	return found
 }

@@ -579,6 +579,15 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 			}
 			fmt.Fprintf(out, "  %s! %s: %s\n", label, hand.Directory, hand.Line())
 		}
+		// A maintainer's instruction in its Portfiles' comments, quoted
+		// (the docs dig's I7).
+		for i, line := range report.Instructions[status.Branch.ID] {
+			label := "         "
+			if i == 0 {
+				label = "Comments "
+			}
+			fmt.Fprintf(out, "  %s! %s\n", label, line)
+		}
 		// What the latest check's builds link and don't declare, a notice
 		// (v0.5.0 part 6).
 		if status.Latest != nil {
