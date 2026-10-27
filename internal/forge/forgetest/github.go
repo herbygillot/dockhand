@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -34,6 +35,10 @@ type GitHub struct {
 	// Renamed are the repositories that answer by another name now, by
 	// the name asked (Describe).
 	Renamed map[string]string
+	// Accounts are the logins GitHub has now, by login, and Made when
+	// each repository was made, by name, for a move's old owner name.
+	Accounts map[string]forge.Account
+	Made     map[string]time.Time
 	// ForkParent is the fork's parent as GitHub reports it; MacPorts'
 	// where empty. Another names a fork of something else.
 	ForkParent string
@@ -134,9 +139,18 @@ func (d *Dockhand) HasCommit(_ context.Context, commit string) (bool, error) {
 // those Renamed names otherwise.
 func (g *GitHub) Describe(_ context.Context, _, name string) (forge.Description, error) {
 	if now, ok := g.Renamed[name]; ok {
-		return forge.Description{Name: now}, nil
+		return forge.Description{Name: now, CreatedAt: g.Made[now]}, nil
 	}
-	return forge.Description{Name: name}, nil
+	return forge.Description{Name: name, CreatedAt: g.Made[name]}, nil
+}
+
+// Account is Accounts' entry for the login, else an account that has
+// always stood.
+func (g *GitHub) Account(_ context.Context, _, login string) (forge.Account, error) {
+	if account, ok := g.Accounts[login]; ok {
+		return account, nil
+	}
+	return forge.Account{Exists: true}, nil
 }
 
 func (g *GitHub) Repository(_, name string) (forge.Repository, error) {

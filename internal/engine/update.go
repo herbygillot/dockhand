@@ -515,7 +515,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		// neither its preview nor the pull request said it had moved
 		// (field testing's batch 10, finding 1).
 		if update.Renamed != "" && update.Upstream != nil {
-			update.Upstream.Changes = append(update.Upstream.Changes, movedChange(update.Release.Repository, update.Renamed, update.Followed != ""))
+			update.Upstream.Changes = append(update.Upstream.Changes, movedChange(update.Release.Repository, update.Renamed, update.Followed != "", e.oldOwnerNow(ctx, update.Release.Repository, update.Renamed, update.Followed != "")))
 		}
 		// An archive MacPorts' mirror already holds another file of, under
 		// a dist_subdir other ports share, fails the check at its checksum
@@ -1163,7 +1163,10 @@ func editRecorded(branch model.BranchID, id model.EditID) func(store.Reader) boo
 // squash to WLTBAgent); either holds until --follow-moves points
 // github.setup at it, the person's choice (field testing at 43949b89:
 // gitoxide's, Byron to GitoxideLabs, was followed by hand).
-func movedChange(from, to string, followed bool) model.UpstreamChange {
+// movedChange is a repository move as a finding; owner says what the old
+// owner name names now, where it's another account's or no one's
+// (oldOwnerNow).
+func movedChange(from, to string, followed bool, owner string) model.UpstreamChange {
 	change := model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: to, Hold: !followed, Class: model.Introduced}
 	fromOwner, _, _ := strings.Cut(from, "/")
 	toOwner, _, _ := strings.Cut(to, "/")
@@ -1173,10 +1176,42 @@ func movedChange(from, to string, followed bool) model.UpstreamChange {
 	case !strings.EqualFold(fromOwner, toOwner):
 		change.Rule = upstreamTransferredRule
 		change.Message = fmt.Sprintf("upstream moved from %s to %s: GitHub redirects %s to %s. Review the new owner before trusting its releases. Use update --follow-moves to update github.setup", fromOwner, toOwner, from, to)
+		if owner != "" {
+			change.Message += ". " + owner
+		}
 	default:
 		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s. Use update --follow-moves to update github.setup", from, to)
 	}
 	return change
+}
+
+// oldOwnerNow says what a moved repository's old owner name names now,
+// where the owner changed and the move isn't followed: a redirect lasts
+// only while the old name has no repository of that name, so github.setup
+// naming it is a supply-chain risk once someone else holds the name, as
+// yabai's koekeishiya now names a new, unrelated account (field testing's
+// outdated-ports session). One request reads the account (GET
+// /users/{old}), and the repository's own creation date tells a newer
+// account apart. Empty where the name is an older account's, or nothing
+// could be read.
+func (e *Engine) oldOwnerNow(ctx context.Context, from, to string, followed bool) string {
+	fromOwner, _, _ := strings.Cut(from, "/")
+	toOwner, _, _ := strings.Cut(to, "/")
+	if followed || strings.EqualFold(fromOwner, toOwner) {
+		return ""
+	}
+	account, err := e.forge().Account(ctx, "https://github.com", fromOwner)
+	if err != nil {
+		return ""
+	}
+	if !account.Exists {
+		return fmt.Sprintf("The old name, %s, is free on GitHub for anyone to take, who could publish a repository named %s in this one's place, so --follow-moves matters", fromOwner, from)
+	}
+	repository, err := e.forge().Describe(ctx, "https://github.com", to)
+	if err != nil || repository.CreatedAt.IsZero() || !account.CreatedAt.After(repository.CreatedAt) {
+		return ""
+	}
+	return fmt.Sprintf("The old name, %s, now belongs to another account, created %s, which could publish a repository named %s in this one's place, so --follow-moves matters", fromOwner, account.CreatedAt.Format("2006-01-02"), from)
 }
 
 // upstreamTransferredRule is movedChange's finding of a new owner.
