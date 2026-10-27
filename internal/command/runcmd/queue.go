@@ -48,21 +48,7 @@ the check runs here, as a foreground check would.`,
 			if err != nil {
 				return err
 			}
-			if run.State.Terminal() {
-				return checkrun.Report(ctx, e, run, streams, s.Places(), false)
-			}
-			session, err := e.Session(ctx, model.SessionForeground)
-			if err != nil {
-				return err
-			}
-			defer session.End(context.WithoutCancel(ctx))
-			return checkrun.Follow(ctx, e, session, run, streams, s.Places(), false, func(lead engine.Lead) {
-				if lead.Here() {
-					fmt.Fprintf(streams.Err, "No dockhand serve is running, so %s will run here. Press Ctrl-C to stop it; completed results will be saved.\n", run.Name())
-					return
-				}
-				fmt.Fprintf(streams.Err, "Following %s. Press Ctrl-C to stop watching; the check will continue.\n", run.Name())
-			})
+			return checkrun.Wait(ctx, e, run, streams, s.Places())
 		},
 	}
 	where.Register(cmd, s, "follow the latest check of")

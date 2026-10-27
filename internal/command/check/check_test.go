@@ -79,8 +79,8 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.NotEmpty(t, drained.Env, "in the command line's environment")
 
 	cmdtest.WithScript(t, w, "failed")
-	_, _, err = cmdtest.Dockhand(t, "check")
-	require.ErrorContains(t, err, "check-2 is already queued for these files; dockhand wait check-2 follows it", "one check of a branch at a time")
+	_, _, err = cmdtest.Dockhand(t, "check", "-d")
+	require.ErrorContains(t, err, "check-2 is already queued for these files; dockhand wait check-2 follows it", "one check of a branch at a time; -d leaves it as it is")
 	out, errs, err = cmdtest.Dockhand(t, "check", "--replace")
 	require.Contains(t, out, "Replaced check-2, canceled before it started.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
 	// Off a terminal at the default level, the check says it runs here,
@@ -114,6 +114,39 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 
 // A narrowed plan says what --only left out, and that submit still needs
 // it checked (Design v3 §7).
+// A check asked while the branch's check of the same files is queued
+// follows it to its result, as wait does, saying so, where it refused for
+// the person to type the wait it printed; one beside a check of other files
+// still refuses, naming --replace (the docs dig's I10).
+func TestCheckFollowsACheckOfTheSameFiles(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	cmdtest.WithScript(t, w, "passed")
+	cmdtest.Hosted(t).StartDrain = func(engine.Options) (int, error) { return 4242, nil }
+	_, _, err = cmdtest.Dockhand(t, "check", "-d")
+	require.NoError(t, err)
+
+	out, errs, err := cmdtest.Dockhand(t, "check")
+	require.NoError(t, err)
+	require.Contains(t, errs, "check-1 is already queued for these files; following it.\n")
+	require.Contains(t, out, "Passed for snapshot 1.", "followed to its result")
+
+	_, _, err = cmdtest.Dockhand(t, "check", "-d")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# another edit\n"), 0o644))
+	_, _, err = cmdtest.Dockhand(t, "check")
+	require.ErrorContains(t, err, "check-2 is queued for")
+	require.ErrorContains(t, err, "--replace stops it")
+}
+
 func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer

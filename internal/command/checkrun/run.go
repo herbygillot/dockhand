@@ -91,6 +91,27 @@ func quiet(streams term.Streams) bool {
 // Follow shows a run's progress until it ends, driving it here where
 // nobody else sees it through, after before says who does, and reports its
 // outcome; named is where the command named what it checks already.
+// Wait follows a check until it ends and reports it, as dockhand wait does:
+// one that ended is reported; with serve running, this observes; with no
+// serve, it runs here, as a foreground check would.
+func Wait(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places) error {
+	if run.State.Terminal() {
+		return Report(ctx, e, run, streams, places, false)
+	}
+	session, err := e.Session(ctx, model.SessionForeground)
+	if err != nil {
+		return err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	return Follow(ctx, e, session, run, streams, places, false, func(lead engine.Lead) {
+		if lead.Here() {
+			fmt.Fprintf(streams.Err, "No dockhand serve is running, so %s will run here. Press Ctrl-C to stop it; completed results will be saved.\n", run.Name())
+			return
+		}
+		fmt.Fprintf(streams.Err, "Following %s. Press Ctrl-C to stop watching; the check will continue.\n", run.Name())
+	})
+}
+
 func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, places config.Places, named bool, before func(engine.Lead)) error {
 	journal := &journal{e: e, run: run.ID, out: streams.Err}
 	if quiet(streams) {
