@@ -557,7 +557,13 @@ func TestAFailedMetadataProbeIsRecorded(t *testing.T) {
 	t.Parallel()
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
-	putFile(t, tree.Root(), "devel/unsure/Portfile", "PortSystem 1.0\nname unsure\nversion 1\ntrace add variable distfiles read {apply {args {error boom}}}\n")
+	// The probe fails through what it alone reads, replaced_by: base's
+	// master reads distfiles as it opens a port (portextract.tcl's
+	// find_methods), so a Portfile whose distfiles fail can't be opened
+	// there at all, as port info says too, and 2.12 reads use_configure
+	// as it opens one, for universal_variant (the weekly job against
+	// base's master).
+	putFile(t, tree.Root(), "devel/unsure/Portfile", "PortSystem 1.0\nname unsure\nversion 1\nreplaced_by other\ntrace add variable replaced_by read {apply {args {error boom}}}\n")
 	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "unsure"})
 	require.NoError(t, err)
 	bound, err := tree.Select(targets[0])
