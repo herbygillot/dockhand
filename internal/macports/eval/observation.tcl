@@ -38,6 +38,13 @@ namespace eval ::dockhand {
                     }
                     set root [file normalize $source_root]
                     set base [file normalize $base_root]
+                    # Tcl's own library, as clock format loads clock.tcl and
+                    # its messages from it, is the interpreter's, not the
+                    # host's state.
+                    set library [file normalize [info library]]
+                    if {$normalized eq $library || [string first "${library}/" $normalized] == 0} {
+                        return ""
+                    }
                     if {$normalized ne $root && [string first "${root}/" $normalized] != 0
                         && $normalized ne $base && [string first "${base}/" $normalized] != 0} {
                         return "modeled context depends on filesystem state outside the captured ports tree"
@@ -126,6 +133,16 @@ namespace eval ::dockhand {
         }
         $worker eval $::dockhand::platform_script
         $worker eval [list set ::dockhand_platform::operands $::dockhand::operands]
+        # An observed context's clock is UTC's, set up before the Portfile
+        # runs: a Portfile that formats source_date_epoch, as uv's and
+        # cloudflared's build dates do, read the Mac's own zone,
+        # /etc/localtime, and clock's first use probes the Mac's zoneinfo
+        # directories, host state an observation judges, and which a
+        # modelled context hasn't.
+        $worker eval {
+            set ::env(TCL_TZ) :UTC
+            catch {clock format 0}
+        }
     }
     # overrides is the list of variable and value pairs that make this
     # interpreter describe another platform, built once in Go by
@@ -148,6 +165,7 @@ namespace eval ::dockhand {
         if {[llength $overrides]} {
             ::macports::override_vars $overrides
         }
+
         if {$declarations} {
             trace add execution ::macports::worker_init leave ::dockhand::observe_worker
         }
