@@ -46,3 +46,18 @@ func TestTheHelpOpensWithTheLogoAndTheVersion(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(out, logo+" "+buildinfo.Current().String()+"\n\nPrepare, check, and submit changes to MacPorts ports.\n"), out)
 }
+
+// A removed flag says what replaced it, or that nothing did, rather than
+// "unknown flag" (the docs re-review's item 7, 2026-10-27), and none names
+// a flag its command has, which would never be reached.
+func TestARemovedFlagSaysWhatReplacedIt(t *testing.T) {
+	t.Parallel()
+	for command, flags := range removedFlags {
+		for flag, words := range flags {
+			_, _, err := cmdtest.Dockhand(t, command, "--"+flag)
+			require.EqualError(t, err, words, "%s --%s", command, flag)
+		}
+	}
+	_, _, err := cmdtest.Dockhand(t, "update", "--no-such-flag")
+	require.EqualError(t, err, "unknown flag: --no-such-flag")
+}

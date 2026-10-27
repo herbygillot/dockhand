@@ -144,6 +144,8 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
+	// A removed flag says what replaced it (removedFlags).
+	root.SetFlagErrorFunc(removedFlag)
 	shared.Flags(root)
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "write the result as one JSON envelope on standard output")
 	root.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "show progress on standard error: -v for additional detail, -vv for every step")

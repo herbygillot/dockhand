@@ -580,6 +580,11 @@ func parse(path, text string) (File, error) {
 			switch key.String() {
 			case "check.on":
 				return File{}, fmt.Errorf("%s: check.on is gone: build.default names a build profile, as \"host\" or \"macports-ci\", or one of your own under [build.profiles]", path)
+			case "providers.tart.capacity":
+				// Tart's limit became the Mac's VMs (Then's item 6), and a
+				// removed setting says what replaced it (the docs
+				// re-review, 2026-10-27).
+				return File{}, fmt.Errorf("%s: providers.tart.capacity is gone: Tart takes as many checks as the Mac runs VMs; delete the line", path)
 			case "serve.for_outdated", "serve.submit_passing":
 				// As did these with ship (the second look's §6).
 				return File{}, fmt.Errorf("%s: %s is gone: serve.ship_to says how far serve carries your outdated ports, list, commit, check, or submit; for_outdated = \"draft\" is ship_to = \"commit\", and submit_passing = true is ship_to = \"submit\"", path, key)

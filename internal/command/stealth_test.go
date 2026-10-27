@@ -142,7 +142,7 @@ func TestShipSettlesWhereBeforeTheEdit(t *testing.T) {
 	g.Others = nil
 
 	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--new", "--on", "command")
-	require.ErrorContains(t, err, "unknown flag: --on", "update is the edit alone")
+	require.ErrorContains(t, err, "update --on is gone: update edits alone", "update is the edit alone")
 	_, _, err = cmdtest.Dockhand(t, "ship", "jq", "--yes", "--on", "nowhere")
 	require.EqualError(t, err, `--on nowhere: no provider "nowhere" is set up; nothing was changed`)
 	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")
