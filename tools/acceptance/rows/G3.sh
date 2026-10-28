@@ -32,7 +32,7 @@ assert() {
 		return
 	fi
 	grep -q "building in $G3_PREFIX (as you)" "$ROW_DIR/out.log" || { row_fail "the check in $G3_PREFIX didn't build as dhtest"; return; }
-	grep -q "MacPorts' binary archives are built for /opt/local alone" "$ROW_DIR/out.log" || { row_fail "the plan didn't say $G3_PREFIX's dependencies build from source"; return; }
+	jq -e '[.. | objects | .note? | strings] | any(test("binary archives are built for /opt/local alone"))' "$file" >/dev/null || { row_fail "the plan's JSON didn't say $G3_PREFIX's dependencies build from source"; return; }
 	local_same "$G3_PREFIX" "$ROW_DIR/active.before" "the check left $G3_PREFIX's active ports changed" || return
 	row_pass "built in $G3_PREFIX with no sudo, clean, and put its ports back"
 }
