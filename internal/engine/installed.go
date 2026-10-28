@@ -79,8 +79,17 @@ func (e *Engine) InstallChanges(ctx context.Context, run model.Run, fetch bool) 
 				if err != nil {
 					return err
 				}
+				// The check before this one, never a later one: check 2
+				// was check 1's baseline once check 2 had run, "libjq.2.dylib
+				// is libjq.1.dylib now" said of check 1 (Codex's review of
+				// 8e314b96, finding 7). Reuse's search answers what can
+				// stand now; this asks what came before a result.
 				i := slices.IndexFunc(earlier, func(b store.Build) bool {
-					return b.Execution.Run != run.ID && (b.Result.Installed != nil || b.Result.Configure != nil)
+					if b.Execution.Run == run.ID || b.Result.Installed == nil && b.Result.Configure == nil {
+						return false
+					}
+					before, err := r.Run(b.Execution.Run)
+					return err == nil && before.Number < run.Number
 				})
 				if i < 0 {
 					// Never checked there: master's archive, read on the
