@@ -1,6 +1,7 @@
 package ghactions
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // A port's result is its runners' together, and keeps each runner's part:
@@ -138,4 +140,54 @@ func TestAJobEndedForItsTime(t *testing.T) {
 	require.False(t, ranFor(job(2*time.Hour), JobCap))
 	require.True(t, ranFor(job(2*time.Hour), 2*time.Hour), "a shorter bound of dockhand's")
 	require.False(t, ranFor(RunnerJob{}, JobCap))
+}
+
+// matrixAPI is a run of two matrix jobs, one a runner built jq in and one
+// GitHub cancelled before any runner took it.
+type matrixAPI struct{ API }
+
+func (matrixAPI) Jobs(context.Context, string, int64, int) ([]RunnerJob, error) {
+	return []RunnerJob{
+		{ID: 1, Name: "build (macos-15)", Status: "completed", Conclusion: "success", RunnerName: "runner-1", Labels: []string{"macos-15"}},
+		{ID: 2, Name: "build (macos-26)", Status: "completed", Conclusion: "cancelled", Labels: []string{"macos-26"}},
+		{ID: 3, Name: "build (macos-14)", Status: "completed", Conclusion: "skipped", Labels: []string{"macos-14"}},
+	}, nil
+}
+
+func (matrixAPI) JobLog(context.Context, string, int64) ([]byte, error) {
+	return []byte("::group::Listing subports\njq\n::endgroup::\n::group::Installing jq\n::endgroup::\n"), nil
+}
+
+// recordingBuild keeps what a read records.
+type recordingBuild struct {
+	buildenv.Build
+	results []model.TargetResult
+}
+
+func (*recordingBuild) Blocked(model.TargetID) (model.TargetID, bool) { return "", false }
+func (b *recordingBuild) Record(report buildenv.TargetReport) error {
+	b.results = append(b.results, report.Result)
+	return nil
+}
+func (*recordingBuild) Observe(model.Observed) error { return nil }
+func (*recordingBuild) Progress(string)              {}
+
+// A matrix a job of which no runner took is incomplete: nothing of it is
+// recorded, so the run is retried as an infrastructure failure, where one
+// green runner beside the untaken job recorded a pass (Codex's review of
+// 2ad896d2, W1, its probe inverted). A skipped job isn't missing.
+func TestAnIncompleteMatrixIsNoPass(t *testing.T) {
+	t.Parallel()
+	p := &Provider{API: matrixAPI{}}
+	build := &recordingBuild{}
+	job := buildenv.Job{Directory: t.TempDir(), Targets: []buildenv.Target{{PlanTarget: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}}}}
+	run := Run{ID: 1, Attempt: 1, Status: "completed", Conclusion: "cancelled", URL: "https://example.invalid/run/1"}
+	err := p.read(t.Context(), job, build, "example/macports-ports", run, "")
+	require.Equal(t, refusal.Infrastructure, refusal.KindOf(err), "%v", err)
+	require.EqualError(t, err, "provider infrastructure failed: GitHub cancelled macos-26's job before any runner took it, so the matrix is incomplete; see https://example.invalid/run/1")
+	require.Empty(t, build.results, "no verdict recorded")
+
+	err = p.read(t.Context(), job, build, "example/macports-ports", run, "the run built for its 6h bound (providers.github.build_timeout), and was ended")
+	require.ErrorContains(t, err, "before any runner took it (the run built for its 6h bound (providers.github.build_timeout), and was ended), so the matrix is incomplete")
+	require.Empty(t, build.results)
 }

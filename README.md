@@ -242,6 +242,7 @@ These limitations have workarounds:
 - A check covers only this Mac's macOS release unless told otherwise (`build.default`'s `host`), while MacPorts CI also builds on macOS 14 and 15. `submit` and the pull request say which releases no check covered. To check on all three, use `--build macports-ci`; to make that the default, set `build.default = "macports-ci"`.
 - On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first Tart check of a Rust or Go port builds rust and cargo, or go, from source, which takes hours on a VM's two cores. The check says so before it builds, and later checks install them from the archives Dockhand kept, until cleanup removes them. To avoid the wait, check such a port first on the previous release with `--on tahoe`, or let the first check run.
 - `status --all` reads each branch in turn, which took close to a minute with several hundred branches, most of them archived (55 s for 683 on rc2). Plain `status`, or `status <branch>`, stays quick.
+- `submit --draft` on a pull request already marked ready pushes to it without returning it to draft; mark it draft on GitHub first (`gh pr ready --undo`).
 
 ## Scope
 
