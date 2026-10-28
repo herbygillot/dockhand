@@ -12,7 +12,7 @@ The whole loop is built and used for real work, MacPorts pull requests and dockh
 - **Checks:** `check` in Tart (macOS 12 through 27, each with an Xcode image), on the fork's GitHub Actions, through a command of your own, or in a MacPorts prefix on this Mac (`local`); `logs`, `retry`, `shell`, `artifacts`, `wait`, and `cancel`.
 - **Review and submit:** `tidy`, `rebase`, `submit`, `review`, and `decide`; `serve` runs queued checks and the daily look at the selected ports.
 
-v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest, a guide in the binary, and five small fixes from field testing.
+v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest and five small fixes from field testing.
 
 ## Next
 
@@ -52,15 +52,11 @@ Its acceptance is v0.6.0's, with:
 - two `local` checks on one prefix at once, the second waiting for the first's put-back (finding 1, above);
 - a `local` check whose dockhand is killed mid-build, and another on its prefix, which waits for the first's guest program to end before it snapshots (272e968b);
 - G3 reading its prefix's note from the check's JSON again, and a second `local` check of the same revision building where rc7's was refused (below);
-- `dockhand usage` and each of its topics printed with no checkout (below).
+- `dockhand usage` and each of its topics printed with no checkout (d72eb26c).
 
 Placed before rc1, in the wait for v0.6.0's tag, so v0.7.0 stays one release (rc6's B7 on the M1, which passed, sent here by the coordinator on 2026-10-28 at 11:25Z; not harm):
 
 - **An idle serve costs little** (about half a batch, inferred). On rc6, serve spent 148 CPU-minutes in 16 hours with nothing to run, about 15% of a core, on dhtest's database of 838 branches. While idle it polls every 2 seconds, reading the store for its lease and queue, and every 5 minutes refreshes the pull requests and gathers the status of every open branch for its submit pass (engine/servesubmit.go `PassingBranches`, through `Status`), the per-branch reads that make v0.6.0's `status --all` slow; on main, item 6 reads each kind of git fact once for every branch (ff7d16cc), which may be most of it. Its first step is done: the submit pass reads git only for the branches a check finished for, which the store says (4f75365e). An in-process measurement on main (2026-10-28, a generated store of 840 branches, 140 open and 120 with pull requests, the forge and git faked) projects an idle hour at about 11 s, at most 0.3% of a core: each 2-second tick's `session.Fenced`, `Candidates`, and `CleanupDue` take about 40 µs together, and the 5-minute pass's `PassingBranches` 41 ms and pull request refresh 860 ms, nearly all of it the fake forge. The rest waits on an hour's profile of an idle serve on main over dhtest's database, on the M1 once C1 and G3 are done, and fixes where the time goes; the suspects left (inferred) are `PassingBranches`' git reads of each open branch a check finished for, and the signed-in pull request refresh's reviews and checks for each pull request. Done when an idle serve on dhtest's database spends a small fraction of rc6's rate, measured in v0.7.0's B7. Taken when touched's serve finding 3 rides it where the change is in serve's loop.
-
-From the person's ask (2026-10-28 16:56Z, in the timeline):
-
-- **A guide in the binary, `dockhand usage [topic]`** (about a batch, inferred), for an agent meeting dockhand for the first time, which has the binary and not docs/. `dockhand usage` alone prints the one-time setup and the straight path to a pull request at length; `dockhand usage <topic>` prints a workflow across commands: `hand-edits`, `unattended`, `checks`, `review`, `batches`, `new-port`, and `agents`, which says `--json`, the exit codes, that nothing is asked without a terminal, the scratch environment (MACPORTS_TREE, DOCKHAND_DB, DOCKHAND_CONFIG), and which commands reach outside this Mac and so want a person's word. `usage` is a command in `--help`'s list, whose introduction names it, and `help` stays what `-h` is (the person's "`usage`", 2026-10-28 17:08Z); `<command> --help` stays each command's reference. The pages are docs/usage.md split by workflow, Markdown files a small package embeds, so the repository's guide and the binary's are one text, which TestEveryNamedCommandExists checks as it checks docs/ now; usage.md becomes their index. Done when each topic prints from a binary with no checkout, and a test has every topic `dockhand usage` lists print.
 
 From field testing's abook session (2026-10-28, on rc6 and v0.5.0, sent here by the coordinator at 17:15Z):
 
@@ -123,6 +119,8 @@ What it carries, each said in full in its notes:
   - status's, check's, and `review --check`'s JSON carry what their text says: a branch's detail, a check's lint, links, and what moved, and the review with its check inside (0c6ea87d).
   - status names the check holding a `local` check's prefix, as the wait does (6ee5ec13).
   - clean removes a merged branch whose changes are all on master, and a listing can end (650ec969); it offers the fork branches closed and canceled work left (d887556f).
+- **The guide.**
+  - `dockhand usage [topic]` prints the guide from the binary, docs/usage.md split by workflow into pages it embeds, at the person's ask and his name for it (d72eb26c).
 - **Inside.**
   - The assessment as a package, item 15 (ab7dce32, bd92981b, and 6441e960).
   - A modelled context's SDK, tools, and compiler list are its own on base master, from the weekly job's findings (33251823 and 0c1aa135).
