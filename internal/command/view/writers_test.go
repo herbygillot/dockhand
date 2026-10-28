@@ -63,13 +63,15 @@ func TestWriteLinks(t *testing.T) {
 	WriteLinks(&out, []engine.LinkFinding{
 		{Target: "harbor", Port: "oniguruma", Library: "/opt/local/lib/libonig.5.dylib", Binary: "/opt/local/bin/harbor", Libraries: 2},
 		{Target: "harbor-cli", Unread: true},
-		{Target: "crystal", Clean: true, Ports: 5},
+		{Target: "crystal", Clean: true, Ports: []string{"boehmgc", "pcre2"}},
+		{Target: "pcre2", Clean: true, Ports: []string{"zlib"}},
 		{Target: "jq", Clean: true},
 	})
 	require.Equal(t, "Links\n  ! harbor links libonig.5.dylib from oniguruma (and 1 more of its libraries), which it doesn't declare in depends_lib\n"+
 		"    couldn't read what harbor-cli's build links, so whether it declares them isn't said\n"+
-		"    crystal links 5 ports, each declared in depends_lib\n"+
-		"    jq links no port's libraries\n", out.String())
+		"    crystal links boehmgc and pcre2's libraries, each declared in depends_lib\n"+
+		"    pcre2 links zlib's libraries, declared in depends_lib\n"+
+		"    jq links no other port's libraries\n", out.String())
 }
 
 // A grid with a cell an earlier check gave says once, under it, that the

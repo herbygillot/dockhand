@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -103,7 +104,17 @@ func requestHeaders(port macports.PortInfo, spec portsource.Spec) http.Header {
 // forge's client when it serves the URL, otherwise plainly, with Base's
 // request headers either way. The validators are the response's ETag and
 // Last-Modified when the plain fetch read them.
-func (s *Service) listing(ctx context.Context, port macports.PortInfo, spec portsource.Spec) ([]byte, http.Header, error) {
+func (s *Service) listing(ctx context.Context, port macports.PortInfo, spec portsource.Spec) (page []byte, header http.Header, err error) {
+	defer func() {
+		// The Portfile's own livecheck reads a page that isn't there, as
+		// MacPorts' port livecheck finds too: tao's reads ${master_sites},
+		// a GitHub release's download folder, which GitHub lists nothing
+		// at, and update said only the fetch's 404 (field testing's tao
+		// update, 2026-10-28).
+		if refused := new(fetch.StatusError); errors.As(err, &refused) && refused.Status == http.StatusNotFound {
+			err = fmt.Errorf("upstream: %s's livecheck reads %s, which answered 404, as port livecheck finds too, so the newest release can't be read from it; name the version: dockhand update %s <version>: %w", port.Name, spec.Livecheck.URL, port.Name, err)
+		}
+	}()
 	headers := requestHeaders(port, spec)
 	if documents, ok := s.Catalogs[spec.Forge].(forge.Documents); ok {
 		body, served, err := documents.Document(ctx, spec.Livecheck.URL, headers)
@@ -131,7 +142,7 @@ func (s *Service) listing(ctx context.Context, port macports.PortInfo, spec port
 		return nil, nil, err
 	}
 	defer response.Body.Close()
-	page, err := io.ReadAll(response.Body)
+	page, err = io.ReadAll(response.Body)
 	if err != nil {
 		return nil, nil, err
 	}

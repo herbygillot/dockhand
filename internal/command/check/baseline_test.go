@@ -39,7 +39,7 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	previewed, _, err := cmdtest.Dockhand(t, "check", "--baseline", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, "jq-update · baseline at master [0-9a-f]{7}: jq\n", previewed)
-	require.Contains(t, previewed, "Also        jq\nProvider    command · tests declared\n")
+	require.Contains(t, previewed, "Also        jq\nProvider    command · tests where declared\n")
 	next("passed")
 	out, _, err = cmdtest.Dockhand(t, "check", "--baseline")
 	require.NoError(t, err, "a baseline is evidence, and never fails")

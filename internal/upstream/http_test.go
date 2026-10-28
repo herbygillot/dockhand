@@ -64,7 +64,7 @@ func TestHTTPDiscoveryUsesNativeFilterAndFreezesRelease(t *testing.T) {
 
 func TestHTTPDiscoveryRejectsIncompleteOrUnsupportedObservations(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []string{"empty", "malformed", "prerelease", "HTTP failure", "custom hook", "curl option", "unmatched version", "invalid capture", "ambiguous"} {
+	for _, scenario := range []string{"empty", "malformed", "prerelease", "HTTP failure", "not found", "custom hook", "curl option", "unmatched version", "invalid capture", "ambiguous"} {
 		t.Run(scenario, func(t *testing.T) {
 			page := `>terraform_1.16.2<`
 			status := 200
@@ -79,6 +79,8 @@ func TestHTTPDiscoveryRejectsIncompleteOrUnsupportedObservations(t *testing.T) {
 				page = `>terraform_1.16.2-rc1<`
 			case "HTTP failure":
 				status = 503
+			case "not found":
+				status = 404
 			case "custom hook":
 				port.Options["dockhand.livecheck_standard"] = "0"
 			case "curl option":
@@ -108,6 +110,12 @@ func TestHTTPDiscoveryRejectsIncompleteOrUnsupportedObservations(t *testing.T) {
 			require.Nil(t, result.Release)
 			if scenario == "custom hook" || scenario == "curl option" {
 				require.Zero(t, calls)
+			}
+			if scenario == "not found" {
+				// tao's livecheck reads a GitHub release's download folder,
+				// as port livecheck does, and both find nothing there
+				// (field testing's tao update, 2026-10-28).
+				require.ErrorContains(t, err, "'s livecheck reads "+server.URL+", which answered 404, as port livecheck finds too, so the newest release can't be read from it; name the version: dockhand update ")
 			}
 		})
 	}

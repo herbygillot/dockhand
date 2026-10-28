@@ -78,29 +78,40 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 	if plan.Profile != "" && plan.Profile != "command" {
 		profile = " · build profile " + plan.Profile
 	}
-	fmt.Fprintf(out, "Provider    %s%s · tests %s\n", strings.Join(on, "; "), profile, plan.Tests)
+	fmt.Fprintf(out, "Provider    %s%s · %s\n", strings.Join(on, "; "), profile, testPolicyWords(plan.Tests))
 	for _, environment := range plan.Environments {
 		if note := engine.PrefixNote(environment); note != "" {
 			fmt.Fprintf(out, "            %s\n", note)
 		}
 	}
 	WriteVariants(out, plan)
-	// Tests required ask nothing of a port that declares none, which
-	// passes under any policy: said, so its ✓ isn't read as tests passed.
-	if plan.Tests == model.TestsRequired {
+	// Tests run where declared, or required, ask nothing of a port that
+	// declares none, which passes under any policy: said, so its ✓ isn't
+	// read as tests passed, and "tests declared" isn't read as the port
+	// declaring them (ace's plan, 2026-10-28).
+	if plan.Tests == model.TestsRequired || plan.Tests == model.TestsDeclared {
 		tested, untested := plan.Untested()
-		// Which do declare them is said too, beside those that don't, so
-		// "asks nothing" of a stub isn't read as of the port (field
-		// testing's py-mlx-vlm, 2026-10-04).
-		if len(untested) > 0 && len(tested) > 0 {
-			fmt.Fprintf(out, "Tests       %s, which must pass\n", prose.And(tested))
+		required := ""
+		if plan.Tests == model.TestsRequired {
+			// Which do declare them is said too, beside those that don't,
+			// so "asks nothing" of a stub isn't read as of the port (field
+			// testing's py-mlx-vlm, 2026-10-04).
+			if len(untested) > 0 && len(tested) > 0 {
+				fmt.Fprintf(out, "Tests       %s, which must pass\n", prose.And(tested))
+			}
+			required = "; --tests required adds no test requirement for this port"
+			if len(untested) > 1 {
+				required = "; --tests required adds no test requirement for these ports"
+			}
 		}
-		switch len(untested) {
-		case 0:
-		case 1:
-			fmt.Fprintf(out, "No tests    %s declares no tests; --tests required adds no test requirement for this port\n", untested[0])
+		switch {
+		case len(untested) == 0:
+		case len(tested) == 0:
+			fmt.Fprintf(out, "No tests    none of its targets declares tests (%s)%s\n", strings.Join(untested, ", "), required)
+		case len(untested) == 1:
+			fmt.Fprintf(out, "No tests    %s declares no tests%s\n", untested[0], required)
 		default:
-			fmt.Fprintf(out, "No tests    %s declare no tests; --tests required adds no test requirement for these ports\n", strings.Join(untested, ", "))
+			fmt.Fprintf(out, "No tests    %s declare no tests%s\n", strings.Join(untested, ", "), required)
 		}
 	}
 	for _, note := range notes {
@@ -437,4 +448,16 @@ func QueueView(queue []engine.QueuedCheck) *[]queuedRunJSON {
 		rows = append(rows, row)
 	}
 	return &rows
+}
+
+// testPolicyWords say a check's test policy as a policy: "tests where
+// declared", where "tests declared" read as the ports declaring them.
+func testPolicyWords(policy model.TestPolicy) string {
+	switch policy {
+	case model.TestsDeclared:
+		return "tests where declared"
+	case model.TestsSkip:
+		return "tests skipped"
+	}
+	return "tests " + string(policy)
 }
