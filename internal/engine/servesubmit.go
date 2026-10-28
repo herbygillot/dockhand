@@ -47,7 +47,21 @@ type Passing struct {
 // for ship --passing and for serve, by branchstate's one definition
 // (SubmitReadiness).
 func (e *Engine) PassingBranches(ctx context.Context) (Passing, error) {
-	statuses, err := e.Status(ctx)
+	// A branch no check has finished for can't be passing, and the store
+	// says which those are before any git read: serve's submit pass read
+	// every open branch's status each five minutes, an idle serve's 148
+	// CPU-minutes in 16 hours over 838 branches (rc6's B7).
+	checked := map[model.BranchID]bool{}
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		runs, err := r.Runs(store.RunFilter{States: model.Finished, NoBaselines: true})
+		for _, run := range runs {
+			checked[run.Branch] = true
+		}
+		return err
+	}); err != nil {
+		return Passing{}, err
+	}
+	statuses, err := e.statusWhere(ctx, []model.BranchState{model.BranchOpen}, func(branch model.Branch) bool { return checked[branch.ID] })
 	if err != nil {
 		return Passing{}, err
 	}
