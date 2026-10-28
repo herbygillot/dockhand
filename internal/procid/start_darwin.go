@@ -1,4 +1,4 @@
-package coord
+package procid
 
 import (
 	"errors"
@@ -9,9 +9,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// processStart reads the process's start time from the kernel's process
+// Start reads the process's start time from the kernel's process
 // table, which is wall-clock time and so differs across reboots.
-func processStart(pid int) (string, error) {
+func Start(pid int) (string, error) {
 	info, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
 	// For a PID with no process, the sysctl succeeds with no data, which
 	// SysctlKinfoProc reports as EIO; some releases say ESRCH.

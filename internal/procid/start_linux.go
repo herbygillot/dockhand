@@ -1,4 +1,4 @@
-package coord
+package procid
 
 import (
 	"fmt"
@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-// processStart reads the process's start time in clock ticks since boot,
+// Start reads the process's start time in clock ticks since boot,
 // qualified by the boot's ID so a reboot cannot make an old record match.
-func processStart(pid int) (string, error) {
+func Start(pid int) (string, error) {
 	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
 		return "", err
