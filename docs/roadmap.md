@@ -12,7 +12,7 @@ The whole loop is built and used for real work, MacPorts pull requests and dockh
 - **Checks:** `check` in Tart (macOS 12 through 27, each with an Xcode image), on the fork's GitHub Actions, through a command of your own, or in a MacPorts prefix on this Mac (`local`); `logs`, `retry`, `shell`, `artifacts`, `wait`, and `cancel`.
 - **Review and submit:** `tidy`, `rebase`, `submit`, `review`, and `decide`; `serve` runs queued checks and the daily look at the selected ports.
 
-v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest and six small fixes from field testing.
+v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest and its notes taking the day's field fixes.
 
 ## Next
 
@@ -57,24 +57,7 @@ Its acceptance is v0.6.0's, with:
 Placed before rc1, in the wait for v0.6.0's tag, so v0.7.0 stays one release (rc6's B7 on the M1, which passed, sent here by the coordinator on 2026-10-28 at 11:25Z; not harm):
 
 - **An idle serve costs little** (about half a batch, inferred). On rc6, serve spent 148 CPU-minutes in 16 hours with nothing to run, about 15% of a core, on dhtest's database of 838 branches. While idle it polls every 2 seconds, reading the store for its lease and queue, and every 5 minutes refreshes the pull requests and gathers the status of every open branch for its submit pass (engine/servesubmit.go `PassingBranches`, through `Status`), the per-branch reads that make v0.6.0's `status --all` slow; on main, item 6 reads each kind of git fact once for every branch (ff7d16cc), which may be most of it. Its first step is done: the submit pass reads git only for the branches a check finished for, which the store says (4f75365e). An in-process measurement on main (2026-10-28, a generated store of 840 branches, 140 open and 120 with pull requests, the forge and git faked) projects an idle hour at about 11 s, at most 0.3% of a core: each 2-second tick's `session.Fenced`, `Candidates`, and `CleanupDue` take about 40 µs together, and the 5-minute pass's `PassingBranches` 41 ms and pull request refresh 860 ms, nearly all of it the fake forge. The rest waits on an hour's profile of an idle serve on main over dhtest's database, on the M1 once C1 and G3 are done, and fixes where the time goes; the suspects left (inferred) are `PassingBranches`' git reads of each open branch a check finished for, and the signed-in pull request refresh's reviews and checks for each pull request. Done when an idle serve on dhtest's database spends a small fraction of rc6's rate, measured in v0.7.0's B7. Taken when touched's serve finding 3 rides it where the change is in serve's loop.
-
-From the abook session's follow-up (2026-10-28, on v0.5.0, sent here by the coordinator at 17:22Z):
-
-- **A held line says what it holds, and what lets it go** (about a tenth of a batch). update's, status's, and submit's `! held:` lines, "Makefile.am changed", "configure.ac is new", "configure.in was removed", say neither that they stop serve and `ship --yes` alone, a person's own submit going ahead, nor what releases them, where submit's preview of serve's holds names `dockhand decide` under its majors, floors, and links (item 13, ce68f1a9). Each held line names its rule, and after them one line says once that serve and `ship --yes` wait on them, that `dockhand decide <rule> -p <port> --because "…"` answers one for the branch, and that `holds.allow` lets a rule go for every branch. Done when update's and status's held lines name their rule and the line after them says the rest.
-
-From the abook session's submission (macports/macports-ports#36162, on v0.5.0, sent here by the coordinator at 17:34Z):
-
-- **A one-port pull request is titled for its update** (about a tenth of a batch). On a branch of "abook: fix formatting" and then "abook: update to 0.6.2", submit titled the pull request "abook: fix formatting": with no title given and several commits, the title is the port's first commit's subject (engine/submit.go `title`). The port's commit whose subject names the version the branch moves it to, as its change record has it, titles it, else its first as now; `--title` and an existing pull request's title still win. Done when that branch's plan is titled "abook: update to 0.6.2", and a branch of two fixes keeps its first.
-- **A branch that raises a version is an enhancement** (about a tenth of a batch). Without `--type`, the template's enhancement is ticked only where dockhand wrote every commit and one is an update it made (engine/body.go `dockhandUpdate`), so abook's hand-made branch ticked none, where `--type`'s help says enhancement is the default for an update dockhand made. A branch whose change record raises a port's version is an update whoever wrote it, and ticks enhancement; a revbump or a new port ticks nothing, as now, and `--type` overrides; the help says "enhancement for a branch that updates a port". Done when a hand-made branch raising a version ticks enhancement and a revbump's ticks nothing.
-
-From the ace 8.0.8 update (on v0.5.0, sent here by the coordinator at 17:58Z):
-
-- **The plan says its test policy as a policy** (about a twentieth of a batch). The plan's line ends "tests declared" (view/writers.go), `check.tests`' policy of running tests where a port declares them, which reads as the port declaring tests: devel/ace declares none. It says "tests where declared", and names the targets that declare none, as `required` names them already (`Plan.Untested`). Done when ace's plan says none of its targets declares tests.
-- **The link notice names the ports, never the port itself** (about a twentieth of a batch). "ace links 1 port, each declared in depends_lib" counted ace's own libraries (evidence `UndeclaredLinks` counts every port a target links, itself and its subports among them; view/stages.go `LinkWords`), where ace links no other port's, and its one dependency, path:bin/perl:perl5, is a program. A target's own port and its Portfile's subports aren't counted, and the line names the ports, "ace links perl5's libraries, declared", or says it links no other port's. tao's "tao links 1 port" is the same count, tcl and zlib declared and nothing of the prefix linked but its own (field testing, sent here by the coordinator at 19:03Z). Done when ace's and tao's links say each links no other port's, and a target linking two declared ports names both.
-
-From field testing's ace and tao check (on v0.5.0, sent here by the coordinator at 19:03Z, the bug sent to implementation with it):
-
-- **update's fetch URL for a distname made through `name_package`** (size not known). update built a wrong fetch URL for tao, whose distname goes through `name_package` and whose release's tag holds a `+` (the coordinator's note; the code isn't read here). Done when tao's update fetches what its Portfile, evaluated at the new version, names.
+- **The notes take the day's field fixes** (about a twentieth of a batch). v0.7.0's notes don't yet say nine of field testing's fixes, each in What it carries below: 3bd21f03, 0b5c7f03, 69c402c7, 371fbfb5, 5ff2426b, e0eae96e, ea5bf52d, 8c44a86b, and b5902aaa. Done when What's new says each.
 
 What it carries, each said in full in its notes:
 
@@ -90,6 +73,7 @@ What it carries, each said in full in its notes:
   - A library's install names, and its dependents, item 9 (b271486c, a146a9fe, c750b273, and 7d5bcf4d).
   - The configure summary's drift, item 10 (881cc8b9).
   - A patch is read against the source `extract.mkdir` unpacks, where it held as not applying (2ad896d2).
+  - A livecheck that reads a missing page says so, and names `update <port> <version>` (b5902aaa).
   - What moved, in what a check installed and in configure's summary, is read against the check before it, never a later one, and names it (5a72a542).
   - A self-hosted GitLab's instance keeps its path, its repositories read below it (6b34996e).
   - create's deferred work, item 14: Cargo targets found once, a workspace's binaries, `create --plan`, and a Go module below its repository's root (35b36ad5, 1fb335ca, and 622c5bd1).
@@ -111,6 +95,7 @@ What it carries, each said in full in its notes:
   - A local check uninstalls an inactive, unrequested image of the version it builds, which MacPorts would activate, where it refused (fd3d4b9f).
   - `--on` takes a provider's name again after a comma, `tart:12,tart:26` as `tart:12,26` (0b5c7f03).
   - A failed build that reran autotools says its generated files may be stale, and how `use_autoreconf` regenerates them (69c402c7).
+  - The plan says its test policy as a policy (ea5bf52d), and the link notice names the ports a target links, never its own Portfile's (8c44a86b).
   - Under serve, a command's progress reports are serve's own "serve:" lines, and its fetches of master say nothing (7bc1e35c).
 - **Selecting, holding, and submitting.**
   - Port selectors, and serve's selection (6daa852a).
@@ -122,6 +107,8 @@ What it carries, each said in full in its notes:
   - Several ports of one Portfile go in one branch, `update` taking several ports and a selection grouping them by Portfile (8e314b96 and 93d2e8cc), and tidy makes a commit for each update, titled for its subport (644faca7); where it makes one commit for several, its subject names each, and the person's own message for dockhand's edits is kept (4fe17cf9).
   - serve's check for a submitted pull request reads a subport on master (8e314b96).
   - A removed flag, like a removed setting, says what replaced it (921c1bf9).
+  - A held line names its rule, and says that serve and `ship --yes` wait on it and what lets it go (371fbfb5).
+  - A one-port pull request is titled for its update, and a branch whose change record moves a port's version ticks enhancement, whoever wrote it (5ff2426b and e0eae96e).
   - Every commit rule that holds can be allowed by `holds.allow`, `version-order` and `replaced-by-unchanged` among them, its catalogue entry carrying its severity; and a tidy commit's hand edit is a field, not a sentence read back (9938c362).
 - **Status and cleaning.**
   - Status gathered once, item 6 (ff7d16cc), its measure an acceptance row above.
@@ -167,6 +154,10 @@ Open, raised by the architecture review on 2026-10-28:
 Decided questions, with the rule each settled, are in [decisions](decisions.md).
 
 ## Later
+
+From the person's best-practice note (2026-10-28 19:31Z, in the prioritization thread; "low-priority"), first of Later:
+
+- **Links moved to HTTPS where it answers.** Reviewers ask new contributors to change a Portfile's plain-HTTP links. create writes a forge's homepage as its https form where that answers (engine/create.go `createSpec`); update and a checksums refresh ask each plain-HTTP `homepage` and `master_sites` URL over HTTPS and say whether it answers, leaving the Portfile as it is, "changing them is the maintainer's call" (engine/https.go, view `WritePlainHTTP`). update, create, and `edit`'s refresh switch each plain-HTTP `homepage`, `master_sites`, and `livecheck.url` whose https form answers, a redirect back to HTTP no answer, in the change's own commit, which says so; one that doesn't answer is said, as now. It's a fix beyond the lines a change touches applied by default, where decision 2026-10-27 makes those opt-in, since reviewers ask for this one; decisions.md says the exception when it's built. About a quarter batch (inferred), a candidate when the next release is sized.
 
 From the abook session's follow-up (2026-10-28, on v0.5.0, sent here by the coordinator at 17:22Z):
 
