@@ -127,6 +127,23 @@ func (r ChangeRecord) RevisionOnly(port string) bool {
 	return false
 }
 
+// MovedVersion is the version the record moves a subport it changes to,
+// and false where it doesn't move one's version, as a revbump, a port
+// the branch adds, or one it removes doesn't.
+func (r ChangeRecord) MovedVersion(port string) (string, bool) {
+	for _, p := range r.Ports {
+		if p.Port != port || p.Kind != SubportChanged {
+			continue
+		}
+		for _, field := range p.Fields {
+			if field.Field == "version" && field.From != "" && field.To != "" {
+				return field.To, true
+			}
+		}
+	}
+	return "", false
+}
+
 // Validate checks the rules every recorded change keeps.
 func (r ChangeRecord) Validate() error {
 	switch {

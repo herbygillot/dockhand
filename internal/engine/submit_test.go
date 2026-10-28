@@ -990,3 +990,27 @@ func TestStatusReadsALintAcceptanceAsSubmitDoes(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, slices.ContainsFunc(passing.Ready, func(s BranchStatus) bool { return s.Branch.ID == branch.ID }), "serve and ship --passing take it")
 }
+
+// A one-port branch of several commits is titled for the commit naming
+// the version its change record moves the port to, else its first: abook's
+// fix, then its update, titled the pull request for the fix (the abook
+// session, 2026-10-28).
+func TestAOnePortPullRequestIsTitledForItsUpdate(t *testing.T) {
+	t.Parallel()
+	commits := func(subjects ...string) []git.HistoryCommit {
+		var made []git.HistoryCommit
+		for _, subject := range subjects {
+			made = append(made, git.HistoryCommit{Message: subject + "\n\nbody\n"})
+		}
+		return made
+	}
+	record := model.ChangeRecord{Ports: []model.SubportChange{{Port: "abook", Kind: model.SubportChanged,
+		Fields: []model.FieldChange{{Field: "revision", From: "1", To: "0"}, {Field: "version", From: "0.6.1", To: "0.6.2"}}}}}
+	moved := movedVersions(map[string]model.ChangeRecord{"mail/abook": record})
+	require.Equal(t, map[string]string{"abook": "0.6.2"}, moved)
+	require.Equal(t, "abook: update to 0.6.2", portTitle("abook", moved["abook"], commits("abook: fix formatting", "abook: update to 0.6.2")))
+	require.Equal(t, "abook: fix formatting", portTitle("abook", "", commits("abook: fix formatting", "abook: fix a typo")), "two fixes keep the first")
+	require.Equal(t, "abook: fix formatting", portTitle("abook", "0.6.2", commits("abook: fix formatting", "abook: fix a typo")), "none naming the version keeps the first")
+	_, ok := model.ChangeRecord{Ports: []model.SubportChange{{Port: "abook", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "revision", From: "0", To: "1"}}}}}.MovedVersion("abook")
+	require.False(t, ok, "a revbump moves no version")
+}
