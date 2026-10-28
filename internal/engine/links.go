@@ -33,6 +33,17 @@ func (e *Engine) UndeclaredLinks(ctx context.Context, run model.Run) ([]evidence
 	if err != nil {
 		return nil, err
 	}
+	return e.linkFindings(ctx, checked)
+}
+
+// linkFindings is UndeclaredLinks of evidence as given: a check's own, or
+// a tree's combined from its checks, each cell's result with the
+// environment it was built in. The submission's guard reads the combined
+// evidence, which a narrower check's run alone dropped: a hold an earlier
+// check's result raised went with it (Codex's review of 8e314b96,
+// finding 4).
+func (e *Engine) linkFindings(ctx context.Context, checked Evidence) ([]evidence.LinkFinding, error) {
+	run := checked.Run
 	revision, err := e.Revision(ctx, run.Revision)
 	if err != nil {
 		return nil, err

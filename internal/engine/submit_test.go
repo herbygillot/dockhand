@@ -351,7 +351,10 @@ func checkedWith(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.
 				if viewer == "" {
 					return nil // the check didn't reach it
 				}
-				result := model.TargetResult{Execution: execution.ID, Target: "harbor-viewer", Outcome: viewer, Tests: model.TestsNone, RecordedAt: at}
+				// The viewer links oniguruma, which it doesn't declare: a
+				// link hold where the provider reads links.
+				result := model.TargetResult{Execution: execution.ID, Target: "harbor-viewer", Outcome: viewer, Tests: model.TestsNone, RecordedAt: at,
+					Links: []model.Link{{Binary: "/opt/local/bin/viewer", Library: "/opt/local/lib/libonig.5.dylib", Port: "oniguruma"}}}
 				if viewer == model.OutcomeFailed {
 					result.Phase = model.PhaseInstall
 				}
@@ -916,4 +919,33 @@ func TestAStandingAcceptanceIsOneEligibility(t *testing.T) {
 	// A newer libgcc15 lapses it.
 	failed(model.FailedDependency{Name: "libgcc15", Version: "15.3.0_0"})
 	agree(false, "libgcc15 15.3.0_0 is no failure it accepted")
+}
+
+// The link guard reads a tree's combined evidence, where a narrower check
+// after a full one keeps the full one's results: the viewer's undeclared
+// oniguruma, which the first check found, still holds after a check of jq
+// alone, where the narrower run's results dropped it (Codex's review of
+// 8e314b96, finding 4).
+func TestALinkHoldStandsAfterANarrowerCheck(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := committedUpdate(t, e)
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}, "graphics/harbor-viewer": {port("harbor-viewer")}}})
+	e.Providers = map[string]buildenv.Provider{"tart": &scriptedProvider{readsLinks: true}}
+	tree := model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD^{tree}"))
+	checkedWith(t, e, branch, model.OutcomePassed, model.OutcomePassed, nil)
+	first, found, err := e.EvidenceFor(t.Context(), branch.ID, tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NotEmpty(t, e.linkHolds(t.Context(), &first), "the full check finds the viewer's undeclared link")
+
+	checkedWith(t, e, branch, model.OutcomePassed, "", nil)
+	combined, found, err := e.EvidenceFor(t.Context(), branch.ID, tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Empty(t, combined.Failed(), "the viewer's earlier result still stands")
+	held := e.linkHolds(t.Context(), &combined)
+	require.Len(t, held, 1, "a narrower check keeps the earlier result's hold")
+	require.Equal(t, "oniguruma", held[0].Subject)
 }

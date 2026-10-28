@@ -597,7 +597,7 @@ func (e *Engine) linkHolds(ctx context.Context, checked *Evidence) []model.Conce
 	if checked == nil {
 		return nil
 	}
-	findings, err := e.UndeclaredLinks(ctx, checked.Run)
+	findings, err := e.linkFindings(ctx, *checked)
 	if err != nil {
 		return nil
 	}
