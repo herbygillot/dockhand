@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/procid"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
@@ -337,7 +338,7 @@ func TestSystemLivenessKnowsAReplacedOrExitedProcess(t *testing.T) {
 
 	child := exec.Command("sleep", "30")
 	require.NoError(t, child.Start())
-	start, err := processStart(child.Process.Pid)
+	start, err := procid.Start(child.Process.Pid)
 	require.NoError(t, err)
 	proc := Process{PID: child.Process.Pid, Start: start}
 	alive, err = System{}.Alive(proc)

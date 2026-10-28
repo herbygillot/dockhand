@@ -615,3 +615,29 @@ func TestHomebrewLibraryPathsAnUpdateAddsAreSaid(t *testing.T) {
 		"upstream: src/ext_zstd.c adds /opt/homebrew/lib/libzstd.1.dylib and /usr/local/lib/libzstd.1.dylib, so it may look for libraries at run time only outside ${prefix}",
 	}, said, "ext_iconv.c's, which 7.1.2 had, and the Makefile's say nothing")
 }
+
+// Repeated substitutions alone don't make a party's rename (Codex's review
+// of 8e314b96, finding 2): "must" to "may" twice, "2" to "3" in a header
+// and a footer, MUST to MAY, a license's name replaced by another's, or a
+// party swapped for one the text named already is a change of the license.
+func TestRepeatedWordsAreNoPartysRename(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ old, now string }{
+		{"You must include a notice.\nYou must include the source.\n", "You may include a notice.\nYou may include the source.\n"},
+		{"Terms, version 2.\nBody of the terms.\nEnd of version 2.\n", "Terms, version 3.\nBody of the terms.\nEnd of version 3.\n"},
+		{"You MUST include a notice.\nYou MUST include the source.\n", "You MAY include a notice.\nYou MAY include the source.\n"},
+		{"Licensed under the GPL.\nBody of the terms.\nSee the GPL for more.\n", "Licensed under the AGPL.\nBody of the terms.\nSee the AGPL for more.\n"},
+		{"Licensed under Apache terms.\nBody of the terms.\nApache terms end here.\n", "Licensed under MIT terms.\nBody of the terms.\nMIT terms end here.\n"},
+		{"Acme grants this.\nAcme keeps that.\nZenith terms.\n", "Zenith grants this.\nZenith keeps that.\nZenith terms.\n"},
+	} {
+		changes, err := compareArchives(t, testsupport.Tarball(t, "demo-1", map[string]string{"LICENSE": c.old}),
+			testsupport.Tarball(t, "demo-2", map[string]string{"LICENSE": c.now}), Versions{})
+		require.NoError(t, err)
+		require.Equal(t, []string{"license changed  LICENSE"}, hows(changes), c.now)
+	}
+	// A party that is a name, the terms the same, is still its rename.
+	changes, err := compareArchives(t, testsupport.Tarball(t, "demo-1", map[string]string{"LICENSE": "Acme grants this.\nAcme keeps that.\n"}),
+		testsupport.Tarball(t, "demo-2", map[string]string{"LICENSE": "Zenith grants this.\nZenith keeps that.\n"}), Versions{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"license party  LICENSE"}, hows(changes))
+}
