@@ -46,7 +46,8 @@ type fakeActions struct {
 	// workflow is the fork's workflow's state, active when empty.
 	workflow string
 	// untaken are the jobs GitHub cancelled before any runner took them,
-	// which have no runner and no log.
+	// which have no runner and no log, in each attempt whose log of them
+	// is empty: a rerun's runner takes the job.
 	untaken map[string]bool
 }
 
@@ -163,7 +164,7 @@ func (f *fakeActions) Jobs(_ context.Context, _ string, id int64, attempt int) (
 		if _, ok := f.logs[attempt-1][name]; ok {
 			// Each job ran on a runner of the label its name gives.
 			label := strings.TrimSuffix(strings.TrimPrefix(name, "build ("), ")")
-			if f.untaken[name] {
+			if f.untaken[name] && f.logs[attempt-1][name] == "" {
 				jobs = append(jobs, ghactions.RunnerJob{ID: int64(attempt*10 + i), Name: name, Status: "completed", Conclusion: "cancelled", Labels: []string{label}})
 				continue
 			}
@@ -186,7 +187,7 @@ func (f *fakeActions) WorkflowState(context.Context, string) (string, error) {
 
 func (f *fakeActions) JobLog(_ context.Context, _ string, job int64) ([]byte, error) {
 	name := []string{"build (macos-14)", "build (macos-15)"}[job%10]
-	if f.untaken[name] {
+	if f.untaken[name] && f.logs[job/10-1][name] == "" {
 		return nil, errors.New("job log: fetch: HTTP 404")
 	}
 	return []byte(f.logs[job/10-1][name]), nil
@@ -293,18 +294,22 @@ func TestAGitHubCheckRefusesAtOnceWhereTheForksWorkflowWontRun(t *testing.T) {
 }
 
 // A job GitHub cancelled before any runner took it has no log, so none is
-// asked for: the other job's results are read, and where it alone was
-// the run, the reason says so, where it read "job log: fetch: HTTP 404"
-// (the M1's B9 on rc4, while GitHub's macOS runners were down).
+// asked for, where it read "job log: fetch: HTTP 404" (the M1's B9 on
+// rc4, while GitHub's macOS runners were down). The matrix it leaves is
+// incomplete: nothing of it is recorded, and the run is tried again,
+// where macos-14's green runner recorded a pass (Codex's review of
+// 2ad896d2, W1).
 func TestAJobNoRunnerTookIsSaid(t *testing.T) {
 	t.Parallel()
 	f, _ := githubBranch(t)
-	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": ""}}
+	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": ""}, {"build (macos-14)": built("jq", false), "build (macos-15)": built("jq", false)}}
 	f.untaken = map[string]bool{"build (macos-15)": true}
-	f.conclusion = []string{"failure"}
-	out, errs, err := cmdtest.Dockhand(t, "check", "--on", "github")
+	f.conclusion = []string{"cancelled", "success"}
+	out, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
+	require.NoError(t, err, errs)
 	require.NotContains(t, errs+out, "HTTP 404")
-	require.Contains(t, out, "  jq  ✓ tests passed", "macos-14's result is read: %v", err)
+	require.Contains(t, errs, "GitHub cancelled macos-15's job before any runner took it, so the matrix is incomplete")
+	require.Contains(t, out, "  jq  ✓ tests passed", "the complete rerun's results are read")
 
 	f, _ = githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-15)": ""}, {"build (macos-15)": ""}, {"build (macos-15)": ""}}
@@ -312,7 +317,7 @@ func TestAJobNoRunnerTookIsSaid(t *testing.T) {
 	f.conclusion = []string{"cancelled", "cancelled", "cancelled"}
 	_, errs, err = cmdtest.Dockhand(t, "check", "--on", "github")
 	require.Error(t, err)
-	require.Contains(t, errs+err.Error(), "GitHub cancelled macos-15's job before any runner took it; see https://github.com/ada/macports-ports/actions/runs/")
+	require.Contains(t, errs+err.Error(), "GitHub cancelled macos-15's job before any runner took it, so the matrix is incomplete; see https://github.com/ada/macports-ports/actions/runs/")
 	require.NotContains(t, errs+err.Error(), "HTTP 404")
 }
 
