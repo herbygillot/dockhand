@@ -69,6 +69,12 @@ func TestACheckSaysWhatMovedOfWhatItInstalled(t *testing.T) {
 	require.Empty(t, found[0].Added, "a new soname is the same file")
 	require.Equal(t, []string{"checking for libjq.2.dylib... yes"}, found[0].Found, "and configure's drift (Then's item 10)")
 	require.Equal(t, []string{"checking for libjq.1.dylib... yes"}, found[0].Lost)
+
+	// The first check, read after the second, has no check before it: a
+	// later check is never its past (Codex's review of 8e314b96, finding 7).
+	historical, err := e.InstallChanges(t.Context(), first, false)
+	require.NoError(t, err)
+	require.Empty(t, historical, "a later check isn't the first's baseline: %#v", historical)
 }
 
 // A moved library's line names its dependents, and says which of them the
