@@ -324,8 +324,9 @@ func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Bas
 }
 
 // besideWords says how to go on from a check refused beside the branch's
-// one queued or running (engine.BesideRefuse): wait resumes one stopped,
-// and --replace checks again, keeping what it finished.
+// one queued or running (engine.BesideRefuse), or of its files without
+// covering this one (engine.BesideFollow): wait resumes one stopped, and
+// --replace checks again, keeping what it finished.
 func besideWords(err error, revision model.Revision) error {
 	active := new(engine.ActiveRunError)
 	if !errors.As(err, &active) {
@@ -337,6 +338,8 @@ func besideWords(err error, revision model.Revision) error {
 		// sent a person to follow a run nothing was running (field
 		// testing's rust check, 2026-10-15).
 		return fmt.Errorf("%v, or --replace checks again, keeping what it finished", active)
+	case active.Uncovered:
+		return fmt.Errorf("%s is %s for these files, but doesn't cover what this check asks, its environments, targets, variants, tests, or freshness; --replace stops it, keeping what it finished, and checks this one instead", active.Run.Name(), active.Run.State)
 	case active.SameRevision:
 		return active
 	}

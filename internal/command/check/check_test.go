@@ -150,7 +150,8 @@ func TestCheckFollowsACheckOfTheSameFiles(t *testing.T) {
 // A check running for the same files is followed only where it covers
 // the one asked, by the engine's rule (PlanCovers): check --tests required
 // followed a --tests skip run, its plan still skipping tests (Codex's
-// review of 8e314b96, finding 3). One that doesn't cover is said.
+// review of 8e314b96, finding 3). One that doesn't cover is said, with
+// --replace, as check's other refusals say it.
 func TestCheckFollowsOnlyACheckThatCoversIt(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
@@ -170,6 +171,7 @@ func TestCheckFollowsOnlyACheckThatCoversIt(t *testing.T) {
 
 	_, _, err = cmdtest.Dockhand(t, "check", "--tests", "required")
 	require.ErrorContains(t, err, "check-1 is queued for these files, but doesn't cover what this check asks")
+	require.ErrorContains(t, err, "--replace stops it, keeping what it finished, and checks this one instead")
 }
 
 func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
