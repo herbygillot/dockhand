@@ -3,6 +3,9 @@ package command
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestJSONEnvelopes(t *testing.T) {
@@ -368,4 +372,40 @@ func TestAPlansJSONSaysWhatWasAskedAndLeftOut(t *testing.T) {
 	require.Equal(t, []string{"oniguruma"}, viewed.Also)
 	require.Len(t, viewed.Omitted, 1)
 	require.Equal(t, "libharbor", viewed.Omitted[0].Name)
+}
+
+// status's JSON carries what its text details of a branch shown alone, a
+// decision's reason among it, where it gave the row alone (Codex's review
+// of 8e314b96, finding 9).
+func TestStatusJSONCarriesWhatItsTextDetails(t *testing.T) {
+	cmdtest.CheckedBranch(t)
+	_, _, err := cmdtest.Dockhand(t, "decide", "license-changed", "--because", "license was reviewed and remains acceptable")
+	require.NoError(t, err)
+	text, _, err := cmdtest.Dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, text, "license was reviewed and remains acceptable")
+	structured, err := cmdtest.JSONOf(t, "status")
+	require.NoError(t, err)
+	decided := cmdtest.Dig(t, structured.Result, "branches", 0, "detail", "decided")
+	require.Contains(t, fmt.Sprint(decided), "license was reviewed and remains acceptable")
+}
+
+// review --check's JSON is the review, its check inside it, where the
+// check's result replaced the review's, its number and findings lost
+// (Codex's review of 8e314b96, finding 9).
+func TestReviewCheckJSONKeepsTheReview(t *testing.T) {
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	testsupport.Git(t, w.Upstream, "switch", "-q", "-c", "contrib")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\n# docs\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document the options")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	g.Theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905}, HeadRepository: "newcontrib/macports-ports",
+		HeadBranch: "patch-1", Title: "jq: document the options", State: forge.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
+	result, err := cmdtest.JSONOf(t, "review", "34905", "--check", "--on", "command")
+	require.NoError(t, err)
+	require.EqualValues(t, 34905, cmdtest.Dig(t, result.Result, "number"), "the review's own result")
+	require.NotNil(t, cmdtest.Dig(t, result.Result, "check", "run"), "with its check inside it")
 }

@@ -126,6 +126,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 		status := report.Statuses[0]
 		if streams.JSON() {
 			viewed := view.BranchView(status)
+			viewed.Detail = view.BranchDetail(status, report)
 			streams.Emit(view.StatusJSON{Attention: view.AttentionView(view.AttentionFor(status)), Branches: []view.BranchJSON{viewed}})
 		}
 		showBranch(streams.Out, places, status, report)
