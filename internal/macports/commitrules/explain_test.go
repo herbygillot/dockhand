@@ -43,6 +43,8 @@ func TestEveryRuleIsExplained(t *testing.T) {
 		}
 		explanation, ok := Explain(finding.Code)
 		require.True(t, ok, "%s is not explained", finding.Code)
+		require.Equal(t, explanation.Severity, finding.Severity, "%s is emitted as the catalogue's severity", finding.Code)
+		require.Equal(t, finding.Severity == Error, slices.Contains(ErrorCodes(), finding.Code), "%s's hold is configurable as an error", finding.Code)
 		require.NotEmpty(t, explanation.Rule)
 		require.NotEmpty(t, explanation.Sources)
 	}

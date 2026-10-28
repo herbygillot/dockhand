@@ -22,13 +22,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
-// ErrorCodes are the codes of the rules whose findings are errors, which
-// hold a submission nobody looks over, for a hold list to name
-// (holds.allow).
-func ErrorCodes() []string {
-	return []string{"merge", "subject-port", "follow-up", "revision-after-update"}
-}
-
 // Severity is how much a finding matters.
 type Severity string
 
