@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -119,7 +120,11 @@ func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 	}))
 }
 
-func TestAnUpdateDockhandMadeIsAnEnhancement(t *testing.T) {
+// A branch whose change record moves a port's version is an enhancement,
+// whoever wrote its commits: abook's hand-made update ticked none (the
+// abook session, 2026-10-28). A revbump ticks nothing, and --type says
+// what it is.
+func TestABranchThatUpdatesAPortIsAnEnhancement(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
@@ -134,11 +139,33 @@ func TestAnUpdateDockhandMadeIsAnEnhancement(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, plan.Body, "###### Type(s)\n\n- [x] bugfix\n- [ ] enhancement\n- [ ] security fix\n", "--type says what it is")
 
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# a person's change\n"})
-	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: a person's change")
-	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	// A hand-made update: its change record, as the evaluator makes one,
+	// moves jq's version.
+	hand, err := e.Start(t.Context(), StartRequest{Name: "jq-by-hand"})
 	require.NoError(t, err)
-	require.Contains(t, plan.Body, "###### Type(s)\n\n- [ ] bugfix\n- [ ] enhancement\n- [ ] security fix\n", "a commit dockhand didn't write is the person's to type")
+	write(t, hand.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.9\n"})
+	testsupport.Git(t, hand.Worktree, "add", "--sparse", "textproc/jq/Portfile")
+	testsupport.Git(t, hand.Worktree, "commit", "-q", "-m", "jq: update to 1.9")
+	tree := model.ObjectID(strings.TrimSpace(testsupport.Git(t, hand.Worktree, "rev-parse", "HEAD^{tree}")))
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		return tx.RecordChange(model.ChangeRecord{Branch: hand.ID, Tree: tree, Base: hand.Base, Directory: "textproc/jq", Policy: fidelity.ChangePolicy, At: at,
+			Ports: []model.SubportChange{{Port: "jq", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "version", From: "1.7.1", To: "1.9"}}}}})
+	}))
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: hand, NoCheck: true})
+	require.NoError(t, err)
+	require.Contains(t, plan.Body, "###### Type(s)\n\n- [ ] bugfix\n- [x] enhancement\n- [ ] security fix\n", "a hand-made update")
+
+	rebuild, err := e.Start(t.Context(), StartRequest{Name: "jq-rebuild"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: rebuild, Action: model.EditRevbump, Port: "jq", Subject: "rebuild for oniguruma"})
+	require.NoError(t, err)
+	tidy, err := e.PlanTidy(t.Context(), TidyRequest{Branch: rebuild})
+	require.NoError(t, err)
+	_, err = e.ApplyTidy(t.Context(), tidy)
+	require.NoError(t, err)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: rebuild, NoCheck: true})
+	require.NoError(t, err)
+	require.Contains(t, plan.Body, "###### Type(s)\n\n- [ ] bugfix\n- [ ] enhancement\n- [ ] security fix\n", "a rebuild ticks nothing")
 }
 
 func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {

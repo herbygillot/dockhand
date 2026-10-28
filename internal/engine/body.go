@@ -2,13 +2,11 @@ package engine
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -189,24 +187,6 @@ func report(environment model.Environment, observed model.Observed, runs []model
 		described.Runs = append(described.Runs, prdescription.Run{ID: string(run.ID), Ref: run.ProviderRef, Check: checks[run.Run], ReusedIn: reusedIn[run.ID]})
 	}
 	return described
-}
-
-// dockhandUpdate reports whether every commit carries dockhand's
-// Generated-By line, which tidy writes only on a port's commit made of
-// dockhand's own edits, and one of them is an update dockhand recorded.
-func dockhandUpdate(commits []git.HistoryCommit, edits []model.Edit) bool {
-	updated := false
-	for _, commit := range commits {
-		_, rest, _ := strings.Cut(strings.TrimSpace(commit.Message), "\n")
-		_, trailers := commitmsg.SplitTrailers(strings.TrimSpace(rest))
-		if !slices.ContainsFunc(trailers, commitmsg.IsAttribution) {
-			return false
-		}
-		updated = updated || slices.ContainsFunc(edits, func(edit model.Edit) bool {
-			return edit.Kind == model.EditUpdate && edit.Subject == commit.Subject()
-		})
-	}
-	return updated
 }
 
 // allBuilt reports whether every target passed or was accepted.
