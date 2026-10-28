@@ -282,6 +282,13 @@ type CheckJSON struct {
 	// Altered are the kept archives found changed since they were kept,
 	// which no guest was given, each said as check says it.
 	Altered []string `json:"altered_archives,omitempty"`
+	// Lint, Links, and Installed are what the finished check's report
+	// says beside its results, each line as it says it: what lint warned
+	// of, what its builds link and don't declare, and what they installed
+	// against the port's earlier build.
+	Lint      []linkLineJSON `json:"lint,omitempty"`
+	Links     []linkLineJSON `json:"links,omitempty"`
+	Installed []linkLineJSON `json:"installed,omitempty"`
 }
 
 // Gather takes a check's result, or the baseline's that looks into it.
@@ -374,6 +381,8 @@ type BranchJSON struct {
 	// HandEdits are the branch's hand edits, each its directory, the
 	// refusal dockhand left it for, and whether the attempt was adjusted.
 	HandEdits []handEditJSON `json:"hand_edits,omitempty"`
+	// Detail is what status's text details of a branch shown alone.
+	Detail *branchDetailJSON `json:"detail,omitempty"`
 	// Moved are the Git-fetched ports whose release's tag named another
 	// commit when the update chose it than when the latest check, of the
 	// files as they are now, planned it (rule release-moved), which hold a
@@ -503,6 +512,51 @@ func AttentionView(rows []Attention) []attentionJSON {
 		views = append(views, attentionJSON{Kind: string(row.Kind), Branch: row.Branch, What: row.What, Next: row.Next})
 	}
 	return views
+}
+
+// branchDetailJSON is what status's text says of a branch shown alone
+// beside its row, as its text says it, each line its mark and words: the
+// person's decisions, a maintainer's instructions in the comments, what
+// lint warned of, what the latest check's builds link and don't declare,
+// and what they installed and configure found against the earlier build.
+// The JSON said only the row, where the text said each (Codex's review of
+// 8e314b96, finding 9).
+type branchDetailJSON struct {
+	Decided      []string       `json:"decided"`
+	Instructions []string       `json:"instructions"`
+	Lint         []linkLineJSON `json:"lint"`
+	Links        []linkLineJSON `json:"links"`
+	Installed    []linkLineJSON `json:"installed"`
+}
+
+// linkLineJSON is a detail line: its mark, ✓, !, or ✗, and its words.
+type linkLineJSON struct {
+	Mark  string `json:"mark"`
+	Words string `json:"words"`
+}
+
+// BranchDetail is what status's text details of a branch shown alone, from
+// the report the text reads too.
+func BranchDetail(status engine.BranchStatus, report engine.StatusReport) *branchDetailJSON {
+	detail := &branchDetailJSON{Decided: []string{}, Instructions: NonNil(report.Instructions[status.Branch.ID]), Lint: []linkLineJSON{}, Links: []linkLineJSON{}, Installed: []linkLineJSON{}}
+	for _, decision := range status.Decided {
+		detail.Decided = append(detail.Decided, engine.DecisionWords(decision))
+	}
+	if status.Latest != nil {
+		detail.Lint = DetailLines(LintLines(report.Lint[status.Latest.ID]))
+		detail.Links = DetailLines(LinkLines(report.Links[status.Latest.ID]))
+		detail.Installed = DetailLines(InstalledLines(report.Installed[status.Latest.ID]))
+	}
+	return detail
+}
+
+// DetailLines are a report's lines as JSON: each its mark and words.
+func DetailLines(from []LinkLine) []linkLineJSON {
+	out := []linkLineJSON{}
+	for _, line := range from {
+		out = append(out, linkLineJSON(line))
+	}
+	return out
 }
 
 type StatusJSON struct {

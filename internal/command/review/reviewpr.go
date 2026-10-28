@@ -59,6 +59,9 @@ MacPorts on this Mac, which it says; the builds run in the guests.`,
 				return err
 			}
 			body := report.Markdown()
+			// The review is the command's one result, its check and its
+			// posting gathered into it (term.LinkSteps).
+			streams.LinkSteps(&view.ReviewJSON{})
 			streams.Emit(view.ReviewView(report))
 			if markdown {
 				// Text for pasting is written as it is.

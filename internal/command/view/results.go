@@ -533,7 +533,7 @@ func CleanView(plans []engine.CleanBranch) []cleanBranchJSON {
 	return views
 }
 
-type reviewJSON struct {
+type ReviewJSON struct {
 	Number     int           `json:"number"`
 	Title      string        `json:"title"`
 	URL        string        `json:"url"`
@@ -547,10 +547,28 @@ type reviewJSON struct {
 	Body       string        `json:"body"`
 	Posted     string        `json:"posted"`
 	PostedURL  string        `json:"posted_url,omitempty"`
+	// Check is review --check's check, as check reports it, inside the
+	// review, where its result replaced the review's (Codex's review of
+	// 8e314b96, finding 9).
+	Check *CheckJSON `json:"check,omitempty"`
 }
 
-func ReviewView(report engine.ReviewReport) reviewJSON {
-	viewed := reviewJSON{Number: report.Ref.Number, Title: report.Title, URL: report.Ref.URL, Head: report.Head, Commits: len(report.Commits), Ports: NonNil(report.Ports),
+// Gather takes a step's result into the review's: the review again, as
+// posting says it, keeping the check, or the check.
+func (r *ReviewJSON) Gather(step any) {
+	switch step := step.(type) {
+	case ReviewJSON:
+		step.Check = r.Check
+		*r = step
+	case CheckJSON:
+		r.Check = &step
+	}
+}
+
+func (r *ReviewJSON) Result() any { return *r }
+
+func ReviewView(report engine.ReviewReport) ReviewJSON {
+	viewed := ReviewJSON{Number: report.Ref.Number, Title: report.Title, URL: report.Ref.URL, Head: report.Head, Commits: len(report.Commits), Ports: NonNil(report.Ports),
 		Permission: report.Permission, Summary: report.Summary(), Findings: findingsView(report.Findings), Resolved: []string{}, Body: report.Markdown()}
 	for _, finding := range report.Resolved {
 		viewed.Resolved = append(viewed.Resolved, finding.Message+" ["+finding.Code+"]")

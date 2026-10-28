@@ -213,30 +213,41 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 	if err != nil {
 		return err
 	}
+	// What lint warned of, a new port's counted as ✗ (the docs dig's I13);
+	// what its builds link and don't declare, a notice (v0.5.0 part 6), one
+	// that couldn't be gathered saying nothing; and what it installed
+	// against the port's previous build there (Then's item 9). Gathered
+	// once, for the text and the JSON alike (Codex's review of 8e314b96,
+	// finding 9).
+	lint := engine.LintFindings(evidence)
+	links, linksErr := e.UndeclaredLinks(ctx, run)
+	installed, installedErr := e.InstallChanges(ctx, run, true)
 	if streams.JSON() {
 		result, err := checkResult(ctx, e, run)
 		if err != nil {
 			return err
 		}
 		result.Targets = view.EvidenceView(evidence)
+		result.Lint = view.DetailLines(view.LintLines(lint))
+		if linksErr == nil {
+			result.Links = view.DetailLines(view.LinkLines(links))
+		}
+		if installedErr == nil {
+			result.Installed = view.DetailLines(view.InstalledLines(installed))
+		}
 		streams.Emit(result)
 	}
 	fmt.Fprintln(out)
 	view.WriteResults(out, "  ", evidence, false)
-	// What lint warned of, a new port's counted as ✗ (the docs dig's I13).
-	if lint := engine.LintFindings(evidence); len(lint) > 0 {
+	if len(lint) > 0 {
 		fmt.Fprintln(out)
 		view.WriteLint(out, lint)
 	}
-	// What its builds link and don't declare is a notice (v0.5.0 part 6);
-	// one that couldn't be gathered says nothing.
-	if links, err := e.UndeclaredLinks(ctx, run); err == nil && len(links) > 0 {
+	if linksErr == nil && len(links) > 0 {
 		fmt.Fprintln(out)
 		view.WriteLinks(out, links)
 	}
-	// And what it installed against the port's previous build there, its
-	// libraries' install names and its files (Then's item 9).
-	if installed, err := e.InstallChanges(ctx, run, true); err == nil && len(installed) > 0 {
+	if installedErr == nil && len(installed) > 0 {
 		fmt.Fprintln(out)
 		view.WriteInstalled(out, installed)
 	}
