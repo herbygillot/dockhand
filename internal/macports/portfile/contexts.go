@@ -159,47 +159,16 @@ func readsPlatform(src []byte, controls []syntax.Word) bool {
 // of lines, after their common start and end.
 func changedLines(before, after []byte) [2][]textedit.Span {
 	a, b := lineSpans(before), lineSpans(after)
-	same := func(i, j int) bool {
+	from, _ := textedit.Match(len(a), len(b), func(i, j int) bool {
 		return bytes.Equal(before[a[i].Start:a[i].End], after[b[j].Start:b[j].End])
-	}
-	start := 0
-	for start < len(a) && start < len(b) && same(start, start) {
-		start++
-	}
-	endA, endB := len(a), len(b)
-	for endA > start && endB > start && same(endA-1, endB-1) {
-		endA--
-		endB--
-	}
-	n, m := endA-start, endB-start
-	// lcs[i][j] is the longest common subsequence of a[start+i:endA] and
-	// b[start+j:endB].
-	lcs := make([][]int, n+1)
-	for i := range lcs {
-		lcs[i] = make([]int, m+1)
-	}
-	for i := n - 1; i >= 0; i-- {
-		for j := m - 1; j >= 0; j-- {
-			if same(start+i, start+j) {
-				lcs[i][j] = lcs[i+1][j+1] + 1
-			} else {
-				lcs[i][j] = max(lcs[i+1][j], lcs[i][j+1])
-			}
-		}
-	}
+	})
 	var changed [2][]textedit.Span
-	i, j := 0, 0
-	for i < n || j < m {
-		switch {
-		case i < n && j < m && same(start+i, start+j):
-			i++
-			j++
-		case j == m || i < n && lcs[i+1][j] >= lcs[i][j+1]:
-			changed[0] = append(changed[0], a[start+i])
-			i++
-		default:
-			changed[1] = append(changed[1], b[start+j])
-			j++
+	for _, i := range textedit.Unmatched(len(a), from) {
+		changed[0] = append(changed[0], a[i])
+	}
+	for j, i := range from {
+		if i < 0 {
+			changed[1] = append(changed[1], b[j])
 		}
 	}
 	return changed

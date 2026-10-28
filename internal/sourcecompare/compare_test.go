@@ -2,6 +2,7 @@ package sourcecompare
 
 import (
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -640,4 +641,22 @@ func TestRepeatedWordsAreNoPartysRename(t *testing.T) {
 		testsupport.Tarball(t, "demo-2", map[string]string{"LICENSE": "Zenith grants this.\nZenith keeps that.\n"}), Versions{})
 	require.NoError(t, err)
 	require.Equal(t, []string{"license party  LICENSE"}, hows(changes))
+}
+
+// Comparing two license files costs memory bounded by textedit's budget,
+// where wordHunks built a whole table: 51 MB for a 25 KB pair of 2,500
+// words with one changed (Codex's review of 8e314b96, finding 5).
+func TestALicenseComparisonsMemoryIsBounded(t *testing.T) {
+	before := []byte(strings.Repeat("word ", 2499) + "Old")
+	after := []byte(strings.Repeat("word ", 2499) + "New")
+	runtime.GC()
+	var start, end runtime.MemStats
+	runtime.ReadMemStats(&start)
+	partyOnly(before, after)
+	runtime.ReadMemStats(&end)
+	require.Less(t, end.TotalAlloc-start.TotalAlloc, uint64(16<<20))
+	// A middle past the budget is a changed license, never a rename.
+	wide := strings.Repeat("alpha ", 2100)
+	_, _, _, ok := partyOnly([]byte("Acme "+wide+"Acme\n"), []byte("Zenith "+strings.Repeat("beta ", 2100)+"Zenith\n"))
+	require.False(t, ok)
 }
