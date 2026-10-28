@@ -35,7 +35,8 @@ esac
 // of its own, as a prefix of the person's is: the active ports are that
 // file's lines, which deactivating, activating, and installing change, a
 // target's install activating it at NEWVERSION. INSTALLED lists the
-// installed images of a port, as "-q installed <name>" does. Its port
+// installed images of a port, as "-q installed <name>" does, and
+// REQUESTED those requested, as "-q installed requested and <name>". Its port
 // snapshot keeps the note it's made with, which --list says as ID 7.
 // Where PORTSRC names a macports.conf, it's copied beside PORT_LOG once,
 // with the sources.conf it names.
@@ -62,6 +63,7 @@ if [ -n "$ACTIVEFILE" ]; then
 fi
 case "$*" in
   *"-q installed active"*) ;;
+  "-q installed requested and "*) printf '%b' "$REQUESTED"; exit 0 ;;
   "-q installed "?*) printf '%b' "$INSTALLED"; exit 0 ;;
 esac
 case "$*" in

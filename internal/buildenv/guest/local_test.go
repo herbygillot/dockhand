@@ -101,17 +101,39 @@ func TestALocalCheckInAPrefixItMayCleanBuildsClean(t *testing.T) {
 }
 
 // An image of the version the branch builds, installed already, would be
-// activated rather than built: the check stops, saying so, and puts the
-// prefix back.
-func TestALocalCheckRefusesWhereTheBranchsVersionIsInstalled(t *testing.T) {
+// activated rather than built. One inactive and unrequested, as a check's
+// put-back leaves it, is uninstalled and said, and the branch's builds;
+// an active or requested one is the person's: the check stops, saying so,
+// and puts the prefix back (rc7's acceptance).
+func TestALocalCheckMakesWayForAnImageItsPutBackLeft(t *testing.T) {
 	t.Parallel()
 	_, active := registry(t, "  zlib @1.3.2_0 (active)\n")
-	results, commands := guestRun(t, asIs(Local{}), active, "DEPVERSION=libharbor=4,0", "INSTALLED=  libharbor @4_0\\n")
-	require.Equal(t, "refused", results.State)
-	require.Contains(t, results.Detail, "libharbor @4_0 is installed in")
-	require.Contains(t, results.Detail, "port uninstall libharbor @4_0")
+	results, commands := guestRun(t, asIs(Local{}), active, "DEPVERSION=libharbor=4,0", "INSTALLED=  libharbor @4_0+doc\\n  libharbor @3_0\\n")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Contains(t, commands, "-N uninstall libharbor @4_0+doc")
+	require.False(t, slices.ContainsFunc(commands, func(c string) bool { return strings.Contains(c, "uninstall libharbor @3_0") }), "another version stays")
+	require.True(t, slices.ContainsFunc(commands, func(c string) bool { return strings.Contains(c, "-dkns install") }), "the branch's builds")
 	require.Equal(t, "yes", results.Environment["restored"])
-	require.False(t, slices.ContainsFunc(commands, func(c string) bool { return strings.Contains(c, "-dkns install") }), "nothing is built")
+}
+
+func TestALocalCheckRefusesWhereThePersonsImageOfTheVersionIsInstalled(t *testing.T) {
+	t.Parallel()
+	for name, env := range map[string][]string{
+		"active":    {"INSTALLED=  libharbor @4_0 (active)\\n"},
+		"requested": {"INSTALLED=  libharbor @4_0\\n", "REQUESTED=  libharbor @4_0\\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, active := registry(t, "  zlib @1.3.2_0 (active)\n")
+			results, commands := guestRun(t, asIs(Local{}), append([]string{active, "DEPVERSION=libharbor=4,0"}, env...)...)
+			require.Equal(t, "refused", results.State)
+			require.Contains(t, results.Detail, "libharbor @4_0 is installed in")
+			require.Contains(t, results.Detail, "port uninstall libharbor @4_0")
+			require.Equal(t, "yes", results.Environment["restored"])
+			require.False(t, slices.ContainsFunc(commands, func(c string) bool { return strings.Contains(c, "uninstall") }), "the person's image stays")
+			require.False(t, slices.ContainsFunc(commands, func(c string) bool { return strings.Contains(c, "-dkns install") }), "nothing is built")
+		})
+	}
 }
 
 // A check whose process ended before it put the prefix back is put back
