@@ -523,6 +523,12 @@ func (e *Engine) Status(ctx context.Context, states ...model.BranchState) ([]Bra
 	if len(states) == 0 {
 		states = []model.BranchState{model.BranchOpen}
 	}
+	return e.statusWhere(ctx, states, nil)
+}
+
+// statusWhere is Status of the branches in states that keep, from their
+// records alone, before any git read; nil keeps every one.
+func (e *Engine) statusWhere(ctx context.Context, states []model.BranchState, keep func(model.Branch) bool) ([]BranchStatus, error) {
 	renamed, err := e.followRenames(ctx, "")
 	if err != nil {
 		return nil, err
@@ -534,6 +540,9 @@ func (e *Engine) Status(ctx context.Context, states ...model.BranchState) ([]Bra
 		return err
 	}); err != nil {
 		return nil, err
+	}
+	if keep != nil {
+		branches = slices.DeleteFunc(branches, func(b model.Branch) bool { return !keep(b) })
 	}
 	var all []BranchStatus
 	// The checkout's remotes are the same for every branch: read once,

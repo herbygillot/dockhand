@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/progress"
 )
 
 // A port that may have a newer release is named once for what was set
@@ -119,4 +120,19 @@ func TestServeSaysNothingOfWhatItsStopCancelled(t *testing.T) {
 		g.look(t.Context())
 	}
 	require.Equal(t, []string{"serve: could not verify the GitHub account (couldn't reach GitHub (no such host)). Continuing with the current authentication state; retrying each minute"}, said)
+}
+
+// What the work reports under serve is said as serve's lines, where it
+// went to standard error plain, and a fetch of master nobody waits on
+// isn't said (rc6's B7: "Fetching master from …" 87 times in 16 hours).
+func TestServesWorkReportsAsServesLines(t *testing.T) {
+	var said []string
+	s := newServer(nil, ServeOptions{Say: func(line string) { said = append(said, line) }})
+	plain := 0
+	ctx := s.reporting(progress.WithReporter(t.Context(), func(progress.Update) { plain++ }))
+	progress.Report(ctx, "Looking up 3 ports")
+	progress.VerboseReport(ctx, "behind the scenes")
+	require.Equal(t, []string{"serve: Looking up 3 ports"}, said)
+	require.Zero(t, plain, "nothing goes to standard error plain")
+	require.True(t, serving(ctx))
 }
