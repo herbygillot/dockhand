@@ -159,13 +159,15 @@ func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Setting
 	if err := engine.Runnable(proposal.Plan); err != nil {
 		return fmt.Errorf("nothing was checked: %w", err)
 	}
-	queued, err := e.QueueCheck(ctx, engine.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: model.OriginPerson, Beside: engine.BesideRefuse})
-	if active := new(engine.ActiveRunError); errors.As(err, &active) && active.SameRevision && !active.Stopped {
-		fmt.Fprintf(streams.Err, "%s is already %s for these files; following it.\n", active.Run.Name(), active.Run.State)
-		return checkrun.Wait(ctx, e, active.Run, streams, s.Places())
-	}
+	// A check running that covers this one, by the engine's rule
+	// (PlanCovers), is followed.
+	queued, err := e.QueueCheck(ctx, engine.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: model.OriginPerson, Beside: engine.BesideFollow})
 	if err != nil {
 		return err
+	}
+	if queued.Followed {
+		fmt.Fprintf(streams.Err, "%s is already %s and covers this check; following it.\n", queued.Run.Name(), queued.Run.State)
+		return checkrun.Wait(ctx, e, queued.Run, streams, s.Places())
 	}
 	return checkrun.RunQueued(ctx, e, queued.Run, streams, false, s.Places(), s.Drain)
 }
