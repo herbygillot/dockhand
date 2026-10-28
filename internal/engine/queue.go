@@ -22,7 +22,10 @@ const (
 	BesideRefuse Beside = iota
 	// BesideFollow follows one for the same files that would stand for this
 	// one once it passed (PlanCovers), and refuses beside any other: ship's,
-	// so a rerun resumes rather than refuses (decision 4).
+	// so a rerun resumes rather than refuses (decision 4), and check's and
+	// review --check's, which followed on the files alone, so check --tests
+	// required followed a --tests skip run (Codex's review of 8e314b96,
+	// finding 3).
 	BesideFollow
 	// BesideReplace stops what holds the branch, keeping what it finished,
 	// and queues this one: check --replace.
@@ -179,7 +182,9 @@ func (e *Engine) beside(ctx context.Context, request QueueRequest) (Queued, erro
 	case BesideRefuse:
 		return Queued{}, active
 	case BesideFollow:
-		if !active.SameRevision {
+		// One whose process ended is no check to follow: it's said, with
+		// how to resume it.
+		if !active.SameRevision || active.Stopped {
 			return Queued{}, active
 		}
 		running, err := e.Plan(ctx, active.Run.Plan)
@@ -187,7 +192,7 @@ func (e *Engine) beside(ctx context.Context, request QueueRequest) (Queued, erro
 			return Queued{}, err
 		}
 		if !PlanCovers(running, request.Plan) {
-			return Queued{}, fmt.Errorf("%s is %s for these files, but does not cover the required environments or test policy. Run dockhand cancel %s, then ship again, or wait for it to finish and ship again", active.Run.Name(), active.Run.State, active.Run.Name())
+			return Queued{}, fmt.Errorf("%s is %s for these files, but doesn't cover what this check asks, its environments, targets, variants, tests, or freshness. Run dockhand cancel %s and run this again, or wait for it to finish and run this again", active.Run.Name(), active.Run.State, active.Run.Name())
 		}
 		return Queued{Run: active.Run, Followed: true}, nil
 	}

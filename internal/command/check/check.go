@@ -163,7 +163,7 @@ check.baseline = true, it runs that baseline automatically.`,
 			if err := confirmVariantBuilds(streams, proposed, yes); err != nil {
 				return err
 			}
-			beside := engine.BesideRefuse
+			beside := engine.BesideFollow
 			if replace {
 				beside = engine.BesideReplace
 			}
@@ -175,13 +175,16 @@ check.baseline = true, it runs that baseline automatically.`,
 					return ok, err
 				}})
 			replaced := replacedWords(queued)
-			// A check already queued or running for these files is followed
-			// to its result, as wait follows it, where check refused for the
-			// person to type the wait it printed (the docs dig's I10). -d
-			// leaves it running.
-			if active := new(engine.ActiveRunError); errors.As(err, &active) && active.SameRevision && !active.Stopped && !enqueue {
-				fmt.Fprintf(streams.Err, "%s is already %s for these files; following it.\n", active.Run.Name(), active.Run.State)
-				return checkrun.Wait(ctx, e, active.Run, streams, s.Places())
+			// A check already queued or running that covers this one, by the
+			// engine's rule (PlanCovers), is followed to its result, as wait
+			// follows it, where check refused for the person to type the
+			// wait it printed (the docs dig's I10). -d leaves it running.
+			if err == nil && queued.Followed {
+				if enqueue {
+					return fmt.Errorf("%s is already %s for these files; dockhand wait %s follows it", queued.Run.Name(), queued.Run.State, queued.Run.Name())
+				}
+				fmt.Fprintf(streams.Err, "%s is already %s and covers this check; following it.\n", queued.Run.Name(), queued.Run.State)
+				return checkrun.Wait(ctx, e, queued.Run, streams, s.Places())
 			}
 			if err != nil {
 				for _, words := range replaced {

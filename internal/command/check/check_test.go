@@ -136,7 +136,7 @@ func TestCheckFollowsACheckOfTheSameFiles(t *testing.T) {
 
 	out, errs, err := cmdtest.Dockhand(t, "check")
 	require.NoError(t, err)
-	require.Contains(t, errs, "check-1 is already queued for these files; following it.\n")
+	require.Contains(t, errs, "check-1 is already queued and covers this check; following it.\n")
 	require.Contains(t, out, "Passed for snapshot 1.", "followed to its result")
 
 	_, _, err = cmdtest.Dockhand(t, "check", "-d")
@@ -145,6 +145,31 @@ func TestCheckFollowsACheckOfTheSameFiles(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "check")
 	require.ErrorContains(t, err, "check-2 is queued for")
 	require.ErrorContains(t, err, "--replace stops it")
+}
+
+// A check running for the same files is followed only where it covers
+// the one asked, by the engine's rule (PlanCovers): check --tests required
+// followed a --tests skip run, its plan still skipping tests (Codex's
+// review of 8e314b96, finding 3). One that doesn't cover is said.
+func TestCheckFollowsOnlyACheckThatCoversIt(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	cmdtest.WithScript(t, w, "passed")
+	cmdtest.Hosted(t).StartDrain = func(engine.Options) (int, error) { return 4242, nil }
+	queued, err := cmdtest.JSONOf(t, "check", "--tests", "skip", "-d")
+	require.NoError(t, err)
+	require.Equal(t, "skip", cmdtest.Dig(t, queued.Result, "plan", "tests"))
+
+	_, _, err = cmdtest.Dockhand(t, "check", "--tests", "required")
+	require.ErrorContains(t, err, "check-1 is queued for these files, but doesn't cover what this check asks")
 }
 
 func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
