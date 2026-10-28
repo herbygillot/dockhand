@@ -679,3 +679,44 @@ func TestASavedPlanTakingAnUntrackedPatchApplies(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "textproc/jq/Portfile\ntextproc/jq/files/fix.diff", testsupport.Git(t, branch.Worktree, "show", "--format=", "--name-only", "HEAD"))
 }
+
+// Updates of several subports of one directory are named each in the
+// subject tidy writes for dockhand's edits, where the last update's
+// subject named one alone (field testing on v0.5.0, kubectl).
+func TestAChainOfSubportUpdatesNamesEach(t *testing.T) {
+	t.Parallel()
+	edits := []model.Edit{
+		{Kind: model.EditUpdate, Port: "kubectl-1.37", Subject: "kubectl-1.37: update to 1.37.2"},
+		{Kind: model.EditUpdate, Port: "kubectl-1.36", Subject: "kubectl-1.36: update to 1.36.9"},
+		{Kind: model.EditUpdate, Port: "kubectl-1.34", Subject: "kubectl-1.34: update to 1.34.13"},
+	}
+	require.Equal(t, "kubectl-1.34, kubectl-1.36, kubectl-1.37: update to 1.34.13, 1.36.9, 1.37.2", chainSubject(edits))
+	require.Equal(t, "kubectl-1.37: update to 1.37.2", chainSubject(edits[:1]))
+}
+
+// The person's own message for dockhand's edits, given to tidy --squash
+// --message, is kept by the next tidy, as ship's: ship rewrote kubectl's
+// four subports' commit as the last update's subject, since a warning
+// about the long subject made tidy plan the commit anew (field testing on
+// v0.5.0).
+func TestTidyKeepsThePersonsMessageForDockhandsEdits(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	message := "jq: update to 1.8.1, the release that fixes the parser and more besides"
+	squashed, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Squash: true, Message: message})
+	require.NoError(t, err)
+	_, err = e.ApplyTidy(t.Context(), squashed)
+	require.NoError(t, err)
+	written := testsupport.Git(t, branch.Worktree, "log", "-1", "--format=%B")
+
+	again, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.True(t, again.Keep, "the commits stand, with the long subject's warning: %+v", again.Groups)
+	require.NotEmpty(t, again.Warnings)
+	require.Equal(t, strings.TrimSpace(written), strings.TrimSpace(again.Groups[0].Message))
+}

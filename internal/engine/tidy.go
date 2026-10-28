@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -335,6 +336,12 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 			return TidyPlan{}, err
 		}
 		group.FromEdits = chained
+		// The person's own message for dockhand's edits, as tidy --squash
+		// --message gave it, is kept as they wrote it: ship rewrote
+		// kubectl's four subports' "kubectl-1.34, kubectl-1.35, …" commit
+		// as "kubectl-1.34: update to 1.34.13", the last update's subject
+		// (field testing on v0.5.0).
+		own := chained && len(group.Combines) == 1 && !commitmsg.Attributed(group.Combines[0].Message)
 		// A new port create wrote, and the person has edited since, as
 		// create asks ("Next: dockhand edit txt"), is the port: the plan
 		// stands, with create's subject, where it had wanted the same
@@ -345,7 +352,7 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 				return TidyPlan{}, err
 			}
 		}
-		if chained {
+		if chained && !own {
 			for _, commit := range group.Combines {
 				if commitmsg.Body(commit.Message) != "" {
 					group.Notes = append(group.Notes, fmt.Sprintf("commit %s %q has a message body that this commit would not keep", model.ObjectID(commit.ID).Short(), commit.Subject()))
@@ -358,6 +365,10 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 			group.Notes = append(group.Notes, hand.Line())
 		}
 		var chosen *git.HistoryCommit
+		if own {
+			chosen, subject = &group.Combines[0], group.Combines[0].Subject()
+			group.Notes = append(group.Notes, fmt.Sprintf("message from your commit %s", model.ObjectID(chosen.ID).Short()))
+		}
 		if subject == "" {
 			for i, commit := range group.Combines {
 				if directory == "" || strings.HasPrefix(commit.Subject(), group.Ports[0]+":") || strings.HasPrefix(commit.Subject(), group.Ports[0]+",") {
@@ -399,6 +410,9 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 			chosenBody = chainBody(edits, directory)
 		}
 		group.Message = commitmsg.Compose(subject, chosenBody, commitMessages(group.Combines), closesFor(branch, edits, directory), chained)
+		if own {
+			group.Message = chosen.Message
+		}
 		group.Author, err = groupAuthor(group, person, author)
 		if err != nil {
 			return TidyPlan{}, err
@@ -672,6 +686,27 @@ func describeDirectory(directory string) string {
 // gives: a new port's names it new, and an update's names the version,
 // whatever edits followed them.
 func chainSubject(mine []model.Edit) string {
+	// Updates of several subports of one directory name each, as
+	// "kubectl-1.34, kubectl-1.35: update to 1.34.13, 1.35.7", where the
+	// last update's subject named one alone (field testing on v0.5.0).
+	if !slices.ContainsFunc(mine, func(edit model.Edit) bool { return edit.Kind == model.EditCreate }) {
+		versions := map[string]string{}
+		for _, edit := range mine {
+			if version, ok := strings.CutPrefix(edit.Subject, edit.Port+": update to "); edit.Kind == model.EditUpdate && ok {
+				versions[edit.Port] = version
+			}
+		}
+		if len(versions) > 1 {
+			ports := slices.SortedFunc(maps.Keys(versions), macports.ComparePortNames)
+			var to []string
+			for _, port := range ports {
+				if !slices.Contains(to, versions[port]) {
+					to = append(to, versions[port])
+				}
+			}
+			return strings.Join(ports, ", ") + ": update to " + strings.Join(to, ", ")
+		}
+	}
 	for _, kind := range []model.EditKind{model.EditCreate, model.EditUpdate} {
 		for _, edit := range slices.Backward(mine) {
 			if edit.Kind == kind {
