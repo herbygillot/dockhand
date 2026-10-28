@@ -20,15 +20,16 @@ act() {
 	printf '\n[providers.local]\nclean = ["%s"]\n' "$G3_PREFIX" >>"$ROW_DIR/g3.toml"
 	G3_BRANCH=$(run_name g3-clean)
 	dh_setup revbump "${ACCEPT_GO_PORT:?}" --new="$G3_BRANCH" --subject "rebuild to check in a prefix of dhtest's" || return 0
-	# No sudo here: one asked for would fail the check, not prompt.
-	(export DOCKHAND_CONFIG="$ROW_DIR/g3.toml"; dh_json check -b "$G3_BRANCH" --on "local:$G3_PREFIX" </dev/null) || :
+	# No sudo here: one asked for would fail the check, not prompt. In
+	# text, since the plan's prefix note is the text view's alone.
+	G3_EXIT=0
+	(export DOCKHAND_CONFIG="$ROW_DIR/g3.toml"; dh check -b "$G3_BRANCH" --on "local:$G3_PREFIX" </dev/null) || G3_EXIT=$?
 }
 
 assert() {
 	[ -n "${G3_PREFIX:-}" ] && [ -n "${G3_BRANCH:-}" ] || return 0
-	local file=$ROW_DIR/json/1.json
-	if [ "$(cat "$file.exit")" != 0 ]; then
-		row_fail "the check in $G3_PREFIX exited $(cat "$file.exit"): $(jq -r '.error // ""' "$file")"
+	if [ "${G3_EXIT:-1}" != 0 ]; then
+		row_fail "the check in $G3_PREFIX exited $G3_EXIT: $(grep -v '^\[exit' "$ROW_DIR/out.log" | tail -1)"
 		return
 	fi
 	grep -q "building in $G3_PREFIX (as you)" "$ROW_DIR/out.log" || { row_fail "the check in $G3_PREFIX didn't build as dhtest"; return; }
