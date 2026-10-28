@@ -239,7 +239,7 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "check", "--on", "github", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "Provider    github · tests declared\nPushes      this revision to a dockhand-check/ branch in your fork for the MacPorts workflow; removes that branch after reading the run's results\n")
+	require.Contains(t, out, "Provider    github · tests where declared\nPushes      this revision to a dockhand-check/ branch in your fork for the MacPorts workflow; removes that branch after reading the run's results\n")
 	_, _, err = cmdtest.Dockhand(t, "check", "--on", "github:sonoma")
 	require.ErrorContains(t, err, "takes no releases")
 
@@ -570,7 +570,7 @@ func TestRequiredTestsFailACheckOnGitHub(t *testing.T) {
 
 	out, _, err = cmdtest.Dockhand(t, "check", "--on", "github", "--tests", "skip", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "Provider    github · tests skip\n            github runs its workflow's own tests; with --tests skip they run there, and don't count\n")
+	require.Contains(t, out, "Provider    github · tests skipped\n            github runs its workflow's own tests; with --tests skip they run there, and don't count\n")
 }
 
 // A GitHub runner's log without the workflow's headings is printed whole,

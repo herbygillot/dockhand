@@ -38,7 +38,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	cmdtest.WithScript(t, w, "passed")
 	out, _, err := cmdtest.Dockhand(t, "check", "--plan")
 	require.NoError(t, err)
-	require.Equal(t, "jq-update · would capture the working files as a new snapshot\nChanged     jq\nProvider    command · tests declared\n", out)
+	require.Equal(t, "jq-update · would capture the working files as a new snapshot\nChanged     jq\nProvider    command · tests where declared\n", out)
 	_, _, err = cmdtest.Dockhand(t, "check", "--on", "tart:tahoe")
 	require.ErrorContains(t, err, "Tart isn't installed here")
 	// Build profiles name where, --on explicit environments, never both;
@@ -438,9 +438,17 @@ func TestAPlanRequiringTestsNamesWhatDeclaresNone(t *testing.T) {
 	plan.Builds[0].Untested = []model.TargetID{"ov", "jq"}
 	out.Reset()
 	view.WritePlan(&out, plan, nil, nil, nil, 8)
-	require.Contains(t, out.String(), "No tests    ov, jq declare no tests; --tests required adds no test requirement for these ports\n")
+	require.Contains(t, out.String(), "No tests    none of its targets declares tests (ov, jq); --tests required adds no test requirement for these ports\n")
 	require.NotContains(t, out.String(), "Tests       ")
+	// Where declared, the policy is said as one, and the targets that
+	// declare none are named, where "tests declared" read as the port
+	// declaring them (ace's plan, 2026-10-28).
 	plan.Tests = model.TestsDeclared
+	out.Reset()
+	view.WritePlan(&out, plan, nil, nil, nil, 8)
+	require.Contains(t, out.String(), "· tests where declared\n")
+	require.Contains(t, out.String(), "No tests    none of its targets declares tests (ov, jq)\n")
+	plan.Builds[0].Untested = nil
 	out.Reset()
 	view.WritePlan(&out, plan, nil, nil, nil, 8)
 	require.NotContains(t, out.String(), "No tests")
