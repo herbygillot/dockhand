@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
@@ -16,8 +17,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/procid"
 )
 
-// holder is who owns a prefix, written into its lock: the process, by its
-// PID and start time, and the check.
+// holder is who owns a prefix, written beside its lock: the process, by
+// its PID and start time, and the check.
 type holder struct {
 	PID    int    `json:"pid"`
 	Start  string `json:"start"`
@@ -33,17 +34,18 @@ func (h holder) String() string { return fmt.Sprintf("%s (pid %d)", h.Check, h.P
 var waitSaid = 50 * time.Millisecond
 
 // locks is where the prefixes' locks are kept, beside the checks'
-// directories: every dockhand process of the person agrees on it, whatever
-// its database, provider, or home.
+// directories: every dockhand process on the Mac agrees on it, whatever
+// its user, database, provider, or home, as a prefix is the Mac's.
 func (l *Local) locks() string {
-	return cmp.Or(l.Locks, filepath.Join(l.temp(), fmt.Sprintf("dockhand-locks-%d", os.Getuid())))
+	return cmp.Or(l.Locks, filepath.Join(l.temp(), "dockhand-locks"))
 }
 
 // own takes the prefix for one check, from what it puts back first to its
 // own put-back, by a lock keyed on the prefix's canonical path: its links
 // resolved, so /opt/local and a link to it are one prefix. A second check
-// waits within its context, saying whose check holds it. The holder is
-// written into the lock, which release clears and lets go.
+// waits within its context, saying whose check holds it, whichever user
+// ran it. The holder's record is written beside the lock, and removed with
+// it.
 func (l *Local) own(ctx context.Context, prefix, check string, build buildenv.Build) (release func(), err error) {
 	canonical, err := filepath.EvalSymlinks(prefix)
 	if err != nil {
@@ -51,11 +53,11 @@ func (l *Local) own(ctx context.Context, prefix, check string, build buildenv.Bu
 	}
 	path := filelock.Path(l.locks(), "prefix:"+canonical)
 	quick, cancel := context.WithTimeout(ctx, waitSaid)
-	file, err := filelock.Acquire(quick, path, filelock.Exclusive)
+	file, err := filelock.AcquireAcrossUsers(quick, path)
 	cancel()
 	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 		build.Progress(fmt.Sprintf("waiting for %s, held by %s", prefix, held(path)))
-		file, err = filelock.Acquire(ctx, path, filelock.Exclusive)
+		file, err = filelock.AcquireAcrossUsers(ctx, path)
 	}
 	if err != nil {
 		if ctx.Err() != nil {
@@ -63,33 +65,51 @@ func (l *Local) own(ctx context.Context, prefix, check string, build buildenv.Bu
 		}
 		return nil, buildenv.Infrastructure("taking %s for the check: %w", prefix, err)
 	}
+	// The holder is said beside the lock, in a record of the user's own,
+	// since one user can't write a file another made there.
 	self, _ := procid.Self()
 	record, _ := json.Marshal(holder{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: canonical})
-	if err := file.Truncate(0); err == nil {
-		_, _ = file.WriteAt(record, 0)
+	said := holderPath(path, os.Getuid())
+	if out, err := os.OpenFile(said, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644); err == nil {
+		_, _ = out.Write(record)
+		out.Close()
 	}
 	return func() {
-		_ = file.Truncate(0)
+		os.Remove(said)
 		file.Close()
 	}, nil
 }
+
+// holderPath is where a user's process that holds a prefix's lock says
+// so.
+func holderPath(lock string, uid int) string { return fmt.Sprintf("%s-%d.holder", lock, uid) }
 
 // held is who holds a prefix's lock, as its record says; "another check"
 // where it says nothing readable, and "a check that ended" where its
 // process runs no more, which the lock's release follows.
 func held(path string) string {
-	file, err := os.Open(path)
+	records, _ := filepath.Glob(path + "-*.holder")
+	said := "another check"
+	for _, record := range records {
+		data, err := readNoFollow(record)
+		var who holder
+		if err != nil || json.Unmarshal(data, &who) != nil || who.PID == 0 {
+			continue
+		}
+		if running(who.PID, who.Start) {
+			return who.String()
+		}
+		said = "a check that ended, " + who.String()
+	}
+	return said
+}
+
+// readNoFollow reads a file, not a link another user planted in its place.
+func readNoFollow(path string) ([]byte, error) {
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return "another check"
+		return nil, err
 	}
 	defer file.Close()
-	data, err := io.ReadAll(file)
-	var who holder
-	if err != nil || json.Unmarshal(data, &who) != nil || who.PID == 0 {
-		return "another check"
-	}
-	if !running(who.PID, who.Start) {
-		return "a check that ended, " + who.String()
-	}
-	return who.String()
+	return io.ReadAll(file)
 }

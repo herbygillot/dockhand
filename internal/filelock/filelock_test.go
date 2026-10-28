@@ -98,3 +98,37 @@ func TestTryExistingOutlastsAForkedChildButNotAHolder(t *testing.T) {
 		require.NoError(t, got.Close())
 	}
 }
+
+// A lock every user's processes agree on is in a directory made sticky
+// and open to all, as /tmp is, on a file all can open to read, which
+// flock locks exclusively; a directory another made otherwise is refused,
+// since a user could replace the lock there (Codex's review of 8e314b96,
+// finding 1).
+func TestALockAcrossUsersIsInAStickyDirectory(t *testing.T) {
+	t.Parallel()
+	directory := filepath.Join(t.TempDir(), "locks")
+	path := Path(directory, "prefix:/opt/local")
+	held, err := AcquireAcrossUsers(t.Context(), path)
+	require.NoError(t, err)
+	info, err := os.Stat(directory)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o777), info.Mode().Perm())
+	require.NotZero(t, info.Mode()&os.ModeSticky)
+	file, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o644), file.Mode().Perm())
+
+	waiting, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	_, err = AcquireAcrossUsers(waiting, path)
+	require.ErrorIs(t, err, context.DeadlineExceeded, "a second holder waits")
+	require.NoError(t, held.Close())
+	again, err := AcquireAcrossUsers(t.Context(), path)
+	require.NoError(t, err)
+	require.NoError(t, again.Close())
+
+	open := filepath.Join(t.TempDir(), "open")
+	require.NoError(t, os.Mkdir(open, 0o700))
+	_, err = AcquireAcrossUsers(t.Context(), Path(open, "prefix:/opt/local"))
+	require.ErrorContains(t, err, "isn't a directory every user can lock in")
+}

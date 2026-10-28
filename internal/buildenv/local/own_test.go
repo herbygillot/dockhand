@@ -86,7 +86,7 @@ func TestADeadHoldersLockIsSaidAsEnded(t *testing.T) {
 	path := filelock.Path(t.TempDir(), "prefix:/opt/local")
 	record, err := json.Marshal(holder{PID: 999999, Start: "darwin:1.0", Check: "check-9", Prefix: "/opt/local"})
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(path, record, 0o600))
+	require.NoError(t, os.WriteFile(holderPath(path, 502), record, 0o644))
 	require.Equal(t, "a check that ended, check-9 (pid 999999)", held(path))
 	require.Equal(t, "another check", held(path+".none"))
 }
