@@ -12,7 +12,7 @@ The whole loop is built and used for real work, MacPorts pull requests and dockh
 - **Checks:** `check` in Tart (macOS 12 through 27, each with an Xcode image), on the fork's GitHub Actions, through a command of your own, or in a MacPorts prefix on this Mac (`local`); `logs`, `retry`, `shell`, `artifacts`, `wait`, and `cancel`.
 - **Review and submit:** `tidy`, `rebase`, `submit`, `review`, and `decide`; `serve` runs queued checks and the daily look at the selected ports.
 
-v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest and a small follow-up of Codex's review.
+v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest and its notes.
 
 ## Next
 
@@ -55,10 +55,7 @@ Its acceptance is v0.6.0's, with:
 Placed before rc1, in the wait for v0.6.0's tag, so v0.7.0 stays one release (rc6's B7 on the M1, which passed, sent here by the coordinator on 2026-10-28 at 11:25Z; not harm):
 
 - **An idle serve costs little** (about half a batch, inferred). On rc6, serve spent 148 CPU-minutes in 16 hours with nothing to run, about 15% of a core, on dhtest's database of 838 branches. While idle it polls every 2 seconds, reading the store for its lease and queue, and every 5 minutes refreshes the pull requests and gathers the status of every open branch for its submit pass (engine/servesubmit.go `PassingBranches`, through `Status`), the per-branch reads that make v0.6.0's `status --all` slow; on main, item 6 reads each kind of git fact once for every branch (ff7d16cc), which may be most of it. Its first step is done: the submit pass reads git only for the branches a check finished for, which the store says (4f75365e). The rest waits on an hour's profile of an idle serve on main over dhtest's database, on the M1 once C1 and G3 are done, and fixes where the time goes; the suspects left are the 2-second loop's store transactions, `session.Fenced`'s write every tick and `Candidates`, and the pull request refresh. Done when an idle serve on dhtest's database spends a small fraction of rc6's rate, measured in v0.7.0's B7. Taken when touched's serve finding 3 rides it where the change is in serve's loop.
-
-From Codex's review of main at 8e314b96 (2026-10-28): its ten findings are done, each probe a test, 1 and 2 in rc7 above and the rest in What it carries. One small follow-up of them is left, about a tenth of a batch (inferred):
-
-- **check's refusal beside a check that doesn't cover it offers `--replace`** (from finding 3's fix, 45e3efae; about a tenth of a batch). Beside a running check of the same files that doesn't cover the one asked, check, ship, and `review --check` all say "Run dockhand cancel check-1 and run this again, or wait for it to finish and run this again" (engine/queue.go), where check's other refusals offer `--replace`, which stops it, keeping what it finished, and checks this one (command/check `besideWords`). check words this refusal with `--replace` too; ship and `review --check`, which have no `--replace`, keep cancel or wait. Done when check's refusal names `--replace`.
+- **The notes say what's on main** (from implementation's question of what else comes before rc1, 2026-10-28 14:49Z; about a tenth of a batch). v0.7.0's notes were last brought up to date at 1324df11. The thirteen commits since that change what a person sees, 7bc1e35c to ce1a7b9a, rc7's three left out since v0.6.0 carries them, are said in What's new; those fixing one of v0.6.0's known issues are said under "Fixed from v0.6.0's known issues", as v0.6.0's notes say v0.5.0's; and Upgrading says that `holds.allow` can name `version-order` and `replaced-by-unchanged`, and that `review --check --json` now carries the review with its check inside. v0.6.0's known issues mark the license's memory, the GitLab instance's path, and the crashed check's guest as fixed on main, and take B7's idle serve, as rc7's paragraph above has it. Done when every change a person sees on main since 1324df11 is in v0.7.0's notes.
 
 What it carries, each said in full in its notes:
 
@@ -82,7 +79,7 @@ What it carries, each said in full in its notes:
   - A fix beyond the change is asked for, with `tidy --restyle` (c4229f64).
 - **Checks.**
   - Tart's limit is the Mac's VMs, not a count of checks (391e76e1).
-  - check and `review --check` follow a check already running for the same files only where it covers what they ask, by the engine's rule, and say what it doesn't cover (614951e1 and 45e3efae).
+  - check and `review --check` follow a check already running for the same files only where it covers what they ask, by the engine's rule, and say what it doesn't cover, check offering `--replace` (614951e1, 45e3efae, and ce1a7b9a).
   - A failed build's summary says the tool's error, and a queued check nothing is running says so (cf5e18c2).
   - A check says how long each part took, and setup says whether go2port and cargo2port are there (42fcbc3f and 0d3d2ffc).
   - Next names the check a passing host check didn't build (03136805), and its variant check names its port and follows minmax (cab3ce9b).
