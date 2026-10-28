@@ -34,6 +34,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/submit"
 	"github.com/herbygillot/dockhand/internal/command/tidy"
 	"github.com/herbygillot/dockhand/internal/command/understand"
+	"github.com/herbygillot/dockhand/internal/command/usage"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/compose"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -63,8 +64,8 @@ your maintainers line, and a clean macOS image for checks to build in. Then:
   dockhand submit                 open the pull request from your fork
 
 dockhand bump <port> does all four asking nothing, and stops where you
-should look. docs/usage.md is the guide, and dockhand status shows where
-things are.`
+should look. dockhand usage prints the guide, and dockhand status shows
+where things are.`
 
 // Run executes the command line in args, in the process's environment and
 // working directory.
@@ -195,6 +196,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	settings.SupportsJSON(root)
 	root.AddGroup(&cobra.Group{ID: "work", Title: "Start or enter work:"})
 	for _, command := range []*cobra.Command{
+		usage.Command(streams),
 		setup.Command(shared, streams),
 		setup.StartCommand(shared, streams),
 		setup.AdoptCommand(shared, streams),

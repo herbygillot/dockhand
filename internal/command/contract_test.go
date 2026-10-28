@@ -29,6 +29,7 @@ var noJSON = map[string]string{
 	"shell":        "prints a shell's completion script",
 	"setup github": "a sign-in, asked on a terminal",
 	"setup tart":   "makes an image, its provisioner's progress the output",
+	"usage":        "prints a page of the guide, which is its output",
 }
 
 // noPlan are the commands with no --plan, each with why: what they do is
@@ -45,6 +46,7 @@ var noPlan = map[string]string{
 	"diff":         "reads only",
 	"edit":         "opens the Portfile in your editor",
 	"explain":      "reads only",
+	"usage":        "reads only",
 	"impact":       "reads only",
 	"logs":         "reads only",
 	"artifacts":    "reads only",

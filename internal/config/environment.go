@@ -9,7 +9,7 @@ type Variable struct {
 	Agent bool
 }
 
-// Environment is every variable dockhand reads, which usage.md's table
+// Environment is every variable dockhand reads, which docs/usage/agents.md's table
 // lists, apart from HOME and XDG_CACHE_HOME; PATH, which serve's agent keeps too; the
 // acceptance build's DOCKHAND_FAILPOINT; and tests' DOCKHAND_TEST_*
 // variables.
