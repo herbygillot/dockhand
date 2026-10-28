@@ -373,6 +373,8 @@ type LiveUnderMigrationError struct {
 	Processes int
 	Builds    []string
 	From, To  int
+	// Live are the processes, which the engine says as status does.
+	Live []LiveProcess
 }
 
 func (e *LiveUnderMigrationError) Error() string {
@@ -387,6 +389,21 @@ func (e *LiveUnderMigrationError) Error() string {
 	return fmt.Sprintf("%s working on schema %d%s: migrating the database to schema %d would leave them unable to record what they do", processes, e.From, builds, e.To)
 }
 
+// A LiveProcess is a dockhand process working on a database whose
+// migration was refused, as status lists one (engine.Process): its
+// session's kind, PID, build, and start, whether it leads the queue, and
+// the numbers of the checks it runs. The refusals said a count and builds,
+// or nothing of them, and four field sessions asked which they were (the
+// abook session, 2026-10-28).
+type LiveProcess struct {
+	Kind    string
+	PID     int
+	Build   string
+	Started time.Time
+	Leads   bool
+	Checks  []int
+}
+
 func (e *LiveUnderMigrationError) Unwrap() error { return ErrLiveUnderMigration }
 
 // ReleaseUnderMigrationError is a migration a development or rc build
@@ -399,6 +416,9 @@ type ReleaseUnderMigrationError struct {
 	// a migration keeps its form at From.
 	Release, Copy string
 	From, To      int
+	// Live are the processes working on it now, which the engine says as
+	// status does.
+	Live []LiveProcess
 }
 
 func (e *ReleaseUnderMigrationError) Error() string {

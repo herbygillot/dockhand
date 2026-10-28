@@ -1524,6 +1524,8 @@ INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, start
 INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_watch','observer',103,'p','v0.3.1',%[1]d,%[1]d,NULL);
 INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_ended','foreground',104,'p','v0.3.0',%[1]d,%[1]d,%[1]d);
 INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_stale','foreground',105,'p','v0.3.0',%[2]d,%[2]d,NULL);
+INSERT INTO leases(repository_id, resource, holder, generation, acquired_at) VALUES('repo_1','run:run_1','ses_check',1,%[1]d);
+INSERT INTO leases(repository_id, resource, holder, generation, acquired_at) VALUES('repo_1','leader','ses_serve',1,%[1]d);
 `, now, now-int64(time.Hour/time.Millisecond))
 	path := schemaAt(t, schemaVersion-1, schema23Records+sessions)
 	// The engine gives coord's window; with none, the stale one counts too.
@@ -1534,7 +1536,12 @@ INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, start
 	_, err = Open(t.Context(), path, Options{LiveWithin: 2 * time.Minute})
 	refused := new(store.LiveUnderMigrationError)
 	require.ErrorAs(t, err, &refused)
-	require.Equal(t, &store.LiveUnderMigrationError{Processes: 2, Builds: []string{"v0.3.1"}, From: schemaVersion - 1, To: schemaVersion}, refused)
+	started := time.UnixMilli(now).UTC()
+	require.Equal(t, &store.LiveUnderMigrationError{Processes: 2, Builds: []string{"v0.3.1"}, From: schemaVersion - 1, To: schemaVersion,
+		Live: []store.LiveProcess{
+			{Kind: "foreground", PID: 101, Build: "v0.3.1", Started: started, Checks: []int{1}},
+			{Kind: "serve", PID: 102, Build: "v0.3.1", Started: started, Leads: true},
+		}}, refused, "each named, with what it does, as status names it (the abook session)")
 	require.ErrorContains(t, err, fmt.Sprintf("2 dockhand processes are working on schema %d (v0.3.1): migrating the database to schema %d would leave them unable to record what they do", schemaVersion-1, schemaVersion))
 
 	s, err := Open(t.Context(), path, Options{MigrateUnderLive: true})

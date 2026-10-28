@@ -261,7 +261,62 @@ func (s *Store) refuseReleaseMigration(ctx context.Context) error {
 	if !ok || !released {
 		return nil
 	}
-	return &store.ReleaseUnderMigrationError{Release: release, Copy: fmt.Sprintf("%s.schema-%d", s.path, version), From: version, To: schemaVersion}
+	return &store.ReleaseUnderMigrationError{Release: release, Copy: fmt.Sprintf("%s.schema-%d", s.path, version), From: version, To: schemaVersion, Live: s.liveProcesses(ctx, s.db, s.options.LiveWithin)}
+}
+
+// rowsQueryer is a database or a connection, which liveProcesses reads
+// with.
+type rowsQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// liveProcesses are the serve and foreground processes with a heartbeat
+// within live, whichever repository, oldest first, each with whether it
+// leads its queue and the checks it runs, read from the sessions, leases,
+// and runs every schema has kept alike. It's what a refused migration
+// names, so a read that fails names none, and the refusal stands.
+func (s *Store) liveProcesses(ctx context.Context, q rowsQueryer, live time.Duration) []store.LiveProcess {
+	since := int64(0)
+	if live > 0 {
+		since = millis(time.Now().Add(-live))
+	}
+	rows, err := q.QueryContext(ctx, `SELECT s.repository_id, s.id, s.kind, s.pid, s.version, s.started_at, l.resource, r.number
+FROM sessions s
+LEFT JOIN leases l ON l.repository_id=s.repository_id AND l.holder=s.id
+LEFT JOIN runs r ON r.repository_id=l.repository_id AND l.resource='run:'||r.id
+WHERE s.ended_at IS NULL AND s.kind<>'observer' AND s.heartbeat_at>=?
+ORDER BY s.started_at, s.id, r.number`, since)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var found []store.LiveProcess
+	last := ""
+	for rows.Next() {
+		var repository, id, kind, build string
+		var pid int
+		var started int64
+		var resource sql.NullString
+		var number sql.NullInt64
+		if rows.Scan(&repository, &id, &kind, &pid, &build, &started, &resource, &number) != nil {
+			return nil
+		}
+		if key := repository + "/" + id; key != last {
+			last = key
+			found = append(found, store.LiveProcess{Kind: kind, PID: pid, Build: build, Started: fromMillis(started)})
+		}
+		process := &found[len(found)-1]
+		switch {
+		case resource.String == "leader":
+			process.Leads = true
+		case number.Valid:
+			process.Checks = append(process.Checks, int(number.Int64))
+		}
+	}
+	if rows.Err() != nil {
+		return nil
+	}
+	return found
 }
 
 // queryer is a database or a connection, which lastBuild reads with.
@@ -403,7 +458,7 @@ func (s *Store) prepareSchema(ctx context.Context) error {
 			return nil
 		case app == applicationID && version > 0 && version < schemaVersion:
 			if !s.options.MigrateUnderLive {
-				if err := t.refuseUnderLive(ctx, version, s.options.LiveWithin); err != nil {
+				if err := t.refuseUnderLive(ctx, s, version, s.options.LiveWithin); err != nil {
 					return err
 				}
 			}
@@ -432,7 +487,7 @@ func (s *Store) prepareSchema(ctx context.Context) error {
 // foreground process, whose sessions every schema has kept alike, has a
 // heartbeat within live: each reads this schema, and couldn't record its
 // work after the migration. Observers only read, and stop.
-func (t *tx) refuseUnderLive(ctx context.Context, version int, live time.Duration) error {
+func (t *tx) refuseUnderLive(ctx context.Context, s *Store, version int, live time.Duration) error {
 	since := int64(0)
 	if live > 0 {
 		since = millis(time.Now().Add(-live))
@@ -442,7 +497,7 @@ func (t *tx) refuseUnderLive(ctx context.Context, version int, live time.Duratio
 		return storageError(err)
 	}
 	defer rows.Close()
-	refused := &store.LiveUnderMigrationError{From: version, To: schemaVersion}
+	refused := &store.LiveUnderMigrationError{From: version, To: schemaVersion, Live: s.liveProcesses(ctx, t.conn, live)}
 	for rows.Next() {
 		var build string
 		if err := rows.Scan(&build); err != nil {

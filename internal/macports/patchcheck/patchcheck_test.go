@@ -286,3 +286,20 @@ func TestAPatchIsRefreshedToApplyAsWritten(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "applies", again[0].Detail)
 }
+
+// Under extract.mkdir, an archive with no top directory is unpacked in the
+// source directory, so its patch applies; without it, MacPorts would
+// unpack the files beside the source directory, and the patch finds none
+// (the abook session, 2026-10-28: patch-database-ctype.diff held as
+// rejected, where the build patched database.c).
+func TestAnArchiveUnpackedInItsSourceDirectoryIsReadThere(t *testing.T) {
+	archive := sourceArchive(t, map[string]string{"dir/a.txt": "one\ntwo\nthree\n", "README": "unrelated\n"})
+	info := macports.PortInfo{Options: map[string]string{"worksrcdir": "abook-0.6.2", "extract.mkdir": "yes", "patch.pre_args": "-t -N -p0"}}
+	results, err := Port(t.Context(), info, []string{archive}, []Patch{{Name: "good.diff", Data: []byte(good)}}, false)
+	require.NoError(t, err)
+	require.True(t, results[0].Applies, results[0].Detail)
+	delete(info.Options, "extract.mkdir")
+	results, err = Port(t.Context(), info, []string{archive}, []Patch{{Name: "good.diff", Data: []byte(good)}}, false)
+	require.NoError(t, err)
+	require.False(t, results[0].Applies, "unpacked as MacPorts would without it, the source directory holds none of them")
+}

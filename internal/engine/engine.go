@@ -27,6 +27,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -364,7 +365,17 @@ type ReleaseUnderMigrationError struct {
 }
 
 func (e *ReleaseUnderMigrationError) Error() string {
-	return e.ReleaseUnderMigrationError.Error() + fmt.Sprintf(". To try this build without touching it, copy the database with sqlite3 <database> \".backup <file>\", since a plain copy of a database in use can miss its last writes, and point DOCKHAND_DB at the copy; run on a terminal, it asks, keeping its schema %d form at %s", e.From, e.Copy)
+	words := e.ReleaseUnderMigrationError.Error() + fmt.Sprintf(". To try this build without touching it, copy the database with sqlite3 <database> \".backup <file>\", since a plain copy of a database in use can miss its last writes, and point DOCKHAND_DB at the copy; run on a terminal, it asks, keeping its schema %d form at %s", e.From, e.Copy)
+	return words + e.Working()
+}
+
+// Working says the processes working on the database now, as status does,
+// after a sentence of its own; empty where there are none.
+func (e *ReleaseUnderMigrationError) Working() string {
+	if len(e.Live) == 0 {
+		return ""
+	}
+	return ". Working on it now:" + liveWords(e.Live)
 }
 
 func (e *ReleaseUnderMigrationError) Unwrap() error { return e.ReleaseUnderMigrationError }
@@ -379,7 +390,34 @@ type LiveUnderMigrationError struct {
 }
 
 func (e *LiveUnderMigrationError) Error() string {
-	return e.LiveUnderMigrationError.Error() + "; wait for them to finish, or stop them, and run this again"
+	return e.LiveUnderMigrationError.Error() + "; wait for them to finish, or stop them, and run this again" + liveWords(e.Live)
+}
+
+// liveWords are the processes a refusal found, a line each, as status's
+// rows say them: "serve, pid 4711, v0.5.0, since 2026-10-28 10:02, leads
+// the queue and runs check-12". Two refusals said a count and builds, or
+// nothing of them, and four field sessions asked which they were (the
+// abook session, 2026-10-28).
+func liveWords(live []store.LiveProcess) string {
+	var lines []string
+	for _, p := range live {
+		var doing, checks []string
+		if p.Leads {
+			doing = append(doing, "leads the queue")
+		}
+		for _, number := range p.Checks {
+			checks = append(checks, model.Run{Number: number}.Name())
+		}
+		if len(checks) > 0 {
+			doing = append(doing, "runs "+prose.And(checks))
+		}
+		line := fmt.Sprintf("%s, pid %d, %s, since %s", p.Kind, p.PID, cmp.Or(p.Build, "an unknown build"), p.Started.Local().Format("2006-01-02 15:04"))
+		if len(doing) > 0 {
+			line += ", " + strings.Join(doing, " and ")
+		}
+		lines = append(lines, "\n  "+line)
+	}
+	return strings.Join(lines, "")
 }
 
 func (e *LiveUnderMigrationError) Unwrap() error { return e.LiveUnderMigrationError }

@@ -36,7 +36,11 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 			environments = append(environments, environment)
 		}
 	}
-	for _, value := range on {
+	values, err := e.onItems(on)
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range values {
 		if value == "ci" {
 			// ci went with build profiles, with no alias (the person,
 			// 2026-10-13).
@@ -77,6 +81,41 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 		add(model.Environment{Provider: name})
 	}
 	return environments, nil
+}
+
+// onForms are the forms --on takes, said where a value is none of them.
+const onForms = "--on takes a provider, tart, github, command, or local; a provider with its releases or prefix, tart:12,26 or local:/opt/macports-test; or a release, tahoe or 26, which is Tart's"
+
+// onItems are --on's values with each comma-separated item that names a
+// provider starting a value of its own: tart:12,tart:26 handed tart
+// "12,tart:26", refused as an unknown release, where tart:12,26 worked
+// (the abook session, 2026-10-28). An item after a comma that names
+// neither a provider nor a release, where the value's provider takes
+// releases, is refused with the forms --on takes.
+func (e *Engine) onItems(on []string) ([]string, error) {
+	provider := func(item string) bool {
+		name, _, _ := strings.Cut(item, ":")
+		_, set := e.Providers[name]
+		return set || slices.Contains([]string{buildenv.Tart, buildenv.GitHub, buildenv.Command, buildenv.Local}, name)
+	}
+	var values []string
+	for _, value := range on {
+		items := strings.Split(value, ",")
+		current := items[0]
+		for _, item := range items[1:] {
+			switch {
+			case provider(item):
+				values = append(values, current)
+				current = item
+			case item == "all" || knownRelease(item):
+				current += "," + item
+			default:
+				return nil, fmt.Errorf("--on %s: %q is neither a provider nor a release; %s", value, item, onForms)
+			}
+		}
+		values = append(values, current)
+	}
+	return values, nil
 }
 
 // OnValues are environments as --on names them, as Environments reads

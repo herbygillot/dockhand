@@ -149,3 +149,21 @@ func TestWhereABuildProfileBuilds(t *testing.T) {
 	_, err = e.Where(t.Context(), WhereRequest{Build: "command"})
 	require.ErrorContains(t, err, "build profile command builds with your own script, which isn't set up")
 }
+
+// A provider's name after a comma starts its own list, so tart:12,tart:26
+// is tart:12,26, and an item that's neither a provider nor a release
+// names the forms --on takes (the abook session, 2026-10-28).
+func TestOnTakesAProviderAfterAComma(t *testing.T) {
+	t.Parallel()
+	e := &Engine{Providers: map[string]buildenv.Provider{"tart": &releasing{}, "github": &scriptedProvider{}}}
+	together, err := e.Environments(t.Context(), []string{"tart:sonoma,tahoe"})
+	require.NoError(t, err)
+	apart, err := e.Environments(t.Context(), []string{"tart:sonoma,tart:tahoe"})
+	require.NoError(t, err)
+	require.Equal(t, together, apart)
+	mixed, err := e.Environments(t.Context(), []string{"tart:sonoma,github"})
+	require.NoError(t, err)
+	require.Equal(t, []model.Environment{together[0], {Provider: "github"}}, mixed)
+	_, err = e.Environments(t.Context(), []string{"tart:sonoma,foo"})
+	require.EqualError(t, err, `--on tart:sonoma,foo: "foo" is neither a provider nor a release; `+onForms)
+}

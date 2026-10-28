@@ -39,6 +39,10 @@ type Request struct {
 	Worksrcdir string
 	// Rename accepts a differing top-level directory, as extract.rename does.
 	Rename bool
+	// Mkdir is extract.mkdir's: MacPorts makes the source directory and
+	// unpacks each archive in it, so a member's path is its path below the
+	// source directory, as the archive has it.
+	Mkdir bool
 	// PatchDir is patch.dir relative to the source directory; empty means the source directory.
 	PatchDir string
 	// PreArgs are the evaluated patch.pre_args tokens, normally -t -N -p0.
@@ -144,8 +148,12 @@ func Port(ctx context.Context, info macports.PortInfo, archives []string, patche
 	if err != nil {
 		return nil, err
 	}
+	mkdir, err := info.Bool("extract.mkdir")
+	if err != nil {
+		return nil, err
+	}
 	return Check(ctx, Request{
-		Archives: archives, Worksrcdir: filepath.ToSlash(info.Options["worksrcdir"]), Rename: rename,
+		Archives: archives, Worksrcdir: filepath.ToSlash(info.Options["worksrcdir"]), Rename: rename, Mkdir: mkdir,
 		PatchDir: strings.TrimPrefix(strings.TrimPrefix(dir, "@worksrc@"), "/"), PreArgs: pre, Patches: patches, Fuzz: fuzz,
 	})
 }
@@ -481,7 +489,7 @@ func extract(ctx context.Context, request Request, wanted map[string]bool, direc
 	// top directory, as extract.rename reads one (field testing, batch 11:
 	// lima's patches read as finding no file to patch, and built).
 	moved := false
-	if !request.Rename {
+	if !request.Rename && !request.Mkdir {
 		held, err := holds(ctx, request.Archives, worksrc)
 		if err != nil {
 			return err
@@ -489,6 +497,14 @@ func extract(ctx context.Context, request Request, wanted map[string]bool, direc
 		moved, subdir = !held, ""
 	}
 	relative := func(member string) (string, bool) {
+		// Under extract.mkdir, each archive is unpacked in the source
+		// directory, so its members are paths below it as they are:
+		// abook's tarball, which has no top directory, read as no file to
+		// patch, a patch-rejected hold, where the build patched it (the
+		// abook session, 2026-10-28).
+		if request.Mkdir {
+			return member, true
+		}
 		if rest, ok := strings.CutPrefix(member, worksrc+"/"); ok {
 			return rest, true
 		}

@@ -244,3 +244,25 @@ func TestAFetchFailureNamesItsArchiveAndSite(t *testing.T) {
 	_, ok = FetchFailed(strings.NewReader("main.c:1:2: error: x\n"))
 	require.False(t, ok)
 }
+
+// A failure whose lines say make reran autotools has a note; one on
+// another target, or a tool's name elsewhere in a line, hasn't (the abook
+// session, 2026-10-28).
+func TestAnAutotoolsRerunIsNoted(t *testing.T) {
+	t.Parallel()
+	for _, lines := range [][]string{
+		{"cd . && /bin/sh ./missing aclocal-1.16 -I m4", "make: *** [aclocal.m4] Error 127"},
+		{"make[1]: *** [Makefile:412: Makefile.in] Error 1"},
+		{"/w/abook-0.6.2/missing: line 81: aclocal-1.16: command not found"},
+		{"WARNING: 'automake-1.16' is missing on your system."},
+	} {
+		require.NotEmpty(t, AutotoolsNote(lines), lines)
+	}
+	for _, lines := range [][]string{
+		{"database.c:12:1: error: unknown type name 'foo'", "make: *** [database.o] Error 1"},
+		{"make: *** [all] Error 2"},
+		{"checking whether autoconf works... yes"},
+	} {
+		require.Empty(t, AutotoolsNote(lines), lines)
+	}
+}
