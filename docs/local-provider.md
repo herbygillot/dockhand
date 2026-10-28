@@ -24,12 +24,13 @@ build_timeout = "6h"           # a target's build's bound, as Tart's
 
 ## What it does
 
-1. If an earlier check left the prefix changed, ending before it could put it back, it's put back first.
-2. The revision's tree and its port index are staged in a directory of the check's own under `/var/tmp`, where MacPorts' unprivileged user can read them.
-3. MacPorts reads the staged tree through a `macports.conf` of the check's own, named by `PORTSRC`, which MacPorts reads after its own so it wins. Its `sources_conf` lists the staged tree first, then the prefix's own sources with their `[default]`, so the branch's ports are found first and the rest as before. The prefix's `etc/macports` is never written.
-4. Before anything changes, what's active is recorded, and `port snapshot --create --note "dockhand check-N attempt 1"` records the prefix.
-5. Each target builds as-is: nothing is deactivated first. How many ports were active, and any other package manager on the Mac (Homebrew at `/opt/homebrew`, say), are facts of the build, which the pull request's Tested on line names: "built in /opt/local on the author's Mac with 143 ports active".
-6. Afterwards, dockhand activates again each port whose active version changed, and deactivates what the check activated, from the list it recorded. That's faster than `port restore`, which installs each port again. The new images stay installed, inactive and unrequested, for `port reclaim`. The snapshot is deleted once the prefix is put back.
+1. The check takes the prefix for itself until step 7 is done, by a lock keyed on the prefix's path, its links resolved, kept in `/var/tmp/dockhand-locks-<uid>`: a second check on the prefix, serve's and yours, or another database's, waits, saying whose: "waiting for /opt/local, held by check-12 (pid 4711)". The lock is per user; two people's checks on one prefix aren't kept apart.
+2. If an earlier check left the prefix changed, ending before it could put it back, it's put back first.
+3. The revision's tree and its port index are staged in a directory of the check's own under `/var/tmp`, where MacPorts' unprivileged user can read them.
+4. MacPorts reads the staged tree through a `macports.conf` of the check's own, named by `PORTSRC`, which MacPorts reads after its own so it wins. Its `sources_conf` lists the staged tree first, then the prefix's own sources with their `[default]`, so the branch's ports are found first and the rest as before. The prefix's `etc/macports` is never written.
+5. Before anything changes, what's active is recorded, and `port snapshot --create --note "dockhand check-N attempt 1"` records the prefix.
+6. Each target builds as-is: nothing is deactivated first. How many ports were active, and any other package manager on the Mac (Homebrew at `/opt/homebrew`, say), are facts of the build, which the pull request's Tested on line names: "built in /opt/local on the author's Mac with 143 ports active".
+7. Afterwards, dockhand activates again each port whose active version changed, and deactivates what the check activated, from the list it recorded. That's faster than `port restore`, which installs each port again. The new images stay installed, inactive and unrequested, for `port reclaim`. The snapshot is deleted once the prefix is put back.
 
 `check --keep`, or `keep = true`, leaves the branch's versions active instead, as `port install` would, and keeps the snapshot: `sudo port restore --snapshot-id N` puts the prefix back as it was, and the check says N.
 

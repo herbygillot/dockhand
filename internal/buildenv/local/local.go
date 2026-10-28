@@ -32,6 +32,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/procid"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
@@ -70,6 +71,10 @@ type Local struct {
 	Temp string
 	// Env is the environment its programs run with, the command line's.
 	Env []string
+	// Locks is where a prefix's lock is kept, one for every dockhand
+	// process of the person, whatever its database: dockhand-locks-<uid>
+	// in Temp when empty (own).
+	Locks string
 
 	workspaces workspace.Registry
 	// sudo runs the guest program as root where the prefix's registry
@@ -150,7 +155,11 @@ func (l *Local) command(ctx context.Context, input io.Reader, args ...string) ([
 // prefix it builds in, which tell a directory a process left from one in
 // use.
 type owner struct {
-	PID    int    `json:"pid"`
+	PID int `json:"pid"`
+	// Start is when the process started (procid), so a PID the system
+	// reused isn't taken for it; empty in a directory an older dockhand
+	// made.
+	Start  string `json:"start,omitempty"`
 	Check  string `json:"check"`
 	Prefix string `json:"prefix"`
 }
@@ -168,6 +177,15 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		return err
 	}
 	cleanup := context.WithoutCancel(ctx)
+	// One check owns the prefix from what it puts back first to its own
+	// put-back: two, serve's and a person's, or two databases', each
+	// snapshotted the other's half-built state (Codex's review of
+	// 8e314b96, finding 1).
+	letGo, err := l.own(ctx, prefix, job.Run.Name(), build)
+	if err != nil {
+		return err
+	}
+	defer letGo()
 	if err := l.restoreLeft(ctx, prefix, build); err != nil {
 		return err
 	}
@@ -370,7 +388,8 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 // group of its own, so a terminal's interrupt reaches dockhand, which
 // stops it.
 func (l *Local) start(dir, prefix, check string, sudo []string) (*localRun, error) {
-	owned, err := json.Marshal(owner{PID: os.Getpid(), Check: check, Prefix: prefix})
+	self, _ := procid.Self()
+	owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix})
 	if err != nil {
 		return nil, err
 	}
@@ -482,7 +501,18 @@ func (l *Local) left() []leftDirectory {
 // dockhand ended first.
 func building(made owner, results guest.Results) bool {
 	program, _ := strconv.Atoi(results.Environment["pid"])
-	return alive(made.PID) || alive(program)
+	return running(made.PID, made.Start) || alive(program)
+}
+
+// running reports whether the process a record names runs still: by its
+// PID and start time where the record has one, so a reused PID isn't it,
+// else by its PID alone.
+func running(pid int, start string) bool {
+	if start == "" {
+		return alive(pid)
+	}
+	ok, err := procid.System{}.Alive(procid.Process{PID: pid, Start: start})
+	return ok || err != nil && alive(pid)
 }
 
 // alive says whether a process is running.
