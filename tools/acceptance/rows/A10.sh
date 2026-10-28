@@ -35,8 +35,10 @@ teardown() {
 
 a10_examples() {
 	local file
-	for file in "$ACCEPT_REPO/README.md" "$ACCEPT_REPO"/docs/usage/setup.md "$ACCEPT_REPO"/docs/usage/hand-edits.md "$ACCEPT_REPO"/docs/usage/unattended.md \
-		"$ACCEPT_REPO"/docs/usage/checks.md "$ACCEPT_REPO"/docs/usage/review.md "$ACCEPT_REPO"/docs/usage/batches.md "$ACCEPT_REPO"/docs/usage/new-port.md "$ACCEPT_REPO"/docs/usage/agents.md; do
+	for file in "$ACCEPT_REPO/README.md" \
+		"$ACCEPT_REPO"/docs/usage/setup.md "$ACCEPT_REPO"/docs/usage/branches.md "$ACCEPT_REPO"/docs/usage/hand-edits.md "$ACCEPT_REPO"/docs/usage/checks.md \
+		"$ACCEPT_REPO"/docs/usage/publishing.md "$ACCEPT_REPO"/docs/usage/recovery.md "$ACCEPT_REPO"/docs/usage/batches.md "$ACCEPT_REPO"/docs/usage/unattended.md \
+		"$ACCEPT_REPO"/docs/usage/new-port.md "$ACCEPT_REPO"/docs/usage/review.md "$ACCEPT_REPO"/docs/usage/agents.md "$ACCEPT_REPO"/docs/usage/configuration.md; do
 		awk '/^```sh/ {f=1; next} /^```/ {f=0} f' "$file" |
 			sed 's/[[:space:]]#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//' | grep -E '^(dockhand |cd "\$\(dockhand path )'
 	done
@@ -93,7 +95,21 @@ act() {
 		verb=${words%% *}
 		why=""
 		case "$line" in
-		*'…'* | *'<'* | *'$('* | *owner/project* | *'~/Downloads'*) why="names something to fill in" ;;
+		*'…'* | *'<'* | *'$('* | *owner/project* | *'~/Downloads'* | *OWNER/* | *NAME* | *MODULE* | *PROGRAM*) why="names something to fill in" ;;
+		*'\') why="goes on over the next lines" ;;
+		*'>'*) why="writes a file of its own" ;;
+		# The guide's examples of acting on someone else's pull request
+		# name a real one: none runs, so the stage never posts on it or
+		# adopts it (Codex's pages, 2026-10-28).
+		"dockhand review "*"--comment"* | "dockhand review "*"--request-changes"*) why="posts a review on a real pull request" ;;
+		"dockhand review "*"--check"* | "dockhand adopt --pr"*) why="adopts a real pull request into the stage" ;;
+		"dockhand open"*) why="opens a browser" ;;
+		*check-[0-9]* | "dockhand wait"*) why="names or follows a check, and A10 runs check only as its plan" ;;
+		"dockhand setup --worktrees"*) why="moves the stage's worktrees" ;;
+		"dockhand undo tidy-"* | "dockhand start --from"*) why="names a checkpoint or a merged branch the stage hasn't" ;;
+		"dockhand clean") why="asks first, and refuses without a terminal; clean --plan runs" ;;
+		*"--hand-edit"*) why="writes a hand edit only where update refuses, and the stage's port updates" ;;
+		*kubectl* | *libharbor* | *mytool*) why="names a port the guide uses as an example" ;;
 		"dockhand bump"*) why="goes on to a pull request, and has no --plan" ;;
 		"dockhand serve"*) why="runs or installs serve, which the stage doesn't" ;;
 		"dockhand setup tart"*) why="makes a Tart image" ;;

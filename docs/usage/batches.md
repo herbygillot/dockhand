@@ -1,9 +1,191 @@
 # Many ports at once
 
+A batch begins with a selection, then a plan for how far to take it. Keep
+discovery separate from execution while deciding its scope. The examples use an
+existing ports checkout and its configured identity:
+
 ```sh
-dockhand outdated --mine                   # your ports with newer releases
-dockhand update --mine                     # a branch a Portfile, from fresh master, nothing committed
-dockhand ship --mine                       # each on to its pull request
+export MACPORTS_TREE="$HOME/Source/macports-ports"
+dockhand config
+dockhand outdated --mine
 ```
 
-`outdated` looks up each port named, or with `--mine` each port whose maintainers line names you (the `maintainer` setting), at master as fetched now. `--maintainer`, `--category`, and `--not-maintainer` select by master's index as `port echo` does, each repeatable or comma-separated: alternatives within a flag, and all of the flags together, so `outdated --maintainer nomaintainer --category devel` looks up the unmaintained ports in devel, and `--mine` may sit beside them. `update` and `ship` take the same selection as they take `--mine`, under the same holds, limits, and stages: a pull request on another's port goes through MacPorts' own review. It lists those with newer releases, and counts the rest; `--current` lists every port, current ones too, and why any couldn't be checked. Ports that couldn't be checked are counted by why, the commonest first: "27 of 320 ports couldn't be checked: 20 for GitHub's rate limit, 4 for …, 3 more". If a port downloads release assets and the new release has not uploaded them yet, `outdated` lists it as not ready. `update` cannot apply it, and `serve` skips it. With `--json`, each port's `class` says which it is: `newer`, `current`, `uncertain`, `unpublished`, `moved`, `own-version`, or `unchecked`. A port that may have one is listed too, and called neither current nor outdated: a version that compares newer was set aside, as `update` sets one aside, and nothing newer is beyond it. Its row names the update that takes it after a look, and `update --mine` and `ship --mine` count it for your look; with `--json`, its `uncertain` lists each version set aside, with its `tag`, the port's `version` at it, the `source` spelling `update` takes, and the tag it `predates`. A subport whose own livecheck it can't run, as the python PortGroup turns off its subports' livecheck, is checked with a sibling of the same Portfile and release that was, "update with py-cbor2", and moves with that sibling's update; with `--json`, its `with` names the sibling. A port that tracks a branch, `livecheck.type git`, is checked as MacPorts' git livecheck checks it, its branch's head against the commit it pins: one whose branch has moved on is listed for an edit by hand, the version for the new commit being yours to name, and `--json` gives the branch and commit as `moved`. A port whose default livecheck reads its master site, as most without a livecheck of their own, is checked the same way, through the tree's own livecheck definitions. Interrupted, it prints what it found so far, and `update --mine` and `ship --mine` start nothing. Ports are looked up several at a time, so a thousand take about three minutes. Their requests to GitHub are paced below the 900 a minute GitHub allows, and a thousand ports use about 2,000 of the 5,000 an hour it allows your account, a budget shared with the GitHub CLI and anything else acting for you. Before it looks anything up, a look whose estimate, about 2.6 requests a port, its subports that share a Portfile's version and source counted once, passes what GitHub says is left of the hour asks first on a terminal, and is refused without one; `--over-allowance` looks anyway. Subports that share a Portfile's version and source are looked up once. Where a limit is reached anyway, a read waits for it when it lifts within two minutes, saying so, and is asked once more; otherwise it says when the limit resets, as "GitHub's rate limit for your login resets at 14:05, in 23 minutes", and nothing more is asked of GitHub until then. A write, as a pull request opened, is never retried. `update --mine` makes one branch per Portfile, from fresh master, and commits nothing: `ship`'s edit stage alone. The ports of one Portfile, as kubectl's subports, go in one branch, named for its directory, and tidy makes a commit for each update, titled for its port, in the order made; `ship` and `serve` split their selections the same way. `update kubectl-1.34 kubectl-1.35 --new` does the same for ports you name; a version goes with a lone port, a second word naming no port being the version. It shows how it will split the work before it starts, a row a port with the branch's name, which the run uses, and the version it moves from and to, saying a new major version, and asks unless `-y`. `ship --mine` goes on from there, as far as `--to` says. If Dockhand cannot prepare a port's edit, it explains why and does not create a branch for that port. It exits 0 where every port was done, 3 where some were and the rest need a look, and 1 where none could be done.
+Use your actual clone path. `--mine` needs the `maintainer` setting to match how
+your ports name you. If it is missing, Dockhand explains the setting to add. See
+`dockhand usage configuration` for the file and `dockhand usage` for first
+setup.
+
+## Select the ports you intend
+
+`outdated`, `update`, and `ship` accept the same index selectors. Repeated or
+comma-separated values within a selector are alternatives. Maintainer selection
+is combined with category selection, and exclusions remove matching maintainers:
+
+```sh
+dockhand outdated --maintainer nomaintainer --category devel
+dockhand outdated --maintainer alice,bob \
+  --category devel,sysutils --not-maintainer openmaintainer
+```
+
+The first asks about unmaintained ports in devel. The second asks about ports
+maintained by alice or bob, in devel or sysutils, excluding ports whose
+maintainers include openmaintainer. `--mine` contributes your configured
+identities to the maintainer alternatives; it can be combined with categories
+and exclusions. `--not-maintainer` needs a positive selection beside it.
+Selection uses master's index as fetched, rather than whichever files happen to
+be checked out in a branch.
+
+For a short explicit list, name ports instead:
+
+```sh
+dockhand outdated jq yq
+```
+
+Do not combine port arguments with index selectors. A selected port is a
+candidate for discovery, not a promise that Dockhand can safely update and
+publish it. The report distinguishes ready updates, held or uncertain releases,
+and ports it could not check. `--current` expands the report to current ports
+and the explanations for other outcomes.
+
+## Preview a batch, then choose its stopping point
+
+A selection that looked sensible in discovery may contain competing work,
+missing release files, or a major version you did not expect. Inspect the split
+into branches before changing files:
+
+```sh
+dockhand update --mine --plan
+dockhand ship --mine --to check --plan
+```
+
+Use the same selectors in the preview and the execution you choose. For example,
+this prepares edits without committing, then a separate workflow can review and
+commit them:
+
+```sh
+dockhand update --mine
+```
+
+On a terminal it shows the planned branches and asks before starting. Without a
+terminal it requires `--yes`. `update` commits nothing. If you want the complete
+pipeline, choose one of ship's stages:
+
+```sh
+dockhand ship --mine --to commit
+dockhand ship --mine --to check
+dockhand ship --mine --to submit
+```
+
+These are alternative stopping points, not three required commands. `commit`
+prepares and tidies the updates; `check` also builds their committed files;
+`submit` also publishes eligible changes. The default is `submit`, so use an
+explicit stage when publication is not intended.
+
+On a terminal ship asks about the initial plan. With `--yes`, or without a
+terminal, it runs unattended and holds findings a person must review; `--yes`
+does not waive later holds. `--plan` and `--yes` cannot be combined. A preview
+may fetch master, query upstream, and populate caches even though it does not
+apply the planned changes. `dockhand usage unattended` covers these execution
+choices.
+
+## How ports become branches and commits
+
+Selection-based `update`, `ship`, and serve group updates by Portfile. Several
+independently versioned subports in one Portfile go into one branch, named for
+their directory, rather than competing branches that edit the same file. Tidy
+makes a commit for each recorded update, in order, when the edit chain still
+stands. Additional hand edits can mean the history needs a different grouping;
+inspect tidy's plan when that happens.
+
+You can request several ports in one branch directly:
+
+```sh
+dockhand update kubectl-1.34 kubectl-1.35 --new
+```
+
+This names one branch for their shared directory when they share a Portfile. A
+version is supplied with a lone port: `update jq 1.8.1` means a version update
+because the second word is not a port name. Choose currently existing port names
+in your checkout.
+
+Discovery and batch planning avoid repeating existing work. A port already
+changed by an open branch is left out of a new selection batch, with its branch
+named. An update closed or archived unmerged is not proposed again at that same
+release; a newer release makes it a candidate again. To resume such existing
+work, inspect and name its branch instead of expecting another `--mine` run to
+select it.
+
+## Follow progress and resume individual changes
+
+Ship carries each selected change to its queued check before it waits for
+results. Serve can run the checks side by side where capacity permits; otherwise
+ship drives them here one at a time. At the normal output level a batch gives
+each change a row and lists the ones needing attention below it. `-v` expands
+the stages, and `--json` retains each change's partial result.
+
+If some changes stop, the rest continue. The batch exit is 0 when all requested
+changes complete, 3 when some complete and others stop, and 1 when none
+complete. A single-target failure retains its own failure or attention code.
+Inspect each stopped change's reason rather than treating the aggregate exit as
+a rollback: edits, commits, checks, and successful submissions already completed
+remain.
+
+```sh
+dockhand status
+dockhand status --branch kubectl
+dockhand ship --branch kubectl --to check
+```
+
+Use the actual branch name from the batch's output. A branch-specific ship
+resumes from its current state; it can follow an active check that covers the
+request and use passing evidence that still stands. `ship --passing --plan`
+previews branches eligible for submission, and `ship --passing` carries those
+forward. The current selection may have changed upstream since the first run, so
+an identical discovery command is not a frozen batch manifest.
+`dockhand usage branches`, `dockhand usage checks`, and
+`dockhand usage recovery` explain the records and the next operation for each
+state.
+
+## Uncertain releases and incomplete discovery
+
+An uncertain release is neither established as current nor safe to select
+automatically. For example, an apparently newer version may have a tag older
+than the port's current tag. The report names the release set aside and the
+explicit update to consider after inspecting it. A port ahead of every upstream
+version also needs investigation. Do not replace that judgment with a loop that
+repeatedly asks for the newest version.
+
+A release marked unpublished has no usable release assets yet. `update` cannot
+prepare it, and unattended selection skips it. Wait for upstream to publish the
+files or investigate the project's release process. A subport can move with a
+sibling sharing its source and version; the report identifies that sibling
+instead of treating every subport as an independent release lookup.
+
+If no port could be checked, discovery fails rather than asserting that none is
+outdated. An interrupted `outdated` can print partial observations; an
+interrupted selection for `update` or `ship` starts no batch from that
+incomplete discovery. Inspect the reported problems, then rerun discovery once
+the cause is addressed.
+
+## Budget GitHub requests
+
+Large selections share the GitHub login's allowance with your other sessions and
+tools. Dockhand looks up shared sources once and caches conditional reads, but a
+broad selection can still use substantial capacity. Before discovery, it
+compares an estimate with the remaining hourly allowance. On a terminal it asks
+before exceeding that estimate; without a terminal it refuses unless
+`--over-allowance` is supplied.
+
+`--over-allowance` permits the attempt; it does not raise GitHub's limit. Prefer
+a narrower maintainer/category selection, inspect the reset time, or wait. When
+a read reaches a rate limit that lifts within two minutes, Dockhand can wait and
+try it once more. Otherwise it reports the reset time and avoids further GitHub
+requests until then. Remote writes are not automatically retried. A partial
+report is useful evidence, but not a reason to repeatedly restart the same large
+look.
+
+An explicit ship batch is not bounded by `serve.submit_limit`; that setting
+limits serve's daily automatic submissions. Start with `--to check` when you
+want to review a large selection before opening pull requests. For publication
+choices and accepted failures, continue with `dockhand usage publishing`; for
+scheduled daily selections, use `dockhand usage unattended`.

@@ -1,44 +1,163 @@
-# Editing by hand
+# Editing a port by hand
 
-Every command reads the branch's files as they are, so any edit of yours, with any tool, is part of the next check, `tidy`, and `submit`. These are the commands for the edits dockhand doesn't make by itself, and for trying a branch's port with MacPorts.
+Use this workflow for a patch, a build fix, a dependency change, or a version
+update you want to make yourself. Dockhand reads the branch's files as they
+stand; you can edit them with any editor. Its authoring commands leave working
+files for you to inspect. `tidy` makes the commits, `check` supplies build
+evidence, and `submit` publishes them.
 
-## edit
+## Put the edit in the right worktree
 
-`edit <port>` opens a port's Portfile in `$VISUAL` or `$EDITOR`, bringing its directory into a sparse worktree first. Without a terminal or an editor, or with `--no-open`, it prints the Portfile's path. Any other editing is yours to do in the worktree, with any tool; dockhand reads the files as they are.
-
-## When update refuses
-
-Where `update` refuses an edit it doesn't make, `--hand-edit` writes its best attempt for you to finish: the version, with the revision reset, and the checksums it could fetch. The attempt is yours, not dockhand's, so `tidy`'s plan, `status`, and the pull request's Description say it, and an unattended run holds on it. `ship`, `bump`, and `serve` never take it.
-
-## checksums
+For a new fix to jq, start a branch and ask for the Portfile's path:
 
 ```sh
+dockhand edit jq --new=jq-fix --no-open
+cd "$(dockhand path jq-fix)"
+```
+
+The first command brings jq's directory into the new worktree and prints its
+Portfile's path. Open that file with your editor. Without `--no-open`, Dockhand
+opens `$VISUAL` or `$EDITOR` when it has a terminal and an editor configured.
+
+To continue an existing tracked branch, use `dockhand edit jq -b jq-fix` instead
+of `--new`. Run subsequent commands in that branch's worktree. From elsewhere, a
+branch with both commits and working edits needs an explicit capture choice. Use
+`dockhand check -b jq-fix --working-tree` to check the edits, or `--head` for
+the committed tip.
+
+If you already made a Git branch yourself, run `dockhand adopt` in its checkout
+first. Adoption tracks the branch without moving or rewriting your work. A
+terminal may offer adoption when another command finds an untracked branch;
+scripts should adopt explicitly. `dockhand usage branches` explains branch
+selection and worktree placement.
+
+For a new patch, put its file under the port's `files/` directory and name it in
+`patchfiles`. The tidy plan says which untracked patches it will take and which
+files it leaves out. For a check before committing, `check --include <path>` can
+include an untracked file without staging it; do not assume every new file is
+captured automatically.
+
+## Refresh checksums after changing the source
+
+After editing a version or a download location, inspect what a checksum refresh
+would do:
+
+```sh
+dockhand diff
+dockhand checksums jq --plan
 dockhand checksums jq
+dockhand diff
 ```
 
-This is what to run after editing a version by hand: it fetches the distfiles the Portfile names, a variant's own included, and writes their checksums. A port whose Portfile lists its crates or Go modules (`cargo.crates`, `go.vendors`) has its own archives refreshed with those lists set aside, as an update computes them. The lists go back byte for byte, since their checksums are Cargo.lock's or go.sum's. Where it can't find a declaration in the Portfile to edit, as one a PortGroup or an `eval` makes, it says which archive's and why, and prints the checksums every archive has now, laid out for the Portfile. A distfile that changed upstream under the same name, in a Portfile whose version the branch hasn't changed, is a stealth update, a comment or a homepage edited by hand included; a revision the branch already bumped by hand isn't bumped again. Dockhand says so and shows the checksums before and after. Since the source changed, it bumps the revision and sets `dist_subdir ${name}/${version}_${revision}`, so mirrors keep both archives. `--no-revbump` leaves the revision, for a change that needs no rebuild, and numbers the directory `${name}/${version}_1` instead. A later version update removes either, where every archive of the new version has a name of its own; where one keeps its name, the line keeps its versions apart on the mirrors, and stays. Both edits are evaluated as MacPorts reads them, and held to changing the port alone: where they would also change another port in the Portfile, such as a subport that inherits the revision, the checksums are refreshed and the rest is left for you, saying why.
+`checksums` fetches the distfiles the Portfile now names and writes their
+checksums. It also looks at modeled platform contexts and variants with archives
+of their own. The plan writes no edit and starts no branch; it can still
+download files. It exits 3 when a distfile differs from its declared checksums,
+so a nonzero plan result can be the difference you came to inspect.
 
-## revbump
+For ports with `cargo.crates` or `go.vendors`, an ordinary refresh preserves
+those lists byte for byte while refreshing the port's own archives. An empty
+declared dependency block can be filled from the source. A declaration or
+context Dockhand cannot handle is left unchanged and explained; where possible,
+the command prints checksum lines for you to write yourself. Read that output
+before treating the refresh as complete.
+
+A changed archive under the same name, with the branch's version unchanged, is a
+**stealth update**. A homepage or comment edit does not turn it into a version
+update. Dockhand reports the old and new checksums and compares the archive's
+contents with what MacPorts shipped. Identical files in a repackaged archive
+need no revision bump; otherwise it bumps the revision unless you already did
+so. An unavailable content comparison is reported and keeps the revision bump.
+
+The new mirror copy gets a separate `dist_subdir`, normally
+`${name}/${version}_${revision}`. Use `--no-revbump` only when you have
+established that installed copies need no rebuild; it leaves the revision and
+numbers the mirror directory instead. If the revision or directory change would
+affect other subports unexpectedly, Dockhand refreshes the checksums and leaves
+that part for you, explaining why.
+
+## Request a rebuild without changing the version
+
+When a patch or dependency change requires installed copies to rebuild, raise
+the revision and give the reason:
 
 ```sh
-dockhand revbump gdal inkscape --subject "rebuild for poppler 25.09.0" --new=poppler-25.09
+dockhand revbump jq --subject "rebuild for a dependency change" --plan
+dockhand revbump jq --subject "rebuild for a dependency change"
 ```
 
-`revbump` increases each port's revision and records the reason as its commit subject, "<port>: <reason>". A revision shared by several subports is bumped for all of them.
+These commands use the branch checked out here. The plan shows the revision
+change; the applied command records the reason for `tidy`'s commit subject. You
+can name several ports, or use `--new=<name>` for a separate rebuild branch. A
+revision shared by subports moves for all of them, so inspect the family in the
+diff.
 
-## Trying a branch with MacPorts
+## Finish an update Dockhand refused
 
-To try a branch's port with MacPorts itself, `dockhand check --on local --keep` builds it in `/opt/local` as a check, recorded like any other, and leaves the branch's versions active; without `--keep`, the prefix is put back as it was ([the local provider](../local-provider.md)). By hand, `sources.conf` stays as it is. For a port whose dependencies the branch doesn't change, `cd "$(dockhand path jq-4f2a)/textproc/jq"` and `sudo port install` builds that directory's Portfile, as `sudo port -D <directory> install` does from anywhere. Where the branch changes a dependency too, give `port` a `sources.conf` of your own that lists the worktree first, ahead of the trees MacPorts' own names, so the branch's ports come from it and the rest as before; MacPorts reads it through `PORTSRC`, beside its own `macports.conf`, which `sudo` would drop, hence `sudo env`:
+First read the refusal and the planned diff:
 
 ```sh
-B=jq-4f2a; PORT=jq; MP_PREFIX=/opt/local
-WT="$(dockhand path "$B")"
-CONF="$HOME/.macports-branch"; mkdir -p "$CONF"
-{ printf 'file://%s\n' "$WT"; grep -Ev '^[[:space:]]*(#|$)' "$MP_PREFIX/etc/macports/sources.conf"; } > "$CONF/sources.conf"
-printf 'sources_conf %s\n' "$CONF/sources.conf" > "$CONF/macports.conf"
-(cd "$WT" && "$MP_PREFIX/bin/portindex")
-sudo env PORTSRC="$CONF/macports.conf" "$MP_PREFIX/bin/port" -N install --unrequested "depof:$PORT"
-sudo env PORTSRC="$CONF/macports.conf" "$MP_PREFIX/bin/port" -N -s install "$PORT"
+dockhand update jq --plan
 ```
 
-The worktree goes first because it's sparse, holding only the ports the branch changes; `depof:` names the port's direct dependencies, which come from MacPorts' archives where it has them, installed as unrequested, and `port` resolves the rest; the port itself builds from source (`-s`). Run `portindex` again after editing a Portfile: the worktree's `PortIndex` is Git's to ignore. The branch's versions are installed and active over your own in `/opt/local`, the earlier ones kept inactive for `port activate`. Tried on the main Mac with a revision bump of ijq: `port` read ijq from the worktree, its dependencies came from archives, only ijq built, and `/opt/local/etc/macports/sources.conf` was unchanged. dockhand never adds a worktree to MacPorts' own `sources.conf`: the file is root's, a tree there needs its port index kept current, and a worktree listed above the default tree would answer every `port` command with its versions, a branch left behind included.
+A refusal about unintended changes means Dockhand could not prove that its
+proposed edit changes only what it intended. Inspect the Portfile and its
+subports before proceeding. Use `--shared-release` only when the other subports
+really share the release and you intend to update them together; it is not a
+general override for fidelity failures.
+
+If you want a starting point for a manual repair, run this in your chosen
+branch:
+
+```sh
+dockhand update jq --hand-edit
+```
+
+Where the update can reach its edit attempt, this writes the best version
+change, revision reset, and checksum refresh it can make. Read everything it
+says it left undone. The result is your manual edit to finish, without
+Dockhand's usual fidelity proof. The original refusal is recorded and shown in
+status, the tidy plan, and the pull request description; unattended publication
+holds on it. `ship`, `bump`, and `serve` do not take this path. Stop if you
+cannot explain the collateral changes rather than repeatedly adding overrides.
+
+## Review, commit, and check the finished edit
+
+For this example's manual fix, supply a commit message that describes the actual
+change:
+
+```sh
+dockhand diff
+dockhand tidy --squash --message "jq: fix the build" --plan
+dockhand tidy --squash --message "jq: fix the build"
+dockhand check
+dockhand submit --plan
+```
+
+Replace the sample message with your reason. `tidy` includes the uncommitted
+edit and may fix deterministic lint issues on lines you touched; inspect its
+plan before applying it. A passing check supports the committed files you are
+about to publish. Follow `dockhand usage publishing` for the submission itself,
+or `dockhand usage recovery` if a check fails or the edit needs undoing.
+
+## Try the port in your own MacPorts prefix
+
+For a recorded local check, use `dockhand check --on local`. It builds in your
+local MacPorts prefix and restores the prior active ports afterwards. `--keep`
+deliberately leaves the branch's versions active. Read `dockhand usage checks`
+before choosing that environment.
+
+For a direct, unrecorded installation of this example's Portfile:
+
+```sh
+sudo /opt/local/bin/port -D "$PWD/textproc/jq" install
+```
+
+Run it from the branch's worktree root, and adjust the prefix and port directory
+for your installation. This installs into your live prefix and leaves the result
+there; it creates no Dockhand check evidence. `-D` selects that Portfile, but
+dependency names still resolve through MacPorts' configured sources. It does not
+make a dependency edited elsewhere in the same branch visible. Use a Dockhand
+check for a branch with changed dependencies, or deliberately configure your own
+temporary MacPorts source overlay and keep its port index current. Dockhand does
+not add worktrees to your system's `sources.conf`.
