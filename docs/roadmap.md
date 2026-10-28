@@ -12,7 +12,7 @@ The whole loop is built and used for real work, MacPorts pull requests and dockh
 - **Checks:** `check` in Tart (macOS 12 through 27, each with an Xcode image), on the fork's GitHub Actions, through a command of your own, or in a MacPorts prefix on this Mac (`local`); `logs`, `retry`, `shell`, `artifacts`, `wait`, and `cancel`.
 - **Review and submit:** `tidy`, `rebase`, `submit`, `review`, and `decide`; `serve` runs queued checks and the daily look at the selected ports.
 
-v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is done on main behind it.
+v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, two items to go.
 
 ## Next
 
@@ -25,11 +25,11 @@ rc6, 0dbf87e2 (tagged 2026-10-27 05:42Z), carries Then's items 1 to 5, the Portf
 - Then the person's sitting, started by his "I'm back" in the Prime-time thread: A2, A8, B4, D-C3, D-C4, D-I5, F5, and F7, and G1, G2, and G4 with sudo.
 - Then the write-up, naming as not covered D-R1, a check that can't fit on disk, and F6, worktrees on an external or case-sensitive volume, and F7, a prefix other than /opt/local, unless G3 covers it; and the tag and its GitHub Release at the person's typed word in the implementation thread.
 
-A harm found makes rc7 with its fix and reruns the rows the fix touches; anything else is a known issue, or rides v0.7.0. After the tag, dockhand's port is updated through dockhand, and moved to a new `macports` category directory, at the person's word (2026-10-27 03:22Z), if the tree takes one; if it doesn't, or dockhand can't make the move, he's told why.
+Its notes take one more known issue from B7, not harm: serve with nothing to run spent about 15% of a core over 16 hours on dhtest's database of 838 branches, fixed in v0.7.0 (below). A harm found makes rc7 with its fix and reruns the rows the fix touches; anything else is a known issue, or rides v0.7.0. After the tag, dockhand's port is updated through dockhand, and moved to a new `macports` category directory, at the person's word (2026-10-27 03:22Z), if the tree takes one; if it doesn't, or dockhand can't make the move, he's told why.
 
-### v0.7.0: done on main, one release
+### v0.7.0: on main, one release
 
-Then's items 6 to 15, and everything placed beside them, are done on main as one release (the person's "One release", 2026-10-26 06:22Z). Its rc1 is cut after v0.6.0's tag, at the person's word, and as it's cut the README's known issues become v0.7.0's, the list [its notes](releases/v0.7.0.md) carry. It migrates the database through schemas 43 to 49.
+Then's items 6 to 15, and everything placed beside them, are done on main as one release (the person's "One release", 2026-10-26 06:22Z), but for the two items placed before rc1 below. Its rc1 is cut after v0.6.0's tag, at the person's word, and as it's cut the README's known issues become v0.7.0's, the list [its notes](releases/v0.7.0.md) carry. It migrates the database through schemas 43 to 49.
 
 Its acceptance is v0.6.0's, with:
 
@@ -38,7 +38,13 @@ Its acceptance is v0.6.0's, with:
 - dhtest's `status --all` measured against rc2's 55 s and 3,962 git processes, its output compared (item 6's measure);
 - an update moving `github.tarball_from tarball` to `archive`, checked in Tart;
 - C8 applying a fresh saved plan whose branch takes an untracked patch that patchfiles names, and a lint fix, where rc6's C8 tries only a stale plan's refusal;
-- G5, two outdated subports of one Portfile updated in one branch and tidied into a commit each, titled for its subport (ACCEPT_SUBPORTS).
+- G5, two outdated subports of one Portfile updated in one branch and tidied into a commit each, titled for its subport (ACCEPT_SUBPORTS);
+- B7's serve measured idle on dhtest's database against rc6's 148 CPU-minutes in 16 hours, its log holding no line without serve's stamp (below).
+
+Placed before rc1, in the wait for v0.6.0's tag, so v0.7.0 stays one release (rc6's B7 on the M1, which passed, sent here by the coordinator on 2026-10-28 at 11:25Z; neither is harm):
+
+- **Every line serve logs carries its stamp, and a fetch nobody waits on isn't said** (about a tenth of a batch). serve.log had "Fetching master from https://github.com/macports/macports-ports.git" 87 times in 16 hours, without the time and prefix serve's own lines carry. It's fetchMaster's line for a person waiting, said once a fetch passes 2 s (engine/engine.go), reaching the log through the command's progress reporter, which writes plain to standard error (command/root.go), where serve's own lines go through its `say` (engine/serve.go). Under serve, a progress report goes through serve's lines, stamped as they are, and the slow fetch's line is verbose there. Done when a serve whose fetch of master passes 2 s logs no unstamped line.
+- **An idle serve costs little** (about half a batch, inferred). On rc6, serve spent 148 CPU-minutes in 16 hours with nothing to run, about 15% of a core, on dhtest's database of 838 branches. While idle it polls every 2 seconds, reading the store for its lease and queue, and every 5 minutes refreshes the pull requests and gathers the status of every open branch for its submit pass (engine/servesubmit.go `PassingBranches`, through `Status`), the per-branch reads that make v0.6.0's `status --all` slow; on main, item 6 reads each kind of git fact once for every branch (ff7d16cc), which may be most of it. The look profiles an idle serve on main over dhtest's database for an hour and fixes where the time goes; the submit pass needs only the open branches with a passing check and no pull request, which the store says before any git read. Done when an idle serve on dhtest's database spends a small fraction of rc6's rate, measured in v0.7.0's B7. Taken when touched's serve finding 3 rides it where the change is in serve's loop.
 
 What it carries, each said in full in its notes:
 
@@ -74,8 +80,8 @@ What it carries, each said in full in its notes:
   - After submit, a follow-up branch and CI's error line, item 7 (6d41829c and 78fb9727).
   - The pull request's body fits GitHub's limit and says what `--except` left out (1f90bc79), and a rebuild whose every dependent was left out is listed too (87102335).
   - A saved tidy plan whose branch adds an untracked patch is no longer refused as stale (a8a40367).
-  - Several ports of one Portfile go in one branch, `update` taking several ports and a selection grouping them by Portfile (8e314b96), and tidy makes a commit for each update, titled for its subport (644faca7); where it makes one commit for several, its subject names each, and the person's own message for dockhand's edits is kept (4fe17cf9).
-    - serve's check for a submitted pull request reads a subport on master (8e314b96).
+  - Several ports of one Portfile go in one branch, `update` taking several ports and a selection grouping them by Portfile (8e314b96 and 93d2e8cc), and tidy makes a commit for each update, titled for its subport (644faca7); where it makes one commit for several, its subject names each, and the person's own message for dockhand's edits is kept (4fe17cf9).
+  - serve's check for a submitted pull request reads a subport on master (8e314b96).
   - A removed flag, like a removed setting, says what replaced it (921c1bf9).
 - **Status and cleaning.**
   - Status gathered once, item 6 (ff7d16cc), its measure an acceptance row above.
@@ -83,8 +89,8 @@ What it carries, each said in full in its notes:
 - **Inside.**
   - The assessment as a package, item 15 (ab7dce32, bd92981b, and 6441e960).
   - A modelled context's SDK, tools, and compiler list are its own on base master, from the weekly job's findings (33251823 and 0c1aa135).
-  - Two wordings (b719703a), and a test's wait bounded by the suite's settle (eb0aaebd).
-  - Its notes, drafted (622c5bd1) and brought up to date (1abbe967).
+  - Two wordings (b719703a), a test's wait bounded by the suite's settle (eb0aaebd), and the corpus comparing a plan's Portfile diff alone (7152c9ad).
+  - Its notes, drafted (622c5bd1) and brought up to date (1abbe967 and 1324df11).
 
 Nothing is placed after v0.7.0 yet; Later is where its items come from.
 
