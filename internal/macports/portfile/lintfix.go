@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // The lint findings dockhand fixes itself, on the lines a change adds or
@@ -164,47 +165,7 @@ func expandTabs(line string) string {
 // by their longest common subsequence: the index in before, or -1 for a
 // line the change adds or alters.
 func matchLines(before, after []string) []int {
-	from := make([]int, len(after))
-	for i := range from {
-		from[i] = -1
-	}
-	// The common head and tail are matched outright, and the rest by the
-	// subsequence's table, small for a change of a few lines.
-	head := 0
-	for head < len(before) && head < len(after) && before[head] == after[head] {
-		from[head] = head
-		head++
-	}
-	tail := 0
-	for tail < len(before)-head && tail < len(after)-head && before[len(before)-1-tail] == after[len(after)-1-tail] {
-		from[len(after)-1-tail] = len(before) - 1 - tail
-		tail++
-	}
-	a, b := before[head:len(before)-tail], after[head:len(after)-tail]
-	table := make([][]int32, len(a)+1)
-	for i := range table {
-		table[i] = make([]int32, len(b)+1)
-	}
-	for i := len(a) - 1; i >= 0; i-- {
-		for j := len(b) - 1; j >= 0; j-- {
-			if a[i] == b[j] {
-				table[i][j] = table[i+1][j+1] + 1
-			} else {
-				table[i][j] = max(table[i+1][j], table[i][j+1])
-			}
-		}
-	}
-	for i, j := 0, 0; i < len(a) && j < len(b); {
-		switch {
-		case a[i] == b[j]:
-			from[head+j] = head + i
-			i, j = i+1, j+1
-		case table[i+1][j] >= table[i][j+1]:
-			i++
-		default:
-			j++
-		}
-	}
+	from, _ := textedit.Match(len(before), len(after), func(i, j int) bool { return before[i] == after[j] })
 	return from
 }
 
