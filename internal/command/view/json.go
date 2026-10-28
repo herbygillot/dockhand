@@ -53,6 +53,9 @@ type environmentJSON struct {
 	Architecture   string `json:"architecture,omitempty"`
 	DeveloperTools string `json:"developer_tools,omitempty"`
 	Prefix         string `json:"prefix,omitempty"`
+	// Note is what a plan says of the environment beside it, as of a local
+	// prefix other than /opt/local (engine.PrefixNote); a plan's alone.
+	Note string `json:"note,omitempty"`
 }
 
 func EnvironmentView(environment model.Environment) environmentJSON {
@@ -183,6 +186,7 @@ func PlanView(plan model.Plan) planJSON {
 		Variants: plan.Variants, EachVariant: plan.EachVariant, Targets: []TargetJSON{}, Omitted: []TargetJSON{}, Exclusions: []exclusionJSON{}, Unmet: []unmetJSON{}, Unresolved: []exclusionJSON{}}
 	for _, environment := range plan.Environments {
 		viewed.Environments = append(viewed.Environments, EnvironmentView(environment))
+		viewed.Environments[len(viewed.Environments)-1].Note = engine.PrefixNote(environment)
 	}
 	for _, target := range plan.Targets {
 		viewed.Targets = append(viewed.Targets, targetView(plan, target))

@@ -220,3 +220,15 @@ func TestAPrefixBeingBuiltInSaysWhoHoldsIt(t *testing.T) {
 	require.Equal(t, "check-12 is building in /opt/local, held by check-12 (pid 4711). Your port commands targeting this prefix must wait; upgrades made there in the meantime will be undone when the prefix is restored.",
 		ChangeWords(buildenv.Change{Check: "check-12", Place: "/opt/local", Building: true, Holder: "check-12 (pid 4711)"}))
 }
+
+// A plan's JSON says of a local prefix other than /opt/local what its text
+// says, that its dependencies build from source; /opt/local's says nothing.
+func TestALocalPlansJSONCarriesItsPrefixNote(t *testing.T) {
+	t.Parallel()
+	viewed := PlanView(model.Plan{Environments: []model.Environment{
+		{Provider: buildenv.Local, Prefix: "/opt/macports-test"},
+		{Provider: buildenv.Local, Prefix: "/opt/local"},
+	}})
+	require.Equal(t, "/opt/macports-test: MacPorts' binary archives are built for /opt/local alone, so its dependencies build from source", viewed.Environments[0].Note)
+	require.Empty(t, viewed.Environments[1].Note)
+}
