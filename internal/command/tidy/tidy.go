@@ -26,8 +26,10 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 		Use:   "tidy",
 		Short: "Prepare the branch's commits for review",
 		Long: `Proposes the commits a reviewer should see: by default one per port
-directory, with the subject dockhand's commands wrote or the one your own
-commits give, and every uncommitted edit included. The final files are
+directory, and one per update where dockhand updated several of a
+directory's ports, as kubectl's subports, with the subject dockhand's
+commands wrote or the one your own commits give, and every uncommitted
+edit included. The final files are
 what you have, but for the lint findings dockhand fixes on the lines your
 change adds or alters, such as trailing whitespace, which it writes into
 your files too.

@@ -691,7 +691,7 @@ func (e *Engine) afterHolds(ctx context.Context, edits []model.Edit) []model.Con
 func (e *Engine) submittedFirst(ctx context.Context, port, version string) (string, bool) {
 	at := ""
 	if master, ok := e.lastMaster(ctx); ok {
-		if directory, err := e.findDirectory(ctx, string(master), port); err == nil {
+		if directory, ok := e.PortDirectory(ctx, port); ok {
 			if _, text, err := e.Repo.File(ctx, string(master), directory+"/Portfile"); err == nil {
 				subport := ""
 				if path.Base(directory) != port {

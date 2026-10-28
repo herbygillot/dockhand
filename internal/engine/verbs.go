@@ -43,6 +43,23 @@ func (e *Engine) Edit(ctx context.Context, branch model.Branch, port string) (st
 	return directory, nil
 }
 
+// PortDirectory is a port's directory on the master dockhand last
+// fetched, a subport's its Portfile's; false where master has no such
+// port, as for a version: update takes a second word naming no port as
+// the version to update to.
+func (e *Engine) PortDirectory(ctx context.Context, name string) (string, bool) {
+	master, ok := e.lastMaster(ctx)
+	if !ok {
+		return "", false
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(master)})
+	if err != nil {
+		return "", false
+	}
+	directory, err := e.findDirectory(ctx, trees[string(master)], name)
+	return directory, err == nil
+}
+
 // findDirectory is the directory of a port by name: category/<name> when a
 // category holds one, else the port reader's answer, which knows subports.
 func (e *Engine) findDirectory(ctx context.Context, tree, name string) (string, error) {
