@@ -12,7 +12,7 @@ The whole loop is built and used for real work, MacPorts pull requests and dockh
 - **Checks:** `check` in Tart (macOS 12 through 27, each with an Xcode image), on the fork's GitHub Actions, through a command of your own, or in a MacPorts prefix on this Mac (`local`); `logs`, `retry`, `shell`, `artifacts`, `wait`, and `cancel`.
 - **Review and submit:** `tidy`, `rebase`, `submit`, `review`, and `decide`; `serve` runs queued checks and the daily look at the selected ports.
 
-v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, one item to go.
+v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, with Codex's review of main to fix before its rc1.
 
 ## Next
 
@@ -25,11 +25,18 @@ rc6, 0dbf87e2 (tagged 2026-10-27 05:42Z), carries Then's items 1 to 5, the Portf
 - Then the person's sitting, started by his "I'm back" in the Prime-time thread: A2, A8, B4, D-C3, D-C4, D-I5, F5, and F7, and G1, G2, and G4 with sudo.
 - Then the write-up, naming as not covered D-R1, a check that can't fit on disk, and F6, worktrees on an external or case-sensitive volume, and F7, a prefix other than /opt/local, unless G3 covers it; and the tag and its GitHub Release at the person's typed word in the implementation thread.
 
+**Pending the person's word, asked in the architecture thread: rc7, for two harms Codex's review of main (8e314b96) found in rc6** (the architecture review's assessment of 2026-10-28, which ran each probe on main; both hold on rc6's code). Each is a fix on main first, for v0.7.0 below:
+
+- **The `local` provider owns its prefix for a whole check** (finding 1; about half a batch, inferred). `Local.Execute` (buildenv/local/local.go) restores what was left, snapshots, builds, and puts the prefix back with nothing keyed on the prefix, and the engine's slots count checks per provider, not per installation, so two checks on one prefix, serve's and a person's, or two sessions on one Mac, can snapshot each other's half-built state and put it back. A file lock (`filelock.Flock`) on a record keyed by the prefix's canonical path is held from the restore through the put-back, its holder recorded as a `coord.Process`, PID and start time, so a dead holder's leftover is told from a live one's, which also ends `alive`'s trust in a recycled PID (local.go); a second check on the prefix waits for it within its context, and status names the holder. Done when two checks on one prefix from two databases run one after the other, the second's snapshot taken after the first's put-back.
+- **A license's party rename is only a name** (finding 2; about a quarter batch, inferred). `partyOnly` (sourcecompare/compare.go) takes any word pair replaced in two or more short hunks as a rename, and `sameLicense` counts two licenses it doesn't know as the same, so "must" to "may" twice, or "version 2" to "version 3" in a header and a footer, is said as a party rename and doesn't hold (`license-party`, assess). The exemption needs the license known and unchanged on both sides, unknown never equal, and the replaced words name-like, a person's or an organization's, never a common word; anything else is a changed license, which holds. Done when the review's two counterexamples hold and d380bc97's vault rename still doesn't.
+
+With the person's yes, rc7 is cut on a branch from rc6's commit with the two fixes ported, since main carries v0.7.0, before his sitting if it's ready, so the sitting's `local` rows run on rc7 and he sits once; the M1 runs A7 from rc6 to rc7, the `local` rows, G1 to G4, the license-hold row, and a new row of two checks on one prefix at once. Without it, both are known issues in v0.6.0's notes, said plainly: the `local` provider isn't safe for two checks on one prefix at once, and a license change of a few repeated words doesn't hold. Either way, its notes take two known issues from the same review: comparing two license files can use memory quadratic in their words (finding 5; 51 MB for a 25 KB pair), and a self-hosted GitLab whose instance URL has a path is refused for source archives (finding 8).
+
 Its notes take one more known issue from B7, not harm: serve with nothing to run spent about 15% of a core over 16 hours on dhtest's database of 838 branches, fixed in v0.7.0 (below). A harm found makes rc7 with its fix and reruns the rows the fix touches; anything else is a known issue, or rides v0.7.0. After the tag, dockhand's port is updated through dockhand, and moved to a new `macports` category directory, at the person's word (2026-10-27 03:22Z), if the tree takes one; if it doesn't, or dockhand can't make the move, he's told why.
 
 ### v0.7.0: on main, one release
 
-Then's items 6 to 15, and everything placed beside them, are done on main as one release (the person's "One release", 2026-10-26 06:22Z), but for the one item placed before rc1 below. Its rc1 is cut after v0.6.0's tag, at the person's word, and as it's cut the README's known issues become v0.7.0's, the list [its notes](releases/v0.7.0.md) carry. It migrates the database through schemas 43 to 49.
+Then's items 6 to 15, and everything placed beside them, are done on main as one release (the person's "One release", 2026-10-26 06:22Z), but for the items placed before rc1 below. Its rc1 is cut after v0.6.0's tag, at the person's word, and as it's cut the README's known issues become v0.7.0's, the list [its notes](releases/v0.7.0.md) carry. It migrates the database through schemas 43 to 49.
 
 Its acceptance is v0.6.0's, with:
 
@@ -39,11 +46,23 @@ Its acceptance is v0.6.0's, with:
 - an update moving `github.tarball_from tarball` to `archive`, checked in Tart;
 - C8 applying a fresh saved plan whose branch takes an untracked patch that patchfiles names, and a lint fix, where rc6's C8 tries only a stale plan's refusal;
 - G5, two outdated subports of one Portfile updated in one branch and tidied into a commit each, titled for its subport (ACCEPT_SUBPORTS);
-- B7's serve measured idle on dhtest's database against rc6's 148 CPU-minutes in 16 hours, its log holding no line that isn't serve's (below).
+- B7's serve measured idle on dhtest's database against rc6's 148 CPU-minutes in 16 hours, its log holding no line that isn't serve's (below);
+- two `local` checks on one prefix at once, the second waiting for the first's put-back (finding 1, above).
 
 Placed before rc1, in the wait for v0.6.0's tag, so v0.7.0 stays one release (rc6's B7 on the M1, which passed, sent here by the coordinator on 2026-10-28 at 11:25Z; not harm):
 
 - **An idle serve costs little** (about half a batch, inferred). On rc6, serve spent 148 CPU-minutes in 16 hours with nothing to run, about 15% of a core, on dhtest's database of 838 branches. While idle it polls every 2 seconds, reading the store for its lease and queue, and every 5 minutes refreshes the pull requests and gathers the status of every open branch for its submit pass (engine/servesubmit.go `PassingBranches`, through `Status`), the per-branch reads that make v0.6.0's `status --all` slow; on main, item 6 reads each kind of git fact once for every branch (ff7d16cc), which may be most of it. Its first step is done: the submit pass reads git only for the branches a check finished for, which the store says (4f75365e). The rest waits on an hour's profile of an idle serve on main over dhtest's database, on the M1 once C1 and G3 are done, and fixes where the time goes; the suspects left are the 2-second loop's store transactions, `session.Fenced`'s write every tick and `Candidates`, and the pull request refresh. Done when an idle serve on dhtest's database spends a small fraction of rc6's rate, measured in v0.7.0's B7. Taken when touched's serve finding 3 rides it where the change is in serve's loop.
+
+From Codex's review of main at 8e314b96 (2026-10-28, its ten findings all holding on main, each probe failing as it says; the architecture review's assessment, sent here by the coordinator at 12:00Z), before rc1, in this order, about 4 batches together (inferred). Findings 1 and 2, above, come first, on main whatever the person says of rc7; then the two that let a submission pass that should hold, then the two where a requested policy or an acceptance is lost, then the two that say the wrong thing, then rc6's other two. Each probe becomes a test at its owner, named as the package names its tests:
+
+- **The undeclared-link hold reads the check's merged evidence** (finding 4; about half a batch). `linkHolds` (engine/servesubmit.go) hands `UndeclaredLinks` the check's primary run, which reads that run's evidence alone, so a narrower check of jq drops the hold an earlier run of the viewer raised. The rule takes the check's combined evidence, each target's cell with its run and environment, and a per-run form wraps it for the per-run report. The done line "An undeclared link holds" below is true once this lands.
+- **Every rule that holds is in the catalogue** (finding 10; about a quarter batch). `ErrorCodes` (macports/commitrules/rules.go) lists four codes where `version-order` and `replaced-by-unchanged` are emitted as errors too, and `HoldRules` and compose's check of `holds.allow` derive from it, so neither can be allowed. One descriptor list, code, severity, and whether it holds, is the owner, `ErrorCodes`, `HoldRules`, and compose read it, and a test has every code a rule emits in it. With it, the hand edit's reason is a kind, not the sentence "hand edit (" that branchstate/commit.go reads back (engine/handedit.go).
+- **check and `review --check` follow by the engine's rule** (finding 3; about a quarter batch). Each command follows a running check on `SameRevision` alone (command/check, command/review), beside the engine's `BesideFollow` and `PlanCovers`, which weigh tests, freshness, variants, environments, and targets, so `check --tests required` follows a `--tests skip` run. Both commands ask the engine and render its followed run, their own rules deleted. The done line "check follows a check already running" below is true once this lands.
+- **Status loads every decision a standing reads** (finding 6; about half a batch). Status loads decisions only when a target failed (engine/status.go), where `Publishable` reads a lint acceptance on a passed new port and submit loads it anyway, so status, serve, and `ship --passing` can say a branch isn't ready that submit takes. One acquisition loads the decisions of every finding kind whose standing reads one, failure, environment, undeclared link, hand edit, and lint, for status, submit, serve, and ship alike, and an agreement test across them guards it.
+- **What moved is read against the check before** (finding 7; about a quarter batch). `InstallChanges` (engine/installed.go) compares with the newest reusable run but this one, so a later check becomes an earlier one's baseline: "libjq.2.dylib is libjq.1.dylib now", said of check 1 after check 2. Its baseline is the newest reusable run started before it, or the one its plan names, a query of its own, recorded on the check so status says which.
+- **JSON carries what the text says** (finding 9; about three quarters of a batch). status's JSON is `BranchView` alone, where its text says decisions, instructions, lint, links, and what installed or configure changed; and `review --check --json` loses the review, `check`'s emit replacing it (term/json.go). Each verb's renderers read one gathered payload, its JSON a projection of it, and `review --check` composes its two results through the gatherer and `LinkSteps`; a test has the JSON carry each section the text renders.
+- **One bounded way to match sequences** (finding 5; about half a batch). The license's `wordHunks` (sourcecompare/compare.go) builds a whole matrix, 51 MB for a 25 KB pair, beside CMake's bounded `changedLines` and two more in portfile (lintfix.go, contexts.go). One bounded primitive, `changedLines`' trimming, int32, and budget, serves all four, and past its budget the answer is "changed", which holds; Taken when touched's CMake wording file rides it.
+- **A GitLab instance keeps its path** (finding 8; about a quarter batch). `gitRepository` (upstream/source_archive.go) compares `https://` and the host with the configured instance, so `gitlab.instance https://gitlab.example.com/root` is refused. The instance is compared as a URL, scheme, host, and path prefix, and the project's path read under it.
 
 What it carries, each said in full in its notes:
 
@@ -65,12 +84,12 @@ What it carries, each said in full in its notes:
   - A fix beyond the change is asked for, with `tidy --restyle` (c4229f64).
 - **Checks.**
   - Tart's limit is the Mac's VMs, not a count of checks (391e76e1).
-  - check follows a check already running for the same files (614951e1).
+  - check follows a check already running for the same files (614951e1), by the engine's rule once finding 3 lands.
   - A failed build's summary says the tool's error, and a queued check nothing is running says so (cf5e18c2).
   - A check says how long each part took, and setup says whether go2port and cargo2port are there (42fcbc3f and 0d3d2ffc).
   - Next names the check a passing host check didn't build (03136805), and its variant check names its port and follows minmax (cab3ce9b).
   - After an amend, what still needs a pass names its platforms (b719703a).
-  - An undeclared link holds, and a regression test keeps it (96af4d95 and a2e81dc1).
+  - An undeclared link holds, and a regression test keeps it (96af4d95 and a2e81dc1), from the check's merged evidence once finding 4 lands.
   - `dockhand artifacts` prints a check's built archives (bd7043f1).
   - Under serve, a command's progress reports are serve's own "serve:" lines, and its fetches of master say nothing (7bc1e35c).
 - **Selecting, holding, and submitting.**
@@ -113,7 +132,12 @@ These need MacPorts Base, whole-tree surveys, or VMs, so they run as the Mac all
 
 ## Decisions for the person
 
-Open: none. Decided questions, with the rule each settled, are in [decisions](decisions.md).
+Open, both raised by the architecture review on 2026-10-28:
+
+- Whether v0.6.0 waits for rc7 with findings 1 and 2 (above), asked in the architecture thread.
+- Whether docs/reviews/ stays: docs phase 2 meant to remove it, and it still holds the review of 8c007979, which Taken when touched links; the review of 8e314b96 stays uncommitted at the person's word.
+
+Decided questions, with the rule each settled, are in [decisions](decisions.md).
 
 ## Later
 
@@ -214,7 +238,7 @@ Codes: the architecture review's A-H1 and on, Codex's review of 832f059e's CX-1 
 - **MacPorts compatibility.** Evaluator tests pass on Base 2.12.6, and CI runs them against the package of whichever release MacPorts currently points its users at, and a weekly job runs them against base's master (231f48c1). Version adapters follow the Base design prospective (2026-09-24): the current release plus a pinned master preview. Keep Base and PortGroup compatibility distinct ([evidence](macports-compatibility.md)).
 - **Images.** Twelve images are made and checked: base and Xcode for macOS 12, 13, 14, 15, 26, and 27. Re-probe the facts table when an image is rebuilt; the 2026-09-27 probes found every earlier row unchanged. Golden Gate needs Tart 2.39.0 or newer.
 - **Package boundaries.** Extend import checks when touching a boundary that matters; the command and engine boundary tests are the models. Don't split packages by size alone. CI runs `make deadcode`, which fails on a function nothing reaches, tests included. Keep test-only exports documented as such. After a milestone, a sweep runs the tool without `-test`: what it lists, only tests reach, and each is test support, documented as such, or dead. The tool can't see an unused exported method on a type that reaches an interface or reflection, so a sweep checks those by references too.
-- **Relocations.** A batch that moves a rule to its owner lists, in its note, the call sites it switched to the owner's rule, and closes with a grep across internal/ for the old rule's shape, its predicate, sentence, or switch, deleting what it finds or saying why it stays. Each of the 5897a82 review's high findings would have been caught by that grep on the day (its section 5).
+- **Relocations.** A batch that moves a rule to its owner lists, in its note, the call sites it switched to the owner's rule, and closes with a grep across internal/ for the old rule's shape, its predicate, sentence, or switch, deleting what it finds or saying why it stays. Each of the 5897a82 review's high findings would have been caught by that grep on the day (its section 5). A rule is moved only once every consumer carries the facts it needs and stops judging beside it: findings 3, 4, 6, and 9 of Codex's review of 8e314b96 are a consumer judging beside its owner, so a move adds an agreement test across the consumers, check, review, status, submit, ship, and serve, where they apply. The engine was 24,704 lines in 68 files at 8e314b96; it's measured again at v0.7.0's rc1, and not split for size alone.
 - **Dependencies.** Minor releases go on main when they build and the gate passes, as 3706d086's did; a major version is measured first, by building main against it, and placed here like any fix (the person's "Let's go with you recommendation.", 2026-10-24 18:31Z). The library survey's preference for no new dependencies stands.
 - **GitHub's budget.** Requests to its API are paced at 750 a minute, under its documented 900. A whole `outdated --mine` spends about 1,800 of the 5,000 an hour the person's account has, a budget shared with the GitHub CLI.
 - **Test throughput.** The cost unit is the MacPorts interpreter. Keep per-test timing visible, and prefer simulated clocks for time-driven tests; v2's `workflow` tests show what wall-clock budgets do under load.
