@@ -10,7 +10,7 @@ package macports
 // mportinfo reports (name, version, revision, epoch, homepage, description,
 // categories, license, dependencies, variants, subports, and platforms).
 var ReadOptions = []string{
-	"checksums", "distfiles", "distname", "dist_subdir", "extract.only", "extract.rename", "worksrcdir", "filespath", "master_sites", "fetch.type",
+	"checksums", "distfiles", "distname", "dist_subdir", "extract.only", "extract.rename", "extract.mkdir", "worksrcdir", "filespath", "master_sites", "fetch.type",
 	"fetch.user_agent", "fetch.ignore_sslcert",
 	"patchfiles", "patch.pre_args", "patch.args", "patch.dir",
 	"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version", "livecheck.branch", "livecheck.ignore_sslcert", "livecheck.compression", "livecheck.curloptions",
