@@ -192,7 +192,8 @@ func (e *Engine) beside(ctx context.Context, request QueueRequest) (Queued, erro
 			return Queued{}, err
 		}
 		if !PlanCovers(running, request.Plan) {
-			return Queued{}, fmt.Errorf("%s is %s for these files, but doesn't cover what this check asks, its environments, targets, variants, tests, or freshness. Run dockhand cancel %s and run this again, or wait for it to finish and run this again", active.Run.Name(), active.Run.State, active.Run.Name())
+			active.Uncovered = true
+			return Queued{}, active
 		}
 		return Queued{Run: active.Run, Followed: true}, nil
 	}

@@ -139,12 +139,18 @@ type ActiveRunError struct {
 	// the new check would have.
 	Checking     model.Revision
 	SameRevision bool
+	// Uncovered is a run of the same files whose plan doesn't cover the
+	// new check's (PlanCovers), which a follow refuses.
+	Uncovered bool
 }
 
 func (a *ActiveRunError) Error() string {
 	name := a.Run.Name()
 	if a.Stopped && a.SameRevision {
 		return fmt.Sprintf("%s stopped before it finished these files, when the process running it ended; dockhand wait %s resumes it", name, name)
+	}
+	if a.Uncovered {
+		return fmt.Sprintf("%s is %s for these files, but doesn't cover what this check asks, its environments, targets, variants, tests, or freshness. Run dockhand cancel %s and run this again, or wait for it to finish and run this again", name, a.Run.State, name)
 	}
 	if a.SameRevision {
 		return fmt.Sprintf("%s is already %s for these files; dockhand wait %s follows it", name, a.Run.State, name)
