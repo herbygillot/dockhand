@@ -168,6 +168,10 @@ Decided questions, with the rule each settled, are in [decisions](decisions.md).
 
 ## Later
 
+From the person's best-practice note (2026-10-28 19:31Z, in the prioritization thread; "low-priority"), first of Later:
+
+- **Links moved to HTTPS where it answers.** Reviewers ask new contributors to change a Portfile's plain-HTTP links. create writes a forge's homepage as its https form where that answers (engine/create.go `createSpec`); update and a checksums refresh ask each plain-HTTP `homepage` and `master_sites` URL over HTTPS and say whether it answers, leaving the Portfile as it is, "changing them is the maintainer's call" (engine/https.go, view `WritePlainHTTP`). update, create, and `edit`'s refresh switch each plain-HTTP `homepage`, `master_sites`, and `livecheck.url` whose https form answers, a redirect back to HTTP no answer, in the change's own commit, which says so; one that doesn't answer is said, as now. It's a fix beyond the lines a change touches applied by default, where decision 2026-10-27 makes those opt-in, since reviewers ask for this one; decisions.md says the exception when it's built. About a quarter batch (inferred), a candidate when the next release is sized.
+
 From the abook session's follow-up (2026-10-28, on v0.5.0, sent here by the coordinator at 17:22Z):
 
 - **A declared library nothing links.** abook's draft declared `port:libiconv`, which nothing it built links, and the check's link notice said nothing, where otool showed it. The link rule has what each build declares and links (evidence `UndeclaredLinks`), so "declares libiconv, which nothing it built links" is a notice of a few lines; but a port declared for a program it runs, a language whose modules don't link it, a header-only library, or one loaded with dlopen links nothing too, and every Python port would say its python; tao declares tcl and zlib and links neither (field testing, 19:03Z). It needs whether the declared port installs a library at all, which the guest would read with `port contents`, a guest protocol change, and stays a notice, never a hold. About a quarter batch (inferred), a candidate when the next release is sized.
