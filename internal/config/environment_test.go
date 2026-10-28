@@ -39,7 +39,7 @@ func TestTheEnvironmentIsTheOneUsageLists(t *testing.T) {
 	require.ElementsMatch(t, names, listed, "the agents page's table")
 
 	sentence := section[strings.Index(section, "`serve --install` keeps"):]
-	sentence = sentence[:strings.Index(sentence, "\n")]
+	sentence = strings.SplitN(sentence, "\n\n", 2)[0]
 	var kept []string
 	for _, name := range regexp.MustCompile("`(DOCKHAND_[A-Z_]+|TART_HOME)`").FindAllStringSubmatch(sentence, -1) {
 		kept = append(kept, name[1])

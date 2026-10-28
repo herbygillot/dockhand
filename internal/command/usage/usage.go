@@ -23,14 +23,18 @@ type Topic struct {
 // Topics are the guide's pages, the first printed with no topic, in the
 // order docs/usage.md lists them.
 var Topics = []Topic{
-	{"", "setup.md", "the one-time setup, and the straight path from an update to its pull request"},
-	{"hand-edits", "hand-edits.md", "edits dockhand doesn't make, and trying a branch's port with MacPorts"},
-	{"unattended", "unattended.md", "bump, serve, and what holds a submission nobody looks over"},
-	{"checks", "checks.md", "what a check builds and where, its results, logs, and baselines"},
-	{"review", "review.md", "someone else's pull request"},
-	{"batches", "batches.md", "many ports at once"},
-	{"new-port", "new-port.md", "a port MacPorts doesn't have"},
-	{"agents", "agents.md", "--json, exit codes, a scratch setup, and what acts beyond this Mac"},
+	{"", "setup.md", "first setup and a release update through to its pull request"},
+	{"branches", "branches.md", "find, start, adopt, rebase, restore, and retire work"},
+	{"hand-edits", "hand-edits.md", "edit Portfiles, refresh checksums, and request rebuilds"},
+	{"checks", "checks.md", "choose files, targets, tests, and build environments"},
+	{"publishing", "publishing.md", "shape commits, assess evidence, and submit or update a PR"},
+	{"recovery", "recovery.md", "diagnose holds, failed checks, interruptions, and stale evidence"},
+	{"batches", "batches.md", "select many ports and manage partially completed work"},
+	{"unattended", "unattended.md", "bump, background checks, serve, and unattended holds"},
+	{"new-port", "new-port.md", "create and finish a Portfile for a new project"},
+	{"review", "review.md", "inspect, adopt, check, and review another pull request"},
+	{"agents", "agents.md", "explicit context, JSON, exit codes, scratch state, and automation"},
+	{"configuration", "configuration.md", "profiles, holds, service settings, paths, and retention"},
 }
 
 // Command is dockhand usage [topic].
@@ -39,14 +43,15 @@ func Command(streams term.Streams) *cobra.Command {
 	var listed []string
 	for _, topic := range Topics[1:] {
 		names = append(names, topic.Name)
-		listed = append(listed, fmt.Sprintf("  %-12s %s", topic.Name, topic.About))
+		listed = append(listed, fmt.Sprintf("  %-14s %s", topic.Name, topic.About))
 	}
 	return &cobra.Command{
 		Use:   "usage [topic]",
 		Short: "Print the guide: setup and the path to a pull request, or a topic",
 		Long: `Prints dockhand's guide, the pages docs/usage keeps, from the binary.
 With no topic, it's the one-time setup and the straight path from an
-update to its pull request. A topic is a workflow across commands:
+update to its pull request. Each topic develops a workflow or a set of
+choices across commands:
 
 ` + strings.Join(listed, "\n") + `
 
@@ -62,6 +67,8 @@ dockhand <command> --help is the reference for any one command.`,
 			if err != nil {
 				return err
 			}
+			// Preserve Markdown and copyable shell examples verbatim.
+			streams.Unwrapped()
 			_, err = fmt.Fprint(streams.Out, text)
 			return err
 		},

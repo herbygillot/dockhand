@@ -1,53 +1,213 @@
 # Unattended work
 
-`bump`, `ship --yes`, and `serve` carry updates to their pull requests with nobody looking along the way, so they hold where a person should look, and `dockhand decide` answers a hold.
+Choose how far the work should go and who will run it. `bump` carries one port
+through to publication without prompts. `ship` can stop at an earlier stage and
+can run with a person at a terminal. `check -d` queues a build in the
+background. `serve` is the worker that continues accepting checks and, when
+configured, looks for updates each day.
 
-## bump
-
-```sh
-dockhand bump jq           # the newest release, all the way to its pull request
-dockhand bump jq 1.8.1     # a version you name
-```
-
-`bump` runs `ship <port> --yes`, optionally targeting a version you specify. It submits the update without prompting at each stage; `ship` asks once, and `update` is the edit alone. It isn't `port bump`, which refreshes checksums, as `checksums` does. It updates the port on fresh master, in a branch it starts for the edit, or resumes the open branch already changing it, tidies the edit into one commit, checks it, and submits exactly that commit once the check passes. Its `--json` result is `ship`'s, and `--plan` shows what it would do, as `ship --plan` does, changing nothing. It takes the flags `ship` takes for one port: `update`'s edit flags, such as `--revbump-dependents`, `--except`, `--shared-release`, `--keep-old-checksums`, `--with-obsolete`, `--follow-moves`, and `--closes`; `check`'s `--build`, `--on`, and `--tests`; and `submit`'s `--type`, `--draft`, `--tested-binaries`, `--tested-variants`, `--title`, `--note`, and `--skip-notification`.
-
-It stops wherever a person should look:
-
-- Before it edits anything, it stops with nothing changed when the check has nowhere to build, or the port is already at the release. Where it can't tell which release is the newest, as `update` can't, it exits 3 and names the `bump` that takes the one set aside.
-- Once it knows the release, and before it downloads or builds anything, it looks for other open pull requests for the port. One found, or not knowing, would hold the submission after the check, so it stops there, changing nothing: it exits 3, as a held check does, and names the `ship <port>` that goes ahead after a look.
-- A failed check leaves the branch, with its logs.
-- A passing check is held, as `serve`'s are, when the upstream comparison found something a build can't catch or couldn't compare the archives, a commit rule finds an error (a warning is said and holds nothing, as `tidy` keeps the commit), another pull request is open for the port, or couldn't be looked for, the port's major version moves (`holds.majors`), its GitHub repository moved or has a new owner, or the revision raises the oldest macOS it builds on, its platforms' darwin floor or its `macosx_deployment_target`: it looks again before submitting, since one may have opened while it checked. `bump` exits 3 and names the `submit` that finishes it after a look; with `--json`, `submit.held` lists why.
-
-The pull request's tested checkboxes stay unticked unless `--tested-binaries` or `--tested-variants` says otherwise: they say what you tested, which dockhand can't. The one exception is a passing `check --variants each` of the port, which ticks the variants item by itself and says which variants it built, since it built them.
-
-## Answering a hold
-
-What holds a submission nobody looks over, an upstream finding or a major version, is yours to answer with `dockhand decide <rule> [<port>]`, the rule's name as status and the preview give it, which they name beside each hold:
+All examples below use an existing ports checkout:
 
 ```sh
-dockhand decide license-changed -p jq --because "the new license is still free, and the Portfile says GPL-3"
-dockhand decide license-changed -p jq --waiting "upstream's word on the COPYING change"
+export MACPORTS_TREE="$HOME/Source/macports-ports"
+dockhand config
+dockhand status
 ```
 
-`--because` takes it as acceptable: serve, ship, and bump no longer wait on it, status and the preview still say it, and the description gives your reason under "Reviewed:", quoted as your note is. `--waiting` leaves it for later, and submit refuses the branch until you decide it `--because`. A decision rests on the port's own files, its Portfile and `files/`, so it lapses when they change, as with the port's next version, and stands when another port of the branch changes. Deciding again replaces it.
+Replace the path with your checkout. Confirm the database and configuration
+before starting a long run. If you have not set up a provider and GitHub login
+yet, start with `dockhand usage`. For isolated experiments, follow the scratch
+setup in `dockhand usage agents`.
 
-## serve
+## One port, without prompts
 
 ```sh
-dockhand serve               # in a terminal of its own
-dockhand serve --install     # as a launchd agent that starts at login
-dockhand serve --drain       # run what is queued now, then exit, naming the open pull requests it leaves unwatched
+dockhand bump jq --plan
+dockhand bump jq
 ```
 
-`serve` runs queued checks, people's before its own, and keeps running new ones as they are queued. One serve leads. A second stands by and takes over if the leader dies. Stopping serve leaves the check it was running for the next serve, which picks it up where it stopped.
+The first command shows the proposed work. The second updates jq to the newest
+release Dockhand can select, tidies the edit, checks its committed files, and
+opens or updates its pull request when eligible. `bump jq 1.8.1` names a
+particular version. This is not MacPorts' `port bump`: Dockhand's `checksums`
+command refreshes checksums for the version already in the Portfile.
 
-Between checks it:
+`bump` is the single-port unattended form of `ship`. It uses an existing open
+branch changing the port when one can be selected, or starts a branch on fresh
+master once there is an edit to make. It binds submission to the commit it
+checked. If it stops, the report says whether nothing was changed or a branch
+remains for inspection; `--json` retains the stages reached. A failed check
+leaves completed results and logs, rather than discarding the branch.
 
-- reads your open pull requests every few minutes, so `status` shows their reviews and CI, and marks a merged one's branch merged;
-- once a day, at `serve.outdated_at`, looks for new releases of your ports, or the ports `serve.maintainers`, `serve.categories`, and `serve.not_maintainers` select as `outdated`'s flags do, and carries them as far as `serve.ship_to` says, under the same holds and `serve.submit_limit` either way, as `ship --to` does: `list` counts them for status, `commit` prepares a branch with one commit for each, `check` also checks each, on `build.unattended`'s profile, and `submit` also submits each that passes. A port that may have one, as `outdated` says, is never prepared: serve and status list it for your look. Without a `maintainer` setting it can't know your ports, and says the line to set, as `create` does: the one master's ports write your GitHub login with;
-- once a day, unless `cleanup.automatic = false`, cleans up automatically, as below;
-- posts macOS notifications as checks finish and pull requests change, and when the day's look finds a different set of your ports with newer releases than the last look did: "2 ports have newer releases (dockhand outdated --mine)". They are posted through AppleScript, so macOS credits them to Script Editor, and clicking one opens it. `serve.notify = false` turns them off, and `--no-notify` turns them off for one run.
+A bump's destination is submission. To stop before publication, use `ship`:
 
-Serve opens no pull requests by default. With `serve.ship_to = "submit"`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream finding or a commit-rule error, one whose archives couldn't be compared, one needing `--accept`, or one for a port another open pull request updates; those wait on the attention list, and the pull request says serve opened it without a person's review. Use `--ship-to` to set the stage for one service run. For example, `serve --ship-to check` prepares and checks updates without submitting them.
+```sh
+dockhand ship jq --to commit --plan
+dockhand ship jq --to commit --yes
+dockhand ship jq --to check --yes
+```
 
-`--install` runs the agent with the flags given beside it, such as `--no-notify`, and with the settings serve was installed under: `--git`, `--db`, and the environment variables below that serve reads, each path made absolute. Run it again after changing them. `--uninstall` removes it. Both wait until launchd has let go of the agent, which it does a few seconds after it's told to, up to thirty seconds, and say so where it hasn't.
+`commit` leaves the updated files committed. `check` also builds them and stops
+before submission. Run these in order only if those are the stages you want;
+they are not prerequisites for a direct bump. An already completed stage can
+stand when you resume, and an active check is followed only when it covers the
+request. `--build` or `--on` chooses the build location explicitly; `--tests`
+chooses the test policy. See `dockhand usage checks` for those choices.
+
+On a terminal, `ship` shows its initial plan and asks once before beginning,
+with later review where needed. `ship --yes`, a ship without terminal input, and
+`bump` all run unattended. Skipping the initial question does not accept
+findings produced later: unattended work holds for a person's look.
+
+## What an unattended hold means
+
+Dockhand checks where it can build before editing. An already-current port
+starts no new branch. An uncertain release selection, a new major version under
+the default hold, or an existing competing pull request can stop an unattended
+update before preparation. An inability to look for other pull requests can hold
+it too; missing information is not treated as proof that none exists.
+
+Later, a passing build can still leave a submission held. Archive comparisons,
+source or ownership changes, commit-rule errors, an unreadable assessment, or
+another pull request found before publication can need review. A build
+establishes what happened on its selected environments; it does not settle those
+concerns. Follow the named branch and the reported next step:
+
+```sh
+dockhand status --branch jq-update
+dockhand submit --branch jq-update --plan
+```
+
+Use the actual branch name returned by your run. A held single bump normally
+exits 3. A failed build exits 2. Neither means the branch should be started
+again. Read `dockhand usage recovery` for the different ways to resume a stopped
+check or fix a failed one.
+
+A concern you have reviewed can receive an evidence-bound decision:
+
+```sh
+dockhand decide license-changed --branch jq-update jq \
+  --because "the new license is acceptable and the Portfile identifies it"
+```
+
+Use the actual rule the report named, and your own reason. `--because` permits
+unattended submission to proceed past that concern;
+`--waiting "what must happen"` records that it remains blocked. Decisions stand
+for that port's directory contents and lapse when those files change. They do
+not turn a failed build into a passing one. `submit --accept` concerns eligible
+build failures or lint findings and has different evidence requirements; see
+`dockhand usage publishing`.
+
+## Queue a check, or run a continuing worker
+
+For one background build:
+
+```sh
+dockhand check --branch jq-update --head -d
+dockhand wait check-42
+```
+
+Use the queued run's actual number. `-d` returns after queueing. A running serve
+takes the work; otherwise Dockhand starts a background drain and reports its
+PID. If starting that worker fails, the check remains queued and the message
+tells you to run serve. `wait` follows it and, when nobody is running it, can
+drive it here. A foreground check's interrupt stops work it is running locally
+and preserves completed results; interrupting a follower leaves another worker's
+check running.
+
+For a worker that accepts new checks, first try it in a terminal:
+
+```sh
+dockhand serve --ship-to list
+```
+
+This runs queued checks, refreshes recorded pull-request state, and does the
+configured daily look. `list` prepares no automatic updates and publishes none.
+Leave it in a terminal of its own and inspect `dockhand status` from another.
+One serve leads the repository's queue; another stands by for takeover. Ctrl-C
+ends this foreground worker, leaving completed results for a later worker.
+`serve --drain` instead runs queued work and exits when the queue drains; it is
+not a replacement for a continuing service.
+
+## Configure daily updates before enabling them
+
+Edit the configuration file that `dockhand config` reports. For example, these
+sections ask for checks of your maintained ports each morning, with no automatic
+publication:
+
+```toml
+maintainer = "@your-github-login"
+
+[build]
+unattended = "minmax"
+
+[serve]
+ship_to = "check"
+outdated_at = "07:00"
+submit_limit = 2
+
+[holds]
+majors = "hold"
+```
+
+Merge these keys into existing sections rather than duplicating TOML tables.
+Replace the maintainer identity with the spelling in your ports' maintainers
+lines. `serve.maintainers`, `serve.categories`, and `serve.not_maintainers` can
+select a different group; `dockhand usage batches` explains selection.
+
+`build.unattended` is the profile for unattended updates. If unset, Dockhand
+uses `minmax` when Tart is configured, otherwise the normal default profile. An
+explicit `--build` or `--on` on ship or bump takes precedence. `holds.majors`
+defaults to `hold`; allow rules and per-port choices are described in
+`dockhand usage configuration`.
+
+The daily stages are `list` (the default), `commit`, `check`, and `submit`. Only
+`submit` enables automatic pull requests. Serve submits branches it prepared,
+under its holds, and opens at most `serve.submit_limit` per day; the default is
+ten. It leaves passing branches you started for you to ship. That limit is a
+serve policy, not a cap on an explicit `ship` batch.
+
+The daily look runs at the configured local time, or after that time when serve
+next has the opportunity. Restarting serve, or changing `--ship-to`, does not
+repeat a daily look already recorded as complete. To act on a selection now, run
+an explicit `ship --mine --to check` or `ship --mine --to submit` after
+inspecting its plan. Existing branches are best resumed by name. A rate-limited
+daily look schedules one retry after the limit resets and reports it; repeated
+restarts are not the remedy for a depleted allowance.
+
+## Install, stop, and remove the service
+
+After checking the foreground behavior, install the launchd agent on macOS:
+
+```sh
+dockhand serve --install
+```
+
+It starts at login and restarts if it stops. Installation reports the agent and
+log paths. It retains the selected tree, database, Git executable, relevant
+environment paths, and flags passed beside `--install`. If you used
+`--ship-to list` to override a configuration that permits submission, include
+that override in the installation too:
+
+```sh
+dockhand serve --install --ship-to list
+```
+
+Reinstall after changing the captured paths or flags. The agent retains the
+configuration file's path; it does not embed the file's contents. Environment
+tokens are omitted from its readable plist, so arrange the saved GitHub login
+with `dockhand setup github` instead of assuming a shell's token follows it.
+Notifications can be disabled with `--no-notify` for a run or
+`serve.notify = false` in the file.
+
+Ctrl-C stops a foreground serve. Killing an installed agent is temporary because
+launchd restarts it. To remove the continuing service:
+
+```sh
+dockhand serve --uninstall
+```
+
+Removal waits for launchd to release the agent and stops automatic startup. It
+does not delete branches, completed checks, or the database. Use
+`dockhand usage recovery` for a check left stopped, and
+`dockhand usage configuration` for the full list of service settings.

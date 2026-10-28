@@ -22,10 +22,10 @@ func RetryCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 		Short: "Repeat a finished check with the same files and plan",
 		Long: `Queues a finished check again, such as check-42: the same files, the same
 plan, and the same environments, whatever the branch holds now. check
-captures newer edits instead. Until results are reused port by port, the
-whole plan is built again. In a branch's worktree, with no check named, the
-branch's latest; -b, -p, or --pr names a branch, for its latest check from
-anywhere.
+captures newer edits instead. A result an earlier build left that still
+stands is reused, as check reuses one, unless the check was --fresh. In a
+branch's worktree, with no check named, the branch's latest; -b, -p, or
+--pr names a branch, for its latest check from anywhere.
 
 With --ci, it runs the branch's pull request's failed MacPorts CI jobs
 again instead, through your GitHub login, which needs write access to

@@ -19,7 +19,7 @@ func RebaseCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 		Short: "Rebase the branch onto the latest master",
 		Long: `Fetches MacPorts' master and replays the branch's commits on it, in the
 branch's worktree, keeping the old history as a checkpoint that dockhand
-restore brings back. A branch with uncommitted edits is refused, and a
+undo brings back. A branch with uncommitted edits is refused, and a
 rebase that conflicts is abandoned with the branch as it was.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
