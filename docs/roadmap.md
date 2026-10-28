@@ -12,7 +12,7 @@ The whole loop is built and used for real work, MacPorts pull requests and dockh
 - **Checks:** `check` in Tart (macOS 12 through 27, each with an Xcode image), on the fork's GitHub Actions, through a command of your own, or in a MacPorts prefix on this Mac (`local`); `logs`, `retry`, `shell`, `artifacts`, `wait`, and `cancel`.
 - **Review and submit:** `tidy`, `rebase`, `submit`, `review`, and `decide`; `serve` runs queued checks and the daily look at the selected ports.
 
-v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, two items to go.
+v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, one item to go.
 
 ## Next
 
@@ -29,7 +29,7 @@ Its notes take one more known issue from B7, not harm: serve with nothing to run
 
 ### v0.7.0: on main, one release
 
-Then's items 6 to 15, and everything placed beside them, are done on main as one release (the person's "One release", 2026-10-26 06:22Z), but for the two items placed before rc1 below. Its rc1 is cut after v0.6.0's tag, at the person's word, and as it's cut the README's known issues become v0.7.0's, the list [its notes](releases/v0.7.0.md) carry. It migrates the database through schemas 43 to 49.
+Then's items 6 to 15, and everything placed beside them, are done on main as one release (the person's "One release", 2026-10-26 06:22Z), but for the one item placed before rc1 below. Its rc1 is cut after v0.6.0's tag, at the person's word, and as it's cut the README's known issues become v0.7.0's, the list [its notes](releases/v0.7.0.md) carry. It migrates the database through schemas 43 to 49.
 
 Its acceptance is v0.6.0's, with:
 
@@ -39,12 +39,11 @@ Its acceptance is v0.6.0's, with:
 - an update moving `github.tarball_from tarball` to `archive`, checked in Tart;
 - C8 applying a fresh saved plan whose branch takes an untracked patch that patchfiles names, and a lint fix, where rc6's C8 tries only a stale plan's refusal;
 - G5, two outdated subports of one Portfile updated in one branch and tidied into a commit each, titled for its subport (ACCEPT_SUBPORTS);
-- B7's serve measured idle on dhtest's database against rc6's 148 CPU-minutes in 16 hours, its log holding no line without serve's stamp (below).
+- B7's serve measured idle on dhtest's database against rc6's 148 CPU-minutes in 16 hours, its log holding no line that isn't serve's (below).
 
-Placed before rc1, in the wait for v0.6.0's tag, so v0.7.0 stays one release (rc6's B7 on the M1, which passed, sent here by the coordinator on 2026-10-28 at 11:25Z; neither is harm):
+Placed before rc1, in the wait for v0.6.0's tag, so v0.7.0 stays one release (rc6's B7 on the M1, which passed, sent here by the coordinator on 2026-10-28 at 11:25Z; not harm):
 
-- **Every line serve logs carries its stamp, and a fetch nobody waits on isn't said** (about a tenth of a batch). serve.log had "Fetching master from https://github.com/macports/macports-ports.git" 87 times in 16 hours, without the time and prefix serve's own lines carry. It's fetchMaster's line for a person waiting, said once a fetch passes 2 s (engine/engine.go), reaching the log through the command's progress reporter, which writes plain to standard error (command/root.go), where serve's own lines go through its `say` (engine/serve.go). Under serve, a progress report goes through serve's lines, stamped as they are, and the slow fetch's line is verbose there. Done when a serve whose fetch of master passes 2 s logs no unstamped line.
-- **An idle serve costs little** (about half a batch, inferred). On rc6, serve spent 148 CPU-minutes in 16 hours with nothing to run, about 15% of a core, on dhtest's database of 838 branches. While idle it polls every 2 seconds, reading the store for its lease and queue, and every 5 minutes refreshes the pull requests and gathers the status of every open branch for its submit pass (engine/servesubmit.go `PassingBranches`, through `Status`), the per-branch reads that make v0.6.0's `status --all` slow; on main, item 6 reads each kind of git fact once for every branch (ff7d16cc), which may be most of it. The look profiles an idle serve on main over dhtest's database for an hour and fixes where the time goes; the submit pass needs only the open branches with a passing check and no pull request, which the store says before any git read. Done when an idle serve on dhtest's database spends a small fraction of rc6's rate, measured in v0.7.0's B7. Taken when touched's serve finding 3 rides it where the change is in serve's loop.
+- **An idle serve costs little** (about half a batch, inferred). On rc6, serve spent 148 CPU-minutes in 16 hours with nothing to run, about 15% of a core, on dhtest's database of 838 branches. While idle it polls every 2 seconds, reading the store for its lease and queue, and every 5 minutes refreshes the pull requests and gathers the status of every open branch for its submit pass (engine/servesubmit.go `PassingBranches`, through `Status`), the per-branch reads that make v0.6.0's `status --all` slow; on main, item 6 reads each kind of git fact once for every branch (ff7d16cc), which may be most of it. Its first step is done: the submit pass reads git only for the branches a check finished for, which the store says (4f75365e). The rest waits on an hour's profile of an idle serve on main over dhtest's database, on the M1 once C1 and G3 are done, and fixes where the time goes; the suspects left are the 2-second loop's store transactions, `session.Fenced`'s write every tick and `Candidates`, and the pull request refresh. Done when an idle serve on dhtest's database spends a small fraction of rc6's rate, measured in v0.7.0's B7. Taken when touched's serve finding 3 rides it where the change is in serve's loop.
 
 What it carries, each said in full in its notes:
 
@@ -73,6 +72,7 @@ What it carries, each said in full in its notes:
   - After an amend, what still needs a pass names its platforms (b719703a).
   - An undeclared link holds, and a regression test keeps it (96af4d95 and a2e81dc1).
   - `dockhand artifacts` prints a check's built archives (bd7043f1).
+  - Under serve, a command's progress reports are serve's own "serve:" lines, and its fetches of master say nothing (7bc1e35c).
 - **Selecting, holding, and submitting.**
   - Port selectors, and serve's selection (6daa852a).
   - The trust rule's attended half, with `review --check`, item 12 (1fce8d50, ee4a792c, and 26c06a4a).
