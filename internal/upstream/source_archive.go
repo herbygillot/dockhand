@@ -63,12 +63,23 @@ func (s *Service) gitRepository(port macports.PortInfo, gitURL string) (forge.Re
 	if err != nil || address.Scheme != "https" || address.Host == "" {
 		return nil, errors.New("upstream: the port's git.url must be an HTTPS repository URL on a supported forge")
 	}
-	name := strings.TrimSuffix(strings.Trim(address.Path, "/"), ".git")
+	path := strings.Trim(address.Path, "/")
+	name := strings.TrimSuffix(path, ".git")
 	instance := "https://" + address.Host
 	var kind portsource.Forge
-	switch spec, err := portsource.Interpret(port, portsource.Edit); {
-	case err == nil && spec.Forge != "" && strings.EqualFold(spec.Instance, instance):
-		kind = spec.Forge
+	spec, err := portsource.Interpret(port, portsource.Edit)
+	// The forge PortGroup's instance is its endpoint, a path and all, as a
+	// self-hosted GitLab under https://gitlab.example.com/root is, and the
+	// repository is the URL's path below it: comparing the URL's host
+	// alone with the instance refused it (Codex's review of 8e314b96,
+	// finding 8). A URL outside the instance goes by its own host.
+	if err == nil && spec.Forge != "" && spec.Instance != "" {
+		if below, ok := underEndpoint(spec.Instance, address); ok {
+			kind, instance, name = spec.Forge, strings.TrimSuffix(spec.Instance, "/"), strings.TrimSuffix(below, ".git")
+		}
+	}
+	switch {
+	case kind != "":
 	case address.Host == "github.com":
 		kind = portsource.GitHub
 	case address.Host == "gitlab.com":
@@ -80,4 +91,20 @@ func (s *Service) gitRepository(port macports.PortInfo, gitURL string) (forge.Re
 		return nil, fmt.Errorf("upstream: no catalog supports %s", kind)
 	}
 	return s.Catalogs[kind].Repository(instance, name)
+}
+
+// underEndpoint is the path of a repository URL below a forge's endpoint,
+// an instance URL whose path may be more than its root; false where the
+// URL is on another host or outside the endpoint's path.
+func underEndpoint(endpoint string, repository *url.URL) (string, bool) {
+	base, err := url.Parse(endpoint)
+	if err != nil || !strings.EqualFold(base.Host, repository.Host) {
+		return "", false
+	}
+	prefix, path := strings.Trim(base.Path, "/"), strings.Trim(repository.Path, "/")
+	if prefix == "" {
+		return path, path != ""
+	}
+	below, ok := strings.CutPrefix(path, prefix+"/")
+	return below, ok && below != ""
 }
