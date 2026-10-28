@@ -18,6 +18,9 @@ import (
 // layer may import (doc.go), each with why.
 var commandImports = map[string]string{
 	"internal/engine": "does the work",
+	// The guide's pages, which usage prints; the package embeds them and
+	// imports nothing of dockhand's.
+	"docs/usage": "the guide's pages, which usage prints",
 	// The verdict on a branch's state, whose kinds and Next the command
 	// renders (v0.5.0 part 4).
 	"internal/branchstate": "the verdict on a branch's state, rendered",

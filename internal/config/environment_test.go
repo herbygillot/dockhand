@@ -18,13 +18,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 )
 
-// The catalogue is what usage.md's table lists, and what its sentence on
+// The catalogue is what the agents page's table lists, and what its sentence on
 // serve --install's agent names.
 func TestTheEnvironmentIsTheOneUsageLists(t *testing.T) {
-	usage, err := os.ReadFile(filepath.Join("..", "..", "docs", "usage.md"))
+	usage, err := os.ReadFile(filepath.Join("..", "..", "docs", "usage", "agents.md"))
 	require.NoError(t, err)
 	section := string(usage)
-	section = section[strings.Index(section, "### Environment"):]
+	section = section[strings.Index(section, "## Environment"):]
 	table := section[:strings.Index(section, "`serve --install` keeps")]
 	var listed []string
 	for _, row := range regexp.MustCompile("(?m)^\\| (`[A-Z_]+`(?:, `[A-Z_]+`)*) \\|").FindAllStringSubmatch(table, -1) {
@@ -36,7 +36,7 @@ func TestTheEnvironmentIsTheOneUsageLists(t *testing.T) {
 	for _, variable := range config.Environment {
 		names = append(names, variable.Name)
 	}
-	require.ElementsMatch(t, names, listed, "usage.md's table")
+	require.ElementsMatch(t, names, listed, "the agents page's table")
 
 	sentence := section[strings.Index(section, "`serve --install` keeps"):]
 	sentence = sentence[:strings.Index(sentence, "\n")]
@@ -44,7 +44,7 @@ func TestTheEnvironmentIsTheOneUsageLists(t *testing.T) {
 	for _, name := range regexp.MustCompile("`(DOCKHAND_[A-Z_]+|TART_HOME)`").FindAllStringSubmatch(sentence, -1) {
 		kept = append(kept, name[1])
 	}
-	require.ElementsMatch(t, config.AgentVariables(), kept, "usage.md's sentence on the agent")
+	require.ElementsMatch(t, config.AgentVariables(), kept, "the agents page's sentence on the agent")
 }
 
 // Every variable dockhand's code reads by name is in the catalogue, but

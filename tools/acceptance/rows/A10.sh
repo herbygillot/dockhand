@@ -1,6 +1,6 @@
 # stages: quick full
 # A10: docs as tests. Every dockhand line of every sh example in the
-# README and usage.md runs as written, in the order the text has them, in
+# README and the usage pages runs as written, in the order the text has them, in
 # the stage's scratch checkout: a cd into a branch's worktree goes there,
 # and a branch an example names with --branch is started first, as the
 # text assumes it. submit, which would push, and check, which would build,
@@ -35,7 +35,8 @@ teardown() {
 
 a10_examples() {
 	local file
-	for file in "$ACCEPT_REPO/README.md" "$ACCEPT_REPO/docs/usage.md"; do
+	for file in "$ACCEPT_REPO/README.md" "$ACCEPT_REPO"/docs/usage/setup.md "$ACCEPT_REPO"/docs/usage/hand-edits.md "$ACCEPT_REPO"/docs/usage/unattended.md \
+		"$ACCEPT_REPO"/docs/usage/checks.md "$ACCEPT_REPO"/docs/usage/review.md "$ACCEPT_REPO"/docs/usage/batches.md "$ACCEPT_REPO"/docs/usage/new-port.md "$ACCEPT_REPO"/docs/usage/agents.md; do
 		awk '/^```sh/ {f=1; next} /^```/ {f=0} f' "$file" |
 			sed 's/[[:space:]]#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//' | grep -E '^(dockhand |cd "\$\(dockhand path )'
 	done

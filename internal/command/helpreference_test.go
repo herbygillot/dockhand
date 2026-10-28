@@ -74,6 +74,9 @@ func referenceDocs(t *testing.T) []string {
 	docs := []string{"../../README.md"}
 	matches, err := filepath.Glob("../../docs/*.md")
 	require.NoError(t, err)
+	pages, err := filepath.Glob("../../docs/usage/*.md")
+	require.NoError(t, err)
+	matches = append(matches, pages...)
 	for _, doc := range matches {
 		if !designRecords[filepath.Base(doc)] {
 			docs = append(docs, doc)
