@@ -564,12 +564,15 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 			}
 		}
 		// Every hold, where the attention row says the first (C2).
-		for i, line := range engine.HoldLines(status.Held) {
+		for i, line := range engine.HoldRuleLines(status.Held) {
 			label := "         "
 			if i == 0 {
 				label = "Holds    "
 			}
 			fmt.Fprintf(out, "  %s! %s\n", label, line)
+		}
+		if len(status.Held) > 0 {
+			fmt.Fprintf(out, "           %s.\n", prose.Sentence(engine.HoldsLetGo))
 		}
 		// The person's decisions on them, which stand for these files (the
 		// person's voice).

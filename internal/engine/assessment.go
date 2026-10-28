@@ -287,6 +287,8 @@ type ComparisonLine struct {
 	Hold  bool
 	Ports []string
 	Words string
+	// Rule is what raised a line that holds, where it's named.
+	Rule string
 }
 
 // ComparisonLines are what the comparisons found, a line each, the same
@@ -297,24 +299,28 @@ type ComparisonLine struct {
 // sliced a "! " back off the words it had put on them.
 func ComparisonLines(comparisons []PortComparison) []ComparisonLine {
 	var lines []ComparisonLine
-	add := func(port string, hold bool, words string) {
+	add := func(port string, hold bool, words, rule string) {
 		for i := range lines {
-			if lines[i].Hold == hold && lines[i].Words == words {
+			if lines[i].Hold == hold && lines[i].Words == words && lines[i].Rule == rule {
 				lines[i].Ports = append(lines[i].Ports, port)
 				return
 			}
 		}
-		lines = append(lines, ComparisonLine{Hold: hold, Ports: []string{port}, Words: words})
+		lines = append(lines, ComparisonLine{Hold: hold, Ports: []string{port}, Words: words, Rule: rule})
 	}
 	for _, c := range Grouped(comparisons) {
 		if c.Comparison.Problem != "" {
-			add(c.Port, true, "archives not compared: "+c.Comparison.Problem)
+			add(c.Port, true, "archives not compared: "+c.Comparison.Problem, "")
 		}
 		for _, change := range c.Comparison.Changes {
-			add(c.Port, change.Hold, UnderUpstream(change).Message)
+			rule := ""
+			if change.Hold {
+				rule = change.Rule
+			}
+			add(c.Port, change.Hold, UnderUpstream(change).Message, rule)
 		}
 		if words := CoverageWords(c.Comparison); words != "" {
-			add(c.Port, false, words)
+			add(c.Port, false, words, "")
 		}
 	}
 	return lines

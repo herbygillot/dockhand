@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/command/view"
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -578,4 +579,23 @@ func TestSubmitJSONGivesEachBlocksKind(t *testing.T) {
 		{Kind: "no-title", Words: "the pull request needs a title, since the branch changes several ports: give one with --title"},
 		{Kind: "failed", Port: "jq", Words: "jq did not pass in check-2. Fix the failure, submit a draft with --draft, or run dockhand check --baseline to see whether master fails in the same way"},
 	}, view.SubmitView(plan).Blocks)
+}
+
+// A branch's held lines each name their rule, and one line after them
+// says what they stop and what lets them go (the abook session,
+// 2026-10-28).
+func TestABranchsHoldsNameTheirRule(t *testing.T) {
+	t.Parallel()
+	latest := model.Run{Number: 7, State: model.RunPassed}
+	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/abook-0.6.2", State: model.BranchOpen}, Head: "c0ffee", Commits: 1, Latest: &latest, Current: true,
+		LatestRevision: &model.Revision{Kind: model.RevisionCommit},
+		Held: []model.Concern{
+			{Origin: model.FromUpstream, Port: "abook", Rule: "build-file-changed", Path: "Makefile.am", Detail: "upstream's Makefile.am changed"},
+			{Origin: model.FromUpstream, Port: "abook", Rule: "build-file-changed", Path: "configure.ac", Detail: "upstream's configure.ac is new"},
+		}}
+	var out strings.Builder
+	showBranch(&out, config.Places{}, status, engine.StatusReport{})
+	require.Contains(t, out.String(), "  Holds    ! upstream's Makefile.am changed [build-file-changed]\n"+
+		"           ! upstream's configure.ac is new [build-file-changed]\n"+
+		"           Serve and ship --yes wait on these, and your own submit goes ahead; dockhand decide <rule> -p <port> --because \"…\" answers one for this branch, and holds.allow lets a rule go for every branch.\n")
 }

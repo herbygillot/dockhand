@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -119,7 +120,11 @@ func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 	}))
 }
 
-func TestAnUpdateDockhandMadeIsAnEnhancement(t *testing.T) {
+// A branch whose change record moves a port's version is an enhancement,
+// whoever wrote its commits: abook's hand-made update ticked none (the
+// abook session, 2026-10-28). A revbump ticks nothing, and --type says
+// what it is.
+func TestABranchThatUpdatesAPortIsAnEnhancement(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
@@ -134,11 +139,33 @@ func TestAnUpdateDockhandMadeIsAnEnhancement(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, plan.Body, "###### Type(s)\n\n- [x] bugfix\n- [ ] enhancement\n- [ ] security fix\n", "--type says what it is")
 
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# a person's change\n"})
-	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: a person's change")
-	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	// A hand-made update: its change record, as the evaluator makes one,
+	// moves jq's version.
+	hand, err := e.Start(t.Context(), StartRequest{Name: "jq-by-hand"})
 	require.NoError(t, err)
-	require.Contains(t, plan.Body, "###### Type(s)\n\n- [ ] bugfix\n- [ ] enhancement\n- [ ] security fix\n", "a commit dockhand didn't write is the person's to type")
+	write(t, hand.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.9\n"})
+	testsupport.Git(t, hand.Worktree, "add", "--sparse", "textproc/jq/Portfile")
+	testsupport.Git(t, hand.Worktree, "commit", "-q", "-m", "jq: update to 1.9")
+	tree := model.ObjectID(strings.TrimSpace(testsupport.Git(t, hand.Worktree, "rev-parse", "HEAD^{tree}")))
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		return tx.RecordChange(model.ChangeRecord{Branch: hand.ID, Tree: tree, Base: hand.Base, Directory: "textproc/jq", Policy: fidelity.ChangePolicy, At: at,
+			Ports: []model.SubportChange{{Port: "jq", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "version", From: "1.7.1", To: "1.9"}}}}})
+	}))
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: hand, NoCheck: true})
+	require.NoError(t, err)
+	require.Contains(t, plan.Body, "###### Type(s)\n\n- [ ] bugfix\n- [x] enhancement\n- [ ] security fix\n", "a hand-made update")
+
+	rebuild, err := e.Start(t.Context(), StartRequest{Name: "jq-rebuild"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: rebuild, Action: model.EditRevbump, Port: "jq", Subject: "rebuild for oniguruma"})
+	require.NoError(t, err)
+	tidy, err := e.PlanTidy(t.Context(), TidyRequest{Branch: rebuild})
+	require.NoError(t, err)
+	_, err = e.ApplyTidy(t.Context(), tidy)
+	require.NoError(t, err)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: rebuild, NoCheck: true})
+	require.NoError(t, err)
+	require.Contains(t, plan.Body, "###### Type(s)\n\n- [ ] bugfix\n- [ ] enhancement\n- [ ] security fix\n", "a rebuild ticks nothing")
 }
 
 func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
@@ -989,4 +1016,28 @@ func TestStatusReadsALintAcceptanceAsSubmitDoes(t *testing.T) {
 	passing, err := e.PassingBranches(t.Context())
 	require.NoError(t, err)
 	require.True(t, slices.ContainsFunc(passing.Ready, func(s BranchStatus) bool { return s.Branch.ID == branch.ID }), "serve and ship --passing take it")
+}
+
+// A one-port branch of several commits is titled for the commit naming
+// the version its change record moves the port to, else its first: abook's
+// fix, then its update, titled the pull request for the fix (the abook
+// session, 2026-10-28).
+func TestAOnePortPullRequestIsTitledForItsUpdate(t *testing.T) {
+	t.Parallel()
+	commits := func(subjects ...string) []git.HistoryCommit {
+		var made []git.HistoryCommit
+		for _, subject := range subjects {
+			made = append(made, git.HistoryCommit{Message: subject + "\n\nbody\n"})
+		}
+		return made
+	}
+	record := model.ChangeRecord{Ports: []model.SubportChange{{Port: "abook", Kind: model.SubportChanged,
+		Fields: []model.FieldChange{{Field: "revision", From: "1", To: "0"}, {Field: "version", From: "0.6.1", To: "0.6.2"}}}}}
+	moved := movedVersions(map[string]model.ChangeRecord{"mail/abook": record})
+	require.Equal(t, map[string]string{"abook": "0.6.2"}, moved)
+	require.Equal(t, "abook: update to 0.6.2", portTitle("abook", moved["abook"], commits("abook: fix formatting", "abook: update to 0.6.2")))
+	require.Equal(t, "abook: fix formatting", portTitle("abook", "", commits("abook: fix formatting", "abook: fix a typo")), "two fixes keep the first")
+	require.Equal(t, "abook: fix formatting", portTitle("abook", "0.6.2", commits("abook: fix formatting", "abook: fix a typo")), "none naming the version keeps the first")
+	_, ok := model.ChangeRecord{Ports: []model.SubportChange{{Port: "abook", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "revision", From: "0", To: "1"}}}}}.MovedVersion("abook")
+	require.False(t, ok, "a revbump moves no version")
 }

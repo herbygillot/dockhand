@@ -94,6 +94,8 @@ type SubmitPlan struct {
 	Ports   []string
 	// recorded is Ports read from every directory's change record.
 	recorded bool
+	// moved are the versions the change records move ports to, by port.
+	moved    map[string]string
 	Findings []commitrules.Finding
 	// LeftOut are uncommitted files --head leaves out.
 	LeftOut []string
@@ -382,6 +384,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	var notes map[string]string
 	plan.Ports, notes = recordedPorts(macports.ScopeOf(changed).Ports, records)
 	plan.recorded = len(notes) == 0
+	plan.moved = movedVersions(records)
 	newPorts := e.newPorts(ctx, worktree, model.Source{Commit: model.ObjectID(head), Tree: model.ObjectID(plan.Tree), Base: branch.Base}, trees[string(branch.Base)], changed)
 	plan.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, model.Source{Commit: branch.Base, Base: branch.Base, Tree: model.ObjectID(trees[string(branch.Base)])},
 		model.Source{Commit: model.ObjectID(head), Base: branch.Base, Tree: model.ObjectID(plan.Tree)}, plan.Commits))
@@ -480,7 +483,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		}
 	}
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: plan.Accepted, Types: request.Types,
-		Updated:     dockhandUpdate(plan.Commits, edits),
+		Updated:     len(plan.moved) > 0,
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
 		Note: plan.Note, UncoveredCI: plan.UncoveredCI, HandEdits: e.submittedHandEdits(ctx, branch, plan.Tree), LeftOut: leftOut(edits),
@@ -780,18 +783,47 @@ func (e *Engine) title(plan *SubmitPlan) {
 	case len(plan.Commits) == 1:
 		plan.Title = plan.Commits[0].Subject()
 	case len(plan.Ports) == 1:
-		for _, commit := range plan.Commits {
-			if strings.HasPrefix(commit.Subject(), plan.Ports[0]+":") {
-				plan.Title = commit.Subject()
-				break
-			}
-		}
+		plan.Title = portTitle(plan.Ports[0], plan.moved[plan.Ports[0]], plan.Commits)
 	default:
 		plan.Title = updateWithRebuilds(plan.Commits)
 	}
 	if plan.Title == "" {
 		plan.block(branchstate.Block{Kind: branchstate.BlockNoTitle})
 	}
+}
+
+// portTitle titles a one-port branch of several commits: the port's
+// commit whose subject names the version the branch moves it to, else
+// its first. abook's "abook: fix formatting" then "abook: update to 0.6.2"
+// titled the pull request for the fix (the abook session, 2026-10-28).
+func portTitle(port, version string, commits []git.HistoryCommit) string {
+	first := ""
+	for _, commit := range commits {
+		subject := commit.Subject()
+		if !strings.HasPrefix(subject, port+":") {
+			continue
+		}
+		if version != "" && slices.Contains(strings.Fields(subject), version) {
+			return subject
+		}
+		if first == "" {
+			first = subject
+		}
+	}
+	return first
+}
+
+// movedVersions are the versions the change records move each port to.
+func movedVersions(records map[string]model.ChangeRecord) map[string]string {
+	moved := map[string]string{}
+	for _, record := range records {
+		for _, port := range record.Ports {
+			if version, ok := record.MovedVersion(port.Port); ok {
+				moved[port.Port] = version
+			}
+		}
+	}
+	return moved
 }
 
 // updateWithRebuilds is the subject of the one commit of a branch that

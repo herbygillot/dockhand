@@ -146,7 +146,7 @@ func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
 // says so.
 func TestTheSubmitPreviewGivesEachUpstreamFindingALine(t *testing.T) {
 	t.Parallel()
-	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}
+	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true, Rule: "license-changed"}
 	dropped := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod drops golang.org/x/net"}
 	preview := func(upstream ...engine.PortComparison) string {
 		var out bytes.Buffer
@@ -158,13 +158,15 @@ func TestTheSubmitPreviewGivesEachUpstreamFindingALine(t *testing.T) {
 	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}}}),
 		"\n  Upstream compared; no license, build file, or dependency changes\n  Other PRs")
 	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}}}),
-		"\n  Upstream ! held: LICENSE changed\n"+
-			"             go.mod drops golang.org/x/net\n  Other PRs", "the label says upstream once; a hold says so in its word")
+		"\n  Upstream ! held: LICENSE changed [license-changed]\n"+
+			"             go.mod drops golang.org/x/net\n"+
+			"           Serve and ship --yes wait on these, and your own submit goes ahead; dockhand decide <rule> -p <port> --because \"…\" answers one for this branch, and holds.allow lets a rule go for every branch.\n  Other PRs", "the label says upstream once; a hold says so in its word, names its rule, and what lets it go is said once (the abook session)")
 	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license}}},
 		engine.PortComparison{Port: "oniguruma6", Comparison: model.UpstreamComparison{Problem: "HTTP 404"}},
 		engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{}}),
-		"\n  Upstream ! held: jq: LICENSE changed\n"+
-			"           ! held: oniguruma6: archives not compared: HTTP 404\n  Other PRs",
+		"\n  Upstream ! held: jq: LICENSE changed [license-changed]\n"+
+			"           ! held: oniguruma6: archives not compared: HTTP 404\n"+
+			"           Serve and ship --yes wait on these, and your own submit goes ahead; dockhand decide <rule> -p <port> --because \"…\" answers one for this branch, and holds.allow lets a rule go for every branch.\n  Other PRs",
 		"an update with nothing to look at adds no line among others' findings")
 }
 
@@ -173,16 +175,16 @@ func TestTheSubmitPreviewGivesEachUpstreamFindingALine(t *testing.T) {
 // them has one, --passing's included (the ov run's finding 5).
 func TestUpstreamIsSaidOnceUnderItsHeading(t *testing.T) {
 	t.Parallel()
-	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}
+	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true, Rule: "license-changed"}
 	dropped := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod drops golang.org/x/net"}
 	var update bytes.Buffer
 	view.WriteUpstream(&update, &model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}})
-	require.Equal(t, "Upstream changes:\n  ! held: LICENSE changed\n    go.mod drops golang.org/x/net\n", update.String(), "a hold says so in its word, where a legend said what the marks meant (the chezmoi run; part 5, item 2)")
+	require.Equal(t, "Upstream changes:\n  ! held: LICENSE changed [license-changed]\n    go.mod drops golang.org/x/net\n  Serve and ship --yes wait on these, and your own submit goes ahead; dockhand decide <rule> -p <port> --because \"…\" answers one for this branch, and holds.allow lets a rule go for every branch.\n", update.String(), "a hold says so in its word, where a legend said what the marks meant (the chezmoi run; part 5, item 2), with its rule and what lets it go (the abook session)")
 	update.Reset()
 	view.WriteUpstream(&update, &model.UpstreamComparison{Changes: []model.UpstreamChange{dropped}})
 	require.Equal(t, "Upstream changes:\n    go.mod drops golang.org/x/net\n", update.String(), "a finding that holds nothing carries no mark")
 	plan := engine.SubmitPlan{Upstream: []engine.PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}}}}}
-	require.Equal(t, []string{"! held: LICENSE changed", "  go.mod drops golang.org/x/net"}, view.UpstreamLines(plan), "every list of them has a heading now, --passing's too")
+	require.Equal(t, []string{"! held: LICENSE changed [license-changed]", "  go.mod drops golang.org/x/net"}, view.UpstreamLines(plan), "every list of them has a heading now, --passing's too")
 }
 
 // A commit whose Generated-By names a dockhand built from uncommitted
