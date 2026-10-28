@@ -73,3 +73,30 @@ func TestASourceArchiveIsTheForgesOfTheCommit(t *testing.T) {
 		require.Equal(t, test.name+" at "+commit, string(data))
 	}
 }
+
+// A self-hosted GitLab whose instance URL has a path is the endpoint its
+// repositories are below: git.url's path past it is the repository. The
+// URL's host alone was compared with the whole instance, and refused it as
+// "not supported" (Codex's review of 8e314b96, finding 8). A git.url
+// outside the instance's path is no repository of it.
+func TestASelfHostedGitLabKeepsItsInstancesPath(t *testing.T) {
+	t.Parallel()
+	options := func(gitURL string) map[string]string {
+		return map[string]string{"fetch.type": "git", "git.url": gitURL, "gitlab.author": "group", "gitlab.project": "tool", "gitlab.version": "1.0",
+			"gitlab.tag_prefix": "v", "gitlab.tag_suffix": "", "gitlab.instance": "https://gitlab.example.com/root", "git.branch": "v1.0"}
+	}
+	archive := func(gitURL string) (*archiving, error) {
+		catalog := &archiving{}
+		service := &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitLab: catalog}}
+		_, err := service.SourceArchive(t.Context(), macports.PortInfo{Name: "tool", Version: "1.0", Options: options(gitURL)},
+			model.GitSource{URL: gitURL, Commit: model.ObjectID(strings.Repeat("a", 40))}, t.TempDir())
+		return catalog, err
+	}
+	catalog, err := archive("https://gitlab.example.com/root/group/tool.git")
+	require.NoError(t, err)
+	require.Equal(t, "https://gitlab.example.com/root", catalog.instance)
+	require.Equal(t, "group/tool", catalog.name)
+
+	_, err = archive("https://gitlab.example.com/other/group/tool.git")
+	require.ErrorContains(t, err, "not supported", "outside the instance's path")
+}
