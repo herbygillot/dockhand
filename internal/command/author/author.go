@@ -114,7 +114,12 @@ func updateSeveral(ctx context.Context, s *settings.Settings, streams term.Strea
 	}
 	var directories []string
 	for i, word := range args {
+		// The first word is a port, as a lone one is, which the update
+		// says where it isn't; the second may be the version.
 		directory, named := e.PortDirectory(ctx, word)
+		if i == 0 {
+			named = true
+		}
 		if !named && i == 1 && len(args) == 2 {
 			e.Close()
 			request, err := version.Request(args, plan)
@@ -131,7 +136,7 @@ func updateSeveral(ctx context.Context, s *settings.Settings, streams term.Strea
 			}
 			return fmt.Errorf("%s names no port on master", word)
 		}
-		if !slices.Contains(directories, directory) {
+		if directory != "" && !slices.Contains(directories, directory) {
 			directories = append(directories, directory)
 		}
 	}
