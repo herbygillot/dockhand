@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -53,4 +54,15 @@ go.vendors example.com/a lock v1.0.0 sha256 cccc size 1 \
 	got, err = read(stale)
 	require.NoError(t, err)
 	require.Equal(t, []string{"go.vendors: the bump has dddd v2.0.0; the replay has eeee v1.9.0"}, differences(want, got))
+}
+
+// A plan's diff is compared by its Portfile's section alone: a refreshed
+// patch under files/ made the whole diff fail to apply to the Portfile.
+func TestAPlansPortfileDiffIsItsOwnSection(t *testing.T) {
+	diff := "diff --git a/databases/mariadb-10.11/Portfile b/databases/mariadb-10.11/Portfile\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n" +
+		"diff --git a/databases/mariadb-10.11/files/patch-a.diff b/databases/mariadb-10.11/files/patch-a.diff\n--- a/y\n+++ b/y\n@@ -1 +1 @@\n-c\n+d\n"
+	got := portfileDiff(diff, "databases/mariadb-10.11")
+	if !strings.HasPrefix(got, "diff --git a/databases/mariadb-10.11/Portfile ") || strings.Contains(got, "files/patch-a.diff") {
+		t.Fatalf("portfileDiff kept %q", got)
+	}
 }

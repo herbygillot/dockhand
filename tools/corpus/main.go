@@ -299,11 +299,14 @@ func replayRow(ctx context.Context, dockhand, tree, db string, env []string, dat
 	if err != nil {
 		return err.Error()
 	}
-	// The plan's diff, applied to a copy of the Portfile, which leaves
-	// the slice as it was for the next row.
+	// The plan's diff of the Portfile, applied to a copy of it, which
+	// leaves the slice as it was for the next row. A patch the update
+	// re-emitted, or dropped, under files/ is no part of what a bump
+	// compares: mariadb-10.11's and qemu's refreshed patches made the
+	// whole diff fail to apply to the Portfile alone (4ba655e2 on).
 	result := filepath.Join(filepath.Dir(db), r.Port+".Portfile")
 	apply := exec.CommandContext(ctx, "patch", "--silent", "--force", "-o", result, path)
-	apply.Stdin = strings.NewReader(out.Result.Diff)
+	apply.Stdin = strings.NewReader(portfileDiff(out.Result.Diff, r.Dir))
 	if output, err := apply.CombinedOutput(); err != nil {
 		return fmt.Sprintf("its plan's diff doesn't apply: %s", strings.TrimSpace(string(output)))
 	}
@@ -327,6 +330,25 @@ func replayRow(ctx context.Context, dockhand, tree, db string, env []string, dat
 		return "the plan's " + err.Error()
 	}
 	return strings.Join(differences(want, got), "; ")
+}
+
+// portfileDiff is the part of a plan's diff that changes the Portfile in
+// dir: its "diff --git" section, up to the next file's.
+func portfileDiff(diff, dir string) string {
+	var kept []string
+	keeping := false
+	for _, line := range strings.SplitAfter(diff, "\n") {
+		if strings.HasPrefix(line, "diff --git ") {
+			keeping = strings.HasPrefix(line, "diff --git a/"+dir+"/Portfile ")
+		}
+		if keeping {
+			kept = append(kept, line)
+		}
+	}
+	if len(kept) == 0 {
+		return diff
+	}
+	return strings.Join(kept, "")
 }
 
 func lastLine(text string) string {
