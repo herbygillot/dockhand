@@ -423,6 +423,19 @@ func TestAMigrationRefusedSaysTheWayOn(t *testing.T) {
 	require.EqualError(t, err, "1 dockhand process is working on schema 31 (v0.4.0): migrating the database to schema 32 would leave them unable to record what they do; wait for them to finish, or stop them, and run this again")
 	refused := new(store.LiveUnderMigrationError)
 	require.ErrorAs(t, err, &refused, "the store's, under it")
+
+	// Each live process is named as status names it (the abook session).
+	started := time.Date(2026, 10, 28, 10, 2, 0, 0, time.Local)
+	live := []store.LiveProcess{
+		{Kind: "serve", PID: 4711, Build: "v0.5.0", Started: started, Leads: true, Checks: []int{12, 13}},
+		{Kind: "foreground", PID: 4712, Started: started},
+	}
+	err = &LiveUnderMigrationError{&store.LiveUnderMigrationError{Processes: 2, Builds: []string{"v0.5.0"}, From: 39, To: 49, Live: live}}
+	require.EqualError(t, err, "2 dockhand processes are working on schema 39 (v0.5.0): migrating the database to schema 49 would leave them unable to record what they do; wait for them to finish, or stop them, and run this again\n"+
+		"  serve, pid 4711, v0.5.0, since 2026-10-28 10:02, leads the queue and runs check-12 and check-13\n"+
+		"  foreground, pid 4712, an unknown build, since 2026-10-28 10:02")
+	err = &ReleaseUnderMigrationError{&store.ReleaseUnderMigrationError{Release: "v0.5.0", Copy: "/db.schema-39", From: 39, To: 49, Live: live[:1]}}
+	require.Contains(t, err.Error(), "keeping its schema 39 form at /db.schema-39. Working on it now:\n  serve, pid 4711, v0.5.0, since 2026-10-28 10:02, leads the queue and runs check-12 and check-13")
 }
 
 // The forge, discovery, and project inspection share one GitHub client,

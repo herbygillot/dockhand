@@ -121,7 +121,7 @@ func (s *Settings) Open(ctx context.Context) (*engine.Engine, error) {
 		// A development or rc build opening a release's database: the
 		// person decides, since the release can't open it after (the
 		// exiv2 session's notes, 2026-10-24).
-		migrate, askErr := s.Streams.AskYes(fmt.Sprintf("%v.\n? Migrate it anyway? Its schema %d form is kept at %s. [y/N] ", refused.ReleaseUnderMigrationError, refused.From, refused.Copy), false)
+		migrate, askErr := s.Streams.AskYes(fmt.Sprintf("%v%s.\n? Migrate it anyway? Its schema %d form is kept at %s. [y/N] ", refused.ReleaseUnderMigrationError, refused.Working(), refused.From, refused.Copy), false)
 		if askErr != nil {
 			return nil, askErr
 		}
