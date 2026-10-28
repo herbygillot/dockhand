@@ -72,7 +72,7 @@ type Local struct {
 	// Env is the environment its programs run with, the command line's.
 	Env []string
 	// Locks is where a prefix's lock is kept, one for every dockhand
-	// process of the person, whatever its database: dockhand-locks-<uid>
+	// process on the Mac, whatever its user or database: dockhand-locks
 	// in Temp when empty (own).
 	Locks string
 

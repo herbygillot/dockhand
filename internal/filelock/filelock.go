@@ -55,6 +55,51 @@ func Acquire(ctx context.Context, path string, mode Mode) (*os.File, error) {
 	}
 }
 
+// AcquireAcrossUsers waits for an exclusive lock that every user's
+// processes on the machine agree on, as a resource they all share does, a
+// MacPorts prefix: its directory is made sticky and world-writable, as
+// /tmp is, and the lock file readable by all, since flock takes an
+// exclusive lock on a file opened only to read. Neither follows a link
+// another user may have planted. Closing the returned file releases it.
+func AcquireAcrossUsers(ctx context.Context, path string) (*os.File, error) {
+	directory := filepath.Dir(path)
+	if err := os.Mkdir(directory, 0o777); err == nil {
+		// The umask narrows the mode Mkdir is given.
+		if err := os.Chmod(directory, 0o777|os.ModeSticky); err != nil {
+			return nil, err
+		}
+	} else if !errors.Is(err, os.ErrExist) {
+		return nil, err
+	}
+	if info, err := os.Lstat(directory); err != nil {
+		return nil, err
+	} else if !info.IsDir() || info.Mode().Perm() != 0o777 || info.Mode()&os.ModeSticky == 0 {
+		return nil, fmt.Errorf("filelock: %s isn't a directory every user can lock in, sticky and open to all", directory)
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY|syscall.O_NOFOLLOW, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	// The umask narrows it too; another user's file is theirs to open.
+	_ = file.Chmod(0o644)
+	for {
+		err = syscall.Flock(int(file.Fd()), int(Exclusive)|syscall.LOCK_NB)
+		if err == nil {
+			return file, nil
+		}
+		if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
+			file.Close()
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			file.Close()
+			return nil, ctx.Err()
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+}
+
 // ErrBusy means another process currently owns an incompatible lock.
 var ErrBusy = errors.New("filelock: busy")
 
