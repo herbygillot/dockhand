@@ -24,6 +24,10 @@ type Group struct {
 	Directory          string
 	FromEdits, Created bool
 	Notes, Blocking    []string
+	// HandEdit is the hand edit the commit holds, as its line says it,
+	// where it holds one: a kind of its own, where the gate read it back
+	// from the notes by its sentence's start (Codex's review of 8e314b96).
+	HandEdit string
 }
 
 // Unambiguous reports whether the plan may be applied without review:
@@ -80,10 +84,8 @@ func (p Plan) CommitUnasked(mode Mode) error {
 		// A hand edit's reason is said with the way on (Then's item 3).
 		var hand []string
 		for _, g := range p.Groups {
-			for _, note := range g.Notes {
-				if strings.HasPrefix(note, "hand edit (") {
-					hand = append(hand, g.Directory+": "+note)
-				}
+			if g.HandEdit != "" {
+				hand = append(hand, g.Directory+": "+g.HandEdit)
 			}
 		}
 		if len(hand) > 0 {

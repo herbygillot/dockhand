@@ -65,6 +65,9 @@ type TidyGroup struct {
 	Created bool
 	// Notes say why it needs a person's review.
 	Notes []string
+	// HandEdit is the hand edit's line where the commit holds one, which
+	// Notes says too (branchstate.Group.HandEdit).
+	HandEdit string
 	// Blocking are what must be settled before it can be applied.
 	Blocking []string
 	// noSubject is the entry of Blocking a missing subject made, which
@@ -163,7 +166,7 @@ func (p TidyPlan) Subjects() []string {
 func (p TidyPlan) Gate() branchstate.Plan {
 	gate := branchstate.Plan{Branch: p.Branch.ShortName(), Keep: p.Keep}
 	for _, g := range p.Groups {
-		gate.Groups = append(gate.Groups, branchstate.Group{Directory: g.Directory, FromEdits: g.FromEdits, Created: g.Created, Notes: g.Notes, Blocking: g.Blocking})
+		gate.Groups = append(gate.Groups, branchstate.Group{Directory: g.Directory, FromEdits: g.FromEdits, Created: g.Created, Notes: g.Notes, Blocking: g.Blocking, HandEdit: g.HandEdit})
 	}
 	return gate
 }
@@ -385,7 +388,7 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 			group.Notes = append(group.Notes, "has changes dockhand's commands did not make; review them")
 		}
 		if hand, ok := handEdits[directory]; ok {
-			group.Notes = append(group.Notes, hand.Line())
+			group.Notes, group.HandEdit = append(group.Notes, hand.Line()), hand.Line()
 		}
 		var chosen *git.HistoryCommit
 		if own {
