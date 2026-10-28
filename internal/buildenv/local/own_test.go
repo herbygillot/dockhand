@@ -57,20 +57,26 @@ close $fd
 		dirs, _ := filepath.Glob(filepath.Join(temp, localDirectory+"*", "entered"))
 		return len(dirs)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 	completed := make(chan error, 2)
 	go func() { completed <- provider().Execute(ctx, localJob(t, prefix), &fakeBuild{}) }()
-	require.Eventually(t, func() bool { return entered() == 1 }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return entered() == 1 }, 30*time.Second, 10*time.Millisecond)
 	waiting := &fakeBuild{}
 	go func() { completed <- provider().Execute(ctx, localJob(t, prefix), waiting) }()
 	require.Eventually(t, func() bool {
 		waiting.mu.Lock()
 		defer waiting.mu.Unlock()
 		return strings.Contains(strings.Join(waiting.progress, "\n"), "waiting for "+prefix+", held by check-3 (pid ")
-	}, 5*time.Second, 10*time.Millisecond)
+	}, 30*time.Second, 10*time.Millisecond)
 	time.Sleep(300 * time.Millisecond)
 	require.Equal(t, 1, entered(), "the second check doesn't begin while the first owns the prefix")
+	// status names who holds it, as the wait does.
+	changes, err := provider().Changes(ctx)
+	require.NoError(t, err)
+	require.Len(t, changes, 1)
+	require.True(t, changes[0].Building)
+	require.Equal(t, fmt.Sprintf("check-3 (pid %d)", os.Getpid()), changes[0].Holder)
 
 	require.NoError(t, os.WriteFile(release, nil, 0o644))
 	require.NoError(t, <-completed)

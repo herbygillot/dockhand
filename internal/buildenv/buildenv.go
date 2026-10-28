@@ -320,6 +320,10 @@ type Change struct {
 	Check, Place string
 	Building     bool
 	Remedy       string
+	// Holder is who holds the place for its check where the provider
+	// keeps a lock on it, as a check waiting on it says: "check-12 (pid
+	// 4711)"; empty where none is held.
+	Holder string
 }
 
 // A ParallelProvider can build several of one check's environments at once,

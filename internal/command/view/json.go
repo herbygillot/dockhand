@@ -583,13 +583,15 @@ type changeJSON struct {
 	Place    string `json:"place"`
 	Building bool   `json:"building,omitempty"`
 	Remedy   string `json:"remedy,omitempty"`
+	// Holder is who holds the prefix, "check-12 (pid 4711)".
+	Holder string `json:"holder,omitempty"`
 }
 
 // ChangesView is engine.Changes as fields.
 func ChangesView(changes []buildenv.Change) []changeJSON {
 	var viewed []changeJSON
 	for _, change := range changes {
-		viewed = append(viewed, changeJSON{Check: change.Check, Place: change.Place, Building: change.Building, Remedy: change.Remedy})
+		viewed = append(viewed, changeJSON{Check: change.Check, Place: change.Place, Building: change.Building, Remedy: change.Remedy, Holder: change.Holder})
 	}
 	return viewed
 }
@@ -600,7 +602,12 @@ func ChangesView(changes []buildenv.Change) []changeJSON {
 // back.
 func ChangeWords(change buildenv.Change) string {
 	if change.Building {
-		return fmt.Sprintf("%s is building in %s. Your port commands targeting this prefix must wait; upgrades made there in the meantime will be undone when the prefix is restored.", change.Check, change.Place)
+		// Who holds the prefix, as a check waiting on it says.
+		held := ""
+		if change.Holder != "" {
+			held = ", held by " + change.Holder
+		}
+		return fmt.Sprintf("%s is building in %s%s. Your port commands targeting this prefix must wait; upgrades made there in the meantime will be undone when the prefix is restored.", change.Check, change.Place, held)
 	}
 	return fmt.Sprintf("%s stopped before it could restore %s. Run %s to restore it, or let the next check there restore it.", change.Check, change.Place, change.Remedy)
 }

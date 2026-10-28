@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -78,6 +79,19 @@ func (l *Local) own(ctx context.Context, prefix, check string, build buildenv.Bu
 		os.Remove(said)
 		file.Close()
 	}, nil
+}
+
+// holder is who holds a prefix's lock now, as a wait on it says; empty
+// where no running process's record says it holds it.
+func (l *Local) holder(prefix string) string {
+	canonical, err := filepath.EvalSymlinks(prefix)
+	if err != nil {
+		canonical = filepath.Clean(prefix)
+	}
+	if who := held(filelock.Path(l.locks(), "prefix:"+canonical)); !strings.HasPrefix(who, "a check that ended") && who != "another check" {
+		return who
+	}
+	return ""
 }
 
 // holderPath is where a user's process that holds a prefix's lock says

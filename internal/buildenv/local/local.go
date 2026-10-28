@@ -646,7 +646,7 @@ func (l *Local) Changes(ctx context.Context) ([]buildenv.Change, error) {
 			continue
 		}
 		if _, ours := l.building.Load(dir); ours || building(made, results) {
-			changes = append(changes, buildenv.Change{Check: made.Check, Place: made.Prefix, Building: true})
+			changes = append(changes, buildenv.Change{Check: made.Check, Place: made.Prefix, Building: true, Holder: l.holder(made.Prefix)})
 			continue
 		}
 		if l.putBackAlready(ctx, dir, made.Prefix) {

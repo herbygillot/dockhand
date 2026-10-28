@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -210,4 +211,12 @@ func TestWriteLint(t *testing.T) {
 	out.Reset()
 	WriteLint(&out, nil)
 	require.Empty(t, out.String())
+}
+
+// A prefix a check is building in says who holds it, as a check waiting
+// on it says (Codex's review of 8e314b96, finding 1's note).
+func TestAPrefixBeingBuiltInSaysWhoHoldsIt(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "check-12 is building in /opt/local, held by check-12 (pid 4711). Your port commands targeting this prefix must wait; upgrades made there in the meantime will be undone when the prefix is restored.",
+		ChangeWords(buildenv.Change{Check: "check-12", Place: "/opt/local", Building: true, Holder: "check-12 (pid 4711)"}))
 }
