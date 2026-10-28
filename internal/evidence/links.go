@@ -1,6 +1,7 @@
 package evidence
 
 import (
+	"maps"
 	"slices"
 	"strings"
 
@@ -30,9 +31,10 @@ type LinkFinding struct {
 	// exiv2 session's notes, 2026-10-24).
 	Reason string
 	// Clean is a target whose read builds link only ports it declares,
-	// Ports counting them.
+	// Ports naming them, the target's own Portfile's left out: ace's
+	// notice counted ace itself (the ace update, 2026-10-28).
 	Clean bool
-	Ports int
+	Ports []string
 }
 
 // Subject is what the finding is about, as a decision on it names it:
@@ -47,6 +49,9 @@ type LinkedBuild struct {
 	Result      model.TargetResult
 	Environment model.Environment
 	Declared    []string
+	// Own are the target's own Portfile's ports, itself among them, which
+	// it links as its own and no other port's.
+	Own []string
 	// Unread is why the build's links weren't read, where they weren't.
 	Unread string
 }
@@ -85,8 +90,8 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 			linked[result.Target] = map[string]bool{}
 		}
 		for _, link := range result.Links {
-			if link.Port != "" {
-				linked[result.Target][strings.ToLower(link.Port)] = true
+			if link.Port != "" && !slices.ContainsFunc(build.Own, func(name string) bool { return strings.EqualFold(name, link.Port) }) {
+				linked[result.Target][link.Port] = true
 			}
 			if link.Port == "" || slices.ContainsFunc(build.Declared, func(name string) bool { return strings.EqualFold(name, link.Port) }) {
 				continue
@@ -114,7 +119,9 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 		case !read[target]:
 			findings = append(findings, LinkFinding{Target: target, Unread: true, Reason: reasons[target]})
 		case !undeclared[target]:
-			findings = append(findings, LinkFinding{Target: target, Clean: true, Ports: len(linked[target])})
+			ports := slices.Collect(maps.Keys(linked[target]))
+			slices.SortFunc(ports, func(a, b string) int { return strings.Compare(strings.ToLower(a), strings.ToLower(b)) })
+			findings = append(findings, LinkFinding{Target: target, Clean: true, Ports: ports})
 		}
 	}
 	slices.SortFunc(findings, func(a, b LinkFinding) int {

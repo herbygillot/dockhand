@@ -96,9 +96,10 @@ func (e *Engine) linkFindings(ctx context.Context, checked Evidence) ([]evidence
 			}
 			// What this environment declares, judged with its own build
 			// alone (Codex's review of 8c007979, C8-2).
-			var declared []string
+			var declared, own []string
 			for _, info := range infos {
 				declared = appendOnce(declared, info.Name)
+				own = appendOnce(own, info.Name)
 				if !strings.EqualFold(info.Name, builtPort(target.Target.Target)) {
 					continue
 				}
@@ -108,7 +109,7 @@ func (e *Engine) linkFindings(ctx context.Context, checked Evidence) ([]evidence
 					}
 				}
 			}
-			builds = append(builds, evidence.LinkedBuild{Result: result, Environment: cell.Environment, Declared: declared, Unread: unread})
+			builds = append(builds, evidence.LinkedBuild{Result: result, Environment: cell.Environment, Declared: declared, Own: own, Unread: unread})
 		}
 	}
 	return evidence.UndeclaredLinks(builds), nil

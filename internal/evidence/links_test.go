@@ -57,7 +57,22 @@ func TestACleanLinkScanIsSaid(t *testing.T) {
 		{Result: model.TargetResult{Target: "crystal", Outcome: model.OutcomePassed, Tests: model.TestsFailed, Links: links[:2]}, Environment: tahoe, Declared: declared},
 		{Result: model.TargetResult{Target: "shards", Outcome: model.OutcomeFailed}, Environment: tahoe},
 	})
-	require.Equal(t, []LinkFinding{{Target: "crystal", Clean: true, Ports: 5}}, found)
+	require.Equal(t, []LinkFinding{{Target: "crystal", Clean: true, Ports: []string{"boehmgc", "libffi", "libiconv", "llvm-23", "pcre2"}}}, found)
+}
+
+// A target's own port and its Portfile's other subports aren't another
+// port's libraries: ace's notice counted ace's own, and tao's its
+// subports' (the ace and tao updates, 2026-10-28).
+func TestALinkNoticeLeavesOutTheTargetsOwnPorts(t *testing.T) {
+	link := func(library, port string) model.Link {
+		return model.Link{Binary: "/opt/local/bin/tao_idl", Library: "/opt/local/lib/" + library, Port: port}
+	}
+	own := []string{"ace", "tao"}
+	found := UndeclaredLinks([]LinkedBuild{{Result: model.TargetResult{Target: "ace", Outcome: model.OutcomePassed, Links: []model.Link{link("libACE.dylib", "ace")}}, Declared: own, Own: own}})
+	require.Equal(t, []LinkFinding{{Target: "ace", Clean: true}}, found, "it links no other port's")
+	found = UndeclaredLinks([]LinkedBuild{{Result: model.TargetResult{Target: "tao", Outcome: model.OutcomePassed,
+		Links: []model.Link{link("libACE.dylib", "ace"), link("libssl.3.dylib", "openssl3"), link("libz.1.dylib", "zlib")}}, Declared: append(own, "openssl3", "zlib"), Own: own}})
+	require.Equal(t, []LinkFinding{{Target: "tao", Clean: true, Ports: []string{"openssl3", "zlib"}}}, found, "both declared ports named")
 }
 
 // An unread target carries the reason its first unread build gave.

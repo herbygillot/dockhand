@@ -58,10 +58,13 @@ func Where(places config.Places, dir string) string {
 // where each is declared, how many ports they map to.
 func LinkWords(finding engine.LinkFinding) string {
 	if finding.Clean {
-		if finding.Ports == 0 {
-			return fmt.Sprintf("%s links no port's libraries", finding.Target)
+		switch len(finding.Ports) {
+		case 0:
+			return fmt.Sprintf("%s links no other port's libraries", finding.Target)
+		case 1:
+			return fmt.Sprintf("%s links %s's libraries, declared in depends_lib", finding.Target, finding.Ports[0])
 		}
-		return fmt.Sprintf("%s links %s, each declared in depends_lib", finding.Target, prose.Plural(finding.Ports, "port"))
+		return fmt.Sprintf("%s links %s's libraries, each declared in depends_lib", finding.Target, prose.And(finding.Ports))
 	}
 	if finding.Unread {
 		words := fmt.Sprintf("couldn't read what %s's build links, so whether it declares them isn't said", finding.Target)
