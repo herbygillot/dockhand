@@ -75,7 +75,7 @@ What it carries, each said in full in its notes:
   - The pull request's body fits GitHub's limit and says what `--except` left out (1f90bc79), and a rebuild whose every dependent was left out is listed too (87102335).
   - A saved tidy plan whose branch adds an untracked patch is no longer refused as stale (a8a40367).
   - Several ports of one Portfile go in one branch, `update` taking several ports and a selection grouping them by Portfile (8e314b96), and tidy makes a commit for each update, titled for its subport (644faca7); where it makes one commit for several, its subject names each, and the person's own message for dockhand's edits is kept (4fe17cf9).
-  - serve's check for a submitted pull request reads a subport on master (8e314b96).
+    - serve's check for a submitted pull request reads a subport on master (8e314b96).
   - A removed flag, like a removed setting, says what replaced it (921c1bf9).
 - **Status and cleaning.**
   - Status gathered once, item 6 (ff7d16cc), its measure an acceptance row above.
@@ -84,7 +84,7 @@ What it carries, each said in full in its notes:
   - The assessment as a package, item 15 (ab7dce32, bd92981b, and 6441e960).
   - A modelled context's SDK, tools, and compiler list are its own on base master, from the weekly job's findings (33251823 and 0c1aa135).
   - Two wordings (b719703a), and a test's wait bounded by the suite's settle (eb0aaebd).
-  - Its notes, drafted (622c5bd1) and brought up to date (1abbe967); before rc1 they take in 4fe17cf9, 644faca7, and 8e314b96, which came after.
+  - Its notes, drafted (622c5bd1) and brought up to date (1abbe967).
 
 Nothing is placed after v0.7.0 yet; Later is where its items come from.
 

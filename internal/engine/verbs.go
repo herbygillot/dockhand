@@ -44,13 +44,18 @@ func (e *Engine) Edit(ctx context.Context, branch model.Branch, port string) (st
 }
 
 // PortDirectory is a port's directory on the master dockhand last
-// fetched, a subport's its Portfile's; false where master has no such
+// fetched, else the checkout's, a subport's its Portfile's; false where master has no such
 // port, as for a version: update takes a second word naming no port as
 // the version to update to.
 func (e *Engine) PortDirectory(ctx context.Context, name string) (string, bool) {
+	// Before dockhand has fetched master, the checkout's own commit says.
 	master, ok := e.lastMaster(ctx)
 	if !ok {
-		return "", false
+		head, err := e.Repo.Resolve(ctx, "HEAD^{commit}")
+		if err != nil {
+			return "", false
+		}
+		master = model.ObjectID(head)
 	}
 	trees, err := e.Repo.CommitTrees(ctx, []string{string(master)})
 	if err != nil {
