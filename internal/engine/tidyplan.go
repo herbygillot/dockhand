@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -52,6 +53,13 @@ func (p TidyPlan) Regroup(spec, author string) (TidyPlan, error) {
 			groups = append(groups, members[0])
 			continue
 		}
+		for _, member := range members {
+			if member.Directory != members[0].Directory && slices.ContainsFunc(p.Groups, func(s TidyGroup) bool {
+				return s.From != "" && (s.Directory == member.Directory || s.Directory == members[0].Directory)
+			}) {
+				return p, fmt.Errorf("%s's updates are a commit each, made from each other; combine them only with each other", cmp.Or(member.Directory, members[0].Directory))
+			}
+		}
 		groups = append(groups, p.combine(members, numbers, chosen))
 	}
 	for n := 1; n <= len(p.Groups); n++ {
@@ -59,8 +67,30 @@ func (p TidyPlan) Regroup(spec, author string) (TidyPlan, error) {
 			return p, fmt.Errorf("commit %d is missing; list every commit exactly once", n)
 		}
 	}
+	if err := keepsSteps(groups, p.Groups); err != nil {
+		return p, err
+	}
 	p.Groups = groups
 	return p, nil
+}
+
+// keepsSteps refuses a regrouping that would commit a directory's update
+// steps out of the order made, since each step's files are its tree's,
+// which holds the steps before it (updateSteps).
+func keepsSteps(groups, steps []TidyGroup) error {
+	last := map[string]int{}
+	for _, group := range groups {
+		stepped := slices.ContainsFunc(steps, func(s TidyGroup) bool { return s.From != "" && s.Directory == group.Directory })
+		if !stepped {
+			continue
+		}
+		at := slices.IndexFunc(steps, func(s TidyGroup) bool { return s.Directory == group.Directory && s.Message == group.Message })
+		if at < last[group.Directory] {
+			return fmt.Errorf("%s's updates are a commit each, made from each other; keep them in the order made", group.Directory)
+		}
+		last[group.Directory] = at
+	}
+	return nil
 }
 
 // combine makes one commit of several of the plan's.
@@ -73,13 +103,22 @@ func (p TidyPlan) combine(members []TidyGroup, numbers []int, chosen git.Signatu
 				group.Ports = append(group.Ports, port)
 			}
 		}
-		group.Paths = append(group.Paths, member.Paths...)
+		for _, path := range member.Paths {
+			if !slices.Contains(group.Paths, path) {
+				group.Paths = append(group.Paths, path)
+			}
+		}
 		group.Working = group.Working || member.Working
 		for _, commit := range member.Combines {
 			ids = append(ids, commit.ID)
 		}
 	}
 	slices.Sort(group.Paths)
+	// Update steps combined, of one directory (Regroup), take their files
+	// from the latest of them, the working files' where it's the
+	// directory's last.
+	latest := members[slices.Index(numbers, slices.Max(numbers))]
+	group.Directory, group.From = latest.Directory, latest.From
 	for _, commit := range p.History {
 		if slices.Contains(ids, commit.ID) {
 			group.Combines = append(group.Combines, commit)
@@ -146,7 +185,11 @@ type savedCommit struct {
 	Paths    []string    `toml:"paths"`
 	Combines []string    `toml:"combines,omitempty"`
 	Working  bool        `toml:"includes_uncommitted_edits,omitempty"`
-	Notes    []string    `toml:"notes,omitempty"`
+	// Tree is the tree an update step's files are taken from, one of
+	// several updates in a directory made a commit each; absent for the
+	// rest, whose files are the working files'.
+	Tree  string   `toml:"tree,omitempty"`
+	Notes []string `toml:"notes,omitempty"`
 }
 
 type savedAuthor struct {
@@ -203,7 +246,7 @@ func (p TidyPlan) Save() ([]byte, error) {
 	}
 	saved := savedTidyPlan{Version: TidyPlanVersion, Branch: p.Branch.Name, Base: p.Base, Head: p.Head, Working: p.Final, Index: p.Index}
 	for _, group := range p.Groups {
-		commit := savedCommit{Message: planMessage(group.Message), Author: savedAuthor(group.Author), Paths: group.Paths, Working: group.Working, Notes: group.Notes}
+		commit := savedCommit{Message: planMessage(group.Message), Author: savedAuthor(group.Author), Paths: group.Paths, Working: group.Working, Notes: group.Notes, Tree: group.From}
 		for _, combined := range group.Combines {
 			commit.Combines = append(commit.Combines, combined.ID)
 		}
@@ -302,12 +345,22 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	for i, commit := range saved.Commits {
 		// The saved notes say how the proposal was made, which an edited
 		// message may no longer fit; the plan as saved is what applies.
-		group := TidyGroup{Message: strings.TrimSpace(string(commit.Message)) + "\n", Author: git.Signature(commit.Author), Paths: commit.Paths, Working: commit.Working}
+		group := TidyGroup{Message: strings.TrimSpace(string(commit.Message)) + "\n", Author: git.Signature(commit.Author), Paths: commit.Paths, Working: commit.Working, From: commit.Tree}
+		if len(commit.Paths) > 0 {
+			group.Directory = groupOf(commit.Paths[0])
+		}
+		if group.From != "" && !git.ValidObjectID(group.From) {
+			return TidyPlan{}, fmt.Errorf("commit %d's tree %q is not an object ID", i+1, group.From)
+		}
+		// An update step's files are taken again by the steps after it,
+		// the last of which takes them from the working files.
 		for _, path := range commit.Paths {
 			if slices.Contains(covered, path) {
 				return TidyPlan{}, fmt.Errorf("%s is in more than one commit", path)
 			}
-			covered = append(covered, path)
+			if group.From == "" {
+				covered = append(covered, path)
+			}
 			if directory := groupOf(path); directory != "" && !slices.Contains(group.Ports, directoryName(directory)) {
 				group.Ports = append(group.Ports, directoryName(directory))
 			}

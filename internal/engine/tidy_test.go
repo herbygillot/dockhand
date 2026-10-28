@@ -720,3 +720,61 @@ func TestTidyKeepsThePersonsMessageForDockhandsEdits(t *testing.T) {
 	require.NotEmpty(t, again.Warnings)
 	require.Equal(t, strings.TrimSpace(written), strings.TrimSpace(again.Groups[0].Message))
 }
+
+// Updates of two subports of one Portfile, dockhand's alone, are a commit
+// each, in the order made, titled for each subport, the first's tree the
+// file as its update left it (field testing's kubectl, on v0.5.0); a tidy
+// again keeps them.
+func TestTidyCommitsEachSubportsUpdate(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	base := "name kubectl\nsubport kubectl-1.34 {\n    version 1.34.1\n}\nsubport kubectl-1.35 {\n    version 1.35.1\n}\n"
+	write(t, f.upstream, map[string]string{"sysutils/kubectl/Portfile": base})
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "kubectl: new port")
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "kubectl-subports"})
+	require.NoError(t, err)
+	first := strings.Replace(base, "1.34.1", "1.34.13", 1)
+	second := strings.Replace(first, "1.35.1", "1.35.9", 1)
+	blob := func(text string) model.ObjectID {
+		id, err := e.Repo.WriteBlob(t.Context(), []byte(text))
+		require.NoError(t, err)
+		return model.ObjectID(id)
+	}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		for i, edit := range []model.Edit{
+			{Port: "kubectl-1.34", Subject: "kubectl-1.34: update to 1.34.13", Files: []model.EditedFile{{Path: "sysutils/kubectl/Portfile", Before: blob(base), After: blob(first)}}},
+			{Port: "kubectl-1.35", Subject: "kubectl-1.35: update to 1.35.9", Files: []model.EditedFile{{Path: "sysutils/kubectl/Portfile", Before: blob(first), After: blob(second)}}},
+		} {
+			edit.ID, edit.Branch, edit.Kind, edit.Directory, edit.At = model.EditID(fmt.Sprint("ed_", i)), branch.ID, model.EditUpdate, "sysutils/kubectl", at
+			if err := tx.AddEdit(edit); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	write(t, branch.Worktree, map[string]string{"sysutils/kubectl/Portfile": second})
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Len(t, plan.Groups, 2)
+	require.True(t, plan.Unambiguous(), "dockhand's own edits: %+v", plan.Groups)
+	// Saved, the steps keep their trees.
+	data, err := plan.Save()
+	require.NoError(t, err)
+	loaded, err := e.LoadTidyPlan(t.Context(), data)
+	require.NoError(t, err)
+	_, err = e.ApplyTidy(t.Context(), loaded)
+	require.NoError(t, err)
+	require.Equal(t, []string{"kubectl-1.34: update to 1.34.13", "kubectl-1.35: update to 1.35.9"}, log(t, branch.Worktree, branch.Base))
+	require.Equal(t, strings.TrimSuffix(first, "\n"), testsupport.Git(t, branch.Worktree, "show", "HEAD~1:sysutils/kubectl/Portfile"))
+	require.Equal(t, strings.TrimSuffix(second, "\n"), testsupport.Git(t, branch.Worktree, "show", "HEAD:sysutils/kubectl/Portfile"))
+
+	again, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.True(t, reproduces(again.Groups, again.History), "the commits stand: %+v", again.Groups)
+
+	_, err = plan.Regroup("2 1", "")
+	require.ErrorContains(t, err, "in the order made")
+}

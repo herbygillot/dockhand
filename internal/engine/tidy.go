@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -53,6 +54,11 @@ type TidyGroup struct {
 	// FromEdits is true when its files are exactly what dockhand's
 	// authoring commands wrote, and its subject the one they wrote.
 	FromEdits bool
+	// From is the tree the commit's files are taken from, where they
+	// aren't the working files': an update step's, one of several
+	// updates in a directory made a commit each (updateSteps). Empty for
+	// the rest.
+	From string
 	// Created is a new port this branch's create wrote, edited by hand
 	// since, as create asks: its edits are the port's, and create's
 	// subject still names the commit, though it isn't dockhand's alone.
@@ -342,6 +348,22 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 		// as "kubectl-1.34: update to 1.34.13", the last update's subject
 		// (field testing on v0.5.0).
 		own := chained && len(group.Combines) == 1 && !commitmsg.Attributed(group.Combines[0].Message)
+		// Several of the directory's ports' updates, dockhand's alone, are
+		// a commit each.
+		if chained && !own && !request.Squash {
+			steps, err := updateSteps(ctx, worktree, trees[base], directory, edits)
+			if err != nil {
+				return TidyPlan{}, err
+			}
+			if len(steps) > 1 {
+				groups, err := stepGroups(steps, group, working, closesFor(branch, edits, directory), person, author)
+				if err != nil {
+					return TidyPlan{}, err
+				}
+				plan.Groups = append(plan.Groups, groups...)
+				continue
+			}
+		}
 		// A new port create wrote, and the person has edited since, as
 		// create asks ("Next: dockhand edit txt"), is the port: the plan
 		// stands, with create's subject, where it had wanted the same
@@ -1210,7 +1232,7 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	// made anew, the rest are, their parents being new.
 	keeping := true
 	for i, group := range plan.Groups {
-		if tree, err = worktree.ComposeTree(ctx, tree, plan.Final, group.Paths); err != nil {
+		if tree, err = worktree.ComposeTree(ctx, tree, cmp.Or(group.From, plan.Final), group.Paths); err != nil {
 			return TidyResult{}, err
 		}
 		if keeping && i < len(plan.History) && unchangedCommit(plan.History[i], parent, tree, group) {

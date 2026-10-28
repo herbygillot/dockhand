@@ -858,7 +858,10 @@ func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branc
 	for _, file := range result.Files {
 		recorded := model.EditedFile{Path: file.Path, Before: model.ObjectID(file.Before.Blob)}
 		if !file.Delete {
-			blob, err := worktree.BlobID(ctx, file.After)
+			// Written, not only hashed: tidy reads it back to commit
+			// this edit alone, one of several updates in its directory
+			// (updateSteps).
+			blob, err := worktree.WriteBlob(ctx, file.After)
 			if err != nil {
 				return model.Edit{}, err
 			}
