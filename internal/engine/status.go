@@ -694,7 +694,7 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 	if err == nil && status.Current {
 		status.Wider = e.wider(ctx, status, changed)
 	}
-	if err == nil && status.Current && len(evidence.Failed()) > 0 {
+	if err == nil && status.Current && branchstate.ReadsDecisions(evidence) {
 		err = e.readDecisions(ctx, &status)
 	}
 	return status, err

@@ -85,6 +85,15 @@ func PublicationBlocks(ev evidence.Evidence, accepted []string, atBase map[strin
 	return append(blocks, LintBlocks(ev, accepted)...)
 }
 
+// ReadsDecisions reports whether a standing of the evidence reads the
+// person's decisions: a failure's acceptance, an environment's standing
+// one, and a new port's lint acceptance, which a passed build holds for
+// too. Status loaded them only where a target failed, so it said a branch
+// wasn't ready that submit took (Codex's review of 8e314b96, finding 6).
+func ReadsDecisions(ev evidence.Evidence) bool {
+	return len(ev.Failed()) > 0 || slices.ContainsFunc(evidence.LintFindings(ev), func(f evidence.LintFinding) bool { return f.Holds })
+}
+
 // LintBlocks are the ports the branch adds that lint warned of and a
 // person hasn't accepted at this commit, each a block with what lint said
 // once: a new port has no baseline, so its warnings count as ✗, its build

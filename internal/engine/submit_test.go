@@ -308,6 +308,13 @@ func checked(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outc
 // leaves them.
 func checkedWith(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outcome, alter func(execution *model.GuestExecution, jq *model.TargetResult)) {
 	t.Helper()
+	checkedAs(t, e, branch, false, jq, viewer, alter)
+}
+
+// checkedAs is checkedWith, jq a port the branch adds where added, as a
+// new port's check is planned.
+func checkedAs(t *testing.T, e *Engine, branch model.Branch, added bool, jq, viewer model.Outcome, alter func(execution *model.GuestExecution, jq *model.TargetResult)) {
+	t.Helper()
 	head := model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 	tree := model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD^{tree}"))
 	at := time.Now().UTC().Truncate(time.Millisecond)
@@ -316,7 +323,7 @@ func checkedWith(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.
 		revision := model.Revision{ID: model.RevisionID(store.NewID("rev")), Branch: branch.ID, Kind: model.RevisionCommit, Source: model.Source{Commit: head, Tree: tree, Base: branch.Base}, Head: head, CreatedAt: at}
 		plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: []model.Environment{tahoe}, Tests: model.TestsDeclared, CreatedAt: at,
 			Targets: []model.PlanTarget{
-				{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed},
+				{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed, Added: added},
 				{ID: "harbor-viewer", Target: model.Target{Name: "harbor-viewer"}, Directory: "graphics/harbor-viewer", Kind: model.Unchanged, Role: model.Also},
 			},
 			Builds: []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"jq", "harbor-viewer"}}}}
@@ -948,4 +955,38 @@ func TestALinkHoldStandsAfterANarrowerCheck(t *testing.T) {
 	held := e.linkHolds(t.Context(), &combined)
 	require.Len(t, held, 1, "a narrower check keeps the earlier result's hold")
 	require.Equal(t, "oniguruma", held[0].Subject)
+}
+
+// Status loads the decisions a standing reads, a new port's lint
+// acceptance among them, where it loaded them only when a target failed:
+// submit took a passed new port whose lint warnings were accepted, and
+// status, serve, and ship --passing said it wasn't ready (Codex's review
+// of 8e314b96, finding 6).
+func TestStatusReadsALintAcceptanceAsSubmitDoes(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	checkedAs(t, e, branch, true, model.OutcomePassed, model.OutcomePassed, func(_ *model.GuestExecution, jq *model.TargetResult) {
+		jq.Lint, jq.Nitpicked = []string{"warning: review new port"}, true
+	})
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.False(t, status.Check().Publishable(), "unaccepted, a new port's lint warning holds")
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocking)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		return tx.AddDecision(model.Decision{Branch: branch.ID, Finding: model.FindingFailure, Subject: "jq", Evidence: plan.Commit, Answer: model.Accepted, At: e.now()})
+	}))
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocking, "submit reads the acceptance")
+	status, err = e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.True(t, status.Check().Publishable(), "status reads it too: %#v", status.Accepted)
+	passing, err := e.PassingBranches(t.Context())
+	require.NoError(t, err)
+	require.True(t, slices.ContainsFunc(passing.Ready, func(s BranchStatus) bool { return s.Branch.ID == branch.ID }), "serve and ship --passing take it")
 }
