@@ -463,6 +463,71 @@ type leftDirectory struct {
 	restored bool
 }
 
+// awaitOrphans waits for the guest programs a crashed dockhand left
+// building in the prefix: one runs under sudo in a process group of its
+// own and outlives its dockhand, whose lock died with it, and the next
+// check, taking the lock, snapshotted and built beside it (the
+// architecture thread's finding on rc7). Once each ends, its directory is
+// an ordinary leftover. A directory whose dockhand runs still is that
+// dockhand's, which the lock waits on already.
+func (l *Local) awaitOrphans(ctx context.Context, prefix string, build buildenv.Build) error {
+	said := map[string]bool{}
+	for {
+		orphans := l.orphans(prefix)
+		if len(orphans) == 0 {
+			return nil
+		}
+		for _, orphan := range orphans {
+			if !said[orphan.dir] {
+				said[orphan.dir] = true
+				build.Progress(fmt.Sprintf("waiting for %s's program (pid %d), which its dockhand left running, to finish in %s", orphan.owner.Check, orphan.program, prefix))
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(cmp.Or(l.Poll, 10*time.Second)):
+		}
+	}
+}
+
+// orphan is a check's directory whose dockhand ended while its guest
+// program, program, runs still.
+type orphan struct {
+	dir     string
+	owner   owner
+	program int
+}
+
+// orphans are the prefix's check directories whose dockhand ended and
+// whose guest program runs still.
+func (l *Local) orphans(prefix string) []orphan {
+	entries, err := os.ReadDir(l.temp())
+	if err != nil {
+		return nil
+	}
+	var found []orphan
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), localDirectory) {
+			continue
+		}
+		dir := filepath.Join(l.temp(), entry.Name())
+		if _, ours := l.building.Load(dir); ours {
+			continue
+		}
+		var made owner
+		data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+		if err != nil || json.Unmarshal(data, &made) != nil || made.Prefix != prefix || running(made.PID, made.Start) {
+			continue
+		}
+		results, _ := (&guest.Follower{Root: dir}).Read(context.Background(), hostGuest{})
+		if program, _ := strconv.Atoi(results.Environment["pid"]); alive(program) {
+			found = append(found, orphan{dir: dir, owner: made, program: program})
+		}
+	}
+	return found
+}
+
 func (l *Local) left() []leftDirectory {
 	entries, err := os.ReadDir(l.temp())
 	if err != nil {
@@ -529,6 +594,9 @@ func alive(pid int) bool {
 // left that changed nothing. One that can't be put back stops the check,
 // saying how.
 func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.Build) error {
+	if err := l.awaitOrphans(ctx, prefix, build); err != nil {
+		return err
+	}
 	for _, left := range l.left() {
 		if left.snapshot == "" || left.restored {
 			os.RemoveAll(left.dir)

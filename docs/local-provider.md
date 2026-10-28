@@ -25,7 +25,7 @@ build_timeout = "6h"           # a target's build's bound, as Tart's
 ## What it does
 
 1. The check takes the prefix for itself until step 7 is done, by a lock keyed on the prefix's path, its links resolved, kept in `/var/tmp/dockhand-locks`, a directory every user reaches, sticky as `/tmp` is: a second check on the prefix, serve's and yours, another database's, or another user's, waits, saying whose: "waiting for /opt/local, held by check-12 (pid 4711)".
-2. If an earlier check left the prefix changed, ending before it could put it back, it's put back first.
+2. If an earlier check's dockhand ended while its program goes on building in the prefix, as after a crash, the check waits for that program to finish, saying so. If an earlier check left the prefix changed, ending before it could put it back, it's put back first.
 3. The revision's tree and its port index are staged in a directory of the check's own under `/var/tmp`, where MacPorts' unprivileged user can read them.
 4. MacPorts reads the staged tree through a `macports.conf` of the check's own, named by `PORTSRC`, which MacPorts reads after its own so it wins. Its `sources_conf` lists the staged tree first, then the prefix's own sources with their `[default]`, so the branch's ports are found first and the rest as before. The prefix's `etc/macports` is never written.
 5. Before anything changes, what's active is recorded, and `port snapshot --create --note "dockhand check-N attempt 1"` records the prefix.
