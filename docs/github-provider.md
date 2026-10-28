@@ -27,6 +27,7 @@ profiles.fork = { provider = "github" }
 3. It waits for the run to finish, then saves each runner's log beside the check's other logs (`dockhand logs check-N`).
 4. It reads each log's markers for each port: the subport listing, `port lint` errors, failed dependencies and installs, and the install and test groups.
    - A port passes only if it passed on every runner that built it.
+   - If GitHub cancels a job before any runner takes it, the check fails as infrastructure, naming the job, and is retried; it can't pass until every job runs.
    - If it failed on any runner, it failed at that runner's phase, and the result names the runner.
    - A runner that listed its subports without the port didn't build it, as the workflow leaves a port off a macOS it doesn't support. The others decide.
    - Each runner's part is kept with the result: `dockhand logs check-N` shows it under the port, and `--json` as `builders`.
