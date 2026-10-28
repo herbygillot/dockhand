@@ -12,7 +12,7 @@ The whole loop is built and used for real work, MacPorts pull requests and dockh
 - **Checks:** `check` in Tart (macOS 12 through 27, each with an Xcode image), on the fork's GitHub Actions, through a command of your own, or in a MacPorts prefix on this Mac (`local`); `logs`, `retry`, `shell`, `artifacts`, `wait`, and `cancel`.
 - **Review and submit:** `tidy`, `rebase`, `submit`, `review`, and `decide`; `serve` runs queued checks and the daily look at the selected ports.
 
-v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest, the guide as Codex rewrote it, and nine small fixes from field testing.
+v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest and six small fixes from field testing.
 
 ## Next
 
@@ -52,25 +52,14 @@ Its acceptance is v0.6.0's, with:
 - two `local` checks on one prefix at once, the second waiting for the first's put-back (finding 1, above);
 - a `local` check whose dockhand is killed mid-build, and another on its prefix, which waits for the first's guest program to end before it snapshots (272e968b);
 - G3 reading its prefix's note from the check's JSON again, and a second `local` check of the same revision building where rc7's was refused (below);
-- `dockhand usage` and each of its topics printed with no checkout (d72eb26c).
+- `dockhand usage` and each of its twelve topics printed with no checkout, and A10 running each page's examples but those it names as not run, each with its reason (d72eb26c and a92db818).
 
 Placed before rc1, in the wait for v0.6.0's tag, so v0.7.0 stays one release (rc6's B7 on the M1, which passed, sent here by the coordinator on 2026-10-28 at 11:25Z; not harm):
 
 - **An idle serve costs little** (about half a batch, inferred). On rc6, serve spent 148 CPU-minutes in 16 hours with nothing to run, about 15% of a core, on dhtest's database of 838 branches. While idle it polls every 2 seconds, reading the store for its lease and queue, and every 5 minutes refreshes the pull requests and gathers the status of every open branch for its submit pass (engine/servesubmit.go `PassingBranches`, through `Status`), the per-branch reads that make v0.6.0's `status --all` slow; on main, item 6 reads each kind of git fact once for every branch (ff7d16cc), which may be most of it. Its first step is done: the submit pass reads git only for the branches a check finished for, which the store says (4f75365e). An in-process measurement on main (2026-10-28, a generated store of 840 branches, 140 open and 120 with pull requests, the forge and git faked) projects an idle hour at about 11 s, at most 0.3% of a core: each 2-second tick's `session.Fenced`, `Candidates`, and `CleanupDue` take about 40 µs together, and the 5-minute pass's `PassingBranches` 41 ms and pull request refresh 860 ms, nearly all of it the fake forge. The rest waits on an hour's profile of an idle serve on main over dhtest's database, on the M1 once C1 and G3 are done, and fixes where the time goes; the suspects left (inferred) are `PassingBranches`' git reads of each open branch a check finished for, and the signed-in pull request refresh's reviews and checks for each pull request. Done when an idle serve on dhtest's database spends a small fraction of rc6's rate, measured in v0.7.0's B7. Taken when touched's serve finding 3 rides it where the change is in serve's loop.
 
-From the person's ask (2026-10-28 18:11Z, in the prioritization thread), first of what's left:
-
-- **The guide as Codex rewrote it** (about a quarter batch, inferred). Codex rewrote docs/usage/ in the person's checkout, uncommitted, into twelve pages: `dockhand usage` alone takes setup through to a pull request in about 1,350 words, where setup.md had 11,800; the seven topics are rewritten, and `branches`, `publishing`, `recovery`, and `configuration` added, each with where to start, examples, what to expect, and navigation that works from the binary alone; the Markdown prints as written, so shell examples copy; and it registered the new topics. Codex checked all twelve from a fresh home outside any checkout. Implementation adopts it, at the person's "Please adopt and rework the `usage` command for its changes": reads the pages against the commands as they are, keeps the usage command's topics, docs/usage.md's index, the names and environment tests, and A10 in step with them, keeps Codex's own checks where they're worth keeping in the gate, and commits it. Done when the twelve pages are on main, each prints from a binary with no checkout, and the full gate passes.
-
-From field testing's abook session (2026-10-28, on rc6 and v0.5.0, sent here by the coordinator at 17:15Z):
-
-- **A migration's refusal names the dockhand processes on the database** (about a tenth of a batch). rc6, asked to migrate the shared database from schema 39 to 49 while a v0.5.0 batch ran, refused and gave the copy's route, which the session praised; it asked which processes were live, the fourth session to ask for that list. status lists each live process with its kind, PID, build, and what it does (engine/processes.go, f954a58a), where the refusals say a count and builds (store's `LiveUnderMigrationError`) or only the release that last opened the database (`ReleaseUnderMigrationError`). Both list the live processes as status does, where there are any. Done when a migration refused under a live process names its kind, PID, build, and work.
-- **`--on` takes a provider's name again after a comma** (about a tenth of a batch). `--on tart:12,tart:26` is refused, `unknown release "tart:26"`, where `tart:12,26` works: everything after the first colon goes to the provider (engine/provider.go `Environments`). An item after a comma that names a provider starts that provider's list, so both forms plan the same environments, and an item that's neither a provider's nor a release's says the forms `--on` takes. Done when both forms plan tart 12 and 26, and `--on tart:12,foo` names the forms.
-- **A failed build that reran autotools says its generated files may be stale** (about a tenth of a batch). abook 0.6.2's failure said `make: *** [aclocal.m4] Error 127` and offered `--baseline`, where its tarball's aclocal.m4 includes m4/extensions.m4, which it doesn't ship, so make's rule to rerun aclocal fired. Where the failing make target is aclocal.m4, configure, Makefile.in, or config.h.in, or its command is aclocal, automake, autoconf, or autoheader, the summary adds a note read from the lines it shows already (buildlog), with nothing of MacPorts': make tried to regenerate the distfile's autotools output, which is often upstream's packaging slip, a file not shipped or timestamps lost; `use_autoreconf yes` regenerates it where every source it reads is shipped. A note, never a hold. Done when abook's lines give the note, and a make error on another target doesn't.
-
 From the abook session's follow-up (2026-10-28, on v0.5.0, sent here by the coordinator at 17:22Z):
 
-- **A patch is read against a source `extract.mkdir` unpacks** (about a tenth of a batch). abook's Portfile sets `extract.mkdir yes`, its tarball having no top directory, and submit said "patch-database-ctype.diff doesn't apply to 0.6.2's source, as dockhand read it … No file to patch", a `patch-rejected` hold, where the build patched database.c. patchcheck's `extract` reads a member as below the worksrcdir, or below a top directory it drops (macports/patchcheck/patchcheck.go), so database.c, at the archive's root, is never read; `Port` passes neither `extract.mkdir` nor anything that says the archive's members sit in the worksrcdir as they are (read, not run). With `extract.mkdir` set, each member is a path below the worksrcdir as the archive has it. Done when a fake archive with no top directory, under `extract.mkdir yes`, has its patch read as applying, and the same archive without it as MacPorts would unpack it.
 - **A held line says what it holds, and what lets it go** (about a tenth of a batch). update's, status's, and submit's `! held:` lines, "Makefile.am changed", "configure.ac is new", "configure.in was removed", say neither that they stop serve and `ship --yes` alone, a person's own submit going ahead, nor what releases them, where submit's preview of serve's holds names `dockhand decide` under its majors, floors, and links (item 13, ce68f1a9). Each held line names its rule, and after them one line says once that serve and `ship --yes` wait on them, that `dockhand decide <rule> -p <port> --because "…"` answers one for the branch, and that `holds.allow` lets a rule go for every branch. Done when update's and status's held lines name their rule and the line after them says the rest.
 
 From the abook session's submission (macports/macports-ports#36162, on v0.5.0, sent here by the coordinator at 17:34Z):
@@ -81,7 +70,11 @@ From the abook session's submission (macports/macports-ports#36162, on v0.5.0, s
 From the ace 8.0.8 update (on v0.5.0, sent here by the coordinator at 17:58Z):
 
 - **The plan says its test policy as a policy** (about a twentieth of a batch). The plan's line ends "tests declared" (view/writers.go), `check.tests`' policy of running tests where a port declares them, which reads as the port declaring tests: devel/ace declares none. It says "tests where declared", and names the targets that declare none, as `required` names them already (`Plan.Untested`). Done when ace's plan says none of its targets declares tests.
-- **The link notice names the ports, never the port itself** (about a twentieth of a batch). "ace links 1 port, each declared in depends_lib" counted ace's own libraries (evidence `UndeclaredLinks` counts every port a target links, itself and its subports among them; view/stages.go `LinkWords`), where ace links no other port's, and its one dependency, path:bin/perl:perl5, is a program. A target's own port and its Portfile's subports aren't counted, and the line names the ports, "ace links perl5's libraries, declared", or says it links no other port's. Done when ace's links say it links no other port's, and a target linking two declared ports names both.
+- **The link notice names the ports, never the port itself** (about a twentieth of a batch). "ace links 1 port, each declared in depends_lib" counted ace's own libraries (evidence `UndeclaredLinks` counts every port a target links, itself and its subports among them; view/stages.go `LinkWords`), where ace links no other port's, and its one dependency, path:bin/perl:perl5, is a program. A target's own port and its Portfile's subports aren't counted, and the line names the ports, "ace links perl5's libraries, declared", or says it links no other port's. tao's "tao links 1 port" is the same count, tcl and zlib declared and nothing of the prefix linked but its own (field testing, sent here by the coordinator at 19:03Z). Done when ace's and tao's links say each links no other port's, and a target linking two declared ports names both.
+
+From field testing's ace and tao check (on v0.5.0, sent here by the coordinator at 19:03Z, the bug sent to implementation with it):
+
+- **update's fetch URL for a distname made through `name_package`** (size not known). update built a wrong fetch URL for tao, whose distname goes through `name_package` and whose release's tag holds a `+` (the coordinator's note; the code isn't read here). Done when tao's update fetches what its Portfile, evaluated at the new version, names.
 
 What it carries, each said in full in its notes:
 
@@ -96,6 +89,7 @@ What it carries, each said in full in its notes:
   - The patch refresh, item 8 (fd9de5a2, 4ba655e2, and 2cdedbf3).
   - A library's install names, and its dependents, item 9 (b271486c, a146a9fe, c750b273, and 7d5bcf4d).
   - The configure summary's drift, item 10 (881cc8b9).
+  - A patch is read against the source `extract.mkdir` unpacks, where it held as not applying (2ad896d2).
   - What moved, in what a check installed and in configure's summary, is read against the check before it, never a later one, and names it (5a72a542).
   - A self-hosted GitLab's instance keeps its path, its repositories read below it (6b34996e).
   - create's deferred work, item 14: Cargo targets found once, a workspace's binaries, `create --plan`, and a Go module below its repository's root (35b36ad5, 1fb335ca, and 622c5bd1).
@@ -115,6 +109,8 @@ What it carries, each said in full in its notes:
   - `dockhand artifacts` prints a check's built archives (bd7043f1).
   - A local plan's JSON carries its prefix's note, as its text does, and G3 reads it there (6ce5d072).
   - A local check uninstalls an inactive, unrequested image of the version it builds, which MacPorts would activate, where it refused (fd3d4b9f).
+  - `--on` takes a provider's name again after a comma, `tart:12,tart:26` as `tart:12,26` (0b5c7f03).
+  - A failed build that reran autotools says its generated files may be stale, and how `use_autoreconf` regenerates them (69c402c7).
   - Under serve, a command's progress reports are serve's own "serve:" lines, and its fetches of master say nothing (7bc1e35c).
 - **Selecting, holding, and submitting.**
   - Port selectors, and serve's selection (6daa852a).
@@ -132,9 +128,10 @@ What it carries, each said in full in its notes:
   - status, serve, and `ship --passing` take a passed new port whose lint warnings were accepted, as submit does, the rule's owner saying when a standing reads decisions (cd1e53b7).
   - status's, check's, and `review --check`'s JSON carry what their text says: a branch's detail, a check's lint, links, and what moved, and the review with its check inside (0c6ea87d).
   - status names the check holding a `local` check's prefix, as the wait does (6ee5ec13).
+  - A refused migration names the dockhand processes on the database, as status does (3bd21f03).
   - clean removes a merged branch whose changes are all on master, and a listing can end (650ec969); it offers the fork branches closed and canceled work left (d887556f).
 - **The guide.**
-  - `dockhand usage [topic]` prints the guide from the binary, docs/usage.md split by workflow into pages it embeds, at the person's ask and his name for it (d72eb26c).
+  - `dockhand usage [topic]` prints the guide from the binary, at the person's ask and his name for it: twelve pages it embeds, docs/usage.md their index, as Codex rewrote them at his word, each page's TOML and shell examples checked (d72eb26c and a92db818).
 - **Inside.**
   - The assessment as a package, item 15 (ab7dce32, bd92981b, and 6441e960).
   - A modelled context's SDK, tools, and compiler list are its own on base master, from the weekly job's findings (33251823 and 0c1aa135).
@@ -173,7 +170,7 @@ Decided questions, with the rule each settled, are in [decisions](decisions.md).
 
 From the abook session's follow-up (2026-10-28, on v0.5.0, sent here by the coordinator at 17:22Z):
 
-- **A declared library nothing links.** abook's draft declared `port:libiconv`, which nothing it built links, and the check's link notice said nothing, where otool showed it. The link rule has what each build declares and links (evidence `UndeclaredLinks`), so "declares libiconv, which nothing it built links" is a notice of a few lines; but a port declared for a program it runs, a language whose modules don't link it, a header-only library, or one loaded with dlopen links nothing too, and every Python port would say its python. It needs whether the declared port installs a library at all, which the guest would read with `port contents`, a guest protocol change, and stays a notice, never a hold. About a quarter batch (inferred), a candidate when the next release is sized.
+- **A declared library nothing links.** abook's draft declared `port:libiconv`, which nothing it built links, and the check's link notice said nothing, where otool showed it. The link rule has what each build declares and links (evidence `UndeclaredLinks`), so "declares libiconv, which nothing it built links" is a notice of a few lines; but a port declared for a program it runs, a language whose modules don't link it, a header-only library, or one loaded with dlopen links nothing too, and every Python port would say its python; tao declares tcl and zlib and links neither (field testing, 19:03Z). It needs whether the declared port installs a library at all, which the guest would read with `port contents`, a guest protocol change, and stays a notice, never a hold. About a quarter batch (inferred), a candidate when the next release is sized.
 
 From the gnome-voice session's notes (2026-10-20, 06987cab):
 
