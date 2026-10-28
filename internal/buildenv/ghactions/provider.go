@@ -394,6 +394,18 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		}
 		runners = append(runners, runner{job: j, log: path, built: cilog.ReadLog(log), listing: cilog.ListsSubports(log), capped: capped})
 	}
+	// A matrix a job of which no runner took is incomplete, and nothing
+	// of it is recorded: one green runner beside an untaken job recorded a
+	// pass, and the check read as covering every CI release (Codex's
+	// review of 2ad896d2, W1). Unrecorded, the run is retried as any
+	// infrastructure failure is; a job GitHub skipped stays skipped.
+	if len(untaken) > 0 {
+		why := ""
+		if ended != "" {
+			why = " (" + ended + ")"
+		}
+		return buildenv.Infrastructure("GitHub cancelled %s before any runner took %s%s, so the matrix is incomplete; see %s", prose.And(jobWords(untaken)), map[bool]string{true: "it", false: "them"}[len(untaken) == 1], why, run.URL)
+	}
 
 	recorded := 0
 	var unbuilt []string
@@ -421,9 +433,6 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		build.Progress(fmt.Sprintf("the workflow did not build %s; it builds only the ports a commit changes", strings.Join(unbuilt, ", ")))
 	}
 	if recorded == 0 && run.Conclusion != "success" {
-		if len(untaken) > 0 {
-			return buildenv.Infrastructure("GitHub cancelled %s before any runner took %s; see %s", prose.And(jobWords(untaken)), map[bool]string{true: "it", false: "them"}[len(untaken) == 1], run.URL)
-		}
 		return buildenv.Infrastructure("%s ended %s without building a port; see %s", run.URL, run.Conclusion, job.Directory)
 	}
 	return nil
