@@ -80,6 +80,7 @@ From the 2026-09 plan's questions for the person. D15, D19's taking, and D3 are 
 - **`check --keep` keeps the clone whether the guest passed or failed** (2026-10-20), for `dockhand shell`.
 - **Branch worktrees go in `~/Source/macports-branches`** (2026-09-27), wherever the clone is; `worktrees` in the configuration names another.
 - **An interrupted serve never abandons work** (2026-10-04): the next serve resumes it.
+- **A decision on a moving source holds for the commit looked at** (2026-10-28, the person's "as per your recommendations", on the architecture thread's with Codex's D1; built before v0.7.0 rc1): a decision on a static finding holds while the port's directory is unchanged, so an edit elsewhere doesn't lapse it; one on `source-moved`, `tag-moved`, or `unknown-source` holds for the checked and current source it was made on, so a later move is a new concern. `decide` takes the subject from the current concern.
 - **Release binaries for macOS 10.13 to 11 are parked** (2026-10-20) as draft PR #6 until someone on those releases asks.
 
 ## Not taken
