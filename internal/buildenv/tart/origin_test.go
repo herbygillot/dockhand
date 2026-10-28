@@ -140,7 +140,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // alone, and every --nitpick finding is a warning (base's portlint.tcl at
 // v2.12.6), so nothing is built or judged otherwise, and the protocol
 // stays 3.
-const guestPin = "e7826ca62e358ea4abefd869792c8351f2b3acbb9dd935cfe39add31c1fcf37b"
+const guestPin = "5f4530657a7ffb75d9052f4d738a86b4cb928b9fb994b132bcd054426bab4855"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

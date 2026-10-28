@@ -898,13 +898,30 @@ proc build {index target} {
     # same version, revision, and variants is master's Portfile's build,
     # not the branch's.
     # In a prefix of the person's, an image of the version the branch
-    # builds would be activated, not built: the check stops, saying so.
+    # builds would be activated, not built. One inactive and unrequested,
+    # as a check's put-back leaves what it built for port reclaim, is
+    # uninstalled first, and said; an active or requested one is the
+    # person's, and the check stops, saying so (rc7's acceptance, where a
+    # second check of jlv's revision was refused).
     if {[llength $local]} {
         lassign [split [fact {*}$here -q info --line --version --revision $selection] \t] version revision
+        set requested [fact $port -q installed requested and $name]
         foreach line [split [fact $port -q installed $name] \n] {
-            if {$version ne "" && [regexp {^\s*\S+ @([^+\s]+)} $line -> installed] && $installed eq "${version}_$revision"} {
-                return -code error -errorcode {DOCKHAND REFUSED} "$name @${version}_$revision is installed in [dict get $input prefix] already, so MacPorts would activate it rather than build the branch's; port uninstall $name @${version}_$revision, or a revision bump, lets it build"
+            if {$version eq "" || ![regexp {^\s*\S+ (@([^+\s]+)\S*)} $line -> image installed] || $installed ne "${version}_$revision"} {
+                continue
             }
+            set mine [expr {[string match {*(active)*} $line] || [lsearch -exact [regexp -all -inline {\S+} $requested] $image] >= 0}]
+            if {!$mine} {
+                set ::phase "uninstalling $name $image, inactive and unrequested, so the branch's builds"
+                save running
+                if {[set message [run $log [list $port -N uninstall $name $image]]] eq ""} {
+                    set fd [open $log a]
+                    puts $fd "dockhand: uninstalled $name $image, inactive and unrequested, so the branch's builds"
+                    close $fd
+                    continue
+                }
+            }
+            return -code error -errorcode {DOCKHAND REFUSED} "$name @${version}_$revision is installed in [dict get $input prefix] already, so MacPorts would activate it rather than build the branch's; port uninstall $name @${version}_$revision, or a revision bump, lets it build"
         }
     }
     set install [concat $here -dks install --unrequested $selection]
