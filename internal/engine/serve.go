@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -163,6 +164,7 @@ func (o ServeOptions) submits() bool { return o.ShipTo == string(ShipSubmit) }
 // check -d does where it sees no serve leading (dockhand check -d's drain).
 func (e *Engine) Serve(ctx context.Context, session *coord.Session, options ServeOptions) error {
 	s := newServer(e, options)
+	ctx = s.reporting(ctx)
 	var again model.RunID
 	for {
 		lease, err := s.lead(ctx, session)
@@ -182,6 +184,28 @@ func (e *Engine) Serve(ctx context.Context, session *coord.Session, options Serv
 		again = queued[0].ID
 		s.say("serve: %s was queued as the drain ended; draining again", queued[0].Name())
 	}
+}
+
+// reporting is ctx with what the work reports said as serve's lines,
+// where it went to standard error plain: serve.log held "Fetching master
+// from …" 87 times in 16 hours apart from serve's lines (rc6's B7). Only
+// what a person needs is said, and a fetch nobody waits on isn't
+// (fetchMaster).
+func (s *server) reporting(ctx context.Context) context.Context {
+	return context.WithValue(progress.WithReporter(ctx, func(update progress.Update) {
+		if update.Level == progress.Info {
+			s.say("serve: %s", update.Message)
+		}
+	}), servingKey{}, true)
+}
+
+// servingKey marks the work serve does, which nobody waits on.
+type servingKey struct{}
+
+// serving reports whether the work under ctx is serve's.
+func serving(ctx context.Context) bool {
+	served, _ := ctx.Value(servingKey{}).(bool)
+	return served
 }
 
 // server is one serve's state while it leads.
