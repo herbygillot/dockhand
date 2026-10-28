@@ -119,6 +119,9 @@ func writeStep(out io.Writer, logs engine.RunLogs, run model.Run, port string) {
 	for _, line := range last {
 		fmt.Fprintf(out, "      %s\n", line)
 	}
+	if note := buildlog.AutotoolsNote(last); note != "" {
+		fmt.Fprintf(out, "    Note: %s.\n", note)
+	}
 	fmt.Fprintf(out, "    dockhand logs %s %s --phase %s shows the step\n", run.Name(), port, step)
 }
 

@@ -331,6 +331,11 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 			for _, line := range lines {
 				fmt.Fprintf(out, "    %s\n", line)
 			}
+			// A note read from the lines shown, never a hold (the abook
+			// session, 2026-10-28).
+			if note := buildlog.AutotoolsNote(lines); note != "" {
+				fmt.Fprintf(out, "  Note: %s.\n", note)
+			}
 			fmt.Fprintln(out)
 		}
 	}
