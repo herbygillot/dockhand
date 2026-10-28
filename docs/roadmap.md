@@ -12,7 +12,7 @@ The whole loop is built and used for real work, MacPorts pull requests and dockh
 - **Checks:** `check` in Tart (macOS 12 through 27, each with an Xcode image), on the fork's GitHub Actions, through a command of your own, or in a MacPorts prefix on this Mac (`local`); `logs`, `retry`, `shell`, `artifacts`, `wait`, and `cancel`.
 - **Review and submit:** `tidy`, `rebase`, `submit`, `review`, and `decide`; `serve` runs queued checks and the daily look at the selected ports.
 
-v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest, two small fixes from rc7's acceptance, and a guide in the binary.
+v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest, a small fix from rc7's acceptance, and a guide in the binary.
 
 ## Next
 
@@ -52,7 +52,7 @@ Its acceptance is v0.6.0's, with:
 - two `local` checks on one prefix at once, the second waiting for the first's put-back (finding 1, above);
 - a `local` check whose dockhand is killed mid-build, and another on its prefix, which waits for the first's guest program to end before it snapshots (272e968b);
 - G3 reading its prefix's note from the check's JSON again, and a second `local` check of the same revision building where rc7's was refused (below);
-- `dockhand help` and each of its topics printed with no checkout (below).
+- `dockhand usage` and each of its topics printed with no checkout (below).
 
 Placed before rc1, in the wait for v0.6.0's tag, so v0.7.0 stays one release (rc6's B7 on the M1, which passed, sent here by the coordinator on 2026-10-28 at 11:25Z; not harm):
 
@@ -60,12 +60,11 @@ Placed before rc1, in the wait for v0.6.0's tag, so v0.7.0 stays one release (rc
 
 From rc7's acceptance on the M1 (sent here by the coordinator at 16:53Z; no harm found):
 
-- **A local plan's JSON carries its prefix's note** (about a tenth of a batch). A plan's text says, of a `local` prefix other than /opt/local, that MacPorts' binary archives are built for /opt/local alone, so its dependencies build from source (engine `PrefixNote`, view/writers.go), and its JSON doesn't, where 0c6ea87d has the JSON carry what the text says elsewhere; G3's assert read it from the JSON and failed, and implementation dropped `--json` from G3 for rc7. The plan's environment carries the note in its JSON, and G3 reads it there again. Done when check's JSON, for a plan in a prefix other than /opt/local, carries the note.
 - **A local check makes way for an image of its own version that MacPorts would reclaim** (about a tenth of a batch). Put-back leaves what a check built inactive and unrequested, for `port reclaim`, as design v3 has it, so a second check of the same revision is refused: "jlv @1.7.1_1 is installed in … already, so MacPorts would activate it rather than build the branch's; port uninstall jlv @1.7.1_1, or a revision bump, lets it build" (buildenv/guest/guest.tcl). Where that image is inactive and unrequested, as a check leaves it, the check uninstalls it first and says so, "uninstalled jlv @1.7.1_1, inactive and unrequested, so the branch's builds"; an active or requested one is the person's, and still refuses. Put-back is unchanged, and the dependencies a check left stay for the next to activate. Done when, in a fake prefix, a check of a revision whose image is inactive and unrequested uninstalls it and builds, and one whose image is active, or requested, refuses.
 
 From the person's ask (2026-10-28 16:56Z, in the timeline):
 
-- **A guide in the binary, `dockhand help <topic>`** (about a batch, inferred), for an agent meeting dockhand for the first time, which has the binary and not docs/. `dockhand help` alone prints the one-time setup and the straight path to a pull request at length, where cobra's prints `--help` again; `dockhand help <topic>` prints a workflow across commands: `hand-edits`, `unattended`, `checks`, `review`, `batches`, `new-port`, and `agents`, which says `--json`, the exit codes, that nothing is asked without a terminal, the scratch environment (MACPORTS_TREE, DOCKHAND_DB, DOCKHAND_CONFIG), and which commands reach outside this Mac and so want a person's word. `--help` lists the topics, as cobra's additional help topics, and `<command> --help` stays each command's reference. The pages are docs/usage.md split by workflow, Markdown files a small package embeds, so the repository's guide and the binary's are one text, which TestEveryNamedCommandExists checks as it checks docs/ now; usage.md becomes their index. The name `help` is prioritization's recommendation, `usage` the person's first; his answer decides it. Done when each topic prints from a binary with no checkout, and a test has every page listed in `dockhand help`'s topics.
+- **A guide in the binary, `dockhand usage [topic]`** (about a batch, inferred), for an agent meeting dockhand for the first time, which has the binary and not docs/. `dockhand usage` alone prints the one-time setup and the straight path to a pull request at length; `dockhand usage <topic>` prints a workflow across commands: `hand-edits`, `unattended`, `checks`, `review`, `batches`, `new-port`, and `agents`, which says `--json`, the exit codes, that nothing is asked without a terminal, the scratch environment (MACPORTS_TREE, DOCKHAND_DB, DOCKHAND_CONFIG), and which commands reach outside this Mac and so want a person's word. `usage` is a command in `--help`'s list, whose introduction names it, and `help` stays what `-h` is (the person's "`usage`", 2026-10-28 17:08Z); `<command> --help` stays each command's reference. The pages are docs/usage.md split by workflow, Markdown files a small package embeds, so the repository's guide and the binary's are one text, which TestEveryNamedCommandExists checks as it checks docs/ now; usage.md becomes their index. Done when each topic prints from a binary with no checkout, and a test has every topic `dockhand usage` lists print.
 
 What it carries, each said in full in its notes:
 
@@ -97,6 +96,7 @@ What it carries, each said in full in its notes:
   - An undeclared link holds, read from the check's merged evidence, and regression tests keep it (96af4d95, a2e81dc1, and b2267cdc).
   - After a dockhand crash, a `local` check waits for the guest it left building before it snapshots (272e968b).
   - `dockhand artifacts` prints a check's built archives (bd7043f1).
+  - A local plan's JSON carries its prefix's note, as its text does, and G3 reads it there (6ce5d072).
   - Under serve, a command's progress reports are serve's own "serve:" lines, and its fetches of master say nothing (7bc1e35c).
 - **Selecting, holding, and submitting.**
   - Port selectors, and serve's selection (6daa852a).
