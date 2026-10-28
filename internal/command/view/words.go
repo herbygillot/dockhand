@@ -40,7 +40,7 @@ func ComparisonLines(comparisons []engine.PortComparison) []string {
 		if several {
 			port = strings.Join(l.Ports, ", ") + ": "
 		}
-		lines = append(lines, mark+port+l.Words)
+		lines = append(lines, mark+port+engine.WithRule(l.Words, l.Rule))
 	}
 	return lines
 }
@@ -218,11 +218,16 @@ func WriteUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 		}
 	default:
 		fmt.Fprintln(out, "Upstream changes:")
+		held := false
 		for _, change := range comparison.Changes {
 			fmt.Fprintf(out, "  %s\n", UpstreamWords(engine.UnderUpstream(change)))
+			held = held || change.Hold
 		}
 		if words := engine.CoverageWords(*comparison); words != "" {
 			fmt.Fprintf(out, "    %s\n", words)
+		}
+		if held {
+			fmt.Fprintf(out, "  %s.\n", prose.Sentence(engine.HoldsLetGo))
 		}
 	}
 }
@@ -232,7 +237,7 @@ func WriteUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 // 5, item 2, where "!" meant it held and "·" that it didn't).
 func UpstreamWords(change model.UpstreamChange) string {
 	if change.Hold {
-		return Look + " held: " + change.Message
+		return Look + " held: " + engine.WithRule(change.Message, change.Rule)
 	}
 	return Unmarked + " " + change.Message
 }

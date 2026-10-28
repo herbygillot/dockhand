@@ -144,6 +144,35 @@ func HoldLines(concerns []model.Concern) []string {
 	return lines
 }
 
+// HoldRuleLines are HoldLines, each naming the rule that raised it, as
+// decide and holds.allow name it: "upstream's COPYING changed
+// [license-changed]". A held line said neither what it stopped nor what
+// let it go (the abook session, 2026-10-28).
+func HoldRuleLines(concerns []model.Concern) []string {
+	var lines []string
+	said := map[string]bool{}
+	for _, concern := range concerns {
+		if key := concern.Unported(); !said[key] {
+			said[key] = true
+			lines = append(lines, WithRule(concern.Detail, concern.Rule))
+		}
+	}
+	return lines
+}
+
+// WithRule is a held line with the rule that raised it, in brackets as a
+// commit rule's finding ends with its code; as it is where none is named.
+func WithRule(line, rule string) string {
+	if rule == "" {
+		return line
+	}
+	return line + " [" + rule + "]"
+}
+
+// HoldsLetGo says once, after the held lines, what they stop and what
+// lets them go.
+const HoldsLetGo = `serve and ship --yes wait on these, and your own submit goes ahead; dockhand decide <rule> -p <port> --because "…" answers one for this branch, and holds.allow lets a rule go for every branch`
+
 // Concerns are what a submission would wait on a person's look for, were
 // nobody to look it over (the assessment design, E), each once: what its
 // assessments found that a passing build can't catch, or couldn't check

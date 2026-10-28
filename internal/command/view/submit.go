@@ -50,6 +50,9 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 			lines = []string{"compared; no license, build file, or dependency changes"}
 		}
 		fmt.Fprintf(out, "  Upstream %s\n", strings.Join(lines, "\n           "))
+		if slices.ContainsFunc(lines, func(line string) bool { return strings.HasPrefix(line, Look+" held: ") }) {
+			fmt.Fprintf(out, "           %s.\n", prose.Sentence(engine.HoldsLetGo))
+		}
 	}
 	// What would hold serve's submission of it, which a person's own goes
 	// ahead of: its major versions, a raised floor, and the ports its
@@ -153,7 +156,7 @@ func UpstreamLines(plan engine.SubmitPlan) []string {
 	// A Git-fetched port whose tag has moved since its check: the check
 	// built another source than this would submit.
 	for _, moved := range plan.Moved {
-		lines = append(lines, Look+" held: "+moved.Detail)
+		lines = append(lines, Look+" held: "+engine.WithRule(moved.Detail, moved.Rule))
 	}
 	return lines
 }
