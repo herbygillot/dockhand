@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -29,7 +31,7 @@ func UpdateCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var selectors outdated.Selectors
 	var version VersionUpdate
 	cmd := &cobra.Command{
-		Use:   "update <port> [version]",
+		Use:   "update <port> [version] | <port>...",
 		Short: "Update a port to a newer release",
 		Long: `Moves a port to the newest release upstream, or the version named, and fills
 in its checksums, in the branch's working files. Nothing is committed.
@@ -49,18 +51,24 @@ The old and new versions' archives are compared, and a changed license
 file, a changed build file, or a new declared dependency is reported: what a
 reviewer would ask about, and what a passing build can't catch.
 
+Several ports are updated in the one branch, each to its newest release:
+"update kubectl-1.34 kubectl-1.35 --new" starts one branch, named for the
+ports' directory where they share a Portfile, and tidy makes a commit for
+each update. A version is given with a lone port: a second word that names
+no port is the version.
+
 --mine updates every port you maintain that has a newer release, as
-outdated --mine finds them: one branch each, from fresh master, nothing
+outdated --mine finds them: a branch a Portfile, from fresh master, nothing
 committed. It shows the branches before starting any, and asks once; --yes
 starts them without asking. dockhand ship --mine carries them on, to their
 pull requests, and ship takes a port's update as far as --to says.
 --maintainer, --category, and --not-maintainer choose the ports by
 master's index instead, or beside --mine, as outdated does.`,
-		Args: cobra.RangeArgs(0, 2),
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if selectors.Chosen() {
 				if len(args) > 0 || where.Branch != "" || where.IsNew() {
-					return errors.New("a selection starts a branch for each port it chooses; it takes no port, --branch, or --new")
+					return errors.New("a selection starts a branch for each Portfile it chooses; it takes no port, --branch, or --new")
 				}
 				return updateMine(cmd.Context(), s, streams, version, selectors, plan, yes)
 			}
@@ -69,6 +77,9 @@ master's index instead, or beside --mine, as outdated does.`,
 			}
 			if len(args) == 0 {
 				return errors.New("name the port to update, or update your outdated ports with --mine")
+			}
+			if len(args) > 1 {
+				return updateSeveral(cmd.Context(), s, streams, where, version, args, plan)
 			}
 			request, err := version.Request(args, plan)
 			if err != nil {
@@ -82,7 +93,7 @@ master's index instead, or beside --mine, as outdated does.`,
 	version.Flags(cmd)
 	cmd.Flags().BoolVar(&version.HandEdit, "hand-edit", false, "write Dockhand's best attempt when an update is refused, for you to finish manually; record the refusal")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
-	selectors.Register(cmd, "update, each in a branch of its own,")
+	selectors.Register(cmd, "update, a branch a Portfile,")
 	settings.OverAllowanceFlag(cmd, s)
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with a selection, start the branches without asking")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
@@ -91,8 +102,71 @@ master's index instead, or beside --mine, as outdated does.`,
 	return cmd
 }
 
+// updateSeveral is update of more than one word: a port and the version
+// to update it to, where the second names no port, else several ports,
+// each to its newest release, in the one branch, which --new names for
+// their directory where they share a Portfile (field testing's four
+// kubectl subports, which took four calls).
+func updateSeveral(ctx context.Context, s *settings.Settings, streams term.Streams, where branchflags.BranchChoice, version VersionUpdate, args []string, plan bool) error {
+	e, err := s.Open(ctx)
+	if err != nil {
+		return err
+	}
+	var directories []string
+	for i, word := range args {
+		directory, named := e.PortDirectory(ctx, word)
+		if !named && i == 1 && len(args) == 2 {
+			e.Close()
+			request, err := version.Request(args, plan)
+			if err != nil {
+				return err
+			}
+			_, _, err = Author(ctx, s, streams, where, engine.WorkUpdate, request, version.Linked)
+			return err
+		}
+		if !named {
+			e.Close()
+			if i == 1 {
+				return fmt.Errorf("%s names no port; a version goes with a lone port, as update %s %s", word, args[0], word)
+			}
+			return fmt.Errorf("%s names no port on master", word)
+		}
+		if !slices.Contains(directories, directory) {
+			directories = append(directories, directory)
+		}
+	}
+	e.Close()
+	if where.IsNew() && where.NewName() == "" && len(directories) == 1 {
+		where.New = path.Base(directories[0])
+	}
+	whole := &view.BatchJSON{}
+	streams.LinkSteps(whole)
+	var failed []string
+	for i, port := range args {
+		whole.Next()
+		if i > 0 {
+			fmt.Fprintln(streams.Out)
+		}
+		request, err := version.Request([]string{port}, plan)
+		if err == nil {
+			var branch model.Branch
+			branch, _, err = Author(ctx, s, streams, where, engine.WorkUpdate, request, version.Linked)
+			// The ports after go in the branch the first started, or the
+			// one named.
+			if err == nil && branch.Name != "" && !plan {
+				where = branchflags.BranchChoice{Branch: branch.Name}
+			}
+		}
+		if err != nil {
+			fmt.Fprintf(streams.Err, "%s: %v\n", port, view.SayNext(err))
+			failed = append(failed, port)
+		}
+	}
+	return view.BatchExit(failed, len(args), "updated")
+}
+
 // updateMine is update --mine, or another selection: ship's edit stage
-// over the outdated ports chosen, each in a branch of its own, nothing
+// over the outdated ports chosen, a branch a Portfile, nothing
 // committed (decision 7, 2026-10-13).
 func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams, version VersionUpdate, selectors outdated.Selectors, plan, yes bool) error {
 	whole := &view.BatchJSON{}
@@ -111,14 +185,20 @@ func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams,
 		fmt.Fprintln(out, "Nothing to update: no newer releases remain outside your existing branches.")
 		return nil
 	}
-	fmt.Fprintf(out, "Will start %s, one per port:\n", prose.Plural(len(outdated.Updates), "branch"))
+	fmt.Fprintf(out, "Will start %s, one per Portfile:\n", prose.Plural(len(outdated.Updates), "branch"))
 	rows := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, update := range outdated.Updates {
-		row := fmt.Sprintf("  %s\t%s %s → %s", engine.BranchName(update.Name), update.Port.Port, update.Port.Current, update.Port.Newest)
-		if update.CrossesMajor() {
-			row += ", a new major version"
+		for i, port := range update.Ports() {
+			name := engine.BranchName(update.Name)
+			if i > 0 {
+				name = ""
+			}
+			row := fmt.Sprintf("  %s\t%s %s → %s", name, port.Port, port.Current, port.Newest)
+			if (engine.PlannedUpdate{Port: port}).CrossesMajor() {
+				row += ", a new major version"
+			}
+			fmt.Fprintln(rows, row)
 		}
-		fmt.Fprintln(rows, row)
 	}
 	_ = rows.Flush()
 	if plan {
@@ -134,20 +214,31 @@ func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams,
 		return nil
 	}
 	var failed []string
+	total := 0
 	for _, update := range outdated.Updates {
-		whole.Next()
-		fmt.Fprintln(out)
-		request, err := version.Request([]string{update.Port.Port}, false)
-		if err == nil {
-			request.Version, request.Release = update.Port.Newest, update.Port.Release
-			_, _, err = Author(ctx, s, streams, branchflags.BranchChoice{New: update.Name}, engine.WorkUpdate, request, version.Linked)
-		}
-		if err != nil {
-			fmt.Fprintf(streams.Err, "%s: %v\n", update.Port.Port, view.SayNext(err))
-			failed = append(failed, update.Port.Port)
+		// The ports of one Portfile go in turn into the one branch the
+		// first starts.
+		where := branchflags.BranchChoice{New: update.Name}
+		for _, port := range update.Ports() {
+			total++
+			whole.Next()
+			fmt.Fprintln(out)
+			request, err := version.Request([]string{port.Port}, false)
+			if err == nil {
+				request.Version, request.Release = port.Newest, port.Release
+				var started model.Branch
+				started, _, err = Author(ctx, s, streams, where, engine.WorkUpdate, request, version.Linked)
+				if err == nil && started.Name != "" {
+					where = branchflags.BranchChoice{Branch: started.Name}
+				}
+			}
+			if err != nil {
+				fmt.Fprintf(streams.Err, "%s: %v\n", port.Port, view.SayNext(err))
+				failed = append(failed, port.Port)
+			}
 		}
 	}
-	return view.BatchExit(failed, len(outdated.Updates), "updated")
+	return view.BatchExit(failed, total, "updated")
 }
 
 func ChecksumsCommand(s *settings.Settings, streams term.Streams) *cobra.Command {

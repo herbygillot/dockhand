@@ -127,12 +127,12 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	require.Equal(t, 3, term.ExitCode(err))
 	require.Contains(t, out, "Not checked (1)\n  lost  —")
 
-	// --mine updates each in a branch of its own, nothing committed, and
+	// --mine updates a branch a Portfile, nothing committed, and
 	// --plan starts none.
 	out, _, err = cmdtest.Dockhand(t, "update", "--mine", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "  lost: skipped: no forge could be found for it\n")
-	require.Contains(t, out, "Will start 1 branch, one per port:\n  dockhand/jq-1.8.1  jq 1.7.1 → 1.8.1\n", "a row a port, with the name the run uses")
+	require.Contains(t, out, "Will start 1 branch, one per Portfile:\n  dockhand/jq-1.8.1  jq 1.7.1 → 1.8.1\n", "a row a port, with the name the run uses")
 	require.Contains(t, out, "Nothing was started (--plan).\n")
 
 	_, _, err = cmdtest.Dockhand(t, "update", "--mine")
@@ -154,7 +154,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	require.Contains(t, out, "Nothing to update: no newer releases remain outside your existing branches.\n")
 
 	_, _, err = cmdtest.Dockhand(t, "update", "--mine", "jq")
-	require.EqualError(t, err, "a selection starts a branch for each port it chooses; it takes no port, --branch, or --new")
+	require.EqualError(t, err, "a selection starts a branch for each Portfile it chooses; it takes no port, --branch, or --new")
 	_, _, err = cmdtest.Dockhand(t, "update")
 	require.ErrorContains(t, err, "name the port to update, or update your outdated ports with --mine")
 }
@@ -173,7 +173,7 @@ func TestUpdateMineLeavesAnUncertainPortForALook(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "update", "--mine", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "Will start 1 branch, one per port:\n  dockhand/jq-")
+	require.Contains(t, out, "Will start 1 branch, one per Portfile:\n  dockhand/jq-")
 	require.Contains(t, out, "1 that may have one; review needed")
 
 	result, err := cmdtest.JSONOf(t, "outdated", "jq", "lost", "yq")

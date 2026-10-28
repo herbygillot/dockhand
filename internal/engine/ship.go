@@ -31,6 +31,9 @@ type shipTarget struct {
 	Version string
 	Release *model.Release
 	Name    string
+	// Also are the other ports of the Portfile it updates in the branch,
+	// in turn (PlannedUpdate.Also).
+	Also []OutdatedPort
 }
 
 // shipOptions are how ship moves a target: who asked, how far, where its
@@ -82,9 +85,32 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 	done.Update, err = e.Update(ctx, UpdateRequest{Start: &StartRequest{Name: target.Name, Origin: options.Origin}, Action: model.EditUpdate, Port: target.Port, Version: target.Version,
 		Release: target.Release, CompareUpstream: true, Batch: true, Unattended: options.Unattended()})
 	done.Branch = done.Update.Branch
+	// The other ports of its Portfile follow, in the one branch, a commit
+	// each: where the first is current, the next starts it.
+	for _, also := range target.Also {
+		if err != nil {
+			break
+		}
+		request := UpdateRequest{Action: model.EditUpdate, Port: also.Port, Version: also.Newest, Release: also.Release, CompareUpstream: true, Batch: true, Unattended: options.Unattended()}
+		if done.Update.Current && done.Branch.ID == "" {
+			request.Start = &StartRequest{Name: target.Name, Origin: options.Origin}
+		} else {
+			request.Branch = done.Branch
+		}
+		var next Update
+		if next, err = e.Update(ctx, request); err != nil {
+			err = fmt.Errorf("%s: %w", also.Port, err)
+		}
+		if !next.Current || done.Update.Current {
+			done.Update = next
+		}
+		if next.Branch.ID != "" {
+			done.Branch = next.Branch
+		}
+	}
 	if err != nil {
 		done.Problem = err.Error()
-		if !done.Update.Started {
+		if !done.Update.Started && done.Branch.ID == "" {
 			done.Problem += "; no branch was started"
 		}
 		return done

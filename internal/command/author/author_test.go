@@ -600,3 +600,19 @@ func TestAnUpdateOutOfStableIsSaid(t *testing.T) {
 	require.Equal(t, 1, strings.Count(out, "this takes jq out of stable"), out)
 	require.Contains(t, out, "  ! this takes jq out of stable (1.7.1 → 2.0-rc1)\n")
 }
+
+// update takes several ports into one branch; a version goes with a lone
+// port, a second word naming no port being the version.
+func TestUpdateTakesAVersionOnlyWithALonePort(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--plan", "--new")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq", "1.9.0", "zzz", "--plan", "--new")
+	require.ErrorContains(t, err, "1.9.0 names no port; a version goes with a lone port, as update jq 1.9.0")
+	out, _, err := cmdtest.Dockhand(t, "update", "jq", "1.9.0", "--plan", "--new")
+	require.NoError(t, err)
+	require.Contains(t, out, "1.9.0", "a second word naming no port is the version")
+}

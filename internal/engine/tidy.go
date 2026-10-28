@@ -176,7 +176,8 @@ func (p TidyPlan) Unambiguous() bool { return p.Gate().Unambiguous() }
 func (p TidyPlan) Blocking() []string { return p.Gate().Blocking() }
 
 // PlanTidy proposes the commits a branch should have: one per port
-// directory by default, with the subject dockhand's authoring commands
+// directory by default, one per update where dockhand's edits updated
+// several of a directory's ports (updateSteps), with the subject dockhand's authoring commands
 // wrote or the one the branch's own commits give, and every edit not yet
 // committed included. Nothing is changed.
 func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, error) {

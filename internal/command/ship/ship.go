@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -21,6 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/term"
 )
@@ -159,11 +161,18 @@ type shipTarget struct {
 	// row is the change's row in a batch's table, where the batch says one
 	// (batchRows).
 	row *shipRow
+	// Also are the other ports of the Portfile Port is in that a selection
+	// updates, in the one branch, which Directory names (mineTargets).
+	Also      []shipTarget
+	Directory string
 }
 
 func (t shipTarget) Name() string {
-	if t.Branch != nil {
+	switch {
+	case t.Branch != nil:
 		return t.Branch.ShortName()
+	case len(t.Also) > 0:
+		return path.Base(t.Directory)
 	}
 	return t.Port
 }
@@ -215,7 +224,13 @@ func mineTargets(ctx context.Context, s *settings.Settings, e *engine.Engine, st
 	}
 	var targets []shipTarget
 	for _, update := range plan.Updates {
-		targets = append(targets, shipTarget{Port: update.Port.Port, Version: update.Port.Newest, Release: update.Port.Release})
+		target := shipTarget{Port: update.Port.Port, Version: update.Port.Newest, Release: update.Port.Release, Directory: update.Directory}
+		// The ports of one Portfile go in one branch, a commit each
+		// (engine.PlanOutdated).
+		for _, also := range update.Also {
+			target.Also = append(target.Also, shipTarget{Port: also.Port, Version: also.Newest, Release: also.Release})
+		}
+		targets = append(targets, target)
 	}
 	return targets, nil
 }
@@ -247,6 +262,12 @@ func WriteShipPlan(ctx context.Context, e *engine.Engine, out io.Writer, targets
 	for _, target := range targets {
 		from := "a version update from master"
 		switch {
+		case len(target.Also) > 0:
+			ports := []string{target.Port}
+			for _, also := range target.Also {
+				ports = append(ports, also.Port)
+			}
+			from = "version updates of " + prose.And(ports) + " from master, in one branch"
 		case target.Branch != nil && target.Port != "":
 			// A resumed branch is brought to the release asked for, the
 			// pin or the newest, where it isn't there: neither submitting
@@ -450,31 +471,51 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 				return nil, err
 			}
 		}
-		request, err := version.Request([]string{target.Port}, false)
-		if err != nil {
-			return nil, err
+		// The ports of one Portfile are updated in turn into the one
+		// branch, named for their directory, which the first edit starts.
+		named := branchflags.NewNamed
+		if len(target.Also) > 0 {
+			named = path.Base(target.Directory)
 		}
-		// A batch, or a ship nobody looks over, starts no branch for an
-		// edit dockhand can't make (UpdateRequest.HandBranch).
-		request.Version, request.Release, request.Unattended, request.Batch = target.Version, target.Release, unattended, batch
-		where := branchflags.BranchChoice{New: branchflags.NewNamed}
-		if target.Branch != nil {
-			where = branchflags.BranchChoice{Branch: target.Branch.ShortName()}
-		}
-		edits, edit := streams.Staged("editing " + target.Port)
-		updated, update, err := author.Author(ctx, s, edits, where, "update", request, linked)
-		if err != nil || !update.Applied {
-			edit.Say()
-		}
-		if err != nil || target.Branch == nil && !update.Applied {
-			return nil, err
-		}
-		target.Branch = &updated
-		if update.Applied {
-			lines.heading = view.UpdateHeading(target.Port, update, updated)
-			lines.done(edit, "edited", strings.Join(update.Files, ", "), "")
-		} else {
-			lines.heading = updated.ShortName()
+		var applied []string
+		for i, port := range append([]shipTarget{target}, target.Also...) {
+			request, err := version.Request([]string{port.Port}, false)
+			if err != nil {
+				return nil, err
+			}
+			// A batch, or a ship nobody looks over, starts no branch for an
+			// edit dockhand can't make (UpdateRequest.HandBranch).
+			request.Version, request.Release, request.Unattended, request.Batch = port.Version, port.Release, unattended, batch
+			where := branchflags.BranchChoice{New: named}
+			if target.Branch != nil {
+				where = branchflags.BranchChoice{Branch: target.Branch.ShortName()}
+			}
+			edits, edit := streams.Staged("editing " + port.Port)
+			updated, update, err := author.Author(ctx, s, edits, where, "update", request, linked)
+			if err != nil || !update.Applied {
+				edit.Say()
+			}
+			if err != nil {
+				return nil, err
+			}
+			if target.Branch == nil && !update.Applied {
+				if i == len(target.Also) {
+					return nil, nil
+				}
+				continue
+			}
+			target.Branch = &updated
+			if update.Applied {
+				applied = append(applied, port.Port)
+				if len(target.Also) == 0 {
+					lines.heading = view.UpdateHeading(port.Port, update, updated)
+				} else {
+					lines.heading = updated.ShortName()
+				}
+				lines.done(edit, "edited", strings.Join(update.Files, ", "), "")
+			} else if len(applied) == 0 {
+				lines.heading = updated.ShortName()
+			}
 		}
 	}
 	branch := *target.Branch

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -343,7 +344,15 @@ type PlannedUpdate struct {
 	Port OutdatedPort
 	// Name is the branch's name, without dockhand/.
 	Name string
+	// Also are the other ports of Port's Portfile the plan updates, in
+	// the one branch, which Name names for Directory: tidy makes a commit
+	// each.
+	Also      []OutdatedPort
+	Directory string
 }
+
+// Ports are the ports the planned branch updates, in order.
+func (p PlannedUpdate) Ports() []OutdatedPort { return append([]OutdatedPort{p.Port}, p.Also...) }
 
 // CrossesMajor says whether the update moves the port to a new major
 // version, which what depends on it may need to follow; a preview says
@@ -358,8 +367,8 @@ type SkippedUpdate struct {
 	Reason string
 }
 
-// PlanOutdated splits a report's outdated ports into branches: a port an
-// open branch already changes, or whose newest release could not be
+// PlanOutdated splits a report's outdated ports into branches, one for
+// the ports of each Portfile: a port an open branch already changes, or whose newest release could not be
 // found, is left alone. A port whose newest release is uncertain isn't
 // outdated, and isn't planned: which release it takes is a person's call.
 func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (OutdatedPlan, error) {
@@ -401,11 +410,25 @@ func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (Outda
 			plan.Skipped = append(plan.Skipped, SkippedUpdate{Port: port.Port, Reason: ClosedWords(closed, port.Newest)})
 			continue
 		}
+		// The ports of one Portfile go in one branch, named for its
+		// directory, where a branch each would be pull requests editing
+		// one file: field testing's four kubectl subports.
+		directory, _ := e.PortDirectory(ctx, port.Port)
+		if at := slices.IndexFunc(plan.Updates, func(u PlannedUpdate) bool { return directory != "" && u.Directory == directory }); at >= 0 {
+			planned := &plan.Updates[at]
+			if len(planned.Also) == 0 {
+				if planned.Name, err = e.FreeName(ctx, path.Base(directory)); err != nil {
+					return plan, err
+				}
+			}
+			planned.Also = append(planned.Also, port)
+			continue
+		}
 		name, err := e.NameFor(ctx, port.Port, port.Newest)
 		if err != nil {
 			return plan, err
 		}
-		plan.Updates = append(plan.Updates, PlannedUpdate{Port: port, Name: name})
+		plan.Updates = append(plan.Updates, PlannedUpdate{Port: port, Name: name, Directory: directory})
 	}
 	return plan, nil
 }
@@ -500,7 +523,7 @@ func (e *Engine) PrepareOutdated(ctx context.Context, plan OutdatedPlan, options
 
 func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options PrepareOptions) PreparedUpdate {
 	to := cmp.Or(options.To, ShipCommit)
-	done := e.ship(ctx, shipTarget{Port: planned.Port.Port, Version: planned.Port.Newest, Release: planned.Port.Release, Name: planned.Name},
+	done := e.ship(ctx, shipTarget{Port: planned.Port.Port, Version: planned.Port.Newest, Release: planned.Port.Release, Name: planned.Name, Also: planned.Also},
 		shipOptions{Origin: options.Origin, To: to, Where: options.Where, Tests: options.Tests, Answered: options.Answered})
 	done.Planned = planned
 	return done

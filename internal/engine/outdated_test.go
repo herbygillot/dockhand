@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/outdated"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
@@ -270,4 +271,32 @@ func TestAnUpdateClosedUnmergedIsNotProposedAgain(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, branch.ID, closed.ID)
+}
+
+// The outdated ports of one Portfile are planned in one branch, named for
+// its directory, where a branch each would be pull requests editing one
+// file (field testing's four kubectl subports); ports of other Portfiles
+// keep a branch each.
+func TestThePortsOfOnePortfileArePlannedInOneBranch(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
+		"sysutils/kubectl": {port("kubectl"), port("kubectl-1.34"), port("kubectl-1.35")},
+		"textproc/jq":      {port("jq")},
+	}})
+	testsupport.Git(t, f.clone, "update-ref", "refs/dockhand/master", "HEAD")
+	outdated := func(name, current, newest string) OutdatedPort {
+		return OutdatedPort{Port: name, Current: current, Newest: newest, Outdated: true, Release: &model.Release{Version: newest}}
+	}
+	plan, err := e.PlanOutdated(t.Context(), OutdatedReport{Ports: []OutdatedPort{
+		outdated("jq", "1.7.1", "1.8.1"), outdated("kubectl-1.34", "1.34.1", "1.34.13"), outdated("kubectl-1.35", "1.35.1", "1.35.9"),
+	}})
+	require.NoError(t, err)
+	require.Len(t, plan.Updates, 2)
+	require.Equal(t, "jq-1.8.1", plan.Updates[0].Name)
+	kubectl := plan.Updates[1]
+	require.Equal(t, "sysutils/kubectl", kubectl.Directory)
+	require.Equal(t, []string{"kubectl-1.34", "kubectl-1.35"}, []string{kubectl.Ports()[0].Port, kubectl.Ports()[1].Port})
+	require.True(t, strings.HasPrefix(kubectl.Name, "kubectl-"), "named for the directory: %s", kubectl.Name)
 }
