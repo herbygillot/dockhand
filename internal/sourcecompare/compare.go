@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/project"
 )
@@ -105,7 +107,7 @@ func yearsOnly(old, now []byte) (string, bool) {
 const partyWords = 8
 
 // partyOnly reports whether two versions of a license file differ only in
-// the party they name, and gives it at each end and in how many places:
+// the party they name, a name-like word (nameLike), and gives it at each end and in how many places:
 // every change replaces a few words, each mention of the old party sharing
 // a word, as "HashiCorp, Inc." and "HashiCorp's" share HashiCorp, and each
 // of the new sharing one, as IBM. vault 2.2's LICENSE made IBM its
@@ -128,10 +130,51 @@ func partyOnly(old, now []byte) (was, is string, places int, ok bool) {
 	// A party is named more than once: one word for another, once, is as
 	// likely a license's name, "MIT" for "Apache-2.0".
 	was, is = sharedWord(olds), sharedWord(news)
-	if len(hunks) < 2 || was == "" || is == "" || strings.EqualFold(was, is) {
+	if len(hunks) < 2 || was == "" || is == "" || strings.EqualFold(was, is) || !nameLike(was) || !nameLike(is) {
+		return "", "", 0, false
+	}
+	// A rename replaces every mention with a party the text never named:
+	// "Licensor" to "Licensee" swaps two the terms already had.
+	if names(before, is) || names(after, was) {
 		return "", "", 0, false
 	}
 	return was, is, len(hunks), true
+}
+
+// names reports whether a text's words name a party, by its word as
+// sharedWord bares it.
+func names(words []string, party string) bool {
+	return slices.ContainsFunc(words, func(word string) bool { return strings.EqualFold(bareWord(word), party) })
+}
+
+// nameLike reports whether a word can name a party, a person or an
+// organization: capitalized, as HashiCorp or IBM, holding a letter, and
+// none of a license's own words. Repeated substitutions alone don't make a
+// rename: "must" to "may" twice, or "2" to "3" in a header and a footer,
+// changes the terms, and held as a party's rename (Codex's review of
+// 8e314b96, finding 2).
+func nameLike(word string) bool {
+	first, _ := utf8.DecodeRuneInString(word)
+	if !unicode.IsUpper(first) || !strings.ContainsFunc(word, unicode.IsLetter) {
+		return false
+	}
+	return !slices.Contains(termWords, strings.ToLower(word))
+}
+
+// termWords are the words a license's terms are made of, which name no
+// party however they're spelled: RFC 2119's MUST and MAY, and the
+// licenses' names, among them.
+var termWords = []string{
+	"must", "may", "shall", "should", "will", "can", "cannot", "not", "required", "optional", "recommended",
+	"license", "licence", "licensor", "licensee", "licensed", "software", "work", "works", "version", "copyright",
+	"holder", "holders", "owner", "owners", "author", "authors", "contributor", "contributors", "you", "your",
+	"the", "this", "that", "any", "all", "and", "or", "change", "date", "notice", "source", "binary", "object",
+	"grant", "permission", "use", "free", "public", "general", "lesser", "affero", "commercial", "noncommercial",
+	// The licenses' own names, which one license replaced by another
+	// repeats in a header and a footer: GPL to AGPL, Apache to MIT.
+	"gpl", "lgpl", "agpl", "gnu", "apache", "mit", "bsd", "isc", "mpl", "mozilla", "epl", "eclipse", "cddl", "eupl",
+	"busl", "bsl", "boost", "artistic", "zlib", "unlicense", "wtfpl", "cc0", "cc", "creative", "commons", "psf",
+	"python", "php", "openssl", "ssleay", "x11", "ofl", "hpnd", "ncsa", "postgresql", "upl", "osl", "afl",
 }
 
 // sameLicense reports whether two texts are the same licenses by what
@@ -190,10 +233,7 @@ func wordHunks(before, after []string) [][2][]string {
 // sharedWord is a word every run has, as it's spelled in the first run,
 // its possessive and punctuation set aside; empty where there's none.
 func sharedWord(runs [][]string) string {
-	bare := func(word string) string {
-		word = strings.TrimSuffix(strings.TrimSuffix(word, "'s"), "’s")
-		return strings.ToLower(strings.Trim(word, ".,;:()[]\"'’"))
-	}
+	bare := func(word string) string { return strings.ToLower(bareWord(word)) }
 	for _, candidate := range runs[0] {
 		key := bare(candidate)
 		if key == "" {
@@ -211,6 +251,12 @@ func sharedWord(runs [][]string) string {
 		}
 	}
 	return ""
+}
+
+// bareWord is a word with its possessive and punctuation set aside.
+func bareWord(word string) string {
+	word = strings.TrimSuffix(strings.TrimSuffix(word, "'s"), "’s")
+	return strings.Trim(word, ".,;:()[]\"'’")
 }
 
 // Versions are the release an update moves from and to, which a build file
