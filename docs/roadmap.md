@@ -12,7 +12,7 @@ The whole loop is built and used for real work, MacPorts pull requests and dockh
 - **Checks:** `check` in Tart (macOS 12 through 27, each with an Xcode image), on the fork's GitHub Actions, through a command of your own, or in a MacPorts prefix on this Mac (`local`); `logs`, `retry`, `shell`, `artifacts`, `wait`, and `cancel`.
 - **Review and submit:** `tidy`, `rebase`, `submit`, `review`, and `decide`; `serve` runs queued checks and the daily look at the selected ports.
 
-v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest and seven small fixes from field testing.
+v0.5.0 is the latest release (2026-10-25, 6246e4b9, its port updated in macports/macports-ports#35968). v0.6.0's last candidate is in acceptance, and v0.7.0 is on main behind it, its rc1 waiting on the idle serve's rest and nine small fixes from field testing.
 
 ## Next
 
@@ -73,6 +73,11 @@ From the abook session's submission (macports/macports-ports#36162, on v0.5.0, s
 
 - **A one-port pull request is titled for its update** (about a tenth of a batch). On a branch of "abook: fix formatting" and then "abook: update to 0.6.2", submit titled the pull request "abook: fix formatting": with no title given and several commits, the title is the port's first commit's subject (engine/submit.go `title`). The port's commit whose subject names the version the branch moves it to, as its change record has it, titles it, else its first as now; `--title` and an existing pull request's title still win. Done when that branch's plan is titled "abook: update to 0.6.2", and a branch of two fixes keeps its first.
 - **A branch that raises a version is an enhancement** (about a tenth of a batch). Without `--type`, the template's enhancement is ticked only where dockhand wrote every commit and one is an update it made (engine/body.go `dockhandUpdate`), so abook's hand-made branch ticked none, where `--type`'s help says enhancement is the default for an update dockhand made. A branch whose change record raises a port's version is an update whoever wrote it, and ticks enhancement; a revbump or a new port ticks nothing, as now, and `--type` overrides; the help says "enhancement for a branch that updates a port". Done when a hand-made branch raising a version ticks enhancement and a revbump's ticks nothing.
+
+From the ace 8.0.8 update (on v0.5.0, sent here by the coordinator at 17:58Z):
+
+- **The plan says its test policy as a policy** (about a twentieth of a batch). The plan's line ends "tests declared" (view/writers.go), `check.tests`' policy of running tests where a port declares them, which reads as the port declaring tests: devel/ace declares none. It says "tests where declared", and names the targets that declare none, as `required` names them already (`Plan.Untested`). Done when ace's plan says none of its targets declares tests.
+- **The link notice names the ports, never the port itself** (about a twentieth of a batch). "ace links 1 port, each declared in depends_lib" counted ace's own libraries (evidence `UndeclaredLinks` counts every port a target links, itself and its subports among them; view/stages.go `LinkWords`), where ace links no other port's, and its one dependency, path:bin/perl:perl5, is a program. A target's own port and its Portfile's subports aren't counted, and the line names the ports, "ace links perl5's libraries, declared", or says it links no other port's. Done when ace's links say it links no other port's, and a target linking two declared ports names both.
 
 What it carries, each said in full in its notes:
 
