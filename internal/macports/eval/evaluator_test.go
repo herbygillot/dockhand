@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
@@ -710,4 +711,62 @@ func TestTheEvaluatorReportsThePortsCode(t *testing.T) {
 	require.Contains(t, names, "procedures")
 	require.Contains(t, names, "options")
 	require.Contains(t, names, "unstable:source_date_epoch")
+}
+
+// Each lint fix says whether it changes what a Portfile evaluates to, and
+// what's kept of an evaluation of the files before rests on that: here
+// the evaluator itself says, for a modeline, whitespace on command lines,
+// whitespace inside a value, a continuation dropped, and a maintainers
+// line (the architecture thread on W5, 2026-10-29).
+func TestALintFixSaysWhetherItChangesTheEvaluation(t *testing.T) {
+	t.Parallel()
+	evaluator := liveEvaluator(t)
+	base := "PortSystem 1.0\nname fixture\nversion 1.0\ncategories devel\nlicense MIT\nmaintainers {example.org:ada @ada}\n" +
+		"description {A fixture\n    over two lines}\nhomepage https://example.invalid\n"
+	// One root, so each evaluation's filespath is the same.
+	root := t.TempDir()
+	evaluate := func(text string) map[string]any {
+		putFile(t, root, "devel/fixture/Portfile", text)
+		// source_date_epoch reads the Portfile's time, which a write
+		// moves: it's held, so only the text differs.
+		at := time.Date(2026, 10, 29, 0, 0, 0, 0, time.UTC)
+		require.NoError(t, os.Chtimes(filepath.Join(root, "devel/fixture/Portfile"), at, at))
+		tree, err := macports.NewTree(model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, root, model.Platform{})
+		require.NoError(t, err)
+		targets, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
+		require.NoError(t, err)
+		source, err := tree.Select(targets[0])
+		require.NoError(t, err)
+		snapshot, err := evaluator.Evaluate(t.Context(), source)
+		require.NoError(t, err)
+		// What each port evaluates to, its fetch semantics by value.
+		ports := map[string]any{}
+		for name, port := range snapshot.Ports {
+			var fetch macports.FetchSemantics
+			if port.Fetch != nil {
+				fetch = *port.Fetch
+			}
+			port.Fetch = nil
+			ports[name] = []any{port, fetch}
+		}
+		return ports
+	}
+	for name, edited := range map[string]string{
+		"whitespace on a command line": strings.Replace(base, "version 1.0\n", "version 1.0  \n", 1),
+		"tabs on a command line":       portfile.Modeline + "\n" + strings.Replace(base, "license MIT\n", "\tlicense MIT\n", 1),
+		"whitespace inside a value":    strings.Replace(base, "A fixture\n", "A fixture  \n", 1),
+		"a continuation that swallows": strings.Replace(base, "license MIT\n", "license MIT \\\n", 1),
+		"openmaintainer alone":         strings.Replace(base, "maintainers {example.org:ada @ada}\n", "maintainers openmaintainer\n", 1),
+	} {
+		fixed, fixes := portfile.FixTouched([]byte(base), []byte(edited))
+		require.Len(t, fixes, 1, name)
+		was, is := evaluate(edited), evaluate(string(fixed))
+		if fixes[0].Evaluates {
+			require.NotEqual(t, was, is, "%s says it changes the evaluation, and does", name)
+		} else {
+			require.Equal(t, was, is, "%s says it changes nothing evaluated, and doesn't", name)
+		}
+	}
+	// A modeline is a comment on line 1.
+	require.Equal(t, evaluate(base), evaluate(portfile.Modeline+"\n"+base))
 }

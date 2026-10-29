@@ -1,6 +1,7 @@
 package portfile
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"slices"
@@ -31,10 +32,15 @@ const (
 )
 
 // A LintFix is one kind of fix FixTouched made, and the lines it made it
-// on, counted from 1.
+// on, counted from 1. Evaluates says it changes what the Portfile
+// evaluates to: a continuation dropped or a maintainers line always does,
+// and whitespace does where it's inside a value, as a braced description
+// over lines, and nowhere else; what's kept of an evaluation of the
+// files before rests on it (the architecture thread on W5, 2026-10-29).
 type LintFix struct {
-	Kind  string
-	Lines []int
+	Kind      string
+	Lines     []int
+	Evaluates bool
 }
 
 // Words say the fix, as an edit's report says it.
@@ -95,6 +101,14 @@ func FixTouched(before, after []byte) (_ []byte, fixes []LintFix) {
 		}
 	}
 	expand := len(lines) > 0 && isModeline(lines[0]) && !conflicts(lines[0])
+	// Whitespace inside a value is the value's: a fix of it there
+	// changes what the Portfile evaluates to.
+	values, parsed := valueSpans(after)
+	starts := lineStarts(after)
+	inValue := func(at int) bool {
+		return !parsed || slices.ContainsFunc(values, func(span textedit.Span) bool { return span.Start < at && at < span.End })
+	}
+	evaluates := map[string]bool{FixContinuation: true, FixOpenMaintainer: true}
 	for i, line := range lines {
 		if !touched(i) {
 			continue
@@ -102,11 +116,13 @@ func FixTouched(before, after []byte) (_ []byte, fixes []LintFix) {
 		if trimmed := strings.TrimRight(line, " \t"); trimmed != line && !escapedSpace(line, trimmed) {
 			line = trimmed
 			fix(FixTrailingSpace, i)
+			evaluates[FixTrailingSpace] = evaluates[FixTrailingSpace] || inValue(starts[i]+len(lines[i]))
 		}
 		if expand {
 			if indented := expandTabs(line); indented != line {
 				line = indented
 				fix(FixTabs, i)
+				evaluates[FixTabs] = evaluates[FixTabs] || inValue(starts[i])
 			}
 		}
 		if m := openMaintainer.FindStringSubmatch(line); m != nil {
@@ -121,10 +137,46 @@ func FixTouched(before, after []byte) (_ []byte, fixes []LintFix) {
 	for _, kind := range []string{FixTrailingSpace, FixTabs, FixContinuation, FixOpenMaintainer} {
 		if len(found[kind]) > 0 {
 			slices.Sort(found[kind])
-			fixes = append(fixes, LintFix{Kind: kind, Lines: found[kind]})
+			fixes = append(fixes, LintFix{Kind: kind, Lines: found[kind], Evaluates: evaluates[kind]})
 		}
 	}
 	return []byte(strings.Join(lines, "\n")), fixes
+}
+
+// lineStarts are the offsets each of a text's lines starts at, as
+// splitLines counts them.
+func lineStarts(src []byte) []int {
+	starts := []int{0}
+	for i, c := range src {
+		if c == '\n' {
+			starts = append(starts, i+1)
+		}
+	}
+	return starts
+}
+
+// valueSpans are the spans of a Portfile's words over more than one line
+// that are values, not a body MacPorts runs as a script: a braced
+// description's, a notes block's. False where the source doesn't parse,
+// so nothing can be said to be outside one.
+func valueSpans(src []byte) ([]textedit.Span, bool) {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return nil, false
+	}
+	var spans []textedit.Span
+	commands(src, script, false, func(cmd syntax.Command, _ bool) {
+		scripts := bodies(src, cmd)
+		for _, word := range cmd.Words {
+			if slices.ContainsFunc(scripts, func(s *syntax.Script) bool { return word.Span.Start <= s.Span.Start && s.Span.End <= word.Span.End }) {
+				continue
+			}
+			if bytes.IndexByte(src[word.Span.Start:word.Span.End], '\n') >= 0 {
+				spans = append(spans, word.Span)
+			}
+		}
+	})
+	return spans, true
 }
 
 // splitLines is a text's lines, the last one empty where it ends in a
