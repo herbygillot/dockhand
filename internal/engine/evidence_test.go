@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -434,4 +435,54 @@ func TestAStandingAcceptanceTakesADependencysFailureOnItsImage(t *testing.T) {
 	unversioned.Dependency.Version = ""
 	evidence.Targets = []TargetEvidence{changed("gfortran-tool", unversioned)}
 	require.Empty(t, standingAccepted(evidence, []model.Decision{decision}))
+}
+
+// releasesTart is Tart with three releases' images, which plans and never
+// builds.
+type releasesTart struct{}
+
+func (releasesTart) Name() string { return "tart" }
+func (releasesTart) Execute(context.Context, buildenv.Job, buildenv.Build) error {
+	panic("never builds")
+}
+func (releasesTart) Environments(context.Context, string) ([]model.Environment, error) {
+	var environments []model.Environment
+	for _, version := range []string{"21", "22", "25"} {
+		environments = append(environments, model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: version, Architecture: "arm64"}})
+	}
+	return environments, nil
+}
+
+// A running check covers another only where it builds each cell the other
+// does, and keeps a guest where the other asks: minmax's plan has all's
+// environments and targets, and builds jq on two releases of three, so it
+// doesn't cover all's; nor does a check that keeps no guest cover
+// --keep's (Codex's review of 2ad896d2, W4, its probe inverted).
+func TestAPlanCoversAnotherCellByCell(t *testing.T) {
+	t.Parallel()
+	e := &Engine{Providers: map[string]buildenv.Provider{"tart": releasesTart{}}}
+	plan := func(profile string) model.Plan {
+		where, err := e.Where(t.Context(), WhereRequest{Build: profile})
+		require.NoError(t, err)
+		var evaluations []planning.Evaluation
+		for range where.Environments {
+			evaluations = append(evaluations, planning.Evaluation{"jq": {}})
+		}
+		decision, err := planning.Decide(planning.Input{Environments: where.Environments, Span: where.Span,
+			Candidates:  []model.PlanTarget{{ID: "jq", Target: model.Target{Name: "jq", Portfile: "textproc/jq/Portfile"}, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed}},
+			Evaluations: evaluations})
+		require.NoError(t, err)
+		return model.Plan{Environments: where.Environments, Targets: decision.Targets, Builds: decision.Builds, Tests: model.TestsDeclared, Profile: profile}
+	}
+	minmax, all := plan("minmax"), plan("all")
+	require.Equal(t, minmax.Environments, all.Environments, "the same environments")
+	require.Equal(t, minmax.Targets, all.Targets, "and targets")
+	require.False(t, PlanCovers(minmax, all), "minmax builds jq on two releases of three")
+	require.True(t, PlanCovers(all, minmax))
+	require.True(t, PlanCovers(all, all))
+
+	keep := all
+	keep.Keep = true
+	require.False(t, PlanCovers(all, keep), "a check that keeps no guest doesn't stand for one that does")
+	require.True(t, PlanCovers(keep, all))
 }

@@ -226,6 +226,7 @@ type Client struct {
 	GroupMarkdownUploads                GroupMarkdownUploadsServiceInterface
 	GroupMembers                        GroupMembersServiceInterface
 	GroupMilestones                     GroupMilestonesServiceInterface
+	GroupPlaceholderReassignments       GroupPlaceholderReassignmentsServiceInterface
 	GroupProtectedEnvironments          GroupProtectedEnvironmentsServiceInterface
 	GroupProtectedBranches              GroupProtectedBranchesServiceInterface
 	GroupRelationsExport                GroupRelationsExportServiceInterface
@@ -561,6 +562,7 @@ func NewAuthSourceClient(as AuthSource, options ...ClientOptionFunc) (*Client, e
 	c.GroupMarkdownUploads = &GroupMarkdownUploadsService{client: c}
 	c.GroupMembers = &GroupMembersService{client: c}
 	c.GroupMilestones = &GroupMilestonesService{client: c}
+	c.GroupPlaceholderReassignments = &GroupPlaceholderReassignmentsService{client: c}
 	c.GroupProtectedEnvironments = &GroupProtectedEnvironmentsService{client: c}
 	c.GroupProtectedBranches = &GroupProtectedBranchesService{client: c}
 	c.GroupRelationsExport = &GroupRelationsExportService{client: c}
@@ -1214,7 +1216,16 @@ func (r *Response) populateLinkValues() {
 				continue
 			}
 
-			linkType := strings.Trim(strings.Split(parts[1], "=")[1], "\"")
+			// The relation type is read from the first parameter,
+			// which may have no value (RFC 8288, section 3), as in
+			// `<url>; anchor; rel="next"`. Skip such a link instead
+			// of indexing past the end.
+			kv := strings.Split(parts[1], "=")
+			if len(kv) < 2 {
+				continue
+			}
+
+			linkType := strings.Trim(kv[1], "\"")
 			linkValue := strings.Trim(parts[0], "< >")
 
 			switch linkType {

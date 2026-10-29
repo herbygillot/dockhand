@@ -339,7 +339,7 @@ func besideWords(err error, revision model.Revision) error {
 		// testing's rust check, 2026-10-15).
 		return fmt.Errorf("%v, or --replace checks again, keeping what it finished", active)
 	case active.Uncovered:
-		return fmt.Errorf("%s is %s for these files, but doesn't cover what this check asks, its environments, targets, variants, tests, or freshness; --replace stops it, keeping what it finished, and checks this one instead", active.Run.Name(), active.Run.State)
+		return fmt.Errorf("%s is %s for these files, but doesn't cover what this check asks, the builds it makes in each environment, its variants, tests, or freshness, or a kept guest; --replace stops it, keeping what it finished, and checks this one instead", active.Run.Name(), active.Run.State)
 	case active.SameRevision:
 		return active
 	}

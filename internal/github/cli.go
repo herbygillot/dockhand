@@ -42,6 +42,15 @@ func (c CLI) MarkReady(ctx context.Context, ref forge.PullRequestRef) error {
 	return err
 }
 
+// MarkDraft returns a pull request to draft, with gh pr ready --undo.
+func (c CLI) MarkDraft(ctx context.Context, ref forge.PullRequestRef) error {
+	if ref.Forge != forge.GitHub || ref.Number <= 0 || !ValidRepositoryName(ref.Repository) {
+		return fmt.Errorf("github: invalid pull-request reference")
+	}
+	_, err := c.run(ctx, "pr", "ready", strconv.Itoa(ref.Number), "--undo", "--repo", ref.Repository)
+	return err
+}
+
 // run runs gh, saying what it said when it fails.
 func (c CLI) run(ctx context.Context, args ...string) ([]byte, error) {
 	if c.Path == "" {

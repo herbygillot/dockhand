@@ -391,16 +391,34 @@ func (e *Engine) Covered(ctx context.Context, branch model.BranchID, tree model.
 }
 
 // PlanCovers reports whether a check still to finish, have, would stand
-// for want once it passed: every environment want builds in, every target
-// want builds, and a test policy at least as strict. A rerun follows such
-// a check, and queues another for one that doesn't.
+// for want once it passed: every cell want builds, each target in each
+// environment, built in have's environment too, a test policy at least as
+// strict, the same freshness and variants, and a guest kept where want
+// keeps one. The sets alone covered a minmax check for check --build all,
+// whose lists were the same and whose cells were more, and a check that
+// keeps no guest for check --keep (Codex's review of 2ad896d2, W4). A
+// rerun follows such a check, and queues another for one that doesn't.
 func PlanCovers(have, want model.Plan) bool {
 	if testsRank(have.Tests) < testsRank(want.Tests) || have.Fresh != want.Fresh || have.Variants != want.Variants || have.EachVariant != want.EachVariant {
+		return false
+	}
+	if want.Keep && !have.Keep {
 		return false
 	}
 	for _, environment := range want.Environments {
 		if !slices.Contains(have.Environments, environment) {
 			return false
+		}
+	}
+	for _, build := range want.Builds {
+		at := slices.IndexFunc(have.Builds, func(b model.EnvironmentPlan) bool { return b.Environment == build.Environment })
+		if at < 0 {
+			return false
+		}
+		for _, id := range build.Order {
+			if !slices.Contains(have.Builds[at].Order, id) {
+				return false
+			}
 		}
 	}
 	for _, target := range want.Targets {

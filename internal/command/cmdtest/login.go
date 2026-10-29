@@ -25,3 +25,5 @@ func (c SignedIn) MarkReady(_ context.Context, ref forge.PullRequestRef) error {
 	*c.Readied = append(*c.Readied, ref.Number)
 	return nil
 }
+
+func (c SignedIn) MarkDraft(context.Context, forge.PullRequestRef) error { return nil }

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -177,9 +178,26 @@ func (a ApproverIDsValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(a.value)
 }
 
-// UnmarshalJSON implements the json.Unmarshaler interface.
-func (a *ApproverIDsValue) UnmarshalJSON(bytes []byte) error {
-	return json.Unmarshal(bytes, a.value)
+// UnmarshalJSON implements the json.Unmarshaler interface. It accepts a
+// list of IDs or a UserIDValue string, the forms MarshalJSON produces, and
+// rejects a list element that is null or 0, since no user has ID 0.
+func (a *ApproverIDsValue) UnmarshalJSON(data []byte) error {
+	// Ignore null, like in the main JSON package.
+	if string(data) == "null" {
+		return nil
+	}
+	value, err := unmarshalIDOrUserID[[]int64](data)
+	if err != nil {
+		return fmt.Errorf("json: cannot unmarshal %s into Go value of type %T", data, *a)
+	}
+	// json.Unmarshal decodes a null element of the list as 0.
+	if ids, ok := value.([]int64); ok {
+		if i := slices.Index(ids, 0); i >= 0 {
+			return fmt.Errorf("json: cannot unmarshal %s into Go value of type %T: element %d is null or 0", data, *a, i)
+		}
+	}
+	a.value = value
+	return nil
 }
 
 // AssigneeIDValue represents an assignee ID value within GitLab.
@@ -215,9 +233,19 @@ func (a AssigneeIDValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(a.value)
 }
 
-// UnmarshalJSON implements the json.Unmarshaler interface.
-func (a *AssigneeIDValue) UnmarshalJSON(bytes []byte) error {
-	return json.Unmarshal(bytes, a.value)
+// UnmarshalJSON implements the json.Unmarshaler interface. It accepts an
+// ID or a UserIDValue string, the forms MarshalJSON produces.
+func (a *AssigneeIDValue) UnmarshalJSON(data []byte) error {
+	// Ignore null, like in the main JSON package.
+	if string(data) == "null" {
+		return nil
+	}
+	value, err := unmarshalIDOrUserID[int64](data)
+	if err != nil {
+		return fmt.Errorf("json: cannot unmarshal %s into Go value of type %T", data, *a)
+	}
+	a.value = value
+	return nil
 }
 
 // ReviewerIDValue represents a reviewer ID value within GitLab.
@@ -253,9 +281,34 @@ func (a ReviewerIDValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(a.value)
 }
 
-// UnmarshalJSON implements the json.Unmarshaler interface.
-func (a *ReviewerIDValue) UnmarshalJSON(bytes []byte) error {
-	return json.Unmarshal(bytes, a.value)
+// UnmarshalJSON implements the json.Unmarshaler interface. It accepts an
+// ID or a UserIDValue string, the forms MarshalJSON produces.
+func (a *ReviewerIDValue) UnmarshalJSON(data []byte) error {
+	// Ignore null, like in the main JSON package.
+	if string(data) == "null" {
+		return nil
+	}
+	value, err := unmarshalIDOrUserID[int64](data)
+	if err != nil {
+		return fmt.Errorf("json: cannot unmarshal %s into Go value of type %T", data, *a)
+	}
+	a.value = value
+	return nil
+}
+
+// unmarshalIDOrUserID decodes data as a T, the ID or list of IDs that the
+// value types above hold, or else as a UserIDValue string such as "None" or
+// "Any".
+func unmarshalIDOrUserID[T int64 | []int64](data []byte) (any, error) {
+	var ids T
+	if err := json.Unmarshal(data, &ids); err == nil {
+		return ids, nil
+	}
+	var userID UserIDValue
+	if err := json.Unmarshal(data, &userID); err != nil {
+		return nil, err
+	}
+	return userID, nil
 }
 
 // AvailabilityValue represents an availability value within GitLab.

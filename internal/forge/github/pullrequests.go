@@ -177,12 +177,28 @@ type appRestricted struct{ error }
 
 func (appRestricted) Is(target error) bool { return target == forge.ErrAppRestricted }
 
-// readyMutation takes a draft out of draft; GitHub's REST API can't.
-const readyMutation = `mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }`
+// readyMutation takes a draft out of draft, and draftMutation returns a
+// pull request to draft; GitHub's REST API can do neither.
+const (
+	readyMutation = `mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }`
+	draftMutation = `mutation($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) { pullRequest { isDraft } } }`
+)
 
 // MarkReady takes a draft pull request out of draft, so it is ready for
 // review, and reports it as it then is. One already ready is left alone.
 func (c *Client) MarkReady(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	return c.setDraft(ctx, ref, false)
+}
+
+// MarkDraft returns a pull request ready for review to draft, and reports
+// it as it then is. One already a draft is left alone.
+func (c *Client) MarkDraft(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	return c.setDraft(ctx, ref, true)
+}
+
+// setDraft makes a pull request a draft or ready for review, as draft
+// says, where it isn't already.
+func (c *Client) setDraft(ctx context.Context, ref forge.PullRequestRef, draft bool) (forge.PullRequestObservation, error) {
 	if ref.Forge != forge.GitHub || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request reference")
 	}
@@ -198,8 +214,12 @@ func (c *Client) MarkReady(ctx context.Context, ref forge.PullRequestRef) (forge
 	if row.GetNumber() != ref.Number {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: response identifies another pull request")
 	}
-	if row.GetDraft() {
-		request, err := client.NewRequest(ctx, "POST", "graphql", map[string]any{"query": readyMutation, "variables": map[string]any{"id": row.GetNodeID()}})
+	if row.GetDraft() != draft {
+		mutation := readyMutation
+		if draft {
+			mutation = draftMutation
+		}
+		request, err := client.NewRequest(ctx, "POST", "graphql", map[string]any{"query": mutation, "variables": map[string]any{"id": row.GetNodeID()}})
 		if err != nil {
 			return forge.PullRequestObservation{}, err
 		}

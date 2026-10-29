@@ -534,6 +534,9 @@ type Project struct {
 	MergeRequestTitleRegex                    string                                      `json:"merge_request_title_regex"`
 	MergeRequestTitleRegexDescription         string                                      `json:"merge_request_title_regex_description"`
 	CICDCatalogEnabled                        bool                                        `json:"cicd_catalog_enabled"`
+	DuoSASTFPDetectionEnabled                 bool                                        `json:"duo_sast_fp_detection_enabled,omitempty"`
+	DuoSASTVRWorkflowEnabled                  bool                                        `json:"duo_sast_vr_workflow_enabled,omitempty"`
+	DuoSecretDetectionFPEnabled               bool                                        `json:"duo_secret_detection_fp_enabled,omitempty"`
 	// Deprecated: Use PackageRegistryAccessLevel instead.
 	PackagesEnabled bool `json:"packages_enabled"`
 	// Deprecated: use Topics instead
@@ -1130,6 +1133,9 @@ type EditProjectOptions struct {
 	PackageRegistryAccessLevel                *AccessControlValue                          `url:"package_registry_access_level,omitempty" json:"package_registry_access_level,omitempty"`
 	DefaultBranch                             *string                                      `url:"default_branch,omitempty" json:"default_branch,omitempty"`
 	Description                               *string                                      `url:"description,omitempty" json:"description,omitempty"`
+	DuoSASTFPDetectionEnabled                 *bool                                        `url:"duo_sast_fp_detection_enabled,omitempty" json:"duo_sast_fp_detection_enabled,omitempty"`
+	DuoSASTVRWorkflowEnabled                  *bool                                        `url:"duo_sast_vr_workflow_enabled,omitempty" json:"duo_sast_vr_workflow_enabled,omitempty"`
+	DuoSecretDetectionFPEnabled               *bool                                        `url:"duo_secret_detection_fp_enabled,omitempty" json:"duo_secret_detection_fp_enabled,omitempty"`
 	EmailsEnabled                             *bool                                        `url:"emails_enabled,omitempty" json:"emails_enabled,omitempty"`
 	EnforceAuthChecksOnUploads                *bool                                        `url:"enforce_auth_checks_on_uploads,omitempty" json:"enforce_auth_checks_on_uploads,omitempty"`
 	ExternalAuthorizationClassificationLabel  *string                                      `url:"external_authorization_classification_label,omitempty" json:"external_authorization_classification_label,omitempty"`

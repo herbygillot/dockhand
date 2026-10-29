@@ -137,8 +137,12 @@ type BoardList struct {
 	Label          *Label             `json:"label"`
 	MaxIssueCount  int64              `json:"max_issue_count"`
 	MaxIssueWeight int64              `json:"max_issue_weight"`
-	Milestone      *Milestone         `json:"milestone"`
-	Position       int64              `json:"position"`
+	// LimitMetric names what the two limits above count: issue_count,
+	// issue_weights or all_metrics. It is empty when none is set, and GitLab
+	// sends it, with the limits, where the list has them available.
+	LimitMetric string     `json:"limit_metric"`
+	Milestone   *Milestone `json:"milestone"`
+	Position    int64      `json:"position"`
 }
 
 func (b BoardList) String() string {

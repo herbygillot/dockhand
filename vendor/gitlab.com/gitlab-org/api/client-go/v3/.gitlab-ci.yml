@@ -196,7 +196,7 @@ tests:integration:
   image: golang:1.27-bookworm
   timeout: 2 hours
   services:
-    - docker:29.8.1-dind
+    - docker:29.9.2-dind
   variables:
     # Docker-in-docker configuration
     DOCKER_HOST: tcp://docker:2376

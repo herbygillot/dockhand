@@ -150,7 +150,7 @@ func (a *ActiveRunError) Error() string {
 		return fmt.Sprintf("%s stopped before it finished these files, when the process running it ended; dockhand wait %s resumes it", name, name)
 	}
 	if a.Uncovered {
-		return fmt.Sprintf("%s is %s for these files, but doesn't cover what this check asks, its environments, targets, variants, tests, or freshness. Run dockhand cancel %s and run this again, or wait for it to finish and run this again", name, a.Run.State, name)
+		return fmt.Sprintf("%s is %s for these files, but doesn't cover what this check asks, the builds it makes in each environment, its variants, tests, or freshness, or a kept guest. Run dockhand cancel %s and run this again, or wait for it to finish and run this again", name, a.Run.State, name)
 	}
 	if a.SameRevision {
 		return fmt.Sprintf("%s is already %s for these files; dockhand wait %s follows it", name, a.Run.State, name)

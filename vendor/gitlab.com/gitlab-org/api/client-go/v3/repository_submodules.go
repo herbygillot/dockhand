@@ -43,19 +43,26 @@ var _ RepositorySubmodulesServiceInterface = (*RepositorySubmodulesService)(nil)
 //
 // GitLab API docs: https://docs.gitlab.com/api/repository_submodules/
 type SubmoduleCommit struct {
-	ID             string           `json:"id"`
-	ShortID        string           `json:"short_id"`
-	Title          string           `json:"title"`
-	AuthorName     string           `json:"author_name"`
-	AuthorEmail    string           `json:"author_email"`
-	CommitterName  string           `json:"committer_name"`
-	CommitterEmail string           `json:"committer_email"`
-	CreatedAt      *time.Time       `json:"created_at"`
-	Message        string           `json:"message"`
-	ParentIDs      []string         `json:"parent_ids"`
-	CommittedDate  *time.Time       `json:"committed_date"`
-	AuthoredDate   *time.Time       `json:"authored_date"`
-	Status         *BuildStateValue `json:"status"`
+	ID             string            `json:"id"`
+	ShortID        string            `json:"short_id"`
+	Title          string            `json:"title"`
+	AuthorName     string            `json:"author_name"`
+	AuthorEmail    string            `json:"author_email"`
+	CommitterName  string            `json:"committer_name"`
+	CommitterEmail string            `json:"committer_email"`
+	CreatedAt      *time.Time        `json:"created_at"`
+	Message        string            `json:"message"`
+	ParentIDs      []string          `json:"parent_ids"`
+	CommittedDate  *time.Time        `json:"committed_date"`
+	AuthoredDate   *time.Time        `json:"authored_date"`
+	Trailers       map[string]string `json:"trailers"`
+	// ExtendedTrailerValues maps each trailer to every value it has in the
+	// commit message, which is how GitLab sends extended_trailers.
+	ExtendedTrailerValues map[string][]string `json:"extended_trailers"`
+	WebURL                string              `json:"web_url"`
+	Status                *BuildStateValue    `json:"status"`
+	ProjectID             int64               `json:"project_id"`
+	LastPipeline          *PipelineInfo       `json:"last_pipeline"`
 }
 
 func (r SubmoduleCommit) String() string {

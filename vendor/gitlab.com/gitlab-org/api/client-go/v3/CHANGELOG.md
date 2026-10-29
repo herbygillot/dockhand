@@ -1,3 +1,124 @@
+## 3.39.1
+
+### 🐛 Bug Fixes
+
+- fix(types): decode the user ID values that MarshalJSON writes ([!3155](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3155)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+
+
+## [3.39.1](https://gitlab.com/gitlab-org/api/client-go/compare/v3.39.0...v3.39.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **types:** decode the user ID values that MarshalJSON writes ([1bcfb60](https://gitlab.com/gitlab-org/api/client-go/commit/1bcfb605a5f64ce481eeb5415f9087b7903e01c5))
+
+## 3.39.0
+
+### 🚀 Features
+
+- feat: add the fields GitLab sends and accepts that nine structs miss ([!3085](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3085)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+
+
+# [3.39.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.38.1...v3.39.0) (2026-10-27)
+
+
+### Features
+
+* add the fields GitLab sends and accepts that nine structs miss ([52a2658](https://gitlab.com/gitlab-org/api/client-go/commit/52a2658342f24763dcce835751b712f61513237d))
+
+## 3.38.1
+
+### 🐛 Bug Fixes
+
+- fix(client): skip a Link entry whose first parameter has no value ([!3143](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3143)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+
+
+## [3.38.1](https://gitlab.com/gitlab-org/api/client-go/compare/v3.38.0...v3.38.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **client:** skip a Link entry whose first parameter has no value ([c57acd2](https://gitlab.com/gitlab-org/api/client-go/commit/c57acd2a1632098f1f0869ee8994341abc1b3e2a))
+
+## 3.38.0
+
+### 🚀 Features
+
+- feat(hooks): add url_variables to the add and edit hook options ([!3151](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3151)) by [Nils Diefenbach](https://gitlab.com/deepbrook)
+
+### 🐛 Bug Fixes
+
+- fix(protected_packages): omit unset fields from a rule update ([!3153](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3153)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+
+
+# [3.38.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.37.0...v3.38.0) (2026-10-26)
+
+
+### Bug Fixes
+
+* **protected_packages:** omit unset fields from a rule update ([b21e5e4](https://gitlab.com/gitlab-org/api/client-go/commit/b21e5e4707159714b244c720867abe3a1ec523d9))
+
+
+### Features
+
+* **hooks:** add url_variables to the add and edit hook options ([7791724](https://gitlab.com/gitlab-org/api/client-go/commit/7791724266a58e98f465491fcf895d67aba8e0fc))
+
+## 3.37.0
+
+### 🚀 Features
+
+- feat(group_placeholder_reassignments): add group placeholder reassignments API ([!3130](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3130)) by [Zubeen](https://gitlab.com/syedzubeen)
+- feat(pipelines): add list pipelines of the current user ([!3123](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3123)) by [Zubeen](https://gitlab.com/syedzubeen)
+
+
+
+# [3.37.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.36.0...v3.37.0) (2026-10-26)
+
+
+### Features
+
+* **group_placeholder_reassignments:** add group placeholder reassignments API ([9b8872f](https://gitlab.com/gitlab-org/api/client-go/commit/9b8872f0fded64dd9c2f610373468ce2912e5211))
+* **pipelines:** add list pipelines of the current user ([075e443](https://gitlab.com/gitlab-org/api/client-go/commit/075e443b262e08f78a7c6d0d3a1f02708de50e83))
+
+## 3.36.0
+
+### 🚀 Features
+
+- feat(pipelines): add archived field to Pipeline ([!3125](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3125)) by [Zubeen](https://gitlab.com/syedzubeen)
+- Add Duo False Detection flows ([!3157](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3157)) by [Heidi Berry](https://gitlab.com/heidi.berry)
+
+### 🔄 Other Changes
+
+- chore(deps): update docker docker tag to v29.9.2 ([!3158](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3158)) by [GitLab Dependency Bot](https://gitlab.com/gitlab-dependency-update-bot)
+
+
+
+# [3.36.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.35.0...v3.36.0) (2026-10-26)
+
+
+### Features
+
+* **pipelines:** add archived field to Pipeline ([6c69148](https://gitlab.com/gitlab-org/api/client-go/commit/6c69148609fa7c4adbbdea5b2e991b7287e03f89))
+
+## 3.35.0
+
+### 🚀 Features
+
+- feat(plan_limits): add the limits and history GitLab sends and accepts ([!3154](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3154)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+
+
+# [3.35.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.34.0...v3.35.0) (2026-10-25)
+
+
+### Features
+
+* **plan_limits:** add the limits and history GitLab sends and accepts ([4851d61](https://gitlab.com/gitlab-org/api/client-go/commit/4851d6128332dd8ed4bdc6749e7d60335b20bda4))
+
 ## 3.34.0
 
 ### 🚀 Features

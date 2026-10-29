@@ -651,14 +651,19 @@ func (restricted) Is(target error) bool { return target == forge.ErrAppRestricte
 // signedInCLI is a GitHub CLI signed in as login, recording what it marks
 // ready.
 type signedInCLI struct {
-	login   string
-	readied []int
+	login            string
+	readied, drafted []int
 }
 
 func (c *signedInCLI) Login(context.Context) (string, error) { return c.login, nil }
 
 func (c *signedInCLI) MarkReady(_ context.Context, ref forge.PullRequestRef) error {
 	c.readied = append(c.readied, ref.Number)
+	return nil
+}
+
+func (c *signedInCLI) MarkDraft(_ context.Context, ref forge.PullRequestRef) error {
+	c.drafted = append(c.drafted, ref.Number)
 	return nil
 }
 
@@ -1040,4 +1045,84 @@ func TestAOnePortPullRequestIsTitledForItsUpdate(t *testing.T) {
 	require.Equal(t, "abook: fix formatting", portTitle("abook", "0.6.2", commits("abook: fix formatting", "abook: fix a typo")), "none naming the version keeps the first")
 	_, ok := model.ChangeRecord{Ports: []model.SubportChange{{Port: "abook", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "revision", From: "0", To: "1"}}}}}.MovedVersion("abook")
 	require.False(t, ok, "a revbump moves no version")
+}
+
+// submit --draft on a pull request that's ready for review returns it to
+// draft before it pushes failing work to it, and the record says draft,
+// where the failing change reached the ready pull request (Codex's review
+// of 2ad896d2, W3, its probe inverted). Where the forge refuses, nothing
+// is pushed, and the refusal names gh pr ready --undo.
+func TestADraftSubmissionReturnsAReadyPullRequestToDraft(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	checked(t, e, branch, model.OutcomePassed, model.OutcomePassed)
+	firstPlan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+	first, err := e.ApplySubmit(t.Context(), firstPlan, model.AnsweredAsked)
+	require.NoError(t, err)
+	require.False(t, recordedPullRequest(t, e, branch).Draft)
+
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: update to 1.8.2")
+	checked(t, e, branch, model.OutcomeFailed, model.OutcomePassed)
+	draft, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Draft: true})
+	require.NoError(t, err)
+	require.Empty(t, draft.Blocking)
+	require.True(t, draft.ToDraft())
+
+	// Refused, nothing is pushed.
+	fake.DraftRefused = errors.New("github: not allowed")
+	before := fake.ForkHead(draft.RemoteBranch())
+	_, err = e.ApplySubmit(t.Context(), draft, model.AnsweredAsked)
+	require.ErrorContains(t, err, fmt.Sprintf("returning #%d to draft: github: not allowed\nNothing was pushed.", first.PullRequest.Ref.Number))
+	require.ErrorContains(t, err, fmt.Sprintf("gh pr ready %d --undo --repo", first.PullRequest.Ref.Number))
+	require.Equal(t, before, fake.ForkHead(draft.RemoteBranch()))
+
+	fake.DraftRefused = nil
+	result, err := e.ApplySubmit(t.Context(), draft, model.AnsweredAsked)
+	require.NoError(t, err)
+	require.True(t, result.Drafted)
+	require.True(t, result.Pushed)
+	require.Equal(t, []int{first.PullRequest.Ref.Number}, fake.Drafted)
+	require.True(t, recordedPullRequest(t, e, branch).Draft, "the record says the draft it made")
+}
+
+// A description edited on GitHub while submit waited for confirmation is
+// kept: the submission reads it again and merges against it, where it
+// replaced it with the body prepared before (Codex's review of 2ad896d2,
+// W7, its probe inverted). One the person wrote whole can't be merged
+// into, and is refused, nothing pushed.
+func TestADescriptionEditedAfterThePreviewIsKept(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	firstPlan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	first, err := e.ApplySubmit(t.Context(), firstPlan, model.AnsweredAsked)
+	require.NoError(t, err)
+	number := first.PullRequest.Ref.Number
+
+	note := "My planned note"
+	planned, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: &note})
+	require.NoError(t, err)
+	require.Contains(t, planned.Body, note)
+	human := "#### Description\n\nA human edited the PR on GitHub while submit was awaiting confirmation.\n" + firstPlan.Body[strings.Index(firstPlan.Body, "###### Type(s)"):]
+	fake.PRs[number].Body = human
+
+	// One the person wrote whole is refused, nothing pushed.
+	described := planned
+	described.Describe("my own description\n")
+	_, err = e.ApplySubmit(t.Context(), described, model.AnsweredAsked)
+	require.ErrorContains(t, err, fmt.Sprintf("#%d's description changed on GitHub since the preview, and this submission would replace it; nothing was pushed", number))
+	require.Equal(t, human, fake.PRs[number].Body)
+
+	_, err = e.ApplySubmit(t.Context(), planned, model.AnsweredAsked)
+	require.NoError(t, err)
+	require.Contains(t, fake.PRs[number].Body, "A human edited the PR on GitHub", "their Description is kept")
+	require.NotEqual(t, planned.Body, fake.PRs[number].Body, "not the body prepared before")
 }

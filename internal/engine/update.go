@@ -503,25 +503,30 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	if err != nil {
 		return Update{}, err
 	}
+	modelined := false
 	if !e.KeepModeline {
-		if err := withModelines(ctx, worktree, captured, &result); err != nil {
-			return Update{}, err
-		}
+		modelined = withModelines(&result)
 	}
-	if update.Fixed, err = withLintFixes(ctx, worktree, captured, &result); err != nil {
+	fixed, reread, err := withLintFixes(ctx, worktree, captured, &result)
+	if err != nil {
 		return Update{}, err
 	}
+	update.Fixed = fixed
 	if result.TarballMoved {
 		update.Fixed = append(update.Fixed, e.tarballMoved(ctx, update.Release, result))
 	}
 	// A version update or a checksum refresh is where the port's URLs are
 	// looked at, so its plain-HTTP ones are said there, beside the edit. A
 	// port with nothing to change is said to be current without waiting on
-	// its hosts.
+	// its hosts. They're read before finalize, which may drop the
+	// evaluation they're read from; what it changes is no URL's scheme.
 	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && len(result.Files) > 0 {
 		if info, ok := result.PortAfter(update.Port); ok {
 			update.PlainHTTP = e.plainHTTP(ctx, info, request.answered)
 		}
+	}
+	if err := finalize(ctx, worktree, captured, &result, update.Followed != "" && !followOnly, modelined || len(fixed) > 0, reread); err != nil {
+		return Update{}, err
 	}
 	update.Stealth, update.DistSubdirRemoved = result.Stealth, result.DistSubdirRemoved
 	if result.Stealth != nil {
@@ -708,6 +713,8 @@ func (e *Engine) followMoves(ctx context.Context, request UpdateRequest, worktre
 				return false, fmt.Errorf("%s: --follow-moves: %w", request.Port, err)
 			}
 			if n > 0 {
+				// The tree is made again once every file is final
+				// (finalize).
 				result.Files[i].After, update.Followed = moved, update.Renamed
 			}
 		}
@@ -1094,9 +1101,10 @@ func (e *Engine) renamed(ctx context.Context, release model.Release) string {
 
 // withModelines gives each Portfile an edit writes MacPorts' modeline as
 // its first line, where it lacks one or spells its settings otherwise
-// (portfile.WithModeline, the person's ask, 2026-10-24), and the prepared
-// tree with them. Line 1 is a comment, which nothing evaluates.
-func withModelines(ctx context.Context, worktree *git.Repository, captured string, result *editprep.Result) error {
+// (portfile.WithModeline, the person's ask, 2026-10-24), saying whether
+// it changed one. Line 1 is a comment, which nothing evaluates; the tree
+// is made once every file is final (finalize).
+func withModelines(result *editprep.Result) bool {
 	changed := false
 	for i, file := range result.Files {
 		if file.Delete || path.Base(file.Path) != "Portfile" {
@@ -1106,7 +1114,47 @@ func withModelines(ctx context.Context, worktree *git.Repository, captured strin
 			result.Files[i].After, changed = after, true
 		}
 	}
-	if !changed {
+	return changed
+}
+
+// withLintFixes fixes, on the lines each Portfile an edit writes adds or
+// alters, the lint findings dockhand fixes itself (portfile.FixTouched,
+// the person's "we should have Dockhand do those", 2026-10-27): the
+// fixes, in words, each with its file, and whether one changes what the
+// Portfile evaluates to, as a continuation dropped or a maintainers line
+// does, where whitespace doesn't. The tree is made once every file is
+// final (finalize).
+func withLintFixes(ctx context.Context, worktree *git.Repository, captured string, result *editprep.Result) (fixed []string, evaluates bool, err error) {
+	for i, file := range result.Files {
+		if file.Delete || path.Base(file.Path) != "Portfile" {
+			continue
+		}
+		_, before, err := worktree.File(ctx, captured, file.Path)
+		if err != nil {
+			return nil, false, err
+		}
+		after, fixes := portfile.FixTouched(before, file.After)
+		for _, fix := range fixes {
+			fixed = append(fixed, file.Path+": "+fix.Words())
+			evaluates = evaluates || fix.Kind == portfile.FixContinuation || fix.Kind == portfile.FixOpenMaintainer
+		}
+		result.Files[i].After = after
+	}
+	return fixed, evaluates, nil
+}
+
+// finalize makes the prepared tree once from the edit's files as every
+// transformation after preparation left them: a moved repository
+// followed, the modelines, and the lint fixes. Each made the tree again
+// only where it changed something, so --follow-moves in a clean Portfile
+// previewed and compared the old repository and wrote the new (Codex's
+// review of 2ad896d2, W5). changed says a file changed since the tree was
+// made; reread that what the files evaluate to may have, so the prepared
+// evaluation and the fidelity reports, which describe the files before,
+// are dropped, and the change record is made from the files as written.
+// A modeline, a comment, and whitespace change nothing evaluated.
+func finalize(ctx context.Context, worktree *git.Repository, captured string, result *editprep.Result, followed, changed, reread bool) error {
+	if !followed && !changed {
 		return nil
 	}
 	prepared, err := worktree.EditTree(ctx, captured, result.Files)
@@ -1114,38 +1162,10 @@ func withModelines(ctx context.Context, worktree *git.Repository, captured strin
 		return err
 	}
 	result.PreparedTree = model.ObjectID(prepared)
+	if followed || reread {
+		result.Fidelity, result.Prepared = nil, macports.Snapshot{}
+	}
 	return nil
-}
-
-// withLintFixes fixes, on the lines each Portfile an edit writes adds or
-// alters, the lint findings dockhand fixes itself (portfile.FixTouched,
-// the person's "we should have Dockhand do those", 2026-10-27), and gives
-// the prepared tree with them: the fixes, in words, each with its file.
-func withLintFixes(ctx context.Context, worktree *git.Repository, captured string, result *editprep.Result) ([]string, error) {
-	var fixed []string
-	for i, file := range result.Files {
-		if file.Delete || path.Base(file.Path) != "Portfile" {
-			continue
-		}
-		_, before, err := worktree.File(ctx, captured, file.Path)
-		if err != nil {
-			return nil, err
-		}
-		after, fixes := portfile.FixTouched(before, file.After)
-		for _, fix := range fixes {
-			fixed = append(fixed, file.Path+": "+fix.Words())
-		}
-		result.Files[i].After = after
-	}
-	if len(fixed) == 0 {
-		return nil, nil
-	}
-	prepared, err := worktree.EditTree(ctx, captured, result.Files)
-	if err != nil {
-		return nil, err
-	}
-	result.PreparedTree = model.ObjectID(prepared)
-	return fixed, nil
 }
 
 // tarballMoved says a version update's move from GitHub's tarball to its
