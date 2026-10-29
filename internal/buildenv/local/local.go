@@ -13,6 +13,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -357,7 +358,9 @@ func sourcesConf(prefix string) string {
 // where they can write its registry, as a prefix MacPorts' source install
 // made without root is; otherwise under sudo, which asks for their
 // password once, where it must. Without a terminal to ask on, as under
-// serve, it's refused unless sudo needs no password, saying so.
+// serve, it's refused unless sudo runs the prefix's port-tclsh asking no
+// password, which it's asked of that command, the one every root step
+// runs (start), saying the one sudoers line that lets it.
 func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build) ([]string, error) {
 	if syscall.Access(filepath.Join(prefix, "var", "macports", "registry"), 2) == nil {
 		return nil, nil
@@ -366,12 +369,14 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 	if sudo == nil {
 		sudo = []string{"/usr/bin/sudo"}
 	}
-	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-n", "/usr/bin/true"), Env: l.Env}); err == nil {
+	// An empty script: the interpreter as root, asked to do nothing.
+	tclsh := filepath.Join(prefix, "bin", macports.TclShell)
+	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-n", tclsh, os.DevNull), Env: l.Env}); err == nil {
 		return append(slices.Clone(sudo), "-n"), nil
 	}
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
-		return nil, buildenv.Infrastructure("%w: %s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on; a sudoers rule that needs no password lets it, which is root for anything a Portfile does", buildenv.ErrNeedsAttention, prefix)
+		return nil, buildenv.Infrastructure("%w: %s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", buildenv.ErrNeedsAttention, prefix, l.sudoersLine(tclsh))
 	}
 	defer tty.Close()
 	build.Progress(fmt.Sprintf("%s's registry is root's: MacPorts builds there as root, so sudo asks for your password once", prefix))
@@ -380,6 +385,24 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 		return nil, buildenv.Infrastructure("%w: sudo didn't let the build run as root in %s: %v", buildenv.ErrNeedsAttention, prefix, err)
 	}
 	return append(slices.Clone(sudo), "-n"), nil
+}
+
+// sudoersLine is the one sudoers line that lets serve check in a prefix
+// whose registry is root's: the person's, asking no password for the
+// prefix's port-tclsh. dockhand never writes sudoers itself.
+func (l *Local) sudoersLine(tclsh string) string {
+	name := ""
+	for _, variable := range l.Env {
+		if value, ok := strings.CutPrefix(variable, "USER="); ok {
+			name = value
+		}
+	}
+	if name == "" {
+		if current, err := user.Current(); err == nil {
+			name = current.Username
+		}
+	}
+	return fmt.Sprintf("%s ALL=(root) NOPASSWD: %s", cmp.Or(name, "<you>"), tclsh)
 }
 
 // start runs the guest program in the check's directory under the
@@ -400,8 +423,9 @@ func (l *Local) start(dir, prefix, check string, sudo []string) (*localRun, erro
 	if err != nil {
 		return nil, err
 	}
-	args := append(slices.Clone(sudo), "/usr/bin/env", "PORTSRC="+filepath.Join(dir, "macports.conf"), "DOCKHAND_GUEST_ROOT="+dir,
-		"PATH="+prefix+"/bin:"+prefix+"/sbin:/usr/bin:/bin:/usr/sbin:/sbin", filepath.Join(prefix, "bin", macports.TclShell), filepath.Join(dir, "guest.tcl"))
+	// One command, the prefix's port-tclsh, which one sudoers line names;
+	// the program sets MacPorts' PORTSRC and PATH from its directory.
+	args := append(slices.Clone(sudo), filepath.Join(prefix, "bin", macports.TclShell), filepath.Join(dir, "guest.tcl"), dir)
 	ctx, stop := context.WithCancel(context.Background())
 	run := &localRun{done: make(chan struct{}), stop: stop}
 	spec := subprocess.Spec{Tool: macports.TclShell, Command: "guest", Path: args[0], Args: args[1:], Env: l.Env, Stdout: log, StdoutOnly: true, Combined: true, Group: true,

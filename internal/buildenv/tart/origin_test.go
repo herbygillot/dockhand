@@ -140,7 +140,13 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // alone, and every --nitpick finding is a warning (base's portlint.tcl at
 // v2.12.6), so nothing is built or judged otherwise, and the protocol
 // stays 3.
-const guestPin = "5f4530657a7ffb75d9052f4d738a86b4cb928b9fb994b132bcd054426bab4855"
+//
+// Since serve's sudo rule names one command, the local provider names the
+// check's directory as the program's argument, and the program sets
+// MacPorts' PORTSRC and PATH itself, as /usr/bin/env did: the same
+// environment, so nothing is built or judged otherwise, and the protocol
+// stays 3.
+const guestPin = "59334ed6b7e7542e253b3daa5f4c2f3273b113cdb85d2ec02a28b6ab729462b1"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this
