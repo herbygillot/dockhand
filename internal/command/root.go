@@ -214,6 +214,8 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		author.RevbumpCommand(shared, streams),
 		create.Command(shared, streams),
 		author.EditCommand(shared, streams),
+		author.RenameCommand(shared, streams),
+		author.MoveCommand(shared, streams),
 	} {
 		command.GroupID = "author"
 		root.AddCommand(command)

@@ -899,11 +899,26 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 	require.True(t, update.Upstream.Changes[moved].Hold)
 	require.Equal(t, "upstream moved from returntocorp to semgrep: GitHub redirects returntocorp/semgrep to semgrep/semgrep. Review the new owner before trusting its releases. Use update --follow-moves to update github.setup", update.Upstream.Changes[moved].Message)
 
-	// The same owner's rename is said as one.
-	require.Equal(t, model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: "jqlang/jq2", Hold: true, Class: model.Introduced,
-		Message: "upstream renamed: GitHub redirects jqlang/jq to jqlang/jq2. Use update --follow-moves to update github.setup"}, movedChange("jqlang/jq", "jqlang/jq2", false, ""))
-	followed := movedChange("jqlang/jq", "jqlang/jq2", true, "")
+	// The same owner's rename is said as one, naming rename after
+	// --follow-moves; a port's rename leads with rename (the person's
+	// rule, 2026-10-29).
+	require.Equal(t, model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: "jqlang/jqtools", Hold: true, Class: model.Introduced,
+		Message: "upstream renamed: GitHub redirects jqlang/jq-tools to jqlang/jqtools. Use update --follow-moves to update github.setup, or dockhand rename jq jqtools to rename the port with it"},
+		movedChange("jqlang/jq-tools", "jqlang/jqtools", false, "", "jq", ""))
+	require.Equal(t, model.UpstreamChange{Kind: "moved", Rule: upstreamRenamedPortRule, Subject: "goplus/xgo", Hold: true, Class: model.Introduced,
+		Message: "upstream renamed: GitHub redirects goplus/gop to goplus/xgo, and the port is named after it. Use dockhand rename goplus xgo to rename the port; update --follow-moves keeps its name, goplus, and updates github.setup"},
+		movedChange("goplus/gop", "goplus/xgo", false, "", "goplus", "xgo"))
+	followed := movedChange("goplus/gop", "goplus/xgo", true, "", "goplus", "xgo")
 	require.False(t, followed.Hold, "followed, the person's choice, nothing holds")
+	require.Equal(t, "upstream renamed: GitHub redirects goplus/gop to goplus/xgo, and github.setup now names it (--follow-moves); the port keeps its name, goplus, which dockhand rename goplus xgo changes", followed.Message)
+
+	// A port rename: the port named after the repository's old name, or
+	// the project's own name changed with it, under the same owner.
+	require.Equal(t, "jq2", portRename("jq", "jqlang/jq", "jqlang/jq2", nil))
+	require.Equal(t, "py-bar", portRename("py-foo", "acme/Foo", "acme/bar", nil))
+	require.Empty(t, portRename("goplus", "goplus/gop", "goplus/xgo", nil), "goplus isn't named after gop")
+	require.Equal(t, "xgo", portRename("goplus", "goplus/gop", "goplus/xgo", []model.UpstreamChange{{Rule: assess.ProjectRenamed, Subject: "xgo"}}), "its Go module was renamed with it")
+	require.Empty(t, portRename("jq", "jqlang/jq", "other/jq2", nil), "an owner's transfer")
 
 	// A branch already at the release still follows the move with
 	// --follow-moves, where it changed nothing: duckdb's at 2.0.0 kept
@@ -930,6 +945,21 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 		Release: &model.Release{Forge: forge.GitHub, Repository: "returntocorp/semgrep", Version: "1.8.1"}})
 	require.NoError(t, err)
 	require.Equal(t, "semgrep/semgrep", standing.Followed)
+
+	// It follows no port rename: jq's repository renamed to jq2 is held,
+	// leading with rename, where --follow-moves asked still follows.
+	renaming.Renamed["jqlang/jq"] = "jqlang/jq2"
+	data, err = os.ReadFile(portfilePath)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(portfilePath, []byte(strings.Replace(string(data), "github.setup semgrep semgrep 1.8.1 v", "github.setup jqlang jq 1.8.1 v", 1)), 0o644))
+	held, err := e.Update(t.Context(), UpdateRequest{Branch: update.Branch, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", CompareUpstream: true, Unattended: true,
+		Release: &model.Release{Forge: forge.GitHub, Repository: "jqlang/jq", Version: "1.8.1"}})
+	require.NoError(t, err)
+	require.Empty(t, held.Followed, "moves = \"follow\" follows no port rename")
+	asked, err := e.Update(t.Context(), UpdateRequest{Branch: update.Branch, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", CompareUpstream: true, Unattended: true, FollowMoves: true,
+		Release: &model.Release{Forge: forge.GitHub, Repository: "jqlang/jq", Version: "1.8.1"}})
+	require.NoError(t, err)
+	require.Equal(t, "jqlang/jq2", asked.Followed, "--follow-moves, asked, keeps the name")
 }
 
 // The obsolete stub a Portfile keeps for a port, replaced_by it and
@@ -1141,7 +1171,7 @@ func TestAMovesOldOwnerNameIsReadNow(t *testing.T) {
 	require.Empty(t, e.oldOwnerNow(t.Context(), "elder/yabai", "asmvik/yabai", false), "an account older than the repository: a transfer, as before")
 	require.Empty(t, e.oldOwnerNow(t.Context(), "koekeishiya/yabai", "asmvik/yabai", true), "followed")
 	require.Empty(t, e.oldOwnerNow(t.Context(), "asmvik/yabai-old", "asmvik/yabai", false), "the same owner's rename")
-	moved := movedChange("koekeishiya/yabai", "asmvik/yabai", false, "The old name, koekeishiya, now belongs to another account")
+	moved := movedChange("koekeishiya/yabai", "asmvik/yabai", false, "The old name, koekeishiya, now belongs to another account", "yabai", "")
 	require.Contains(t, moved.Message, "Use update --follow-moves to update github.setup. The old name, koekeishiya, now belongs to another account")
 }
 

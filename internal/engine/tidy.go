@@ -571,11 +571,13 @@ func derivedSubject(ctx context.Context, repo *git.Repository, before, after str
 	}
 	// A moved port's subject says the move, "dockhand: move to
 	// macports", as MacPorts' commits say one, with its update where it
-	// has one.
+	// has one; a renamed one's says the rename first, "xgo: rename from
+	// goplus, update to 1.7.5", as field testing's hand rename was.
 	move := ""
 	if group.MovedFrom != "" {
 		move = "move to " + strings.SplitN(group.Directory, "/", 2)[0]
 	}
+	renamed := group.MovedFrom != "" && path.Base(group.MovedFrom) != path.Base(group.Directory)
 	// The version the port declares, as its Portfile proves it: the
 	// group's first port, which is the directory's own or one of its
 	// subports.
@@ -586,6 +588,10 @@ func derivedSubject(ctx context.Context, repo *git.Repository, before, after str
 	from, known := portfile.DeclaredVersion(oldText, subport)
 	to, ok := portfile.DeclaredVersion(text, subport)
 	switch {
+	case renamed && ok && (!known || from != to):
+		return group.Ports[0] + ": rename from " + path.Base(group.MovedFrom) + ", update to " + to, nil
+	case renamed:
+		return group.Ports[0] + ": rename from " + path.Base(group.MovedFrom), nil
 	case ok && (!known || from != to) && move != "":
 		return group.Ports[0] + ": update to " + to + ", " + move, nil
 	case ok && (!known || from != to):
@@ -769,6 +775,24 @@ func chainSubject(mine []model.Edit) string {
 			}
 			return strings.Join(ports, ", ") + ": update to " + strings.Join(to, ", ")
 		}
+	}
+	// A rename or a move with an update after it says both, as tidy's
+	// subject from the files would: "xgo: rename from goplus, update to
+	// 1.7.5", "dockhand: update to 0.7.0, move to macports".
+	if i := slices.IndexFunc(mine, func(edit model.Edit) bool { return edit.Kind == model.EditRename || edit.Kind == model.EditMove }); i >= 0 {
+		placed := mine[i]
+		for _, edit := range slices.Backward(mine[i+1:]) {
+			version, ok := strings.CutPrefix(edit.Subject, edit.Port+": update to ")
+			switch {
+			case !ok || edit.Kind != model.EditUpdate:
+				continue
+			case placed.Kind == model.EditRename:
+				return placed.Subject + ", update to " + version
+			default:
+				return placed.Port + ": update to " + version + ", " + strings.TrimPrefix(placed.Subject, placed.Port+": ")
+			}
+		}
+		return placed.Subject
 	}
 	for _, kind := range []model.EditKind{model.EditCreate, model.EditUpdate} {
 		for _, edit := range slices.Backward(mine) {
@@ -1024,7 +1048,8 @@ func (e *Engine) portfileFindings(ctx context.Context, repo *git.Repository, bef
 			continue
 		}
 		directory := strings.TrimSuffix(path, "/Portfile")
-		if slices.ContainsFunc(scope.Moved, func(m macports.Move) bool { return m.From == directory }) {
+		// A rename's stub is a Portfile of its own, weighed as one.
+		if slices.ContainsFunc(scope.Moved, func(m macports.Move) bool { return m.From == directory && !m.Stub }) {
 			continue
 		}
 		from := scope.MovedFrom(directory)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -85,7 +86,37 @@ func placedScope(ctx context.Context, repo *git.Repository, before, after string
 	if err != nil {
 		return macports.Scope{}, err
 	}
-	return scope.Placed(inBase, inHead), nil
+	// A Portfile the change makes an obsolete stub names the port it's
+	// replaced by, a rename where the change adds that port; it's read only
+	// where the change adds a port.
+	var kept []string
+	added := false
+	for _, directory := range scope.Ports {
+		switch {
+		case inBase[directory] && inHead[directory]:
+			kept = append(kept, directory+"/Portfile")
+		case inHead[directory]:
+			added = true
+		}
+	}
+	replacedBy := map[string]string{}
+	if added && len(kept) > 0 {
+		now, err := repo.ReadFiles(ctx, after, kept)
+		if err != nil {
+			return macports.Scope{}, err
+		}
+		was, err := repo.ReadFiles(ctx, before, kept)
+		if err != nil {
+			return macports.Scope{}, err
+		}
+		for _, file := range kept {
+			name, stub := portfile.ReplacedBy(now[file])
+			if _, already := portfile.ReplacedBy(was[file]); stub && !already {
+				replacedBy[strings.TrimSuffix(file, "/Portfile")] = name
+			}
+		}
+	}
+	return scope.Placed(inBase, inHead, replacedBy), nil
 }
 
 // keepAnalysis keeps a revision's analysis for analyze, by its base and

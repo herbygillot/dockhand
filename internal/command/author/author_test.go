@@ -616,3 +616,47 @@ func TestUpdateTakesAVersionOnlyWithALonePort(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "1.9.0", "a second word naming no port is the version")
 }
+
+// rename moves a port to its new name with an obsolete stub left behind,
+// and move to another category, each said with what's next (the person's
+// "I agree we add a `rename` action to Dockhand.", 2026-10-29).
+func TestRenameAndMoveAPort(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-rename")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-rename")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	testsupport.Git(t, dir, "sparse-checkout", "add", "textproc/jq")
+	cmdtest.UsePorts(cmdtest.Stands(t), versioned{})
+
+	out, _, err := cmdtest.Dockhand(t, "rename", "jq", "jq2", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, cmdtest.Flat(out), "jq-rename · would rename jq to jq2: textproc/jq → textproc/jq2, with an obsolete stub at textproc/jq, replaced_by jq2, version 1.7.1_1")
+	require.Contains(t, out, "Plan, nothing changed.\n")
+	require.NoFileExists(t, filepath.Join(dir, "textproc/jq2/Portfile"))
+
+	out, _, err = cmdtest.Dockhand(t, "rename", "jq", "jq2")
+	require.NoError(t, err)
+	require.Contains(t, cmdtest.Flat(out), "jq-rename · renamed jq to jq2: textproc/jq → textproc/jq2")
+	require.Contains(t, cmdtest.Flat(out), "Next: dockhand update jq2 (for a new release), then dockhand check\n")
+	require.FileExists(t, filepath.Join(dir, "textproc/jq2/Portfile"))
+	stub, err := os.ReadFile(filepath.Join(dir, "textproc/jq/Portfile"))
+	require.NoError(t, err)
+	require.Contains(t, string(stub), "replaced_by         jq2\n")
+
+	testsupport.Git(t, dir, "commit", "-q", "-m", "jq2: rename from jq")
+	out, _, err = cmdtest.Dockhand(t, "move", "jq2", "devel")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-rename · moved jq2: textproc/jq2 → devel/jq2\n")
+	require.FileExists(t, filepath.Join(dir, "devel/jq2/Portfile"))
+}
+
+// versioned reads each directory as one port of its name at 1.7.1, the
+// fixture's jq's version.
+type versioned struct{ cmdtest.OnePort }
+
+func (versioned) Ports(_ context.Context, _ model.Source, directory string, _ model.Environment, _ map[string]bool) ([]macports.PortInfo, error) {
+	return []macports.PortInfo{{Name: filepath.Base(directory), Version: "1.7.1", Options: map[string]string{"categories": "textproc"}}}, nil
+}

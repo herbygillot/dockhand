@@ -113,8 +113,10 @@ type UpdateRequest struct {
 	// FollowMoves points github.setup at the repository GitHub now answers
 	// the release's by, where it moved: the person's choice, never made
 	// unasked (part 2's new holds), save by the port's own holds, moves =
-	// "follow", for an unattended update.
-	FollowMoves bool
+	// "follow", for an unattended update, standingFollow, which never
+	// follows a port rename (portRename).
+	FollowMoves    bool
+	standingFollow bool
 	// WithObsolete also moves the obsolete stub the Portfile keeps for the
 	// port, one replaced_by it that fetches nothing, to the same version,
 	// in the same commit: terraform beside terraform-1.16, whose version
@@ -283,8 +285,8 @@ type Update struct {
 func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, error) {
 	// A port whose holds say moves = "follow" follows a moved repository
 	// unattended, its standing answer to the move's hold (Then's item 2).
-	if request.Unattended && e.holdsFor(request.Port).followMoves {
-		request.FollowMoves = true
+	if request.Unattended && !request.FollowMoves && e.holdsFor(request.Port).followMoves {
+		request.FollowMoves, request.standingFollow = true, true
 	}
 	update, err := e.updateWithObsolete(ctx, request)
 	if err == nil && request.Action == model.EditUpdate && !update.Current && update.Port != "" {
@@ -540,7 +542,16 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		// neither its preview nor the pull request said it had moved
 		// (field testing's batch 10, finding 1).
 		if update.Renamed != "" && update.Upstream != nil {
-			update.Upstream.Changes = append(update.Upstream.Changes, movedChange(update.Release.Repository, update.Renamed, update.Followed != "", e.oldOwnerNow(ctx, update.Release.Repository, update.Renamed, update.Followed != "")))
+			moved := movedChange(update.Release.Repository, update.Renamed, update.Followed != "", e.oldOwnerNow(ctx, update.Release.Repository, update.Renamed, update.Followed != ""),
+				update.Port, portRename(update.Port, update.Release.Repository, update.Renamed, update.Upstream.Changes))
+			// A port's moves = "follow" follows no port rename, which a
+			// renamed project shows only once its archives are read: the
+			// follow made holds for a look (the person's rule, 2026-10-29).
+			if request.standingFollow && update.Followed != "" && moved.Rule == upstreamRenamedPortRule {
+				moved.Hold = true
+				moved.Message += `; holds.ports."` + update.Port + `".moves = "follow" followed it, which a port rename isn't`
+			}
+			update.Upstream.Changes = append(update.Upstream.Changes, moved)
 		}
 		// An archive MacPorts' mirror already holds another file of, under
 		// a dist_subdir other ports share, fails the check at its checksum
@@ -701,7 +712,7 @@ func (e *Engine) followMoves(ctx context.Context, request UpdateRequest, worktre
 	}
 	if len(result.Files) > 0 {
 		update.Renamed = e.renamed(ctx, *update.Release)
-		if update.Renamed == "" || !request.FollowMoves {
+		if update.Renamed == "" || !request.FollowMoves || request.standingFollow && portRename(update.Port, update.Release.Repository, update.Renamed, nil) != "" {
 			return false, nil
 		}
 		for i, file := range result.Files {
@@ -724,7 +735,7 @@ func (e *Engine) followMoves(ctx context.Context, request UpdateRequest, worktre
 		return false, nil
 	}
 	renamed := e.renamed(ctx, *update.Release)
-	if renamed == "" {
+	if renamed == "" || request.standingFollow && portRename(update.Port, update.Release.Repository, renamed, nil) != "" {
 		return false, nil
 	}
 	file, text, err := worktree.File(ctx, captured, result.Target.Portfile)
@@ -1018,14 +1029,24 @@ func editRecorded(branch model.BranchID, id model.EditID) func(store.Reader) boo
 // gitoxide's, Byron to GitoxideLabs, was followed by hand).
 // movedChange is a repository move as a finding; owner says what the old
 // owner name names now, where it's another account's or no one's
-// (oldOwnerNow).
-func movedChange(from, to string, followed bool, owner string) model.UpstreamChange {
+// (oldOwnerNow). A rename of the project a port is named after is a port
+// rename, renamed the port's new name, its line leading with dockhand
+// rename, where any other rename's leads with --follow-moves and names
+// rename after it (the person's rule, 2026-10-29).
+func movedChange(from, to string, followed bool, owner, port, renamed string) model.UpstreamChange {
 	change := model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: to, Hold: !followed, Class: model.Introduced}
 	fromOwner, _, _ := strings.Cut(from, "/")
-	toOwner, _, _ := strings.Cut(to, "/")
+	toOwner, toName, _ := strings.Cut(to, "/")
+	if renamed != "" {
+		change.Rule = upstreamRenamedPortRule
+	}
 	switch {
+	case followed && renamed != "":
+		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s, and github.setup now names it (--follow-moves); the port keeps its name, %s, which dockhand rename %s %s changes", from, to, port, port, renamed)
 	case followed:
 		change.Message = fmt.Sprintf("upstream moved: GitHub redirects %s to %s, and github.setup now names it (--follow-moves)", from, to)
+	case renamed != "":
+		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s, and the port is named after it. Use dockhand rename %s %s to rename the port; update --follow-moves keeps its name, %s, and updates github.setup", from, to, port, renamed, port)
 	case !strings.EqualFold(fromOwner, toOwner):
 		change.Rule = upstreamTransferredRule
 		change.Message = fmt.Sprintf("upstream moved from %s to %s: GitHub redirects %s to %s. Review the new owner before trusting its releases. Use update --follow-moves to update github.setup", fromOwner, toOwner, from, to)
@@ -1033,10 +1054,30 @@ func movedChange(from, to string, followed bool, owner string) model.UpstreamCha
 			change.Message += ". " + owner
 		}
 	default:
-		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s. Use update --follow-moves to update github.setup", from, to)
+		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s. Use update --follow-moves to update github.setup, or dockhand rename %s %s to rename the port with it", from, to, port, macports.RenamedAfter(port, toName))
 	}
 	return change
 }
+
+// portRename is a port's new name where its project's rename under the
+// same owner is the port's: the port named after the repository's old
+// name, or the project's own name changed with it, as its archives read
+// (assess.ProjectRenamed), which is what makes goplus's, its repository
+// gop, one. Empty where it isn't one, an owner's transfer included.
+func portRename(port, from, to string, changes []model.UpstreamChange) string {
+	fromOwner, fromName, _ := strings.Cut(from, "/")
+	toOwner, toName, _ := strings.Cut(to, "/")
+	if !strings.EqualFold(fromOwner, toOwner) {
+		return ""
+	}
+	if macports.NamedAfter(port, fromName) || slices.ContainsFunc(changes, func(change model.UpstreamChange) bool { return change.Rule == assess.ProjectRenamed }) {
+		return macports.RenamedAfter(port, toName)
+	}
+	return ""
+}
+
+// upstreamRenamedPortRule is movedChange's finding of a port rename.
+const upstreamRenamedPortRule = "upstream-renamed-port"
 
 // oldOwnerNow says what a moved repository's old owner name names now,
 // where the owner changed and the move isn't followed: a redirect lasts

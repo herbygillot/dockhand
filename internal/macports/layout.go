@@ -115,8 +115,13 @@ type Scope struct {
 
 // Move is a port the change moves: its Portfile gone from From, the
 // base's directory, and at To, a directory of the same name the base
-// hasn't, as `git mv sysutils/dockhand macports/dockhand` leaves it.
-type Move struct{ From, To string }
+// hasn't, as `git mv sysutils/dockhand macports/dockhand` leaves it. A
+// rename, Stub, leaves at From an obsolete stub replaced_by To's port,
+// which the base hasn't, as MacPorts renames a port (dockhand rename).
+type Move struct {
+	From, To string
+	Stub     bool
+}
 
 // Placed is the scope with each changed directory placed by its Portfile
 // at the base and at the change, as inBase and inHead say of a directory
@@ -125,8 +130,12 @@ type Move struct{ From, To string }
 // testing's move of dockhand to macports, 2026-10-29); and one deleted
 // beside one added under the same directory name is that port moved, its
 // base read at From. MacPorts' CI builds neither, listing only the
-// Portfiles a change adds or alters, with git's rename detection.
-func (s Scope) Placed(inBase, inHead map[string]bool) Scope {
+// Portfiles a change adds or alters, with git's rename detection. A
+// directory whose Portfile the change makes an obsolete stub, replaced_by
+// a port at a directory the change adds, by that name (replacedBy), is
+// that port renamed, the stub at From with it (dockhand rename,
+// 2026-10-29).
+func (s Scope) Placed(inBase, inHead map[string]bool, replacedBy map[string]string) Scope {
 	var removed, added []string
 	for _, directory := range s.Ports {
 		switch {
@@ -153,6 +162,18 @@ func (s Scope) Placed(inBase, inHead map[string]bool) Scope {
 		}
 		moved[from], moved[to[0]] = true, true
 		placed.Moved = append(placed.Moved, Move{From: from, To: to[0]})
+	}
+	for _, from := range s.Ports {
+		name, ok := replacedBy[from]
+		if !ok || !inBase[from] || !inHead[from] || moved[from] {
+			continue
+		}
+		i := slices.IndexFunc(added, func(candidate string) bool { return path.Base(candidate) == name && !moved[candidate] })
+		if i < 0 {
+			continue
+		}
+		moved[from], moved[added[i]] = true, true
+		placed.Moved = append(placed.Moved, Move{From: from, To: added[i], Stub: true})
 	}
 	for _, directory := range s.Ports {
 		if !slices.Contains(placed.Removed, directory) && !slices.ContainsFunc(placed.Moved, func(m Move) bool { return m.From == directory }) {

@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -25,6 +26,11 @@ const (
 	// EditCreate is a new port's first Portfile, which create writes; the
 	// editor is never asked for it.
 	EditCreate EditKind = "create"
+	// EditRename is a port renamed, its Portfile and files at the new
+	// name's directory and an obsolete stub at the old one; EditMove a
+	// port moved to another category's directory, keeping its name.
+	EditRename EditKind = "rename"
+	EditMove   EditKind = "move"
 )
 
 // EditedFile is one file an authoring command wrote: its blob before and
@@ -211,7 +217,7 @@ func (e Edit) Validate() error {
 	switch {
 	case e.ID == "" || e.Branch == "":
 		return invalid("edit %q has no ID or branch", e.ID)
-	case e.Kind != EditUpdate && e.Kind != EditChecksums && e.Kind != EditRevbump && e.Kind != EditCreate:
+	case !slices.Contains([]EditKind{EditUpdate, EditChecksums, EditRevbump, EditCreate, EditRename, EditMove}, e.Kind):
 		return invalid("edit %s has unknown kind %q", e.ID, e.Kind)
 	case e.Port == "" || e.Directory == "" || e.Subject == "":
 		return invalid("edit %s has no port, directory, or subject", e.ID)

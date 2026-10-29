@@ -182,11 +182,30 @@ func (r *Repository) ReadTree(ctx context.Context, object string) ([]TreeEntry, 
 	return slices.Clone(entries), nil
 }
 
+// FilesBelow are a tree's files below a directory, at any depth, each
+// named by its path in the tree, as a port's Portfile and its files/ are,
+// in ls-tree's order.
+func (r *Repository) FilesBelow(ctx context.Context, tree, directory string) ([]TreeEntry, error) {
+	if !ValidObjectID(tree) || !snapshotPath(directory) {
+		return nil, fmt.Errorf("git: invalid tree %q or directory %q", tree, directory)
+	}
+	out, err := r.output(ctx, "ls-tree", "-rz", tree, "--", directory+"/")
+	if err != nil {
+		return nil, err
+	}
+	return treeEntries(out)
+}
+
 func (r *Repository) readTree(ctx context.Context, object string) ([]TreeEntry, error) {
 	out, err := r.output(ctx, "ls-tree", "-z", object)
 	if err != nil {
 		return nil, err
 	}
+	return treeEntries(out)
+}
+
+// treeEntries are ls-tree -z's entries.
+func treeEntries(out []byte) ([]TreeEntry, error) {
 	var entries []TreeEntry
 	for len(out) != 0 {
 		record, rest, ok := bytes.Cut(out, []byte{0})
