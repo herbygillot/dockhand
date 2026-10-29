@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"slices"
+	"strings"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -47,9 +49,43 @@ func (e *Engine) analyze(ctx context.Context, base, tree model.ObjectID) (Revisi
 	if analysis.Paths, err = e.Repo.ChangedPaths(ctx, string(analysis.BaseTree), string(tree)); err != nil {
 		return RevisionAnalysis{}, err
 	}
-	analysis.Scope = macports.ScopeOf(analysis.Paths)
+	if analysis.Scope, err = placedScope(ctx, e.Repo, string(analysis.BaseTree), string(tree), analysis.Paths); err != nil {
+		return RevisionAnalysis{}, err
+	}
 	e.keepAnalysis(analysis)
 	return analysis.copy(), nil
+}
+
+// placedScope is the scope of the paths changed between two trees, each
+// changed directory placed by its Portfile on each side, so a removed one
+// is no port to build and a moved one is read at its base's directory
+// (macports.Scope.Placed).
+func placedScope(ctx context.Context, repo *git.Repository, before, after string, changed []string) (macports.Scope, error) {
+	scope := macports.ScopeOf(changed)
+	var portfiles []string
+	for _, directory := range scope.Ports {
+		portfiles = append(portfiles, directory+"/Portfile")
+	}
+	held := func(tree string) (map[string]bool, error) {
+		blobs, err := repo.FileBlobs(ctx, tree, portfiles)
+		if err != nil {
+			return nil, err
+		}
+		directories := map[string]bool{}
+		for file := range blobs {
+			directories[strings.TrimSuffix(file, "/Portfile")] = true
+		}
+		return directories, nil
+	}
+	inBase, err := held(before)
+	if err != nil {
+		return macports.Scope{}, err
+	}
+	inHead, err := held(after)
+	if err != nil {
+		return macports.Scope{}, err
+	}
+	return scope.Placed(inBase, inHead), nil
 }
 
 // keepAnalysis keeps a revision's analysis for analyze, by its base and
@@ -69,5 +105,7 @@ func (e *Engine) keepAnalysis(analysis RevisionAnalysis) {
 func (a RevisionAnalysis) copy() RevisionAnalysis {
 	a.Paths = slices.Clone(a.Paths)
 	a.Scope.Ports = slices.Clone(a.Scope.Ports)
+	a.Scope.Removed = slices.Clone(a.Scope.Removed)
+	a.Scope.Moved = slices.Clone(a.Scope.Moved)
 	return a
 }

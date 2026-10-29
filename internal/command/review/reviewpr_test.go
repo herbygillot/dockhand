@@ -119,10 +119,47 @@ func TestReviewCheckAdoptsAndChecks(t *testing.T) {
 
 	out, said, err := cmdtest.Dockhand(t, "review", "34905", "--check", "--on", "command")
 	require.NoError(t, err, said)
-	require.Contains(t, out, "Adopted #34905 as pr-34905; checking it.")
+	head := testsupport.Git(t, w.Upstream, "rev-parse", "--short=7", "contrib")
+	require.Contains(t, out, "Adopted #34905 at "+head+" as pr-34905; checking it.")
 	require.Contains(t, out, "Passed")
 	require.Contains(t, said, "Evaluating @newcontrib's Portfiles on this Mac, for pr-34905")
 	require.FileExists(t, filepath.Join(w.Home, "Source", "macports-branches", "pr-34905", "textproc/jq/Portfile"))
 	out, _, _ = cmdtest.Dockhand(t, "review", "34905", "--check", "--on", "command")
-	require.Contains(t, out, "#34905 is tracked as pr-34905; checking it.")
+	require.Contains(t, out, "#34905 is tracked as pr-34905, at the head reviewed, "+head+"; checking it.")
+}
+
+// review --check checks the commit it reviewed: after the author pushes B
+// over an adopted A, the branch is moved to B, and the JSON's review and
+// its check name one commit, where they named B and A (Codex's review of
+// 2ad896d2, W2, its probe inverted).
+func TestReviewCheckChecksTheCommitItReviewed(t *testing.T) {
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	testsupport.Git(t, w.Upstream, "switch", "-q", "-c", "contrib")
+	path := filepath.Join(w.Upstream, "textproc/jq/Portfile")
+	require.NoError(t, os.WriteFile(path, []byte("name jq\n# version A\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document version A")
+	a := testsupport.Git(t, w.Upstream, "rev-parse", "HEAD")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/34905/head", "HEAD")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	pr := forge.PullRequest{Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905}, HeadRepository: "contributor/macports-ports", HeadBranch: "contrib", RemoteHead: model.ObjectID(a), Title: "jq: docs", State: forge.PullRequestOpen, Author: "contributor", MaintainerCanModify: true}
+	g.Theirs = map[int]forge.PullRequest{34905: pr}
+	_, said, err := cmdtest.Dockhand(t, "adopt", "--pr", "34905")
+	require.NoError(t, err, said)
+
+	testsupport.Git(t, w.Upstream, "switch", "-q", "contrib")
+	require.NoError(t, os.WriteFile(path, []byte("name jq\n# version B\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document version B")
+	b := testsupport.Git(t, w.Upstream, "rev-parse", "HEAD")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/34905/head", "HEAD")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	pr.RemoteHead = model.ObjectID(b)
+	g.Theirs[34905] = pr
+
+	result, err := cmdtest.JSONOf(t, "review", "34905", "--check", "--on", "command")
+	require.NoError(t, err)
+	require.Equal(t, b, cmdtest.Dig(t, result.Result, "head"))
+	require.Equal(t, b, cmdtest.Dig(t, result.Result, "check", "revision", "commit"), "the check is of the commit reviewed")
+	require.Equal(t, "passed", cmdtest.Dig(t, result.Result, "check", "run", "state"))
 }

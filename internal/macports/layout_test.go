@@ -97,3 +97,27 @@ func TestScopeFollowsCIsRule(t *testing.T) {
 	require.Empty(t, macports.ScopeOf([]string{"devel/libharbor/README"}).Ports, "only a Portfile or files/ marks a port")
 	require.Equal(t, []string{"jq"}, macports.ScopeOf([]string{"textproc/jq/Portfile"}).Changed())
 }
+
+// A directory whose Portfile the change deletes is removed, and one beside
+// it of the same name that the base hasn't is that port moved; only the
+// moved port's new directory is a changed port (field testing's move of
+// dockhand to macports, 2026-10-29).
+func TestAScopePlacesRemovedAndMovedPorts(t *testing.T) {
+	t.Parallel()
+	scope := macports.ScopeOf([]string{"sysutils/dockhand/Portfile", "macports/dockhand/Portfile", "devel/gone/Portfile", "textproc/jq/Portfile"})
+	placed := scope.Placed(
+		map[string]bool{"sysutils/dockhand": true, "devel/gone": true, "textproc/jq": true},
+		map[string]bool{"macports/dockhand": true, "textproc/jq": true})
+	require.Equal(t, []string{"macports/dockhand", "textproc/jq"}, placed.Ports)
+	require.Equal(t, []macports.Move{{From: "sysutils/dockhand", To: "macports/dockhand"}}, placed.Moved)
+	require.Equal(t, []string{"devel/gone"}, placed.Removed)
+	require.Equal(t, "sysutils/dockhand", placed.MovedFrom("macports/dockhand"))
+	require.Equal(t, "textproc/jq", placed.MovedFrom("textproc/jq"))
+
+	// Two new directories of the name can't be told apart: a removal.
+	ambiguous := macports.ScopeOf([]string{"sysutils/dockhand/Portfile", "macports/dockhand/Portfile", "devel/dockhand/Portfile"}).Placed(
+		map[string]bool{"sysutils/dockhand": true}, map[string]bool{"macports/dockhand": true, "devel/dockhand": true})
+	require.Empty(t, ambiguous.Moved)
+	require.Equal(t, []string{"sysutils/dockhand"}, ambiguous.Removed)
+	require.Equal(t, []string{"devel/dockhand", "macports/dockhand"}, ambiguous.Ports)
+}

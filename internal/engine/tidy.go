@@ -43,6 +43,9 @@ type TidyGroup struct {
 	// Directory is the port directory the commit changes; empty for files
 	// outside any port, or for a squash.
 	Directory string
+	// MovedFrom is the base's directory of a port the commit moves to
+	// Directory, whose removal the commit carries too.
+	MovedFrom string
 	Ports     []string
 	Paths     []string
 	Message   string
@@ -308,13 +311,28 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 			}
 		}
 	}
+	// A port the branch moves is one commit, its removal from the old
+	// directory with it, as git reads the move as a rename (field
+	// testing's move of dockhand to macports, 2026-10-29).
+	analysis, err := e.analyze(ctx, model.ObjectID(base), model.ObjectID(final))
+	if err != nil {
+		return TidyPlan{}, err
+	}
+	movedTo := map[string]string{}
+	for _, move := range analysis.Scope.Moved {
+		movedTo[move.From] = move.To
+	}
 	for _, path := range changed {
 		directory := groupOf(path)
+		if to, ok := movedTo[directory]; ok {
+			directory = to
+		}
 		if !slices.Contains(order, directory) {
 			order = append(order, directory)
 		}
 		byDirectory[directory] = append(byDirectory[directory], path)
 	}
+	order = slices.DeleteFunc(order, func(directory string) bool { _, moved := movedTo[directory]; return moved })
 	// Files outside any port, such as a PortGroup, come first: the ports
 	// that load them are built on them.
 	if i := slices.Index(order, ""); i > 0 {
@@ -330,6 +348,9 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	for _, directory := range order {
 		paths := byDirectory[directory]
 		group := TidyGroup{Directory: directory, Paths: paths, Working: slices.ContainsFunc(paths, func(p string) bool { return slices.Contains(working, p) })}
+		if from := analysis.Scope.MovedFrom(directory); from != directory && directory != "" {
+			group.MovedFrom = from
+		}
 		if directory != "" {
 			group.Ports, _ = recordedPorts([]string{directory}, records)
 		}
@@ -533,7 +554,11 @@ func derivedSubject(ctx context.Context, repo *git.Repository, before, after str
 	if !slices.Contains(group.Paths, file) {
 		return "", nil
 	}
-	old, oldText, err := repo.File(ctx, before, file)
+	was := file
+	if group.MovedFrom != "" {
+		was = group.MovedFrom + "/Portfile"
+	}
+	old, oldText, err := repo.File(ctx, before, was)
 	if err != nil {
 		return "", nil
 	}
@@ -544,6 +569,13 @@ func derivedSubject(ctx context.Context, repo *git.Repository, before, after str
 	if !old.Exists {
 		return group.Ports[0] + ": new port", nil
 	}
+	// A moved port's subject says the move, "dockhand: move to
+	// macports", as MacPorts' commits say one, with its update where it
+	// has one.
+	move := ""
+	if group.MovedFrom != "" {
+		move = "move to " + strings.SplitN(group.Directory, "/", 2)[0]
+	}
 	// The version the port declares, as its Portfile proves it: the
 	// group's first port, which is the directory's own or one of its
 	// subports.
@@ -553,8 +585,13 @@ func derivedSubject(ctx context.Context, repo *git.Repository, before, after str
 	}
 	from, known := portfile.DeclaredVersion(oldText, subport)
 	to, ok := portfile.DeclaredVersion(text, subport)
-	if ok && (!known || from != to) {
+	switch {
+	case ok && (!known || from != to) && move != "":
+		return group.Ports[0] + ": update to " + to + ", " + move, nil
+	case ok && (!known || from != to):
 		return group.Ports[0] + ": update to " + to, nil
+	case move != "":
+		return group.Ports[0] + ": " + move, nil
 	}
 	return "", nil
 }
@@ -975,12 +1012,23 @@ func (e *Engine) ruleCommits(ctx context.Context, base, head model.Source, histo
 // changes, ordering versions as MacPorts' vercmp does (versionOrder),
 // restated's and path-style's rules evaluating them.
 func (e *Engine) portfileFindings(ctx context.Context, repo *git.Repository, before, after string, changed []string) ([]commitrules.Finding, error) {
+	// A moved port's Portfile is weighed against the base's at the
+	// directory it moved from, and its removal there is no finding.
+	scope, err := placedScope(ctx, repo, before, after, changed)
+	if err != nil {
+		return nil, err
+	}
 	var portfiles []commitrules.Portfile
 	for _, path := range changed {
 		if !strings.HasSuffix(path, "/Portfile") {
 			continue
 		}
-		_, old, err := repo.File(ctx, before, path)
+		directory := strings.TrimSuffix(path, "/Portfile")
+		if slices.ContainsFunc(scope.Moved, func(m macports.Move) bool { return m.From == directory }) {
+			continue
+		}
+		from := scope.MovedFrom(directory)
+		_, old, err := repo.File(ctx, before, from+"/Portfile")
 		if err != nil {
 			continue
 		}
@@ -994,7 +1042,7 @@ func (e *Engine) portfileFindings(ctx context.Context, repo *git.Repository, bef
 		files := strings.TrimSuffix(path, "Portfile") + "files/"
 		for _, other := range changed {
 			if name, ok := strings.CutPrefix(other, files); ok {
-				if state, _, err := repo.File(ctx, before, other); err == nil && !state.Exists {
+				if state, _, err := repo.File(ctx, before, from+"/files/"+name); err == nil && !state.Exists {
 					if now, _, err := repo.File(ctx, after, other); err == nil && now.Exists {
 						added = append(added, name)
 					}
@@ -1333,9 +1381,13 @@ func (e *Engine) narrow(ctx context.Context, worktree *git.Repository, branch mo
 		return nil, err
 	}
 	want := append([]string{macports.ResourcesDirectory}, macports.ScopeOf(changed).Ports...)
+	// A cone entry holding a wanted directory, as a category a moved port
+	// went into, narrows to it and isn't left out: tidy said "Removed
+	// macports from the sparse checkout" and kept macports/dockhand (field
+	// testing's move of dockhand to macports, 2026-10-29).
 	var left []string
 	for _, directory := range cone {
-		if !slices.Contains(want, directory) {
+		if !slices.Contains(want, directory) && !slices.ContainsFunc(want, func(w string) bool { return strings.HasPrefix(w, directory+"/") }) {
 			left = append(left, directory)
 		}
 	}

@@ -910,14 +910,24 @@ type PullRequestAdoption struct {
 	// MaintainerCanModify is whether its author lets maintainers push to
 	// its branch.
 	MaintainerCanModify bool
+	// Head is the commit the branch stands at; empty for a tracked
+	// branch whose Git branch is gone.
+	Head model.ObjectID
 }
 
 // AdoptPullRequest brings someone's pull request of MacPorts' repository
 // into a branch of its own, pr-<number>, in a sparse worktree, to inspect
 // and work on (Design v3 §6.11). Its head is recorded as the last push, so
 // a push by its author since then is noticed; it assumes no permission to
-// push to their branch, which submit checks.
-func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestAdoption, error) {
+// push to their branch, which submit checks. A tracked branch is returned
+// as it stands, neither fetched nor moved (RefreshAdopted moves one).
+//
+// at, where it's given, is the commit to adopt the pull request at, as a
+// review read it, rather than its head fetched now: review --check
+// reviewed one commit and checked another where the head moved between
+// them (Codex's review of 2ad896d2, W2). It must be in the repository
+// already, as Review's fetch left it.
+func (e *Engine) AdoptPullRequest(ctx context.Context, number int, at model.ObjectID) (PullRequestAdoption, error) {
 	var adoption PullRequestAdoption
 	ref := pullRequestRef(e.PullRequestRepository(), number)
 	observed, err := e.forge().Observe(ctx, ref)
@@ -940,6 +950,7 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 		if branch.PullRequest != nil && branch.PullRequest.Repository == e.PullRequestRepository() && branch.PullRequest.Number == number {
 			adoption.Branch, adoption.Already = branch, true
 			if head, _, err := e.Repo.Branch(ctx, branch.Name); err == nil {
+				adoption.Head = model.ObjectID(head)
 				adoption.Commits, adoption.Scope, err = e.changes(ctx, branch.Base, head)
 				return adoption, err
 			}
@@ -954,10 +965,15 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 	if exists(directory) {
 		return adoption, fmt.Errorf("%s already exists; remove it, then adopt again", directory)
 	}
-	head, err := e.Repo.FetchPullRequest(ctx, e.Upstream(), number)
-	if err != nil {
+	var head string
+	if at != "" {
+		if head, err = e.Repo.Resolve(ctx, string(at)+"^{commit}"); err != nil || head != string(at) {
+			return adoption, fmt.Errorf("#%d's reviewed commit %s isn't in the repository; review it again", number, at.Short())
+		}
+	} else if head, err = e.Repo.FetchPullRequest(ctx, e.Upstream(), number); err != nil {
 		return adoption, fmt.Errorf("fetching #%d: %w", number, err)
 	}
+	adoption.Head = model.ObjectID(head)
 	master, err := e.fetchMaster(ctx)
 	if err != nil {
 		return adoption, err
@@ -998,6 +1014,69 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 		return adoption, err
 	}
 	return adoption, nil
+}
+
+// RefreshAdopted moves an adopted pull request's branch to to, a head of
+// the pull request since it was adopted, where the branch is untouched:
+// at the head it was adopted from, or last moved to, with no edits in its
+// worktree. The branch and its files are reset to to, not rebased, since
+// a force-pushed head needn't descend from the old one, and the branch
+// holds nothing of the person's; the record's last push becomes to. A
+// branch with commits or edits of its own is refused, naming both commits
+// and the check of the branch as it is. to must be in the repository.
+func (e *Engine) RefreshAdopted(ctx context.Context, branch model.Branch, to model.ObjectID) (model.Branch, error) {
+	pr := branch.PullRequest
+	if pr == nil || !pr.Adopted {
+		return branch, fmt.Errorf("%s isn't an adopted pull request's branch", branch.ShortName())
+	}
+	head, _, err := e.Repo.Branch(ctx, branch.Name)
+	if err != nil {
+		return branch, err
+	}
+	local := model.ObjectID(head)
+	if local == to {
+		return branch, nil
+	}
+	diverged := func(what string) error {
+		return fmt.Errorf("%s has %s beyond #%d's head %s, which it was adopted at, and #%d's head is %s now; dockhand check -b %s checks the branch as it is", branch.ShortName(), what, pr.Number, pr.Pushed.Short(), pr.Number, to.Short(), branch.ShortName())
+	}
+	if local != pr.Pushed {
+		return branch, diverged("commits of its own")
+	}
+	worktree, err := e.worktree(ctx, branch)
+	if err != nil {
+		return branch, err
+	}
+	if edited, err := worktree.TrackedChanges(ctx); err != nil {
+		return branch, err
+	} else if len(edited) > 0 {
+		return branch, diverged("edits of its own")
+	}
+	_, scope, err := e.changes(ctx, branch.Base, string(to))
+	if err != nil {
+		return branch, err
+	}
+	if err := worktree.ExpandSparse(ctx, scope.Ports...); err != nil {
+		return branch, err
+	}
+	if err := worktree.MoveCheckout(ctx, string(local), string(to)); err != nil {
+		return branch, fmt.Errorf("%s stays at %s: moving it to #%d's head %s: %w", branch.ShortName(), local.Short(), pr.Number, to.Short(), err)
+	}
+	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		current, err := tx.Branch(branch.ID)
+		if err != nil {
+			return err
+		}
+		current.PullRequest.Pushed = to
+		if err := tx.UpdateBranch(current); err != nil {
+			return err
+		}
+		branch = current
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchAdopt, Level: model.LevelInfo,
+			Message: fmt.Sprintf("moved %s to #%d's head %s, from %s", branch.ShortName(), pr.Number, to.Short(), local.Short())})
+		return err
+	})
+	return branch, err
 }
 
 // worktree opens the branch's checkout, which must have the branch checked

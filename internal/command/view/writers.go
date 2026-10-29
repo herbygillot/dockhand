@@ -42,6 +42,9 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 			changed = append(changed, name+" (needed by --only)")
 		case siblings[target.ID]:
 			built = append(built, name)
+		case target.MovedFrom != "":
+			name += " (moved from " + target.MovedFrom + ")"
+			changed = append(changed, name)
 		default:
 			if target.Kind == model.RevisionOnly {
 				name += " (revision only)"
@@ -51,6 +54,15 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 	}
 	if len(changed) > 0 {
 		fmt.Fprintf(out, "Changed     %s\n", prose.Few(changed, shown, "port"))
+	}
+	if len(plan.Removed) > 0 {
+		fmt.Fprintf(out, "Removed     %s, with no port to build\n", strings.Join(plan.Removed, ", "))
+	}
+	// MacPorts' workflow lists the Portfiles a commit adds or alters, git
+	// reading a moved one as a rename, so it builds nothing for a move.
+	if slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == buildenv.GitHub }) &&
+		slices.ContainsFunc(plan.Targets, func(target model.PlanTarget) bool { return target.MovedFrom != "" }) {
+		fmt.Fprintln(out, "            github's workflow builds nothing for a moved port, which git reads as a rename; check it with Tart, local, or command")
 	}
 	// The subports a change record finds unchanged are built too, since a
 	// check builds every subport of a changed Portfile as MacPorts' CI

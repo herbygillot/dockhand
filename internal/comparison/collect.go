@@ -33,13 +33,15 @@ import (
 const binaryPackage = "binary package: "
 
 // Revision assesses one port of a directory at the revision against the
-// base, as this Mac's context fetches it: names are the port in the base,
-// its own or a sibling's (macports.CounterpartIn), and in the revision. A port new to the directory has
+// base, as this Mac's context fetches it: directories are the port's in
+// the base and in the revision, which differ for a moved port; names are
+// the port in the base, its own or a sibling's (macports.CounterpartIn),
+// and in the revision. A port new to the directory has
 // no base, and its candidate is assessed alone, with nothing said of a
 // missing old archive; a port that fetches no upstream source has nothing
 // to compare, and says so.
-func (c Collector) Revision(ctx context.Context, sources [2]model.Source, directory string, names [2]string, hadBase bool, portfile []byte) model.UpstreamComparison {
-	name := names[1]
+func (c Collector) Revision(ctx context.Context, sources [2]model.Source, directories [2]string, names [2]string, hadBase bool, portfile []byte) model.UpstreamComparison {
+	name, directory := names[1], directories[1]
 	var infos [2]macports.PortInfo
 	var plans [2][]macports.Distfile
 	problem := ""
@@ -51,7 +53,7 @@ func (c Collector) Revision(ctx context.Context, sources [2]model.Source, direct
 		if side == 0 && !hadBase {
 			continue
 		}
-		info, plan, err := c.Planner.ArchivePlan(ctx, source, directory, names[side])
+		info, plan, err := c.Planner.ArchivePlan(ctx, source, directories[side], names[side])
 		switch {
 		case errors.Is(err, treequery.ErrNoArchives):
 			if side == 1 {
@@ -106,7 +108,7 @@ func (c Collector) Revision(ctx context.Context, sources [2]model.Source, direct
 			break
 		}
 		if problem == "" {
-			input.Patches = c.patchesFor(ctx, patchRequest{infos: infos, sources: sources, portdir: directory, plan: plans[1], fetched: fetched, scratch: scratchDirectory})
+			input.Patches = c.patchesFor(ctx, patchRequest{infos: infos, sources: sources, portdirs: directories, plan: plans[1], fetched: fetched, scratch: scratchDirectory})
 		}
 	}
 	comparison := c.collect(ctx, input, sources, portfile, problem == "")
@@ -136,19 +138,19 @@ func (c Collector) collect(ctx context.Context, input assess.Input, trees [2]mod
 }
 
 // patchRequest is what checking a revision's patches reads: each version's
-// port, the trees its patch files are in, the port's directory, and the
+// port, the trees its patch files are in, the port's directory in each, and the
 // candidate's archives, fetched by name where fetched has them, else from
 // its plan into scratch. checked are the candidate's own patches an
 // update's preparation already checked against those archives, which
 // aren't checked again; nil where none were.
 type patchRequest struct {
-	infos   [2]macports.PortInfo
-	sources [2]model.Source
-	portdir string
-	plan    []macports.Distfile
-	fetched map[string]string
-	scratch string
-	checked []patchcheck.Result
+	infos    [2]macports.PortInfo
+	sources  [2]model.Source
+	portdirs [2]string
+	plan     []macports.Distfile
+	fetched  map[string]string
+	scratch  string
+	checked  []patchcheck.Result
 }
 
 // patchesFor checks the revision's patches, and those the base applied that
@@ -160,7 +162,7 @@ type patchRequest struct {
 // port's directory; one the check can't reach is unchecked, with why. None
 // where neither version declares patches.
 func (c Collector) patchesFor(ctx context.Context, request patchRequest) []assess.Patch {
-	infos, sources, portdir := request.infos, request.sources, request.portdir
+	infos, sources, portdirs := request.infos, request.sources, request.portdirs
 	own, ownErr := infos[1].Patchfiles()
 	had, hadErr := infos[0].Patchfiles()
 	var dropped []string
@@ -239,7 +241,7 @@ func (c Collector) patchesFor(ctx context.Context, request patchRequest) []asses
 	own = checking
 	var patches []patchcheck.Patch
 	read := func(side int, name string) ([]byte, string) {
-		where, ok := infos[side].FilesPath(portdir, name)
+		where, ok := infos[side].FilesPath(portdirs[side], name)
 		if !ok {
 			return nil, "its filespath isn't below the port's directory"
 		}
@@ -571,7 +573,7 @@ func (c Collector) Update(ctx context.Context, result editprep.Result, versions 
 			}
 		}
 		input.Patches = c.patchesFor(ctx, patchRequest{infos: [2]macports.PortInfo{input.Base, input.Port}, sources: trees,
-			portdir: path.Dir(result.Target.Portfile), fetched: fetched, checked: result.Patches})
+			portdirs: [2]string{path.Dir(result.Target.Portfile), path.Dir(result.Target.Portfile)}, fetched: fetched, checked: result.Patches})
 	}
 	comparison := c.collect(ctx, input, trees, portfile, problem == "")
 	comparison.Problem = problem

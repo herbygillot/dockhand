@@ -382,10 +382,10 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		return plan, err
 	}
 	var notes map[string]string
-	plan.Ports, notes = recordedPorts(macports.ScopeOf(changed).Ports, records)
+	plan.Ports, notes = recordedPorts(analysis.Scope.Ports, records)
 	plan.recorded = len(notes) == 0
 	plan.moved = movedVersions(records)
-	newPorts := e.newPorts(ctx, worktree, model.Source{Commit: model.ObjectID(head), Tree: model.ObjectID(plan.Tree), Base: branch.Base}, trees[string(branch.Base)], changed)
+	newPorts := e.newPorts(ctx, worktree, model.Source{Commit: model.ObjectID(head), Tree: model.ObjectID(plan.Tree), Base: branch.Base}, trees[string(branch.Base)], changed, analysis.Scope)
 	plan.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, model.Source{Commit: branch.Base, Base: branch.Base, Tree: model.ObjectID(trees[string(branch.Base)])},
 		model.Source{Commit: model.ObjectID(head), Base: branch.Base, Tree: model.ObjectID(plan.Tree)}, plan.Commits))
 	e.sayWhose(ctx, branch)
@@ -1268,9 +1268,10 @@ func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named st
 }
 
 // newPorts are the ports a branch adds, each a Portfile its base doesn't
-// have, as the submitted files evaluate them. One that can't be evaluated
-// is left out: the description says less, and nothing more is wrong.
-func (e *Engine) newPorts(ctx context.Context, worktree *git.Repository, source model.Source, baseTree string, changed []string) []NewPort {
+// have, as the submitted files evaluate them, a moved one aside, which the
+// base has at another directory. One that can't be evaluated is left out:
+// the description says less, and nothing more is wrong.
+func (e *Engine) newPorts(ctx context.Context, worktree *git.Repository, source model.Source, baseTree string, changed []string, scope macports.Scope) []NewPort {
 	reader, err := e.portReader()
 	if err != nil {
 		return nil
@@ -1278,7 +1279,7 @@ func (e *Engine) newPorts(ctx context.Context, worktree *git.Repository, source 
 	var ports []NewPort
 	for _, path := range changed {
 		directory, ok := macports.PortDirectoryOf(path)
-		if !ok || path != directory+"/Portfile" {
+		if !ok || path != directory+"/Portfile" || scope.MovedFrom(directory) != directory {
 			continue
 		}
 		if before, _, err := worktree.File(ctx, baseTree, path); err != nil || before.Exists {

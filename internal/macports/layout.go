@@ -2,6 +2,7 @@ package macports
 
 import (
 	"io/fs"
+	"path"
 	"slices"
 	"strings"
 )
@@ -98,11 +99,78 @@ func ChangedPort(path string) (string, bool) {
 
 // Scope is what a set of changed paths touches, by CI's rule.
 type Scope struct {
-	// Ports are the changed port directories, sorted.
+	// Ports are the changed port directories, sorted: those whose
+	// Portfile the change keeps or adds, a moved port's at its new
+	// directory.
 	Ports []string
 	// Resources reports a change under _resources, which CI builds nothing
 	// for and which may affect every port that loads it.
 	Resources bool
+	// Removed are the directories whose Portfile the change deletes,
+	// moved nowhere: no port is there to build (Placed).
+	Removed []string
+	// Moved are the ports the change moves to another directory (Placed).
+	Moved []Move
+}
+
+// Move is a port the change moves: its Portfile gone from From, the
+// base's directory, and at To, a directory of the same name the base
+// hasn't, as `git mv sysutils/dockhand macports/dockhand` leaves it.
+type Move struct{ From, To string }
+
+// Placed is the scope with each changed directory placed by its Portfile
+// at the base and at the change, as inBase and inHead say of a directory
+// (absent, it holds none): one whose Portfile the change deletes is
+// removed, no port to build, where planning failed to evaluate it (field
+// testing's move of dockhand to macports, 2026-10-29); and one deleted
+// beside one added under the same directory name is that port moved, its
+// base read at From. MacPorts' CI builds neither, listing only the
+// Portfiles a change adds or alters, with git's rename detection.
+func (s Scope) Placed(inBase, inHead map[string]bool) Scope {
+	var removed, added []string
+	for _, directory := range s.Ports {
+		switch {
+		case inBase[directory] && !inHead[directory]:
+			removed = append(removed, directory)
+		case !inBase[directory] && inHead[directory]:
+			added = append(added, directory)
+		}
+	}
+	placed := Scope{Resources: s.Resources}
+	moved := map[string]bool{}
+	for _, from := range removed {
+		var to []string
+		for _, candidate := range added {
+			if path.Base(candidate) == path.Base(from) && !moved[candidate] {
+				to = append(to, candidate)
+			}
+		}
+		// One directory of the name is a move; several, or none, can't be
+		// told apart, and the removal is a removal.
+		if len(to) != 1 {
+			placed.Removed = append(placed.Removed, from)
+			continue
+		}
+		moved[from], moved[to[0]] = true, true
+		placed.Moved = append(placed.Moved, Move{From: from, To: to[0]})
+	}
+	for _, directory := range s.Ports {
+		if !slices.Contains(placed.Removed, directory) && !slices.ContainsFunc(placed.Moved, func(m Move) bool { return m.From == directory }) {
+			placed.Ports = append(placed.Ports, directory)
+		}
+	}
+	return placed
+}
+
+// MovedFrom is the base's directory of a port at directory: where the
+// change moved it from, else the directory itself.
+func (s Scope) MovedFrom(directory string) string {
+	for _, move := range s.Moved {
+		if move.To == directory {
+			return move.From
+		}
+	}
+	return directory
 }
 
 // ScopeOf applies CI's rule to changed paths: the port directories they

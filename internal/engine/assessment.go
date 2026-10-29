@@ -175,13 +175,21 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 		return nil, nil, err
 	}
 	sources := [2]model.Source{{Commit: base, Tree: baseTree, Base: base}, {Tree: tree, Base: base}}
-	for _, directory := range macports.ScopeOf(changed).Ports {
+	analysis, err := e.analyze(ctx, base, tree)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, directory := range analysis.Scope.Ports {
 		exists := [2]bool{}
+		// A moved port is compared with the base's at the directory it
+		// moved from (field testing's move of dockhand to macports,
+		// 2026-10-29).
+		directories := [2]string{analysis.Scope.MovedFrom(directory), directory}
 		// The revision's Portfile, which the comparison reads as the
 		// collector's caller gives it.
 		var portfileText []byte
 		for i, source := range sources {
-			file, text, err := e.Repo.File(ctx, string(source.Tree), directory+"/Portfile")
+			file, text, err := e.Repo.File(ctx, string(source.Tree), directories[i]+"/Portfile")
 			if err != nil {
 				return nil, nil, err
 			}
@@ -214,7 +222,7 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 		if exists[0] {
 			// Read only to find a new subport's sibling; where it can't
 			// be, each subport is evaluated by its own name, as before.
-			basePorts, _ = reader.Ports(ctx, sources[0], directory, model.Environment{}, nil)
+			basePorts, _ = reader.Ports(ctx, sources[0], directories[0], model.Environment{}, nil)
 		}
 		for _, port := range ports {
 			// A subport the revision's record says it didn't change is no
@@ -236,7 +244,7 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 				continue
 			}
 			made = append(made, model.Assessment{Branch: branch, Tree: tree, Base: base, Port: port.Name, Directory: directory, Policy: assess.Policy, Build: assessmentBuild(), At: e.now(),
-				Comparison: e.collector(planner).Revision(ctx, sources, directory, [2]string{macports.CounterpartIn(basePorts, port.Name), port.Name}, exists[0], portfileText)})
+				Comparison: e.collector(planner).Revision(ctx, sources, directories, [2]string{macports.CounterpartIn(basePorts, port.Name), port.Name}, exists[0], portfileText)})
 		}
 	}
 	return found, made, nil

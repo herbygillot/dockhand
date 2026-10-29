@@ -211,7 +211,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	// candidates are every port some environment defined, as the branch
 	// sees it, in the order the scope and --also name them.
 	var candidates []model.PlanTarget
-	add := func(directory string, kind model.TargetKind, role model.TargetRole, added bool) {
+	add := func(directory string, kind model.TargetKind, role model.TargetRole, added bool, movedFrom string) {
 		for e, environment := range plan.Environments {
 			ports, err := reader.Ports(ctx, revision.Source, directory, environment, nil)
 			if err != nil {
@@ -233,23 +233,31 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 					return
 				}
 				if !slices.ContainsFunc(candidates, func(c model.PlanTarget) bool { return c.ID == id }) {
-					candidates = append(candidates, model.PlanTarget{ID: id, Target: target, Directory: directory, Kind: kind, Role: role, Added: added})
+					candidates = append(candidates, model.PlanTarget{ID: id, Target: target, Directory: directory, Kind: kind, Role: role, Added: added, MovedFrom: movedFrom})
 				}
 				evaluations[e][id], infos[e][id] = evaluated, port
 			}
 		}
 	}
+	// A directory the branch removes has no port to build, and is said.
+	plan.Removed = slices.Clone(scope.Removed)
 	for _, directory := range scope.Ports {
-		kind, err := e.targetKind(ctx, baseTree, string(revision.Source.Tree), directory, analysis.Paths)
+		// A moved port is read against the base's Portfile at the
+		// directory it moved from.
+		from, movedFrom := scope.MovedFrom(directory), ""
+		if from != directory {
+			movedFrom = from
+		}
+		kind, err := e.targetKind(ctx, baseTree, string(revision.Source.Tree), from, directory, analysis.Paths)
 		if err != nil {
 			return plan, err
 		}
 		// A port whose Portfile the base hasn't is one the branch adds,
 		// which lint checks with --nitpick (the docs dig's I13); one the
 		// base can't be read for is taken as not added, as targetKind
-		// takes it as substantive.
-		before, _, err := e.Repo.File(ctx, baseTree, directory+"/Portfile")
-		add(directory, kind, model.Changed, err == nil && !before.Exists)
+		// takes it as substantive, and a moved one isn't added.
+		before, _, err := e.Repo.File(ctx, baseTree, from+"/Portfile")
+		add(directory, kind, model.Changed, err == nil && !before.Exists, movedFrom)
 	}
 	// A directory is evaluated once, however many of its ports are named:
 	// twice would count its exclusions twice.
@@ -268,7 +276,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 			continue
 		}
 		also = append(also, directory)
-		add(directory, model.Unchanged, model.Also, false)
+		add(directory, model.Unchanged, model.Also, false, "")
 	}
 	if len(plan.Unresolved) > 0 {
 		return plan, nil
@@ -422,17 +430,30 @@ func directoryName(directory string) string {
 // nothing under files/ changed, no shared code it loads changed, and the
 // Portfile is identical once its revision lines are set aside. Anything
 // else is substantive (Design v3 §3).
-func (e *Engine) targetKind(ctx context.Context, before, after, directory string, changed []string) (model.TargetKind, error) {
+func (e *Engine) targetKind(ctx context.Context, before, after, from, directory string, changed []string) (model.TargetKind, error) {
 	file := directory + "/Portfile"
-	for _, path := range changed {
-		if strings.HasPrefix(path, directory+"/") && path != file {
+	if from == directory {
+		for _, path := range changed {
+			if strings.HasPrefix(path, directory+"/") && path != file {
+				return model.Substantive, nil
+			}
+		}
+	} else {
+		// A moved port's files are compared with the base's at the
+		// directory it moved from, its files/ whole.
+		was, err := e.Repo.Directories(ctx, before, []string{from + "/files"})
+		if err != nil {
+			return model.Substantive, nil
+		}
+		is, err := e.Repo.Directories(ctx, after, []string{directory + "/files"})
+		if err != nil || was[from+"/files"] != is[directory+"/files"] {
 			return model.Substantive, nil
 		}
 	}
 	if e.loadsChangedSharedCode(ctx, after, file, changed) {
 		return model.Substantive, nil
 	}
-	old, oldText, err := e.Repo.File(ctx, before, file)
+	old, oldText, err := e.Repo.File(ctx, before, from+"/Portfile")
 	if err != nil || !old.Exists {
 		return model.Substantive, nil
 	}
