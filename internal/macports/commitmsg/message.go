@@ -139,6 +139,18 @@ func SubjectPorts(subject string) []string {
 	return ports
 }
 
+// RebuildFor is the port a rebuild's subject rebuilds for, as update
+// --revbump-dependents writes them: libunibreak for "taisei: rebuild for
+// libunibreak 8.0". False for any other subject.
+func RebuildFor(subject string) (string, bool) {
+	_, rest, ok := strings.Cut(subject, ": rebuild for ")
+	if !ok {
+		return "", false
+	}
+	port, _, _ := strings.Cut(strings.TrimSpace(rest), " ")
+	return port, port != ""
+}
+
 // TitlePorts are the ports a pull request's title names as a subject does
 // (SubjectPorts), after any bracketed tags before it, as "[WIP] jq: update
 // to 1.8.1" or the acceptance stage's "[testing] …".

@@ -306,9 +306,19 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	}
 	for _, updates := range []bool{true, false} {
 		for _, edit := range edits {
-			if (edit.Kind == model.EditUpdate) == updates && edit.Directory != "" && !slices.Contains(order, edit.Directory) && changes(edit.Directory) {
-				order = append(order, edit.Directory)
+			if (edit.Kind == model.EditUpdate) != updates || edit.Directory == "" || slices.Contains(order, edit.Directory) || !changes(edit.Directory) {
+				continue
 			}
+			// A rebuild follows the port it rebuilds for, whoever changed
+			// it, as a library its person updated by hand, where every
+			// directory dockhand edited came first (taisei and
+			// libunibreak, field testing, after batch 84).
+			if port, ok := commitmsg.RebuildFor(edit.Subject); ok && edit.Kind == model.EditRevbump {
+				if directory, found := e.PortDirectory(ctx, port); found && changes(directory) && !slices.Contains(order, directory) {
+					order = append(order, directory)
+				}
+			}
+			order = append(order, edit.Directory)
 		}
 	}
 	// A port the branch moves is one commit, its removal from the old
