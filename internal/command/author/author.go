@@ -891,13 +891,7 @@ func writeOthers(out io.Writer, update engine.Update) {
 	for _, line := range update.Instructions {
 		fmt.Fprintf(out, "! The Portfile's comment says, at %s\n", line)
 	}
-	if update.OthersProblem != "" {
-		fmt.Fprintf(out, "Couldn't look for other open pull requests for %s: %s\n", update.Port, update.OthersProblem)
-		return
-	}
-	for _, pr := range update.Others {
-		fmt.Fprintf(out, "Also open for %s: #%d %s\n", update.Port, pr.Number, pr.Title)
-	}
+	view.WriteOthers(out, update.Port, update.Others)
 }
 
 // matchWords says that every archive a checksum refresh compared matches

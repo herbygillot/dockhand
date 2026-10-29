@@ -68,10 +68,9 @@ type updateJSON struct {
 	// as update prints it; absent when they weren't compared.
 	Upstream *upstreamJSON `json:"upstream,omitempty"`
 	// Others are the port's other open pull requests, where the update
-	// looked, and OthersProblem why it couldn't.
-	Regenerated   []regeneratedJSON `json:"regenerated,omitempty"`
-	Others        []otherJSON       `json:"others,omitempty"`
-	OthersProblem string            `json:"others_problem,omitempty"`
+	// looked.
+	Regenerated []regeneratedJSON `json:"regenerated,omitempty"`
+	Others      []otherJSON       `json:"others,omitempty"`
 	// SwitchedToHTTPS are the links the edit switched to https, which
 	// answered there; PlainHTTP are the port's URLs still over plain HTTP,
 	// and whether each answers over HTTPS.
@@ -195,6 +194,16 @@ type otherJSON struct {
 	URL    string `json:"url,omitempty"`
 }
 
+// OthersJSON are a port's other open pull requests, as update and start
+// report them.
+func OthersJSON(others []engine.OtherPullRequest) []otherJSON {
+	var viewed []otherJSON
+	for _, pr := range others {
+		viewed = append(viewed, otherJSON{Number: pr.Number, Title: pr.Title, URL: pr.URL})
+	}
+	return viewed
+}
+
 func UpdateView(branch model.Branch, started bool, update engine.Update, plan bool) updateJSON {
 	viewed := updateJSON{Branch: BranchRef(branch), Started: started, Port: update.Port, CrossesMajor: update.CrossesMajor, LeavesStable: update.LeavesStable, Renamed: update.Renamed, Followed: update.Followed,
 		Before: versionJSON{update.Before.Version, update.Before.Revision}, After: versionJSON{update.After.Version, update.After.Revision},
@@ -214,10 +223,7 @@ func UpdateView(branch model.Branch, started bool, update engine.Update, plan bo
 		}
 		viewed.Regenerated = append(viewed.Regenerated, regenerated)
 	}
-	for _, pr := range update.Others {
-		viewed.Others = append(viewed.Others, otherJSON{Number: pr.Number, Title: pr.Title, URL: pr.URL})
-	}
-	viewed.OthersProblem = update.OthersProblem
+	viewed.Others = OthersJSON(update.Others)
 	viewed.Fixed = update.Fixed
 	for _, url := range update.HTTPS {
 		viewed.SwitchedToHTTPS = append(viewed.SwitchedToHTTPS, plainHTTPJSON{Option: url.Option, URL: url.URL, HTTPS: url.HTTPS, Answers: url.Answers})

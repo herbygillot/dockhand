@@ -216,6 +216,10 @@ it's the merged branch's with a short ID.`,
 			} else if name, err = e.FreeName(ctx, ports[0]); err != nil {
 				return err
 			}
+			// The ports' other open pull requests are looked for beside
+			// the fetch, and said, never a hold (the bazel session's
+			// notes, 2026-10-24, which ran gh pr list by hand first).
+			e.LookForOthers(ctx, ports)
 			branch, err := e.Start(ctx, engine.StartRequest{Name: name, Here: here, Ports: ports})
 			// An archived branch's name is offered back: renamed aside, the
 			// archived one keeps its work under <name>-archived.
@@ -241,13 +245,29 @@ it's the merged branch's with a short ID.`,
 					return fmt.Errorf("%s was started, but %w", branch.Name, err)
 				}
 			}
-			streams.Emit(map[string]any{"branch": view.BranchRef(branch)})
+			// Each port's others, read from the looks started before.
+			var others []engine.OtherPullRequest
+			found := map[string][]engine.OtherPullRequest{}
+			for _, port := range ports {
+				found[port] = e.OtherPullRequests(ctx, []string{port}, 0)
+				others = append(others, found[port]...)
+			}
+			result := map[string]any{"branch": view.BranchRef(branch)}
+			if len(others) > 0 {
+				result["others"] = view.OthersJSON(others)
+			}
+			streams.Emit(result)
 			if here {
 				fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now) in this checkout, and switched to it.\n", branch.Name, branch.Base.Short())
-				return nil
+			} else {
+				fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now)\nDirectory: %s\n", branch.Name, branch.Base.Short(), s.Places().Tilde(branch.Worktree))
 			}
-			fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now)\nDirectory: %s\nNext: cd \"$(dockhand path %s)\"\n",
-				branch.Name, branch.Base.Short(), s.Places().Tilde(branch.Worktree), branch.ShortName())
+			for _, port := range ports {
+				view.WriteOthers(streams.Out, port, found[port])
+			}
+			if !here {
+				fmt.Fprintf(streams.Out, "Next: cd \"$(dockhand path %s)\"\n", branch.ShortName())
+			}
 			return nil
 		},
 	}

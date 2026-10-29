@@ -139,6 +139,21 @@ func SubjectPorts(subject string) []string {
 	return ports
 }
 
+// TitlePorts are the ports a pull request's title names as a subject does
+// (SubjectPorts), after any bracketed tags before it, as "[WIP] jq: update
+// to 1.8.1" or the acceptance stage's "[testing] …".
+func TitlePorts(title string) []string {
+	rest := strings.TrimSpace(title)
+	for strings.HasPrefix(rest, "[") {
+		_, after, ok := strings.Cut(rest, "]")
+		if !ok {
+			break
+		}
+		rest = strings.TrimSpace(after)
+	}
+	return SubjectPorts(rest)
+}
+
 // Subject composes the commit subject MacPorts asks for, "<port>: <what
 // changed>". The person writes only what follows the port name, so a
 // subject that already carries it is refused rather than doubled.

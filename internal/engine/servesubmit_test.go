@@ -222,6 +222,8 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	require.Equal(t, "jq needs review before Dockhand can prepare its update: #34777 is open for the same port: jq: update to 1.8.1; no branch was started", early[0].Problem)
 	require.Nil(t, early[0].Run, "nothing is checked")
 
+	// serve's next pass, past the answer its last one had.
+	e.options.Now = func() time.Time { return time.Now().Add(othersKept) }
 	fake.Others = nil
 	servePrepared(t, e)
 	fake.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.1"}}
@@ -252,6 +254,11 @@ func TestAnUnattendedUpdateLooksForOthersBeforeItsEdit(t *testing.T) {
 	bump := func(name string) UpdateRequest {
 		return UpdateRequest{Start: &StartRequest{Name: name}, Action: model.EditUpdate, Port: "jq", LookForOthers: true, Unattended: true}
 	}
+	// Each bump is a run of its own, whose search the run before's answer
+	// doesn't stand for: the clock moves past it.
+	var past time.Duration
+	e.options.Now = func() time.Time { return time.Now().Add(past) }
+	later := func() { past += othersKept }
 
 	_, err := e.Update(t.Context(), bump("jq-bump"))
 	var held *HeldBeforeEdit
@@ -260,6 +267,7 @@ func TestAnUnattendedUpdateLooksForOthersBeforeItsEdit(t *testing.T) {
 	require.Equal(t, []string{"#34777 is open for the same port: jq: update to 1.8.0"}, HoldLines(held.Held))
 	require.Empty(t, p.requests, "nothing was prepared")
 	fake.Others, fake.SearchErr = nil, errors.New("rate limited")
+	later()
 	_, err = e.Update(t.Context(), bump("jq-bump"))
 	require.ErrorAs(t, err, &held)
 	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, HoldLines(held.Held))
@@ -279,6 +287,7 @@ func TestAnUnattendedUpdateLooksForOthersBeforeItsEdit(t *testing.T) {
 	require.Equal(t, 1, fake.Searches, "looked for once, before the edit")
 
 	fake.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	later()
 	person := bump("jq-update")
 	person.Unattended = false
 	update, err = e.Update(t.Context(), person)

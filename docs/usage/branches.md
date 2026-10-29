@@ -96,6 +96,11 @@ name, `start --port jq` generates one. `start jq-fix --here` instead creates the
 branch in the current checkout, which must have no uncommitted changes to
 tracked files.
 
+`start --port` and `update` name each port's other open pull requests on
+MacPorts' repository, such as `Also open for jq: #34620 jq: update to 1.8.0`,
+so you can look before duplicating someone's work. They stop nothing, and a
+search that fails says nothing; `submit` searches again before it publishes.
+
 Without `--new`, an authoring command such as `update jq` uses the tracked
 branch checked out here, or the one open branch already changing jq; if neither
 exists, it can start one. Where several branches match, it asks or refuses as
