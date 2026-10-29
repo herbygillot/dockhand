@@ -57,5 +57,9 @@ assert() {
 		{ row_fail "serve didn't say its login was back"; return; }
 	cmp -s "$ROW_DIR/pid.before" "$ROW_DIR/pid.after" ||
 		{ row_fail "serve didn't run on as one process: pid $(cat "$ROW_DIR/pid.before") before, $(cat "$ROW_DIR/pid.after") after"; return; }
+	# No line leads a refusal with a package's name: rc8's serve said
+	# "could not read pull requests: forge: authentication is required".
+	! grep -E ': forge: ' "$ROW_DIR/serve.log" "$ROW_DIR/out.log" | head -1 | matches . ||
+		{ row_fail "a refusal still names the forge package: $(grep -hE ': forge: ' "$ROW_DIR/serve.log" "$ROW_DIR/out.log" | head -1)"; return; }
 	row_pass "said the login was rejected, once; serve said so once, status said it wasn't acting, and it acted again on the new login as one process"
 }

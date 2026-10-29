@@ -314,16 +314,28 @@ type ChangingProvider interface {
 
 // Change is something of the person's a check changed: Check names the
 // check, check-12, and Place what it changed, /opt/local. Building is a
-// check building there now, which puts it back when it ends; otherwise
-// Remedy is how to put it back, "sudo port restore --snapshot-id 7".
+// check building there now, which puts it back when it ends; Kept one
+// that kept what it built there, check --keep's; otherwise it stopped
+// before it could put it back. Remedy is how to put it back, "dockhand
+// undo check-12".
 type Change struct {
 	Check, Place string
 	Building     bool
+	Kept         bool
 	Remedy       string
 	// Holder is who holds the place for its check where the provider
 	// keeps a lock on it, as a check waiting on it says: "check-12 (pid
 	// 4711)"; empty where none is held.
 	Holder string
+}
+
+// A PuttingBackProvider puts back what a check of its changed and left, as
+// dockhand undo check-N asks: kept, or stopped before it could put it
+// back. It says where, and false where the check left nothing to put
+// back.
+type PuttingBackProvider interface {
+	ChangingProvider
+	PutBack(ctx context.Context, check string, progress func(string)) (place string, found bool, err error)
 }
 
 // A ParallelProvider can build several of one check's environments at once,

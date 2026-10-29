@@ -146,6 +146,7 @@ need review.`,
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	settings.SupportsJSON(cmd)
 	settings.KeepModelineFlag(cmd, s)
+	settings.KeepHTTPFlag(cmd, s)
 	return cmd
 }
 

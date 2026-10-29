@@ -66,6 +66,16 @@ type Edit struct {
 	// Excepted are, for a revision bump, the dependents --except left out
 	// of the same rebuild, which the pull request's description lists.
 	Excepted []string `json:",omitempty"`
+	// HTTPS are the plain-HTTP links the edit switched to https, which
+	// answered there, which tidy's commit and the pull request say.
+	HTTPS []HTTPSLink `json:",omitempty"`
+}
+
+// HTTPSLink is a plain-HTTP link an edit switched to https: the option
+// that names it, such as homepage, and its URL as it was.
+type HTTPSLink struct {
+	Option string `json:"option"`
+	URL    string `json:"url"`
 }
 
 // UpstreamComparison is what an update's upstream archives showed: an

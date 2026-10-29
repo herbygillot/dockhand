@@ -65,6 +65,10 @@ type Facts struct {
 	// line naming the rebuild and them, which the Description gives with
 	// the hand edits, so a reviewer can disagree (the docs dig's I41).
 	LeftOut []string
+	// HTTPS are the links each port's edits switched to https, which the
+	// Description says beside the hand edits where it doesn't give the one
+	// commit's body that says so.
+	HTTPS []HTTPSSwitch
 	// CommitsLeftOut is how many commits' rows the commits' table leaves
 	// out to keep the description within GitHub's limit (Compose).
 	CommitsLeftOut int
@@ -122,6 +126,26 @@ type TestedOn struct {
 	// of the reports' run names, are left out to keep the description
 	// within GitHub's limit (Compose).
 	RowsLeftOut, RunsLeftOut int
+}
+
+// HTTPSSwitch is a port's plain-HTTP links its edits switched to https:
+// the line tidy's commit body gives, "Switches homepage and master_sites
+// to HTTPS.".
+type HTTPSSwitch struct {
+	Port, Line string
+}
+
+// httpsLines are the HTTPS switches the Description says, each a line
+// naming its port: those the one commit's body, which it gives, doesn't.
+func (facts Facts) httpsLines() []string {
+	var lines []string
+	for _, switched := range facts.HTTPS {
+		if len(facts.Commits) == 1 && strings.Contains(commitBody(facts.Commits[0].Message), switched.Line) {
+			continue
+		}
+		lines = append(lines, "**"+switched.Port+"**: "+switched.Line)
+	}
+	return lines
 }
 
 // Limit is the most characters GitHub takes in a pull request's body: one
@@ -277,7 +301,8 @@ func compose(facts Facts) string {
 	}
 	// Where nothing else would be said, the note is the Description
 	// itself, unquoted (field testing, 2026-10-20).
-	alone := facts.Note != "" && len(facts.Reviewed) == 0 && len(facts.NewPorts) == 0 && len(facts.HandEdits) == 0 && len(facts.Commits) == 1 && commitBody(facts.Commits[0].Message) == ""
+	https := facts.httpsLines()
+	alone := facts.Note != "" && len(facts.Reviewed) == 0 && len(facts.NewPorts) == 0 && len(facts.HandEdits) == 0 && len(https) == 0 && len(facts.Commits) == 1 && commitBody(facts.Commits[0].Message) == ""
 	if len(facts.Commits) == 1 {
 		if text := commitBody(facts.Commits[0].Message); text != "" {
 			fmt.Fprintf(&b, "%s\n\n", text)
@@ -303,7 +328,10 @@ func compose(facts Facts) string {
 	for _, line := range facts.LeftOut {
 		fmt.Fprintf(&b, "- %s\n", line)
 	}
-	if len(facts.HandEdits)+len(facts.LeftOut) > 0 {
+	for _, line := range https {
+		fmt.Fprintf(&b, "- %s\n", line)
+	}
+	if len(facts.HandEdits)+len(facts.LeftOut)+len(https) > 0 {
 		b.WriteString("\n")
 	}
 	switch {
@@ -701,7 +729,7 @@ var trailer = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*: \S`)
 // field testing, 2026-10-04: py-coremltools' Description held its
 // Assisted-by trailer alone).
 func SaysNothing(facts Facts) bool {
-	if len(facts.NewPorts) > 0 || facts.Note != "" || len(facts.Reviewed) > 0 || len(facts.HandEdits) > 0 || len(facts.Commits) != 1 {
+	if len(facts.NewPorts) > 0 || facts.Note != "" || len(facts.Reviewed) > 0 || len(facts.HandEdits) > 0 || len(facts.httpsLines()) > 0 || len(facts.Commits) != 1 {
 		return false
 	}
 	for _, line := range strings.Split(commitBody(facts.Commits[0].Message), "\n") {

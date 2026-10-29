@@ -93,5 +93,6 @@ dockhand can't. The check builds where build.unattended's profile says;
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what it would do and change nothing")
 	settings.SupportsJSON(cmd)
 	settings.KeepModelineFlag(cmd, s)
+	settings.KeepHTTPFlag(cmd, s)
 	return cmd
 }

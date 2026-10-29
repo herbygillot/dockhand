@@ -247,6 +247,7 @@ an installed agent. Accepted check plans remain frozen. Read
 | --- | --- | --- |
 | `check.tests` | `declared` | `declared`, `required`, or `skip`; see the checks topic |
 | `check.baseline` | `false` | Automatically run an applicable baseline after a failed check; it still accepts no failure by itself |
+| `update.keep_http` | `false` | Leave plain-HTTP `homepage`, `master_sites`, and `livecheck.url` links as they are, asking nothing; otherwise update, create, and a checksums refresh switch each that answers over HTTPS. `--keep-http` does the same for one command |
 | `submit.rerequest_review` | `ask` | `ask`, `always`, or `never` after pushing fixes to a PR with changes requested |
 | `cleanup.automatic` | `true` | Perform eligible background pruning |
 | `cleanup.after` | `15d` | Retention window for eligible history, logs, and caches |

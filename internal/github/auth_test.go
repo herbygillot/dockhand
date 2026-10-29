@@ -237,3 +237,11 @@ func TestPublicReadsResolveCredentialsWithoutPriorAuthentication(t *testing.T) {
 		})
 	}
 }
+
+// No login found says what's missing and the way on, still an
+// authentication refusal, where serve's line read "forge: authentication
+// is required" (D-C3 on rc8, 2026-10-29).
+func TestNoLoginSaysTheWayOn(t *testing.T) {
+	require.EqualError(t, github.ErrNoCredentials, "no GitHub login was found; dockhand setup github signs in")
+	require.ErrorIs(t, github.ErrNoCredentials, github.ErrAuthentication)
+}

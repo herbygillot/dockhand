@@ -194,8 +194,13 @@ not treat a pass among everyday active ports as the same experiment as a clean
 guest.
 
 If the registry requires root, the check needs `sudo`; a foreground terminal can
-ask for the password. `--keep` leaves the branch's versions active and reports
-the snapshot needed to restore the prefix. Restoring active versions leaves
+ask for the password. `--keep` leaves the branch's versions active, and
+`dockhand undo check-N` puts the prefix back as it was, each port active before
+active again at its version; MacPorts' `port restore` brings back only the ports
+requested before and what they need. A check that stopped before it could put
+the prefix back is put back the same way, or by the next check there; a check of
+the same branch first needs `dockhand wait`, `check --replace`, or
+`dockhand cancel` of the stopped one. Restoring active versions leaves
 newly built images inactive and unrequested for MacPorts' `port reclaim`. A
 later check can remove a matching inactive, unrequested image before rebuilding;
 an installed image it cannot safely replace is refused.

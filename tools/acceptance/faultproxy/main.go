@@ -8,7 +8,8 @@
 //	faultproxy -mode stall|reset|5xx|pass [-listen 127.0.0.1:0]
 //
 // It prints the address it listens on, one line, then serves until it is
-// stopped.
+// stopped, logging each request's method and host, so a row can show
+// which hosts dockhand asked.
 package main
 
 import (
@@ -54,6 +55,7 @@ func serve(conn net.Conn, mode string) {
 	if err != nil {
 		return
 	}
+	log.Printf("%s %s", request.Method, request.Host)
 	switch mode {
 	case "reset":
 		if tcp, ok := conn.(*net.TCPConn); ok {

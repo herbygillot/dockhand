@@ -347,6 +347,22 @@ func TestTheDependentsLeftOutAreListed(t *testing.T) {
 	require.Contains(t, body, "\n- Left out of the rebuild for jq 1.8.1 with `--except`: **gojq**.\n\n")
 }
 
+// The links each port's edits switched to HTTPS are listed with the hand
+// edits, where the one commit's body the Description gives doesn't say so.
+func TestTheLinksSwitchedToHTTPSAreSaid(t *testing.T) {
+	t.Parallel()
+	switched := []HTTPSSwitch{{Port: "jq", Line: "Switches homepage and master_sites to HTTPS."}}
+	two := Facts{Commits: []Commit{{ID: "abc1234", Message: "jq: update to 1.8.1\n\nSwitches homepage and master_sites to HTTPS."}, {ID: "def5678", Message: "yq: rebuild for jq 1.8.1"}}, HTTPS: switched}
+	require.Contains(t, Compose(two), "\n- **jq**: Switches homepage and master_sites to HTTPS.\n\n")
+	one := Facts{Commits: two.Commits[:1], HTTPS: switched}
+	body := Compose(one)
+	require.Equal(t, 1, strings.Count(body, "Switches homepage and master_sites to HTTPS."), "the commit's body says it")
+	require.NotContains(t, body, "**jq**:")
+	bare := Facts{Commits: []Commit{{ID: "abc1234", Message: "jq: update to 1.8.1"}}, HTTPS: switched}
+	require.Contains(t, Compose(bare), "\n- **jq**: Switches homepage and master_sites to HTTPS.\n")
+	require.False(t, SaysNothing(bare))
+}
+
 // What the check's builds installed against the port's earlier build is
 // said under Tested on, for a reviewer to weigh (Then's item 9).
 func TestInstalledFindingsAreSaidUnderTestedOn(t *testing.T) {

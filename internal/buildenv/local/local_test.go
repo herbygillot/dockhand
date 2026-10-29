@@ -228,7 +228,7 @@ func TestALocalCheckLeftUnfinishedIsPutBack(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("  zlib @1.3.2_0 (active)\n  libharbor @9.9_0 (active)\n"), 0o644))
 	changes, err := l.Changes(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, []buildenv.Change{{Check: "check-9", Place: prefix, Remedy: "sudo port restore --snapshot-id 7"}}, changes)
+	require.Equal(t, []buildenv.Change{{Check: "check-9", Place: prefix, Remedy: "dockhand undo check-9"}}, changes)
 
 	l = localProvider(t, append(slices.DeleteFunc(slices.Clone(env), func(v string) bool { return strings.HasPrefix(v, "HANG=") }), "HANG="))
 	l.Temp = filepath.Dir(left)
@@ -237,6 +237,59 @@ func TestALocalCheckLeftUnfinishedIsPutBack(t *testing.T) {
 	require.Contains(t, build.progress, "putting "+prefix+" back as it was before an earlier check, which ended before it could")
 	require.NoDirExists(t, left)
 	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path))
+}
+
+// dockhand undo check-N puts back a prefix a check left changed, or kept
+// its versions active in, by the check's own put-back from its record,
+// where port restore brings back requested ports alone; a kept check's
+// directory stays, said as kept, and the next check there leaves it to
+// undo (G2's rerun on rc8, 2026-10-29).
+func TestUndoPutsBackAPrefixACheckLeftOrKept(t *testing.T) {
+	t.Parallel()
+	path, active := registry(t, "  zlib @1.3.2_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active, "HANG=")
+	l := localProvider(t, env)
+	said := func(string) {}
+
+	_, found, err := l.PutBack(t.Context(), "check-9", said)
+	require.NoError(t, err)
+	require.False(t, found, "nothing left")
+
+	left := leftBehind(t, l.Temp, prefix)
+	require.NoError(t, os.WriteFile(path, []byte("  zlib @1.3.2_0 (active)\n  libharbor @9.9_0 (active)\n"), 0o644))
+	place, found, err := l.PutBack(t.Context(), "check-9", said)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, prefix, place)
+	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path), "put back as it was")
+	require.NoDirExists(t, left)
+
+	// A kept check's directory stays, said as kept; the next check there
+	// leaves it; undo puts the prefix back.
+	kept := leftBehind(t, l.Temp, prefix)
+	require.NoError(t, os.WriteFile(filepath.Join(kept, "results.json"), []byte(`{"protocol":1,"state":"finished","environment":{"snapshot":"7","restored":"kept"}}`), 0o644))
+	require.NoError(t, os.WriteFile(path, []byte("  zlib @1.3.2_0 (active)\n  libharbor @9.9_0 (active)\n"), 0o644))
+	changes, err := l.Changes(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []buildenv.Change{{Check: "check-9", Place: prefix, Kept: true, Remedy: "dockhand undo check-9"}}, changes)
+	require.NoError(t, l.restoreLeft(t.Context(), prefix, &fakeBuild{}))
+	require.DirExists(t, kept, "the next check leaves a kept check's directory to undo")
+	_, found, err = l.PutBack(t.Context(), "check-9", said)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path))
+	require.NoDirExists(t, kept)
+}
+
+// Where dockhand's put-back can't run, port restore is offered as what it
+// is, the ports requested before, with the rest that were active from the
+// check's record.
+func TestAPutBackByHandSaysWhatPortRestoreDoes(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "before.txt"), []byte("  zlib @1.3.2_0 (active)\n  gettext @0.22.5_0 (active)\n  jq @1.7.1_0 (inactive)\n"), 0o644))
+	require.Equal(t, "Where dockhand's put-back can't run, sudo port restore --snapshot-id 7 restores the ports requested before check-9 and what they need, and sudo port activate gettext @0.22.5_0 zlib @1.3.2_0 the rest that were active, from its record",
+		(&Local{}).byHand(dir, "check-9", "7"))
 }
 
 // leftBehind is a check's directory in temp that a process left, ending
@@ -320,4 +373,25 @@ func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
 	require.ErrorContains(t, err, "This sudoers line, added with visudo, lets it: dhtest ALL=(root) NOPASSWD: "+tclsh+".")
 	require.ErrorContains(t, err, "A prefix MacPorts installed without root needs no sudo")
+}
+
+// A check's directory dockhand can't remove, as one its guest program,
+// root, made a directory in, is said, with how to remove it (G4 on rc8,
+// 2026-10-29).
+func TestADirectoryThatCantBeRemovedIsSaid(t *testing.T) {
+	t.Parallel()
+	if os.Getuid() == 0 {
+		t.Skip("root removes anything")
+	}
+	dir := filepath.Join(t.TempDir(), localDirectory+"stuck")
+	locked := filepath.Join(dir, "rootmade")
+	require.NoError(t, os.MkdirAll(locked, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(locked, "results.json"), nil, 0o644))
+	require.NoError(t, os.Chmod(locked, 0o555))
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+	build := &fakeBuild{}
+	remove(dir, build)
+	require.Len(t, build.progress, 1)
+	require.Contains(t, build.progress[0], dir+" couldn't be removed: ")
+	require.Contains(t, build.progress[0], "; sudo rm -rf "+dir+" removes it")
 }

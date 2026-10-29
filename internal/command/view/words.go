@@ -140,10 +140,16 @@ func CheckWords(plan engine.SubmitPlan) string {
 // writeOthers names the port's other open pull requests the update found,
 // or why it couldn't look. They stop nothing: submit shows them again, and
 // bump and serve hold on one.
-// writePlainHTTP says the port's plain-HTTP URLs, which MacPorts would
-// have over HTTPS, with whether the https form answers. The Portfile is
-// left as it is: changing them is the maintainer's call.
-func WritePlainHTTP(out io.Writer, plain []engine.PlainURL) {
+// WritePlainHTTP says the port's plain-HTTP links the edit switched to
+// HTTPS, which answered there, and those still over plain HTTP, which
+// MacPorts would have over HTTPS, with whether the https form answers.
+func WritePlainHTTP(out io.Writer, switched, plain []engine.PlainURL) {
+	if len(switched) > 0 {
+		fmt.Fprintln(out, "Switched to HTTPS, which answers there:")
+		for _, url := range switched {
+			fmt.Fprintf(out, "  %s %s\n", url.Option, url.HTTPS)
+		}
+	}
 	if len(plain) == 0 {
 		return
 	}

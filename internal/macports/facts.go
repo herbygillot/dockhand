@@ -292,7 +292,16 @@ func IsLivecheckOption(key string) bool {
 // PlainURL is a URL a port names over plain HTTP, and the option it's in.
 type PlainURL struct {
 	Option, URL string
+	// Ask is the https URL whose answer proves the link's https form: the
+	// form itself, or for a master_sites site, a distfile it serves there,
+	// since a directory answering proves nothing, and MacPorts' mirror
+	// fallback would hide a site that doesn't serve it (the architecture
+	// thread, 2026-10-29). Empty where no distfile says what a site serves.
+	Ask string
 }
+
+// HTTPS is a plain-HTTP URL's https form.
+func HTTPS(url string) string { return "https://" + strings.TrimPrefix(url, "http://") }
 
 // Categories are the port's categories, its primary first, as its
 // categories option lists them.
@@ -302,32 +311,83 @@ func (p PortInfo) Categories() []string {
 }
 
 // PlainHTTP are the port's URLs over plain HTTP, which MacPorts prefers
-// over HTTPS: its homepage, and each of its master_sites that is a URL
-// (without the ":tag" that names which distfiles it serves). A mirror
+// over HTTPS: its homepage, its livecheck.url, and each of its
+// master_sites that is a URL (without the ":tag" that names which
+// distfiles it serves), each with what to ask of its https form. A mirror
 // group, "gnu" or "sourceforge:project", is MacPorts' own list, and none
 // of the port's.
 func (p PortInfo) PlainHTTP() []PlainURL {
 	var plain []PlainURL
-	if homepage := p.Options["homepage"]; strings.HasPrefix(homepage, "http://") {
-		plain = append(plain, PlainURL{Option: "homepage", URL: homepage})
+	for _, option := range []string{"homepage", "livecheck.url"} {
+		if url := p.Options[option]; strings.HasPrefix(url, "http://") {
+			plain = append(plain, PlainURL{Option: option, URL: url, Ask: HTTPS(url)})
+		}
 	}
 	sites, _ := syntax.ListValues(p.Options["master_sites"])
+	distfiles, _ := syntax.ListValues(p.Options["distfiles"])
 	for _, site := range sites {
 		if !strings.HasPrefix(site, "http://") {
 			continue
 		}
 		// Its tags, a mirror option or which distfiles it serves, are
 		// taken off as Base takes them, one or two.
+		var tags []string
 		for range 2 {
 			if m := taggedURL.FindStringSubmatch(site); m != nil {
-				site = m[1]
+				site, tags = m[1], append(tags, m[2])
 			}
 		}
-		if !slices.ContainsFunc(plain, func(u PlainURL) bool { return u.URL == site }) {
-			plain = append(plain, PlainURL{Option: "master_sites", URL: site})
+		// A site listed again, for other tags, is the one site; a
+		// livecheck.url of the same URL, as ${master_sites} gives, is
+		// another link, asked as a page, where the site is asked for its
+		// distfile (dnsmasq's, G10).
+		if slices.ContainsFunc(plain, func(u PlainURL) bool { return u.Option == "master_sites" && u.URL == site }) {
+			continue
 		}
+		url := PlainURL{Option: "master_sites", URL: site}
+		if served := servedFrom(distfiles, tags); served != "" {
+			url.Ask = strings.TrimSuffix(HTTPS(site), "/") + "/" + served
+		}
+		plain = append(plain, url)
 	}
 	return plain
+}
+
+// AsPlainHTTP is the snapshot with the https form of each of urls, plain-
+// HTTP links an edit switched (portfile.SwitchHTTPS), read back as the URL
+// over plain HTTP, wherever any option names it: the switch an edit makes
+// changes every value that names it, a master_sites of ${homepage}files/
+// among them, so two snapshots that read alike so differ in nothing else.
+func (s Snapshot) AsPlainHTTP(urls []string) Snapshot {
+	if len(urls) == 0 {
+		return s
+	}
+	plain := s
+	plain.Ports = map[string]PortInfo{}
+	for name, port := range s.Ports {
+		options := map[string]string{}
+		for key, value := range port.Options {
+			for _, url := range urls {
+				value = strings.ReplaceAll(value, HTTPS(url), url)
+			}
+			options[key] = value
+		}
+		port.Options = options
+		plain.Ports[name] = port
+	}
+	return plain
+}
+
+// servedFrom is the first distfile a site of these tags serves: one of
+// its tags, or, for a site with none, one with none, as Base matches them.
+func servedFrom(distfiles, tags []string) string {
+	for _, distfile := range distfiles {
+		name, tag, tagged := strings.Cut(distfile, ":")
+		if tagged == (len(tags) > 0) && (!tagged || slices.Contains(tags, tag)) && name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 // taggedURL is Base's pattern for a site with a tag after it

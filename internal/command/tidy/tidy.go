@@ -194,16 +194,23 @@ func applySaved(ctx context.Context, e *engine.Engine, streams term.Streams, fil
 func UndoCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
-		Use: "undo [<checkpoint>]",
+		Use: "undo [<checkpoint> | <check>]",
 		// v0.3.0's restore points here, not run as an alias.
 		SuggestFor: []string{"restore"},
-		Short:      "Restore history from before the latest tidy or rebase",
+		Short:      "Restore history from before the latest tidy or rebase, or a prefix a check changed",
 		Long: `Puts a branch's commits back as they were before its latest tidy or
 rebase, or the checkpoint named, such as tidy-3 or rebase-4, when nothing
 has been committed since. After a tidy, the files are not touched: edits
 that tidy committed read as uncommitted again. After a rebase, the files go
 back as they were before it, with the master the branch started from; a
 change to one of those files stops it.
+
+Named a check, such as check-12, it puts back the MacPorts prefix a local
+check kept its versions active in (check --keep), or left changed when it
+stopped before it could: each port active before it active again at its
+version, and what it activated deactivated, from its record. MacPorts' port
+restore brings back the ports requested before and what they need, not
+that.
 
 With no checkpoint named, the branch is -b, -p, or --pr, else the one
 checked out here.`,
@@ -218,6 +225,9 @@ checked out here.`,
 			if len(args) == 1 {
 				if where.Explicit() {
 					return errors.New("a checkpoint names its branch already; name the checkpoint or the branch, not both")
+				}
+				if model.IsRunName(args[0]) {
+					return putBack(ctx, e, streams, args[0])
 				}
 				return restoreCheckpoint(ctx, e, streams, args[0])
 			}
@@ -235,6 +245,24 @@ checked out here.`,
 	where.Register(cmd, s, "undo in")
 	settings.SupportsJSON(cmd)
 	return cmd
+}
+
+// putBack puts back what a check changed of the person's own and left,
+// and says where (G2's rerun on rc8, 2026-10-29).
+func putBack(ctx context.Context, e *engine.Engine, streams term.Streams, name string) error {
+	run, err := e.RunNamed(ctx, name)
+	if err != nil {
+		return err
+	}
+	places, err := e.PutBack(ctx, run, func(line string) { fmt.Fprintln(streams.Err, line) })
+	if err != nil {
+		return err
+	}
+	streams.Emit(map[string]any{"check": run.Name(), "put_back": places})
+	for _, place := range places {
+		fmt.Fprintf(streams.Out, "Put %s back as it was before %s.\n", place, run.Name())
+	}
+	return nil
 }
 
 // restoreCheckpoint puts a branch back as it was before a checkpoint, and

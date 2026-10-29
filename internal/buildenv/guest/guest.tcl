@@ -57,6 +57,19 @@ if {[llength $local]} {
     set ::env(PORTSRC) $root/macports.conf
     set ::env(PATH) $prefix/bin:$prefix/sbin:/usr/bin:/bin:/usr/sbin:/sbin
 }
+# Run under sudo in a prefix of the person's, the program gives what it
+# wrote in the check's directory to the person who ran sudo as it exits,
+# so dockhand, as them, can remove the directory with no other root
+# command: cancelled check-739 left /var/tmp/dockhand-local-333991266
+# behind (G4 on rc8, 2026-10-29).
+if {[llength $local] && [info exists ::env(SUDO_UID)] && [info exists ::env(SUDO_GID)]} {
+    rename exit handback_exit
+    proc exit {{code 0}} {
+        global root
+        catch { exec /usr/sbin/chown -R $::env(SUDO_UID):$::env(SUDO_GID) $root }
+        handback_exit $code
+    }
+}
 
 # save writes the results so far, replacing the file whole. A result's
 # fields are strings, but for the ports active as it built, what its

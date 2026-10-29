@@ -273,23 +273,61 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 	case err != nil || snapshot == "":
 		// Nothing was changed before the program stopped: its snapshot
 		// comes before anything does.
-		os.RemoveAll(dir)
+		remove(dir, build)
 	case restored == "yes":
-		os.RemoveAll(dir)
+		remove(dir, build)
 	case restored == "kept":
-		os.RemoveAll(dir)
-		build.Progress(fmt.Sprintf("kept the branch's versions active in %s; sudo port restore --snapshot-id %s puts it back as it was", prefix, snapshot))
+		// Its directory stays, marked kept, for dockhand undo's put-back,
+		// which the next check leaves to it.
+		build.Progress(fmt.Sprintf("kept the branch's versions active in %s; dockhand undo %s puts it back as it was", prefix, check))
 	case restored == "":
 		restoring, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		defer cancel()
+		// A long build outlasts the sudo it was given at the start, five
+		// minutes by default: root is asked again, on the terminal where
+		// there is one, as at the start.
+		if len(sudo) > 0 {
+			if again, err := l.asRoot(restoring, prefix, build); err == nil {
+				sudo = again
+			}
+		}
 		if err := l.restore(restoring, dir, prefix, check, sudo); err != nil {
-			build.Progress(fmt.Sprintf("%s wasn't put back as it was: %v; sudo port restore --snapshot-id %s puts it back, or the next check there does", prefix, err, snapshot))
+			build.Progress(fmt.Sprintf("%s wasn't put back as it was: %v; dockhand undo %s tries again, or the next check there does. %s", prefix, err, check, l.byHand(dir, check, snapshot)))
 			return
 		}
-		os.RemoveAll(dir)
+		remove(dir, build)
 		build.Progress("put " + prefix + " back as it was")
 	default:
-		build.Progress(fmt.Sprintf("%s wasn't put back as it was: %s; sudo port restore --snapshot-id %s puts it back, or the next check there does", prefix, strings.TrimPrefix(restored, "no: "), snapshot))
+		build.Progress(fmt.Sprintf("%s wasn't put back as it was: %s; dockhand undo %s tries again, or the next check there does. %s", prefix, strings.TrimPrefix(restored, "no: "), check, l.byHand(dir, check, snapshot)))
+	}
+}
+
+// byHand is how a prefix is put back where dockhand's own put-back can't
+// run: MacPorts' port restore brings back the ports requested before and
+// what they need, not the active set, so the rest active before are
+// activated from the check's record (G2's rerun on rc8, 2026-10-29).
+func (l *Local) byHand(dir, check, snapshot string) string {
+	words := fmt.Sprintf("Where dockhand's put-back can't run, sudo port restore --snapshot-id %s restores the ports requested before %s and what they need", snapshot, check)
+	before, err := os.ReadFile(filepath.Join(dir, "before.txt"))
+	if err != nil {
+		return words
+	}
+	var activate []string
+	for _, name := range slices.Sorted(maps.Keys(activePorts(string(before)))) {
+		activate = append(activate, name+" "+activePorts(string(before))[name])
+	}
+	if len(activate) == 0 {
+		return words
+	}
+	return words + ", and sudo port activate " + strings.Join(activate, " ") + " the rest that were active, from its record"
+}
+
+// remove removes a check's directory, saying where it can't, as where
+// its guest program, root, left what dockhand, as the person, can't
+// remove (G4 on rc8, 2026-10-29).
+func remove(dir string, build buildenv.Build) {
+	if err := os.RemoveAll(dir); err != nil {
+		build.Progress(fmt.Sprintf("%s couldn't be removed: %v; sudo rm -rf %s removes it", dir, err, dir))
 	}
 }
 
@@ -379,7 +417,7 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 		return nil, buildenv.Infrastructure("%w: %s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", buildenv.ErrNeedsAttention, prefix, l.sudoersLine(tclsh))
 	}
 	defer tty.Close()
-	build.Progress(fmt.Sprintf("%s's registry is root's: MacPorts builds there as root, so sudo asks for your password once", prefix))
+	build.Progress(fmt.Sprintf("%s's registry is root's: MacPorts builds there as root, so sudo asks for your password", prefix))
 	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-v"), Env: l.Env,
 		Stdin: tty, Stdout: tty, StdoutOnly: true, Combined: true}); err != nil {
 		return nil, buildenv.Infrastructure("%w: sudo didn't let the build run as root in %s: %v", buildenv.ErrNeedsAttention, prefix, err)
@@ -485,6 +523,9 @@ type leftDirectory struct {
 	owner    owner
 	snapshot string
 	restored bool
+	// kept is a check that kept its versions active, check --keep's,
+	// whose directory stays for dockhand undo.
+	kept bool
 }
 
 // awaitOrphans waits for the guest programs a crashed dockhand left
@@ -578,7 +619,8 @@ func (l *Local) left() []leftDirectory {
 		}
 		if err == nil {
 			left.snapshot = results.Environment["snapshot"]
-			left.restored = slices.Contains([]string{"yes", "kept"}, results.Environment["restored"])
+			left.restored = results.Environment["restored"] == "yes"
+			left.kept = results.Environment["restored"] == "kept"
 		}
 		found = append(found, left)
 	}
@@ -622,8 +664,11 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 		return err
 	}
 	for _, left := range l.left() {
+		if left.kept {
+			continue
+		}
 		if left.snapshot == "" || left.restored {
-			os.RemoveAll(left.dir)
+			remove(left.dir, build)
 			continue
 		}
 		if left.owner.Prefix != prefix {
@@ -638,11 +683,18 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return buildenv.Infrastructure("%w: %s couldn't be put back as it was before an earlier check: %v; sudo port restore --snapshot-id %s puts it back", buildenv.ErrNeedsAttention, prefix, err, left.snapshot)
+			return buildenv.Infrastructure("%w: %s couldn't be put back as it was before %s: %v; dockhand undo %s tries again. %s", buildenv.ErrNeedsAttention, prefix, left.owner.Check, err, left.owner.Check, l.byHand(left.dir, left.owner.Check, left.snapshot))
 		}
-		os.RemoveAll(left.dir)
+		remove(left.dir, build)
 	}
 	return nil
+}
+
+// buildingNow are the checks building in a prefix now, by their dockhand
+// or their program, as Changes says them.
+func (l *Local) buildingNow() []buildenv.Change {
+	changes, _ := l.Changes(context.Background())
+	return slices.DeleteFunc(changes, func(change buildenv.Change) bool { return !change.Building })
 }
 
 // Changes are the prefixes checks are building in now, and those checks
@@ -666,7 +718,11 @@ func (l *Local) Changes(ctx context.Context) ([]buildenv.Change, error) {
 			continue
 		}
 		results, err := (&guest.Follower{Root: dir}).Read(ctx, hostGuest{})
-		if err != nil || results.Environment["snapshot"] == "" || slices.Contains([]string{"yes", "kept"}, results.Environment["restored"]) {
+		if err != nil || results.Environment["snapshot"] == "" || results.Environment["restored"] == "yes" {
+			continue
+		}
+		if results.Environment["restored"] == "kept" {
+			changes = append(changes, buildenv.Change{Check: made.Check, Place: made.Prefix, Kept: true, Remedy: "dockhand undo " + made.Check})
 			continue
 		}
 		if _, ours := l.building.Load(dir); ours || building(made, results) {
@@ -677,10 +733,62 @@ func (l *Local) Changes(ctx context.Context) ([]buildenv.Change, error) {
 			os.RemoveAll(dir)
 			continue
 		}
-		changes = append(changes, buildenv.Change{Check: made.Check, Place: made.Prefix, Remedy: "sudo port restore --snapshot-id " + results.Environment["snapshot"]})
+		changes = append(changes, buildenv.Change{Check: made.Check, Place: made.Prefix, Remedy: "dockhand undo " + made.Check})
 	}
 	return changes, nil
 }
+
+// PutBack puts back the prefix a check kept, or left changed when its
+// process ended first, as dockhand undo check-N asks: the check's own
+// put-back, exact, run by its guest program from its record, where port
+// restore brings back requested ports alone (G2's rerun on rc8). It takes
+// the prefix as a check does, and says false where the check left nothing
+// here to put back (buildenv.PuttingBackProvider).
+func (l *Local) PutBack(ctx context.Context, check string, progress func(string)) (string, bool, error) {
+	build := saying{say: progress}
+	// One building still, by its dockhand or its program, puts the prefix
+	// back itself when it ends.
+	for _, change := range l.buildingNow() {
+		if change.Check == check {
+			return change.Place, true, fmt.Errorf("%s is building in %s now, and puts it back when it ends; dockhand cancel %s stops it, putting it back", check, change.Place, check)
+		}
+	}
+	for _, left := range l.left() {
+		if left.owner.Check != check || left.snapshot == "" || left.restored {
+			continue
+		}
+		prefix := left.owner.Prefix
+		letGo, err := l.own(ctx, prefix, check, build)
+		if err != nil {
+			return prefix, true, err
+		}
+		defer letGo()
+		sudo, err := l.asRoot(ctx, prefix, build)
+		if err != nil {
+			return prefix, true, err
+		}
+		build.Progress(fmt.Sprintf("putting %s back as it was before %s", prefix, check))
+		if err := l.restore(ctx, left.dir, prefix, check, sudo); err != nil {
+			if ctx.Err() != nil {
+				return prefix, true, ctx.Err()
+			}
+			return prefix, true, buildenv.Infrastructure("%w: %s couldn't be put back as it was before %s: %v. %s", buildenv.ErrNeedsAttention, prefix, check, err, l.byHand(left.dir, check, left.snapshot))
+		}
+		remove(left.dir, build)
+		return prefix, true, nil
+	}
+	return "", false, nil
+}
+
+// saying is a put-back's progress, as a check's build says it: the prefix
+// waited for and root asked for are all a put-back says, and none of a
+// build's other methods is called.
+type saying struct {
+	buildenv.Build
+	say func(string)
+}
+
+func (s saying) Progress(message string) { s.say(message) }
 
 // putBackAlready says whether a prefix's active ports are those a check's
 // directory says were active before it, as after the person's own port

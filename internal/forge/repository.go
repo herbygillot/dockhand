@@ -16,24 +16,30 @@ const (
 	GitLab = "gitlab"
 )
 
-var ErrRejected = errors.New("forge: remote write was rejected")
+// The forge's sentinels are said to a person where they surface, so their
+// words lead with what happened, never the package's name: serve said
+// "could not read pull requests: forge: authentication is required" (D-C3
+// on rc8, 2026-10-29).
+var ErrRejected = errors.New("the remote write was rejected")
 
 // ErrAuthentication is a forge refusing who's asking, or no one to ask as:
-// a refusal of the auth kind, which every error wrapping it is.
-var ErrAuthentication error = refusal.New(refusal.Auth, "forge: authentication is required")
+// a refusal of the auth kind, which every error wrapping it is. Where no
+// login is found, the forge's own refusal says the way on, as
+// github.ErrNoCredentials does.
+var ErrAuthentication error = refusal.New(refusal.Auth, "a login is required")
 
-var ErrNotFound = errors.New("forge: requested object was not found")
+var ErrNotFound = errors.New("the requested object was not found")
 
 // ErrAppRestricted is an organization refusing the app a client acts as,
 // one it hasn't approved, as GitHub's OAuth App access restrictions do.
 // Another app it has approved may do what this one can't.
-var ErrAppRestricted = errors.New("forge: the organization restricts which apps may act for it")
-var ErrIncomplete = errors.New("forge: incomplete repository evidence")
+var ErrAppRestricted = errors.New("the organization restricts which apps may act for it")
+var ErrIncomplete = errors.New("the repository's evidence is incomplete")
 
 // ErrAccessUnknown is a role on a repository the forge wouldn't say, as
 // GitHub won't to a fine-grained token not granted the repository
 // (403 "Resource not accessible by personal access token").
-var ErrAccessUnknown = errors.New("forge: your access to the repository isn't readable with this login")
+var ErrAccessUnknown = errors.New("your access to the repository isn't readable with this login")
 
 type Tag struct{ Name, Commit string }
 

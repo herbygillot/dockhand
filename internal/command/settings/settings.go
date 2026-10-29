@@ -41,6 +41,10 @@ type Settings struct {
 	// KeepModeline is --keep-modeline: the Portfiles the command's edits
 	// write keep their first line (engine.Engine.KeepModeline).
 	KeepModeline bool
+	// KeepHTTP is --keep-http: the command's edits leave plain-HTTP links
+	// as they are, asking nothing, as [update] keep_http does
+	// (engine.Options.KeepHTTP).
+	KeepHTTP bool
 	// Command runs a command line in this one's invocation, its
 	// environment, directory, and tree, database, and Git, for one typed at
 	// status --watch's prompt.
@@ -78,6 +82,12 @@ func KeepModelineFlag(cmd *cobra.Command, s *Settings) {
 	cmd.Flags().BoolVar(&s.KeepModeline, "keep-modeline", false, "leave each Portfile's first line as it is, where dockhand otherwise gives it MacPorts' modeline")
 }
 
+// KeepHTTPFlag registers --keep-http on a command whose edits switch a
+// Portfile's plain-HTTP links that answer over HTTPS.
+func KeepHTTPFlag(cmd *cobra.Command, s *Settings) {
+	cmd.Flags().BoolVar(&s.KeepHTTP, "keep-http", false, "leave plain-HTTP homepage, master_sites, and livecheck.url links as they are, where dockhand otherwise switches each that answers over HTTPS")
+}
+
 func (s *Settings) Flags(root *cobra.Command) {
 	root.PersistentFlags().StringVarP(&s.Tree, "tree", "t", "", "the ports checkout (default $MACPORTS_TREE, else the current directory)")
 	root.PersistentFlags().StringVar(&s.Database, "db", "", "the database (default $DOCKHAND_DB, else ~/.dockhand/dockhand.db)")
@@ -90,7 +100,7 @@ const PullRequestsVariable = compose.PullRequestsVariable
 
 // ComposeOptions are the command line's selections, as compose takes them.
 func (s *Settings) ComposeOptions() compose.Options {
-	return compose.Options{Tree: s.Tree, Database: s.Database, Git: s.Git, NamesBranch: s.NamesBranch, Unattended: s.Unattended || !s.Streams.Terminal(), Env: s.Env, Dir: s.Dir}
+	return compose.Options{Tree: s.Tree, Database: s.Database, Git: s.Git, NamesBranch: s.NamesBranch, Unattended: s.Unattended || !s.Streams.Terminal(), KeepHTTP: s.KeepHTTP, Env: s.Env, Dir: s.Dir}
 }
 
 // Options resolves the engine's options, reading the configuration file

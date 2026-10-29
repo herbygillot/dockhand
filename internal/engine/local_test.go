@@ -62,7 +62,7 @@ func TestALocalCheckIsRefusedWhereItsPortfilesArentTheirs(t *testing.T) {
 // that changes something, for status to say.
 func TestChangesAreGatheredFromTheProviders(t *testing.T) {
 	t.Parallel()
-	left := buildenv.Change{Check: "check-9", Place: "/opt/local", Remedy: "sudo port restore --snapshot-id 7"}
+	left := buildenv.Change{Check: "check-9", Place: "/opt/local", Remedy: "dockhand undo check-9"}
 	e := &Engine{Providers: map[string]buildenv.Provider{buildenv.Local: &prefixes{changes: []buildenv.Change{left}}, "command": &scriptedProvider{}}}
 	require.Equal(t, []buildenv.Change{left}, e.Changes(t.Context()))
 }
