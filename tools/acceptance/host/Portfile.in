@@ -25,9 +25,11 @@ checksums           rmd160  @RMD160@ \
 
 go.toolchain_min    1.27.1
 
-# dockhand drives git itself; the rest of what it uses -- MacPorts, a GitHub
-# credential -- is found at runtime and reported when missing.
-depends_run         bin:git:git
+# dockhand drives git itself, and needs Git 2.40 or newer, which the
+# command-line tools' git on older macOS isn't; the rest of what it uses --
+# MacPorts, a GitHub credential -- is found at runtime and reported when
+# missing.
+depends_run         port:git
 
 # Verifying in a local VM needs tart, which runs only on Apple silicon,
 # macOS 15 or later; elsewhere dockhand builds on GitHub Actions.
@@ -73,3 +75,6 @@ destroot {
             "./${name} completion ${shell} > ${destroot}${prefix}/${path}"
     }
 }
+
+# Skip prereleases such as v0.4.0-rc4.
+github.livecheck.regex {([0-9.]+)}
