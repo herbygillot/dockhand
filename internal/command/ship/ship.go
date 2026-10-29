@@ -308,9 +308,12 @@ func writeSubmitRow(ctx context.Context, e *engine.Engine, out io.Writer, indent
 // how the batch went by the batch exit rule (the command-line UX review's
 // §10): 1 where none went through, 3 where some need a look. Each is
 // carried to its check, queued, before any check is seen through, and
-// each submitted as its check passes (decision 4): serve runs them side by
-// side where it leads, and a rerun follows a check still queued or
-// running for the same files rather than starting another.
+// each submitted as its check passes (decision 4), in the order they end:
+// the checks run together, here within the providers' capacity where no
+// serve leads, serve's side by side where it does (engine.SeeAllThrough),
+// where they ran one at a time in input order, so a batch took the sum of
+// its checks. A rerun follows a check still queued or running for the same
+// files rather than starting another.
 func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, whole *view.BatchJSON, targets []shipTarget, stage engine.ShipStage, answered model.Answered, version author.VersionUpdate) error {
 	unattended := branchstate.Mode{Answered: answered}.Unattended()
 	if unattended {
@@ -335,7 +338,7 @@ func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 		fmt.Fprintf(streams.Err, "%s: %v\n", target.Name(), view.SayNext(err))
 		return nil
 	}
-	var carried []carried
+	var all []carried
 	for _, target := range targets {
 		whole.Next()
 		done, err := shipOne(ctx, s, streams, target, stage, unattended, len(targets) > 1, version)
@@ -346,14 +349,45 @@ func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 			continue
 		}
 		if done != nil {
-			carried = append(carried, *done)
+			done.index = len(whole.Changes) - 1
+			all = append(all, *done)
 		}
 	}
-	for _, done := range carried {
+	finish := func(done carried) error {
+		whole.At(done.index)
 		if err := finishCarried(ctx, s, streams, done); err != nil {
-			if err := stopped(done.target, err); err != nil {
+			return stopped(done.target, err)
+		}
+		return nil
+	}
+	// What passed already is submitted first; the checks then run
+	// together, each change finished as its check ends.
+	checks := map[model.RunID]carried{}
+	var ids []model.RunID
+	for _, done := range all {
+		if done.run == nil || len(all) < 2 {
+			if err := finish(done); err != nil {
 				return err
 			}
+			continue
+		}
+		checks[done.run.ID] = done
+		ids = append(ids, done.run.ID)
+	}
+	if len(ids) > 0 {
+		e, err := s.Open(ctx)
+		if err != nil {
+			return err
+		}
+		var first error
+		e.SeeAllThrough(ctx, ids, func(run model.Run, _ error) {
+			if err := finish(checks[run.ID]); err != nil && first == nil {
+				first = err
+			}
+		})
+		e.Close()
+		if first != nil {
+			return first
 		}
 	}
 	writeRows(streams, rows)
@@ -423,6 +457,8 @@ func writeRows(streams term.Streams, rows []*shipRow) {
 // none where one passed already, and the submission that follows it.
 type carried struct {
 	target shipTarget
+	// index is its change's in the batch's JSON (view.BatchJSON.At).
+	index  int
 	run    *model.Run
 	submit *pendingSubmit
 	// lines are the change's stage lines; queued is its check's queueing,

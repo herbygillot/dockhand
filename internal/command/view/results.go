@@ -804,6 +804,13 @@ func (b *BatchJSON) Next() {
 	b.at = &b.Changes[len(b.Changes)-1]
 }
 
+// At goes back to the change at i, whose later steps follow: a batch's
+// checks end in any order, and each change's check and submission are its
+// own.
+func (b *BatchJSON) At(i int) {
+	b.at = &b.Changes[i]
+}
+
 func (b *BatchJSON) Gather(step any) {
 	if skipped, ok := step.([]SkippedJSON); ok {
 		b.Skipped = append(b.Skipped, skipped...)
