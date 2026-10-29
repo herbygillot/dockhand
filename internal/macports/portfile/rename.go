@@ -10,13 +10,15 @@ import (
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
-// Rename sets the port name a Portfile declares from old to name where the
-// Portfile sets it: its name line's literal, else the project of the forge
-// setup the name comes from, github.setup's and its kin's second word, or
-// the last element of go.setup's package, as field testing's hand rename
-// of goplus left xgo's name to go.setup (2026-10-29). Each is the port's
-// own, at the top of the Portfile, never a subport's. A name set any other
-// way is refused, as is one whose words aren't literals.
+// Rename sets the port name a Portfile declares from old to name: its name
+// line's literal where it has one; else, where the name comes from a
+// forge's setup, github.setup's and its kin's project or go.setup's
+// package's last element, a name line after that setup, which keeps the
+// port's source where it is. A setup's words are its source: changing
+// them is following a move (update --follow-moves), or the person's, as
+// a Go module's path is. Each is the port's own, at the top of the
+// Portfile, never a subport's. A name set any other way is refused, as is
+// one whose words aren't literals.
 func Rename(src []byte, old, name string) ([]byte, error) {
 	if !Literal(name) {
 		return nil, ErrUnsupported.Because("%q is no name a Portfile writes as a literal", name)
@@ -25,29 +27,47 @@ func Rename(src []byte, old, name string) ([]byte, error) {
 	if len(errs) > 0 {
 		return nil, ErrUnsupported.Because("invalid Tcl syntax")
 	}
-	var named, setup, golang *textedit.Edit
+	var named, setup *textedit.Edit
 	for _, item := range script.Items {
 		cmd, ok := item.(syntax.Command)
 		if !ok {
 			continue
 		}
 		command, _ := cmd.Name(src)
+		value, literal := "", false
 		switch {
 		case command == "name" && len(cmd.Words) == 2:
-			if value, literal := cmd.Words[1].Literal(src); literal && value == old {
+			if value, literal = cmd.Words[1].Literal(src); literal && value == old {
 				named = &textedit.Edit{Span: cmd.Words[1].Span, New: []byte(name)}
 			}
+			continue
 		case command == "go.setup" && len(cmd.Words) >= 3:
-			if value, literal := cmd.Words[1].Literal(src); literal && path.Base(value) == old {
-				golang = &textedit.Edit{Span: cmd.Words[1].Span, New: []byte(path.Join(path.Dir(value), name))}
-			}
+			value, literal = cmd.Words[1].Literal(src)
+			value = path.Base(value)
 		case strings.HasSuffix(command, ".setup") && len(cmd.Words) >= 4:
-			if value, literal := cmd.Words[2].Literal(src); literal && value == old {
-				setup = &textedit.Edit{Span: cmd.Words[2].Span, New: []byte(name)}
+			value, literal = cmd.Words[2].Literal(src)
+		default:
+			continue
+		}
+		if literal && value == old && setup == nil {
+			// The name line is written below the setup, its value where
+			// the setup's first word is.
+			end := cmd.Span.End
+			if newline := strings.IndexByte(string(src[end:]), '\n'); newline >= 0 {
+				end += newline + 1
+			} else {
+				end = len(src)
 			}
+			lineStart := strings.LastIndexByte(string(src[:cmd.Span.Start]), '\n') + 1
+			width := max(cmd.Words[1].Span.Start-lineStart, len("name")+1)
+			insert := fmt.Sprintf("%-*s%s\n", width, "name", name)
+			if end == len(src) && !strings.HasSuffix(string(src), "\n") {
+				insert = "\n" + insert
+			}
+			setup = &textedit.Edit{Span: textedit.Span{Start: end, End: end}, New: []byte(insert)}
 		}
 	}
-	for _, edit := range []*textedit.Edit{named, setup, golang} {
+	for _, edit := range []*textedit.Edit{named, setup} {
 		if edit != nil {
 			return textedit.Apply(src, []textedit.Edit{*edit})
 		}

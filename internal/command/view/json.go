@@ -64,11 +64,16 @@ func EnvironmentView(environment model.Environment) environmentJSON {
 }
 
 type TargetJSON struct {
-	Name      string   `json:"name"`
-	Portfile  string   `json:"portfile"`
-	Subport   string   `json:"subport,omitempty"`
-	Kind      string   `json:"kind"`
-	Role      string   `json:"role"`
+	Name     string `json:"name"`
+	Portfile string `json:"portfile"`
+	Subport  string `json:"subport,omitempty"`
+	Kind     string `json:"kind"`
+	Role     string `json:"role"`
+	// Added is a port the change adds, which lint checks with --nitpick;
+	// MovedFrom the base's directory of one it moves or renames here, as
+	// the plan's text says "(moved from …)" or "(renamed from …)".
+	Added     bool     `json:"added,omitempty"`
+	MovedFrom string   `json:"moved_from,omitempty"`
 	DependsOn []string `json:"depends_on,omitempty"`
 	// NeedsXcode are the environments where the target needs Xcode.
 	NeedsXcode []environmentJSON `json:"needs_xcode,omitempty"`
@@ -242,7 +247,8 @@ func PlanView(plan model.Plan) planJSON {
 }
 
 func targetView(plan model.Plan, target model.PlanTarget) TargetJSON {
-	viewed := TargetJSON{Name: string(target.ID), Portfile: target.Target.Portfile, Subport: target.Target.Subport, Kind: string(target.Kind), Role: string(target.Role)}
+	viewed := TargetJSON{Name: string(target.ID), Portfile: target.Target.Portfile, Subport: target.Target.Subport, Kind: string(target.Kind), Role: string(target.Role),
+		Added: target.Added, MovedFrom: target.MovedFrom}
 	for _, environment := range plan.Environments {
 		for _, dependency := range plan.DependsOnIn(environment, target.ID) {
 			if !slices.Contains(viewed.DependsOn, string(dependency)) {
