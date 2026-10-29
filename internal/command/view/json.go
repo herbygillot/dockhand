@@ -389,7 +389,8 @@ type BranchJSON struct {
 	Detail *branchDetailJSON `json:"detail,omitempty"`
 	// Moved are the Git-fetched ports whose release's tag named another
 	// commit when the update chose it than when the latest check, of the
-	// files as they are now, planned it (rule release-moved), which hold a
+	// files as they are now, planned it (rule release-moved), or whose
+	// assessment read another commit (assessment-moved), which hold a
 	// submission nobody looks over. Whether a tag names another commit now
 	// (source-moved) takes the network, which status never reads.
 	Moved []ConcernJSON `json:"moved,omitempty"`

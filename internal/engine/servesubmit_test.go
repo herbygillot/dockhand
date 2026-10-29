@@ -337,7 +337,7 @@ func TestATagMovedBetweenAnUpdateAndItsCheckIsAConcern(t *testing.T) {
 
 	require.Empty(t, preparedSources(evidence, []model.Edit{update("libharbor", release("v4", planned))}), "the check built what the update chose")
 	moved := preparedSources(evidence, []model.Edit{update("libharbor", release("v4", chosen))})
-	require.Equal(t, []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: planned, Class: model.Introduced,
+	require.Equal(t, []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: chosen + ".." + planned, Class: model.Introduced,
 		Detail: "libharbor: git.branch v4 pointed to aaaaaaa when the update was prepared, then to bbbbbbb when check-7 was planned. The check used a different source from the update"}}, moved)
 	require.Contains(t, HoldLines(SubmitPlan{Moved: moved}.Held()), moved[0].Detail, "it holds a submission nobody looks over")
 
@@ -422,7 +422,19 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 	status, err := e.BranchStatus(t.Context(), candidates[0].Branch)
 	require.NoError(t, err)
 	require.Len(t, status.Moved, 1)
-	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "release-moved", Subject: moved, Class: model.Introduced, Detail: candidates[0].Held[0].Detail}, status.Moved[0])
+	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "release-moved", Subject: chosen + ".." + moved, Class: model.Introduced, Detail: candidates[0].Held[0].Detail}, status.Moved[0])
+
+	// A decision on it takes its commits from status, and lets it go
+	// there and for serve; a later pair of commits would hold again (D1).
+	decision, err := e.Decide(t.Context(), DecideRequest{Branch: candidates[0].Branch, Rule: model.RuleReleaseMoved, Answer: model.Accepted, Words: "the tag's move changed nothing built"})
+	require.NoError(t, err)
+	require.Equal(t, "jq release-moved "+chosen[:7]+".."+moved[:7], decision.Subject)
+	status, err = e.BranchStatus(t.Context(), candidates[0].Branch)
+	require.NoError(t, err)
+	require.Empty(t, status.Moved)
+	later := status.Moved
+	later = append(later, model.Concern{Port: "jq", Rule: model.RuleReleaseMoved, Subject: chosen + ".." + strings.Repeat("c", 40)})
+	require.Len(t, undecided(later, e.decided(t.Context(), candidates[0].Branch.ID, status.Tree)), 1)
 
 	// Files changed since the check aren't what it planned for: the
 	// question waits for a check of them.
@@ -450,6 +462,7 @@ func TestAnAssessmentOfAnotherCommitIsAConcern(t *testing.T) {
 	moved := assessedSources(evidence, assessed(read))
 	require.Len(t, moved, 1)
 	require.Equal(t, "assessment-moved", moved[0].Rule)
+	require.Equal(t, read+".."+planned, moved[0].Subject, "the commits it compares, which a decision names (D1)")
 	require.Equal(t, "libharbor: the upstream assessment examined aaaaaaa, but check-7 planned to build bbbbbbb. The assessment and check refer to different source commits", moved[0].Detail)
 	require.Empty(t, assessedSources(evidence, assessed(planned)), "it read what the check built")
 	require.Empty(t, assessedSources(evidence, assessed("")), "it kept no commit")

@@ -73,7 +73,7 @@ func (e *Engine) Decide(ctx context.Context, request DecideRequest) (model.Decis
 // with its commits, as status found it: the one that holds, else the
 // latest a standing decision answers; empty where there's none.
 func movedSubject(status BranchStatus, port, rule string) string {
-	for _, held := range status.Held {
+	for _, held := range slices.Concat(status.Held, status.Moved) {
 		if held.Port == port && held.Rule == rule {
 			return model.ConcernSubject(held)
 		}

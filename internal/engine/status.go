@@ -112,15 +112,20 @@ type BranchStatus struct {
 	Releases []PortRelease
 	// Moved are the Git-fetched ports whose update chose a release whose
 	// tag named another commit then than when Latest's check planned it
-	// (preparedSources' release-moved), where Latest checked the files as
-	// they are now, which hold a submission nobody looks over, as submit
-	// says them. They're read from the store and the plan alone. Whether a
+	// (preparedSources' release-moved), or whose recorded assessment read
+	// another commit (assessedSources' assessment-moved), where Latest
+	// checked the files as they are now, which hold a submission nobody
+	// looks over, as submit says them, unless a decision answers them.
+	// They're read from the store and the plan alone. Whether a
 	// tag names another commit now than the
 	// check planned (source-moved) takes the network, which status never
 	// reads, and nothing records it: submit's plan isn't kept, serve says
 	// its holds on its own terminal, and an assessment is made once for
 	// its files.
 	Moved []model.Concern
+	// assessed are the recorded assessments' comparisons, which
+	// assessment-moved reads.
+	assessed []PortComparison
 	// OnMaster is the master dockhand last fetched where it has every
 	// change the branch's files make, so its work landed by another
 	// route, as duckdb-cxx14's C++14 fix did while status still asked to
@@ -689,7 +694,13 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 	evidence, err := e.evidenceNow(ctx, *status.Latest, checks)
 	status.Evidence = &evidence
 	if status.Current {
-		status.Moved = preparedSources(status.Evidence, edits)
+		// Each lets go where a person's decision answers its commits, as
+		// submit's do (D1).
+		decided := map[string]model.Decision{}
+		for _, decision := range status.Decided {
+			decided[decision.Subject] = decision
+		}
+		status.Moved = undecided(append(preparedSources(status.Evidence, edits), assessedSources(status.Evidence, status.assessed)...), decided)
 	}
 	if err == nil && status.Current {
 		status.Wider = e.wider(ctx, status, changed)
@@ -710,7 +721,7 @@ func (e *Engine) readOpen(ctx context.Context, status *BranchStatus, worktree *g
 	// for each: paused where serve prepared it, and for a person's own, what
 	// submit shows (C2, where it was serve's alone).
 	var err error
-	if status.Held, status.Assessment, err = e.assessedHolds(ctx, status.Branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
+	if status.Held, status.assessed, status.Assessment, err = e.assessedHolds(ctx, status.Branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
 		return err
 	}
 	// A hand edit says why it's the person's, as its working files have

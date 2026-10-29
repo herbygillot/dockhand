@@ -377,27 +377,33 @@ func ConcernSubject(c Concern) string {
 	return subject
 }
 
-// The rules of findings about where a port's source points now, outside
-// its files: a Git-fetched port's git.branch, and the tag a GitHub
-// archive is fetched by.
+// The rules of findings about which commit a Git-fetched port's source
+// is, outside its files: where its git.branch, or the tag a GitHub
+// archive is fetched by, points now against what the check planned; and
+// the commit the update chose, or the assessment read, against it.
 const (
-	RuleSourceMoved = "source-moved"
-	RuleTagMoved    = "tag-moved"
+	RuleSourceMoved     = "source-moved"
+	RuleTagMoved        = "tag-moved"
+	RuleReleaseMoved    = "release-moved"
+	RuleAssessmentMoved = "assessment-moved"
 )
 
-// MovingSource says whether a rule's finding is about where a port's
-// source points, its subject the commit checked and the one current
+// MovingSource says whether a rule's finding is about which commit a
+// port's source is, its subject the two commits it compares
 // (MovedSubject). A decision on one holds for those commits, where a
 // decision on any other holds while the port's directory does: the
 // source can move with the port's files as they were, and an acceptance
 // of the move to B answered a later move to C (Codex's workflow review
 // of 2ad896d2, D1; decisions.md).
-func MovingSource(rule string) bool { return rule == RuleSourceMoved || rule == RuleTagMoved }
+func MovingSource(rule string) bool {
+	return rule == RuleSourceMoved || rule == RuleTagMoved || rule == RuleReleaseMoved || rule == RuleAssessmentMoved
+}
 
-// MovedSubject is a moving source's concern's subject: the commit checked
-// and the one current, checked..current.
-func MovedSubject(checked, current ObjectID) string {
-	return string(checked) + ".." + string(current)
+// MovedSubject is a moving source's concern's subject, the two commits it
+// compares, from..to: the commit checked and the one current, or the one
+// the update prepared or the assessment read and the one checked.
+func MovedSubject(from, to ObjectID) string {
+	return string(from) + ".." + string(to)
 }
 
 // EnvironmentEvidence is what a standing acceptance of a dependency's
