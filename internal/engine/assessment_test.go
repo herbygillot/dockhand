@@ -456,7 +456,7 @@ func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
 	now := testsupport.Git(t, project, "rev-parse", "HEAD")
 	moved := e.movedSources(t.Context(), evidence)
 	require.Len(t, moved, 1)
-	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "tool", Rule: "source-moved", Subject: now, Class: model.Introduced,
+	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "tool", Rule: "source-moved", Subject: built + ".." + now, Class: model.Introduced,
 		Detail: "tool: git.branch v2 pointed to " + built[:7] + " when check-7 was planned, but now points to " + now[:7] + ". The checked source differs from the source this submission would use"}, moved[0])
 	require.Contains(t, HoldLines(SubmitPlan{Moved: moved}.Held()), moved[0].Detail, "it holds a submission nobody looks over")
 	// A target --only left out of the check is read the same way.

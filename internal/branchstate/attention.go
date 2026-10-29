@@ -402,6 +402,8 @@ func Attend(facts Facts) []Attention {
 // "jq license-changed": dockhand decide license-changed jq --because "…".
 func decideNext(subject string) Next {
 	port, rule, _ := strings.Cut(subject, " ")
+	// A moving source's subject names its commits after the rule.
+	rule, _, _ = strings.Cut(rule, " ")
 	return Next{Verb: VerbDecide, Args: []string{rule, port, "--because", `"…"`}}
 }
 

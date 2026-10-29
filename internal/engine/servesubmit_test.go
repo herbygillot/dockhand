@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -684,4 +685,50 @@ func TestADecisionOnAConcernCarriesThePersonsReason(t *testing.T) {
 	status, err = e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
 	require.Empty(t, status.Decided, "its evidence changed")
+}
+
+// A decision on a moving source holds for the commits looked at: one
+// accepting jq's git.branch move from A to B doesn't answer a later move
+// to C, though jq's files are unchanged, where Codex's probe found it did.
+// decide takes the commits from the concern status found, so the
+// person's command doesn't change, and refuses where none stands
+// (Codex's workflow review of 2ad896d2, D1).
+func TestADecisionOnAMovingSourceHoldsForTheCommitsLookedAt(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := servePrepared(t, e)
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	checked, current, later := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40)), model.ObjectID(strings.Repeat("c", 40))
+	for _, rule := range []string{model.RuleSourceMoved, model.RuleTagMoved} {
+		_, err := e.Decide(t.Context(), DecideRequest{Branch: branch, Rule: rule, Answer: model.Accepted, Words: "reviewed the move"})
+		require.ErrorContains(t, err, "no "+rule+" of jq stands on jq-1.8.1")
+
+		moved := model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: rule, Subject: model.MovedSubject(checked, current), Class: model.Introduced, Detail: "jq moved from A to B"}
+		require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+			return tx.SetNetworkHolds(branch.ID, model.ObjectID(status.Tree), at, []model.Concern{moved})
+		}))
+		decision, err := e.Decide(t.Context(), DecideRequest{Branch: branch, Rule: rule, Answer: model.Accepted, Words: "reviewed commit B"})
+		require.NoError(t, err)
+		require.Equal(t, "jq "+rule+" aaaaaaa..bbbbbbb", decision.Subject)
+		decided := e.decided(t.Context(), branch.ID, status.Tree)
+		require.Empty(t, undecided([]model.Concern{moved}, decided), "the move looked at")
+		again := moved
+		again.Subject = model.MovedSubject(checked, later)
+		require.Equal(t, []model.Concern{again}, undecided([]model.Concern{again}, decided), "a later move is a new concern")
+
+		// Decided again, it takes the commits of the one it answered,
+		// which no longer holds.
+		answered, err := e.BranchStatus(t.Context(), branch)
+		require.NoError(t, err)
+		require.Empty(t, answered.Held)
+		decision, err = e.Decide(t.Context(), DecideRequest{Branch: branch, Rule: rule, Answer: model.Accepted, Words: "reviewed commit B again"})
+		require.NoError(t, err)
+		require.Equal(t, "jq "+rule+" aaaaaaa..bbbbbbb", decision.Subject)
+		require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+			return tx.SetNetworkHolds(branch.ID, model.ObjectID(status.Tree), at, nil)
+		}))
+	}
 }
