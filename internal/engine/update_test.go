@@ -26,6 +26,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
@@ -1157,4 +1158,44 @@ func TestAnUpdateFixesTheLintFindingsOnItsLines(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"textproc/jq/Portfile: removed trailing whitespace on line 5"}, update.Fixed)
 	require.Equal(t, modelineHead+"name jq\nversion 1.8.1\ndepends_lib port:oniguruma\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
+}
+
+// A repository move followed in a Portfile no modeline or lint fix
+// changes is in the tree the preview and the comparison read, as in the
+// file written, and the evaluation of the files before it is dropped:
+// one candidate after every edit (Codex's review of 2ad896d2, W5, its
+// probe inverted).
+func TestAFollowedMoveIsInThePreparedTree(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	fake := forgetest.New("", "")
+	fake.Renamed = map[string]string{"oldowner/jq": "newowner/jq"}
+	e.Forge = fake
+	_, captured, err := e.Repo.WorkingTree(t.Context())
+	require.NoError(t, err)
+	name := "textproc/jq/Portfile"
+	before, _, err := e.Repo.File(t.Context(), captured, name)
+	require.NoError(t, err)
+	candidate := []byte(portfile.Modeline + "\n\nname jq\nversion 1.8.1\ngithub.setup oldowner jq 1.8.1 v\n")
+	result := editprep.Result{Files: []git.FileEdit{{Path: name, Before: before, After: candidate, Mode: before.Mode}},
+		Fidelity: []portedit.Fidelity{{}}}
+	prepared, err := e.Repo.EditTree(t.Context(), captured, result.Files)
+	require.NoError(t, err)
+	result.PreparedTree = model.ObjectID(prepared)
+	update := Update{Release: &model.Release{Forge: forge.GitHub, Repository: "oldowner/jq"}}
+	followOnly, err := e.followMoves(t.Context(), UpdateRequest{Action: model.EditUpdate, FollowMoves: true}, e.Repo, captured, &update, &result)
+	require.NoError(t, err)
+	modelined := withModelines(&result)
+	fixed, reread, err := withLintFixes(t.Context(), e.Repo, captured, &result)
+	require.NoError(t, err)
+	require.False(t, modelined)
+	require.Empty(t, fixed, "a clean Portfile: nothing else rebuilds the tree")
+	require.NoError(t, finalize(t.Context(), e.Repo, captured, &result, update.Followed != "" && !followOnly, modelined || len(fixed) > 0, reread))
+
+	_, treeText, err := e.Repo.File(t.Context(), string(result.PreparedTree), name)
+	require.NoError(t, err)
+	require.Equal(t, string(result.Files[0].After), string(treeText), "the tree read is the file written")
+	require.Contains(t, string(treeText), "github.setup newowner jq")
+	require.Empty(t, result.Fidelity, "the evaluation of the files before the move is dropped")
 }
