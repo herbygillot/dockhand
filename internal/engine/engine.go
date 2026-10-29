@@ -225,6 +225,9 @@ type Engine struct {
 	// required is build.default's environments as last resolved, kept for
 	// requiredWait (requiredEnvironments).
 	required requiredRead
+	// others are the run's searches for ports' open pull requests, which
+	// start, update, bump, ship, serve, and submit share (othersCache).
+	others othersCache
 	// https are the answers of URLs over HTTPS this run has had, which
 	// every update, create, bump, ship, serve, and submit in it shares
 	// (httpsAnswers).

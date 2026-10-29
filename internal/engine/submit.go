@@ -944,30 +944,7 @@ func (e *Engine) searchOthers(ctx context.Context, plan *SubmitPlan) {
 		ports = changed
 	}
 	plan.Searched = ports
-	plan.Others, plan.SearchProblem = e.openPullRequests(ctx, ports, except)
-}
-
-// openPullRequests are the open pull requests for any of the ports, but
-// except, each once; or why they couldn't be looked for.
-func (e *Engine) openPullRequests(ctx context.Context, ports []string, except int) ([]forge.PullRequestSummary, string) {
-	var others []forge.PullRequestSummary
-	for _, port := range ports {
-		found, err := e.forge().OpenPullRequests(ctx, e.PullRequestRepository(), port)
-		if err != nil {
-			return nil, err.Error()
-		}
-		for _, pr := range found {
-			// GitHub's search matches a word anywhere in a title; one for the
-			// port names it as a MacPorts subject does.
-			if !slices.Contains(commitmsg.SubjectPorts(pr.Title), port) {
-				continue
-			}
-			if pr.Number != except && !slices.ContainsFunc(others, func(o forge.PullRequestSummary) bool { return o.Number == pr.Number }) {
-				others = append(others, pr)
-			}
-		}
-	}
-	return others, ""
+	plan.Others, plan.SearchProblem = e.pullRequestsNow(ctx, ports, except)
 }
 
 // Submitted is what submit did: the pull request it opened or updated,

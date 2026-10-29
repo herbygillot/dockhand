@@ -96,7 +96,9 @@ type UpdateRequest struct {
 	CompareUpstream bool
 	// LookForOthers names the port's other open pull requests, for a
 	// version update, as submit's preview does: someone starting an update
-	// should hear of one in flight. It holds nothing, and stops nothing.
+	// should hear of one in flight. It's looked for beside the edit, and
+	// holds nothing, stops nothing, and says nothing where the search
+	// failed (Engine.OtherPullRequests).
 	LookForOthers bool
 	// Unattended is a version update no person looks over before it is
 	// submitted, bump's. It looks for the port's other open pull requests
@@ -240,10 +242,8 @@ type Update struct {
 	// when the update compared them.
 	Upstream *model.UpstreamComparison
 	// Others are the port's other open pull requests, where the update
-	// looked for them (UpdateRequest.LookForOthers), and OthersProblem why
-	// they couldn't be looked for.
-	Others        []forge.PullRequestSummary
-	OthersProblem string
+	// looked for them (UpdateRequest.LookForOthers).
+	Others []forge.PullRequestSummary
 	// Renamed is the GitHub repository the update's release came from as
 	// GitHub names it now, where that's another name than the Portfile's:
 	// returntocorp/semgrep answered as semgrep/semgrep, by a redirect
@@ -481,6 +481,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		// its version, and refused every port (field testing,
 		// 2026-10-02: "a matching resolved release is required").
 		input.Version = release.Requested
+		// A person's update looks for the port's other pull requests
+		// beside its edit, the download the long step, where it looked
+		// after (the person's "Add this to 0.7.0 as well", 2026-10-29).
+		if request.LookForOthers && !request.Unattended && !release.NoUpdate {
+			e.LookForOthers(ctx, []string{request.Port})
+		}
 		if request.Unattended && !release.NoUpdate {
 			if major := e.majorHold(request.Port, release.CurrentVersion, release.Version); major != nil {
 				return Update{}, &HeldBeforeEdit{Port: request.Port, Held: []model.Concern{*major}}
@@ -596,7 +602,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	// An unattended update looked before its edit, and found none.
 	if request.LookForOthers && request.Action == model.EditUpdate && !request.Unattended {
-		update.Others, update.OthersProblem = e.openPullRequests(ctx, []string{update.Port}, own)
+		update.Others = e.OtherPullRequests(ctx, []string{update.Port}, own)
 	}
 	diff, err := worktree.DiffTrees(ctx, captured, string(result.PreparedTree))
 	if err != nil {

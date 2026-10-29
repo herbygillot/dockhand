@@ -767,7 +767,9 @@ func (e *Engine) submittedFirst(ctx context.Context, port, version string) (stri
 			}
 		}
 	}
-	open, problem := e.openPullRequests(ctx, []string{port}, 0)
+	// Searched afresh, as submit's look is: the port named first may have
+	// been submitted moments ago, in the same pass.
+	open, problem := e.pullRequestsNow(ctx, []string{port}, 0)
 	if problem != "" {
 		return fmt.Sprintf("its pull requests couldn't be read: %s", problem), false
 	}

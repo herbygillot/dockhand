@@ -100,6 +100,9 @@ func TestSubjectPorts(t *testing.T) {
 	require.Equal(t, []string{"gojq", "jq"}, commitmsg.SubjectPorts("gojq, jq: rebuild"))
 	require.Equal(t, []string{"jq"}, commitmsg.SubjectPorts("jq: update to 1.8.1"))
 	require.Nil(t, commitmsg.SubjectPorts("Update jq"))
+	require.Equal(t, []string{"jq"}, commitmsg.TitlePorts("[WIP] [testing] jq: update to 1.8.1"))
+	require.Equal(t, []string{"gojq", "jq"}, commitmsg.TitlePorts("gojq, jq: rebuild"))
+	require.Nil(t, commitmsg.TitlePorts("[WIP] Update jq"))
 }
 
 // A combined commit's message is its subject, its body, and the trailers

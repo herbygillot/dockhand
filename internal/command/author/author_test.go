@@ -370,7 +370,9 @@ func TestProgressGoesToStandardError(t *testing.T) {
 
 // An update names the port's other open pull requests, planned or made,
 // and stops for none: libuv 1.53.0 was planned without a word of #34620
-// (the libuv run's finding 1). What couldn't be looked for is said.
+// (the libuv run's finding 1). So does start, for the ports it brings in,
+// searching each once. A search that failed says nothing: a person can
+// look (the person's "Add this to 0.7.0 as well", 2026-10-29).
 func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
@@ -390,6 +392,15 @@ func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
 	require.NoError(t, err, "it stops for none")
 	require.Contains(t, made, "Also open for jq: #34620 jq: update to 1.8.0\n")
 
+	searches := g.Searches
+	started, _, err := cmdtest.Dockhand(t, "start", "--port", "jq")
+	require.NoError(t, err)
+	require.Regexp(t, `Directory: .*\nAlso open for jq: #34620 jq: update to 1\.8\.0\nNext: cd `, started)
+	require.Equal(t, searches+1, g.Searches, "searched once")
+	startJSON, err := cmdtest.JSONOf(t, "start", "--port", "jq")
+	require.NoError(t, err)
+	require.Equal(t, float64(34620), cmdtest.Dig(t, startJSON.Result, "others", 0, "number"))
+
 	g.SearchErr = errors.New("rate limited")
 	dir := filepath.Join(w.Home, "Source", "macports-branches")
 	entries, err := os.ReadDir(dir)
@@ -398,7 +409,8 @@ func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, entries[0].Name(), "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n"), 0o644))
 	again, _, err := cmdtest.Dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, again, "Couldn't look for other open pull requests for jq: rate limited\n")
+	require.NotContains(t, again, "Also open")
+	require.NotContains(t, again, "rate limited", "a failed search says nothing")
 }
 
 // uncertainBumper is a bumper whose discovery set jq-1.9.0 aside, tagged
