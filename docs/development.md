@@ -32,7 +32,7 @@ go test -v ./internal/buildenv/tart -run '^TestLiveCheckInATahoeGuest$' -timeout
 
 ## Scratch runs
 
-A run of dockhand on a scratch clone, a measurement or a replay, sets three things, not one: `MACPORTS_TREE` to the clone, `DOCKHAND_DB` to a database of its own (a `.backup` copy for a replay, with `~/.dockhand/archives/` copied beside it), and `DOCKHAND_CONFIG` to a configuration whose `worktrees` is a directory of its own, as `tools/acceptance/quick.sh` writes one. `MACPORTS_TREE` picks the tree, not where its branches' worktrees go: the worktree root stays `~/Source/macports-branches` whichever clone runs, so a scratch run that sets the tree alone puts its branches beside yours.
+A run of dockhand on a scratch clone, a measurement or a replay, sets three things, not one: `MACPORTS_TREE` to the clone, `DOCKHAND_DB` to a database of its own (a `.backup` copy for a replay, with `~/.dockhand/archives/` copied beside it), and `DOCKHAND_CONFIG` to a configuration whose `worktrees` is a directory of its own, as `tools/acceptance/quick.sh` writes one. `MACPORTS_TREE` picks the tree, not where its branches' worktrees go: the worktree root stays `~/Source/macports-branches` whichever clone runs, so a scratch run that sets the tree alone puts its branches beside yours. A development build migrates a `.backup` copy that `DOCKHAND_DB` names without asking, though a release last opened it, and counts only the processes whose heartbeat moves in the copy; the default database asks on a terminal and is refused without one.
 
 ## Other opt-in tests
 

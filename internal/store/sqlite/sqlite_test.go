@@ -1550,6 +1550,54 @@ INSERT INTO leases(repository_id, resource, holder, generation, acquired_at) VAL
 	require.NoError(t, s.Close())
 }
 
+// A copy of a database carries its sessions, their heartbeats fresh, and
+// the processes behind them beat in the original: field testing's .backup
+// copy was refused for the serve and check working on the shared database
+// (2026-10-29). Where a heartbeat is given, a migration counts only the
+// processes whose heartbeat moves in this file while it waits three beats.
+func TestAMigrationCountsOnlyTheProcessesWorkingOnThisFile(t *testing.T) {
+	now := time.Now().UnixMilli()
+	sessions := fmt.Sprintf(`
+INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_here','foreground',101,'p','v0.3.1',%[1]d,%[1]d,NULL);
+INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_original','serve',102,'p','v0.3.1',%[1]d,%[1]d,NULL);
+INSERT INTO leases(repository_id, resource, holder, generation, acquired_at) VALUES('repo_1','leader','ses_original',1,%[1]d);
+`, now)
+	path := schemaAt(t, schemaVersion-1, schema23Records+sessions)
+	options := Options{LiveWithin: 2 * time.Minute, Heartbeat: 50 * time.Millisecond}
+
+	// One process beats in this file, as a check working on it would.
+	beater, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
+	require.NoError(t, err)
+	defer beater.Close()
+	stop := make(chan struct{})
+	beating := make(chan struct{})
+	go func() {
+		defer close(beating)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(10 * time.Millisecond):
+				_, _ = beater.Exec("UPDATE sessions SET heartbeat_at=? WHERE id='ses_here'", time.Now().UnixMilli())
+			}
+		}
+	}()
+	_, err = Open(t.Context(), path, options)
+	close(stop)
+	<-beating
+	refused := new(store.LiveUnderMigrationError)
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, 1, refused.Processes, "the one beating here, not the serve beating in the original")
+	require.Len(t, refused.Live, 1)
+	require.Equal(t, 101, refused.Live[0].PID)
+
+	// Neither beats here now: the copy migrates.
+	s, err := Open(t.Context(), path, options)
+	require.NoError(t, err)
+	require.Equal(t, schemaVersion, s.Migration().To)
+	require.NoError(t, s.Close())
+}
+
 // A check's records come in one read: the run, its plan, its executions,
 // and each one's results, with each reused result's origin and the
 // inputs its results name (the SQL study's O2).
@@ -1726,7 +1774,7 @@ func TestADevelopmentBuildAsksBeforeMigratingAReleasesDatabase(t *testing.T) {
 
 	asked, err := Open(t.Context(), path, Options{Build: "v0.5.0-rc5 (6246e4b9eb84)", MigrateRelease: true})
 	require.NoError(t, err)
-	require.NotNil(t, asked.Migration())
+	require.Equal(t, &Migration{From: 32, To: schemaVersion, Copy: path + ".schema-32", Release: "v0.4.0"}, asked.Migration(), "the release passed over, for the engine to say")
 	require.NoError(t, asked.Close())
 
 	release := schemaAt(t, 32, ended)

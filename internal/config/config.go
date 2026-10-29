@@ -541,6 +541,36 @@ func (p Places) ConfigPath(named string) (string, error) {
 	return filepath.Join(p.Home, ".dockhand", "config.toml"), nil
 }
 
+// DatabasePath is the database to use: named, where it's given, else
+// ~/.dockhand/dockhand.db, the one a release opens by default. standard
+// says whether it's that one, by whatever path names the same file: a copy
+// named in its place migrates where a release last opened it, unasked,
+// and the default asks (engine.Options.NamedDatabase).
+func (p Places) DatabasePath(named string) (path string, standard bool, err error) {
+	if named == "" && p.Home == "" {
+		return "", false, fmt.Errorf("%w; name the database with --db or DOCKHAND_DB", errNoHome)
+	}
+	byDefault := ""
+	if p.Home != "" {
+		byDefault = filepath.Join(p.Home, ".dockhand", "dockhand.db")
+	}
+	if named == "" {
+		return byDefault, true, nil
+	}
+	if path, err = p.Absolute(named); err != nil {
+		return "", false, err
+	}
+	if byDefault == "" || path == byDefault {
+		return path, path == byDefault, nil
+	}
+	given, err := os.Stat(path)
+	if err != nil {
+		return path, false, nil
+	}
+	known, err := os.Stat(byDefault)
+	return path, err == nil && os.SameFile(given, known), nil
+}
+
 // Load reads the file at path, its worktrees' leading ~ expanded.
 func (p Places) Load(path string) (File, error) {
 	f, err := Load(path)

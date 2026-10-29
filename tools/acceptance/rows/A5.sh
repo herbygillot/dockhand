@@ -6,11 +6,14 @@
 # it) is opened by the build before that schema, then by the candidate: the migration says so and keeps the copy
 # of the old schema; status --all lists the same branches before and
 # after; and the older build then refuses the database by name. And a
-# development or rc build migrates no database a release last opened
-# unasked (v0.6.0, 96592fe9): a second copy, opened by the candidate first
-# with no terminal to ask on, is refused naming the release, its schema
-# unchanged; where a release last opened it, the older build is given the
-# person's yes on a terminal, as it asks too. Status
+# development or rc build migrates no default database a release last
+# opened unasked (v0.6.0, 96592fe9): a second copy, the default database of
+# a home of its own, opened by the candidate first with no terminal to ask
+# on, is refused naming the release, its schema unchanged; named with
+# DOCKHAND_DB, as the refusal advises, the same copy migrates on its own
+# and says so (field testing, 2026-10-29); where a release last opened it,
+# the older build is given the person's yes on a terminal, as it asks
+# too. Status
 # reads the person's ports checkout (ACCEPT_REAL_TREE, else the stage's
 # ACCEPT_PORTS_SOURCE), as it only reads. The database is opened read-only;
 # where there's none, the row isn't run.
@@ -52,8 +55,8 @@ setup() {
 		[ ! -f "$ACCEPT_REAL_DB$part" ] || cp "$ACCEPT_REAL_DB$part" "$ROW_DIR/source/dockhand.db$part"
 	done
 	sqlite3 "$ROW_DIR/source/dockhand.db" ".backup '$ROW_DIR/db/dockhand.db'" || return 1
-	mkdir -p "$ROW_DIR/release-db"
-	sqlite3 "$ROW_DIR/source/dockhand.db" ".backup '$ROW_DIR/release-db/dockhand.db'" || return 1
+	mkdir -p "$ROW_DIR/release-home/.dockhand"
+	sqlite3 "$ROW_DIR/source/dockhand.db" ".backup '$ROW_DIR/release-home/.dockhand/dockhand.db'" || return 1
 	A5_LAST_BUILD=$(sqlite3 "$ROW_DIR/source/dockhand.db" "SELECT version FROM sessions ORDER BY started_at DESC LIMIT 1" 2>/dev/null)
 	# The build before the newest schema: the parent of the commit that
 	# added it.
@@ -86,8 +89,11 @@ a5_status_yes() {
 a5_refused_live() { jq -r '.error // ""' "$1" 2>/dev/null | matches 'would leave them unable to record what they do'; }
 
 act() {
-	# The candidate first, on its own copy, with no terminal to ask on.
-	DOCKHAND_DB="$ROW_DIR/release-db/dockhand.db" "$DH_BIN" --json --tree "$ACCEPT_REAL_TREE" status --all >"$ROW_DIR/release.json" 2>"$ROW_DIR/release.json.err" || :
+	# The candidate first, on its own copy as a home's default database,
+	# with no terminal to ask on; then the same copy, named.
+	env -u DOCKHAND_DB HOME="$ROW_DIR/release-home" "$DH_BIN" --json --tree "$ACCEPT_REAL_TREE" status --all >"$ROW_DIR/release.json" 2>"$ROW_DIR/release.json.err" || :
+	A5_RELEASE_SCHEMA=$(sqlite3 "$ROW_DIR/release-home/.dockhand/dockhand.db" 'PRAGMA user_version')
+	DOCKHAND_DB="$ROW_DIR/release-home/.dockhand/dockhand.db" "$DH_BIN" --json --tree "$ACCEPT_REAL_TREE" status --all >"$ROW_DIR/named.json" 2>"$ROW_DIR/named.json.err" || :
 	a5_status "$ROW_DIR/old/dockhand" "$ROW_DIR/before.json" || :
 	if a5_refused_release "$ROW_DIR/before.json"; then
 		a5_status_yes "$ROW_DIR/old/dockhand" "$ROW_DIR/before.json" || :
@@ -149,11 +155,15 @@ assert() {
 			row_fail "the candidate migrated a database $A5_LAST_BUILD last opened, unasked: $(jq -r '.error // "no refusal"' "$ROW_DIR/release.json")"
 			return
 		fi
-		if [ "$(sqlite3 "$ROW_DIR/release-db/dockhand.db" 'PRAGMA user_version')" != "$(sqlite3 "$ROW_DIR/source/dockhand.db" 'PRAGMA user_version')" ]; then
+		if [ "${A5_RELEASE_SCHEMA:-}" != "$(sqlite3 "$ROW_DIR/source/dockhand.db" 'PRAGMA user_version')" ]; then
 			row_fail "the candidate refused, but changed the release's database's schema"
 			return
 		fi
-		release_words="the candidate asked before migrating $A5_LAST_BUILD's database, leaving it as it was"
+		if [ "$(jq -r .exit_code "$ROW_DIR/named.json" 2>/dev/null)" != 0 ] || ! grep -q "without asking, since it isn't the default one" "$ROW_DIR/named.json.err"; then
+			row_fail "the candidate didn't migrate the copy DOCKHAND_DB named on its own, saying so: $(jq -r '.error // empty' "$ROW_DIR/named.json" 2>/dev/null) $(tail -2 "$ROW_DIR/named.json.err")"
+			return
+		fi
+		release_words="the candidate asked before migrating $A5_LAST_BUILD's default database, leaving it as it was, and migrated the same copy named with DOCKHAND_DB on its own, saying so"
 	fi
 	row_pass "migrated with a copy kept; status --all the same before and after; the older build refuses it by name; $release_words"
 }

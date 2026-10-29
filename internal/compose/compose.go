@@ -237,16 +237,10 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		portHolds[port] = held
 	}
 	git := cmp.Or(options.Git, options.Getenv("GIT_BIN"))
-	database := cmp.Or(options.Database, options.Getenv("DOCKHAND_DB"))
-	if database == "" {
-		if places.Home == "" {
-			return engine.Options{}, config.File{}, "", errors.New("$HOME is not defined; name the database with --db or DOCKHAND_DB")
-		}
-		database = filepath.Join(places.Home, ".dockhand", "dockhand.db")
-	}
 	// A path given is read against the command line's directory, never
 	// the process's, which a test running beside others shares.
-	if database, err = places.Absolute(database); err != nil {
+	database, standard, err := places.DatabasePath(cmp.Or(options.Database, options.Getenv("DOCKHAND_DB")))
+	if err != nil {
 		return engine.Options{}, config.File{}, "", err
 	}
 	// With no --tree, MACPORTS_TREE names the checkout, and a directory in
@@ -302,6 +296,7 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		Home:             places.Home,
 		MigrateUnderLive: options.MigrateUnderLive,
 		MigrateRelease:   options.MigrateRelease,
+		NamedDatabase:    !standard,
 	}, file, configPath, nil
 }
 
