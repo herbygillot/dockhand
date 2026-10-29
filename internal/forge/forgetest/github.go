@@ -75,6 +75,10 @@ type GitHub struct {
 	// refusing to mark one.
 	Readied      []int
 	ReadyRefused error
+	// Drafted are the pull requests returned to draft; DraftRefused is
+	// GitHub refusing that.
+	Drafted      []int
+	DraftRefused error
 	// Role is what Permission reports; read where empty.
 	Role string
 	// Reviews are those posted, and Rerequested the reviewers asked again.
@@ -304,6 +308,14 @@ func (g *GitHub) MarkReady(ctx context.Context, ref forge.PullRequestRef) (forge
 		return forge.PullRequestObservation{}, g.ReadyRefused
 	}
 	g.Readied = append(g.Readied, ref.Number)
+	return g.Observe(ctx, ref)
+}
+
+func (g *GitHub) MarkDraft(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	if g.DraftRefused != nil {
+		return forge.PullRequestObservation{}, g.DraftRefused
+	}
+	g.Drafted = append(g.Drafted, ref.Number)
 	return g.Observe(ctx, ref)
 }
 

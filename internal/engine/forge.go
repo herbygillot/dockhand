@@ -21,8 +21,10 @@ type Forge interface {
 	OpenPullRequests(ctx context.Context, repository, port string) ([]forge.PullRequestSummary, error)
 	// Inspect reports a pull request's reviews and checks.
 	Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestStatus, error)
-	// MarkReady takes a draft out of draft.
+	// MarkReady takes a draft out of draft, and MarkDraft returns one
+	// ready for review to draft.
 	MarkReady(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error)
+	MarkDraft(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error)
 	// Permission is a person's role on a repository.
 	Permission(ctx context.Context, repository, login string) (string, error)
 	// PostReview posts a review on a pull request.
@@ -56,8 +58,10 @@ type Forge interface {
 type GitHubCLI interface {
 	// Login is the account it's signed in as.
 	Login(ctx context.Context) (string, error)
-	// MarkReady takes a draft pull request out of draft.
+	// MarkReady takes a draft pull request out of draft, and MarkDraft
+	// returns one to draft.
 	MarkReady(ctx context.Context, ref forge.PullRequestRef) error
+	MarkDraft(ctx context.Context, ref forge.PullRequestRef) error
 }
 
 // forge is the engine's Forge: the one it was given, or GitHub with the

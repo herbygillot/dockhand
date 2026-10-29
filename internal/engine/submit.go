@@ -300,6 +300,21 @@ func (p *SubmitPlan) Describe(body string) {
 // Head is the fork's head as "owner/repo:branch".
 func (p SubmitPlan) Head() string { return p.HeadRepository + ":" + p.RemoteBranch() }
 
+// ToDraft reports whether a draft submission returns its open pull request
+// to draft before it pushes: a draft request lets failing or unchecked
+// work through, which only a pull request that is a draft may carry, and
+// an update edited only the title and body, so failing work reached a
+// ready pull request (Codex's review of 2ad896d2, W3). The forge leaves
+// one already a draft as it is.
+func (p SubmitPlan) ToDraft() bool { return p.Request.Draft && p.Existing != nil }
+
+// WasDraft reports whether the branch's record says its pull request is a
+// draft, as dockhand made it or last read it.
+func (p SubmitPlan) WasDraft() bool {
+	pr := p.Branch.PullRequest
+	return pr != nil && (pr.Draft || pr.Observed != nil && pr.Observed.Draft)
+}
+
 // ForkOwner is the account that owns the repository the submission pushes
 // to, and whether it isn't the login's own: a fork's owner check gives way
 // under DOCKHAND_PULL_REQUESTS's sandbox and to --remote, so GitHub's
@@ -915,6 +930,8 @@ type Submitted struct {
 	Created     bool
 	Pushed      bool
 	Edited      SubmitEdits
+	// Drafted is an open pull request returned to draft before the push.
+	Drafted bool
 }
 
 // SubmitEdits are what a submission rewrote of an existing pull request:
@@ -953,6 +970,14 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		return Submitted{}, fmt.Errorf("%w: %s moved; run dockhand submit again", ErrStaleSubmit, plan.Branch.Name)
 	}
 	var result Submitted
+	// A draft submission returns the pull request to draft before it
+	// pushes what may be failing work to it (ToDraft).
+	if plan.ToDraft() {
+		if err := e.draftFirst(ctx, plan); err != nil {
+			return Submitted{}, err
+		}
+		result.Drafted = true
+	}
 	if !plan.RemoteHead.Exists || plan.RemoteHead.Object != plan.Commit {
 		// A fork's branch that holds the commit already, as a submit
 		// racing this one leaves it, is pushed (git.Push).
@@ -1008,8 +1033,10 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		if plan.Theirs {
 			body = plan.Existing.PullRequest.Body
 		}
+		// The draft state asked for: a new pull request's, or one
+		// returned to draft; otherwise the one recorded stands.
 		draft := plan.Request.Draft
-		if branch.PullRequest != nil && plan.Existing != nil {
+		if branch.PullRequest != nil && plan.Existing != nil && !result.Drafted {
 			draft = branch.PullRequest.Draft
 		}
 		var seen *model.PullRequestObservation
@@ -1065,10 +1092,41 @@ func (e *Engine) createdAnyway(ctx context.Context, plan SubmitPlan, failed erro
 	return found, nil
 }
 
+// draftFirst returns a submission's open pull request to draft. Where an
+// organization refuses dockhand's app, the GitHub CLI does it when it's
+// signed in as the account dockhand is, as Ready's does; otherwise nothing
+// is pushed, and the refusal names the command that does it.
+func (e *Engine) draftFirst(ctx context.Context, plan SubmitPlan) error {
+	ref := plan.Existing.PullRequest.Ref
+	_, err := e.forge().MarkDraft(ctx, ref)
+	if err == nil {
+		return nil
+	}
+	why := ""
+	if errors.Is(err, forge.ErrAppRestricted) {
+		var byCLI bool
+		if byCLI, why = e.byCLI(ctx, func() error { return e.GitHubCLI.MarkDraft(ctx, ref) }, "return it to draft"); byCLI {
+			return nil
+		}
+	}
+	err = fmt.Errorf("returning #%d to draft: %w\nNothing was pushed. Return it to draft on its page, %s, or with the GitHub CLI: gh pr ready %d --undo --repo %s, then submit --draft again", ref.Number, err, github.PullRequestURL(ref.Repository, ref.Number), ref.Number, ref.Repository)
+	if why != "" {
+		err = fmt.Errorf("%w\n%s", err, why)
+	}
+	return err
+}
+
 // readyByCLI marks a pull request ready with the GitHub CLI, when it's
 // signed in as the account dockhand acts for, since the change is then
 // made by the same person through another app; why it didn't, otherwise.
 func (e *Engine) readyByCLI(ctx context.Context, ref forge.PullRequestRef) (bool, string) {
+	return e.byCLI(ctx, func() error { return e.GitHubCLI.MarkReady(ctx, ref) }, "mark it ready")
+}
+
+// byCLI does what the GitHub CLI does for the account dockhand acts for,
+// when it's signed in as that account, saying why it didn't otherwise:
+// what, as "mark it ready", names it in the reason.
+func (e *Engine) byCLI(ctx context.Context, do func() error, what string) (bool, string) {
 	if e.GitHubCLI == nil {
 		return false, ""
 	}
@@ -1083,8 +1141,8 @@ func (e *Engine) readyByCLI(ctx context.Context, ref forge.PullRequestRef) (bool
 	if !strings.EqualFold(login, mine) {
 		return false, fmt.Sprintf("The GitHub CLI wasn't used: it's signed in as %s, and dockhand as %s.", login, mine)
 	}
-	if err := e.GitHubCLI.MarkReady(ctx, ref); err != nil {
-		return false, fmt.Sprintf("The GitHub CLI couldn't mark it ready either: %v.", err)
+	if err := do(); err != nil {
+		return false, fmt.Sprintf("The GitHub CLI couldn't %s either: %v.", what, err)
 	}
 	return true, ""
 }

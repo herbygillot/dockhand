@@ -209,7 +209,9 @@ merely because the final confirmation did not print.
 These choices answer different questions:
 
 - `submit --draft`: Share work while checks are incomplete or failing. The pull
-  request is a draft and shows its evidence.
+  request is a draft and shows its evidence. One already open and ready for
+  review is returned to draft before anything is pushed to it; where GitHub
+  refuses that, nothing is pushed, and `gh pr ready <number> --undo` does it.
 - `submit --no-check`: Publish without a check. The description explicitly says
   no local build ran.
 - `submit --accept <port>`: Accept an eligible recorded failure, or a new port's

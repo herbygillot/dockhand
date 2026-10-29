@@ -212,7 +212,12 @@ func PullRequestWords(plan engine.SubmitPlan) string {
 		return words
 	}
 	words := fmt.Sprintf("updates #%d", plan.Existing.PullRequest.Ref.Number)
-	if pr := plan.Branch.PullRequest; pr != nil && pr.Draft && !plan.Request.Draft {
+	switch {
+	case plan.ToDraft() && !plan.WasDraft():
+		words += ", returning it to draft before it pushes"
+	case plan.ToDraft():
+		words += ", a draft"
+	case plan.WasDraft():
 		words += ", a draft: dockhand submit --ready marks it ready for review"
 	}
 	var refreshing []string
