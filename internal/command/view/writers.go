@@ -18,6 +18,19 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
+// WriteEstimates says what a check will install in each environment, by
+// the port index (engine.InstallEstimates), naming the environment where
+// the plan has several.
+func WriteEstimates(out io.Writer, estimates []engine.InstallEstimate, all []model.Environment) {
+	for _, estimate := range estimates {
+		words := estimate.Words()
+		if len(all) > 1 {
+			words = engine.EnvironmentHeading(estimate.Environment, all) + ": " + words
+		}
+		fmt.Fprintf(out, "Installs    %s\n", words)
+	}
+}
+
 // WritePushes says where a check pushes: "only checking" never hides a
 // write to your fork (Design v3 §9).
 func WritePushes(out io.Writer, plan model.Plan) {

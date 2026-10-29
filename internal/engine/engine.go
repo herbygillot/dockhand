@@ -96,6 +96,10 @@ type Options struct {
 	// Readings is where readings of upstream's archives are kept
 	// (ReadingCache); none are kept when empty.
 	Readings string
+	// Archives is where packages.macports.org's listings of ports'
+	// archives are kept a day, for a check's install estimate; kept for
+	// the run alone when empty.
+	Archives string
 	// Indexes is where port indexes are cached, which staging an index
 	// needs; IndexMirror is the directory a cache with no generation near
 	// enough is seeded from, MacPorts' own when empty.
@@ -225,6 +229,11 @@ type Engine struct {
 	// required is build.default's environments as last resolved, kept for
 	// requiredWait (requiredEnvironments).
 	required requiredRead
+	// ArchiveSite is where ports' archives are listed, a test's stand-in
+	// for packages.macports.org where set (InstallEstimates).
+	ArchiveSite string
+	// listings are packages.macports.org's listings this run has had.
+	listings listingCache
 	// others are the run's searches for ports' open pull requests, which
 	// start, update, bump, ship, serve, and submit share (othersCache).
 	others othersCache

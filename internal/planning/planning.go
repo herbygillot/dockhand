@@ -354,6 +354,36 @@ func ThroughUnchanged(graph map[string][]string, candidates []model.PlanTarget, 
 
 // Needs are what each target needs built first in each environment: the
 // targets built there that it depends on there. Their union, over every
+// Closure are the ports the roots need, each one the graph, a port index's
+// direct dependencies by lowercased name (portindex.Index.Dependencies),
+// reaches from the roots, less those in except: what a check's guest
+// installs before it builds the roots, as the index says it, in the order
+// first reached (the gnome-voice session's notes, 2026-10-20, whose check
+// of an unchanged port built 4 dependencies from source, unsaid).
+func Closure(graph map[string][]string, roots []string, except map[string]bool) []string {
+	seen := map[string]bool{}
+	var closure []string
+	queue := make([]string, 0, len(roots))
+	for _, root := range roots {
+		queue = append(queue, strings.ToLower(root))
+	}
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		for _, next := range graph[name] {
+			if seen[next] {
+				continue
+			}
+			seen[next] = true
+			queue = append(queue, next)
+			if !except[next] {
+				closure = append(closure, next)
+			}
+		}
+	}
+	return closure
+}
+
 // environment, is what --only adds back.
 func Needs(built []model.PlanTarget, reasons []map[model.TargetID]Excluded, evaluations []Evaluation) (needs []map[model.TargetID][]Dependency, union map[model.TargetID][]model.TargetID) {
 	builtAnywhere := func(id model.TargetID) bool {

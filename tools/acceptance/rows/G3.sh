@@ -5,6 +5,9 @@
 # ACCEPT_LOCAL_PREFIX names the prefix, which MacPorts' source install
 # made as dhtest (./configure --prefix=<it> --with-no-root-privileges,
 # make, make install, port selfupdate); without one, the row isn't run.
+# A second check of the same revision, --fresh, builds again and says the
+# prefix's note in its JSON, where rc7 refused it until the first's image
+# was uninstalled (v0.7.0).
 . "${ROW_LIB:?}/local.sh"
 
 act() {
@@ -22,6 +25,9 @@ act() {
 	dh_setup revbump "${ACCEPT_GO_PORT:?}" --new="$G3_BRANCH" --subject "rebuild to check in a prefix of dhtest's" || return 0
 	# No sudo here: one asked for would fail the check, not prompt.
 	(export DOCKHAND_CONFIG="$ROW_DIR/g3.toml"; dh_json check -b "$G3_BRANCH" --on "local:$G3_PREFIX" </dev/null) || :
+	# A second check of the same revision builds again, uninstalling the
+	# first's image, inactive and unrequested, where rc7 refused it (v0.7.0).
+	(export DOCKHAND_CONFIG="$ROW_DIR/g3.toml"; dh_json check -b "$G3_BRANCH" --on "local:$G3_PREFIX" --fresh </dev/null) || :
 }
 
 assert() {
@@ -34,5 +40,12 @@ assert() {
 	grep -q "building in $G3_PREFIX (as you)" "$ROW_DIR/out.log" || { row_fail "the check in $G3_PREFIX didn't build as dhtest"; return; }
 	jq -e '[.. | objects | .note? | strings] | any(test("binary archives are built for /opt/local alone"))' "$file" >/dev/null || { row_fail "the plan's JSON didn't say $G3_PREFIX's dependencies build from source"; return; }
 	local_same "$G3_PREFIX" "$ROW_DIR/active.before" "the check left $G3_PREFIX's active ports changed" || return
-	row_pass "built in $G3_PREFIX with no sudo, clean, and put its ports back"
+	local again=$ROW_DIR/json/2.json
+	if [ "$(cat "$again.exit" 2>/dev/null)" != 0 ]; then
+		row_fail "a second check of the same revision in $G3_PREFIX exited $(cat "$again.exit" 2>/dev/null), where it builds again: $(jq -r '.error // ""' "$again" 2>/dev/null)"
+		return
+	fi
+	jq -e '[.. | objects | .note? | strings] | any(test("binary archives are built for /opt/local alone"))' "$again" >/dev/null || { row_fail "the second check's JSON didn't say $G3_PREFIX's dependencies build from source"; return; }
+	local_same "$G3_PREFIX" "$ROW_DIR/active.before" "the second check left $G3_PREFIX's active ports changed" || return
+	row_pass "built in $G3_PREFIX with no sudo, clean, and put its ports back; a second check of the same revision built again and said the prefix's note"
 }

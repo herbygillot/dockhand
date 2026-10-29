@@ -147,6 +147,10 @@ check.baseline = true, it runs that baseline automatically.`,
 				}
 			}
 			view.WritePlan(out, proposed, e.PlanNotes(ctx, proposed), e.PlanSiblings(ctx, proposed), e.Remedy, view.ListShown(streams))
+			// What it will install, by the port index: --plan waits for
+			// packages.macports.org's listings; a check says what's kept,
+			// and its run says the rest as it starts.
+			view.WriteEstimates(out, e.InstallEstimates(ctx, proposed, capture.Revision.Source, plan), proposed.Environments)
 			view.WritePushes(out, proposed)
 			revision, planned := view.RevisionView(capture.Revision), view.PlanView(proposed)
 			streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []view.TargetJSON{}})

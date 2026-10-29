@@ -336,3 +336,12 @@ func TestCandidatesAreOrderedThroughUnchangedPorts(t *testing.T) {
 	require.Equal(t, []Dependency{{Port: "py313-transformers"}, {Port: "py313-safetensors"}}, evaluations[0]["py313-mlx-vlm"].Dependencies)
 	require.Empty(t, evaluations[0]["py313-safetensors"].Dependencies)
 }
+
+// A closure is what the index's dependencies reach from the roots, each
+// once, in the order first reached, less what's excepted.
+func TestClosure(t *testing.T) {
+	graph := map[string][]string{"gnome-voice": {"gtk3", "glib2"}, "gtk3": {"glib2", "cairo"}, "cairo": {"pixman"}, "glib2": {"libffi"}}
+	require.Equal(t, []string{"gtk3", "glib2", "cairo", "libffi", "pixman"}, Closure(graph, []string{"gnome-voice"}, nil))
+	require.Equal(t, []string{"gtk3", "cairo", "libffi", "pixman"}, Closure(graph, []string{"Gnome-Voice"}, map[string]bool{"glib2": true}), "an excepted port is still walked through")
+	require.Empty(t, Closure(graph, []string{"pixman"}, nil))
+}

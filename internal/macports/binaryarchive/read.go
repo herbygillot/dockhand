@@ -33,6 +33,39 @@ func ArchiveName(port, version, revision string, variants []string, darwin int, 
 // URL is where packages.macports.org serves a port's archive.
 func URL(port, name string) string { return Packages + "/" + port + "/" + name }
 
+// Directory is where packages.macports.org lists a port's archives.
+func Directory(site, port string) string { return strings.TrimSuffix(site, "/") + "/" + port + "/" }
+
+// Listed reports whether a directory's listing holds an archive of a
+// port's version and revision for a release and architecture, or a noarch
+// one, whatever its variants: MacPorts' builders build a port's default
+// variants, which a dependency installs with, so theirs is the archive it
+// fetches. An archive's name can't be built for the match, since a port
+// index lists a port's variants but not its defaults (the install
+// estimate, 2026-10-29: git's carries +credential_osxkeychain and four
+// more).
+func Listed(listing []byte, port, version, revision string, darwin int, arch string) bool {
+	prefix := fmt.Sprintf("%s-%s_%s", port, version, revision)
+	for _, suffix := range []string{fmt.Sprintf(".darwin_%d.%s.tbz2", darwin, arch), ".darwin_any.noarch.tbz2"} {
+		for rest := string(listing); ; {
+			at := strings.Index(rest, prefix)
+			if at < 0 {
+				break
+			}
+			name := rest[at:]
+			if end := strings.IndexAny(name, "\"<> \n"); end >= 0 {
+				name = name[:end]
+			}
+			after := strings.TrimPrefix(name, prefix)
+			if strings.HasSuffix(name, suffix) && (strings.HasPrefix(after, "+") || after == suffix) {
+				return true
+			}
+			rest = rest[at+len(prefix):]
+		}
+	}
+	return false
+}
+
 // maxMember is the most of one archive member read for its Mach-O load
 // commands; a library past it is passed over.
 const maxMember = 512 << 20

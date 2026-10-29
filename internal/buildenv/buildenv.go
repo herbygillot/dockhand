@@ -387,6 +387,18 @@ type PuttingBackProvider interface {
 	PutBack(ctx context.Context, check string, progress func(string)) (place string, found bool, err error)
 }
 
+// An InstalledProvider says what an environment has installed already, for
+// a check's estimate of what it installs: a local prefix's active ports,
+// and the global variants its variants.conf sets, under which a dependency
+// isn't the archive MacPorts' builders made. Tart's and GitHub's start
+// each build from MacPorts with no ports and no global variants, by their
+// setup; a command provider's script says neither, so its environments
+// get no estimate.
+type InstalledProvider interface {
+	Provider
+	Installed(ctx context.Context, environment model.Environment) (active, variants []string, err error)
+}
+
 // A ParallelProvider can build several of one check's environments at once,
 // as Tart builds two releases in the Mac's two VMs. The runner builds at
 // most Parallel of its environments together; a provider that isn't one
