@@ -868,6 +868,32 @@ type OutdatedLook struct {
 	SetAside  map[string][]string `json:"set_aside,omitempty"`
 }
 
+// retried is the look a retry over ports makes of the day's, last: the
+// retry's own entries for those ports, and last's for every other, which
+// the retry didn't look at. A port the retry left out isn't resolved: the
+// retry's look kept only the outdated ports, and a port uncertain before
+// it read as current (Codex's workflow review of 2ad896d2, W8).
+func (l OutdatedLook) retried(last OutdatedLook, ports []string) OutdatedLook {
+	for _, name := range last.Outdated {
+		if !slices.Contains(ports, name) && !slices.Contains(l.Outdated, name) {
+			l.Outdated = append(l.Outdated, name)
+		}
+	}
+	for _, name := range last.Uncertain {
+		if slices.Contains(ports, name) || slices.Contains(l.Uncertain, name) {
+			continue
+		}
+		l.Uncertain = append(l.Uncertain, name)
+		if aside, ok := last.SetAside[name]; ok {
+			if l.SetAside == nil {
+				l.SetAside = map[string][]string{}
+			}
+			l.SetAside[name] = aside
+		}
+	}
+	return l
+}
+
 // uncertainWords are the day's line of the ports that may have newer
 // releases: each named where what was set aside is new since the last
 // look, and the rest, said already, counted. A port with a misspelled old
@@ -1022,12 +1048,10 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	last, _ := e.LastOutdatedLook(settings.PortSelection)
 	look := OutdatedLook{CheckedAt: now, Maintainers: settings.Maintainers, Categories: settings.Categories, NotMaintainers: settings.NotMaintainers, Outdated: names, Uncertain: uncertain, SetAside: setAside}
 	// A retry's look adds to the day's, which it went over only part of.
+	looked := settings.Words()
 	if retrying {
-		for _, name := range last.Outdated {
-			if !slices.Contains(look.Outdated, name) {
-				look.Outdated = append(look.Outdated, name)
-			}
-		}
+		look = look.retried(last, request.Ports)
+		looked = "the ports retried"
 	}
 	if data, err := json.Marshal(look); err == nil {
 		o.s.written("outdated.json", e.writeServeFile("outdated.json", data))
@@ -1045,7 +1069,9 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	case len(names) == 0 && unchecked != "":
 		o.s.say("serve: none of the rest has a newer release")
 	case len(names) == 0:
-		o.s.say("serve: none of %s has a newer release", settings.Words())
+		o.s.say("serve: none of %s has a newer release", looked)
+	case retrying:
+		o.s.say("serve: %s retried %s newer releases: %s", prose.Plural(len(names), "port"), map[bool]string{true: "has", false: "have"}[len(names) == 1], strings.Join(names, ", "))
 	case settings.Chosen:
 		o.s.say("serve: %s of the selected %s newer releases: %s", prose.Plural(len(names), "port"), map[bool]string{true: "has", false: "have"}[len(names) == 1], strings.Join(names, ", "))
 	default:

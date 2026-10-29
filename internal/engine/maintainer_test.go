@@ -114,11 +114,13 @@ func TestServeSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 
 // limitedReader is upstream discovery under GitHub's rate limit: the
 // day's look finds jq outdated and fd held by the limit, until lifted,
-// when fd is found outdated, unless the limit holds again.
+// when fd is found outdated, unless the limit holds again; dolt, where
+// uncertain, is uncertain for a misspelled tag.
 type limitedReader struct {
-	asked   []OutdatedRequest
-	lifted  time.Time
-	holdsOn bool
+	asked     []OutdatedRequest
+	lifted    time.Time
+	holdsOn   bool
+	uncertain bool
 }
 
 func (l *limitedReader) Outdated(_ context.Context, _ model.ObjectID, request OutdatedRequest) ([]OutdatedPort, error) {
@@ -130,12 +132,19 @@ func (l *limitedReader) Outdated(_ context.Context, _ model.ObjectID, request Ou
 		}
 		return []OutdatedPort{fd}, nil
 	}
-	return []OutdatedPort{{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true}, fd}, nil
+	found := []OutdatedPort{{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true}, fd}
+	if l.uncertain {
+		found = append(found, OutdatedPort{Port: "dolt", Current: "1.40.15", Uncertain: []SetAside{{Tag: "v040.15"}}})
+	}
+	return found, nil
 }
 
 // The day's look a rate limit cut short goes over those ports once, just
 // after it lifts, and isn't done until then; a limit that holds again
 // leaves the day done without them, said once (the rc6 full stage, D-N4).
+// The retry's look keeps what it didn't look at: dolt, uncertain before
+// it, isn't resolved by a retry over fd alone (Codex's workflow review of
+// 2ad896d2, W8).
 func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 	t.Parallel()
 	for _, holdsOn := range []bool{false, true} {
@@ -143,7 +152,7 @@ func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 		e := f.open(t)
 		e.Forge = forgetest.New("", "")
 		morning := time.Date(2026, 10, 7, 8, 0, 0, 0, time.Local)
-		reader := &limitedReader{lifted: morning.Add(18 * time.Minute), holdsOn: holdsOn}
+		reader := &limitedReader{lifted: morning.Add(18 * time.Minute), holdsOn: holdsOn, uncertain: true}
 		e.OutdatedReader = reader
 		now := morning
 		var said []string
@@ -165,13 +174,18 @@ func TestTheDaysLookRetriesWhatARateLimitHeld(t *testing.T) {
 		require.Equal(t, []string{"fd"}, reader.asked[1].Ports, "only what the limit held")
 		_, err = os.Stat(e.serveFile("outdated.stamp"))
 		require.NoError(t, err, "the day is done once the retry ran")
-		if holdsOn {
-			require.Contains(t, said, "serve: GitHub’s rate limit still prevents checking 1 port for new releases. No further retries today")
-			continue
-		}
 		look, ok := e.LastOutdatedLook(PortSelection{Maintainers: []string{"@ada"}})
 		require.True(t, ok)
+		require.Equal(t, []string{"dolt"}, look.Uncertain, "not resolved by a retry that didn't look at it")
+		require.Equal(t, map[string][]string{"dolt": {"v040.15"}}, look.SetAside)
+		require.NotContains(t, strings.Join(said, "\n"), "dolt", "said once, the first time")
+		if holdsOn {
+			require.Contains(t, said, "serve: GitHub’s rate limit still prevents checking 1 port for new releases. No further retries today")
+			require.Equal(t, []string{"jq"}, look.Outdated)
+			continue
+		}
 		require.ElementsMatch(t, []string{"jq", "fd"}, look.Outdated, "the retry adds to the day's look")
+		require.Contains(t, said, "serve: 1 port retried has newer releases: fd", "said of the ports retried, not of all of @ada's")
 	}
 }
 
