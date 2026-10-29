@@ -1121,9 +1121,8 @@ func withModelines(result *editprep.Result) bool {
 // alters, the lint findings dockhand fixes itself (portfile.FixTouched,
 // the person's "we should have Dockhand do those", 2026-10-27): the
 // fixes, in words, each with its file, and whether one changes what the
-// Portfile evaluates to, as a continuation dropped or a maintainers line
-// does, where whitespace doesn't. The tree is made once every file is
-// final (finalize).
+// Portfile evaluates to, as each fix says of itself (LintFix.Evaluates).
+// The tree is made once every file is final (finalize).
 func withLintFixes(ctx context.Context, worktree *git.Repository, captured string, result *editprep.Result) (fixed []string, evaluates bool, err error) {
 	for i, file := range result.Files {
 		if file.Delete || path.Base(file.Path) != "Portfile" {
@@ -1136,7 +1135,7 @@ func withLintFixes(ctx context.Context, worktree *git.Repository, captured strin
 		after, fixes := portfile.FixTouched(before, file.After)
 		for _, fix := range fixes {
 			fixed = append(fixed, file.Path+": "+fix.Words())
-			evaluates = evaluates || fix.Kind == portfile.FixContinuation || fix.Kind == portfile.FixOpenMaintainer
+			evaluates = evaluates || fix.Evaluates
 		}
 		result.Files[i].After = after
 	}
