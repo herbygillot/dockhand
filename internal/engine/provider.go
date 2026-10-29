@@ -53,6 +53,18 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 			}
 		}
 		provider, ok := e.Providers[name]
+		if ok && name == buildenv.GitHub {
+			// A release MacPorts' workflow builds on is an environment of
+			// its own (githubEnvironments).
+			found, err := e.githubEnvironments(ctx, releases)
+			if err != nil {
+				return nil, err
+			}
+			for _, environment := range found {
+				add(environment)
+			}
+			continue
+		}
 		if !ok {
 			switch name {
 			case buildenv.Tart:
@@ -72,10 +84,7 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 			}
 			continue
 		}
-		switch {
-		case releases != "" && name == buildenv.GitHub:
-			return nil, fmt.Errorf("--on %s: the github provider builds on the runners MacPorts' workflow names, so it takes no releases", value)
-		case releases != "":
+		if releases != "" {
 			return nil, fmt.Errorf("--on %s: the %s provider builds wherever its script does, so it takes no releases", value, name)
 		}
 		add(model.Environment{Provider: name})
@@ -119,16 +128,19 @@ func (e *Engine) onItems(on []string) ([]string, error) {
 }
 
 // OnValues are environments as --on names them, as Environments reads
-// them back: Tart's releases together by their product versions,
-// tart:12,26, a local check's prefix, local:/opt/local, and another
-// provider by its name, in the order the
+// them back: Tart's and GitHub's releases together by their product
+// versions, tart:12,26 and github:15,26, a local check's prefix,
+// local:/opt/local, and another provider by its name, in the order the
 // environments first name each. False where a release can't be named, as
 // one this dockhand doesn't know can't.
 func OnValues(environments []model.Environment) ([]string, bool) {
 	var values []string
 	releases := map[string][]string{}
 	for _, environment := range environments {
-		if environment.Provider != buildenv.Tart {
+		// Tart's and GitHub's are named by their releases, tart:12,26 and
+		// github:15; a GitHub check's from before it had them by its name.
+		named := environment.Provider == buildenv.Tart || environment.Provider == buildenv.GitHub && environment.Platform.Version != ""
+		if !named {
 			// A local check's prefix is named as --on names it.
 			value := providerPlace(environment)
 			if !slices.Contains(values, value) {
@@ -144,11 +156,11 @@ func OnValues(environments []model.Environment) ([]string, bool) {
 		if err != nil {
 			return nil, false
 		}
-		if _, ok := releases[buildenv.Tart]; !ok {
-			values = append(values, buildenv.Tart)
+		if _, ok := releases[environment.Provider]; !ok {
+			values = append(values, environment.Provider)
 		}
-		if !slices.Contains(releases[buildenv.Tart], release.Product) {
-			releases[buildenv.Tart] = append(releases[buildenv.Tart], release.Product)
+		if !slices.Contains(releases[environment.Provider], release.Product) {
+			releases[environment.Provider] = append(releases[environment.Provider], release.Product)
 		}
 	}
 	for i, value := range values {

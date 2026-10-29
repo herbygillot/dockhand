@@ -149,10 +149,18 @@ func (e *Engine) profileEnvironments(ctx context.Context, profile Profile) ([]mo
 	if !ok {
 		return nil, e.notSetUp(ctx, profile)
 	}
+	if profile.Provider == buildenv.GitHub {
+		// github builds on every release MacPorts' workflow names, each an
+		// environment of its own; a profile that lists releases is refused.
+		environments, err := e.githubEnvironments(ctx, strings.Join(profile.Releases, ","))
+		if err != nil {
+			return nil, fmt.Errorf("build profile %s: %w", profile.Name, err)
+		}
+		return environments, nil
+	}
 	releaser, ok := provider.(buildenv.ReleaseProvider)
 	if !ok {
-		// github builds on what MacPorts' workflow names, and a script
-		// wherever it does: one environment each.
+		// A script builds wherever it does: one environment.
 		return []model.Environment{{Provider: profile.Provider}}, nil
 	}
 	var releases string

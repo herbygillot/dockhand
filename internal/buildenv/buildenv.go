@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -102,6 +104,53 @@ type Job struct {
 	// (decision 28). A provider that can't install archives leaves them,
 	// and MacPorts gets such a target however it would.
 	Installs []Archive
+	// Matrix are the environments one run of a MatrixProvider builds,
+	// each with its own execution, the targets left to build there, and
+	// the Build it records through; the first is the job's Environment,
+	// Execution, and Targets. Empty for any other provider.
+	Matrix []MatrixCell
+}
+
+// MatrixCell is one environment of a MatrixProvider's run: its execution,
+// the targets left to build there, and the Build that records its results.
+type MatrixCell struct {
+	Environment model.Environment
+	Execution   model.GuestExecution
+	Targets     []Target
+	Build       Build
+}
+
+// A MatrixProvider builds several environments of a check in one run, as
+// GitHub's workflow builds every macOS release of its matrix: the runner
+// gives it each of its environments together, as Job.Matrix, where it
+// gives any other provider one at a time. Each environment's results are
+// recorded through its own cell's Build.
+type MatrixProvider interface {
+	Provider
+	Matrix() bool
+}
+
+// Unrun is a MatrixProvider's run in which some environments' builds
+// never ran, as a job of GitHub's matrix no runner took: those cells are
+// left unrecorded, each with why, and the others recorded as they built.
+// The runner ends each unrun cell's execution with its words, and spends
+// no attempt on it; a run where nothing ran is Infrastructure.
+type Unrun struct {
+	// Cells are each unrun environment's words, by EnvironmentKey.
+	Cells map[string]string
+}
+
+func (u *Unrun) Error() string {
+	var words []string
+	for _, key := range slices.Sorted(maps.Keys(u.Cells)) {
+		words = append(words, key+": "+u.Cells[key])
+	}
+	return strings.Join(words, "; ")
+}
+
+// EnvironmentKey is an environment's key in Unrun.Cells.
+func EnvironmentKey(environment model.Environment) string {
+	return environment.Provider + "/" + environment.Platform.OS + environment.Platform.Version + "/" + environment.Platform.Architecture + "/" + environment.Prefix
 }
 
 // Archive is a kept archive a guest installs a target from.

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
@@ -24,14 +25,11 @@ func (e *Engine) ciReleases(ctx context.Context, tree string) []string {
 // uncoveredCI are the releases of MacPorts' CI that no environment of a
 // check built on: tart 2.40.1 passed its check on macOS 26 alone, and
 // failed MacPorts CI on 15, using an API only the macOS 26 SDK has (field
-// testing, #35157). A check on the github provider runs MacPorts' own
-// workflow, so it covers them all.
+// testing, #35157). A check on the github provider covers each release its
+// workflow's job ran on, which is its own environment.
 func uncoveredCI(ci []string, environments []model.Environment) []string {
 	covered := map[string]bool{}
 	for _, environment := range environments {
-		if environment.Provider == buildenv.GitHub {
-			return nil
-		}
 		darwin, err := strconv.Atoi(environment.Platform.Version)
 		if err != nil {
 			continue
@@ -47,6 +45,61 @@ func uncoveredCI(ci []string, environments []model.Environment) []string {
 		}
 	}
 	return uncovered
+}
+
+// githubEnvironments are the environments a GitHub check builds in: one
+// for each macOS release MacPorts' workflow at master runs a job on, its
+// runners' arm64 (the M1's suggestion, 2026-10-29, after rc8's GitHub
+// rows, where one release's job never ran and the matrix couldn't be
+// recorded as passing the others). The workflow runs every job of its
+// matrix, so each is planned and recorded, and a failure on any is seen:
+// releases, as github:15, are refused, where the plan would have to say
+// per environment which were asked (the architecture thread, 2026-10-29).
+func (e *Engine) githubEnvironments(ctx context.Context, releases string) ([]model.Environment, error) {
+	if releases != "" {
+		return nil, fmt.Errorf("--on github:%s: the github provider builds every release MacPorts' workflow names; to check one release, use tart or local", releases)
+	}
+	master, ok := e.lastMaster(ctx)
+	if !ok {
+		return nil, fmt.Errorf("--on github: master hasn't been fetched, so the releases MacPorts' workflow builds on can't be read; dockhand outdated or update fetches it")
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(master)})
+	if err != nil {
+		return nil, err
+	}
+	var environments []model.Environment
+	for _, product := range e.ciReleases(ctx, trees[string(master)]) {
+		release, err := macos.ParseRelease(product)
+		if err != nil {
+			return nil, fmt.Errorf("--on github: MacPorts' workflow builds on macOS %s, which dockhand doesn't know: %w", product, err)
+		}
+		environment := model.Environment{Provider: buildenv.GitHub, Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"}}
+		if !slices.Contains(environments, environment) {
+			environments = append(environments, environment)
+		}
+	}
+	if len(environments) == 0 {
+		return nil, fmt.Errorf("--on github: %s at master names no releases MacPorts' workflow builds on", macports.CIWorkflow)
+	}
+	return environments, nil
+}
+
+// GitHubWontBuild are the targets a plan's GitHub environments won't build:
+// MacPorts' workflow builds only the ports a commit changes, so neither
+// --also's unchanged ports nor a baseline's, which are the plan's Also
+// targets. The plan says them before anything is pushed, where they were
+// said only once the run was read.
+func GitHubWontBuild(plan model.Plan) []string {
+	if !slices.ContainsFunc(plan.Environments, func(environment model.Environment) bool { return environment.Provider == buildenv.GitHub }) {
+		return nil
+	}
+	var unbuilt []string
+	for _, target := range plan.Targets {
+		if target.Role == model.Also {
+			unbuilt = append(unbuilt, string(target.ID))
+		}
+	}
+	return unbuilt
 }
 
 // ciSlugs are MacPorts' CI's releases as Tart names them, sonoma, sequoia,

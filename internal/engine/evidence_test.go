@@ -131,12 +131,12 @@ func TestEachEnvironmentTakesItsNewestCheck(t *testing.T) {
 	}
 
 	// A default environment no check of these files planned is required.
-	e.Providers["github"] = &scriptedProvider{}
-	e.Builds = Builds{Default: "fork", Profiles: map[string]Profile{"fork": {Provider: "github"}}}
+	e.Providers["custom"] = &scriptedProvider{}
+	e.Builds = Builds{Default: "fork", Profiles: map[string]Profile{"fork": {Provider: "custom"}}}
 	submission, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
 	require.NoError(t, err)
 	require.Len(t, submission.Blocking, 2)
-	require.Contains(t, submission.Blocking[0], "has changed, but these files haven't been built on github", "naming where")
+	require.Contains(t, submission.Blocking[0], "has changed, but these files haven't been built on custom", "naming where")
 	require.Empty(t, submission.Evidence.Problem)
 	// submit --check runs the check that's still needed, rather than
 	// refusing for the earlier check's gap (field testing, grafana 13.2.4).

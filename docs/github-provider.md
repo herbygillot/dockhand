@@ -2,6 +2,8 @@
 
 `check --on github` builds a revision with MacPorts' own workflow (`.github/workflows/main.yml`), in your fork of `macports/macports-ports`. It builds the way MacPorts' CI builds: the ports the commit changes, on the macOS releases its matrix names, with default variants, `port lint` without `--nitpick`, and the built-in test phase (Design v3 §7).
 
+Each release the workflow at master names is an environment of its own, `github macOS 15 (Sequoia) arm64`, with its own column in the check's report and the pull request's table, and one run of the workflow builds them all. `--on github` asks for every one; `--on github:15` is refused, since the workflow runs its whole matrix whatever is asked: check one release with Tart or `local`. The plan says before anything is pushed which of its targets the workflow won't build, `--also`'s unchanged ports and a baseline's, since it builds only the ports a commit changes.
+
 ## Setting it up
 
 - A GitHub login: `dockhand setup github`.
@@ -26,10 +28,10 @@ profiles.fork = { provider = "github" }
 2. The workflow runs on that push, as it does for every branch but master. Dockhand waits up to 10 minutes for GitHub to start the run. If none starts, it says so and names your fork's Actions page.
 3. It waits for the run to finish, then saves each runner's log beside the check's other logs (`dockhand logs check-N`).
 4. It reads each log's markers for each port: the subport listing, `port lint` errors, failed dependencies and installs, and the install and test groups.
-   - A port passes only if it passed on every runner that built it.
-   - If GitHub cancels a job before any runner takes it, the check fails as infrastructure, naming the job, and is retried; it can't pass until every job runs.
-   - If it failed on any runner, it failed at that runner's phase, and the result names the runner.
-   - A runner that listed its subports without the port didn't build it, as the workflow leaves a port off a macOS it doesn't support. The others decide.
+   - Each release's job is that release's result: the job's labels name its release (below).
+   - If GitHub cancels a job before any runner takes it, that release's result isn't recorded, and the check doesn't spend an attempt on it: submit names the release, quoting GitHub's annotation for the job, as "The job was not acquired by Runner of type hosted even after multiple attempts", and says to check that release with Tart, `local`, or a command provider, or to try again later. A check with Tart on that release then becomes what submit needs, and the other releases' results still count. A run where no job ran at all fails as infrastructure and is retried, once for every release still without a result.
+   - If it failed, it failed at the job's phase, and the result names the job.
+   - A job that listed its subports without the port didn't build it, as the workflow leaves a port off a macOS it doesn't support.
    - Each runner's part is kept with the result: `dockhand logs check-N` shows it under the port, and `--json` as `builders`.
    - Test failures are advisory, as in MacPorts' CI, unless `--tests required`, which dockhand applies to the workflow's reported results as it does to Tart's. The workflow runs its own tests whatever the policy, so `--tests skip` only stops them counting.
 5. It removes `dockhand-check/<commit>` from your fork, as long as it still holds the commit pushed. The logs are kept here, so nothing needs the branch once the run is read. `check` says this too before it starts.
@@ -44,7 +46,7 @@ The workflow builds only what the commit changes. A port that `--also` adds but 
 
 ## Tested on
 
-A pull request's Tested on gives the macOS release of each runner, from GitHub's jobs API: the labels a job's `runs-on` asked for, which the runner that took it has. `macos-15` is macOS 15, as are `macos-15-xlarge` and `macos-15-intel`, so MacPorts' matrix reads `macOS 14, 15, 26`. A label that names no release, such as `macos-latest`, whose release GitHub moves, says nothing rather than a guess, and so does a job no runner took. The rest of what the template asks for, the macOS build, the architecture, and Xcode's version, the jobs API doesn't give. The runner's log has them as text, which isn't a documented interface, so they aren't read, and the line says "Developer tools not recorded".
+A pull request's Tested on gives the macOS release of each runner, from GitHub's jobs API: the labels a job's `runs-on` asked for, which the runner that took it has. `macos-15` is macOS 15, as are `macos-15-xlarge` and `macos-15-intel`, so MacPorts' matrix reads `macOS 15, 26`, one line for the run. A label that names no release, such as `macos-latest`, whose release GitHub moves, says nothing rather than a guess, and so does a job no runner took. The rest of what the template asks for, the macOS build, the architecture, and Xcode's version, the jobs API doesn't give. The runner's log has them as text, which isn't a documented interface, so they aren't read, and the line says "Developer tools not recorded".
 
 ## A port fetched with Git
 

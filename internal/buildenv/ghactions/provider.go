@@ -21,12 +21,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/cilog"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -85,6 +87,12 @@ func (j RunnerJob) Release() string {
 	if j.RunnerName == "" {
 		return ""
 	}
+	return j.asked()
+}
+
+// asked is the macOS release the job's labels ask for, whether or not a
+// runner took it.
+func (j RunnerJob) asked() string {
 	release := ""
 	for _, label := range j.Labels {
 		match := releaseLabel.FindStringSubmatch(strings.ToLower(label))
@@ -110,6 +118,9 @@ type API interface {
 	Cancel(ctx context.Context, repository string, id int64) error
 	Jobs(ctx context.Context, repository string, id int64, attempt int) ([]RunnerJob, error)
 	JobLog(ctx context.Context, repository string, job int64) ([]byte, error)
+	// Annotations are the messages GitHub annotated a job's check run
+	// with, as why no runner took it.
+	Annotations(ctx context.Context, repository string, job int64) ([]string, error)
 	// WorkflowState is the fork's workflow's state, active where its runs
 	// start, or ErrNoWorkflow where it has none.
 	WorkflowState(ctx context.Context, repository string) (string, error)
@@ -159,6 +170,12 @@ type Provider struct {
 }
 
 func (p *Provider) Name() string { return buildenv.GitHub }
+
+// Matrix says one run of the workflow builds every release a check plans
+// on GitHub, each its own environment (buildenv.MatrixProvider).
+func (p *Provider) Matrix() bool { return true }
+
+var _ buildenv.MatrixProvider = (*Provider)(nil)
 
 func (p *Provider) sleep(ctx context.Context, d time.Duration) error {
 	if p.Sleep != nil {
@@ -358,20 +375,17 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 	if err != nil {
 		return buildenv.Infrastructure("listing %s's jobs: %w", run.URL, err)
 	}
-	if err := observe(build, jobs); err != nil {
-		return err
-	}
 	var runners []runner
 	// untaken are the jobs GitHub cancelled before any runner took them,
 	// as while its macOS runners were down during the M1's B9: no runner,
 	// no log, where asking for one read "job log: fetch: HTTP 404".
-	var untaken []string
+	var untaken []RunnerJob
 	for _, j := range jobs {
 		if j.Conclusion == "skipped" {
 			continue
 		}
 		if j.RunnerName == "" {
-			untaken = append(untaken, j.Name)
+			untaken = append(untaken, j)
 			continue
 		}
 		log, err := p.API.JobLog(ctx, repository, j.ID)
@@ -394,25 +408,102 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		}
 		runners = append(runners, runner{job: j, log: path, built: cilog.ReadLog(log), listing: cilog.ListsSubports(log), capped: capped})
 	}
-	// A matrix a job of which no runner took is incomplete, and nothing
-	// of it is recorded: one green runner beside an untaken job recorded a
-	// pass, and the check read as covering every CI release (Codex's
-	// review of 2ad896d2, W1). Unrecorded, the run is retried as any
-	// infrastructure failure is; a job GitHub skipped stays skipped.
-	if len(untaken) > 0 {
+	// A run where no runner took a job built nothing, and is tried again
+	// as any infrastructure failure is (Codex's review of 2ad896d2, W1).
+	if len(runners) == 0 && len(untaken) > 0 {
+		var names []string
+		for _, j := range untaken {
+			names = append(names, j.Name)
+		}
 		why := ""
 		if ended != "" {
 			why = " (" + ended + ")"
 		}
-		return buildenv.Infrastructure("GitHub cancelled %s before any runner took %s%s, so the matrix is incomplete; see %s", prose.And(jobWords(untaken)), map[bool]string{true: "it", false: "them"}[len(untaken) == 1], why, run.URL)
+		return buildenv.Infrastructure("GitHub cancelled %s before any runner took %s%s, so nothing was built; see %s", prose.And(jobWords(names)), map[bool]string{true: "it", false: "them"}[len(names) == 1], why, run.URL)
 	}
+	cells := job.Matrix
+	if len(cells) == 0 {
+		cells = []buildenv.MatrixCell{{Environment: job.Environment, Execution: job.Execution, Targets: job.Targets, Build: build}}
+	}
+	unrun := map[string]string{}
+	failed := false
+	for _, cell := range cells {
+		// Each release's job is its environment's (RunnerJob.Release); a
+		// check planned before releases were, with no platform, reads every
+		// runner, as it did.
+		mine, missing := runners, untaken
+		product := ""
+		if darwin, err := strconv.Atoi(cell.Environment.Platform.Version); err == nil {
+			if product, err = macos.ProductForDarwin(darwin); err != nil {
+				return fmt.Errorf("%w: darwin %s: %w", buildenv.ErrDockhandFault, cell.Environment.Platform.Version, err)
+			}
+			mine = slices.DeleteFunc(slices.Clone(runners), func(r runner) bool { return r.job.Release() != product })
+			missing = slices.DeleteFunc(slices.Clone(untaken), func(j RunnerJob) bool { return j.asked() != product })
+		} else if len(missing) > 0 {
+			// One environment standing for the whole matrix is no pass
+			// with a job of it untaken (W1).
+			var names []string
+			for _, j := range missing {
+				names = append(names, j.Name)
+			}
+			why := ""
+			if ended != "" {
+				why = " (" + ended + ")"
+			}
+			return buildenv.Infrastructure("GitHub cancelled %s before any runner took %s%s, so the matrix is incomplete; see %s", prose.And(jobWords(names)), map[bool]string{true: "it", false: "them"}[len(names) == 1], why, run.URL)
+		}
+		if len(mine) == 0 {
+			unrun[buildenv.EnvironmentKey(cell.Environment)] = p.neverRan(ctx, repository, product, missing)
+			continue
+		}
+		if err := observe(cell.Build, mine); err != nil {
+			return err
+		}
+		recorded, err := record(cell, mine)
+		if err != nil {
+			return err
+		}
+		if recorded == 0 && !slices.ContainsFunc(mine, func(r runner) bool { return r.job.Conclusion == "success" }) {
+			failed = true
+		}
+	}
+	switch {
+	case failed:
+		// A job that ran and built no port says nothing of the ports, and
+		// runs again with those that didn't succeed (Rerun): one rerun
+		// for every release still without a verdict.
+		return buildenv.Infrastructure("%s ended %s without building a port; see %s", run.URL, run.Conclusion, job.Directory)
+	case len(unrun) > 0:
+		return &buildenv.Unrun{Cells: unrun}
+	}
+	return nil
+}
 
+// neverRan says why a release's build never ran: its job no runner took,
+// with GitHub's annotation, as "The job was not acquired by Runner of type
+// hosted even after multiple attempts", or a workflow with no job there.
+func (p *Provider) neverRan(ctx context.Context, repository, product string, untaken []RunnerJob) string {
+	if len(untaken) == 0 {
+		return fmt.Sprintf("MacPorts' workflow ran no job on macOS %s", product)
+	}
+	words := "the job never ran"
+	// The annotation is GitHub's word on why, at best effort: without it
+	// the job still never ran.
+	if annotations, err := p.API.Annotations(ctx, repository, untaken[0].ID); err == nil && len(annotations) > 0 {
+		words += ": GitHub says \"" + strings.Join(annotations, " ") + "\""
+	}
+	return words
+}
+
+// record records each of a cell's targets as its runners built it, and
+// says those they didn't; how many it recorded.
+func record(cell buildenv.MatrixCell, runners []runner) (int, error) {
 	recorded := 0
 	var unbuilt []string
-	for _, target := range job.Targets {
-		if _, blocked := build.Blocked(target.ID); blocked {
-			if err := build.Record(buildenv.Reported(model.TargetResult{Target: target.ID, Outcome: model.OutcomeBlocked})); err != nil {
-				return err
+	for _, target := range cell.Targets {
+		if _, blocked := cell.Build.Blocked(target.ID); blocked {
+			if err := cell.Build.Record(buildenv.Reported(model.TargetResult{Target: target.ID, Outcome: model.OutcomeBlocked})); err != nil {
+				return recorded, err
 			}
 			continue
 		}
@@ -424,18 +515,15 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 			continue
 		}
 		result.Target = target.ID
-		if err := build.Record(buildenv.Reported(result)); err != nil {
-			return err
+		if err := cell.Build.Record(buildenv.Reported(result)); err != nil {
+			return recorded, err
 		}
 		recorded++
 	}
 	if len(unbuilt) > 0 {
-		build.Progress(fmt.Sprintf("the workflow did not build %s; it builds only the ports a commit changes", strings.Join(unbuilt, ", ")))
+		cell.Build.Progress(fmt.Sprintf("the workflow did not build %s; it builds only the ports a commit changes", strings.Join(unbuilt, ", ")))
 	}
-	if recorded == 0 && run.Conclusion != "success" {
-		return buildenv.Infrastructure("%s ended %s without building a port; see %s", run.URL, run.Conclusion, job.Directory)
-	}
-	return nil
+	return recorded, nil
 }
 
 // jobWords name jobs by their runner's label, as a person reads them,
@@ -451,19 +539,16 @@ func jobWords(names []string) []string {
 	return words
 }
 
-// observe records the macOS release of each of the run's runners, as its
-// job's labels name it (RunnerJob.Release), for the pull request's Tested
-// on: the jobs API is GitHub's documented word for it. A runner's Xcode
-// is only in its log's text, which isn't a documented interface, so it
-// isn't recorded. Where no runner's labels name a release, nothing is.
-func observe(build buildenv.Build, jobs []RunnerJob) error {
+// observe records the macOS release of each of an environment's runners,
+// as its job's labels name it (RunnerJob.Release), for the pull request's
+// Tested on: the jobs API is GitHub's documented word for it. A runner's
+// Xcode is only in its log's text, which isn't a documented interface, so
+// it isn't recorded. Where no runner's labels name a release, nothing is.
+func observe(build buildenv.Build, runners []runner) error {
 	var observed model.Observed
 	named := false
-	for _, j := range jobs {
-		if j.Conclusion == "skipped" {
-			continue
-		}
-		builder := model.BuilderObserved{Builder: j.Name, MacOS: j.Release()}
+	for _, r := range runners {
+		builder := model.BuilderObserved{Builder: r.job.Name, MacOS: r.job.Release()}
 		observed.Builders = append(observed.Builders, builder)
 		named = named || builder.MacOS != ""
 	}

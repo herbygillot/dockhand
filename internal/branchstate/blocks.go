@@ -143,7 +143,13 @@ func (b Block) Words(v Vocabulary) string {
 		var places []string
 		for _, u := range b.Unbuilt {
 			place := v.Environment(u.Environment)
-			if u.PlannedIn != "" {
+			switch {
+			case u.Unrun != "":
+				// A release whose build never ran, as a GitHub job no
+				// runner took, is checked elsewhere or again later (rc8's
+				// GitHub rows).
+				place += ": " + u.Unrun + "; check that release with Tart, local, or a command provider, or try again later"
+			case u.PlannedIn != "":
 				place += ", planned by " + u.PlannedIn + ", but the check stopped before building it"
 			}
 			places = append(places, place)
@@ -182,6 +188,9 @@ func (b Block) Words(v Vocabulary) string {
 type Place struct {
 	Environment model.Environment
 	PlannedIn   string
+	// Unrun is why its build never ran, in its provider's words
+	// (evidence.Cell.Unrun).
+	Unrun string
 }
 
 // unbuilt are where a target wasn't built, as its cells say.
@@ -189,7 +198,7 @@ func unbuilt(target evidence.TargetEvidence) []Place {
 	var where []Place
 	for _, cell := range target.Outcomes {
 		if cell.Kind == evidence.CellNotRun {
-			where = append(where, Place{Environment: cell.Environment, PlannedIn: cell.PlannedIn})
+			where = append(where, Place{Environment: cell.Environment, PlannedIn: cell.PlannedIn, Unrun: cell.Unrun})
 		}
 	}
 	return where

@@ -156,6 +156,7 @@ func (facts bodyFacts) description() prdescription.Facts {
 				described.TestedOn.Reports = append(described.TestedOn.Reports, report(environment, observation.Observed, built, checks, reusedIn))
 			}
 		}
+		described.TestedOn.Reports = sharedRuns(described.TestedOn.Reports)
 		shown := evidence.Shown()
 		for _, i := range shown {
 			described.TestedOn.Columns = append(described.TestedOn.Columns, EnvironmentHeading(evidence.Plan.Environments[i], evidence.Plan.Environments))
@@ -206,6 +207,38 @@ func report(environment model.Environment, observed model.Observed, runs []model
 		described.Runs = append(described.Runs, prdescription.Run{ID: string(run.ID), Ref: run.ProviderRef, Check: checks[run.Run], ReusedIn: reusedIn[run.ID]})
 	}
 	return described
+}
+
+// sharedRuns are the reports with those of one provider run that built
+// several environments as one, as a GitHub workflow run builds each
+// release of its matrix: the releases its runners reported together,
+// "macOS 14, 15", with the run named once.
+func sharedRuns(reports []prdescription.Report) []prdescription.Report {
+	refs := func(report prdescription.Report) []string {
+		var refs []string
+		for _, run := range report.Runs {
+			if run.Ref != "" && !slices.Contains(refs, run.Ref) {
+				refs = append(refs, run.Ref)
+			}
+		}
+		slices.Sort(refs)
+		return refs
+	}
+	shared := func(a, b prdescription.Report) bool {
+		return a.Provider == b.Provider && a.Tools == b.Tools && a.Observed.MacOS == "" && b.Observed.MacOS == "" &&
+			len(a.Observed.Builders) > 0 && len(b.Observed.Builders) > 0 && len(refs(a)) > 0 && slices.Equal(refs(a), refs(b))
+	}
+	var merged []prdescription.Report
+	for _, report := range reports {
+		i := slices.IndexFunc(merged, func(m prdescription.Report) bool { return shared(m, report) })
+		if i < 0 {
+			merged = append(merged, report)
+			continue
+		}
+		merged[i].Observed.Builders = append(slices.Clone(merged[i].Observed.Builders), report.Observed.Builders...)
+		merged[i].Runs = append(slices.Clone(merged[i].Runs), report.Runs...)
+	}
+	return merged
 }
 
 // allBuilt reports whether every target passed or was accepted.

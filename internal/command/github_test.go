@@ -193,8 +193,23 @@ func (f *fakeActions) JobLog(_ context.Context, _ string, job int64) ([]byte, er
 	return []byte(f.logs[job/10-1][name]), nil
 }
 
+// Annotations say why GitHub's runners took no job, for one it cancelled
+// before any did.
+func (f *fakeActions) Annotations(_ context.Context, _ string, job int64) ([]string, error) {
+	name := []string{"build (macos-14)", "build (macos-15)"}[job%10]
+	if f.untaken[name] && f.logs[job/10-1][name] == "" {
+		return []string{"The job was not acquired by Runner of type hosted even after multiple attempts"}, nil
+	}
+	return nil, nil
+}
+
 func withActions(t *testing.T, f *fakeActions) {
 	cmdtest.Stands(t).Actions = f
+}
+
+// both is each release's job's log, the same.
+func both(log string) map[string]string {
+	return map[string]string{"build (macos-14)": log, "build (macos-15)": log}
 }
 
 func built(port string, testsFail bool) string {
@@ -207,11 +222,17 @@ func built(port string, testsFail bool) string {
 	return log
 }
 
-// githubBranch starts jq-update with an update of jq, ready to check.
+// githubBranch starts jq-update with an update of jq, ready to check, on
+// master whose workflow builds on macOS 14 and 15, each its own
+// environment.
 func githubBranch(t *testing.T) (*fakeActions, cmdtest.World) {
 	t.Helper()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Upstream, ".github", "workflows"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, ".github", "workflows", "main.yml"), []byte("jobs:\n  build:\n    strategy:\n      matrix:\n        os: [macos-14, macos-15]\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "add", ".github")
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "CI")
 	cmdtest.WithBumper(t)
 	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
@@ -240,16 +261,18 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "check", "--on", "github", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "Provider    github · tests where declared\nPushes      this revision to a dockhand-check/ branch in your fork for the MacPorts workflow; removes that branch after reading the run's results\n")
+	require.Contains(t, out, "Provider    github macOS 14 (Sonoma) arm64; github macOS 15 (Sequoia) arm64 · tests where declared\nPushes      this revision to a dockhand-check/ branch in your fork for the MacPorts workflow; removes that branch after reading the run's results\n")
 	_, _, err = cmdtest.Dockhand(t, "check", "--on", "github:sonoma")
-	require.ErrorContains(t, err, "takes no releases")
+	require.ErrorContains(t, err, "the github provider builds every release MacPorts' workflow names; to check one release, use tart or local")
 
 	out, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
 	require.NoError(t, err, errs)
 	require.Contains(t, errs, "github: pushing to dockhand-check/")
 	require.Contains(t, errs, "github: in progress https://github.com/ada/macports-ports/actions/runs/7")
-	require.Contains(t, errs, "github: jq passed")
-	require.Regexp(t, `\n  jq  ✓ build passed; tests failed \(advisory\)( \(\d+s\))?\n`, out)
+	require.Contains(t, errs, "github macOS 14 (Sonoma) arm64: jq passed")
+	require.Contains(t, errs, "github macOS 15 (Sequoia) arm64: jq passed")
+	// Each release's job is its own cell (the M1's suggestion, 2026-10-29).
+	require.Regexp(t, `\n  PORT +macOS 14 +macOS 15\n  jq +✓ tests passed( \(\d+s\))? +✓ build passed; tests failed \(advisory\)( \(\d+s\))?\n`, out)
 	require.Contains(t, out, "\nPassed.\n", "the check's heading named what it checks")
 	require.Equal(t, 0, f.reruns)
 
@@ -268,7 +291,9 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 	require.Contains(t, logs, "\n    https://github.com/ada/macports-ports/actions/runs/7\n")
 	logs, _, err = cmdtest.Dockhand(t, "logs", "https://github.com/ada/macports-ports/actions/runs/7")
 	require.NoError(t, err)
-	require.Regexp(t, `github, attempt 1, run github_[a-z0-9]{16}: finished`, logs)
+	// The run built each release, each its own environment's execution.
+	require.Regexp(t, `github macOS 14 \(Sonoma\) arm64, attempt 1, run github_[a-z0-9]{16}: finished`, logs)
+	require.Regexp(t, `github macOS 15 \(Sequoia\) arm64, attempt 1, run github_[a-z0-9]{16}: finished`, logs)
 }
 
 // A fork whose workflow won't run is said at once, before anything is
@@ -295,21 +320,27 @@ func TestAGitHubCheckRefusesAtOnceWhereTheForksWorkflowWontRun(t *testing.T) {
 
 // A job GitHub cancelled before any runner took it has no log, so none is
 // asked for, where it read "job log: fetch: HTTP 404" (the M1's B9 on
-// rc4, while GitHub's macOS runners were down). The matrix it leaves is
-// incomplete: nothing of it is recorded, and the run is tried again,
-// where macos-14's green runner recorded a pass (Codex's review of
-// 2ad896d2, W1).
+// rc4, while GitHub's macOS runners were down). Its release's environment
+// is left unrecorded, with GitHub's word on why, and the others recorded,
+// where the whole matrix was tried again three times and never recorded
+// (rc8's GitHub rows; the M1's suggestion, 2026-10-29); submit names the
+// release, and what checks it. A run where no job ran is tried again, as
+// W1's was (Codex's review of 2ad896d2).
 func TestAJobNoRunnerTookIsSaid(t *testing.T) {
 	t.Parallel()
 	f, _ := githubBranch(t)
-	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": ""}, {"build (macos-14)": built("jq", false), "build (macos-15)": built("jq", false)}}
+	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": ""}}
 	f.untaken = map[string]bool{"build (macos-15)": true}
-	f.conclusion = []string{"cancelled", "success"}
-	out, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
-	require.NoError(t, err, errs)
+	f.conclusion = []string{"cancelled"}
+	out, errs, _ := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
 	require.NotContains(t, errs+out, "HTTP 404")
-	require.Contains(t, errs, "GitHub cancelled macos-15's job before any runner took it, so the matrix is incomplete")
-	require.Contains(t, out, "  jq  ✓ tests passed", "the complete rerun's results are read")
+	require.Contains(t, errs, `github macOS 15 (Sequoia) arm64: the job never ran: GitHub says "The job was not acquired by Runner of type hosted even after multiple attempts"`)
+	require.Regexp(t, `\n  jq +✓ tests passed( \(\d+s\))? +! not run\n`, out, "macOS 14's result is recorded")
+	require.Zero(t, f.reruns, "no attempt is spent on it")
+	_, _, err := cmdtest.Dockhand(t, "tidy", "-y")
+	require.NoError(t, err)
+	plan, _, _ := cmdtest.Dockhand(t, "submit", "--plan")
+	require.Contains(t, cmdtest.Flat(plan), `✗ jq has changed, but these files haven't been built on github macOS 15 (Sequoia) arm64: the job never ran: GitHub says "The job was not acquired by Runner of type hosted even after multiple attempts"; check that release with Tart, local, or a command provider, or try again later.`)
 
 	f, _ = githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-15)": ""}, {"build (macos-15)": ""}, {"build (macos-15)": ""}}
@@ -317,7 +348,7 @@ func TestAJobNoRunnerTookIsSaid(t *testing.T) {
 	f.conclusion = []string{"cancelled", "cancelled", "cancelled"}
 	_, errs, err = cmdtest.Dockhand(t, "check", "--on", "github")
 	require.Error(t, err)
-	require.Contains(t, errs+err.Error(), "GitHub cancelled macos-15's job before any runner took it, so the matrix is incomplete; see https://github.com/ada/macports-ports/actions/runs/")
+	require.Contains(t, errs+err.Error(), "GitHub cancelled macos-15's job before any runner took it, so nothing was built; see https://github.com/ada/macports-ports/actions/runs/")
 	require.NotContains(t, errs+err.Error(), "HTTP 404")
 }
 
@@ -325,14 +356,14 @@ func TestGitHubRunsAFailureNoPortExplainsAgain(t *testing.T) {
 	t.Parallel()
 	f, _ := githubBranch(t)
 	// The first attempt dies before listing a port; the rerun builds jq.
-	f.logs = []map[string]string{{"build (macos-14)": "2026-09-25T10:00:00.0Z ##[error]bootstrap failed\n"}, {"build (macos-14)": built("jq", false)}}
+	f.logs = []map[string]string{both("2026-09-25T10:00:00.0Z ##[error]bootstrap failed\n"), both(built("jq", false))}
 	f.conclusion = []string{"failure", "success"}
 
 	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
 	require.NoError(t, err, errs)
 	require.Contains(t, errs, "ended failure without building a port")
 	require.Contains(t, errs, "unsuccessful jobs again")
-	require.Contains(t, errs, "github: jq passed")
+	require.Contains(t, errs, "github macOS 14 (Sonoma) arm64: jq passed")
 	require.Equal(t, 1, f.reruns)
 	// The first attempt left the branch for the second to run the run
 	// again, which the fake refuses without it; the second removed it.
@@ -346,7 +377,7 @@ func TestGitHubRunsAFailureNoPortExplainsAgain(t *testing.T) {
 func TestTheLastAttemptOfAGitHubCheckRemovesItsBranch(t *testing.T) {
 	t.Parallel()
 	f, _ := githubBranch(t)
-	stuck := map[string]string{"build (macos-14)": "2026-09-25T10:00:00.0Z ##[error]bootstrap failed\n"}
+	stuck := both("2026-09-25T10:00:00.0Z ##[error]bootstrap failed\n")
 	f.logs = []map[string]string{stuck, stuck, stuck}
 	f.conclusion = []string{"failure", "failure", "failure"}
 
@@ -365,7 +396,7 @@ func TestTheLastAttemptOfAGitHubCheckRemovesItsBranch(t *testing.T) {
 func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 	t.Parallel()
 	f, _ := githubBranch(t)
-	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}}
+	f.logs = []map[string]string{both(built("jq", false))}
 	f.conclusion = []string{"success"}
 	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github")
 	require.NoError(t, err, errs)
@@ -377,7 +408,7 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 	require.Contains(t, errs, "github: pushing to dockhand-check/")
 	require.Contains(t, errs, "github: in progress https://github.com/ada/macports-ports/actions/runs/8\n")
 	require.NotContains(t, errs, "actions/runs/7", "the earlier check's run isn't this one's")
-	require.Contains(t, errs, "github: jq passed")
+	require.Contains(t, errs, "github macOS 14 (Sonoma) arm64: jq passed")
 	require.Len(t, f.runs, 2)
 	require.Equal(t, f.runs[0].branch, f.runs[1].branch)
 	require.Empty(t, checkBranches(t, f))
@@ -410,7 +441,7 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 func TestAResumedGitHubCheckReadsTheRunItLeft(t *testing.T) {
 	t.Parallel()
 	f, _ := githubBranch(t)
-	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}, {"build (macos-14)": built("jq", false)}}
+	f.logs = []map[string]string{both(built("jq", false)), both(built("jq", false))}
 	f.conclusion = []string{"success", "success"}
 	_, _, err := cmdtest.Dockhand(t, "check", "--on", "github", "-d")
 	require.NoError(t, err)
@@ -438,7 +469,7 @@ func TestAResumedGitHubCheckReadsTheRunItLeft(t *testing.T) {
 	f.hold = nil
 	_, errs, err := cmdtest.Dockhand(t, "wait", "check-1", "-v")
 	require.NoError(t, err, errs)
-	require.Contains(t, errs, "github: jq passed")
+	require.Contains(t, errs, "github macOS 14 (Sonoma) arm64: jq passed")
 	require.Len(t, f.runs, 1, "the run it left, not another")
 	require.Equal(t, 0, f.reruns)
 	require.Empty(t, checkBranches(t, f))
@@ -452,7 +483,7 @@ func TestGitHubReadsAFailedPortsPhase(t *testing.T) {
 
 	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
 	require.Error(t, err)
-	require.Contains(t, errs, "github: jq failed at install")
+	require.Contains(t, errs, "github macOS 15 (Sequoia) arm64: jq failed at install")
 	require.Equal(t, 0, f.reruns)
 }
 
@@ -510,8 +541,8 @@ func TestAGitHubRunPastItsBoundIsCancelled(t *testing.T) {
 	_, err = config.WriteString("\n[providers.github]\nbuild_timeout = \"1m\"\n")
 	require.NoError(t, err)
 	require.NoError(t, config.Close())
-	f.logs = []map[string]string{{"build (macos-14)": "2026-09-25T10:00:01.0Z ##[group]Listing subports\n2026-09-25T10:00:01.1Z jq\n2026-09-25T10:00:01.2Z ##[endgroup]\n" +
-		"2026-09-25T10:01:31.0Z ##[group]Installing jq\n2026-09-25T10:01:32.0Z checking for gcc... gcc\n"}}
+	f.logs = []map[string]string{both("2026-09-25T10:00:01.0Z ##[group]Listing subports\n2026-09-25T10:00:01.1Z jq\n2026-09-25T10:00:01.2Z ##[endgroup]\n" +
+		"2026-09-25T10:01:31.0Z ##[group]Installing jq\n2026-09-25T10:01:32.0Z checking for gcc... gcc\n")}
 	f.conclusion = []string{"success"}
 	f.hold = func() bool { return true }
 
@@ -519,7 +550,7 @@ func TestAGitHubRunPastItsBoundIsCancelled(t *testing.T) {
 	require.Error(t, err, errs)
 	require.Equal(t, 1, f.canceled)
 	require.Contains(t, errs, "built past its 1m0s bound; cancelling it")
-	require.Regexp(t, `\n  jq  ✗ failed at install( \(\d+s\))?\n`, out)
+	require.Regexp(t, `\n  jq +✗ failed at install( \(\d+s\))? +✗ failed at install( \(\d+s\))?\n`, out)
 	logs, _, err := cmdtest.Dockhand(t, "logs", "check-1")
 	require.NoError(t, err)
 	require.Contains(t, logs, "on build (macos-14): the run exceeded the 1m0s build timeout (providers.github.build_timeout) and was cancelled", errs)
@@ -531,7 +562,7 @@ func TestAGitHubRunPastItsBoundIsCancelled(t *testing.T) {
 func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 	t.Parallel()
 	f, w := githubBranch(t)
-	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}}
+	f.logs = []map[string]string{both(built("jq", false))}
 	f.conclusion = []string{"success"}
 	refuseDeletions(t, f.fork)
 	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
@@ -571,11 +602,11 @@ func TestRequiredTestsFailACheckOnGitHub(t *testing.T) {
 	f.conclusion = []string{"success"}
 	out, _, err := cmdtest.Dockhand(t, "check", "--on", "github", "--tests", "required")
 	require.Error(t, err, "a failing test fails a check that requires tests")
-	require.Regexp(t, `\n  jq  ✗ failed at test( \(\d+s\))?\n`, out)
+	require.Regexp(t, `\n  jq +✓ tests passed( \(\d+s\))? +✗ failed at test( \(\d+s\))?\n`, out)
 
 	out, _, err = cmdtest.Dockhand(t, "check", "--on", "github", "--tests", "skip", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "Provider    github · tests skipped\n            github runs its workflow's own tests; with --tests skip they run there, and don't count\n")
+	require.Contains(t, out, "Provider    github macOS 14 (Sonoma) arm64; github macOS 15 (Sequoia) arm64 · tests skipped\n            github runs its workflow's own tests; with --tests skip they run there, and don't count\n")
 }
 
 // A GitHub runner's log without the workflow's headings is printed whole,
