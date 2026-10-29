@@ -107,16 +107,15 @@ func TestARunnersLabelsNameItsRelease(t *testing.T) {
 // where no runner's labels name a release.
 func TestTheRunnersReleasesAreReported(t *testing.T) {
 	build := &observing{}
-	require.NoError(t, observe(build, []RunnerJob{
-		{Name: "macos-26", Labels: []string{"macos-26"}, RunnerName: "GitHub Actions 3"},
-		{Name: "macos-14", Labels: []string{"macos-14"}, RunnerName: "GitHub Actions 1"},
-		{Name: "macos-latest", Labels: []string{"macos-latest"}, RunnerName: "GitHub Actions 2"},
-		{Name: "macos-13", Labels: []string{"macos-13"}, Conclusion: "skipped"},
+	require.NoError(t, observe(build, []runner{
+		{job: RunnerJob{Name: "macos-26", Labels: []string{"macos-26"}, RunnerName: "GitHub Actions 3"}},
+		{job: RunnerJob{Name: "macos-14", Labels: []string{"macos-14"}, RunnerName: "GitHub Actions 1"}},
+		{job: RunnerJob{Name: "macos-latest", Labels: []string{"macos-latest"}, RunnerName: "GitHub Actions 2"}},
 	}))
 	require.Equal(t, []model.Observed{{Builders: []model.BuilderObserved{{Builder: "macos-14", MacOS: "14"}, {Builder: "macos-26", MacOS: "26"}, {Builder: "macos-latest"}}}}, build.observed)
 
 	build = &observing{}
-	require.NoError(t, observe(build, []RunnerJob{{Name: "macos-latest", Labels: []string{"macos-latest"}, RunnerName: "GitHub Actions 2"}}))
+	require.NoError(t, observe(build, []runner{{job: RunnerJob{Name: "macos-latest", Labels: []string{"macos-latest"}, RunnerName: "GitHub Actions 2"}}}))
 	require.Empty(t, build.observed)
 }
 
@@ -161,6 +160,23 @@ func (matrixAPI) JobLog(context.Context, string, int64) ([]byte, error) {
 	return []byte("::group::Listing subports\njq\n::endgroup::\n::group::Installing jq\n::endgroup::\n"), nil
 }
 
+func (matrixAPI) Annotations(_ context.Context, _ string, job int64) ([]string, error) {
+	if job == 2 {
+		return []string{"The job was not acquired by Runner of type hosted even after multiple attempts"}, nil
+	}
+	return nil, nil
+}
+
+// untakenAPI is a run none of whose jobs a runner took.
+type untakenAPI struct{ matrixAPI }
+
+func (untakenAPI) Jobs(context.Context, string, int64, int) ([]RunnerJob, error) {
+	return []RunnerJob{
+		{ID: 1, Name: "build (macos-15)", Status: "completed", Conclusion: "cancelled", Labels: []string{"macos-15"}},
+		{ID: 2, Name: "build (macos-26)", Status: "completed", Conclusion: "cancelled", Labels: []string{"macos-26"}},
+	}, nil
+}
+
 // recordingBuild keeps what a read records.
 type recordingBuild struct {
 	buildenv.Build
@@ -175,10 +191,43 @@ func (b *recordingBuild) Record(report buildenv.TargetReport) error {
 func (*recordingBuild) Observe(model.Observed) error { return nil }
 func (*recordingBuild) Progress(string)              {}
 
-// A matrix a job of which no runner took is incomplete: nothing of it is
-// recorded, so the run is retried as an infrastructure failure, where one
-// green runner beside the untaken job recorded a pass (Codex's review of
-// 2ad896d2, W1, its probe inverted). A skipped job isn't missing.
+// Each release's job is its own environment's: jq's pass on macOS 15's
+// runner is recorded there, and macOS 26's job, which no runner took,
+// leaves its environment unrecorded, with GitHub's word on why, where the
+// matrix couldn't be recorded at all and was tried again (rc8's GitHub
+// rows; the M1's suggestion, 2026-10-29). A run where no job ran is tried
+// again, as W1's was.
+func TestEachReleasesJobIsItsOwnEnvironments(t *testing.T) {
+	t.Parallel()
+	p := &Provider{API: matrixAPI{}}
+	jq := []buildenv.Target{{PlanTarget: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}}}
+	sequoia, tahoe := &recordingBuild{}, &recordingBuild{}
+	platform := func(darwin string) model.Environment {
+		return model.Environment{Provider: buildenv.GitHub, Platform: model.Platform{OS: "darwin", Version: darwin, Architecture: "arm64"}}
+	}
+	job := buildenv.Job{Directory: t.TempDir(), Matrix: []buildenv.MatrixCell{
+		{Environment: platform("24"), Targets: jq, Build: sequoia},
+		{Environment: platform("25"), Targets: jq, Build: tahoe},
+	}}
+	run := Run{ID: 1, Attempt: 1, Status: "completed", Conclusion: "cancelled", URL: "https://example.invalid/run/1"}
+	err := p.read(t.Context(), job, sequoia, "example/macports-ports", run, "")
+	var unrun *buildenv.Unrun
+	require.ErrorAs(t, err, &unrun)
+	require.Equal(t, map[string]string{buildenv.EnvironmentKey(platform("25")): `the job never ran: GitHub says "The job was not acquired by Runner of type hosted even after multiple attempts"`}, unrun.Cells)
+	require.Len(t, sequoia.results, 1)
+	require.Equal(t, model.OutcomePassed, sequoia.results[0].Outcome)
+	require.Empty(t, tahoe.results, "no verdict where nothing ran")
+
+	err = (&Provider{API: untakenAPI{}}).read(t.Context(), job, sequoia, "example/macports-ports", run, "")
+	require.Equal(t, refusal.Infrastructure, refusal.KindOf(err), "%v", err)
+	require.ErrorContains(t, err, "GitHub cancelled macos-15's job and macos-26's job before any runner took them, so nothing was built")
+}
+
+// A check planned before each release was an environment, one standing
+// for the whole matrix, is no pass with a job of it untaken: nothing of it
+// is recorded, so the run is retried as an infrastructure failure, where
+// one green runner beside the untaken job recorded a pass (Codex's review
+// of 2ad896d2, W1, its probe inverted). A skipped job isn't missing.
 func TestAnIncompleteMatrixIsNoPass(t *testing.T) {
 	t.Parallel()
 	p := &Provider{API: matrixAPI{}}

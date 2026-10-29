@@ -17,20 +17,19 @@ import (
 // when there is one.
 func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 	t.Parallel()
-	e := &Engine{Providers: map[string]buildenv.Provider{"command": &scriptedProvider{}, "github": &scriptedProvider{}}}
+	e := &Engine{Providers: map[string]buildenv.Provider{"command": &scriptedProvider{}, "custom": &scriptedProvider{}}}
 	environments, err := e.Environments(t.Context(), nil)
 	require.NoError(t, err)
 	require.Equal(t, []model.Environment{{Provider: "command"}}, environments)
-	environments, err = e.Environments(t.Context(), []string{"github", "command", "github"})
+	environments, err = e.Environments(t.Context(), []string{"custom", "command", "custom"})
 	require.NoError(t, err)
-	require.Equal(t, []model.Environment{{Provider: "github"}, {Provider: "command"}}, environments)
+	require.Equal(t, []model.Environment{{Provider: "custom"}, {Provider: "command"}}, environments)
 
 	for on, refusal := range map[string]string{
 		"tart:sonoma": "Tart isn't installed here",
 		"local":       "the local provider builds in a MacPorts prefix on a Mac, and this isn't one",
 		"prefix":      `no provider "prefix" is set up`,
 		"nosuch":      `no provider "nosuch" is set up`,
-		"github:15":   "the github provider builds on the runners MacPorts' workflow names",
 		"command:15":  "the command provider builds wherever its script does",
 	} {
 		_, err := e.Environments(t.Context(), []string{on})
@@ -82,12 +81,12 @@ func (*releasing) Environments(ctx context.Context, releases string) ([]model.En
 // when no command provider is set up.
 func TestEnvironmentsOfAProviderThatTakesReleases(t *testing.T) {
 	t.Parallel()
-	e := &Engine{Providers: map[string]buildenv.Provider{"tart": &releasing{}, "github": &scriptedProvider{}}}
+	e := &Engine{Providers: map[string]buildenv.Provider{"tart": &releasing{}, "custom": &scriptedProvider{}}}
 	sonoma := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
-	environments, err := e.Environments(t.Context(), []string{"tart:sonoma,tahoe", "github", "tahoe"})
+	environments, err := e.Environments(t.Context(), []string{"tart:sonoma,tahoe", "custom", "tahoe"})
 	require.NoError(t, err)
-	require.Equal(t, []model.Environment{sonoma, tahoe, {Provider: "github"}}, environments, "the bare release is the tart:tahoe already named")
+	require.Equal(t, []model.Environment{sonoma, tahoe, {Provider: "custom"}}, environments, "the bare release is the tart:tahoe already named")
 	environments, err = e.Environments(t.Context(), nil)
 	require.NoError(t, err)
 	require.Equal(t, []model.Environment{tahoe}, environments)
@@ -121,7 +120,7 @@ func TestEnvironmentsAreNamedAsOnNamesThem(t *testing.T) {
 // which submit takes (D17); local is no profile.
 func TestWhereABuildProfileBuilds(t *testing.T) {
 	t.Parallel()
-	e := &Engine{Providers: map[string]buildenv.Provider{"tart": &releasing{}, "github": &scriptedProvider{}}}
+	e := &Engine{Providers: map[string]buildenv.Provider{"tart": &releasing{}, "custom": &scriptedProvider{}}}
 	sonoma := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 
@@ -135,13 +134,13 @@ func TestWhereABuildProfileBuilds(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, Where{Profile: "all", Environments: []model.Environment{sonoma, tahoe}, Asked: true}, where)
 
-	e.Builds = Builds{Default: "mine", Unattended: "fork", Profiles: map[string]Profile{"mine": {Releases: []string{"sonoma"}}, "fork": {Provider: "github"}}}
+	e.Builds = Builds{Default: "mine", Unattended: "fork", Profiles: map[string]Profile{"mine": {Releases: []string{"sonoma"}}, "fork": {Provider: "custom"}}}
 	where, err = e.Where(t.Context(), WhereRequest{})
 	require.NoError(t, err)
 	require.Equal(t, Where{Profile: "mine", Environments: []model.Environment{sonoma}}, where)
 	where, err = e.Where(t.Context(), WhereRequest{Unattended: true})
 	require.NoError(t, err)
-	require.Equal(t, Where{Profile: "fork", Environments: []model.Environment{{Provider: "github"}}}, where)
+	require.Equal(t, Where{Profile: "fork", Environments: []model.Environment{{Provider: "custom"}}}, where)
 	where, err = e.Where(t.Context(), WhereRequest{On: []string{"tahoe"}, Build: "mine"})
 	require.NoError(t, err)
 	require.Equal(t, Where{Environments: []model.Environment{tahoe}, Asked: true}, where, "--on's explicit environments")
@@ -158,15 +157,15 @@ func TestWhereABuildProfileBuilds(t *testing.T) {
 // names the forms --on takes (the abook session, 2026-10-28).
 func TestOnTakesAProviderAfterAComma(t *testing.T) {
 	t.Parallel()
-	e := &Engine{Providers: map[string]buildenv.Provider{"tart": &releasing{}, "github": &scriptedProvider{}}}
+	e := &Engine{Providers: map[string]buildenv.Provider{"tart": &releasing{}, "command": &scriptedProvider{}}}
 	together, err := e.Environments(t.Context(), []string{"tart:sonoma,tahoe"})
 	require.NoError(t, err)
 	apart, err := e.Environments(t.Context(), []string{"tart:sonoma,tart:tahoe"})
 	require.NoError(t, err)
 	require.Equal(t, together, apart)
-	mixed, err := e.Environments(t.Context(), []string{"tart:sonoma,github"})
+	mixed, err := e.Environments(t.Context(), []string{"tart:sonoma,command"})
 	require.NoError(t, err)
-	require.Equal(t, []model.Environment{together[0], {Provider: "github"}}, mixed)
+	require.Equal(t, []model.Environment{together[0], {Provider: "command"}}, mixed)
 	_, err = e.Environments(t.Context(), []string{"tart:sonoma,foo"})
 	require.EqualError(t, err, `--on tart:sonoma,foo: "foo" is neither a provider nor a release; `+onForms)
 }

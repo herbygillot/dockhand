@@ -24,6 +24,9 @@ func WritePushes(out io.Writer, plan model.Plan) {
 	if slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == buildenv.GitHub }) {
 		fmt.Fprintf(out, "Pushes      this revision to a %s branch in your fork for the MacPorts workflow; removes that branch after reading the run's results\n", ghactions.BranchPrefix)
 	}
+	if unbuilt := engine.GitHubWontBuild(plan); len(unbuilt) > 0 {
+		fmt.Fprintf(out, "Won't build %s on github: MacPorts' workflow builds only the ports a commit changes; check %s with Tart, local, or a command provider\n", prose.And(unbuilt), map[bool]string{true: "it", false: "them"}[len(unbuilt) == 1])
+	}
 	if plan.Keep {
 		fmt.Fprintln(out, "Keeps       each Tart environment's clone, stopped, where its guest finishes, for dockhand shell; clean or the branch's next check removes it")
 	}

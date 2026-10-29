@@ -367,6 +367,12 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 	group, together := errgroup.WithContext(running)
 	for _, name := range names {
 		provider, queue := e.Providers[name], queues[name]
+		// A provider whose one run builds all its environments gets them
+		// together (buildenv.MatrixProvider).
+		if matrix, ok := provider.(buildenv.MatrixProvider); ok && matrix.Matrix() {
+			group.Go(func() error { return d.matrix(together, provider, queue, revision, commit) })
+			continue
+		}
 		workers := 1
 		if parallel, ok := provider.(buildenv.ParallelProvider); ok && parallel.Parallel() > 1 {
 			workers = parallel.Parallel()
@@ -484,26 +490,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 				}
 			}
 		}
-		// What is left to build here, in this environment's own order,
-		// each target with what it needs built first here.
-		planned, _ := d.plan.In(environment)
-		var remaining []buildenv.Target
-		for _, id := range planned.Order {
-			if _, unmet := d.plan.UnmetIn(environment, id); unmet {
-				continue
-			}
-			if result, ok := results[id]; !ok || !result.Outcome.Complete() {
-				target, _ := d.plan.Target(id)
-				next := buildenv.Target{PlanTarget: target, DependsOn: planned.Dependencies[id]}
-				if source, ok := planned.Git[id]; ok {
-					next.Git = &source
-				}
-				if tag, ok := planned.Tags[id]; ok {
-					next.Tag = &tag
-				}
-				remaining = append(remaining, next)
-			}
-		}
+		remaining := d.remaining(environment, results)
 		if len(remaining) == 0 {
 			return nil
 		}
@@ -690,6 +677,208 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}
 		return d.endExecution(ctx, execution, model.ExecutionFinished, "")
 	}
+}
+
+// remaining are what is left to build in an environment, in its own
+// order, each target with what it needs built first there.
+func (d *driver) remaining(environment model.Environment, results map[model.TargetID]model.TargetResult) []buildenv.Target {
+	planned, _ := d.plan.In(environment)
+	var remaining []buildenv.Target
+	for _, id := range planned.Order {
+		if _, unmet := d.plan.UnmetIn(environment, id); unmet {
+			continue
+		}
+		if result, ok := results[id]; !ok || !result.Outcome.Complete() {
+			target, _ := d.plan.Target(id)
+			next := buildenv.Target{PlanTarget: target, DependsOn: planned.Dependencies[id]}
+			if source, ok := planned.Git[id]; ok {
+				next.Git = &source
+			}
+			if tag, ok := planned.Tags[id]; ok {
+				next.Tag = &tag
+			}
+			remaining = append(remaining, next)
+		}
+	}
+	return remaining
+}
+
+// matrixCell is one environment of a matrix run, as the runner keeps it.
+type matrixCell struct {
+	environment model.Environment
+	attempt     int
+	remaining   []buildenv.Target
+	results     map[model.TargetID]model.TargetResult
+	build       *build
+}
+
+// matrix builds a MatrixProvider's environments of the check in one run of
+// its own, each recorded through an execution of its own, as GitHub's
+// workflow builds every release of its matrix at once (the M1's
+// suggestion, 2026-10-29, after rc8's GitHub rows: one release's job never
+// ran, and the matrix couldn't be recorded as passing the others). An
+// environment whose build never ran is left unrecorded with why; one with
+// nothing left, or out of attempts, sits the next run out. Its provider
+// records what no earlier build reads, so nothing is reused, and installs
+// no archives.
+func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environments []model.Environment, revision model.Revision, commit string) error {
+	e := d.e
+	kept := ctx
+	ctx = progress.Keep(progress.Within(ctx, provider.Name()), func(update progress.Update) {
+		if update.Level == progress.Info {
+			d.emit(kept, model.EventProgress, update.Message)
+		}
+	})
+	for {
+		var check store.Check
+		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+			var err error
+			check, err = r.Check(d.run.ID)
+			return err
+		}); err != nil {
+			return err
+		}
+		var cells []*matrixCell
+		for _, environment := range environments {
+			executions := slices.DeleteFunc(slices.Clone(check.Executions), func(x model.GuestExecution) bool { return x.Environment != environment })
+			slices.SortFunc(executions, func(a, b model.GuestExecution) int { return a.Attempt - b.Attempt })
+			cell := &matrixCell{environment: environment, results: evidence.Merged(executions, check.Results)}
+			if len(executions) > 0 {
+				last := executions[len(executions)-1]
+				cell.attempt = last.Attempt
+				switch last.State {
+				case model.ExecutionFinished, model.ExecutionCanceled:
+					continue
+				case model.ExecutionWaiting, model.ExecutionRunning:
+					if err := d.endExecution(ctx, last, model.ExecutionInfrastructure, "the process running it ended"); err != nil {
+						return err
+					}
+				}
+			}
+			if cell.remaining = d.remaining(environment, cell.results); len(cell.remaining) == 0 {
+				continue
+			}
+			if cell.attempt >= model.MaxAttempts {
+				d.problem(fmt.Sprintf("%s failed %d times because of an environment error. See dockhand logs %s", DescribeEnvironment(environment), cell.attempt, d.run.Name()))
+				continue
+			}
+			cells = append(cells, cell)
+		}
+		if len(cells) == 0 {
+			return nil
+		}
+		var job buildenv.Job
+		attempt := 0
+		for _, cell := range cells {
+			execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(cell.environment.Provider)), Run: d.run.ID, Environment: cell.environment, Attempt: cell.attempt + 1, State: model.ExecutionWaiting, CreatedAt: e.now()}
+			if err := d.fenced(ctx, func(tx store.Tx) error {
+				if err := tx.AddExecution(execution); err != nil {
+					return err
+				}
+				execution.State = model.ExecutionRunning
+				if err := tx.UpdateExecution(execution); err != nil {
+					return err
+				}
+				_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventExecutionState, Level: model.LevelInfo,
+					Message: fmt.Sprintf("%s: attempt %d of %d on %s, run %s", d.run.Name(), execution.Attempt, model.MaxAttempts, DescribeEnvironment(cell.environment), execution.ID)})
+				return err
+			}); err != nil {
+				return err
+			}
+			cellContext := progress.Within(ctx, DescribeEnvironment(cell.environment))
+			cell.build = &build{d: d, ctx: cellContext, execution: execution, tree: revision.Source.Tree, results: cell.results, inputs: map[model.TargetID]model.TargetInputs{}, fetched: map[model.TargetID]model.ObjectID{}}
+			job.Matrix = append(job.Matrix, buildenv.MatrixCell{Environment: cell.environment, Execution: execution, Targets: cell.remaining, Build: cell.build})
+			attempt = max(attempt, execution.Attempt)
+		}
+		failpoint.Hit("check.running")
+		first := job.Matrix[0]
+		job.Run, job.Execution, job.Revision, job.Plan, job.Environment, job.Targets, job.Commit = d.run, first.Execution, revision, d.plan, first.Environment, first.Targets, commit
+		job.Directory = filepath.Join(e.LogDirectory(), d.run.Name(), fmt.Sprintf("%s-%d", provider.Name(), attempt))
+		run := &matrixBuild{build: cells[0].build, name: provider.Name(), cells: cells}
+		stopWatching := watchStalls(ctx, cells[0].build, job.Directory)
+		err := provider.Execute(ctx, job, run)
+		stopWatching()
+		_ = os.Remove(job.Directory)
+		var unrun *buildenv.Unrun
+		retry := false
+		for _, cell := range cells {
+			cell.build.blockRemaining(cell.remaining)
+			execution := cell.build.execution
+			var endErr error
+			switch {
+			case ctx.Err() != nil && d.stopped():
+				endErr = d.endExecution(ctx, execution, model.ExecutionInfrastructure, "interrupted: the process driving it stopped")
+			case ctx.Err() != nil:
+				endErr = d.endExecution(ctx, execution, model.ExecutionCanceled, "canceled")
+			case errors.As(err, &unrun):
+				// A build that never ran is left unrecorded, with why, and
+				// no attempt is spent on it: submit names it, and what
+				// checks the release instead.
+				words := unrun.Cells[buildenv.EnvironmentKey(cell.environment)]
+				if words != "" {
+					d.emit(ctx, model.EventProgress, DescribeEnvironment(cell.environment)+": "+words)
+				}
+				endErr = d.endExecution(ctx, execution, model.ExecutionFinished, words)
+			case errors.Is(err, buildenv.ErrNeedsAttention):
+				endErr = d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error())
+			case errors.Is(err, buildenv.ErrDockhandFault):
+				endErr = d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error())
+			case refusal.Transient(err):
+				endErr, retry = d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()), true
+			case err != nil:
+				endErr = d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error())
+			default:
+				endErr = d.endExecution(ctx, execution, model.ExecutionFinished, "")
+			}
+			if endErr != nil {
+				return endErr
+			}
+		}
+		where := provider.Name()
+		switch {
+		case ctx.Err() != nil, unrun != nil:
+			return nil
+		case errors.Is(err, buildenv.ErrNeedsAttention):
+			d.problem(fmt.Sprintf("%s: %v; another attempt won't fix it, so none was made", where, err))
+			return nil
+		case errors.Is(err, buildenv.ErrDockhandFault):
+			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", where, refusal.WordsOf(err)))
+			return nil
+		case retry:
+			d.emit(ctx, model.EventExecutionRetry, fmt.Sprintf("%s: %v", where, err))
+			continue
+		case err != nil:
+			d.problem(fmt.Sprintf("dockhand: %s: %v; the provider didn't mark it as trouble another attempt could clear, so none was made", where, err))
+			return nil
+		}
+		return nil
+	}
+}
+
+// matrixBuild is the Build a matrix run's provider reports the run through:
+// its progress is the provider's, not one release's, and the run it refers
+// to is every cell's. Each cell's results go through its own Build.
+type matrixBuild struct {
+	*build
+	name  string
+	cells []*matrixCell
+}
+
+func (m *matrixBuild) Progress(message string) {
+	m.d.emit(m.ctx, model.EventProgress, m.name+": "+message)
+}
+
+func (m *matrixBuild) Waiting(message string) {
+	m.d.emit(m.ctx, model.EventWaiting, m.name+": "+message)
+}
+
+func (m *matrixBuild) Refer(ref string) error {
+	for _, cell := range m.cells {
+		if err := cell.build.Refer(ref); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // unreadIdentity records an attempt that ended before it began, since what

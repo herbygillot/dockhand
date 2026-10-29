@@ -877,18 +877,44 @@ func IsCheckName(name string) bool { return checkName.MatchString(name) }
 
 // RunOrExecution is the check a name means, check-42, or the provider run
 // it means, by its ID or its provider's own reference, with that run's
-// check (the command package split's 7a row 11).
+// check (the command package split's 7a row 11). A reference several
+// environments' executions share, as a GitHub workflow run that built
+// each release of its matrix, means the check, all of them: no execution.
 func (e *Engine) RunOrExecution(ctx context.Context, name string) (model.Run, model.ExecutionID, error) {
 	run, err := e.RunNamed(ctx, name)
 	if err == nil || IsCheckName(name) {
 		return run, "", err
 	}
-	execution, runErr := e.ExecutionNamed(ctx, name)
+	executions, runErr := e.executionsNamed(ctx, name)
 	if runErr != nil {
 		return model.Run{}, "", fmt.Errorf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL", name)
 	}
-	run, err = e.Run(ctx, execution.Run)
-	return run, execution.ID, err
+	run, err = e.Run(ctx, executions[0].Run)
+	if len(executions) > 1 {
+		return run, "", err
+	}
+	return run, executions[0].ID, err
+}
+
+// executionsNamed are the provider runs a name means: the one execution of
+// that ID, or those its provider's reference names in their newest
+// attempt, several where one run built several environments.
+func (e *Engine) executionsNamed(ctx context.Context, name string) ([]model.GuestExecution, error) {
+	newest, err := e.ExecutionNamed(ctx, name)
+	if err != nil || newest.ID == model.ExecutionID(name) {
+		return []model.GuestExecution{newest}, err
+	}
+	var executions []model.GuestExecution
+	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		referred, err := r.ExecutionsReferred(name)
+		for _, execution := range referred {
+			if execution.Run == newest.Run && execution.Attempt == newest.Attempt {
+				executions = append(executions, execution)
+			}
+		}
+		return err
+	})
+	return executions, err
 }
 
 // RunNamed finds a run by the name people type, check-42, or its number.

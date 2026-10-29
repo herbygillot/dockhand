@@ -100,6 +100,11 @@ type Cell struct {
 	// environment outside build.default's profile, which asks for it there
 	// only because that check did; empty in the profile's own.
 	PlannedIn string
+	// Unrun is why the environment's build never ran, in its provider's
+	// words, for a target not run where its execution finished building
+	// nothing: a GitHub job no runner took, "the job never ran: GitHub
+	// says …" (buildenv.Unrun).
+	Unrun string
 }
 
 // recorded is a result recorded in an environment, as a cell: one that
@@ -256,8 +261,15 @@ func Of(check Check) Evidence {
 		byEnvironment[execution.Environment] = append(byEnvironment[execution.Environment], execution)
 	}
 	merged := map[model.Environment]map[model.TargetID]model.TargetResult{}
+	// unrun are the environments whose newest execution finished with
+	// words and nothing built: their build never ran.
+	unrun := map[model.Environment]string{}
 	for environment, executions := range byEnvironment {
 		merged[environment] = Merged(executions, check.Results)
+		newest := slices.MaxFunc(executions, func(a, b model.GuestExecution) int { return a.Attempt - b.Attempt })
+		if newest.State == model.ExecutionFinished && newest.Detail != "" && len(check.Results[newest.ID]) == 0 {
+			unrun[environment] = newest.Detail
+		}
 	}
 	for _, target := range plan.Targets {
 		te := TargetEvidence{Target: target, Passed: true}
@@ -275,7 +287,9 @@ func Of(check Check) Evidence {
 			}
 			result, ok := merged[environment][target.ID]
 			if !ok {
-				te.Outcomes = append(te.Outcomes, noResult(CellNotRun, environment, target.ID))
+				cell := noResult(CellNotRun, environment, target.ID)
+				cell.Unrun = unrun[environment]
+				te.Outcomes = append(te.Outcomes, cell)
 				te.Passed = false
 				continue
 			}

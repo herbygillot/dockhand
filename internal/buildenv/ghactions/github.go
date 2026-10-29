@@ -41,6 +41,31 @@ func (g GitHub) service(ctx context.Context, repository string) (*gh.ActionsServ
 	return api.Actions, owner, name, nil
 }
 
+// Annotations are the messages GitHub annotated a job's check run with, as
+// "The job was not acquired by Runner of type hosted even after multiple
+// attempts" on a job no runner took: a job's ID is its check run's.
+func (g GitHub) Annotations(ctx context.Context, repository string, job int64) ([]string, error) {
+	if !githubapi.ValidRepositoryName(repository) {
+		return nil, fmt.Errorf("github: invalid repository %q", repository)
+	}
+	api, err := g.Client.AuthenticatedAPI(ctx)
+	if err != nil {
+		return nil, githubapi.RateLimitError(err)
+	}
+	owner, name, _ := strings.Cut(repository, "/")
+	annotations, _, err := api.Checks.ListCheckRunAnnotations(ctx, owner, name, job, &gh.ListOptions{PerPage: 50})
+	if err != nil {
+		return nil, githubapi.RateLimitError(err)
+	}
+	var messages []string
+	for _, annotation := range annotations {
+		if message := strings.TrimSpace(annotation.GetMessage()); message != "" {
+			messages = append(messages, message)
+		}
+	}
+	return messages, nil
+}
+
 func run(r *gh.WorkflowRun) Run {
 	return Run{ID: r.GetID(), Attempt: r.GetRunAttempt(), Status: r.GetStatus(), Conclusion: r.GetConclusion(), URL: r.GetHTMLURL()}
 }

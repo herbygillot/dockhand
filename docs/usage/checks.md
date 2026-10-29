@@ -174,6 +174,14 @@ workflow. Dockhand reads the results and keeps logs locally, then removes the
 temporary branch when it is done with it. This has external effects even though
 it opens no PR.
 
+Each macOS release in the workflow's matrix is its own environment, with its own
+column, and one run builds them all. `--on github` asks for every release;
+`--on github:15` is refused, so check one release with Tart or `local`. A
+release whose job no runner took is left unchecked, and submit says so with
+GitHub's reason; check that release with Tart or `local`, or try again later.
+The workflow builds only the ports a commit changes, so the plan says which
+`--also` or baseline targets it won't build.
+
 The workflow chooses its runners and tests. A host check's pass does not
 guarantee those runners will pass. `dockhand usage publishing` explains local
 evidence and MacPorts CI on the eventual pull request.
