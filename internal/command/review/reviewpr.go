@@ -73,7 +73,7 @@ MacPorts on this Mac, which it says; the builds run in the guests.`,
 			// --check adopts it and builds it, and a script that posts
 			// nothing ends with the check's answer (Then's item 12).
 			if check {
-				checked := checkPullRequest(ctx, e, s, streams, number, on)
+				checked := checkPullRequest(ctx, e, s, streams, number, model.ObjectID(report.Head), on)
 				if !comment && !requestChanges && !streams.Terminal() {
 					return errors.Join(checked, e.RecordReview(ctx, report, ""))
 				}
@@ -133,19 +133,28 @@ MacPorts on this Mac, which it says; the builds run in the guests.`,
 	return cmd
 }
 
-// checkPullRequest adopts a pull request, or takes the branch it was
-// adopted as, and checks its commits where on says, Tart where it says
-// nothing, reporting as check does.
-func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Settings, streams term.Streams, number int, on []string) error {
-	adoption, err := e.AdoptPullRequest(ctx, number)
+// checkPullRequest adopts a pull request at head, the commit the review
+// read, or takes the branch it was adopted as, moved to head where it's
+// untouched since, and checks that commit where on says, Tart where it
+// says nothing, reporting as check does: the review and its check are of
+// one commit, where review --check reviewed B and checked A (Codex's
+// review of 2ad896d2, W2).
+func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Settings, streams term.Streams, number int, head model.ObjectID, on []string) error {
+	adoption, err := e.AdoptPullRequest(ctx, number, head)
 	if err != nil {
 		return err
 	}
 	branch := adoption.Branch
-	if adoption.Already {
-		fmt.Fprintf(streams.Out, "#%d is tracked as %s; checking it.\n", number, branch.ShortName())
-	} else {
-		fmt.Fprintf(streams.Out, "Adopted #%d as %s; checking it.\n", number, branch.ShortName())
+	switch {
+	case !adoption.Already:
+		fmt.Fprintf(streams.Out, "Adopted #%d at %s as %s; checking it.\n", number, head.Short(), branch.ShortName())
+	case adoption.Head != head:
+		if branch, err = e.RefreshAdopted(ctx, branch, head); err != nil {
+			return fmt.Errorf("nothing was checked: %w", err)
+		}
+		fmt.Fprintf(streams.Out, "#%d is tracked as %s; moved it from %s to the head reviewed, %s, and checking it.\n", number, branch.ShortName(), adoption.Head.Short(), head.Short())
+	default:
+		fmt.Fprintf(streams.Out, "#%d is tracked as %s, at the head reviewed, %s; checking it.\n", number, branch.ShortName(), head.Short())
 	}
 	if len(on) == 0 {
 		on = []string{"tart"}
@@ -157,6 +166,9 @@ func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Setting
 	proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: engine.CaptureHead, Named: true}, Where: place})
 	if err != nil {
 		return err
+	}
+	if captured := proposal.Capture.Revision.Source.Commit; captured != head {
+		return fmt.Errorf("%s moved to %s while review --check ran; nothing was checked", branch.ShortName(), captured.Short())
 	}
 	view.WritePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
 	if err := engine.Runnable(proposal.Plan); err != nil {

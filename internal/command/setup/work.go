@@ -362,7 +362,7 @@ func writePlaced(out io.Writer, adoption engine.Adoption) {
 }
 
 func adoptPullRequest(ctx context.Context, e *engine.Engine, streams term.Streams, places config.Places, number int) error {
-	adoption, err := e.AdoptPullRequest(ctx, number)
+	adoption, err := e.AdoptPullRequest(ctx, number, "")
 	if err != nil {
 		return err
 	}

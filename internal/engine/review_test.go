@@ -137,7 +137,7 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	// A part dockhand would otherwise refresh, as it last saw it.
 	pr.Body = "#### Description\n\ntheirs\n\n###### Tested on\n\nmacOS 15, by hand\n"
 
-	adopted, err := e.AdoptPullRequest(t.Context(), 34905)
+	adopted, err := e.AdoptPullRequest(t.Context(), 34905, "")
 	require.NoError(t, err)
 	require.Equal(t, "pr-34905", adopted.Branch.Name)
 	require.Equal(t, 2, adopted.Commits)
@@ -145,7 +145,7 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	require.Equal(t, "newcontrib", adopted.Author)
 	require.FileExists(t, filepath.Join(adopted.Branch.Worktree, "textproc/jq/Portfile"))
 	require.Equal(t, testsupport.Git(t, theirs, "rev-parse", "patch-1"), string(adopted.Branch.PullRequest.Pushed))
-	again, err := e.AdoptPullRequest(t.Context(), 34905)
+	again, err := e.AdoptPullRequest(t.Context(), 34905, "")
 	require.NoError(t, err)
 	require.True(t, again.Already)
 
@@ -287,6 +287,78 @@ func TestAMissingPullRequestSaysWhereItWasLookedFor(t *testing.T) {
 	require.ErrorIs(t, err, forge.ErrNotFound)
 	require.ErrorContains(t, err, "no pull request #999 in macports/macports-ports")
 	e.options.PullRequests = "ada/macports-ports"
-	_, err = e.AdoptPullRequest(t.Context(), 999)
+	_, err = e.AdoptPullRequest(t.Context(), 999, "")
 	require.ErrorContains(t, err, "no pull request #999 in ada/macports-ports, the sandbox DOCKHAND_PULL_REQUESTS names")
+}
+
+// A pull request adopted at the commit a review read stands there, though
+// its head moved since: no second fetch, so no race between the review and
+// the adoption (Codex's review of 2ad896d2, W2).
+func TestAPullRequestIsAdoptedAtTheCommitReviewed(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	fake := f.withFork(t, e)
+	contribution(t, f, fake)
+	report, err := e.Review(t.Context(), 34905)
+	require.NoError(t, err)
+	reviewed := model.ObjectID(report.Head)
+
+	// The author pushes again after the review.
+	testsupport.Git(t, f.upstream, "switch", "-q", "contrib")
+	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n# docs, again\n"})
+	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: more docs")
+	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, f.upstream, "switch", "-q", "master")
+
+	adopted, err := e.AdoptPullRequest(t.Context(), 34905, reviewed)
+	require.NoError(t, err)
+	require.Equal(t, reviewed, adopted.Head)
+	require.Equal(t, reviewed, adopted.Branch.PullRequest.Pushed)
+	require.Equal(t, string(reviewed), testsupport.Git(t, adopted.Branch.Worktree, "rev-parse", "HEAD"))
+
+}
+
+// An adopted branch untouched since it was adopted is moved to the pull
+// request's new head, its record's last push with it; one with a commit or
+// an edit of its own is refused, naming both commits and the check of the
+// branch as it is (W2).
+func TestAnUntouchedAdoptedBranchIsRefreshed(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	fake := f.withFork(t, e)
+	contribution(t, f, fake)
+	adopted, err := e.AdoptPullRequest(t.Context(), 34905, "")
+	require.NoError(t, err)
+	old := adopted.Head
+
+	testsupport.Git(t, f.upstream, "switch", "-q", "contrib")
+	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\nrevision 0\n"})
+	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: update to 1.8.2")
+	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, f.upstream, "switch", "-q", "master")
+	report, err := e.Review(t.Context(), 34905)
+	require.NoError(t, err)
+	head := model.ObjectID(report.Head)
+	require.NotEqual(t, old, head)
+
+	// An edit of the person's own holds it where it is.
+	write(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n# mine\n"})
+	_, err = e.RefreshAdopted(t.Context(), adopted.Branch, head)
+	require.ErrorContains(t, err, "pr-34905 has edits of its own beyond #34905's head "+old.Short())
+	require.ErrorContains(t, err, "dockhand check -b pr-34905 checks the branch as it is")
+	testsupport.Git(t, adopted.Branch.Worktree, "checkout", "--", "textproc/jq/Portfile")
+
+	moved, err := e.RefreshAdopted(t.Context(), adopted.Branch, head)
+	require.NoError(t, err)
+	require.Equal(t, head, moved.PullRequest.Pushed)
+	require.Equal(t, string(head), testsupport.Git(t, adopted.Branch.Worktree, "rev-parse", "HEAD"))
+	require.Contains(t, testsupport.Git(t, adopted.Branch.Worktree, "show", "HEAD:textproc/jq/Portfile"), "version 1.8.2")
+
+	// A commit of the person's own holds it too.
+	write(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\nrevision 0\n# mine\n"})
+	testsupport.Git(t, adopted.Branch.Worktree, "commit", "-q", "-am", "jq: a note of mine")
+	_, err = e.RefreshAdopted(t.Context(), moved, model.ObjectID(old))
+	require.ErrorContains(t, err, "pr-34905 has commits of its own beyond #34905's head "+head.Short())
 }
