@@ -366,9 +366,38 @@ const (
 )
 
 // ConcernSubject is what a decision on a concern names: its port and
-// rule, as "jq license-changed", one decision for each.
+// rule, as "jq license-changed", one decision for each; for a moving
+// source, the commits too, abbreviated, as "jq source-moved
+// 1a2b3c4..5d6e7f8", so a later move is a new concern.
 func ConcernSubject(c Concern) string {
-	return strings.TrimSpace(c.Port + " " + c.Rule)
+	subject := strings.TrimSpace(c.Port + " " + c.Rule)
+	if checked, current, ok := strings.Cut(c.Subject, ".."); ok && MovingSource(c.Rule) {
+		subject += " " + ObjectID(checked).Short() + ".." + ObjectID(current).Short()
+	}
+	return subject
+}
+
+// The rules of findings about where a port's source points now, outside
+// its files: a Git-fetched port's git.branch, and the tag a GitHub
+// archive is fetched by.
+const (
+	RuleSourceMoved = "source-moved"
+	RuleTagMoved    = "tag-moved"
+)
+
+// MovingSource says whether a rule's finding is about where a port's
+// source points, its subject the commit checked and the one current
+// (MovedSubject). A decision on one holds for those commits, where a
+// decision on any other holds while the port's directory does: the
+// source can move with the port's files as they were, and an acceptance
+// of the move to B answered a later move to C (Codex's workflow review
+// of 2ad896d2, D1; decisions.md).
+func MovingSource(rule string) bool { return rule == RuleSourceMoved || rule == RuleTagMoved }
+
+// MovedSubject is a moving source's concern's subject: the commit checked
+// and the one current, checked..current.
+func MovedSubject(checked, current ObjectID) string {
+	return string(checked) + ".." + string(current)
 }
 
 // EnvironmentEvidence is what a standing acceptance of a dependency's

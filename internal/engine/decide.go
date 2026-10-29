@@ -32,7 +32,9 @@ type DecideRequest struct {
 // are, its evidence the port's directory there, so a change to the port's
 // Portfile or files lapses it and a change to another port's doesn't (the
 // prioritization thread's word, 2026-10-27). A decision made again on the
-// same evidence replaces it.
+// same evidence replaces it. One on a moving source names the commits of
+// the concern status found, so a later move is a new concern
+// (model.MovingSource).
 func (e *Engine) Decide(ctx context.Context, request DecideRequest) (model.Decision, error) {
 	if !slices.Contains(HoldRules(), request.Rule) {
 		return model.Decision{}, fmt.Errorf("%q is not a hold dockhand raises; the rules are %s", request.Rule, strings.Join(HoldRules(), ", "))
@@ -56,9 +58,34 @@ func (e *Engine) Decide(ctx context.Context, request DecideRequest) (model.Decis
 	if evidence == "" {
 		return model.Decision{}, fmt.Errorf("%s has no port %s in its files", request.Branch.ShortName(), port)
 	}
-	decision := model.Decision{Branch: request.Branch.ID, Finding: model.FindingConcern, Subject: model.ConcernSubject(model.Concern{Port: port, Rule: request.Rule}),
+	subject := model.ConcernSubject(model.Concern{Port: port, Rule: request.Rule})
+	if model.MovingSource(request.Rule) {
+		if subject = movedSubject(status, port, request.Rule); subject == "" {
+			return model.Decision{}, fmt.Errorf("no %s of %s stands on %s: a decision on a moving source answers the commits a submission's plan found, which status lists among what holds it", request.Rule, port, request.Branch.ShortName())
+		}
+	}
+	decision := model.Decision{Branch: request.Branch.ID, Finding: model.FindingConcern, Subject: subject,
 		Evidence: evidence, Answer: request.Answer, Words: strings.TrimSpace(request.Words), At: e.now()}
 	return decision, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return tx.AddDecision(decision) })
+}
+
+// movedSubject is the subject of the branch's concern of a moving source,
+// with its commits, as status found it: the one that holds, else the
+// latest a standing decision answers; empty where there's none.
+func movedSubject(status BranchStatus, port, rule string) string {
+	for _, held := range status.Held {
+		if held.Port == port && held.Rule == rule {
+			return model.ConcernSubject(held)
+		}
+	}
+	prefix := model.ConcernSubject(model.Concern{Port: port, Rule: rule}) + " "
+	var latest model.Decision
+	for _, decision := range status.Decided {
+		if strings.HasPrefix(decision.Subject, prefix) && !decision.At.Before(latest.At) {
+			latest = decision
+		}
+	}
+	return latest.Subject
 }
 
 // portEvidence is what a decision on a port's concern rests on: the tree

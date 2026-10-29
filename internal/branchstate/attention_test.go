@@ -218,3 +218,10 @@ func TestANewPortsLintWarningsHoldUntilAccepted(t *testing.T) {
 	require.Equal(t, []evidence.LintFinding{{Target: "harbor", Port: "harbor", Environment: environment, Lines: []string{}, NotNitpicked: true}}, evidence.LintFindings(ev))
 	require.Empty(t, PublicationBlocks(ev, nil, nil, nil))
 }
+
+// The decision that answers a concern names its rule and port, a moving
+// source's commits left out: they're found from the concern (D1).
+func TestTheDecisionNextNamesTheRuleAndPort(t *testing.T) {
+	require.Equal(t, Next{Verb: VerbDecide, Args: []string{"license-changed", "jq", "--because", `"…"`}}, decideNext("jq license-changed"))
+	require.Equal(t, Next{Verb: VerbDecide, Args: []string{"source-moved", "jq", "--because", `"…"`}}, decideNext("jq source-moved aaaaaaa..bbbbbbb"))
+}

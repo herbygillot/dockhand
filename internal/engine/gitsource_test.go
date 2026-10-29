@@ -618,7 +618,7 @@ func TestAMovedGitHubTagIsSaidByCheckAndSubmit(t *testing.T) {
 	second := move()
 	moved := e.movedSources(t.Context(), &evidence)
 	require.Len(t, moved, 1)
-	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "libharbor", Rule: "tag-moved", Subject: second, Class: model.Introduced,
+	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "libharbor", Rule: "tag-moved", Subject: first + ".." + second, Class: model.Introduced,
 		Detail: "v4 now names " + second[:7] + ", not " + first[:7] + ", as when " + evidence.Run.Name() + " built it; dockhand checksums libharbor handles a stealth update"}, moved[0])
 	require.Contains(t, HoldLines(SubmitPlan{Moved: moved}.Held()), moved[0].Detail, "it holds a submission nobody looks over")
 

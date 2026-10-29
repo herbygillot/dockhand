@@ -261,7 +261,7 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 		if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
 			continue
 		}
-		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "source-moved", Subject: string(current.Commit), Class: model.Introduced,
+		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleSourceMoved, Subject: model.MovedSubject(planned.Commit, current.Commit), Class: model.Introduced,
 			Detail: fmt.Sprintf("%s: git.branch %s pointed to %s when %s was planned, but now points to %s. The checked source differs from the source this submission would use", target.Target.Name, planned.Ref, planned.Commit.Short(), evidence.Run.Name(), current.Commit.Short())})
 	}
 	tags := map[[2]string]model.GitSource{}
@@ -279,7 +279,7 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 		if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
 			continue
 		}
-		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "tag-moved", Subject: string(current.Commit), Class: model.Introduced,
+		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleTagMoved, Subject: model.MovedSubject(planned.Commit, current.Commit), Class: model.Introduced,
 			Detail: tagMovedWords(planned, current, evidence.Run.Name(), target.Target.Name)})
 	}
 	return concerns
@@ -507,7 +507,7 @@ const afterRule = "after"
 // list says, as what couldn't be checked does (D4).
 func HoldRules() []string {
 	rules := slices.Concat(assess.Rules(), commitrules.ErrorCodes(), []string{majorRule, darwinFloorRule, deploymentTargetRule,
-		"source-moved", "tag-moved", "release-moved", "assessment-moved", "open", "search-failed",
+		model.RuleSourceMoved, model.RuleTagMoved, "release-moved", "assessment-moved", "open", "search-failed",
 		upstreamMovedRule, upstreamTransferredRule, mirrorConflictRule, manifestHookRule, afterRule, linkUndeclaredRule})
 	slices.Sort(rules)
 	return slices.Compact(rules)
