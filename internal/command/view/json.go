@@ -593,6 +593,7 @@ type changeJSON struct {
 	Check    string `json:"check"`
 	Place    string `json:"place"`
 	Building bool   `json:"building,omitempty"`
+	Kept     bool   `json:"kept,omitempty"`
 	Remedy   string `json:"remedy,omitempty"`
 	// Holder is who holds the prefix, "check-12 (pid 4711)".
 	Holder string `json:"holder,omitempty"`
@@ -602,7 +603,7 @@ type changeJSON struct {
 func ChangesView(changes []buildenv.Change) []changeJSON {
 	var viewed []changeJSON
 	for _, change := range changes {
-		viewed = append(viewed, changeJSON{Check: change.Check, Place: change.Place, Building: change.Building, Remedy: change.Remedy, Holder: change.Holder})
+		viewed = append(viewed, changeJSON{Check: change.Check, Place: change.Place, Building: change.Building, Kept: change.Kept, Remedy: change.Remedy, Holder: change.Holder})
 	}
 	return viewed
 }
@@ -620,7 +621,12 @@ func ChangeWords(change buildenv.Change) string {
 		}
 		return fmt.Sprintf("%s is building in %s%s. Your port commands targeting this prefix must wait; upgrades made there in the meantime will be undone when the prefix is restored.", change.Check, change.Place, held)
 	}
-	return fmt.Sprintf("%s stopped before it could restore %s. Run %s to restore it, or let the next check there restore it.", change.Check, change.Place, change.Remedy)
+	if change.Kept {
+		return fmt.Sprintf("%s kept its versions active in %s. %s puts it back as it was.", change.Check, change.Place, change.Remedy)
+	}
+	// The next check there puts it back too, but one of the same branch
+	// first needs the stopped check settled, as G4's recovery on rc8 met.
+	return fmt.Sprintf("%s stopped before it could restore %s. %s puts it back as it was, or the next check there does; a check of the same branch first needs dockhand wait %s, check --replace, or dockhand cancel %s.", change.Check, change.Place, change.Remedy, change.Check, change.Check)
 }
 
 // processJSON is a dockhand process working on the checkout.

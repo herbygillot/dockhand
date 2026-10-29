@@ -32,13 +32,13 @@ build_timeout = "6h"           # a target's build's bound, as Tart's
 6. Each target builds as-is: nothing is deactivated first. How many ports were active, and any other package manager on the Mac (Homebrew at `/opt/homebrew`, say), are facts of the build, which the pull request's Tested on line names: "built in /opt/local on the author's Mac with 143 ports active".
 7. Afterwards, dockhand activates again each port whose active version changed, and deactivates what the check activated, from the list it recorded. That's faster than `port restore`, which installs each port again. The new images stay installed, inactive and unrequested, for `port reclaim`. The snapshot is deleted once the prefix is put back.
 
-`check --keep`, or `keep = true`, leaves the branch's versions active instead, as `port install` would, and keeps the snapshot: `sudo port restore --snapshot-id N` puts the prefix back as it was, and the check says N.
+`check --keep`, or `keep = true`, leaves the branch's versions active instead, as `port install` would, and keeps its record and snapshot: `dockhand undo check-N` puts the prefix back as it was, as step 7 does, and the next check there leaves it to that. MacPorts' `sudo port restore --snapshot-id N` brings back the ports requested before and what they need, not the set that was active, so dockhand offers it only where its own put-back can't run, with a `port activate` of the rest from the check's record.
 
 A prefix listed in `clean` is one that's dockhand's own to clean. There each target builds with all but its dependencies deactivated, as in a clean VM and in CI, and everything is put back after. It's tied to paths, so no switch ever cleans `/opt/local`.
 
 ## What it costs
 
-- **Root.** Where you can write the prefix's registry, as in a prefix installed without root, nothing needs `sudo`. Otherwise MacPorts builds there as root: a check asks for your password once, and runs the build under `sudo`. Every Portfile it builds runs as root on this Mac.
+- **Root.** Where you can write the prefix's registry, as in a prefix installed without root, nothing needs `sudo`. Otherwise MacPorts builds there as root: a check asks for your password at its start, and again at its put-back where a long build outlasted sudo's five minutes, and runs the build under `sudo`. Every Portfile it builds runs as root on this Mac.
 - **Your own `port` commands.** While a check builds, your `port` commands in that prefix wait on MacPorts' lock, and status says so. An upgrade you make there meanwhile is undone when the check puts the prefix back.
 - **Binary archives.** MacPorts' archives are built for `/opt/local` alone, so in any other prefix every dependency builds from source, and the plan says so.
 - **One at a time.** A prefix takes one check at a time.
@@ -50,9 +50,9 @@ A prefix listed in `clean` is one that's dockhand's own to clean. There each tar
 A check you stop, with Ctrl-C or `dockhand cancel`, puts the prefix back as it ends. One whose process ended first, the Mac shut down mid-build, say, leaves the prefix changed. `dockhand status` says so:
 
 ```
-check-12 stopped before it could restore /opt/local. Run sudo port restore --snapshot-id 7 to restore it, or let the next check there restore it.
+check-12 stopped before it could restore /opt/local. dockhand undo check-12 puts it back as it was, or the next check there does; a check of the same branch first needs dockhand wait check-12, check --replace, or dockhand cancel check-12.
 ```
 
-The next check in that prefix puts it back before it builds.
+The next check in that prefix puts it back before it builds. Where the guest program dies and dockhand lives, its put-back asks for root again, as at the check's start, on the terminal where there is one, since a long build outlasts sudo's five minutes.
 
 An image of the version the branch builds that's installed already would be activated, not built, so the check stops, saying `port uninstall jq @1.8.1_0`, or a revision bump, lets it build.

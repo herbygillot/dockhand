@@ -705,6 +705,32 @@ func (e *Engine) Changes(ctx context.Context) []buildenv.Change {
 	return changes
 }
 
+// PutBack puts back what a check changed of the person's own and left,
+// kept or stopped before it could put it back, by its provider's own
+// put-back (buildenv.PuttingBackProvider), as dockhand undo check-N asks,
+// saying how it goes: the places it put back. One that left nothing to
+// put back is said so.
+func (e *Engine) PutBack(ctx context.Context, run model.Run, progress func(string)) ([]string, error) {
+	var places []string
+	for _, name := range slices.Sorted(maps.Keys(e.Providers)) {
+		provider, ok := e.Providers[name].(buildenv.PuttingBackProvider)
+		if !ok {
+			continue
+		}
+		place, found, err := provider.PutBack(ctx, run.Name(), progress)
+		if err != nil {
+			return places, err
+		}
+		if found {
+			places = append(places, place)
+		}
+	}
+	if len(places) == 0 {
+		return nil, fmt.Errorf("%s left nothing to put back: it put back what it changed, or changed nothing of yours", run.Name())
+	}
+	return places, nil
+}
+
 // PlanLeftovers finds what providers left of checks, and which clean may
 // remove. A provider removes its environment when the attempt using it
 // ends, and a run's next attempt removes an earlier one's, so what is left
