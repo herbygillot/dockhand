@@ -166,9 +166,12 @@ The baseline builds eligible failed ports at the master commit the original
 check started from, in the relevant environments. It does not fetch today's
 master and call that the comparison. By default it targets failures at install
 or test, including advisory test failures; `--only <port>` can name a port
-explicitly. A port newly added by the branch has no baseline version to build. A
-failure before building, such as an incorrect checksum, usually needs a Portfile
-or source investigation instead.
+explicitly. It compares with the branch's newest finished check; `--of check-12`
+names an earlier one. It builds with that check's environments, variants, and
+tests, so it refuses `--on`, `--build`, `--variants`, `--tests`, and the
+capture's flags. A port newly added by the branch has no baseline version to
+build. A failure before building, such as an incorrect checksum, usually needs a
+Portfile or source investigation instead.
 
 Read both outcomes and their phases. A baseline failure is an observation, not
 an automatic acceptance. If the same eligible failure is reproduced, direct

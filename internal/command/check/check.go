@@ -22,7 +22,7 @@ import (
 
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
-	var tests, variants, build string
+	var tests, variants, build, of string
 	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, keep, yes bool
 	var include, only, also, on []string
 	cmd := &cobra.Command{
@@ -64,9 +64,9 @@ and checks the files as they are now, where --on says (switching is
 always explicit).
 
 --baseline builds the ports that failed at install or test in the
-branch's latest check, or the --only ones, at the master that check
-started from, planned as a check would be, and reports each beside the
-branch's result. It reports what happened in each run and nothing more. A
+branch's latest check, or the check --of names, or the --only ones, at
+the master that check started from, in its environments, with its
+variants and tests, and reports each beside the branch's result. It reports what happened in each run and nothing more. A
 failed check suggests a baseline when one could tell more; with
 check.baseline = true, it runs that baseline automatically.`,
 		Args: cobra.NoArgs,
@@ -75,6 +75,9 @@ check.baseline = true, it runs that baseline automatically.`,
 			// A misspelled policy is refused before anything is captured.
 			if tests != "" && !model.TestPolicy(tests).Valid() {
 				return fmt.Errorf("--tests %q is not declared, required, or skip", tests)
+			}
+			if err := baselineFlags(cmd, baseline, of); err != nil {
+				return err
 			}
 			e, err := s.Open(ctx)
 			if err != nil {
@@ -88,11 +91,12 @@ check.baseline = true, it runs that baseline automatically.`,
 			// The result is the check's, with a baseline check.baseline runs
 			// inside it.
 			streams.LinkSteps(&view.CheckJSON{})
+			request := engine.BaselineRequest{Branch: branch, Of: of, Ports: only}
 			if baseline && plan {
-				return previewBaseline(ctx, e, streams, branch, only)
+				return previewBaseline(ctx, e, streams, request)
 			}
 			if baseline {
-				return runBaseline(ctx, e, streams, branch, only, enqueue, s)
+				return runBaseline(ctx, e, streams, request, enqueue, s)
 			}
 			mode := captureMode(head, staged, workingTree)
 			place, err := e.Where(ctx, engine.WhereRequest{On: on, Build: build})
@@ -244,6 +248,7 @@ check.baseline = true, it runs that baseline automatically.`,
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return; serve, or a background drain where none runs, runs it")
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
 	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the master it started from")
+	cmd.Flags().StringVar(&of, "of", "", "with --baseline, the branch's finished check to compare with, as check-42, not its latest")
 	cmd.Flags().BoolVar(&fresh, "fresh", false, "build every port, reusing no earlier build's result")
 	cmd.Flags().BoolVar(&keep, "keep", false, "keep what the check built: each Tart clone, stopped, where its guest finishes, for dockhand shell, and in a local prefix the branch's versions, left active")
 	cmd.Flags().StringVar(&variants, "variants", "", "build the one port checked with these variants, +name -name, or each: its defaults, then each variant it declares")
@@ -271,10 +276,34 @@ func captureMode(head, staged, workingTree bool) engine.CaptureMode {
 	return engine.CaptureAuto
 }
 
+// baselineFlags refuses the flags --baseline doesn't take, where it
+// returned before reading them, and --of without it: a baseline is built
+// at master as the check it compares with was, in its environments, with
+// its variants and tests, from the files that check captured.
+func baselineFlags(cmd *cobra.Command, baseline bool, of string) error {
+	if !baseline {
+		if of != "" {
+			return fmt.Errorf("--of names the check a baseline compares with; add --baseline")
+		}
+		return nil
+	}
+	var given []string
+	for _, name := range []string{"on", "build", "variants", "tests", "fresh", "head", "staged", "working-tree", "include", "replace", "yes"} {
+		if cmd.Flags().Changed(name) {
+			given = append(given, "--"+name)
+		}
+	}
+	if len(given) > 0 {
+		return fmt.Errorf("--baseline builds at master as the check it compares with built, in its environments, with its variants and tests, so it takes no %s", prose.And(given))
+	}
+	return nil
+}
+
 // previewBaseline shows the baseline check --baseline would run, and
 // runs nothing.
-func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string) error {
-	baseline, err := e.PreviewBaseline(ctx, branch, only)
+func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, request engine.BaselineRequest) error {
+	branch := request.Branch
+	baseline, err := e.PreviewBaseline(ctx, request)
 	if err != nil {
 		return err
 	}
@@ -285,12 +314,11 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 	return nil
 }
 
-// runBaseline plans a baseline of the branch's latest check and runs it,
-// here or through serve.
-// runBaseline runs a baseline of a branch's failed check; auto is
-// check.baseline's, which the failed check's report pointed to.
-func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, only []string, enqueue bool, s *settings.Settings) error {
-	baseline, err := e.PlanBaseline(ctx, branch, only)
+// runBaseline plans a baseline of the branch's check, its latest or the
+// one --of names, and runs it, here or through serve.
+func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, request engine.BaselineRequest, enqueue bool, s *settings.Settings) error {
+	branch := request.Branch
+	baseline, err := e.PlanBaseline(ctx, request)
 	if err != nil {
 		return err
 	}

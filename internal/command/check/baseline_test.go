@@ -47,6 +47,20 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	require.Contains(t, out, "\njq · command\n", "the heading named master's commit")
 	require.Contains(t, out, "  ✓ builds at the base. This branch's result differs (check-2); the cause isn't established.\n")
 
+	// What --baseline doesn't take is refused, where it was read past;
+	// --of names the check it compares with (Codex's additions).
+	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--on", "command")
+	require.EqualError(t, err, "--baseline builds at master as the check it compares with built, in its environments, with its variants and tests, so it takes no --on")
+	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--tests", "required", "--fresh")
+	require.ErrorContains(t, err, "so it takes no --tests and --fresh")
+	_, _, err = cmdtest.Dockhand(t, "check", "--of", "check-2")
+	require.EqualError(t, err, "--of names the check a baseline compares with; add --baseline")
+	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--of", "check-3")
+	require.EqualError(t, err, "check-3 is a baseline; name the check it compares with")
+	previewed, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--of", "check-2", "--plan")
+	require.NoError(t, err)
+	require.Regexp(t, "jq-update · baseline at master [0-9a-f]{7}: jq\n", previewed)
+
 	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "check-2", "the branch's check is still its latest")

@@ -50,33 +50,61 @@ func UnchangedWords(ports []string, of model.Run) string {
 	return fmt.Sprintf("%s left out: master's build reads what %s's did", prose.And(ports), of.Name())
 }
 
-// PlanBaseline plans a baseline of the branch's newest finished check: of
-// the ports named, or else of the ports that failed in it at install or
-// test (BaselineWorthy), each rebuilt only where it failed (rebuildWhere).
+// BaselineRequest is a baseline asked of a branch: of its newest finished
+// check, or of Of, a finished check of the branch's named as people type
+// it, check-42, since what moved names the check it's read against
+// (5a72a542); of Ports, or of the ports that failed in it.
+type BaselineRequest struct {
+	Branch model.Branch
+	Of     string
+	Ports  []string
+}
+
+// PlanBaseline plans a baseline of the branch's check, the newest finished
+// one or the one named: of the ports named, or else of the ports that
+// failed in it at install or test (BaselineWorthy), each rebuilt only
+// where it failed (rebuildWhere).
 // It is planned the way a check is, from the base that check started
 // from, not the branch's base since a rebase: the base's own Portfiles are
 // evaluated in each environment, so its exclusions, dependencies, and
 // needs are the base's, and a port that needs Xcode is unmet where there
 // is none, not sent there.
-func (e *Engine) PlanBaseline(ctx context.Context, branch model.Branch, ports []string) (Baseline, error) {
-	return e.planBaseline(ctx, branch, ports, true)
+func (e *Engine) PlanBaseline(ctx context.Context, request BaselineRequest) (Baseline, error) {
+	return e.planBaseline(ctx, request, true)
 }
 
 // PreviewBaseline plans a baseline as PlanBaseline does, and records
 // nothing, not even the base as a revision of the branch: what check
 // --baseline --plan shows.
-func (e *Engine) PreviewBaseline(ctx context.Context, branch model.Branch, ports []string) (Baseline, error) {
-	return e.planBaseline(ctx, branch, ports, false)
+func (e *Engine) PreviewBaseline(ctx context.Context, request BaselineRequest) (Baseline, error) {
+	return e.planBaseline(ctx, request, false)
 }
 
-func (e *Engine) planBaseline(ctx context.Context, branch model.Branch, ports []string, record bool) (Baseline, error) {
+func (e *Engine) planBaseline(ctx context.Context, request BaselineRequest, record bool) (Baseline, error) {
+	branch, ports := request.Branch, request.Ports
 	var baseline Baseline
 	var checked model.Revision
 	var found bool
+	if request.Of != "" {
+		named, err := e.RunNamed(ctx, request.Of)
+		switch {
+		case err != nil:
+			return baseline, err
+		case named.Branch != branch.ID:
+			return baseline, fmt.Errorf("%s isn't a check of %s; a baseline compares with one of the branch's own", named.Name(), branch.ShortName())
+		case named.BaselineOf != "":
+			return baseline, fmt.Errorf("%s is a baseline; name the check it compares with", named.Name())
+		case !slices.Contains(model.Finished, named.State):
+			return baseline, fmt.Errorf("%s is %s, not finished, so there is nothing to compare with yet; dockhand wait %s follows it", named.Name(), named.State, named.Name())
+		}
+		baseline.Of, found = named, true
+	}
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
-		if baseline.Of, found, err = latestCheck(r, branch.ID); err != nil || !found {
-			return err
+		if !found {
+			if baseline.Of, found, err = latestCheck(r, branch.ID); err != nil || !found {
+				return err
+			}
 		}
 		if baseline.OfPlan, err = r.Plan(baseline.Of.Plan); err != nil {
 			return err
@@ -590,7 +618,7 @@ func (e *Engine) continueWithBaseline(ctx context.Context, run model.Run) {
 	branch, err := e.Branch(ctx, run.Branch)
 	if err == nil {
 		var baseline Baseline
-		if baseline, err = e.PlanBaseline(ctx, branch, nil); err == nil {
+		if baseline, err = e.PlanBaseline(ctx, BaselineRequest{Branch: branch, Of: run.Name()}); err == nil {
 			var queued model.Run
 			if queued, err = e.EnqueueBaseline(ctx, branch, baseline, run.Origin); err == nil {
 				progress.Report(ctx, "%s's baseline is %s, queued since check.baseline is on", run.Name(), queued.Name())
