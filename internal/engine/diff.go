@@ -33,6 +33,7 @@ type PortChange string
 const (
 	PortAdded        PortChange = "new_port"
 	PortMoved        PortChange = "moved"
+	PortRenamed      PortChange = "renamed"
 	PortRemoved      PortChange = "removed"
 	PortRevisionOnly PortChange = "revision_only"
 	PortChanged      PortChange = "changed"
@@ -43,6 +44,8 @@ const (
 // read it (part 4, item 2).
 func (p PortDiff) Change() PortChange {
 	switch {
+	case p.MovedFrom != "" && path.Base(p.MovedFrom) != path.Base(p.Directory):
+		return PortRenamed
 	case p.MovedFrom != "":
 		return PortMoved
 	case p.Added:

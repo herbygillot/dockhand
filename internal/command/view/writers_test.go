@@ -248,4 +248,12 @@ func TestAPlanSaysAMoveAndARemoval(t *testing.T) {
 	require.Contains(t, out.String(), "Changed     dockhand (moved from sysutils/dockhand)\n")
 	require.Contains(t, out.String(), "Removed     devel/gone, with no port to build\n")
 	require.Contains(t, out.String(), "github's workflow builds nothing for a moved port")
+
+	// A rename says the name it had, and the workflow builds its new
+	// Portfile (dockhand rename).
+	plan.Targets = []model.PlanTarget{{ID: "xgo", Target: model.Target{Name: "xgo"}, Directory: "lang/xgo", MovedFrom: "lang/goplus", Kind: model.Substantive, Role: model.Changed}}
+	out.Reset()
+	WritePlan(&out, plan, nil, nil, nil, 8)
+	require.Contains(t, out.String(), "Changed     xgo (renamed from goplus)\n")
+	require.NotContains(t, out.String(), "github's workflow builds nothing")
 }

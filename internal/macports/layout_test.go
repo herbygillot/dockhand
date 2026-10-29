@@ -107,7 +107,7 @@ func TestAScopePlacesRemovedAndMovedPorts(t *testing.T) {
 	scope := macports.ScopeOf([]string{"sysutils/dockhand/Portfile", "macports/dockhand/Portfile", "devel/gone/Portfile", "textproc/jq/Portfile"})
 	placed := scope.Placed(
 		map[string]bool{"sysutils/dockhand": true, "devel/gone": true, "textproc/jq": true},
-		map[string]bool{"macports/dockhand": true, "textproc/jq": true})
+		map[string]bool{"macports/dockhand": true, "textproc/jq": true}, nil)
 	require.Equal(t, []string{"macports/dockhand", "textproc/jq"}, placed.Ports)
 	require.Equal(t, []macports.Move{{From: "sysutils/dockhand", To: "macports/dockhand"}}, placed.Moved)
 	require.Equal(t, []string{"devel/gone"}, placed.Removed)
@@ -116,8 +116,17 @@ func TestAScopePlacesRemovedAndMovedPorts(t *testing.T) {
 
 	// Two new directories of the name can't be told apart: a removal.
 	ambiguous := macports.ScopeOf([]string{"sysutils/dockhand/Portfile", "macports/dockhand/Portfile", "devel/dockhand/Portfile"}).Placed(
-		map[string]bool{"sysutils/dockhand": true}, map[string]bool{"macports/dockhand": true, "devel/dockhand": true})
+		map[string]bool{"sysutils/dockhand": true}, map[string]bool{"macports/dockhand": true, "devel/dockhand": true}, nil)
 	require.Empty(t, ambiguous.Moved)
 	require.Equal(t, []string{"sysutils/dockhand"}, ambiguous.Removed)
 	require.Equal(t, []string{"devel/dockhand", "macports/dockhand"}, ambiguous.Ports)
+
+	// A Portfile made an obsolete stub replaced_by a port the change adds
+	// is that port renamed, the stub with it (dockhand rename).
+	renamed := macports.ScopeOf([]string{"lang/goplus/Portfile", "lang/xgo/Portfile", "textproc/jq/Portfile"}).Placed(
+		map[string]bool{"lang/goplus": true, "textproc/jq": true}, map[string]bool{"lang/goplus": true, "lang/xgo": true, "textproc/jq": true},
+		map[string]string{"lang/goplus": "xgo", "textproc/jq": "jq3"})
+	require.Equal(t, []macports.Move{{From: "lang/goplus", To: "lang/xgo", Stub: true}}, renamed.Moved)
+	require.Equal(t, []string{"lang/xgo", "textproc/jq"}, renamed.Ports, "jq's replacement isn't the change's")
+	require.Equal(t, "lang/goplus", renamed.MovedFrom("lang/xgo"))
 }

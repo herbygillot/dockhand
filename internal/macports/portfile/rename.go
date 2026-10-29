@@ -85,6 +85,32 @@ func SetPrimaryCategory(src []byte, from, category string) ([]byte, bool, error)
 	return src, false, nil
 }
 
+// ReplacedBy is the port an obsolete stub's Portfile names: one that loads
+// PortGroup obsolete and declares replaced_by as a literal, at its top;
+// false for any other.
+func ReplacedBy(src []byte) (string, bool) {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return "", false
+	}
+	obsolete, replaced := false, ""
+	for _, item := range script.Items {
+		cmd, ok := item.(syntax.Command)
+		if !ok || len(cmd.Words) < 2 {
+			continue
+		}
+		command, _ := cmd.Name(src)
+		value, literal := cmd.Words[1].Literal(src)
+		switch {
+		case command == "PortGroup" && literal && value == "obsolete":
+			obsolete = true
+		case command == "replaced_by" && literal && len(cmd.Words) == 2:
+			replaced = value
+		}
+	}
+	return replaced, obsolete && replaced != ""
+}
+
 // Stub is the Portfile a renamed port leaves at its old name: PortGroup
 // obsolete 1.0, replaced_by its new name, at its version with its revision
 // raised, which replaced-by-unchanged asks, its epoch kept, in its

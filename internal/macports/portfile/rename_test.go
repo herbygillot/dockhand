@@ -47,6 +47,11 @@ func TestSetPrimaryCategory(t *testing.T) {
 // its version with its revision raised.
 func TestARenamedPortsStub(t *testing.T) {
 	stub := Stub{Name: "goplus", ReplacedBy: "xgo", Version: "1.7.5", Revision: 1, Categories: []string{"lang", "devel"}}
+	replaced, ok := ReplacedBy(stub.Text())
+	require.True(t, ok)
+	require.Equal(t, "xgo", replaced)
+	_, ok = ReplacedBy([]byte("PortSystem 1.0\nname jq\nreplaced_by jq2\n"))
+	require.False(t, ok, "no obsolete PortGroup")
 	require.Equal(t, Modeline+`
 
 PortSystem          1.0

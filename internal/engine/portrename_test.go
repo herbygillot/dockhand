@@ -3,10 +3,12 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -84,4 +86,60 @@ func TestRenamingAPort(t *testing.T) {
 	}))
 	require.Equal(t, model.EditMove, edits[1].Kind)
 	require.Equal(t, "libharbor: move to net", edits[1].Subject)
+}
+
+// A rename is one change: the new port planned at its directory, read
+// against the old Portfile and not linted as new, the stub excluded as
+// MacPorts' CI excludes a port replaced_by another; tidy makes it one
+// commit, "jq2: rename from jq", with an update after it "…, update to
+// 1.8.1", and submit takes its title from it and calls it no new port
+// (dockhand rename, 2026-10-29).
+func TestARenameIsCheckedTidiedAndSubmittedAsOne(t *testing.T) {
+	t.Parallel()
+	for _, update := range []bool{false, true} {
+		f := setup(t)
+		e, _ := f.withPreparer(t)
+		f.withFork(t, e)
+		branch, err := e.Start(t.Context(), StartRequest{Name: "jq-rename"})
+		require.NoError(t, err)
+		testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "textproc/jq")
+		usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
+			"textproc/jq":  {{Name: "jq", Version: "1.7.1", Options: map[string]string{"categories": "textproc", "replaced_by": "jq2"}}},
+			"textproc/jq2": {{Name: "jq2", Version: "1.7.1", Options: map[string]string{"categories": "textproc"}}},
+		}})
+		e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+		_, err = e.RenamePort(t.Context(), PortRenameRequest{Branch: branch, Port: "jq", Name: "jq2"})
+		require.NoError(t, err)
+		subject := "jq2: rename from jq"
+		if update {
+			write(t, branch.Worktree, map[string]string{"textproc/jq2/Portfile": "name jq2\nversion 1.8.1\n"})
+			testsupport.Git(t, branch.Worktree, "add", "textproc/jq2/Portfile")
+			subject = "jq2: rename from jq, update to 1.8.1"
+		}
+
+		proposal, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureAuto}, Where: Where{Environments: []model.Environment{tahoeArm}}})
+		require.NoError(t, err)
+		require.Empty(t, proposal.Plan.Unresolved)
+		i := slices.IndexFunc(proposal.Plan.Targets, func(target model.PlanTarget) bool { return target.Target.Name == "jq2" })
+		require.GreaterOrEqual(t, i, 0, "%+v", proposal.Plan.Targets)
+		jq2 := proposal.Plan.Targets[i]
+		require.Equal(t, "textproc/jq", jq2.MovedFrom)
+		require.False(t, jq2.Added, "a renamed port isn't linted as a new one")
+		require.False(t, slices.ContainsFunc(proposal.Plan.Targets, func(target model.PlanTarget) bool { return target.Directory == "textproc/jq" }), "the stub is the rename's")
+
+		plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+		require.NoError(t, err)
+		require.Len(t, plan.Groups, 1, "the rename is one commit")
+		require.Equal(t, "textproc/jq2", plan.Groups[0].Directory)
+		require.Equal(t, "textproc/jq", plan.Groups[0].MovedFrom)
+		require.Equal(t, subject, plan.Groups[0].Subject())
+		_, err = e.ApplyTidy(t.Context(), plan)
+		require.NoError(t, err)
+
+		submit, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+		require.NoError(t, err)
+		require.Equal(t, subject, submit.Title)
+		require.Equal(t, []string{"jq2"}, submit.Ports)
+		require.NotContains(t, submit.Body, "New port", "a renamed port is no new one")
+	}
 }

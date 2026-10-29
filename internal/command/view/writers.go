@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"path"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -42,6 +43,9 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 			changed = append(changed, name+" (needed by --only)")
 		case siblings[target.ID]:
 			built = append(built, name)
+		case target.MovedFrom != "" && path.Base(target.MovedFrom) != path.Base(target.Directory):
+			name += " (renamed from " + path.Base(target.MovedFrom) + ")"
+			changed = append(changed, name)
 		case target.MovedFrom != "":
 			name += " (moved from " + target.MovedFrom + ")"
 			changed = append(changed, name)
@@ -61,7 +65,9 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 	// MacPorts' workflow lists the Portfiles a commit adds or alters, git
 	// reading a moved one as a rename, so it builds nothing for a move.
 	if slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == buildenv.GitHub }) &&
-		slices.ContainsFunc(plan.Targets, func(target model.PlanTarget) bool { return target.MovedFrom != "" }) {
+		slices.ContainsFunc(plan.Targets, func(target model.PlanTarget) bool {
+			return target.MovedFrom != "" && path.Base(target.MovedFrom) == path.Base(target.Directory)
+		}) {
 		fmt.Fprintln(out, "            github's workflow builds nothing for a moved port, which git reads as a rename; check it with Tart, local, or command")
 	}
 	// The subports a change record finds unchanged are built too, since a

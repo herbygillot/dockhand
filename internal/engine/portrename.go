@@ -34,9 +34,9 @@ type PortRenameRequest struct {
 	Plan     bool
 }
 
-// PortRenamed is a port's rename or move, as written or, for a plan, as it
+// RenamedPort is a port's rename or move, as written or, for a plan, as it
 // would be.
-type PortRenamed struct {
+type RenamedPort struct {
 	Port, Name string
 	// From and To are the port's directories before and after.
 	From, To string
@@ -63,64 +63,64 @@ type PortRenamed struct {
 // what's left; a new release is update of the new name after. The port's
 // directory is moved as committed, so one with changes not committed is
 // refused.
-func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (PortRenamed, error) {
+func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (RenamedPort, error) {
 	moving := request.Name == ""
 	name := cmp.Or(request.Name, request.Port)
 	if !macports.ValidName(name) {
-		return PortRenamed{}, fmt.Errorf("%q is not a port name", name)
+		return RenamedPort{}, fmt.Errorf("%q is not a port name", name)
 	}
 	worktree, err := e.worktree(ctx, request.Branch)
 	if err != nil {
-		return PortRenamed{}, err
+		return RenamedPort{}, err
 	}
 	head, err := worktree.Resolve(ctx, "HEAD^{commit}")
 	if err != nil {
-		return PortRenamed{}, err
+		return RenamedPort{}, err
 	}
 	trees, err := worktree.CommitTrees(ctx, []string{head})
 	if err != nil {
-		return PortRenamed{}, err
+		return RenamedPort{}, err
 	}
 	tree := trees[head]
 	from, err := e.findDirectory(ctx, tree, request.Port)
 	if err != nil {
-		return PortRenamed{}, err
+		return RenamedPort{}, err
 	}
 	if path.Base(from) != request.Port {
-		return PortRenamed{}, fmt.Errorf("%s is a subport of %s's Portfile; rename the Portfile's port, %s", request.Port, from, path.Base(from))
+		return RenamedPort{}, fmt.Errorf("%s is a subport of %s's Portfile; rename the Portfile's port, %s", request.Port, from, path.Base(from))
 	}
 	category := cmp.Or(request.Category, path.Dir(from))
 	if !macports.ValidCategory(category) {
-		return PortRenamed{}, fmt.Errorf("%q is not a category", category)
+		return RenamedPort{}, fmt.Errorf("%q is not a category", category)
 	}
 	to := category + "/" + name
 	switch {
 	case to == from && moving:
-		return PortRenamed{}, fmt.Errorf("%s is in %s already", request.Port, category)
+		return RenamedPort{}, fmt.Errorf("%s is in %s already", request.Port, category)
 	case to == from:
-		return PortRenamed{}, fmt.Errorf("%s is %s's name already", name, request.Port)
+		return RenamedPort{}, fmt.Errorf("%s is %s's name already", name, request.Port)
 	}
 	changed, err := worktree.TrackedChanges(ctx)
 	if err != nil {
-		return PortRenamed{}, err
+		return RenamedPort{}, err
 	}
 	if slices.ContainsFunc(changed, func(file string) bool { return strings.HasPrefix(file, from+"/") }) {
-		return PortRenamed{}, fmt.Errorf("%s has changes not committed; it's moved as committed, so tidy or commit them first", from)
+		return RenamedPort{}, fmt.Errorf("%s has changes not committed; it's moved as committed, so tidy or commit them first", from)
 	}
 	if existing, err := worktree.ExistingPaths(ctx, tree, []string{to}); err != nil || len(existing) > 0 {
 		if err != nil {
-			return PortRenamed{}, err
+			return RenamedPort{}, err
 		}
-		return PortRenamed{}, fmt.Errorf("there is already a %s", to)
+		return RenamedPort{}, fmt.Errorf("there is already a %s", to)
 	}
 	if !moving {
 		if err := e.refuseExisting(ctx, worktree, name); err != nil {
-			return PortRenamed{}, err
+			return RenamedPort{}, err
 		}
 	}
 	entries, err := worktree.FilesBelow(ctx, tree, from)
 	if err != nil {
-		return PortRenamed{}, err
+		return RenamedPort{}, err
 	}
 	var paths []string
 	for _, entry := range entries {
@@ -128,20 +128,20 @@ func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (Por
 	}
 	contents, err := worktree.ReadFiles(ctx, tree, paths)
 	if err != nil {
-		return PortRenamed{}, err
+		return RenamedPort{}, err
 	}
-	renamed := PortRenamed{Port: request.Port, Name: name, From: from, To: to}
+	renamed := RenamedPort{Port: request.Port, Name: name, From: from, To: to}
 	text := contents[from+"/Portfile"]
 	if !moving {
 		if text, err = portfile.Rename(text, request.Port, name); err != nil {
-			return PortRenamed{}, fmt.Errorf("%s: %w", from, err)
+			return RenamedPort{}, fmt.Errorf("%s: %w", from, err)
 		}
 		if renamed.Stub, err = e.stubFor(ctx, tree, from, request.Port, name); err != nil {
-			return PortRenamed{}, err
+			return RenamedPort{}, err
 		}
 	}
 	if text, renamed.Category, err = portfile.SetPrimaryCategory(text, path.Dir(from), category); err != nil {
-		return PortRenamed{}, fmt.Errorf("%s: %w", from, err)
+		return RenamedPort{}, fmt.Errorf("%s: %w", from, err)
 	}
 	if !moving {
 		renamed.Left = linesNaming(text, request.Port)
