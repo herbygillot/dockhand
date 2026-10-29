@@ -104,13 +104,17 @@ func (e *Engine) identityNow(ctx context.Context, environment model.Environment)
 // plan they're judged against, then the environments' identities, read
 // outside any transaction, then the checks' records.
 func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []model.Run) (Evidence, error) {
-	required, problem := e.requiredEnvironments(ctx)
+	var own model.Plan
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		own, err = r.Plan(primary.Plan)
+		return err
+	}); err != nil {
+		return Evidence{}, err
+	}
+	required, problem := e.requiredFor(ctx, own)
 	var plan model.Plan
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		own, err := r.Plan(primary.Plan)
-		if err != nil {
-			return err
-		}
 		var others []model.Plan
 		for _, run := range runs {
 			if run.ID == primary.ID {
@@ -214,11 +218,32 @@ func runsOfTree(r store.Reader, branch model.BranchID, tree model.ObjectID, stat
 	return r.Runs(store.RunFilter{Branch: branch, Tree: tree, States: states, NoBaselines: true})
 }
 
+// requiredFor are the environments a branch's files need, judged by
+// their newest check, newest: what the person asked it to build on, with
+// --on or --build, exactly, local included where Tart is set up; else its
+// own and build.default's (requiredEnvironments). The newest ask replaces
+// an earlier one, so an ask that was dropped doesn't hold until it passes
+// (D17, the person's "Newest ask", 2026-10-29); a failure in any check of
+// the files still does (evidence.Judge).
+func (e *Engine) requiredFor(ctx context.Context, newest model.Plan) ([]model.Environment, string) {
+	if newest.Asked {
+		return slices.Clone(newest.Environments), ""
+	}
+	profile, problem := e.requiredEnvironments(ctx)
+	required := slices.Clone(newest.Environments)
+	for _, environment := range profile {
+		if !slices.ContainsFunc(required, func(planned model.Environment) bool { return evidence.Covers(environment, planned) }) {
+			required = append(required, environment)
+		}
+	}
+	return required, problem
+}
+
 // requiredEnvironments are the environments build.default's profile builds
-// in, which a branch's evidence always requires (D17); none where they
-// can't be resolved, as where a provider isn't set up, with why, for the
-// evidence to say, where it was dropped and the evidence required less
-// without a word (the architecture review's L5).
+// in, which a branch's evidence requires where its newest check named
+// none (D17); none where they can't be resolved, as where a provider isn't
+// set up, with why, for the evidence to say, where it was dropped and the
+// evidence required less without a word (the architecture review's L5).
 //
 // One resolution stands for requiredWait: resolving a profile lists Tart's
 // images, half a minute on the M1 and two at most (tart.ErrListingTimedOut),

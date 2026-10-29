@@ -117,7 +117,8 @@ func TestEnvironmentsAreNamedAsOnNamesThem(t *testing.T) {
 // set, build.unattended's for a check nobody looks over, minmax unless
 // set, which spans each port's oldest and newest; a profile of the
 // person's own; and --on's explicit environments over any of them (the
-// person's design, 2026-10-13).
+// person's design, 2026-10-13). --on or --build is the person's ask,
+// which submit takes (D17); local is no profile.
 func TestWhereABuildProfileBuilds(t *testing.T) {
 	t.Parallel()
 	e := &Engine{Providers: map[string]buildenv.Provider{"tart": &releasing{}, "github": &scriptedProvider{}}}
@@ -132,7 +133,7 @@ func TestWhereABuildProfileBuilds(t *testing.T) {
 	require.Equal(t, Where{Profile: "minmax", Environments: []model.Environment{sonoma, tahoe}, Span: true}, where)
 	where, err = e.Where(t.Context(), WhereRequest{Build: "all"})
 	require.NoError(t, err)
-	require.Equal(t, Where{Profile: "all", Environments: []model.Environment{sonoma, tahoe}}, where)
+	require.Equal(t, Where{Profile: "all", Environments: []model.Environment{sonoma, tahoe}, Asked: true}, where)
 
 	e.Builds = Builds{Default: "mine", Unattended: "fork", Profiles: map[string]Profile{"mine": {Releases: []string{"sonoma"}}, "fork": {Provider: "github"}}}
 	where, err = e.Where(t.Context(), WhereRequest{})
@@ -143,7 +144,9 @@ func TestWhereABuildProfileBuilds(t *testing.T) {
 	require.Equal(t, Where{Profile: "fork", Environments: []model.Environment{{Provider: "github"}}}, where)
 	where, err = e.Where(t.Context(), WhereRequest{On: []string{"tahoe"}, Build: "mine"})
 	require.NoError(t, err)
-	require.Equal(t, Where{Environments: []model.Environment{tahoe}}, where, "--on's explicit environments")
+	require.Equal(t, Where{Environments: []model.Environment{tahoe}, Asked: true}, where, "--on's explicit environments")
+	_, err = e.Where(t.Context(), WhereRequest{Build: "local"})
+	require.EqualError(t, err, "--build local: local is no build profile; --build host builds on Tart on this Mac's release, and --on local in a MacPorts prefix on this Mac")
 	_, err = e.Where(t.Context(), WhereRequest{Build: "nosuch"})
 	require.ErrorContains(t, err, "--build nosuch: unknown build profile")
 	_, err = e.Where(t.Context(), WhereRequest{Build: "command"})

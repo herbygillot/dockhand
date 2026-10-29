@@ -300,15 +300,12 @@ const (
 	RuleAll        ReleaseRule = "all"
 )
 
-// ProfileLocal is host's profile by its other name.
-const ProfileLocal = "local"
-
 // releaseRules are the rules a profile's releases may name.
 var releaseRules = []ReleaseRule{RuleHost, RuleMinMax, RuleMacPortsCI, RuleAll}
 
 // builtinProfiles are dockhand's own profiles, all on Tart, each named for
-// its rule, local being host's other name.
-var builtinProfiles = []string{string(RuleHost), ProfileLocal, string(RuleMinMax), string(RuleMacPortsCI), string(RuleAll)}
+// its rule.
+var builtinProfiles = []string{string(RuleHost), string(RuleMinMax), string(RuleMacPortsCI), string(RuleAll)}
 
 // List is a profile's releases as a list, and its rule where it names one.
 func (p Profile) List() (releases []string, rule ReleaseRule) {
@@ -888,6 +885,9 @@ func setTopLevel(path, key, value string) error {
 // profile has, and a default naming no profile.
 func checkBuild(f File) error {
 	for name, profile := range f.Build.Profiles {
+		if name == buildenv.Local {
+			return fmt.Errorf("build.profiles.local: local names the local provider, which --on local builds with; name yours another way")
+		}
 		if slices.Contains(builtinProfiles, name) || name == "command" {
 			return fmt.Errorf("build.profiles.%s: %s is dockhand's own profile; name yours another way", name, name)
 		}
@@ -916,6 +916,12 @@ func checkBuild(f File) error {
 		}
 	}
 	for key, name := range map[string]string{"build.default": f.Build.Default, "build.unattended": f.Build.Unattended} {
+		// local was host's other name, on Tart, where a person asking
+		// for local means the local provider, which dockhand never
+		// chooses itself (D17).
+		if name == buildenv.Local {
+			return fmt.Errorf("%s: \"local\" is no build profile: \"host\" builds on Tart on this Mac's release, and --on local, asked each time, in a MacPorts prefix on this Mac", key)
+		}
 		if _, defined := f.Build.Profiles[name]; name != "" && !defined && !slices.Contains(builtinProfiles, name) && name != "command" {
 			return fmt.Errorf("%s: %q names no profile: host, minmax, macports-ci, all, or one under [build.profiles]", key, name)
 		}

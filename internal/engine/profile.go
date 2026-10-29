@@ -32,11 +32,11 @@ type Builds struct {
 }
 
 // builtinProfile is one of dockhand's own profiles, all on Tart, each
-// named for its rule, local being host's other name; and command, the
-// person's own script, where it's set up.
+// named for its rule; and command, the person's own script, where it's
+// set up.
 func builtinProfile(name string) (Profile, bool) {
 	switch name {
-	case string(config.RuleHost), config.ProfileLocal:
+	case string(config.RuleHost):
 		return Profile{Name: name, Provider: buildenv.Tart, Rule: config.RuleHost}, true
 	case string(config.RuleMinMax), string(config.RuleMacPortsCI), string(config.RuleAll):
 		return Profile{Name: name, Provider: buildenv.Tart, Rule: config.ReleaseRule(name)}, true
@@ -58,16 +58,24 @@ func (e *Engine) Profile(name string) (Profile, error) {
 	if profile, ok := builtinProfile(name); ok {
 		return profile, nil
 	}
+	// local was host's other name, which built on Tart where a person
+	// asking for local means the local provider (D17).
+	if name == buildenv.Local {
+		return Profile{}, fmt.Errorf("--build local: local is no build profile; --build host builds on Tart on this Mac's release, and --on local in a MacPorts prefix on this Mac")
+	}
 	return Profile{}, fmt.Errorf("--build %s: unknown build profile. Built-in profiles are host, minmax, macports-ci, and all. Define custom profiles under [build.profiles] in %s", name, e.configFile())
 }
 
 // Where is where a check builds: the environments, the profile that
-// named them, empty where --on did, and whether each port builds only on
-// its oldest and newest of them (minmax).
+// named them, empty where --on did, whether each port builds only on its
+// oldest and newest of them (minmax), and whether the person named them,
+// with --on or --build (WhereRequest.explicit), which the plan keeps for
+// submit (D17).
 type Where struct {
 	Profile      string
 	Environments []model.Environment
 	Span         bool
+	Asked        bool
 }
 
 // WhereRequest is how a check was told where: --on's explicit
@@ -88,7 +96,7 @@ func (r WhereRequest) explicit() bool { return len(r.On) > 0 || r.Build != "" }
 func (e *Engine) Where(ctx context.Context, request WhereRequest) (Where, error) {
 	if len(request.On) > 0 {
 		environments, err := e.Environments(ctx, request.On)
-		return Where{Environments: environments}, err
+		return Where{Environments: environments, Asked: true}, err
 	}
 	name := request.Build
 	if name == "" && request.Unattended {
@@ -101,7 +109,7 @@ func (e *Engine) Where(ctx context.Context, request WhereRequest) (Where, error)
 	if err != nil {
 		return Where{}, err
 	}
-	where := Where{Profile: profile.Name, Span: profile.Rule == config.RuleMinMax}
+	where := Where{Profile: profile.Name, Span: profile.Rule == config.RuleMinMax, Asked: request.explicit()}
 	where.Environments, err = e.profileEnvironments(ctx, profile)
 	return where, err
 }

@@ -416,7 +416,7 @@ func (e *Engine) wider(ctx context.Context, status BranchStatus, changed []strin
 	if status.Latest.State != model.RunPassed || status.Latest.Origin == model.OriginServe || plan.Variants != "" || plan.EachVariant {
 		return nil
 	}
-	if plan.Profile == string(config.RuleHost) || plan.Profile == config.ProfileLocal {
+	if plan.Profile == string(config.RuleHost) {
 		if raised := e.floorsRaised(ctx, status); len(raised) > 0 {
 			return &branchstate.Wider{Next: branchstate.Next{Verb: branchstate.VerbCheck, Args: []string{"--build", string(config.RuleMinMax)}},
 				Why: fmt.Sprintf("the update raises the oldest macOS %s builds on, or its toolchain's", prose.And(raised))}

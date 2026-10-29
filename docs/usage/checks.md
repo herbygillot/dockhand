@@ -125,9 +125,15 @@ is `minmax` when Tart is available, or the ordinary default. Use
 `dockhand config` and the check plan to see which configuration is in effect.
 Define your own profile with `dockhand usage configuration`.
 
-Use `--on local` for a host MacPorts prefix. The built-in profile named `local`,
-selected by `--build local`, is another name for the Tart `host` profile; those
-two spellings do different things.
+Use `--on local` for a host MacPorts prefix; `local` is no build profile, and
+`--build local` is refused.
+
+Where you name where a check builds, with `--on` or `--build`, submission needs
+exactly that: `check --on local` then `submit` passes on the prefix alone, even
+where Tart is set up. Where you name neither, it needs `build.default`'s
+environments as well as the check's own. The newest check of the files decides,
+so asking again replaces an earlier ask; a failure in any check of the same
+files still blocks until it passes or is accepted.
 
 ### Tart guests
 

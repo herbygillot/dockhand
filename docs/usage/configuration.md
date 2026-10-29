@@ -87,9 +87,10 @@ ordinary checks use `host`, or `command` when a command provider is configured.
 Unattended publication paths fall back to `minmax` when Tart is available,
 otherwise the ordinary default.
 
-`--on local` means the MacPorts prefix on this Mac. The built-in profile called
-`local`, used by `--build local`, is another name for the Tart `host` profile.
-Custom profiles currently support `tart`, `github`, and `command`; they do not
+`--on local` means the MacPorts prefix on this Mac, and Dockhand never chooses it
+on its own. `local` is no build profile: `--build local` and
+`build.default = "local"` are refused, naming `host` for Tart on this Mac's
+release and `--on local` for the prefix. Custom profiles currently support `tart`, `github`, and `command`; they do not
 accept `provider = "local"`. Select a host prefix explicitly with `--on local`
 or `--on local:/path/to/prefix`.
 

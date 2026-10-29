@@ -154,6 +154,72 @@ func TestEachEnvironmentTakesItsNewestCheck(t *testing.T) {
 	require.Contains(t, submission.Evidence.Problem, "build.default's profile, nowhere, couldn't be resolved, so only the environments its checks planned are required: ")
 }
 
+// Submit needs where the person named, exactly, local included where
+// Tart is set up, and build.default's where they named none (D17, the
+// person's rulings of 2026-10-29: nomad's ship --on local passed in
+// /opt/macports-test and submit asked for Tart). The newest check's ask
+// decides; a failure in any check of the files still blocks. ship and
+// bump take where through Where as check does, so their submissions
+// agree; serve leaves a branch of its own a person checked elsewhere to
+// them.
+func TestSubmitNeedsWhatTheNewestCheckWasAsked(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := twoPortBranch(t, e)
+	tart, local := &scriptedProvider{}, &scriptedProvider{}
+	e.Providers = map[string]buildenv.Provider{buildenv.Tart: tart, buildenv.Local: local}
+	checkWhere := func(where Where) model.Run {
+		t.Helper()
+		proposal, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureHead}, Where: where})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, proposal.Plan, model.OriginPerson)
+		require.NoError(t, err)
+		completed, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		return completed
+	}
+	blocking := func() []string {
+		t.Helper()
+		submission, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
+		require.NoError(t, err)
+		return submission.Blocking
+	}
+	onLocal, err := e.Where(t.Context(), WhereRequest{On: []string{buildenv.Local}})
+	require.NoError(t, err)
+	require.True(t, onLocal.Asked)
+
+	// A check of local recorded before the ask was kept named none, so
+	// it needs build.default's Tart too.
+	unasked := onLocal
+	unasked.Asked = false
+	checkWhere(unasked)
+	require.Len(t, blocking(), 2)
+	require.Contains(t, blocking()[0], "haven't been built on tart")
+
+	// --on local is exactly what's needed.
+	asked := checkWhere(onLocal)
+	require.Equal(t, model.RunPassed, asked.State)
+	require.Empty(t, blocking(), "check --on local then submit passes, Tart set up")
+
+	// A default check names none: build.default's Tart, and its own.
+	byDefault, err := e.Where(t.Context(), WhereRequest{})
+	require.NoError(t, err)
+	require.False(t, byDefault.Asked)
+	checkWhere(byDefault)
+	require.Empty(t, blocking(), "Tart built it")
+
+	// A failure in any check of the files blocks, whatever the newest ask.
+	tart.outcomes = map[model.TargetID]model.Outcome{"jq": model.OutcomeFailed}
+	onTart, err := e.Where(t.Context(), WhereRequest{On: []string{buildenv.Tart}})
+	require.NoError(t, err)
+	checkWhere(onTart)
+	checkWhere(onLocal)
+	require.Len(t, blocking(), 1)
+	require.Contains(t, blocking()[0], "jq")
+}
+
 // identified is a scripted provider that says what its environments are
 // now (buildenv.IdentityProvider).
 type identified struct {

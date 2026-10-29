@@ -254,6 +254,11 @@ type Plan struct {
 	// Profile is the build profile that named them, as minmax; empty
 	// where --on did.
 	Profile string `json:",omitempty"`
+	// Asked says the person named where it builds, with --on or --build:
+	// submit then needs exactly its environments, where a check that
+	// named none needs the profile in effect, build.default (D17). A
+	// check recorded before it was kept named none.
+	Asked bool `json:",omitempty"`
 	// Targets are what the check builds in some environment, in the
 	// environments' orders merged: the first environment's, and what each
 	// other one adds, after what comes before it there.

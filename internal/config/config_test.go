@@ -365,3 +365,15 @@ func TestPlacesHere(t *testing.T) {
 	require.False(t, Places{Dir: dir + "-other"}.Here(dir))
 	require.False(t, Places{}.Here(dir))
 }
+
+// local was host's other name, on Tart, where a person asking for local
+// means the local provider, which dockhand never chooses itself: it's
+// refused as a default and as a profile's name (D17, 2026-10-29).
+func TestLocalIsNoBuildProfile(t *testing.T) {
+	for _, text := range []string{"[build]\ndefault = \"local\"\n", "[build]\nunattended = \"local\"\n"} {
+		_, err := parse("config.toml", text)
+		require.ErrorContains(t, err, `"local" is no build profile: "host" builds on Tart on this Mac's release, and --on local, asked each time, in a MacPorts prefix on this Mac`)
+	}
+	_, err := parse("config.toml", "[build.profiles.local]\nprovider = \"tart\"\n")
+	require.ErrorContains(t, err, "build.profiles.local: local names the local provider, which --on local builds with; name yours another way")
+}

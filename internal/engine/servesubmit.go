@@ -99,7 +99,10 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 		if branch.PullRequest != nil {
 			continue
 		}
-		if branch.Origin != model.OriginServe {
+		// A serve branch a person checked where they named is theirs to
+		// submit: serve submits what passed where build.unattended builds
+		// (D17).
+		if branch.Origin != model.OriginServe || e.personAsked(status) {
 			yours = append(yours, branch)
 			continue
 		}
@@ -114,6 +117,17 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 		candidates = append(candidates, candidate)
 	}
 	return candidates, yours, nil
+}
+
+// personAsked reports whether a branch's newest check was asked, by a
+// person, to build somewhere other than build.unattended's profile: --on,
+// or another --build.
+func (e *Engine) personAsked(status BranchStatus) bool {
+	if status.Evidence == nil {
+		return false
+	}
+	plan := status.Evidence.Plan
+	return plan.Asked && plan.Profile != e.unattendedProfile()
 }
 
 // Held are the concerns a submission no person looked over waits for one
