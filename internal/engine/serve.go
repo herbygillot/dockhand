@@ -365,6 +365,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	scanned := &outdatedScanner{s: s}
 	if !options.Drain {
 		scanned.announce(ctx)
+		s.resumePrepared(ctx)
 	}
 	submitter := &passingSubmitter{s: s, held: map[model.BranchID]string{}}
 
@@ -576,6 +577,34 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	}
 	s.say("serve: stopped")
 	return nil
+}
+
+// resumePrepared queues, as serve starts, the check of each branch it
+// prepared and committed whose check it never queued, where serve.ship_to
+// carries its updates to a check, and says each; one with edits not
+// committed is the person's, said too (Engine.ResumePrepared).
+func (s *server) resumePrepared(ctx context.Context) {
+	to := ShipStage(s.options.ShipTo)
+	if to != ShipCheck && to != ShipSubmit {
+		return
+	}
+	where, err := s.e.Where(ctx, WhereRequest{Unattended: true})
+	if err != nil {
+		return
+	}
+	resumed, err := s.e.ResumePrepared(ctx, where, "")
+	if err != nil {
+		s.say("serve: looking for branches it prepared and didn't check: %v", err)
+		return
+	}
+	for _, done := range resumed {
+		switch {
+		case done.Run != nil:
+			s.say("serve: %s was prepared and never checked; %s queued", done.Branch.ShortName(), done.Run.Name())
+		default:
+			s.say("serve: %s was prepared and never checked: %s", done.Branch.ShortName(), done.Problem)
+		}
+	}
 }
 
 // loginGate keeps serve acting on GitHub only as the account it first
