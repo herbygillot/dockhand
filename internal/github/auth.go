@@ -15,8 +15,11 @@ import (
 
 var ErrAuthentication = forge.ErrAuthentication
 
-// ErrNoCredentials permits anonymous public reads; invalid or inaccessible credentials do not.
-var ErrNoCredentials = fmt.Errorf("%w: no credential available", ErrAuthentication)
+// ErrNoCredentials permits anonymous public reads; invalid or inaccessible
+// credentials do not. It says what's missing and the way on, where
+// serve's line read "forge: authentication is required" (D-C3 on rc8).
+var ErrNoCredentials error = refusal.Wrap(refusal.Auth, ErrAuthentication, "no GitHub login was found; dockhand setup github signs in").
+	Then(refusal.Next{Verb: refusal.VerbSetup, Args: []string{"github"}})
 
 type TokenSource interface {
 	Token(context.Context) (Token, error)
@@ -130,7 +133,7 @@ func resolvedToken(secret string, source CredentialSource) (Token, error) {
 // rejected is GitHub's refusal of the credential from s, a particular of
 // ErrAuthentication whose own words lead, with s's remedy: dockhand's
 // login says it as serve does, "GitHub rejected the login", where D-C3 on
-// rc5 read the sentinel's "forge: authentication is required" first.
+// rc5 read the sentinel's words first.
 func (s CredentialSource) rejected() error {
 	auth := ErrAuthentication.(*refusal.Refusal)
 	remedy := "replace the explicitly configured credential"
