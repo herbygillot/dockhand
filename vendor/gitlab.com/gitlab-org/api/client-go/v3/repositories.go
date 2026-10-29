@@ -111,6 +111,9 @@ type TreeNode struct {
 	Type string `json:"type"`
 	Path string `json:"path"`
 	Mode string `json:"mode"`
+	// LastCommit is the most recent commit that changed the entry. GitLab
+	// sends it only when ListTreeOptions.WithLastCommit is true.
+	LastCommit *Commit `json:"last_commit"`
 }
 
 func (t TreeNode) String() string {
@@ -126,6 +129,9 @@ type ListTreeOptions struct {
 	Path      *string `url:"path,omitempty" json:"path,omitempty"`
 	Ref       *string `url:"ref,omitempty" json:"ref,omitempty"`
 	Recursive *bool   `url:"recursive,omitempty" json:"recursive,omitempty"`
+	// WithLastCommit asks for each entry's LastCommit. GitLab refuses it
+	// together with Recursive.
+	WithLastCommit *bool `url:"with_last_commit,omitempty" json:"with_last_commit,omitempty"`
 }
 
 func (s *RepositoriesService) ListTree(pid any, opt *ListTreeOptions, options ...RequestOptionFunc) ([]*TreeNode, *Response, error) {

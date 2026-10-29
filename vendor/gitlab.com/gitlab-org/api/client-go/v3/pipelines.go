@@ -23,6 +23,7 @@ import (
 )
 
 var (
+	routePipelines                              = route("pipelines")
 	routeProjectsIDPipeline                     = route("projects/%s/pipeline")
 	routeProjectsIDPipelines                    = route("projects/%s/pipelines")
 	routeProjectsIDPipelinesID                  = route("projects/%s/pipelines/%d")
@@ -59,6 +60,13 @@ const (
 
 type (
 	PipelinesServiceInterface interface {
+		// ListUserPipelines gets the pipelines across all projects that were
+		// triggered by the authenticated user. Only keyset pagination is
+		// supported.
+		//
+		// GitLab API docs:
+		// https://docs.gitlab.com/api/pipelines/#list-pipelines
+		ListUserPipelines(opt *ListUserPipelinesOptions, options ...RequestOptionFunc) ([]*UserPipeline, *Response, error)
 		ListProjectPipelines(pid any, opt *ListProjectPipelinesOptions, options ...RequestOptionFunc) ([]*PipelineInfo, *Response, error)
 		GetPipeline(pid any, pipeline int64, options ...RequestOptionFunc) (*Pipeline, *Response, error)
 		GetPipelineVariables(pid any, pipeline int64, options ...RequestOptionFunc) ([]*PipelineVariable, *Response, error)
@@ -90,6 +98,9 @@ type PipelineVariable struct {
 	Key          string            `json:"key"`
 	Value        string            `json:"value"`
 	VariableType VariableTypeValue `json:"variable_type"`
+	// Raw reports whether the value is used as is, without expanding the
+	// variables it references.
+	Raw bool `json:"raw"`
 }
 
 // PipelineInput represents a pipeline input.
@@ -127,6 +138,7 @@ type Pipeline struct {
 	Coverage       string          `json:"coverage"`
 	WebURL         string          `json:"web_url"`
 	DetailedStatus *DetailedStatus `json:"detailed_status"`
+	Archived       bool            `json:"archived"`
 }
 
 func (p Pipeline) String() string {
@@ -254,6 +266,72 @@ type PipelineInfo struct {
 
 func (p PipelineInfo) String() string {
 	return Stringify(p)
+}
+
+// UserPipeline represents a pipeline triggered by the authenticated user, as
+// returned by ListUserPipelines.
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/pipelines/#list-pipelines
+type UserPipeline struct {
+	ID             int64                     `json:"id"`
+	IID            int64                     `json:"iid"`
+	ProjectID      int64                     `json:"project_id"`
+	Status         string                    `json:"status"`
+	Source         PipelineSource            `json:"source"`
+	Ref            string                    `json:"ref"`
+	SHA            string                    `json:"sha"`
+	Name           string                    `json:"name"`
+	WebURL         string                    `json:"web_url"`
+	CreatedAt      *time.Time                `json:"created_at"`
+	UpdatedAt      *time.Time                `json:"updated_at"`
+	StartedAt      *time.Time                `json:"started_at"`
+	FinishedAt     *time.Time                `json:"finished_at"`
+	Duration       int64                     `json:"duration"`
+	QueuedDuration int64                     `json:"queued_duration"`
+	DetailedStatus *DetailedStatus           `json:"detailed_status"`
+	MergeRequest   *UserPipelineMergeRequest `json:"merge_request"`
+	Project        *BasicProject             `json:"project"`
+}
+
+func (p UserPipeline) String() string {
+	return Stringify(p)
+}
+
+// UserPipelineMergeRequest represents the merge request of a merge request
+// pipeline in a UserPipeline. It is only set if the merge request is visible
+// to the user.
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/pipelines/#list-pipelines
+type UserPipelineMergeRequest struct {
+	IID    int64  `json:"iid"`
+	Title  string `json:"title"`
+	WebURL string `json:"web_url"`
+}
+
+// ListUserPipelinesOptions represents the available ListUserPipelines()
+// options. Only keyset pagination is supported, so it does not embed
+// ListOptions.
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/pipelines/#list-pipelines
+type ListUserPipelinesOptions struct {
+	CreatedAfter  *time.Time      `url:"created_after,omitempty" json:"created_after,omitempty"`
+	CreatedBefore *time.Time      `url:"created_before,omitempty" json:"created_before,omitempty"`
+	Cursor        *string         `url:"cursor,omitempty" json:"cursor,omitempty"`
+	OrderBy       *string         `url:"order_by,omitempty" json:"order_by,omitempty"`
+	Sort          *string         `url:"sort,omitempty" json:"sort,omitempty"`
+	Source        *PipelineSource `url:"source,omitempty" json:"source,omitempty"`
+	PerPage       *int64          `url:"per_page,omitempty" json:"per_page,omitempty"`
+}
+
+func (s *PipelinesService) ListUserPipelines(opt *ListUserPipelinesOptions, options ...RequestOptionFunc) ([]*UserPipeline, *Response, error) {
+	return do[[]*UserPipeline](s.client,
+		withPath(routePipelines),
+		withAPIOpts(opt),
+		withRequestOpts(options...),
+	)
 }
 
 // ListProjectPipelinesOptions represents the available ListProjectPipelines()

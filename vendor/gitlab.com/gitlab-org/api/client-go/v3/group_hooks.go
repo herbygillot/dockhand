@@ -155,6 +155,7 @@ type AddGroupHookOptions struct {
 	// SigningToken is write-only and controlled by a feature flag currently. See https://docs.gitlab.com/api/group_webhooks/#update-a-group-hook
 	SigningToken          *string              `url:"signing_token,omitempty" json:"signing_token,omitempty"`
 	CustomWebhookTemplate *string              `url:"custom_webhook_template,omitempty" json:"custom_webhook_template,omitempty"`
+	URLVariables          []HookURLVariable    `url:"url_variables,omitempty" json:"url_variables,omitempty"`
 	CustomHeaders         *[]*HookCustomHeader `url:"custom_headers,omitempty" json:"custom_headers,omitempty"`
 }
 
@@ -207,6 +208,7 @@ type EditGroupHookOptions struct {
 	// SigningToken is write-only and controlled by a feature flag currently. See https://docs.gitlab.com/api/group_webhooks/#update-a-group-hook
 	SigningToken          *string              `url:"signing_token,omitempty" json:"signing_token,omitempty"`
 	CustomWebhookTemplate *string              `url:"custom_webhook_template,omitempty" json:"custom_webhook_template,omitempty"`
+	URLVariables          []HookURLVariable    `url:"url_variables,omitempty" json:"url_variables,omitempty"`
 	CustomHeaders         *[]*HookCustomHeader `url:"custom_headers,omitempty" json:"custom_headers,omitempty"`
 }
 

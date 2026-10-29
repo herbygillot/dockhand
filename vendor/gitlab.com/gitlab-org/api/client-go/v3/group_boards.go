@@ -95,12 +95,20 @@ var _ GroupIssueBoardsServiceInterface = (*GroupIssueBoardsService)(nil)
 // GitLab API docs:
 // https://docs.gitlab.com/api/group_boards/
 type GroupIssueBoard struct {
-	ID        int64         `json:"id"`
-	Name      string        `json:"name"`
-	Group     *Group        `json:"group"`
-	Milestone *Milestone    `json:"milestone"`
-	Labels    []*GroupLabel `json:"labels"`
-	Lists     []*BoardList  `json:"lists"`
+	ID              int64      `json:"id"`
+	Name            string     `json:"name"`
+	HideBacklogList bool       `json:"hide_backlog_list"`
+	HideClosedList  bool       `json:"hide_closed_list"`
+	Group           *Group     `json:"group"`
+	Milestone       *Milestone `json:"milestone"`
+	// Assignee and Weight are the board's scope, which GitLab sends where
+	// the group has configurable boards (Premium and Ultimate only).
+	Assignee *BasicUser    `json:"assignee"`
+	Labels   []*GroupLabel `json:"labels"`
+	// GitLab counts a null or -1 weight as no weight scope, and null reads
+	// 0 here, like a board scoped to weight 0.
+	Weight int64        `json:"weight"`
+	Lists  []*BoardList `json:"lists"`
 }
 
 func (b GroupIssueBoard) String() string {
@@ -156,11 +164,13 @@ func (s *GroupIssueBoardsService) GetGroupIssueBoard(gid any, board int64, optio
 // GitLab API docs:
 // https://docs.gitlab.com/api/group_boards/#update-a-group-issue-board
 type UpdateGroupIssueBoardOptions struct {
-	Name        *string       `url:"name,omitempty" json:"name,omitempty"`
-	AssigneeID  *int64        `url:"assignee_id,omitempty" json:"assignee_id,omitempty"`
-	MilestoneID *int64        `url:"milestone_id,omitempty" json:"milestone_id,omitempty"`
-	Labels      *LabelOptions `url:"labels,omitempty" json:"labels,omitempty"`
-	Weight      *int64        `url:"weight,omitempty" json:"weight,omitempty"`
+	Name            *string       `url:"name,omitempty" json:"name,omitempty"`
+	HideBacklogList *bool         `url:"hide_backlog_list,omitempty" json:"hide_backlog_list,omitempty"`
+	HideClosedList  *bool         `url:"hide_closed_list,omitempty" json:"hide_closed_list,omitempty"`
+	AssigneeID      *int64        `url:"assignee_id,omitempty" json:"assignee_id,omitempty"`
+	MilestoneID     *int64        `url:"milestone_id,omitempty" json:"milestone_id,omitempty"`
+	Labels          *LabelOptions `url:"labels,omitempty" json:"labels,omitempty"`
+	Weight          *int64        `url:"weight,omitempty" json:"weight,omitempty"`
 }
 
 func (s *GroupIssueBoardsService) UpdateIssueBoard(gid any, board int64, opt *UpdateGroupIssueBoardOptions, options ...RequestOptionFunc) (*GroupIssueBoard, *Response, error) {
@@ -208,12 +218,17 @@ func (s *GroupIssueBoardsService) GetGroupIssueBoardList(gid any, board, list in
 }
 
 // CreateGroupIssueBoardListOptions represents the available
-// CreateGroupIssueBoardList() options.
+// CreateGroupIssueBoardList() options. GitLab takes exactly one of the four
+// list types; assignee, milestone, and iteration lists are Premium and
+// Ultimate only.
 //
 // GitLab API docs:
 // https://docs.gitlab.com/api/group_boards/#new-group-issue-board-list
 type CreateGroupIssueBoardListOptions struct {
-	LabelID *int64 `url:"label_id" json:"label_id"`
+	LabelID     *int64 `url:"label_id,omitempty" json:"label_id,omitempty"`
+	AssigneeID  *int64 `url:"assignee_id,omitempty" json:"assignee_id,omitempty"`
+	MilestoneID *int64 `url:"milestone_id,omitempty" json:"milestone_id,omitempty"`
+	IterationID *int64 `url:"iteration_id,omitempty" json:"iteration_id,omitempty"`
 }
 
 func (s *GroupIssueBoardsService) CreateGroupIssueBoardList(gid any, board int64, opt *CreateGroupIssueBoardListOptions, options ...RequestOptionFunc) (*BoardList, *Response, error) {

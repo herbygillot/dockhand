@@ -83,8 +83,8 @@ type CreatePackageProtectionRulesOptions struct {
 // GitLab API docs:
 // https://docs.gitlab.com/api/project_packages_protection_rules/#update-a-package-protection-rule
 type UpdatePackageProtectionRulesOptions struct {
-	PackageNamePattern          *string                             `url:"package_name_pattern" json:"package_name_pattern"`
-	PackageType                 *string                             `url:"package_type" json:"package_type"`
+	PackageNamePattern          *string                             `url:"package_name_pattern,omitempty" json:"package_name_pattern,omitempty"`
+	PackageType                 *string                             `url:"package_type,omitempty" json:"package_type,omitempty"`
 	MinimumAccessLevelForDelete Nullable[ProtectionRuleAccessLevel] `url:"minimum_access_level_for_delete,omitempty" json:"minimum_access_level_for_delete,omitempty"`
 	MinimumAccessLevelForPush   Nullable[ProtectionRuleAccessLevel] `url:"minimum_access_level_for_push,omitempty" json:"minimum_access_level_for_push,omitempty"`
 }

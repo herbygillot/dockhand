@@ -35,27 +35,27 @@ type (
 		// ScheduleExport schedules a project export.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/project_import_export/#schedule-an-export
+		// https://docs.gitlab.com/api/project_import_export/#export-a-project
 		ScheduleExport(pid any, opt *ScheduleExportOptions, options ...RequestOptionFunc) (*Response, error)
 		// ExportStatus gets the status of export.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/project_import_export/#export-status
+		// https://docs.gitlab.com/api/project_import_export/#retrieve-the-status-of-a-project-export
 		ExportStatus(pid any, options ...RequestOptionFunc) (*ExportStatus, *Response, error)
 		// ExportDownload downloads the finished export.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/project_import_export/#export-download
+		// https://docs.gitlab.com/api/project_import_export/#download-a-project-export
 		ExportDownload(pid any, options ...RequestOptionFunc) ([]byte, *Response, error)
 		// ImportFromFile imports a project from an archive file.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/project_import_export/#import-a-file
+		// https://docs.gitlab.com/api/project_import_export/#import-a-project-from-a-local-archive
 		ImportFromFile(archive io.Reader, opt *ImportFileOptions, options ...RequestOptionFunc) (*ImportStatus, *Response, error)
 		// ImportStatus gets the status of an import.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/project_import_export/#import-status
+		// https://docs.gitlab.com/api/project_import_export/#retrieve-the-status-of-a-project-import
 		ImportStatus(pid any, options ...RequestOptionFunc) (*ImportStatus, *Response, error)
 	}
 
@@ -74,29 +74,67 @@ var _ ProjectImportExportServiceInterface = (*ProjectImportExportService)(nil)
 // ImportStatus represents a project import status.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_import_export/#import-status
+// https://docs.gitlab.com/api/project_import_export/#retrieve-the-status-of-a-project-import
 type ImportStatus struct {
-	ID                int64      `json:"id"`
-	Description       string     `json:"description"`
-	Name              string     `json:"name"`
-	NameWithNamespace string     `json:"name_with_namespace"`
-	Path              string     `json:"path"`
-	PathWithNamespace string     `json:"path_with_namespace"`
-	CreateAt          *time.Time `json:"create_at"`
-	ImportStatus      string     `json:"import_status"`
-	ImportType        string     `json:"import_type"`
-	CorrelationID     string     `json:"correlation_id"`
-	ImportError       string     `json:"import_error"`
+	ID                int64  `json:"id"`
+	Description       string `json:"description"`
+	Name              string `json:"name"`
+	NameWithNamespace string `json:"name_with_namespace"`
+	Path              string `json:"path"`
+	PathWithNamespace string `json:"path_with_namespace"`
+
+	// Deprecated: use CreatedAt instead. GitLab sends created_at, not
+	// create_at, so this field is always nil.
+	CreateAt *time.Time `json:"create_at"`
+
+	CreatedAt       *time.Time                     `json:"created_at"`
+	ImportStatus    string                         `json:"import_status"`
+	ImportType      string                         `json:"import_type"`
+	CorrelationID   string                         `json:"correlation_id"`
+	FailedRelations []*ProjectImportFailedRelation `json:"failed_relations"`
+	ImportError     string                         `json:"import_error"`
+	// Stats counts the objects fetched from GitHub and imported so far. It
+	// is nil for every other kind of import.
+	Stats *ProjectImportStats `json:"stats"`
 }
 
 func (s ImportStatus) String() string {
 	return Stringify(s)
 }
 
+// ProjectImportFailedRelation represents a relation an import could not
+// bring over. GitLab lists at most 100 of them. It also sends
+// exception_message, always as null, which is why this struct leaves it out.
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/project_import_export/#retrieve-the-status-of-a-project-import
+type ProjectImportFailedRelation struct {
+	ID             int64      `json:"id"`
+	CreatedAt      *time.Time `json:"created_at"`
+	ExceptionClass string     `json:"exception_class"`
+	Source         string     `json:"source"`
+	RelationName   string     `json:"relation_name"`
+	LineNumber     int64      `json:"line_number"`
+}
+
+// ProjectImportStats represents the counts of a GitHub import: the objects
+// fetched from GitHub and those imported so far. Each map is keyed by the
+// object type GitLab counted, such as "issue", "pull_request", or "note".
+// The set of keys is open: GitLab adds one only once it counts an object of
+// that type, and a finished import keeps the keys of the GitLab release that
+// ran it.
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/project_import_export/#retrieve-the-status-of-a-project-import
+type ProjectImportStats struct {
+	Fetched  map[string]int64 `json:"fetched"`
+	Imported map[string]int64 `json:"imported"`
+}
+
 // ExportStatus represents a project export status.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_import_export/#export-status
+// https://docs.gitlab.com/api/project_import_export/#retrieve-the-status-of-a-project-export
 type ExportStatus struct {
 	ID                int64             `json:"id"`
 	Description       string            `json:"description"`
@@ -117,7 +155,7 @@ func (s ExportStatus) String() string {
 // ExportStatusLinks represents the project export status links.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_import_export/#export-status
+// https://docs.gitlab.com/api/project_import_export/#retrieve-the-status-of-a-project-export
 type ExportStatusLinks struct {
 	APIURL string `json:"api_url"`
 	WebURL string `json:"web_url"`
@@ -130,7 +168,7 @@ func (l ExportStatusLinks) String() string {
 // ScheduleExportOptions represents the available ScheduleExport() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_import_export/#schedule-an-export
+// https://docs.gitlab.com/api/project_import_export/#export-a-project
 type ScheduleExportOptions struct {
 	Description *string                     `url:"description,omitempty" json:"description,omitempty"`
 	Upload      ScheduleExportUploadOptions `url:"upload,omitempty" json:"upload,omitempty"`
@@ -172,7 +210,7 @@ func (s *ProjectImportExportService) ExportDownload(pid any, options ...RequestO
 // ImportFileOptions represents the available ImportFile() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_import_export/#import-a-file
+// https://docs.gitlab.com/api/project_import_export/#import-a-project-from-a-local-archive
 type ImportFileOptions struct {
 	Namespace      *string               `url:"namespace,omitempty" json:"namespace,omitempty"`
 	Name           *string               `url:"name,omitempty" json:"name,omitempty"`
