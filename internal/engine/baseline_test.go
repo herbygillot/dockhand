@@ -39,7 +39,7 @@ func TestABaselineKeepsEachEnvironmentsRequirements(t *testing.T) {
 	_, err = e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)
 
-	baseline, err := e.PlanBaseline(t.Context(), branch, []string{"libharbor", "harbor-viewer", "harbor-viewer-legacy"})
+	baseline, err := e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch, Ports: []string{"libharbor", "harbor-viewer", "harbor-viewer-legacy"}})
 	require.NoError(t, err)
 	require.Equal(t, revision.Source.Base, baseline.Revision.Source.Commit)
 	require.Equal(t, []string{"libharbor:unchanged:also", "harbor-viewer:unchanged:also", "harbor-viewer-legacy:unchanged:also"}, names(baseline.Plan.Targets),
@@ -89,17 +89,58 @@ func TestABaselineUsesTheCheckedBase(t *testing.T) {
 		return len(found)
 	}
 	before := revisions()
-	preview, err := e.PreviewBaseline(t.Context(), current, []string{"jq"})
+	preview, err := e.PreviewBaseline(t.Context(), BaselineRequest{Branch: current, Ports: []string{"jq"}})
 	require.NoError(t, err)
 	require.Equal(t, checked.Base, preview.Revision.Source.Commit)
 	require.NotEmpty(t, preview.Revision.ID)
 	require.Equal(t, before, revisions(), "a preview records nothing")
 
-	baseline, err := e.PlanBaseline(t.Context(), current, []string{"jq"})
+	baseline, err := e.PlanBaseline(t.Context(), BaselineRequest{Branch: current, Ports: []string{"jq"}})
 	require.NoError(t, err)
 	require.Equal(t, checked.Base, baseline.Revision.Source.Commit)
 	require.Equal(t, checked.Base, baseline.Revision.Source.Base)
 	require.Equal(t, before+1, revisions(), "the base is recorded as the branch's revision once planned")
+}
+
+// --of names the check a baseline compares with, where it takes the
+// branch's newest otherwise: what moved names the check it's read against
+// (5a72a542). It names a finished check of the branch's own, not a
+// baseline (Codex's additions).
+func TestABaselineOfANamedCheck(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := twoPortBranch(t, e)
+	first := checkHead(t, e, branch)
+	checked, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	write(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\nversion 1\n"})
+	testsupport.Git(t, f.upstream, "add", "devel/other/Portfile")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "other: new port")
+	_, err = e.Rebase(t.Context(), checked)
+	require.NoError(t, err)
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	checkHead(t, e, current)
+
+	newest, err := e.PreviewBaseline(t.Context(), BaselineRequest{Branch: current, Ports: []string{"jq"}})
+	require.NoError(t, err)
+	require.Equal(t, current.Base, newest.Revision.Source.Commit, "the newest check's base")
+	named, err := e.PlanBaseline(t.Context(), BaselineRequest{Branch: current, Of: first.Name(), Ports: []string{"jq"}})
+	require.NoError(t, err)
+	require.Equal(t, first.ID, named.Of.ID)
+	require.Equal(t, checked.Base, named.Revision.Source.Commit, "the named check's base")
+
+	queued, err := e.EnqueueBaseline(t.Context(), current, named, model.OriginPerson)
+	require.NoError(t, err)
+	_, err = e.PlanBaseline(t.Context(), BaselineRequest{Branch: current, Of: queued.Name(), Ports: []string{"jq"}})
+	require.EqualError(t, err, queued.Name()+" is a baseline; name the check it compares with")
+	_, err = e.PlanBaseline(t.Context(), BaselineRequest{Branch: current, Of: "check-99", Ports: []string{"jq"}})
+	require.EqualError(t, err, "there is no run check-99")
+	other := current
+	other.ID = "br_other"
+	_, err = e.PlanBaseline(t.Context(), BaselineRequest{Branch: other, Of: first.Name(), Ports: []string{"jq"}})
+	require.ErrorContains(t, err, first.Name()+" isn't a check of ")
 }
 
 // Without --only, a baseline takes the ports that failed at install or
@@ -170,11 +211,11 @@ func TestOnlyTheNewestFailedCheckPointsToABaseline(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"libharbor"}, offer.Ports)
 
-	baseline, err := e.PlanBaseline(t.Context(), branch, nil)
+	baseline, err := e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Equal(t, latest.ID, baseline.Of.ID)
 	require.Equal(t, []string{"libharbor:unchanged:also"}, names(baseline.Plan.Targets))
-	_, err = e.PlanBaseline(t.Context(), branch, []string{"jq"})
+	_, err = e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch, Ports: []string{"jq"}})
 	require.ErrorContains(t, err, "--only jq: "+latest.Name()+" did not build it")
 }
 
@@ -219,7 +260,7 @@ func TestABaselineRebuildsAPortOnlyWhereItFailed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.RunFailed, checked.State)
 
-	baseline, err := e.PlanBaseline(t.Context(), branch, nil)
+	baseline, err := e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Equal(t, []string{"jq:unchanged:also"}, names(baseline.Plan.Targets))
 	armPlan, _ := baseline.Plan.In(tahoeArm)
@@ -228,7 +269,7 @@ func TestABaselineRebuildsAPortOnlyWhereItFailed(t *testing.T) {
 	require.Equal(t, []model.Exclusion{{Target: model.Target{Name: "jq", Portfile: "textproc/jq/Portfile"}, Reason: checked.Name() + " didn't fail there"}}, armPlan.Exclusions)
 	require.Equal(t, []model.TargetID{"jq"}, x86Plan.Order)
 
-	named, err := e.PlanBaseline(t.Context(), branch, []string{"libharbor"})
+	named, err := e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch, Ports: []string{"libharbor"}})
 	require.NoError(t, err)
 	for _, environment := range []model.Environment{tahoeArm, tahoeX86} {
 		planned, _ := named.Plan.In(environment)
@@ -258,7 +299,7 @@ func TestABaselineKeepsTheChecksVariants(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.RunFailed, checked.State)
 
-	baseline, err := e.PlanBaseline(t.Context(), branch, nil)
+	baseline, err := e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Equal(t, []string{"libharbor:unchanged:also", "libharbor +docs:unchanged:also"}, names(baseline.Plan.Targets), "each failed build, with its own variants, and not +tests, which passed")
 	require.Equal(t, map[string]bool{"docs": true}, baseline.Plan.Targets[1].Target.Variants)
@@ -383,9 +424,9 @@ func TestABaselineLeavesOutWhatMastersBuildReadsTheSame(t *testing.T) {
 	offer, err := e.BaselineCandidates(t.Context(), run)
 	require.NoError(t, err)
 	require.Empty(t, offer.Ports, "jq reads nothing the branch changes")
-	_, err = e.PlanBaseline(t.Context(), branch, nil)
+	_, err = e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch})
 	require.EqualError(t, err, "jq left out: master's build reads what "+run.Name()+"'s did")
-	baseline, err := e.PlanBaseline(t.Context(), branch, []string{"jq"})
+	baseline, err := e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch, Ports: []string{"jq"}})
 	require.NoError(t, err)
 	require.Equal(t, []string{"jq:unchanged:also"}, names(baseline.Plan.Targets), "--only builds it whatever the rule says")
 }
