@@ -26,12 +26,16 @@ act() {
 	kill -9 "$DH_BG_PID" 2>/dev/null
 	[ -z "$pid" ] || sudo /bin/kill -9 -- "-$(ps -o pgid= -p "$pid" | tr -d ' ')" "$pid" 2>/dev/null || :
 	dh_bg_wait || :
-	dh status >"$ROW_DIR/status.txt" 2>&1 || :
+	# dh sends dockhand's output to out.log alone, so status is run
+	# directly to keep its own copy, then added to the log (the rc8 G4
+	# run, whose status.txt was always empty).
+	"$DH_BIN" status >"$ROW_DIR/status.txt" 2>&1 </dev/null || :
 	cat "$ROW_DIR/status.txt" >>"$ROW_DIR/out.log"
 	G4_SNAPSHOT=$(grep -o 'sudo port restore --snapshot-id [0-9]*' "$ROW_DIR/status.txt" | awk '{print $NF}' | head -1)
 	[ -z "$G4_SNAPSHOT" ] || sudo /opt/local/bin/port -N restore --snapshot-id "$G4_SNAPSHOT" >>"$ROW_DIR/out.log" 2>&1 || :
 	dh cancel -b "$G4_BRANCH" || :
-	dh status >"$ROW_DIR/status.after" 2>&1 || :
+	"$DH_BIN" status >"$ROW_DIR/status.after" 2>&1 </dev/null || :
+	cat "$ROW_DIR/status.after" >>"$ROW_DIR/out.log"
 }
 
 assert() {
