@@ -274,3 +274,50 @@ func TestAPrefixPutBackByHandIsForgotten(t *testing.T) {
 	require.Empty(t, changes)
 	require.NoDirExists(t, left)
 }
+
+// Every root step runs one command, the prefix's port-tclsh, with the
+// check's directory as its argument, which the probe asks sudo about, so
+// one sudoers line lets serve check in a prefix whose registry is root's;
+// where sudo would ask with no terminal to ask on, the refusal gives that
+// line (the person's sitting on rc8, 2026-10-29).
+func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
+	t.Parallel()
+	prefix := t.TempDir()
+	registry := filepath.Join(prefix, "var", "macports", "registry")
+	require.NoError(t, os.MkdirAll(registry, 0o755))
+	require.NoError(t, os.Chmod(registry, 0o555))
+	t.Cleanup(func() { os.Chmod(registry, 0o755) })
+	called := filepath.Join(t.TempDir(), "called")
+	answer := filepath.Join(t.TempDir(), "answer")
+	sudo := filepath.Join(t.TempDir(), "sudo")
+	require.NoError(t, os.WriteFile(sudo, []byte("#!/bin/sh\necho \"$*\" >> "+called+"\nexit $(cat "+answer+")\n"), 0o755))
+	l := &Local{sudo: []string{sudo}, Env: []string{"USER=dhtest", "PATH=/usr/bin:/bin"}}
+	tclsh := filepath.Join(prefix, "bin", "port-tclsh")
+
+	require.NoError(t, os.WriteFile(answer, []byte("0"), 0o644))
+	as, err := l.asRoot(t.Context(), prefix, &fakeBuild{})
+	require.NoError(t, err)
+	require.Equal(t, []string{sudo, "-n"}, as)
+	said, err := os.ReadFile(called)
+	require.NoError(t, err)
+	require.Equal(t, "-n "+tclsh+" /dev/null\n", string(said), "the probe asks of the command every root step runs")
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "owner.json"), nil, 0o644))
+	run, err := l.start(dir, prefix, "check-1", as)
+	require.NoError(t, err)
+	<-run.Done()
+	said, err = os.ReadFile(called)
+	require.NoError(t, err)
+	require.Equal(t, "-n "+tclsh+" "+filepath.Join(dir, "guest.tcl")+" "+dir, strings.Split(strings.TrimSpace(string(said)), "\n")[1], "one command, no /usr/bin/env")
+
+	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+		tty.Close()
+		return // a terminal would be asked on
+	}
+	require.NoError(t, os.WriteFile(answer, []byte("1"), 0o644))
+	_, err = l.asRoot(t.Context(), prefix, &fakeBuild{})
+	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
+	require.ErrorContains(t, err, "This sudoers line, added with visudo, lets it: dhtest ALL=(root) NOPASSWD: "+tclsh+".")
+	require.ErrorContains(t, err, "A prefix MacPorts installed without root needs no sudo")
+}

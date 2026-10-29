@@ -104,8 +104,10 @@ dockhand rename goplus xgo
 dockhand update xgo
 ```
 
-The new name is set where the Portfile sets its name: its `name` line, or the
-setup its name comes from, such as `github.setup` or `go.setup`. The stub uses
+The new name is set on the Portfile's `name` line, or, where the name comes
+from a setup such as `github.setup` or `go.setup`, on a `name` line below it, so
+the port's source stays where it is. Pointing the setup at a renamed repository
+is `update --follow-moves`. The stub uses
 `PortGroup obsolete 1.0` and `replaced_by xgo`, at the old version with its
 revision raised. Dockhand does only that much. It lists the new Portfile's lines
 that still name the old name, such as a Go module path or a binary's name, and

@@ -6,25 +6,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A rename sets the name where the Portfile sets it: its name line, else
-// the forge setup's project, else go.setup's package's last element, as
-// field testing's hand rename of goplus to xgo left it to go.setup
-// (2026-10-29); a name set otherwise is refused.
+// A rename sets the name on the Portfile's name line, or, where the name
+// comes from a forge's setup, on a name line below it, keeping the port's
+// source where it is; a name set otherwise is refused.
 func TestRenameSetsTheNameWhereThePortfileSetsIt(t *testing.T) {
 	named := "PortSystem 1.0\nPortGroup github 1.0\ngithub.setup goplus gop 1.7.5 v\nname goplus\nversion 1.7.5\n"
 	out, err := Rename([]byte(named), "goplus", "xgo")
 	require.NoError(t, err)
 	require.Equal(t, "PortSystem 1.0\nPortGroup github 1.0\ngithub.setup goplus gop 1.7.5 v\nname xgo\nversion 1.7.5\n", string(out), "the name line, not the setup's project")
 
-	setup := "PortSystem 1.0\nPortGroup github 1.0\ngithub.setup acme foo 1.0 v\n"
+	setup := "PortSystem 1.0\nPortGroup github 1.0\ngithub.setup        acme foo 1.0 v\nrevision            0\n"
 	out, err = Rename([]byte(setup), "foo", "bar")
 	require.NoError(t, err)
-	require.Equal(t, "PortSystem 1.0\nPortGroup github 1.0\ngithub.setup acme bar 1.0 v\n", string(out))
+	require.Equal(t, "PortSystem 1.0\nPortGroup github 1.0\ngithub.setup        acme foo 1.0 v\nname                bar\nrevision            0\n", string(out), "the source stays acme/foo")
 
-	golang := "PortSystem 1.0\nPortGroup golang 1.0\ngo.setup github.com/goplus/gop 1.7.5 v\n"
+	golang := "PortSystem 1.0\nPortGroup golang 1.0\ngo.setup github.com/goplus/gop 1.7.5 v"
 	out, err = Rename([]byte(golang), "gop", "xgo")
 	require.NoError(t, err)
-	require.Equal(t, "PortSystem 1.0\nPortGroup golang 1.0\ngo.setup github.com/goplus/xgo 1.7.5 v\n", string(out))
+	require.Equal(t, "PortSystem 1.0\nPortGroup golang 1.0\ngo.setup github.com/goplus/gop 1.7.5 v\nname     xgo\n", string(out), "the module's path is the person's")
 
 	_, err = Rename([]byte("PortSystem 1.0\nname [string tolower Foo]\n"), "foo", "bar")
 	require.ErrorIs(t, err, ErrUnsupported)

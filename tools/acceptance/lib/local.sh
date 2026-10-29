@@ -12,10 +12,12 @@ local_active() {
 
 # local_root has sudo's ticket ready for the row's checks in /opt/local,
 # which ask for it once each, on this terminal: a person sitting at the
-# M1 types dhtest's password, where the run has a terminal. Without one,
-# or without sudo, the row isn't run, saying why.
+# M1 types dhtest's password, where the run has a terminal. A rule asking
+# no password for /opt/local's port-tclsh, the one command a check runs
+# as root (G8's), is as good. Without one, or without sudo, the row isn't
+# run, saying why.
 local_root() {
-	if sudo -n /usr/bin/true 2>/dev/null; then
+	if sudo -n /opt/local/bin/port-tclsh /dev/null 2>/dev/null || sudo -n /usr/bin/true 2>/dev/null; then
 		return 0
 	fi
 	if [ ! -t 0 ] || ! sudo -v; then

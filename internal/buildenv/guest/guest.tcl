@@ -22,6 +22,11 @@ json::write indented false
 
 set root /var/tmp/dockhand-check
 if {[info exists ::env(DOCKHAND_GUEST_ROOT)]} { set root $::env(DOCKHAND_GUEST_ROOT) }
+# The local provider names the check's directory as the program's one
+# argument, where sudo passes no environment of the person's: one
+# sudoers line for the prefix's port-tclsh lets serve run it (the
+# person's sitting on rc8, 2026-10-29).
+if {[llength $argv]} { set root [lindex $argv 0] }
 set fd [open $root/input.json r]
 set input [json::json2dict [read $fd]]
 close $fd
@@ -46,6 +51,12 @@ set environment [dict create]
 # note its snapshot is made with; empty in a VM.
 set local {}
 if {[dict exists $input local]} { set local [dict get $input local] }
+# In a prefix of the person's, MacPorts reads the staged tree through the
+# check's macports.conf, and the prefix's own programs come first.
+if {[llength $local]} {
+    set ::env(PORTSRC) $root/macports.conf
+    set ::env(PATH) $prefix/bin:$prefix/sbin:/usr/bin:/bin:/usr/sbin:/sbin
+}
 
 # save writes the results so far, replacing the file whole. A result's
 # fields are strings, but for the ports active as it built, what its

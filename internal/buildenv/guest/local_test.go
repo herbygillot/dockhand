@@ -154,3 +154,26 @@ func TestTheGuestPutsBackWhatAnEarlierCheckLeft(t *testing.T) {
 	require.Contains(t, got, "  zlib @1.3.2_0 (active)\n")
 	require.NotContains(t, got, "harbor-cli")
 }
+
+// Run under sudo, which passes no environment of the person's, the
+// program takes the check's directory as its argument and sets MacPorts'
+// PORTSRC from it itself, so one sudoers line for the prefix's port-tclsh
+// lets it run (the person's sitting on rc8, 2026-10-29).
+func TestALocalCheckTakesItsDirectoryAsItsArgument(t *testing.T) {
+	t.Parallel()
+	_, active := registry(t, "  zlib @1.3.2_0 (active)\n")
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "sources.conf"), []byte("file://"+root+"/ports [default]\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "macports.conf"), []byte("sources_conf "+filepath.Join(root, "sources.conf")+"\n"), 0o644))
+	// The fake port keeps its own files where DOCKHAND_GUEST_ROOT says,
+	// which the program no longer reads given its argument.
+	command := guestCommand(t, root, asIs(Local{}), active, "DEPS=", "DOCKHAND_GUEST_ROOT="+t.TempDir(), "PORTSRC=")
+	command.Args = append(command.Args, root)
+	output, _ := command.CombinedOutput()
+	results, err := readResults(root)
+	require.NoError(t, err, "%s", output)
+	require.Equal(t, "finished", results.State, results.Detail)
+	conf, err := os.ReadFile(filepath.Join(root, "port.log.conf"))
+	require.NoError(t, err, "port read the check's macports.conf through PORTSRC")
+	require.Contains(t, string(conf), "file://"+root+"/ports [default]")
+}

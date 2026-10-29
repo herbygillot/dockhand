@@ -152,9 +152,21 @@ between targets as it does in guests. Do not put an everyday shared prefix in
 that list merely to make a build pass.
 
 `serve = true` permits the service to run local checks. A registry requiring
-root also needs noninteractive sudo access; that allows Portfiles to execute as
-root on this Mac. It does not permit local checks of adopted pull requests. Read
-`dockhand usage checks` before enabling it.
+root also needs sudo to run the prefix's `port-tclsh` without a password, which
+one sudoers line allows, added with `visudo`:
+
+```text
+you ALL=(root) NOPASSWD: /opt/local/bin/port-tclsh
+```
+
+Every root step of a local check runs that one command. It allows Portfiles to
+execute as root on this Mac, as a rule for `port` does, and is no narrower:
+`port-tclsh` runs whatever script it is given, from a directory you can write.
+A prefix MacPorts installed without root needs no sudo at all, at the cost of
+MacPorts' binary archives. serve's refusal names the line, with your name and
+the prefix's `port-tclsh`; Dockhand never writes sudoers itself. It does not
+permit local checks of adopted pull requests. Read `dockhand usage checks`
+before enabling it.
 
 ### A command provider
 

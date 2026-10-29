@@ -27,7 +27,7 @@ func TestAPrefixIsOwnedForAWholeCheck(t *testing.T) {
 	release := filepath.Join(t.TempDir(), "release")
 	entries := filepath.Join(t.TempDir(), "entries")
 	temp := t.TempDir()
-	script := fmt.Sprintf(`set root $::env(DOCKHAND_GUEST_ROOT)
+	script := fmt.Sprintf(`set root [lindex $argv 0]
 set fd [open $root/results.json w]
 puts $fd {{"protocol":1,"state":"running","environment":{"snapshot":"7"},"targets":[]}}
 close $fd
@@ -128,7 +128,7 @@ func TestACheckWaitsForAGuestItsCrashedDockhandLeft(t *testing.T) {
 			return err
 		}
 		script := fmt.Sprintf(`set log [open {%s} a]; puts $log entered; close $log
-set fd [open $::env(DOCKHAND_GUEST_ROOT)/results.json w]
+set fd [open [lindex $argv 0]/results.json w]
 puts $fd {{"protocol":1,"state":"finished","environment":{},"targets":[]}}
 close $fd
 `, entries)

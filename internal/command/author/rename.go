@@ -26,9 +26,9 @@ func RenameCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 		Short: "Rename a port, leaving an obsolete stub at its old name",
 		Long: `Renames a port as MacPorts does: its Portfile and files/ move to the new
 name's directory, in its category unless --category names another, with the
-new name set where the Portfile sets its name (its name line, or the setup its
-name comes from, such as github.setup or go.setup), and its old Portfile
-becomes a stub: PortGroup obsolete 1.0, replaced_by the new name, at its
+new name on its name line, or on a name line below the setup its name comes
+from, such as github.setup or go.setup, keeping its source; and its old
+Portfile becomes a stub: PortGroup obsolete 1.0, replaced_by the new name, at its
 version with its revision raised. It's one edit, so tidy commits it as
 "<new>: rename from <old>", and check and submit take the pair as one change.
 

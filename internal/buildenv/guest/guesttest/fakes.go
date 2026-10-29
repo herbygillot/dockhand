@@ -39,8 +39,11 @@ esac
 // REQUESTED those requested, as "-q installed requested and <name>". Its port
 // snapshot keeps the note it's made with, which --list says as ID 7.
 // Where PORTSRC names a macports.conf, it's copied beside PORT_LOG once,
-// with the sources.conf it names.
+// with the sources.conf it names. Its files are kept in the check's
+// directory, DOCKHAND_GUEST_ROOT, else the one PORTSRC's macports.conf is
+// in, as the local provider's program sets it.
 const FakePort = `#!/bin/sh
+: "${DOCKHAND_GUEST_ROOT:=$(dirname "${PORTSRC:-.}")}"
 echo "$*" >> "$PORT_LOG"
 if [ -n "$PORTSRC" ] && [ ! -f "$PORT_LOG.conf" ]; then cat "$PORTSRC" "$(awk '/^sources_conf/ {print $2}' "$PORTSRC")" > "$PORT_LOG.conf"; fi
 drop() { for name in "$@"; do grep -v "^  $name @" "$ACTIVEFILE" > "$ACTIVEFILE.new"; mv "$ACTIVEFILE.new" "$ACTIVEFILE"; done; }
