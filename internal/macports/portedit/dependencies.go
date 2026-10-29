@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -166,7 +167,14 @@ func dependencyPatches(input *sourceInput, kind string) error {
 		if err != nil {
 			return err
 		}
-		if changed(string(data)) && !(kind == depblock.Cargo && featuresOnly(data)) {
+		switch {
+		case !changed(string(data)) || kind == depblock.Cargo && featuresOnly(data):
+		case patchcheck.LockfileOnly(data):
+			// A lock the release's own may make unneeded, said so, where
+			// it read as a manifest to regenerate (field testing's batch
+			// 15, meli).
+			return ErrUnsupported.Because("patch %s only refreshes Cargo.lock, which the new release's own lock may make unneeded; drop it from patchfiles where the release's Cargo.lock has what it adds, or refresh it by hand", name)
+		default:
 			return ErrUnsupported.Because("patch %s edits dependency manifests; regenerate manually", name)
 		}
 	}
