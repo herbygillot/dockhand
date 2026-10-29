@@ -414,6 +414,16 @@ func targets(data []byte, strip int) []string {
 	return names
 }
 
+// LockfileOnly reports a patch every file of which is a Cargo.lock: a
+// lockfile refresh, which a new release's own lock may make unneeded, not
+// a change to what the project depends on (field testing's batch 15,
+// meli's patch-Cargo.lock.diff).
+func LockfileOnly(patch []byte) bool {
+	names := targets(patch, 0)
+	// The original's side often names the file's .orig copy.
+	return len(names) > 0 && !slices.ContainsFunc(names, func(name string) bool { return path.Base(strings.TrimSuffix(name, ".orig")) != "Cargo.lock" })
+}
+
 // quotes reports a patch whose file headers name a file in git's quoted
 // form.
 func quotes(data []byte) bool {

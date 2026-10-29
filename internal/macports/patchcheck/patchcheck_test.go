@@ -112,6 +112,17 @@ func TestTargets(t *testing.T) {
 	require.Equal(t, []string{"my file.c", "café.c"}, targets([]byte(quoted), 1))
 }
 
+// A patch every file of which is a Cargo.lock is a lockfile refresh, which
+// a new release's own lock may make unneeded (field testing's batch 15,
+// meli's patch-Cargo.lock.diff); one touching a manifest too isn't.
+func TestALockfileOnlyPatch(t *testing.T) {
+	lock := "--- Cargo.lock.orig\n+++ Cargo.lock\n@@ -1,3 +1,3 @@\n-version = \"0.4.1\"\n+version = \"0.4.2\"\n"
+	require.True(t, LockfileOnly([]byte(lock)))
+	require.True(t, LockfileOnly([]byte("diff --git a/crates/x/Cargo.lock b/crates/x/Cargo.lock\n--- a/crates/x/Cargo.lock\n+++ b/crates/x/Cargo.lock\n")))
+	require.False(t, LockfileOnly([]byte(lock+"--- Cargo.toml.orig\n+++ Cargo.toml\n")), "a manifest too")
+	require.False(t, LockfileOnly(nil))
+}
+
 // A compressed patch that decompresses past the 64 MiB checked of one is
 // refused, and left unchecked, as other unreadable patches are, rather than
 // checked as its first 64 MiB; the others are still checked.

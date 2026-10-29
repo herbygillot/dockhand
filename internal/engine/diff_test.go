@@ -333,6 +333,30 @@ func TestTheUpdateIsCommittedBeforeTheRebuildsForIt(t *testing.T) {
 	require.Equal(t, "aaa: rebuild for jq 1.8.1", plan.Groups[1].Subject())
 }
 
+// So does a library its person updated by hand, with only the rebuilds
+// for it dockhand's: a rebuild follows the port it rebuilds for, whoever
+// changed that, where every directory dockhand edited came first
+// (taisei and libunibreak, field testing, after batch 84).
+func TestARebuildFollowsAHandUpdateOfWhatItRebuildsFor(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	write(t, f.upstream, map[string]string{"textproc/aaa/Portfile": "name aaa\nversion 1\n"})
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "aaa")
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Ports: []string{"jq"}})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}, "textproc/aaa": {port("aaa", "jq")}}})
+	_, err = e.RevbumpLinked(t.Context(), branch, Update{Port: "jq", After: PortVersion{Version: "1.8.1"}}, nil, false)
+	require.NoError(t, err)
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Len(t, plan.Groups, 2)
+	require.Equal(t, "textproc/jq", plan.Groups[0].Directory, "the update first")
+	require.Equal(t, "aaa: rebuild for jq 1.8.1", plan.Groups[1].Subject())
+}
+
 // How a branch changes a port is read once: a new port, one removed, its
 // revision alone, or changed (part 4, item 2, where diff's words and
 // impact's test of them each read it).
