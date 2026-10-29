@@ -1,6 +1,7 @@
 package guest
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -167,7 +168,10 @@ func TestALocalCheckTakesItsDirectoryAsItsArgument(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "macports.conf"), []byte("sources_conf "+filepath.Join(root, "sources.conf")+"\n"), 0o644))
 	// The fake port keeps its own files where DOCKHAND_GUEST_ROOT says,
 	// which the program no longer reads given its argument.
-	command := guestCommand(t, root, asIs(Local{}), active, "DEPS=", "DOCKHAND_GUEST_ROOT="+t.TempDir(), "PORTSRC=")
+	// Under sudo, it gives what it wrote back to the person who ran it
+	// as it exits, here the test's own user.
+	command := guestCommand(t, root, asIs(Local{}), active, "DEPS=", "DOCKHAND_GUEST_ROOT="+t.TempDir(), "PORTSRC=",
+		fmt.Sprintf("SUDO_UID=%d", os.Getuid()), fmt.Sprintf("SUDO_GID=%d", os.Getgid()))
 	command.Args = append(command.Args, root)
 	output, _ := command.CombinedOutput()
 	results, err := readResults(root)

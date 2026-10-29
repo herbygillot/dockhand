@@ -27,5 +27,11 @@ assert() {
 		return
 	fi
 	local_same /opt/local "$ROW_DIR/active.before" "dockhand undo $G2_RUN didn't put /opt/local back exactly" || return
+	# Its directory goes once the prefix is put back: the guest program,
+	# root, gives what it wrote there back (G4 on rc8 left one).
+	if grep -ls '"check":"'"$G2_RUN"'"' /var/tmp/dockhand-local-*/owner.json >/dev/null 2>&1; then
+		row_fail "$G2_RUN's directory stayed in /var/tmp once /opt/local was put back: $(grep -ls '"check":"'"$G2_RUN"'"' /var/tmp/dockhand-local-*/owner.json | head -1)"
+		return
+	fi
 	row_pass "check --keep left the branch's versions active, and dockhand undo $G2_RUN put /opt/local back exactly"
 }

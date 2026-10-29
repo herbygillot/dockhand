@@ -273,9 +273,9 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 	case err != nil || snapshot == "":
 		// Nothing was changed before the program stopped: its snapshot
 		// comes before anything does.
-		os.RemoveAll(dir)
+		remove(dir, build)
 	case restored == "yes":
-		os.RemoveAll(dir)
+		remove(dir, build)
 	case restored == "kept":
 		// Its directory stays, marked kept, for dockhand undo's put-back,
 		// which the next check leaves to it.
@@ -295,7 +295,7 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 			build.Progress(fmt.Sprintf("%s wasn't put back as it was: %v; dockhand undo %s tries again, or the next check there does. %s", prefix, err, check, l.byHand(dir, check, snapshot)))
 			return
 		}
-		os.RemoveAll(dir)
+		remove(dir, build)
 		build.Progress("put " + prefix + " back as it was")
 	default:
 		build.Progress(fmt.Sprintf("%s wasn't put back as it was: %s; dockhand undo %s tries again, or the next check there does. %s", prefix, strings.TrimPrefix(restored, "no: "), check, l.byHand(dir, check, snapshot)))
@@ -320,6 +320,15 @@ func (l *Local) byHand(dir, check, snapshot string) string {
 		return words
 	}
 	return words + ", and sudo port activate " + strings.Join(activate, " ") + " the rest that were active, from its record"
+}
+
+// remove removes a check's directory, saying where it can't, as where
+// its guest program, root, left what dockhand, as the person, can't
+// remove (G4 on rc8, 2026-10-29).
+func remove(dir string, build buildenv.Build) {
+	if err := os.RemoveAll(dir); err != nil {
+		build.Progress(fmt.Sprintf("%s couldn't be removed: %v; sudo rm -rf %s removes it", dir, err, dir))
+	}
 }
 
 // stage packs the revision's tree, its port index, and the guest program
@@ -659,7 +668,7 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 			continue
 		}
 		if left.snapshot == "" || left.restored {
-			os.RemoveAll(left.dir)
+			remove(left.dir, build)
 			continue
 		}
 		if left.owner.Prefix != prefix {
@@ -676,7 +685,7 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 			}
 			return buildenv.Infrastructure("%w: %s couldn't be put back as it was before %s: %v; dockhand undo %s tries again. %s", buildenv.ErrNeedsAttention, prefix, left.owner.Check, err, left.owner.Check, l.byHand(left.dir, left.owner.Check, left.snapshot))
 		}
-		os.RemoveAll(left.dir)
+		remove(left.dir, build)
 	}
 	return nil
 }
@@ -765,7 +774,7 @@ func (l *Local) PutBack(ctx context.Context, check string, progress func(string)
 			}
 			return prefix, true, buildenv.Infrastructure("%w: %s couldn't be put back as it was before %s: %v. %s", buildenv.ErrNeedsAttention, prefix, check, err, l.byHand(left.dir, check, left.snapshot))
 		}
-		os.RemoveAll(left.dir)
+		remove(left.dir, build)
 		return prefix, true, nil
 	}
 	return "", false, nil

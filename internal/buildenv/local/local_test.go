@@ -374,3 +374,24 @@ func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 	require.ErrorContains(t, err, "This sudoers line, added with visudo, lets it: dhtest ALL=(root) NOPASSWD: "+tclsh+".")
 	require.ErrorContains(t, err, "A prefix MacPorts installed without root needs no sudo")
 }
+
+// A check's directory dockhand can't remove, as one its guest program,
+// root, made a directory in, is said, with how to remove it (G4 on rc8,
+// 2026-10-29).
+func TestADirectoryThatCantBeRemovedIsSaid(t *testing.T) {
+	t.Parallel()
+	if os.Getuid() == 0 {
+		t.Skip("root removes anything")
+	}
+	dir := filepath.Join(t.TempDir(), localDirectory+"stuck")
+	locked := filepath.Join(dir, "rootmade")
+	require.NoError(t, os.MkdirAll(locked, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(locked, "results.json"), nil, 0o644))
+	require.NoError(t, os.Chmod(locked, 0o555))
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+	build := &fakeBuild{}
+	remove(dir, build)
+	require.Len(t, build.progress, 1)
+	require.Contains(t, build.progress[0], dir+" couldn't be removed: ")
+	require.Contains(t, build.progress[0], "; sudo rm -rf "+dir+" removes it")
+}

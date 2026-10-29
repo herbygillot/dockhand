@@ -46,5 +46,11 @@ assert() {
 	grep -q "first needs dockhand wait $G4_RUN, check --replace, or dockhand cancel $G4_RUN" "$ROW_DIR/status.txt" || { row_fail "status didn't say a check of the branch first needs $G4_RUN settled"; return; }
 	local_same /opt/local "$ROW_DIR/active.before" "dockhand undo $G4_RUN didn't put /opt/local back exactly" || return
 	! grep -q 'stopped before it could restore /opt/local' "$ROW_DIR/status.after" || { row_fail "status still said /opt/local was changed once it was put back"; return; }
+	# Its directory goes once the prefix is put back: the guest program,
+	# root, gives what it wrote there back (G4 on rc8 left one).
+	if grep -ls '"check":"'"$G4_RUN"'"' /var/tmp/dockhand-local-*/owner.json >/dev/null 2>&1; then
+		row_fail "$G4_RUN's directory stayed in /var/tmp once /opt/local was put back: $(grep -ls '"check":"'"$G4_RUN"'"' /var/tmp/dockhand-local-*/owner.json | head -1)"
+		return
+	fi
 	row_pass "status named dockhand undo $G4_RUN, which put /opt/local back exactly, and status then said nothing of it"
 }

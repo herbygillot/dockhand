@@ -146,7 +146,12 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // MacPorts' PORTSRC and PATH itself, as /usr/bin/env did: the same
 // environment, so nothing is built or judged otherwise, and the protocol
 // stays 3.
-const guestPin = "59334ed6b7e7542e253b3daa5f4c2f3273b113cdb85d2ec02a28b6ab729462b1"
+//
+// Since a check's directory goes once its prefix is put back, the program
+// run under sudo on this Mac gives what it wrote there to the person who
+// ran sudo as it exits: ownership of its own records, so the protocol
+// stays 3.
+const guestPin = "f081cfae9478c954a97c3368aa751af201f859381544acfee96ffe2a514dea8b"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this
