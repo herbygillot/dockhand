@@ -486,6 +486,36 @@ func TestServeLeavesAPersonsPassingBranchToThem(t *testing.T) {
 	require.Equal(t, branch.ID, yours[0].ID)
 }
 
+// A branch serve prepared that a person then checked where they named is
+// theirs to submit: serve submits what passed where build.unattended
+// builds, and submit needs what the person named (D17, 2026-10-29).
+func TestServeLeavesABranchCheckedWhereAPersonNamedToThem(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := servePrepared(t, e)
+	candidates, yours, err := e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	require.Empty(t, yours)
+
+	e.Providers[buildenv.Local] = &scriptedProvider{}
+	where, err := e.Where(t.Context(), WhereRequest{On: []string{buildenv.Local}})
+	require.NoError(t, err)
+	proposal, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureHead}, Where: where})
+	require.NoError(t, err)
+	queued, err := e.Enqueue(t.Context(), branch, proposal.Plan, model.OriginPerson)
+	require.NoError(t, err)
+	checked, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, checked.State)
+	candidates, yours, err = e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, candidates)
+	require.Len(t, yours, 1)
+}
+
 // A hold two ports share is said once: py-kubernetes's two subports' held
 // line read "…follow; upstream's setup.py changed; …follow" (field testing
 // at f41fbad6). Concerns stay one a port, each with its key.

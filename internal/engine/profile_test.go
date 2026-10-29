@@ -14,7 +14,7 @@ import (
 // 5897a82, R3-16).
 func TestEveryRuleConfigTakesIsADockhandProfile(t *testing.T) {
 	t.Parallel()
-	for name, rule := range map[string]config.ReleaseRule{string(config.RuleHost): config.RuleHost, config.ProfileLocal: config.RuleHost, string(config.RuleMinMax): config.RuleMinMax, string(config.RuleMacPortsCI): config.RuleMacPortsCI, string(config.RuleAll): config.RuleAll} {
+	for name, rule := range map[string]config.ReleaseRule{string(config.RuleHost): config.RuleHost, string(config.RuleMinMax): config.RuleMinMax, string(config.RuleMacPortsCI): config.RuleMacPortsCI, string(config.RuleAll): config.RuleAll} {
 		profile, ok := builtinProfile(name)
 		require.True(t, ok, name)
 		require.Equal(t, buildenv.Tart, profile.Provider, name)

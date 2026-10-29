@@ -109,7 +109,8 @@ of working files, the index, and untracked files have different uses.
 A narrowed check adds evidence for the targets and environments it actually
 built. It does not erase the need to check the other changed targets. Submission
 combines applicable results for the same files and evaluates the required
-environments. The preview names missing, outdated, or failed results instead of
+environments: those the newest check was asked to build on with `--on` or
+`--build`, or, where it named none, its own and `build.default`'s. The preview names missing, outdated, or failed results instead of
 assuming a narrowed pass covers the whole change. Build-environment identity and
 fetched Git commits can also make an earlier result no longer stand. Recheck
 when the output asks for it; reuse can spare the builds whose inputs remain

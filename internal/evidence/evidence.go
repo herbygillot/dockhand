@@ -324,8 +324,8 @@ func Merged(executions []model.GuestExecution, results map[model.ExecutionID][]m
 // them, after its provider (blockRemaining), so they stand and fall with
 // it.
 //
-// Outside build.default's profile (required), a target is required only
-// where a check of the files planned it (outsideProfile).
+// Outside what the newest check asked for (required), a result counts
+// only where it failed or passed (outsideProfile).
 func Judge(primary Check, plan model.Plan, earlier []Check, now Identities, required []model.Environment) Evidence {
 	checks := append([]Check{primary}, earlier...)
 	primary.Plan = plan
@@ -359,15 +359,19 @@ func Judge(primary Check, plan model.Plan, earlier []Check, now Identities, requ
 	return evidence
 }
 
-// outsideProfile asks nothing of a target, in an environment
-// build.default's profile doesn't cover (Covers), that no check of the
-// files planned there: its cell reads "—", as a release a profile skipped
-// does, and counts for nothing. Plan takes every check's environments, so
-// one diagnostic check --only ufraw on macOS 13 and 14 had submit ask for
-// all six of the branch's ports there (the exiv2 session's notes,
-// 2026-10-21). What a check found there still counts, a failure included,
-// and a target a check planned there and didn't reach, as when it
-// stopped, is still asked for.
+// outsideProfile asks nothing of a target in an environment the newest
+// check of the files didn't ask for (required, Covers): a cell no check
+// built there, or whose result was recorded in an environment that is
+// another now, reads "—", as a release a profile skipped does, and counts
+// for nothing, so asking again replaces an earlier ask (D17, the person's
+// "Newest ask", 2026-10-29). What a check found there still counts, a
+// failure above all, which blocks or is accepted, so a narrower ask never
+// un-requires one. Plan takes every check's environments, so one
+// diagnostic check --only ufraw on macOS 13 and 14 had submit ask for all
+// six of the branch's ports there (the exiv2 session's notes,
+// 2026-10-21). Inside what was asked, a target a check planned and didn't
+// reach, as when it stopped, names that check, as the block says where
+// (the exiv2 session's note 7).
 func (e *Evidence) outsideProfile(required []model.Environment, checks []Check) {
 	planned := func(environment model.Environment, id model.TargetID) string {
 		for _, check := range checks {
@@ -378,22 +382,17 @@ func (e *Evidence) outsideProfile(required []model.Environment, checks []Check) 
 		return ""
 	}
 	for i, environment := range e.Plan.Environments {
-		if slices.ContainsFunc(required, func(r model.Environment) bool { return Covers(r, environment) }) {
-			continue
-		}
+		asked := slices.ContainsFunc(required, func(r model.Environment) bool { return Covers(r, environment) })
 		for t := range e.Targets {
 			cell := &e.Targets[t].Outcomes[i]
-			if cell.Kind != CellNotRun {
-				continue
+			switch {
+			case asked && cell.Kind == CellNotRun:
+				cell.PlannedIn = planned(environment, e.Targets[t].Target.ID)
+			case !asked && (cell.Kind == CellNotRun || cell.Kind == CellRemade):
+				skipped := noResult(CellExcluded, environment, e.Targets[t].Target.ID)
+				skipped.Exclusion = model.Exclusion{Target: e.Targets[t].Target.Target, Reason: "outside what the newest check of these files asked for", Span: true}
+				*cell = skipped
 			}
-			// Asked for there only because a check planned it: that check
-			// is named, as the block says where (the exiv2 session's note 7).
-			if cell.PlannedIn = planned(environment, e.Targets[t].Target.ID); cell.PlannedIn != "" {
-				continue
-			}
-			skipped := noResult(CellExcluded, environment, e.Targets[t].Target.ID)
-			skipped.Exclusion = model.Exclusion{Target: e.Targets[t].Target.Target, Reason: "outside build.default's profile, and no check of these files planned it here", Span: true}
-			*cell = skipped
 		}
 	}
 }
@@ -401,11 +400,11 @@ func (e *Evidence) outsideProfile(required []model.Environment, checks []Check) 
 // Plan is the plan a tree's evidence is judged against: the primary
 // check's, with each environment another check of the same files planned,
 // by the newest that did (others, newest first), and the required ones,
-// build.default's profile's, which no check may have planned (D17). A check narrowed to
-// one release replaced the others' results: sand-runner's check on macOS
-// 15 alone left its pass on 26 out of status and submit (the sand-runner
-// port). An environment no check planned has no plan of its own, and what
-// it requires is unchecked there.
+// what the newest check asked for, which no check may have planned (D17).
+// A check narrowed to one release replaced the others' results:
+// sand-runner's check on macOS 15 alone left its pass on 26 out of status
+// and submit (the sand-runner port). An environment no check planned has
+// no plan of its own, and what it requires is unchecked there.
 func Plan(primary model.Plan, others []model.Plan, required []model.Environment) model.Plan {
 	plan := primary
 	plan.Environments = slices.Clone(plan.Environments)
