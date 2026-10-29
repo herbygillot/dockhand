@@ -26,3 +26,18 @@ func TestPortNamesAreOrderedAsAPersonReadsThem(t *testing.T) {
 	slices.SortFunc(names, macports.ComparePortNames)
 	require.Equal(t, []string{"py39-a", "py310-a", "terraform", "terraform-1.2", "terraform-1.9", "terraform-1.10", "terraform-1.16", "terraform_select", "x01", "x1"}, names)
 }
+
+// A port is named after a project where its name, case and its group's
+// prefix set aside, is the project's (the person's rule for a port
+// rename, 2026-10-29).
+func TestNamedAfter(t *testing.T) {
+	require.True(t, macports.NamedAfter("gop", "gop"))
+	require.True(t, macports.NamedAfter("Gop", "GOP"))
+	require.True(t, macports.NamedAfter("py-requests", "requests"))
+	require.True(t, macports.NamedAfter("php-redis", "redis"))
+	require.False(t, macports.NamedAfter("goplus", "gop"), "goplus's repository was gop")
+	require.False(t, macports.NamedAfter("py-requests", "py-requests-oauth"))
+	require.False(t, macports.NamedAfter("gop", ""))
+	require.Equal(t, "py-bar", macports.RenamedAfter("py-foo", "Bar"))
+	require.Equal(t, "xgo", macports.RenamedAfter("goplus", "xgo"))
+}

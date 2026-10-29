@@ -294,6 +294,13 @@ type PlainURL struct {
 	Option, URL string
 }
 
+// Categories are the port's categories, its primary first, as its
+// categories option lists them.
+func (p PortInfo) Categories() []string {
+	categories, _ := syntax.ListValues(p.Options["categories"])
+	return categories
+}
+
 // PlainHTTP are the port's URLs over plain HTTP, which MacPorts prefers
 // over HTTPS: its homepage, and each of its master_sites that is a URL
 // (without the ":tag" that names which distfiles it serves). A mirror

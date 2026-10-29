@@ -18,6 +18,33 @@ func ValidName(value string) bool {
 	}
 	return value != "" && utf8.ValidString(value) && !strings.ContainsAny(value, "/\\") && strings.IndexFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) < 0
 }
+
+// NamedAfter reports whether a port is named after a project's name: the
+// port's name, case and its port group's prefix (py-, p5-, rb-, php-) set
+// aside, is the name. goplus isn't named after its repository, gop; xgo
+// would be after xgo (the person's rule for a port rename, 2026-10-29).
+func NamedAfter(port, name string) bool {
+	return name != "" && strings.TrimPrefix(strings.ToLower(port), groupPrefix(port)) == strings.ToLower(name)
+}
+
+// RenamedAfter is a port's name once its project is renamed to name: its
+// port group's prefix kept, and the name in lower case, as py-foo after
+// foo became bar is py-bar.
+func RenamedAfter(port, name string) string {
+	return groupPrefix(port) + strings.ToLower(name)
+}
+
+// groupPrefix is the prefix a port group names its ports by, py-, p5-,
+// rb-, or php-, in lower case; empty where the port has none.
+func groupPrefix(port string) string {
+	for _, prefix := range []string{"py-", "p5-", "rb-", "php-"} {
+		if strings.HasPrefix(strings.ToLower(port), prefix) {
+			return prefix
+		}
+	}
+	return ""
+}
+
 func validateVariants(variants map[string]bool) error {
 	for name := range variants {
 		if !ValidName(name) || strings.HasPrefix(name, "+") || strings.HasPrefix(name, "-") {

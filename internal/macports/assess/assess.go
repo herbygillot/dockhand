@@ -183,6 +183,7 @@ const (
 	ProviderRemoved     = "python-provider-removed"
 	GoToolchainRule     = "go-toolchain"
 	GoModuleMoved       = "go-module-moved"
+	ProjectRenamed      = "project-renamed"
 	RequiresPythonRule  = "python-requires"
 	PythonPinBehind     = "python-pin-behind"
 	PatchRejected       = "patch-rejected"
@@ -202,7 +203,7 @@ func Rules() []string {
 	return []string{LicenseChanged, LicenseYears, LicenseParty, LicenseMoved, BuildFileChanged, BuildFileVersion, BuildFileOptions, DependencyAdded, DependencyDropped,
 		DependencyMoved, DependenciesCounted, NativeLibrary, NativeLibraryLeft, Unread, LayoutAmbiguous, RequirementUnmet, RequirementUnknown,
 		ProviderUnresolved, ProviderRemoved, GoToolchainRule, GoModuleMoved, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, PatchFuzz, SourceRemoved,
-		SourceUncertain, WorksrcPathGone, GitHubTarball, CXXStandardRule, GoLinkTargetRule}
+		SourceUncertain, WorksrcPathGone, GitHubTarball, CXXStandardRule, GoLinkTargetRule, ProjectRenamed}
 }
 
 // floorRules raise a toolchain's floor upstream: a Go toolchain, a Python,
@@ -268,6 +269,9 @@ func Assess(input Input) model.UpstreamComparison {
 		a.add(found)
 	}
 	if found, ok := a.moduleMoved(); ok {
+		a.add(found)
+	}
+	if found, ok := a.projectRenamed(); ok {
 		a.add(found)
 	}
 	if found, ok := a.requiresPython(); ok {

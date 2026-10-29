@@ -135,3 +135,29 @@ func TestAGoModuleThatMovedIsSaid(t *testing.T) {
 		require.NotEqual(t, GoModuleMoved, change.Rule, "the same module")
 	}
 }
+
+// A project that calls itself another name in the new version says so, a
+// notice, from its root's go.mod, Cargo.toml, or pyproject.toml: goplus's
+// gop became xgo, its module with it, and a port named after the old name
+// is renamed with it (the person's rule, 2026-10-29). The same name in
+// other spellings, or a module's major version, is no rename.
+func TestAProjectThatRenamedItselfIsSaid(t *testing.T) {
+	pairs := func(file, was, now string) []Pair {
+		return []Pair{{Before: read(t, "pkg-1", map[string]string{file: was}, project.Spec{}), After: read(t, "pkg-2", map[string]string{file: now}, project.Spec{})}}
+	}
+	renamed := func(pairs []Pair) []model.UpstreamChange {
+		var found []model.UpstreamChange
+		for _, change := range Assess(Input{Port: goPort("1.26"), Base: goPort("1.26"), Pairs: pairs}).Changes {
+			if change.Rule == ProjectRenamed {
+				found = append(found, change)
+			}
+		}
+		return found
+	}
+	require.Equal(t, []model.UpstreamChange{{Kind: "name", Path: "go.mod", Rule: ProjectRenamed, Subject: "xgo", Class: model.Introduced,
+		Message: "upstream renamed its project from gop to xgo, as go.mod names it"}}, renamed(pairs("go.mod", "module github.com/goplus/gop\n\ngo 1.26\n", "module github.com/goplus/xgo\n\ngo 1.26\n")))
+	require.Empty(t, renamed(pairs("go.mod", "module github.com/goplus/gop\n\ngo 1.26\n", "module github.com/goplus/gop/v2\n\ngo 1.26\n")), "a major version")
+	require.Len(t, renamed(pairs("Cargo.toml", "[package]\nname = \"old-tool\"\nversion = \"1.0.0\"\n", "[package]\nname = \"new-tool\"\nversion = \"2.0.0\"\n")), 1)
+	require.Len(t, renamed(pairs("pyproject.toml", "[project]\nname = \"Old_Tool\"\n", "[project]\nname = \"new-tool\"\n")), 1)
+	require.Empty(t, renamed(pairs("pyproject.toml", "[project]\nname = \"Old_Tool\"\n", "[project]\nname = \"old-tool\"\n")), "PEP 503's one name")
+}

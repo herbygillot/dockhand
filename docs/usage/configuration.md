@@ -192,7 +192,8 @@ The `holds.ports."<port>"` table can set that port's `majors` and `allow`,
 overriding global choices where supplied. It also accepts:
 
 - `moves = "follow"`: follow a repository move on unattended updates; the
-  default is `"hold"`.
+  default is `"hold"`. It never follows a port rename, a rename of the project
+  the port is named after, which stays held for `dockhand rename`.
 - `after = ["OTHER_PORT"]`: wait until each named port is at the same version on
   master or has an open PR for that version.
 

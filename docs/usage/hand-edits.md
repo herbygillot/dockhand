@@ -92,6 +92,42 @@ can name several ports, or use `--new=<name>` for a separate rebuild branch. A
 revision shared by subports moves for all of them, so inspect the family in the
 diff.
 
+## Rename a port, or move it to another category
+
+When a project renames itself, MacPorts renames its port: the Portfile and
+`files/` move to the new name's directory, and the old Portfile becomes an
+obsolete stub that names the new port.
+
+```sh
+dockhand rename goplus xgo --plan
+dockhand rename goplus xgo
+dockhand update xgo
+```
+
+The new name is set where the Portfile sets its name: its `name` line, or the
+setup its name comes from, such as `github.setup` or `go.setup`. The stub uses
+`PortGroup obsolete 1.0` and `replaced_by xgo`, at the old version with its
+revision raised. Dockhand does only that much. It lists the new Portfile's lines
+that still name the old name, such as a Go module path or a binary's name, and
+the ports that depend on the old name; those changes are yours. `--category`
+places the new directory in another category. `tidy` commits the rename as
+`xgo: rename from goplus`.
+
+An update whose GitHub repository was renamed under the same owner, where the
+port is named after it or the project's own name changed with it, is held, its
+line leading with `dockhand rename`. `update --follow-moves` still follows it,
+keeping the port's name, but a port's `moves = "follow"` setting and `serve`
+never do.
+
+To move a port to another category without renaming it:
+
+```sh
+dockhand move dockhand macports
+```
+
+The move names the new category first on the port's `categories` line where the
+old one was first, and `tidy` commits it as `dockhand: move to macports`.
+
 ## Finish an update Dockhand refused
 
 First read the refusal and the planned diff:
