@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -135,6 +136,9 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 		return done
 	}
 	done.Tidied = true
+	// A serve that stops here leaves a committed branch with no check,
+	// which the next serve queues (ResumePrepared, W6).
+	failpoint.Hit("ship.committed")
 	if options.To == ShipCommit {
 		return done
 	}

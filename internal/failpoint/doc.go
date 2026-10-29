@@ -13,7 +13,9 @@
 //   - submit.pushed, after the push, before the pull request opens;
 //   - submit.created, once GitHub has opened the pull request, before
 //     dockhand records it;
-//   - check.running, once a check's provider run is recorded running.
+//   - check.running, once a check's provider run is recorded running;
+//   - ship.committed, once ship or serve has committed a prepared
+//     branch's edits, before its check is queued.
 //
 // DOCKHAND_FAILPOINT=<step>:fault, <step>:error, and <step>:infrastructure
 // make a step fail once in the process, as a fault in dockhand's own
