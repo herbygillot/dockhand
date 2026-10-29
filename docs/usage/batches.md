@@ -118,8 +118,10 @@ select it.
 ## Follow progress and resume individual changes
 
 Ship carries each selected change to its queued check before it waits for
-results. Serve can run the checks side by side where capacity permits; otherwise
-ship drives them here one at a time. At the normal output level a batch gives
+results, then runs the checks together: here, at most as many on a provider at
+once as its capacity, two on Tart, or serve's side by side where serve leads.
+Each change is finished, submitted where ship goes on to submit, as its own
+check ends, in the order they end. At the normal output level a batch gives
 each change a row and lists the ones needing attention below it. `-v` expands
 the stages, and `--json` retains each change's partial result.
 

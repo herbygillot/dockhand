@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
@@ -85,6 +86,11 @@ func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id mode
 	if before != nil {
 		before(lead)
 	}
+	// A run that ended needs no slot: it's read, where it waited for a
+	// slot a batch's other checks held (SeeAllThrough).
+	if ended, err := e.Run(ctx, id); err != nil || ended.State.Terminal() {
+		return ended, nil, err
+	}
 	if lead.Here() {
 		if err := e.awaitSlot(ctx, session, id); err != nil {
 			return model.Run{}, nil, err
@@ -98,6 +104,70 @@ func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id mode
 	}
 	run, err = e.waitFor(ctx, id)
 	return run, taker, err
+}
+
+// SeeAllThrough sees a batch's queued runs to their ends together, each as
+// SeeThrough sees one, in a session of its own: driven here where nothing
+// leads, at most as many at once on a provider as its capacity, which a
+// run waiting for its slot couldn't see of its siblings still queued, or
+// followed where serve leads or another process holds it. ended is told of
+// each run as it ends, in the order they end, one at a time, so a batch
+// takes about its longest check, not the sum of them (Codex's workflow
+// review of 2ad896d2; the person's "every ask I add to Dockhand can
+// increase the amount of time it takes to go through the bump process",
+// 2026-10-29). Where ctx ends first, each run is as it was last read.
+func (e *Engine) SeeAllThrough(ctx context.Context, ids []model.RunID, ended func(model.Run, error)) {
+	type seen struct {
+		run model.Run
+		err error
+	}
+	slots := map[string]chan struct{}{}
+	for provider := range e.Providers {
+		slots[provider] = make(chan struct{}, e.capacity(provider))
+	}
+	results := make(chan seen, len(ids))
+	for _, id := range ids {
+		go func() {
+			results <- func() seen {
+				session, err := e.Session(ctx, model.SessionForeground)
+				if err != nil {
+					return seen{model.Run{ID: id}, err}
+				}
+				defer session.End(context.WithoutCancel(ctx))
+				run, err := e.Run(ctx, id)
+				if err != nil {
+					return seen{run, err}
+				}
+				// The batch's own slots, taken in one order, so two runs
+				// needing the same providers never hold one each.
+				if lead, err := e.LeadOf(ctx, session, id); err == nil && lead.Here() {
+					needs, err := e.RunProviders(ctx, run)
+					if err != nil {
+						return seen{run, err}
+					}
+					slices.Sort(needs)
+					for _, provider := range needs {
+						slot, ok := slots[provider]
+						if !ok {
+							continue
+						}
+						select {
+						case slot <- struct{}{}:
+							defer func() { <-slot }()
+						case <-ctx.Done():
+							return seen{run, ctx.Err()}
+						}
+					}
+				}
+				run, _, err = e.SeeThrough(ctx, session, id, nil)
+				return seen{run, err}
+			}()
+		}()
+	}
+	for range ids {
+		result := <-results
+		ended(result.run, result.err)
+	}
 }
 
 // waitFor reads a run until it ends or ctx does.

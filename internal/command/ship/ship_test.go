@@ -209,6 +209,22 @@ func TestShipQueuesABatchsChecksFirst(t *testing.T) {
 	require.Len(t, g.PRs, 1)
 }
 
+// Each change of a batch keeps its own check and submission in the JSON,
+// whichever order the checks end in, where every change's later steps were
+// gathered into the last change's.
+func TestABatchsChangesKeepTheirOwnChecks(t *testing.T) {
+	t.Parallel()
+	twoPortWorld(t)
+	result, err := cmdtest.JSONOf(t, "ship", "jq", "yq", "--yes")
+	require.Equal(t, 3, term.ExitCode(err))
+	for i := range 2 {
+		branch := cmdtest.Dig(t, result.Result, "changes", i, "branch", "name")
+		require.Equal(t, branch, cmdtest.Dig(t, result.Result, "changes", i, "check", "branch"), "change %d's check is its own", i)
+	}
+	require.NotEqual(t, cmdtest.Dig(t, result.Result, "changes", 0, "check", "run", "name"), cmdtest.Dig(t, result.Result, "changes", 1, "check", "run", "name"))
+	require.NotNil(t, cmdtest.Dig(t, result.Result, "changes", 0, "submit", "pull_request"))
+}
+
 // ship takes each stage's flags: --tests for the check, and --type and
 // --draft for the pull request, which bump lacked (the second look's §6).
 // A draft goes up whatever its check found.
