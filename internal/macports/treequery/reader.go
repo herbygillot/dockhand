@@ -6,6 +6,7 @@
 package treequery
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -236,6 +237,23 @@ func (p *Reader) PortsDefined(ctx context.Context, source model.Source, director
 		})
 	})
 	return defined, err
+}
+
+// ArchiveVersions are every indexed port's version and revision, by
+// lowercased name, as an archive's name writes them, 2.56.0_0, from the
+// port index of the source: what a check's estimate looks for on
+// packages.macports.org.
+func (p *Reader) ArchiveVersions(ctx context.Context, source model.Source) (versions map[string]string, err error) {
+	versions = map[string]string{}
+	err = p.index(ctx, source, func(index *portindex.Index) error {
+		return index.Each(func(entry portindex.Entry) bool {
+			if version := entry.Fields["version"]; version != "" {
+				versions[strings.ToLower(entry.Name)] = version + "_" + cmp.Or(entry.Fields["revision"], "0")
+			}
+			return true
+		})
+	})
+	return versions, err
 }
 
 // DependencyGraph reads every port's direct dependencies from the port

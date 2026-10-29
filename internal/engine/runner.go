@@ -269,6 +269,9 @@ type driver struct {
 	// canceled records that a cancel request, not the driver stopping,
 	// ended the run.
 	canceled atomic.Bool
+	// estimates are the environments' install estimates being said
+	// (sayEstimate), which the run waits for before it finishes.
+	estimates sync.WaitGroup
 	// problems are why the run needs a person's attention; mu guards them
 	// while environments build together.
 	problems []string
@@ -392,7 +395,9 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 			})
 		}
 	}
-	if err := group.Wait(); err != nil {
+	err = group.Wait()
+	d.estimates.Wait()
+	if err != nil {
 		return d.run, err
 	}
 	if running.Err() != nil {
@@ -459,6 +464,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			d.emit(kept, model.EventProgress, update.Message)
 		}
 	})
+	d.estimates.Go(func() { d.sayEstimate(kept, environment, revision.Source) })
 	for {
 		var executions []model.GuestExecution
 		var results map[model.TargetID]model.TargetResult
@@ -679,6 +685,25 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 	}
 }
 
+// estimateWait bounds an environment's install estimate, which the run
+// waits for before it finishes.
+const estimateWait = 30 * time.Second
+
+// sayEstimate says what the check will install in an environment, by the
+// port index, once packages.macports.org's listings are had: beside the
+// clone's start, never delaying it (the install estimate, 2026-10-29).
+func (d *driver) sayEstimate(ctx context.Context, environment model.Environment, source model.Source) {
+	ctx, cancel := context.WithTimeout(ctx, estimateWait)
+	defer cancel()
+	plan := d.plan
+	plan.Environments = []model.Environment{environment}
+	for _, estimate := range d.e.InstallEstimates(ctx, plan, source, true) {
+		if ctx.Err() == nil {
+			d.emit(ctx, model.EventProgress, DescribeEnvironment(environment)+": "+estimate.Words())
+		}
+	}
+}
+
 // remaining are what is left to build in an environment, in its own
 // order, each target with what it needs built first there.
 func (d *driver) remaining(environment model.Environment, results map[model.TargetID]model.TargetResult) []buildenv.Target {
@@ -729,6 +754,9 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 			d.emit(kept, model.EventProgress, update.Message)
 		}
 	})
+	for _, environment := range environments {
+		d.estimates.Go(func() { d.sayEstimate(kept, environment, revision.Source) })
+	}
 	for {
 		var check store.Check
 		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {

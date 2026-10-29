@@ -267,6 +267,7 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		env = gitprogram.Unattended(ctx, gitprogram.Program{Executable: git, Env: env}, tree)
 	}
 	readings, _ := options.cacheDirectory("DOCKHAND_READING_CACHE", "readings")
+	archives, _ := options.cacheDirectory("DOCKHAND_ARCHIVE_CACHE", "archives")
 	indexes, _ := options.cacheDirectory("DOCKHAND_INDEX_CACHE", "indexes")
 	return engine.Options{
 		Tree: tree,
@@ -294,6 +295,7 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		// are kept; port indexes are staged, so their cache is refused
 		// when they're staged.
 		Readings:         readings,
+		Archives:         archives,
 		Indexes:          indexes,
 		IndexMirror:      options.Getenv("DOCKHAND_INDEX_MIRROR"),
 		Home:             places.Home,

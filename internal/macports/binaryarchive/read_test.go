@@ -64,3 +64,17 @@ func TestAnArchivesFilesAndLibrariesAreRead(t *testing.T) {
 	require.Equal(t, []string{"/opt/local/lib/libx.1.dylib", "/opt/local/bin/x"}, files, "+CONTENTS is metadata")
 	require.Equal(t, []model.Library{{File: "/opt/local/lib/libx.1.dylib", Name: "/opt/local/lib/libx.1.dylib", Compatibility: "1.2.0"}}, libraries)
 }
+
+// A port's directory lists an archive of its version for a release
+// whatever its variants, or a noarch one; another version, release, or a
+// port whose name begins the same doesn't count.
+func TestAnArchiveIsListed(t *testing.T) {
+	listing := []byte(`<a href="git-2.56.0_0+credential_osxkeychain+diff_highlight+doc+pcre+perl5_34.darwin_25.arm64.tbz2">` +
+		`<a href="git-2.55.0_0+doc.darwin_24.arm64.tbz2"><a href="git-lfs-2.56.0_0.darwin_24.arm64.tbz2"><a href="gron-0.7.1_0.darwin_27.arm64.tbz2">`)
+	require.True(t, Listed(listing, "git", "2.56.0", "0", 25, "arm64"))
+	require.False(t, Listed(listing, "git", "2.56.0", "0", 24, "arm64"), "not for that release")
+	require.False(t, Listed(listing, "git", "2.56.0", "1", 25, "arm64"), "another revision")
+	require.True(t, Listed(listing, "gron", "0.7.1", "0", 27, "arm64"))
+	require.True(t, Listed([]byte(`<a href="py313-six-1.17.0_0.darwin_any.noarch.tbz2">`), "py313-six", "1.17.0", "0", 25, "arm64"), "noarch serves every release")
+	require.Equal(t, "https://packages.macports.org/git/", Directory(Packages, "git"))
+}

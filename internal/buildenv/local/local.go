@@ -802,6 +802,34 @@ func (l *Local) putBackAlready(ctx context.Context, dir, prefix string) bool {
 	return err == nil && maps.Equal(activePorts(string(before)), activePorts(string(now)))
 }
 
+// Installed are a prefix's active ports, as port -q installed active says
+// them, and the global variants its variants.conf sets, the person's own,
+// for a check's estimate (buildenv.InstalledProvider).
+func (l *Local) Installed(ctx context.Context, environment model.Environment) (active, variants []string, err error) {
+	prefix := cmp.Or(environment.Prefix, l.prefix())
+	listing, err := l.command(ctx, nil, filepath.Join(prefix, "bin", "port"), "-q", "installed", "active")
+	if err != nil {
+		return nil, nil, err
+	}
+	active = slices.Sorted(maps.Keys(activePorts(string(listing))))
+	// A variants.conf that can't be read sets none.
+	if conf, err := os.ReadFile(filepath.Join(prefix, "etc", "macports", "variants.conf")); err == nil {
+		for _, line := range strings.Split(string(conf), "\n") {
+			if comment := strings.IndexByte(line, '#'); comment >= 0 {
+				line = line[:comment]
+			}
+			for _, word := range strings.Fields(line) {
+				if strings.HasPrefix(word, "+") || strings.HasPrefix(word, "-") {
+					variants = append(variants, word)
+				}
+			}
+		}
+	}
+	return active, variants, nil
+}
+
+var _ buildenv.InstalledProvider = (*Local)(nil)
+
 // activePorts are the ports a listing of port -q installed active says
 // are active, each with its version, revision, and variants.
 func activePorts(listing string) map[string]string {

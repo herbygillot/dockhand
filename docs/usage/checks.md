@@ -166,6 +166,15 @@ image's source or tools can invalidate earlier evidence; check the affected
 targets again. macOS's VM limit includes your other running VMs, so queued work
 can wait for a slot without having failed.
 
+### What a check installs
+
+check's plan estimates what each environment installs before it builds,
+`Installs    about 14 dependencies to install, 3 with no archive on
+packages.macports.org for this release, by the port index; the clone decides`.
+Those with no archive build from source, which can take a while; it's a hint
+for choosing `-d`, and the clone decides. `check --plan` looks the archives up;
+a check says them as it starts.
+
 ### GitHub Actions
 
 `--on github` needs a login, a Git remote that pushes to your fork, and Actions
