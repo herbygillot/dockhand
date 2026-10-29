@@ -207,7 +207,11 @@ its go-get answer.`,
 				// flyctl run).
 				fmt.Fprintf(out, "  maintainers: nomaintainer (no maintainer configured). %s\n", engine.MaintainerWords(e.SuggestMaintainer(ctx, branch.Base), e.ConfigFile))
 			}
-			view.WritePlainHTTP(out, created.PlainHTTP)
+			var switched []engine.PlainURL
+			if created.Checksums != nil {
+				switched = created.Checksums.HTTPS
+			}
+			view.WritePlainHTTP(out, switched, created.PlainHTTP)
 			// A draft with no checksums isn't done: it exits 3, for a look,
 			// where it exited 0 (v0.4.0's known issues).
 			if created.ChecksumsProblem != "" {
@@ -222,6 +226,7 @@ its go-get answer.`,
 	cmd.Flags().StringVar(&name, "name", "", "the port's name (default: the project's, in lower case)")
 	cmd.Flags().BoolVar(&plan, "plan", false, "print the Portfile create would write, and write nothing")
 	cmd.Flags().StringVar(&category, "category", "", "port category (prompts in a terminal; otherwise uses a marked guess)")
+	settings.KeepHTTPFlag(cmd, s)
 	settings.SupportsJSON(cmd)
 	return cmd
 }

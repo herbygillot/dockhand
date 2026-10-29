@@ -57,6 +57,16 @@ type File struct {
 	} `toml:"providers"`
 	Cleanup Cleanup `toml:"cleanup"`
 	Holds   Holds   `toml:"holds"`
+	Update  Update  `toml:"update"`
+}
+
+// Update is what an edit does beside the change it's asked for.
+type Update struct {
+	// KeepHTTP leaves a Portfile's plain-HTTP links as they are, asking
+	// nothing, where update, create, and a checksums refresh otherwise
+	// switch each that answers over HTTPS, as --keep-http does for one
+	// command (the person's "keep_http", 2026-10-29).
+	KeepHTTP bool `toml:"keep_http"`
 }
 
 // Holds are what holds an update nobody looks over, bump's and serve's, for
@@ -481,6 +491,7 @@ func Defaults() map[string]string {
 		"cleanup.min_free":               prose.Bytes(DefaultMinFree),
 		"holds.majors":                   "hold",
 		"holds.allow":                    "(none)",
+		"update.keep_http":               "false",
 		"serve.ship_to":                  DefaultShipTo,
 		"serve.outdated_at":              DefaultOutdatedAt,
 		"serve.submit_limit":             strconv.Itoa(DefaultSubmitLimit),

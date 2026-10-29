@@ -201,7 +201,6 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	if err != nil {
 		return Created{}, err
 	}
-	answered := map[string]bool{}
 	directory := spec.Category + "/" + name
 	if err := e.refuseExisting(ctx, worktree, name); err != nil {
 		return Created{}, err
@@ -263,7 +262,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 
 	created := Created{Port: name, Directory: directory, Version: version, Build: build, Crates: len(spec.Crates),
 		Category: spec.Category, CategoryFrom: spec.CategoryFrom, Unconfirmed: spec.Unconfirmed(), HomepageFrom: homepageFrom}
-	update, err := e.Update(ctx, UpdateRequest{Branch: request.Branch, Action: model.EditChecksums, Port: name, answered: answered})
+	update, err := e.Update(ctx, UpdateRequest{Branch: request.Branch, Action: model.EditChecksums, Port: name})
 	switch {
 	case ctx.Err() != nil:
 		return created, ctx.Err()
@@ -275,8 +274,8 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	}
 	// Where the refresh couldn't look at the port's URLs, the homepage is
 	// still said if it's plain HTTP.
-	if len(created.PlainHTTP) == 0 {
-		created.PlainHTTP = e.plainHTTP(ctx, homepageOnly(spec.Homepage), answered)
+	if len(created.PlainHTTP) == 0 && !e.options.KeepHTTP {
+		created.PlainHTTP = e.plainHTTP(ctx, homepageOnly(spec.Homepage))
 	}
 	return created, nil
 }
@@ -612,10 +611,12 @@ func (e *Engine) createSpec(ctx context.Context, repo *git.Repository, observed 
 		spec.CategoryGuessed = true
 	}
 	// MacPorts prefers HTTPS: a forge's plain-HTTP homepage is written as
-	// its https form where that answers.
+	// its https form where that answers, unless keep_http.
 	var homepageFrom string
-	if plain := e.plainHTTP(ctx, homepageOnly(spec.Homepage), map[string]bool{}); len(plain) > 0 && plain[0].Answers {
-		homepageFrom, spec.Homepage = spec.Homepage, plain[0].HTTPS
+	if !e.options.KeepHTTP {
+		if plain := e.plainHTTP(ctx, homepageOnly(spec.Homepage)); len(plain) > 0 && plain[0].Answers {
+			homepageFrom, spec.Homepage = spec.Homepage, plain[0].HTTPS
+		}
 	}
 	if !macports.ValidCategory(spec.Category) {
 		return spec, "", fmt.Errorf("%q is not a category", spec.Category)

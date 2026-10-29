@@ -72,9 +72,11 @@ type updateJSON struct {
 	Regenerated   []regeneratedJSON `json:"regenerated,omitempty"`
 	Others        []otherJSON       `json:"others,omitempty"`
 	OthersProblem string            `json:"others_problem,omitempty"`
-	// PlainHTTP are the port's URLs over plain HTTP, and whether each
-	// answers over HTTPS.
-	PlainHTTP []plainHTTPJSON `json:"plain_http,omitempty"`
+	// SwitchedToHTTPS are the links the edit switched to https, which
+	// answered there; PlainHTTP are the port's URLs still over plain HTTP,
+	// and whether each answers over HTTPS.
+	SwitchedToHTTPS []plainHTTPJSON `json:"switched_to_https,omitempty"`
+	PlainHTTP       []plainHTTPJSON `json:"plain_http,omitempty"`
 	// Fixed are the lint findings the edit fixed on the lines it wrote.
 	Fixed []string `json:"fixed,omitempty"`
 	// Tidy, Check, and Submit are the steps ship and bump go on
@@ -217,6 +219,9 @@ func UpdateView(branch model.Branch, started bool, update engine.Update, plan bo
 	}
 	viewed.OthersProblem = update.OthersProblem
 	viewed.Fixed = update.Fixed
+	for _, url := range update.HTTPS {
+		viewed.SwitchedToHTTPS = append(viewed.SwitchedToHTTPS, plainHTTPJSON{Option: url.Option, URL: url.URL, HTTPS: url.HTTPS, Answers: url.Answers})
+	}
 	for _, url := range update.PlainHTTP {
 		viewed.PlainHTTP = append(viewed.PlainHTTP, plainHTTPJSON{Option: url.Option, URL: url.URL, HTTPS: url.HTTPS, Answers: url.Answers})
 	}

@@ -76,6 +76,12 @@ type Options struct {
 	// MigrateRelease migrates a database a release last opened though this
 	// build isn't one, a person's answer to ReleaseUnderMigrationError.
 	MigrateRelease bool
+	// KeepHTTP is --keep-http, or [update] keep_http: every update,
+	// create, and checksums refresh, serve's among them, leaves plain-HTTP
+	// links as they are, asking nothing and saying nothing of them, where
+	// each that answers over HTTPS is otherwise switched (the person's
+	// "keep_http", 2026-10-29).
+	KeepHTTP bool
 	// NamedDatabase is a Database named, with --db or DOCKHAND_DB, other
 	// than the default one a release opens: a copy the person made to try
 	// this build, as the refusal advises, which migrates without asking
@@ -219,6 +225,10 @@ type Engine struct {
 	// required is build.default's environments as last resolved, kept for
 	// requiredWait (requiredEnvironments).
 	required requiredRead
+	// https are the answers of URLs over HTTPS this run has had, which
+	// every update, create, bump, ship, serve, and submit in it shares
+	// (httpsAnswers).
+	https httpsCache
 }
 
 // requiredRead is one resolution of build.default's environments, and

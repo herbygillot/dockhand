@@ -66,6 +66,18 @@ type Request struct {
 	// where a patch that applies only with fuzz is re-emitted for them to
 	// look at in the diff; nobody's holds it (patch-fuzz), unwritten.
 	Attended bool
+	// HTTPS answers which of the port's plain-HTTP links answer over
+	// HTTPS, which the preparer (editprep) switches as part of the edit;
+	// nil asks nothing and switches nothing.
+	HTTPS HTTPSAnswers
+}
+
+// HTTPSAnswers says whether URLs answer over HTTPS: Ask starts asking
+// one, returning at once, and Answers waits for its answer. The engine's,
+// one cache a run.
+type HTTPSAnswers interface {
+	Ask(ctx context.Context, url string)
+	Answers(ctx context.Context, url string) bool
 }
 
 // Fidelity is the comparison report for one evaluated edit.

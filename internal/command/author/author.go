@@ -99,6 +99,7 @@ master's index instead, or beside --mine, as outdated does.`,
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	settings.SupportsJSON(cmd)
 	settings.KeepModelineFlag(cmd, s)
+	settings.KeepHTTPFlag(cmd, s)
 	return cmd
 }
 
@@ -298,6 +299,7 @@ none is open, and exits 3 where any doesn't.`,
 	cmd.Flags().BoolVar(&keepRevision, "no-revbump", false, "for a stealth update, leave the revision as it is")
 	settings.SupportsJSON(cmd)
 	settings.KeepModelineFlag(cmd, s)
+	settings.KeepHTTPFlag(cmd, s)
 	return cmd
 }
 
@@ -521,7 +523,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 			fmt.Fprintf(out, "%s %s: %s; nothing to change.\n", update.Port, update.After, matchWords(update.Compared))
 		}
 		writeLeft(out, update.ChecksumsLeft)
-		view.WritePlainHTTP(out, update.PlainHTTP)
+		view.WritePlainHTTP(out, update.HTTPS, update.PlainHTTP)
 		return branch, update, nil
 	}
 	if request.Action == model.EditUpdate {
@@ -582,7 +584,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		view.WriteUpstream(out, update.Upstream)
 		writePatches(out, update)
 		writeOthers(out, update)
-		view.WritePlainHTTP(out, update.PlainHTTP)
+		view.WritePlainHTTP(out, update.HTTPS, update.PlainHTTP)
 		if linked.Revbump {
 			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, true, view.ListShown(streams))
 			streams.Emit(result)
@@ -717,7 +719,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	}
 	writePatches(out, update)
 	writeOthers(out, update)
-	view.WritePlainHTTP(out, update.PlainHTTP)
+	view.WritePlainHTTP(out, update.HTTPS, update.PlainHTTP)
 	if linked.Revbump {
 		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, false, view.ListShown(streams)); err != nil {
 			return branch, update, err

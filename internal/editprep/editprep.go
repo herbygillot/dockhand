@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -15,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -63,6 +65,9 @@ type Result struct {
 	portedit.Result
 	PreparedTree model.ObjectID
 	Files        []git.FileEdit
+	// HTTPS are the port's plain-HTTP links the edit switched to https,
+	// which answered there (Request.HTTPS).
+	HTTPS []macports.PlainURL
 }
 
 // UncheckedPatches names the declared patches no check reached before the
@@ -207,6 +212,16 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		if err := probe.Close(); err != nil {
 			return Result{}, err
 		}
+		// The port's plain-HTTP links are asked from the port as it is,
+		// beside the download, the long step, and awaited only as the edit
+		// is written (the architecture thread, 2026-10-29).
+		if request.HTTPS != nil {
+			for _, url := range original.PlainHTTP() {
+				if url.Ask != "" {
+					request.HTTPS.Ask(ctx, url.Ask)
+				}
+			}
+		}
 		if err := s.Upstream.Check(ctx, original, *request.Release); err != nil {
 			return Result{}, err
 		}
@@ -248,6 +263,10 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		result.PreparedTree = request.Source.Tree
 		return result, nil
 	}
+	var switched []string
+	if edited.Refused == nil {
+		switched = s.switchHTTPS(ctx, request, &result)
+	}
 	tree, err := s.Repo.EditTree(ctx, string(request.Source.Tree), result.Files)
 	if err != nil {
 		return result, err
@@ -259,7 +278,9 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	}
 	// The committed candidate is evaluated once more from git, in a
 	// projection of its own tree holding the target's directory, to prove
-	// the stored tree evaluates as the prepared overlay did.
+	// the stored tree evaluates as the prepared overlay did, but for the
+	// links it switched to https (macports.Snapshot.AsPlainHTTP), so the
+	// switch costs no evaluation of its own (W5's one finalize).
 	expected := result.Prepared
 	source := model.Source{Tree: model.ObjectID(tree), Base: request.Source.Base}
 	candidate, err := workspace.Open(ctx, s.Repo, source)
@@ -281,7 +302,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if snapshot.Source != source {
 		return result, ErrFidelity.Because("stored candidate source identity differs")
 	}
-	if err = fidelity.Equivalent(expected, snapshot); err != nil {
+	if err = fidelity.Equivalent(expected.AsPlainHTTP(switched), snapshot.AsPlainHTTP(switched)); err != nil {
 		return result, err
 	}
 	// The committed candidate is the prepared result, and the last report
@@ -290,6 +311,53 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	result.Fidelity[len(result.Fidelity)-1].After = snapshot
 	result.PreparedTree = model.ObjectID(tree)
 	return result, nil
+}
+
+// switchHTTPS writes https in the edit's Portfile for each of the port's
+// plain-HTTP links, as it evaluates after the edit, whose https form
+// answers, and says the URLs it switched. A link the Portfile writes
+// otherwise than as a literal is left, and said as plain still.
+func (s *Service) switchHTTPS(ctx context.Context, request Request, result *Result) []string {
+	if request.HTTPS == nil || (request.Action != model.EditUpdate && request.Action != model.EditChecksums) {
+		return nil
+	}
+	port, ok := result.PortAfter(result.Prepared.Target.Name)
+	if !ok {
+		return nil
+	}
+	links := port.PlainHTTP()
+	for _, url := range links {
+		if url.Ask != "" {
+			request.HTTPS.Ask(ctx, url.Ask)
+		}
+	}
+	var answering []macports.PlainURL
+	for _, url := range links {
+		if url.Ask != "" && request.HTTPS.Answers(ctx, url.Ask) {
+			answering = append(answering, url)
+		}
+	}
+	if len(answering) == 0 {
+		return nil
+	}
+	for i, file := range result.Files {
+		if file.Delete || path.Base(file.Path) != "Portfile" || path.Dir(file.Path) != path.Dir(result.Prepared.Target.Portfile) {
+			continue
+		}
+		switchedText, switched := portfile.SwitchHTTPS(file.After, answering)
+		if len(switched) == 0 {
+			return nil
+		}
+		result.Files[i].After, result.HTTPS = switchedText, switched
+		var urls []string
+		for _, url := range switched {
+			if !slices.Contains(urls, url.URL) {
+				urls = append(urls, url.URL)
+			}
+		}
+		return urls
+	}
+	return nil
 }
 
 func probeSource(request Request) portedit.ProbeSource {

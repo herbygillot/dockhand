@@ -58,6 +58,9 @@ type Options struct {
 	// Unattended is a command nobody can answer, serve's or one with no
 	// terminal: git's ssh never asks it (git.Unattended).
 	Unattended bool
+	// KeepHTTP is --keep-http, over [update] keep_http
+	// (engine.Options.KeepHTTP).
+	KeepHTTP bool
 	// Env is the command line's environment, as os.Environ gives one, and
 	// Dir its working directory, which compose reads in place of the
 	// process's.
@@ -297,6 +300,7 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		MigrateUnderLive: options.MigrateUnderLive,
 		MigrateRelease:   options.MigrateRelease,
 		NamedDatabase:    !standard,
+		KeepHTTP:         options.KeepHTTP || file.Update.KeepHTTP,
 	}, file, configPath, nil
 }
 

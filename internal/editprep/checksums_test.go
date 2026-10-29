@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,4 +59,29 @@ func TestRefreshChecksumsRejectsCustomFetchBeforeDownload(t *testing.T) {
 	require.ErrorIs(t, err, editprep.ErrUnsupported)
 	require.Empty(t, result.Commits)
 	require.Zero(t, reads.Load())
+}
+
+// A checksum refresh switches the port's plain-HTTP links whose https
+// forms answer, a site as a distfile it serves there, as part of the edit
+// it evaluates, so the stored candidate's evaluation proves it with none of
+// its own; one that doesn't answer is left (the person's "Let's try to get
+// HTTP to HTTPS into 0.7.0", 2026-10-29).
+func TestAnEditSwitchesTheLinksThatAnswerOverHTTPS(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, r.URL.Path) }))
+	defer server.Close()
+	site := server.URL + "/"
+	service, request := preparationFixture(t, "homepage http://fixture.example/\nlong_description see ${homepage}docs\nlivecheck.url http://fixture.example/releases\nmaster_sites "+site+"\ndistfiles source.tar.gz\nchecksums sha256 "+strings.Repeat("0", 64)+" size 0\n")
+	request.Action, request.Subject = model.EditChecksums, ""
+	request.HTTPS = testsupport.HTTPSAnswers{"https://fixture.example/": true, "https://" + strings.TrimPrefix(site, "http://") + "source.tar.gz": true}
+	result, err := service.Prepare(t.Context(), request)
+	require.NoError(t, err)
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "homepage https://fixture.example/\n")
+	require.Contains(t, after, "livecheck.url http://fixture.example/releases\n", "it doesn't answer")
+	require.Contains(t, after, "master_sites https://"+strings.TrimPrefix(site, "http://")+"\n")
+	require.Len(t, result.HTTPS, 2)
+	final := result.Prepared.Ports["fixture"]
+	require.Equal(t, "https://fixture.example/", final.Options["homepage"], "the stored candidate evaluates so")
+	require.Equal(t, "see https://fixture.example/docs", final.Options["long_description"], "a value derived from it with it")
 }

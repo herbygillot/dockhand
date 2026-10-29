@@ -807,14 +807,40 @@ func chainSubject(mine []model.Edit) string {
 // chainBody is what the newest update of a directory's edits says of its
 // release, for the commit's body: the version it updates from and its
 // release's page or compare link, as far as they're known
-// (model.Release.CommitBody); empty where nothing is.
+// (model.Release.CommitBody), then the links its edits switched to HTTPS
+// (httpsLine); empty where nothing is.
 func chainBody(edits []model.Edit, directory string) string {
+	var lines []string
 	for _, edit := range slices.Backward(edits) {
 		if edit.Directory == directory && edit.Kind == model.EditUpdate && edit.Release != nil {
-			return edit.Release.CommitBody()
+			if body := edit.Release.CommitBody(); body != "" {
+				lines = append(lines, body)
+			}
+			break
 		}
 	}
-	return ""
+	if line := httpsLine(edits, directory); line != "" {
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// httpsLine says the options whose plain-HTTP links a directory's edits
+// switched to https, each once: "Switches homepage and master_sites to
+// HTTPS."; empty where they switched none.
+func httpsLine(edits []model.Edit, directory string) string {
+	var options []string
+	for _, edit := range edits {
+		for _, link := range edit.HTTPS {
+			if edit.Directory == directory && !slices.Contains(options, link.Option) {
+				options = append(options, link.Option)
+			}
+		}
+	}
+	if len(options) == 0 {
+		return ""
+	}
+	return "Switches " + prose.And(options) + " to HTTPS."
 }
 
 // standingSubject is the subject dockhand's edits of a directory give,

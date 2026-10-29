@@ -77,6 +77,9 @@ type fakePreparer struct {
 	refused error
 	// patches are the patch check's results the edit reports.
 	patches []patchcheck.Result
+	// https are the links the edit reports it switched to https, where
+	// it's given answers to ask (editprep.Request.HTTPS).
+	https []macports.PlainURL
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r editprep.Request) (model.Release, error) {
@@ -182,6 +185,9 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 	result.Files, result.PreparedTree = []git.FileEdit{edit}, model.ObjectID(tree)
 	result.GoToolchain = p.toolchain
 	result.Patches = p.patches
+	if r.HTTPS != nil {
+		result.HTTPS = p.https
+	}
 	if len(p.dependencies) > 0 {
 		result.Prepared = snapshot(next, nextRevision, options[1])
 		result.Prepared.Ports[r.Selection.Selector] = port(r.Selection.Selector, p.dependencies...)
@@ -778,7 +784,7 @@ func TestAnUpdateSaysThePortsPlainHTTPURLs(t *testing.T) {
 	probe := newGatedProbe(testsupport.HTTPSAnswers{"https://jqlang.example/": true}, false)
 	e.HTTPS = probe
 	want := []PlainURL{
-		{PlainURL: macports.PlainURL{Option: "homepage", URL: "http://jqlang.example/"}, HTTPS: "https://jqlang.example/", Answers: true},
+		{PlainURL: macports.PlainURL{Option: "homepage", URL: "http://jqlang.example/", Ask: "https://jqlang.example/"}, HTTPS: "https://jqlang.example/", Answers: true},
 		{PlainURL: macports.PlainURL{Option: "master_sites", URL: "http://dl.example/jq/"}, HTTPS: "https://dl.example/jq/"},
 	}
 	update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-update"}, Action: model.EditUpdate, Port: "jq"})
@@ -799,6 +805,57 @@ func TestAnUpdateSaysThePortsPlainHTTPURLs(t *testing.T) {
 		require.Empty(t, current.PlainHTTP, action)
 	}
 	require.Equal(t, asked, probe.asked["https://jqlang.example/"], "a current port's URLs aren't asked")
+}
+
+// An update and a checksums refresh switch the links that answer over
+// HTTPS as part of their edit, which records them for tidy's commit and the
+// pull request to say; with keep_http, or --keep-http, an edit asks
+// nothing, switches nothing, and says nothing of them (the person's
+// "keep_http", 2026-10-29).
+func TestAnUpdateSwitchesTheLinksThatAnswerUnlessKeepHTTP(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	p.options = map[string]string{"homepage": "http://jqlang.example/", "master_sites": "http://dl.example/jq/", "distfiles": "jq-1.8.1.tar.gz"}
+	p.https = []macports.PlainURL{{Option: "livecheck.url", URL: "http://jqlang.example/releases", Ask: "https://jqlang.example/releases"}}
+	probe := newGatedProbe(testsupport.HTTPSAnswers{"https://jqlang.example/": true}, false)
+	e.HTTPS = probe
+	update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-update"}, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	require.NotNil(t, p.requests[len(p.requests)-1].HTTPS, "the edit asks")
+	require.Equal(t, []PlainURL{{PlainURL: p.https[0], HTTPS: "https://jqlang.example/releases", Answers: true}}, update.HTTPS)
+	var edits []model.Edit
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		edits, err = r.Edits(update.Branch.ID)
+		return err
+	}))
+	require.Equal(t, []model.HTTPSLink{{Option: "livecheck.url", URL: "http://jqlang.example/releases"}}, edits[0].HTTPS)
+	require.Equal(t, "Switches livecheck.url to HTTPS.", httpsLine(edits, edits[0].Directory))
+
+	revbump, err := e.Update(t.Context(), UpdateRequest{Branch: update.Branch, Action: model.EditRevbump, Port: "jq", Subject: "rebuild for oniguruma 6.9.10"})
+	require.NoError(t, err)
+	require.Nil(t, p.requests[len(p.requests)-1].HTTPS, "a revision bump switches nothing")
+	require.Empty(t, revbump.HTTPS)
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: update.Branch})
+	require.NoError(t, err)
+	require.Len(t, plan.Groups, 1)
+	require.Contains(t, plan.Groups[0].Message, "\n\nSwitches livecheck.url to HTTPS.", "tidy's commit says it")
+
+	kept, p := f.withPreparer(t)
+	kept.options.KeepHTTP = true
+	p.options, p.https = map[string]string{"homepage": "http://jqlang.example/"}, []macports.PlainURL{{Option: "homepage", URL: "http://jqlang.example/"}}
+	probe = newGatedProbe(testsupport.HTTPSAnswers{"https://jqlang.example/": true}, false)
+	kept.HTTPS = probe
+	update, err = kept.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-kept"}, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	checksums, err := kept.Update(t.Context(), UpdateRequest{Branch: update.Branch, Action: model.EditChecksums, Port: "jq"})
+	require.NoError(t, err)
+	for i, update := range []Update{update, checksums} {
+		require.Nil(t, p.requests[i].HTTPS, i)
+		require.Empty(t, update.HTTPS, i)
+		require.Empty(t, update.PlainHTTP, i)
+	}
+	require.Empty(t, probe.asked, "keep_http asks nothing")
 }
 
 // A Python pin that applies only elsewhere asks nothing of MacPorts' port:

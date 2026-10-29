@@ -739,6 +739,9 @@ unattended = "minmax"     # the profile of a check nobody looks over: serve's an
 tests = "declared"        # declared | required | skip
 baseline = false
 
+[update]
+keep_http = false         # true leaves plain-HTTP links as they are, asking nothing; --keep-http for one command
+
 [submit]
 rerequest_review = "ask"
 

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
@@ -70,6 +71,9 @@ type bodyFacts struct {
 	// LeftOut are the dependents each rebuild left out with --except
 	// (leftOut).
 	LeftOut []string
+	// HTTPS are the links each port's edits switched to https
+	// (httpsSwitches).
+	HTTPS []prdescription.HTTPSSwitch
 	// Installed are the check's install findings as lines, with the
 	// dependents the branch rebuilds (InstallFinding.Lines).
 	Installed []string
@@ -106,11 +110,26 @@ func leftOut(edits []model.Edit) []string {
 	return lines
 }
 
+// httpsSwitches are the plain-HTTP links each directory's edits switched to
+// https, as tidy's commit body says them (httpsLine), named by the port.
+func httpsSwitches(edits []model.Edit) []prdescription.HTTPSSwitch {
+	var switches []prdescription.HTTPSSwitch
+	var said []string
+	for _, edit := range edits {
+		if len(edit.HTTPS) == 0 || slices.Contains(said, edit.Directory) {
+			continue
+		}
+		said = append(said, edit.Directory)
+		switches = append(switches, prdescription.HTTPSSwitch{Port: edit.Port, Line: httpsLine(edits, edit.Directory)})
+	}
+	return switches
+}
+
 // description is what the facts let the description claim, as
 // prdescription composes it: the evidence's reports and table, in the
 // engine's words, and the checklist's answers.
 func (facts bodyFacts) description() prdescription.Facts {
-	described := prdescription.Facts{Note: facts.Note, Reviewed: facts.Reviewed, Types: facts.Types, Updated: facts.Updated, NewPorts: facts.NewPorts, LeftOut: facts.LeftOut,
+	described := prdescription.Facts{Note: facts.Note, Reviewed: facts.Reviewed, Types: facts.Types, Updated: facts.Updated, NewPorts: facts.NewPorts, LeftOut: facts.LeftOut, HTTPS: facts.HTTPS,
 		SkipNotification: facts.SkipNotification, Version: buildinfo.Current().Tag()}
 	for _, hand := range facts.HandEdits {
 		described.HandEdits = append(described.HandEdits, "**"+hand.Directory+"**: "+hand.Line())

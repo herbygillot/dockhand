@@ -74,17 +74,54 @@ func TestAStubWhoseProbeFailedIsSaid(t *testing.T) {
 	require.ErrorContains(t, err, "can't tell whether py-requests builds anything")
 }
 
-// A port's plain-HTTP URLs are its homepage and its master_sites that are
-// URLs, tags taken off as Base takes them, and never a mirror group, which
-// is MacPorts' own; MacPorts prefers HTTPS.
+// A port's plain-HTTP URLs are its homepage, its livecheck.url, and its
+// master_sites that are URLs, tags taken off as Base takes them, and never
+// a mirror group, which is MacPorts' own; MacPorts prefers HTTPS. Each is
+// asked as its https form, a site as a distfile it serves, which its tags
+// say (the architecture thread, 2026-10-29).
 func TestAPortsPlainHTTPURLs(t *testing.T) {
 	t.Parallel()
 	info := PortInfo{Options: map[string]string{
-		"homepage":     "http://txt.hellman.io/",
-		"master_sites": "http://ftp.example.org/pub/ http://ftp.example.org/pub/:docs http://mirror.example.org/x/:nosubdir:src https://example.org/ gnu sourceforge:project",
+		"homepage":      "http://txt.hellman.io/",
+		"livecheck.url": "http://txt.hellman.io/releases",
+		"master_sites":  "http://ftp.example.org/pub/ http://ftp.example.org/pub/:docs http://mirror.example.org/x/:nosubdir:src https://example.org/ gnu sourceforge:project",
+		"distfiles":     "txt-1.0.tar.gz txt-doc-1.0.pdf:docs txt-src.zip:src",
 	}}
-	require.Equal(t, []PlainURL{{"homepage", "http://txt.hellman.io/"}, {"master_sites", "http://ftp.example.org/pub/"}, {"master_sites", "http://mirror.example.org/x/"}}, info.PlainHTTP())
+	require.Equal(t, []PlainURL{
+		{"homepage", "http://txt.hellman.io/", "https://txt.hellman.io/"},
+		{"livecheck.url", "http://txt.hellman.io/releases", "https://txt.hellman.io/releases"},
+		{"master_sites", "http://ftp.example.org/pub/", "https://ftp.example.org/pub/txt-1.0.tar.gz"},
+		{"master_sites", "http://mirror.example.org/x/", "https://mirror.example.org/x/txt-src.zip"},
+	}, info.PlainHTTP())
 	require.Empty(t, PortInfo{Options: map[string]string{"homepage": "https://example.org", "master_sites": "https://example.org/ gnu"}}.PlainHTTP())
+	// A livecheck.url of ${master_sites} is asked as a page, and the site
+	// still for its distfile.
+	require.Equal(t, []PlainURL{
+		{"livecheck.url", "http://www.example.org/dnsmasq/", "https://www.example.org/dnsmasq/"},
+		{"master_sites", "http://www.example.org/dnsmasq/", "https://www.example.org/dnsmasq/dnsmasq-2.93.tar.xz"},
+	}, PortInfo{Options: map[string]string{"livecheck.url": "http://www.example.org/dnsmasq/", "master_sites": "http://www.example.org/dnsmasq/", "distfiles": "dnsmasq-2.93.tar.xz"}}.PlainHTTP())
+}
+
+// A snapshot read with links switched to https as plain HTTP again has
+// each https form of them, in any option, a value derived from one among
+// them, written back as http, and nothing else.
+func TestASnapshotAsPlainHTTP(t *testing.T) {
+	t.Parallel()
+	snapshot := Snapshot{Ports: map[string]PortInfo{"txt": {Name: "txt", Options: map[string]string{
+		"homepage":      "https://txt.example/",
+		"master_sites":  "https://txt.example/files/ https://txt.example/:docs https://mirror.example/",
+		"livecheck.url": "https://txt.example/releases",
+		"description":   "see https://other.example/",
+	}}}}
+	plain := snapshot.AsPlainHTTP([]string{"http://txt.example/"})
+	require.Equal(t, map[string]string{
+		"homepage":      "http://txt.example/",
+		"master_sites":  "http://txt.example/files/ http://txt.example/:docs https://mirror.example/",
+		"livecheck.url": "http://txt.example/releases",
+		"description":   "see https://other.example/",
+	}, plain.Ports["txt"].Options)
+	require.Equal(t, "https://txt.example/", snapshot.Ports["txt"].Options["homepage"], "the snapshot itself stands")
+	require.Equal(t, snapshot, snapshot.AsPlainHTTP(nil))
 }
 
 // A native library's ties are what's named for it: its PortGroup, and the

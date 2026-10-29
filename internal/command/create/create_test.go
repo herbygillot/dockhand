@@ -229,18 +229,20 @@ func TestCreateSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	require.NoFileExists(t, config, "it only suggests")
 }
 
-// A port's plain-HTTP URLs are said with whether their https form answers,
-// and left as they are.
+// The links an edit switched to HTTPS are said, and a port's URLs still
+// over plain HTTP with whether their https form answers.
 func TestPlainHTTPURLsAreSaid(t *testing.T) {
 	t.Parallel()
 	var out strings.Builder
-	view.WritePlainHTTP(&out, nil)
+	view.WritePlainHTTP(&out, nil, nil)
 	require.Empty(t, out.String())
 	view.WritePlainHTTP(&out, []engine.PlainURL{
+		{PlainURL: macports.PlainURL{Option: "livecheck.url", URL: "http://jqlang.example/releases"}, HTTPS: "https://jqlang.example/releases", Answers: true},
+	}, []engine.PlainURL{
 		{PlainURL: macports.PlainURL{Option: "homepage", URL: "http://jqlang.example/"}, HTTPS: "https://jqlang.example/", Answers: true},
 		{PlainURL: macports.PlainURL{Option: "master_sites", URL: "http://dl.example/jq/"}, HTTPS: "https://dl.example/jq/"},
 	})
-	require.Equal(t, "MacPorts prefers HTTPS; over plain HTTP:\n  homepage http://jqlang.example/: https://jqlang.example/ answers\n  master_sites http://dl.example/jq/: https doesn't answer there\n", out.String())
+	require.Equal(t, "Switched to HTTPS, which answers there:\n  livecheck.url https://jqlang.example/releases\nMacPorts prefers HTTPS; over plain HTTP:\n  homepage http://jqlang.example/: https://jqlang.example/ answers\n  master_sites http://dl.example/jq/: https doesn't answer there\n", out.String())
 }
 
 // toolProject stands in for GitHub: a Python project.

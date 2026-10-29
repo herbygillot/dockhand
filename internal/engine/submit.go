@@ -549,7 +549,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		Updated:     len(plan.moved) > 0,
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
-		Note: plan.Note, UncoveredCI: plan.UncoveredCI, HandEdits: e.submittedHandEdits(ctx, branch, plan.Tree), LeftOut: leftOut(edits),
+		Note: plan.Note, UncoveredCI: plan.UncoveredCI, HandEdits: e.submittedHandEdits(ctx, branch, plan.Tree), LeftOut: leftOut(edits), HTTPS: httpsSwitches(edits),
 		Installed: e.installedLines(ctx, plan.Evidence, edits), Reviewed: reviewed}
 	plan.facts = facts
 	plan.allowed = e.allowedFor

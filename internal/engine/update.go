@@ -127,10 +127,6 @@ type UpdateRequest struct {
 	// another edit's: an obsolete stub moved with its replacement is the
 	// replacement's update.
 	subject string
-	// answered are the HTTPS answers the command making the update has had
-	// already, create's for the homepage it wrote, which aren't asked
-	// again (plainHTTP).
-	answered map[string]bool
 }
 
 // PortVersion is a port's version and revision.
@@ -260,10 +256,13 @@ type Update struct {
 	// RenamedFrom is the branch's name before the update renamed it for
 	// the version it now moves to; empty where it wasn't renamed.
 	RenamedFrom string
-	// PlainHTTP are the port's URLs over plain HTTP, homepage and
-	// master_sites, each with whether its https form answers, since
-	// MacPorts prefers HTTPS. They're said, never changed: that's the
-	// maintainer's call, and no part of the edit.
+	// HTTPS are the plain-HTTP links the edit switched to https, which
+	// answered there (portedit.HTTPSAnswers).
+	HTTPS []PlainURL
+	// PlainHTTP are the port's URLs still over plain HTTP after the edit,
+	// homepage, master_sites, and livecheck.url, each with whether its
+	// https form answers, since MacPorts prefers HTTPS: one that doesn't,
+	// or one the Portfile writes through a variable, which the edit leaves.
 	PlainHTTP []PlainURL
 	// Stealth is a checksum refresh's stealth update, when it found one.
 	Stealth *Stealth
@@ -445,6 +444,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		HandEdit:   request.HandEdit,
 		Attended:   !request.Unattended,
 	}
+	// The port's plain-HTTP links that answer over HTTPS are switched as
+	// part of the edit, asked from the run's answers (the person's "Let's
+	// try to get HTTP to HTTPS into 0.7.0", 2026-10-29).
+	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && !e.options.KeepHTTP {
+		input.HTTPS = httpsAnswers{e}
+	}
 	if request.Action == model.EditChecksums {
 		// Which files the branch changed since its base is the branch's to
 		// say, and where its Portfile is among them, the port as the base
@@ -522,10 +527,11 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	// port with nothing to change is said to be current without waiting on
 	// its hosts. They're read before finalize, which may drop the
 	// evaluation they're read from; what it changes is no URL's scheme.
-	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && len(result.Files) > 0 {
+	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && len(result.Files) > 0 && !e.options.KeepHTTP {
 		if info, ok := result.PortAfter(update.Port); ok {
-			update.PlainHTTP = e.plainHTTP(ctx, info, request.answered)
+			update.PlainHTTP = e.plainHTTP(ctx, info)
 		}
+		update.HTTPS = switchedLinks(result.HTTPS)
 	}
 	if err := finalize(ctx, worktree, captured, &result, update.Followed != "" && !followOnly, modelined || len(fixed) > 0, reread); err != nil {
 		return Update{}, err
@@ -859,6 +865,9 @@ func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branc
 	}
 	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: request.Action, Port: update.Port, Subject: subject, At: e.now(),
 		Upstream: update.Upstream, Release: update.Release, Excepted: request.Excepted}
+	for _, url := range result.HTTPS {
+		edit.HTTPS = append(edit.HTTPS, model.HTTPSLink{Option: url.Option, URL: url.URL})
+	}
 	edit.Directory = portDirectory(result.Files[0].Path)
 	if result.Target.Portfile != "" {
 		edit.Directory = path.Dir(result.Target.Portfile)
