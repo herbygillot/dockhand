@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -436,6 +437,19 @@ func TestAMigrationRefusedSaysTheWayOn(t *testing.T) {
 		"  foreground, pid 4712, an unknown build, since 2026-10-28 10:02")
 	err = &ReleaseUnderMigrationError{&store.ReleaseUnderMigrationError{Release: "v0.5.0", Copy: "/db.schema-39", From: 39, To: 49, Live: live[:1]}}
 	require.Contains(t, err.Error(), "keeping its schema 39 form at /db.schema-39. Working on it now:\n  serve, pid 4711, v0.5.0, since 2026-10-28 10:02, leads the queue and runs check-12 and check-13")
+	require.Contains(t, err.Error(), "point DOCKHAND_DB at the copy, which migrates on its own;")
+}
+
+// A copy named in place of the default database migrates where a release
+// last opened it, unasked, and a migration watches heartbeats, to tell the
+// processes working on the copy from those on its original (field testing,
+// 2026-10-29).
+func TestANamedCopyMigratesUnasked(t *testing.T) {
+	t.Parallel()
+	require.False(t, Options{}.storeOptions().MigrateRelease, "the default database asks")
+	require.True(t, Options{NamedDatabase: true}.storeOptions().MigrateRelease)
+	require.True(t, Options{MigrateRelease: true}.storeOptions().MigrateRelease)
+	require.Equal(t, coord.DefaultHeartbeat, Options{}.storeOptions().Heartbeat)
 }
 
 // The forge, discovery, and project inspection share one GitHub client,

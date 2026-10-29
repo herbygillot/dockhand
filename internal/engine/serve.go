@@ -365,6 +365,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	scanned := &outdatedScanner{s: s}
 	if !options.Drain {
 		scanned.announce(ctx)
+		s.resumePrepared(ctx)
 	}
 	submitter := &passingSubmitter{s: s, held: map[model.BranchID]string{}}
 
@@ -576,6 +577,34 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	}
 	s.say("serve: stopped")
 	return nil
+}
+
+// resumePrepared queues, as serve starts, the check of each branch it
+// prepared and committed whose check it never queued, where serve.ship_to
+// carries its updates to a check, and says each; one with edits not
+// committed is the person's, said too (Engine.ResumePrepared).
+func (s *server) resumePrepared(ctx context.Context) {
+	to := ShipStage(s.options.ShipTo)
+	if to != ShipCheck && to != ShipSubmit {
+		return
+	}
+	where, err := s.e.Where(ctx, WhereRequest{Unattended: true})
+	if err != nil {
+		return
+	}
+	resumed, err := s.e.ResumePrepared(ctx, where, "")
+	if err != nil {
+		s.say("serve: looking for branches it prepared and didn't check: %v", err)
+		return
+	}
+	for _, done := range resumed {
+		switch {
+		case done.Run != nil:
+			s.say("serve: %s was prepared and never checked; %s queued", done.Branch.ShortName(), done.Run.Name())
+		default:
+			s.say("serve: %s was prepared and never checked: %s", done.Branch.ShortName(), done.Problem)
+		}
+	}
 }
 
 // loginGate keeps serve acting on GitHub only as the account it first
@@ -839,6 +868,32 @@ type OutdatedLook struct {
 	SetAside  map[string][]string `json:"set_aside,omitempty"`
 }
 
+// retried is the look a retry over ports makes of the day's, last: the
+// retry's own entries for those ports, and last's for every other, which
+// the retry didn't look at. A port the retry left out isn't resolved: the
+// retry's look kept only the outdated ports, and a port uncertain before
+// it read as current (Codex's workflow review of 2ad896d2, W8).
+func (l OutdatedLook) retried(last OutdatedLook, ports []string) OutdatedLook {
+	for _, name := range last.Outdated {
+		if !slices.Contains(ports, name) && !slices.Contains(l.Outdated, name) {
+			l.Outdated = append(l.Outdated, name)
+		}
+	}
+	for _, name := range last.Uncertain {
+		if slices.Contains(ports, name) || slices.Contains(l.Uncertain, name) {
+			continue
+		}
+		l.Uncertain = append(l.Uncertain, name)
+		if aside, ok := last.SetAside[name]; ok {
+			if l.SetAside == nil {
+				l.SetAside = map[string][]string{}
+			}
+			l.SetAside[name] = aside
+		}
+	}
+	return l
+}
+
 // uncertainWords are the day's line of the ports that may have newer
 // releases: each named where what was set aside is new since the last
 // look, and the rest, said already, counted. A port with a misspelled old
@@ -993,12 +1048,10 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	last, _ := e.LastOutdatedLook(settings.PortSelection)
 	look := OutdatedLook{CheckedAt: now, Maintainers: settings.Maintainers, Categories: settings.Categories, NotMaintainers: settings.NotMaintainers, Outdated: names, Uncertain: uncertain, SetAside: setAside}
 	// A retry's look adds to the day's, which it went over only part of.
+	looked := settings.Words()
 	if retrying {
-		for _, name := range last.Outdated {
-			if !slices.Contains(look.Outdated, name) {
-				look.Outdated = append(look.Outdated, name)
-			}
-		}
+		look = look.retried(last, request.Ports)
+		looked = "the ports retried"
 	}
 	if data, err := json.Marshal(look); err == nil {
 		o.s.written("outdated.json", e.writeServeFile("outdated.json", data))
@@ -1016,7 +1069,9 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	case len(names) == 0 && unchecked != "":
 		o.s.say("serve: none of the rest has a newer release")
 	case len(names) == 0:
-		o.s.say("serve: none of %s has a newer release", settings.Words())
+		o.s.say("serve: none of %s has a newer release", looked)
+	case retrying:
+		o.s.say("serve: %s retried %s newer releases: %s", prose.Plural(len(names), "port"), map[bool]string{true: "has", false: "have"}[len(names) == 1], strings.Join(names, ", "))
 	case settings.Chosen:
 		o.s.say("serve: %s of the selected %s newer releases: %s", prose.Plural(len(names), "port"), map[bool]string{true: "has", false: "have"}[len(names) == 1], strings.Join(names, ", "))
 	default:

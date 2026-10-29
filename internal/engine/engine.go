@@ -76,6 +76,12 @@ type Options struct {
 	// MigrateRelease migrates a database a release last opened though this
 	// build isn't one, a person's answer to ReleaseUnderMigrationError.
 	MigrateRelease bool
+	// NamedDatabase is a Database named, with --db or DOCKHAND_DB, other
+	// than the default one a release opens: a copy the person made to try
+	// this build, as the refusal advises, which migrates without asking
+	// where a release last opened it, said so (field testing's .backup
+	// copy, 2026-10-29).
+	NamedDatabase bool
 	// Now defaults to time.Now.
 	Now func() time.Time
 	// Poll is how often a driver looks for a cancel request; a second when
@@ -307,7 +313,9 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 	// A migration can't be undone by an older build, which can't open the
 	// database after it, so it's said, with the copy kept of the database
 	// before it.
-	if migrated := s.Migration(); migrated != nil {
+	if migrated := s.Migration(); migrated != nil && migrated.Release != "" && !options.MigrateRelease {
+		progress.Report(ctx, "Migrated the database at %s, which dockhand %s, a release, last opened, from schema %d to %d without asking, since it isn't the default one a release opens; %s can't open it now. Its schema %d form is kept at %s.", options.Database, migrated.Release, migrated.From, migrated.To, migrated.Release, migrated.From, migrated.Copy)
+	} else if migrated != nil {
 		progress.Report(ctx, "Migrated dockhand's database from schema %d to %d; dockhand builds older than this one can't open it now. Its schema %d form is kept at %s.", migrated.From, migrated.To, migrated.From, migrated.Copy)
 	}
 	id, err := s.Register(ctx, repo.CommonDir)
@@ -354,7 +362,7 @@ func (e *Engine) Sandboxed() bool {
 // migration's refusals, and this build, which a release's database is
 // refused to unasked where it isn't one.
 func (o Options) storeOptions() sqlite.Options {
-	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease, Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter}
+	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease || o.NamedDatabase, Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter, Heartbeat: coord.DefaultHeartbeat}
 }
 
 // ReleaseUnderMigrationError is a migration Open refused, since a release
@@ -365,7 +373,7 @@ type ReleaseUnderMigrationError struct {
 }
 
 func (e *ReleaseUnderMigrationError) Error() string {
-	words := e.ReleaseUnderMigrationError.Error() + fmt.Sprintf(". To try this build without touching it, copy the database with sqlite3 <database> \".backup <file>\", since a plain copy of a database in use can miss its last writes, and point DOCKHAND_DB at the copy; run on a terminal, it asks, keeping its schema %d form at %s", e.From, e.Copy)
+	words := e.ReleaseUnderMigrationError.Error() + fmt.Sprintf(". To try this build without touching it, copy the database with sqlite3 <database> \".backup <file>\", since a plain copy of a database in use can miss its last writes, and point DOCKHAND_DB at the copy, which migrates on its own; run on a terminal, it asks, keeping its schema %d form at %s", e.From, e.Copy)
 	return words + e.Working()
 }
 

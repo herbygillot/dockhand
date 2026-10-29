@@ -82,6 +82,41 @@ func TestConfigPathIsTheNamedFileElseTheHomes(t *testing.T) {
 	require.ErrorContains(t, err, "$HOME is not defined")
 }
 
+// The database is the named one, else the home's, and says whether it's
+// the home's, the one a release opens, by whatever path names it: a copy
+// named in its place migrates unasked (field testing, 2026-10-29).
+func TestDatabasePathIsTheNamedFileElseTheHomes(t *testing.T) {
+	home := t.TempDir()
+	byDefault := filepath.Join(home, ".dockhand", "dockhand.db")
+	places := Places{Home: home, Dir: "/work"}
+	path, standard, err := places.DatabasePath("")
+	require.NoError(t, err)
+	require.Equal(t, byDefault, path)
+	require.True(t, standard)
+	path, standard, err = places.DatabasePath("copy.db")
+	require.NoError(t, err)
+	require.Equal(t, "/work/copy.db", path, "against the command line's directory")
+	require.False(t, standard)
+	_, standard, err = places.DatabasePath("~/.dockhand/dockhand.db")
+	require.NoError(t, err)
+	require.True(t, standard, "the home's, named")
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(byDefault), 0o700))
+	require.NoError(t, os.WriteFile(byDefault, nil, 0o600))
+	link := filepath.Join(t.TempDir(), "linked.db")
+	require.NoError(t, os.Symlink(byDefault, link))
+	_, standard, err = places.DatabasePath(link)
+	require.NoError(t, err)
+	require.True(t, standard, "the home's, by a link")
+
+	_, _, err = Places{}.DatabasePath("")
+	require.EqualError(t, err, "$HOME is not defined; name the database with --db or DOCKHAND_DB")
+	path, standard, err = Places{Dir: "/work"}.DatabasePath("/elsewhere/dockhand.db")
+	require.NoError(t, err)
+	require.Equal(t, "/elsewhere/dockhand.db", path)
+	require.False(t, standard)
+}
+
 func TestCheckAndProviderSettings(t *testing.T) {
 	f, err := parse("config.toml", "[check]\ntests = \"required\"\n\n[providers.command]\nrun = \"~/bin/build-ports\"\n")
 	require.NoError(t, err)

@@ -54,8 +54,8 @@ type Coordinator struct {
 	Liveness Liveness
 	// Now defaults to time.Now.
 	Now func() time.Time
-	// Heartbeat is how often a session records that it is alive; five
-	// seconds by default.
+	// Heartbeat is how often a session records that it is alive;
+	// DefaultHeartbeat when zero.
 	Heartbeat time.Duration
 	// HungAfter is how long a live process may go without a heartbeat
 	// before its leases may be taken; two minutes by default.
@@ -80,8 +80,13 @@ func (c *Coordinator) heartbeat() time.Duration {
 	if c.Heartbeat > 0 {
 		return c.Heartbeat
 	}
-	return 5 * time.Second
+	return DefaultHeartbeat
 }
+
+// DefaultHeartbeat is how often a session records that it is alive, which
+// the store's migration guard watches for, to tell a process working on
+// the database from one working on the original of a copy.
+const DefaultHeartbeat = 5 * time.Second
 
 // DefaultHungAfter is how long a live process may go without a heartbeat
 // before another dockhand may take over its work, and so how recent a

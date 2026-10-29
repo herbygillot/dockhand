@@ -17,6 +17,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -71,15 +72,22 @@ type Options struct {
 	// migration is refused (store.LiveUnderMigrationError).
 	MigrateUnderLive bool
 	// Build is this build's version, as buildinfo.Info.String gives it, and
-	// MigrateRelease a person's answer to migrating a database a release
-	// last opened with a build that isn't one
-	// (store.ReleaseUnderMigrationError).
+	// MigrateRelease migrates a database a release last opened with a
+	// build that isn't one, a person's answer or a copy they named, which
+	// is otherwise refused (store.ReleaseUnderMigrationError).
 	Build          string
 	MigrateRelease bool
 	// LiveWithin is how recent a heartbeat says a process is working,
 	// coord.DefaultHungAfter, which the engine gives; where it's zero,
 	// every session not ended is working.
 	LiveWithin time.Duration
+	// Heartbeat is how often a working process records its heartbeat,
+	// coord's, which the engine gives. Where it's set, a migration
+	// refused for live processes counts only those whose heartbeat moves
+	// in this file while it waits three beats: a copy of a database
+	// carries its sessions, fresh, and the processes behind them work on
+	// the original (field testing's .backup copy, 2026-10-29).
+	Heartbeat time.Duration
 }
 
 // Store is a dockhand v3 database.
@@ -89,6 +97,14 @@ type Store struct {
 	path    string
 	// migration is the migration Open made, if it made one.
 	migration *Migration
+	// release is the release that last opened the database, which this
+	// build, not one, migrates as MigrateRelease lets it.
+	release string
+	// still are the sessions that looked live and whose heartbeat didn't
+	// move in this file while Open waited three beats, by repository and
+	// ID: their processes work on another file. A session Open didn't
+	// watch still counts.
+	still map[string]bool
 }
 
 // Migration is a schema migration Open made, and where the database's
@@ -97,6 +113,10 @@ type Store struct {
 type Migration struct {
 	From, To int
 	Copy     string
+	// Release is the release that last opened the database, where this
+	// build isn't one and migrated it as MigrateRelease let it: that
+	// release can't open it after.
+	Release string
 }
 
 // Migration is the migration Open made; nil where it made none.
@@ -191,7 +211,9 @@ func openStore(ctx context.Context, path string, options Options) (*Store, error
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) initialize(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, s.options.OperationTimeout)
+	// The heartbeat watch's three beats come on top of the operation's
+	// time.
+	ctx, cancel := context.WithTimeout(ctx, s.options.OperationTimeout+3*max(0, s.options.Heartbeat))
 	defer cancel()
 	var mode string
 	deadline := time.Now().Add(s.options.BusyTimeout)
@@ -211,6 +233,9 @@ func (s *Store) initialize(ctx context.Context) error {
 	}
 	if mode != "wal" {
 		return fmt.Errorf("%w: WAL mode required, got %q", store.ErrUnavailable, mode)
+	}
+	if err := s.watchHeartbeats(ctx); err != nil {
+		return err
 	}
 	if err := s.refuseReleaseMigration(ctx); err != nil {
 		return err
@@ -234,24 +259,87 @@ func (s *Store) initialize(ctx context.Context) error {
 	return nil
 }
 
+// watchHeartbeats finds, before a migration, which of the sessions that
+// look live aren't working on this file: those whose heartbeat doesn't
+// move in it within three beats. It looks only where a migration is due,
+// a heartbeat is given, and a session looks live, and stops looking once
+// every one has moved.
+func (s *Store) watchHeartbeats(ctx context.Context) error {
+	if s.options.Heartbeat <= 0 || s.options.MigrateUnderLive {
+		return nil
+	}
+	version, app, err := schemaOf(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	if app != applicationID || version == 0 || version >= schemaVersion {
+		return nil
+	}
+	read := func() (map[string]int64, error) {
+		since := int64(0)
+		if s.options.LiveWithin > 0 {
+			since = millis(time.Now().Add(-s.options.LiveWithin))
+		}
+		rows, err := s.db.QueryContext(ctx, "SELECT repository_id, id, heartbeat_at FROM sessions WHERE ended_at IS NULL AND kind<>'observer' AND heartbeat_at>=?", since)
+		if err != nil {
+			return nil, storageError(err)
+		}
+		defer rows.Close()
+		beats := map[string]int64{}
+		for rows.Next() {
+			var repository, id string
+			var at int64
+			if err := rows.Scan(&repository, &id, &at); err != nil {
+				return nil, storageError(err)
+			}
+			beats[repository+"/"+id] = at
+		}
+		return beats, rows.Err()
+	}
+	before, err := read()
+	if err != nil || len(before) == 0 {
+		return err
+	}
+	still := maps.Clone(before)
+	deadline := time.Now().Add(3 * s.options.Heartbeat)
+	for len(still) > 0 && time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(min(time.Second, s.options.Heartbeat)):
+		}
+		now, err := read()
+		if err != nil {
+			return err
+		}
+		for session, was := range still {
+			if at, ok := now[session]; !ok || at > was {
+				delete(still, session)
+			}
+		}
+	}
+	s.still = map[string]bool{}
+	for session := range still {
+		s.still[session] = true
+	}
+	return nil
+}
+
 // refuseReleaseMigration refuses, unasked, a development or rc build's
 // migration of a database a release last opened, as the newest session
 // recorded says: it would lock that release out, where a release's own
 // migration is the port's upgrade. Unknown is no release, and a store
 // opened with no build named, as a test's, refuses nothing.
 func (s *Store) refuseReleaseMigration(ctx context.Context) error {
-	if s.options.MigrateRelease || s.options.Build == "" {
+	if s.options.Build == "" {
 		return nil
 	}
 	if _, release := buildinfo.Released(s.options.Build); release {
 		return nil
 	}
-	var version, app int
-	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
-		return storageError(err)
-	}
-	if err := s.db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&app); err != nil {
-		return storageError(err)
+	version, app, err := schemaOf(ctx, s.db)
+	if err != nil {
+		return err
 	}
 	if app != applicationID || version == 0 || version >= schemaVersion {
 		return nil
@@ -261,7 +349,24 @@ func (s *Store) refuseReleaseMigration(ctx context.Context) error {
 	if !ok || !released {
 		return nil
 	}
+	if s.options.MigrateRelease {
+		s.release = release
+		return nil
+	}
 	return &store.ReleaseUnderMigrationError{Release: release, Copy: fmt.Sprintf("%s.schema-%d", s.path, version), From: version, To: schemaVersion, Live: s.liveProcesses(ctx, s.db, s.options.LiveWithin)}
+}
+
+// schemaOf reads a database's schema version and application ID.
+func schemaOf(ctx context.Context, q interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}) (version, app int, err error) {
+	if err := q.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return 0, 0, storageError(err)
+	}
+	if err := q.QueryRowContext(ctx, "PRAGMA application_id").Scan(&app); err != nil {
+		return 0, 0, storageError(err)
+	}
+	return version, app, nil
 }
 
 // rowsQueryer is a database or a connection, which liveProcesses reads
@@ -301,7 +406,11 @@ ORDER BY s.started_at, s.id, r.number`, since)
 		if rows.Scan(&repository, &id, &kind, &pid, &build, &started, &resource, &number) != nil {
 			return nil
 		}
-		if key := repository + "/" + id; key != last {
+		key := repository + "/" + id
+		if s.still[key] {
+			continue
+		}
+		if key != last {
 			last = key
 			found = append(found, store.LiveProcess{Kind: kind, PID: pid, Build: build, Started: fromMillis(started)})
 		}
@@ -370,12 +479,9 @@ func fileExists(path string) bool {
 // two, which leaves a copy of the older form, as intended. Where the copy
 // can't be made, nothing is migrated.
 func (s *Store) keepBeforeMigrating(ctx context.Context) error {
-	var version, app int
-	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
-		return storageError(err)
-	}
-	if err := s.db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&app); err != nil {
-		return storageError(err)
+	version, app, err := schemaOf(ctx, s.db)
+	if err != nil {
+		return err
 	}
 	if app != applicationID || version >= schemaVersion {
 		return nil
@@ -386,7 +492,7 @@ func (s *Store) keepBeforeMigrating(ctx context.Context) error {
 			return fmt.Errorf("%w: keeping a copy of %s before migrating it from schema %d to %d: %w; nothing was migrated", store.ErrUnavailable, s.path, version, schemaVersion, err)
 		}
 	}
-	s.migration = &Migration{From: version, To: schemaVersion, Copy: copy}
+	s.migration = &Migration{From: version, To: schemaVersion, Copy: copy, Release: s.release}
 	earlier, _ := filepath.Glob(s.path + ".schema-*")
 	for _, path := range earlier {
 		kept := keptCopies
@@ -446,13 +552,11 @@ func (s *Store) keepCopy(ctx context.Context, copy string) (err error) {
 // schema up to this build's, or makes it for an empty file.
 func (s *Store) prepareSchema(ctx context.Context) error {
 	return s.transaction(ctx, true, "", func(t *tx) error {
-		var version, app, tables int
-		if err := t.conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
-			return storageError(err)
+		version, app, err := schemaOf(ctx, t.conn)
+		if err != nil {
+			return err
 		}
-		if err := t.conn.QueryRowContext(ctx, "PRAGMA application_id").Scan(&app); err != nil {
-			return storageError(err)
-		}
+		var tables int
 		switch {
 		case app == applicationID && version == schemaVersion:
 			return nil
@@ -492,16 +596,19 @@ func (t *tx) refuseUnderLive(ctx context.Context, s *Store, version int, live ti
 	if live > 0 {
 		since = millis(time.Now().Add(-live))
 	}
-	rows, err := t.conn.QueryContext(ctx, "SELECT version FROM sessions WHERE ended_at IS NULL AND kind<>'observer' AND heartbeat_at>=?", since)
+	rows, err := t.conn.QueryContext(ctx, "SELECT repository_id, id, version FROM sessions WHERE ended_at IS NULL AND kind<>'observer' AND heartbeat_at>=?", since)
 	if err != nil {
 		return storageError(err)
 	}
 	defer rows.Close()
 	refused := &store.LiveUnderMigrationError{From: version, To: schemaVersion, Live: s.liveProcesses(ctx, t.conn, live)}
 	for rows.Next() {
-		var build string
-		if err := rows.Scan(&build); err != nil {
+		var repository, id, build string
+		if err := rows.Scan(&repository, &id, &build); err != nil {
 			return storageError(err)
+		}
+		if s.still[repository+"/"+id] {
+			continue
 		}
 		refused.Processes++
 		if !slices.Contains(refused.Builds, build) {
