@@ -42,7 +42,7 @@ func TestTheBasesPatchesARevisionDropsAreChecked(t *testing.T) {
 	had := macports.PortInfo{Name: "libuv", Options: map[string]string{"patchfiles": "patch-legacy.diff patch-still.diff patch-lost.diff"}}
 	directory := t.TempDir()
 	c := Collector{Files: files}
-	patches := c.patchesFor(t.Context(), patchRequest{infos: [2]macports.PortInfo{had, info}, sources: [2]model.Source{{Tree: before}, {Tree: after}}, portdir: "devel/libuv", plan: plan, scratch: directory})
+	patches := c.patchesFor(t.Context(), patchRequest{infos: [2]macports.PortInfo{had, info}, sources: [2]model.Source{{Tree: before}, {Tree: after}}, portdirs: [2]string{"devel/libuv", "devel/libuv"}, plan: plan, scratch: directory})
 	byName := map[string]assess.Patch{}
 	for _, patch := range patches {
 		byName[patch.Name] = patch

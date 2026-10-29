@@ -120,7 +120,7 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 	// (Then's item 15).
 	_, portfile, err := e.Repo.File(t.Context(), string(tree), "textproc/jq/Portfile")
 	require.NoError(t, err)
-	collected := e.collector(p).Revision(t.Context(), [2]model.Source{{Commit: branch.Base, Tree: base, Base: branch.Base}, {Tree: tree, Base: branch.Base}}, "textproc/jq", [2]string{"jq", "jq"}, true, portfile)
+	collected := e.collector(p).Revision(t.Context(), [2]model.Source{{Commit: branch.Base, Tree: base, Base: branch.Base}, {Tree: tree, Base: branch.Base}}, [2]string{"textproc/jq", "textproc/jq"}, [2]string{"jq", "jq"}, true, portfile)
 	require.Equal(t, collected, assessments[0].Comparison)
 
 	held, state, err = e.assessedHolds(t.Context(), branch, tree, []string{"textproc/jq"})
@@ -680,7 +680,7 @@ func TestAnArchiveNoLongerFetchedIsSaid(t *testing.T) {
 	e := &Engine{}
 	e.options.Readings = t.TempDir()
 	e.SourceArchiver = stubArchiver{}
-	result := e.collector(p).Revision(t.Context(), [2]model.Source{{Tree: "base"}, {Tree: "candidate"}}, "devel/demo", [2]string{"demo", "demo"}, true, nil)
+	result := e.collector(p).Revision(t.Context(), [2]model.Source{{Tree: "base"}, {Tree: "candidate"}}, [2]string{"devel/demo", "devel/demo"}, [2]string{"demo", "demo"}, true, nil)
 	require.Empty(t, result.Problem)
 	require.True(t, result.Held(), "an archive no longer fetched holds for a look (L2a)")
 	require.Contains(t, result.Changes, model.UpstreamChange{Kind: "source", Path: "extra-1.0.tar.gz", Message: "upstream: extra-1.0.tar.gz is no longer fetched; look at what the port used of it, and at its checksum lines in the Portfile",

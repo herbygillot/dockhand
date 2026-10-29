@@ -22,6 +22,8 @@ type PortDiff struct {
 	Kind model.TargetKind
 	// Added and Deleted say the Portfile is new, or gone.
 	Added, Deleted bool
+	// MovedFrom is the base's directory of a port the branch moves here.
+	MovedFrom string
 }
 
 // PortChange is how a branch changes a port: a new port, one removed, its
@@ -30,6 +32,7 @@ type PortChange string
 
 const (
 	PortAdded        PortChange = "new_port"
+	PortMoved        PortChange = "moved"
 	PortRemoved      PortChange = "removed"
 	PortRevisionOnly PortChange = "revision_only"
 	PortChanged      PortChange = "changed"
@@ -40,6 +43,8 @@ const (
 // read it (part 4, item 2).
 func (p PortDiff) Change() PortChange {
 	switch {
+	case p.MovedFrom != "":
+		return PortMoved
 	case p.Added:
 		return PortAdded
 	case p.Deleted:
@@ -81,12 +86,16 @@ func (e *Engine) Diff(ctx context.Context, branch model.Branch, paths []string) 
 	}
 	diff.BaseTree = string(analysis.BaseTree)
 	changed := analysis.Paths
-	for _, directory := range status.Scope.Ports {
+	for _, directory := range append(slices.Clone(analysis.Scope.Ports), analysis.Scope.Removed...) {
 		port := PortDiff{Directory: directory}
-		if port.Kind, err = e.targetKind(ctx, diff.BaseTree, status.Tree, directory, changed); err != nil {
+		from := analysis.Scope.MovedFrom(directory)
+		if from != directory {
+			port.MovedFrom = from
+		}
+		if port.Kind, err = e.targetKind(ctx, diff.BaseTree, status.Tree, from, directory, changed); err != nil {
 			return diff, err
 		}
-		before, _, err := e.Repo.File(ctx, diff.BaseTree, directory+"/Portfile")
+		before, _, err := e.Repo.File(ctx, diff.BaseTree, from+"/Portfile")
 		if err != nil {
 			return diff, err
 		}

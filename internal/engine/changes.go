@@ -125,7 +125,12 @@ func (e *Engine) makeChanges(ctx context.Context, branch model.Branch, base, tre
 		var texts [2][]byte
 		problem := ""
 		for i, source := range sources {
-			file, text, err := e.Repo.File(ctx, string(source.Tree), directory+"/Portfile")
+			// A moved port's base is read at the directory it moved from.
+			at := directory
+			if i == 0 {
+				at = analysis.Scope.MovedFrom(directory)
+			}
+			file, text, err := e.Repo.File(ctx, string(source.Tree), at+"/Portfile")
 			if err != nil {
 				return nil, err
 			}
@@ -133,7 +138,7 @@ func (e *Engine) makeChanges(ctx context.Context, branch model.Branch, base, tre
 				continue
 			}
 			texts[i] = text
-			snapshot, err := family.Family(ctx, source, directory)
+			snapshot, err := family.Family(ctx, source, at)
 			if err != nil {
 				problem = sideWords[i] + ": " + err.Error()
 				break

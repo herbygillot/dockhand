@@ -69,7 +69,7 @@ func TestAnUpdatesAssessmentChecksItsPatches(t *testing.T) {
 	require.Equal(t, 1, ofPatch(reused[0].Comparison), "the update's own record checked the patch")
 	_, portfile, err := e.Repo.File(t.Context(), string(tree), "textproc/jq/Portfile")
 	require.NoError(t, err)
-	fresh := e.collector(planner).Revision(t.Context(), [2]model.Source{{Tree: base}, {Tree: tree}}, "textproc/jq", [2]string{"jq", "jq"}, true, portfile)
+	fresh := e.collector(planner).Revision(t.Context(), [2]model.Source{{Tree: base}, {Tree: tree}}, [2]string{"textproc/jq", "textproc/jq"}, [2]string{"jq", "jq"}, true, portfile)
 	require.Empty(t, fresh.Problem)
 	require.Equal(t, 1, ofPatch(fresh), "as a fresh collection does")
 }

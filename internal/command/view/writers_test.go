@@ -234,3 +234,18 @@ func TestALocalPlansJSONCarriesItsPrefixNote(t *testing.T) {
 	require.Equal(t, "/opt/macports-test: MacPorts' binary archives are built for /opt/local alone, so its dependencies build from source", viewed.Environments[0].Note)
 	require.Empty(t, viewed.Environments[1].Note)
 }
+
+// A plan says a moved port where it came from, and a removed directory as
+// no port to build; a GitHub check says the workflow builds nothing for a
+// move (field testing's move of dockhand to macports, 2026-10-29).
+func TestAPlanSaysAMoveAndARemoval(t *testing.T) {
+	t.Parallel()
+	plan := model.Plan{Environments: []model.Environment{{Provider: buildenv.GitHub}},
+		Targets: []model.PlanTarget{{ID: "dockhand", Target: model.Target{Name: "dockhand"}, Directory: "macports/dockhand", MovedFrom: "sysutils/dockhand", Kind: model.RevisionOnly, Role: model.Changed}},
+		Removed: []string{"devel/gone"}}
+	var out bytes.Buffer
+	WritePlan(&out, plan, nil, nil, nil, 8)
+	require.Contains(t, out.String(), "Changed     dockhand (moved from sysutils/dockhand)\n")
+	require.Contains(t, out.String(), "Removed     devel/gone, with no port to build\n")
+	require.Contains(t, out.String(), "github's workflow builds nothing for a moved port")
+}

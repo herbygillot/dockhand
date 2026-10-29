@@ -54,6 +54,9 @@ type PlanTarget struct {
 	// Added is a port whose Portfile the branch adds: lint checks it with
 	// --nitpick, and its warnings hold submit (the docs dig's I13).
 	Added bool `json:",omitempty"`
+	// MovedFrom is the base's directory of a port the branch moves to
+	// Directory, which it isn't adding (macports.Scope.Placed).
+	MovedFrom string `json:",omitempty"`
 }
 
 // Exclusion is a port a plan doesn't build in one environment, and needn't
@@ -264,6 +267,9 @@ type Plan struct {
 	// excluded: a narrowed check never shrinks what submit requires
 	// (Design v3 §7).
 	Omitted []PlanTarget `json:",omitempty"`
+	// Removed are the port directories the branch deletes, moved nowhere,
+	// which no environment builds.
+	Removed []string `json:",omitempty"`
 	// Only and Also record the selection as given, for status and the PR.
 	Only  []string
 	Also  []string

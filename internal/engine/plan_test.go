@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -602,4 +604,76 @@ func TestACheckRefusesAPatchGitDoesntTrack(t *testing.T) {
 	// one with files to include at its working files, which can take them.
 	_, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureAuto, Named: true, Include: []string{"textproc/jq/files/fix.diff"}}, Where: where})
 	require.NoError(t, err)
+}
+
+// A port the branch moves is planned at its new directory, read against
+// the base's at its old one, and isn't a port the branch adds; one the
+// branch removes is no target, and the plan says it's removed, where
+// planning evaluated the gone directory and failed (field testing's move
+// of dockhand to macports, 2026-10-29).
+func TestAMovedPortIsPlannedAtItsNewDirectory(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-move"})
+	require.NoError(t, err)
+	testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "textproc/jq", "misc", "devel/libharbor")
+	require.NoError(t, os.MkdirAll(filepath.Join(branch.Worktree, "misc"), 0o755))
+	testsupport.Git(t, branch.Worktree, "mv", "textproc/jq", "misc/jq")
+	testsupport.Git(t, branch.Worktree, "rm", "-q", "-r", "devel/libharbor")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "jq: move to misc")
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"misc/jq": {port("jq")}}})
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+
+	proposal, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureHead}, Where: Where{Environments: []model.Environment{tahoeArm}}})
+	require.NoError(t, err)
+	require.Empty(t, proposal.Plan.Unresolved)
+	require.Len(t, proposal.Plan.Targets, 1)
+	jq := proposal.Plan.Targets[0]
+	require.Equal(t, "misc/jq", jq.Directory)
+	require.Equal(t, "textproc/jq", jq.MovedFrom)
+	require.False(t, jq.Added, "a moved port isn't linted as a new one")
+	require.Equal(t, model.RevisionOnly, jq.Kind, "its Portfile and files are the base's")
+	require.Equal(t, []string{"devel/libharbor"}, proposal.Plan.Removed)
+}
+
+// A move tidies into one commit, titled for it, and submits as one: no
+// new port, the title the move's (field testing's move of dockhand to
+// macports, 2026-10-29). With an update, the subject says both; and tidy
+// says it left out nothing of the category the port moved into.
+func TestAMovedPortTidiesAndSubmitsAsAMove(t *testing.T) {
+	t.Parallel()
+	for _, update := range []bool{false, true} {
+		f := setup(t)
+		e, _ := f.withPreparer(t)
+		f.withFork(t, e)
+		branch, err := e.Start(t.Context(), StartRequest{Name: "jq-move"})
+		require.NoError(t, err)
+		testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "textproc/jq", "misc")
+		require.NoError(t, os.MkdirAll(filepath.Join(branch.Worktree, "misc"), 0o755))
+		testsupport.Git(t, branch.Worktree, "mv", "textproc/jq", "misc/jq")
+		subject := "jq: move to misc"
+		if update {
+			write(t, branch.Worktree, map[string]string{"misc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+			testsupport.Git(t, branch.Worktree, "add", "misc/jq/Portfile")
+			subject = "jq: update to 1.8.1, move to misc"
+		}
+		usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"misc/jq": {port("jq")}}})
+
+		plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+		require.NoError(t, err)
+		require.Len(t, plan.Groups, 1, "the move is one commit")
+		require.Equal(t, "misc/jq", plan.Groups[0].Directory)
+		require.Equal(t, "textproc/jq", plan.Groups[0].MovedFrom)
+		require.Equal(t, subject, plan.Groups[0].Subject())
+		applied, err := e.ApplyTidy(t.Context(), plan)
+		require.NoError(t, err)
+		require.NotContains(t, applied.Narrowed, "misc", "the category the port moved into isn't left out")
+
+		submit, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+		require.NoError(t, err)
+		require.Equal(t, subject, submit.Title)
+		require.Equal(t, []string{"jq"}, submit.Ports)
+		require.NotContains(t, submit.Body, "New port", "a moved port is no new one")
+	}
 }
