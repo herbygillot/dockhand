@@ -102,7 +102,7 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 		return nil
 	}))
 
-	held, state, err := e.assessedHolds(t.Context(), branch, tree, []string{"textproc/jq"})
+	held, _, state, err := e.assessedHolds(t.Context(), branch, tree, []string{"textproc/jq"})
 	require.NoError(t, err)
 	require.Empty(t, held)
 	require.Equal(t, AssessmentPending, state, "status collects nothing")
@@ -123,7 +123,7 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 	collected := e.collector(p).Revision(t.Context(), [2]model.Source{{Commit: branch.Base, Tree: base, Base: branch.Base}, {Tree: tree, Base: branch.Base}}, [2]string{"textproc/jq", "textproc/jq"}, [2]string{"jq", "jq"}, true, portfile)
 	require.Equal(t, collected, assessments[0].Comparison)
 
-	held, state, err = e.assessedHolds(t.Context(), branch, tree, []string{"textproc/jq"})
+	held, _, state, err = e.assessedHolds(t.Context(), branch, tree, []string{"textproc/jq"})
 	require.NoError(t, err)
 	require.Equal(t, AssessmentAvailable, state)
 	require.Equal(t, []string{"upstream's meson.build is new; the build may need the Portfile to follow"}, HoldLines(held))
@@ -249,7 +249,7 @@ func TestWhatCantBeComparedSaysSo(t *testing.T) {
 		byPort[a.Port] = a
 	}
 	require.Equal(t, []string{"the upstream archives couldn't be compared: the revision's Git source couldn't be read: macports: fetched with Git, and git.url names no repository"}, holds(byPort["gitty"]))
-	_, state, err := e.assessedHolds(t.Context(), branch, tree, []string{"devel/gitty", "devel/meta"})
+	_, _, state, err := e.assessedHolds(t.Context(), branch, tree, []string{"devel/gitty", "devel/meta"})
 	require.NoError(t, err)
 	require.Equal(t, AssessmentIncomplete, state)
 	require.Empty(t, holds(byPort["meta"]))

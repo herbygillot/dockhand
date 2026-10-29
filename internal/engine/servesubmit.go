@@ -321,7 +321,7 @@ func preparedSources(evidence *Evidence, edits []model.Edit) []model.Concern {
 		if chosen == nil || chosen.Commit == "" || planned.Commit == "" || model.ObjectID(chosen.Commit) == planned.Commit {
 			continue
 		}
-		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "release-moved", Subject: string(planned.Commit), Class: model.Introduced,
+		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleReleaseMoved, Subject: model.MovedSubject(model.ObjectID(chosen.Commit), planned.Commit), Class: model.Introduced,
 			Detail: fmt.Sprintf("%s: git.branch %s pointed to %s when the update was prepared, then to %s when %s was planned. The check used a different source from the update", target.Target.Name, planned.Ref, model.ObjectID(chosen.Commit).Short(), planned.Commit.Short(), evidence.Run.Name())})
 	}
 	return concerns
@@ -348,7 +348,7 @@ func assessedSources(evidence *Evidence, upstream []PortComparison) []model.Conc
 		if read == "" || model.ObjectID(read) == planned.Commit {
 			continue
 		}
-		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "assessment-moved", Subject: string(planned.Commit), Class: model.Introduced,
+		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleAssessmentMoved, Subject: model.MovedSubject(model.ObjectID(read), planned.Commit), Class: model.Introduced,
 			Detail: fmt.Sprintf("%s: the upstream assessment examined %s, but %s planned to build %s. The assessment and check refer to different source commits", target.Target.Name, model.ObjectID(read).Short(), evidence.Run.Name(), planned.Commit.Short())})
 	}
 	return concerns
@@ -439,16 +439,20 @@ func (e *Engine) heldBeforeEdit(ctx context.Context, port string, except int) er
 // assessedHolds are why the recorded assessments of a branch's files hold
 // it for a person's look (UpstreamComparison.Holds), and how far they're
 // recorded: status reads them, and collects nothing.
-func (e *Engine) assessedHolds(ctx context.Context, branch model.Branch, tree model.ObjectID, directories []string) ([]model.Concern, AssessmentState, error) {
+func (e *Engine) assessedHolds(ctx context.Context, branch model.Branch, tree model.ObjectID, directories []string) ([]model.Concern, []PortComparison, AssessmentState, error) {
 	assessments, err := e.revisionAssessments(ctx, branch.ID, branch.Base, tree, false)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	slices.SortFunc(assessments, func(a, b model.Assessment) int { return macports.ComparePortNames(a.Port, b.Port) })
 	var held []model.Concern
+	var comparisons []PortComparison
 	state := AssessmentAvailable
 	for _, a := range assessments {
 		held = append(held, a.Comparison.Concerns(a.Port)...)
+		if !SourceUnchanged(a.Comparison) {
+			comparisons = append(comparisons, PortComparison{Port: a.Port, Comparison: a.Comparison})
+		}
 		if a.Comparison.Problem != "" {
 			state = AssessmentIncomplete
 		}
@@ -458,7 +462,7 @@ func (e *Engine) assessedHolds(ctx context.Context, branch model.Branch, tree mo
 			state = AssessmentPending
 		}
 	}
-	return holding(held, e.allowedFor), state, nil
+	return holding(held, e.allowedFor), comparisons, state, nil
 }
 
 // AssessmentState is how far a branch's files are assessed, as status
@@ -507,7 +511,7 @@ const afterRule = "after"
 // list says, as what couldn't be checked does (D4).
 func HoldRules() []string {
 	rules := slices.Concat(assess.Rules(), commitrules.ErrorCodes(), []string{majorRule, darwinFloorRule, deploymentTargetRule,
-		model.RuleSourceMoved, model.RuleTagMoved, "release-moved", "assessment-moved", "open", "search-failed",
+		model.RuleSourceMoved, model.RuleTagMoved, model.RuleReleaseMoved, model.RuleAssessmentMoved, "open", "search-failed",
 		upstreamMovedRule, upstreamTransferredRule, mirrorConflictRule, manifestHookRule, afterRule, linkUndeclaredRule})
 	slices.Sort(rules)
 	return slices.Compact(rules)
