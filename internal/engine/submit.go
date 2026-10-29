@@ -228,6 +228,9 @@ type SubmitPlan struct {
 	// last wrote: Body, but each part kept as someone's own carries
 	// dockhand's last text of it (prdescription.Written).
 	Written string
+	// described is a description the person wrote whole (Describe),
+	// which a fresh read can't merge into.
+	described bool
 
 	facts bodyFacts
 	// allowed are the rules the configuration's hold list sets apart for
@@ -293,8 +296,53 @@ func (p SubmitPlan) NoteKept() bool { return p.Note != "" && p.Request.Note == n
 // Describe replaces the description with one the person wrote, which
 // gives their note however they left it.
 func (p *SubmitPlan) Describe(body string) {
-	p.Body, p.Written, p.BodyKept, p.NoteLeftOut = body, body, true, false
+	p.Body, p.Written, p.BodyKept, p.NoteLeftOut, p.described = body, body, true, false, true
 	p.Sections = DescriptionSections{Description: SectionKept, Types: SectionKept, TestedOn: SectionKept}
+}
+
+// unchangedSince reads the pull request again, where the plan writes its
+// title or description, and makes the plan's text against what it is now
+// where someone edited it on GitHub since the preview: the merge keeps
+// their edit as it keeps any, and a title left as it was follows theirs.
+// Where the plan can't merge, as for a description the person wrote whole
+// or one --rewrite-description replaces, it refuses, naming the change.
+// The planned title and body were written with nothing checked, so an
+// edit made while submit waited for confirmation was lost (Codex's review
+// of 2ad896d2, W7). GitHub has no conditional write for a pull request's
+// title or body: an edit in the moment between this read and the write
+// can still be lost; unattended, there's no wait for one to land in.
+func (e *Engine) unchangedSince(ctx context.Context, plan *SubmitPlan) error {
+	if plan.Existing == nil || plan.Theirs {
+		return nil
+	}
+	fresh, err := e.forge().Observe(ctx, plan.Existing.PullRequest.Ref)
+	if err != nil {
+		return fmt.Errorf("reading #%d again before writing it: %w", plan.Existing.PullRequest.Ref.Number, err)
+	}
+	was := plan.Existing.PullRequest
+	now := fresh.PullRequest
+	if now.Title == was.Title && now.Body == was.Body {
+		return nil
+	}
+	var changed []string
+	if now.Title != was.Title {
+		changed = append(changed, "title")
+	}
+	if now.Body != was.Body {
+		changed = append(changed, "description")
+	}
+	if now.Body != was.Body && (plan.described || plan.Request.Rewrite) {
+		return fmt.Errorf("#%d's %s changed on GitHub since the preview, and this submission would replace it; nothing was pushed: run dockhand submit again to see it", was.Ref.Number, prose.And(changed))
+	}
+	title := plan.Title
+	if plan.Request.Title == "" && plan.Branch.Title == "" && plan.Title == was.Title {
+		title = now.Title
+	}
+	plan.Existing = &fresh
+	plan.Answer(plan.Request.TestedBinaries, plan.Request.TestedVariants)
+	plan.Title = title
+	progress.Report(ctx, "#%d's %s changed on GitHub since the preview; this submission keeps the change", was.Ref.Number, prose.And(changed))
+	return nil
 }
 
 // Head is the fork's head as "owner/repo:branch".
@@ -968,6 +1016,11 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	}
 	if head, _, err := worktree.Branch(ctx, plan.Branch.Name); err != nil || head != plan.Commit {
 		return Submitted{}, fmt.Errorf("%w: %s moved; run dockhand submit again", ErrStaleSubmit, plan.Branch.Name)
+	}
+	// The title and description it writes are made against them as they
+	// are now, before anything is pushed (unchangedSince).
+	if err := e.unchangedSince(ctx, &plan); err != nil {
+		return Submitted{}, err
 	}
 	var result Submitted
 	// A draft submission returns the pull request to draft before it

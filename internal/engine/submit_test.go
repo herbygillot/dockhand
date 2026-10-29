@@ -1089,3 +1089,40 @@ func TestADraftSubmissionReturnsAReadyPullRequestToDraft(t *testing.T) {
 	require.Equal(t, []int{first.PullRequest.Ref.Number}, fake.Drafted)
 	require.True(t, recordedPullRequest(t, e, branch).Draft, "the record says the draft it made")
 }
+
+// A description edited on GitHub while submit waited for confirmation is
+// kept: the submission reads it again and merges against it, where it
+// replaced it with the body prepared before (Codex's review of 2ad896d2,
+// W7, its probe inverted). One the person wrote whole can't be merged
+// into, and is refused, nothing pushed.
+func TestADescriptionEditedAfterThePreviewIsKept(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	firstPlan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	first, err := e.ApplySubmit(t.Context(), firstPlan, model.AnsweredAsked)
+	require.NoError(t, err)
+	number := first.PullRequest.Ref.Number
+
+	note := "My planned note"
+	planned, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: &note})
+	require.NoError(t, err)
+	require.Contains(t, planned.Body, note)
+	human := "#### Description\n\nA human edited the PR on GitHub while submit was awaiting confirmation.\n" + firstPlan.Body[strings.Index(firstPlan.Body, "###### Type(s)"):]
+	fake.PRs[number].Body = human
+
+	// One the person wrote whole is refused, nothing pushed.
+	described := planned
+	described.Describe("my own description\n")
+	_, err = e.ApplySubmit(t.Context(), described, model.AnsweredAsked)
+	require.ErrorContains(t, err, fmt.Sprintf("#%d's description changed on GitHub since the preview, and this submission would replace it; nothing was pushed", number))
+	require.Equal(t, human, fake.PRs[number].Body)
+
+	_, err = e.ApplySubmit(t.Context(), planned, model.AnsweredAsked)
+	require.NoError(t, err)
+	require.Contains(t, fake.PRs[number].Body, "A human edited the PR on GitHub", "their Description is kept")
+	require.NotEqual(t, planned.Body, fake.PRs[number].Body, "not the body prepared before")
+}
