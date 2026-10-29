@@ -220,6 +220,56 @@ func TestSubmitNeedsWhatTheNewestCheckWasAsked(t *testing.T) {
 	require.Contains(t, blocking()[0], "jq")
 }
 
+// A check narrowed to some of the changed ports adds its results but sets
+// no ask: exiv2's check --on tart:13,14 --only ufraw, after a check of
+// every port, had submit ask for every changed port on 13 and 14 and
+// nothing on the default. The ask is the newest check's that covers them
+// all; where none does, build.default's (D17, prioritization's answer,
+// 2026-10-29). A narrowed check's failure still blocks.
+func TestANarrowedCheckSetsNoAsk(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := twoPortBranch(t, e)
+	tart, local := &scriptedProvider{}, &scriptedProvider{}
+	e.Providers = map[string]buildenv.Provider{buildenv.Tart: tart, buildenv.Local: local}
+	checkWhere := func(request WhereRequest, only ...string) model.Run {
+		t.Helper()
+		where, err := e.Where(t.Context(), request)
+		require.NoError(t, err)
+		proposal, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureHead}, Where: where, Only: only})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, proposal.Plan, model.OriginPerson)
+		require.NoError(t, err)
+		completed, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		return completed
+	}
+	blocking := func() []string {
+		t.Helper()
+		submission, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
+		require.NoError(t, err)
+		return submission.Blocking
+	}
+
+	// Narrowed alone, it sets no ask: build.default's Tart is needed.
+	checkWhere(WhereRequest{On: []string{buildenv.Local}}, "jq")
+	require.Len(t, blocking(), 2)
+
+	// After a check of every port, the diagnostic adds and asks nothing.
+	checkWhere(WhereRequest{})
+	require.Empty(t, blocking())
+	checkWhere(WhereRequest{On: []string{buildenv.Local}}, "jq")
+	require.Empty(t, blocking(), "the default check's ask stands")
+
+	// Its failure blocks.
+	local.outcomes = map[model.TargetID]model.Outcome{"jq": model.OutcomeFailed}
+	checkWhere(WhereRequest{On: []string{buildenv.Local}}, "jq")
+	require.Len(t, blocking(), 1)
+	require.Contains(t, blocking()[0], "jq")
+}
+
 // identified is a scripted provider that says what its environments are
 // now (buildenv.IdentityProvider).
 type identified struct {

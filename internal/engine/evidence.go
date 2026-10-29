@@ -105,17 +105,12 @@ func (e *Engine) identityNow(ctx context.Context, environment model.Environment)
 // outside any transaction, then the checks' records.
 func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []model.Run) (Evidence, error) {
 	var own model.Plan
+	var others []model.Plan
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
-		own, err = r.Plan(primary.Plan)
-		return err
-	}); err != nil {
-		return Evidence{}, err
-	}
-	required, problem := e.requiredFor(ctx, own)
-	var plan model.Plan
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		var others []model.Plan
+		if own, err = r.Plan(primary.Plan); err != nil {
+			return err
+		}
 		for _, run := range runs {
 			if run.ID == primary.ID {
 				continue
@@ -126,11 +121,23 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 			}
 			others = append(others, earlier)
 		}
-		plan = evidence.Plan(own, others, required)
 		return nil
 	}); err != nil {
 		return Evidence{}, err
 	}
+	// The ask is the newest check's that covers every changed port: one
+	// narrowed with --only adds its results but sets none, so exiv2's
+	// check --on tart:13,14 --only ufraw doesn't make 13 and 14 the
+	// branch's requirement (D17).
+	var ask *model.Plan
+	for _, plan := range append([]model.Plan{own}, others...) {
+		if len(plan.Omitted) == 0 {
+			ask = &plan
+			break
+		}
+	}
+	required, problem := e.requiredFor(ctx, ask)
+	plan := evidence.Plan(own, others, required)
 	now := e.identitiesNow(ctx, plan.Environments)
 	var judged Evidence
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
@@ -218,19 +225,24 @@ func runsOfTree(r store.Reader, branch model.BranchID, tree model.ObjectID, stat
 	return r.Runs(store.RunFilter{Branch: branch, Tree: tree, States: states, NoBaselines: true})
 }
 
-// requiredFor are the environments a branch's files need, judged by
-// their newest check, newest: what the person asked it to build on, with
-// --on or --build, exactly, local included where Tart is set up; else its
-// own and build.default's (requiredEnvironments). The newest ask replaces
-// an earlier one, so an ask that was dropped doesn't hold until it passes
-// (D17, the person's "Newest ask", 2026-10-29); a failure in any check of
-// the files still does (evidence.Judge).
-func (e *Engine) requiredFor(ctx context.Context, newest model.Plan) ([]model.Environment, string) {
-	if newest.Asked {
-		return slices.Clone(newest.Environments), ""
+// requiredFor are the environments a branch's files need, judged by the
+// ask, the newest check of them covering every changed port: what the
+// person asked it to build on, with --on or --build, exactly, local
+// included where Tart is set up; else its own and build.default's
+// (requiredEnvironments), and build.default's alone where no check sets
+// an ask. The newest ask replaces an earlier one, so an ask that was
+// dropped doesn't hold until it passes (D17, the person's "Newest ask",
+// 2026-10-29); a failure in any check of the files still does, while its
+// environment stands (evidence.Judge).
+func (e *Engine) requiredFor(ctx context.Context, ask *model.Plan) ([]model.Environment, string) {
+	if ask != nil && ask.Asked {
+		return slices.Clone(ask.Environments), ""
 	}
 	profile, problem := e.requiredEnvironments(ctx)
-	required := slices.Clone(newest.Environments)
+	var required []model.Environment
+	if ask != nil {
+		required = slices.Clone(ask.Environments)
+	}
 	for _, environment := range profile {
 		if !slices.ContainsFunc(required, func(planned model.Environment) bool { return evidence.Covers(environment, planned) }) {
 			required = append(required, environment)

@@ -131,9 +131,11 @@ Use `--on local` for a host MacPorts prefix; `local` is no build profile, and
 Where you name where a check builds, with `--on` or `--build`, submission needs
 exactly that: `check --on local` then `submit` passes on the prefix alone, even
 where Tart is set up. Where you name neither, it needs `build.default`'s
-environments as well as the check's own. The newest check of the files decides,
-so asking again replaces an earlier ask; a failure in any check of the same
-files still blocks until it passes or is accepted.
+environments as well as the check's own. The newest check of the files that
+covers every changed port decides, so asking again replaces an earlier ask; a
+check narrowed with `--only` adds its results but sets no ask. A failure in any
+check of the same files still blocks until it passes or is accepted, while its
+environment stands.
 
 ### Tart guests
 
