@@ -22,7 +22,7 @@ v0.6.0 is the latest release (2026-10-29, b89e8ca1, the commit of rc8, its GitHu
 
 ### v0.7.0: on main, one release
 
-Then's items 6 to 15, and everything placed beside them, are done on main as one release (the person's "One release", 2026-10-26 06:22Z), but for the items placed before rc1 below. Its rc1 is cut at the person's word, the idle serve's profile and A7's look taken in rc1's own B7 and A7 rather than before it (prioritization's reading, 2026-10-29 23:54Z, since both need the M1 and the person's word as rc1 does, and a fix either finds is an rc2 whose acceptance reruns its rows alone), and as it's cut the README's known issues become v0.7.0's, the list [its notes](releases/v0.7.0.md) carry. It migrates the database through schemas 43 to 51.
+Then's items 6 to 15, and everything placed beside them, are done on main as one release (the person's "One release", 2026-10-26 06:22Z), but for the items placed before rc1 below. Its rc1 is cut at the person's word, the idle serve's profile and A7's look taken in rc1's own B7 and A7 rather than before it (the person's "Cut rc1 now", 2026-10-30 00:04Z, on prioritization's card, since both need the M1 and the person's word as rc1 does, and a fix either finds is an rc2 whose acceptance reruns its rows alone), and as it's cut the README's known issues become v0.7.0's, the list [its notes](releases/v0.7.0.md) carry. It migrates the database through schemas 43 to 51.
 
 Its acceptance is v0.6.0's, with:
 
