@@ -27,7 +27,7 @@ func TestInspectReportsFactsWithoutEnforcingImagePolicy(t *testing.T) {
 			require.NoError(t, err)
 			require.Contains(t, string(script), "package require macports")
 			require.NotContains(t, string(script), "install")
-			return []byte("darwin 21 arm64\n"), nil
+			return []byte("dockhand-platform: darwin 21 arm64\n"), nil
 		default:
 			t.Fatalf("unexpected modifying command: %v", args)
 			return nil, nil
@@ -80,4 +80,27 @@ func TestParseVersionReadsPastAWarning(t *testing.T) {
 	require.Equal(t, "2.11.5", version)
 	_, ok = ParseVersion([]byte("port: command not found\n"))
 	require.False(t, ok)
+}
+
+// The guest reads stderr with stdout, so every probe's answer may follow
+// mportinit's stale-definitions warning, which failed setup tart's image
+// on its version, its platform, and its active ports (rc1's full stage).
+func TestInspectReadsPastTheStaleDefinitionsWarning(t *testing.T) {
+	t.Parallel()
+	const warning = "Warning: port definitions are more than two weeks old, consider updating them by running 'port selfupdate'.\n"
+	facts, err := Inspect(t.Context(), func(_ context.Context, _ io.Reader, args ...string) ([]byte, error) {
+		switch strings.Join(args, " ") {
+		case "/opt/local/bin/port version":
+			return []byte(warning + "Version: 2.12.6\n"), nil
+		case "/opt/local/bin/port -q installed active":
+			return []byte(warning), nil
+		default:
+			return []byte(warning + "dockhand-platform: darwin 25 arm64\n"), nil
+		}
+	}, "/opt/local")
+	require.NoError(t, err)
+	require.Empty(t, facts.Problems)
+	require.Equal(t, "2.12.6", facts.Version)
+	require.Equal(t, model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, facts.Platform)
+	require.Empty(t, facts.ActivePorts)
 }

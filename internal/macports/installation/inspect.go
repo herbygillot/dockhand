@@ -60,11 +60,12 @@ func Inspect(ctx context.Context, command macos.Command, prefix string) (Facts, 
 	if err != nil {
 		return result, err
 	}
-	if value := strings.TrimSpace(string(active)); value != "" {
-		result.ActivePorts = strings.Split(value, "\n")
-	}
-	// Pass the program through stdin rather than interpolating the prefix into Tcl.
-	tcl := "package require macports\nmportinit\nputs \"$::macports::os_platform $::macports::os_major $::macports::build_arch\"\n"
+	result.ActivePorts = activePorts(active)
+	// Pass the program through stdin rather than interpolating the prefix into
+	// Tcl. Its answer is the line it marks: mportinit warns, on stderr, once
+	// the port definitions are more than two weeks old, and a guest's
+	// commands read stderr with stdout (rc1's full stage).
+	tcl := "package require macports\nmportinit\nputs \"" + platformMark + " $::macports::os_platform $::macports::os_major $::macports::build_arch\"\n"
 	out, err := command(ctx, strings.NewReader(tcl), filepath.Join(prefix, "bin", macports.TclShell))
 	if ctx.Err() != nil {
 		return result, ctx.Err()
@@ -76,7 +77,7 @@ func Inspect(ctx context.Context, command macos.Command, prefix string) (Facts, 
 		}
 		result.Problems = append(result.Problems, "MacPorts platform evaluation failed: "+err.Error())
 	} else {
-		fields := strings.Fields(string(out))
+		fields := markedFields(out, platformMark)
 		if len(fields) == 3 {
 			result.Platform = model.Platform{OS: fields[0], Version: fields[1], Architecture: fields[2]}
 		} else {
@@ -103,4 +104,32 @@ func ParseVersion(out []byte) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// platformMark marks the platform probe's answer among what MacPorts
+// says as it starts.
+const platformMark = "dockhand-platform:"
+
+// markedFields are the fields of out's line that starts with mark, less
+// the mark; nil where none does.
+func markedFields(out []byte, mark string) []string {
+	for line := range strings.Lines(string(out)) {
+		if fields := strings.Fields(line); len(fields) > 0 && fields[0] == mark {
+			return fields[1:]
+		}
+	}
+	return nil
+}
+
+// activePorts are the active ports port -q installed active lists, a
+// line each ending "(active)", anything else MacPorts says beside them,
+// as its stale-definitions warning, left out.
+func activePorts(out []byte) []string {
+	var ports []string
+	for line := range strings.Lines(string(out)) {
+		if line = strings.TrimSpace(line); strings.HasSuffix(line, "(active)") {
+			ports = append(ports, line)
+		}
+	}
+	return ports
 }
