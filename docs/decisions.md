@@ -113,7 +113,7 @@ Declined, with the reason. Each reopens only on the condition given, or on new e
   - a batch `rebase --stale` (a pull request needs a rebase only where it conflicts, which status says per branch);
   - written rules for agreement and round-trip tests (nothing would enforce them);
   - a Tart lock and clone cleanup across databases on one Mac (several databases are a development setup's alone);
-  - one MacPorts interpreter reused across evaluations (state could leak, and no speed pain is measured);
+  - one MacPorts interpreter reused across evaluations (state could leak, and no speed pain is measured; reopened 2026-10-30 for one port's contexts, the faster look in v0.8.0 having measured three sessions a port, each paying its start);
   - create's other extras: SwiftPM, a long_description from the README, clap's completions, go.sum-only `go.vendors` rows, GitLab and Codeberg upstreams (each refuses cleanly today);
   - `create --like <port>`;
   - `check --trace` (the guest builds with the declared dependencies alone, as the buildbots do);
