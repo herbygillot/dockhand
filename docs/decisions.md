@@ -104,7 +104,7 @@ Declined, with the reason. Each reopens only on the condition given, or on new e
 - **Field testing's scope increases** (2026-10-23): series management, tree-health signals and Trac drafts, upstream patch sourcing, and smoke-running installed binaries.
 - **The SQL study's speed work** (2026-10-13): no rewrite of the N+1 reads or polling, no ORM, query builder, or generated code, no plan or statement cache, no second durability mode.
 - **Command-package frameworks** (2026-10-15): no workflow or pipeline type, no command registry, no branch shape shared across commands.
-- **Extractions no consumer asks for** (2026-10-17, 2026-10-23): one ship driver for the command and serve, a version probe below portedit, a source-file reader, an image service, and PlanSubmit's facts split from its policy, each until someone next rewrites that code.
+- **Extractions no consumer asks for** (2026-10-17, 2026-10-23): one ship driver for the command and serve, a version probe below portedit, a source-file reader, an image service, and PlanSubmit's facts split from its policy, each until someone next rewrites that code. Codex's review of 275125ff (2026-10-30) passes near the first and the last, its findings 1 and 2 fixed by a fact the rule was missing and a rule both paths call, and reopens neither (architecture's assessment).
 - **Reuse across a test-only edit, and `--debug-cmd` after a failure** (2026-10-19): the first needs kept work trees of gigabytes each; `shell --test` serves the second.
 - **From the documentation dig** (2026-10-26):
   - serve notifying a merge another command recorded first (that command showed it);
