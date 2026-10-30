@@ -180,7 +180,11 @@ What it carries, each said in full in its notes:
   - One bounded matcher for every sequence comparison, past whose budget a license reads as changed and holds, and CMake's wording in a file of its own (14aa1665).
   - Its notes, drafted (622c5bd1) and brought up to date (1abbe967, 1324df11, and 0ba25be4).
 
-Nothing is placed after v0.7.0 yet; Later is where its items come from.
+### v0.8.0
+
+Placed at the person's word (2026-10-30 14:15Z, prioritization's thread: "for 0.8.0, definitely take on #2 (batches over GraphQL)"), after v0.7.0, whose rc2 stays fixes only; work starts once rc2 is tagged. The rest of v0.8.0 is the person's to pick from Later, where prioritization proposed merge fitness in status, a GitHub port's source chosen for it, and ports.macports.org's build history (2026-10-30).
+
+- **A look's tag and release lookups batched over GraphQL** (Then's item 5's rest, from Later; about a batch, inferred). Its conditional requests (0f6e9a39), a look past the hour's allowance asking first (52cb54c9), and pull requests read in one GraphQL request (c719fff1) are done; a look's tag and release lookups are still one REST request a repository, eight ports at once (`outdated.Concurrency`), each answer shared within the look. First a measure, the item's baseline: `outdated` over the person's selection on the main Mac, its wall time split between GitHub's answers and the Portfiles' evaluation, and the hour's allowance it spends. Then the batch: a look's repositories asked together, their tags with each tag's commit and date, and their releases, in as few GraphQL requests as GitHub's limits allow. A conditional REST answer that comes back unchanged costs nothing of the allowance, and GraphQL has no such answer, so the shape keeps the conditional path where it costs less, as the measure shows (inferred; the shape is implementation's, with architecture). Done when the measured look is faster and spends no more of the allowance.
 
 ### Alongside, on the Mac
 
@@ -191,8 +195,7 @@ These need MacPorts Base, whole-tree surveys, or VMs, so they run as the Mac all
   - phase 6, the bootstrap under the environment contract;
   - `java_home` answered from the facts table;
   - 4b, `with-deps`, only when a survey shows a registry answer reaching what an update edits;
-  - the comparison with a fresh Tart guest, possible since the v3 Tart provider;
-  - decision D2 ([decisions](decisions.md)).
+  - the comparison with a fresh Tart guest, possible since the v3 Tart provider.
 - **Host-independence foundations:**
   - the evaluator's clean launch environment (16);
   - the environment contract, and a disposable `portdbpath`;
@@ -262,7 +265,6 @@ From the exiv2 and bazel sessions' notes (2026-10-24, 95e78117):
 
 Left from v0.6.0's and the docs dig's work:
 
-- **GraphQL's batched tag and release lookups across repositories,** Then's item 5's rest: its conditional requests (0f6e9a39), a look past the hour's allowance asking first (52cb54c9), and pull requests read in one GraphQL request (c719fff1) are done, and a look's tag and release lookups are still one REST request a repository.
 - **A worked command-provider example building on another Mac over SSH** (the dig's I27), held, not declined: it waits for barracuda156's answer on herbygillot/dockhand#5, and would be a tested tool, not a doc.
 
 ### Taken when their area is next touched
