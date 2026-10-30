@@ -50,6 +50,12 @@ type RenamedPort struct {
 	// what the new name implies is the person's to change: a Go module's
 	// path, a binary's name, notes.
 	Left []string
+	// UsesName are the new Portfile's lines that use ${name} or
+	// ${subport}, which read the new name now, but the name line itself:
+	// which mean the port and which upstream's files is the person's call,
+	// so none is changed (rc1's quick stage, G6: jlv's destroot installed
+	// ${name}, and the binary built was still jlv).
+	UsesName []string
 	// Dependents are the ports that depend on the old name, by the port
 	// index's graph, whose lines are the person's; DependentsProblem why
 	// they couldn't be read.
@@ -145,6 +151,7 @@ func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (Ren
 	}
 	if !moving {
 		renamed.Left = linesNaming(text, request.Port)
+		renamed.UsesName = linesUsingName(text)
 	}
 	var edits []git.FileEdit
 	for _, entry := range entries {
@@ -254,6 +261,24 @@ func linesNaming(text []byte, word string) []string {
 		if named.MatchString(line) {
 			lines = append(lines, fmt.Sprintf("line %d: %s", n+1, strings.TrimSpace(line)))
 		}
+	}
+	return lines
+}
+
+// usesName is a use of the name variables, $name or ${subport}, as Tcl
+// substitutes them.
+var usesName = regexp.MustCompile(`\$(\{(name|subport)\}|(name|subport)\b)`)
+
+// linesUsingName are a Portfile's lines that use ${name} or ${subport},
+// numbered as linesNaming's, the name line itself left out.
+func linesUsingName(text []byte) []string {
+	var lines []string
+	for n, line := range strings.Split(string(text), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "name ") || !usesName.MatchString(line) {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("line %d: %s", n+1, trimmed))
 	}
 	return lines
 }
