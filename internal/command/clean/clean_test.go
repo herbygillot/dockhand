@@ -48,3 +48,13 @@ func TestACommandStartsCleanupWhenItIsDue(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, started, 1, "turned off")
 }
+
+// A fork that refused this Mac is said in one line, its branches not
+// counted as kept, where "kept 515" read as alarming after a reboot left
+// no SSH key loaded.
+func TestAnUnreachedForkIsOneLine(t *testing.T) {
+	t.Parallel()
+	steps := []engine.CleanStep{{Kind: engine.CleanFork, Kept: "it could not be read", Unreached: true}, {Kind: engine.CleanFork, Kept: "it could not be read", Unreached: true}, {Kind: engine.CleanWorktree, Done: true}}
+	require.Equal(t, "Removed 1 worktree; your fork couldn't be reached (is your SSH key loaded? ssh-add -l lists the agent's keys), so 2 fork branches weren't looked at.",
+		cleanedWords([]engine.CleanBranch{{Steps: steps}}, nil))
+}

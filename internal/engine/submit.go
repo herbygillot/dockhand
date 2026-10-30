@@ -1285,6 +1285,24 @@ func loginError(what string, err error) error {
 	return fmt.Errorf("%s couldn't ask GitHub who you are: %w", what, err)
 }
 
+// ForkRefuses says why your fork refuses this Mac's push, asked once with
+// git ls-remote of its push URL before a batch that pushes starts its
+// checks: for want of an SSH key loaded or HTTPS credentials, which a
+// batch met only after checks that passed and pushes that failed, after a
+// reboot (rc1's bump batch). nil where the fork answers, or can't be found
+// or asked for another reason, which submit says as now.
+func (e *Engine) ForkRefuses(ctx context.Context) error {
+	fork, err := e.Fork(ctx, "")
+	if err != nil || fork.PushURL == "" {
+		return nil
+	}
+	_, err = e.Repo.RemoteHead(ctx, fork.PushURL, UpstreamBranch)
+	if errors.Is(err, git.ErrSSHRefused) || errors.Is(err, git.ErrNoHTTPSCredentials) {
+		return fmt.Errorf("your fork %s can't be pushed to from this Mac, so nothing was shipped: %w", fork.Repository, err)
+	}
+	return nil
+}
+
 // Fork finds your fork: the one Git remote that pushes to a fork of
 // MacPorts' repository your GitHub login owns, or the remote named. With
 // a sandbox (Options.PullRequests), the fork is the sandbox itself, which

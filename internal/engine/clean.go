@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
@@ -31,6 +32,11 @@ type CleanStep struct {
 	Why string
 	// Done is true once it was removed.
 	Done bool
+	// Unreached is a fork branch not looked at, since the fork couldn't be
+	// reached for want of a key or credentials, which clean says in one
+	// line where it counted each as kept (the bump batch after a reboot,
+	// with no SSH key loaded: "kept 515").
+	Unreached bool
 	// Kind is what it is: a worktree, a local branch, a fork's branch, or
 	// what a check left, which a command reads where it read What's words.
 	Kind CleanKind
@@ -255,10 +261,17 @@ func (e *Engine) planCleanFork(ctx context.Context, branch model.Branch, pushed 
 		case err != nil:
 			step.Kept = err.Error()
 			step.Said = errors.Is(err, errNoRemote) && strings.Contains(branch.CleanKept, cleanKindWords[CleanFork]+" kept: "+step.Kept)
+		case e.unreached(remote) != nil:
+			// The fork refused this Mac once: asked again for each branch,
+			// it was hundreds of refusals.
+			step.Kept, step.Unreached = "it could not be read: "+e.unreached(remote).Error(), true
 		default:
 			step.remote = remote
 			value, err := e.Repo.RemoteHead(ctx, remote, name)
 			switch {
+			case err != nil && (errors.Is(err, git.ErrSSHRefused) || errors.Is(err, git.ErrNoHTTPSCredentials)):
+				e.unreachable(remote, err)
+				step.Kept, step.Unreached = "it could not be read: "+err.Error(), true
 			case err != nil:
 				step.Kept = "it could not be read: " + err.Error()
 			case !value.Exists:
@@ -895,4 +908,28 @@ func (e *Engine) portMoves(ctx context.Context, master, head string) ([]portMove
 		moves = append(moves, portMove{port: path.Base(directory), was: was, mine: mine, master: now})
 	}
 	return moves, nil
+}
+
+// unreachedRemotes are the remotes this run found refusing this Mac, for
+// want of a key or credentials, by URL.
+type unreachedRemotes struct {
+	mu      sync.Mutex
+	refused map[string]error
+}
+
+// unreached is why a remote refused this Mac in this run; nil where it
+// didn't.
+func (e *Engine) unreached(remote string) error {
+	e.unreachedRemotes.mu.Lock()
+	defer e.unreachedRemotes.mu.Unlock()
+	return e.unreachedRemotes.refused[remote]
+}
+
+func (e *Engine) unreachable(remote string, err error) {
+	e.unreachedRemotes.mu.Lock()
+	defer e.unreachedRemotes.mu.Unlock()
+	if e.unreachedRemotes.refused == nil {
+		e.unreachedRemotes.refused = map[string]error{}
+	}
+	e.unreachedRemotes.refused[remote] = err
 }

@@ -252,6 +252,8 @@ func writeClean(out io.Writer, plans []engine.CleanBranch, done bool, places con
 				why = ": " + step.Why
 			}
 			switch {
+			case step.Unreached:
+				// Said once, in the summary.
 			case step.Kept != "":
 				fmt.Fprintf(out, "  keep     %s: %s\n", cleanWords(places, step.What), step.Kept)
 			case done && step.Done:
@@ -310,10 +312,12 @@ func cleanWords(places config.Places, what string) string {
 // and how much it kept, which -v lists.
 func cleanedWords(plans []engine.CleanBranch, leftovers []engine.Leftover) string {
 	removed := map[engine.CleanKind]int{}
-	kept := 0
+	kept, unreached := 0, 0
 	for _, plan := range plans {
 		for _, step := range plan.Steps {
 			switch {
+			case step.Unreached:
+				unreached++
 			case step.Kept != "":
 				kept++
 			case step.Done:
@@ -345,6 +349,12 @@ func cleanedWords(plans []engine.CleanBranch, leftovers []engine.Leftover) strin
 	}
 	if kept > 0 {
 		line += fmt.Sprintf("; kept %d, which dockhand clean -v lists with why", kept)
+	}
+	// A fork that refused this Mac is one line, where its branches each
+	// counted as kept read as alarming: "kept 515" after a reboot left no
+	// SSH key loaded.
+	if unreached > 0 {
+		line += fmt.Sprintf("; your fork couldn't be reached (is your SSH key loaded? ssh-add -l lists the agent's keys), so %s looked at", prose.Plural(unreached, "fork branch")+map[bool]string{true: " wasn't", false: " weren't"}[unreached == 1])
 	}
 	return line + "."
 }

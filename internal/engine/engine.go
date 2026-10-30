@@ -232,6 +232,8 @@ type Engine struct {
 	// ArchiveSite is where ports' archives are listed, a test's stand-in
 	// for packages.macports.org where set (InstallEstimates).
 	ArchiveSite string
+	// unreachedRemotes are the remotes this run found refusing this Mac.
+	unreachedRemotes unreachedRemotes
 	// listings are packages.macports.org's listings this run has had.
 	listings listingCache
 	// others are the run's searches for ports' open pull requests, which
