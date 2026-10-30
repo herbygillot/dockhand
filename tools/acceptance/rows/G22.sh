@@ -17,6 +17,11 @@ act() {
 		return 0
 	fi
 	allow_change "*"
+	# The author's pushes to its branch are the row's, which H2 counted
+	# (rc1's full stage).
+	local head
+	head=$(gh pr view "$(pr)" --repo "${DOCKHAND_PULL_REQUESTS:?}" --json headRefName --jq .headRefName 2>/dev/null)
+	[ -z "$head" ] || allow_push "*$head"
 	dh review "$(pr)" --check </dev/null || :
 	checkpoint "push a new commit to #$(pr)'s branch, as its author" || return 0
 	G22_HEAD=$(gh pr view "$(pr)" --repo "${DOCKHAND_PULL_REQUESTS:?}" --json headRefOid --jq .headRefOid 2>/dev/null)
