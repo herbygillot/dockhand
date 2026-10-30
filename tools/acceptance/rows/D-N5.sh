@@ -1,8 +1,8 @@
 # stages: full
 # D-N5: upstream retags a release between update and check. A Git-fetched
 # port is out of scope, so a branch whose tag moved is planned with
-# --plan: the plan and submit's preview say the check built another
-# source.
+# --plan: check --plan says the target builds again, its tag naming
+# another commit, and submit's preview holds on it.
 #
 # It needs a branch whose Git tag moved upstream after its check, named as
 # ACCEPT_DN5_BRANCH: the run can't move a tag it doesn't own, and a test
@@ -14,10 +14,21 @@ act() {
 		row_result "not run" "no branch whose Git tag moved upstream after its check was named as ACCEPT_DN5_BRANCH"
 		return 0
 	fi
-	dh_json check -b "$ACCEPT_DN5_BRANCH" --plan || :
-	dh_json submit -b "$ACCEPT_DN5_BRANCH" --plan || :
+	# In prose, where the plan's notes are said.
+	dh check -b "$ACCEPT_DN5_BRANCH" --plan || :
+	dh submit -b "$ACCEPT_DN5_BRANCH" --plan || :
 }
 assert() {
-	grep -qiE 'moved|another (source|commit)' "$ROW_DIR/out.log" "$ROW_DIR"/json/*.json &&
-		row_pass "the plan and preview said the source moved" || row_fail "nothing said the tag moved"
+	# Both say it: check --plan, from its plans' tags, and submit's
+	# preview, as a hold, which rc1's preview stopped short of on a
+	# refused key (rc1's full stage).
+	local plan preview
+	# Each joined, as dockhand wraps its lines off a terminal.
+	plan=$(sed -n '/^\$ dockhand check /,/^\[exit/p' "$ROW_DIR/out.log" | tr '\n' ' ' | tr -s ' ')
+	preview=$(sed -n '/^\$ dockhand submit /,/^\[exit/p' "$ROW_DIR/out.log" | tr '\n' ' ' | tr -s ' ')
+	printf '%s' "$plan" | matches -E 'builds again: .* now names .*, not ' ||
+		{ row_fail "check --plan didn't say the tag moved"; return; }
+	printf '%s' "$preview" | matches -E 'now names .*, not .*, as when' ||
+		{ row_fail "submit's preview didn't hold on the moved tag: $(printf '%s' "$preview" | tail -c 300)"; return; }
+	row_pass "check --plan and submit's preview said the tag moved"
 }
