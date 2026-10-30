@@ -395,7 +395,14 @@ func (s BranchStatus) Facts() branchstate.Facts {
 		Held: s.Held, Moved: s.Moved, Awaiting: s.Awaiting, NotAssessed: s.Assessment == AssessmentPending, NoFork: s.NoFork, Pushed: s.Pushed(), OthersPushed: s.SomeoneElsePushed(),
 		Failing: s.Failing(), CI: s.CI, Ports: s.Scope.PortNames(), Wider: s.Wider, PastMerge: s.PastMerge}
 	if s.Evidence != nil {
-		if on, ok := OnValues(s.Evidence.Plan.Environments); ok {
+		// Where the governing check built, which a narrowed one after it
+		// doesn't change (evidence.Ask); the newest's where every check
+		// was narrowed.
+		environments := s.Evidence.Plan.Environments
+		if s.Evidence.Ask != nil {
+			environments = s.Evidence.Ask.Environments
+		}
+		if on, ok := OnValues(environments); ok {
 			b.CheckOn = on
 		}
 	}

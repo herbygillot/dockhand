@@ -525,6 +525,50 @@ func TestServeLeavesABranchCheckedWhereAPersonNamedToThem(t *testing.T) {
 	require.Len(t, yours, 1)
 }
 
+// A narrowed check after a person's doesn't hand the branch back to serve:
+// a full check --on local of a serve branch changing two ports, then a
+// default check of one, left local required and made the branch serve's
+// candidate, since personAsked read the newest check's ask, not the
+// governing one (Codex's review of 275125ff, finding 1; D17).
+func TestANarrowedCheckLeavesAPersonsBranchToThem(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := servePrepared(t, e)
+	// The branch changes a second port, yq.
+	dir := branch.Worktree
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "textproc/yq"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/yq/Portfile"), []byte("name yq\nversion 1.0\n"), 0o644))
+	testsupport.Git(t, dir, "add", "--sparse", "textproc/yq")
+	testsupport.Git(t, dir, "commit", "-q", "-m", "yq: new port")
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}, "textproc/yq": {port("yq")}}})
+	check := func(on []string, only []string) {
+		t.Helper()
+		where, err := e.Where(t.Context(), WhereRequest{On: on})
+		require.NoError(t, err)
+		proposal, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureHead}, Where: where, Only: only})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, proposal.Plan, model.OriginPerson)
+		require.NoError(t, err)
+		checked, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, checked.State, checked.Detail)
+	}
+	e.Providers[buildenv.Local] = &scriptedProvider{}
+	check([]string{buildenv.Local}, nil)
+	check(nil, []string{"jq"})
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.NotNil(t, status.Evidence.Ask)
+	require.True(t, status.Evidence.Ask.Asked, "the full check --on local governs")
+	require.False(t, status.Evidence.Plan.Asked, "the newest check named no environment")
+	candidates, yours, err := e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, candidates)
+	require.Len(t, yours, 1)
+}
+
 // A hold two ports share is said once: py-kubernetes's two subports' held
 // line read "…follow; upstream's setup.py changed; …follow" (field testing
 // at f41fbad6). Concerns stay one a port, each with its key.

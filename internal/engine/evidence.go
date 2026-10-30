@@ -106,6 +106,7 @@ func (e *Engine) identityNow(ctx context.Context, environment model.Environment)
 func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []model.Run) (Evidence, error) {
 	var own model.Plan
 	var others []model.Plan
+	ids := []model.RunID{primary.ID}
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		if own, err = r.Plan(primary.Plan); err != nil {
@@ -120,6 +121,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 				return err
 			}
 			others = append(others, earlier)
+			ids = append(ids, run.ID)
 		}
 		return nil
 	}); err != nil {
@@ -129,13 +131,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 	// narrowed with --only adds its results but sets none, so exiv2's
 	// check --on tart:13,14 --only ufraw doesn't make 13 and 14 the
 	// branch's requirement (D17).
-	var ask *model.Plan
-	for _, plan := range append([]model.Plan{own}, others...) {
-		if len(plan.Omitted) == 0 {
-			ask = &plan
-			break
-		}
-	}
+	ask := evidence.AskOf(ids, append([]model.Plan{own}, others...))
 	required, problem := e.requiredFor(ctx, ask)
 	plan := evidence.Plan(own, others, required)
 	now := e.identitiesNow(ctx, plan.Environments)
@@ -157,7 +153,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 			earlier = append(earlier, check)
 		}
 		judged = evidence.Judge(own, plan, earlier, now, required)
-		judged.Problem = problem
+		judged.Problem, judged.Ask = problem, ask
 		// A passed result no later check can reuse says why, so a rebuild
 		// isn't a silent hour (the architecture review's L3a).
 		for t := range judged.Targets {
@@ -234,7 +230,7 @@ func runsOfTree(r store.Reader, branch model.BranchID, tree model.ObjectID, stat
 // dropped doesn't hold until it passes (D17, the person's "Newest ask",
 // 2026-10-29); a failure in any check of the files still does, while its
 // environment stands (evidence.Judge).
-func (e *Engine) requiredFor(ctx context.Context, ask *model.Plan) ([]model.Environment, string) {
+func (e *Engine) requiredFor(ctx context.Context, ask *evidence.Ask) ([]model.Environment, string) {
 	if ask != nil && ask.Asked {
 		return slices.Clone(ask.Environments), ""
 	}
