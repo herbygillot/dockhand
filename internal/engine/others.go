@@ -75,7 +75,9 @@ func (e *Engine) lookForOthers(ctx context.Context, port string, fresh bool) *ot
 		// GitHub's search matches a word anywhere in a title; one for the
 		// port names it as a MacPorts subject does, after a tag such as
 		// [WIP].
-		found = slices.DeleteFunc(found, func(pr forge.PullRequestSummary) bool {
+		// Filtered in a copy: DeleteFunc writes the slice it's given,
+		// which a forge may hand to another search too.
+		found = slices.DeleteFunc(slices.Clone(found), func(pr forge.PullRequestSummary) bool {
 			return !slices.Contains(commitmsg.TitlePorts(pr.Title), port)
 		})
 		c.mu.Lock()

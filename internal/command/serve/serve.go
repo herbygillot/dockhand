@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -90,7 +91,7 @@ line, unless --keep-modeline.`,
 			}
 			// Nobody answers git's ssh under serve, at a terminal or not.
 			s.Unattended = true
-			e, err := s.Open(ctx)
+			e, err := openWaiting(ctx, s, streams)
 			if err != nil {
 				return err
 			}
@@ -263,4 +264,35 @@ func agentJob(arguments []string, environment [][2]string, log string) macos.Lau
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// migrationPoll is how often a serve waiting on a person's answer to its
+// database's migration tries the database again.
+var migrationPoll = time.Minute
+
+// openWaiting opens the engine for serve. A database that won't migrate
+// without a person's answer, a release's that an rc would lock out or one
+// another process is working on, is said once, and serve waits for the
+// answer, trying again each minute, where it exited: launchd's agent keeps
+// it alive while its program is there, so it was started again every ten
+// seconds, each start refusing and saying so again (rc1's A7). The answer
+// is dockhand status on a terminal, from any directory.
+func openWaiting(ctx context.Context, s *settings.Settings, streams term.Streams) (*engine.Engine, error) {
+	said := false
+	for {
+		e, err := s.Open(ctx)
+		release, live := new(engine.ReleaseUnderMigrationError), new(engine.LiveUnderMigrationError)
+		if err == nil || !errors.As(err, &release) && !errors.As(err, &live) {
+			return e, err
+		}
+		if !said {
+			said = true
+			fmt.Fprintf(streams.Out, "serve: waiting for your answer before it opens the database, trying again each minute: %v\n", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(migrationPoll):
+		}
+	}
 }
