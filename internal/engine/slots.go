@@ -139,3 +139,42 @@ func slotWords(full map[string][]slotHolder, e *Engine) []string {
 	}
 	return words
 }
+
+// sayHeldInServe says once, in a run's journal, that serve's queue holds
+// it for a provider its own checks fill, which the person following it
+// reads: a check handed to serve said nothing while it waited, where local's
+// own waiting words come only once a check runs (rc1's full stage, G14). A
+// local prefix another check builds in is said as local says it, "waiting
+// for /opt/local, held by check-786"; any other provider as awaitSlot says
+// it.
+func (e *Engine) sayHeldInServe(ctx context.Context, session *coord.Session, run model.Run, full []string, inFlight map[model.RunID]model.Run) error {
+	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		own, err := tx.Plan(run.Plan)
+		if err != nil {
+			return err
+		}
+		holders := map[string][]slotHolder{}
+		var words []string
+		for _, id := range slices.Sorted(maps.Keys(inFlight)) {
+			other := inFlight[id]
+			plan, err := tx.Plan(other.Plan)
+			if err != nil {
+				return err
+			}
+			for _, environment := range plan.Environments {
+				if !slices.Contains(full, environment.Provider) || slices.ContainsFunc(holders[environment.Provider], func(h slotHolder) bool { return h.run.ID == other.ID }) {
+					continue
+				}
+				holders[environment.Provider] = append(holders[environment.Provider], slotHolder{run: other})
+				if environment.Provider == buildenv.Local && slices.ContainsFunc(own.Environments, func(mine model.Environment) bool { return mine.Prefix == environment.Prefix }) {
+					words = append(words, fmt.Sprintf("waiting for %s, held by %s", environment.Prefix, other.Name()))
+				}
+			}
+		}
+		if len(words) == 0 {
+			words = []string{fmt.Sprintf("waits for a slot on %s: %s", prose.And(slices.Sorted(maps.Keys(holders))), strings.Join(slotWords(holders, e), "; "))}
+		}
+		_, err = session.Emit(tx, model.Event{Branch: run.Branch, Run: run.ID, Kind: model.EventWaiting, Level: model.LevelInfo, Message: run.Name() + " " + strings.Join(words, "; ")})
+		return err
+	})
+}
