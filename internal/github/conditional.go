@@ -159,14 +159,23 @@ func (t conditional) roundTrip(req *http.Request) (*http.Response, bool, error) 
 		return response, false, nil
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, keptLimit+1))
-	response.Body.Close()
 	if err != nil {
+		response.Body.Close()
 		return nil, false, err
 	}
-	response.Body = io.NopCloser(bytes.NewReader(body))
-	if len(body) <= keptLimit {
-		t.cache.store(key, keptAnswer{ETag: etag, Status: response.StatusCode, Header: response.Header.Clone(), Body: body})
+	// An answer past what's kept goes through whole, what was read and
+	// the rest, and isn't kept: wasmtime's releases, past 4 MiB, were cut
+	// at keptLimit+1 bytes, which read as JSON that ends early.
+	if len(body) > keptLimit {
+		response.Body = struct {
+			io.Reader
+			io.Closer
+		}{io.MultiReader(bytes.NewReader(body), response.Body), response.Body}
+		return response, false, nil
 	}
+	response.Body.Close()
+	response.Body = io.NopCloser(bytes.NewReader(body))
+	t.cache.store(key, keptAnswer{ETag: etag, Status: response.StatusCode, Header: response.Header.Clone(), Body: body})
 	return response, false, nil
 }
 
