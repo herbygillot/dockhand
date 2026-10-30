@@ -147,12 +147,14 @@ namespace eval ::dockhand {
                 }
                 # note keeps a call's read, as record_paths has it kept: a
                 # command line by who answered it, or a path normalized,
-                # by what it is (kind_of) and who answered it, the host
-                # answering a host path in a modelled context being
-                # host-in-model. Path arithmetic reads nothing and is left
-                # to the ledger.
+                # by what it is (kind_of) and who answered it. The host
+                # running a program, or answering for a host path, in a
+                # modelled context is host-in-model. Path arithmetic reads
+                # nothing and is left to the ledger.
                 proc note {name arguments answered} {
+                    variable toolchain
                     if {$name eq "exec" || ($name eq "open" && [string index [lindex $arguments 0] 0] eq "|")} {
+                        if {$answered eq "host" && [dict size $toolchain]} { set answered host-in-model }
                         variable execs
                         set line [expr {$name eq "exec" ? $arguments : [string range [lindex $arguments 0] 1 end]}]
                         dict incr execs [list [string range $line 0 199] $answered]
@@ -172,7 +174,6 @@ namespace eval ::dockhand {
                         default { return }
                     }
                     variable reads
-                    variable toolchain
                     foreach path $paths {
                         set kind relative
                         if {![catch {interp invokehidden {} file normalize $path} normalized]} {

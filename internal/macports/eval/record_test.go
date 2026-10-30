@@ -142,7 +142,7 @@ func TestARecordingSessionSaysWhatMportinitRead(t *testing.T) {
 	require.True(t, slices.ContainsFunc(record.Reads, func(r BootstrapRead) bool {
 		return r.Command == "open" && strings.HasSuffix(r.Path, "/macports.conf")
 	}), "%+v", record.Reads)
-	require.True(t, slices.ContainsFunc(record.Reads, func(r BootstrapRead) bool { return r.Command == "env" }))
+	require.True(t, slices.ContainsFunc(record.Reads, func(r BootstrapRead) bool { return r.Command == "env" && r.Path == "HOME" && r.Value != "" }), "%+v", record.Reads)
 	i := slices.IndexFunc(record.Settings, func(s BootstrapSetting) bool { return s.Name == "prefix" })
 	require.GreaterOrEqual(t, i, 0)
 	require.NotEmpty(t, record.Settings[i].Value)

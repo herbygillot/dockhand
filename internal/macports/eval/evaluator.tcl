@@ -53,6 +53,7 @@ namespace eval ::dockhand {
             file { set entry [list "file [lindex $arguments 0]" [lindex $arguments 1] [string range $result 0 199]] }
             exec - glob { set entry [list $command [string range $arguments 0 199] [string range $result 0 199]] }
             source { set entry [list source [lindex $arguments end] ""] }
+            env { set entry [list env [lindex $arguments 0] $result] }
             default { set entry [list $command [lindex $arguments 0] ""] }
         }
         dict set bootstrap_reads $entry 1

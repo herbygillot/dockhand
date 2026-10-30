@@ -67,7 +67,8 @@ type Record struct {
 	jobs chan job
 	done chan struct{}
 
-	// The writer's own: paths kept by id, and the toolchains written.
+	// The writer's own: paths and hook bodies kept by id, and the
+	// toolchains written.
 	paths      map[string]int64
 	toolchains map[string]bool
 	roots      sync.Map
@@ -346,19 +347,19 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 				code, errs := syntax.DictValues(value)
 				if len(errs) == 0 {
 					for _, key := range keysOf(code) {
-						if err := add("code:"+key, code[key]); err != nil {
+						if err := add("code:"+key, local(code[key])); err != nil {
 							return err
 						}
 					}
 					continue
 				}
 			}
-			if err := add(name, value); err != nil {
+			if err := add(name, local(value)); err != nil {
 				return err
 			}
 		}
 		for _, name := range keysOf(o.Info.OptionErrors) {
-			if err := add("error:"+name, o.Info.OptionErrors[name]); err != nil {
+			if err := add("error:"+name, local(o.Info.OptionErrors[name])); err != nil {
 				return err
 			}
 		}
@@ -391,7 +392,7 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 				urls = []string{""}
 			}
 			for _, address := range urls {
-				if err := add(i, d.Name, address); err != nil {
+				if err := add(i, d.Name, local(address)); err != nil {
 					return err
 				}
 			}
@@ -434,20 +435,37 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 	}); err != nil {
 		return err
 	}
-	if err := insert(`INSERT INTO host_access (evaluation_id, problem, frames) VALUES (?, ?, ?)`, func(add func(...any) error) error {
+	if err := insert(`INSERT INTO host_access (evaluation_id, problem, frames, count) VALUES (?, ?, ?, ?)`, func(add func(...any) error) error {
+		type access struct{ problem, frames string }
+		counts := map[access]int{}
+		var order []access
 		for _, d := range o.Observation.Declarations {
 			if d.Command != "dockhand.host-access" || len(d.Values) == 0 {
 				continue
 			}
-			frames := make([]macports.SourceFrame, len(d.Frames))
-			for i, frame := range d.Frames {
-				frames[i] = macports.SourceFrame{File: local(frame.File), Line: frame.Line, Command: frame.Command}
+			var frames []macports.SourceFrame
+			for _, frame := range d.Frames {
+				if frame.File == "" {
+					continue
+				}
+				command := frame.Command
+				if len(command) > 200 {
+					command = command[:200]
+				}
+				frames = append(frames, macports.SourceFrame{File: local(frame.File), Line: frame.Line, Command: local(command)})
 			}
 			data, err := json.Marshal(frames)
 			if err != nil {
 				return err
 			}
-			if err := add(d.Values[0], string(data)); err != nil {
+			key := access{d.Values[0], string(data)}
+			if counts[key] == 0 {
+				order = append(order, key)
+			}
+			counts[key]++
+		}
+		for _, key := range order {
+			if err := add(key.problem, key.frames, counts[key]); err != nil {
 				return err
 			}
 		}
@@ -455,9 +473,13 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 	}); err != nil {
 		return err
 	}
-	return insert(`INSERT INTO hook (evaluation_id, phase, origin, body) VALUES (?, ?, ?, ?)`, func(add func(...any) error) error {
+	return insert(`INSERT INTO hook_body (evaluation_id, phase, origin, body_id) VALUES (?, ?, ?, ?)`, func(add func(...any) error) error {
 		for _, hook := range o.Observation.Hooks {
-			if err := add(hook.Procedure, local(hook.Origin), local(hook.Body)); err != nil {
+			body, err := r.bodyID(tx, local(hook.Body))
+			if err != nil {
+				return err
+			}
+			if err := add(hook.Procedure, local(hook.Origin), body); err != nil {
 				return err
 			}
 		}
@@ -485,14 +507,24 @@ func (r *Record) localizer(root string) func(string) string {
 }
 
 func (r *Record) pathID(tx *sql.Tx, name string) (int64, error) {
-	if id, ok := r.paths[name]; ok {
+	return r.intern(tx, "path:"+name, `INSERT INTO path (path) VALUES (?) ON CONFLICT (path) DO UPDATE SET path = excluded.path RETURNING id`, name)
+}
+
+func (r *Record) bodyID(tx *sql.Tx, body string) (int64, error) {
+	return r.intern(tx, "body:"+body, `INSERT INTO body (body) VALUES (?) ON CONFLICT (body) DO UPDATE SET body = excluded.body RETURNING id`, body)
+}
+
+// intern is the id of a value kept once, from the writer's cache where
+// it has it.
+func (r *Record) intern(tx *sql.Tx, key, query, value string) (int64, error) {
+	if id, ok := r.paths[key]; ok {
 		return id, nil
 	}
 	var id int64
-	if err := tx.QueryRow(`INSERT INTO path (path) VALUES (?) ON CONFLICT (path) DO UPDATE SET path = excluded.path RETURNING id`, name).Scan(&id); err != nil {
+	if err := tx.QueryRow(query, value).Scan(&id); err != nil {
 		return 0, err
 	}
-	r.paths[name] = id
+	r.paths[key] = id
 	return id, nil
 }
 

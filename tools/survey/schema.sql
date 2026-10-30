@@ -124,18 +124,32 @@ CREATE VIEW registry AS
     SELECT evaluation_id, command AS alias, subject, source, count
     FROM ledger WHERE command GLOB 'registry_*' OR command GLOB '_*';
 
+-- Each read outside the tree a Portfile made, as the observation judges
+-- them, with the stack's frames in files, each command cut at 200
+-- characters, counted.
 CREATE TABLE host_access (
     evaluation_id INTEGER NOT NULL REFERENCES evaluation (id),
     problem TEXT NOT NULL,
-    frames TEXT NOT NULL
+    frames TEXT NOT NULL,
+    count INTEGER NOT NULL
 );
 
-CREATE TABLE hook (
+-- Hook bodies are kept once, a PortGroup's being every port's that loads
+-- it; hook is the record's shape.
+CREATE TABLE body (
+    id INTEGER PRIMARY KEY,
+    body TEXT NOT NULL UNIQUE
+);
+CREATE TABLE hook_body (
     evaluation_id INTEGER NOT NULL REFERENCES evaluation (id),
     phase TEXT NOT NULL,
     origin TEXT NOT NULL,
-    body TEXT NOT NULL
+    body_id INTEGER NOT NULL REFERENCES body (id)
 );
+CREATE INDEX hook_evaluation ON hook_body (evaluation_id);
+CREATE VIEW hook AS
+    SELECT h.evaluation_id, h.phase, h.origin, b.body
+    FROM hook_body h JOIN body b ON b.id = h.body_id;
 
 CREATE TABLE finding (
     port_id INTEGER NOT NULL REFERENCES port (id),
