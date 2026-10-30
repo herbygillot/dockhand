@@ -72,6 +72,10 @@ func survey() (err error) {
 	cargo2port := flag.String("cargo2port", firstOf(os.Getenv("CARGO2PORT_BIN"), lookPath("cargo2port")), "cargo2port, for Cargo dependency blocks")
 	cpuProfile := flag.String("cpuprofile", "", "write a CPU profile of the survey itself")
 	ledgerPath := flag.String("ledger", "", "write each observed port's dispatcher ledger to this file, one JSON line per port and context")
+	dbPath := flag.String("db", "", "record to write, one SQLite file per snapshot of the tree, never dockhand's own database; a rerun continues it")
+	mode := flag.String("mode", "current", "with -db, what each port is evaluated against: current, installed, or host")
+	recording := flag.Bool("recording", true, "with -db, record what each evaluation read, ran, and declared")
+	sample := flag.String("sample", "", "a file naming ports to survey, one a line")
 	verbose := flag.Bool("v", false, "report the work behind the scenes")
 	compare := flag.Bool("compare", false, "compare two journals, the baseline and the new one, given as arguments")
 	top := flag.Int("top", 15, "with -compare, how many of each kind of change to list")
@@ -87,8 +91,26 @@ func survey() (err error) {
 		}
 		return compareJournals(os.Stdout, flag.Arg(0), flag.Arg(1), *top)
 	}
-	if *journalPath == "" {
-		return errors.New("-journal is required, so a long survey can be continued")
+	if *journalPath == "" && *dbPath == "" {
+		return errors.New("-journal or -db is required, so a long survey can be continued")
+	}
+	installation, known := modes[*mode]
+	if !known {
+		return fmt.Errorf("unknown -mode %q: current, installed, or host", *mode)
+	}
+	if *dbPath != "" && *journalPath == "" && *mode == "current" {
+		*journalPath = strings.TrimSuffix(*dbPath, filepath.Ext(*dbPath)) + ".jsonl"
+	}
+	if *sample != "" {
+		data, err := os.ReadFile(*sample)
+		if err != nil {
+			return err
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
+				ports = append(ports, line)
+			}
+		}
 	}
 	request := Request{}
 	request.Selection.Ports, request.Selection.Maintainers, request.Selection.NotMaintainers, request.Selection.Categories = ports, maintainers, notMaintainers, categories
@@ -145,6 +167,9 @@ func survey() (err error) {
 		}
 	}
 	native := &eval.Evaluator{Executable: tclsh, Env: os.Environ()}
+	if *dbPath != "" {
+		native.Recording, native.Installation = *recording, installation
+	}
 	if *ledgerPath != "" {
 		file, err := os.Create(*ledgerPath)
 		if err != nil {
@@ -165,43 +190,89 @@ func survey() (err error) {
 		Ports:           &selection.Reader{Evaluator: native, Index: &portindex.Stager{Repo: repo, Config: index, NativePlatform: native.NativePlatform, WithoutBase: true}},
 		Index:           &portindex.Stager{Repo: repo, Config: index},
 		DependencyTools: depblock.Tools{Go2Port: *go2port, Cargo2Port: *cargo2port},
+		Observe:         *dbPath != "",
+		ObserveOnly:     *mode != "current",
 	}
 	Concurrency = max(*parallel, 1)
-	journal, err := OpenJournal(*journalPath)
-	if err != nil {
-		return err
+	var journal *Journal
+	if *journalPath != "" {
+		if journal, err = OpenJournal(*journalPath); err != nil {
+			return err
+		}
 	}
-	defer func() { err = errors.Join(err, journal.Close()) }()
-	request.Journal = journal
+	var record *Record
+	if *dbPath != "" {
+		host, err := native.NativePlatform(ctx)
+		if err != nil {
+			return err
+		}
+		info := RunInfo{Tree: root, Tclsh: tclsh, Portindex: portindexBin, Base: baseVersion(tclsh), Host: host.OS + " " + host.Version + " " + host.Architecture, Load: loadAverage(), Parallel: Concurrency}
+		if record, err = OpenRecord(ctx, *dbPath, *mode, *recording, info, repo.Root, *gitBin, journal); err != nil {
+			if journal != nil {
+				journal.Close()
+			}
+			return err
+		}
+		defer func() { err = errors.Join(err, record.Close()) }()
+		if *recording {
+			native.Bootstrap = record.Bootstrap
+		}
+		request.Journal = record
+		if *mode == "installed" {
+			askers, tables, err := record.Installed(ctx)
+			if err != nil {
+				return err
+			}
+			if len(request.Selection.Ports) == 0 && request.Selection.All {
+				request.Selection.Ports, request.Selection.All = askers, false
+			}
+			if len(request.Selection.Ports) == 0 {
+				return errors.New("the record's current run has no port that asked the registry; survey -mode current first")
+			}
+			native.Installed = func(port string) map[string]eval.InstalledPort { return tables[port] }
+		}
+	} else {
+		request.Journal = journal
+	}
+	if journal != nil {
+		defer func() { err = errors.Join(err, journal.Close()) }()
+	}
 
-	record := run{Tree: root, Tclsh: tclsh, Portindex: portindexBin, Base: baseVersion(tclsh), Parallel: Concurrency, Started: time.Now(), LoadAtStart: loadAverage()}
-	fmt.Fprintf(os.Stderr, "Surveying %s with %s (%s), %d Portfiles at a time; load %s\n", root, tclsh, record.Base, Concurrency, record.LoadAtStart)
+	made := run{Tree: root, Tclsh: tclsh, Portindex: portindexBin, Base: baseVersion(tclsh), Parallel: Concurrency, Started: time.Now(), LoadAtStart: loadAverage()}
+	fmt.Fprintf(os.Stderr, "Surveying %s with %s (%s), %d Portfiles at a time; load %s\n", root, tclsh, made.Base, Concurrency, made.LoadAtStart)
 	result, err := service.Assess(ctx, request)
 	if err != nil {
 		return err
 	}
-	record.Finished = time.Now()
-	record.Commit = string(result.Source.Commit)
-	record.WallSeconds = record.Finished.Sub(record.Started).Seconds()
-	record.UserSeconds, record.SystemSeconds = cpuSeconds()
-	if record.WallSeconds > 0 {
-		record.Cores = (record.UserSeconds + record.SystemSeconds) / record.WallSeconds
+	made.Finished = time.Now()
+	made.Commit = string(result.Source.Commit)
+	made.WallSeconds = made.Finished.Sub(made.Started).Seconds()
+	made.UserSeconds, made.SystemSeconds = cpuSeconds()
+	if made.WallSeconds > 0 {
+		made.Cores = (made.UserSeconds + made.SystemSeconds) / made.WallSeconds
 	}
-	record.Assessed, record.Skipped = len(result.Ports), result.Skipped
+	made.Assessed, made.Skipped = len(result.Ports), result.Skipped
 	outcomes := map[string]int{}
 	for _, port := range result.Ports {
 		outcomes[port.Outcome]++
 	}
-	record.Outcomes = outcomes
-	data, err := json.MarshalIndent(record, "", "  ")
-	if err != nil {
-		return err
+	made.Outcomes = outcomes
+	if record != nil {
+		if err := record.Finish(made.WallSeconds, made.UserSeconds, made.SystemSeconds); err != nil {
+			return err
+		}
 	}
-	if err := os.WriteFile(*journalPath+".run.json", append(data, '\n'), 0o644); err != nil {
-		return err
+	if *journalPath != "" {
+		data, err := json.MarshalIndent(made, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(*journalPath+".run.json", append(data, '\n'), 0o644); err != nil {
+			return err
+		}
 	}
 	fmt.Fprintf(os.Stderr, "Assessed %d ports (%d already in the journal) at %s in %s: %v; %.1f cores\n",
-		len(result.Ports), result.Skipped, shortID(record.Commit), time.Duration(record.WallSeconds*float64(time.Second)).Round(time.Second), outcomes, record.Cores)
+		len(result.Ports), result.Skipped, shortID(made.Commit), time.Duration(made.WallSeconds*float64(time.Second)).Round(time.Second), outcomes, made.Cores)
 	return nil
 }
 

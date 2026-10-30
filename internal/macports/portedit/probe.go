@@ -67,6 +67,27 @@ func (p *VersionProbe) Port() macports.PortInfo {
 	return info
 }
 
+// Observations observes the port as committed in each context an
+// assessment observes its archives in, with its declarations, and hands
+// each context's observation, or why it couldn't be had, to observed; the
+// assessment reuses them. A survey records them (tools/survey). Without
+// the contexts, it says why.
+func (p *VersionProbe) Observations(ctx context.Context, observed func(model.Platform, macports.Observation, error)) error {
+	session := p.input.observe
+	profiles, err := session.Profiles(ctx, p.input.data)
+	if err != nil {
+		return err
+	}
+	for _, profile := range profiles {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		observation, err := session.One(ctx, p.input.data, macports.ObservationRequest{Platform: profile, Declarations: true}, true)
+		observed(profile, observation, err)
+	}
+	return nil
+}
+
 func (p *VersionProbe) prepare(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
