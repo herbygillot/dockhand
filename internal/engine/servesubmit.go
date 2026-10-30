@@ -119,15 +119,16 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 	return candidates, yours, nil
 }
 
-// personAsked reports whether a branch's newest check was asked, by a
+// personAsked reports whether a branch's governing check was asked, by a
 // person, to build somewhere other than build.unattended's profile: --on,
-// or another --build.
+// or another --build. A check narrowed after it doesn't hand the branch
+// back to serve (evidence.Ask).
 func (e *Engine) personAsked(status BranchStatus) bool {
-	if status.Evidence == nil {
+	if status.Evidence == nil || status.Evidence.Ask == nil {
 		return false
 	}
-	plan := status.Evidence.Plan
-	return plan.Asked && plan.Profile != e.unattendedProfile()
+	ask := status.Evidence.Ask
+	return ask.Asked && ask.Profile != e.unattendedProfile()
 }
 
 // Held are the concerns a submission no person looked over waits for one

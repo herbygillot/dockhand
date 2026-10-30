@@ -206,8 +206,11 @@ func (t TargetEvidence) Failing() bool {
 // against everything the newest of them required: its own targets and
 // the changed targets its --only left out.
 type Evidence struct {
-	Run     model.Run
+	Run model.Run
+	// Plan is what the checks planned, merged: its Asked and Profile are
+	// the newest check's alone. Ask is the check that governs.
 	Plan    model.Plan
+	Ask     *Ask
 	Targets []TargetEvidence
 	// Earlier are older checks of the same files whose results fill in what
 	// Run didn't build. A result holds for its tree, so a narrowed check
@@ -1130,4 +1133,31 @@ func (e Evidence) VariantsBuilt() (port string, builds []string, passed bool) {
 		}
 	}
 	return port, builds, passed && len(builds) > 0
+}
+
+// Ask is the governing ask of a branch's checks (D17): the newest that
+// covers every changed port, a check narrowed with --only adding its
+// results but setting none. Where it was asked, by --on or --build, and
+// by which profile, and its environments, are what submission requires
+// and whose the branch is to submit: a full check --on local, then a
+// default check narrowed to one port, left the person's environments
+// required and made the branch serve's to submit (Codex's review of
+// 275125ff, finding 1).
+type Ask struct {
+	Run          model.RunID
+	Plan         model.PlanID
+	Asked        bool
+	Profile      string
+	Environments []model.Environment
+}
+
+// AskOf is the governing ask among a tree's checks' plans, newest first,
+// each with its check; nil where every one was narrowed.
+func AskOf(runs []model.RunID, plans []model.Plan) *Ask {
+	for i, plan := range plans {
+		if len(plan.Omitted) == 0 {
+			return &Ask{Run: runs[i], Plan: plan.ID, Asked: plan.Asked, Profile: plan.Profile, Environments: slices.Clone(plan.Environments)}
+		}
+	}
+	return nil
 }
