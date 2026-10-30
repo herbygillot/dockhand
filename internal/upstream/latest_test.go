@@ -187,6 +187,44 @@ func TestAPortAheadOfEveryStableTagIsAhead(t *testing.T) {
 	require.Equal(t, "v0.1.0", result.NewestTag)
 }
 
+// A versioned subport, terragrunt-0.52 at 0.52.1, takes its candidates
+// within its series, and a newer series is said, never its update: outdated
+// failed on terragrunt-0.52, no input of which can select 1.2.1 (rc1's
+// staging). A livecheck regex of the port's own still governs, and one that
+// admits only its series says no newer one.
+func TestAVersionedSubportLooksWithinItsSeries(t *testing.T) {
+	t.Parallel()
+	c := &catalog{releases: []forge.Release{{Tag: "v0.52.1"}, {Tag: "v0.52.3"}, {Tag: "v0.53.0"}, {Tag: "v1.2.1"}}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	port.Name = "project-0.52"
+	port.Version = "0.52.1"
+	port.Options["github.version"] = "0.52.1"
+	port.Options["git.branch"] = "v0.52.1"
+	port.Options["livecheck.version"] = "0.52.1"
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment, result.Detail)
+	require.Equal(t, "0.52.3", result.CandidateVersion)
+	require.Equal(t, "1.2.1", result.NewerSeries)
+	require.Contains(t, result.Detail, "; 1.2.1 is a newer series than project-0.52's; a new subport for it is the maintainer's")
+	c.releases = []forge.Release{{Tag: "v0.52.1"}, {Tag: "v1.2.1"}}
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Current, result.Assessment, result.Detail)
+	require.Equal(t, "1.2.1", result.NewerSeries)
+	port.Options["livecheck.regex"] = `{archive/refs/tags/v(0\.52\.[0-9]+)\.tar\.gz}`
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Current, result.Assessment, result.Detail)
+	require.Empty(t, result.NewerSeries)
+	port.Name, port.Options["livecheck.regex"] = "project", automaticPort().Options["livecheck.regex"]
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, "1.2.1", result.CandidateVersion, "a port whose name names no series looks at every release")
+	require.Empty(t, result.NewerSeries)
+}
+
 func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"network", "no matches", "prerelease only", "invalid regex", "ambiguous", "missing selected tag", "custom source", "unknown current"} {

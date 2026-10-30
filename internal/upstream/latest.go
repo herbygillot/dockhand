@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -146,7 +147,11 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		}
 		seen[observation.Tag] = true
 	}
-	var candidates []macports.VersionCandidate
+	// A versioned subport, terragrunt-0.52 at 0.52.1, takes its
+	// candidates within its series; the newer series beyond it are a
+	// notice, a new subport being the maintainer's, never its update.
+	series, inSeries := version.Series(port.Name, port.Version), version.InSeries
+	var candidates, beyond []macports.VersionCandidate
 	var tags, pages []string
 	for _, release := range observations {
 		if release.Draft || release.Prerelease && !followsPrereleases {
@@ -159,6 +164,10 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		subject, err := spec.MatchText(release.Tag)
 		if err != nil {
 			return result, err
+		}
+		if series != "" && !inSeries(series, version) {
+			beyond = append(beyond, macports.VersionCandidate{Version: version, MatchText: subject, CaptureVersion: version})
+			continue
 		}
 		candidates = append(candidates, macports.VersionCandidate{Version: version, MatchText: subject, CaptureVersion: version})
 		tags = append(tags, release.Tag)
@@ -275,7 +284,31 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		result.SetAside = setAside
 		result.Detail += fmt.Sprintf("; excluded %s because it predates %s despite having a higher version", strings.Join(asideTags, ", "), current)
 	}
+	if result.NewerSeries = s.newerSeries(ctx, spec.Livecheck.Regex, candidates[index].Version, beyond); result.NewerSeries != "" {
+		result.Detail += "; " + SeriesWords(result.NewerSeries, port.Name)
+	}
 	return result, nil
+}
+
+// newerSeries is the newest of the versions beyond a port's series that
+// its livecheck admits, where it's newer than the one selected within it;
+// "" where none is.
+func (s *Service) newerSeries(ctx context.Context, expression, selected string, beyond []macports.VersionCandidate) string {
+	if len(beyond) == 0 {
+		return ""
+	}
+	tied, comparison, err := s.newestTied(ctx, selected, expression, beyond, "the port's livecheck filter")
+	if err != nil || comparison <= 0 {
+		return ""
+	}
+	return beyond[tied[0]].CaptureVersion
+}
+
+// SeriesWords say a newer series than a versioned subport's: "1.2.1 is a
+// newer series than terragrunt-0.52's; a new subport for it is the
+// maintainer's".
+func SeriesWords(newer, port string) string {
+	return fmt.Sprintf("%s is a newer series than %s's; a new subport for it is the maintainer's", newer, port)
 }
 
 // withoutTags are the candidates and their tags, less those set aside.

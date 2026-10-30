@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
+	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 // refusedUpdate is why an update didn't go, composed once for every way
@@ -192,3 +193,7 @@ func SetAsideWords(aside []SetAside) string {
 	}
 	return fmt.Sprintf("%s compare newer, but their commits are older than %s's", strings.Join(tags, ", "), aside[0].Predates)
 }
+
+// SeriesWords say a newer series than a versioned subport's
+// (upstream.SeriesWords).
+func SeriesWords(newer, port string) string { return upstream.SeriesWords(newer, port) }

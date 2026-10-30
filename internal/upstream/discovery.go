@@ -126,6 +126,10 @@ type Result struct {
 	// Unpublished is an update whose release has none of its files yet,
 	// for a port that fetches them (askAssets): newer, but not ready.
 	Unpublished bool
+	// NewerSeries is, for a versioned subport (version.Series), the newest
+	// release of a newer series than its own, which is a new subport's,
+	// the maintainer's to add, and never its update; "" where none is.
+	NewerSeries string
 }
 
 type Service struct {

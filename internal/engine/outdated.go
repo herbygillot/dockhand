@@ -75,6 +75,10 @@ type OutdatedPort struct {
 	// none of the files the port fetches yet (upstream's askAssets). It's
 	// said, as update would refuse it, and never planned.
 	Unpublished string
+	// NewerSeries is, for a versioned subport, the newest release of a
+	// newer series than its own (upstream.Result.NewerSeries): said, a new
+	// subport being the maintainer's, and never planned.
+	NewerSeries string
 }
 
 // OutdatedClass is what a look found of a port, one of the classes below,
@@ -306,7 +310,7 @@ func (s *surveyedPorts) Outdated(ctx context.Context, commit model.ObjectID, req
 
 // outdatedPort is a port as upstream discovery assessed it.
 func outdatedPort(port outdated.Port) OutdatedPort {
-	entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release, With: port.With}
+	entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release, With: port.With, NewerSeries: port.NewerSeries}
 	switch port.Assessment {
 	case upstream.UpdateAvailable:
 		entry.Outdated = true

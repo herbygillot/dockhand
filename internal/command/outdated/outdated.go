@@ -186,7 +186,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			case port.With != "":
 				can = "update with " + port.With
 			}
-			row.note = can + with(port.Port)
+			row.note = can + with(port.Port) + seriesNote(port)
 			// A major version bump, which serve would hold
 			// (holds.majors).
 			if e.HoldsMajor(port.Port, port.Current, port.Newest) {
@@ -200,7 +200,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			row.note = fmt.Sprintf("it is current, as %s is", port.With)
 			current = append(current, row)
 		default:
-			row.note = "it is current" + with(port.Port)
+			row.note = "it is current" + with(port.Port) + seriesNote(port)
 			current = append(current, row)
 		}
 	}
@@ -504,4 +504,14 @@ func (l *lookups) stop() {
 // worth printing: what was looked up is still true.
 func (l *lookups) cutShort(ctx context.Context, report engine.OutdatedReport) bool {
 	return ctx.Err() != nil && len(report.Ports) > 0
+}
+
+// seriesNote says a newer series than a versioned subport's, after a row's
+// note: "; 1.2.1 is a newer series than terragrunt-0.52's; a new subport
+// for it is the maintainer's".
+func seriesNote(port engine.OutdatedPort) string {
+	if port.NewerSeries == "" {
+		return ""
+	}
+	return "; " + engine.SeriesWords(port.NewerSeries, port.Port)
 }
