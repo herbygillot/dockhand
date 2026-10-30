@@ -62,6 +62,31 @@ type LedgerEntry struct {
 	Count                       int
 }
 
+// PathRead counts the calls that read one path, by command, file
+// subcommand, what the path is (the captured tree, Base's library, Tcl's
+// library, the host, or relative where it couldn't be normalized), and who
+// answered: the host, the fresh or installed installation, the facts
+// table, or the host in a modelled context (host-in-model). An evaluator
+// records them only when asked to (eval.Evaluator.Recording).
+type PathRead struct {
+	Command, Subcommand, Kind, Source, Path string
+	Count                                   int
+}
+
+// CommandRun counts the runs of one command line, cut at 200 characters,
+// by who answered: the host ran it, or the fresh installation or the facts
+// table answered for it.
+type CommandRun struct {
+	Line, Source string
+	Count        int
+}
+
+// Hook is a phase body a Portfile or PortGroup declared, as Base made it
+// a procedure, and the file and line it was declared at.
+type Hook struct {
+	Procedure, Origin, Body string
+}
+
 type PortObservation struct {
 	// HostAccess records external evaluation inputs even in the native context.
 	HostAccess bool
@@ -73,6 +98,11 @@ type PortObservation struct {
 	Declarations      []Declaration
 	Distfiles         []Distfile
 	Problems          []string
+	// Reads, Execs, and Hooks are what the evaluation read, ran, and
+	// declared, where the evaluator records them; empty otherwise.
+	Reads []PathRead
+	Execs []CommandRun
+	Hooks []Hook
 }
 
 // FetchPlan is the port's fetch plan as MacPorts made it: each archive,

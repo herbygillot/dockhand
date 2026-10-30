@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -41,6 +42,23 @@ type Evaluator struct {
 	// reads. Evaluations run concurrently, so it must be safe to call from
 	// several goroutines.
 	Ledger func(LedgerReport)
+	// Recording has each evaluation record what it read, ran, and
+	// declared (macports.PortObservation's Reads, Execs, and Hooks), and
+	// each session what mportinit read (Bootstrap). A survey sets it
+	// (tools/survey); off, it costs the dispatcher one test a call.
+	Recording bool
+	// Installation is what a port is evaluated against: the fresh
+	// installation when empty. A survey sets the others.
+	Installation Installation
+	// Installed is the registry installation InstalledPorts evaluates a
+	// port against: the ports it holds, by name. It is asked for each
+	// evaluation, with the port evaluated.
+	Installed func(port string) map[string]InstalledPort
+	// Bootstrap, when set with Recording, receives the first session's
+	// record of what mportinit read; it is the same for every session.
+	Bootstrap func(Bootstrap)
+
+	bootstrapped atomic.Bool
 }
 
 // LedgerReport is one port's ledger in one evaluation context.
@@ -99,8 +117,14 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 		_ = session.Close()
 		return nil, macports.Runtime{}, err
 	}
+	installation, err := e.Installation.resolve()
+	if err != nil {
+		return nil, macports.Runtime{}, err
+	}
 	tables := "namespace eval ::dockhand {}\nset ::dockhand::read_options [list " + strings.Join(macports.ReadOptions, " ") + "]\n" +
-		"set ::dockhand::host_programs [list " + macports.TclHostPrograms(macports.HostPrograms) + "]\n"
+		"set ::dockhand::host_programs [list " + macports.TclHostPrograms(macports.HostPrograms) + "]\n" +
+		"set ::dockhand::recording_paths " + strconv.FormatBool(e.Recording) + "\n" +
+		"set ::dockhand::installation " + string(installation) + "\n"
 	if _, err := session.Call(ctx, "eval", tables+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+dispatcherScript+"\n"+installationScript+"\n"+toolchainScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
 	}
@@ -198,7 +222,27 @@ func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, reque
 		return macports.Observation{}, err
 	}
 	defer func() { err = errors.Join(err, session.Close()) }()
+	if e.Installation == InstalledPorts {
+		var table map[string]InstalledPort
+		if e.Installed != nil {
+			table = e.Installed(source.Target().Name)
+		}
+		if _, err := session.Call(ctx, "installed_table", encodeInstalled(table)); err != nil {
+			return macports.Observation{}, err
+		}
+	}
 	observation, err := evaluateIn(ctx, session, runtime, checked, source, request, selectedOnly)
+	if err == nil && e.Recording && e.Bootstrap != nil && e.bootstrapped.CompareAndSwap(false, true) {
+		reply, err := session.Call(ctx, "bootstrap_record")
+		if err != nil {
+			return macports.Observation{}, err
+		}
+		record, err := decodeBootstrap(reply)
+		if err != nil {
+			return macports.Observation{}, err
+		}
+		e.Bootstrap(record)
+	}
 	if err == nil && e.Ledger != nil {
 		for name, port := range observation.Ports {
 			e.Ledger(LedgerReport{Portfile: source.Target().Portfile, Port: name, Platform: observation.Snapshot.Platform, Modeled: observation.Modeled, Entries: port.Ledger})

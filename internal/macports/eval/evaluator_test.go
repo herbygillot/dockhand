@@ -428,6 +428,9 @@ func TestTheEvaluatorReportsThePortGroupsAPortLoads(t *testing.T) {
 		require.NoError(t, err)
 		groups, set := snapshot.Ports[name].Options["dockhand.portgroups"]
 		require.True(t, set, name)
+		if want != "" {
+			want = "{" + want + " 1.0 <source>/_resources/port1.0/group/" + want + "-1.0.tcl}"
+		}
 		require.Equal(t, want, groups, name)
 		require.Equal(t, "./configure", snapshot.Ports[name].Options["configure.cmd"], name)
 	}

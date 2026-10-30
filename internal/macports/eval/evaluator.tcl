@@ -15,7 +15,14 @@ namespace eval ::dockhand {
         variable base_root [file normalize [expr {$base eq "" ? $root : $base}]]
         package require macports
         check_startup
-        if {[catch {mportinit} detail]} { incompatible "initialization failed: $detail" }
+        variable recording_paths
+        if {$recording_paths} { bootstrap_wrap }
+        set failed [catch {mportinit} detail]
+        if {$recording_paths} {
+            bootstrap_unwrap
+            bootstrap_settle
+        }
+        if {$failed} { incompatible "initialization failed: $detail" }
         check_initialized
         # The dispatcher goes into every worker first, before the model
         # and observation add theirs: leave traces run in the order they
@@ -28,6 +35,91 @@ namespace eval ::dockhand {
             set ::macports::porturl_prefix_map [dict create $url $url]
         }
         return [dict create platform [list $::macports::os_platform $::macports::os_major $::macports::build_arch] base_version [base_version] tcl_version [info patchlevel]]
+    }
+
+    # bootstrap_reads are what mportinit read, when a survey records
+    # (recording_paths): each file, open, glob, exec, and source call it
+    # made, with the path, or the command line, and what it answered, and
+    # each environment variable it read, as keys. bootstrap_settings are
+    # the settings it ended with, each with the configuration file that
+    # set it, or default. bootstrap_record returns them, with the aliases
+    # Base gives a worker (guard_worker), once a session has evaluated.
+    variable bootstrap_reads [dict create]
+    variable bootstrap_settings {}
+    variable bootstrap_commands {file open glob exec source}
+    proc bootstrap_note {command arguments result} {
+        variable bootstrap_reads
+        switch -- $command {
+            file { set entry [list "file [lindex $arguments 0]" [lindex $arguments 1] [string range $result 0 199]] }
+            exec - glob { set entry [list $command [string range $arguments 0 199] [string range $result 0 199]] }
+            source { set entry [list source [lindex $arguments end] ""] }
+            default { set entry [list $command [lindex $arguments 0] ""] }
+        }
+        dict set bootstrap_reads $entry 1
+    }
+    proc bootstrap_env {name1 name2 op} {
+        set value <unset>
+        if {$name2 eq ""} {
+            set name2 *
+            set value ""
+        } elseif {[info exists ::env($name2)]} {
+            set value $::env($name2)
+        }
+        bootstrap_note env [list $name2] $value
+    }
+    # bootstrap_wrap puts a recorder in front of the parent's commands that
+    # read, and an environment trace, while mportinit runs;
+    # bootstrap_unwrap takes them away.
+    proc bootstrap_wrap {} {
+        variable bootstrap_commands
+        foreach command $bootstrap_commands {
+            rename ::$command ::dockhand_bootstrap_$command
+            proc ::$command args [string map [list @command@ $command] {
+                set code [catch {uplevel 1 [list ::dockhand_bootstrap_@command@ {*}$args]} result options]
+                ::dockhand::bootstrap_note @command@ $args $result
+                dict incr options -level
+                return -options $options $result
+            }]
+        }
+        trace add variable ::env read ::dockhand::bootstrap_env
+    }
+    proc bootstrap_unwrap {} {
+        variable bootstrap_commands
+        trace remove variable ::env read ::dockhand::bootstrap_env
+        foreach command $bootstrap_commands {
+            rename ::$command {}
+            rename ::dockhand_bootstrap_$command ::$command
+        }
+    }
+    # bootstrap_settle reads the settings mportinit ended with, and which
+    # of the configuration files it opened set each, as it reads them.
+    proc bootstrap_settle {} {
+        variable bootstrap_reads
+        variable bootstrap_settings {}
+        set origins [dict create]
+        foreach entry [dict keys $bootstrap_reads] {
+            lassign $entry command path
+            if {$command ne "open" || [file tail $path] ni {macports.conf user.conf} || [catch {open $path} channel]} { continue }
+            foreach line [split [read $channel] \n] {
+                if {[regexp {^(\w+)([ \t]+(.*))?$} $line -> option]} { dict set origins $option $path }
+            }
+            close $channel
+        }
+        set options {}
+        if {[info exists ::macports::bootstrap_options]} { lappend options {*}[dict keys $::macports::bootstrap_options] }
+        if {[info exists ::macports::user_options]} { lappend options {*}$::macports::user_options }
+        foreach option [lsort -unique $options] {
+            if {[catch {set ::macports::$option} value]} { continue }
+            set origin default
+            if {[dict exists $origins $option]} { set origin [dict get $origins $option] }
+            lappend bootstrap_settings [list $option $value $origin]
+        }
+    }
+    proc bootstrap_record {} {
+        variable bootstrap_reads
+        variable bootstrap_settings
+        variable worker_aliases
+        return [list [dict keys $bootstrap_reads] $bootstrap_settings $worker_aliases]
     }
 
     # model_platform makes this interpreter describe another platform for
@@ -330,14 +422,20 @@ namespace eval ::dockhand {
                     expr {[info exists ::xcodeversion] ? $::xcodeversion : "none"}
                 }]
             }
-            # The PortGroups the port loads, by name, as Base records them
-            # for the registry and the PortIndex.
+            # The PortGroups the port loads, as Base records them for the
+            # registry and the PortIndex: each name, version, and the file
+            # it was sourced from, written <source> where the tree's, so a
+            # difference between two evaluations can be put down to
+            # _resources.
             if {[catch {$worker eval {
-                if {[info exists PortInfo(portgroups)]} { lmap group $PortInfo(portgroups) {lindex $group 0} }
+                if {[info exists PortInfo(portgroups)]} { set PortInfo(portgroups) }
             }} groups]} {
                 dict set failures dockhand.portgroups $groups
             } else {
-                dict set out dockhand.portgroups $groups
+                set sources [::dockhand::placeholders $worker 1]
+                dict set out dockhand.portgroups [lmap group $groups {
+                    list [lindex $group 0] [lindex $group 1] [string map $sources [lindex $group 2]]
+                }]
             }
             # The Python the python PortGroup would build the port with, were
             # python.default_version not pinned: its own default of it,
@@ -406,3 +504,4 @@ namespace eval ::dockhand {
 ::tclrpc::register initialize ::dockhand::initialize
 ::tclrpc::register model_platform ::dockhand::model_platform
 ::tclrpc::register metadata ::dockhand::metadata
+::tclrpc::register bootstrap_record ::dockhand::bootstrap_record

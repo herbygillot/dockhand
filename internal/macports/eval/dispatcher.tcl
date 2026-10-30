@@ -1,4 +1,17 @@
 namespace eval ::dockhand {
+    # recording_paths is set when a survey records what each evaluation
+    # read (tools/survey): the paths file, open, glob, and source read and
+    # the command lines exec ran, each worker's hooks, what mportinit read,
+    # and the aliases Base gives a worker. installation is what a port is
+    # evaluated against (installation.tcl). Go sets both before this script
+    # runs; these are their values for a script loaded without it.
+    if {![info exists recording_paths]} { variable recording_paths 0 }
+    if {![info exists installation]} { variable installation fresh }
+    # worker_aliases are the registry_ and _ aliases Base gave the first
+    # worker, each its name and target, recorded before the dispatcher
+    # hides any of them.
+    variable worker_aliases {}
+
     # refusals are the effects the current port's workers attempted and
     # the dispatcher refused, each its command, why, and where. They are
     # kept here in the parent, where the Portfile can't reach them: a catch
@@ -25,6 +38,15 @@ namespace eval ::dockhand {
     proc guard_worker {cmd code result op} {
         if {$code != 0} { return }
         set worker [lindex $cmd 1]
+        variable recording_paths
+        variable worker_aliases
+        if {$recording_paths && ![llength $worker_aliases]} {
+            foreach name [lsort [interp aliases $worker]] {
+                if {[string match registry_* $name] || [string match _* $name]} {
+                    lappend worker_aliases [list $name [interp alias $worker $name]]
+                }
+            }
+        }
         interp alias $worker dockhand_refused {} ::dockhand::refused
         interp hide $worker dockhand_refused
         $worker eval {
@@ -36,6 +58,16 @@ namespace eval ::dockhand {
                 # PortSystem has run; see observation.tcl.
                 variable ready 0
                 variable ledger [dict create]
+                # record_paths is the parent's recording_paths. reads
+                # counts each path read by command, file subcommand, what
+                # the path is, and who answered; execs each command line
+                # run by who answered; hooks are the Portfile's and its
+                # PortGroups' phase bodies, each with where it was declared.
+                variable record_paths 0
+                variable reads [dict create]
+                variable execs [dict create]
+                variable hooks {}
+                variable tcl_library ""
                 variable source_root ""
                 variable base_root ""
                 variable base_library ""
@@ -112,6 +144,94 @@ namespace eval ::dockhand {
                     variable base_library
                     if {$base_library ne "" && [string first "$base_library/" $path] == 0} { return base }
                     return host
+                }
+                # note keeps a call's read, as record_paths has it kept: a
+                # command line by who answered it, or a path normalized,
+                # by what it is (kind_of) and who answered it, the host
+                # answering a host path in a modelled context being
+                # host-in-model. Path arithmetic reads nothing and is left
+                # to the ledger.
+                proc note {name arguments answered} {
+                    if {$name eq "exec" || ($name eq "open" && [string index [lindex $arguments 0] 0] eq "|")} {
+                        variable execs
+                        set line [expr {$name eq "exec" ? $arguments : [string range [lindex $arguments 0] 1 end]}]
+                        dict incr execs [list [string range $line 0 199] $answered]
+                        return
+                    }
+                    set subcommand ""
+                    switch -- $name {
+                        file {
+                            variable pure
+                            set subcommand [lindex $arguments 0]
+                            if {$subcommand in $pure} { return }
+                            set paths [list [lindex $arguments 1]]
+                        }
+                        open { set paths [list [lindex $arguments 0]] }
+                        source { set paths [list [lindex $arguments end]] }
+                        glob { set paths [patterns $arguments] }
+                        default { return }
+                    }
+                    variable reads
+                    variable toolchain
+                    foreach path $paths {
+                        set kind relative
+                        if {![catch {interp invokehidden {} file normalize $path} normalized]} {
+                            set path $normalized
+                            set kind [kind_of $path]
+                        }
+                        set by $answered
+                        if {$by eq "host" && $kind eq "host" && [dict size $toolchain]} { set by host-in-model }
+                        dict incr reads [list $name $subcommand $kind $by $path]
+                    }
+                }
+                # kind_of is what an absolute path is: the captured tree's,
+                # Base's own library, Tcl's own library, or the host's.
+                proc kind_of {path} {
+                    variable source_root
+                    variable base_root
+                    variable base_library
+                    variable tcl_library
+                    foreach root [list $source_root $base_root] {
+                        if {$root ne "" && ($path eq $root || [string first "$root/" $path] == 0)} { return tree }
+                    }
+                    if {$base_library ne "" && [string first "$base_library/" $path] == 0} { return base }
+                    if {$tcl_library ne "" && ($path eq $tcl_library || [string first "$tcl_library/" $path] == 0)} { return library }
+                    return host
+                }
+                # patterns are a glob's patterns, each joined with its
+                # -directory or -path.
+                proc patterns {arguments} {
+                    set prefix ""
+                    set i 0
+                    while {$i < [llength $arguments]} {
+                        switch -- [tcl::prefix match -error {} {-directory -join -nocomplain -path -tails -types --} [lindex $arguments $i]] {
+                            -directory {
+                                set prefix [lindex $arguments $i+1]/
+                                incr i 2
+                            }
+                            -path {
+                                set prefix [lindex $arguments $i+1]
+                                incr i 2
+                            }
+                            -types { incr i 2 }
+                            -join - -nocomplain - -tails { incr i }
+                            -- {
+                                incr i
+                                break
+                            }
+                            default { break }
+                        }
+                    }
+                    return [lmap pattern [lrange $arguments $i end] {string cat $prefix $pattern}]
+                }
+                # hooked keeps a phase body as makeuserproc makes it, every
+                # hook a Portfile or PortGroup declares going through it
+                # (portutil.tcl's target_provides).
+                proc hooked {cmd op} {
+                    variable recording
+                    if {$recording} { return }
+                    variable hooks
+                    lappend hooks [list [lindex $cmd 1] [where] [lindex $cmd 2]]
                 }
                 # refusal is why a call is refused, or empty if it isn't.
                 proc refusal {name arguments} {
@@ -212,8 +332,10 @@ namespace eval ::dockhand {
                     # as it would have, as the ruby PortGroup's query of a
                     # ruby not installed does, and falls back. There is
                     # what the fresh installation has (installation.tcl).
+                    # The host's own installation has what the host has.
                     set path [lindex $command 0]
-                    if {[lindex [locate $path] 1] eq ""} { return "" }
+                    variable installation
+                    if {[lindex [locate $path] [expr {$installation eq "host" ? 0 : 1}]] eq ""} { return "" }
                     set name [lindex [split $path /] end]
                     set arguments [lrange $command 1 end]
                     foreach entry $programs {
@@ -259,8 +381,9 @@ namespace eval ::dockhand {
                     return $i
                 }
                 # dispatch is every hidden command's alias: a refusal, else
-                # the modelled toolchain's answer or the fresh
-                # installation's where they have one, else the host's, counted in the ledger by command, file
+                # the modelled toolchain's answer, or the installed ports'
+                # or the fresh installation's where they have one, else the
+                # host's, counted in the ledger by command, file
                 # subcommand, source, and subject, the port or program a
                 # question of the installation is about.
                 proc dispatch {name args} {
@@ -273,16 +396,21 @@ namespace eval ::dockhand {
                         return -code error -errorcode {DOCKHAND REFUSED} "dockhand refused `$command`: it $reason"
                     }
                     variable ledger
+                    variable record_paths
+                    variable installation
+                    set asked $args
                     set subcommand [expr {$name eq "file" ? [lindex $args 0] : ""}]
                     set answer [modelled $name $args]
-                    if {$answer ne ""} {
-                        lassign $answer subject code result options
-                        dict incr ledger [list $name $subcommand table $subject]
-                        dict set options -level 1
-                        return -options $options $result
+                    set source table
+                    if {$answer eq "" && $installation eq "installed"} {
+                        set answer [installed $name $args]
+                        set source installed
                     }
-                    set answer [fresh $name $args]
-                    if {$answer eq "" && ($name eq "exec" || ($name eq "open" && [string index [lindex $args 0] 0] eq "|"))} {
+                    if {$answer eq ""} {
+                        set answer [fresh $name $args]
+                        set source fresh
+                    }
+                    if {$answer eq "" && $installation ne "host" && ($name eq "exec" || ($name eq "open" && [string index [lindex $args 0] 0] eq "|"))} {
                         set answer [run $name $args]
                         if {[lindex $answer 0] eq "run"} {
                             set args [lindex $answer 1]
@@ -291,7 +419,8 @@ namespace eval ::dockhand {
                     }
                     if {$answer ne ""} {
                         lassign $answer subject code result options
-                        dict incr ledger [list $name $subcommand fresh $subject]
+                        dict incr ledger [list $name $subcommand $source $subject]
+                        if {$record_paths} { note $name $asked $source }
                         dict set options -level 1
                         return -options $options $result
                     }
@@ -300,7 +429,12 @@ namespace eval ::dockhand {
                     set source [source_of $name $args]
                     variable toolchain
                     if {$source eq "host" && [dict size $toolchain]} { set source host-in-model }
-                    dict incr ledger [list $name $subcommand $source ""]
+                    # What the host's own installation is asked, where it
+                    # answers (installation host), is about its subject too.
+                    variable registry_reads
+                    set subject [expr {$name in $registry_reads || $name in {findBinary binaryInPath} ? [lindex $args 0] : ""}]
+                    dict incr ledger [list $name $subcommand $source $subject]
+                    if {$record_paths} { note $name $asked host }
                     variable ready
                     if {$ready} { ::dockhand_observation::host 2 [list $name {*}$args] }
                     # file stat and lstat set an array in their caller's frame.
@@ -336,6 +470,10 @@ namespace eval ::dockhand {
                 proc loaded {cmd code result op} {
                     variable outright
                     guard [dict keys $outright]
+                    variable record_paths
+                    if {$record_paths && [llength [info commands ::makeuserproc]] && ![llength [trace info execution ::makeuserproc]]} {
+                        trace add execution ::makeuserproc enter ::dockhand_dispatcher::hooked
+                    }
                 }
             }
         }
@@ -350,6 +488,8 @@ namespace eval ::dockhand {
         $worker eval [list set ::dockhand_dispatcher::source_root $::dockhand::source_root]
         $worker eval [list set ::dockhand_dispatcher::base_root $::dockhand::base_root]
         $worker eval [list set ::dockhand_dispatcher::base_library [base_library]]
+        $worker eval [list set ::dockhand_dispatcher::record_paths $recording_paths]
+        $worker eval [list set ::dockhand_dispatcher::tcl_library [file normalize [info library]]]
     }
 
     # base_library is where MacPorts Base's own Tcl lives, the port1.0 and
