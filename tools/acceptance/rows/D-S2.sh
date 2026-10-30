@@ -27,6 +27,9 @@ act() {
 	host_only "a pull request on GitHub" || return 0
 	[ -n "${DS2_BRANCH:-}" ] || return 0
 	allow_change "*"
+	# Its clean takes its own fork branch, and the clone's tracking ref of
+	# it, which H1 read as lost (rc1's full stage).
+	allow_ref_gone "*$DS2_BRANCH*"
 	dh_json status --refresh "$DS2_BRANCH" || :
 	# Its branch alone, as close_test_pr cleans: clean --closed also
 	# takes the sandbox's leftover fork branches (rc1's full stage).
