@@ -37,10 +37,7 @@ func (c *Client) Repository(instance, name string) (forge.Repository, error) {
 func (r *repository) Name() string { return r.name }
 
 func (r *repository) api() (*sdk.Client, error) {
-	options := []sdk.ClientOptionFunc{sdk.WithBaseURL(r.apiBase)}
-	if r.client.HTTP != nil {
-		options = append(options, sdk.WithHTTPClient(r.client.HTTP))
-	}
+	options := []sdk.ClientOptionFunc{sdk.WithBaseURL(r.apiBase), sdk.WithHTTPClient(limitedClient(r.client.HTTP)), sdk.WithCustomRetry(checkRetry), sdk.WithCustomRetryMax(limitRetries)}
 	return sdk.NewClient("", options...)
 }
 
