@@ -222,10 +222,6 @@ These need MacPorts Base, whole-tree surveys, or VMs, so they run as the Mac all
 
 ## Decisions for the person
 
-Open, raised by the architecture review on 2026-10-28:
-
-- Whether docs/reviews/ stays: docs phase 2 meant to remove it, and it still holds the review of 8c007979, which Taken when touched links; the reviews of 8e314b96 and of 2ad896d2's workflow stay uncommitted at the person's word.
-
 Decided questions, with the rule each settled, are in [decisions](decisions.md).
 
 ## Later
@@ -288,7 +284,7 @@ Left from v0.6.0's and the docs dig's work:
 
 ### Taken when their area is next touched
 
-Codes: the architecture review's A-H1 and on, Codex's review of 832f059e's CX-1 to CX-12, the review of 5897a82's R3-1 to R3-40, and [Codex's review of 8c007979](reviews/2026-10-22-architecture-8c007979.md)'s C8-1 to C8-10; the other reviews and the triage notes are at tag `docs-archive-2026-10-25`. Also when touched: A-H3 to A-H7, A-H10, A-H11, M4, and C4a.
+Codes: the architecture review's A-H1 and on, Codex's review of 832f059e's CX-1 to CX-12, the review of 5897a82's R3-1 to R3-40, and Codex's review of 8c007979's C8-1 to C8-10; the reviews and the triage notes are at tag `docs-archive-2026-10-25`. Also when touched: A-H3 to A-H7, A-H10, A-H11, M4, and C4a.
 
 - **A link notice names the dependency whose pkg-config brought a library in** (the gnome-voice session's note 9, inferred, 2026-10-24; when the link notice is next touched). Its check named cairo, pango, harfbuzz, gdk-pixbuf2, graphene, and gettext-runtime as linked and undeclared; gtk4's pkg-config Libs carry those through its public Requires, and glib's carries libintl (inferred, not read on the guest). The notice is right that the binary links them, and a port's dependents are found through what it declares. It would add, where a declared dependency's .pc file names the library, "through gtk4's pkg-config Libs", so the person can choose between declaring it and `-Wl,-dead_strip_dylibs`.
 - **Tart workarounds to retire as Tart releases fixes:**
@@ -309,6 +305,7 @@ Codes: the architecture review's A-H1 and on, Codex's review of 832f059e's CX-1 
   - C8-8, sourcecompare's `Compare` reporting each option's change with nothing of the Portfile, assess attaching whether the Portfile sets it (its `named` and `sets` callbacks today), with compare.go's split above;
   - configuration's provenance carried from the parse, where config.go derives "default" from a value's emptiness, so an explicit false reads as default;
   - the two ship drivers, `shipOne` (command/ship) and `Engine.ship` (serve's), which share part 4.1's gate but not a driver: R3-5's residual, when ship is next touched;
+  - each `exec.LookPath` reading the process's PATH reads the invocation's through `subprocess.LookPath` when its file is next touched: tart/setup.go (xcodes), patchcheck/refresh.go (diff), patchcheck/patchcheck.go (patch), portindex/index.go, depblock/blocks.go, keychain/keychain.go (security), and macos/notify.go (open), compose's Tart lookup riding the check-execution service.
 - tart/provision's agent plist moves onto macos.LaunchdPlist when tart.SetupProtocol is next raised (R3-21's second half; moving it now changes what images hold).
 - **patchcheck's line names each failed hunk's line,** as `patch` says it ("Hunk #1 FAILED at 29"), beside the count it gives now, when patchcheck is next touched (field testing's e2fsprogs 1.47.4 and net-snmp 5.9.5.2 bumps, 2026-10-19, where bump named each patch that doesn't apply before its check; the roadmap's history).
 - **The observer's boundary at Golden Gate.** A boundary at `${os.major} >= 27` samples nothing below it, since its lower neighbor, Darwin 26, never shipped; the release below, 25, should stand in (7f593240).

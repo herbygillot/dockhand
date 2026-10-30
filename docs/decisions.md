@@ -82,6 +82,7 @@ From the 2026-09 plan's questions for the person. D15, D19's taking, and D3 are 
 - **An interrupted serve never abandons work** (2026-10-04): the next serve resumes it.
 - **A decision on a moving source holds for the commit looked at** (2026-10-28, the person's "as per your recommendations", on the architecture thread's with Codex's D1; built before v0.7.0 rc1): a decision on a static finding holds while the port's directory is unchanged, so an edit elsewhere doesn't lapse it; one on `source-moved` or `tag-moved` holds for the checked and current commits it was made on, its subject `checked..current`, so a later move is a new concern, as one on `release-moved` or `assessment-moved` does for the two commits each compares. `decide` takes the subject from the current concern. `source-unknown` is no hold `decide` takes, so it binds nothing.
 - **Release binaries for macOS 10.13 to 11 are parked** (2026-10-20) as draft PR #6 until someone on those releases asks.
+- **Reviews live in Git's history, not in docs/** (2026-10-30, left to Claude by the person, on the architecture thread's verdict). docs/reviews/ holds nothing committed: the reviews up to 8c007979's (cfa4530f) are at tag `docs-archive-2026-10-25`, and the roadmap carries what each still asks. Later reviews stay uncommitted in the person's checkout at the person's word.
 
 ## Not taken
 
