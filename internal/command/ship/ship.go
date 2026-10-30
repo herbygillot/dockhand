@@ -338,6 +338,19 @@ func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 		fmt.Fprintf(streams.Err, "%s: %v\n", target.Name(), view.SayNext(err))
 		return nil
 	}
+	// A batch that pushes asks the fork first, so a missing key is said
+	// now, not after checks that pass and pushes that fail.
+	if stage == engine.ShipSubmit {
+		e, err := s.Open(ctx)
+		if err != nil {
+			return err
+		}
+		refused := e.ForkRefuses(ctx)
+		e.Close()
+		if refused != nil {
+			return refused
+		}
+	}
 	var all []carried
 	for _, target := range targets {
 		whole.Next()
