@@ -66,3 +66,18 @@ func TestInspectRejectsMalformedFacts(t *testing.T) {
 	require.Empty(t, facts.Version)
 	require.Equal(t, model.Platform{}, facts.Platform)
 }
+
+// port version says its version after a warning once the port definitions
+// are more than two weeks old, which setup tart read as no version, and
+// refused a sound image (rc1's full stage).
+func TestParseVersionReadsPastAWarning(t *testing.T) {
+	t.Parallel()
+	version, ok := ParseVersion([]byte("Warning: port definitions are more than two weeks old, consider updating them by running 'port selfupdate'.\nVersion: 2.12.6\n"))
+	require.True(t, ok)
+	require.Equal(t, "2.12.6", version)
+	version, ok = ParseVersion([]byte("Version: 2.11.5\n"))
+	require.True(t, ok)
+	require.Equal(t, "2.11.5", version)
+	_, ok = ParseVersion([]byte("port: command not found\n"))
+	require.False(t, ok)
+}
