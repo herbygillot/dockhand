@@ -121,7 +121,7 @@ submit_pr() {
 }
 
 # close_test_pr closes a test pull request once the row has its evidence,
-# then cleans its branch with clean --closed, which is row C7's too.
+# then cleans its branch, named alone, as its state has it.
 close_test_pr() {
 	local port=$1 branch=$2 url
 	[ "$(pr_kind "$port")" = test ] || return 0
@@ -132,7 +132,10 @@ close_test_pr() {
 	[ -n "$url" ] && gh pr close "$url" --comment "Closed: a dockhand release candidate's test, recorded." >/dev/null
 	allow_change "*"
 	allow_ref_gone "*$branch*"
-	dh_json clean --closed -y
+	# The branch named alone: clean --closed also took the fork's
+	# leftover branches, 32 earlier runs' in the sandbox, which the row
+	# allowed only its own of (rc1's full stage).
+	dh_json clean "$branch" -y
 	# The clone's remote-tracking ref of the fork branch clean removed goes
 	# too, which a later row's prune would otherwise take for lost work.
 	git -C "$MACPORTS_TREE" update-ref -d "refs/remotes/origin/dockhand/$branch" 2>/dev/null || :

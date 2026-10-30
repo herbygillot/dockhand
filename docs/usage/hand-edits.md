@@ -99,21 +99,21 @@ When a project renames itself, MacPorts renames its port: the Portfile and
 obsolete stub that names the new port.
 
 ```sh
-dockhand rename goplus xgo --plan
-dockhand rename goplus xgo
-dockhand update xgo
+dockhand rename jq jqlang --plan
+dockhand rename jq jqlang
+dockhand update jqlang
 ```
 
 The new name is set on the Portfile's `name` line, or, where the name comes
 from a setup such as `github.setup` or `go.setup`, on a `name` line below it, so
 the port's source stays where it is. Pointing the setup at a renamed repository
 is `update --follow-moves`. The stub uses
-`PortGroup obsolete 1.0` and `replaced_by xgo`, at the old version with its
+`PortGroup obsolete 1.0` and `replaced_by jqlang`, at the old version with its
 revision raised. Dockhand does only that much. It lists the new Portfile's lines
 that still name the old name, such as a Go module path or a binary's name, and
 the ports that depend on the old name; those changes are yours. `--category`
 places the new directory in another category. `tidy` commits the rename as
-`xgo: rename from goplus`.
+`jqlang: rename from jq`.
 
 An update whose GitHub repository was renamed under the same owner, where the
 port is named after it or the project's own name changed with it, is held, its

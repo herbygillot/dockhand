@@ -91,11 +91,16 @@ func CheckTclPackages(ctx context.Context, command macos.Command, prefix string)
 	return err
 }
 
-// ParseVersion reads the version from the output of port version.
+// ParseVersion reads the version from the output of port version, from its
+// "Version:" line wherever it is: port prints a warning before it once the
+// port definitions are more than two weeks old, which refused every Tart
+// image set up from a sound one (rc1's full stage).
 func ParseVersion(out []byte) (string, bool) {
-	fields := strings.Fields(string(out))
-	if len(fields) >= 2 && fields[0] == "Version:" {
-		return fields[1], true
+	for line := range strings.Lines(string(out)) {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "Version:" {
+			return fields[1], true
+		}
 	}
 	return "", false
 }
