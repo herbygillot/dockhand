@@ -2,6 +2,7 @@ package ship
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,9 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -373,4 +376,40 @@ func TestABatchStopsWhereTheForkRefusesItsKey(t *testing.T) {
 	require.Contains(t, errs+err.Error(), "can't be pushed to from this Mac, so nothing was shipped")
 	require.NotContains(t, errs+err.Error(), "check-1", "nothing was checked")
 	require.Empty(t, g.PRs)
+}
+
+// uncertainBumper's discovery set jq-1.9.0 aside, tagged on a commit
+// older than the port's, and found nothing newer.
+type uncertainBumper struct{ cmdtest.Bumper }
+
+func (b uncertainBumper) ResolveRelease(ctx context.Context, r editprep.Request) (model.Release, error) {
+	if r.Version == "" {
+		return model.Release{}, &engine.UncertainRelease{Port: "jq", SetAside: []engine.SetAside{{Tag: "jq-1.9.0", Version: "1.9.0", Source: "1.9.0", Predates: "jq-1.8.1"}}}
+	}
+	return b.Bumper.ResolveRelease(ctx, r)
+}
+
+// A ship run again for a branch that carries its update and a check that
+// passed goes on to submit it where which release is newest is uncertain,
+// where it stopped there: dolt's first ship passed its check and failed
+// its push, and the second refused on its v040.15 tag and submitted
+// nothing (rc1's batch).
+func TestShipGoesOnWithABranchWhereTheNewestReleaseIsUncertain(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	g.Others = nil
+	_, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "check")
+	require.NoError(t, err, errs)
+	require.Empty(t, g.PRs)
+
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return uncertainBumper{cmdtest.Bumper{Repo: e.Repo}} }
+	out, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--yes", "--tested-binaries")
+	require.NoError(t, err, errs)
+	require.Contains(t, errs, "jq: jq-1.8.1 goes on as it is")
+	require.Contains(t, out, "passed for this commit already")
+	require.Len(t, g.PRs, 1, "submitted")
 }

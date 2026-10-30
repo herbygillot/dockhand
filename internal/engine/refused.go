@@ -127,6 +127,13 @@ func indented(block string) string {
 	return strings.ReplaceAll(block, "\n", "\n    ")
 }
 
+// ErrReleaseUncertain marks an update to the newest release that couldn't
+// tell which that is (uncertainRelease, aheadRelease): nothing was
+// changed, and a branch that carries an update already goes on as it is
+// (ship, after dolt's push failed: run again, its v040.15 tag compared
+// newer and stopped it short of the check that had passed).
+var ErrReleaseUncertain = errors.New("the newest release is uncertain")
+
 // uncertainRelease is an update to the newest release that found none to
 // choose: what compares newest was set aside, since its tag's commit is
 // older than the port's own, and nothing newer is beyond it. Whether it's
@@ -144,7 +151,7 @@ func uncertainRelease(request UpdateRequest, aside []SetAside, branch string, st
 	// One that isn't a release, as certgraph's tag on an older commit
 	// isn't, is better left out by the port's own livecheck than updated
 	// to "after a look" (field testing at c97bca63).
-	return refusal.New(refusal.Attention, "can't tell whether %s is current, so nothing was changed: %s", request.Port, SetAsideWords(aside)).
+	return refusal.Wrap(refusal.Attention, ErrReleaseUncertain, "can't tell whether %s is current, so nothing was changed: %s", request.Port, SetAsideWords(aside)).
 		With(kept).
 		Then(refusal.Next{External: fmt.Sprintf("if %s is a release: dockhand %s %s %s", aside[0].Tag, verb, request.Port, aside[0].Source)},
 			refusal.Next{External: fmt.Sprintf("if it isn't, as an old tag spelled oddly: a livecheck.regex in the Portfile that leaves %s out keeps it out of later looks", aside[0].Tag)})
@@ -163,7 +170,7 @@ func aheadRelease(request UpdateRequest, ahead AheadRelease, branch string, star
 	if started {
 		kept = branch + ", with nothing changed"
 	}
-	return refusal.New(refusal.Attention, "can't tell whether %s is current, so nothing was changed: %s", request.Port, AheadWords(ahead.Current, ahead.Tag)).
+	return refusal.Wrap(refusal.Attention, ErrReleaseUncertain, "can't tell whether %s is current, so nothing was changed: %s", request.Port, AheadWords(ahead.Current, ahead.Tag)).
 		With(kept).
 		Then(refusal.Next{External: fmt.Sprintf("with the version to take: dockhand %s %s <version>", verb, request.Port)})
 }
