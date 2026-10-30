@@ -48,6 +48,13 @@ hint)
 	echo "Next: dockhand diff -b x, then dockhand tidy -b x"
 	exit 0
 	;;
+wrapped)
+	# A Next: line as dockhand wraps it off a terminal, its later line two
+	# spaces in (term.Wrapped).
+	echo 'Next: cd "$(dockhand path x)", then dockhand diff -b x, then'
+	echo "  dockhand tidy -b x"
+	exit 0
+	;;
 leak)
 	echo "token gho_0123456789abcdefghijklmnopqrstuvwxyz"
 	exit 0

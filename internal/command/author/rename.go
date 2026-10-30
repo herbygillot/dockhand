@@ -86,6 +86,7 @@ type renameJSON struct {
 	To                string             `json:"to"`
 	Stub              string             `json:"stub,omitempty"`
 	Left              []string           `json:"left"`
+	UsesName          []string           `json:"uses_name"`
 	Dependents        []string           `json:"dependents"`
 	DependentsProblem string             `json:"dependents_problem,omitempty"`
 	Applied           bool               `json:"applied"`
@@ -112,7 +113,7 @@ func renamePort(cmd *cobra.Command, s *settings.Settings, streams term.Streams, 
 		return err
 	}
 	result := renameJSON{Branch: view.BranchRef(chosen.Branch), Started: chosen.Started, Port: renamed.Port, Name: renamed.Name, From: renamed.From, To: renamed.To,
-		Left: view.NonNil(renamed.Left), Dependents: view.NonNil(renamed.Dependents), DependentsProblem: renamed.DependentsProblem, Applied: renamed.Applied}
+		Left: view.NonNil(renamed.Left), UsesName: view.NonNil(renamed.UsesName), Dependents: view.NonNil(renamed.Dependents), DependentsProblem: renamed.DependentsProblem, Applied: renamed.Applied}
 	verb := map[bool]string{true: "would rename", false: "renamed"}[request.Plan]
 	what := fmt.Sprintf("%s %s to %s: %s → %s", verb, renamed.Port, renamed.Name, renamed.From, renamed.To)
 	if renamed.Stub == nil {
@@ -129,6 +130,12 @@ func renamePort(cmd *cobra.Command, s *settings.Settings, streams term.Streams, 
 	if len(renamed.Left) > 0 {
 		fmt.Fprintf(out, "    Still naming %s in %s/Portfile, yours to change:\n", renamed.Port, renamed.To)
 		for _, line := range renamed.Left {
+			fmt.Fprintf(out, "      %s\n", line)
+		}
+	}
+	if len(renamed.UsesName) > 0 {
+		fmt.Fprintf(out, "    Uses ${name}, which now reads %s; yours to check:\n", renamed.Name)
+		for _, line := range renamed.UsesName {
 			fmt.Fprintf(out, "      %s\n", line)
 		}
 	}

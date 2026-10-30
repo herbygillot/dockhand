@@ -332,11 +332,16 @@ EOT
 # H6: every Next: line works: each step it names, run as its --plan where
 # it would change something, or as named where it only reads, is
 # accepted. A step that can't be run from here is said, not counted.
+#
+# Each line starts from the run directory, and its steps run where its cd
+# puts them; a cd that fails stops its line, whose steps would run
+# elsewhere than they say. A cd in one line no longer carries to the next.
 harm_h6() {
-	local line segment dir broken="" unverified="" ran=0 status verb word words
-	dir=${ACCEPT_RUN_DIR:-${ACCEPT_WATCH%% *}}
+	local line segment start dir lost broken="" unverified="" ran=0 status verb word words
+	start=${ACCEPT_RUN_DIR:-${ACCEPT_WATCH%% *}}
 	: >"$ROW_DIR/next.log"
 	while IFS= read -r line; do
+		dir=$start lost=""
 		line=${line#Next: }
 		line=$(printf '%s\n' "$line" | awk '{gsub(/, then |; |, or /, "\n"); print}')
 		while IFS= read -r segment; do
@@ -344,12 +349,14 @@ harm_h6() {
 			# command: "dockhand check (the files changed)".
 			segment=$(printf '%s' "$segment" | sed 's/ *([^()]*)$//; s/^ *//; s/ *$//; s/[.]$//')
 			[ -n "$segment" ] || continue
+			[ -z "$lost" ] || continue
 			case "$segment" in
 			'cd "$(dockhand path '*')"')
 				word=${segment#cd \"\$(dockhand path }
 				word=${word%)\"}
-				dir=$("$DH_BIN" path "$word" 2>/dev/null) || {
+				dir=$(cd "$dir" && "$DH_BIN" path "$word" 2>>"$ROW_DIR/next.log") || {
 					broken="$broken [$segment]"
+					lost=1
 					continue
 				}
 				continue
@@ -423,8 +430,18 @@ EOT
 # harm_next_lines are the row's Next: lines H6 runs: those after the last
 # whole mark (next_superseded), less those naming a branch a later mark
 # names (next_superseded_for), by its name or dockhand/ and its name.
+#
+# A Next: line dockhand wrapped, off a terminal at its default width, is
+# joined again, its later lines two spaces in (term.Wrapped): G6's
+# "Next: cd \"$(dockhand path jlv-tt5v)\", then dockhand update
+# jlv-renamed (for a new release), then dockhand check" broke after its
+# second "then", so H6 ran "update jlv-renamed (for a new release), then"
+# and lost the check; every rename's and move's Next: line, and A10's
+# longer ones, blocked so (rc1's quick stage).
 harm_next_lines() {
 	awk '
+	/^  [^ ]/ && joining { sub(/^  /, ""); lines[n] = lines[n] " " $0; next }
+	{ joining = /^Next: / }
 	/^# Next: lines above were superseded/ { n = 0; next }
 	/^# Next: lines naming [^ ]+ above were superseded/ {
 		b = $5; m = 0

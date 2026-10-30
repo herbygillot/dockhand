@@ -1,7 +1,10 @@
 # stages: quick full
-# E9: adopt --pr and review are experimental until the trust rule is in
-# code: review of a public pull request prints the notice, saying whose
-# Portfile it evaluates. ACCEPT_REVIEW_PR names it.
+# E9: review of a public pull request says, once, whose Portfiles it
+# evaluates on this Mac, "Evaluating @cdeil's Portfiles on this Mac, for
+# #34756", where it printed an experimental notice, which 1fce8d50 took
+# away with the trust rule in code. ACCEPT_REVIEW_PR names it; G22's
+# sandbox pull request is ACCEPT_SANDBOX_PR, since setting one for both
+# had E9 review the sandbox's number in MacPorts' (rc1's quick stage).
 act() {
 	local pr=${ACCEPT_REVIEW_PR:-34756}
 	# The quick stage's pinned upstream has no pull requests' refs; review
@@ -16,9 +19,11 @@ act() {
 	(unset DOCKHAND_PULL_REQUESTS; dh review "$pr" --markdown </dev/null) || :
 }
 assert() {
-	if grep -qi 'experimental' "$ROW_DIR/out.log"; then
-		row_pass "review says it's experimental: $(grep -i experimental "$ROW_DIR/out.log" | head -1)"
+	local said
+	said=$(grep -E -m1 "Evaluating @[^ ]+ Portfiles on this Mac" "$ROW_DIR/out.log")
+	if [ -n "$said" ]; then
+		row_pass "review says whose Portfiles it evaluates: $said"
 	else
-		row_fail "review printed no experimental notice"
+		row_fail "review didn't say whose Portfiles it evaluates on this Mac"
 	fi
 }

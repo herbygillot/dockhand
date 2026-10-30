@@ -12,6 +12,15 @@ act() {
 	dh_setup rename "$(port)" "$(renamed)" --new || return 0
 	G6_BRANCH=$(own_branch)
 	[ -n "$G6_BRANCH" ] || { row_fail "rename --new made no branch"; return 0; }
+	# The lines rename lists under "Uses ${name}" read the new name now;
+	# the port's binary is still its old name's, so the row edits them as
+	# the person would, where destroot's "xinstall …/${name}" failed
+	# (rc1's quick stage).
+	local portfile line
+	portfile=$(ls "$("$DH_BIN" path "$G6_BRANCH")"/*/"$(renamed)"/Portfile 2>/dev/null | head -1)
+	sed -n '/Uses \${name}, which now reads/,/^ \{0,4\}[^ ]/p' "$ROW_DIR/out.log" | sed -n 's/^      line \([0-9][0-9]*\): .*/\1/p' | while IFS= read -r line; do
+		sed -i '' "${line}s/\\\${name}/$(port)/g; ${line}s/\\\${subport}/$(port)/g" "$portfile"
+	done
 	dh_json update "$(renamed)" -b "$G6_BRANCH" || return 0
 	dh_json check -b "$G6_BRANCH" || return 0
 	dh_json tidy -b "$G6_BRANCH" -y || return 0

@@ -642,6 +642,10 @@ func TestRenameAndMoveAPort(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
 	testsupport.Git(t, dir, "sparse-checkout", "add", "textproc/jq")
 	cmdtest.UsePorts(cmdtest.Stands(t), versioned{})
+	// A use of ${name}, which reads the new name after, is listed and
+	// left as it is (rc1's quick stage, G6).
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n# ${name} in a comment\ndestroot {\n    xinstall ${worksrcpath}/${name} ${destroot}${prefix}/bin/$subport\n}\n"), 0o644))
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: install ${name}")
 
 	out, _, err := cmdtest.Dockhand(t, "rename", "jq", "jq2", "--plan")
 	require.NoError(t, err)
@@ -653,6 +657,11 @@ func TestRenameAndMoveAPort(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, cmdtest.Flat(out), "jq-rename · renamed jq to jq2: textproc/jq → textproc/jq2")
 	require.Contains(t, cmdtest.Flat(out), "Next: dockhand update jq2 (for a new release), then dockhand check\n")
+	require.Contains(t, out, "    Uses ${name}, which now reads jq2; yours to check:\n      line 5: xinstall ${worksrcpath}/${name} ${destroot}${prefix}/bin/$subport\n")
+	require.NotContains(t, out, "line 1:", "the name line isn't a use")
+	moved, err := os.ReadFile(filepath.Join(dir, "textproc/jq2/Portfile"))
+	require.NoError(t, err)
+	require.Contains(t, string(moved), "xinstall ${worksrcpath}/${name} ${destroot}${prefix}/bin/$subport\n", "none is changed")
 	require.FileExists(t, filepath.Join(dir, "textproc/jq2/Portfile"))
 	stub, err := os.ReadFile(filepath.Join(dir, "textproc/jq/Portfile"))
 	require.NoError(t, err)

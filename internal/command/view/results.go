@@ -446,7 +446,7 @@ type ChangesRequestedJSON struct {
 
 func SubmitView(plan engine.SubmitPlan) submitJSON {
 	owner, _ := plan.ForkOwner()
-	viewed := submitJSON{Branch: plan.Branch.ShortName(), Title: plan.Title, Commit: plan.Commit, Commits: len(plan.Commits), From: plan.Head(), To: plan.Repository + ":" + engine.UpstreamBranch,
+	viewed := submitJSON{Branch: plan.Branch.ShortName(), Title: plan.Title, Commit: plan.Commit, Commits: len(plan.Commits), From: FromWords(plan), To: plan.Repository + ":" + engine.UpstreamBranch,
 		Account: plan.Login.Account, LoginSource: plan.Login.Source, ForkOwner: owner,
 		Push: PushWords(plan), Checks: CheckWords(plan), Findings: findingsView(plan.Findings), Blocking: NonNil(plan.Blocking), LeftOut: NonNil(plan.LeftOut), ChangedPatches: NonNil(plan.ChangedPatches), Body: plan.Body,
 		Upstream: []portUpstreamJSON{}, ModifiedBuilds: NonNil(plan.ModifiedBuilds), UnfoundBuilds: []unfoundBuildJSON{}, BuildsProblem: plan.BuildsProblem}

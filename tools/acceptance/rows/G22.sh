@@ -1,19 +1,19 @@
 # stages: full
 # G22: review --check after the author pushes over an adopted pull request
 # (Codex's workflow review of 2ad896d2, W2). review <N> --check adopts and
-# checks ACCEPT_REVIEW_PR, an open pull request in the sandbox that this
+# checks ACCEPT_SANDBOX_PR, an open pull request in the sandbox that this
 # database didn't open and that a person can push to as its author; after
 # their push, review --check moves the adopted branch to the new head and
 # checks that; after a local commit on the branch and another push, it's
 # refused, naming the commit beyond the head it was adopted at and dockhand
 # check -b, which checks the branch as it is. Without the pull request, the
 # row isn't run.
-pr() { printf '%s' "${ACCEPT_REVIEW_PR:-}"; }
+pr() { printf '%s' "${ACCEPT_SANDBOX_PR:-}"; }
 
 act() {
 	host_only "a sandbox pull request its author pushes to" || return 0
 	if [ -z "$(pr)" ]; then
-		row_result "not run" "set ACCEPT_REVIEW_PR to an open pull request in the sandbox this database didn't open, which you can push to as its author"
+		row_result "not run" "set ACCEPT_SANDBOX_PR to an open pull request in the sandbox this database didn't open, which you can push to as its author"
 		return 0
 	fi
 	allow_change "*"
