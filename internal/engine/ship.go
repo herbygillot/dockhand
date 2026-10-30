@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/failpoint"
@@ -148,8 +147,18 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 	// (the docs dig's I9, e2fsprogs and net-snmp in field testing).
 	// patchcheck's reading isn't the build's, so a person's ship and check
 	// build as before, and holds.allow's patch-rejected lets one go.
+	// The hold is recorded on the update's edit, so serve's recovery
+	// leaves it held, and a person's ship takes it off (finding 2).
+	var held []string
 	if options.Unattended() && len(done.Update.PatchProblems) > 0 && !slices.Contains(e.holdsFor(target.Port).allow, assess.PatchRejected) {
-		done.Problem = fmt.Sprintf("held before its check, at its committed edit: %s; holds.allow = [\"%s\"] lets it build", strings.Join(done.Update.PatchProblems, "; "), assess.PatchRejected)
+		held = done.Update.PatchProblems
+	}
+	if err := e.holdBeforeCheck(ctx, branch, target.Port, held); err != nil {
+		done.Problem = err.Error()
+		return done
+	}
+	if prepared, err := e.preparation(ctx, branch); err != nil || prepared.Disposition != branchstate.ReadyToCheck {
+		done.Problem = preparedWords(prepared, branch, err)
 		return done
 	}
 	proposal, err := e.ProposeCheck(ctx, CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureHead}, Where: options.Where, Tests: options.Tests})
@@ -180,6 +189,58 @@ type Resumed struct {
 	// edits not committed, which are the person's to carry on.
 	Problem   string
 	HandEdits bool
+	// Held is a branch ship held before its check, a patch not applying.
+	Held bool
+}
+
+// preparation is the branch's preparation verdict (branchstate.Preparation)
+// from its recorded edits and its worktree's edits not committed.
+func (e *Engine) preparation(ctx context.Context, branch model.Branch) (branchstate.Prepared, error) {
+	worktree, err := e.worktree(ctx, branch)
+	if err != nil {
+		return branchstate.Prepared{}, err
+	}
+	edited, err := worktree.TrackedChanges(ctx)
+	if err != nil {
+		return branchstate.Prepared{}, err
+	}
+	var edits []model.Edit
+	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		edits, err = r.Edits(branch.ID)
+		return err
+	})
+	return branchstate.Preparation(branchstate.Branch{Record: branch, Edited: edited, Edits: edits}), err
+}
+
+// preparedWords say why a branch's check isn't queued.
+func preparedWords(prepared branchstate.Prepared, branch model.Branch, err error) string {
+	switch {
+	case err != nil:
+		return err.Error()
+	case prepared.Disposition == branchstate.HandEditsToCarry:
+		return fmt.Sprintf("its worktree holds edits not committed; dockhand ship -b %s carries it on", branch.ShortName())
+	}
+	return branchstate.HeldWords(prepared.Why)
+}
+
+// holdBeforeCheck records on the newest update edit of a port the patch
+// problems ship held it before its check for, none taking a hold off.
+func (e *Engine) holdBeforeCheck(ctx context.Context, branch model.Branch, port string, problems []string) error {
+	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		edits, err := tx.Edits(branch.ID)
+		if err != nil {
+			return err
+		}
+		for i := len(edits) - 1; i >= 0; i-- {
+			if edits[i].Port == port && edits[i].Kind == model.EditUpdate {
+				if len(edits[i].Held) == 0 && len(problems) == 0 {
+					return nil
+				}
+				return tx.SetHeld(edits[i].ID, problems)
+			}
+		}
+		return nil
+	})
 }
 
 // ResumePrepared queues the check of each branch serve prepared and
@@ -217,18 +278,12 @@ func (e *Engine) ResumePrepared(ctx context.Context, where Where, tests model.Te
 			continue
 		}
 		done := Resumed{Branch: branch}
-		worktree, err := e.worktree(ctx, branch)
-		if err != nil {
-			done.Problem = err.Error()
-			resumed = append(resumed, done)
-			continue
-		}
-		if edited, err := worktree.TrackedChanges(ctx); err != nil || len(edited) > 0 {
-			done.HandEdits = err == nil
-			done.Problem = fmt.Sprintf("its worktree holds edits not committed; dockhand ship -b %s carries it on", branch.ShortName())
-			if err != nil {
-				done.Problem = err.Error()
-			}
+		// What ship would queue, recovery queues: neither a branch with
+		// hand edits nor one ship held for a patch (finding 2).
+		if prepared, err := e.preparation(ctx, branch); err != nil || prepared.Disposition != branchstate.ReadyToCheck {
+			done.HandEdits = err == nil && prepared.Disposition == branchstate.HandEditsToCarry
+			done.Held = err == nil && prepared.Disposition == branchstate.HeldBeforeCheck
+			done.Problem = preparedWords(prepared, branch, err)
 			resumed = append(resumed, done)
 			continue
 		}

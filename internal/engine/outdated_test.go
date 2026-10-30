@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"strings"
 	"testing"
 	"time"
@@ -202,6 +203,22 @@ func TestAPatchThatDoesntApplyHoldsAnUnattendedShipBeforeItsCheck(t *testing.T) 
 	require.Equal(t, `held before its check, at its committed edit: patch-stale.diff: 1 out of 1 hunks failed; holds.allow = ["patch-rejected"] lets it build`, done.Problem)
 	require.True(t, done.Tidied, "committed")
 	require.Nil(t, done.Run, "no check queued")
+
+	// serve started over it leaves it held, where its recovery queued the
+	// check ship held back, and status says the hold (Codex's review of
+	// 275125ff, finding 2).
+	resumed, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "")
+	require.NoError(t, err)
+	require.Len(t, resumed, 1)
+	require.True(t, resumed[0].Held)
+	require.Nil(t, resumed[0].Run, "recovery queues no check")
+	status, err := e.BranchStatus(t.Context(), done.Branch)
+	require.NoError(t, err)
+	rows := branchstate.Attend(status.Facts())
+	require.Len(t, rows, 1)
+	require.Equal(t, branchstate.HeldBeforeItsCheck, rows[0].Reason)
+	require.Equal(t, `held before its check, at its committed edit: patch-stale.diff: 1 out of 1 hunks failed; holds.allow = ["patch-rejected"] lets it build`, rows[0].Words(Vocabulary{}))
+
 }
 
 func TestShipAsksOnceWhetherItMayGoOn(t *testing.T) {

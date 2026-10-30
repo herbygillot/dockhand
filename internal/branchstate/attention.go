@@ -37,6 +37,7 @@ const (
 	CIFailing              Reason = "ci-failing"
 	OpenedByServe          Reason = "opened-by-serve"
 	OnMaster               Reason = "on-master"
+	HeldBeforeItsCheck     Reason = "held-before-check"
 	FilesChangedSince      Reason = "files-changed-since"
 	DependencyFailed       Reason = "dependency-failed"
 	TargetFailed           Reason = "target-failed"
@@ -98,6 +99,9 @@ type Branch struct {
 	// Edited its files edited and not committed.
 	Commits int
 	Edited  []string
+	// Edits are the branch's recorded edits, oldest first, which say a
+	// hold before its check (Preparation).
+	Edits []model.Edit
 	// Held are what holds its submission, from its recorded assessments;
 	// Moved the Git sources whose tag moved before its check.
 	Held, Moved []model.Concern
@@ -242,6 +246,11 @@ func Attend(facts Facts) []Attention {
 		return row(Ready, OnMaster, Next{Verb: VerbArchive}, func(a *Attention) { a.Detail = string(b.OnMaster.Short()) })
 	}
 	standing := check.Standing()
+	// A branch an unattended ship held at its committed edit, a patch not
+	// applying, has no check to say; it says the hold (finding 2).
+	if prepared := Preparation(b); standing == NotChecked && prepared.Disposition == HeldBeforeCheck {
+		return row(NeedsYou, HeldBeforeItsCheck, Next{Verb: VerbCheck}, func(a *Attention) { a.Detail = prepared.Why })
+	}
 	if standing == Checking || standing == NotChecked {
 		return nil
 	}
@@ -504,6 +513,8 @@ func (a Attention) Words(v Vocabulary) string {
 		return fmt.Sprintf("#%d was opened by serve without human review", pr.Number)
 	case OnMaster:
 		return "its changes are on master already, as of " + a.Detail
+	case HeldBeforeItsCheck:
+		return HeldWords(a.Detail)
 	case FilesChangedSince:
 		ended := string(a.Run.State)
 		if a.Run.State == model.RunAttention {

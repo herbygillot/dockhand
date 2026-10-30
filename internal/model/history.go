@@ -69,6 +69,10 @@ type Edit struct {
 	// HTTPS are the plain-HTTP links the edit switched to https, which
 	// answered there, which tidy's commit and the pull request say.
 	HTTPS []HTTPSLink `json:",omitempty"`
+	// Held are, for an update an unattended ship held before its check,
+	// the patch problems it held it for: serve's recovery leaves it held,
+	// where it queued its check (Codex's review of 275125ff, finding 2).
+	Held []string `json:",omitempty"`
 }
 
 // HTTPSLink is a plain-HTTP link an edit switched to https: the option

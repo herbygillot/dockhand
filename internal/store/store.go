@@ -312,6 +312,10 @@ type Tx interface {
 	// SetExcepted records the dependents --except left out of an update's
 	// rebuild on its edit, where no revision bump's edit keeps them.
 	SetExcepted(edit model.EditID, excepted []string) error
+	// SetHeld records the patch problems an unattended ship held an
+	// update's edit before its check for (model.Edit.Held); none clears
+	// it.
+	SetHeld(edit model.EditID, problems []string) error
 	// RecordAssessment records a revision's assessment of a port,
 	// replacing one recorded for the same revision, base, and port.
 	RecordAssessment(assessment model.Assessment) error

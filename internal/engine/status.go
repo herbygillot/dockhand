@@ -65,7 +65,10 @@ type BranchStatus struct {
 	Commits int
 	// Edited lists tracked files changed and not committed.
 	Edited []string
-	Scope  Scope
+	// Edits are the branch's recorded edits, which say a hold before its
+	// check (branchstate.Preparation).
+	Edits []model.Edit
+	Scope Scope
 	// Changes are the change records of the files as they are now, by
 	// directory, where they've been made; status makes none.
 	Changes map[string]model.ChangeRecord
@@ -391,7 +394,7 @@ func (s BranchStatus) Check() branchstate.Check {
 // Facts are what's recorded of the branch, as the verdict reads it
 // (branchstate.Facts).
 func (s BranchStatus) Facts() branchstate.Facts {
-	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Commits: s.Commits, Edited: s.Edited,
+	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Commits: s.Commits, Edited: s.Edited, Edits: s.Edits,
 		Held: s.Held, Moved: s.Moved, Awaiting: s.Awaiting, NotAssessed: s.Assessment == AssessmentPending, NoFork: s.NoFork, Pushed: s.Pushed(), OthersPushed: s.SomeoneElsePushed(),
 		Failing: s.Failing(), CI: s.CI, Ports: s.Scope.PortNames(), Wider: s.Wider, PastMerge: s.PastMerge}
 	if s.Evidence != nil {
@@ -628,6 +631,7 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 		if edits, err = r.Edits(branch.ID); err != nil {
 			return err
 		}
+		status.Edits = edits
 		if pr := branch.PullRequest; pr != nil && pr.Observed != nil && pr.Observed.Checks == model.ChecksFailing {
 			if status.CI, err = r.CIFailures(branch.ID, pr.Observed.Head); err != nil {
 				return err
