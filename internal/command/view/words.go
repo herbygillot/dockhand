@@ -58,6 +58,8 @@ func PushWords(plan engine.SubmitPlan) string {
 		return fmt.Sprintf("replaces the fork branch at %s with %s, only if the remote still points to %s", model.ObjectID(plan.RemoteHead.Object).Short(), model.ObjectID(plan.Commit).Short(), model.ObjectID(plan.RemoteHead.Object).Short())
 	case engine.PushNoFork:
 		return "nothing: no fork to push to"
+	case engine.PushUnreached:
+		return "nothing: your fork can't be pushed to from this Mac"
 	case engine.PushAdds:
 		return fmt.Sprintf("adds to the fork's branch, up to %s", model.ObjectID(plan.Commit).Short())
 	}
