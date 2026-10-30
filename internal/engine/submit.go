@@ -126,6 +126,9 @@ type SubmitPlan struct {
 	// Replaces is true when the push replaces history rather than adding
 	// to it.
 	Replaces bool
+	// NoFork is true where no fork was found to push to, which holds the
+	// submission (branchstate.BlockNoFork).
+	NoFork bool
 	// Amended is someone else's commit the push replaces, which the
 	// branch's reflog shows and the commit amends: said on the preview's
 	// Push line, as only the reflog vouches for it (the rc5 full stage,
@@ -707,6 +710,13 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 		}
 	} else {
 		fork, err := e.fork(ctx, remotes, login, plan.Request.Remote)
+		// No fork to push to holds the submission, said with the rest of
+		// its plan, which pushes nothing: submit --plan refused at once.
+		if missing := (*noForkError)(nil); errors.As(err, &missing) {
+			plan.NoFork = true
+			plan.block(branchstate.Block{Kind: branchstate.BlockNoFork, NoFork: err.Error()})
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -1319,6 +1329,12 @@ func (e *Engine) Fork(ctx context.Context, remote string) (buildenv.Fork, error)
 	return e.fork(ctx, remotes, login, remote)
 }
 
+// noForkError is no remote found that pushes to the fork, or to the one
+// named: the submission's to hold, its words the way on.
+type noForkError struct{ words string }
+
+func (n *noForkError) Error() string { return n.words }
+
 func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named string) (buildenv.Fork, error) {
 	f := e.forge()
 	sandbox := e.Sandboxed()
@@ -1341,11 +1357,11 @@ func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named st
 	}
 	switch {
 	case len(candidates) == 0 && named != "":
-		return buildenv.Fork{}, fmt.Errorf("there is no remote %s that pushes to a GitHub repository other than %s", named, UpstreamRepository)
+		return buildenv.Fork{}, &noForkError{fmt.Sprintf("there is no remote %s that pushes to a GitHub repository other than %s", named, UpstreamRepository)}
 	case len(candidates) == 0 && sandbox:
-		return buildenv.Fork{}, fmt.Errorf("no Git remote pushes to the sandbox %s that pull requests go to", e.PullRequestRepository())
+		return buildenv.Fork{}, &noForkError{fmt.Sprintf("no Git remote pushes to the sandbox %s that pull requests go to", e.PullRequestRepository())}
 	case len(candidates) == 0:
-		return buildenv.Fork{}, fmt.Errorf("no Git remote pushes to a fork of %s that %s owns; fork it on GitHub, then git remote add fork https://github.com/%s/macports-ports.git", UpstreamRepository, login, login)
+		return buildenv.Fork{}, &noForkError{fmt.Sprintf("no Git remote pushes to a fork of %s that %s owns; fork it on GitHub, then git remote add fork https://github.com/%s/macports-ports.git", UpstreamRepository, login, login)}
 	case len(candidates) > 1:
 		return buildenv.Fork{}, fmt.Errorf("several remotes push to your forks: %s; choose one with --remote", strings.Join(candidates, ", "))
 	}
@@ -1439,6 +1455,8 @@ const (
 	PushReplaces     PushKind = "replaces"
 	PushAdds         PushKind = "adds"
 	PushCreates      PushKind = "creates"
+	// PushNoFork is no fork found to push to (SubmitPlan.NoFork).
+	PushNoFork PushKind = "no-fork"
 )
 
 // Push is what the plan's push would do, the one reading of its remote
@@ -1447,6 +1465,8 @@ const (
 // D-S1: "replaces the fork's branch at d2b5022 …").
 func (p SubmitPlan) Push() PushKind {
 	switch {
+	case p.NoFork:
+		return PushNoFork
 	case p.OthersPushed != "":
 		return PushOthersPushed
 	case p.RemoteHead.Exists && p.RemoteHead.Object == p.Commit:

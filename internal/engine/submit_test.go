@@ -318,8 +318,15 @@ func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.ApplyTidy(t.Context(), plan)
 	require.NoError(t, err)
-	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
-	require.ErrorContains(t, err, "no Git remote pushes to a fork of macports/macports-ports that ada owns")
+	// A preview pushes nothing, so no fork holds the plan, which says the
+	// way on, rather than refusing it; applying it refuses (rc1's quick
+	// stage, B2 and C15).
+	held, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Equal(t, PushNoFork, held.Push())
+	require.Contains(t, held.Blocking, "no Git remote pushes to a fork of macports/macports-ports that ada owns; fork it on GitHub, then git remote add fork https://github.com/ada/macports-ports.git")
+	_, err = e.ApplySubmit(t.Context(), held, model.AnsweredYes)
+	require.Error(t, err)
 	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Types: []string{"update"}})
 	require.ErrorContains(t, err, `--type "update" is not one of the template's`)
 }

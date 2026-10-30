@@ -61,6 +61,9 @@ const (
 	BlockNoWriteAccess BlockKind = "no-write-access"
 	// BlockNoTitle is a pull request with no title to give it.
 	BlockNoTitle BlockKind = "no-title"
+	// BlockNoFork is no fork to push to, which a preview shows with the
+	// rest of its plan, pushing nothing either way (rc1's quick stage).
+	BlockNoFork BlockKind = "no-fork"
 )
 
 // Block is one thing that stops a submission: its kind, and what its
@@ -99,6 +102,8 @@ type Block struct {
 	// Pushed is someone's push to a pull request: its number, its author,
 	// its head, where dockhand last pushed, and how to fetch it.
 	Pushed *Push
+	// NoFork is why no fork was found, and the way on, for BlockNoFork.
+	NoFork string
 }
 
 // Push is a pull request someone else pushed to, or someone's whose head
@@ -178,6 +183,8 @@ func (b Block) Words(v Vocabulary) string {
 		return fmt.Sprintf("pushing to @%s's %s needs write access to %s, and you have %s; suggest your changes in a review (dockhand review %d)", p.Author, p.Head, p.Repository, p.Permission, p.Number)
 	case BlockNoTitle:
 		return "the pull request needs a title, since the branch changes several ports: give one with --title"
+	case BlockNoFork:
+		return b.NoFork
 	}
 	return string(b.Kind)
 }

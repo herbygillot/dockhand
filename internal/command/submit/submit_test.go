@@ -115,6 +115,33 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 // The preview says what comparing the upstream archives found, as update
 // did and ship --passing does, and its JSON carries it: a person's own
 // submission shows it, and isn't held for it (D4).
+// A preview pushes nothing, so submit --plan with no fork to push to
+// shows the whole plan, the missing fork among what holds it, with the
+// way on, where it refused at once (rc1's quick stage, B2 and C15).
+func TestThePreviewShowsAMissingForkAsAHold(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	for _, name := range strings.Fields(testsupport.Git(t, w.Clone, "remote")) {
+		if strings.TrimSpace(testsupport.Git(t, w.Clone, "remote", "get-url", "--push", name)) == g.Fork {
+			testsupport.Git(t, w.Clone, "remote", "remove", name)
+		}
+	}
+	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--new=jq-update")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy", "-b", "jq-update")
+	require.NoError(t, err)
+	out, _, err := cmdtest.Dockhand(t, "submit", "-b", "jq-update", "--no-check", "--plan")
+	require.Error(t, err, out)
+	require.Contains(t, out, "  Title    jq: update to 1.8.1\n", "the plan is shown whole")
+	require.Contains(t, out, "  From     dockhand/jq-update, once you have a fork\n")
+	require.Contains(t, out, "  Push     nothing: no fork to push to\n")
+	require.Contains(t, cmdtest.Flat(out), "no Git remote pushes to a fork of macports/macports-ports that ada owns; fork it on GitHub, then git remote add fork https://github.com/ada/macports-ports.git")
+	require.Empty(t, g.PRs)
+}
+
 func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)

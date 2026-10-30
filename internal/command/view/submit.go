@@ -28,7 +28,7 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 		title = "(none)"
 	}
 	fmt.Fprintf(out, "  Title    %s\n", title)
-	fmt.Fprintf(out, "  From     %s\n", plan.Head())
+	fmt.Fprintf(out, "  From     %s\n", FromWords(plan))
 	fmt.Fprintf(out, "  As       %s\n", loginWords(plan))
 	if owner, another := plan.ForkOwner(); another {
 		fmt.Fprintf(out, "           ! %s belongs to %s; you will push and create or update the pull request as %s\n", plan.HeadRepository, owner, plan.Login.Account)
@@ -280,4 +280,14 @@ func ServeHolds(plan engine.SubmitPlan) []string {
 		}
 	}
 	return words
+}
+
+// FromWords are where a submission pushes from, the fork and its branch:
+// "ada/macports-ports:dockhand/jq-update", or, with no fork found, the
+// branch alone, "dockhand/jq-update, once you have a fork".
+func FromWords(plan engine.SubmitPlan) string {
+	if plan.NoFork {
+		return plan.RemoteBranch() + ", once you have a fork"
+	}
+	return plan.Head()
 }

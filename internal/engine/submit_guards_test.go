@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,8 +31,13 @@ func TestSubmitPushesOnlyToYourFork(t *testing.T) {
 		fake := f.withFork(t, e)
 		arrange(f, fake)
 		branch := committedUpdate(t, e)
-		_, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Remote: remote})
+		planned, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Remote: remote})
 		require.Empty(t, testsupport.Git(t, fake.Fork, "branch", "--list", "dockhand/*"), "nothing was pushed")
+		// No fork to push to holds the plan, which the preview shows,
+		// rather than refusing it.
+		if err == nil && planned.NoFork {
+			return errors.New(strings.Join(planned.Blocking, "; "))
+		}
 		return err
 	}
 	err := plan(t, "", func(_ fixture, fake *forgetest.GitHub) { fake.ForkParent = "someone/other-ports" })
@@ -72,8 +78,9 @@ func TestASandboxTakesThePullRequestsWithinItself(t *testing.T) {
 	require.Equal(t, "ada/macports-ports", plan.HeadRepository)
 
 	e.options.PullRequests = "tester/macports-ports"
-	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
-	require.ErrorContains(t, err, "no Git remote pushes to the sandbox tester/macports-ports that pull requests go to")
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Contains(t, plan.Blocking, "no Git remote pushes to the sandbox tester/macports-ports that pull requests go to")
 
 	e.options.PullRequests = "ada/macports-ports"
 	fake.ForkParent = "someone/other-ports"
