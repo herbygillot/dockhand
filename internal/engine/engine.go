@@ -318,9 +318,16 @@ func Checkouts(ctx context.Context, options Options) ([]string, error) {
 // registers the repository. A directory that is not a ports tree is
 // refused before anything is recorded for it.
 func Open(ctx context.Context, options Options) (*Engine, error) {
-	repo, err := OpenPortsTree(ctx, options.Tree, options.git())
-	if err != nil {
-		return nil, err
+	// A database there already is opened first, so a migration's question
+	// is asked wherever the command runs: it's the database's, not a
+	// tree's, and dhtest's status from ~ refused for want of a checkout
+	// before it could ask (rc1's A7). One not made yet waits for the tree,
+	// so a directory that's no ports tree records nothing.
+	var repo *git.Repository
+	if _, err := os.Stat(options.Database); err != nil {
+		if repo, err = OpenPortsTree(ctx, options.Tree, options.git()); err != nil {
+			return nil, err
+		}
 	}
 	s, err := sqlite.Open(ctx, options.Database, options.storeOptions())
 	if refused := new(store.LiveUnderMigrationError); errors.As(err, &refused) {
@@ -339,6 +346,12 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 		progress.Report(ctx, "Migrated the database at %s, which dockhand %s, a release, last opened, from schema %d to %d without asking, since it isn't the default one a release opens; %s can't open it now. Its schema %d form is kept at %s.", options.Database, migrated.Release, migrated.From, migrated.To, migrated.Release, migrated.From, migrated.Copy)
 	} else if migrated != nil {
 		progress.Report(ctx, "Migrated dockhand's database from schema %d to %d; dockhand builds older than this one can't open it now. Its schema %d form is kept at %s.", migrated.From, migrated.To, migrated.From, migrated.Copy)
+	}
+	if repo == nil {
+		if repo, err = OpenPortsTree(ctx, options.Tree, options.git()); err != nil {
+			s.Close()
+			return nil, err
+		}
 	}
 	id, err := s.Register(ctx, repo.CommonDir)
 	if err != nil {
@@ -395,7 +408,7 @@ type ReleaseUnderMigrationError struct {
 }
 
 func (e *ReleaseUnderMigrationError) Error() string {
-	words := e.ReleaseUnderMigrationError.Error() + fmt.Sprintf(". To try this build without touching it, copy the database with sqlite3 <database> \".backup <file>\", since a plain copy of a database in use can miss its last writes, and point DOCKHAND_DB at the copy, which migrates on its own; run on a terminal, it asks, keeping its schema %d form at %s", e.From, e.Copy)
+	words := e.ReleaseUnderMigrationError.Error() + fmt.Sprintf(". To try this build without touching it, copy the database with sqlite3 <database> \".backup <file>\", since a plain copy of a database in use can miss its last writes, and point DOCKHAND_DB at the copy, which migrates on its own; to migrate this one, run dockhand status on a terminal, from any directory, which asks, keeping its schema %d form at %s", e.From, e.Copy)
 	return words + e.Working()
 }
 

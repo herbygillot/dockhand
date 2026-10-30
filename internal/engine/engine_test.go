@@ -438,6 +438,21 @@ func TestAMigrationRefusedSaysTheWayOn(t *testing.T) {
 	err = &ReleaseUnderMigrationError{&store.ReleaseUnderMigrationError{Release: "v0.5.0", Copy: "/db.schema-39", From: 39, To: 49, Live: live[:1]}}
 	require.Contains(t, err.Error(), "keeping its schema 39 form at /db.schema-39. Working on it now:\n  serve, pid 4711, v0.5.0, since 2026-10-28 10:02, leads the queue and runs check-12 and check-13")
 	require.Contains(t, err.Error(), "point DOCKHAND_DB at the copy, which migrates on its own;")
+	require.Contains(t, err.Error(), "to migrate this one, run dockhand status on a terminal, from any directory, which asks", "the command to run, where it said only that a terminal asks (rc1's A7)")
+}
+
+// The database is opened before the tree is looked for, so its migration
+// question is asked from any directory: dhtest's status from ~ refused for
+// want of a checkout before it could ask (rc1's A7). A database that can't
+// be opened is said so before a directory that's no checkout is.
+func TestTheDatabaseOpensBeforeTheTree(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	database := filepath.Join(dir, "dockhand.db")
+	require.NoError(t, os.WriteFile(database, []byte("not a database, and long enough to be read as one's header\n"), 0o644))
+	_, err := Open(t.Context(), Options{Tree: dir, Database: database})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrNotPortsTree, "the database's trouble first: %v", err)
 }
 
 // A copy named in place of the default database migrates where a release
