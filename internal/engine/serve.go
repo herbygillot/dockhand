@@ -382,6 +382,9 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	// launchd's SIGKILL came first, so neither line was said (a reboot on
 	// rc5).
 	unfinished := map[model.RunID]bool{}
+	// heldSaid are the runs whose wait for a slot their journal said, each
+	// once (sayHeldInServe).
+	heldSaid := map[model.RunID]bool{}
 	type finished struct {
 		run       model.Run
 		branch    model.Branch
@@ -519,8 +522,14 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				failure = err
 				break
 			}
-			if slices.ContainsFunc(needs, func(name string) bool { return inUse[name] >= max(capacity[name], 1) }) {
+			if full := slices.DeleteFunc(slices.Clone(needs), func(name string) bool { return inUse[name] < max(capacity[name], 1) }); len(full) > 0 {
 				waiting = true
+				if !heldSaid[run.ID] {
+					heldSaid[run.ID] = true
+					if err := e.sayHeldInServe(running, session, run, full, inFlight); err != nil {
+						s.say("serve: saying what %s waits behind: %v", run.Name(), err)
+					}
+				}
 				continue
 			}
 			// A check on GitHub pushes as the login: none starts while it

@@ -12,7 +12,9 @@ act() {
 	dh_setup revbump "$(port)" --new="$G16_BRANCH" --subject "rebuild to compare the install estimate" || return 0
 	dh check -b "$G16_BRANCH" --on tart --plan || :
 	dh check -b "$G16_BRANCH" --on tart -v || :
-	"$DH_BIN" logs -b "$G16_BRANCH" --port "$(port)" >"$ROW_DIR/port.log" 2>&1 || :
+	# In the branch's worktree, logs <port> reads its newest check: -b and
+	# --port together are refused (rc1's full stage).
+	(cd "$("$DH_BIN" path "$G16_BRANCH")" && "$DH_BIN" logs "$(port)") >"$ROW_DIR/port.log" 2>&1 || :
 }
 
 assert() {

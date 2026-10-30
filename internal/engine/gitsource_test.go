@@ -622,6 +622,11 @@ func TestAMovedGitHubTagIsSaidByCheckAndSubmit(t *testing.T) {
 		Detail: "v4 now names " + second[:7] + ", not " + first[:7] + ", as when " + evidence.Run.Name() + " built it; dockhand checksums libharbor handles a stealth update"}, moved[0])
 	require.Contains(t, HoldLines(SubmitPlan{Moved: moved}.Held()), moved[0].Detail, "it holds a submission nobody looks over")
 
+	// check --plan says it before the check runs, from the plans' tags
+	// (rc1's full stage, D-N5): the first check built it, the second
+	// reused that build.
+	require.Contains(t, e.PlanNotes(t.Context(), plan()), "libharbor builds again: v4 now names "+second[:7]+", not "+first[:7]+", as when "+built.Name()+" built it; dockhand checksums libharbor handles a stealth update")
+
 	again := check()
 	require.Len(t, provider.jobs, 2)
 	require.Equal(t, []model.TargetID{"libharbor"}, func() []model.TargetID {
