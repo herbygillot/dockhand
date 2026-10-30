@@ -6,22 +6,24 @@
 # <prefix>", puts back what the first left changed, then builds; it
 # passes, and the prefix's ports are as they were. It builds in
 # ACCEPT_LOCAL_PREFIX, installed without root, so no sudo asks, with
-# ACCEPT_SLEEP_PORT's build long enough to be caught in; without them, the
-# row isn't run.
+# ACCEPT_LOCAL_SLEEP_PORT's build long enough to be caught in, a port
+# whose dependencies the prefix has already: ACCEPT_SLEEP_PORT's, rc1's
+# dominant_colours, pulled about 62 there from source, rust still building
+# after 1800 s (rc1's full stage). Without them, the row isn't run.
 . "${ROW_LIB:?}/local.sh"
 
 act() {
 	host_only "a MacPorts prefix installed without root" || return 0
 	G15_PREFIX=${ACCEPT_LOCAL_PREFIX:-}
-	if [ -z "$G15_PREFIX" ] || [ ! -x "$G15_PREFIX/bin/port" ] || [ -z "${ACCEPT_SLEEP_PORT:-}" ]; then
-		row_result "not run" "set ACCEPT_LOCAL_PREFIX to a MacPorts prefix dhtest installed without root, and ACCEPT_SLEEP_PORT to a port whose build lasts a few minutes"
+	if [ -z "$G15_PREFIX" ] || [ ! -x "$G15_PREFIX/bin/port" ] || [ -z "${ACCEPT_LOCAL_SLEEP_PORT:-}" ]; then
+		row_result "not run" "set ACCEPT_LOCAL_PREFIX to a MacPorts prefix dhtest installed without root, and ACCEPT_LOCAL_SLEEP_PORT to a port whose build there lasts a few minutes, its dependencies installed already"
 		G15_PREFIX=""
 		return 0
 	fi
 	local_active "$G15_PREFIX" >"$ROW_DIR/active.before"
 	G15_FIRST=$(run_name g15-killed)
 	G15_SECOND=$(run_name g15-after)
-	dh_setup revbump "$ACCEPT_SLEEP_PORT" --new="$G15_FIRST" --subject "rebuild to stop mid-build" || return 0
+	dh_setup revbump "$ACCEPT_LOCAL_SLEEP_PORT" --new="$G15_FIRST" --subject "rebuild to stop mid-build" || return 0
 	dh_setup revbump "${ACCEPT_GO_PORT:?}" --new="$G15_SECOND" --subject "rebuild to check after a killed check" || return 0
 	dh_bg check -b "$G15_FIRST" --on "local:$G15_PREFIX"
 	if ! wait_for_line "$DH_BG_LOG" "building .*: (fetch|checksum|install)" 1800; then

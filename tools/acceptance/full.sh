@@ -23,6 +23,10 @@
 #                      small Rust one, chosen on the day
 #   ACCEPT_SLEEP_PORT  optional: a port whose build lasts some minutes, for
 #                      D-I5's sleep, the Rust port unless set
+#   ACCEPT_LOCAL_SLEEP_PORT
+#                      optional: one whose build in ACCEPT_LOCAL_PREFIX lasts
+#                      some minutes, its dependencies installed there
+#                      already, as a large Go port's, for G15; not run unset
 #   ACCEPT_GH_KEY      the test account's SSH key, which git offers alone,
 #                      ~/.dockhand-acceptance/test-account_ed25519 unless
 #                      set: never the agent's keys, which may be a person's
@@ -97,7 +101,7 @@ export DOCKHAND_CONFIG=${DOCKHAND_CONFIG:-$HOME/.dockhand/config.toml}
 export DOCKHAND_DB=${DOCKHAND_DB:-$HOME/.dockhand/dockhand.db}
 mkdir -p "$(dirname "$DOCKHAND_CONFIG")"
 touch "$DOCKHAND_CONFIG"
-export ACCEPT_STATE ACCEPT_GH_LOGIN ACCEPT_GO_PORT ACCEPT_RUST_PORT ACCEPT_SLEEP_PORT MACPORTS_TREE
+export ACCEPT_STATE ACCEPT_GH_LOGIN ACCEPT_GO_PORT ACCEPT_RUST_PORT ACCEPT_SLEEP_PORT ACCEPT_LOCAL_SLEEP_PORT MACPORTS_TREE
 export ACCEPT_REPO=$(cd "$here/../.." && pwd)
 export DH_BIN=${DH_BIN:-/opt/local/bin/dockhand}
 # The fixture ports must be due, or the rows that update them make no
