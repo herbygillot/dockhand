@@ -130,9 +130,12 @@ func (p OutdatedPort) Class() OutdatedClass {
 }
 
 // uncheckedReason is why a port couldn't be checked, as ports are grouped
-// by: GitHub's rate limit for every port it kept, whenever each lifts, and
-// otherwise its Reason.
+// by: GitHub's rate limit, or GitLab's (forge/gitlab's LimitWords), for
+// every port it kept, whenever each lifts, and otherwise its Reason.
 func (p OutdatedPort) uncheckedReason() string {
+	if !p.RetryAt.IsZero() && strings.Contains(p.Problem, "GitLab's rate limit") {
+		return "GitLab's rate limit"
+	}
 	if !p.RetryAt.IsZero() {
 		return "GitHub's rate limit"
 	}

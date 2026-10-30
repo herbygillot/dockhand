@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	forgegitlab "github.com/herbygillot/dockhand/internal/forge/gitlab"
@@ -99,4 +101,43 @@ func TestGitLabTagFailuresRemainDistinct(t *testing.T) {
 			}
 		})
 	}
+}
+
+// GitLab's rate limit, a 429 with RateLimit-Reset an hour away, is said
+// at once as rate-limited until then, where the SDK waited for the reset
+// and a look sat an hour on zix (the GraphQL item's baseline, 2026-10-30).
+// A server's error is retried, a bounded number of times.
+func TestARateLimitIsSaidUntilItsReset(t *testing.T) {
+	t.Parallel()
+	reset := time.Now().Add(time.Hour).Truncate(time.Second)
+	asked := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		w.Header().Set("RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+	client := forgegitlab.Client{HTTP: server.Client()}
+	repository, err := client.Repository(server.URL, "drobilla/zix")
+	require.NoError(t, err)
+	start := time.Now()
+	_, err = repository.ListTags(t.Context())
+	require.Less(t, time.Since(start), 5*time.Second, "said at once, not waited for")
+	limited := new(forge.RateLimitError)
+	require.ErrorAs(t, err, &limited)
+	require.True(t, limited.RetryAt.Equal(reset), "%v", limited.RetryAt)
+	require.Equal(t, 1, asked, "a rate limit isn't retried")
+
+	failing := 0
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		failing++
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer broken.Close()
+	brokenClient := forgegitlab.Client{HTTP: broken.Client()}
+	repository, err = brokenClient.Repository(broken.URL, "drobilla/zix")
+	require.NoError(t, err)
+	_, err = repository.ListTags(t.Context())
+	require.Error(t, err)
+	require.Equal(t, 4, failing, "the first ask and three retries")
 }
