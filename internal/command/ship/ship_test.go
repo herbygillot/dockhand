@@ -157,6 +157,13 @@ func TestShipMineAndPassing(t *testing.T) {
 // by one script that passes both.
 func twoPortWorld(t *testing.T) *forgetest.GitHub {
 	t.Helper()
+	_, g := twoPortWorldOf(t)
+	return g
+}
+
+// twoPortWorldOf is twoPortWorld, with its world.
+func twoPortWorldOf(t *testing.T) (cmdtest.World, *forgetest.GitHub) {
+	t.Helper()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
 	require.NoError(t, os.MkdirAll(filepath.Join(w.Upstream, "textproc/yq"), 0o755))
@@ -173,7 +180,7 @@ JSON
 	g := cmdtest.WithGitHub(t, w)
 	g.Others = nil
 
-	return g
+	return w, g
 }
 
 // A batch at the default level is a row a change, a cell a stage, then
@@ -342,4 +349,28 @@ func TestShipStartsNoBranchForAnEditItCantMakeUnattended(t *testing.T) {
 	_, _, err := cmdtest.Dockhand(t, "ship", "jq", "--yes", "--to", "commit")
 	require.ErrorContains(t, err, "Could not update jq automatically: its pre-fetch hook runs exec\nNo branch was started.")
 	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")
+}
+
+// A batch that pushes asks the fork first, and one that refuses this
+// Mac's key stops it before anything is checked, saying so, where rc1's
+// bump batch found it only after checks that passed and pushes that
+// failed. ssh's refusal is a stand-in's, in ssh's own words.
+func TestABatchStopsWhereTheForkRefusesItsKey(t *testing.T) {
+	t.Parallel()
+	w, g := twoPortWorldOf(t)
+	remote := strings.TrimSpace(testsupport.Git(t, w.Clone, "remote"))
+	for _, name := range strings.Fields(remote) {
+		if url := strings.TrimSpace(testsupport.Git(t, w.Clone, "remote", "get-url", "--push", name)); url == g.Fork {
+			testsupport.Git(t, w.Clone, "remote", "set-url", "--push", name, "ssh://git@github.com/ada/macports-ports.git")
+			g.Fork = "ssh://git@github.com/ada/macports-ports.git"
+		}
+	}
+	refusing := filepath.Join(t.TempDir(), "ssh")
+	require.NoError(t, os.WriteFile(refusing, []byte("#!/bin/sh\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n"), 0o755))
+	cmdtest.Setenv(t, "GIT_SSH_COMMAND", refusing)
+	_, errs, err := cmdtest.Dockhand(t, "ship", "jq", "yq", "--yes")
+	require.Error(t, err)
+	require.Contains(t, errs+err.Error(), "can't be pushed to from this Mac, so nothing was shipped")
+	require.NotContains(t, errs+err.Error(), "check-1", "nothing was checked")
+	require.Empty(t, g.PRs)
 }
