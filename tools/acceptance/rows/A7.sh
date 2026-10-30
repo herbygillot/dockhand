@@ -3,7 +3,10 @@
 # launchd agent. The running serve notices its executable was replaced,
 # says so, and stops once its checks end; launchd starts the new build,
 # so a new serve leads, and status says no other build runs. The database
-# is never stuck between versions.
+# is never stuck between versions. A candidate's serve refuses to migrate
+# a release's database until a person answers, which the row waits for at
+# a checkpoint, then sees serve run on the migrated database with its older
+# schema's copy kept.
 act() {
 	host_only "serve --install, then a port upgrade" || return 0
 	allow_change "*"
@@ -15,6 +18,13 @@ act() {
 	# There's a next candidate only while one is being made; on the newest
 	# one, skip (the rc3 full stage).
 	checkpoint "stage a dockhand newer than ${ACCEPT_CANDIDATE:-this candidate} in the overlay, as the next candidate or a build of main, and upgrade it: sudo port -N upgrade dockhand. With none to stage, answer skip" || return 0
+	# A candidate's serve refuses to migrate a release's database, which
+	# would lock the release out, until a person answers at the terminal:
+	# rc1's did, as designed (the Prime-time session's A7 on rc1).
+	if wait_for_line "$A7_LOG" "a release, last opened this database" 120 "$(cat "$ROW_DIR/log.before")"; then
+		touch "$ROW_DIR/release-refused"
+		checkpoint "the new dockhand refuses to migrate the release's database unasked: at dhtest's terminal, run dockhand status and answer y to migrate it" || return 0
+	fi
 	# serve stops once its checks end, and launchd starts the new build:
 	# a new process leads.
 	local waited=0
@@ -54,6 +64,12 @@ assert() {
 	fi
 	if grep -q 'where this is' <(sed -n '/^\$ dockhand status/,/^\[exit/p' "$ROW_DIR/out.log"); then
 		row_fail "status says serve runs another build than the upgraded one"
+		return
+	fi
+	# Where the migration was a person's answer, the database's older form
+	# is kept beside it, as the question said.
+	if [ -f "$ROW_DIR/release-refused" ] && ! ls "${DOCKHAND_DB:-$HOME/.dockhand/dockhand.db}".schema-* >/dev/null 2>&1; then
+		row_fail "the migration a person answered kept no copy of the database's older schema beside it"
 		return
 	fi
 	row_pass "serve said the upgrade, stopped, and a new serve (pid $(cat "$ROW_DIR/pid.after")) leads on the new build"
