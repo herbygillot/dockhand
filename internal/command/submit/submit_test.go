@@ -142,6 +142,36 @@ func TestThePreviewShowsAMissingForkAsAHold(t *testing.T) {
 	require.Empty(t, g.PRs)
 }
 
+// A fork that refuses this Mac's key holds the preview, said with the rest
+// of the plan, where submit --plan stopped on it, and D-N5's moved tag
+// went unsaid (rc1's full stage). ssh's refusal is a stand-in's.
+func TestThePreviewShowsAForkThatRefusesTheKeyAsAHold(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	for _, name := range strings.Fields(testsupport.Git(t, w.Clone, "remote")) {
+		if strings.TrimSpace(testsupport.Git(t, w.Clone, "remote", "get-url", "--push", name)) == g.Fork {
+			testsupport.Git(t, w.Clone, "remote", "set-url", "--push", name, "ssh://git@github.com/ada/macports-ports.git")
+			g.Fork = "ssh://git@github.com/ada/macports-ports.git"
+		}
+	}
+	refusing := filepath.Join(t.TempDir(), "ssh")
+	require.NoError(t, os.WriteFile(refusing, []byte("#!/bin/sh\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n"), 0o755))
+	cmdtest.Setenv(t, "GIT_SSH_COMMAND", refusing)
+	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--new=jq-update")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy", "-b", "jq-update")
+	require.NoError(t, err)
+	out, _, err := cmdtest.Dockhand(t, "submit", "-b", "jq-update", "--no-check", "--plan")
+	require.Error(t, err, out)
+	require.Contains(t, out, "  Title    jq: update to 1.8.1\n", "the plan is shown whole")
+	require.Contains(t, out, "  Push     nothing: your fork can't be pushed to from this Mac\n")
+	require.Contains(t, cmdtest.Flat(out), "your fork can't be pushed to from this Mac: git: the SSH server refused this Mac's keys")
+	require.Empty(t, g.PRs)
+}
+
 func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)

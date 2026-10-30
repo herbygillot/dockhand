@@ -127,8 +127,9 @@ type SubmitPlan struct {
 	// to it.
 	Replaces bool
 	// NoFork is true where no fork was found to push to, which holds the
-	// submission (branchstate.BlockNoFork).
-	NoFork bool
+	// submission (branchstate.BlockNoFork); Unreached where the fork
+	// refused this Mac (branchstate.BlockForkUnreached).
+	NoFork, Unreached bool
 	// Amended is someone else's commit the push replaces, which the
 	// branch's reflog shows and the commit amends: said on the preview's
 	// Push line, as only the reflog vouches for it (the rc5 full stage,
@@ -722,7 +723,17 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 		}
 		plan.HeadRepository, remoteName, plan.PushURL = fork.Repository, fork.Remote, fork.PushURL
 	}
-	if plan.RemoteHead, err = worktree.RemoteHead(ctx, plan.PushURL, plan.RemoteBranch()); err != nil {
+	plan.RemoteHead, err = worktree.RemoteHead(ctx, plan.PushURL, plan.RemoteBranch())
+	// A fork that refuses this Mac's key, or asks credentials it hasn't,
+	// holds the submission, said with the rest of its plan, which pushes
+	// nothing: D-N5's preview stopped there, its moved tag unsaid (rc1's
+	// full stage).
+	if errors.Is(err, git.ErrSSHRefused) || errors.Is(err, git.ErrNoHTTPSCredentials) {
+		plan.Unreached = true
+		plan.block(branchstate.Block{Kind: branchstate.BlockForkUnreached, Unreached: err.Error()})
+		err = nil
+	}
+	if err != nil {
 		return err
 	}
 	if plan.RemoteHead.Exists && plan.RemoteHead.Object != plan.Commit {
@@ -1457,6 +1468,8 @@ const (
 	PushCreates      PushKind = "creates"
 	// PushNoFork is no fork found to push to (SubmitPlan.NoFork).
 	PushNoFork PushKind = "no-fork"
+	// PushUnreached is a fork this Mac can't push to (SubmitPlan.Unreached).
+	PushUnreached PushKind = "unreached"
 )
 
 // Push is what the plan's push would do, the one reading of its remote
@@ -1467,6 +1480,8 @@ func (p SubmitPlan) Push() PushKind {
 	switch {
 	case p.NoFork:
 		return PushNoFork
+	case p.Unreached:
+		return PushUnreached
 	case p.OthersPushed != "":
 		return PushOthersPushed
 	case p.RemoteHead.Exists && p.RemoteHead.Object == p.Commit:

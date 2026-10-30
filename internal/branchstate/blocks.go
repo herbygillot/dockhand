@@ -64,6 +64,10 @@ const (
 	// BlockNoFork is no fork to push to, which a preview shows with the
 	// rest of its plan, pushing nothing either way (rc1's quick stage).
 	BlockNoFork BlockKind = "no-fork"
+	// BlockForkUnreached is a fork this Mac's push would be refused by,
+	// for want of an SSH key or HTTPS credentials: a preview says it with
+	// the rest of its plan (rc1's full stage, D-N5).
+	BlockForkUnreached BlockKind = "fork-unreached"
 )
 
 // Block is one thing that stops a submission: its kind, and what its
@@ -102,8 +106,9 @@ type Block struct {
 	// Pushed is someone's push to a pull request: its number, its author,
 	// its head, where dockhand last pushed, and how to fetch it.
 	Pushed *Push
-	// NoFork is why no fork was found, and the way on, for BlockNoFork.
-	NoFork string
+	// NoFork is why no fork was found, and the way on, for BlockNoFork;
+	// Unreached why the fork refused this Mac, for BlockForkUnreached.
+	NoFork, Unreached string
 }
 
 // Push is a pull request someone else pushed to, or someone's whose head
@@ -185,6 +190,8 @@ func (b Block) Words(v Vocabulary) string {
 		return "the pull request needs a title, since the branch changes several ports: give one with --title"
 	case BlockNoFork:
 		return b.NoFork
+	case BlockForkUnreached:
+		return "your fork can't be pushed to from this Mac: " + b.Unreached
 	}
 	return string(b.Kind)
 }
