@@ -14,6 +14,9 @@ const (
 	Done = "✓"
 	// Working is what's under way: "⋯ checking".
 	Working = "⋯"
+	// NotRun is a step that didn't run, in a table of steps: a batch's
+	// "jq  ✓  ✓  –".
+	NotRun = "–"
 )
 
 // Unmarked is the space a mark takes, for a line in a marked list that

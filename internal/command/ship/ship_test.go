@@ -194,10 +194,25 @@ func TestShipBatchIsARowAChange(t *testing.T) {
 	var out, errs bytes.Buffer
 	err := cmdtest.RunFor(t, t.Context(), []string{"ship", "jq", "yq", "--yes"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.Equal(t, 3, term.ExitCode(err), out.String())
-	require.Contains(t, out.String(), "  jq  ✓ ✓ ✓ #34901\n  yq  ✓ ✓ ✓ !\nNeeds attention\n  yq  yq-1.8.1 passed its check and needs review, so nothing was submitted")
+	require.Contains(t, out.String(), "      edited  committed  checked  submitted\n  jq  ✓       ✓          ✓        #34901\n  yq  ✓       ✓          ✓        !\nNeeds attention\n  yq  yq-1.8.1 passed its check and needs review, so nothing was submitted")
 	require.NotContains(t, out.String(), "checking commit ")
 	require.NotContains(t, errs.String(), "yq: ", "said under Needs attention")
 	require.Len(t, g.PRs, 1)
+}
+
+// A batch's table names its stages over their columns, and a stage a
+// change didn't run reads as not run, never ✓: v0.6.0's "dolt ✓ ✓ ✗", its
+// edit and commit then a push refused, was read as two checks passed
+// (field testing, 2026-10-30). A change with nothing to edit runs none;
+// one whose check ran marks each. A batch stopped before its checks, by
+// the fork, says that stop alone (TestABatchStopsWhereTheForkRefusesItsKey).
+func TestABatchsTableMarksOnlyWhatRan(t *testing.T) {
+	t.Parallel()
+	twoPortWorld(t)
+	var out, errs bytes.Buffer
+	err := cmdtest.RunFor(t, t.Context(), []string{"ship", "jq", "nosuchport", "--yes", "--to", "check"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+	require.NoError(t, err, errs.String())
+	require.Contains(t, out.String(), "              edited  committed  checked\n  jq          ✓       ✓          ✓\n  nosuchport  –       –          –\n")
 }
 
 // A batch queues every change's check before it sees any through, and
@@ -371,10 +386,11 @@ func TestABatchStopsWhereTheForkRefusesItsKey(t *testing.T) {
 	refusing := filepath.Join(t.TempDir(), "ssh")
 	require.NoError(t, os.WriteFile(refusing, []byte("#!/bin/sh\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n"), 0o755))
 	cmdtest.Setenv(t, "GIT_SSH_COMMAND", refusing)
-	_, errs, err := cmdtest.Dockhand(t, "ship", "jq", "yq", "--yes")
+	out, errs, err := cmdtest.Dockhand(t, "ship", "jq", "yq", "--yes")
 	require.Error(t, err)
 	require.Contains(t, errs+err.Error(), "can't be pushed to from this Mac, so nothing was shipped")
 	require.NotContains(t, errs+err.Error(), "check-1", "nothing was checked")
+	require.NotContains(t, out, "edited", "the stop is said as itself, with no table")
 	require.Empty(t, g.PRs)
 }
 
