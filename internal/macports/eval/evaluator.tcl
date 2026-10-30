@@ -13,6 +13,9 @@ namespace eval ::dockhand {
     proc initialize {root {base ""}} {
         variable source_root [file normalize $root]
         variable base_root [file normalize [expr {$base eq "" ? $root : $base}]]
+        # The roots as given, which a path made from them names unresolved.
+        variable source_given $root
+        variable base_given [expr {$base eq "" ? $root : $base}]
         package require macports
         check_startup
         variable recording_paths

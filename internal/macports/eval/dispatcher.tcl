@@ -67,7 +67,6 @@ namespace eval ::dockhand {
                 variable reads [dict create]
                 variable execs [dict create]
                 variable hooks {}
-                variable tcl_library ""
                 variable source_root ""
                 variable base_root ""
                 variable base_library ""
@@ -146,10 +145,13 @@ namespace eval ::dockhand {
                     return host
                 }
                 # note keeps a call's read, as record_paths has it kept: a
-                # command line by who answered it, or a path normalized,
-                # by what it is (kind_of) and who answered it. The host
-                # running a program, or answering for a host path, in a
-                # modelled context is host-in-model. Path arithmetic reads
+                # command line by who answered it, or a path, made
+                # absolute against the working directory, by what it is
+                # (kind_of) and who answered it. The host running a
+                # program, or answering for a host path, in a modelled
+                # context is host-in-model. Paths are kept as asked, not
+                # normalized, which would cost a call each: the survey
+                # normalizes each distinct one once. Path arithmetic reads
                 # nothing and is left to the ledger.
                 proc note {name arguments answered} {
                     variable toolchain
@@ -175,28 +177,23 @@ namespace eval ::dockhand {
                     }
                     variable reads
                     foreach path $paths {
-                        set kind relative
-                        if {![catch {interp invokehidden {} file normalize $path} normalized]} {
-                            set path $normalized
-                            set kind [kind_of $path]
-                        }
+                        if {[string index $path 0] ne "/"} { set path [pwd]/$path }
+                        set kind [kind_of $path]
                         set by $answered
                         if {$by eq "host" && $kind eq "host" && [dict size $toolchain]} { set by host-in-model }
                         dict incr reads [list $name $subcommand $kind $by $path]
                     }
                 }
-                # kind_of is what an absolute path is: the captured tree's,
-                # Base's own library, Tcl's own library, or the host's.
+                # kinds are where the tree's roots, Base's library, and
+                # Tcl's library are, each as given and as normalized, and
+                # the kind of path under each; kind_of is a path's kind, the
+                # host's under none of them.
+                variable kinds {}
                 proc kind_of {path} {
-                    variable source_root
-                    variable base_root
-                    variable base_library
-                    variable tcl_library
-                    foreach root [list $source_root $base_root] {
-                        if {$root ne "" && ($path eq $root || [string first "$root/" $path] == 0)} { return tree }
+                    variable kinds
+                    foreach {root kind} $kinds {
+                        if {$path eq $root || [string first "$root/" $path] == 0} { return $kind }
                     }
-                    if {$base_library ne "" && [string first "$base_library/" $path] == 0} { return base }
-                    if {$tcl_library ne "" && ($path eq $tcl_library || [string first "$tcl_library/" $path] == 0)} { return library }
                     return host
                 }
                 # patterns are a glob's patterns, each joined with its
@@ -490,7 +487,15 @@ namespace eval ::dockhand {
         $worker eval [list set ::dockhand_dispatcher::base_root $::dockhand::base_root]
         $worker eval [list set ::dockhand_dispatcher::base_library [base_library]]
         $worker eval [list set ::dockhand_dispatcher::record_paths $recording_paths]
-        $worker eval [list set ::dockhand_dispatcher::tcl_library [file normalize [info library]]]
+        set kinds {}
+        set roots {}
+        foreach name {source_root base_root source_given base_given} {
+            if {[info exists ::dockhand::$name]} { lappend roots [set ::dockhand::$name] tree }
+        }
+        foreach {root kind} [list {*}$roots [base_library] base [info library] library [file normalize [info library]] library] {
+            if {$root ne "" && ![dict exists $kinds $root]} { dict set kinds $root $kind }
+        }
+        $worker eval [list set ::dockhand_dispatcher::kinds $kinds]
     }
 
     # base_library is where MacPorts Base's own Tcl lives, the port1.0 and

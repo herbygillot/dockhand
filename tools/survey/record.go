@@ -70,6 +70,7 @@ type Record struct {
 	// The writer's own: paths and hook bodies kept by id, and the
 	// toolchains written.
 	paths      map[string]int64
+	normalized map[string]string
 	toolchains map[string]bool
 	roots      sync.Map
 }
@@ -100,7 +101,7 @@ func OpenRecord(ctx context.Context, file, mode string, recording bool, info Run
 	}
 	db.SetMaxOpenConns(1)
 	r := &Record{db: db, path: file, mode: mode, recording: recording, info: info, repo: repo, git: gitBin, journal: journal,
-		held: map[string]bool{}, trees: map[string]string{}, jobs: make(chan job), done: make(chan struct{}), paths: map[string]int64{}, toolchains: map[string]bool{}}
+		held: map[string]bool{}, trees: map[string]string{}, jobs: make(chan job), done: make(chan struct{}), paths: map[string]int64{}, normalized: map[string]string{}, toolchains: map[string]bool{}}
 	if err := r.initialize(ctx); err != nil {
 		db.Close()
 		return nil, err
@@ -402,12 +403,27 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 		return err
 	}
 	if err := insert(`INSERT INTO read_count (evaluation_id, command, subcommand, kind, source, path_id, count) VALUES (?, ?, ?, ?, ?, ?, ?)`, func(add func(...any) error) error {
+		// The evaluator keeps paths as asked; each is normalized here,
+		// once, and the reads of one path asked two ways are one.
+		type key struct {
+			read macports.PathRead
+			path string
+		}
+		counts := map[key]int{}
+		var order []key
 		for _, read := range o.Observation.Reads {
-			path, err := r.pathID(tx, local(read.Path))
+			k := key{macports.PathRead{Command: read.Command, Subcommand: read.Subcommand, Kind: read.Kind, Source: read.Source}, local(r.normalize(read.Path))}
+			if counts[k] == 0 {
+				order = append(order, k)
+			}
+			counts[k] += read.Count
+		}
+		for _, k := range order {
+			path, err := r.pathID(tx, k.path)
 			if err != nil {
 				return err
 			}
-			if err := add(read.Command, read.Subcommand, read.Kind, read.Source, path, read.Count); err != nil {
+			if err := add(k.read.Command, k.read.Subcommand, k.read.Kind, k.read.Source, path, counts[k]); err != nil {
 				return err
 			}
 		}
@@ -487,6 +503,29 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 	})
 }
 
+// normalize is a path as Tcl's file normalize has it: cleaned, with its
+// symbolic links resolved as far as it exists, as /etc's is to
+// /private/etc. It is the writer's, and each path is resolved once.
+func (r *Record) normalize(name string) string {
+	if resolved, ok := r.normalized[name]; ok {
+		return resolved
+	}
+	resolved := filepath.Clean(name)
+	for rest, dir := "", resolved; ; {
+		if found, err := filepath.EvalSymlinks(dir); err == nil {
+			resolved = filepath.Join(found, rest)
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		rest, dir = filepath.Join(filepath.Base(dir), rest), parent
+	}
+	r.normalized[name] = resolved
+	return resolved
+}
+
 // localizer writes the evaluation's root, as given and as the evaluator
 // normalized it, <source>, so the record names the tree's files by their
 // place in it whatever directory the tree was materialized in.
@@ -498,7 +537,7 @@ func (r *Record) localizer(root string) func(string) string {
 		return cached.(*strings.Replacer).Replace
 	}
 	pairs := []string{root + "/", "<source>/"}
-	if resolved, err := filepath.EvalSymlinks(root); err == nil && resolved != root {
+	if resolved := r.normalize(root); resolved != root {
 		pairs = append([]string{resolved + "/", "<source>/"}, pairs...)
 	}
 	replacer := strings.NewReplacer(pairs...)
