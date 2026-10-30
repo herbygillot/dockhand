@@ -542,6 +542,15 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 			}
 			edits, edit := streams.Staged("editing " + port.Port)
 			updated, update, err := author.Author(ctx, s, edits, where, "update", request, linked)
+			// A branch that carries an update already goes on as it is,
+			// to its check or the one that passed, where which release is
+			// newest is uncertain: dolt's, run again after its push failed,
+			// stopped short of submitting the check that had passed.
+			if errors.Is(err, engine.ErrReleaseUncertain) && target.Branch != nil {
+				edit.Say()
+				fmt.Fprintf(streams.Err, "%s: %s goes on as it is\n", port.Port, target.Branch.ShortName())
+				continue
+			}
 			if err != nil || !update.Applied {
 				edit.Say()
 			}
