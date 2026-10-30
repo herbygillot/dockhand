@@ -110,3 +110,28 @@ func CrossesMajor(from, to string) bool {
 	x, y := strings.TrimLeft(a[1], "0"), strings.TrimLeft(b[1], "0")
 	return x != y && len(x) <= 3 && len(y) <= 3
 }
+
+// seriesSpelling is a release series as a port's name ends in one: 0.52,
+// 1.28, 17.
+var seriesSpelling = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)*$`)
+
+// Series is the release series a versioned port keeps to: 0.52 for
+// terragrunt-0.52 at 0.52.1, 1.28 for kubectl-1.28 at 1.28.15, where its
+// name ends in a series its version begins with; "" for any other port.
+func Series(name, version string) string {
+	i := strings.LastIndex(name, "-")
+	if i < 0 {
+		return ""
+	}
+	series := name[i+1:]
+	if !seriesSpelling.MatchString(series) || !strings.HasPrefix(version, series+".") {
+		return ""
+	}
+	return series
+}
+
+// InSeries reports whether a version is of a release series: 0.52.2 is of
+// 0.52, and 1.2.1 and 0.520.1 aren't.
+func InSeries(series, version string) bool {
+	return version == series || strings.HasPrefix(version, series+".")
+}

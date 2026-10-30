@@ -63,3 +63,25 @@ func TestCrossesMajor(t *testing.T) {
 		require.Equal(t, test.crosses, CrossesMajor(test.from, test.to), "%s → %s", test.from, test.to)
 	}
 }
+
+// A port's series is the one its name ends in where its version begins with
+// it, terragrunt-0.52's 0.52 and kubectl-1.28's 1.28, and none otherwise.
+func TestSeries(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ name, version, series string }{
+		{"terragrunt-0.52", "0.52.1", "0.52"},
+		{"kubectl-1.28", "1.28.15", "1.28"},
+		{"llvm-17", "17.0.6", "17"},
+		{"terragrunt-0.52", "0.53.0", ""},
+		{"terragrunt-0.52", "0.52", ""},
+		{"py-fs2", "2.0", ""},
+		{"terragrunt", "0.52.1", ""},
+		{"go-1.x", "1.2.3", ""},
+	} {
+		require.Equal(t, c.series, Series(c.name, c.version), c.name+" at "+c.version)
+	}
+	require.True(t, InSeries("0.52", "0.52.2"))
+	require.True(t, InSeries("0.52", "0.52"))
+	require.False(t, InSeries("0.52", "0.520.1"))
+	require.False(t, InSeries("0.52", "1.2.1"))
+}
