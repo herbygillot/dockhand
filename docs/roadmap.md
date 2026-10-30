@@ -182,23 +182,29 @@ What it carries, each said in full in its notes:
 
 ### v0.8.0
 
-Placed at the person's word (2026-10-30 14:15Z, prioritization's thread: "for 0.8.0, definitely take on #2 (batches over GraphQL)"), after v0.7.0, whose rc2 stays fixes only; work starts once rc2 is tagged. The rest of v0.8.0 is the person's to pick from Later, where prioritization proposed merge fitness in status, a GitHub port's source chosen for it, and ports.macports.org's build history (2026-10-30).
+Placed at the person's word (2026-10-30 14:15Z, prioritization's thread: "for 0.8.0, definitely take on #2 (batches over GraphQL)"), after v0.7.0, whose rc2 stays fixes only; work starts once rc2 is tagged. The rest of v0.8.0 is the person's to pick from Later, where prioritization proposed merge fitness in status, a GitHub port's source chosen for it, and ports.macports.org's build history (2026-10-30). PortGroup change made visible, below, is prioritization's placement from architecture's oracle rethink, answering the person's resilience ask, and leaves at the person's word.
 
 - **A look's tag and release lookups batched over GraphQL** (Then's item 5's rest, from Later; about a batch, inferred). Its conditional requests (0f6e9a39), a look past the hour's allowance asking first (52cb54c9), and pull requests read in one GraphQL request (c719fff1) are done; a look's tag and release lookups are still one REST request a repository, eight ports at once (`outdated.Concurrency`), each answer shared within the look. First a measure, the item's baseline: `outdated` over the person's selection on the main Mac, its wall time split between GitHub's answers and the Portfiles' evaluation, and the hour's allowance it spends. Then the batch: a look's repositories asked together, their tags with each tag's commit and date, and their releases, in as few GraphQL requests as GitHub's limits allow. A conditional REST answer that comes back unchanged costs nothing of the allowance, and GraphQL has no such answer, so the shape keeps the conditional path where it costs less, as the measure shows (inferred; the shape is implementation's, with architecture). Done when the measured look is faster and spends no more of the allowance.
+- **PortGroup change made visible** (architecture's oracle rethink, 2026-10-30, /mnt/project-files/plan/oracle-evaluation-rethink-2026-10-30.md, for the person's ask at 14:45Z; about a batch, inferred). dockhand relies on PortGroups three ways: options and procs it reads by name (`macports.ReadOptions`, `python_get_default_version`), a change silently empty; shapes it matches (the `*.setup` arities, `go.vendors` and `cargo.crates` rows, Base's hook wrapper), an edit's caught by fidelity and a read isn't; and behaviour it restates in Go (golang's `worksrcdir` and hosts, python's stubs, the forge PortGroups' livecheck), a change silently wrong (architecture's inventory, /mnt/project-files/plan/portgroup-assumptions-inventory-2026-10-30.md, 22 groups, about 230 rows). In order:
+  - one list of registry aliases in Go, beside `HostPrograms`, read by the dispatcher and the hook grammar both: `fetchguard/effect.go:74` admits `registry_installed` and `_mportsearchpath` in a hook, which the dispatcher's `registry_reads` (`installation.tcl:142`) doesn't guard, and six the dispatcher guards fetchguard refuses; which aliases Base 2.12 gives a worker is the survey's dry run's to say (its `worker_alias` rows), and the list follows it;
+  - each evaluation records its PortGroups' name, version, and file blob, where `dockhand.portgroups` keeps names alone, so a difference between two evaluations can be put down to `_resources`;
+  - an assumption manifest in Go beside `ReadOptions`, each PortGroup's options and procs dockhand relies on, checked in the worker after `PortSystem`, an absence an `option_errors` entry so the rules that read it are inconclusive rather than wrong; a PortGroup version the manifest wasn't checked against says so in one line and evaluation goes on;
+  - the corpus (`make test-corpus`) replayed weekly against macports-ports master's `_resources` as well, beside the weekly job against Base's master, a row that moves naming the PortGroup and the assumption, where today it replays the PortGroups pinned at `ee76ef2c`.
+  Restating less, where Go restates what Base computes, is taken when touched, as the manifest and the corpus name each.
 
 ### Alongside, on the Mac
 
 These need MacPorts Base, whole-tree surveys, or VMs, so they run as the Mac allows, independent of the order above.
 
-- **The oracle's remaining phases** ([scope](oracle.md)):
-  - phase 3, the workspace rule: reads inside the tree materialize on demand, and reads outside it are refused;
-  - phase 6, the bootstrap under the environment contract;
-  - `java_home` answered from the facts table;
-  - 4b, `with-deps`, only when a survey shows a registry answer reaching what an update edits;
-  - the comparison with a fresh Tart guest, possible since the v3 Tart provider.
+- **The oracle's one survey** (architecture's design, /mnt/project-files/plan/oracle-super-survey-2026-10-30.md, from its rethink, 2026-10-30, for the person's ask at 14:45Z, prioritization's questions taken whole). One whole-tree run on the main Mac, as dockhand evaluates today, recording facts rather than answers into a SQLite file per snapshot beside the journal (the person's question, 14:48Z); other modes run over the selections it names, `installed` over the ports that ask the registry and `host` in a Tart guest over a sample, and Q1 to Q19 are answered by queries checked in with the tool. Its evaluator changes (reads and execs recorded, installation modes, the bootstrap's record, PortGroup versions) are built on a branch by a session on the person's Mac, which stops before the whole-tree run for the person's go; they reach main after rc2 is tagged. Its answers come here, and place what follows.
+- **The oracle's remaining phases** ([scope](oracle.md), as the rethink corrects them, docs/oracle.md taking the corrections when the survey's changes land):
+  - the record, phase 3's first half: the evaluator records what each evaluation reads, for good, the survey its first consumer; reuse keys on the `_resources` files a port reads rather than all of `_resources`, once the survey's Q2 says what a build reads beyond evaluation (every `_resources` commit voids every kept result today, `port1.0/group` taking about 100 commits in five months); refusing a read outside the tree comes later, as a policy over the record;
+  - phase 6, the bootstrap, built rather than measured in shadow: `PORTSRC`, a private `portdbpath`, and a `HOME` dockhand owns (docs/macports-compatibility.md, 2026-09-24), then the before/after survey; it takes the host-independence foundations' environment contract and disposable `portdbpath`;
+  - 4b, `with-deps`, decided by the survey's `installed` mode (Q7), over about 900 subports, in minutes;
+  - `java_home`, a `tools/facts` harvest of a row per release (decision 18), not a survey's;
+  - the comparison with a fresh Tart guest, the survey's guest run (Q8, and Q9 for the facts table's drift).
 - **Host-independence foundations:**
   - the evaluator's clean launch environment (16);
-  - the environment contract, and a disposable `portdbpath`;
   - normalized records;
   - `base212`, and a master preview identified by commit (39).
 
