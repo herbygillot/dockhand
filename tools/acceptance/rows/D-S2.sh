@@ -28,7 +28,9 @@ act() {
 	[ -n "${DS2_BRANCH:-}" ] || return 0
 	allow_change "*"
 	dh_json status --refresh "$DS2_BRANCH" || :
-	dh_json clean --closed -y || :
+	# Its branch alone, as close_test_pr cleans: clean --closed also
+	# takes the sandbox's leftover fork branches (rc1's full stage).
+	dh_json clean "$DS2_BRANCH" -y || :
 	dh rebase -b "$DS2_BRANCH" || :
 }
 assert() {

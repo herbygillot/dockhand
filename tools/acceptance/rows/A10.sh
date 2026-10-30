@@ -147,6 +147,12 @@ act() {
 		*"--variants '"*) why="names jq's variants, which the stage's port hasn't" ;;
 		*"--pr "[0-9]*) why="follows adopt --pr, which isn't run" ;;
 		"dockhand outdated --maintainer "* | "dockhand outdated --category "*) why="asks GitHub of thousands of ports, past the account's hourly allowance" ;;
+		# The guide's rename is jq's to a name of its own; its plan runs
+		# on the stage's port, and the rename itself, which would move the
+		# port the later examples edit, is G6's (rc1's full stage: the
+		# guide's goplus became xgo on master, and the plan refused).
+		"dockhand rename "*" --plan") ;;
+		"dockhand rename "* | *jqlang*) why="renames the port the later examples edit; G6 runs a rename whole" ;;
 		"dockhand bump"*) why="goes on to a pull request, and has no --plan" ;;
 		"dockhand serve"*) why="runs or installs serve, which the stage doesn't" ;;
 		"dockhand setup tart"*) why="makes a Tart image" ;;
