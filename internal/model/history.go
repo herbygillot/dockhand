@@ -320,6 +320,8 @@ func (c Checkpoint) Validate() error {
 		return invalid("checkpoint %s has no base", c.Name())
 	case c.Kind == CheckpointTidy && c.BaseBefore != c.BaseAfter:
 		return invalid("checkpoint %s moved the base, which a tidy doesn't", c.Name())
+	case c.Kind == CheckpointTidy && c.Index == "":
+		return invalid("checkpoint %s has no index", c.Name())
 	case c.At.IsZero():
 		return invalid("checkpoint %s has no time", c.Name())
 	}

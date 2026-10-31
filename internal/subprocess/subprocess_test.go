@@ -83,7 +83,6 @@ func TestRunDrainsOutputPastTheLimit(t *testing.T) {
 	path := script(t, "yes | head -c 4096; echo done >&2; exit \"$FIXTURE_EXIT\"\n")
 	result, err := Run(t.Context(), Spec{Tool: "fixture", Path: path, Limit: 512, Drain: true, Env: []string{"FIXTURE_EXIT=0", "PATH=" + os.Getenv("PATH")}})
 	require.NoError(t, err)
-	require.True(t, result.Truncated)
 	require.Len(t, result.Output, 512)
 	require.Equal(t, "done\n", string(result.Stderr), "the command ran to its end")
 
@@ -92,5 +91,5 @@ func TestRunDrainsOutputPastTheLimit(t *testing.T) {
 	require.ErrorAs(t, err, &exit)
 	require.Equal(t, 4, exit.ExitCode())
 	require.NotErrorIs(t, err, errOutputLimit, "the overflow isn't the failure")
-	require.True(t, result.Truncated)
+	require.Len(t, result.Output, 512)
 }

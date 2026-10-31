@@ -44,7 +44,6 @@ func ValidBranchName(name string) bool {
 }
 
 type Snapshot struct {
-	Tree      string
 	Root      string
 	directory string
 }
@@ -71,7 +70,7 @@ func (r *Repository) Materialize(ctx context.Context, tree string) (_ *Snapshot,
 	if _, err = r.MaterializeInto(ctx, tree, directory, nil, nil); err != nil {
 		return nil, err
 	}
-	return &Snapshot{Tree: tree, Root: directory, directory: directory}, nil
+	return &Snapshot{Root: directory, directory: directory}, nil
 }
 
 // MaterializeInto writes the tree's blobs under an existing directory: the

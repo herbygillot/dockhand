@@ -744,7 +744,7 @@ func TestASubportWhoseSourceDidntChangeIsLeftOut(t *testing.T) {
 	}
 	require.True(t, SourceUnchanged(byPort["tool-1"].Comparison), "%+v", byPort["tool-1"].Comparison)
 	require.False(t, SourceUnchanged(byPort["tool-2"].Comparison))
-	comparisons, err := e.revisionComparisons(t.Context(), branch, tree, true)
+	comparisons, err := e.revisionComparisons(t.Context(), branch, tree)
 	require.NoError(t, err)
 	require.Len(t, comparisons, 1)
 	require.Equal(t, "tool-2", comparisons[0].Port)

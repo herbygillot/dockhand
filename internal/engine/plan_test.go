@@ -107,7 +107,7 @@ func harborBranch(t *testing.T, e *Engine) model.Revision {
 		"graphics/harbor-viewer/files/a.patch": "b\n",
 	})
 	branch.Base = model.ObjectID(base)
-	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	return capture.Revision
 }
@@ -235,7 +235,7 @@ func TestChangedSharedCodeIsSubstantive(t *testing.T) {
 		}
 		write(t, branch.Worktree, files)
 		testsupport.Git(t, branch.Worktree, "add", "-A") // new files are captured once tracked
-		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 		require.NoError(t, err)
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
 		require.NoError(t, err)

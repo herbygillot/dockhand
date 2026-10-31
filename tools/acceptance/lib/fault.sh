@@ -31,37 +31,6 @@ fault_proxy_stop() {
 	FAULT_PROXY_PID=""
 }
 
-# fault_low_disk mounts a sparse disk image of a size, such as 2g, and says
-# where; fault_low_disk_fill fills it but for some megabytes.
-fault_low_disk() {
-	local size=$1 mount="$ROW_DIR/lowdisk"
-	mkdir -p "$mount"
-	hdiutil create -quiet -size "$size" -type SPARSE -fs APFS -volname dhlowdisk "$ROW_DIR/lowdisk.sparseimage" || return 1
-	hdiutil attach -quiet -nobrowse -mountpoint "$mount" "$ROW_DIR/lowdisk.sparseimage" || return 1
-	FAULT_LOW_DISK=$mount
-	printf '%s' "$mount"
-}
-#
-# A row calls fault_low_disk in $(...), whose FAULT_LOW_DISK goes with it,
-# so _fill and _stop take the row's own mount point where it's unset: the
-# image was neither filled nor detached, and rc6's and rc8's were left
-# attached in their results (the rc8 full stage).
-fault_low_disk_fill() {
-	local leave_mb=${1:-50} free_mb mount=${FAULT_LOW_DISK:-$ROW_DIR/lowdisk}
-	free_mb=$(df -m "$mount" | awk 'NR == 2 {print $4}')
-	[ "$free_mb" -gt "$leave_mb" ] && mkfile -n "$((free_mb - leave_mb))m" "$mount/filler"
-}
-fault_low_disk_stop() {
-	local mount=${FAULT_LOW_DISK:-$ROW_DIR/lowdisk} device
-	hdiutil detach -quiet "$mount" 2>/dev/null || hdiutil detach -quiet -force "$mount" 2>/dev/null || :
-	# Attached but not mounted there, as a failed attach leaves one: by
-	# its image.
-	for device in $(fault_images_attached "$ROW_DIR/lowdisk.sparseimage"); do
-		hdiutil detach -quiet -force "$device" 2>/dev/null || :
-	done
-	FAULT_LOW_DISK=""
-}
-
 # fault_vm_slots takes the Mac's two VM slots with two running clones of a
 # vanilla macOS image, ACCEPT_VANILLA, in the user's own Tart home, as a
 # person's own VMs would. It says nothing and does nothing without one.

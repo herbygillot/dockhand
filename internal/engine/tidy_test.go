@@ -299,7 +299,7 @@ func TestARegroupPuttingADependentFirstIsNoted(t *testing.T) {
 	// Edits to both, uncommitted, checked as they are: tidy proposes a
 	// commit for each.
 	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3.1\n", "textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
-	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	checkPlan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
 	require.NoError(t, err)

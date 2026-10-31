@@ -51,17 +51,14 @@ type Spec struct {
 	// rather than failing the command: it then ends as it would have, its
 	// exit status the verdict, as patch's is. A stream no longer read
 	// broke the command's pipe, and failed it, or killed it, for its
-	// output alone (the limits sweep, 2026-10-01). Result.Truncated says
-	// bytes were dropped.
+	// output alone (the limits sweep, 2026-10-01).
 	Drain bool
 }
 
 // Result is what the command wrote. Stderr is empty when Combined.
-// Truncated is true when Drain dropped bytes past the limit.
 type Result struct {
-	Output    []byte
-	Stderr    []byte
-	Truncated bool
+	Output []byte
+	Stderr []byte
 }
 
 // Error reports a failed command with what it wrote to standard error, or to
@@ -139,7 +136,7 @@ func Run(ctx context.Context, spec Spec) (Result, error) {
 		}
 	}
 	err := command.Run()
-	result := Result{Output: output.Bytes(), Stderr: stderr.Bytes(), Truncated: spec.Drain && (output.exceeded || stderr.exceeded)}
+	result := Result{Output: output.Bytes(), Stderr: stderr.Bytes()}
 	if err == nil {
 		return result, nil
 	}

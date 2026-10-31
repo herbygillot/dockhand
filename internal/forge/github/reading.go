@@ -143,7 +143,7 @@ func readingOf(ref forge.PullRequestRef, pr graphPullRequest) (forge.PullRequest
 		return forge.PullRequestReading{}, fmt.Errorf("github: pull request #%d is %q", pr.Number, pr.State)
 	}
 	reading := forge.PullRequestReading{Ref: ref, Found: true, PullRequest: forge.PullRequest{Ref: ref, State: state, RemoteHead: model.ObjectID(pr.HeadRefOID)}}
-	status := forge.PullRequestStatus{Draft: pr.IsDraft, Mergeable: "unknown", Review: "none", ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	status := forge.PullRequestStatus{Draft: pr.IsDraft, Mergeable: "unknown", Review: "none"}
 	// The refresh's query reads mergeable as Inspect's REST read does, where
 	// it was set unknown whatever GitHub said (the docs dig's I2).
 	switch pr.Mergeable {

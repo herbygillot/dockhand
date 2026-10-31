@@ -29,7 +29,7 @@ func TestTheFirstCompilerErrorIsTheLikelyCause(t *testing.T) {
 	}, "\n")
 	cause, ok := FirstFrom(strings.NewReader(log), 1)
 	require.True(t, ok)
-	require.Equal(t, Cause{Line: "../src/h/sqlany_utils.h:14:10: fatal error: 'source_location' file not found", Number: 6}, cause)
+	require.Equal(t, Cause{Line: "../src/h/sqlany_utils.h:14:10: fatal error: 'source_location' file not found"}, cause)
 
 	cause, ok = FirstFrom(strings.NewReader("main.c:3: error: expected ';' before '}' token\r\n"), 1)
 	require.True(t, ok, "GCC's, without a column")
@@ -38,7 +38,7 @@ func TestTheFirstCompilerErrorIsTheLikelyCause(t *testing.T) {
 	long := strings.Repeat("x", 200<<10)
 	cause, ok = FirstFrom(strings.NewReader(long+"\nfoo.swift:1:2: error: cannot find 'bar' in scope\n"), 1)
 	require.True(t, ok, "past a line longer than the scanner's first buffer")
-	require.Equal(t, 2, cause.Number)
+	require.Equal(t, "foo.swift:1:2: error: cannot find 'bar' in scope", cause.Line)
 
 	for _, none := range []string{
 		"make: *** [all] Error 2\nError: Failed to build jq: command execution failed\n",
@@ -58,10 +58,10 @@ func TestTheFirstCompilerErrorIsTheLikelyCause(t *testing.T) {
 func TestALongLineDoesNotHideTheCauseAfterIt(t *testing.T) {
 	long := strings.Repeat("x", maxLine+1)
 	log := "--->  Building foo\n" + long + "\nfoo.c:1:2: error: unknown type name 'bar'\n"
-	cause, ok := FirstFrom(strings.NewReader(log), 2)
-	require.True(t, ok)
-	require.Equal(t, Cause{Line: "foo.c:1:2: error: unknown type name 'bar'", Number: 3}, cause, "numbered as From counts")
-	rest, ok := From([]byte(log), cause.Number)
+	cause, ok := FirstFrom(strings.NewReader(log), 3)
+	require.True(t, ok, "counted as From counts")
+	require.Equal(t, Cause{Line: "foo.c:1:2: error: unknown type name 'bar'"}, cause)
+	rest, ok := From([]byte(log), 3)
 	require.True(t, ok)
 	require.True(t, strings.HasPrefix(string(rest), cause.Line))
 
@@ -69,7 +69,7 @@ func TestALongLineDoesNotHideTheCauseAfterIt(t *testing.T) {
 	require.False(t, ok, "a cause past the bound, with no newline, is passed over too")
 	cause, ok = FirstFrom(strings.NewReader("--->  Building foo\nfoo.c:1:2: error: no newline at the end"), 1)
 	require.True(t, ok)
-	require.Equal(t, 2, cause.Number)
+	require.Equal(t, "foo.c:1:2: error: no newline at the end", cause.Line)
 }
 
 // A log from a line is what follows the newlines before it, as the Tart
@@ -149,7 +149,6 @@ func TestARustErrorIsReadWithWhereItIs(t *testing.T) {
 	cause, ok := FirstFrom(strings.NewReader(log), 1)
 	require.True(t, ok)
 	require.Equal(t, "error: No suitable version of LLVM was found system-wide or pointed to by LLVM_SYS_221_PREFIX. (at /opt/local/var/macports/build/perry/work/.home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/llvm-sys-221.0.1/src/lib.rs:542:1)", cause.Line)
-	require.Equal(t, 4, cause.Number)
 	_, ok = FirstFrom(strings.NewReader("error: could not compile `perry` (bin \"perry\") due to 2 previous errors\n"), 1)
 	require.False(t, ok, "Cargo's summary places nothing")
 	cause, ok = FirstFrom(strings.NewReader("error[E0425]: cannot find value `x` in this scope\n --> src/main.rs:3:13\n"), 1)
@@ -169,7 +168,6 @@ func TestACMakeErrorIsReadWithItsCause(t *testing.T) {
 	cause, ok := FirstFrom(strings.NewReader(log), 1)
 	require.True(t, ok)
 	require.Equal(t, `CMake Error at CMakeLists.txt:20 (find_package): Could not find a package configuration file provided by "Qt6" with any`, cause.Line)
-	require.Equal(t, 2, cause.Number)
 	_, ok = FirstFrom(strings.NewReader("-- Configuring incomplete, errors occurred!\n"), 1)
 	require.False(t, ok)
 }

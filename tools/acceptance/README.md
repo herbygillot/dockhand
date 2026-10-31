@@ -24,7 +24,6 @@ tools/acceptance/resume.sh done     # answer a WAITING checkpoint: done, skip, o
 
 - **A row** is `rows/<ID>.sh`. Its header line `# stages: quick full` says the stages it runs in. It defines `setup`, `act`, `assert`, and `teardown`, which runs whatever came before it, and uses `lib/common.sh`:
   - `dh` and `dh_json` run dockhand, the second once with `--json` for H8;
-  - `expect_exit` checks a command's exit status;
   - `allow_change`, `allow_ref_gone`, `allow_push`, `allow_prs`, and `allow_running` say what the row is meant to change;
   - `row_pass`, `row_refused_well`, `row_known`, and `row_fail` give its result.
 - **The harm sweep** (`lib/harm.sh`) snapshots between `setup` and `act` and again after `act`, then checks prime-time.md's invariants, H1 to H8, and the quick stage's H9:

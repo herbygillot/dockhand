@@ -173,9 +173,8 @@ type savedTidyPlan struct {
 	Base    string `toml:"base"`
 	Head    string `toml:"head"`
 	Working string `toml:"working_tree"`
-	// Index is the index's tree when the plan was made; absent from plans
-	// saved before it was recorded.
-	Index   string        `toml:"index,omitempty"`
+	// Index is the index's tree when the plan was made.
+	Index   string        `toml:"index"`
 	Commits []savedCommit `toml:"commits"`
 }
 
@@ -322,14 +321,12 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	case final != saved.Working:
 		return TidyPlan{}, fmt.Errorf("%w: its files were edited; make a new plan with dockhand tidy --plan --out", ErrStalePlan)
 	}
-	if saved.Index != "" {
-		index, err := worktree.IndexTree(ctx)
-		if err != nil {
-			return TidyPlan{}, err
-		}
-		if index != saved.Index {
-			return TidyPlan{}, fmt.Errorf("%w: something was staged since it was made; make a new plan with dockhand tidy --plan --out", ErrStalePlan)
-		}
+	index, err := worktree.IndexTree(ctx)
+	if err != nil {
+		return TidyPlan{}, err
+	}
+	if index != saved.Index {
+		return TidyPlan{}, fmt.Errorf("%w: something was staged since it was made; make a new plan with dockhand tidy --plan --out", ErrStalePlan)
 	}
 	history, err := worktree.History(ctx, saved.Base, head)
 	if err != nil {

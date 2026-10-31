@@ -29,7 +29,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		progress.VerboseReport(ctx, "Refreshing %s", item.artifact.Name)
 		download, err := store.FetchFirst(ctx, item.info, item.artifact.Name, item.artifact.URLs)
 		if err != nil {
-			return result, wheelsOnly(ctx, s.PyPI, item.artifact.Name, item.artifact.URLs, item.info.Version, err)
+			return result, wheelsOnly(ctx, pypi.Client{}, item.artifact.Name, item.artifact.URLs, item.info.Version, err)
 		}
 		if subdir, differs := store.SharedMirrorCopy(ctx, item.info, download); differs && !slices.ContainsFunc(result.MirrorConflicts, func(c MirrorConflict) bool { return c.Name == download.Name }) {
 			result.MirrorConflicts = append(result.MirrorConflicts, MirrorConflict{Name: download.Name, Subdir: subdir})

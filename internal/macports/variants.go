@@ -12,11 +12,10 @@ import (
 // and PortInfo(vinfo)): whether it's among the defaults, the variants it
 // requires and conflicts with, and its description.
 type Variant struct {
-	Name        string
-	Default     bool
-	Requires    []string
-	Conflicts   []string
-	Description string
+	Name      string
+	Default   bool
+	Requires  []string
+	Conflicts []string
 }
 
 // Variants are the variants a port declares, in the order it declares
@@ -40,7 +39,7 @@ func (p PortInfo) Variants() ([]Variant, error) {
 		if len(errs) > 0 {
 			return nil, fmt.Errorf("macports: %s's +%s can't be read: %v", p.Name, name, errs)
 		}
-		variant := Variant{Name: name, Description: fields["description"]}
+		variant := Variant{Name: name}
 		// is_default exists only for a default variant, "+" where on.
 		variant.Default = fields["is_default"] == "+"
 		for key, into := range map[string]*[]string{"requires": &variant.Requires, "conflicts": &variant.Conflicts} {

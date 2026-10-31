@@ -87,7 +87,7 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 		return archivePlan{}, err
 	}
 	report := fidelity.GitVersion(request.SharedRelease, family, versioned, input.target.Name, *release, branch)
-	result := Result{Scope: input.scope, Target: input.target, Release: release, Coverage: []ContextCoverage{{Fetch: next.Fetch, Platform: input.before.Platform}}}
+	result := Result{Scope: input.scope, Target: input.target, Release: release}
 	result.report(report)
 	if len(report.UnexpectedChanges) > 0 {
 		return archivePlan{result: result}, ErrFidelity.Because("%v", report.UnexpectedChanges)

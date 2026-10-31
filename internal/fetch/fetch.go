@@ -125,43 +125,32 @@ func redirecting(client *http.Client) *http.Client {
 	return &configured
 }
 
-// Answer is what asking a URL found: whether it answered, below 400, and
-// the URL that did after redirects; Err is why it didn't.
-type Answer struct {
-	Answered bool
-	Final    string
-	Err      error
-}
-
-// Ask asks a URL for its head, and, where that isn't answered, as some
-// servers refuse HEAD, its first byte, following redirects as Open does:
-// one from HTTPS to plain HTTP is no answer. Unlike Open's, its success is
-// any status below 400, since a probe needs no body.
-func Ask(ctx context.Context, client *http.Client, url string) Answer {
-	var answer Answer
+// Ask reports whether a URL answers, below 400: it asks for its head,
+// and, where that isn't answered, as some servers refuse HEAD, its first
+// byte, following redirects as Open does: one from HTTPS to plain HTTP is
+// no answer. Unlike Open's, its success is any status below 400, since a
+// probe needs no body.
+func Ask(ctx context.Context, client *http.Client, url string) bool {
 	for _, method := range []string{http.MethodHead, http.MethodGet} {
 		request, err := http.NewRequestWithContext(ctx, method, url, nil)
 		if err != nil {
-			return Answer{Err: err}
+			return false
 		}
 		if request.URL.User != nil || request.URL.Host == "" || request.URL.Scheme != "http" && request.URL.Scheme != "https" {
-			return Answer{Err: fmt.Errorf("fetch: unsupported URL")}
+			return false
 		}
 		request.Header.Set("User-Agent", UserAgent)
 		request.Header.Set("Range", "bytes=0-0")
 		response, err := redirecting(client).Do(request)
 		if err != nil {
-			return Answer{Err: err}
+			return false
 		}
 		response.Body.Close()
-		answer = Answer{Final: response.Request.URL.Redacted()}
 		if response.StatusCode < 400 {
-			answer.Answered = true
-			return answer
+			return true
 		}
-		answer.Err = &StatusError{Status: response.StatusCode, URL: answer.Final}
 	}
-	return answer
+	return false
 }
 
 type boundedBody struct {

@@ -3,7 +3,6 @@ package forge
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -49,7 +48,6 @@ type PullRequest struct {
 	// the repository's maintainers push to its head branch.
 	Author              string `json:",omitempty"`
 	MaintainerCanModify bool   `json:",omitempty"`
-	ObservedAt          time.Time
 }
 
 // PullRequestStatus is what a forge reported about a pull request's head
@@ -75,7 +73,6 @@ type PullRequestStatus struct {
 	// submitted; zero where none does.
 	ReviewedAt time.Time `json:",omitempty"`
 	Checks     CheckSummary
-	ObservedAt time.Time
 }
 
 // CheckSummary counts the checks and statuses reported for a pull
@@ -84,25 +81,6 @@ type CheckSummary struct {
 	Total, Passed, Failed, Pending int
 	// Failing names the checks that concluded unsuccessfully.
 	Failing []string `json:",omitempty"`
-}
-
-// Summary describes the status in one line for reports.
-func (s PullRequestStatus) Summary() string {
-	mergeable := "mergeable: " + s.Mergeable
-	if s.MergeableDetail != "" {
-		mergeable += " (" + s.MergeableDetail + ")"
-	}
-	if s.Draft {
-		mergeable = "draft; " + mergeable
-	}
-	checks := fmt.Sprintf("checks: %d passed, %d failed, %d pending of %d", s.Checks.Passed, s.Checks.Failed, s.Checks.Pending, s.Checks.Total)
-	if s.Checks.Total == 0 {
-		checks = "checks: none reported"
-	}
-	if len(s.Checks.Failing) > 0 {
-		checks += " (failing: " + strings.Join(s.Checks.Failing, ", ") + ")"
-	}
-	return mergeable + "; review: " + s.Review + "; " + checks
 }
 
 // CIJob is one of a head's CI jobs that failed, as the forge runs them:
@@ -125,7 +103,6 @@ type PullRequestContent struct {
 type PullRequestObservation struct {
 	Found       bool
 	PullRequest PullRequest
-	ObservedAt  time.Time
 }
 
 // PullRequestReading is a pull request as one read over many gives it:
@@ -156,13 +133,11 @@ type AllowanceReader interface {
 }
 
 // Login is who a forge's requests are made as, and where its token comes
-// from: Source as the forge names it, and From as a person reads it; with
-// RenewsUntil, for a login that renews itself unused, until when.
+// from: Source as the forge names it, and From as a person reads it.
 type Login struct {
-	Account     string
-	Source      string
-	From        string
-	RenewsUntil time.Time
+	Account string
+	Source  string
+	From    string
 }
 
 // PullRequestInput is a pull request to open, or an existing one to
@@ -186,7 +161,7 @@ type PullRequestSummary struct {
 }
 
 type PullRequestQuery struct{ Repository, HeadRepository, HeadBranch, BaseBranch string }
-type RepositoryInfo struct{ Name, DefaultBranch, Parent, CloneURL string }
+type RepositoryInfo struct{ Parent string }
 
 // RepositoryMovedError is a repository the forge answers under another
 // name, renamed or transferred, as it redirects the old one: what a remote

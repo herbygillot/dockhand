@@ -158,17 +158,6 @@ dh_json() {
 # pass it silently. matches reads all its input.
 matches() { grep "$@" >/dev/null; }
 
-# expect_exit runs a command and fails the row unless it exits as said.
-expect_exit() {
-	local want=$1 status=0
-	shift
-	"$@" || status=$?
-	if [ "$status" -ne "$want" ]; then
-		row_fail "$* exited $status, not $want"
-		return 1
-	fi
-}
-
 # The allowances: what a row is meant to change, which the harm sweep
 # then doesn't count. Each is a glob.
 allow_change() { printf '%s\n' "$@" >>"$ROW_DIR/allow.change"; }

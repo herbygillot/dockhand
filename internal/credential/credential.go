@@ -3,7 +3,6 @@ package credential
 import (
 	"context"
 	"errors"
-	"time"
 )
 
 var ErrNotFound = errors.New("credential: not found")
@@ -27,7 +26,6 @@ type Store interface {
 type DeviceAuthorization struct {
 	UserCode        string
 	VerificationURL string
-	ExpiresAt       time.Time
 }
 
 // DeviceFlow logs in with a one-time code, giving a login that renews

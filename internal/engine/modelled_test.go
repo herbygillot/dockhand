@@ -49,7 +49,7 @@ if {${xcodeversion} eq "none"} {
 }
 `})
 	testsupport.Git(t, branch.Worktree, "add", "-A")
-	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}

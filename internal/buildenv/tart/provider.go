@@ -84,8 +84,6 @@ type Provider struct {
 	Repo     *git.Repository
 	// Index stages a tree's port index for a platform: the engine's.
 	Index func() (portindex.Source, error)
-	// Prefix is where the images' MacPorts is, /opt/local when empty.
-	Prefix string
 	// TestTimeout bounds a target's tests, 30 minutes when zero.
 	TestTimeout time.Duration
 	// BuildTimeout bounds a target's build, its dependencies' installs,
@@ -121,7 +119,7 @@ type Provider struct {
 // guestRoot, its end launchd's job's, its tools compared with the facts
 // table's, and its dependencies' archives kept for later guests.
 func (p *Provider) follower() *guestprogram.Follower {
-	return &guestprogram.Follower{Prefix: p.prefix(), Root: guestRoot, Poll: p.poll(), Stopped: stopped, Drift: true, KeepDependencies: true}
+	return &guestprogram.Follower{Prefix: macports.DefaultPrefix, Root: guestRoot, Poll: p.poll(), Stopped: stopped, Drift: true, KeepDependencies: true}
 }
 
 func (p *Provider) Name() string { return buildenv.Tart }
@@ -541,7 +539,7 @@ func (p *Provider) Shell(ctx context.Context, job buildenv.ShellJob) (int, error
 		if err := p.restage(ctx, g, job.Test, staged); err != nil {
 			return -1, err
 		}
-		command = []string{"/usr/bin/sudo", p.prefix() + "/bin/port", "-o", "-N", "-D", staged, "test"}
+		command = []string{"/usr/bin/sudo", macports.DefaultPrefix + "/bin/port", "-o", "-N", "-D", staged, "test"}
 		command = append(command, strings.Fields(job.Variants)...)
 	}
 	if len(command) == 0 {
@@ -549,7 +547,7 @@ func (p *Provider) Shell(ctx context.Context, job buildenv.ShellJob) (int, error
 	}
 	// The work directory is the port's as MacPorts places it, read in the
 	// guest; the staged directory where it's gone.
-	script := `work=$(` + p.prefix() + `/bin/port -q -D "$1" work 2>/dev/null); cd "${work:-$1}" 2>/dev/null || cd "$1"; shift; exec "$@"`
+	script := `work=$(` + macports.DefaultPrefix + `/bin/port -q -D "$1" work 2>/dev/null); cd "${work:-$1}" 2>/dev/null || cd "$1"; shift; exec "$@"`
 	return g.Attach(ctx, job.Input, job.Output, job.Terminal, "", append([]string{"/bin/sh", "-c", script, "dockhand", staged}, command...)...)
 }
 
@@ -596,7 +594,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	cleanup := context.WithoutCancel(ctx)
 	p.sweep(cleanup, m, prefix, job.Execution.Attempt)
 
-	input := guestprogram.Input{Protocol: guestprogram.Protocol, Run: job.Run.Name(), Attempt: job.Execution.Attempt, Prefix: p.prefix(),
+	input := guestprogram.Input{Protocol: guestprogram.Protocol, Prefix: macports.DefaultPrefix,
 		Platform: job.Environment.Platform, Tests: string(job.Plan.Tests), TestTimeout: int(p.testTimeout() / time.Second),
 		BuildTimeout: int(p.buildTimeout() / time.Second), LintTimeout: int(guestprogram.LintTimeout / time.Second)}
 	if input.Tests == "" {
@@ -699,13 +697,6 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		return p.trouble(ctx, "starting the build in "+vm, err)
 	}
 	return p.follower().Follow(ctx, g, started, job, build, release)
-}
-
-func (p *Provider) prefix() string {
-	if p.Prefix != "" {
-		return p.Prefix
-	}
-	return macports.DefaultPrefix
 }
 
 func (p *Provider) testTimeout() time.Duration {

@@ -193,9 +193,9 @@ func (g *GitHub) RepositoryInfo(_ context.Context, name string) (forge.Repositor
 		if parent == "" {
 			parent = UpstreamRepository
 		}
-		return forge.RepositoryInfo{Name: name, DefaultBranch: "master", Parent: parent}, nil
+		return forge.RepositoryInfo{Parent: parent}, nil
 	}
-	return forge.RepositoryInfo{Name: name, DefaultBranch: "master"}, nil
+	return forge.RepositoryInfo{}, nil
 }
 
 // head is the commit a repository's branch is at, the fork's where repo

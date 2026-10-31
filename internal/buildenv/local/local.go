@@ -191,7 +191,7 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		return err
 	}
 	keep := job.Plan.Keep || l.Keep
-	input := guest.Input{Protocol: guest.Protocol, Run: job.Run.Name(), Attempt: job.Execution.Attempt, Prefix: prefix,
+	input := guest.Input{Protocol: guest.Protocol, Prefix: prefix,
 		Platform: job.Environment.Platform, Tests: cmp.Or(string(job.Plan.Tests), string(model.TestsDeclared)),
 		TestTimeout: int(cmp.Or(l.TestTimeout, buildenv.DefaultTestTimeout) / time.Second), BuildTimeout: int(cmp.Or(l.BuildTimeout, buildenv.DefaultBuildTimeout) / time.Second),
 		LintTimeout: int(guest.LintTimeout / time.Second), Targets: guest.Targets(job, build),

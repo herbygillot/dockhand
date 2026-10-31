@@ -108,7 +108,7 @@ set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 }
 
 func twoTargets(tests string) Input {
-	return Input{Run: "check-1", Attempt: 1, Tests: tests, Targets: []Target{
+	return Input{Tests: tests, Targets: []Target{
 		{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile", Log: buildenv.LogName("libharbor")},
 		{ID: "harbor-cli", Name: "harbor-cli", Portfile: "devel/harbor-cli/Portfile", DependsOn: []string{"libharbor"}, Log: buildenv.LogName("harbor-cli")},
 	}}
@@ -200,7 +200,7 @@ func TestAVerdictRecordsThePortsActiveAsItBuilt(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(archives, "libharbor"), []byte("libharbor's archive"), 0o644))
 	require.NoError(t, os.Mkdir(filepath.Join(archives, "xz"), 0o755))
 	active := `  zlib @1.3.2_0 (active)\n  xz @5.8.1_0+universal (active)\n  gone @1.0_0 (active)\n  libharbor @3_0 (active)\n`
-	input := Input{Run: "check-1", Attempt: 1, Tests: "skip", Targets: []Target{{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile"}}}
+	input := Input{Tests: "skip", Targets: []Target{{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile"}}}
 	results, commands := guestRun(t, input, "ACTIVE="+active, "ARCHIVES="+archives, "UNRESOLVED=gone")
 	require.Equal(t, "finished", results.State, results.Detail)
 	digest := func(data string) string {
@@ -576,7 +576,7 @@ func TestTheGuestSaysWhatItIsBuilding(t *testing.T) {
 // nothing more is run.
 func TestATargetBuildsWithOnlyItsClosureActive(t *testing.T) {
 	t.Parallel()
-	input := Input{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []Target{{ID: "taisei", Name: "taisei", Portfile: "games/taisei/Portfile"}}}
+	input := Input{Tests: "declared", Targets: []Target{{ID: "taisei", Name: "taisei", Portfile: "games/taisei/Portfile"}}}
 	active := `  git @2.51.0_0 (active)\n  gettext @1.0_0 (active)\n  gettext-runtime @1.0_0 (active)\n  meson @1.9.1_0 (active)\n  python314 @3.14.0_0 (active)\n`
 	results, commands := guestRun(t, input, "DEPS=taisei=meson,git", "RDEPS=meson=python314 git=gettext-runtime", "ACTIVE="+active)
 	require.Equal(t, "passed", results.Targets[0].Outcome, results.Detail)
@@ -653,7 +653,7 @@ func TestTheGuestSaysWhatAPassedTargetsBinariesLink(t *testing.T) {
 	require.NoError(t, os.WriteFile(harbor+".loads", []byte("Load command 12\n          cmd LC_RPATH\n      cmdsize 32\n         path @loader_path/../lib (offset 12)\n"), 0o644))
 	require.NoError(t, os.WriteFile(own+".links", []byte(own+":\n\t"+own+" (compatibility version 1.0.0, current version 1.0.0)\n\t"+z+" (compatibility version 1.0.0, current version 1.3.1)\n"), 0o644))
 	require.NoError(t, os.WriteFile(own+".id", []byte(own+":\n"+own+"\n"), 0o644))
-	input := Input{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []Target{{ID: "harbor", Name: "harbor", Portfile: "devel/harbor/Portfile", Log: buildenv.LogName("harbor")}}}
+	input := Input{Tests: "declared", Targets: []Target{{ID: "harbor", Name: "harbor", Portfile: "devel/harbor/Portfile", Log: buildenv.LogName("harbor")}}}
 	results, _ := guestRunIn(t, root, input, "CONTENTS="+harbor+"\\n"+own+"\\n"+script+"\\n", "PROVIDES="+onig+"=oniguruma "+own+"=harbor")
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Equal(t, []Link{
@@ -685,7 +685,7 @@ func TestAnUndeclaredLinkIsFoundFromTheGuestsReading(t *testing.T) {
 		require.NoError(t, os.WriteFile(file, macho, 0o755))
 	}
 	require.NoError(t, os.WriteFile(rustup+".links", []byte(rustup+":\n\t"+lzma+" (compatibility version 10.0.0, current version 10.8.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n"), 0o644))
-	input := Input{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []Target{{ID: "rustup", Name: "rustup", Portfile: "devel/rustup/Portfile", Log: buildenv.LogName("rustup")}}}
+	input := Input{Tests: "declared", Targets: []Target{{ID: "rustup", Name: "rustup", Portfile: "devel/rustup/Portfile", Log: buildenv.LogName("rustup")}}}
 	results, _ := guestRunIn(t, root, input, "CONTENTS="+rustup+"\\n", "PROVIDES="+lzma+"=xz")
 	require.Equal(t, "finished", results.State, results.Detail)
 
@@ -723,7 +723,7 @@ func TestAPassedBuildKeepsWhatItInstalledAndItsLibrariesNames(t *testing.T) {
 		require.NoError(t, os.WriteFile(file+".links", []byte(file+":\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n"), 0o644))
 	}
 	require.NoError(t, os.WriteFile(library+".loads", []byte("Load command 3\n          cmd LC_ID_DYLIB\n      cmdsize 56\n         name "+library+" (offset 24)\n   time stamp 1 Thu Jan  1 00:00:01 1970\n      current version 28.0.2\ncompatibility version 28.0.0\nLoad command 4\n          cmd LC_LOAD_DYLIB\n"), 0o644))
-	input := Input{Run: "check-1", Attempt: 1, Tests: "declared", Targets: []Target{{ID: "exiv2", Name: "exiv2", Portfile: "graphics/exiv2/Portfile", Log: buildenv.LogName("exiv2")}}}
+	input := Input{Tests: "declared", Targets: []Target{{ID: "exiv2", Name: "exiv2", Portfile: "graphics/exiv2/Portfile", Log: buildenv.LogName("exiv2")}}}
 	says := "checking for icu-uc... yes\\n-- Found ZLIB: /opt/local/lib/libz.dylib (found version \"1.3.1\")\\n-- Could NOT find LibArchive (missing: LibArchive_LIBRARY)\\nDependency libxml-2.0 found: YES 2.13.5 (cached)\\nchecking for icu-uc... yes\\n"
 	results, _ := guestRunIn(t, root, input, "CONTENTS="+tool+"\\n"+library+"\\n", "CONFIGURESAYS="+says)
 	require.Equal(t, "finished", results.State, results.Detail)

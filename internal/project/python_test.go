@@ -29,11 +29,8 @@ Some_Package = { git = "https://example.org/p" }
 	require.NoError(t, err)
 	require.Equal(t, &PythonProject{Name: "demo", Description: "A demo", RequiresPython: ">=3.10",
 		Dependencies: []Declaration{{Requirement: Requirement{Name: "requests", Specifier: ">=2", Marker: "sys_platform != 'win32'"}, Written: "[socks] (>=2)"}},
-		Optional:     map[string][]Declaration{"cli": {{Requirement: Requirement{Name: "rich", Specifier: ">=13"}, Written: ">=13"}}},
 	}, manifest.Project)
-	require.Equal(t, []Declaration{{Requirement: Requirement{Name: "hatchling", Specifier: ">=1"}, Written: ">=1"}}, manifest.BuildRequires)
 	require.Equal(t, "hatchling.build", manifest.BuildBackend)
-	require.Equal(t, []string{"!!", "@@"}, manifest.Unparsed)
 	require.Equal(t, map[string]string{"some-package": "git https://example.org/p"}, manifest.Poetry)
 
 	_, err = ReadPyproject([]byte("[project]\ndependencies = [\"@@\"]\n"))

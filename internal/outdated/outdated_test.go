@@ -34,16 +34,13 @@ func TestObserveKeepsCommittedSourceAndCleansWorkspace(t *testing.T) {
 	require.NoError(t, err)
 	before, err := repo.ReadRefs(t.Context(), "refs/heads/")
 	require.NoError(t, err)
-	head, err := repo.Resolve(t.Context(), "HEAD^{commit}")
-	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, []byte("invalid checkout edits\n"), 0600))
 	scratch := t.TempDir()
 	t.Setenv("TMPDIR", scratch)
 	ports := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
-	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Ports: ports, Versions: ports}}
+	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Versions: ports}}
 	result, err := service.Observe(t.Context(), outdated.Selection{Ports: []string{"missing", "fixture", "fixture"}})
 	require.NoError(t, err)
-	require.Equal(t, head, string(result.Source.Commit))
 	require.Len(t, result.Ports, 2)
 	require.Equal(t, "missing", result.Ports[0].Selector)
 	require.Equal(t, "fixture", result.Ports[1].Selector)
@@ -94,7 +91,7 @@ func TestObserveLooksUpPortsTogetherInOrder(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	ports := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	var progress [][2]int
-	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Ports: ports, Versions: ports}, Concurrency: 3,
+	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Versions: ports}, Concurrency: 3,
 		Progress: func(done, total int) { progress = append(progress, [2]int{done, total}) }}
 	asked := []string{"gamma", "epsilon", "alpha", "delta", "beta"}
 	result, err := service.Observe(t.Context(), outdated.Selection{Ports: asked})
@@ -150,7 +147,7 @@ if {${subport} eq ${name}} {
 	t.Setenv("TMPDIR", t.TempDir())
 	ports := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	index := &portindex.Stager{Repo: repo, Config: portindex.Config{Env: os.Environ(), Executable: testsupport.MacPortsTool(t, "portindex"), CacheDirectory: t.TempDir()}, NativePlatform: ports.NativePlatform}
-	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Ports: ports, Versions: ports}, Index: index}
+	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Versions: ports}, Index: index}
 	result, err := service.Observe(t.Context(), outdated.Selection{Maintainers: []string{"ada@example.org"}})
 	require.NoError(t, err)
 	found := map[string]outdated.Port{}

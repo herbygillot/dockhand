@@ -85,11 +85,6 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	observed, err := s.planObservedArchives(ctx, request, input, contents)
 	result := Result{Scope: input.scope, Target: input.target, Release: release, TarballMoved: input.tarballMoved}
 	result.report(fidelity.ScopedVersion(request.SharedRelease, family, versioned, input.target.Name, *release, versioned.Ports[input.target.Name].Options["checksums"]))
-	if observed != nil {
-		for _, frame := range observed.contexts {
-			result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Variant: frame.variant, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
-		}
-	}
 	return archivePlan{result: result, contents: contents, observed: observed, subject: "update to " + release.Version}, err
 }
 

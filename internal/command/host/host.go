@@ -64,17 +64,13 @@ type Host struct {
 // Timings are how often the long-running commands look again.
 type Timings struct {
 	// ServePoll is how often serve looks for work and a standby for the
-	// leader; serveRefresh how often it reads your pull requests from
-	// GitHub; serveGrace how long its executable may be missing before
-	// serve takes dockhand as uninstalled; serveCleanup how often it runs
-	// automatic cleanup (decision 36); serveIdentity how often it reads
-	// who its login acts as.
-	ServePoll, ServeRefresh, ServeGrace, ServeCleanup, ServeIdentity time.Duration
-	// WatchPoll is how often status --watch looks at the journal;
-	// watchRedraw how often the live view is redrawn with nothing new, so
-	// its ages stay true, and watchProgress how often at most for a
-	// check's progress alone, which the list of checks shows.
-	WatchPoll, WatchRedraw, WatchProgress time.Duration
+	// leader; serveGrace how long its executable may be missing before
+	// serve takes dockhand as uninstalled; serveIdentity how often it
+	// reads who its login acts as. How often it reads your pull requests
+	// and runs automatic cleanup are the engine's (ServeOptions).
+	ServePoll, ServeGrace, ServeIdentity time.Duration
+	// WatchPoll is how often status --watch looks at the journal.
+	WatchPoll time.Duration
 	// FollowPoll is how often logs --follow reads the log again.
 	FollowPoll time.Duration
 	// MigrationPoll is how often a serve waiting on a person's answer to
@@ -89,13 +85,9 @@ func MachineHost(look func(name string) string) *Host {
 	return &Host{
 		Timings: Timings{
 			ServePoll:     2 * time.Second,
-			ServeRefresh:  engine.PullRequestRefresh,
 			ServeGrace:    time.Minute,
-			ServeCleanup:  24 * time.Hour,
 			ServeIdentity: time.Minute,
 			WatchPoll:     time.Second,
-			WatchRedraw:   30 * time.Second,
-			WatchProgress: 5 * time.Second,
 			FollowPoll:    time.Second,
 			MigrationPoll: time.Minute,
 		},

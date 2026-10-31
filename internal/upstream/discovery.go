@@ -141,7 +141,6 @@ type Result struct {
 
 type Service struct {
 	HTTP            *http.Client
-	Ports           macports.Reader
 	Catalogs        map[portsource.Forge]Catalog
 	Versions        versionSelector
 	EvaluateVersion func(context.Context, string) (string, error)

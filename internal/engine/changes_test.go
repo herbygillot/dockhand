@@ -329,7 +329,7 @@ func TestAPlanOfNewFilesNamesItsSiblings(t *testing.T) {
 	branch, err := e.Start(t.Context(), StartRequest{Name: "devel"})
 	require.NoError(t, err)
 	write(t, branch.Worktree, map[string]string{"devel/zdemo/Portfile": zdemo("0", "2.1")})
-	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	target := func(name string) model.PlanTarget {
 		return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Directory: "devel/zdemo", Kind: model.Substantive, Role: model.Changed}

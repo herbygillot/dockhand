@@ -33,7 +33,7 @@ type holding struct {
 // Acquire returns the workspace for the source, opening it on first use,
 // and the release that gives it back. The workspace holds whatever scope
 // earlier holders ensured; a holder that needs more ensures it. It is
-// closed when the last holder releases it, or when the registry closes.
+// closed when the last holder releases it.
 func (r *Registry) Acquire(ctx context.Context, repo *git.Repository, source model.Source) (*Workspace, func() error, error) {
 	if r == nil {
 		w, err := Open(ctx, repo, source)
@@ -77,20 +77,4 @@ func (r *Registry) Acquire(ctx context.Context, repo *git.Repository, source mod
 		return err
 	}
 	return entry.workspace, release, nil
-}
-
-// Close closes every workspace the registry still holds, whatever their
-// holders; a later release of one is a no-op.
-func (r *Registry) Close() error {
-	if r == nil {
-		return nil
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	var err error
-	for key, entry := range r.held {
-		err = errors.Join(err, entry.workspace.Close())
-		delete(r.held, key)
-	}
-	return err
 }

@@ -419,7 +419,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	// the evaluator can't be had, they're left unset, and the engine says
 	// so where it needs one.
 	if ports, err := e.SelectionReader(); err == nil {
-		discovery := &upstream.Service{Ports: ports, HTTP: fetch.Client, Versions: ports, Git: e.GitProgram(),
+		discovery := &upstream.Service{HTTP: fetch.Client, Versions: ports, Git: e.GitProgram(),
 			Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: e.GitHubClient(), portsource.GitLab: &forgegitlab.Client{HTTP: fetch.Client}}}
 		e.Discovery, e.SourceArchiver = discovery, discovery
 		e.Preparer = &editprep.Service{Repo: e.Repo, Ports: ports, Upstream: discovery, HTTP: fetch.Client, Mirror: distfetch.MacPortsMirror, Workspaces: &workspace.Registry{},

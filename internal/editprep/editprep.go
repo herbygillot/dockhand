@@ -55,7 +55,6 @@ const (
 
 var ErrUnsupported = portedit.ErrUnsupported
 var ErrFidelity = portedit.ErrFidelity
-var ErrNotImplemented = portedit.ErrNotImplemented
 
 // Result is the editor's result, carried whole, with its files as Git
 // edits of the source tree and the tree they make. Prepared is bound to
@@ -165,9 +164,6 @@ func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ model.
 	}
 	defer func() { err = errors.Join(err, done()) }()
 	request.Workspace = files
-	if request.Action != model.EditUpdate {
-		return model.Release{}, fmt.Errorf("%w: release resolution requires a bump action", ErrNotImplemented)
-	}
 	probe, err := s.editor().Probe(ctx, probeSource(request))
 	if err != nil {
 		return model.Release{}, err
