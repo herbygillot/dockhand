@@ -1119,14 +1119,14 @@ func (e *Engine) openWorktree(ctx context.Context, branch model.Branch) (*git.Re
 // change record for a directory, the record says which of its subports
 // they change, so a branch updating terraform-1.16 changes that subport
 // and not terraform-1.17; a directory without one changes the port its
-// name is, as its text says.
+// name is, as its text says. A command asking of many ports reads the
+// open branches once, with OpenWork.
 func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Branch, error) {
-	found, err := e.PortBranches(ctx, port)
-	branches := make([]model.Branch, 0, len(found))
-	for _, f := range found {
-		branches = append(branches, f.Branch)
+	work, err := e.OpenWork(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return branches, err
+	return work.BranchesChanging(ctx, port)
 }
 
 // PortBranch is an open branch that changes a port, and whether its
@@ -1142,51 +1142,151 @@ type PortBranch struct {
 // first (the command-line UX review's §1, revised): `-p jq` means jq's
 // own update before the rebuild of jq a library's branch carries.
 func (e *Engine) PortBranches(ctx context.Context, port string) ([]PortBranch, error) {
+	work, err := e.OpenWork(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return work.PortBranches(ctx, port)
+}
+
+// OpenWork is what the open branches change, read once: each one's head,
+// its tree, the directories its commits and working files change, and
+// its worktree where it's checked out there. outdated asked each due
+// port's branches afresh, about nine git processes an open branch a
+// port, 10,080 of a look's 10,125 over 1,114 ports and 40 branches (the
+// faster look's baseline, 2026-10-30); read once, as status reads its
+// branches, they're a few processes and a status a worktree. It holds
+// while no branch starts, moves, or is edited.
+type OpenWork struct {
+	e        *Engine
+	branches []openBranch
+}
+
+// openBranch is an open branch as OpenWork read it.
+type openBranch struct {
+	branch      model.Branch
+	head, tree  string
+	worktree    *git.Repository
+	edited      bool
+	directories []string
+}
+
+// OpenWork reads what the open branches change: their heads by one
+// for-each-ref, their trees and their bases' by one cat-file, what each
+// head changes from its base by one diff-tree, the worktrees by one
+// worktree list, and a status of each worktree a branch is checked out
+// in. A branch whose Git branch is gone is passed over.
+func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 	open, err := e.OpenBranches(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var substantive, revisionOnly []PortBranch
+	work := &OpenWork{e: e}
+	if len(open) == 0 {
+		return work, nil
+	}
+	refs, err := e.Repo.ReadRefs(ctx, "refs/heads/")
+	if err != nil {
+		return nil, err
+	}
+	var commits []string
 	for _, branch := range open {
-		head, _, err := e.Repo.Branch(ctx, branch.Name)
-		if errors.Is(err, git.ErrBranchMissing) {
+		if ref := refs["refs/heads/"+branch.Name]; ref.Exists {
+			commits = append(commits, ref.Object, string(branch.Base))
+		}
+	}
+	trees, err := e.Repo.CommitTrees(ctx, slices.Compact(slices.Sorted(slices.Values(commits))))
+	if err != nil {
+		return nil, err
+	}
+	checkouts, err := e.Repo.AllCheckouts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var pairs [][2]string
+	for _, branch := range open {
+		ref := refs["refs/heads/"+branch.Name]
+		if !ref.Exists {
 			continue
 		}
-		if err != nil {
-			return nil, err
+		found := openBranch{branch: branch, head: ref.Object, tree: trees[ref.Object]}
+		if found.tree == "" || trees[string(branch.Base)] == "" {
+			return nil, fmt.Errorf("%s's head or base couldn't be read as a commit", branch.ShortName())
 		}
-		paths, err := e.Repo.ChangedPaths(ctx, string(branch.Base), head)
-		if err != nil {
-			return nil, err
+		pairs = append(pairs, [2]string{trees[string(branch.Base)], found.tree})
+		work.branches = append(work.branches, found)
+	}
+	changed, err := e.Repo.ChangedPathsOf(ctx, pairs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range work.branches {
+		found := &work.branches[i]
+		paths := changed[i]
+		// The tracked files edited in its worktree and not yet committed;
+		// none where it isn't checked out there, which leaves it as it is.
+		if found.branch.Worktree != "" && exists(found.branch.Worktree) {
+			for _, checkout := range checkouts[found.branch.Name] {
+				if samePath(checkout, found.branch.Worktree) {
+					found.worktree = e.Repo.Worktree(checkout)
+				}
+			}
 		}
-		edited, err := e.workingEdits(ctx, branch)
-		if err != nil {
-			return nil, err
+		if found.worktree != nil {
+			edited, err := found.worktree.TrackedChanges(ctx)
+			if err != nil {
+				return nil, err
+			}
+			found.edited = len(edited) > 0
+			paths = append(slices.Clip(paths), edited...)
 		}
-		changes, onlyRevision, err := e.branchChanges(ctx, branch, head, macports.ScopeOf(append(paths, edited...)).Ports, port)
+		found.directories = macports.ScopeOf(paths).Ports
+	}
+	return work, nil
+}
+
+// BranchesChanging are the open branches that change a port, as
+// Engine.BranchesChanging finds them.
+func (w *OpenWork) BranchesChanging(ctx context.Context, port string) ([]model.Branch, error) {
+	found, err := w.PortBranches(ctx, port)
+	branches := make([]model.Branch, 0, len(found))
+	for _, f := range found {
+		branches = append(branches, f.Branch)
+	}
+	return branches, err
+}
+
+// PortBranches are the open branches that change a port, as
+// Engine.PortBranches orders them.
+func (w *OpenWork) PortBranches(ctx context.Context, port string) ([]PortBranch, error) {
+	var substantive, revisionOnly []PortBranch
+	for i := range w.branches {
+		found := &w.branches[i]
+		changes, onlyRevision, err := w.e.branchChanges(ctx, found, port)
 		switch {
 		case err != nil:
 			return nil, err
 		// A branch started for the port is the port's before it changes
 		// it (the command-line UX second look's §1).
-		case !changes && slices.Contains(branch.Ports, port):
-			substantive = append(substantive, PortBranch{Branch: branch})
+		case !changes && slices.Contains(found.branch.Ports, port):
+			substantive = append(substantive, PortBranch{Branch: found.branch})
 		case changes && onlyRevision:
-			revisionOnly = append(revisionOnly, PortBranch{Branch: branch, RevisionOnly: true})
+			revisionOnly = append(revisionOnly, PortBranch{Branch: found.branch, RevisionOnly: true})
 		case changes:
-			substantive = append(substantive, PortBranch{Branch: branch})
+			substantive = append(substantive, PortBranch{Branch: found.branch})
 		}
 	}
 	return append(substantive, revisionOnly...), nil
 }
 
-// branchChanges says whether a branch whose files change these directories
-// changes a port, and whether only its revision: by the change record of
-// its files as they stand, where one says, and else by a directory's
-// name. The branch's files are read for their tree only where a record
-// might name the port, so a branch nothing of which could is passed over
+// branchChanges says whether an open branch changes a port, and whether
+// only its revision: by the change record of its files as they stand,
+// where one says, and else by a directory's name. The branch's files are
+// written as a tree only where a record might name the port and its
+// worktree has edits, so a branch nothing of which could is passed over
 // cheaply.
-func (e *Engine) branchChanges(ctx context.Context, branch model.Branch, head string, directories []string, port string) (changes, revisionOnly bool, err error) {
+func (e *Engine) branchChanges(ctx context.Context, found *openBranch, port string) (changes, revisionOnly bool, err error) {
+	branch, directories := found.branch, found.directories
 	var recorded []model.ChangeRecord
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
@@ -1208,7 +1308,7 @@ func (e *Engine) branchChanges(ctx context.Context, branch model.Branch, head st
 	if !candidates {
 		return false, false, nil
 	}
-	tree, err := e.branchTree(ctx, branch, head)
+	tree, err := found.files(ctx)
 	if err != nil {
 		return false, false, err
 	}
@@ -1230,6 +1330,16 @@ func (e *Engine) branchChanges(ctx context.Context, branch model.Branch, head st
 		}
 	}
 	return false, false, nil
+}
+
+// files is the branch's files as they stand: its worktree's, edits and
+// all, where it's checked out there with edits, else its head's tree.
+func (b *openBranch) files(ctx context.Context) (model.ObjectID, error) {
+	if b.worktree != nil && b.edited {
+		_, tree, err := b.worktree.WorkingTree(ctx)
+		return model.ObjectID(tree), err
+	}
+	return model.ObjectID(b.tree), nil
 }
 
 // renameForVersion renames a branch named for the version an update moved
@@ -1260,26 +1370,6 @@ func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, por
 		return err
 	}, branchRecorded(branch.ID))
 	return old, err
-}
-
-// branchTree is a branch's files as they stand: its worktree's, edits and
-// all, where it's checked out there, else its head's.
-func (e *Engine) branchTree(ctx context.Context, branch model.Branch, head string) (model.ObjectID, error) {
-	if branch.Worktree != "" && exists(branch.Worktree) {
-		worktree, err := git.Open(ctx, branch.Worktree, e.options.git())
-		if err != nil {
-			return "", err
-		}
-		if current, err := worktree.CurrentBranch(ctx); err == nil && current == branch.Name {
-			_, tree, err := worktree.WorkingTree(ctx)
-			return model.ObjectID(tree), err
-		}
-	}
-	trees, err := e.Repo.CommitTrees(ctx, []string{head})
-	if err != nil {
-		return "", err
-	}
-	return model.ObjectID(trees[head]), nil
 }
 
 // ChangesHere reports whether what's checked out where the engine was
@@ -1314,23 +1404,6 @@ func (e *Engine) ChangesHere(ctx context.Context, port string) (bool, error) {
 		return false, err
 	}
 	return slices.Contains(macports.ScopeOf(slices.Concat(paths, edited, added)).PortNames(), port), nil
-}
-
-// workingEdits are the tracked files edited in a branch's worktree and not
-// yet committed; none where it isn't checked out, which it leaves as it
-// is.
-func (e *Engine) workingEdits(ctx context.Context, branch model.Branch) ([]string, error) {
-	if branch.Worktree == "" || !exists(branch.Worktree) {
-		return nil, nil
-	}
-	worktree, err := git.Open(ctx, branch.Worktree, e.options.git())
-	if err != nil {
-		return nil, err
-	}
-	if current, err := worktree.CurrentBranch(ctx); err != nil || current != branch.Name {
-		return nil, nil
-	}
-	return worktree.TrackedChanges(ctx)
 }
 
 // FreeName is a name for a new branch for work on a port:

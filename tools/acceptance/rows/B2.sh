@@ -2,8 +2,8 @@
 # B2: one shot, with no serve running: bump on the small Rust port, asking
 # nothing, to its pull request, or exiting 3 where it's held, naming the
 # command that finishes it. bump settles what would stop its submit before
-# it edits anything, so in a quick stage without ACCEPT_GH_FORK it refuses
-# at once, naming the fork.
+# its check, so in a quick stage without ACCEPT_GH_FORK it updates the port
+# and holds it there for "no-fork", exiting 1 with nothing checked.
 #
 # With ACCEPT_GH_FORK it goes through a whole Tart check, and the guest
 # builds the port's toolchain first: MacPorts has no binary archives of
@@ -35,11 +35,19 @@ act() {
 			--note "This pull request tests a dockhand release candidate, ${ACCEPT_CANDIDATE:-}, and will be closed without merging.")
 	fi
 	dh_json bump "${ACCEPT_RUST_PORT:?}" "${test[@]}" </dev/null || :
-	b2_reuse
+	# Held for want of a fork, bump queued no check, so there is no kept
+	# archive for a second check to reuse (rc2's quick stage).
+	b2_no_fork "$ROW_DIR/json/1.json" || b2_reuse
 	# Its test pull request closes once the row has its evidence: left
 	# open, its branch stayed, and B5 and D-I4 saw two of the port's (the
 	# rc6 full stage).
 	close_test_pr "$ACCEPT_RUST_PORT" "$(own_branch)"
+}
+
+# b2_no_fork reports whether a bump's submission was held for "no-fork",
+# which bump settles before its check (297f0507).
+b2_no_fork() {
+	jq -e '[.. | objects | select(.kind? == "no-fork")] | length > 0' "$1" >/dev/null 2>&1
 }
 
 # b2_reuse checks the bump's branch again, --fresh, in the same home: the
@@ -109,7 +117,9 @@ assert() {
 	else
 		row_fail "held without naming the command that finishes it: $error"
 	fi ;;
-	*) if printf '%s' "$error" | matches -i fork && [ -z "$(git -C "$MACPORTS_TREE" branch --list 'dockhand/*')" ]; then
+	*) if [ "$status" = 1 ] && b2_no_fork "$file"; then
+		row_refused_well "updated, then held before its check for want of a GitHub fork, which the stage hasn't: $(jq -r '[.. | objects | select(.kind? == "no-fork") | .words][0]' "$file")"
+	elif printf '%s' "$error" | matches -i fork && [ -z "$(git -C "$MACPORTS_TREE" branch --list 'dockhand/*')" ]; then
 		row_refused_well "refused before editing anything, for want of a GitHub fork, which the quick stage hasn't: $error"
 	else
 		row_fail "bump exited $status: $error"

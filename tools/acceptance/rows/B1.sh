@@ -1,7 +1,7 @@
 # stages: quick full
 # B1: step by step on the small Go port: update, check, tidy, and
-# submit's preview. The quick stage's fork is local, so submit stops at its
-# preview, which must say so and push nothing.
+# submit's preview. The quick stage has no GitHub fork, so the preview
+# shows its whole plan held for "no-fork", exits 1, and pushes nothing.
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 
 act() {
@@ -34,8 +34,13 @@ assert() {
 	why=$(b_step 4 "submit --plan")
 	if [ -z "$why" ]; then
 		row_pass "updated, checked, tidied into one commit, and previewed"
-	elif printf '%s' "$why" | matches -i fork; then
-		row_pass "updated, checked, tidied, and stopped at submit's preview for want of a GitHub fork, which the quick stage hasn't"
+		return
+	fi
+	# With no fork, the preview shows the whole plan held for "no-fork"
+	# and exits 1, nothing submitted (297f0507; rc2's quick stage).
+	local file=$ROW_DIR/json/4.json
+	if [ "$(cat "$file.exit")" = 1 ] && jq -e '.result.blocks // [] | any(.kind == "no-fork")' "$file" >/dev/null; then
+		row_pass "updated, checked, tidied, and previewed, the plan held for want of a GitHub fork, which the quick stage hasn't: $(jq -r '.result.blocks[] | select(.kind == "no-fork") | .words' "$file" | head -1)"
 	else
 		row_fail "$why"
 	fi

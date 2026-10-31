@@ -238,6 +238,16 @@ act() {
 		# A step naming its branch runs from the clone, not the branch an
 		# earlier cd went to.
 		[ -z "$named" ] || here=$MACPORTS_TREE
+		# The guide's rename plan runs in a branch of its own, clean: in
+		# the branch an earlier cd went to, the examples before it left the
+		# port's edits uncommitted, and rename rightly refused (rc2's quick
+		# stage, rename jlv jqlang).
+		case "$words" in "rename "*)
+			here=$MACPORTS_TREE
+			words="$words --new=$(a10_name jq-rename)"
+			eval "set -- $words"
+			;;
+		esac
 		# --apply reads the file --out wrote, from where -b's line ran.
 		case " $words " in *" --apply "*)
 			here=$MACPORTS_TREE

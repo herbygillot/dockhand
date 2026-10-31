@@ -216,11 +216,9 @@ func TestABranchChangesTheSubportsItsRecordSays(t *testing.T) {
 	require.Equal(t, 1, changing("zdemo"), "no record yet: the directory's name")
 	require.Zero(t, changing("zdemo-devel"))
 
-	head, _, err := e.Repo.Branch(t.Context(), branch.Name)
+	_, tree, err := e.Repo.Worktree(branch.Worktree).WorkingTree(t.Context())
 	require.NoError(t, err)
-	tree, err := e.branchTree(t.Context(), branch, head)
-	require.NoError(t, err)
-	_, err = e.revisionChanges(t.Context(), branch.ID, branch.Base, tree, true)
+	_, err = e.revisionChanges(t.Context(), branch.ID, branch.Base, model.ObjectID(tree), true)
 	require.NoError(t, err)
 	require.Equal(t, 1, changing("zdemo-devel"))
 	require.Zero(t, changing("zdemo"), "the record says the main port is as it was")
@@ -301,7 +299,7 @@ func TestARaisedFloorHolds(t *testing.T) {
 	trees, err := e.Repo.CommitTrees(t.Context(), []string{string(branch.Base)})
 	require.NoError(t, err)
 	tree := editTree(t, e, model.ObjectID(trees[string(branch.Base)]), map[string]string{"devel/zdemo/Portfile": floored("21", "12.0")})
-	_, err = e.revisionChanges(t.Context(), branch.ID, branch.Base, tree, true)
+	_, err = e.revisionChanges(t.Context(), branch.ID, branch.Base, model.ObjectID(tree), true)
 	require.NoError(t, err)
 	var rules []string
 	for _, held := range e.floorHolds(t.Context(), branch.ID, branch.Base, tree) {
