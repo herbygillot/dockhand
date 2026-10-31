@@ -394,6 +394,15 @@ func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 			return err
 		}
 		var first error
+		// Which run together, and how many at once on each provider, is
+		// said first (G13).
+		var together []model.Run
+		for _, id := range ids {
+			together = append(together, *checks[id].run)
+		}
+		if words := e.TogetherWords(ctx, together); words != "" {
+			fmt.Fprintln(streams.Err, words)
+		}
 		// A check's wait for a slot or one of the Mac's VMs is said as it
 		// comes, as one check run alone says it.
 		waited := func(run model.Run, message string) {
@@ -700,7 +709,13 @@ func finishCarried(ctx context.Context, s *settings.Settings, streams term.Strea
 	var checked error
 	if done.run != nil {
 		done.lines.begin("checked")
-		checks, check := streams.Staged("checking " + done.target.Name())
+		// A batch's check has ended by now, and is said as it ended, not
+		// as starting (rc1's full stage, G13).
+		label := "checking " + done.target.Name()
+		if ended, err := e.Run(ctx, done.run.ID); err == nil && ended.State.Terminal() {
+			label = ended.Name() + ", " + done.target.Name() + "'s check, " + string(ended.State)
+		}
+		checks, check := streams.Staged(label)
 		checked = checkrun.RunQueued(ctx, e, *done.run, checks, false, s.Places(), s.Drain)
 		if checked != nil {
 			// The check's report alone expands: the plan it was queued

@@ -109,6 +109,15 @@ func TestABatchKeepsToAProvidersCapacity(t *testing.T) {
 		ids = append(ids, run.ID)
 	}
 	e.Capacity = map[string]int{"command": 2}
+	// Said first, which run together and how many at once (G13).
+	var runs []model.Run
+	for _, id := range ids {
+		run, err := e.Run(t.Context(), id)
+		require.NoError(t, err)
+		runs = append(runs, run)
+	}
+	require.Regexp(t, `^check-\d+, check-\d+, and check-\d+ are checked as a batch, 2 at once on command$`, e.TogetherWords(t.Context(), runs))
+	require.Empty(t, e.TogetherWords(t.Context(), runs[:1]), "one check is no batch")
 	n := 0
 	var mu sync.Mutex
 	var waits []string
