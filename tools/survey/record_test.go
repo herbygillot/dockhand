@@ -85,6 +85,7 @@ func TestTheRecordKeepsEachContextsFactsAndContinues(t *testing.T) {
 	require.Equal(t, 2, count(`SELECT count(*) FROM distfile WHERE ord = 0`))
 	require.Equal(t, 1, count(`SELECT count(*) FROM hook WHERE origin = '<source>/devel/fixture/Portfile:9'`))
 	require.Equal(t, 1, count(`SELECT count(*) FROM portgroup p JOIN tree_file f ON f.blob = p.blob AND f.path = '_resources/port1.0/group/fixture-1.0.tcl' WHERE p.version = '1.0'`))
+	require.Equal(t, 1, count(`SELECT count(*) FROM tree_file WHERE path = '_resources/port1.0/group'`), "a directory is kept by its tree")
 	require.Equal(t, 1, count(`SELECT count(*) FROM bootstrap_read`), "one run's bootstrap is recorded once")
 	require.Equal(t, 1, count(`SELECT count(*) FROM worker_alias WHERE target = 'registry::active'`))
 	require.Equal(t, 1, count(`SELECT count(*) FROM finding WHERE code = 'fetch-checked'`))

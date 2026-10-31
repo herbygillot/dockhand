@@ -225,27 +225,33 @@ func (r *Record) Begin(source model.Source) error {
 	}, nil)
 }
 
-// treeFiles records the tree's _resources at the commit, by blob, once.
+// treeFiles records the tree's _resources at the commit, by blob, and
+// every directory, a port's among them, by tree, so two snapshots' records
+// tell a port whose directory didn't change from one whose did.
 func (r *Record) treeFiles(tx *sql.Tx) error {
-	command := exec.Command(firstOf(r.git, "git"), "-C", r.repo, "ls-tree", "-r", r.commit, "--", "_resources")
-	out, err := command.Output()
-	if err != nil {
-		return fmt.Errorf("survey: listing _resources at %s: %w", r.commit, err)
-	}
 	insert, err := tx.Prepare(`INSERT OR IGNORE INTO tree_file ("commit", path, blob) VALUES (?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer insert.Close()
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		meta, file, ok := strings.Cut(line, "\t")
-		fields := strings.Fields(meta)
-		if !ok || len(fields) != 3 {
-			continue
+	for _, listing := range [][]string{{"-r", r.commit, "--", "_resources"}, {"-r", "-d", r.commit}} {
+		command := exec.Command(firstOf(r.git, "git"), append([]string{"-C", r.repo, "ls-tree"}, listing...)...)
+		out, err := command.Output()
+		if err != nil {
+			return fmt.Errorf("survey: listing the tree at %s: %w", r.commit, err)
 		}
-		r.trees[file] = fields[2]
-		if _, err := insert.Exec(r.commit, file, fields[2]); err != nil {
-			return err
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			meta, file, ok := strings.Cut(line, "\t")
+			fields := strings.Fields(meta)
+			if !ok || len(fields) != 3 {
+				continue
+			}
+			if fields[1] == "blob" {
+				r.trees[file] = fields[2]
+			}
+			if _, err := insert.Exec(r.commit, file, fields[2]); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
