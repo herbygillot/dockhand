@@ -430,6 +430,12 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 	require.EqualError(t, err, "-p chooses a branch, not a check's port; for check-1's log of jq: dockhand logs check-1 jq")
 	_, _, err = cmdtest.Dockhand(t, "logs", "check-1", "jq", "--port", "fd")
 	require.EqualError(t, err, "name a check or a branch, not both")
+	// A provider run's ID beside -p names no port the branch changes, and
+	// is refused with the command that reads it, where it was read as a
+	// port and said unclearly.
+	_, _, err = cmdtest.Dockhand(t, "logs", "command_8f3e2a", "--port", "jq")
+	require.Error(t, err)
+	require.Regexp(t, `^\S+ changes no port named command_8f3e2a; for a check's or a provider run's log of jq: dockhand logs command_8f3e2a jq$`, err.Error())
 }
 
 // A serve that stops leaves the run going and its branch on the fork, so

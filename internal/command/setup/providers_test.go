@@ -211,7 +211,7 @@ func TestSetupShowsTheProviders(t *testing.T) {
 		"               github   ! needs a GitHub login, dockhand setup github, and your fork's Actions\n"+
 		"               enabled\n")
 	// The local provider's prefix, as this Mac has MacPorts there or not.
-	require.Regexp(t, `\n               local    (✓ in /opt/local, among the ports active there: check --on local|· no MacPorts at /opt/local; \[providers.local\] prefix\n               names another)\n  Publishing   `, out)
+	require.Regexp(t, `\n               local    (✓ in /opt/local, among the ports active there: check --on local|· no MacPorts at /opt/local; \[providers.local\] prefix names another)\n  Publishing   `, out)
 
 	// With this Mac's image deleted and its golden copy kept, setup offers
 	// the restore, not a 60 GB download (Codex's review, checked against
