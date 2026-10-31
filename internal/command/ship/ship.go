@@ -394,7 +394,12 @@ func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 			return err
 		}
 		var first error
-		e.SeeAllThrough(ctx, ids, func(run model.Run, _ error) {
+		// A check's wait for a slot or one of the Mac's VMs is said as it
+		// comes, as one check run alone says it.
+		waited := func(run model.Run, message string) {
+			fmt.Fprintf(streams.Err, "%s: %s\n", checks[run.ID].target.Name(), message)
+		}
+		e.SeeAllThrough(ctx, ids, waited, func(run model.Run, _ error) {
 			if err := finish(checks[run.ID]); err != nil && first == nil {
 				first = err
 			}

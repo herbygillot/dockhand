@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // Session records this process's session of kind and keeps its heartbeat
@@ -116,7 +118,11 @@ func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id mode
 // review of 2ad896d2; the person's "every ask I add to Dockhand can
 // increase the amount of time it takes to go through the bump process",
 // 2026-10-29). Where ctx ends first, each run is as it was last read.
-func (e *Engine) SeeAllThrough(ctx context.Context, ids []model.RunID, ended func(model.Run, error)) {
+//
+// waited, where given, hears each check's wait for a slot or a VM as its
+// journal says it, once, which the batch says: G13's checks went one at a
+// time behind a VM, and nothing said why (rc1's full stage).
+func (e *Engine) SeeAllThrough(ctx context.Context, ids []model.RunID, waited func(model.Run, string), ended func(model.Run, error)) {
 	type seen struct {
 		run model.Run
 		err error
@@ -154,10 +160,25 @@ func (e *Engine) SeeAllThrough(ctx context.Context, ids []model.RunID, ended fun
 						select {
 						case slot <- struct{}{}:
 							defer func() { <-slot }()
+							continue
+						default:
+						}
+						// It waits for a sibling's slot, which it says.
+						if waited != nil {
+							waited(run, fmt.Sprintf("%s waits for a slot on %s, which the batch's other checks are using (capacity %d)", run.Name(), provider, cap(slot)))
+						}
+						select {
+						case slot <- struct{}{}:
+							defer func() { <-slot }()
 						case <-ctx.Done():
 							return seen{run, ctx.Err()}
 						}
 					}
+				}
+				if waited != nil {
+					watching, stop := context.WithCancel(ctx)
+					defer stop()
+					go e.sayWaits(watching, run, waited)
 				}
 				run, _, err = e.SeeThrough(ctx, session, id, nil)
 				return seen{run, err}
@@ -169,6 +190,35 @@ func (e *Engine) SeeAllThrough(ctx context.Context, ids []model.RunID, ended fun
 		ended(result.run, result.err)
 	}
 }
+
+// sayWaits tells waited each new wait a run's journal records, until ctx
+// ends: a batch's checks are driven quietly, so a wait for a slot or a VM
+// was only in the journal.
+func (e *Engine) sayWaits(ctx context.Context, run model.Run, waited func(model.Run, string)) {
+	var last string
+	for {
+		var message string
+		_ = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+			event, found, err := r.LatestRunEvent(run.ID, model.EventWaiting)
+			if found {
+				message = event.Message
+			}
+			return err
+		})
+		if message != "" && message != last {
+			last = message
+			waited(run, message)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(waitPoll):
+		}
+	}
+}
+
+// waitPoll is how often a batch reads its checks' waits.
+var waitPoll = 2 * time.Second
 
 // waitFor reads a run until it ends or ctx does.
 func (e *Engine) waitFor(ctx context.Context, id model.RunID) (model.Run, error) {
