@@ -409,7 +409,7 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 	}
 	out := streams.Out
 	for _, plan := range plans {
-		fmt.Fprintf(out, "%s · archived\n", plan.Branch.ShortName())
+		fmt.Fprintf(out, "%s · %s\n", plan.Branch.ShortName(), plan.Branch.State)
 		if plan.Worktree != "" {
 			fmt.Fprintf(out, "  worktree %s\n", plan.Worktree)
 		}

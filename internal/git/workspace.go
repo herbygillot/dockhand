@@ -134,6 +134,14 @@ func (r *Repository) RemoveWorktree(ctx context.Context, directory string) error
 	return err
 }
 
+// RemoveUnchangedWorktree removes a linked worktree as RemoveWorktree
+// does, but git refuses one with tracked changes or untracked files,
+// which go with no word where it forces.
+func (r *Repository) RemoveUnchangedWorktree(ctx context.Context, directory string) error {
+	_, err := r.output(ctx, "worktree", "remove", "--", directory)
+	return err
+}
+
 // TrackedChanges lists tracked paths whose index or working contents differ
 // from HEAD: the work a branch switch could displace. A rename lists both
 // its paths. Untracked files are not listed.

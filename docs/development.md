@@ -73,7 +73,7 @@ The rest reach something outside the checkout and run only when named:
 `tools/survey`'s `TestTheNoticesOverATree` runs the notices that hold nothing over a whole ports tree, each Portfile read as a new port's, every line one its change adds, the most each could say, and prints every match for a person to read. No snapshot is kept; a phrase or rule that reads wrong is narrowed in its code.
 
 ```sh
-MACPORTS_TREE=~/Source/macports-ports DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh go test ./tools/survey -run TestTheNoticesOverATree -v -timeout 2h
+DOCKHAND_MEASURE_TREE=~/Source/macports-ports DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh go test ./tools/survey -run TestTheNoticesOverATree -v -timeout 2h
 ```
 
 `DOCKHAND_MEASURE_RESTATED` sets how many Portfiles `restated` evaluates (200 unless given, 0 for all) and `DOCKHAND_MEASURE_COMMITS` how many commits `ticket-trailer` reads (20,000 unless given).

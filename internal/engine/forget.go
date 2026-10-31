@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -37,6 +38,9 @@ func (e *Engine) PlanForget(ctx context.Context, branch model.Branch) (ForgetPla
 	}
 	if branch.Worktree != "" && exists(branch.Worktree) {
 		plan.Worktree = branch.Worktree
+		if err := e.refuseDirty(ctx, branch, plan.Worktree); err != nil {
+			return plan, err
+		}
 	}
 	var err error
 	if plan.Fork, err = e.planCleanFork(ctx, branch, pushedHead(branch), "it has moved since dockhand pushed it"); err != nil {
@@ -70,6 +74,14 @@ func (e *Engine) PlanForget(ctx context.Context, branch model.Branch) (ForgetPla
 // Git branch only while it's still at the commit planned, so one someone
 // moved since stays, and the record isn't forgotten.
 func (e *Engine) Forget(ctx context.Context, plan *ForgetPlan) (store.Pruned, error) {
+	// The worktree's work may have come since the plan: nothing goes, the
+	// fork's branch neither, and git's own removal refuses what comes
+	// after this look.
+	if plan.Worktree != "" {
+		if err := e.refuseDirty(ctx, plan.Branch, plan.Worktree); err != nil {
+			return store.Pruned{}, err
+		}
+	}
 	if len(plan.Fork) > 0 {
 		cleaned, err := e.ApplyClean(ctx, []CleanBranch{{Branch: plan.Branch, Steps: plan.Fork}})
 		if err != nil {
@@ -78,7 +90,7 @@ func (e *Engine) Forget(ctx context.Context, plan *ForgetPlan) (store.Pruned, er
 		plan.Fork = cleaned[0].Steps
 	}
 	if plan.Worktree != "" {
-		if err := e.Repo.RemoveWorktree(ctx, plan.Worktree); err != nil {
+		if err := e.Repo.RemoveUnchangedWorktree(ctx, plan.Worktree); err != nil {
 			return store.Pruned{}, fmt.Errorf("removing %s's worktree: %w", plan.Branch.ShortName(), err)
 		}
 	}
@@ -94,4 +106,15 @@ func (e *Engine) Forget(ctx context.Context, plan *ForgetPlan) (store.Pruned, er
 		return err
 	})
 	return pruned, err
+}
+
+// refuseDirty refuses to forget a branch whose worktree holds work of its
+// own, uncommitted edits or untracked files, which its removal would lose,
+// as clean and archive keep such a worktree; exit 3, a person's look.
+func (e *Engine) refuseDirty(ctx context.Context, branch model.Branch, worktree string) error {
+	dirty, err := e.dirty(ctx, worktree)
+	if err != nil || dirty == "" {
+		return err
+	}
+	return refusal.New(refusal.Attention, "%s's worktree %s is kept: %s, which forgetting it would lose; commit them or remove them, then run clean --delete again", branch.ShortName(), worktree, dirty)
 }
