@@ -239,8 +239,10 @@ preserving local work master lacks. A named `clean jq-update` considers only
 that ended branch; an open branch must first be finished or archived. Use
 `status --all` to inspect the records left behind. `clean --delete` is the
 explicit step that forgets an ended branch; its preview matters because unmerged
-commits can go with it. In a nonterminal invocation, clean requires `--yes` to
-apply its plan.
+commits can go with it. A worktree with uncommitted edits or untracked files is
+never removed: `clean --delete` refuses, exit 3, naming them, until you commit or
+remove them. In a nonterminal invocation, clean requires `--yes` to apply its
+plan.
 
 If you committed more work after a pull request merged, keep it as a follow-up
 rather than deleting it:
