@@ -99,10 +99,10 @@ func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id mode
 		before(lead)
 	}
 	if lead.Here() {
-		if err := e.awaitSlot(ctx, session, id); err != nil {
-			return model.Run{}, nil, err
+		var lease model.Lease
+		if lease, err = e.awaitSlot(ctx, session, id); err == nil {
+			run, err = e.driveLeased(progress.Quiet(ctx), session, lease, id, false)
 		}
-		run, err = e.Drive(progress.Quiet(ctx), session, id)
 		held := new(coord.HeldError)
 		if !errors.As(err, &held) {
 			return run, nil, err
@@ -115,9 +115,9 @@ func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id mode
 
 // SeeAllThrough sees a batch's queued runs to their ends together, each as
 // SeeThrough sees one, in a session of its own: driven here where nothing
-// leads, at most as many at once on a provider as its capacity, which a
-// run waiting for its slot couldn't see of its siblings still queued, or
-// followed where serve leads or another process holds it. ended is told of
+// leads, at most as many at once on a provider as its capacity, its
+// siblings', serve's, and other processes' checks counted alike
+// (reserve), or followed where serve leads or another process holds it. ended is told of
 // each run as it ends, in the order they end, one at a time, so a batch
 // takes about its longest check, not the sum of them (Codex's workflow
 // review of 2ad896d2; the person's "every ask I add to Dockhand can
@@ -132,10 +132,6 @@ func (e *Engine) SeeAllThrough(ctx context.Context, ids []model.RunID, waited fu
 		run model.Run
 		err error
 	}
-	slots := map[string]chan struct{}{}
-	for provider := range e.Providers {
-		slots[provider] = make(chan struct{}, e.capacity(provider))
-	}
 	results := make(chan seen, len(ids))
 	for _, id := range ids {
 		go func() {
@@ -148,37 +144,6 @@ func (e *Engine) SeeAllThrough(ctx context.Context, ids []model.RunID, waited fu
 				run, err := e.Run(ctx, id)
 				if err != nil {
 					return seen{run, err}
-				}
-				// The batch's own slots, taken in one order, so two runs
-				// needing the same providers never hold one each.
-				if lead, err := e.LeadOf(ctx, session, id); err == nil && lead.Here() {
-					needs, err := e.RunProviders(ctx, run)
-					if err != nil {
-						return seen{run, err}
-					}
-					slices.Sort(needs)
-					for _, provider := range needs {
-						slot, ok := slots[provider]
-						if !ok {
-							continue
-						}
-						select {
-						case slot <- struct{}{}:
-							defer func() { <-slot }()
-							continue
-						default:
-						}
-						// It waits for a sibling's slot, which it says.
-						if waited != nil {
-							waited(run, fmt.Sprintf("%s waits for a slot on %s, which the batch's other checks are using (capacity %d)", run.Name(), provider, cap(slot)))
-						}
-						select {
-						case slot <- struct{}{}:
-							defer func() { <-slot }()
-						case <-ctx.Done():
-							return seen{run, ctx.Err()}
-						}
-					}
 				}
 				if waited != nil {
 					watching, stop := context.WithCancel(ctx)

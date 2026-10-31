@@ -25,10 +25,10 @@ func TestTartsSlotsAreTheMacsVMs(t *testing.T) {
 	require.Equal(t, 2, e.capacity("tart"))
 }
 
-// A check serve's queue holds for a provider its own checks fill says what
-// it waits behind, once, in its journal, which the person following it
-// reads: a local prefix as local says it, where nothing was said (rc1's
-// full stage, G14); any other provider as awaitSlot says it.
+// A check held for a provider's slots says what it waits behind, in its
+// journal, which the person following it reads, wherever it waits: a
+// local prefix as local says it, where serve's queue said nothing (rc1's
+// full stage, G14); any other provider with what fills it.
 func TestServeSaysWhatAHeldCheckWaitsBehind(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
@@ -62,7 +62,7 @@ func TestServeSaysWhatAHeldCheckWaitsBehind(t *testing.T) {
 		}))
 		return message
 	}
-	require.NoError(t, e.sayHeldInServe(t.Context(), s, waiting, []string{"local"}, map[model.RunID]model.Run{holding.ID: holding}))
+	require.NoError(t, e.sayHeld(t.Context(), s, waiting, map[string][]slotHolder{"local": {{run: holding}}}))
 	require.Equal(t, waiting.Name()+" waiting for /opt/local, held by check-786", said(waiting))
 
 	// The check serve prepared, on command, fills its capacity.
@@ -75,6 +75,6 @@ func TestServeSaysWhatAHeldCheckWaitsBehind(t *testing.T) {
 		return err
 	}))
 	e.Capacity = map[string]int{"command": 1}
-	require.NoError(t, e.sayHeldInServe(t.Context(), s, waiting, []string{"command"}, map[model.RunID]model.Run{prepared.ID: prepared}))
+	require.NoError(t, e.sayHeld(t.Context(), s, waiting, map[string][]slotHolder{"command": {{run: prepared}}}))
 	require.Equal(t, waiting.Name()+" waits for a slot on command: providers.command.capacity is 1, and "+prepared.Name()+" is using it", said(waiting))
 }

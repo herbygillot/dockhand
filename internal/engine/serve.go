@@ -219,6 +219,8 @@ type server struct {
 	// unwritten is the day each of serve's files last failed to be
 	// written, said once a day (written).
 	unwritten map[string]time.Time
+	// problems are the workers' problems, each said once while it stands.
+	problems problems
 }
 
 func newServer(e *Engine, options ServeOptions) *server {
@@ -234,7 +236,9 @@ func newServer(e *Engine, options ServeOptions) *server {
 	if options.Now == nil {
 		options.Now = time.Now
 	}
-	return &server{e: e, options: options}
+	server := &server{e: e, options: options}
+	server.problems.s = server
+	return server
 }
 
 // say writes one of serve's lines whole.
@@ -273,6 +277,68 @@ func (s *server) notify(title, text string) {
 	if s.options.Notify != nil {
 		s.options.Notify(title, text)
 	}
+}
+
+// problems says each of serve's workers' problems once while it stands:
+// said the first time a worker's pass finds it, and forgotten once a
+// pass doesn't, so it's said again if it comes back. The four workers
+// each kept their own "said once", two never forgetting a problem their
+// next pass didn't find (the code-organization review's serve finding
+// 3). It's safe from the loop and the day's look, which runs beside it.
+type problems struct {
+	s    *server
+	mu   sync.Mutex
+	said map[string]map[string]bool
+}
+
+// problemPass is one pass of a worker's, the problems it found so far.
+type problemPass struct {
+	p      *problems
+	worker string
+	found  map[string]bool
+}
+
+// pass starts a worker's pass.
+func (p *problems) pass(worker string) *problemPass {
+	return &problemPass{p: p, worker: worker, found: map[string]bool{}}
+}
+
+// say says a problem the pass found, unless the worker's last pass found
+// it too, or serve's own stop caused it (D-I5 on rc5).
+func (pass *problemPass) say(ctx context.Context, problem string) {
+	if ctx.Err() != nil {
+		return
+	}
+	pass.found[problem] = true
+	pass.p.mu.Lock()
+	said := pass.p.said[pass.worker][problem]
+	if !said {
+		if pass.p.said == nil {
+			pass.p.said = map[string]map[string]bool{}
+		}
+		if pass.p.said[pass.worker] == nil {
+			pass.p.said[pass.worker] = map[string]bool{}
+		}
+		pass.p.said[pass.worker][problem] = true
+	}
+	pass.p.mu.Unlock()
+	if !said {
+		pass.p.s.say("%s", problem)
+	}
+}
+
+// done ends a pass that ran through: what it didn't find is forgotten.
+// A pass serve's stop cut short forgets nothing.
+func (pass *problemPass) done(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+	pass.p.mu.Lock()
+	defer pass.p.mu.Unlock()
+	if pass.p.said == nil {
+		pass.p.said = map[string]map[string]bool{}
+	}
+	pass.p.said[pass.worker] = pass.found
 }
 
 // lead takes the lead, or stands by until the leader goes. A drain with
@@ -360,22 +426,29 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	login := &loginGate{s: s}
 	login.look(ctx)
 	s.written("serving.json", e.announceServing(login.serving()))
-	followed := &follower{s: s, reported: map[string]bool{}}
+	followed := &follower{s: s}
 	cleaned := &cleaner{s: s, session: session}
 	scanned := &outdatedScanner{s: s}
+	// The day's look runs beside the loop, one at a time, so a run that
+	// ends while it looks is settled, and the next started, where a
+	// finished run waited on done until the look and its preparations
+	// ended (the code-organization review's serve finding 3).
+	var looking atomic.Bool
+	var looks sync.WaitGroup
+	defer looks.Wait()
 	if !options.Drain {
 		scanned.announce(ctx)
 		s.resumePrepared(ctx)
 	}
-	submitter := &passingSubmitter{s: s, held: map[model.BranchID]string{}}
+	submitter := &passingSubmitter{s: s}
 
 	// Runs are driven concurrently, each provider up to its capacity. A
 	// run takes a slot on every provider its plan builds on, for as long
-	// as it runs; one that can't have them all waits, and the runs after
-	// it that can go ahead.
+	// as it runs, as every driver takes them (reserve), so a batch's
+	// checks and foreground ones count; one that can't have them all
+	// waits, and the runs after it that can go ahead.
 	running, stop := context.WithCancel(ctx)
 	defer stop()
-	inUse := map[string]int{}
 	inFlight := map[model.RunID]model.Run{}
 	// unfinished are the runs said unfinished as serve's stop began, before
 	// it waited for them: a Tart check stops its VM for up to a minute, and
@@ -386,10 +459,9 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	// once (sayHeldInServe).
 	heldSaid := map[model.RunID]bool{}
 	type finished struct {
-		run       model.Run
-		branch    model.Branch
-		providers []string
-		err       error
+		run    model.Run
+		branch model.Branch
+		err    error
 	}
 	done := make(chan finished)
 	// ended are the runs whose end serve said, each said once: field
@@ -397,29 +469,23 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	// found (the ninth report).
 	ended := map[model.RunID]bool{}
 	var failure error
-	launch := func(run model.Run, branch model.Branch, needs []string) {
+	launch := func(run model.Run, branch model.Branch, needs []string, lease model.Lease) {
 		inFlight[run.ID] = run
-		for _, name := range needs {
-			inUse[name]++
-		}
 		verb := "running"
 		if run.State == model.RunRunning {
 			verb = "resuming"
 		}
 		s.say("%s %s: %s", run.Name(), branch.ShortName(), verb)
 		go func() {
-			result, err := e.Resume(running, session, run.ID)
+			result, err := e.driveLeased(running, session, lease, run.ID, true)
 			if result.ID == "" {
 				result = run
 			}
-			done <- finished{run: result, branch: branch, providers: needs, err: err}
+			done <- finished{run: result, branch: branch, err: err}
 		}()
 	}
 	settle := func(f finished) {
 		delete(inFlight, f.run.ID)
-		for _, name := range f.providers {
-			inUse[name]--
-		}
 		if held := new(coord.HeldError); errors.As(f.err, &held) {
 			return
 		}
@@ -489,7 +555,12 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			login.look(running)
 			if login.reads() {
 				followed.maybe(running)
-				scanned.maybe(running)
+				if looking.CompareAndSwap(false, true) {
+					looks.Go(func() {
+						defer looking.Store(false)
+						scanned.maybe(running)
+					})
+				}
 			}
 			if options.submits() && login.writes() {
 				submitter.maybe(running)
@@ -522,16 +593,6 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				failure = err
 				break
 			}
-			if full := slices.DeleteFunc(slices.Clone(needs), func(name string) bool { return inUse[name] < max(capacity[name], 1) }); len(full) > 0 {
-				waiting = true
-				if !heldSaid[run.ID] {
-					heldSaid[run.ID] = true
-					if err := e.sayHeldInServe(running, session, run, full, inFlight); err != nil {
-						s.say("serve: saying what %s waits behind: %v", run.Name(), err)
-					}
-				}
-				continue
-			}
 			// A check on GitHub pushes as the login: none starts while it
 			// isn't the account serve started as.
 			if slices.Contains(needs, buildenv.GitHub) && !login.writes() {
@@ -543,7 +604,25 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				failure = err
 				break
 			}
-			launch(run, branch, needs)
+			lease, full, err := e.reserve(running, session, run, needs)
+			if held := new(coord.HeldError); errors.As(err, &held) {
+				continue
+			}
+			if err != nil {
+				failure = err
+				break
+			}
+			if len(full) > 0 {
+				waiting = true
+				if !heldSaid[run.ID] {
+					heldSaid[run.ID] = true
+					if err := e.sayHeld(running, session, run, full); err != nil {
+						s.say("serve: saying what %s waits behind: %v", run.Name(), err)
+					}
+				}
+				continue
+			}
+			launch(run, branch, needs, lease)
 		}
 		if failure != nil {
 			break
@@ -560,7 +639,10 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				}
 				return nil
 			}
-			cleaned.maybe(running)
+			// Nor while the day's look prepares branches.
+			if !looking.Load() {
+				cleaned.maybe(running)
+			}
 		}
 		select {
 		case <-running.Done():
@@ -570,8 +652,9 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		}
 	}
 	// Runs still going stop with serve, and are left for the next one,
-	// said so before serve waits for them to stop.
+	// said so before serve waits for them to stop; a look stops with them.
 	stop()
+	looks.Wait()
 	left := slices.Collect(maps.Values(inFlight))
 	slices.SortFunc(left, func(a, b model.Run) int { return cmp.Compare(a.Number, b.Number) })
 	for _, run := range left {
@@ -747,11 +830,10 @@ func (g *loginGate) words() string {
 }
 
 // follower reads the pull requests every Refresh, reporting what changed,
-// and each problem once until it changes.
+// and each problem once while it stands.
 type follower struct {
-	s        *server
-	last     time.Time
-	reported map[string]bool
+	s    *server
+	last time.Time
 }
 
 func (f *follower) maybe(ctx context.Context) {
@@ -769,13 +851,9 @@ func (f *follower) maybe(ctx context.Context) {
 	if err == nil {
 		err = refreshed.Refused
 	}
-	problems := map[string]bool{}
-	report := func(problem string) {
-		problems[problem] = true
-		if !f.reported[problem] {
-			f.s.say("%s", problem)
-		}
-	}
+	pass := f.s.problems.pass("follow")
+	defer pass.done(ctx)
+	report := func(problem string) { pass.say(ctx, problem) }
 	switch {
 	// A login that can't renew itself is said once, and notified once a
 	// process, rather than as each pull request it couldn't read (the
@@ -802,7 +880,6 @@ func (f *follower) maybe(ctx context.Context) {
 			f.s.notify(r.Branch.ShortName(), change)
 		}
 	}
-	f.reported = problems
 }
 
 // cleaner runs automatic cleanup at most once per CleanupEvery for the
@@ -811,7 +888,6 @@ func (f *follower) maybe(ctx context.Context) {
 type cleaner struct {
 	s       *server
 	session *coord.Session
-	failed  string
 }
 
 func (c *cleaner) maybe(ctx context.Context) {
@@ -827,12 +903,11 @@ func (c *cleaner) maybe(ctx context.Context) {
 		return
 	}
 	// A cleanup that fails is tried again the next day, and its problem
-	// is reported once until it changes.
+	// is said once while it stands.
+	pass := c.s.problems.pass("cleanup")
+	defer pass.done(ctx)
 	if err != nil {
-		if problem := fmt.Sprintf("serve: cleanup: %v", err); problem != c.failed {
-			c.s.say("%s", problem)
-			c.failed = problem
-		}
+		pass.say(ctx, fmt.Sprintf("serve: cleanup: %v", err))
 	}
 	for _, line := range report.Words(c.s.options.CleanupAge) {
 		c.s.say("%s", line)
@@ -946,8 +1021,7 @@ func lookNotice(last, look OutdatedLook, selection PortSelection) string {
 // outdatedScanner looks for new releases of serve's selection, your ports
 // by default, once a day, at the configured time, and carries them as far as serve.ship_to says.
 type outdatedScanner struct {
-	s        *server
-	reported string
+	s *server
 	// retryAt is when the day's look goes over the ports a rate limit
 	// kept it from checking, retry, once, just after the limit lifts; the
 	// day isn't done until then (the rc6 full stage, D-N4).
@@ -966,9 +1040,9 @@ func (o *outdatedScanner) hint(ctx context.Context) string {
 // again only where it changed.
 func (o *outdatedScanner) announce(ctx context.Context) {
 	if o.s.options.Outdated.empty() {
-		line := o.hint(ctx)
-		o.s.say("%s", line)
-		o.reported = line
+		pass := o.s.problems.pass("look")
+		pass.say(ctx, o.hint(ctx))
+		pass.done(ctx)
 	}
 }
 
@@ -996,16 +1070,9 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 			o.s.written("outdated.stamp", e.stampServeFile("outdated.stamp", now))
 		}
 	}()
-	report := func(problem string) {
-		// A problem serve's own stop caused is unsaid (D-I5 on rc5).
-		if ctx.Err() != nil {
-			return
-		}
-		if problem != o.reported {
-			o.s.say("%s", problem)
-			o.reported = problem
-		}
-	}
+	pass := o.s.problems.pass("look")
+	defer pass.done(ctx)
+	report := func(problem string) { pass.say(ctx, problem) }
 	if settings.empty() {
 		// The person's own line, as master's ports write their GitHub
 		// login, where it can be found (the flyctl run). The day isn't
@@ -1173,7 +1240,6 @@ func sameSet(a, b []string) bool {
 type passingSubmitter struct {
 	s    *server
 	last time.Time
-	held map[model.BranchID]string
 	// yours are the passing branches a person started, as last said.
 	yours string
 }
@@ -1190,8 +1256,10 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 		p.last = time.Time{}
 		return
 	}
+	pass := p.s.problems.pass("submit")
+	defer pass.done(ctx)
 	if err != nil {
-		p.s.say("serve: finding passing updates: %v", err)
+		pass.say(ctx, fmt.Sprintf("serve: finding passing updates: %v", err))
 		return
 	}
 	// The passing branches a person started are theirs to submit, and
@@ -1215,14 +1283,7 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 		if len(candidate.Held) > 0 {
 			// Every concern is said, where only the first was (C2), once a
 			// branch while they stay the same.
-			var keys []string
-			for _, concern := range candidate.Held {
-				keys = append(keys, concern.Key())
-			}
-			if key := strings.Join(keys, "\x01"); p.held[candidate.Branch.ID] != key {
-				p.s.say("serve: %s needs review before submission: %s", name, strings.Join(HoldLines(candidate.Held), "; "))
-				p.held[candidate.Branch.ID] = key
-			}
+			pass.say(ctx, fmt.Sprintf("serve: %s needs review before submission: %s", name, strings.Join(HoldLines(candidate.Held), "; ")))
 			continue
 		}
 		opened, err := e.servedToday(ctx, p.s.options.Now())
@@ -1230,11 +1291,11 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 			return
 		}
 		if err != nil {
-			p.s.say("serve: counting today's pull requests: %v", err)
+			pass.say(ctx, fmt.Sprintf("serve: counting today's pull requests: %v", err))
 			return
 		}
 		if opened >= p.s.options.SubmitLimit {
-			p.s.say("serve: %s will wait until tomorrow; today's limit of %s has been reached (serve.submit_limit)", name, prose.Plural(p.s.options.SubmitLimit, "pull request"))
+			pass.say(ctx, fmt.Sprintf("serve: %s will wait until tomorrow; today's limit of %s has been reached (serve.submit_limit)", name, prose.Plural(p.s.options.SubmitLimit, "pull request")))
 			return
 		}
 		submitted, err := e.SubmitForServe(ctx, candidate)
@@ -1242,7 +1303,7 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 			return
 		}
 		if err != nil {
-			p.s.say("serve: submitting %s: %v", name, err)
+			pass.say(ctx, fmt.Sprintf("serve: submitting %s: %v", name, err))
 			continue
 		}
 		p.s.say("serve: opened #%d for %s after its check passed", submitted.PullRequest.Ref.Number, name)

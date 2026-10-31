@@ -112,7 +112,7 @@ func TestServeSaysNothingOfWhatItsStopCancelled(t *testing.T) {
 	cancel()
 	g := &loginGate{s: s}
 	g.look(cancelled)
-	(&follower{s: s, reported: map[string]bool{}}).maybe(cancelled)
+	(&follower{s: s}).maybe(cancelled)
 	require.Empty(t, said)
 	require.Empty(t, g.problem)
 	for range 2 {
@@ -135,4 +135,36 @@ func TestServesWorkReportsAsServesLines(t *testing.T) {
 	require.Equal(t, []string{"serve: Looking up 3 ports"}, said)
 	require.Zero(t, plain, "nothing goes to standard error plain")
 	require.True(t, serving(ctx))
+}
+
+// A worker's problem is said once while it stands, forgotten once a pass
+// doesn't find it, and said again when it comes back; a pass serve's stop
+// cut short forgets nothing (the code-organization review's serve finding
+// 3: cleanup and the day's look never forgot one).
+func TestServeSaysAWorkersProblemOnceWhileItStands(t *testing.T) {
+	t.Parallel()
+	var said []string
+	s := newServer(nil, ServeOptions{Say: func(line string) { said = append(said, line) }})
+	pass := func(ctx context.Context, problems ...string) {
+		p := s.problems.pass("cleanup")
+		for _, problem := range problems {
+			p.say(ctx, problem)
+		}
+		p.done(ctx)
+	}
+	ctx := t.Context()
+	pass(ctx, "serve: cleanup: disk full")
+	pass(ctx, "serve: cleanup: disk full")
+	require.Equal(t, []string{"serve: cleanup: disk full"}, said, "said once while it stands")
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	pass(cancelled)
+	pass(ctx, "serve: cleanup: disk full")
+	require.Len(t, said, 1, "a pass serve's stop cut short forgets nothing")
+	pass(ctx)
+	pass(ctx, "serve: cleanup: disk full")
+	require.Equal(t, []string{"serve: cleanup: disk full", "serve: cleanup: disk full"}, said, "said again once it came back")
+	other := s.problems.pass("look")
+	other.say(ctx, "serve: cleanup: disk full")
+	require.Len(t, said, 3, "each worker's own")
 }
