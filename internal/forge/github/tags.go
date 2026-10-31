@@ -118,6 +118,7 @@ func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
 		}
 		seen[row.GetName()] = true
 		tags = append(tags, forge.Tag{Name: row.GetName(), Commit: row.GetCommit().GetSHA()})
+		r.answer(row.GetZipballURL())
 	}
 	// The API names each tag's commit, peeled, as Tag would read it. Git's
 	// listing above can't tell a commit from a blob, so it isn't kept.

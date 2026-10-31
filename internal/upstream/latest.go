@@ -280,6 +280,26 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		release.FromTag = current
 	}
 	result.finish(release, port.Version, "Selected "+tag.Name+" from "+catalog, " among "+catalog)
+	// A repository answering as another owner and another name may be
+	// another project: GitHub redirected acorn-io/acorn to
+	// obot-platform/obot, whose 0.27.0 read "Ready to ship" over acorn's
+	// 0.10.1 (field testing's outdated-ports session). Its release is
+	// uncertain; one moved by owner or name alone is said beside it.
+	if answering, ok := repository.(forge.AnsweringRepository); ok && answering.AnswersAs() != "" {
+		moved := answering.AnswersAs()
+		fromOwner, fromName, _ := strings.Cut(repository.Name(), "/")
+		toOwner, toName, _ := strings.Cut(moved, "/")
+		switch {
+		case !strings.EqualFold(fromOwner, toOwner) && !strings.EqualFold(fromName, toName) && result.Assessment == UpdateAvailable:
+			why := fmt.Sprintf("%s now answers as %s; if that's the same project, github.setup names it", repository.Name(), moved)
+			result.Assessment, result.Release = Uncertain, nil
+			result.SetAside = []SetAside{{Tag: tag.Name, Version: release.Version, Source: candidates[index].CaptureVersion, Predates: current, Why: why}}
+			result.Detail = fmt.Sprintf("Cannot determine whether %s is current: %s", port.Version, why)
+			return result, nil
+		default:
+			result.Detail += fmt.Sprintf("; GitHub answers %s as %s now, which github.setup could name", repository.Name(), moved)
+		}
+	}
 	if len(setAside) > 0 {
 		result.SetAside = setAside
 		result.Detail += fmt.Sprintf("; excluded %s because it predates %s despite having a higher version", strings.Join(asideTags, ", "), current)

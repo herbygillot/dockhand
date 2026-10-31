@@ -25,6 +25,42 @@ type repository struct {
 
 	mu   sync.Mutex
 	tags map[string]forge.Tag
+	// answered is the name GitHub answered a listing as, from the URLs it
+	// gave (AnswersAs).
+	answered string
+}
+
+// AnswersAs is the owner/name GitHub answered the repository's tags or
+// releases as, where that isn't the name asked: acorn-io/acorn's listing
+// answered from obot-platform/obot, another project (field testing's
+// outdated-ports session).
+func (r *repository) AnswersAs() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if strings.EqualFold(r.answered, r.name) {
+		return ""
+	}
+	return r.answered
+}
+
+// answer notes the owner/name a URL GitHub gave names, the first time:
+// https://github.com/<owner>/<name>/… or https://api.github.com/repos/<owner>/<name>/….
+func (r *repository) answer(url string) {
+	rest, ok := strings.CutPrefix(url, "https://api.github.com/repos/")
+	if !ok {
+		if rest, ok = strings.CutPrefix(url, "https://github.com/"); !ok {
+			return
+		}
+	}
+	parts := strings.SplitN(rest, "/", 3)
+	if len(parts) < 2 || !githubapi.ValidRepositoryName(parts[0]+"/"+parts[1]) {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.answered == "" {
+		r.answered = parts[0] + "/" + parts[1]
+	}
 }
 
 // Repository validates a GitHub owner/name without making a network request.

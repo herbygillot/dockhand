@@ -33,6 +33,7 @@ func (r *repository) Releases(ctx context.Context) ([]forge.Release, error) {
 		}
 		seen[row.TagName] = true
 		release := forge.Release{Tag: row.TagName, URL: row.HTMLURL, Draft: row.Draft, Prerelease: row.Prerelease}
+		r.answer(row.HTMLURL)
 		if row.PublishedAt != nil {
 			release.PublishedAt = row.PublishedAt.Time
 		}

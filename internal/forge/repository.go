@@ -97,6 +97,15 @@ type ArchiveRepository interface {
 
 // DatedRepository reports when a commit was made, its committer's date, so
 // discovery can tell an old tag from a new one however it is spelled.
+// AnsweringRepository is a repository that says the name its forge
+// answered a listing as, read from the URLs in what it listed with no
+// request of its own: GitHub redirects a moved or renamed repository's
+// API, and its answers name where it went. Empty where nothing listed
+// said, or it answered as itself.
+type AnsweringRepository interface {
+	AnswersAs() string
+}
+
 type DatedRepository interface {
 	CommitTime(ctx context.Context, commit string) (time.Time, error)
 }

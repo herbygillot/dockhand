@@ -69,6 +69,10 @@ type SetAside struct {
 	// Predates is the tag the port follows now, whose commit this tag's
 	// predates.
 	Predates string
+	// Why says why it's set aside, where it isn't its commit's age: a
+	// repository answering as another project, or an older version
+	// scheme.
+	Why string `json:",omitempty"`
 }
 
 // UncertainError is Resolve's answer for a port whose discovery is
@@ -79,6 +83,9 @@ type UncertainError struct {
 }
 
 func (e *UncertainError) Error() string {
+	if e.SetAside[0].Why != "" {
+		return fmt.Sprintf("upstream: can't tell whether %s is current: %s; name the version to update to", e.Port, e.SetAside[0].Why)
+	}
 	var tags []string
 	for _, aside := range e.SetAside {
 		tags = append(tags, aside.Tag)

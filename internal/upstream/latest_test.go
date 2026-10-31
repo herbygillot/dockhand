@@ -39,7 +39,12 @@ type catalog struct {
 	// assets are each release's files, by tag; every release has one
 	// where it's nil.
 	assets map[string][]string
+	// answers is the name the forge answered its listing as, where it
+	// isn't the name asked.
+	answers string
 }
+
+func (c *catalog) AnswersAs() string { return c.answers }
 
 func (c *catalog) Assets(_ context.Context, tag string) ([]string, error) {
 	if c.assets == nil {
@@ -223,6 +228,32 @@ func TestAVersionedSubportLooksWithinItsSeries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1.2.1", result.CandidateVersion, "a port whose name names no series looks at every release")
 	require.Empty(t, result.NewerSeries)
+}
+
+// A repository answering as another owner and another name may be another
+// project, so its newer release is uncertain: GitHub redirected
+// acorn-io/acorn to obot-platform/obot, whose 0.27.0 read "Ready to ship"
+// (field testing's outdated-ports session). One moved by owner or name
+// alone stays outdated, said beside it.
+func TestAnotherProjectsAnswerIsUncertain(t *testing.T) {
+	t.Parallel()
+	c := &catalog{releases: []forge.Release{{Tag: "v1.0"}, {Tag: "v2.0"}}, answers: "obot-platform/obot"}
+	service := automaticService(t, c)
+	port := automaticPort()
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Uncertain, result.Assessment, result.Detail)
+	require.Equal(t, "2.0", result.CandidateVersion)
+	require.Len(t, result.SetAside, 1)
+	require.Equal(t, "owner/project now answers as obot-platform/obot; if that's the same project, github.setup names it", result.SetAside[0].Why)
+	_, err = service.Resolve(t.Context(), port, "")
+	require.ErrorContains(t, err, "can't tell whether "+port.Name+" is current: owner/project now answers as obot-platform/obot")
+
+	c.answers = "neworg/project"
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment, "an owner's move alone stays outdated")
+	require.Contains(t, result.Detail, "GitHub answers owner/project as neworg/project now, which github.setup could name")
 }
 
 func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {
