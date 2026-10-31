@@ -115,7 +115,9 @@ type Service struct {
 	Ports           macports.Evaluator
 	Upstream        *upstream.Service
 	DependencyTools depblock.Tools
-	HTTP            *http.Client
+	// PatchTools are the diff and patch a port's patches are checked with.
+	PatchTools patchcheck.Tools
+	HTTP       *http.Client
 	// Mirror is where an archive upstream no longer serves as its Portfile
 	// declares it is fetched from, archives.MacPortsMirror in use; none
 	// when empty.
@@ -126,7 +128,7 @@ type Service struct {
 }
 
 func (s *Service) editor() *portedit.Service {
-	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, Archives: distfetch.Client{HTTP: s.HTTP, Mirror: s.Mirror}}
+	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, PatchTools: s.PatchTools, Archives: distfetch.Client{HTTP: s.HTTP, Mirror: s.Mirror}}
 	if s.Upstream != nil {
 		editor.Manifests = s.Upstream
 	}

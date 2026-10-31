@@ -152,10 +152,12 @@ func (o Options) TartPlaces() TartPlaces {
 	}
 }
 
-// TartProvider is the Tart provider, in the command line's places.
-func (o Options) TartProvider() *tart.Provider {
+// TartProvider is the Tart provider, in the command line's places, with
+// xcodes where look finds it.
+func (o Options) TartProvider(look func(string) (string, error)) *tart.Provider {
 	places := o.TartPlaces()
-	return &tart.Provider{Tart: tartvm.Client{Home: places.Home, Env: o.Env}, Personal: places.Personal, Keys: places.Keys}
+	xcodes, _ := look("xcodes")
+	return &tart.Provider{Tart: tartvm.Client{Home: places.Home, Env: o.Env}, Personal: places.Personal, Keys: places.Keys, XcodesExecutable: xcodes}
 }
 
 // Places are the command line's home, $HOME, and working directory.
@@ -182,13 +184,33 @@ type Dependencies struct {
 	// Leftovers is a provider with environments left behind, registered
 	// under its name in place of whichever the configuration made.
 	Leftovers buildenv.LeftoverProvider
-	// LookTart finds Tart; exec.LookPath where nil.
-	LookTart func(string) (string, error)
+	// Look finds a program by name, each program compose hands down
+	// found with it once; the command line's PATH where nil (Lookup).
+	Look func(string) (string, error)
 	// GitHubClient is GitHub as the login reaches it, with Store's;
 	// github.SystemClient where nil, over the system keychain where Store
 	// is nil.
 	GitHubClient func(github.Signin) *github.Client
 	Store        credential.Store
+}
+
+// Lookup is how compose finds a program: Look, or else the command line's
+// PATH (subprocess.LookPath).
+func (d Dependencies) Lookup(options Options) func(string) (string, error) {
+	if d.Look != nil {
+		return d.Look
+	}
+	return func(name string) (string, error) { return subprocess.LookPath(name, options.Env) }
+}
+
+// LookTart finds Tart: with Look where it's given, else on the process's
+// PATH, which the check-execution service's construction moves to the
+// command line's (docs/roadmap.md).
+func (d Dependencies) LookTart() (string, error) {
+	if d.Look != nil {
+		return d.Look("tart")
+	}
+	return exec.LookPath("tart")
 }
 
 // Assembly is what a command works with: the engine, opened, the
@@ -206,8 +228,10 @@ type Assembly struct {
 const PullRequestsVariable = "DOCKHAND_PULL_REQUESTS"
 
 // Settings resolves the engine's options from the command line's, the
-// environment, and the configuration file, which it reads.
-func Settings(ctx context.Context, options Options) (engine.Options, config.File, string, error) {
+// environment, and the configuration file, which it reads, with the
+// programs the engine runs found as dependencies find them (Lookup).
+func Settings(ctx context.Context, options Options, dependencies Dependencies) (engine.Options, config.File, string, error) {
+	look := dependencies.Lookup(options)
 	places := options.Places()
 	configPath, err := places.ConfigPath(options.Getenv(config.PathVariable))
 	if err != nil {
@@ -274,8 +298,9 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 		Git:  git,
 		Env:  env,
 		// port-tclsh on the command line's PATH, else under MacPorts'
-		// default prefix.
-		Tclsh:     macports.FindTclsh(func(name string) (string, error) { return subprocess.LookPath(name, options.Env) }),
+		// default prefix, and the other programs the engine runs.
+		Tclsh:     macports.FindTclsh(look),
+		Programs:  engine.FindPrograms(look),
 		Database:  database,
 		Worktrees: file.Worktrees,
 		// holds.majors = "allow" lets bump and serve move a major version.
@@ -311,7 +336,8 @@ func Settings(ctx context.Context, options Options) (engine.Options, config.File
 // schema is working with is refused (engine.LiveUnderMigrationError), for
 // the command to ask the person, and open again with MigrateUnderLive.
 func Open(ctx context.Context, options Options, dependencies Dependencies) (Assembly, error) {
-	engineOptions, file, configPath, err := Settings(ctx, options)
+	engineOptions, file, configPath, err := Settings(ctx, options, dependencies)
+	look := dependencies.Lookup(options)
 	if err != nil {
 		return Assembly{}, err
 	}
@@ -341,7 +367,8 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		client = github.SystemClient
 	}
 	if store == nil {
-		store = keychain.Store{}
+		security, _ := look("security")
+		store = keychain.Store{Executable: security}
 	}
 	e.GitHub = &github.Runtime{Client: client(options.Signin(store))}
 	// Reads GitHub answered before are asked again with their ETags, which
@@ -358,12 +385,8 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	e.Providers[buildenv.GitHub] = actions
 	// Tart builds wherever Tart is installed; its images are checked when a
 	// check names a release.
-	look := dependencies.LookTart
-	if look == nil {
-		look = exec.LookPath
-	}
-	if _, err := look("tart"); err == nil {
-		provider := options.TartProvider()
+	if _, err := dependencies.LookTart(); err == nil {
+		provider := options.TartProvider(look)
 		provider.Repo, provider.Index = e.Repo, e.PortIndex
 		provider.TestTimeout, provider.BuildTimeout = file.Providers.Tart.Timeout(), file.Providers.Tart.BuildBound()
 		e.Providers[buildenv.Tart] = provider
@@ -388,7 +411,8 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	}
 	e.GitHubCLI = dependencies.GitHubCLI
 	if e.GitHubCLI == nil {
-		e.GitHubCLI = github.CLI{Path: options.LookPath("gh")}
+		gh, _ := look("gh")
+		e.GitHubCLI = github.CLI{Path: gh}
 	}
 	// The readers built over MacPorts' evaluator, composed here, in order:
 	// the evaluator's selection reader, upstream discovery over it, and
@@ -399,7 +423,8 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		discovery := &upstream.Service{Ports: ports, HTTP: fetch.Client, Versions: ports, Git: e.GitProgram(),
 			Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: e.GitHubClient(), portsource.GitLab: &forgegitlab.Client{HTTP: fetch.Client}}}
 		e.Discovery, e.SourceArchiver = discovery, discovery
-		e.Preparer = &editprep.Service{Repo: e.Repo, Ports: ports, Upstream: discovery, HTTP: fetch.Client, Mirror: distfetch.MacPortsMirror, Workspaces: &workspace.Registry{}}
+		e.Preparer = &editprep.Service{Repo: e.Repo, Ports: ports, Upstream: discovery, HTTP: fetch.Client, Mirror: distfetch.MacPortsMirror, Workspaces: &workspace.Registry{},
+			DependencyTools: engineOptions.Programs.Vendoring, PatchTools: engineOptions.Programs.Patches}
 	}
 	if dependencies.Preparer != nil {
 		e.Preparer = dependencies.Preparer(e)

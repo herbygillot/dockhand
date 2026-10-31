@@ -11,8 +11,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/comparison/comparisontest"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/project"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // treeFiles are trees' files by path, for the collector's Files.
@@ -41,7 +43,7 @@ func TestTheBasesPatchesARevisionDropsAreChecked(t *testing.T) {
 	require.NoError(t, err)
 	had := macports.PortInfo{Name: "libuv", Options: map[string]string{"patchfiles": "patch-legacy.diff patch-still.diff patch-lost.diff"}}
 	directory := t.TempDir()
-	c := Collector{Files: files}
+	c := Collector{Files: files, PatchTools: patchcheck.Tools{Diff: testsupport.Program(t, "diff"), Patch: testsupport.Program(t, "patch")}}
 	patches := c.patchesFor(t.Context(), patchRequest{infos: [2]macports.PortInfo{had, info}, sources: [2]model.Source{{Tree: before}, {Tree: after}}, portdirs: [2]string{"devel/libuv", "devel/libuv"}, plan: plan, scratch: directory})
 	byName := map[string]assess.Patch{}
 	for _, patch := range patches {

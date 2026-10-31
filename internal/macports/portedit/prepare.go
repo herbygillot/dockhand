@@ -279,7 +279,9 @@ func (r *Result) report(report Fidelity) {
 
 type Service struct {
 	DependencyTools depblock.Tools
-	Ports           macports.Evaluator
+	// PatchTools are the diff and patch a port's patches are checked with.
+	PatchTools patchcheck.Tools
+	Ports      macports.Evaluator
 	// Archives fetches source archives; its zero value downloads with the
 	// default client and limits.
 	Archives distfetch.Client

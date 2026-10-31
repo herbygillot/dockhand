@@ -74,7 +74,8 @@ func Run(ctx context.Context, args []string, streams term.Streams) error {
 	if err != nil {
 		return err
 	}
-	return RunWith(ctx, settings.Invocation{Args: args, Env: os.Environ(), Dir: dir}, streams, compose.Dependencies{}, host.MachineHost())
+	env := os.Environ()
+	return RunWith(ctx, settings.Invocation{Args: args, Env: env, Dir: dir}, streams, compose.Dependencies{}, host.MachineHost(compose.Options{Env: env}.LookPath))
 }
 
 // run executes the command line on the host, with the stand-ins given,

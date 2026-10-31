@@ -105,3 +105,61 @@ func TestNothingBelowComposeReadsTheEnvironment(t *testing.T) {
 		require.Equal(t, allowed, found[pkg], "%s reads the process's environment %d times now; lower readersBelow to match", pkg, found[pkg])
 	}
 }
+
+// lookPathCallers are the packages that may find a program on the
+// process's PATH with exec.LookPath, and how many times: compose's Tart
+// lookup, until the check-execution service's construction reads the
+// command line's (docs/roadmap.md). subprocess finds programs on a PATH
+// it's given, and so may, as may testsupport, which only tests import.
+var lookPathCallers = map[string]int{"compose": 1}
+
+// compose finds each program once, on the command line's PATH, and hands
+// it down resolved: nothing else in internal finds one on the process's
+// (the LookPath audit's C8, 2026-10-31).
+func TestOnlyComposeFindsAProgram(t *testing.T) {
+	found := map[string]int{}
+	var where []string
+	files := token.NewFileSet()
+	require.NoError(t, filepath.WalkDir(filepath.Join(".."), func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		pkg := filepath.ToSlash(filepath.Dir(path))[len("../"):]
+		if pkg == "subprocess" || pkg == "testsupport" || strings.HasPrefix(pkg, "testsupport/") {
+			return nil
+		}
+		file, err := parser.ParseFile(files, path, nil, parser.SkipObjectResolution)
+		if err != nil {
+			return err
+		}
+		name := ""
+		for _, spec := range file.Imports {
+			if imported, _ := strconv.Unquote(spec.Path.Value); imported == "os/exec" {
+				name = "exec"
+				if spec.Name != nil {
+					name = spec.Name.Name
+				}
+			}
+		}
+		if name == "" {
+			return nil
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			if selector, ok := node.(*ast.SelectorExpr); ok && selector.Sel.Name == "LookPath" {
+				if ident, ok := selector.X.(*ast.Ident); ok && ident.Name == name {
+					found[pkg]++
+					where = append(where, files.Position(selector.Pos()).String())
+				}
+			}
+			return true
+		})
+		return nil
+	}))
+	sort.Strings(where)
+	for pkg, count := range found {
+		require.LessOrEqual(t, count, lookPathCallers[pkg], "%s finds a program on the process's PATH %d times; take it from compose, found on the command line's:\n%s", pkg, count, strings.Join(where, "\n"))
+	}
+	for pkg, allowed := range lookPathCallers {
+		require.Equal(t, allowed, found[pkg], "%s finds a program on the process's PATH %d times now; lower lookPathCallers to match", pkg, found[pkg])
+	}
+}

@@ -2,7 +2,7 @@ package macos
 
 import (
 	"context"
-	"os/exec"
+	"errors"
 	"strings"
 	"time"
 
@@ -23,12 +23,15 @@ func Notify(ctx context.Context, title, text string) error {
 	return err
 }
 
-// Open opens an address in the person's browser, with open(1).
-func Open(ctx context.Context, url string) error {
-	path, err := exec.LookPath("open")
-	if err != nil {
-		return err
+// Opener opens addresses in the person's browser with open(1), at Path,
+// which the command line finds on the PATH dockhand was run with.
+type Opener struct{ Path string }
+
+// Open opens an address in the person's browser.
+func (o Opener) Open(ctx context.Context, url string) error {
+	if o.Path == "" {
+		return errors.New("macos: open isn't on the PATH dockhand was run with")
 	}
-	_, err = subprocess.Run(ctx, subprocess.Spec{Tool: "open", Path: path, Args: []string{url}, Limit: 1 << 16})
+	_, err := subprocess.Run(ctx, subprocess.Spec{Tool: "open", Path: o.Path, Args: []string{url}, Limit: 1 << 16})
 	return err
 }

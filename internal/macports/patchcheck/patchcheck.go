@@ -51,7 +51,17 @@ type Request struct {
 	// Fuzz refreshes a patch that applies only with fuzz too, for a
 	// person to look over: an attended edit's (Refresh.Fuzzed).
 	Fuzz bool
+	// Tools are the diff and patch the check runs.
+	Tools Tools
 }
+
+// Tools are where diff and patch are, which compose finds on the PATH
+// dockhand was run with; one not found is empty, and a check that needs
+// it says so.
+type Tools struct{ Diff, Patch string }
+
+// notFound is what a check says of a program it wasn't given.
+const notFound = "isn't on the PATH dockhand was run with"
 
 // Result is the verdict for one patch. Checked is false when the check could
 // not model the patch, which is reported rather than treated as a failure.
@@ -131,8 +141,9 @@ func HunkWords(hunks []Hunk) string {
 // level (field testing at 5eb101a3). A patch.dir that leaves the source
 // directory can't be modelled, so each patch is unchecked there.
 //
-// fuzz refreshes a patch that applies only with fuzz too (Request.Fuzz).
-func Port(ctx context.Context, info macports.PortInfo, archives []string, patches []Patch, fuzz bool) ([]Result, error) {
+// fuzz refreshes a patch that applies only with fuzz too (Request.Fuzz),
+// and tools are the diff and patch it runs.
+func Port(ctx context.Context, tools Tools, info macports.PortInfo, archives []string, patches []Patch, fuzz bool) ([]Result, error) {
 	dir := info.Options["patch.dir"]
 	if dir != "" && dir != "@worksrc@" && !strings.HasPrefix(dir, "@worksrc@/") {
 		results := make([]Result, 0, len(patches))
@@ -154,7 +165,7 @@ func Port(ctx context.Context, info macports.PortInfo, archives []string, patche
 	}
 	return Check(ctx, Request{
 		Archives: archives, Worksrcdir: filepath.ToSlash(info.Options["worksrcdir"]), Rename: rename, Mkdir: mkdir,
-		PatchDir: strings.TrimPrefix(strings.TrimPrefix(dir, "@worksrc@"), "/"), PreArgs: pre, Patches: patches, Fuzz: fuzz,
+		PatchDir: strings.TrimPrefix(strings.TrimPrefix(dir, "@worksrc@"), "/"), PreArgs: pre, Patches: patches, Fuzz: fuzz, Tools: tools,
 	})
 }
 
@@ -235,9 +246,9 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 		}
 		return results, nil
 	}
-	command, err := exec.LookPath("patch")
-	if err != nil {
-		return nil, fmt.Errorf("patchcheck: %w", err)
+	command := request.Tools.Patch
+	if command == "" {
+		return nil, fmt.Errorf("patchcheck: patch %s", notFound)
 	}
 	flag, err := checkFlag(ctx, command)
 	if err != nil {
@@ -295,7 +306,7 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 				results[i].Detail = "applies, " + HunkWords(results[i].Hunks)
 			}
 			if len(results[i].Hunks) > 0 && (!results[i].Fuzzed() || request.Fuzz) {
-				if results[i].Refresh, err = refresh(ctx, command, apply, dir, contents[i], strip, request.Fuzz); err != nil {
+				if results[i].Refresh, err = refresh(ctx, request.Tools, apply, dir, contents[i], strip, request.Fuzz); err != nil {
 					return nil, err
 				}
 			}
@@ -337,7 +348,7 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 			results[i].Detail = "is already in the source: it applies in reverse"
 		} else if ctx.Err() != nil {
 			return nil, ctx.Err()
-		} else if results[i].Refresh, err = refresh(ctx, command, apply, dir, contents[i], strip, false); err != nil {
+		} else if results[i].Refresh, err = refresh(ctx, request.Tools, apply, dir, contents[i], strip, false); err != nil {
 			// One with some hunks the source carries applies without them.
 			return nil, err
 		}

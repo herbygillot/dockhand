@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
@@ -35,7 +36,7 @@ func preparationFixture(t *testing.T, body string) (*editprep.Service, editprep.
 	require.NoError(t, err)
 	commit, tree, err := repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
-	return &editprep.Service{Repo: repo, Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}}, editprep.Request{
+	return &editprep.Service{Repo: repo, Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}, PatchTools: patchcheck.Tools{Diff: testsupport.Program(t, "diff"), Patch: testsupport.Program(t, "patch")}}, editprep.Request{
 		Action: model.EditRevbump, Source: model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(tree)}, Selection: macports.Selection{Selector: "fixture"}, Subject: "rebuild against updated dependency",
 	}
 }

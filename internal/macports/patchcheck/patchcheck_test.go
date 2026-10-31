@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -47,7 +47,7 @@ func TestCheckReportsEachPatch(t *testing.T) {
 	// It builds on good.diff, which is applied before it is checked.
 	_, _ = gz.Write([]byte(onGood))
 	require.NoError(t, gz.Close())
-	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-t", "-N", "-p0"}, Patches: []Patch{
+	results, err := Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-t", "-N", "-p0"}, Patches: []Patch{
 		{Name: "good.diff", Data: []byte(good)}, {Name: "stale.diff", Data: []byte(stale)}, {Name: "missing.diff", Data: []byte(missing)},
 		{Name: "good.diff.gz", Data: gzipped.Bytes()}, {Name: "packed.diff.xz", Data: []byte("irrelevant")},
 	}})
@@ -72,17 +72,17 @@ func TestCheckHonorsStripRenameAndPatchDir(t *testing.T) {
 	archive := sourceArchive(t, map[string]string{"upstream-name/sub/dir/a.txt": "one\ntwo\nthree\n"})
 	p1 := strings.ReplaceAll(good, "--- dir/a.txt", "--- a/dir/a.txt")
 	p1 = strings.ReplaceAll(p1, "+++ dir/a.txt", "+++ b/dir/a.txt")
-	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0/sub", Rename: true, PreArgs: []string{"-p1"}, Patches: []Patch{{Name: "p1.diff", Data: []byte(p1)}}})
+	results, err := Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "project-2.0/sub", Rename: true, PreArgs: []string{"-p1"}, Patches: []Patch{{Name: "p1.diff", Data: []byte(p1)}}})
 	require.NoError(t, err)
 	require.True(t, results[0].Applies, results[0].Detail)
-	results, err = Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0/sub", PreArgs: []string{"-p1"}, Patches: []Patch{{Name: "p1.diff", Data: []byte(p1)}}})
+	results, err = Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "project-2.0/sub", PreArgs: []string{"-p1"}, Patches: []Patch{{Name: "p1.diff", Data: []byte(p1)}}})
 	require.NoError(t, err)
 	require.False(t, results[0].Applies, "without extract.rename a differing top-level directory is not the source")
 	inner := strings.ReplaceAll(good, "dir/a.txt", "a.txt")
-	results, err = Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "upstream-name/sub", PatchDir: "dir", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "inner.diff", Data: []byte(inner)}}})
+	results, err = Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "upstream-name/sub", PatchDir: "dir", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "inner.diff", Data: []byte(inner)}}})
 	require.NoError(t, err)
 	require.True(t, results[0].Applies, results[0].Detail)
-	results, err = Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "upstream-name/sub", PreArgs: []string{"-p0", "--posix"}, Patches: []Patch{{Name: "good.diff", Data: []byte(good)}}})
+	results, err = Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "upstream-name/sub", PreArgs: []string{"-p0", "--posix"}, Patches: []Patch{{Name: "good.diff", Data: []byte(good)}}})
 	require.NoError(t, err)
 	require.False(t, results[0].Checked)
 	require.Contains(t, results[0].Detail, `"--posix" is not modeled`)
@@ -94,7 +94,7 @@ func TestCheckHonorsStripRenameAndPatchDir(t *testing.T) {
 // apply against that directory (field testing, batch 11: lima).
 func TestAMovedSourceIsTheArchivesTopDirectory(t *testing.T) {
 	archive := sourceArchive(t, map[string]string{"lima-2.2.1/dir/a.txt": "one\ntwo\nthree\n"})
-	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "gopath/src/github.com/lima-vm/lima", PreArgs: []string{"-t", "-N", "-p0"},
+	results, err := Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "gopath/src/github.com/lima-vm/lima", PreArgs: []string{"-t", "-N", "-p0"},
 		Patches: []Patch{{Name: "good.diff", Data: []byte(good)}, {Name: "stale.diff", Data: []byte(stale)}}})
 	require.NoError(t, err)
 	require.True(t, results[0].Applies, results[0].Detail)
@@ -135,7 +135,7 @@ func TestACompressedPatchPastTheBoundIsUncheckedNotCut(t *testing.T) {
 	_, _ = gz.Write([]byte(good))
 	_, _ = gz.Write(bytes.Repeat([]byte("\n"), maxPatchedFile))
 	require.NoError(t, gz.Close())
-	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{
+	results, err := Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{
 		{Name: "large.diff.gz", Data: gzipped.Bytes()}, {Name: "good.diff", Data: []byte(good)},
 	}})
 	require.NoError(t, err)
@@ -150,8 +150,7 @@ func TestACompressedPatchPastTheBoundIsUncheckedNotCut(t *testing.T) {
 // here says it, standing in for one that prints a line for each of many
 // files.
 func TestPatchsExitStatusDecidesPastItsOutputLimit(t *testing.T) {
-	real, err := exec.LookPath("patch")
-	require.NoError(t, err)
+	real := tools(t).Patch
 	bin := t.TempDir()
 	testsupport.WriteExecutable(t, filepath.Join(bin, "patch"), "#!/bin/sh\n"+
 		"if [ \"$1\" = --version ]; then exec "+real+" --version; fi\n"+
@@ -160,7 +159,7 @@ func TestPatchsExitStatusDecidesPastItsOutputLimit(t *testing.T) {
 		"exit \"$FAKE_PATCH_EXIT\"\n")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "one\ntwo\nthree\n"})
-	request := Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "good.diff", Data: []byte(good)}}}
+	request := Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "good.diff", Data: []byte(good)}}}
 
 	t.Setenv("FAKE_PATCH_EXIT", "0")
 	results, err := Check(t.Context(), request)
@@ -177,7 +176,7 @@ func TestPatchsExitStatusDecidesPastItsOutputLimit(t *testing.T) {
 func TestUnreadableArchiveLeavesPatchesUnchecked(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "source.tar.gz")
 	require.NoError(t, os.WriteFile(file, []byte("archive bytes for /1.2.4/source.tar.gz"), 0600))
-	results, err := Check(t.Context(), Request{Archives: []string{file}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "good.diff", Data: []byte(good)}}})
+	results, err := Check(t.Context(), Request{Tools: tools(t), Archives: []string{file}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "good.diff", Data: []byte(good)}}})
 	require.NoError(t, err)
 	require.False(t, results[0].Checked)
 	require.Contains(t, results[0].Detail, "source archive not readable")
@@ -189,7 +188,7 @@ func TestUnreadableArchiveLeavesPatchesUnchecked(t *testing.T) {
 // isn't (the roadmap's item 7, files preparation deletes).
 func TestAPatchTheSourceAlreadyHoldsIsMerged(t *testing.T) {
 	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "one\nTWO\nthree\n"})
-	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{
+	results, err := Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{
 		{Name: "merged.diff", Data: []byte(good)}, {Name: "stale.diff", Data: []byte(stale)},
 	}})
 	require.NoError(t, err)
@@ -205,7 +204,7 @@ func TestAPatchTheSourceAlreadyHoldsIsMerged(t *testing.T) {
 func TestARenamedGOPATHSourceIsTheArchivesTopDirectory(t *testing.T) {
 	archive := sourceArchive(t, map[string]string{"maddy-0.9.6/build.sh": "one\ntwo\nthree\n"})
 	patch := strings.ReplaceAll(good, "dir/a.txt", "./build.sh")
-	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "gopath/src/github.com/foxcpp/maddy", Rename: true, PreArgs: []string{"-t", "-N", "-p0"},
+	results, err := Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "gopath/src/github.com/foxcpp/maddy", Rename: true, PreArgs: []string{"-t", "-N", "-p0"},
 		Patches: []Patch{{Name: "patch-build.sh.diff", Data: []byte(patch)}}})
 	require.NoError(t, err)
 	require.True(t, results[0].Applies, results[0].Detail)
@@ -218,11 +217,11 @@ func TestPatchArgsStripLevelIsMacPorts(t *testing.T) {
 	archive := sourceArchive(t, map[string]string{"herdr-0.9.5/src/update.rs": "one\ntwo\nthree\n"})
 	patch := strings.ReplaceAll(strings.ReplaceAll(good, "--- dir/a.txt", "--- a/src/update.rs"), "+++ dir/a.txt", "+++ b/src/update.rs")
 	info := macports.PortInfo{Options: map[string]string{"worksrcdir": "herdr-0.9.5", "extract.rename": "1", "patch.pre_args": "-t -N -p0", "patch.args": "-p1"}}
-	results, err := Port(t.Context(), info, []string{archive}, []Patch{{Name: "patch-macports-update.diff", Data: []byte(patch)}}, false)
+	results, err := Port(t.Context(), tools(t), info, []string{archive}, []Patch{{Name: "patch-macports-update.diff", Data: []byte(patch)}}, false)
 	require.NoError(t, err)
 	require.True(t, results[0].Applies, results[0].Detail)
 	delete(info.Options, "patch.args")
-	results, err = Port(t.Context(), info, []string{archive}, []Patch{{Name: "patch-macports-update.diff", Data: []byte(patch)}}, false)
+	results, err = Port(t.Context(), tools(t), info, []string{archive}, []Patch{{Name: "patch-macports-update.diff", Data: []byte(patch)}}, false)
 	require.NoError(t, err)
 	require.False(t, results[0].Applies, "at -p0 alone it finds no file")
 }
@@ -236,13 +235,13 @@ func TestFuzzIsToldFromAnOffset(t *testing.T) {
 	offset := "--- dir/a.txt\n+++ dir/a.txt\n@@ -1,5 +1,5 @@\n one\n two\n-three\n+THREE\n four\n five\n"
 	fuzz := "--- dir/a.txt\n+++ dir/a.txt\n@@ -4,5 +4,5 @@\n ONE\n two\n-three\n+THREE\n four\n FIVE\n"
 	// Each alone, since both change the same line.
-	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "offset.diff", Data: []byte(offset)}}})
+	results, err := Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "offset.diff", Data: []byte(offset)}}})
 	require.NoError(t, err)
 	require.True(t, results[0].Applies)
 	require.False(t, results[0].Fuzzed())
 	require.Equal(t, []Hunk{{Number: 1, Line: 4, Offset: 3}}, results[0].Hunks)
 	require.Equal(t, "applies, hunk 1 at an offset of 3 lines", results[0].Detail)
-	results, err = Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "fuzz.diff", Data: []byte(fuzz)}}})
+	results, err = Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "fuzz.diff", Data: []byte(fuzz)}}})
 	require.NoError(t, err)
 	require.True(t, results[0].Applies)
 	require.True(t, results[0].Fuzzed())
@@ -258,7 +257,7 @@ func TestAPatchIsRefreshedToApplyAsWritten(t *testing.T) {
 	source := "x\ny\nz\none\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n"
 	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": source})
 	request := func(name, data string) Request {
-		return Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: name, Data: []byte(data)}}}
+		return Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: name, Data: []byte(data)}}}
 	}
 	offset := "Keep three upper-case.\n\n--- dir/a.txt\n+++ dir/a.txt\n@@ -1,5 +1,5 @@\n one\n two\n-three\n+THREE\n four\n five\n"
 	results, err := Check(t.Context(), request("offset.diff", offset))
@@ -311,11 +310,11 @@ func TestAPatchIsRefreshedToApplyAsWritten(t *testing.T) {
 func TestAnArchiveUnpackedInItsSourceDirectoryIsReadThere(t *testing.T) {
 	archive := sourceArchive(t, map[string]string{"dir/a.txt": "one\ntwo\nthree\n", "README": "unrelated\n"})
 	info := macports.PortInfo{Options: map[string]string{"worksrcdir": "abook-0.6.2", "extract.mkdir": "yes", "patch.pre_args": "-t -N -p0"}}
-	results, err := Port(t.Context(), info, []string{archive}, []Patch{{Name: "good.diff", Data: []byte(good)}}, false)
+	results, err := Port(t.Context(), tools(t), info, []string{archive}, []Patch{{Name: "good.diff", Data: []byte(good)}}, false)
 	require.NoError(t, err)
 	require.True(t, results[0].Applies, results[0].Detail)
 	delete(info.Options, "extract.mkdir")
-	results, err = Port(t.Context(), info, []string{archive}, []Patch{{Name: "good.diff", Data: []byte(good)}}, false)
+	results, err = Port(t.Context(), tools(t), info, []string{archive}, []Patch{{Name: "good.diff", Data: []byte(good)}}, false)
 	require.NoError(t, err)
 	require.False(t, results[0].Applies, "unpacked as MacPorts would without it, the source directory holds none of them")
 }
@@ -326,11 +325,34 @@ func TestAnArchiveUnpackedInItsSourceDirectoryIsReadThere(t *testing.T) {
 // tried on the pristine source (field testing's outdated-ports session).
 func TestPatchesAreCheckedInOrderOnWhatTheEarlierOnesLeft(t *testing.T) {
 	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "one\ntwo\nthree\n"})
-	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{
+	results, err := Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{
 		{Name: "first.diff", Data: []byte(good)}, {Name: "second.diff", Data: []byte(onGood)},
 	}})
 	require.NoError(t, err)
 	require.True(t, results[0].Applies, results[0].Detail)
 	require.True(t, results[1].Applies, "the second's context is the first's output: %s", results[1].Detail)
 	require.Empty(t, Rejected(results))
+}
+
+// tools are diff and patch where the test's PATH has them, as compose
+// finds them on the command line's.
+func tools(t *testing.T) Tools {
+	t.Helper()
+	found := Tools{}
+	for name, path := range map[string]*string{"diff": &found.Diff, "patch": &found.Patch} {
+		executable, err := subprocess.LookPath(name, os.Environ())
+		require.NoError(t, err)
+		*path = executable
+	}
+	return found
+}
+
+// A check given no patch says it isn't on the PATH, where a refresh
+// given no diff says the same of diff.
+func TestAProgramNotGivenIsNamed(t *testing.T) {
+	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "one\ntwo\nthree\n"})
+	_, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "good.diff", Data: []byte(good)}}})
+	require.EqualError(t, err, "patchcheck: patch isn't on the PATH dockhand was run with")
+	_, err = diffFiles(t.Context(), "", "before", "after")
+	require.EqualError(t, err, "patchcheck: diff isn't on the PATH dockhand was run with")
 }

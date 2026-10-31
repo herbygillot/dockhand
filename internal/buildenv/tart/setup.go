@@ -330,17 +330,14 @@ func (p *Provider) provisionConfig(release macos.Release, options SetupOptions) 
 // wasn't given.
 type MissingXcode = macos.MissingXcode
 
-// Xcodes is where the xcodes command is, when it's installed: it downloads
+// Xcodes is where the xcodes command is, when it's installed
+// (XcodesExecutable): it downloads
 // Xcode from Apple with the person's Apple ID, which dockhand never sees.
 // It signs in through Apple's own sign-in, which Apple doesn't document
 // for other programs: an exception to depending only on documented
 // interfaces, which the person chose (docs/roadmap.md).
 func (p *Provider) Xcodes() (string, bool) {
-	if p.xcodes != "" {
-		return p.xcodes, true
-	}
-	path, err := exec.LookPath("xcodes")
-	return path, err == nil
+	return p.XcodesExecutable, p.XcodesExecutable != ""
 }
 
 // ErrXcodes is xcodes failing to download an Xcode, which says why in its

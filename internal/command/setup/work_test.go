@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -130,7 +131,12 @@ func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
 	require.NotContains(t, e.Providers, "tart")
 	e.Close()
 
-	cmdtest.Stands(t).LookTart = func(string) (string, error) { return "/opt/homebrew/bin/tart", nil }
+	cmdtest.Stands(t).Look = func(name string) (string, error) {
+		if name == "tart" {
+			return "/opt/homebrew/bin/tart", nil
+		}
+		return subprocess.LookPath(name, os.Environ())
+	}
 	s = *cmdtest.TestSettings(t)
 	e, err = s.Open(t.Context())
 	require.NoError(t, err)

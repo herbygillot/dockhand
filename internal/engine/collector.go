@@ -26,7 +26,7 @@ type SourceArchiver = comparison.SourceArchiver
 func (e *Engine) collector(planner ArchivePlanner) comparison.Collector {
 	archiver, problem := e.sourceArchiver()
 	c := comparison.Collector{Archiver: archiver, ArchiverProblem: problem, Resolver: gitResolver{e}, Files: treeFiles{e.Repo},
-		Mirror: e.ArchiveMirror, Readings: e.readings()}
+		Mirror: e.ArchiveMirror, Readings: e.readings(), PatchTools: e.options.Programs.Patches}
 	if planner != nil {
 		c.Planner = planner
 	}

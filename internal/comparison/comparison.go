@@ -15,6 +15,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/project"
 )
@@ -38,6 +39,8 @@ type Collector struct {
 	// Readings where readings of archives are kept.
 	Mirror   string
 	Readings project.Cache
+	// PatchTools are the diff and patch a port's patches are checked with.
+	PatchTools patchcheck.Tools
 }
 
 // ArchivePlanner evaluates a port of a directory, or its first where port

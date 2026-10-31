@@ -165,7 +165,7 @@ func occurrences(file []byte, block []string) int {
 //
 // fuzz re-emits a hunk that landed only with fuzz too, where patch put
 // it, for a person to look over: an attended edit's.
-func refresh(ctx context.Context, command string, args []string, dir string, data []byte, strip int, fuzz bool) (*Refresh, error) {
+func refresh(ctx context.Context, tools Tools, args []string, dir string, data []byte, strip int, fuzz bool) (*Refresh, error) {
 	comment, files, ok := sections(data, strip)
 	if !ok {
 		return nil, nil
@@ -221,7 +221,7 @@ func refresh(ctx context.Context, command string, args []string, dir string, dat
 			numbers[f.name] = append(numbers[f.name], i)
 		}
 	}
-	output, err := run(ctx, command, args, applied, []byte(kept.String()))
+	output, err := run(ctx, tools.Patch, args, applied, []byte(kept.String()))
 	if err != nil || hunkFailed.Match(output) || hunkIgnored.Match(output) {
 		return nil, nil
 	}
@@ -255,7 +255,7 @@ func refresh(ctx context.Context, command string, args []string, dir string, dat
 	var b strings.Builder
 	b.WriteString(strings.Join(comment, ""))
 	for _, f := range files {
-		diff, err := diffFiles(ctx, filepath.Join(old, filepath.FromSlash(f.name)), filepath.Join(applied, filepath.FromSlash(f.name)))
+		diff, err := diffFiles(ctx, tools.Diff, filepath.Join(old, filepath.FromSlash(f.name)), filepath.Join(applied, filepath.FromSlash(f.name)))
 		if err != nil {
 			return nil, err
 		}
@@ -270,7 +270,7 @@ func refresh(ctx context.Context, command string, args []string, dir string, dat
 	refreshed := []byte(b.String())
 	// The prediction, exactly: the refreshed patch applies as written, and
 	// makes what the old one made.
-	again, err := run(ctx, command, args, check, refreshed)
+	again, err := run(ctx, tools.Patch, args, check, refreshed)
 	if err != nil || len(placed(again)) > 0 || hunkIgnored.Match(again) {
 		return nil, nil
 	}
@@ -291,12 +291,12 @@ func run(ctx context.Context, command string, args []string, dir string, data []
 	return output.Output, err
 }
 
-// diffFiles are the hunks of a unified diff from one file to another,
-// their own header lines left out; none where they're the same.
-func diffFiles(ctx context.Context, before, after string) ([]byte, error) {
-	command, err := exec.LookPath("diff")
-	if err != nil {
-		return nil, err
+// diffFiles are the hunks of a unified diff from one file to another, by
+// the diff at command, their own header lines left out; none where
+// they're the same.
+func diffFiles(ctx context.Context, command, before, after string) ([]byte, error) {
+	if command == "" {
+		return nil, fmt.Errorf("patchcheck: diff %s", notFound)
 	}
 	output, err := subprocess.Run(ctx, subprocess.Spec{Tool: "diff", Path: command, Args: []string{"-u", before, after}, Limit: 64 << 20})
 	var failure *subprocess.Error

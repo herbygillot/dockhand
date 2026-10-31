@@ -22,6 +22,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
@@ -69,6 +71,9 @@ type Options struct {
 	// Mac's, which compose finds (macports.FindTclsh), and none where it's
 	// empty.
 	Tclsh string
+	// Programs are the other programs the engine's readers and editors
+	// run, which compose finds.
+	Programs Programs
 	// MigrateUnderLive migrates the database's schema though dockhand
 	// processes that read the older one are working: a person's answer to
 	// store.LiveUnderMigrationError, which the migration is otherwise.
@@ -126,6 +131,28 @@ type Options struct {
 	// which ProposeCheck resolves for check, ship, and serve alike (the
 	// architecture review of 5897a82, R3-35); declared where it's empty.
 	Tests model.TestPolicy
+}
+
+// Programs are where the programs dockhand runs beside MacPorts'
+// evaluator are, each found once, by compose, on the PATH dockhand was run
+// with: diff and patch, which check a port's patches; go2port and
+// cargo2port, which regenerate its vendored dependencies; and portindex,
+// which indexes a tree, found as port-tclsh is (macports.FindPortindex).
+// One not found is empty, and what needs it says so.
+type Programs struct {
+	Patches   patchcheck.Tools
+	Vendoring depblock.Tools
+	Portindex string
+}
+
+// FindPrograms finds each of the programs with look, as compose does on
+// the PATH dockhand was run with, once.
+func FindPrograms(look func(name string) (string, error)) Programs {
+	found := Programs{Vendoring: depblock.Tools{Look: look}, Portindex: macports.FindPortindex(look)}
+	for name, path := range map[string]*string{"diff": &found.Patches.Diff, "patch": &found.Patches.Patch, "go2port": &found.Vendoring.Go2Port, "cargo2port": &found.Vendoring.Cargo2Port} {
+		*path, _ = look(name)
+	}
+	return found
 }
 
 // git is the git dockhand runs, in Env.

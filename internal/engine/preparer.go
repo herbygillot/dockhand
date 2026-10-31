@@ -78,7 +78,7 @@ func (e *Engine) indexConfig() (portindex.Config, error) {
 	if err != nil {
 		return portindex.Config{}, err
 	}
-	return portindex.Config{CacheDirectory: cache, Env: e.options.Env, Mirror: &portindex.Mirror{HTTP: fetch.Client, Base: e.options.IndexMirror}}, nil
+	return portindex.Config{Executable: e.options.Programs.Portindex, CacheDirectory: cache, Env: e.options.Env, Mirror: &portindex.Mirror{HTTP: fetch.Client, Base: e.options.IndexMirror}}, nil
 }
 
 // PortIndex is how the engine stages a tree's port index for a platform,

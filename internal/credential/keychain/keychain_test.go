@@ -122,3 +122,10 @@ func TestPutRefusesWhatWouldInjectACommand(t *testing.T) {
 	}
 	require.NoFileExists(t, ran, "security never ran")
 }
+
+// A store given no security tool says it isn't on the PATH, which compose
+// searched.
+func TestAStoreWithoutTheSecurityToolSaysWhere(t *testing.T) {
+	_, err := (keychain.Store{}).Get(t.Context(), credential.Key{Service: "fixture", Account: "github.com"})
+	require.EqualError(t, err, "keychain: macOS security tool is unavailable: it isn't on the PATH dockhand was run with")
+}
