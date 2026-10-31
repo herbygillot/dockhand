@@ -87,10 +87,21 @@ func (p PortInfo) DeclaresTests() (declares, known bool) {
 }
 
 // PortGroups are the PortGroups the port loads, by name; known is false
-// where they weren't read.
+// where they weren't read. The evaluator records each with its version
+// and file, and a name alone reads the same.
 func (p PortInfo) PortGroups() (groups []string, known bool) {
-	groups, set, err := p.optionList("dockhand.portgroups")
-	return groups, set && err == nil
+	entries, set, err := p.optionList("dockhand.portgroups")
+	if !set || err != nil {
+		return nil, false
+	}
+	for _, entry := range entries {
+		fields, errs := syntax.ListValues(entry)
+		if len(errs) != 0 || len(fields) == 0 {
+			return nil, false
+		}
+		groups = append(groups, fields[0])
+	}
+	return groups, true
 }
 
 // BuildsInto reports a directory below ${worksrcpath} that the port's

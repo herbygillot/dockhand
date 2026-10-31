@@ -4,6 +4,22 @@ namespace eval ::dockhand {
     # empty registry, as MacPorts CI and a new Mac start from, whatever this
     # Mac has installed. The dispatcher answers the worker's questions about
     # it here, and they never reach the host's prefix or registry.
+    #
+    # A survey evaluates against two others (tools/survey), installation
+    # being which: host, the Mac's own, where the dispatcher still refuses
+    # what it refuses and passes every read to the host, counted; and
+    # installed, the fresh one but for a registry that holds the ports of
+    # installed_table, each installed and active.
+
+    # installed_table is the ports installation installed holds, each name
+    # and its version, revision, epoch, and variants; installed_table sets
+    # it before an evaluation.
+    variable installed_table {}
+    proc set_installed_table {table} {
+        if {[llength $table] % 2 != 0} { error "invalid installed table" }
+        variable installed_table $table
+        return
+    }
 
     # skeleton is the fresh prefix's directories, relative to it: those
     # Base's installer makes from its mtree files, which Base keeps in its
@@ -44,6 +60,8 @@ namespace eval ::dockhand {
     proc install_fresh {worker} {
         $worker eval {
             namespace eval ::dockhand_dispatcher {
+                variable installation fresh
+                variable installed_table {}
                 variable prefix ""
                 variable applications ""
                 variable skeleton {}
@@ -140,7 +158,64 @@ namespace eval ::dockhand {
                     }
                 }
                 variable registry_reads {registry_active registry_open registry_exists registry_exists_for_name registry_file_registered
-                    registry_port_registered registry_list_depends registry_fileinfo_for_file registry_fileinfo_for_index _portnameactive}
+                    registry_port_registered registry_list_depends registry_fileinfo_for_file registry_fileinfo_for_index _portnameactive registry_prop_retr}
+                # installed answers the registry aliases as a registry that
+                # holds the ports of installed_table does, each installed
+                # and active, in Base's words (registry2.0's receipt_sqlite
+                # and registry.tcl); nothing for a port it doesn't hold or a
+                # question it can't answer, as which files a port
+                # installed, which the fresh installation then answers.
+                # registry_open's entry is a token registry_prop_retr reads.
+                proc installed {name arguments} {
+                    variable installed_table
+                    set port [lindex $arguments 0]
+                    switch -- $name {
+                        registry_active {
+                            set rows {}
+                            foreach candidate [expr {$port eq "" ? [dict keys $installed_table] : [list $port]}] {
+                                if {![dict exists $installed_table $candidate]} { continue }
+                                lassign [dict get $installed_table $candidate] version revision epoch variants
+                                lappend rows [list $candidate $version $revision $variants 1 $epoch]
+                            }
+                            if {![llength $rows]} { return }
+                            return [list $port 0 $rows {-code 0}]
+                        }
+                        _portnameactive - registry_exists_for_name {
+                            if {![dict exists $installed_table $port]} { return }
+                            return [list $port 0 1 {-code 0}]
+                        }
+                        registry_exists {
+                            if {![dict exists $installed_table $port]} { return }
+                            lassign $arguments port version revision variants
+                            if {$revision eq ""} { set revision 0 }
+                            lassign [dict get $installed_table $port] held_version held_revision held_epoch held_variants
+                            return [list $port 0 [expr {$version eq $held_version && $revision eq $held_revision && $variants eq $held_variants}] {-code 0}]
+                        }
+                        registry_open {
+                            if {![dict exists $installed_table $port]} { return }
+                            lassign $arguments port version revision variants epoch
+                            if {$revision eq ""} { set revision 0 }
+                            lassign [dict get $installed_table $port] held_version held_revision held_epoch held_variants
+                            if {$version ne $held_version || $revision ne $held_revision || $variants ne $held_variants || ($epoch ne "" && $epoch ne $held_epoch)} { return }
+                            return [list $port 0 [list dockhand-installed $port] {-code 0}]
+                        }
+                        registry_prop_retr {
+                            lassign $arguments ref property
+                            set port [lindex $ref 1]
+                            if {[lindex $ref 0] ne "dockhand-installed" || ![dict exists $installed_table $port]} { return }
+                            lassign [dict get $installed_table $port] version revision epoch variants
+                            switch -- $property {
+                                name { set value $port }
+                                version - revision - epoch - variants { set value [set $property] }
+                                active { set value 1 }
+                                state { set value installed }
+                                default { set value 0 }
+                            }
+                            return [list $port 0 $value {-code 0}]
+                        }
+                    }
+                    return
+                }
                 # binaryInPath and findBinary, Base's lookups of a program
                 # along PATH, run in the parent and see the host's prefix;
                 # these are the same, in the worker, over the fresh one.
@@ -165,6 +240,8 @@ namespace eval ::dockhand {
                 # subject, then catch's code, result, and options; or
                 # nothing, for a call it has no say in.
                 proc fresh {name arguments} {
+                    variable installation
+                    if {$installation eq "host"} { return }
                     variable registry_reads
                     variable nowhere
                     switch -- $name {
@@ -247,5 +324,10 @@ namespace eval ::dockhand {
         $worker eval [list set ::dockhand_dispatcher::prefix $::macports::prefix]
         $worker eval [list set ::dockhand_dispatcher::applications $::macports::applications_dir]
         $worker eval [list set ::dockhand_dispatcher::skeleton [skeleton]]
+        variable installation
+        variable installed_table
+        $worker eval [list set ::dockhand_dispatcher::installation $installation]
+        $worker eval [list set ::dockhand_dispatcher::installed_table $installed_table]
     }
 }
+::tclrpc::register installed_table ::dockhand::set_installed_table

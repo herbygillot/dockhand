@@ -30,8 +30,8 @@ type Request struct {
 	Version       string
 	Subport       string
 	// Journal, when set, receives each port as it finishes and names the
-	// ports a rerun leaves out.
-	Journal *Journal
+	// ports a rerun leaves out: the journal, or the record.
+	Journal Recorder
 }
 
 func (r Request) Validate() error {
@@ -60,6 +60,10 @@ type Result struct {
 type Port struct {
 	Selector string
 	portedit.Assessment
+	// portfile is the port's Portfile where the selection knew it, and
+	// observed each context it was observed in, for the record.
+	portfile string
+	observed []observed
 }
 
 // Service receives evaluation, source selection, and optional release integrations.
@@ -71,6 +75,10 @@ type Service struct {
 	Index           portindex.Source
 	// Workspaces hands out the tree; nil materializes one for this survey.
 	Workspaces *workspace.Registry
+	// Observe observes each port as committed in each context its
+	// assessment observes it in, for the record; ObserveOnly does that
+	// alone, without assessing it.
+	Observe, ObserveOnly bool
 }
 
 func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err error) {
@@ -196,47 +204,65 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 		return Port{}, err
 	}
 	progress.VerboseReport(ctx, "Assessing %s", selected.Label)
-	item := Port{Selector: selected.Label}
-	{
-		if request.Subport != "" {
-			selected.Selection.Subport = request.Subport
-		} else if selected.Name != "" && selected.Name != path.Base(path.Dir(selected.Selection.Selector)) {
-			selected.Selection.Subport = selected.Name
-		}
-		probe, problem := editor.Probe(ctx, portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: files.Source, Workspace: projection, Selection: selected.Selection, Platform: platform})
-		if problem == nil {
-			defer probe.Close()
-		}
-		if problem == nil && selected.Name != "" {
-			problem = probe.Agrees(selected.Name)
-		}
-		if problem != nil {
-			item.Findings = []portedit.Finding{portedit.Problem("evaluation", problem)}
-			item.Summarize()
-		} else {
-			var release *model.Release
-			var resolutionErr error
-			if request.Version != "" {
-				bound, bindErr := s.Upstream.Bind(probe)
-				resolutionErr = bindErr
-				if bindErr == nil {
-					resolved, resolveErr := bound.Resolve(ctx, request.Version)
-					resolutionErr = resolveErr
-					if resolveErr == nil {
-						release = &resolved
-					}
-				}
+	item := Port{Selector: selected.Label, portfile: selected.Portfile}
+	if request.Subport != "" {
+		selected.Selection.Subport = request.Subport
+	} else if selected.Name != "" && selected.Name != path.Base(path.Dir(selected.Selection.Selector)) {
+		selected.Selection.Subport = selected.Name
+	}
+	probe, problem := editor.Probe(ctx, portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: files.Source, Workspace: projection, Selection: selected.Selection, Platform: platform})
+	if problem == nil {
+		defer probe.Close()
+	}
+	if problem == nil && selected.Name != "" {
+		problem = probe.Agrees(selected.Name)
+	}
+	if problem == nil && s.Observe {
+		// Observed first, so the assessment's own observations of the
+		// committed Portfile are these.
+		err := probe.Observations(ctx, func(context model.Platform, observation macports.Observation, err error) {
+			name := observation.Snapshot.Target.Name
+			item.observed = append(item.observed, observed{Platform: context, Modeled: observation.Modeled, Root: observation.Snapshot.Root,
+				Info: observation.Snapshot.Ports[name], Observation: observation.Ports[name], Err: err})
+		})
+		if err != nil {
+			if ctx.Err() != nil {
+				return Port{}, ctx.Err()
 			}
-			var err error
-			item.Assessment, err = probe.Assess(ctx, release)
-			if err != nil {
-				return Port{}, err
-			}
-			if resolutionErr != nil {
-				item.Findings = append(item.Findings, portedit.Problem("release", resolutionErr))
-				item.Summarize()
+			item.observed = append(item.observed, observed{Platform: platform, Err: err})
+		}
+	}
+	if problem != nil {
+		item.Findings = []portedit.Finding{portedit.Problem("evaluation", problem)}
+		item.Summarize()
+		if s.Observe {
+			item.observed = []observed{{Platform: platform, Err: problem}}
+		}
+		return item, nil
+	}
+	if s.ObserveOnly {
+		return item, nil
+	}
+	var release *model.Release
+	var resolutionErr error
+	if request.Version != "" {
+		bound, bindErr := s.Upstream.Bind(probe)
+		resolutionErr = bindErr
+		if bindErr == nil {
+			resolved, resolveErr := bound.Resolve(ctx, request.Version)
+			resolutionErr = resolveErr
+			if resolveErr == nil {
+				release = &resolved
 			}
 		}
+	}
+	var err error
+	if item.Assessment, err = probe.Assess(ctx, release); err != nil {
+		return Port{}, err
+	}
+	if resolutionErr != nil {
+		item.Findings = append(item.Findings, portedit.Problem("release", resolutionErr))
+		item.Summarize()
 	}
 	return item, nil
 }

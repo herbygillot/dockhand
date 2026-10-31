@@ -105,6 +105,8 @@ namespace eval ::dockhand {
                     variable ::dockhand_dispatcher::ledger
                     set cmd [lreplace $cmd 0 0 source]
                     dict incr ledger [list source "" [::dockhand_dispatcher::source_of source [lrange $cmd 1 end]] ""]
+                    variable ::dockhand_dispatcher::record_paths
+                    if {$record_paths} { ::dockhand_dispatcher::note source [lrange $cmd 1 end] host }
                     if {[string match */Portfile [lindex $cmd end]]} {
                         variable portfiles
                         incr portfiles
@@ -218,8 +220,13 @@ namespace eval ::dockhand {
             set operands [$worker eval {set ::dockhand_platform::events}]
         }
         set ledger {}
+        set reads {}
+        set execs {}
+        set hooks {}
         if {[$worker eval {info exists ::dockhand_dispatcher::ledger}]} {
             set ledger [$worker eval {set ::dockhand_dispatcher::ledger}]
+            # What a survey records (recording_paths); empty otherwise.
+            lassign [$worker eval {list $::dockhand_dispatcher::reads $::dockhand_dispatcher::execs $::dockhand_dispatcher::hooks}] reads execs hooks
         }
         # Each source frame goes once, in a table the events name by
         # index: every checksums-append go.vendors makes had the whole
@@ -247,7 +254,7 @@ namespace eval ::dockhand {
         }}
         set events [apply $intern $events]
         set operands [apply $intern $operands]
-        return [list $events $artifacts $problems $host_access $operands $any_host_access $ledger $table]
+        return [list $events $artifacts $problems $host_access $operands $any_host_access $ledger $table $reads $execs $hooks]
     }
 }
 ::tclrpc::register observation_setup ::dockhand::observation_setup
