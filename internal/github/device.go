@@ -49,7 +49,7 @@ func (f *DeviceFlow) Authorize(ctx context.Context, clientID string, present fun
 	if authorization.DeviceCode == "" || authorization.UserCode == "" || authorization.VerificationURI == "" {
 		return credential.Login{}, fmt.Errorf("github: incomplete device authorization response")
 	}
-	if err := present(credential.DeviceAuthorization{UserCode: authorization.UserCode, VerificationURL: authorization.VerificationURI, ExpiresAt: authorization.Expiry}); err != nil {
+	if err := present(credential.DeviceAuthorization{UserCode: authorization.UserCode, VerificationURL: authorization.VerificationURI}); err != nil {
 		return credential.Login{}, err
 	}
 	token, err := config.DeviceAccessToken(ctx, authorization)

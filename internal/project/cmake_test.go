@@ -30,7 +30,7 @@ else()
 endif()
 `).Facts()
 	require.Equal(t, map[string]CMakeOption{
-		"FLB_TLS": {Default: "ON"}, "FLB_KAFKA": {Default: "OFF"}, "FLB_KAFKA_SASL": {Default: "ON", Dependent: true},
+		"FLB_TLS": {Default: "ON"}, "FLB_KAFKA": {Default: "OFF"}, "FLB_KAFKA_SASL": {Default: "ON"},
 		"FLB_PROTOBUF_ENCODER": {Default: "OFF"}, "FLB_SHARED": {Default: "${BUILD_SHARED_LIBS}"},
 	}, facts.Options)
 	require.Equal(t, []CMakePackage{

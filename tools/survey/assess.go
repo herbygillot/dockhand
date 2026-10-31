@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
 	"path"
 
@@ -20,34 +19,18 @@ import (
 	portsurvey "github.com/herbygillot/dockhand/internal/macports/survey"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
-// Request selects local ports and optionally one exact upstream release.
+// Request selects local ports.
 type Request struct {
-	SharedRelease bool
-	Selection     portsurvey.Selection
-	Version       string
-	Subport       string
+	Selection portsurvey.Selection
 	// Journal, when set, receives each port as it finishes and names the
 	// ports a rerun leaves out: the journal, or the record.
 	Journal Recorder
 }
 
 func (r Request) Validate() error {
-	if err := r.Selection.Validate(); err != nil {
-		return err
-	}
-	if r.Subport != "" && (len(r.Selection.Ports) != 1 || !macports.ValidName(r.Subport)) {
-		return fmt.Errorf("assess: --subport requires one explicit Portfile and a valid subport name")
-	}
-	if r.Version != "" {
-		if len(r.Selection.Ports) != 1 {
-			return fmt.Errorf("assess: --at requires exactly one explicit port")
-		}
-		return version.Validate(r.Version)
-	}
-	return nil
+	return r.Selection.Validate()
 }
 
 type Result struct {
@@ -66,15 +49,12 @@ type Port struct {
 	observed []observed
 }
 
-// Service receives evaluation, source selection, and optional release integrations.
+// Service receives evaluation and source selection.
 type Service struct {
 	Repo            *git.Repository
 	Ports           macports.NativeEvaluator
-	Upstream        *upstream.Service
 	DependencyTools depblock.Tools
 	Index           portindex.Source
-	// Workspaces hands out the tree; nil materializes one for this survey.
-	Workspaces *workspace.Registry
 	// Observe observes each port as committed in each context its
 	// assessment observes it in, for the record; ObserveOnly does that
 	// alone, without assessing it.
@@ -88,14 +68,14 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	if s == nil || s.Repo == nil || s.Ports == nil || (request.Version != "" && s.Upstream == nil) {
-		return Result{}, fmt.Errorf("assess: Git, MacPorts, and requested release integrations are required")
+	if s == nil || s.Repo == nil || s.Ports == nil {
+		return Result{}, fmt.Errorf("assess: Git and MacPorts are required")
 	}
 	platform, err := s.Ports.NativePlatform(ctx)
 	if err != nil {
 		return Result{}, err
 	}
-	files, err := portsurvey.Open(ctx, s.Repo, s.Workspaces, platform, s.Index, request.Selection)
+	files, err := portsurvey.Open(ctx, s.Repo, nil, platform, s.Index, request.Selection)
 	if err != nil {
 		return Result{}, err
 	}
@@ -170,7 +150,7 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 				if ctx.Err() != nil {
 					return
 				}
-				assessed[i], failures[i] = s.assessOne(ctx, editor, files, projection, platform, request, files.Ports[i])
+				assessed[i], failures[i] = s.assessOne(ctx, editor, files, projection, platform, files.Ports[i])
 				if failures[i] == nil && journal != nil {
 					failures[i] = journal.Record(assessed[i])
 				}
@@ -197,20 +177,18 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 // Concurrency bounds the ports assessed at once.
 var Concurrency = min(8, max(2, runtime.NumCPU()))
 
-// assessOne assesses one selected port: its probe, the optional release
-// resolution, and the assessment itself.
-func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *portsurvey.Workspace, projection *workspace.Workspace, platform model.Platform, request Request, selected portsurvey.Port) (Port, error) {
+// assessOne assesses one selected port: its probe and the assessment
+// itself.
+func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *portsurvey.Workspace, projection *workspace.Workspace, platform model.Platform, selected portsurvey.Port) (Port, error) {
 	if err := ctx.Err(); err != nil {
 		return Port{}, err
 	}
 	progress.VerboseReport(ctx, "Assessing %s", selected.Label)
 	item := Port{Selector: selected.Label, portfile: selected.Portfile}
-	if request.Subport != "" {
-		selected.Selection.Subport = request.Subport
-	} else if selected.Name != "" && selected.Name != path.Base(path.Dir(selected.Selection.Selector)) {
+	if selected.Name != "" && selected.Name != path.Base(path.Dir(selected.Selection.Selector)) {
 		selected.Selection.Subport = selected.Name
 	}
-	probe, problem := editor.Probe(ctx, portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: files.Source, Workspace: projection, Selection: selected.Selection, Platform: platform})
+	probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: files.Source, Workspace: projection, Selection: selected.Selection, Platform: platform})
 	if problem == nil {
 		defer probe.Close()
 	}
@@ -243,26 +221,9 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 	if s.ObserveOnly {
 		return item, nil
 	}
-	var release *model.Release
-	var resolutionErr error
-	if request.Version != "" {
-		bound, bindErr := s.Upstream.Bind(probe)
-		resolutionErr = bindErr
-		if bindErr == nil {
-			resolved, resolveErr := bound.Resolve(ctx, request.Version)
-			resolutionErr = resolveErr
-			if resolveErr == nil {
-				release = &resolved
-			}
-		}
-	}
 	var err error
-	if item.Assessment, err = probe.Assess(ctx, release); err != nil {
+	if item.Assessment, err = probe.Assess(ctx, nil); err != nil {
 		return Port{}, err
-	}
-	if resolutionErr != nil {
-		item.Findings = append(item.Findings, portedit.Problem("release", resolutionErr))
-		item.Summarize()
 	}
 	return item, nil
 }

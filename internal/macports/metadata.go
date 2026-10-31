@@ -3,7 +3,6 @@ package macports
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -36,12 +35,11 @@ type PortInfo struct {
 }
 
 type Snapshot struct {
-	Runtime    Runtime
-	Source     model.Source
-	Target     model.Target
-	Platform   model.Platform
-	Ports      map[string]PortInfo
-	ObservedAt time.Time
+	Runtime  Runtime
+	Source   model.Source
+	Target   model.Target
+	Platform model.Platform
+	Ports    map[string]PortInfo
 	// Root is the directory the evaluation ran in, which option values
 	// such as filespath name absolutely. Comparisons normalize each
 	// snapshot by its own root, so two evaluations of the same tree in

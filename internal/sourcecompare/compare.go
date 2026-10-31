@@ -55,9 +55,9 @@ type Change struct {
 	// System is the build system the file belongs to, a manifest's
 	// language or a build file's tool; empty for a license file.
 	System project.System
-	// Name is a dependency's name, and Old and Now its version or
-	// constraint in each version, as the manifest writes it.
-	Name, Old, Now string
+	// Name is a dependency's name, and Now its version or constraint in
+	// the new version, as the manifest writes it.
+	Name, Now string
 	// Requirements and Before are a Python dependency's declarations in
 	// the new version and the old, each with its specifier and marker;
 	// none for every other change.
@@ -851,7 +851,7 @@ func dependencyChanges(file string, before, after reading) []Change {
 	}
 	var changes []Change
 	for _, delta := range dependencyDeltas(before, after) {
-		change := Change{Kind: "dependency", How: delta.how, Path: file, Name: delta.name, Old: delta.old, Now: delta.now,
+		change := Change{Kind: "dependency", How: delta.how, Path: file, Name: delta.name, Now: delta.now,
 			Requirements: after.requirements[delta.name], Before: before.requirements[delta.name]}
 		switch delta.how {
 		case "adds":
@@ -1054,16 +1054,16 @@ func lockMoves(name string, earlier, packages []project.CargoPackage) []Change {
 				Message: fmt.Sprintf("upstream: %s adds %s %s, beside %s", name, crate, strings.Join(added, ", "), strings.Join(old, ", "))})
 		case subset(now[crate], old):
 			dropped := slices.DeleteFunc(slices.Clone(old), func(v string) bool { return slices.Contains(now[crate], v) })
-			changes = append(changes, Change{Kind: "dependency", How: "drops", Path: name, Name: crate, Old: strings.Join(dropped, ", "),
+			changes = append(changes, Change{Kind: "dependency", How: "drops", Path: name, Name: crate,
 				Message: fmt.Sprintf("upstream: %s drops %s %s, keeping %s", name, crate, strings.Join(dropped, ", "), strings.Join(now[crate], ", "))})
 		default:
-			changes = append(changes, Change{Kind: "dependency", How: "moves", Path: name, Name: crate, Old: strings.Join(old, ", "), Now: strings.Join(now[crate], ", "),
+			changes = append(changes, Change{Kind: "dependency", How: "moves", Path: name, Name: crate, Now: strings.Join(now[crate], ", "),
 				Message: fmt.Sprintf("upstream: %s moves %s from %s to %s", name, crate, strings.Join(old, ", "), strings.Join(now[crate], ", "))})
 		}
 	}
 	for _, crate := range slices.Sorted(maps.Keys(before)) {
 		if _, has := now[crate]; !has {
-			changes = append(changes, Change{Kind: "dependency", How: "drops", Path: name, Name: crate, Old: strings.Join(before[crate], ", "),
+			changes = append(changes, Change{Kind: "dependency", How: "drops", Path: name, Name: crate,
 				Message: fmt.Sprintf("upstream: %s drops %s", name, crate)})
 		}
 	}
@@ -1122,7 +1122,7 @@ func nativeLinks(name string, old project.File, hadOld bool, now project.File, h
 			continue
 		}
 		has[pkg.Name] = true
-		changes = append(changes, Change{Kind: "dependency", How: "unlinked", Path: name, Name: pkg.Name, Old: pkg.Version,
+		changes = append(changes, Change{Kind: "dependency", How: "unlinked", Path: name, Name: pkg.Name,
 			Message: fmt.Sprintf("upstream: Cargo.lock drops %s, which linked the native library %s", pkg.Name, library)})
 	}
 	return changes

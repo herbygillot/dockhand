@@ -8,6 +8,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // A branch serve prepared and committed and never queued a check of, as a
@@ -32,7 +33,7 @@ func TestServeResumesABranchItPreparedAndDidntQueue(t *testing.T) {
 	}
 	stranded := prepared("jq-stranded", model.OriginServe)
 	edited := prepared("jq-edited", model.OriginServe)
-	write(t, edited.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# mine\n"})
+	testsupport.WriteFiles(t, edited.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# mine\n"})
 	prepared("jq-mine", model.OriginPerson)
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}

@@ -149,22 +149,16 @@ func TestAskingAURLFollowsRedirectsAsFetchingDoes(t *testing.T) {
 		}
 		return answer(r, http.StatusOK, ""), nil
 	})}
-	got := Ask(t.Context(), client, "https://example.invalid/downgrade")
-	require.False(t, got.Answered)
-	require.ErrorContains(t, got.Err, "redirect downgraded HTTPS")
+	require.False(t, Ask(t.Context(), client, "https://example.invalid/downgrade"))
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.invalid/downgrade", nil)
 	require.NoError(t, err)
 	_, err = Open(client, request, 1)
 	require.ErrorContains(t, err, "redirect downgraded HTTPS", "the rule Open keeps too")
 
-	got = Ask(t.Context(), client, "https://example.invalid/moved")
-	require.True(t, got.Answered)
-	require.Equal(t, "https://example.invalid/home/", got.Final)
-	require.True(t, Ask(t.Context(), client, "https://example.invalid/nohead").Answered)
-	got = Ask(t.Context(), client, "https://example.invalid/gone")
-	require.False(t, got.Answered)
-	require.ErrorContains(t, got.Err, "HTTP 404")
-	require.ErrorContains(t, Ask(t.Context(), client, "ftp://example.invalid/").Err, "unsupported URL")
+	require.True(t, Ask(t.Context(), client, "https://example.invalid/moved"))
+	require.True(t, Ask(t.Context(), client, "https://example.invalid/nohead"))
+	require.False(t, Ask(t.Context(), client, "https://example.invalid/gone"))
+	require.False(t, Ask(t.Context(), client, "ftp://example.invalid/"))
 }
 
 // A failure another try may meet is the network's, or a busy or failing

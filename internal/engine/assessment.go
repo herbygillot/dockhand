@@ -119,9 +119,9 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 }
 
 // revisionComparisons are a revision's assessments, by port, as a
-// submission and status show them.
-func (e *Engine) revisionComparisons(ctx context.Context, branch model.Branch, tree model.ObjectID, collect bool) ([]PortComparison, error) {
-	assessments, err := e.revisionAssessments(ctx, branch.ID, branch.Base, tree, collect)
+// submission shows them, any missing collected first.
+func (e *Engine) revisionComparisons(ctx context.Context, branch model.Branch, tree model.ObjectID) ([]PortComparison, error) {
+	assessments, err := e.revisionAssessments(ctx, branch.ID, branch.Base, tree, true)
 	if err != nil {
 		return nil, err
 	}

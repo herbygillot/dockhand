@@ -66,7 +66,7 @@ func TestEditsCheckpointsAndDecisions(t *testing.T) {
 		return tx.AddEdit(bad)
 	}), model.ErrInvalid, "an edit that changed nothing is refused")
 
-	checkpoint := model.Checkpoint{Number: 1, Kind: model.CheckpointTidy, State: model.CheckpointPrepared, Branch: b.ID, Before: "old", After: "new", BaseBefore: "m1", BaseAfter: "m1", At: at}
+	checkpoint := model.Checkpoint{Number: 1, Kind: model.CheckpointTidy, State: model.CheckpointPrepared, Branch: b.ID, Before: "old", After: "new", BaseBefore: "m1", BaseAfter: "m1", Index: "index", At: at}
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.AddCheckpoint(checkpoint) }))
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
 		again := checkpoint
@@ -86,13 +86,13 @@ func TestEditsCheckpointsAndDecisions(t *testing.T) {
 		return tx.AddCheckpoint(model.Checkpoint{Number: 2, Kind: model.CheckpointRebase, State: model.CheckpointApplied, Branch: b.ID, Before: "new", After: "rebased", BaseBefore: "m1", BaseAfter: "m2", At: at})
 	}), "kinds share one numbering")
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
-		return tx.AddCheckpoint(model.Checkpoint{Number: 3, Kind: model.CheckpointTidy, State: model.CheckpointPrepared, Branch: b.ID, Before: "rebased", After: "tidied", BaseBefore: "m2", BaseAfter: "m2", At: at})
+		return tx.AddCheckpoint(model.Checkpoint{Number: 3, Kind: model.CheckpointTidy, State: model.CheckpointPrepared, Branch: b.ID, Before: "rebased", After: "tidied", BaseBefore: "m2", BaseAfter: "m2", Index: "index", At: at})
 	}))
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
 		return tx.SettleCheckpoint(model.Checkpoint{Number: 3, Kind: model.CheckpointTidy, State: model.CheckpointAbandoned})
 	}), "a change that wasn't made is abandoned")
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
-		return tx.AddCheckpoint(model.Checkpoint{Number: 4, Kind: model.CheckpointTidy, State: model.CheckpointPrepared, Branch: b.ID, Before: "rebased", After: "tidied", BaseBefore: "m2", BaseAfter: "m3", At: at})
+		return tx.AddCheckpoint(model.Checkpoint{Number: 4, Kind: model.CheckpointTidy, State: model.CheckpointPrepared, Branch: b.ID, Before: "rebased", After: "tidied", BaseBefore: "m2", BaseAfter: "m3", Index: "index", At: at})
 	}), model.ErrInvalid, "a tidy doesn't move the base")
 
 	accepted := model.Decision{Branch: b.ID, Finding: model.FindingFailure, Subject: "harbor-cli", Evidence: "c1", Answer: model.Accepted, At: at}

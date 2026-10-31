@@ -137,11 +137,7 @@ func (e *Engine) restore(ctx context.Context, checkpoint model.Checkpoint, branc
 			Expected: git.RefValue{Exists: true, Object: string(checkpoint.After)}, Desired: git.RefValue{Exists: true, Object: string(checkpoint.Before)}}}); err != nil {
 			return checkpoint, branch, err
 		}
-		if checkpoint.Index != "" {
-			if err := worktree.SetIndex(ctx, string(checkpoint.Index)); err != nil {
-				return checkpoint, branch, err
-			}
-		} else if err := worktree.ResetIndex(ctx); err != nil {
+		if err := worktree.SetIndex(ctx, string(checkpoint.Index)); err != nil {
 			return checkpoint, branch, err
 		}
 	}

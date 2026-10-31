@@ -2,7 +2,6 @@ package git_test
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // refsRemote makes a bare repository whose refs a fresh clone reads in
@@ -19,15 +19,10 @@ import (
 // the repository and its commits by name.
 func refsRemote(t *testing.T) (string, map[string]string) {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	remote := filepath.Join(t.TempDir(), "project.git")
 	run := func(args ...string) string {
 		t.Helper()
-		command := exec.CommandContext(t.Context(), "git", append([]string{"-C", remote, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"}, args...)...)
-		out, err := command.CombinedOutput()
-		require.NoError(t, err, "%s", out)
-		return strings.TrimSpace(string(out))
+		return testsupport.Git(t, remote, args...)
 	}
 	require.NoError(t, os.MkdirAll(remote, 0o755))
 	run("init", "--bare", "-q", "--initial-branch=main")
@@ -56,16 +51,13 @@ func refsRemote(t *testing.T) (string, map[string]string) {
 // MacPorts' Git fetch runs it: git clone, then git checkout -q.
 func checkedOut(t *testing.T, remote, name string) string {
 	t.Helper()
-	clone := filepath.Join(t.TempDir(), "work")
-	out, err := exec.CommandContext(t.Context(), "git", "clone", "-q", remote, clone).CombinedOutput()
-	require.NoError(t, err, "%s", out)
+	parent := t.TempDir()
+	clone := filepath.Join(parent, "work")
+	testsupport.Git(t, parent, "clone", "-q", remote, clone)
 	if name != "" {
-		out, err = exec.CommandContext(t.Context(), "git", "-C", clone, "checkout", "-q", name).CombinedOutput()
-		require.NoError(t, err, "%s", out)
+		testsupport.Git(t, clone, "checkout", "-q", name)
 	}
-	out, err = exec.CommandContext(t.Context(), "git", "-C", clone, "rev-parse", "HEAD").CombinedOutput()
-	require.NoError(t, err, "%s", out)
-	return strings.TrimSpace(string(out))
+	return testsupport.Git(t, clone, "rev-parse", "HEAD")
 }
 
 // What a name resolves to from the remote's refs is what Git itself checks
@@ -73,16 +65,18 @@ func checkedOut(t *testing.T, remote, name string) string {
 // name, a tag over a branch of its name, a branch by its remote-tracking
 // name or its own, an annotated tag at its commit, and HEAD with no name.
 func TestCloneCheckoutLandsWhereAFreshClonesCheckoutDoes(t *testing.T) {
+	t.Parallel()
+	program := git.Program{Env: testsupport.GitEnv(t)}
 	remote, commits := refsRemote(t)
 	for _, name := range []string{"", "main", "v1.0", "v2.0", "feature", "origin/feature", "release", "origin/release", "tags/v2.0", "refs/tags/v1.0", "HEAD", "origin/HEAD", "origin/main"} {
-		got, err := git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, name)
+		got, err := git.CloneCheckout(t.Context(), program, remote, name)
 		require.NoError(t, err, "%q", name)
 		require.Equal(t, git.Checkout{Commit: checkedOut(t, remote, name)}, got, "%q", name)
 	}
-	got, err := git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, "main")
+	got, err := git.CloneCheckout(t.Context(), program, remote, "main")
 	require.NoError(t, err)
 	require.Equal(t, commits["three"], got.Commit, "the default branch is checked out as itself, not the tag of its name")
-	got, err = git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, "release")
+	got, err = git.CloneCheckout(t.Context(), program, remote, "release")
 	require.NoError(t, err)
 	require.Equal(t, commits["two"], got.Commit, "a tag comes before a branch of its name")
 }
@@ -91,23 +85,25 @@ func TestCloneCheckoutLandsWhereAFreshClonesCheckoutDoes(t *testing.T) {
 // that has the form of an abbreviated commit is that abbreviation, which
 // the commit checked out begins with; anything else is no ref.
 func TestCloneCheckoutOfACommitOrOfNoRef(t *testing.T) {
+	t.Parallel()
+	program := git.Program{Env: testsupport.GitEnv(t)}
 	remote, commits := refsRemote(t)
 	missing := filepath.Join(t.TempDir(), "missing.git")
-	got, err := git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, missing, strings.ToUpper(commits["four"]))
+	got, err := git.CloneCheckout(t.Context(), program, missing, strings.ToUpper(commits["four"]))
 	require.NoError(t, err, "a whole commit asks nothing of the remote")
 	require.Equal(t, git.Checkout{Commit: commits["four"]}, got)
 
 	short := strings.ToUpper(commits["four"][:7])
-	got, err = git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, short)
+	got, err = git.CloneCheckout(t.Context(), program, remote, short)
 	require.NoError(t, err)
 	require.Equal(t, git.Checkout{Abbreviation: strings.ToLower(short)}, got)
 	require.True(t, strings.HasPrefix(checkedOut(t, remote, short), got.Abbreviation), "what the clone checks out begins with it")
 
-	_, err = git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, "v9.9")
+	_, err = git.CloneCheckout(t.Context(), program, remote, "v9.9")
 	require.ErrorIs(t, err, git.ErrNoRef)
-	_, err = git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, remote, "v1.0^{}")
+	_, err = git.CloneCheckout(t.Context(), program, remote, "v1.0^{}")
 	require.ErrorIs(t, err, git.ErrNoRef, "revision syntax is no ref")
-	_, err = git.CloneCheckout(t.Context(), git.Program{Env: os.Environ()}, missing, "v1.0")
+	_, err = git.CloneCheckout(t.Context(), program, missing, "v1.0")
 	require.Error(t, err)
 	require.NotErrorIs(t, err, git.ErrNoRef, "a remote that can't be read is no answer about its refs")
 }

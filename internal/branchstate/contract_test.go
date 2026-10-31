@@ -11,8 +11,9 @@ import (
 // A refusal's Next moves the branch on: another verb, or the same once
 // something named has changed, never the refused action asked again with
 // nothing to wait for (architecture, 2026-10-22). Publish's refusals of
-// what blocks a submission and of what holds it where nobody looks are
-// each held to it, and so is the commit plan's gate on the way to a
+// what blocks a submission, of a branch that moved while it was checked,
+// whose way on is a check of where it moved, and of what holds it where
+// nobody looks are each held to it, and so is the commit plan's gate on the way to a
 // submission, whose way on is tidy.
 func TestARefusalsNextAdvances(t *testing.T) {
 	held := model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "license-changed", Detail: "upstream's COPYING changed"}
@@ -24,6 +25,7 @@ func TestARefusalsNextAdvances(t *testing.T) {
 		mode        Mode
 	}{
 		{"blocked", Publication{Branch: "jq-1.8.2", Blocks: []Block{{Kind: BlockNoTitle}}, Commit: commit}, asked},
+		{"moved", Publication{Branch: "jq-1.8.2", Commit: commit, Bound: model.ObjectID("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")}, asked},
 		{"held", Publication{Branch: "jq-1.8.2", Holds: []model.Concern{held}, Commit: commit}, nobody},
 	}
 	for _, c := range cases {

@@ -144,6 +144,11 @@ copies it as it grows, as Tart's does.`,
 			if where.Port != "" && len(args) == 1 && engine.IsCheckName(args[0]) {
 				return fmt.Errorf("-p chooses a branch, not a check's port; for %s's log of %s: dockhand logs %s %s", args[0], where.Port, args[0], where.Port)
 			}
+			// The one argument beside -p, where it names no port the branch
+			// changes, is a provider run's ID, or a mistyped port: refused
+			// once the branch's check is read, with the command that names
+			// the port.
+			named := ""
 			if where.Explicit() {
 				if len(args) == 2 {
 					return errors.New("name a check or a branch, not both")
@@ -151,6 +156,9 @@ copies it as it grows, as Tart's does.`,
 				port = where.Port
 				if len(args) == 1 {
 					port, args = args[0], nil
+					if where.Port != "" {
+						named = port
+					}
 				}
 			}
 			if len(args) == 2 {
@@ -191,6 +199,13 @@ copies it as it grows, as Tart's does.`,
 			}
 			if err != nil {
 				return err
+			}
+			if named != "" && !changesPort(ctx, e, run, named) {
+				branch := where.Port
+				if record, err := e.Branch(ctx, run.Branch); err == nil {
+					branch = record.ShortName()
+				}
+				return fmt.Errorf("%s changes no port named %s; for a check's or a provider run's log of %s: dockhand logs %s %s", branch, named, where.Port, named, where.Port)
 			}
 			if follow {
 				if port == "" {
@@ -410,4 +425,20 @@ func stoppedRun(ctx context.Context, e *engine.Engine, run model.Run) bool {
 	defer end()
 	stopped, err := engine.Stopped(ctx, session, run)
 	return err == nil && stopped
+}
+
+// changesPort reports whether the check's plan has port among the ports
+// its branch changes; true where the plan can't be read, so a failure to
+// read it isn't said as a wrong argument.
+func changesPort(ctx context.Context, e *engine.Engine, run model.Run, port string) bool {
+	plan, err := e.Plan(ctx, run.Plan)
+	if err != nil {
+		return true
+	}
+	for _, target := range plan.Targets {
+		if target.Role == model.Changed && target.Target.Name == port {
+			return true
+		}
+	}
+	return false
 }

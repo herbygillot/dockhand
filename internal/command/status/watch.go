@@ -134,6 +134,14 @@ const (
 	clearView = "\x1b[H\x1b[2J"
 )
 
+// watchRedraw is how often the live view is redrawn with nothing new, so
+// its ages stay true, and watchProgress how often at most for a check's
+// progress alone, which the list of checks shows.
+const (
+	watchRedraw   = 30 * time.Second
+	watchProgress = 5 * time.Second
+)
+
 // watchLive redraws status on a terminal as what it shows changes, and
 // runs the commands typed at it. A check's progress isn't redrawn for: it
 // redrew every branch's status each second of every check (SQL-O6).
@@ -225,7 +233,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams term.Streams, timi
 			progressed = progressed || slices.ContainsFunc(events, func(event model.Event) bool {
 				return event.Kind == model.EventProgress || event.Kind == model.EventWaiting
 			})
-			if changed || progressed && time.Since(drawn) >= timings.WatchProgress || time.Since(drawn) >= timings.WatchRedraw {
+			if changed || progressed && time.Since(drawn) >= watchProgress || time.Since(drawn) >= watchRedraw {
 				draw()
 				progressed = false
 			}

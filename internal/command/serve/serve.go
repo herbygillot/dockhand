@@ -135,8 +135,6 @@ func serveOptions(h *host.Host, e *engine.Engine, file config.File, out io.Write
 		CleanupAge:      file.Cleanup.Age(),
 		Say:             func(line string) { fmt.Fprintln(out, line) },
 		Poll:            h.Timings.ServePoll,
-		Refresh:         h.Timings.ServeRefresh,
-		CleanupEvery:    h.Timings.ServeCleanup,
 		MinFree:         file.Cleanup.Free(),
 		Build:           buildinfo.Current().String(),
 		Executable:      h.Executable(drain),

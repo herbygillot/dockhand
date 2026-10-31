@@ -68,29 +68,6 @@ func (r *Repository) RemoteHead(ctx context.Context, remote, branch string) (Ref
 	return RefValue{Exists: true, Object: fields[0]}, nil
 }
 
-// RemoteBranches are a remote's branches under a prefix, by name, each
-// with its commit, as one ls-remote lists them.
-func (r *Repository) RemoteBranches(ctx context.Context, remote, prefix string) (map[string]string, error) {
-	if !validRemoteURL(remote) || prefix == "" || !ValidBranchName(strings.TrimSuffix(prefix, "/")) {
-		return nil, fmt.Errorf("git: invalid remote or prefix")
-	}
-	out, err := r.output(ctx, "ls-remote", "--refs", "--", remote, "refs/heads/"+prefix+"*")
-	if err != nil {
-		return nil, err
-	}
-	branches := map[string]string{}
-	for _, row := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		fields := strings.Fields(row)
-		if len(fields) != 2 || !ValidObjectID(fields[0]) {
-			continue
-		}
-		if name, ok := strings.CutPrefix(fields[1], "refs/heads/"); ok && strings.HasPrefix(name, prefix) {
-			branches[name] = fields[0]
-		}
-	}
-	return branches, nil
-}
-
 // Push uses a literal destination ref and an explicit expected value, independent
 // of remote-tracking refs. Repeating a confirmed desired head is a no-op.
 func (r *Repository) Push(ctx context.Context, request Push) error {

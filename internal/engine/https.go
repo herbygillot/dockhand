@@ -150,5 +150,5 @@ func (e *Engine) httpsProbe() HTTPSProbe {
 type requestProbe struct{ client *http.Client }
 
 func (p requestProbe) Answers(ctx context.Context, url string) bool {
-	return fetch.Ask(ctx, p.client, url).Answered
+	return fetch.Ask(ctx, p.client, url)
 }

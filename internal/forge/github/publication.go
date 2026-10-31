@@ -50,7 +50,7 @@ func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.Reposit
 	if err != nil || !strings.EqualFold(cloneName, name) {
 		return forge.RepositoryInfo{}, fmt.Errorf("github: clone URL does not identify the repository")
 	}
-	result := forge.RepositoryInfo{Name: row.GetFullName(), DefaultBranch: row.GetDefaultBranch(), CloneURL: row.GetCloneURL()}
+	var result forge.RepositoryInfo
 	if row.GetFork() {
 		if row.Parent == nil || !githubapi.ValidRepositoryName(row.Parent.GetFullName()) {
 			return result, fmt.Errorf("github: fork parent is unknown")

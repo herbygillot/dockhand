@@ -147,7 +147,7 @@ func TestASubmitRefusesABranchThatMovedAfterItsPlan(t *testing.T) {
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# more\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# more\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: more")
 	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.ErrorIs(t, err, ErrStaleSubmit)

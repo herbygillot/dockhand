@@ -23,10 +23,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
-// Result retains the frozen source and independent observations for selected ports.
+// Result retains the independent observations for selected ports.
 type Result struct {
-	Source model.Source
-	Ports  []Port
+	Ports []Port
 }
 
 // Port associates a selector with its upstream observation or an unknown result.
@@ -94,7 +93,7 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
 	editor := &portedit.Service{Ports: ports, PatchTools: s.PatchTools}
-	result := Result{Source: files.Source}
+	result := Result{}
 	for _, problem := range files.Problems {
 		result.Ports = append(result.Ports, Port{Selector: problem.Port, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC(), Detail: problem.Detail}})
 	}

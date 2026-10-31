@@ -358,7 +358,7 @@ func (d CMakeDocument) Facts() CMakeFacts {
 			}
 		case "cmake_dependent_option":
 			if len(args) > 2 {
-				facts.Options[args[0]] = CMakeOption{Default: cmakeBool(args[2]), Dependent: true}
+				facts.Options[args[0]] = CMakeOption{Default: cmakeBool(args[2])}
 			}
 		case "find_package":
 			if len(args) == 0 {
@@ -597,12 +597,11 @@ type CMakeFacts struct {
 	Packages []CMakePackage
 }
 
-// CMakeOption is an option a CMakeLists.txt offers: its default as
-// written, OFF where option() names none, and whether it depends on other
-// options, as cmake_dependent_option()'s does.
+// CMakeOption is an option a CMakeLists.txt offers, by option() or
+// cmake_dependent_option(): its default as written, OFF where option()
+// names none.
 type CMakeOption struct {
-	Default   string
-	Dependent bool
+	Default string
 }
 
 // CMakePackage is a package a CMakeLists.txt finds: its name, the version
@@ -814,11 +813,10 @@ func cmakeBool(value string) string {
 type cmakeCommand struct {
 	name string
 	args []string
-	// start and end are where the invocation is in the text, its name to
-	// its closing parenthesis, and file the file it's in, empty for the
-	// CMakeLists.txt itself.
-	start, end int
-	file       string
+	// start is where the invocation's name is in the text, and file the
+	// file it's in, empty for the CMakeLists.txt itself.
+	start int
+	file  string
 }
 
 // cmakeScan splits a CMake file into its command invocations, as CMake's
@@ -847,7 +845,7 @@ func cmakeScan(text string) ([]cmakeCommand, [][2]int) {
 				continue
 			}
 			args, end := cmakeArgs(text, i+1, &comments)
-			commands = append(commands, cmakeCommand{name: name, args: args, start: start, end: end})
+			commands = append(commands, cmakeCommand{name: name, args: args, start: start})
 			i = end
 		default:
 			i++

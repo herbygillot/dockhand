@@ -52,7 +52,7 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 	// Someone else pushes to the pull request's branch.
 	other := filepath.Join(t.TempDir(), "other")
 	testsupport.Git(t, t.TempDir(), "clone", "-q", "-b", "dockhand/jq-update", fake.Fork, other)
-	write(t, other, map[string]string{"README": "theirs\n"})
+	testsupport.WriteFiles(t, other, map[string]string{"README": "theirs\n"})
 	testsupport.Git(t, other, "add", "README")
 	testsupport.Git(t, other, "commit", "-q", "-m", "their change")
 	testsupport.Git(t, other, "push", "-q", "origin", "dockhand/jq-update")

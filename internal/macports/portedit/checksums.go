@@ -222,9 +222,6 @@ func (s *Service) refreshChecksumsInto(ctx context.Context, request Request, inp
 		return result, err
 	}
 	result.Left = observed.left
-	for _, frame := range observed.contexts {
-		result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Variant: frame.variant, Modeled: frame.profile != input.before.Platform})
-	}
 	return s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, store)
 }
 
@@ -269,7 +266,7 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 			coverage.cover(artifact)
 			coverage.download(artifact, info)
 		}
-		plan.contexts = append(plan.contexts, archiveContext{port: input.target.Name, profile: profile, variant: variant, session: session, before: observed.Snapshot, after: observed.Snapshot, binding: binding})
+		plan.contexts = append(plan.contexts, archiveContext{port: input.target.Name, profile: profile, variant: variant, session: session, after: observed.Snapshot, binding: binding})
 		return nil
 	}
 	for i, profile := range profiles {

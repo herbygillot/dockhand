@@ -55,7 +55,6 @@ func TestDeviceFlowUsesOAuthPollingAndValidatesTheAuthenticatedUser(t *testing.T
 		presented = true
 		require.Equal(t, "ABCD-EFGH", authorization.UserCode)
 		require.Equal(t, "https://github.com/login/device", authorization.VerificationURL)
-		require.False(t, authorization.ExpiresAt.IsZero())
 		return nil
 	})
 	require.NoError(t, err)

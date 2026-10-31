@@ -5,7 +5,6 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,17 +20,13 @@ import (
 // and not staged by Add or AddAll, as create stages a new port and moves
 // one (the person, 2026-10-04).
 func TestWhatGitIgnoresIsNeitherListedNorStaged(t *testing.T) {
+	t.Parallel()
 	repo, _ := portsCheckout(t)
 	root := repo.Root
-	for name, content := range map[string]string{".gitignore": "*.swp\n", "textproc/jq/.gitignore": "scratch/\n"} {
-		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(content), 0o644))
-	}
+	testsupport.WriteFiles(t, root, map[string]string{".gitignore": "*.swp\n", "textproc/jq/.gitignore": "scratch/\n"})
 	testsupport.Git(t, root, "add", ".gitignore", "textproc/jq/.gitignore")
 	testsupport.Git(t, root, "commit", "-q", "-m", "ignore an editor's files")
-	for name, content := range map[string]string{"textproc/jq/.Portfile.swp": "swap\n", "textproc/jq/scratch/out.txt": "out\n", "textproc/jq/files/fix.patch": "fix\n"} {
-		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.Dir(name)), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(content), 0o644))
-	}
+	testsupport.WriteFiles(t, root, map[string]string{"textproc/jq/.Portfile.swp": "swap\n", "textproc/jq/scratch/out.txt": "out\n", "textproc/jq/files/fix.patch": "fix\n"})
 
 	untracked, err := repo.Untracked(t.Context())
 	require.NoError(t, err)
@@ -53,6 +48,7 @@ func TestWhatGitIgnoresIsNeitherListedNorStaged(t *testing.T) {
 // command gathers files. A package that ran git, or asked it for
 // untracked files or to stage them, by its own words, would bypass that.
 func TestOnlyThisPackageGathersWorkingFiles(t *testing.T) {
+	t.Parallel()
 	forbidden := []string{"ls-files", "--others", "--exclude-standard", "check-ignore", "update-index"}
 	files := token.NewFileSet()
 	// The module's own code, but this package's and the test helpers',

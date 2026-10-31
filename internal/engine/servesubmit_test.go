@@ -446,7 +446,7 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 
 	// Files changed since the check aren't what it planned for: the
 	// question waits for a check of them.
-	write(t, candidates[0].Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# edited\n"})
+	testsupport.WriteFiles(t, candidates[0].Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# edited\n"})
 	status, err = e.BranchStatus(t.Context(), candidates[0].Branch)
 	require.NoError(t, err)
 	require.False(t, status.Current)
@@ -775,7 +775,7 @@ func TestADecisionOnAConcernCarriesThePersonsReason(t *testing.T) {
 	require.Equal(t, []string{"jq license-changed: acceptable because the new license is still free, and the Portfile says GPL-3"}, []string{DecisionWords(status.Decided[0])})
 
 	// A change to the port's own files lapses it.
-	write(t, branch.Worktree, map[string]string{"textproc/jq/files/patch-x.diff": "--- a\n+++ b\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/files/patch-x.diff": "--- a\n+++ b\n"})
 	testsupport.Git(t, branch.Worktree, "add", "-A")
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "jq: add a patch")
 	status, err = e.BranchStatus(t.Context(), branch)

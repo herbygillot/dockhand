@@ -22,7 +22,7 @@ func (c *Client) Login(ctx context.Context) (forge.Login, error) {
 	if err != nil {
 		return forge.Login{}, err
 	}
-	return forge.Login{Account: status.Account, Source: string(status.Source), From: status.Source.Words(), RenewsUntil: status.RenewsUntil}, nil
+	return forge.Login{Account: status.Account, Source: string(status.Source), From: status.Source.Words()}, nil
 }
 
 // RequestsLeft is what's left of the hour's requests for the client's

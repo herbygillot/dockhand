@@ -35,9 +35,9 @@ func TestASurveyOfNamedPortsBringsOnlyThem(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, files.Close()) }()
 	require.False(t, files.Projection.Whole())
-	require.FileExists(t, filepath.Join(files.Root, "devel/alpha/files/patch-a.diff"))
-	require.FileExists(t, filepath.Join(files.Root, "_resources/port1.0/group/fixture-1.0.tcl"))
+	require.FileExists(t, filepath.Join(files.Projection.Root(), "devel/alpha/files/patch-a.diff"))
+	require.FileExists(t, filepath.Join(files.Projection.Root(), "_resources/port1.0/group/fixture-1.0.tcl"))
 	// A bare name no index placed is brought as it's resolved, which walks
 	// the categories.
-	require.NoFileExists(t, filepath.Join(files.Root, "devel/beta/Portfile"))
+	require.NoFileExists(t, filepath.Join(files.Projection.Root(), "devel/beta/Portfile"))
 }

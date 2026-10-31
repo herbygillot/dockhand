@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // The branches changing a port are found by it, and a pull request's
@@ -41,7 +42,7 @@ func TestABranchIsFoundByThePortItChangesOrItsPullRequest(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.Edit(t.Context(), other, "jq")
 	require.NoError(t, err)
-	write(t, other.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.9\n"})
+	testsupport.WriteFiles(t, other.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.9\n"})
 	found, err = e.PortBranches(t.Context(), "jq")
 	require.NoError(t, err)
 	require.Len(t, found, 2)

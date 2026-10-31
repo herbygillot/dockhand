@@ -65,7 +65,7 @@ func TestABatchsChecksRunTogether(t *testing.T) {
 	for i, pause := range []time.Duration{900 * time.Millisecond, 450 * time.Millisecond, 50 * time.Millisecond} {
 		update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: []string{"jq-a", "jq-b", "jq-c"}[i]}, Action: model.EditUpdate, Port: "jq"})
 		require.NoError(t, err)
-		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: update.Branch})
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: update.Branch, Mode: CaptureWorking})
 		require.NoError(t, err)
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
 		require.NoError(t, err)
@@ -99,7 +99,7 @@ func TestABatchKeepsToAProvidersCapacity(t *testing.T) {
 	for _, name := range []string{"jq-a", "jq-b", "jq-c"} {
 		update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: name}, Action: model.EditUpdate, Port: "jq"})
 		require.NoError(t, err)
-		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: update.Branch})
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: update.Branch, Mode: CaptureWorking})
 		require.NoError(t, err)
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
 		require.NoError(t, err)
@@ -154,7 +154,7 @@ func TestABatchCountsAnotherProcesssChecks(t *testing.T) {
 	for _, name := range []string{"jq-a", "jq-b"} {
 		update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: name}, Action: model.EditUpdate, Port: "jq"})
 		require.NoError(t, err)
-		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: update.Branch})
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: update.Branch, Mode: CaptureWorking})
 		require.NoError(t, err)
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
 		require.NoError(t, err)

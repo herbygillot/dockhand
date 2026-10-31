@@ -20,8 +20,6 @@ import (
 type Cause struct {
 	// Line is the log's line, as the tool that wrote it wrote it.
 	Line string
-	// Number is where it is in the log, counting from 1.
-	Number int
 	// cmake is a CMake error waiting for the line that says its cause.
 	cmake bool
 }
@@ -73,12 +71,12 @@ func FirstFrom(log io.Reader, from int) (Cause, bool) {
 		if !long && number >= from {
 			text := strings.TrimRight(string(line), "\r\n")
 			if compilerError.MatchString(text) {
-				return Cause{Line: strings.TrimSpace(text), Number: number}, true
+				return Cause{Line: strings.TrimSpace(text)}, true
 			}
 			if pending.Line != "" {
 				if pending.cmake {
 					if said := strings.TrimSpace(text); said != "" {
-						return Cause{Line: pending.Line + " " + said, Number: pending.Number}, true
+						return Cause{Line: pending.Line + " " + said}, true
 					}
 					continue
 				}
@@ -89,7 +87,7 @@ func FirstFrom(log io.Reader, from int) (Cause, bool) {
 				pending = Cause{}
 			}
 			if rustError.MatchString(text) || cmakeError.MatchString(text) {
-				pending = Cause{Line: strings.TrimSpace(text), Number: number, cmake: cmakeError.MatchString(text)}
+				pending = Cause{Line: strings.TrimSpace(text), cmake: cmakeError.MatchString(text)}
 			}
 		}
 		if err != nil {

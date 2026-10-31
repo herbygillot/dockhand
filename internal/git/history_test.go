@@ -11,6 +11,7 @@ import (
 )
 
 func TestHistoryAndComposeTree(t *testing.T) {
+	t.Parallel()
 	repo, base := portsCheckout(t)
 	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "textproc/jq/Portfile"), []byte("name jq\nversion 2\n"), 0o644))
 	testsupport.Git(t, repo.Root, "commit", "-q", "-am", "Update jq")

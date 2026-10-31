@@ -100,8 +100,6 @@ const Protocol = 1
 // Input is the guest program's input.
 type Input struct {
 	Protocol    int            `json:"protocol"`
-	Run         string         `json:"run"`
-	Attempt     int            `json:"attempt"`
 	Prefix      string         `json:"prefix"`
 	Platform    model.Platform `json:"platform"`
 	Tests       string         `json:"tests"`

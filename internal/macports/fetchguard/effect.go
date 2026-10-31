@@ -15,7 +15,6 @@ import (
 type definition struct {
 	kind   string
 	option string
-	args   string
 	body   string
 }
 
@@ -43,7 +42,7 @@ func ParseDefinitions(value string) Definitions {
 			if len(errs) != 0 || len(parts) != 2 {
 				continue
 			}
-			definition.args, definition.body = parts[0], parts[1]
+			definition.body = parts[1]
 		case "command":
 		default:
 			continue

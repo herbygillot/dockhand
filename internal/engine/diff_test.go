@@ -53,7 +53,7 @@ func (f fakePorts) Dependents(_ context.Context, _ model.Source, directories []s
 // the github PortGroup.
 func harborMaster(t *testing.T, f fixture) {
 	t.Helper()
-	write(t, f.upstream, map[string]string{
+	testsupport.WriteFiles(t, f.upstream, map[string]string{
 		"devel/harbor-cli/Portfile":            "name harbor-cli\nrevision 0\n",
 		"graphics/harbor-viewer/Portfile":      "name harbor-viewer\n",
 		"graphics/harbor-viewer/files/a.patch": "a\n",
@@ -71,9 +71,9 @@ func TestDiffShowsTheBranchAsItIsNow(t *testing.T) {
 	e := f.open(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-3", Here: true})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	commitAs(t, branch.Worktree, "Ada ada@example.org", "libharbor: update to 3")
-	write(t, branch.Worktree, map[string]string{
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{
 		"devel/harbor-cli/Portfile":               "name harbor-cli\nrevision 1\n",
 		"textproc/jq/README":                      "not built\n",
 		"_resources/port1.0/group/github-1.0.tcl": "# group, changed\n",
@@ -104,7 +104,7 @@ func TestImpactNamesDependentsAndSharedFiles(t *testing.T) {
 	usePorts(e, harborPorts())
 	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-3", Here: true})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{
 		"devel/libharbor/Portfile":                "name libharbor\nversion 3\n",
 		"devel/harbor-cli/Portfile":               "name harbor-cli\nrevision 1\n",
 		"_resources/port1.0/group/github-1.0.tcl": "# group, changed\n",
@@ -146,7 +146,7 @@ func TestLinkedPortsAreLibraryDependentsOncePerDirectory(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"harbor-cli", "harbor-viewer"}, dependentNames(linked.Bump), "harbor-viewer-legacy shares harbor-viewer's directory")
 
-	write(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 1\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 1\n"})
 	linked, err = e.LinkedPorts(t.Context(), branch, "libharbor", []string{"harbor-viewer"})
 	require.NoError(t, err)
 	require.Empty(t, linked.Bump)
@@ -161,7 +161,7 @@ func TestLinkedPortsAreLibraryDependentsOncePerDirectory(t *testing.T) {
 func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
-	write(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 1\n", "textproc/gojq/Portfile": "name gojq\nversion 1\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 1\n", "textproc/gojq/Portfile": "name gojq\nversion 1\n"})
 	testsupport.Git(t, f.upstream, "add", "-A")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "yq and gojq")
 	e, _ := f.withPreparer(t)
@@ -283,7 +283,7 @@ func TestALinkedPortUnderAVariantIsBumpedAndCanBeExcepted(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	harborMaster(t, f)
-	write(t, f.upstream, map[string]string{"net/harbor-sync/Portfile": "PortGroup github 1.0\nname harbor-sync\nvariant sync description {Sync} {\n    depends_lib-append port:libharbor\n}\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"net/harbor-sync/Portfile": "PortGroup github 1.0\nname harbor-sync\nvariant sync description {Sync} {\n    depends_lib-append port:libharbor\n}\n"})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "harbor-sync's variant")
 	e := f.open(t)
 	ports := harborPorts()
@@ -315,7 +315,7 @@ func TestALinkedPortUnderAVariantIsBumpedAndCanBeExcepted(t *testing.T) {
 func TestTheUpdateIsCommittedBeforeTheRebuildsForIt(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
-	write(t, f.upstream, map[string]string{"textproc/aaa/Portfile": "name aaa\nversion 1\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/aaa/Portfile": "name aaa\nversion 1\n"})
 	testsupport.Git(t, f.upstream, "add", "-A")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "aaa")
 	e, _ := f.withPreparer(t)
@@ -340,13 +340,13 @@ func TestTheUpdateIsCommittedBeforeTheRebuildsForIt(t *testing.T) {
 func TestARebuildFollowsAHandUpdateOfWhatItRebuildsFor(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
-	write(t, f.upstream, map[string]string{"textproc/aaa/Portfile": "name aaa\nversion 1\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/aaa/Portfile": "name aaa\nversion 1\n"})
 	testsupport.Git(t, f.upstream, "add", "-A")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "aaa")
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Ports: []string{"jq"}})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}, "textproc/aaa": {port("aaa", "jq")}}})
 	_, err = e.RevbumpLinked(t.Context(), branch, Update{Port: "jq", After: PortVersion{Version: "1.8.1"}}, nil, false)
 	require.NoError(t, err)

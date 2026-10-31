@@ -179,7 +179,7 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 	// trailing space, checked and then tidied, needed a check again,
 	// which can take hours (implementation's finding on 652d5e05).
 	var fixes []git.FileEdit
-	working := request.Mode == CaptureWorking || request.Mode == ""
+	working := request.Mode == CaptureWorking
 	if working {
 		bases, err := worktree.CommitTrees(ctx, []string{string(branch.Base)})
 		if err != nil {

@@ -79,7 +79,7 @@ its go-get answer.`,
 			}
 			fmt.Fprintln(out, header)
 			if plan {
-				planned, err := e.PlanCreate(ctx, engine.CreateRequest{URL: args[0], Name: name, Category: category, Maintainer: s.File.Maintainer, Project: &project})
+				planned, err := e.PlanCreate(ctx, engine.CreateRequest{URL: args[0], Name: name, Category: category, Maintainer: s.File.Maintainer, Project: project})
 				if err != nil {
 					return err
 				}
@@ -138,7 +138,7 @@ its go-get answer.`,
 					category = observed.Category
 				}
 			}
-			created, err := e.Create(ctx, engine.CreateRequest{Branch: branch, URL: args[0], Name: name, Category: category, Maintainer: s.File.Maintainer, Project: &project})
+			created, err := e.Create(ctx, engine.CreateRequest{Branch: branch, URL: args[0], Name: name, Category: category, Maintainer: s.File.Maintainer, Project: project})
 			if err != nil {
 				// Interrupted once the port was written, the result says
 				// what is there.

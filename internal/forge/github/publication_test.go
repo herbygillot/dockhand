@@ -156,8 +156,6 @@ func TestGitHubRemoteNamesAndForkMetadata(t *testing.T) {
 	info, err := client.RepositoryInfo(t.Context(), "author/ports")
 	require.NoError(t, err)
 	require.Equal(t, "upstream/ports", info.Parent)
-	require.Equal(t, "master", info.DefaultBranch)
-	require.Equal(t, "https://github.com/author/ports.git", info.CloneURL)
 }
 
 func TestPullRequestLookupChecksEveryPageBeforeAcceptingAMatch(t *testing.T) {
@@ -195,7 +193,7 @@ func TestPullRequestLookupChecksEveryPageBeforeAcceptingAMatch(t *testing.T) {
 	}
 }
 
-func TestRepositoryInfoUsesTheReturnedCloneURL(t *testing.T) {
+func TestRepositoryInfoChecksTheReturnedCloneURL(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		address   string
@@ -212,14 +210,12 @@ func TestRepositoryInfoUsesTheReturnedCloneURL(t *testing.T) {
 			}))
 			defer server.Close()
 			client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
-			info, err := client.RepositoryInfo(t.Context(), "author/ports")
+			_, err := client.RepositoryInfo(t.Context(), "author/ports")
 			if test.wantError {
 				require.Error(t, err)
-				require.Empty(t, info.CloneURL)
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, test.address, info.CloneURL)
 		})
 	}
 }

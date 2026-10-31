@@ -57,8 +57,6 @@ func Open(root string) (*Index, error) {
 	return index, nil
 }
 
-func (i *Index) Len() int { return len(i.offsets) }
-
 // Files are the index's own files, PortIndex and PortIndex.quick where it
 // has one, for a consumer that ships the index as it was staged.
 func (i *Index) Files() []string {

@@ -51,17 +51,15 @@ type ProjectReader interface {
 type CreateRequest struct {
 	Branch model.Branch
 	URL    string
-	// Name is the port's name; the project's, in lower case, when empty,
-	// with py- before it for a Python project.
+	// Name is the port's name, which ObserveProject suggests.
 	Name string
 	// Category is where it goes; guessed from the build system, and marked
 	// so, when empty.
 	Category string
 	// Maintainer is the maintainers line; nomaintainer, marked, when empty.
 	Maintainer string
-	// Project is the project as ObserveProject found it; observed afresh
-	// when nil.
-	Project *Project
+	// Project is the project as ObserveProject found it.
+	Project Project
 }
 
 // Observed is an upstream project, and what create would make of it.
@@ -169,12 +167,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	if err != nil {
 		return Created{}, err
 	}
-	var observed Observed
-	if request.Project != nil {
-		observed, err = observe(*request.Project)
-	} else {
-		observed, err = e.ObserveProject(ctx, request.URL)
-	}
+	observed, err := observe(request.Project)
 	if err != nil {
 		return Created{}, err
 	}
@@ -182,9 +175,6 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	prefix, _, _ := portcreate.SplitTag(strings.TrimPrefix(project.Tag, directoryTag(project)))
 	prefix = directoryTag(project) + prefix
 	name := request.Name
-	if name == "" {
-		name = defaultName(project, build)
-	}
 	if !macports.ValidName(name) {
 		return Created{}, fmt.Errorf("%q is not a port name; name it with --name", name)
 	}
@@ -644,20 +634,11 @@ type PlannedCreate struct {
 // branch started, nothing written, and no checksums fetched (create
 // --plan, Then's item 14).
 func (e *Engine) PlanCreate(ctx context.Context, request CreateRequest) (PlannedCreate, error) {
-	var observed Observed
-	var err error
-	if request.Project != nil {
-		observed, err = observe(*request.Project)
-	} else {
-		observed, err = e.ObserveProject(ctx, request.URL)
-	}
+	observed, err := observe(request.Project)
 	if err != nil {
 		return PlannedCreate{}, err
 	}
 	name := request.Name
-	if name == "" {
-		name = observed.Name
-	}
 	if !macports.ValidName(name) {
 		return PlannedCreate{}, fmt.Errorf("%q is not a port name; name it with --name", name)
 	}

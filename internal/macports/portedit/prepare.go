@@ -17,7 +17,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/pypi"
 	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
@@ -88,11 +87,7 @@ type Fidelity = fidelity.Report
 type ContextCoverage struct {
 	Fetch    *macports.FetchSemantics `json:",omitempty"`
 	Platform model.Platform
-	// Variant is the variant asked for in a variant's context, one whose
-	// body declares archives of its own.
-	Variant  string `json:",omitempty"`
 	Modeled  bool
-	Affected bool
 	// FetchesNothing is a context where the port has no archive to
 	// download, as a metaport or a _select port has.
 	FetchesNothing bool `json:",omitempty"`
@@ -107,7 +102,6 @@ type Result struct {
 	// start from (HandAttempt).
 	Versioned []byte                 `json:"-"`
 	Scope     *macports.ReleaseScope `json:",omitempty"`
-	Coverage  []ContextCoverage      `json:",omitempty"`
 	Target    model.Target
 	Files     []portfile.Edit
 	Commits   []CommitIntent
@@ -284,9 +278,6 @@ type Service struct {
 	// a git-fetched port that downloads no archive to read it from; nil
 	// leaves such a port's toolchain minimum as declared.
 	Manifests ManifestSource
-	// PyPI says which files a PyPI release publishes, where its source
-	// archive can't be had; its zero value asks PyPI.
-	PyPI pypi.Client
 }
 
 // ManifestSource reads one file of a port's source repository at the

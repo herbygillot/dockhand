@@ -100,8 +100,6 @@ func (u *updateJSON) Gather(step any) {
 	}
 }
 
-func (u *updateJSON) Result() any { return *u }
-
 type upstreamJSON struct {
 	Changes []upstreamChangeJSON `json:"changes"`
 	// Problem says why the archives could not be compared.
@@ -391,22 +389,7 @@ type submitJSON struct {
 	// kind of reason, and the baselines that fail it alike where that's
 	// the reason (R3-30).
 	Accepted []AcceptedJSON `json:"accepted,omitempty"`
-	// Check is the check ship ran before submitting, as far as it went.
-	Check *CheckJSON `json:"check,omitempty"`
 }
-
-// Gather takes the submission's result, or its check's.
-func (s *submitJSON) Gather(step any) {
-	switch step := step.(type) {
-	case submitJSON:
-		step.Check = s.Check
-		*s = step
-	case CheckJSON:
-		s.Check = &step
-	}
-}
-
-func (s *submitJSON) Result() any { return *s }
 
 // unfoundBuildJSON is a build the commits name in Generated-By that
 // nobody else can find.

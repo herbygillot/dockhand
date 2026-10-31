@@ -4,10 +4,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,27 +16,18 @@ import (
 // returns its path and the commit they name.
 func tagged(t *testing.T) (string, string) {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	remote := filepath.Join(t.TempDir(), "owner", "project.git")
 	run := func(args ...string) string {
 		t.Helper()
-		command := exec.CommandContext(t.Context(), "git", append([]string{"-C", remote, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"}, args...)...)
-		out, err := command.CombinedOutput()
-		require.NoError(t, err, "%s", out)
-		return strings.TrimSpace(string(out))
+		return testsupport.Git(t, remote, args...)
 	}
 	require.NoError(t, os.MkdirAll(remote, 0o755))
 	run("init", "--bare", "-q")
 	tree := run("mktree")
 	commit := run("commit-tree", tree, "-m", "release")
-	blob := strings.TrimSpace(func() string {
-		command := exec.CommandContext(t.Context(), "git", "-C", remote, "hash-object", "-w", "--stdin")
-		command.Stdin = strings.NewReader("key\n")
-		out, err := command.Output()
-		require.NoError(t, err)
-		return string(out)
-	}())
+	key := filepath.Join(t.TempDir(), "key")
+	require.NoError(t, os.WriteFile(key, []byte("key\n"), 0o644))
+	blob := run("hash-object", "-w", key)
 	run("tag", "v1.0", commit)
 	run("tag", "-a", "-m", "annotated", "v2.0", commit)
 	run("tag", "-a", "-m", "nested", "v2.0-signed", "v2.0")
@@ -46,8 +37,9 @@ func tagged(t *testing.T) (string, string) {
 }
 
 func TestListRemoteTagsPeelsAnnotatedTagsToTheirCommit(t *testing.T) {
+	t.Parallel()
 	remote, commit := tagged(t)
-	tags, err := git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, remote)
+	tags, err := git.ListRemoteTags(t.Context(), git.Program{Env: testsupport.GitEnv(t)}, remote)
 	require.NoError(t, err)
 	byName := map[string]string{}
 	for _, tag := range tags {
@@ -61,19 +53,21 @@ func TestListRemoteTagsPeelsAnnotatedTagsToTheirCommit(t *testing.T) {
 }
 
 func TestListRemoteTagsReturnsOnlyTheExactNamesAsked(t *testing.T) {
+	t.Parallel()
+	program := git.Program{Env: testsupport.GitEnv(t)}
 	remote, commit := tagged(t)
-	tags, err := git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, remote, "v1.0")
+	tags, err := git.ListRemoteTags(t.Context(), program, remote, "v1.0")
 	require.NoError(t, err)
 	require.Equal(t, []git.RemoteTag{{Name: "v1.0", Object: commit}}, tags, "release/v1.0 ends with the same components and is not v1.0")
-	tags, err = git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, remote, "v2.0-signed")
+	tags, err = git.ListRemoteTags(t.Context(), program, remote, "v2.0-signed")
 	require.NoError(t, err)
 	require.Equal(t, []git.RemoteTag{{Name: "v2.0-signed", Object: commit}}, tags, "a tag asked for by name peels as a listed one does")
-	tags, err = git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, remote, "v9.9")
+	tags, err = git.ListRemoteTags(t.Context(), program, remote, "v9.9")
 	require.NoError(t, err)
 	require.Empty(t, tags)
-	_, err = git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, remote, "bad..name")
+	_, err = git.ListRemoteTags(t.Context(), program, remote, "bad..name")
 	require.Error(t, err)
-	_, err = git.ListRemoteTags(t.Context(), git.Program{Env: os.Environ()}, filepath.Join(t.TempDir(), "missing.git"))
+	_, err = git.ListRemoteTags(t.Context(), program, filepath.Join(t.TempDir(), "missing.git"))
 	require.Error(t, err)
 }
 
@@ -84,8 +78,9 @@ func TestListRemoteTagsReturnsOnlyTheExactNamesAsked(t *testing.T) {
 // review's finding 30). The read runs in a child process, whose run root
 // is made under that temporary directory.
 func TestARemoteIsReadOutsideAnyRepository(t *testing.T) {
+	t.Parallel()
 	if url := os.Getenv("DOCKHAND_TEST_OUTSIDE_URL"); url != "" {
-		tags, err := git.ListRemoteTags(t.Context(), git.Program{Executable: "git", Env: os.Environ()}, url)
+		tags, err := git.ListRemoteTags(t.Context(), git.Program{Executable: "git", Env: testsupport.GitEnv(t)}, url)
 		if err != nil {
 			t.Log("outside: not read")
 			return
@@ -95,19 +90,15 @@ func TestARemoteIsReadOutsideAnyRepository(t *testing.T) {
 	}
 	remote, _ := tagged(t)
 	enclosing := t.TempDir()
-	for _, args := range [][]string{{"init", "-q", enclosing}, {"-C", enclosing, "config", "url." + remote + ".insteadOf", "https://example.invalid/project.git"}} {
-		out, err := exec.CommandContext(t.Context(), "git", args...).CombinedOutput()
-		require.NoError(t, err, "%s", out)
-	}
+	testsupport.Git(t, enclosing, "init", "-q")
+	testsupport.Git(t, enclosing, "config", "url."+remote+".insteadOf", "https://example.invalid/project.git")
 	tmp := filepath.Join(enclosing, "tmp")
 	require.NoError(t, os.Mkdir(tmp, 0o755))
-	out, err := exec.CommandContext(t.Context(), "git", "-C", tmp, "ls-remote", "--tags", "https://example.invalid/project.git").CombinedOutput()
-	require.NoError(t, err, "%s", out)
-	require.Contains(t, string(out), "refs/tags/v1.0", "git run there reads the local repository")
+	require.Contains(t, testsupport.Git(t, tmp, "ls-remote", "--tags", "https://example.invalid/project.git"), "refs/tags/v1.0", "git run there reads the local repository")
 
 	child := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestARemoteIsReadOutsideAnyRepository$", "-test.v")
 	child.Env = append(os.Environ(), "TMPDIR="+tmp, "DOCKHAND_TEST_OUTSIDE_URL=https://example.invalid/project.git")
-	out, err = child.CombinedOutput()
+	out, err := child.CombinedOutput()
 	require.NoError(t, err, "%s", out)
 	require.Contains(t, string(out), "outside: not read", "the enclosing repository's configuration doesn't apply")
 }

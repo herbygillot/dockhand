@@ -20,7 +20,6 @@ import (
 // commands that say it.
 type (
 	DescriptionSections = prdescription.Sections
-	SectionOutcome      = prdescription.Outcome
 	NewPort             = prdescription.NewPort
 )
 

@@ -66,14 +66,14 @@ func TestRebaseMovesTheBranchOntoFreshMaster(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
 
 	up, err := e.Rebase(t.Context(), branch)
 	require.NoError(t, err)
 	require.True(t, up.UpToDate, "nothing new on master")
 
-	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
 	rebased, err := e.Rebase(t.Context(), branch)
 	require.NoError(t, err)
@@ -90,7 +90,7 @@ func TestRebaseMovesTheBranchOntoFreshMaster(t *testing.T) {
 
 	// Restoring puts back the history, the files, and the base together.
 	// (The architecture review of 2026-09-27, finding 3.)
-	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "mine\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "mine\n"})
 	_, _, err = e.Restore(t.Context(), "rebase-1")
 	require.ErrorContains(t, err, "restoring rebase-1 puts back master's older files too, and a change to one of them stops it, so nothing was changed")
 	require.Equal(t, string(rebased.Checkpoint.After), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
@@ -113,10 +113,10 @@ func TestARebaseThatConflictsChangesNothing(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
 	head := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.0\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.0\n"})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.0")
 
 	_, err = e.Rebase(t.Context(), branch)
@@ -124,7 +124,7 @@ func TestARebaseThatConflictsChangesNothing(t *testing.T) {
 	require.Equal(t, head, testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"))
 
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "mine\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "mine\n"})
 	_, err = e.Rebase(t.Context(), branch)
 	require.ErrorContains(t, err, "has uncommitted edits")
 }
@@ -167,9 +167,9 @@ func TestARebaseCountsWhatItReplays(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
-	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	commitAs(t, branch.Worktree, "Ada ada@example.org", "libharbor: update to 3")
 
 	rebases := func() int {
@@ -183,7 +183,7 @@ func TestARebaseCountsWhatItReplays(t *testing.T) {
 	require.True(t, up.UpToDate)
 	require.Zero(t, rebases(), "a branch already on master records no rebase from master onto itself")
 
-	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
 	rebased, err := e.Rebase(t.Context(), branch)
 	require.NoError(t, err)
@@ -202,13 +202,13 @@ func TestAMergedBranchIsNotRebased(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
 	head := strings.TrimSpace(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 
 	// Master takes the same change as another commit, as a squash merge
 	// would.
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1 (#34901)")
 	_, err = e.Rebase(t.Context(), branch)
 	require.ErrorContains(t, err, "already has every change jq-update makes, so there's nothing to rebase; dockhand clean jq-update removes it once its pull request is merged")
@@ -231,7 +231,7 @@ func TestStatusCreditsTheCheckOfTheFilesAsTheyAre(t *testing.T) {
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 	before := checkHead(t, e, branch)
 
-	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
 	rebased, err := e.Rebase(t.Context(), branch)
 	require.NoError(t, err)
@@ -257,7 +257,7 @@ func TestStatusCreditsTheCheckOfTheFilesAsTheyAre(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, before.ID, evidence.Run.ID, "as submit credits it")
 
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
 	status, err = e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
 	require.Equal(t, after.ID, status.Latest.ID, "files no check has seen are judged by the newest check")
@@ -274,14 +274,14 @@ func TestARebaseAndATidySayAnOlderBuildsAttribution(t *testing.T) {
 	branch, err := e.Start(t.Context(), StartRequest{Name: "zola-legacy", Here: true})
 	require.NoError(t, err)
 	old := "v0.0.0-20260921.2.0.20260923041537-ec1997b8bc53"
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1\n\nGenerated-By: Dockhand "+old+" (https://github.com/herbygillot/dockhand)")
 
 	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Equal(t, []string{old}, plan.OlderBuilds())
 
-	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
 	rebased, err := e.Rebase(t.Context(), branch)
 	require.NoError(t, err)

@@ -32,7 +32,6 @@ if {${build_arch} eq "arm64"} {distfiles arm.zip} else {distfiles intel.zip}
 	require.Contains(t, after, "revision 2")
 	require.NotContains(t, after, "sha256 aaaa")
 	require.NotContains(t, after, "sha256 bbbb")
-	require.Len(t, result.Coverage, 2, "both architectures are observed contexts")
 	original, err := os.ReadFile(filepath.Join(r.Workspace.Root(), "devel/fixture/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(original), "sha256 aaaa", "the workspace is restored")

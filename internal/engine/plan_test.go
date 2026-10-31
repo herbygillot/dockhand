@@ -91,7 +91,7 @@ func harborBranch(t *testing.T, e *Engine) model.Revision {
 	t.Helper()
 	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-2", Here: true})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{
 		"devel/libharbor/Portfile":             "name libharbor\nversion 3\n",
 		"devel/harbor-cli/Portfile":            "name harbor-cli\nrevision 0\n",
 		"graphics/harbor-viewer/Portfile":      "name harbor-viewer\n",
@@ -101,13 +101,13 @@ func harborBranch(t *testing.T, e *Engine) model.Revision {
 	testsupport.Git(t, branch.Worktree, "add", "-A")
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "base for the ports")
 	base := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
-	write(t, branch.Worktree, map[string]string{
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{
 		"devel/libharbor/Portfile":             "name libharbor\nversion 4\n",
 		"devel/harbor-cli/Portfile":            "name harbor-cli\nrevision 1\n",
 		"graphics/harbor-viewer/files/a.patch": "b\n",
 	})
 	branch.Base = model.ObjectID(base)
-	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	return capture.Revision
 }
@@ -202,7 +202,7 @@ func TestAPlanThatCannotEvaluateIsUnresolved(t *testing.T) {
 func TestChangedSharedCodeIsSubstantive(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
-	write(t, f.upstream, map[string]string{
+	testsupport.WriteFiles(t, f.upstream, map[string]string{
 		"textproc/jq/Portfile":                           "PortGroup github 1.0\nname jq\nversion 1.7.1\nrevision 0\n",
 		"_resources/port1.0/group/github-1.0.tcl":        "PortGroup legacysupport 1.1\n",
 		"_resources/port1.0/group/legacysupport-1.1.tcl": "# legacy support\n",
@@ -233,9 +233,9 @@ func TestChangedSharedCodeIsSubstantive(t *testing.T) {
 		for path, text := range c.files {
 			files[path] = text
 		}
-		write(t, branch.Worktree, files)
+		testsupport.WriteFiles(t, branch.Worktree, files)
 		testsupport.Git(t, branch.Worktree, "add", "-A") // new files are captured once tracked
-		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 		require.NoError(t, err)
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
 		require.NoError(t, err)
@@ -576,9 +576,9 @@ func TestACheckRefusesAPatchGitDoesntTrack(t *testing.T) {
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := twoPortBranch(t, e)
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\npatchfiles fix.diff\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\npatchfiles fix.diff\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: fix the build")
-	write(t, branch.Worktree, map[string]string{"textproc/jq/files/fix.diff": "fix\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/files/fix.diff": "fix\n"})
 	where := Where{Environments: []model.Environment{tahoeArm}}
 
 	for _, mode := range []CaptureMode{CaptureHead, CaptureWorking} {
@@ -590,14 +590,14 @@ func TestACheckRefusesAPatchGitDoesntTrack(t *testing.T) {
 	// One Git ignores is held too, said with the rule's command, since
 	// --include refuses it.
 	common := testsupport.Git(t, branch.Worktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
-	write(t, common, map[string]string{"info/exclude": "ignored.diff\n"})
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\npatchfiles ignored.diff\n", "textproc/jq/files/ignored.diff": "ignored\n"})
+	testsupport.WriteFiles(t, common, map[string]string{"info/exclude": "ignored.diff\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\npatchfiles ignored.diff\n", "textproc/jq/files/ignored.diff": "ignored\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: patch it again")
 	for _, mode := range []CaptureMode{CaptureHead, CaptureWorking} {
 		_, err := e.ProposeCheck(t.Context(), CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: mode}, Where: where})
 		require.EqualError(t, err, "jq's patchfiles names files/ignored.diff, which Git ignores, so neither a commit nor a check carries it; git check-ignore -v files/ignored.diff names the rule", "mode %v", mode)
 	}
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\npatchfiles fix.diff\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\npatchfiles fix.diff\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: fix the build")
 
 	// A named branch with nothing uncommitted is checked at its head, but
@@ -654,7 +654,7 @@ func TestAMovedPortTidiesAndSubmitsAsAMove(t *testing.T) {
 		testsupport.Git(t, branch.Worktree, "mv", "textproc/jq", "misc/jq")
 		subject := "jq: move to misc"
 		if update {
-			write(t, branch.Worktree, map[string]string{"misc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+			testsupport.WriteFiles(t, branch.Worktree, map[string]string{"misc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 			testsupport.Git(t, branch.Worktree, "add", "misc/jq/Portfile")
 			subject = "jq: update to 1.8.1, move to misc"
 		}

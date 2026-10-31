@@ -22,7 +22,7 @@ func twoPortBranch(t *testing.T, e *Engine) model.Branch {
 	t.Helper()
 	branch := committedUpdate(t, e)
 	testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "devel/libharbor")
-	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "libharbor: update to 3")
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
 		"textproc/jq": {port("jq")}, "devel/libharbor": {port("libharbor")},

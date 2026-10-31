@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	gh "github.com/google/go-github/v93/github"
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -16,7 +15,6 @@ import (
 )
 
 func pullRequestObservation(r *gh.PullRequest, repository string) (forge.PullRequestObservation, error) {
-	at := time.Now().UTC().Truncate(time.Millisecond)
 	if r == nil || r.Head == nil || r.Base == nil || r.GetNumber() <= 0 || (r.Head.Repo == nil && r.GetState() != "closed") || r.Base.Repo == nil || !strings.EqualFold(r.Base.Repo.GetFullName(), repository) || (r.Head.Repo != nil && !githubapi.ValidRepositoryName(r.Head.Repo.GetFullName())) || !git.ValidBranchName(r.Head.GetRef()) || !git.ValidBranchName(r.Base.GetRef()) || !git.ValidObjectID(r.Head.GetSHA()) || (r.GetState() != "open" && r.GetState() != "closed") || r.GetTitle() == "" || r.GetHTMLURL() == "" {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request observation")
 	}
@@ -31,7 +29,7 @@ func pullRequestObservation(r *gh.PullRequest, repository string) (forge.PullReq
 	if r.Body != nil {
 		body = *r.Body
 	}
-	return forge.PullRequestObservation{Found: true, ObservedAt: at, PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: repository, Number: r.GetNumber(), URL: r.GetHTMLURL()}, HeadRepository: r.Head.Repo.GetFullName(), HeadBranch: r.Head.GetRef(), BaseBranch: r.Base.GetRef(), State: state, RemoteHead: model.ObjectID(r.Head.GetSHA()), Commits: r.GetCommits(), Title: r.GetTitle(), Body: body, Author: r.GetUser().GetLogin(), MaintainerCanModify: r.GetMaintainerCanModify(), ObservedAt: at}}, nil
+	return forge.PullRequestObservation{Found: true, PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: repository, Number: r.GetNumber(), URL: r.GetHTMLURL()}, HeadRepository: r.Head.Repo.GetFullName(), HeadBranch: r.Head.GetRef(), BaseBranch: r.Base.GetRef(), State: state, RemoteHead: model.ObjectID(r.Head.GetSHA()), Commits: r.GetCommits(), Title: r.GetTitle(), Body: body, Author: r.GetUser().GetLogin(), MaintainerCanModify: r.GetMaintainerCanModify()}}, nil
 }
 
 func validQuery(q forge.PullRequestQuery) bool {
@@ -55,7 +53,7 @@ func (c *Client) Find(ctx context.Context, q forge.PullRequestQuery) (forge.Pull
 	// earlier one closed or merged, and the one open now, as each update of
 	// a port to a version is named alike. The open one is the branch's; with
 	// none open, the latest.
-	found := forge.PullRequestObservation{ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	found := forge.PullRequestObservation{}
 	open := false
 	for row, err := range client.PullRequests.ListIter(ctx, owner, repo, options) {
 		if err != nil {

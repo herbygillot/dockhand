@@ -86,7 +86,7 @@ func TestCleanRemovesARetidiedBranchWhoseChangesAreOnMaster(t *testing.T) {
 	t.Parallel()
 	f, e, _, branch := mergedBranch(t)
 	portfile := testsupport.Git(t, branch.Worktree, "show", "HEAD:textproc/jq/Portfile")
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": portfile + "\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": portfile + "\n"})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1")
 	_, err := e.fetchMaster(t.Context())
 	require.NoError(t, err)
@@ -144,7 +144,7 @@ func TestCleanKeepsWorkOfItsOwn(t *testing.T) {
 	require.Equal(t, "the worktree it is checked out in is kept", whats(plans)["branch dockhand/jq-update"], "planned so, not only found so as clean runs (an escaped mutant)")
 
 	require.NoError(t, os.Remove(filepath.Join(branch.Worktree, "notes.txt")))
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: update to 1.8.2")
 	plans, err = e.PlanClean(t.Context())
 	require.NoError(t, err)
@@ -285,7 +285,7 @@ func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T)
 	require.NoError(t, err)
 	_, err = e.Edit(t.Context(), working, "jq")
 	require.NoError(t, err)
-	write(t, working.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	testsupport.WriteFiles(t, working.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	commitAs(t, working.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
 	var named []model.Branch
 	for _, branch := range []model.Branch{empty, working} {
@@ -308,7 +308,7 @@ func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T)
 	// One whose port master has since moved on is said, for a look, as the
 	// adopted and archived pre-v3 zola branch was (the dogfood run with
 	// fb2d195f).
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.2")
 	_, err = e.fetchMaster(t.Context())
 	require.NoError(t, err)
