@@ -555,11 +555,20 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			login.look(running)
 			if login.reads() {
 				followed.maybe(running)
-				if looking.CompareAndSwap(false, true) {
-					looks.Go(func() {
-						defer looking.Store(false)
+				// Only a look that looks runs beside the loop: one started
+				// each turn to find it isn't due held cleanup off for good
+				// on a loaded Mac. Only the loop starts one, and the
+				// scanner is the look's while it runs.
+				if !looking.Load() {
+					if scanned.due() {
+						looking.Store(true)
+						looks.Go(func() {
+							defer looking.Store(false)
+							scanned.maybe(running)
+						})
+					} else {
 						scanned.maybe(running)
-					})
+					}
 				}
 			}
 			if options.submits() && login.writes() {
@@ -1046,20 +1055,32 @@ func (o *outdatedScanner) announce(ctx context.Context) {
 	}
 }
 
+// due says the day's look would look now, which takes longer than a
+// turn of serve's loop; not where it isn't due, nor where no maintainer
+// or category is set, which says so and is quick.
+func (o *outdatedScanner) due() bool {
+	return !o.s.options.Outdated.empty() && o.dueAt(o.s.options.Now())
+}
+
+func (o *outdatedScanner) dueAt(now time.Time) bool {
+	settings := o.s.options.Outdated
+	due := time.Date(now.Year(), now.Month(), now.Day(), settings.Hour, settings.Minute, 0, 0, now.Location())
+	if now.Before(due) {
+		return false
+	}
+	if info, err := os.Stat(o.s.e.serveFile("outdated.stamp")); err == nil && !info.ModTime().Before(due) {
+		return false
+	}
+	return len(o.retry) == 0 || !now.Before(o.retryAt)
+}
+
 func (o *outdatedScanner) maybe(ctx context.Context) {
 	e, settings := o.s.e, o.s.options.Outdated
 	now := o.s.options.Now()
-	due := time.Date(now.Year(), now.Month(), now.Day(), settings.Hour, settings.Minute, 0, 0, now.Location())
-	if now.Before(due) {
-		return
-	}
-	if info, err := os.Stat(e.serveFile("outdated.stamp")); err == nil && !info.ModTime().Before(due) {
+	if !o.dueAt(now) {
 		return
 	}
 	retrying := len(o.retry) > 0
-	if retrying && now.Before(o.retryAt) {
-		return
-	}
 	// The day's look is stamped once it has run, so a serve stopped part
 	// way through looks again; one that failed is stamped too, and tried
 	// the next day, its problem said once. One a rate limit cut short
