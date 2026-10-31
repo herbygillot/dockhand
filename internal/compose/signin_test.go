@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // GH_TOKEN's token overrides GITHUB_TOKEN's, and either dockhand's login;
@@ -18,7 +19,7 @@ func TestSigninIsTheCommandLinesOwn(t *testing.T) {
 	t.Parallel()
 	home, bin := t.TempDir(), t.TempDir()
 	gh := filepath.Join(bin, "gh")
-	require.NoError(t, os.WriteFile(gh, []byte("#!/bin/sh\n"), 0o755))
+	testsupport.WriteExecutable(t, gh, "#!/bin/sh\n")
 	options := Options{Env: []string{"HOME=" + home, "PATH=/nowhere:" + bin, "GITHUB_TOKEN=second"}}
 	signin := options.Signin(nil)
 	require.Equal(t, github.Token{Secret: "second", Source: github.SourceGitHubEnvironment}, signin.Token)

@@ -12,6 +12,7 @@ import (
 )
 
 func TestProgressRunsOnlyDuringOperation(t *testing.T) {
+	t.Parallel()
 	var buffer bytes.Buffer
 	writer := &progressWriter{writer: &buffer}
 	failure := errors.New("fixture")

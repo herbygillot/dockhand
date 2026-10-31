@@ -13,6 +13,7 @@ import (
 // A check on macOS 26 alone leaves MacPorts' CI's 14 and 15 uncovered;
 // one on the github provider runs MacPorts' own workflow, and leaves none.
 func TestUncoveredCIIsWhatNoEnvironmentBuiltOn(t *testing.T) {
+	t.Parallel()
 	tahoe := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	sequoia := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
 	ci := []string{"14", "15", "26"}

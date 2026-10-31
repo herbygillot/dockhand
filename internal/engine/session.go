@@ -182,13 +182,10 @@ func (e *Engine) sayWaits(ctx context.Context, run model.Run, waited func(model.
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(waitPoll):
+		case <-time.After(e.slotPoll()):
 		}
 	}
 }
-
-// waitPoll is how often a batch reads its checks' waits.
-var waitPoll = 2 * time.Second
 
 // waitFor reads a run until it ends or ctx does.
 func (e *Engine) waitFor(ctx context.Context, id model.RunID) (model.Run, error) {

@@ -18,6 +18,7 @@ func (f adoptionFixture) Clone(ctx context.Context, from, to string) error {
 }
 
 func TestAdoptionRestoresOldImageAfterFailedClone(t *testing.T) {
+	t.Parallel()
 	for _, canceled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "failure", true: "cancellation"}[canceled], func(t *testing.T) {
 			m := newFakeMachine("ready", "candidate")
@@ -47,6 +48,7 @@ func TestAdoptionRestoresOldImageAfterFailedClone(t *testing.T) {
 }
 
 func TestAdoptionPreservesPriorRecoveryImage(t *testing.T) {
+	t.Parallel()
 	m := newFakeMachine("ready", "ready-previous", "candidate")
 	err := adopt(t.Context(), m, "candidate", "ready", true)
 	require.ErrorContains(t, err, "interrupted replacement")
@@ -54,6 +56,7 @@ func TestAdoptionPreservesPriorRecoveryImage(t *testing.T) {
 }
 
 func TestSuccessfulAdoptionRemovesPreviousOnlyAfterClone(t *testing.T) {
+	t.Parallel()
 	m := newFakeMachine("ready", "candidate")
 	require.NoError(t, adopt(t.Context(), m, "candidate", "ready", true))
 	require.Less(t, index(m.events, "clone:candidate:ready"), index(m.events, "delete:ready-previous"))
@@ -74,6 +77,7 @@ func (f adoptionFixture) Rename(ctx context.Context, from, to string) error {
 }
 
 func TestFailedRollbackKeepsPreviousAndCandidate(t *testing.T) {
+	t.Parallel()
 	m := newFakeMachine("ready", "candidate")
 	m.fail = "rename:ready-previous:ready"
 	f := adoptionFixture{m, func(context.Context, string, string) error { return errors.New("clone failed") }}

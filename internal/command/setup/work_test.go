@@ -91,7 +91,7 @@ func TestSetupRefusesAnOldGit(t *testing.T) {
 	w := cmdtest.NewWorld(t)
 	old := filepath.Join(w.Home, "bin", "git")
 	require.NoError(t, os.MkdirAll(filepath.Dir(old), 0o755))
-	require.NoError(t, os.WriteFile(old, []byte("#!/bin/sh\necho 'git version 2.39.5 (Apple Git-154)'\n"), 0o755))
+	testsupport.WriteExecutable(t, old, "#!/bin/sh\necho 'git version 2.39.5 (Apple Git-154)'\n")
 	cmdtest.Setenv(t, "GIT_BIN", old)
 	_, _, err := cmdtest.Dockhand(t, "setup", "--yes")
 	require.EqualError(t, err, "dockhand needs Git 2.40 or newer, and "+old+" is 2.39.5; install a newer one, such as with: sudo port install git, or name one with GIT_BIN")

@@ -616,6 +616,7 @@ func TestAPythonPinMacPortsCantMeetHolds(t *testing.T) {
 			Message: "upstream: couldn't tell whether MacPorts' py313-textual-fastdatatable meets pyproject.toml's textual-fastdatatable ==0.19.0: \"not-a-version\" isn't a PEP 440 version"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			f := setup(t)
 			e, p := f.withPreparer(t)
 			branch, err := e.Start(t.Context(), StartRequest{Name: "sqlit-tui"})

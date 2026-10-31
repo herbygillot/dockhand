@@ -112,7 +112,7 @@ func fakePrefix(t *testing.T, env ...string) (prefix string, environment []strin
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "etc", "macports"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "var", "macports", "registry"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(prefix, "etc", "macports", "sources.conf"), []byte("rsync://rsync.macports.org/macports/release/tarballs/ports.tar [default]\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(prefix, "bin", "port"), []byte(guesttest.FakePort), 0o755))
+	testsupport.WriteExecutable(t, filepath.Join(prefix, "bin", "port"), guesttest.FakePort)
 	prelude := filepath.Join(root, "prelude.tcl")
 	require.NoError(t, os.WriteFile(prelude, []byte(`
 package provide macports 1.0
@@ -127,9 +127,9 @@ set argv [lrange $argv 1 end]
 source $argv0
 `), 0o644))
 	tclsh := testsupport.MacPortsTclsh(t)
-	require.NoError(t, os.WriteFile(filepath.Join(prefix, "bin", "port-tclsh"), []byte("#!/bin/sh\nexec "+tclsh+" "+prelude+" \"$@\"\n"), 0o755))
+	testsupport.WriteExecutable(t, filepath.Join(prefix, "bin", "port-tclsh"), "#!/bin/sh\nexec "+tclsh+" "+prelude+" \"$@\"\n")
 	otool := filepath.Join(root, "otool")
-	require.NoError(t, os.WriteFile(otool, []byte(guesttest.FakeOtool), 0o755))
+	testsupport.WriteExecutable(t, otool, guesttest.FakeOtool)
 	portLog = filepath.Join(root, "port.log")
 	environment = append(append(os.Environ(), "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=",
 		"ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "INSTALLED=", "DEPVERSION=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
@@ -343,7 +343,7 @@ func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 	called := filepath.Join(t.TempDir(), "called")
 	answer := filepath.Join(t.TempDir(), "answer")
 	sudo := filepath.Join(t.TempDir(), "sudo")
-	require.NoError(t, os.WriteFile(sudo, []byte("#!/bin/sh\necho \"$*\" >> "+called+"\nexit $(cat "+answer+")\n"), 0o755))
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\necho \"$*\" >> "+called+"\nexit $(cat "+answer+")\n")
 	l := &Local{sudo: []string{sudo}, Env: []string{"USER=dhtest", "PATH=/usr/bin:/bin"}}
 	tclsh := filepath.Join(prefix, "bin", "port-tclsh")
 

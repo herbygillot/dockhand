@@ -998,6 +998,7 @@ func TestAnArchiveGivenToTheGuestIsNamed(t *testing.T) {
 // A status has the host's image where a base image is of this Mac's own
 // release, by Darwin version.
 func TestAStatusHasTheHostsImage(t *testing.T) {
+	t.Parallel()
 	tahoe, err := macos.ReleaseForDarwin(25)
 	require.NoError(t, err)
 	sequoia, err := macos.ReleaseForDarwin(24)
@@ -1033,6 +1034,7 @@ func TestTheGuestsProgressIsSaidAsItChanges(t *testing.T) {
 // A target's log is named by its target, for a multi-port check's
 // directory to say whose each is (the exiv2 session's notes, 2026-10-21).
 func TestALogIsNamedByItsTarget(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "luminance-hdr.log", buildenv.LogName("luminance-hdr"))
 	require.Equal(t, "s2n-tls+tests.log", buildenv.LogName("s2n-tls+tests"))
 	require.Equal(t, "a_b.log", buildenv.LogName("a/b"))

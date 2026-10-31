@@ -15,6 +15,7 @@ import (
 )
 
 func TestAgentReadinessReportsCancellationAndLastProbe(t *testing.T) {
+	t.Parallel()
 	script := filepath.Join(t.TempDir(), "tart")
 	testsupport.WriteExecutable(t, script, "#!/bin/sh\necho 'fixture agent unavailable' >&2\nexit 1\n")
 	n := newNative(Config{Env: os.Environ(), Executable: script}, nil)
@@ -26,6 +27,7 @@ func TestAgentReadinessReportsCancellationAndLastProbe(t *testing.T) {
 }
 
 func TestAgentReadinessDetectsVMExit(t *testing.T) {
+	t.Parallel()
 	script := filepath.Join(t.TempDir(), "tart")
 	testsupport.WriteExecutable(t, script, "#!/bin/sh\n[ \"$1\" != run ] || echo 'fixture VM exited' >&2\nexit 1\n")
 	n := newNative(Config{Env: os.Environ(), Executable: script}, nil)
@@ -39,6 +41,7 @@ func TestAgentReadinessDetectsVMExit(t *testing.T) {
 // Setup's guest commands go over SSH, with the command's output shown as
 // it arrives and its exit status kept.
 func TestProvisioningGuestTransportPreservesStreamingAndFailure(t *testing.T) {
+	t.Parallel()
 	ssh := filepath.Join(t.TempDir(), "ssh")
 	testsupport.WriteExecutable(t, ssh, `#!/bin/sh
 while [ $# -gt 0 ]; do
@@ -68,6 +71,7 @@ exit 7
 // edits nothing on the host. A disk it doesn't know is refused before
 // anything is set.
 func TestConfigureSizesAnASIFDiskAndEditsNothing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	calls := filepath.Join(dir, "calls")
 	script := filepath.Join(dir, "tart")
@@ -93,6 +97,7 @@ func TestConfigureSizesAnASIFDiskAndEditsNothing(t *testing.T) {
 // all, then given up with what to do, where it held setup as long as the
 // VM ran (the limits sweep, batch 26).
 func TestABlockedListingIsWaitedOnlySoLong(t *testing.T) {
+	t.Parallel()
 	retry, bound := listingRetry, listingBound
 	listingRetry, listingBound = time.Millisecond, 3*time.Millisecond
 	t.Cleanup(func() { listingRetry, listingBound = retry, bound })

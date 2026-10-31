@@ -16,6 +16,7 @@ import (
 )
 
 func TestDeviceFlowUsesOAuthPollingAndValidatesTheAuthenticatedUser(t *testing.T) {
+	t.Parallel()
 	presented := false
 	tokenRequests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +69,7 @@ func TestDeviceFlowUsesOAuthPollingAndValidatesTheAuthenticatedUser(t *testing.T
 }
 
 func TestDeviceFlowStopsWhenThePromptCannotBePresented(t *testing.T) {
+	t.Parallel()
 	tokenRequests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -89,6 +91,7 @@ func TestDeviceFlowStopsWhenThePromptCannotBePresented(t *testing.T) {
 // A login GitHub gives without a refresh token, as an OAuth app whose
 // tokens don't expire does, can't renew itself, and isn't kept.
 func TestALoginWithoutARefreshTokenIsRefused(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -108,6 +111,7 @@ func TestALoginWithoutARefreshTokenIsRefused(t *testing.T) {
 // GitHub's expired_token or the wait its expiry set ends it (the rc6 full
 // stage, D-C2).
 func TestAnExpiredDeviceCodeSaysSo(t *testing.T) {
+	t.Parallel()
 	for _, answer := range []string{"expired_token", "authorization_pending"} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

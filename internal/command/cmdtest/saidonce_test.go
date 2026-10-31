@@ -12,6 +12,7 @@ import (
 // SaidOnce counts a name once a line, outside tables and paths, and the
 // Next: lines.
 func TestSaidOnce(t *testing.T) {
+	t.Parallel()
 	require.Empty(t, SaidOnce("jq-update · checking commit 1a2b3c4\n  jq  ✓\nPassed.\n"))
 	require.Empty(t, SaidOnce("check-1 failed\nLogs:\n  jq on command, attempt 1: ~/.dockhand/logs/check-1/command-1/command.log.gz\n"), "a path")
 	require.Empty(t, SaidOnce("Replaced check-1, canceled\n  RUN      STATE\n  check-1  canceled\n"), "a table")
@@ -25,6 +26,7 @@ func TestSaidOnce(t *testing.T) {
 
 // -v, --json, a preview, and help are read in full.
 func TestSaidOnceChecks(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"ship", "-v"}, {"ship", "-vv"}, {"status", "--json"}, {"submit", "--plan"}, {"serve"}, {"review", "1", "--markdown"}} {
 		require.False(t, saidOnceChecked(args, testStreams()), args)
 	}

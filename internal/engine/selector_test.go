@@ -55,6 +55,7 @@ func TestABranchIsFoundByThePortItChangesOrItsPullRequest(t *testing.T) {
 // a branch ranks after one that changes more: `-p jq` means jq's own
 // update before a library branch's rebuild of it.
 func TestARevisionOnlyChangeIsSaid(t *testing.T) {
+	t.Parallel()
 	record := model.ChangeRecord{Ports: []model.SubportChange{
 		{Port: "jq", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "revision", From: "0", To: "1"}}},
 		{Port: "jq-devel", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "revision", From: "0", To: "1"}, {Field: "version", From: "1", To: "2"}}},

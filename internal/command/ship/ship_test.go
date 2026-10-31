@@ -377,16 +377,7 @@ func TestShipStartsNoBranchForAnEditItCantMakeUnattended(t *testing.T) {
 func TestABatchStopsWhereTheForkRefusesItsKey(t *testing.T) {
 	t.Parallel()
 	w, g := twoPortWorldOf(t)
-	remote := strings.TrimSpace(testsupport.Git(t, w.Clone, "remote"))
-	for _, name := range strings.Fields(remote) {
-		if url := strings.TrimSpace(testsupport.Git(t, w.Clone, "remote", "get-url", "--push", name)); url == g.Fork {
-			testsupport.Git(t, w.Clone, "remote", "set-url", "--push", name, "ssh://git@github.com/ada/macports-ports.git")
-			g.Fork = "ssh://git@github.com/ada/macports-ports.git"
-		}
-	}
-	refusing := filepath.Join(t.TempDir(), "ssh")
-	require.NoError(t, os.WriteFile(refusing, []byte("#!/bin/sh\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n"), 0o755))
-	cmdtest.Setenv(t, "GIT_SSH_COMMAND", refusing)
+	cmdtest.RefusingSSH(t, w, g)
 	out, errs, err := cmdtest.Dockhand(t, "ship", "jq", "yq", "--yes")
 	require.Error(t, err)
 	require.Contains(t, errs+err.Error(), "can't be pushed to from this Mac, so nothing was shipped")

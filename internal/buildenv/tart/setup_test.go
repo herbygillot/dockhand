@@ -170,6 +170,7 @@ echo "asked for $2" >&2
 
 // What the images let a check do, read off which images there are.
 func TestReadiness(t *testing.T) {
+	t.Parallel()
 	tahoe, err := macos.ReleaseForDarwin(25)
 	require.NoError(t, err)
 	sequoia, err := macos.ReleaseForDarwin(24)
@@ -185,6 +186,7 @@ func TestReadiness(t *testing.T) {
 // floor, so a stale image's rebuild clears its staleness: a hard 2.12.6
 // made it again as stale (field testing, 2026-10-16).
 func TestANewImageInstallsThisMacsMacPorts(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "2.12.7", (&Provider{macPorts: "2.12.7"}).newMacPorts(t.Context()))
 	require.Equal(t, DefaultMacPorts, (&Provider{macPorts: "2.11.5"}).newMacPorts(t.Context()), "never older than the floor")
 	require.Equal(t, DefaultMacPorts, (&Provider{macPorts: DefaultMacPorts}).newMacPorts(t.Context()))

@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,12 +28,12 @@ func WithScript(t *testing.T, w World, outcome string) {
 	if outcome == "failed" {
 		phase = `, "phase": "install"`
 	}
-	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
+	testsupport.WriteExecutable(t, script, `#!/bin/sh
 echo "building from $1"
 cat > "$(dirname "$1")/result.json" <<JSON
 {"version": 1, "targets": [{"id": "jq", "outcome": "`+outcome+`"`+phase+`}]}
 JSON
-`), 0o755))
+`)
 	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[providers.command]\nrun = \"~/bin/build-ports\"\nname = \"my build box\"\n"), 0o644))
 	UsePorts(Stands(t), OnePort{})
@@ -67,13 +68,13 @@ func WithOutcomeScript(t *testing.T, w World, config string) func(string) {
 	t.Helper()
 	script := filepath.Join(w.Home, "bin", "build-ports")
 	require.NoError(t, os.MkdirAll(filepath.Dir(script), 0o755))
-	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
+	testsupport.WriteExecutable(t, script, `#!/bin/sh
 read -r outcome phase < "$HOME/outcome"
 [ "$outcome" = failed ] && phase=", \"phase\": \"${phase:-install}\""
 cat > "$(dirname "$1")/result.json" <<JSON
 {"version": 1, "targets": [{"id": "jq", "outcome": "$outcome"$phase}]}
 JSON
-`), 0o755))
+`)
 	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[providers.command]\nrun = \"~/bin/build-ports\"\n"+config), 0o644))
 	UsePorts(Stands(t), OnePort{})

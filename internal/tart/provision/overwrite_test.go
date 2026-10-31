@@ -32,6 +32,7 @@ esac
 // replace it without a word, in each of setup's three places, and nothing
 // is cloned or imported (the test plan's step 2, item 18).
 func TestSetupRefusesToOverwriteAListedVM(t *testing.T) {
+	t.Parallel()
 	config, calls := listingTart(t, "dockhand-base-tahoe-next")
 	n := newNative(config, nil)
 	err := n.Clone(t.Context(), "ghcr.io/cirruslabs/macos-tahoe-vanilla:latest", "dockhand-base-tahoe-next")

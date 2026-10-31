@@ -72,6 +72,7 @@ func (*behindProvider) MacPortsBehind(context.Context, model.Environment) (strin
 // image again, an Xcode image's Xcode named; one it builds nothing on isn't
 // said (the person's "yes", 2026-10-16; field testing, the same day).
 func TestPlanNotesSayAnEnvironmentBehindThisMacsMacPorts(t *testing.T) {
+	t.Parallel()
 	e := &Engine{Providers: map[string]buildenv.Provider{buildenv.Tart: &behindProvider{}}}
 	at := func(darwin string) model.Environment {
 		return model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: darwin, Architecture: "arm64"}}

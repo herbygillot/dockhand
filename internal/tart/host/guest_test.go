@@ -22,6 +22,7 @@ func localGuest(ctx context.Context, input io.Reader, args ...string) ([]byte, e
 }
 
 func TestGuestAgentVersionIsOnlyDiagnostic(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"tart-guest-agent version 0.14.1-extra", "nightly development snapshot", ""} {
 		run := func(context.Context, io.Reader, ...string) ([]byte, error) { return []byte(value), nil }
 		observed, err := ObserveGuestAgentVersion(t.Context(), run)

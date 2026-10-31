@@ -19,6 +19,7 @@ import (
 // several minutes and a VM slot, so it runs only with DOCKHAND_TEST_TART_LIVE
 // set, on a Mac with the image.
 func TestLiveCheckInATahoeGuest(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("DOCKHAND_TEST_TART_LIVE") == "" {
 		t.Skip("set DOCKHAND_TEST_TART_LIVE to build in a real Tart guest")
 	}

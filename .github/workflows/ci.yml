@@ -49,9 +49,6 @@ jobs:
       - name: Local paths
         run: make path-check
 
-      - name: Vet
-        run: make vet
-
       - name: Lint
         run: make lint
 

@@ -26,7 +26,7 @@ func gitCounted(t *testing.T, f *fixture) func() map[string]int {
 	wrapper := filepath.Join(dir, "git")
 	// The command is the first argument after git's -c pairs.
 	script := fmt.Sprintf("#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in -c) skip=1;; *) if [ -n \"$skip\" ]; then skip=; else echo \"$a\" >> %q; break; fi;; esac; done\nexec %q \"$@\"\n", log, real)
-	require.NoError(t, os.WriteFile(wrapper, []byte(script), 0o755))
+	testsupport.WriteExecutable(t, wrapper, script)
 	f.options.Git = wrapper
 	return func() map[string]int {
 		data, _ := os.ReadFile(log)

@@ -23,6 +23,7 @@ func fixtureMachine(t *testing.T, script string) Machine {
 // Clone hands tart the image lock it holds, so the image is read-locked
 // for as long as tart clones it.
 func TestCloneInheritsTheImageLock(t *testing.T) {
+	t.Parallel()
 	m := fixtureMachine(t, `
 case "$1" in
  list) printf '[]' ;;
@@ -42,6 +43,7 @@ esac
 // replaces it without a word, and reads nothing inside the Tart home: a
 // directory Tart does not list is Tart's to clean up.
 func TestCloneRefusesListedDestinationsOnly(t *testing.T) {
+	t.Parallel()
 	for _, listed := range []bool{true, false} {
 		t.Run(map[bool]string{true: "listed", false: "unlisted directory"}[listed], func(t *testing.T) {
 			m := fixtureMachine(t, `
@@ -72,6 +74,7 @@ esac
 // Tart renames running VMs, and refuses a listed target only by chance of
 // its own checks.
 func TestRenameRequiresAStoppedSourceAndAnUnlistedTarget(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct{ name, list, want string }{
 		{"renamed", `[{"Name":"from","Source":"local","State":"stopped"}]`, ""},
 		{"running", `[{"Name":"from","Source":"local","State":"running"}]`, "cannot rename running VM from"},
@@ -102,6 +105,7 @@ esac
 // `tart delete` says: it reports a running VM as one that "does not exist"
 // and leaves it (openai/tart#1345), and a failed delete can have worked.
 func TestDeleteRequiresStoppedImageAndConfirmedAbsence(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"running", "retained", "collision", "removed", "removed despite error", "absent"} {
 		t.Run(mode, func(t *testing.T) {
 			m := fixtureMachine(t, `
@@ -151,6 +155,7 @@ esac
 }
 
 func TestForegroundReportsEarlyFailureWithDiagnostics(t *testing.T) {
+	t.Parallel()
 	m := fixtureMachine(t, `
 [ "$1" = run ] && [ "$2" = --no-graphics ] && [ "$5" = candidate ]
 [ "$TART_NO_AUTO_PRUNE" = 1 ] && [ "$LC_ALL" = C ]
@@ -175,6 +180,7 @@ exit 42
 // Ctrl-C reaches dockhand, and dockhand stops it: `tart stop` first, then
 // SIGINT, then SIGKILL, whatever `tart stop` says.
 func TestForegroundRunsInItsOwnGroupAndStopsByEscalation(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct{ name, script string }{
 		{"tart stop", `
 case "$1" in
@@ -217,6 +223,7 @@ esac
 // and says so where one it deleted is still listed; a local VM of the
 // same name, or none, is left alone (the test plan's step 2, item 19).
 func TestDeleteCachedRemovesOnlyARegistryImage(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"cached", "retained", "local", "absent"} {
 		t.Run(mode, func(t *testing.T) {
 			m := fixtureMachine(t, `

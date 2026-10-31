@@ -3,6 +3,11 @@ version: "2"
 linters:
   # The standard set: errcheck, govet, ineffassign, staticcheck, unused.
   default: standard
+  # Engine's and the command line's tests run in parallel (development.md),
+  # so a new one that doesn't is named; the rule holds there only.
+  enable:
+    - paralleltest
+    - tparallel
   settings:
     errcheck:
       # Ending a session or releasing a lease is best effort: the lease
@@ -38,3 +43,7 @@ linters:
       - path: (_test\.go|internal/command/cmdtest/)
         linters:
           - errcheck
+      - path-except: ^internal/(engine|command)/
+        linters:
+          - paralleltest
+          - tparallel

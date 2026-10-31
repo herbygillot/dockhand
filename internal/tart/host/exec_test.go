@@ -13,6 +13,7 @@ import (
 )
 
 func TestGuestCommandsCloseInheritedDescriptorsAndPreserveInputAndArguments(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	executable := filepath.Join(root, "tart")
 	testsupport.WriteExecutable(t, executable, `#!/bin/sh

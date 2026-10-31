@@ -12,6 +12,7 @@ import (
 )
 
 func TestPathHashesKeysIntoStableLockNames(t *testing.T) {
+	t.Parallel()
 	first := Path("/locks", "refs/heads/feature")
 	require.Equal(t, first, Path("/locks", "refs/heads/feature"))
 	require.NotEqual(t, first, Path("/locks", "refs/heads/other"))
@@ -21,6 +22,7 @@ func TestPathHashesKeysIntoStableLockNames(t *testing.T) {
 }
 
 func TestWithHoldsTheLockAroundTheCallbackAndKeepsTheFile(t *testing.T) {
+	t.Parallel()
 	path := Path(filepath.Join(t.TempDir(), "locks"), "key")
 	var inside *os.File
 	err := With(t.Context(), path, Exclusive, func(ctx context.Context, file *os.File) error {
@@ -45,6 +47,7 @@ func TestWithHoldsTheLockAroundTheCallbackAndKeepsTheFile(t *testing.T) {
 }
 
 func TestAcquireRefusesSymlinkedLockFiles(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	target := filepath.Join(root, "target")
 	require.NoError(t, os.WriteFile(target, nil, 0600))

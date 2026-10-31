@@ -126,6 +126,7 @@ func TestServeSaysNothingOfWhatItsStopCancelled(t *testing.T) {
 // went to standard error plain, and a fetch of master nobody waits on
 // isn't said (rc6's B7: "Fetching master from …" 87 times in 16 hours).
 func TestServesWorkReportsAsServesLines(t *testing.T) {
+	t.Parallel()
 	var said []string
 	s := newServer(nil, ServeOptions{Say: func(line string) { said = append(said, line) }})
 	plain := 0

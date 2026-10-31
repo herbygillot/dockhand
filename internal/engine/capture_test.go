@@ -155,6 +155,7 @@ func TestWhatGitIgnoresIsLeftOutOfWhatACheckGathers(t *testing.T) {
 // An untracked file in a directory the plan changes is the one to say, as
 // a new patch in files/; one elsewhere, or in an extra's, isn't.
 func TestUntrackedFilesInChangedPortsAreSaid(t *testing.T) {
+	t.Parallel()
 	capture := Capture{Untracked: []string{"textproc/jq/files/fix.diff", "notes.txt", "devel/oniguruma/files/x.diff"}}
 	plan := model.Plan{Targets: []model.PlanTarget{
 		{ID: "jq", Directory: "textproc/jq", Role: model.Changed},

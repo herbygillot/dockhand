@@ -61,7 +61,7 @@ type fakeRun struct {
 // the pushes that start runs.
 func recordPushes(t *testing.T, fork string) {
 	t.Helper()
-	require.NoError(t, os.WriteFile(filepath.Join(fork, "hooks", "post-receive"), []byte("#!/bin/sh\ncat >> pushes\n"), 0o755))
+	testsupport.WriteExecutable(t, filepath.Join(fork, "hooks", "post-receive"), "#!/bin/sh\ncat >> pushes\n")
 }
 
 // refuseDeletions has the fork refuse to delete a branch, as a fork that
@@ -69,7 +69,7 @@ func recordPushes(t *testing.T, fork string) {
 func refuseDeletions(t *testing.T, fork string) {
 	t.Helper()
 	hook := "#!/bin/sh\nwhile read old new ref; do\n\tcase \"$new\" in\n\t*[!0]*) ;;\n\t*) echo \"no deleting $ref here\" >&2; exit 1 ;;\n\tesac\ndone\n"
-	require.NoError(t, os.WriteFile(filepath.Join(fork, "hooks", "pre-receive"), []byte(hook), 0o755))
+	testsupport.WriteExecutable(t, filepath.Join(fork, "hooks", "pre-receive"), hook)
 }
 
 func (f *fakeActions) pushed(branch, commit string) bool {

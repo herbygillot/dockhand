@@ -130,6 +130,7 @@ func TestBumpAndServeStopOnTheSameConditions(t *testing.T) {
 		{name: "a change outside any port", concerns: concerned{outside: true}, stops: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			bumped, bumpSaid := bumpWith(t, test.concerns, test.search)
 			served, serveSaid := serveWith(t, test.concerns, test.search)
 			require.Equal(t, test.stops, !bumped, "bump: %s", bumpSaid)

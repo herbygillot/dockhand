@@ -262,6 +262,7 @@ func TestAnUncertainCommitIsReadBack(t *testing.T) {
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			f := setup(t)
 			e, _ := f.withPreparer(t)
 			branch, plan := updated(t, e)

@@ -18,7 +18,7 @@ import (
 // the host, with the guest program's protocol; an image setup recorded no
 // origin of has none.
 func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	t.Parallel()
 	home := filepath.Join(t.TempDir(), "tart")
 	require.NoError(t, os.MkdirAll(home, 0o700))
 	provider := &Provider{Tart: tartvm.Client{Env: os.Environ(), Home: home}}
@@ -160,6 +160,7 @@ const guestPin = "f081cfae9478c954a97c3368aa751af201f859381544acfee96ffe2a514dea
 // program recorded before; or, for a change of wording only, update the
 // pin.
 func TestTheVerifierProtocolCoversTheGuestProgram(t *testing.T) {
+	t.Parallel()
 	sum := sha256.Sum256(guestprogram.Program)
 	require.Equal(t, 3, VerifierProtocol)
 	require.Equal(t, guestPin, hex.EncodeToString(sum[:]), "guest.tcl changed: raise VerifierProtocol if ports are built or judged otherwise, or update guestPin if not")
@@ -170,6 +171,7 @@ func TestTheVerifierProtocolCoversTheGuestProgram(t *testing.T) {
 // image, or an identity it doesn't know, is left for the engine to say
 // (the s2n-tls run's note 1).
 func TestAChangedIdentitySaysWhatChanged(t *testing.T) {
+	t.Parallel()
 	p := &Provider{}
 	image := "source sha256:eeec; setup 3; macports 2.12.6; tools 26.6"
 	require.Equal(t, "dockhand has begun to build each target from its source, never from a published archive, and from clean work",

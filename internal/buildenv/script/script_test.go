@@ -69,7 +69,7 @@ func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	run := filepath.Join(root, "build ports.sh")
-	require.NoError(t, os.WriteFile(run, []byte("#!/bin/sh\n"+body+"\n"), 0o755))
+	testsupport.WriteExecutable(t, run, "#!/bin/sh\n"+body+"\n")
 	run = "'" + run + "'"
 	upstream, clone := filepath.Join(root, "upstream"), filepath.Join(root, "macports-ports")
 	require.NoError(t, os.MkdirAll(filepath.Join(upstream, "textproc/jq"), 0o755))
@@ -103,6 +103,7 @@ func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports)
 // after its grace, killed. A background job of a script ignores the
 // interrupt, as sh has it, so only the kill reaches this one.
 func TestACanceledScriptStopsWhatItStarted(t *testing.T) {
+	t.Parallel()
 	child := filepath.Join(t.TempDir(), "child.pid")
 	e, session, queued := queuedCheck(t, `sleep 300 &
 echo $! > '`+child+`'
@@ -127,6 +128,7 @@ wait`, 200*time.Millisecond)
 }
 
 func TestTheScriptGetsTheRevisionAndReportsEachTarget(t *testing.T) {
+	t.Parallel()
 	// The script proves the bundle applies on top of the base, then reports
 	// jq passed with its tests failing and jq-docs failed at install.
 	build := `dir=$(dirname "$1")
@@ -180,6 +182,7 @@ JSON`
 // with the result, and one other than the request's fails the target at
 // fetch, whatever its outcome says (batch 20).
 func TestTheScriptIsToldTheCommitAGitFetchMustCheckOut(t *testing.T) {
+	t.Parallel()
 	upstream := t.TempDir()
 	testsupport.Git(t, upstream, "init", "-q")
 	testsupport.Git(t, upstream, "commit", "-q", "--allow-empty", "-m", "1.8.1")
@@ -226,6 +229,7 @@ JSON`
 }
 
 func TestNoResultFileIsInfrastructureTrouble(t *testing.T) {
+	t.Parallel()
 	run, dir, _ := checked(t, `echo "the build box is unreachable" >&2; exit 3`)
 	require.Equal(t, model.RunAttention, run.State)
 	require.Contains(t, run.Detail, "failed 3 times")
