@@ -72,6 +72,9 @@ type Timings struct {
 	WatchPoll, WatchRedraw, WatchProgress time.Duration
 	// FollowPoll is how often logs --follow reads the log again.
 	FollowPoll time.Duration
+	// MigrationPoll is how often a serve waiting on a person's answer to
+	// its database's migration tries the database again.
+	MigrationPoll time.Duration
 }
 
 // MachineHost is the Mac's own host.
@@ -87,6 +90,7 @@ func MachineHost() *Host {
 			WatchRedraw:   30 * time.Second,
 			WatchProgress: 5 * time.Second,
 			FollowPoll:    time.Second,
+			MigrationPoll: time.Minute,
 		},
 		Now: time.Now,
 		// From the engine's own runtime, so a renewal its store didn't
