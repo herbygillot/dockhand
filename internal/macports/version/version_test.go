@@ -85,3 +85,14 @@ func TestSeries(t *testing.T) {
 	require.False(t, InSeries("0.52", "0.520.1"))
 	require.False(t, InSeries("0.52", "1.2.1"))
 }
+
+// A candidate newer only by a component written with a leading zero is an
+// older scheme, aften's 0.07 over 0.0.8; a date's month isn't.
+func TestOlderScheme(t *testing.T) {
+	t.Parallel()
+	require.True(t, OlderScheme("0.0.8", "0.07"))
+	require.False(t, OlderScheme("2023.12", "2024.01"), "the year differs first")
+	require.False(t, OlderScheme("1.2.3", "1.2.4"))
+	require.False(t, OlderScheme("0.07", "0.08"), "the current version writes leading zeros too")
+	require.False(t, OlderScheme("1.0", "1.0.1"))
+}

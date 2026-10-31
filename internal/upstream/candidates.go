@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"regexp"
@@ -155,6 +156,17 @@ func (result *Result) finish(release model.Release, current string, selected, am
 	if release.NoUpdate {
 		result.Assessment = Current
 		result.Detail = fmt.Sprintf("Already current at %s; latest eligible version%s is %s", current, among, release.Version)
+		return
+	}
+	// A candidate newer only by a component written with a leading zero
+	// the port's version hasn't may be an older scheme, as aften's 0.07
+	// beside 0.0.8; it's uncertain, a person's to name (field testing's
+	// outdated-ports session).
+	if version.OlderScheme(current, release.Version) {
+		why := fmt.Sprintf("%s may be an older scheme than %s", release.Version, current)
+		result.Assessment, result.Release = Uncertain, nil
+		result.SetAside = []SetAside{{Tag: release.Tag, Version: release.Version, Source: cmp.Or(release.SourceVersion, release.Version), Why: why}}
+		result.Detail = fmt.Sprintf("Cannot determine whether %s is current: %s", current, why)
 		return
 	}
 	result.Assessment = UpdateAvailable

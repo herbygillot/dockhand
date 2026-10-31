@@ -135,3 +135,25 @@ func Series(name, version string) string {
 func InSeries(series, version string) bool {
 	return version == series || strings.HasPrefix(version, series+".")
 }
+
+// OlderScheme reports whether a candidate compares newer than the current
+// version only where a component is written with a leading zero that the
+// current version's has none of: aften's SourceForge listing kept 0.07,
+// an older scheme than 0.0.8 that compares newer, and outdated said the
+// downgrade was ready to ship (field testing's outdated-ports session).
+// Where they first differ by number, the candidate's component leads
+// with a zero and the current one's doesn't; 2024.01 over 2023.12 differs
+// first at 2024, and isn't.
+func OlderScheme(current, candidate string) bool {
+	split := func(v string) []string {
+		return strings.FieldsFunc(strings.TrimPrefix(v, "v"), func(r rune) bool { return r < '0' || r > '9' })
+	}
+	ours, theirs := split(current), split(candidate)
+	for i := range min(len(ours), len(theirs)) {
+		if ours[i] == theirs[i] {
+			continue
+		}
+		return len(theirs[i]) > 1 && theirs[i][0] == '0' && (len(ours[i]) == 1 || ours[i][0] != '0')
+	}
+	return false
+}
