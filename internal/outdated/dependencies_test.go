@@ -14,7 +14,7 @@ func TestCapabilityDependencies(t *testing.T) {
 	require.NoError(t, err)
 	const prefix = "github.com/herbygillot/dockhand/internal/"
 	allowed := map[string]bool{
-		"git": true, "macports": true, "macports/portedit": true,
+		"git": true, "macports": true, "macports/patchcheck": true, "macports/portedit": true,
 		"macports/portindex": true, "macports/survey": true, "macports/workspace": true, "model": true, "progress": true, "upstream": true,
 	}
 	// errgroup is x/sync's concurrency primitive, not an integration.

@@ -87,7 +87,7 @@ func Setup(ctx context.Context, options Options, named string) (*Engine, SetupRe
 	if tclsh := e.Tclsh(); tclsh != "" {
 		report.MacPorts = filepath.Dir(filepath.Dir(tclsh))
 	}
-	report.Vendoring = vendoringTools(depblock.Tools{})
+	report.Vendoring = vendoringTools(options.Programs.Vendoring)
 	return e, report, nil
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -77,7 +78,8 @@ func setup(t *testing.T) fixture {
 	// The worktrees are the fixture's own, never the person's
 	// ~/Source/macports-branches, which the default is.
 	f.options = Options{Env: os.Environ(), Tree: f.clone, Database: filepath.Join(root, "home", ".dockhand", "dockhand.db"), Upstream: f.upstream, Now: func() time.Time { return at },
-		Worktrees: filepath.Join(root, "src", "macports-branches"), Indexes: filepath.Join(root, "cache", "indexes"), Home: filepath.Join(root, "home")}
+		Worktrees: filepath.Join(root, "src", "macports-branches"), Indexes: filepath.Join(root, "cache", "indexes"), Home: filepath.Join(root, "home"),
+		Programs: FindPrograms(func(name string) (string, error) { return subprocess.LookPath(name, os.Environ()) })}
 	return f
 }
 

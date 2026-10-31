@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -25,8 +25,17 @@ const CargoGit = "cargo.crates_github"
 // ErrToolUnavailable identifies a missing optional regeneration prerequisite.
 var ErrToolUnavailable = errors.New("dependency: cannot regenerate")
 
-type Tools struct{ Go2Port, Cargo2Port string }
+// Tools are go2port and cargo2port: each one's path where it's given, and
+// Look, which finds one by name, compose's lookup on the PATH dockhand was
+// run with. Where Look is nil, only a path is taken.
+type Tools struct {
+	Go2Port, Cargo2Port string
+	Look                func(string) (string, error)
+}
 
+// Resolve is where the tool regenerating kind's declarations is: its path,
+// or its name as Look finds it; ErrToolUnavailable, naming the port that
+// installs it, where neither is an executable.
 func (t Tools) Resolve(kind string) (string, error) {
 	name, path := "cargo2port", t.Cargo2Port
 	if kind == Go {
@@ -35,7 +44,11 @@ func (t Tools) Resolve(kind string) (string, error) {
 	if path == "" {
 		path = name
 	}
-	resolved, err := exec.LookPath(path)
+	look := t.Look
+	if look == nil {
+		look = func(path string) (string, error) { return subprocess.LookPath(path, nil) }
+	}
+	resolved, err := look(path)
 	if err != nil {
 		return "", fmt.Errorf("%w %s: missing executable %s; install it, as sudo port install %s, so it's on PATH", ErrToolUnavailable, kind, name, name)
 	}

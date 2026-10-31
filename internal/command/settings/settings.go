@@ -106,7 +106,7 @@ func (s *Settings) ComposeOptions() compose.Options {
 // Options resolves the engine's options, reading the configuration file
 // (compose.Settings).
 func (s *Settings) Options(ctx context.Context) (engine.Options, config.File, string, error) {
-	return compose.Settings(ctx, s.ComposeOptions())
+	return compose.Settings(ctx, s.ComposeOptions(), s.Dependencies())
 }
 
 // Open opens the engine through compose, asking the person, on a
@@ -149,8 +149,8 @@ func (s *Settings) Open(ctx context.Context) (*engine.Engine, error) {
 }
 
 // Dependencies are the stand-ins for compose: those given, with the
-// login's parts the command shares with setup github, and Tart as the
-// host finds it.
+// login's parts the command shares with setup github, and programs as the
+// host finds them.
 func (s *Settings) Dependencies() compose.Dependencies {
 	d := s.Deps
 	if d.GitHubClient == nil {
@@ -159,8 +159,8 @@ func (s *Settings) Dependencies() compose.Dependencies {
 	if d.Store == nil {
 		d.Store = s.Host.AuthStore
 	}
-	if d.LookTart == nil {
-		d.LookTart = s.Host.LookTart
+	if d.Look == nil {
+		d.Look = s.Host.Look
 	}
 	return d
 }

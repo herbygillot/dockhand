@@ -45,6 +45,9 @@ const maxPortIndexBytes = 128 << 20
 // consumer. Runtime is the MacPorts Base the executable loads; ResolveTool
 // probes it because hashing the launcher alone would miss a Base upgrade.
 type Config struct {
+	// Executable is portindex, which compose finds on the PATH dockhand
+	// was run with, else under MacPorts' default prefix
+	// (macports.FindPortindex).
 	Executable     string
 	Digest         string
 	Runtime        string
@@ -95,11 +98,7 @@ var mirrorArchitectures = map[string]string{"arm64": "arm", "x86_64": "i386", "i
 func ResolveTool(ctx context.Context, c Config) (Config, error) {
 	path := c.Executable
 	if path == "" {
-		var err error
-		path, err = exec.LookPath("portindex")
-		if err != nil {
-			return c, fmt.Errorf("portindex: locating executable: %w", err)
-		}
+		return c, fmt.Errorf("portindex: locating executable: it's neither on the PATH dockhand was run with nor in %s, where MacPorts installs it", filepath.Join(macports.DefaultPrefix, "bin"))
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {

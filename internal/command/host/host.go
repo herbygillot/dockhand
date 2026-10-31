@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"os/exec"
 	"runtime"
 	"time"
 
@@ -42,8 +41,10 @@ type Host struct {
 	// leading, returning its process's ID.
 	StartCleanup func(engine.Options) error
 	StartDrain   func(engine.Options) (int, error)
-	// LookTart finds Tart, for setup's report and the engine's provider.
-	LookTart func(string) (string, error)
+	// Look finds a program by name in place of compose's own lookup
+	// (compose.Dependencies.Look); nil, as the Mac's host has it, for the
+	// command line's PATH.
+	Look func(string) (string, error)
 	// TartImages, when set, stands in for dockhand's Tart images.
 	TartImages TartImages
 	// TartSupported is whether this Mac takes Tart (tart.Supported).
@@ -77,8 +78,10 @@ type Timings struct {
 	MigrationPoll time.Duration
 }
 
-// MachineHost is the Mac's own host.
-func MachineHost() *Host {
+// MachineHost is the Mac's own host, with the programs its login's keeping
+// and the browser run where look finds them on the command line's PATH
+// (compose.Options.LookPath).
+func MachineHost(look func(name string) string) *Host {
 	return &Host{
 		Timings: Timings{
 			ServePoll:     2 * time.Second,
@@ -121,12 +124,11 @@ func MachineHost() *Host {
 		OS:            runtime.GOOS,
 		StartCleanup:  startCleanup,
 		StartDrain:    startDrain,
-		LookTart:      exec.LookPath,
 		TartSupported: tart.Supported,
 		AuthFlow:      &github.DeviceFlow{},
-		AuthStore:     keychain.Store{},
+		AuthStore:     keychain.Store{Executable: look("security")},
 		AuthAPI:       github.SystemClient,
-		OpenBrowser:   macos.Open,
+		OpenBrowser:   macos.Opener{Path: look("open")}.Open,
 	}
 }
 

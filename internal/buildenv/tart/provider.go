@@ -93,6 +93,9 @@ type Provider struct {
 	BuildTimeout time.Duration
 	// Poll is how often a guest's results are read, 10 seconds when zero.
 	Poll time.Duration
+	// XcodesExecutable is xcodes, which compose finds on the PATH
+	// dockhand was run with; empty where it isn't installed.
+	XcodesExecutable string
 
 	workspaces workspace.Registry
 	// machine replaces the Mac's VMs in tests, and stager the staging.
@@ -108,8 +111,6 @@ type Provider struct {
 	host int
 	// starting lets one clone start at a time (start).
 	starting sync.Mutex
-	// xcodes stands in for xcodes in tests.
-	xcodes string
 	// hostMacPorts is this Mac's MacPorts version, read once; macPorts
 	// stands in for it in tests.
 	hostMacPorts sync.Once
