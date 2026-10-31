@@ -120,5 +120,15 @@ export ACCEPT_WATCH=$MACPORTS_TREE ACCEPT_UPSTREAM=${upstream# } ACCEPT_RUN_DIR=
 export ACCEPT_SECRET_DIRS="$HOME/.dockhand $HOME/Library/LaunchAgents"
 # H9 watches a person's own state in the quick stage; here the state is
 # the test's.
-unset ACCEPT_HOME_DIRS ACCEPT_RESET DH_FAILPOINT_BIN
+unset ACCEPT_HOME_DIRS ACCEPT_RESET
+# G21 kills serve at an acceptance-only failpoint, in a dockhand of this
+# checkout built with them, as quick.sh builds one; DH_BIN, the installed
+# dockhand, has none (rc1's full stage).
+if [ -z "${DH_FAILPOINT_BIN:-}" ]; then
+	mkdir -p "$ACCEPT_STATE/bin"
+	(cd "$ACCEPT_REPO" && GOFLAGS=-mod=vendor go build -tags acceptance -o "$ACCEPT_STATE/bin/dockhand-failpoints" ./cmd/dockhand) ||
+		{ echo "full.sh: couldn't build the failpoint dockhand G21 needs" >&2; exit 1; }
+	DH_FAILPOINT_BIN="$ACCEPT_STATE/bin/dockhand-failpoints"
+fi
+export DH_FAILPOINT_BIN
 exec "$here/run.sh" --stage full "$@"

@@ -30,7 +30,9 @@ act() {
 	[ -n "${G20_URL:-}" ] && [ ! -f "$ROW_DIR/result" ] || return 0
 	dh revbump "$(port)" -b "$G20_BRANCH" --subject "rebuild to submit as a draft" || :
 	dh tidy -b "$G20_BRANCH" -y || :
-	submit_pr "$(port)" "$G20_BRANCH" --draft --no-check || :
+	# A draft goes up whatever its check found, with none too: --draft with
+	# --no-check is refused (rc1's full stage).
+	submit_pr "$(port)" "$G20_BRANCH" --draft || :
 	gh pr view "$G20_URL" --json isDraft,headRefOid >"$ROW_DIR/after.json" 2>>"$ROW_DIR/out.log" || :
 	git -C "$("$DH_BIN" path "$G20_BRANCH")" rev-parse HEAD >"$ROW_DIR/head" 2>/dev/null || :
 	close_test_pr "$(port)" "$G20_BRANCH"
