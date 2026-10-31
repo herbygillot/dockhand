@@ -13,11 +13,24 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 )
 
 // Resolve accepts a snapshot-relative port directory/Portfile or a unique
 // directory name. A subport is selected explicitly within that Portfile.
-func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection macports.Selection) (_ []model.Target, err error) {
+func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection macports.Selection) ([]model.Target, error) {
+	return resolve(ctx, tree, selection, func() (*rpc.Session, func() error, error) {
+		session, _, err := e.start(ctx, tree)
+		if err != nil {
+			return nil, nil, err
+		}
+		return session, session.Close, nil
+	})
+}
+
+// resolve resolves a selection, evaluating its port in the interpreter
+// open gives, which done ends.
+func resolve(ctx context.Context, tree macports.Tree, selection macports.Selection, open func() (*rpc.Session, func() error, error)) (_ []model.Target, err error) {
 	if err := selection.Validate(); err != nil {
 		return nil, err
 	}
@@ -75,11 +88,11 @@ func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection m
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", macports.ErrTarget, err)
 	}
-	session, _, err := e.start(ctx, tree)
+	session, done, err := open()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { err = errors.Join(err, session.Close()) }()
+	defer func() { err = errors.Join(err, done()) }()
 	if selection.Subport != "" {
 		// A subport the Portfile doesn't define is a target that can't be
 		// resolved, said as one, not as MacPorts failing to evaluate it:

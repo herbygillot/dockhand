@@ -67,9 +67,6 @@ func (e *Evaluator) versions(ctx context.Context) (*versionSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err = session.Call(ctx, "eval", versionScript); err != nil {
-		return nil, errors.Join(err, session.Close())
-	}
 	return &versionSession{session: session}, nil
 }
 

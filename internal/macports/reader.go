@@ -55,6 +55,24 @@ type Batch interface {
 	Close() error
 }
 
+// Resolver resolves a selection to targets, as Reader does.
+type Resolver interface {
+	Resolve(context.Context, Tree, Selection) ([]model.Target, error)
+}
+
+// ResolvesWithin is a reader that can resolve in a batch's interpreter,
+// where the batch resolves too, rather than start one of its own.
+type ResolvesWithin interface {
+	Within(Batch) Resolver
+}
+
+// VersionBatch is a batch whose interpreter compares versions too, for
+// the port it evaluates; closing what Versions gives leaves the batch
+// open.
+type VersionBatch interface {
+	Versions() VersionSession
+}
+
 // Evaluator is the reader an edit requires: whole and selected-only
 // evaluation, modeled observation of declarations and reads, and interpreter
 // sessions. Every edit is judged across observed contexts, so a reader that

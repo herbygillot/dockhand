@@ -125,7 +125,7 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 		"set ::dockhand::host_programs [list " + macports.TclHostPrograms(macports.HostPrograms) + "]\n" +
 		"set ::dockhand::recording_paths " + strconv.FormatBool(e.Recording) + "\n" +
 		"set ::dockhand::installation " + string(installation) + "\n"
-	if _, err := session.Call(ctx, "eval", tables+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+dispatcherScript+"\n"+installationScript+"\n"+toolchainScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
+	if _, err := session.Call(ctx, "eval", tables+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+dispatcherScript+"\n"+installationScript+"\n"+toolchainScript+"\n"+observationScript+"\n"+evaluatorScript+"\n"+versionScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
 	}
 	version, err := session.Call(ctx, "probe")
@@ -254,6 +254,11 @@ func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, reque
 // Session keeps one MacPorts interpreter for repeated evaluations of the same
 // tree, such as probing many candidate versions of one Portfile. Each
 // evaluation still opens the port afresh, so rewritten contents are observed.
+// A port's resolution and its version comparisons go through it too
+// (Resolve, Versions), where each started an interpreter of its own: a
+// look started three a port, 3,463 over 1,114 ports, each paying its
+// start, initialize, and ping again (the faster look's baseline,
+// 2026-10-30).
 type Session struct {
 	tree    macports.Tree
 	session *rpc.Session
@@ -268,6 +273,33 @@ func (e *Evaluator) Open(ctx context.Context, tree macports.Tree) (*Session, err
 	}
 	return &Session{tree: tree, session: session, runtime: runtime}, nil
 }
+
+// Resolve resolves a selection in the session's interpreter, as
+// Evaluator.Resolve does in one of its own.
+func (s *Session) Resolve(ctx context.Context, tree macports.Tree, selection macports.Selection) ([]model.Target, error) {
+	if s == nil || s.session == nil {
+		return nil, fmt.Errorf("%w: session is closed", macports.ErrStartup)
+	}
+	if tree.Base() != s.tree.Base() {
+		return nil, fmt.Errorf("%w: session is bound to %s, not %s", macports.ErrTarget, s.tree.Base(), tree.Base())
+	}
+	return resolve(ctx, tree, selection, func() (*rpc.Session, func() error, error) {
+		return s.session, func() error { return nil }, nil
+	})
+}
+
+// Versions compares versions in the session's interpreter, as a
+// VersionSession of its own would; closing it leaves the session open,
+// which its opener closes.
+func (s *Session) Versions() macports.VersionSession {
+	return sharedVersions{&versionSession{session: s.session}}
+}
+
+// sharedVersions is a session's version comparisons, which its session's
+// Close ends, not its own.
+type sharedVersions struct{ *versionSession }
+
+func (sharedVersions) Close() error { return nil }
 
 // OpenBatch satisfies macports.BatchReader.
 func (e *Evaluator) OpenBatch(ctx context.Context, tree macports.Tree) (macports.Batch, error) {

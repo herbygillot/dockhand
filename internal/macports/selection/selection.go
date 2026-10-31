@@ -54,11 +54,36 @@ func (e unknownPort) Unwrap() []error { return []error{macports.ErrTarget, ErrUn
 var ErrUnknownPort = errors.New("no port of that name")
 
 func (r *Reader) Resolve(ctx context.Context, tree macports.Tree, selected macports.Selection) ([]model.Target, error) {
+	return r.resolve(ctx, tree, selected, r.Evaluator)
+}
+
+// Within is the reader resolving in a batch's interpreter where the batch
+// resolves, as eval.Session does (macports.ResolvesWithin).
+func (r *Reader) Within(batch macports.Batch) macports.Resolver {
+	final, ok := batch.(macports.Resolver)
+	if !ok {
+		return r
+	}
+	return within{r, final}
+}
+
+type within struct {
+	reader *Reader
+	final  macports.Resolver
+}
+
+func (w within) Resolve(ctx context.Context, tree macports.Tree, selected macports.Selection) ([]model.Target, error) {
+	return w.reader.resolve(ctx, tree, selected, w.final)
+}
+
+// resolve resolves a selection, the index naming a bare name's Portfile,
+// and final evaluating it.
+func (r *Reader) resolve(ctx context.Context, tree macports.Tree, selected macports.Selection, final macports.Resolver) ([]model.Target, error) {
 	if err := selected.Validate(); err != nil {
 		return nil, err
 	}
 	if strings.Contains(selected.Selector, "/") {
-		return r.Evaluator.Resolve(ctx, tree, selected)
+		return final.Resolve(ctx, tree, selected)
 	}
 	if r.Index == nil {
 		return nil, fmt.Errorf("%w: source-bound port index is required", macports.ErrTarget)
@@ -95,7 +120,7 @@ func (r *Reader) Resolve(ctx context.Context, tree macports.Tree, selected macpo
 	if err := tree.Projection().EnsurePort(ctx, model.Target{Portfile: bound.Selector}); err != nil {
 		return nil, err
 	}
-	targets, err := r.Evaluator.Resolve(ctx, tree, bound)
+	targets, err := final.Resolve(ctx, tree, bound)
 	if err != nil {
 		return nil, err
 	}
