@@ -235,3 +235,18 @@ func TestDirectoriesNameTheirTrees(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{"README.md": testsupport.Git(t, repo.Root, "rev-parse", head+":README.md")}, blobs)
 }
+
+// An unchanged worktree, sparse as dockhand makes them, is removed without
+// forcing; one holding an untracked file is refused and keeps it.
+func TestAnUnchangedWorktreeIsRemovedAndAChangedOneRefused(t *testing.T) {
+	repo, head := portsCheckout(t)
+	require.NoError(t, repo.CreateBranch(t.Context(), "dockhand/jq-update", head))
+	dir := filepath.Join(t.TempDir(), "branches", "jq-update")
+	require.NoError(t, repo.AddSparseWorktree(t.Context(), dir, "dockhand/jq-update", []string{"_resources"}))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("mine\n"), 0o644))
+	require.Error(t, repo.RemoveUnchangedWorktree(t.Context(), dir))
+	require.FileExists(t, filepath.Join(dir, "notes.txt"))
+	require.NoError(t, os.Remove(filepath.Join(dir, "notes.txt")))
+	require.NoError(t, repo.RemoveUnchangedWorktree(t.Context(), dir))
+	require.NoDirExists(t, dir)
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -427,4 +428,48 @@ func TestCleanupKeepsAnEndedBranchsNewestCheck(t *testing.T) {
 	require.ErrorContains(t, err, runs[0].Name()+" is no longer recorded")
 	_, err = e.RunNamed(t.Context(), "check-99")
 	require.ErrorContains(t, err, "there is no run check-99")
+}
+
+// clean --delete keeps a worktree holding work of its own, as clean and
+// archive do, where its forced removal lost uncommitted edits with no
+// word; one made dirty after the plan is refused at the removal too.
+func TestForgetKeepsAWorktreeWithWorkOfItsOwn(t *testing.T) {
+	t.Parallel()
+	_, e, _, branch := mergedBranch(t)
+	portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
+	original, err := os.ReadFile(portfile)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(portfile, append(original, "# mine\n"...), 0o644))
+	_, err = e.PlanForget(t.Context(), branch)
+	require.ErrorContains(t, err, "jq-update's worktree "+branch.Worktree+" is kept: it has uncommitted edits to textproc/jq/Portfile, which forgetting it would lose")
+	require.Equal(t, 3, refusal.Of(err).Kind().Exit(), "a person's look")
+
+	require.NoError(t, os.WriteFile(portfile, original, 0o644))
+	plan, err := e.PlanForget(t.Context(), branch)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(branch.Worktree, "notes.txt"), []byte("mine\n"), 0o644))
+	_, err = e.Forget(t.Context(), &plan)
+	require.ErrorContains(t, err, "it has untracked files: notes.txt")
+	require.FileExists(t, filepath.Join(branch.Worktree, "notes.txt"), "kept")
+	merged, err := e.Status(t.Context(), model.BranchMerged)
+	require.NoError(t, err)
+	require.Len(t, merged, 1, "nor is the record forgotten")
+}
+
+// Forget deletes the Git branch only at the commit planned: one moved
+// since stays, and its record isn't forgotten, where nothing tested it.
+func TestForgetKeepsABranchMovedSinceThePlan(t *testing.T) {
+	t.Parallel()
+	_, e, _, branch := mergedBranch(t)
+	plan, err := e.PlanForget(t.Context(), branch)
+	require.NoError(t, err)
+	require.NotEmpty(t, plan.Head)
+	moved := testsupport.Git(t, e.Repo.Root, "commit-tree", plan.Head+"^{tree}", "-p", plan.Head, "-m", "moved since the plan")
+	testsupport.Git(t, e.Repo.Root, "update-ref", "refs/heads/"+branch.Name, moved)
+	_, err = e.Forget(t.Context(), &plan)
+	require.ErrorContains(t, err, "deleting "+branch.Name)
+	require.Equal(t, moved, testsupport.Git(t, e.Repo.Root, "rev-parse", "refs/heads/"+branch.Name), "the moved branch stays")
+	merged, err := e.Status(t.Context(), model.BranchMerged)
+	require.NoError(t, err)
+	require.Len(t, merged, 1, "its record isn't forgotten")
 }
