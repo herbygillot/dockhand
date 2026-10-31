@@ -380,6 +380,7 @@ type SkippedUpdate struct {
 // outdated, and isn't planned: which release it takes is a person's call.
 func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (OutdatedPlan, error) {
 	var plan OutdatedPlan
+	var work *OpenWork
 	for _, port := range report.Ports {
 		if port.Problem != "" {
 			plan.Skipped = append(plan.Skipped, SkippedUpdate{Port: port.Port, Reason: port.Problem})
@@ -396,7 +397,14 @@ func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (Outda
 			plan.Skipped = append(plan.Skipped, SkippedUpdate{Port: port.Port, Reason: "moves with " + port.With + ", whose release it shares"})
 			continue
 		}
-		open, err := e.BranchesChanging(ctx, port.Port)
+		// The open branches are read once, for every outdated port.
+		if work == nil {
+			var err error
+			if work, err = e.OpenWork(ctx); err != nil {
+				return plan, err
+			}
+		}
+		open, err := work.BranchesChanging(ctx, port.Port)
 		if err != nil {
 			return plan, err
 		}

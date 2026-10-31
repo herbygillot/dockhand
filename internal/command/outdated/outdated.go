@@ -119,6 +119,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	for _, port := range report.Ports {
 		listed[port.Port] = true
 	}
+	var work *engine.OpenWork
 	following := map[string]int{}
 	for _, port := range report.Ports {
 		if port.With != "" && listed[port.With] {
@@ -176,7 +177,14 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		case class == engine.OutdatedNewer && folded:
 		case class == engine.OutdatedNewer:
 			can := "update"
-			open, err := e.BranchesChanging(ctx, port.Port)
+			// The open branches are read once, for every due port.
+			if work == nil {
+				var err error
+				if work, err = e.OpenWork(ctx); err != nil {
+					return err
+				}
+			}
+			open, err := work.BranchesChanging(ctx, port.Port)
 			if err != nil {
 				return err
 			}
