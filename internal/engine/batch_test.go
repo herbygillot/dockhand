@@ -77,7 +77,7 @@ func TestABatchsChecksRunTogether(t *testing.T) {
 
 	e.Capacity = map[string]int{"command": 3}
 	var ended []model.RunID
-	e.SeeAllThrough(t.Context(), ids, func(run model.Run, err error) {
+	e.SeeAllThrough(t.Context(), ids, nil, func(run model.Run, err error) {
 		require.NoError(t, err)
 		require.Equal(t, model.RunPassed, run.State, run.Detail)
 		ended = append(ended, run.ID)
@@ -110,11 +110,22 @@ func TestABatchKeepsToAProvidersCapacity(t *testing.T) {
 	}
 	e.Capacity = map[string]int{"command": 2}
 	n := 0
-	e.SeeAllThrough(t.Context(), ids, func(run model.Run, err error) {
+	var mu sync.Mutex
+	var waits []string
+	// The one that waits for a sibling's slot says so, where a batch said
+	// nothing of a wait (rc1's full stage, G13).
+	waited := func(run model.Run, message string) {
+		mu.Lock()
+		defer mu.Unlock()
+		waits = append(waits, message)
+	}
+	e.SeeAllThrough(t.Context(), ids, waited, func(run model.Run, err error) {
 		require.NoError(t, err)
 		require.Equal(t, model.RunPassed, run.State, run.Detail)
 		n++
 	})
 	require.Equal(t, 3, n)
 	require.LessOrEqual(t, provider.most, 2, "never more than its capacity at once")
+	require.Len(t, waits, 1)
+	require.Regexp(t, `^check-\d+ waits for a slot on command, which the batch's other checks are using \(capacity 2\)$`, waits[0])
 }
