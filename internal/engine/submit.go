@@ -25,6 +25,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -431,6 +432,9 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	if len(plan.Commits) == 0 {
 		return plan, &Uncommitted{Branch: branch.Name}
+	}
+	if err := e.commitsAreOwn(ctx, worktree, branch, string(branch.Base), head, len(plan.Commits), "submitted"); err != nil {
+		return plan, err
 	}
 	for _, commit := range plan.Commits {
 		if commitmsg.ModifiedBuild(commit.Message) {
@@ -851,6 +855,30 @@ func (e *Engine) mayPushTheirs(ctx context.Context, plan *SubmitPlan, login stri
 		plan.block(branchstate.Block{Kind: branchstate.BlockNoWriteAccess, Pushed: &branchstate.Push{Number: pr.Ref.Number, Author: pr.Author, Head: plan.Head(), Repository: e.PullRequestRepository(), Permission: permission}})
 	}
 	return nil
+}
+
+// commitsAreOwn refuses a branch whose commits since its base include
+// commits master has: its history moved past the base this database
+// keeps, as another database on the same checkout can move it, and a pull
+// request from it would carry master's commits, and a title from master's
+// subject (rc2's full stage, 2026-10-31: submit titled dhtest's pull
+// request "lang/sbcl: update to sbcl-2.6.10"); tidy would have folded
+// them into the branch's own. Master is the one dockhand last fetched;
+// where none was, there's nothing to compare. undone is what wasn't done.
+func (e *Engine) commitsAreOwn(ctx context.Context, worktree *git.Repository, branch model.Branch, base, head string, commits int, undone string) error {
+	master, ok := e.lastMaster(ctx)
+	if !ok {
+		return nil
+	}
+	own, err := worktree.CountCommits(ctx, string(master), head)
+	if err != nil {
+		return err
+	}
+	if own >= commits {
+		return nil
+	}
+	return refusal.New(refusal.Attention, "%s's history has %s master already has, past the base %s this database records for it, so nothing was %s: its Git branch was moved elsewhere, as by dockhand on another database", branch.ShortName(), prose.Plural(commits-own, "commit"), model.ObjectID(base).Short(), undone).
+		Then(refusal.Next{Verb: refusal.VerbRebase, Branch: branch.ShortName()})
 }
 
 // title keeps a title given at any step; otherwise a single commit's
