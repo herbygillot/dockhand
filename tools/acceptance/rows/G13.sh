@@ -31,21 +31,34 @@ act() {
 assert() {
 	[ -f "$ROW_DIR/result" ] && return 0
 	[ -s "$ROW_DIR/ship.log" ] || return 0
-	local exit started first
+	local exit started
 	exit=$(sed -n 's/^\[exit \([0-9]*\)\]$/\1/p' "$ROW_DIR/ship.log" | tail -1)
 	case "$exit" in
 	0 | 3) ;;
 	*) row_fail "ship exited $exit: $(grep -v '^\[exit' "$ROW_DIR/ship.log" | tail -2 | tr '\n' ' ')"; return ;;
 	esac
-	started=$(grep -cE 'check-[0-9]+: attempt 1 of 3 on ' "$ROW_DIR/ship.log")
-	[ "$started" -ge 3 ] || { row_fail "ship started $started checks, not three: $(grep -E 'attempt 1 of 3' "$ROW_DIR/ship.log" | tr '\n' ';')"; return; }
-	# How many had started before the first result was recorded.
-	first=$(grep -nE ': [A-Za-z0-9._+-]+ (passed|failed)( at [a-z]+)?$' "$ROW_DIR/ship.log" | head -1 | cut -d: -f1)
-	[ -n "$first" ] || { row_fail "no check recorded a result: $(tail -3 "$ROW_DIR/ship.log" | tr '\n' ' ')"; return; }
-	started=$(head -n "$first" "$ROW_DIR/ship.log" | grep -cE 'check-[0-9]+: attempt 1 of 3 on ')
+	# The checks ship named, and their first executions' times, from the
+	# stage's database: ship says each check once it ends, so its text
+	# read three checks run side by side as one at a time (rc1's full
+	# stage, check-820 to 822).
+	local numbers rows
+	numbers=$(grep -oE 'check-[0-9]+: attempt 1 of 3' "$ROW_DIR/ship.log" | sed 's/check-//; s/:.*//' | sort -un | tr '\n' ',' | sed 's/,$//')
+	[ -n "$numbers" ] || { row_fail "ship named no check: $(tail -3 "$ROW_DIR/ship.log" | tr '\n' ' ')"; return; }
+	rows=$(stage_db "SELECT r.number, e.created_at, coalesce(e.finished_at, 0) FROM executions e JOIN runs r ON r.repository_id = e.repository_id AND r.id = e.run_id WHERE r.number IN ($numbers) AND e.attempt = 1 ORDER BY e.created_at" 2>>"$ROW_DIR/out.log")
+	printf '%s\n' "$rows" >"$ROW_DIR/executions.txt"
+	[ "$(printf '%s\n' "$rows" | grep -c '|')" -ge 3 ] || { row_fail "the stage's database has $(printf '%s\n' "$rows" | grep -c '|') of the three checks' executions: $rows"; return; }
+	# How many started before the first to finish ended. An execution is
+	# recorded before it waits for a slot or one of the Mac's VMs, which
+	# the batch says (ec5a4846), so a check said waiting doesn't count.
+	local waited
+	waited=$(grep -E "waiting for the Mac's VMs|waits for a slot" "$ROW_DIR/ship.log" | grep -oE 'check-[0-9]+' | sed 's/check-//' | sort -un | tr '\n' ' ')
+	started=$(printf '%s\n' "$rows" | awk -F'|' -v waited=" $waited " '
+		$3 > 0 && (end == 0 || $3 < end) { end = $3 }
+		index(waited, " " $1 " ") == 0 { start[NR] = $2 }
+		END { n = 0; for (i in start) if (start[i] < end) n++; print n }')
 	if [ "$started" -lt 2 ]; then
-		row_fail "only $started check had started when the first recorded a result: they ran one at a time"
+		row_fail "only $started check had started when the first finished: they ran one at a time ($ROW_DIR/executions.txt)"
 		return
 	fi
-	row_pass "ship of three ports ran $started checks together before the first result, within Tart's two VMs, in ${G13_TOOK:-?}s"
+	row_pass "ship of three ports had $started checks building together before the first finished, within Tart's two VMs, in ${G13_TOOK:-?}s (by the stage's database)"
 }
