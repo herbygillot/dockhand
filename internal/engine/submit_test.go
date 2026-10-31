@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -1132,4 +1133,41 @@ func TestADescriptionEditedAfterThePreviewIsKept(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, fake.PRs[number].Body, "A human edited the PR on GitHub", "their Description is kept")
 	require.NotEqual(t, planned.Body, fake.PRs[number].Body, "not the body prepared before")
+}
+
+// A branch whose Git history moved past the base this database records,
+// onto a newer master, as another database's dockhand on the same
+// checkout moved dhtest's, is refused: its commits since the recorded
+// base include master's, and its pull request was titled with master's
+// subject, "lang/sbcl: update to sbcl-2.6.10" (rc2's full stage,
+// 2026-10-31). rebase records the base, and submit goes on.
+func TestABranchCarryingMastersCommitsIsntSubmitted(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	write(t, f.upstream, map[string]string{"lang/sbcl/Portfile": "name sbcl\nversion 2.6.10\n"})
+	testsupport.Git(t, f.upstream, "add", ".")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "lang/sbcl: update to sbcl-2.6.10")
+	master, err := e.fetchMaster(t.Context())
+	require.NoError(t, err)
+	// Another database's rebase moves the Git branch; this one's record
+	// keeps the old base.
+	testsupport.Git(t, branch.Worktree, "rebase", "-q", string(master))
+
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.ErrorContains(t, err, "jq-update's history has 1 commit master already has, past the base "+branch.Base.Short()+" this database records for it, so nothing was submitted")
+	require.Equal(t, []refusal.Next{{Verb: refusal.VerbRebase, Branch: "jq-update"}}, refusal.Of(err).Next)
+	// tidy would have folded master's commit into the branch's own.
+	_, err = e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.ErrorContains(t, err, "so nothing was tidied")
+
+	_, err = e.Rebase(t.Context(), branch)
+	require.NoError(t, err)
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, "jq: update to 1.8.1", plan.Title)
 }

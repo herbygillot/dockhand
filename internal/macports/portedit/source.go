@@ -127,7 +127,14 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 			return nil, err
 		}
 	}
-	targets, err := s.Ports.Resolve(ctx, tree, request.Selection)
+	// The port is resolved in the interpreter its evaluations use.
+	var resolver macports.Resolver = s.Ports
+	if within, ok := s.Ports.(macports.ResolvesWithin); ok {
+		if batch := input.opened(ctx, s.Ports); batch != nil {
+			resolver = within.Within(batch)
+		}
+	}
+	targets, err := resolver.Resolve(ctx, tree, request.Selection)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +143,7 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	}
 	selected := targets[0]
 	if selected.Subport != "" {
-		targets, err = s.Ports.Resolve(ctx, tree, macports.Selection{Selector: selected.Portfile, Variants: selected.Variants})
+		targets, err = resolver.Resolve(ctx, tree, macports.Selection{Selector: selected.Portfile, Variants: selected.Variants})
 		if err != nil {
 			return nil, err
 		}
@@ -271,13 +278,22 @@ func (i *sourceInput) familySnapshot(ctx context.Context, ports macports.Evaluat
 // does not start an interpreter per evaluation. When an interpreter cannot
 // be opened the evaluator itself serves, an interpreter per evaluation.
 func (s *session) native(ctx context.Context, ports macports.Evaluator) snapshotEvaluator {
+	if batch := s.opened(ctx, ports); batch != nil {
+		return batch
+	}
+	return ports
+}
+
+// opened is the session's native interpreter, opened now where it isn't
+// yet; nil where it can't be, and each evaluation starts its own.
+func (s *session) opened(ctx context.Context, ports macports.Evaluator) macports.Batch {
 	if s.batch != nil {
 		return s.batch
 	}
 	batch, err := ports.OpenBatch(ctx, s.tree)
 	if err != nil {
 		progress.DebugReport(ctx, "Evaluating without a shared session: %v", err)
-		return ports
+		return nil
 	}
 	s.batch = batch
 	return batch

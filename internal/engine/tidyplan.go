@@ -335,6 +335,9 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	if err != nil {
 		return TidyPlan{}, err
 	}
+	if err := e.commitsAreOwn(ctx, worktree, branch, saved.Base, head, len(history), "tidied"); err != nil {
+		return TidyPlan{}, err
+	}
 	plan := TidyPlan{Branch: branch, Base: saved.Base, Head: head, Final: final, BaseTree: trees[saved.Base], History: history, Index: saved.Index,
 		Taken: files.taken, LeftOut: files.leftOut, Ignored: files.ignored, Fixed: files.words}
 	changed, err := worktree.ChangedPaths(ctx, plan.BaseTree, final)

@@ -28,6 +28,13 @@ type BatchVersionProbe interface {
 	EvaluateVersions(context.Context, []string) ([]string, error)
 }
 
+// VersionsProbe is a VersionProbe whose interpreter compares versions
+// too; Bind compares in it, so a discovery starts none of its own, where
+// it gives one. The probe ends it.
+type VersionsProbe interface {
+	Versions() macports.VersionSession
+}
+
 func (s *Service) Bind(probe VersionProbe) (*Discovery, error) {
 	if s == nil || probe == nil {
 		return nil, fmt.Errorf("upstream: service and source version probe are required")
@@ -37,6 +44,11 @@ func (s *Service) Bind(probe VersionProbe) (*Discovery, error) {
 	bound.EvaluateVersions = nil
 	if batch, ok := probe.(BatchVersionProbe); ok {
 		bound.EvaluateVersions = batch.EvaluateVersions
+	}
+	if versions, ok := probe.(VersionsProbe); ok {
+		if session := versions.Versions(); session != nil {
+			bound.Versions = session
+		}
 	}
 	return &Discovery{service: bound, port: probe.Port()}, nil
 }

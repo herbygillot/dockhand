@@ -117,6 +117,16 @@ func (p *VersionProbe) EvaluateVersion(ctx context.Context, value string) (strin
 	return snapshot.Ports[p.input.target.Name].Version, nil
 }
 
+// Versions compares versions in the probe's interpreter, where it has
+// one that can (macports.VersionBatch), so a discovery bound to the probe
+// starts none of its own; nil otherwise. The probe's Close ends it.
+func (p *VersionProbe) Versions() macports.VersionSession {
+	if batch, ok := p.input.session.batch.(macports.VersionBatch); ok {
+		return batch.Versions()
+	}
+	return nil
+}
+
 // Close ends the probe's interpreter session. Callers close a probe when
 // they are done with it, as they close the workspace it was bound to.
 func (p *VersionProbe) Close() error {
