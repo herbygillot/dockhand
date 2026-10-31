@@ -228,8 +228,9 @@ func TestShipQueuesABatchsChecksFirst(t *testing.T) {
 	out := both.String()
 	require.Equal(t, 3, term.ExitCode(err), out)
 	require.EqualError(t, err, "yq-1.8.1 stopped; the rest went on")
-	jq, yq, ran := strings.Index(out, "jq-1.8.1 · checking commit "), strings.Index(out, "yq-1.8.1 · checking commit "), strings.Index(out, "check-1 is running here")
-	require.True(t, jq >= 0 && yq > jq && ran > yq, "both queued before either ran:\n%s", out)
+	jq, yq, ran := strings.Index(out, "jq-1.8.1 · checking commit "), strings.Index(out, "yq-1.8.1 · checking commit "), strings.Index(out, "check-1 and check-2 are checked as a batch, one at a time on command")
+	require.True(t, jq >= 0 && yq > jq && ran > yq, "both queued before either ran, said together:\n%s", out)
+	require.NotContains(t, out, "is running here because dockhand serve is not running", "an ended check isn't said as starting (G13)")
 	require.Contains(t, out, "yq-1.8.1: yq-1.8.1 passed its check and needs review, so nothing was submitted")
 	require.Len(t, g.PRs, 1)
 }

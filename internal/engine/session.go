@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -85,13 +87,16 @@ func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id mode
 	if err != nil {
 		return model.Run{}, nil, err
 	}
-	if before != nil {
-		before(lead)
-	}
 	// A run that ended needs no slot: it's read, where it waited for a
-	// slot a batch's other checks held (SeeAllThrough).
+	// slot a batch's other checks held (SeeAllThrough). Nor is it told
+	// who leads, which a command says as the run's start: a batch's ended
+	// checks each read "running here because dockhand serve is not
+	// running" as they were reported (rc1's full stage, G13).
 	if ended, err := e.Run(ctx, id); err != nil || ended.State.Terminal() {
 		return ended, nil, err
+	}
+	if before != nil {
+		before(lead)
 	}
 	if lead.Here() {
 		if err := e.awaitSlot(ctx, session, id); err != nil {
@@ -233,4 +238,45 @@ func (e *Engine) waitFor(ctx context.Context, id model.RunID) (model.Run, error)
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
+}
+
+// TogetherWords say, before a batch's checks run, which run together and
+// how many at once on each provider they build on: "check-820, check-821,
+// and check-822 are checked as a batch, 2 at once on tart", or "one at a
+// time on command". ship said each check
+// only once it ended, worded as its start, which read a batch run two at
+// a time as one at a time (rc1's full stage, G13). Empty for fewer than
+// two.
+func (e *Engine) TogetherWords(ctx context.Context, runs []model.Run) string {
+	if len(runs) < 2 {
+		return ""
+	}
+	var names []string
+	using := map[string]int{}
+	for _, run := range runs {
+		names = append(names, run.Name())
+		needs, err := e.RunProviders(ctx, run)
+		if err != nil {
+			continue
+		}
+		for _, provider := range needs {
+			using[provider]++
+		}
+	}
+	var at []string
+	for _, provider := range slices.Sorted(maps.Keys(using)) {
+		switch capacity := e.capacity(provider); {
+		case capacity == 1:
+			at = append(at, "one at a time on "+provider)
+		case capacity < using[provider]:
+			at = append(at, fmt.Sprintf("%d at once on %s", capacity, provider))
+		default:
+			at = append(at, "all at once on "+provider)
+		}
+	}
+	words := prose.And(names) + " are checked as a batch"
+	if len(at) > 0 {
+		words += ", " + prose.And(at)
+	}
+	return words
 }
