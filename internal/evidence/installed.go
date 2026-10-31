@@ -16,10 +16,8 @@ import (
 // CMake package file. Notices, holding nothing.
 type InstallChange struct {
 	Target model.TargetID
-	// Environment is where both builds were, and Against the version the
-	// earlier one built, "1.7.1_0".
+	// Environment is where both builds were.
 	Environment model.Environment
-	Against     string
 	Libraries   []LibraryChange
 	Removed     []string
 	Added       []string

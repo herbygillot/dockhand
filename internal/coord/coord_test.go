@@ -4,7 +4,6 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -324,9 +323,6 @@ func TestAnEndedSessionStopsBeatingQuietly(t *testing.T) {
 }
 
 func TestSystemLivenessKnowsAReplacedOrExitedProcess(t *testing.T) {
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		t.Skip("process start times are read on Linux and macOS")
-	}
 	self, err := Self()
 	require.NoError(t, err)
 	alive, err := System{}.Alive(self)

@@ -55,8 +55,7 @@ of disk. A golden copy is kept beside each image, sharing its blocks, and a
 lost image is restored from it. An image that exists is checked in a
 disposable clone instead and left as it is. `--check` only checks, and
 `--rebuild` makes a replacement, keeping the old image until the new one
-passes. An image `v2-final`'s `setup` made in `~/.tart` is copied in, when
-it still passes, rather than made again.
+passes.
 
 Golden Gate's images, macOS 27, have ASIF disks where earlier releases'
 are raw. They need Tart 2.39.0 or newer, the first to list its VMs while

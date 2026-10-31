@@ -5,7 +5,6 @@ import (
 )
 
 // Runtime describes the installation observed by this evaluator session.
-// SourceReviewed records historical inspection, not runtime certification.
 // Startup checks do not certify individual PortGroups or fetch customizations.
 type Runtime struct {
 	// Platform is what the interpreter describes to a Portfile: the host's
@@ -13,10 +12,9 @@ type Runtime struct {
 	Platform model.Platform
 	// Host is the platform MacPorts itself runs on when it differs from
 	// Platform, and zero when the interpreter describes its own host.
-	Host           model.Platform
-	BaseVersion    string
-	TclVersion     string
-	SourceReviewed bool
+	Host        model.Platform
+	BaseVersion string
+	TclVersion  string
 }
 
 // Provenance is the runtime as a record keeps it (model.EvaluatedUnder).

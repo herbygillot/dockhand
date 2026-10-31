@@ -94,7 +94,7 @@ func (s *Service) discoverOverridden(ctx context.Context, port macports.PortInfo
 		}
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
-	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: evaluated, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt}
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: evaluated, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit}
 	result.finish(release, port.Version, "Selected "+tag.Name+" from the port's livecheck", " by the port's livecheck")
 	return result, nil
 }

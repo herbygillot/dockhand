@@ -17,10 +17,9 @@ import (
 )
 
 type archivePlan struct {
-	observed  *observedArchivePlan
-	result    Result
-	contents  []byte
-	versioned macports.Snapshot
+	observed *observedArchivePlan
+	result   Result
+	contents []byte
 	// viaGit marks a git-fetched port's plan, which downloads nothing;
 	// branch is where git.branch must land, empty when the tag is unknown.
 	viaGit bool
@@ -41,7 +40,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		return archivePlan{}, fmt.Errorf("portedit: explicit selection cannot imply no update")
 	}
 	if release.NoUpdate {
-		return archivePlan{result: Result{Base: request.Source, Target: input.target, Release: release}}, nil
+		return archivePlan{result: Result{Target: input.target, Release: release}}, nil
 	}
 	spec, err := portsource.Interpret(input.info, portsource.Edit)
 	if err != nil {
@@ -84,14 +83,14 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		return s.planGitVersion(ctx, request, input, contents, versioned)
 	}
 	observed, err := s.planObservedArchives(ctx, request, input, contents)
-	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, TarballMoved: input.tarballMoved}
+	result := Result{Scope: input.scope, Target: input.target, Release: release, TarballMoved: input.tarballMoved}
 	result.report(fidelity.ScopedVersion(request.SharedRelease, family, versioned, input.target.Name, *release, versioned.Ports[input.target.Name].Options["checksums"]))
 	if observed != nil {
 		for _, frame := range observed.contexts {
 			result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Variant: frame.variant, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
 		}
 	}
-	return archivePlan{result: result, contents: contents, versioned: versioned, observed: observed, subject: "update to " + release.Version}, err
+	return archivePlan{result: result, contents: contents, observed: observed, subject: "update to " + release.Version}, err
 }
 
 func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {

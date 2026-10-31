@@ -54,7 +54,6 @@ func TestPrepareRevisionUsesWholeSnapshotAndPreservesCheckout(t *testing.T) {
 	result, err := service.Prepare(t.Context(), request)
 	require.NoError(t, err)
 	require.NotEmpty(t, result.PreparedTree)
-	require.Equal(t, request.Source, result.Base)
 	require.Equal(t, "7.2", result.Fidelity[0].Before.Ports["fixture"].Version)
 	require.Equal(t, "7.2", result.Fidelity[0].After.Ports["fixture"].Version)
 	require.Equal(t, 5, result.Fidelity[0].After.Ports["fixture"].Revision)

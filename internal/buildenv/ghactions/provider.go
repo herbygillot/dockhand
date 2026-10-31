@@ -56,9 +56,9 @@ type Run struct {
 
 // RunnerJob is one job of a run: one runner of the workflow's matrix.
 type RunnerJob struct {
-	ID                 int64
-	Name               string
-	Status, Conclusion string
+	ID         int64
+	Name       string
+	Conclusion string
 	// Labels are the labels the job asked its runner for, its runs-on,
 	// macos-15; RunnerName names the runner that took it, and is empty
 	// for a job no runner took.

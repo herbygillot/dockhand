@@ -62,7 +62,6 @@ func (u *Unlocated) Unwrap() error { return u.Reason }
 // it reads covers, with every archive the context fetches, for a
 // declaration of them all to be written.
 type Undeclared struct {
-	Name  string
 	Names []string
 	Err   error
 }
@@ -251,7 +250,7 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 			}
 		}
 		if group == nil {
-			undeclared := &Undeclared{Name: file.Name, Err: portfile.ErrUnsupported.Because("no checksum declaration for %s", file.Name)}
+			undeclared := &Undeclared{Err: portfile.ErrUnsupported.Because("no checksum declaration for %s", file.Name)}
 			for _, fetched := range observed.Distfiles {
 				undeclared.Names = append(undeclared.Names, fetched.Name)
 			}

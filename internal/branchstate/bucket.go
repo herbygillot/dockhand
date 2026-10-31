@@ -22,11 +22,6 @@ const (
 	BucketDone
 )
 
-// String is the bucket's name, as status's JSON gives it.
-func (b Bucket) String() string {
-	return [...]string{"needs-you", "working", "waiting", "done"}[b]
-}
-
 // BucketOf is the bucket a branch's facts put it in.
 func BucketOf(facts Facts) Bucket {
 	b := facts.Branch

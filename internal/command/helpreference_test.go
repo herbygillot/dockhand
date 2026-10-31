@@ -29,9 +29,7 @@ func TestEveryNamedCommandExists(t *testing.T) {
 	var problems []string
 	check := func(where, text string, code bool) {
 		for _, problem := range referenceProblems(root, text, code) {
-			if _, ok := pastReferences[where+": "+problem]; !ok {
-				problems = append(problems, where+": "+problem)
-			}
+			problems = append(problems, where+": "+problem)
 		}
 	}
 	var walk func(*cobra.Command)
@@ -93,10 +91,6 @@ var designRecords = map[string]bool{
 	"design-v3.md": true,
 	"decisions.md": true,
 }
-
-// pastReferences are a doc's references to a command of an earlier
-// release, on purpose.
-var pastReferences = map[string]string{}
 
 // markdownCode is a Markdown file's code: its fenced blocks and inline
 // spans, where commands are named, one a line.

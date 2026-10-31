@@ -3,7 +3,6 @@ package model
 import (
 	"net/url"
 	"strings"
-	"time"
 )
 
 // EditIntent is what a person asked of an update beyond the version: the
@@ -69,7 +68,6 @@ type Release struct {
 	Repository string
 	Tag        string
 	Commit     string
-	ObservedAt time.Time
 	// Page is the forge's page of the release, where its listing gave one,
 	// and FromTag the tag of the version it updates from, where the
 	// listing names it: what an update's commit body links (CommitBody).

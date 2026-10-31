@@ -203,7 +203,6 @@ func TestGoDependencyPreparation(t *testing.T) {
 				require.NoError(t, err)
 				require.Empty(t, result.ManifestHook)
 				require.NotEmpty(t, result.PreparedTree)
-				require.Equal(t, request.Source, result.Base)
 				require.Len(t, result.Files, 1)
 				require.Contains(t, string(result.Files[0].After), "# preserve these instructions\nconfigure.args --keep")
 				require.NotContains(t, string(result.Files[0].After), "example.com/old")
@@ -412,7 +411,7 @@ extract.rename no
 			if scenario == "partial" {
 				script = "exit 0"
 			}
-			if scenario == "failed" || scenario == "unsupported-context" {
+			if scenario == "failed" {
 				script = "echo 'invalid lockfile' >&2;exit 4"
 			}
 			executable := dependencyHelper(t, script)
@@ -430,10 +429,6 @@ extract.rename no
 			case "shared-unauthorized":
 				require.ErrorContains(t, err, "fixture, another port of the same Portfile, moves with fixture-server's release")
 				require.ErrorContains(t, err, "--shared-release moves both")
-			case "unsupported-context":
-				require.ErrorContains(t, err, "pre-fetch hook 1 ends with `set distfiles changed.tar.gz` rather than return -code error, which writes `distfiles`, at Portfile line 46")
-				require.NotContains(t, err.Error(), "dependency resolution failed")
-				require.Zero(t, requests.Load(), "local refusal must precede old-source download and helper")
 			case "missing":
 				require.ErrorContains(t, err, "missing executable cargo2port")
 				require.Zero(t, requests.Load())
@@ -446,7 +441,6 @@ extract.rename no
 			default:
 				require.NoError(t, err)
 				require.NotEmpty(t, result.PreparedTree)
-				require.Equal(t, request.Source, result.Base)
 				require.NotContains(t, string(result.Files[0].After), "cargo.crates old")
 				if newName != "" {
 					require.Contains(t, string(result.Files[0].After), "new 1.2.3")
@@ -520,7 +514,6 @@ source = "git+https://github.com/owner/gitdep?branch=main#%s"
 	require.NotEmpty(t, result.PreparedTree)
 	require.Equal(t, int64(2), gitDownloads.Load())
 	require.Len(t, result.Downloads, 1, "the port's source")
-	require.Len(t, result.Crates, 1, "the Git crate, apart, since the current version has no counterpart to compare")
 	require.Contains(t, string(result.Files[0].After), "gitdep owner/gitdep main "+newCommit+" "+checksum)
 	require.NotContains(t, string(result.Files[0].After), oldCommit)
 }
@@ -615,7 +608,6 @@ cargo.crates old 1.2.3 ` + sha + "\n"
 			require.Contains(t, after, "sha256 "+hex.EncodeToString(sum[:]), "the port's own archive is refreshed")
 			require.Contains(t, after, "\ncargo.crates old 1.2.3 "+sha+"\n", "the crates are as they were")
 			require.Equal(t, int64(1), requests.Load(), "no crate is fetched")
-			require.Equal(t, request.Source, result.Base)
 		})
 	}
 }

@@ -95,7 +95,7 @@ func TestTheActionsAPIAsDockhandAsksIt(t *testing.T) {
 	jobs, err := api.Jobs(t.Context(), "ada/macports-ports", 12, 2)
 	require.NoError(t, err)
 	require.Len(t, jobs, 1)
-	require.Equal(t, RunnerJob{ID: 99, Name: "build (macos-15)", Status: "completed", Conclusion: "success", Labels: []string{"macos-15"}, RunnerName: "GitHub Actions 1000",
+	require.Equal(t, RunnerJob{ID: 99, Name: "build (macos-15)", Conclusion: "success", Labels: []string{"macos-15"}, RunnerName: "GitHub Actions 1000",
 		Started: time.Date(2026, 10, 2, 10, 0, 0, 0, time.UTC), Completed: time.Date(2026, 10, 2, 10, 30, 0, 0, time.UTC)}, jobs[0])
 
 	require.NoError(t, api.Rerun(t.Context(), "ada/macports-ports", 11))

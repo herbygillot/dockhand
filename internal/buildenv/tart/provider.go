@@ -320,11 +320,10 @@ func (p *Provider) Identity(_ context.Context, environment model.Environment) (s
 }
 
 // verifierChanges are what each guest protocol changed in how it builds,
-// for a person told why an earlier result doesn't stand.
-var verifierChanges = map[int]string{
-	2: "has begun to build each target from its source, never from a published archive, and from clean work",
-	3: "has begun to build each target with its own dependencies alone active, deactivating what a dependency built from source needed to build",
-}
+// for a person told why an earlier result doesn't stand: the next
+// protocol's, once there is one, since no result from before protocol 3
+// is left to explain.
+var verifierChanges = map[int]string{}
 
 // IdentityChange says what changed between two of an environment's
 // identities where only its guest protocol did: the image is the one it

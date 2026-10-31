@@ -22,9 +22,7 @@ type Candidate struct {
 }
 
 type Selection struct {
-	Requested string
 	Candidate Candidate
-	Inferred  bool
 }
 
 // MatchRelease judges already collected evidence; lookup failures must be
@@ -50,7 +48,7 @@ func MatchRelease(requested string, pattern *version.TagPattern, releases []Cand
 			continue
 		}
 		release.Version = version
-		choice := Selection{Requested: requested, Candidate: release, Inferred: release.Tag != "" && release.Tag != requested}
+		choice := Selection{Candidate: release}
 		if !slices.Contains(matches, choice) {
 			matches = append(matches, choice)
 		}

@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -24,13 +23,11 @@ var testPlatform = model.Platform{OS: "darwin", Version: "25", Architecture: "ar
 
 type fakeMachine struct {
 	images     map[string]image
-	personal   map[string]image
 	hostKeys   map[string]bool
 	events     []string
 	fail       string
 	failures   map[string]error
 	format     string
-	imported   string // the disk format of images Import copies, when set
 	oldTart    bool   // Tart is older than tart.ASIFVersion
 	installsAs string // the version the installed Xcode reports, when not the archive's
 	formats    map[string]string
@@ -52,7 +49,7 @@ func newFakeMachine(names ...string) *fakeMachine {
 	for _, name := range names {
 		keys[name] = true
 	}
-	return &fakeMachine{images: images, personal: map[string]image{}, hostKeys: keys, validation: validation{Platform: testPlatform, MacPortsVersion: macports.DefaultBaseVersion, GuestAgentVersion: "development snapshot", CommandLineTools: "26.6"}}
+	return &fakeMachine{images: images, hostKeys: keys, validation: validation{Platform: testPlatform, MacPortsVersion: macports.DefaultBaseVersion, GuestAgentVersion: "development snapshot", CommandLineTools: "26.6"}}
 }
 
 func (f *fakeMachine) event(name string) error {
@@ -67,22 +64,6 @@ func (f *fakeMachine) LockSetup(context.Context, string) (io.Closer, error) {
 }
 func (f *fakeMachine) Images(context.Context) (map[string]image, error) {
 	return f.images, f.event("images")
-}
-func (f *fakeMachine) PersonalImages(context.Context) (map[string]image, error) {
-	return f.personal, f.event("personal")
-}
-func (f *fakeMachine) Import(_ context.Context, source, destination string) error {
-	if err := f.event("import:" + source + ":" + destination); err != nil {
-		return err
-	}
-	f.images[destination] = image{Name: destination}
-	if f.imported != "" {
-		if f.formats == nil {
-			f.formats = map[string]string{}
-		}
-		f.formats[destination] = f.imported
-	}
-	return nil
 }
 func (f *fakeMachine) Connect(_ context.Context, name, alias string, bootstrap bool) error {
 	if bootstrap {
@@ -496,80 +477,6 @@ func TestAnImageWithoutTheKeyIsGivenIt(t *testing.T) {
 	require.NotContains(t, machine.events, "macports", "nothing is installed again")
 	require.True(t, machine.hostKeys["dockhand-base-tahoe"])
 	require.True(t, machine.hostKeys["dockhand-golden-tahoe"])
-}
-
-// An image an earlier dockhand made in the person's own Tart home is
-// copied into dockhand's when it still validates, and provisioned afresh
-// when it does not, as a Tahoe image with the macOS 27 tools does.
-func TestAnImageInThePersonsHomeIsImportedWhenItValidates(t *testing.T) {
-	t.Parallel()
-	machine := newFakeMachine()
-	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
-	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
-	require.NoError(t, err)
-	require.Equal(t, "26.6", result.CommandLineTools)
-	require.Contains(t, machine.events, "import:dockhand-base-tahoe:dockhand-base-tahoe-next")
-	require.NotContains(t, machine.events, "pull")
-	require.Contains(t, machine.images, "dockhand-base-tahoe")
-
-	machine = newFakeMachine()
-	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
-	machine.validation.CommandLineTools = "27.0"
-	machine.failures = map[string]error{}
-	var progress bytes.Buffer
-	provisioner := testProvisioner(t, machine)
-	provisioner.Progress = &progress
-	calls := 0
-	machine.onValidate = func(v *validation) {
-		calls++
-		if calls > 1 {
-			v.CommandLineTools = "26.6"
-		}
-	}
-	result, err = provisioner.Run(t.Context(), Options{})
-	require.NoError(t, err)
-	require.Contains(t, machine.events, "import:dockhand-base-tahoe:dockhand-base-tahoe-next")
-	require.Contains(t, machine.events, "pull", "the unsuitable copy is replaced by a new image")
-	require.Contains(t, progress.String(), "cannot be used")
-	require.Contains(t, progress.String(), "Command Line Tools 27.0")
-	require.Equal(t, "26.6", result.CommandLineTools)
-}
-
-// With a Tart that handles it, a copy from the person's home with an ASIF
-// disk is used, as a raw one is, and nothing is pulled.
-func TestAnImportedASIFImageIsUsedOnACurrentTart(t *testing.T) {
-	t.Parallel()
-	machine := newFakeMachine()
-	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
-	machine.imported = "asif"
-	_, err := testProvisioner(t, machine).Run(t.Context(), Options{})
-	require.NoError(t, err)
-	require.Contains(t, machine.events, "import:dockhand-base-tahoe:dockhand-base-tahoe-next")
-	require.NotContains(t, machine.events, "pull")
-	require.Contains(t, machine.images, "dockhand-base-tahoe")
-}
-
-// A copy from the person's home with an ASIF disk is declined before it
-// runs when Tart is too old for it, as a source is, and the image is
-// provisioned afresh.
-func TestAnImportedASIFImageIsDeclinedBeforeItRunsOnAnOldTart(t *testing.T) {
-	t.Parallel()
-	machine := newFakeMachine()
-	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
-	machine.imported = "asif"
-	machine.oldTart = true
-	var progress bytes.Buffer
-	provisioner := testProvisioner(t, machine)
-	provisioner.Progress = &progress
-	_, err := provisioner.Run(t.Context(), Options{})
-	require.NoError(t, err)
-	require.Contains(t, progress.String(), "has an ASIF disk")
-	imported := slices.Index(machine.events, "import:dockhand-base-tahoe:dockhand-base-tahoe-next")
-	pulled := slices.Index(machine.events, "pull")
-	require.True(t, imported >= 0 && pulled > imported, "the copy is tried, then a new image is made")
-	require.NotContains(t, machine.events[imported:pulled], "start", "the ASIF copy never runs")
-	require.Contains(t, machine.events[imported:pulled], "delete:dockhand-base-tahoe-next")
-	require.Contains(t, machine.images, "dockhand-base-tahoe")
 }
 
 // Setup pins its source by what the registry says the tag names on either

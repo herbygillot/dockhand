@@ -5,13 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/guestssh"
-	"github.com/herbygillot/dockhand/internal/tart/host"
 )
 
 // connectWait bounds how long setup waits for a started guest to accept
@@ -125,68 +122,4 @@ func (n *native) BootstrapAgent(ctx context.Context, name string) error {
 		return fmt.Errorf("tart: installing guest agent: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
-}
-
-// PersonalImages lists the person's own Tart home, reading nothing else
-// there; a home that does not exist has none.
-func (n *native) PersonalImages(ctx context.Context) (map[string]image, error) {
-	home := n.config.Personal
-	if home == "" || home == n.config.Home {
-		return map[string]image{}, nil
-	}
-	if _, err := os.Stat(filepath.Join(home, "vms")); err != nil {
-		return map[string]image{}, nil
-	}
-	values, err := host.Machine{Client: tart.Client{Executable: n.config.Executable, Home: home, Env: n.config.Env}}.Images(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("setup: listing your Tart home %s: %w", home, err)
-	}
-	result := map[string]image{}
-	for _, value := range values {
-		if value.Source == "local" {
-			result[value.Name] = image{Name: value.Name, Running: value.Running}
-		}
-	}
-	return result, nil
-}
-
-// Import copies an image of the person's Tart home into dockhand's with
-// Tart's export and import, through a file in dockhand's own directory
-// (tart.StateDirectory), ~/.dockhand, removed afterwards; the person's
-// image is only read.
-func (n *native) Import(ctx context.Context, source, destination string) error {
-	home := n.config.Personal
-	if home == "" {
-		return errors.New("setup: your Tart home wasn't given, to import from")
-	}
-	state, err := tart.StateDirectory(n.config.Home)
-	if err != nil {
-		return err
-	}
-	directory := filepath.Join(state, "imports")
-	if err := os.MkdirAll(directory, 0700); err != nil {
-		return err
-	}
-	scratch, err := os.MkdirTemp(directory, source+"-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(scratch)
-	archive := filepath.Join(scratch, source+".tvm")
-	theirs := tart.Client{Executable: n.config.Executable, Home: home, Env: n.config.Env}
-	if err := n.during(ctx, "Exporting "+source, func() error {
-		_, err := theirs.Run(ctx, tart.RunOptions{Combined: true}, "export", source, archive)
-		return err
-	}); err != nil {
-		return fmt.Errorf("setup: exporting %s from %s: %w", source, home, err)
-	}
-	if exists, _, err := n.vm().LocalVM(ctx, destination); err != nil {
-		return err
-	} else if exists {
-		return fmt.Errorf("tart: refusing to overwrite existing VM %s", destination)
-	}
-	return n.during(ctx, "Importing "+source, func() error {
-		_, err := n.command(ctx, nil, false, "import", archive, destination)
-		return err
-	})
 }

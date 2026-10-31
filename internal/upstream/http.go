@@ -68,7 +68,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 		evaluated = port.Version
 	}
 	digest := sha256.Sum256(page)
-	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Archive: true, Version: evaluated, ObservedAt: result.ObservedAt, Listing: &model.ReleaseListing{URL: spec.Livecheck.URL, ETag: validators.Get("ETag"), LastModified: validators.Get("Last-Modified"), SHA256: hex.EncodeToString(digest[:])}}
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Archive: true, Version: evaluated, Listing: &model.ReleaseListing{URL: spec.Livecheck.URL, ETag: validators.Get("ETag"), LastModified: validators.Get("Last-Modified"), SHA256: hex.EncodeToString(digest[:])}}
 	if version != evaluated {
 		release.SourceVersion = version
 	}

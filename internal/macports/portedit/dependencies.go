@@ -301,7 +301,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	// check it against (fillEmptyBlock).
 	oldValues := maps.Clone(plan.Values)
 	if unchecked == "" && !plan.Empty() {
-		if oldValues, _, err = s.gitCrateChecksums(ctx, request, input, plan, stripped, old); err != nil {
+		if oldValues, err = s.gitCrateChecksums(ctx, request, input, plan, stripped, old); err != nil {
 			return Result{}, err
 		}
 	}
@@ -371,7 +371,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if len(generated.Online) > 0 {
 		progress.Report(ctx, "Leaving %d Git-pinned crates to Cargo's online resolution at build time, since its build resolves Git sources online: %s", len(generated.Online), depblock.GitSummary(generated.Online))
 	}
-	values, gitDownloads, err := s.gitCrateChecksums(ctx, request, input, plan, result.portfileAfter(), generated)
+	values, err := s.gitCrateChecksums(ctx, request, input, plan, result.portfileAfter(), generated)
 	if err != nil {
 		return Result{}, err
 	}
@@ -529,10 +529,8 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if len(final.UnexpectedChanges) > 0 {
 		return Result{}, ErrFidelity.Because("%v", final.UnexpectedChanges)
 	}
-	result.Base = request.Source
 	result.Files = []portfile.Edit{evaluated.edit}
 	result.report(final)
-	result.Crates = gitDownloads
 	result.Regenerated = regenerated
 	result.ManifestHook = hookUnchecked
 	result.TarballMoved = archivePlan.result.TarballMoved
@@ -567,25 +565,25 @@ func dependencyInput(info macports.PortInfo, archive string, plan *depblock.Plan
 	return depblock.Input{Archive: archive, Worksrcdir: filepath.ToSlash(root), Package: info.Options["go.package"], Tag: info.Options["git.branch"], Git: plan.Git, Vendored: plan.Values[depblock.Go]}, nil
 }
 
-func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input *sourceInput, plan *depblock.Plan, contents []byte, generated depblock.GeneratedBlocks) (map[string][]string, []distfetch.Download, error) {
+func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input *sourceInput, plan *depblock.Plan, contents []byte, generated depblock.GeneratedBlocks) (map[string][]string, error) {
 	sums := map[string]string{}
 	for _, crate := range generated.Git {
 		sums[crate.Distfile()] = strings.Repeat("0", 64)
 	}
 	values, err := generated.WithGitChecksums(sums)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if len(generated.Git) == 0 {
-		return values, nil, nil
+		return values, nil
 	}
 	provisional, err := plan.ApplyPlain(contents, values)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	evaluated, err := s.evaluateEdit(ctx, input, provisional)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	info := evaluated.after.Ports[input.target.Name]
 	info.Options = maps.Clone(info.Options)
@@ -595,27 +593,25 @@ func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input 
 	info.Options["patchfiles"] = ""
 	sources, err := distfetch.Sources(info, "")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	byName := map[string]distfetch.Source{}
 	for _, source := range sources {
 		byName[source.Name] = source
 	}
-	var downloads []distfetch.Download
 	for _, crate := range generated.Git {
 		source, ok := byName[crate.Distfile()]
 		if !ok {
-			return nil, nil, ErrFidelity.Because("Git crate archive missing from evaluated PortGroup")
+			return nil, ErrFidelity.Because("Git crate archive missing from evaluated PortGroup")
 		}
 		download, err := s.Archives.Store("").Fetch(ctx, info, source)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		sums[crate.Distfile()] = download.SHA256
-		downloads = append(downloads, download)
 	}
 	values, err = generated.WithGitChecksums(sums)
-	return values, downloads, err
+	return values, err
 }
 
 // inertWords says which declared Git crates the lock pins other than by
