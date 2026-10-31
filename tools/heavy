@@ -1,0 +1,51 @@
+#!/bin/sh
+# heavy runs a command holding the main Mac's lock for heavy work, so the
+# sessions sharing one Mac take turns: the gate, the corpus, Tart checks,
+# and the survey's whole-tree runs each run under it, one at a time,
+# where each kept its own "wait until quiet" rule (the person's process
+# change, 2026-10-31). A run that finds the lock held says by whom, and
+# waits. Each session also uses its own DOCKHAND_DB copy, its archives/
+# cloned beside it (docs/usage/configuration.md), so turns are only
+# about the Mac's cores and memory, never one database.
+#
+#	tools/heavy make test-corpus
+#	tools/heavy sh -c 'make fmt-check && go test ./...'
+#
+# DOCKHAND_HEAVY_LOCK names another lock file; the default is
+# ~/.dockhand-heavy.lock. A command run under heavy that runs heavy
+# again would wait on itself, so heavy notes its holding in
+# DOCKHAND_HEAVY_HELD and runs a nested command straight away.
+set -eu
+if [ $# -eq 0 ]; then
+	echo "usage: tools/heavy <command> [arguments...]" >&2
+	exit 2
+fi
+lock=${DOCKHAND_HEAVY_LOCK:-$HOME/.dockhand-heavy.lock}
+if [ "${DOCKHAND_HEAVY_HELD:-}" = "$lock" ]; then
+	exec "$@"
+fi
+DOCKHAND_HEAVY_HELD=$lock
+export DOCKHAND_HEAVY_HELD
+# macOS has no flock(1); the system Perl's flock is the same lock. The
+# lock's descriptor is kept open across exec, so the command holds it
+# until it exits, and the kernel lets it go however it exits.
+exec /usr/bin/perl -e '
+	use strict;
+	use Fcntl qw(:flock SEEK_SET);
+	$^F = 255;
+	my $lock = shift;
+	open(my $fh, "+>>", $lock) or die "heavy: $lock: $!\n";
+	if (!flock($fh, LOCK_EX | LOCK_NB)) {
+		seek($fh, 0, SEEK_SET);
+		my $holder = <$fh> // "";
+		chomp $holder;
+		$holder = "another run" if $holder eq "";
+		print STDERR "heavy: waiting for $holder\n";
+		flock($fh, LOCK_EX) or die "heavy: $lock: $!\n";
+	}
+	truncate($fh, 0);
+	my $started = localtime;
+	print $fh "@ARGV (pid $$, in $ENV{PWD}, since $started)\n";
+	$fh->flush;
+	exec { $ARGV[0] } @ARGV or die "heavy: $ARGV[0]: $!\n";
+' "$lock" "$@"

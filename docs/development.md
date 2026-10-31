@@ -30,6 +30,10 @@ DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh \
 go test -v ./internal/buildenv/tart -run '^TestLiveCheckInATahoeGuest$' -timeout 30m
 ```
 
+## Heavy work on a shared Mac
+
+Sessions that share one Mac take turns at its heavy work: `make gate`, the checks a commit passes, in CI's order, and `make test-corpus` each run under `tools/heavy`, a lock on `~/.dockhand-heavy.lock` (`DOCKHAND_HEAVY_LOCK` names another), and so does any other long run, a Tart check or a whole-tree survey: `tools/heavy <command>`. A run that finds the lock held says by whom and waits; a command run under it that runs `tools/heavy` again doesn't wait on itself. Each session also keeps its own `DOCKHAND_DB` copy, its archives cloned beside it, as scratch runs below say, so turns are about cores and memory, never one database.
+
 ## Scratch runs
 
 A run of dockhand on a scratch clone, a measurement or a replay, sets three things, not one: `MACPORTS_TREE` to the clone, `DOCKHAND_DB` to a database of its own (a `.backup` copy for a replay, with `~/.dockhand/archives/` copied beside it), and `DOCKHAND_CONFIG` to a configuration whose `worktrees` is a directory of its own, as `tools/acceptance/quick.sh` writes one. `MACPORTS_TREE` picks the tree, not where its branches' worktrees go: the worktree root stays `~/Source/macports-branches` whichever clone runs, so a scratch run that sets the tree alone puts its branches beside yours. A development build migrates a `.backup` copy that `DOCKHAND_DB` names without asking, though a release last opened it, and counts only the processes whose heartbeat moves in the copy; the default database asks on a terminal and is refused without one.
