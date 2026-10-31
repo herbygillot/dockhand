@@ -57,7 +57,7 @@ CREATE TABLE field (
     value TEXT
 );
 CREATE INDEX field_name ON field (name);
-CREATE INDEX field_evaluation ON field (evaluation_id);
+CREATE INDEX field_evaluation ON field (evaluation_id, name);
 
 -- MacPorts' fetch plan, mirror groups expanded.
 CREATE TABLE distfile (
@@ -180,7 +180,8 @@ CREATE TABLE worker_alias (
     target TEXT NOT NULL
 );
 
--- The tree's shared files at the commit, by blob.
+-- The tree's shared files at the commit, by blob, and every directory,
+-- each port's among them, by tree.
 CREATE TABLE tree_file (
     "commit" TEXT NOT NULL,
     path TEXT NOT NULL,
