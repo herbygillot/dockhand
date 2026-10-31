@@ -266,10 +266,6 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// migrationPoll is how often a serve waiting on a person's answer to its
-// database's migration tries the database again.
-var migrationPoll = time.Minute
-
 // openWaiting opens the engine for serve. A database that won't migrate
 // without a person's answer, a release's that an rc would lock out or one
 // another process is working on, is said once, and serve waits for the
@@ -292,7 +288,7 @@ func openWaiting(ctx context.Context, s *settings.Settings, streams term.Streams
 		select {
 		case <-ctx.Done():
 			return nil, err
-		case <-time.After(migrationPoll):
+		case <-time.After(s.Host.Timings.MigrationPoll):
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/store/sqlite"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -544,4 +546,35 @@ func TestServeSaysNothingOfALookItsStopCancelled(t *testing.T) {
 	out := served.String()
 	require.NotContains(t, out, "could not verify", out)
 	require.True(t, strings.HasSuffix(out, "serve: stopped\n"), out)
+}
+
+// serve, which no person answers, waits on a database a release last
+// opened rather than exit and be started again, saying so once, and opens
+// it once the person has answered on a terminal, where no test reached
+// the wait (the test analysis's step b).
+func TestServeWaitsForTheAnswerToItsDatabasesMigration(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Hosted(t).Timings.MigrationPoll = 20 * time.Millisecond
+	path := filepath.Join(w.Home, ".dockhand", "dockhand.db")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, sqlite.CreateAt(path, 32, "INSERT INTO repositories VALUES('repo_1', '/src/macports-ports/.git', 0);\n"+
+		"INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_1','foreground',101,'p','v0.4.0 (5897a828e1c2)',1,1,2);"))
+
+	ctx, stop := context.WithCancel(t.Context())
+	var served cmdtest.SyncBuffer
+	done := make(chan error, 1)
+	go func() {
+		done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+	}()
+	require.Eventually(t, func() bool {
+		return strings.Contains(served.String(), "serve: waiting for your answer before it opens the database")
+	}, cmdtest.Settle, 10*time.Millisecond)
+	var out, errs bytes.Buffer
+	require.NoError(t, cmdtest.RunFor(t, t.Context(), []string{"status"}, term.Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs}.AsTerminal()), errs.String())
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, cmdtest.Settle, 10*time.Millisecond)
+	stop()
+	require.NoError(t, <-done)
+	require.Equal(t, 1, strings.Count(served.String(), "serve: waiting for your answer"), "said once")
 }

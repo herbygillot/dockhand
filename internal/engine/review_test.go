@@ -2,13 +2,16 @@ package engine
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
@@ -361,4 +364,35 @@ func TestAnUntouchedAdoptedBranchIsRefreshed(t *testing.T) {
 	testsupport.Git(t, adopted.Branch.Worktree, "commit", "-q", "-am", "jq: a note of mine")
 	_, err = e.RefreshAdopted(t.Context(), moved, model.ObjectID(old))
 	require.ErrorContains(t, err, "pr-34905 has commits of its own beyond #34905's head "+head.Short())
+}
+
+// Adopting a pull request refuses what it can't take: one that isn't open,
+// a branch or directory of its name already there, and a reviewed commit
+// the repository hasn't, each saying what to do, where no test reached
+// them (the test analysis's step b).
+func TestAdoptRefusesWhatItCantTake(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	contribution(t, f, fake)
+
+	fake.PRs[34905].State = forge.PullRequestClosed
+	_, err := e.AdoptPullRequest(t.Context(), 34905, "")
+	require.ErrorContains(t, err, "#34905 is closed; only an open pull request can be worked on")
+	fake.PRs[34905].State = forge.PullRequestOpen
+
+	_, err = e.AdoptPullRequest(t.Context(), 34905, model.ObjectID(strings.Repeat("e", 40)))
+	require.ErrorContains(t, err, "#34905's reviewed commit eeeeeee isn't in the repository; review it again")
+
+	directory := e.worktreeDirectory("pr-34905")
+	require.NoError(t, os.MkdirAll(directory, 0o755))
+	_, err = e.AdoptPullRequest(t.Context(), 34905, "")
+	require.ErrorContains(t, err, directory+" already exists; remove it, then adopt again")
+	require.NoError(t, os.Remove(directory))
+
+	testsupport.Git(t, e.Repo.Root, "branch", "pr-34905", "HEAD")
+	_, err = e.AdoptPullRequest(t.Context(), 34905, "")
+	require.ErrorIs(t, err, git.ErrBranchExists)
+	require.ErrorContains(t, err, "pr-34905; remove it or rename it, then adopt again")
 }

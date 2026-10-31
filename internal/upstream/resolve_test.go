@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
@@ -253,4 +254,43 @@ func TestAPortWhoseVersionIsMacPortsOwnHasNoReleaseToChoose(t *testing.T) {
 	_, err = service.Resolve(t.Context(), port, "")
 	require.ErrorIs(t, err, upstream.ErrOwnVersion)
 	require.EqualError(t, err, "upstream: no release to look for: kubectl_select fetches no source on this platform, and livecheck does not use its version; specify a version with dockhand update kubectl_select <version>")
+}
+
+// A saved release is checked again before it's used: an archive release
+// discovery found whose listing no longer is the Portfile's, a forge
+// release whose tag no longer follows the Portfile's convention, and one
+// whose tag the forge no longer has, each refused, where no test reached
+// them (the test analysis's step b).
+func TestASavedReleaseIsCheckedAgainstThePortfileAndTheForge(t *testing.T) {
+	t.Parallel()
+	archive := macports.PortInfo{Name: "fixture", Version: "1.2.3", Options: map[string]string{
+		"livecheck.type": "regex", "livecheck.url": "https://example.org/downloads/", "livecheck.regex": `fixture-([0-9.]+)\.tar\.gz`, "livecheck.version": "1.2.3", "dockhand.livecheck_standard": "1", "livecheck.ignore_sslcert": "no", "livecheck.compression": "no", "livecheck.curloptions": "",
+	}}
+	service := upstream.Service{EvaluateVersion: identityVersion}
+	discovered := model.Release{Archive: true, Version: "1.2.4", CurrentVersion: "1.2.3", Listing: &model.ReleaseListing{URL: "https://example.org/downloads/", SHA256: strings.Repeat("e", 64)}}
+	require.NoError(t, service.Check(t.Context(), archive, discovered))
+	moved := discovered
+	moved.Listing = &model.ReleaseListing{URL: "https://example.org/elsewhere/", SHA256: strings.Repeat("e", 64)}
+	require.ErrorContains(t, service.Check(t.Context(), archive, moved), "upstream: archive discovery evidence does not match the Portfile")
+	moved.Listing = nil
+	require.ErrorContains(t, service.Check(t.Context(), archive, moved), "upstream: archive discovery evidence does not match the Portfile")
+
+	commit := strings.Repeat("a", 40)
+	gone := false
+	forged := serviceWithCatalog(tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
+		if gone || name != "v2.0" {
+			return forge.Tag{}, forge.ErrNotFound
+		}
+		return forge.Tag{Name: name, Commit: commit}, nil
+	}))
+	release, err := forged.Resolve(t.Context(), githubPort(), "2.0")
+	require.NoError(t, err)
+	require.NoError(t, forged.Check(t.Context(), githubPort(), release))
+	renamed := release
+	renamed.Tag = "release-2.0"
+	require.ErrorContains(t, forged.Check(t.Context(), githubPort(), renamed), "upstream: resolved release does not match the Portfile source convention")
+	gone = true
+	err = forged.Check(t.Context(), githubPort(), release)
+	require.ErrorIs(t, err, upstream.ErrSourceChanged)
+	require.ErrorContains(t, err, "v2.0 disappeared")
 }

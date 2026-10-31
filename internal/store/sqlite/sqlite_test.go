@@ -622,17 +622,7 @@ func TestAnExecutionsEnvironmentIncludesItsPrefix(t *testing.T) {
 func schemaAt(t *testing.T, version int, setup string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "dockhand.db")
-	db, err := sql.Open("sqlite", "file:"+path)
-	require.NoError(t, err)
-	defer db.Close()
-	all := ""
-	for _, schema := range schemas[:version] {
-		all += schema
-	}
-	_, err = db.Exec(all + fmt.Sprintf("PRAGMA application_id=%d; PRAGMA user_version=%d;", applicationID, version))
-	require.NoError(t, err)
-	_, err = db.Exec(setup)
-	require.NoError(t, err)
+	require.NoError(t, CreateAt(path, version, setup))
 	return path
 }
 

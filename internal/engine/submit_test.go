@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -1170,4 +1171,57 @@ func TestABranchCarryingMastersCommitsIsntSubmitted(t *testing.T) {
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
 	require.NoError(t, err)
 	require.Equal(t, "jq: update to 1.8.1", plan.Title)
+}
+
+// --accept and --standing accept what a check found, so with --no-check
+// they're refused, saying so, where no test reached them (the test
+// analysis's step b).
+func TestSubmitRefusesAcceptingWithoutACheck(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	_, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Accept: []string{"jq"}})
+	require.ErrorContains(t, err, "--accept requires a failed check and cannot be combined with --no-check")
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Standing: true})
+	require.ErrorContains(t, err, "--standing accepts a failure a check found, and cannot be combined with --no-check")
+}
+
+// A branch whose own pull request was closed on GitHub isn't pushed to it
+// again: submit says to start a new branch, where nothing tested it.
+func TestSubmitRefusesABranchWhosePullRequestClosed(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	number := submitted.PullRequest.Ref.Number
+	fake.PRs[number].State = forge.PullRequestClosed
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.ErrorContains(t, err, fmt.Sprintf("#%d is closed; start a new branch for further work (dockhand start)", number))
+}
+
+// A description past GitHub's limit with someone's own part kept is said
+// before anything is pushed, since GitHub would refuse it after the push.
+func TestSubmitRefusesADescriptionPastGitHubsLimit(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	plan.Body += strings.Repeat("a person's own words ", prdescription.Limit/10)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.ErrorContains(t, err, "past GitHub's limit of ")
+	require.ErrorContains(t, err, "shorten it on GitHub, or submit --rewrite-description; nothing was pushed")
+	require.Empty(t, fake.ForkHead(branch.Name), "nothing was pushed")
+	require.Empty(t, fake.PRs)
 }

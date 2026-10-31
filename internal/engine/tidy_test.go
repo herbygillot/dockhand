@@ -778,3 +778,58 @@ func TestTidyCommitsEachSubportsUpdate(t *testing.T) {
 	_, err = plan.Regroup("2 1", "")
 	require.ErrorContains(t, err, "in the order made")
 }
+
+// Tidy refuses a branch that doesn't descend from the base its record
+// keeps, as one moved off it behind dockhand's back, and says to rebase,
+// where it would have read another history as the branch's.
+func TestTidyRefusesABranchOffItsRecordedBase(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, _ := updated(t, e)
+	stray := testsupport.Git(t, branch.Worktree, "commit-tree", "HEAD^{tree}", "-m", "elsewhere")
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	current.Base = model.ObjectID(stray)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(current) }))
+	_, err = e.PlanTidy(t.Context(), TidyRequest{Branch: current})
+	require.ErrorContains(t, err, branch.Name+" does not descend from its recorded base "+model.ObjectID(stray).Short()+"; rebase it onto master first")
+}
+
+// A plan applied after something was staged, which the plan's commits
+// don't hold, is refused, nothing moving, rather than lose the staged
+// change; the plan made again applies.
+func TestTidyRefusesAPlanStaleBySomethingStaged(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, plan := updated(t, e)
+	require.NotEmpty(t, plan.Index)
+	testsupport.Git(t, branch.Worktree, "add", "textproc/jq/Portfile")
+	_, err := e.ApplyTidy(t.Context(), plan)
+	require.ErrorIs(t, err, ErrStalePlan)
+	require.ErrorContains(t, err, "something was staged since the plan was made; run dockhand tidy again")
+	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "nothing moved")
+	again, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	_, err = e.ApplyTidy(t.Context(), again)
+	require.NoError(t, err)
+}
+
+// Commits that would end at another tree than the working files' are
+// refused before the branch moves: the check that a plan's groups cover
+// every change, which no plan dockhand makes fails, here one whose group
+// lost its paths.
+func TestTidyRefusesCommitsThatDontEndAtTheWorkingFiles(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, plan := updated(t, e)
+	require.NotEmpty(t, plan.Groups)
+	plan.Groups[0].Paths = nil
+	_, err := e.ApplyTidy(t.Context(), plan)
+	require.ErrorContains(t, err, "the tidied commits end at tree ")
+	require.ErrorContains(t, err, "not the working files' "+plan.Final+"; nothing was changed")
+	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "nothing moved")
+	require.Empty(t, testsupport.Git(t, branch.Worktree, "for-each-ref", "refs/dockhand/checkpoints/"), "no checkpoint was taken")
+}

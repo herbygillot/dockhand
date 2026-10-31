@@ -26,17 +26,23 @@ func (n *native) Flush(ctx context.Context, name string) error {
 }
 
 func (n *native) Validate(ctx context.Context, name string, config Config) (validation, error) {
-	if _, err := n.guest(ctx, name, nil, "sudo", "-n", "/usr/bin/true"); err != nil {
+	return validate(ctx, n.target(name), config)
+}
+
+// validate checks a prepared image through target, a command in its
+// guest, so it runs, and is tested, off a Mac too.
+func validate(ctx context.Context, target macos.Command, config Config) (validation, error) {
+	if _, err := target(ctx, nil, "sudo", "-n", "/usr/bin/true"); err != nil {
 		return validation{}, fmt.Errorf("passwordless sudo is unavailable: %w", err)
 	}
-	foreign, err := macos.ForeignPackageManagers(ctx, n.target(name))
+	foreign, err := macos.ForeignPackageManagers(ctx, target)
 	if err != nil {
 		return validation{}, err
 	}
 	if len(foreign) > 0 {
 		return validation{}, fmt.Errorf("foreign package manager found: %s", strings.Join(foreign, ", "))
 	}
-	facts, err := installation.Inspect(ctx, n.target(name), config.GuestPrefix)
+	facts, err := installation.Inspect(ctx, target, config.GuestPrefix)
 	if err != nil {
 		return validation{}, err
 	}
@@ -46,22 +52,22 @@ func (n *native) Validate(ctx context.Context, name string, config Config) (vali
 	if len(facts.ActivePorts) > 0 {
 		return validation{}, fmt.Errorf("prepared image has active ports: %s", strings.Join(facts.ActivePorts, ", "))
 	}
-	if err := installation.CheckTclPackages(ctx, n.target(name), config.GuestPrefix); err != nil {
+	if err := installation.CheckTclPackages(ctx, target, config.GuestPrefix); err != nil {
 		return validation{}, err
 	}
-	if err := macos.CheckCompiler(ctx, n.target(name)); err != nil {
+	if err := macos.CheckCompiler(ctx, target); err != nil {
 		return validation{}, err
 	}
-	tools, err := macos.CommandLineToolsVersion(ctx, n.target(name))
+	tools, err := macos.CommandLineToolsVersion(ctx, target)
 	if err != nil {
 		return validation{}, err
 	}
-	xcodeVersion, err := n.validateXcode(ctx, name, config)
+	xcodeVersion, err := validateXcode(ctx, target, config)
 	if err != nil {
 		return validation{}, err
 	}
 	agentVersion, err := host.ObserveGuestAgentVersion(ctx, func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
-		return n.guest(ctx, name, input, args...)
+		return target(ctx, input, args...)
 	})
 	if err != nil {
 		return validation{}, err
@@ -69,8 +75,8 @@ func (n *native) Validate(ctx context.Context, name string, config Config) (vali
 	return validation{Platform: facts.Platform, MacPortsVersion: facts.Version, GuestAgentVersion: agentVersion, XcodeVersion: xcodeVersion, CommandLineTools: tools}, nil
 }
 
-func (n *native) validateXcode(ctx context.Context, name string, config Config) (string, error) {
-	tools, err := macos.InspectDeveloperTools(ctx, n.target(name))
+func validateXcode(ctx context.Context, target macos.Command, config Config) (string, error) {
+	tools, err := macos.InspectDeveloperTools(ctx, target)
 	if err != nil {
 		return "", err
 	}

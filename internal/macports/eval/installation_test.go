@@ -209,3 +209,30 @@ func TestAModelledContextTakesItsToolsFromTheTable(t *testing.T) {
 		require.Positive(t, sources["table"], "%+v: %v", c.platform, sources)
 	}
 }
+
+// Whether the system has headers in /usr/include, which Base's
+// portconfigure asks of /usr/include/sys/cdefs.h, is the modelled
+// release's: the tools' through 10.13, none from 10.15, and the host's to
+// say on 10.14, where a headers package put them (the survey's insight 1:
+// 3,419 ports asked the Mac).
+func TestAModelledContextSaysWhetherItHasSystemHeaders(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		version, architecture string
+		want                  string
+	}{
+		{"15", "x86_64", "1"},
+		{"21", "arm64", "0"},
+		{"25", "x86_64", "0"},
+		{"18", "x86_64", ""},
+	} {
+		platform := model.Platform{OS: "darwin", Version: c.version, Architecture: c.architecture}
+		got, port := observedDescription(t, platform, model.DeveloperToolsCommandLine, "lappend results [file exists /usr/include/sys/cdefs.h]")
+		if c.want == "" {
+			require.True(t, port.ModeledHostAccess, "darwin %s asks the host", c.version)
+			continue
+		}
+		require.Equal(t, []string{c.want}, got, "darwin %s", c.version)
+		require.False(t, port.ModeledHostAccess, "darwin %s: %v", c.version, port.Problems)
+	}
+}
